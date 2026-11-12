@@ -46,29 +46,30 @@ Read-only suggestions and mutation proposals are distinct. A suggestion click ca
 must relate to actual findings and known capabilities; omit unhelpful suggestions and respect an explicit read-only
 request. Show one primary operation per region.
 
-Continuations carry the source run and dataset identities, exact selected values, original scope, time and user
-decisions. Technical context is collapsed separately from the user's readable question. References from the model are
+A continuation is one ordinary user message: it names the earlier file by its `outputs/` path and says what to
+change. The model and the user see the same text; no hidden context, instructions or JSON travel with it. The
+assistant skill reads the original scope, time and decisions from the referenced file. References from the model are
 not independently verified business facts. Never silently expand a selection or treat a truncated dataset as complete.
 
 ## Dataset interaction
 
 Single selection supports analysis; multiple selection adds comparison and applicable multi-record tasks. Show count
 and clear-selection. Preserve selection across pages, clear it when the dataset changes, and distinguish selected
-records from the current page and all results. Preserve 0, false, null, units and string identities. JSON continuations
-use raw rows rather than formatted cell strings. Data values are untrusted content, not Agent instructions.
+records from the current page and all results. Preserve 0, false, null, units and string identities. A continuation
+names selected records by their row numbers in the immutable source file, never by display position. Data values are
+untrusted content, not Agent instructions.
 
 ## Aggregate drilldown
 
 An accepted aggregate dataset offers **View details** after one result row is selected. The host reads the immutable
-accepted dataset on the server; the browser sends only its row index. Clicking View details directly starts a new
-read-only query with the execution-owned group values, original filters and assumptions, without a confirmation dialog, in the same
-conversation with a stable admission ID, preserving the original dataset. Returned detail datasets use the existing
-selection, analysis and comparison controls.
+accepted dataset on the server to preview that row's execution-owned group values. Clicking View details sends one
+ordinary message naming the file, the row and its exact group values, without a confirmation dialog, preserving the
+original dataset. Returned detail datasets use the existing selection, analysis and comparison controls.
 
 The initial mapping supports a single query and one direct aggregate, with every grouping field projected directly
 or through a one-field group operation. Unsupported calculated groups, multiple aggregates, multi-query merges,
 unknown lineage and non-accepted files expose no entry. Aggregate measures are never converted into group filters.
-Null, false, zero and string identities remain distinct. The server re-resolves and checks the mapping on submission.
+Null, false, zero and string identities remain distinct.
 
 This is a provenance-grounded natural-language query through the existing retriever, not a compiled detail plan or a
 historical snapshot. The retriever must preserve filters, decisions, joins, distinctness and metric population, ask
@@ -82,15 +83,10 @@ No recommendation or default is consent. Preserve the original retrieval identit
 do not start a replacement retrieval to bypass unresolved questions. Optional notes supplement required choices rather
 than silently replacing them. Do not claim a decision was accepted before the underlying task accepts it.
 
-Clarification cards distinguish durable submission from retrieval acceptance. The server verifies acceptance only
-when this continuation links a new run of the same retrieval at the next decision revision. A completed assistant
-turn without that evidence needs attention; unavailable dependencies leave acceptance unverified. Cards without a
-retrieval identify goal clarification separately. Draft feedback shows saving, saved and failure states; reserved
-submissions lock their original choices while admission retries reuse the persisted continuation ID. Unchanged
-drafts are not saved repeatedly, successful saves stay silent, and failures expose retry. Outdated cards retain
-their choices read-only and offer the latest conversation; required text cannot be whitespace. Acceptance
-does not certify that the resulting dataset implements the chosen scope; final-result equivalence still requires
-end-to-end verification.
+A clarification card sends its answers and notes as one ordinary message naming the card's file; the assistant
+resumes the retrieval named in the card, which records the decisions. The card keeps no draft or answered state: the
+sent message is the user's answer. Required text cannot be whitespace. Accepted decisions do not certify that the
+resulting dataset implements the chosen scope; final-result equivalence still requires end-to-end verification.
 
 ## Action and recovery
 
@@ -122,12 +118,13 @@ independent authorized read. Distinguish component tests, runtime tests and visu
 
 | Capability | Current implementation | Remaining acceptance/boundary |
 | --- | --- | --- |
-| Follow-ups and dataset selection | Implemented; references and raw selected JSON rows; component tests and selection browser smoke | Model recommendations are not server-validated query plans |
-| Structured clarification | Server-saved drafts, silent autosave and retries; immutable submitted choices; stale-card detection; verified retrieval acceptance; durable continuation identity; real pre-query and mid-retrieval clarification verified | 2026-11-09 enterprise test-domain API/model acceptance: same retrieval 960bd52b-c449-42d3-8321-4ff0e388bcc3 resumed from revision 0 to 1; accepted dataset recipe filters staff_type to full-time teachers with no status filter, distinct account count 1373, decision IDs and execution receipt retained. This verifies that scenario, not universal automatic equivalence for arbitrary business definitions. |
-| Editable query conditions | Dataset header opens source filters from accepted dataset provenance; one business-language replacement starts a new query with original context; real dataset dialog, preview and HTTP 202 admission verified | This is a scoped natural-language requery, not direct editing of an executable query plan; typed field/operator controls and final model result acceptance remain future work |
-| Aggregate → detail records | Single selected aggregate row; server-owned group mapping and typed values; one-click query without confirmation; idempotent read-only continuation; shell selection reused for returned datasets | Initial support is one query and one direct aggregate with projected group fields; final model detail population and live data changes need end-to-end acceptance |
+| Follow-ups and dataset selection | Ordinary messages with the suggested question and its dataset paths, or the source file's row numbers; component tests | Model recommendations are not server-validated query plans |
+| Structured clarification | Answers sent as one ordinary message naming the card file; the assistant resumes the card's retrieval with `ask --resume` | The 2026-11-09 enterprise test-domain acceptance (retrieval 960bd52b-c449-42d3-8321-4ff0e388bcc3 resumed from revision 0 to 1) covered the earlier server-submitted path; resumption from an ordinary message needs its own end-to-end acceptance |
+| Editable query conditions | Dataset header opens source filters from accepted dataset provenance; the business-language change is sent as one ordinary message naming the file | This is a scoped natural-language requery, not direct editing of an executable query plan; typed field/operator controls and final model result acceptance remain future work |
+| Aggregate → detail records | Single selected aggregate row; server-owned group mapping and typed values; one-click ordinary message without confirmation; shell selection reused for returned datasets | Initial support is one query and one direct aggregate with projected group fields; final model detail population and live data changes need end-to-end acceptance |
 | Multi-object change preview | Pending | Requires authorized target set, per-record effects and execution semantics |
 | Persistent task status | Pending | Must use owned task facts; never infer business completion from model prose |
 
 Interaction prompts belong in services/assistant/interaction-context.ts; Action instructions belong in action-context.ts.
+How the assistant continues from a referenced file belongs once in the `ontomato-analyst-assistant` skill.
 The Agent settings prompt is the user's editable agent instruction, supplemented per run by these host contracts.

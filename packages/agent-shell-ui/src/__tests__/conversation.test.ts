@@ -15,7 +15,7 @@ function envelope(seq: number, event: RuntimeEventEnvelope["event"]): RuntimeEve
 }
 
 const snapshot: AgentHostRunSnapshot = {
-  run: { id: runId, sessionId, status: "running", stopReason: null, errorMessage: null, workspaceCommit: null, createdAt: new Date(0).toISOString(), finishedAt: null, resolvedSkills: [] },
+  run: { id: runId, sessionId, status: "running", stopReason: null, errorMessage: null, answerMessageId: null, workspaceCommit: null, createdAt: new Date(0).toISOString(), finishedAt: null, resolvedSkills: [] },
   cursor: { runId, seq: 3, streamId },
   messages: [
     { id: userId, runId, messageSeq: 0, message: { role: "user", content: "hello", timestamp: 1 } },
@@ -48,7 +48,8 @@ describe("conversation projection", () => {
 
     let items = conversationItems(state);
     expect(items.map((item) => item.kind)).toEqual(["user", "response"]);
-    expect(items[1]).toMatchObject({ running: true, blocks: [{ kind: "text", text: "Hi", final: false }] });
+    // Until the runtime names the answer, streamed text is process.
+    expect(items[1]).toMatchObject({ running: true, answerMessageId: null, process: [{ kind: "note", text: "Hi", final: false }] });
 
     applyEnvelope(state, envelope(7, {
       type: "message_end",
@@ -56,14 +57,35 @@ describe("conversation projection", () => {
       messageSeq: 1,
       message: { ...partial, content: [{ type: "text", text: "Hi there" }], stopReason: "stop" },
     }));
-    applyEnvelope(state, envelope(8, { type: "agent_end", messages: [], status: "stopped", stopReason: "stop", errorMessage: null, workspaceCommit: null }));
+    applyEnvelope(state, envelope(8, {
+      type: "agent_end", messages: [], status: "stopped", stopReason: "stop", errorMessage: null, answerMessageId: replyId, workspaceCommit: null,
+    }));
     items = conversationItems(state);
     expect(items[1]).toMatchObject({
       running: false,
       answerMessageId: replyId,
       answerText: "Hi there",
       end: { stopReason: "stop" },
-      blocks: [{ kind: "text", text: "Hi there", final: true }],
+      process: [],
+    });
+  });
+
+  it("keeps a stopped run's text as process when the runtime names no answer", () => {
+    const state = emptyConversation(sessionId);
+    const message = {
+      role: "assistant" as const,
+      content: [{ type: "thinking" as const, thinking: "Plan" }, { type: "text" as const, text: "Partial" }],
+      api: null, provider: null, model: null, usage: null, stopReason: "length" as const, timestamp: 2,
+    };
+    applyRunSnapshot(state, {
+      ...snapshot,
+      run: { ...snapshot.run, status: "stopped", stopReason: "length", finishedAt: new Date(1).toISOString() },
+      messages: [...snapshot.messages, { id: replyId, runId, messageSeq: 1, message }],
+    });
+    expect(conversationItems(state)[1]).toMatchObject({
+      answerMessageId: null,
+      answerText: "",
+      process: [{ kind: "steps", steps: [{ kind: "thinking", text: "Plan" }] }, { kind: "note", text: "Partial" }],
     });
   });
 });

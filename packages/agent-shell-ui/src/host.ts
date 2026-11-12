@@ -15,7 +15,7 @@ import type {
 import { agentHostStreamFrameSchema } from "@ontomato/contracts/agent-host";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { RuntimeCursor, RuntimeEventEnvelope, RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
-import type { RetrievalSnapshot } from "@ontomato/contracts/data-retrieval";
+import { agentTasksFrameSchema, type AgentTasksFrame } from "@ontomato/contracts/agent-tasks";
 
 /*
  * The one client of the agent-host proxy interface: every host that serves this shell exposes the
@@ -26,6 +26,25 @@ export interface HostStreamHandlers {
   frame(frame: RuntimeStreamFrame): void;
   /** The transport ended without the run stopping; the shell re-reads the snapshot. */
   error(error: unknown): void;
+}
+
+export interface TaskStreamHandlers {
+  frame(frame: AgentTasksFrame): void;
+  /** The stream ended before a settled snapshot; the shell opens it again and reads the whole snapshot. */
+  error(error: unknown): void;
+}
+
+/**
+ * Work a reply delegated, for a host whose conversations delegate any: the conversation's task stream and each
+ * retrieval task's own run. Other hosts leave it out and the shell shows no tasks.
+ */
+export interface ShellTaskPort {
+  /** Complete snapshots of the conversation's tasks; the stream ends after one that is settled. */
+  subscribe(sessionId: string, handlers: TaskStreamHandlers): () => void;
+  readProcess(sessionId: string, taskId: string): Promise<AgentHostRunSnapshot>;
+  subscribeProcess(
+    sessionId: string, taskId: string, after: Pick<RuntimeCursor, "seq" | "streamId">, handlers: HostStreamHandlers,
+  ): () => void;
 }
 
 export interface AgentHostClient {
@@ -50,16 +69,7 @@ export interface AgentHostClient {
   /** The run's version of a path: at the run's end once stopped, the current one while running. */
   resolveArtifact(sessionId: string, runId: string, path: string): Promise<RuntimeArtifact | null>;
   readArtifact(artifact: RuntimeArtifact): Promise<Blob>;
-  /**
-   * Reads one retrieval's snapshot. The retrieval ID is stable across continuations of the same
-   * retrieval, so callers use it as the fold state key. The child run is explicit for history.
-   */
-  readRetrieval(sessionId: string, runId: string, retrievalId: string, retrievalRunId: string): Promise<RetrievalSnapshot>;
-  readRetrievalRun(sessionId: string, runId: string, retrievalId: string, retrievalRunId: string): Promise<AgentHostRunSnapshot>;
-  subscribeRetrieval(
-    sessionId: string, runId: string, retrievalId: string, retrievalRunId: string,
-    after: Pick<RuntimeCursor, "seq" | "streamId">, handlers: HostStreamHandlers,
-  ): () => void;
+  tasks?: ShellTaskPort;
 }
 
 /**
@@ -83,6 +93,8 @@ export interface AgentHostClientOptions {
   onEvent?(sessionId: string, envelope: RuntimeEventEnvelope): void;
   /** Binds every conversation of this client to one workspace. */
   workspace?: AgentHostWorkspaceScope;
+  /** The host serves the task routes under each conversation (`/sessions/:id/tasks...`). */
+  tasks?: boolean;
 }
 
 const enc = encodeURIComponent;
@@ -102,10 +114,7 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
   const query = (values: Record<string, string>) => new URLSearchParams(values).toString();
   const session = (id: string) => `/sessions/${enc(id)}`;
   const run = (sessionId: string, runId: string) => `${session(sessionId)}/runs/${enc(runId)}`;
-  const retrieval = (sessionId: string, runId: string, retrievalId: string) =>
-    `${run(sessionId, runId)}/retrievals/${enc(retrievalId)}`;
-  const retrievalRun = (sessionId: string, runId: string, retrievalId: string, retrievalRunId: string) =>
-    `${retrieval(sessionId, runId, retrievalId)}/runs/${enc(retrievalRunId)}`;
+  const task = (sessionId: string, taskId: string) => `${session(sessionId)}/tasks/${enc(taskId)}`;
 
   function subscribe(
     path: string,
@@ -125,7 +134,11 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
           headers: { Accept: "text/event-stream" },
           signal: controller.signal,
         });
-        const ended = await readFrames(response, frame, () => !controller.signal.aborted);
+        const ended = await readData(response, (data) => {
+          const parsed = agentHostStreamFrameSchema.parse(data);
+          frame(parsed);
+          return parsed.type === "snapshot_required" || parsed.envelope.event.type === "agent_end";
+        }, () => !controller.signal.aborted);
         if (!ended && !controller.signal.aborted) handlers.error(new Error("stream closed"));
       } catch (error) {
         if (!controller.signal.aborted) handlers.error(error);
@@ -134,7 +147,37 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
     return () => controller.abort();
   }
 
+  const tasks: ShellTaskPort = {
+    subscribe(sessionId, handlers) {
+      const controller = new AbortController();
+      void (async () => {
+        try {
+          const response = await call(`${session(sessionId)}/tasks/events`, {
+            headers: { Accept: "text/event-stream" },
+            signal: controller.signal,
+          });
+          const settled = await readData(response, (data) => {
+            const parsed = agentTasksFrameSchema.parse(data);
+            handlers.frame(parsed);
+            return parsed.settled;
+          }, () => !controller.signal.aborted);
+          if (!settled && !controller.signal.aborted) handlers.error(new Error("stream closed"));
+        } catch (error) {
+          if (!controller.signal.aborted) handlers.error(error);
+        }
+      })();
+      return () => controller.abort();
+    },
+    readProcess(sessionId, taskId) {
+      return json<AgentHostRunSnapshot>(`${task(sessionId, taskId)}/process`);
+    },
+    subscribeProcess(sessionId, taskId, after, handlers) {
+      return subscribe(`${task(sessionId, taskId)}/process`, sessionId, after, handlers);
+    },
+  };
+
   return {
+    ...(options.tasks ? { tasks } : {}),
     async listAgents() {
       const agents = (await json<AgentHostAgentList>("/agents")).agents;
       return options.agents ? options.agents(agents) : agents;
@@ -179,27 +222,16 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
     async readArtifact(artifact) {
       return (await call(`${session(artifact.sessionId)}/artifacts/${enc(artifact.id)}/content`)).blob();
     },
-    readRetrieval(sessionId, runId, retrievalId, retrievalRunId) {
-      return json<RetrievalSnapshot>(
-        `${retrieval(sessionId, runId, retrievalId)}?${query({ retrievalRunId })}`,
-      );
-    },
-    readRetrievalRun(sessionId, runId, retrievalId, retrievalRunId) {
-      return json<AgentHostRunSnapshot>(retrievalRun(sessionId, runId, retrievalId, retrievalRunId));
-    },
-    subscribeRetrieval(sessionId, runId, retrievalId, retrievalRunId, after, handlers) {
-      return subscribe(retrievalRun(sessionId, runId, retrievalId, retrievalRunId), sessionId, after, handlers);
-    },
   };
 }
 
 /**
- * Reads `data:` frames of the runtime SSE stream until the run ends or a snapshot is required.
- * Returns true when the stream ended on such a frame. Malformed frames throw.
+ * Reads the `data:` payloads of an SSE stream until `handle` says the stream is done with one. Returns true when it
+ * ended that way, false when the body ended first. Malformed payloads throw.
  */
-async function readFrames(
+async function readData(
   response: Response,
-  frame: (value: RuntimeStreamFrame) => void,
+  handle: (data: unknown) => boolean,
   current: () => boolean,
 ): Promise<boolean> {
   const reader = response.body?.getReader();
@@ -221,10 +253,9 @@ async function readFrames(
           continue;
         }
         if (line !== "" || data.length === 0) continue;
-        const parsed = agentHostStreamFrameSchema.parse(JSON.parse(data.join("\n")));
+        const payload = JSON.parse(data.join("\n"));
         data = [];
-        frame(parsed);
-        if (parsed.type === "snapshot_required" || parsed.envelope.event.type === "agent_end") return true;
+        if (handle(payload)) return true;
       }
     }
     return false;

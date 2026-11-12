@@ -82,14 +82,10 @@ export function messageText(m: { content: unknown }): string {
           .join("\n")
       : "";
 }
-export function finalText(s: Pick<RuntimeRunSnapshot, "messages">) {
-  return (
-    [...s.messages]
-      .reverse()
-      .filter((m) => m.message.role === "assistant")
-      .map((m) => messageText(m.message))
-      .find(Boolean) ?? ""
-  );
+/** The text of the message the runtime named as the run's answer; empty when the run has none. */
+export function answerText(s: Pick<RuntimeRunSnapshot, "messages"> & { run: { answerMessageId: string | null } }) {
+  const answer = s.messages.find((m) => m.id === s.run.answerMessageId);
+  return answer ? messageText(answer.message) : "";
 }
 const WAIT_STEP_MS = 30_000;
 /**
@@ -175,5 +171,5 @@ export async function runAuxiliary(input: AuxiliaryInput) {
   const s = await waitForRun(client, runId, input.signal);
   if (s.run.stopReason !== "stop")
     throw new Error(s.run.errorMessage ?? `Model stopped: ${s.run.stopReason}`);
-  return finalText(s);
+  return answerText(s);
 }

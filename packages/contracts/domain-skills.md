@@ -16,7 +16,6 @@ type AssistantSkillCatalog = {
     skill: RuntimeSkillRef;
     title: string;
     description: string;
-    enabled: boolean;
     tags: string[];
   }[];
 };
@@ -30,39 +29,37 @@ Provider references must be selectable/removable, not silently preserved outside
 that list. Definition writes retain the domain-completion rule in assistant-chat.
 Catalogue read failure prevents saving a replacement selection.
 
-For each **new run**, the host reads the current definition and domain enablement.
-Only selected, enabled skills enter `definition.skills`; disabling preserves the
-saved selection, re-enabling restores eligibility, deletion removes domain
-references. Missing or invalid selected packages fail preparation rather than
+For each **new run**, the host reads the current definition. Exactly the selected
+skills enter `definition.skills`; there is no domain-wide enablement (removed
+2026-11-12), and deletion removes domain references. Missing or invalid selected packages fail preparation rather than
 using an old publication. Unselected packages never enter the installed tree or
 PI catalogue. Existing duplicate-name admission rules still apply.
 
 ## Package and publication
 
 SkillInfo also returns the complete `skill` reference for selection after import.
-The existing management URLs, permission (`skill-management`), ZIP import/export
-and read-only public-package rule remain. An authorized save/import approves the
-package for use by selected agents. A new domain package uses standard
+The management URLs, permission (`skill-management`), ZIP import/export
+and read-only public-package rule remain. An authorized import approves the
+package for use by selected agents. A domain package uses standard
 `SKILL.md` frontmatter plus ordinary scripts/references. Required identity and
 description validation is shared with runtime publication through contracts.
 Private top-level `type/category/entries` and an exported `execute(input)` are no
 longer package requirements. No private execution manifest is generated.
 
-The existing form's descriptive fields use optional string-valued
-`metadata["ontomato.<field>"]` entries: type, category, title, tags (JSON array),
-version and outputType. These are workbench presentation/editor hints, not runtime
-dispatch or version selectors. A plain standard package requires none of them;
-the view defaults to category analysis, derives type from script presence, and
-uses name/empty tags/empty version when hints are absent. Import/export preserves
-package bytes; form edits preserve unrelated standard fields and package files.
-Optional `ontomato.defaultEnabled` retains initial enablement for bundled public
-packages; domain overrides remain authoritative and do not select an agent's
-skills. New form templates document an ordinary CLI and file outputs.
+Descriptive fields use optional string-valued `metadata["ontomato.<field>"]`
+entries: type, category, title, tags (JSON array), version and outputType. These
+are workbench presentation hints, not runtime dispatch or version selectors. A
+plain standard package requires none of them; the view defaults to category
+analysis, derives type from script presence, and uses name/empty tags/empty
+version when hints are absent. Import/export preserves package bytes; importing a
+package with an existing name replaces the whole package after confirmation.
+Packages are not edited in place, and there is no domain-wide enablement: an
+agent uses exactly the skills selected in its definition.
 
 At new-run preparation the workbench publishes the selected domain directory's
 exact files with `POST /v1/skills`, using its existing service credential and the
-verified `X-Domain-Id`. The stored source directory owns edits; the runtime owns
-immutable published versions. Saving edits changes that source; successful run
+verified `X-Domain-Id`. The stored source directory owns the package; the runtime
+owns immutable published versions. An import replaces that source; successful run
 preparation publishes it before admission. Publication failure prevents the run,
 with no stale-package fallback. This reuses UTF-8 package transport; import and
 publication reject non-UTF-8 files, without replacement decoding or dropping files.
@@ -72,7 +69,7 @@ Active runs keep those files; the next run, including the next message in an old
 session, resolves again. Idempotent retries return their original run without
 republishing or resolving a new version. Source changes and publication/admission
 are serialized per domain so a delayed preparation cannot republish older bytes
-after a newer edit. No stored-data conversion or session-level version pin is added.
+after a newer import. No stored-data conversion or session-level version pin is added.
 
 ## Credentials and history
 

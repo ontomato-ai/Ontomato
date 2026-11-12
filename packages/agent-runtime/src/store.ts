@@ -18,6 +18,7 @@ import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifact
 import type { RuntimeMessage } from "@ontomato/contracts/agent-runtime-messages";
 import type { RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
 import { RuntimeError, missing } from "./errors";
+import { answerMessageId } from "./answer";
 
 export interface Scope {
   hostId: string;
@@ -176,6 +177,7 @@ export class RuntimeStore {
         CREATE INDEX IF NOT EXISTS artifacts_session_idx ON ${this.table("artifacts")}(host_id,domain_id,session_id);
         CREATE INDEX IF NOT EXISTS artifacts_sha256_idx ON ${this.table("artifacts")}(sha256);
       `);
+      if (!versions.some(row => row.version === 4)) await this.backfillAnswers(c);
     });
     this.lease = await this.pool.connect();
     const claimed = await this.lease.query(
@@ -192,6 +194,24 @@ export class RuntimeStore {
       runtimeLogger.error("Runtime ownership connection lost");
       process.exit(1);
     });
+  }
+  /** Runs stored before answer identities get theirs from the same rule, in the run and in its agent_end event. */
+  private async backfillAnswers(c: PoolClient) {
+    const runs = (await c.query(
+      `SELECT host_id,domain_id,id,run->>'stopReason' AS stop_reason FROM ${this.table("runs")} WHERE NOT run ? 'answerMessageId'`,
+    )).rows;
+    for (const run of runs) {
+      const key = [run.host_id, run.domain_id, run.id];
+      const messages = (await c.query(
+        `SELECT id,message FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND run_id=$3 ORDER BY seq`, key,
+      )).rows;
+      const answer = JSON.stringify(answerMessageId(run.stop_reason, messages));
+      await c.query(`UPDATE ${this.table("runs")} SET run=jsonb_set(run,'{answerMessageId}',$4::jsonb)
+        WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...key, answer]);
+      await c.query(`UPDATE ${this.table("events")} SET envelope=jsonb_set(envelope,'{event,answerMessageId}',$4::jsonb)
+        WHERE host_id=$1 AND domain_id=$2 AND run_id=$3 AND envelope->'event'->>'type'='agent_end'`, [...key, answer]);
+    }
+    await c.query(`INSERT INTO ${this.table("schema_migrations")} VALUES (4)`);
   }
   async close() {
     if (this.lease) {
@@ -451,13 +471,12 @@ export class RuntimeStore {
     updateServiceLogContext({ runId: row.run.id, sessionId: row.run.sessionId, domainId: scope.domainId });
     return { run: row.run, seq: Number(row.seq), streamId: row.stream_id };
   }
-  /** The last assistant reply with text; the caller has already observed the stop. */
+  /** The run's answer message, null while it runs and when it stopped without one. */
   async finalReply(scope: Scope, id: string): Promise<RuntimeMessage | null> {
     const result = await this.pool.query(
-      `SELECT message FROM ${this.table("messages")}
-       WHERE host_id=$1 AND domain_id=$2 AND run_id=$3 AND message->>'role'='assistant'
-         AND jsonb_path_exists(message, '$.content[*] ? (@.type == "text" && @.text != "")')
-       ORDER BY seq DESC LIMIT 1`, [...values(scope), id]);
+      `SELECT m.message FROM ${this.table("runs")} r JOIN ${this.table("messages")} m
+       ON m.host_id=r.host_id AND m.domain_id=r.domain_id AND m.id=(r.run->>'answerMessageId')::uuid
+       WHERE r.host_id=$1 AND r.domain_id=$2 AND r.id=$3`, [...values(scope), id]);
     return result.rows[0]?.message ?? null;
   }
   async messages(
@@ -600,23 +619,19 @@ export class RuntimeStore {
     ).rows.map((r) => this.artifactRow(r));
   }
   private historyProjection() {
-    // Only the user input and the last assistant message of a settled run are public history.
+    // Only the user input and the answer message of a settled run are public history.
     const text = (alias: string) => `CASE WHEN jsonb_typeof(${alias}.message->'content')='string'
       THEN ${alias}.message->>'content' ELSE COALESCE((SELECT string_agg(part->>'text', E'\\n' ORDER BY n)
       FROM jsonb_array_elements(${alias}.message->'content') WITH ORDINALITY AS p(part,n)
       WHERE part->>'type'='text'),'') END`;
     return `SELECT r.host_id,r.domain_id,r.id,r.run,${text("u")} AS question,
-      CASE WHEN r.run->>'status'='stopped' AND r.run->>'stopReason' IN ('stop','length')
-      AND a.message IS NOT NULL AND NOT EXISTS (
-        SELECT 1 FROM jsonb_array_elements(a.message->'content') part WHERE part->>'type'='toolCall'
-      ) THEN ${text("a")} ELSE NULL END AS answer
+      CASE WHEN a.message IS NOT NULL THEN ${text("a")} END AS answer
       FROM ${this.table("runs")} r
       LEFT JOIN LATERAL (SELECT message FROM ${this.table("messages")} m
         WHERE m.host_id=r.host_id AND m.domain_id=r.domain_id AND m.run_id=r.id
         AND m.message->>'role'='user' ORDER BY seq LIMIT 1) u ON true
-      LEFT JOIN LATERAL (SELECT message FROM ${this.table("messages")} m
-        WHERE m.host_id=r.host_id AND m.domain_id=r.domain_id AND m.run_id=r.id
-        AND m.message->>'role'='assistant' ORDER BY seq DESC LIMIT 1) a ON true`;
+      LEFT JOIN ${this.table("messages")} a ON a.host_id=r.host_id AND a.domain_id=r.domain_id
+        AND a.id=(r.run->>'answerMessageId')::uuid`;
   }
   private async historyRow(row: Record<string, any>) {
     return runtimeHistoryRecordSchema.parse({
@@ -775,6 +790,7 @@ export class RuntimeStore {
         run.finishedAt = envelope.timestamp;
         run.stopReason = event.stopReason;
         run.errorMessage = event.errorMessage;
+        run.answerMessageId = event.answerMessageId;
         run.workspaceCommit = event.workspaceCommit;
         await c.query(
           `UPDATE ${this.table("sessions")} SET active_run_id=NULL,updated_at=now() WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND active_run_id=$4`,
@@ -832,7 +848,8 @@ export class RuntimeStore {
         });
       }
     }
-    messages = (await this.messages(scope, run.sessionId, this.pool, id)).map(m => m.message);
+    let rows = await this.messages(scope, run.sessionId, this.pool, id);
+    messages = rows.map(m => m.message);
     const last = [...messages].reverse().find((m) => m.role === "assistant");
     if (
       reason &&
@@ -857,7 +874,8 @@ export class RuntimeStore {
           errorMessage: errorMessage ?? undefined,
         },
       });
-      messages = (await this.messages(scope, run.sessionId, this.pool, id)).map((m) => m.message);
+      rows = await this.messages(scope, run.sessionId, this.pool, id);
+      messages = rows.map((m) => m.message);
     }
     const final = [...messages].reverse().find((m) => m.role === "assistant");
     const stopReason =
@@ -875,6 +893,7 @@ export class RuntimeStore {
       status: "stopped",
       stopReason,
       errorMessage: text,
+      answerMessageId: answerMessageId(stopReason, rows),
       workspaceCommit: workspaceCommit === undefined ? run.workspaceCommit : workspaceCommit,
     });
     return envelope;

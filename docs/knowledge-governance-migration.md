@@ -36,8 +36,8 @@ The response contains `records` and `nextOffset`.
 
 Each record contains `hostId`, `runId`, `sessionId`, nullable `agentId`, timestamps,
 `question`, nullable `answer`, and registered artifact metadata. A final answer is the text of
-only the last assistant message of a run stopped with `stop` or `length`, provided it has no
-pending tool calls. Thinking, intermediate assistant text, tool messages, definitions, prompts,
+the message the runtime named as the run's `answerMessageId`, and null when it named none
+(see [the runtime contract](../packages/contracts/agent-runtime.md#pi-state-and-history)). Thinking, intermediate assistant text, tool messages, definitions, prompts,
 credentials, feedback, decisions and quality annotations are excluded. Run annotations are deferred.
 
 `GET /v1/history/:hostId/:runId` returns the same projection.

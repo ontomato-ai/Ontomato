@@ -386,6 +386,9 @@ class BuildTestPostgresIntegrationTest {
    expectCode("BUILD_TEST_CONTEXT_EXPIRED",()->contexts.require(id,"builder","contract"));
    var closed=contexts.create("closed",sample,Map.of());contexts.close(closed.getString("contextId"));
    expectCode("BUILD_TEST_CONTEXT_CLOSED",()->contexts.require(closed.getString("contextId"),"builder","contract"));
+   // Past its deadline an ended test still reads as ended, as its status says.
+   jdbc.update("UPDATE build_test_contexts SET expires_at=0 WHERE id=?",closed.getString("contextId"));
+   expectCode("BUILD_TEST_CONTEXT_CLOSED",()->contexts.require(closed.getString("contextId"),"builder","contract"));
    config.setDataAdapter("gaussdb");
    expectCode("BUILD_TEST_UNSUPPORTED",()->contexts.create("unsupported",sample,Map.of()));config.setDataAdapter("postgresql");
    assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM build_test_contexts WHERE workspace_id='unsupported'",Integer.class));

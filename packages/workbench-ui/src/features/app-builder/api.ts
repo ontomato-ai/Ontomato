@@ -54,6 +54,12 @@ export const builderApi = {
   async remove(id: string) {
     await nodeApiFetch(workspacePath(id), "DELETE");
   },
+  /** A page of the workspace's conversations, newest first. */
+  async sessions(id: string, cursor: string | null) {
+    return agentHostSessionPageSchema.parse(
+      await nodeApiGet(`${workspacePath(id)}/sessions${cursor ? `?${new URLSearchParams({ cursor })}` : ""}`),
+    );
+  },
   /** The current files, uncommitted ones included. */
   async files(id: string) {
     return ((await nodeApiGet(`${workspacePath(id)}/tree`)) as WorkspaceTree).files;
@@ -72,6 +78,13 @@ export const builderApi = {
   /** Makes a new commit with an earlier commit's files; returns that new commit. */
   async restore(id: string, commit: string) {
     return ((await nodeApiPost(`${workspacePath(id)}/restore`, { commit })) as WorkspaceSaved).commit;
+  },
+  /**
+   * Starts a business test from a sample of the workspace through the entry the agent's `test start` uses; Java ends
+   * the previous round and owns the new one.
+   */
+  async startBuildTest(id: string, samplePath: string) {
+    await nodeApiPost(`${workspacePath(id)}/build-tests`, { samplePath });
   },
   async previewToken(id: string) {
     return (await nodeApiPost(`${workspacePath(id)}/preview-token`, {})) as WorkspacePreviewToken;
@@ -92,11 +105,5 @@ export const builderApi = {
 
 /** The assistant client of one workspace: its conversations are made in it and listed from its own list. */
 export function createBuilderClient(workspaceId: string) {
-  return createWorkspaceAssistantClient({
-    id: workspaceId,
-    listSessions: async (cursor) =>
-      agentHostSessionPageSchema.parse(
-        await nodeApiGet(`${workspacePath(workspaceId)}/sessions${cursor ? `?${new URLSearchParams({ cursor })}` : ""}`),
-      ),
-  });
+  return createWorkspaceAssistantClient({ id: workspaceId, listSessions: (cursor) => builderApi.sessions(workspaceId, cursor) });
 }

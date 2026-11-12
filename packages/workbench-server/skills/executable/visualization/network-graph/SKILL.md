@@ -8,7 +8,6 @@ metadata:
   ontomato.tags: '["visualization","relationship graph","network graph","entities","dependencies","ECharts"]'
   ontomato.version: 1.0.0
   ontomato.outputType: html
-  ontomato.defaultEnabled: "false"
 ---
 
 ## Standard CLI

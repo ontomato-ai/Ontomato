@@ -14,7 +14,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
-/** Durable admission/status for final executions and legacy asynchronous checks. */
+/**
+ * Durable admission/status for final executions and legacy asynchronous checks. A job's state records when it started
+ * and finished; jobs admitted before these times were kept have neither.
+ */
 @Service
 @DependsOn("jdbcInitDb")
 public class QueryJobService {
@@ -85,7 +88,7 @@ public class QueryJobService {
     String sessionId = sessionId(id, user);
     UUID uuid = UUID.fromString(id);
     String hash = OntologyQueryService.digest(input);
-    JSONObject state = JSONObject.of("id", id, "status", "running");
+    JSONObject state = JSONObject.of("id", id, "status", "running", "startedAt", java.time.Instant.now().toString());
     state.put("result", null);
     state.put("error", null);
     int inserted =
@@ -138,6 +141,7 @@ public class QueryJobService {
                         "message",
                         e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
               } finally {
+                state.put("finishedAt", java.time.Instant.now().toString());
                 jdbc.update(
                     "UPDATE ontology_query_jobs SET state=?::jsonb WHERE id=? AND domain_id=? AND"
                         + " user_id=? AND state->>'status'='running'",
@@ -191,7 +195,9 @@ public class QueryJobService {
             "status",
             "cancelled",
             "error",
-            Map.of("code", "QUERY_JOB_CANCELLED", "message", "Cancelled before admission"));
+            Map.of("code", "QUERY_JOB_CANCELLED", "message", "Cancelled before admission"),
+            "finishedAt",
+            java.time.Instant.now().toString());
     closed.put("result", null);
     jdbc.update(
         "INSERT INTO ontology_query_jobs VALUES(?,?,?,?,?,?::jsonb,?) ON CONFLICT DO NOTHING",
@@ -206,6 +212,7 @@ public class QueryJobService {
     if ("running".equals(state.getString("status"))) {
       state.put("status", "cancelled");
       state.put("error", Map.of("code", "QUERY_JOB_CANCELLED", "message", "Cancelled"));
+      state.put("finishedAt", java.time.Instant.now().toString());
       jdbc.update(
           "UPDATE ontology_query_jobs SET state=?::jsonb WHERE id=? AND domain_id=? AND user_id=?"
               + " AND state->>'status'='running'",

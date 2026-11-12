@@ -1,40 +1,47 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { FolderGit2, FolderPlus, Lock, MessageSquare, MoreHorizontal, Plus } from "lucide-vue-next";
-import type { AgentHostSession } from "@ontomato/contracts/agent-host";
+import { FolderGit2, FolderPlus, Lock, MessageSquare, MoreHorizontal, SquarePen } from "lucide-vue-next";
 import type { Workspace } from "@ontomato/contracts/workspaces";
+import type { WorkspaceSessions } from "../column-sessions";
 import { firstLine } from "../panel";
 import type { LoadState } from "../workspace-view";
 
 /**
- * The builder's column: its name, a new workspace, the reader's workspaces, and under the open one its conversations.
- * A workspace or conversation that a run occupies shows the running mark; the rows' rhythm is the conversation column's.
+ * The builder's column: its name, a new conversation, a new workspace, and the reader's workspaces. Any number of them
+ * may be expanded at once, each listing its conversations. A workspace's row only expands or collapses it; its new
+ * conversation button and its conversations open it, and the open workspace is marked. The column only says what the
+ * reader asked for, the builder opens it. A workspace or conversation that a run occupies shows the running mark; the
+ * rows' rhythm is the conversation column's.
  */
-defineProps<{
+const props = defineProps<{
   workspaces: readonly Workspace[];
   workspacesState: LoadState;
   moreWorkspaces: boolean;
+  /** The open workspace. */
   workspaceId: string | null;
-  sessions: readonly AgentHostSession[];
-  sessionsState: LoadState;
-  moreSessions: boolean;
+  /** The expanded workspaces, each with the conversations it shows. */
+  expanded: ReadonlyMap<string, WorkspaceSessions>;
   sessionId: string | null;
   /** The edition signs readers in, so a workspace is only its owner's. */
   privateWorkspaces: boolean;
 }>();
 const emit = defineEmits<{
+  startConversation: [];
   createWorkspace: [];
-  selectWorkspace: [id: string];
+  toggleWorkspace: [id: string];
+  newConversation: [workspaceId: string];
+  openSession: [workspaceId: string, sessionId: string];
   renameWorkspace: [workspace: Workspace];
   deleteWorkspace: [workspace: Workspace];
   moreWorkspaces: [];
   retryWorkspaces: [];
-  newConversation: [];
-  selectSession: [id: string];
-  moreSessions: [];
-  retrySessions: [];
+  moreSessions: [workspaceId: string];
+  retrySessions: [workspaceId: string];
 }>();
 const { t } = useI18n();
+/** Each listed workspace with its conversations, or null while it is collapsed. */
+const rows = computed(() => props.workspaces.map((workspace) => ({ workspace, list: props.expanded.get(workspace.id) ?? null })));
 
 function workspaceCommand(workspace: Workspace, command: "rename" | "delete") {
   if (command === "rename") emit("renameWorkspace", workspace);
@@ -45,7 +52,11 @@ function workspaceCommand(workspace: Workspace, command: "rename" | "delete") {
 <template>
   <div class="builder-column">
     <div class="column-head">{{ t("appBuilder.title") }}</div>
-    <button type="button" class="nav-item primary" @click="emit('createWorkspace')">
+    <button type="button" class="nav-item primary" @click="emit('startConversation')">
+      <SquarePen :size="16" aria-hidden="true" />
+      <span class="nav-label">{{ t("appBuilder.startConversation") }}</span>
+    </button>
+    <button type="button" class="nav-item" @click="emit('createWorkspace')">
       <FolderPlus :size="16" aria-hidden="true" />
       <span class="nav-label">{{ t("appBuilder.newWorkspace") }}</span>
     </button>
@@ -66,20 +77,30 @@ function workspaceCommand(workspace: Workspace, command: "rename" | "delete") {
     </div>
     <div v-else-if="workspaces.length === 0" class="column-note">{{ t("appBuilder.noWorkspaces") }}</div>
     <ul v-else class="workspace-list">
-      <li v-for="workspace in workspaces" :key="workspace.id">
-        <div class="row workspace-row" :class="{ open: workspace.id === workspaceId }">
+      <li v-for="{ workspace, list } in rows" :key="workspace.id">
+        <div class="row workspace-row" :class="{ current: workspace.id === workspaceId }">
           <button
             type="button"
-            class="row-open"
-            :aria-expanded="workspace.id === workspaceId"
-            @click="emit('selectWorkspace', workspace.id)"
+            class="row-toggle"
+            :aria-expanded="list !== null"
+            :aria-current="workspace.id === workspaceId ? 'true' : undefined"
+            @click="emit('toggleWorkspace', workspace.id)"
           >
             <FolderGit2 :size="16" aria-hidden="true" />
             <span class="row-label">{{ workspace.name }}</span>
             <span v-if="workspace.activeRunId" class="running" aria-hidden="true" />
           </button>
+          <button
+            type="button"
+            class="row-tool"
+            :title="t('appBuilder.newConversation')"
+            :aria-label="t('appBuilder.newConversationIn', { name: workspace.name })"
+            @click="emit('newConversation', workspace.id)"
+          >
+            <SquarePen :size="15" aria-hidden="true" />
+          </button>
           <el-dropdown trigger="click" placement="bottom-end" @command="(command: 'rename' | 'delete') => workspaceCommand(workspace, command)">
-            <button type="button" class="row-more" :aria-label="t('appBuilder.workspaceActions')"><MoreHorizontal :size="16" /></button>
+            <button type="button" class="row-tool row-more" :aria-label="t('appBuilder.workspaceActions')"><MoreHorizontal :size="16" /></button>
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="rename">{{ t("common.rename") }}</el-dropdown-item>
@@ -88,38 +109,36 @@ function workspaceCommand(workspace: Workspace, command: "rename" | "delete") {
             </template>
           </el-dropdown>
         </div>
-        <ul v-if="workspace.id === workspaceId" class="conversation-list">
-          <li v-if="sessionsState === 'error'" class="column-note nested">
+        <ul v-if="list" class="conversation-list">
+          <li v-if="list.state === 'error'" class="column-note nested">
             {{ t("assistant.loadFailed") }}
-            <button type="button" class="link" @click="emit('retrySessions')">{{ t("common.retry") }}</button>
+            <button type="button" class="link" @click="emit('retrySessions', workspace.id)">{{ t("common.retry") }}</button>
           </li>
-          <li v-for="session in sessions" :key="session.id">
+          <li v-else-if="list.state === 'loading' && list.sessions.length === 0" class="skeleton nested" aria-busy="true">
+            <span />
+          </li>
+          <li v-else-if="list.sessions.length === 0" class="column-note nested">{{ t("assistant.noSessions") }}</li>
+          <li v-for="session in list.sessions" :key="session.id">
             <button
               type="button"
               class="row conversation-row"
               :class="{ active: session.id === sessionId }"
               :aria-current="session.id === sessionId ? 'page' : undefined"
-              @click="emit('selectSession', session.id)"
+              @click="emit('openSession', workspace.id, session.id)"
             >
               <MessageSquare :size="14" aria-hidden="true" />
               <span class="row-label">{{ firstLine(session.title) || t("appBuilder.newConversation") }}</span>
               <span v-if="session.latestRun?.status === 'running'" class="running" aria-hidden="true" />
             </button>
           </li>
-          <li v-if="moreSessions">
-            <button type="button" class="row conversation-row more" :disabled="sessionsState === 'loading'" @click="emit('moreSessions')">
-              {{ t("assistant.more") }}
-            </button>
-          </li>
-          <li>
+          <li v-if="list.more">
             <button
               type="button"
-              class="row conversation-row new"
-              :class="{ active: sessionId === null }"
-              @click="emit('newConversation')"
+              class="row conversation-row more"
+              :disabled="list.state === 'loading'"
+              @click="emit('moreSessions', workspace.id)"
             >
-              <Plus :size="14" aria-hidden="true" />
-              <span class="row-label">{{ t("appBuilder.newConversation") }}</span>
+              {{ t("assistant.more") }}
             </button>
           </li>
         </ul>
@@ -152,7 +171,7 @@ function workspaceCommand(workspace: Workspace, command: "rename" | "delete") {
   color: var(--el-text-color-primary);
 }
 .nav-item,
-.row-open,
+.row-toggle,
 .conversation-row,
 .more {
   display: flex;
@@ -235,22 +254,23 @@ function workspaceCommand(workspace: Workspace, command: "rename" | "delete") {
 .workspace-row:hover {
   background: var(--shell-panel-hover);
 }
-.workspace-row.open .row-open {
+/* The open workspace: its name in the ink and weight of a selection, its icon in the link tone. */
+.workspace-row.current .row-toggle {
   color: var(--el-text-color-primary);
   font-weight: var(--font-semibold);
 }
-.workspace-row.open .row-open svg {
+.workspace-row.current .row-toggle svg {
   color: var(--brand-link);
 }
-.row-open:hover {
+.row-toggle:hover {
   color: var(--el-text-color-primary);
 }
-.row-more {
+/* The row's own buttons, a new conversation and the menu, show while the row is hovered or focused. */
+.row-tool {
   display: grid;
   place-items: center;
   flex: 0 0 28px;
   height: 28px;
-  margin-right: 2px;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -259,16 +279,20 @@ function workspaceCommand(workspace: Workspace, command: "rename" | "delete") {
   opacity: 0;
   transition: opacity var(--transition-fast);
 }
-.row-more:hover {
-  background: var(--el-fill-color-light);
+.row-more {
+  margin-right: 2px;
 }
-.workspace-row:hover .row-more,
-.workspace-row:focus-within .row-more,
+.row-tool:hover {
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
+}
+.workspace-row:hover .row-tool,
+.workspace-row:focus-within .row-tool,
 .row-more[aria-expanded="true"] {
   opacity: 1;
 }
 @media (hover: none) {
-  .row-more {
+  .row-tool {
     opacity: 1;
   }
 }
@@ -282,9 +306,6 @@ function workspaceCommand(workspace: Workspace, command: "rename" | "delete") {
 }
 .conversation-row.active:hover {
   background: var(--shell-panel-selected-hover);
-}
-.conversation-row.new:not(.active) {
-  color: var(--el-text-color-secondary);
 }
 .more {
   color: var(--el-text-color-secondary);
@@ -334,9 +355,19 @@ function workspaceCommand(workspace: Workspace, command: "rename" | "delete") {
 .skeleton span:nth-child(3) {
   width: 85%;
 }
+/* A workspace's first read, as tall as one conversation row. */
+.skeleton.nested {
+  justify-content: center;
+  height: var(--nav-row-height);
+  padding: 0 10px 0 32px;
+  box-sizing: border-box;
+}
+.skeleton.nested span {
+  width: 60%;
+}
 .nav-item:focus-visible,
-.row-open:focus-visible,
-.row-more:focus-visible,
+.row-toggle:focus-visible,
+.row-tool:focus-visible,
 .conversation-row:focus-visible,
 .more:focus-visible,
 .private-mark:focus-visible {

@@ -65,7 +65,7 @@ Run `node ontomato.mjs <command>` from this directory. JSON accepts `@file`.
 | `run <actionId> [@parameters.json]` | `POST /action/execute`: perform one step your roles are granted; a refusal is reported with its real cause |
 | `knowledge <question> [--limit n]` | `POST /ontology/query/knowledge/search`: relevant business knowledge |
 | `ask [--lang en] [--request-id UUID] "complete question"` | Start concurrent binding execution and retrieval; return the first deliverable results and download their files |
-| `ask --status <retrievalId>` | Read branch status, available results, cursor and quality checks |
+| `ask --status <retrievalId>` | Read branch status, available results, cursor and each branch's quality task |
 | `ask --wait <retrievalId> --after <cursor>` | Wait for later results without starting another query; download only the returned results |
 | `ask --cancel-retriever <retrievalId>` | Cancel only the current retriever, retaining binding results and their QC |
 | `ask --cancel <retrievalId>` | Cancel unfinished work in both branches; keep accepted results |
@@ -77,8 +77,10 @@ They do not share execution results. Only a successfully executed binding can
 return early; no match or a binding failure keeps ask waiting for the retriever.
 A successful result with zero rows is still a result, with its completeness flags.
 The response includes pending branch status, a result cursor and downloaded files.
-If a binding answers the question, explicitly cancel the retriever. Otherwise
-wait with the returned cursor for later results. Keep the new cursor after every
+Cancel the retriever only when a binding's meaning, conditions and parameter values
+fully answer the question. Otherwise, including when it keeps a condition the
+question changes or drops, wait with the returned cursor for later results; a
+binding never shows that a request cannot be answered. Keep the new cursor after every
 wait. Do not restart ask for this question or treat lookup failure as empty data.
 Binding files are formal host results with null selfCheck, not agent self-checks.
 The retriever retains its existing metric-use and comparison requirements.
@@ -93,8 +95,8 @@ retrieval with their text; silence does not select a recommendation.
 ```
 
 Use this envelope with ask --resume <id> --answers @file and a fresh request ID.
-Reuse that same request ID/envelope after a lost response. Quality checking is
-asynchronous; inspect ask --status later. The product retriever uses direct
+Reuse that same request ID/envelope after a lost response. Quality checks run
+separately after delivery as their own tasks; they never hold up your answer. The product retriever uses direct
 ontology commands and the data-retrieval file script, never recursively ask.
 
 ## Acting on your own work

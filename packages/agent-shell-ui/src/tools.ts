@@ -23,7 +23,7 @@ export function resolveToolRenderer(
 /** The business action a step performs; the process view names steps and summarizes runs by it. */
 export type StepActivity =
   | "read" | "write" | "edit" | "run" | "skill" | "other"
-  | "schema" | "values" | "query" | "knowledge" | "retrieve" | "dataset" | "compute";
+  | "schema" | "values" | "query" | "knowledge" | "dataset" | "compute";
 
 // Only a script that node actually runs counts; reading or editing the file (cat, sed) does not.
 const SCRIPT_PATH = String.raw`(?:"[^"]*?|'[^']*?|[^\s"';&|]*?)`;
@@ -32,16 +32,9 @@ const ANALYST_COMMAND = new RegExp(String.raw`${NODE_SCRIPT}ontomato\.mjs["']?\s
 const DATASET_COMMAND = new RegExp(String.raw`${NODE_SCRIPT}dataset\.mjs\b`);
 const SKILL_SCRIPT_RUN = new RegExp(String.raw`\b(?:node|python3?|bash|sh)\s+${SCRIPT_PATH}skills/[A-Za-z0-9][A-Za-z0-9._-]*/`);
 
-/**
- * The analyst entry script running its ask subcommand, i.e. a retrieval. Its tool call blocks until
- * the retrieval ends, so the shell starts looking for the association as soon as the call starts.
- */
-export function runsAnalystAsk(command: string): boolean {
-  return ANALYST_COMMAND.exec(command)?.[1] === "ask";
-}
-
+/** Asking for data is calling a skill; the retrieval it starts is a task with its own card. */
 const ANALYST_ACTIVITY: Record<string, StepActivity> = {
-  ask: "retrieve",
+  ask: "skill",
   "execute-dsl": "query",
   "distinct-values": "values",
   overview: "schema",
@@ -77,7 +70,7 @@ type ActivityLabels = Pick<
   ShellLabels,
   | "toolRead" | "toolWrite" | "toolEdit" | "toolBash" | "toolSkill"
   | "activitySchema" | "activityValues" | "activityQuery" | "activityKnowledge"
-  | "activityRetrieve" | "activityDataset" | "activityCompute"
+  | "activityDataset" | "activityCompute"
 >;
 
 /** The phrase for an activity; "other" has none and uses the tool's own name. */
@@ -93,7 +86,6 @@ export function activityLabel(activity: StepActivity, labels: ActivityLabels): s
     values: labels.activityValues,
     query: labels.activityQuery,
     knowledge: labels.activityKnowledge,
-    retrieve: labels.activityRetrieve,
     dataset: labels.activityDataset,
     compute: labels.activityCompute,
   }[activity];

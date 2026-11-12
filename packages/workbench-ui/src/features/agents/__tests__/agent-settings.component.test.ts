@@ -22,13 +22,7 @@ vi.mock("../api", () => ({
   loadModelOptions: async () => ({ models: [], defaultModelId: null }),
   loadOntologyScope: async () => ({ classes: [], relations: [] }),
 }));
-vi.mock("../../skills/api", () => ({ skillsApi: { fetchSkills: async () => ({ success: true, skills: [] }) } }));
-vi.mock("../../mcp/api", () => ({
-  listMcpServices: async () => [],
-  listPublishedMcpServices: async () => [],
-  listExternalMcpTools: async () => [],
-}));
-// The editor and the library have their own tests; here only the screen's shape matters.
+// The editor has its own tests; here only the screen's shape matters.
 vi.mock("../components/AgentEditor.vue", () => ({
   __esModule: true,
   default: {
@@ -37,10 +31,6 @@ vi.mock("../components/AgentEditor.vue", () => ({
     template: '<div class="editor-double">{{ agent ? agent.name : "new" }}</div>',
   },
 }));
-vi.mock("../components/CapabilityLibrary.vue", () => ({
-  __esModule: true,
-  default: { name: "CapabilityLibraryDouble", template: '<div class="capability-library" />' },
-}));
 
 const wrappers: ReturnType<typeof mount>[] = [];
 afterEach(() => {
@@ -48,7 +38,7 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-type SettingsProps = { agentId: string | null; creating: boolean; capabilities: boolean };
+type SettingsProps = { agentId: string | null; creating: boolean };
 
 async function mountNav(props: SettingsProps) {
   const wrapper = mount(AgentSettingsNav, { props, global: { plugins: [i18n, ElementPlus] }, attachTo: document.body });
@@ -67,49 +57,42 @@ async function mountPage(props: SettingsProps) {
 const rowNames = (wrapper: ReturnType<typeof mount>) => wrapper.findAll(".agent-row .row-name").map((row) => row.text());
 
 describe("the agent settings column", () => {
-  it("holds the agents, the new-agent button, the capability library and the way back", async () => {
-    const wrapper = await mountNav({ agentId: "a2", creating: false, capabilities: false });
+  it("holds the agents, the new-agent button and the way back", async () => {
+    const wrapper = await mountNav({ agentId: "a2", creating: false });
     expect(wrapper.find(".back").text()).toBe(t("common.backToChat"));
     expect(rowNames(wrapper)).toEqual(["助理", "分析师"]);
     // Each agent carries its one-line description, and the open one is marked.
     expect(wrapper.findAll(".agent-row .row-note").map((row) => row.text())).toEqual(["日常问数", "调查分析"]);
     expect(wrapper.find(".agent-row.active .row-name").text()).toBe("分析师");
     expect(wrapper.find(".new-agent").exists()).toBe(true);
-    expect(wrapper.findAll(".plain-row").map(row => row.text())).toEqual(["Skill", "MCP"]);
   });
 
-  it("opens an agent, a new one, the library, and goes back, all through the host", async () => {
-    const wrapper = await mountNav({ agentId: "a1", creating: false, capabilities: false });
+  it("opens an agent, a new one, and goes back, all through the host", async () => {
+    const wrapper = await mountNav({ agentId: "a1", creating: false });
     await wrapper.findAll(".agent-row")[1]!.trigger("click");
     await wrapper.find(".new-agent").trigger("click");
-    await wrapper.find(".plain-row").trigger("click");
-    await wrapper.findAll(".plain-row")[1]!.trigger("click");
     await wrapper.find(".back").trigger("click");
     expect(wrapper.emitted("selectAgent")).toEqual([["a2"]]);
     expect(wrapper.emitted("createAgent")).toHaveLength(1);
-    expect(wrapper.emitted("openCapabilities")).toEqual([["skill"], ["tool"]]);
     expect(wrapper.emitted("back")).toHaveLength(1);
   });
 });
 
 describe("the agent settings page", () => {
   it("opens the agent the address names in the editor, with no list of its own", async () => {
-    const wrapper = await mountPage({ agentId: "a2", creating: false, capabilities: false });
+    const wrapper = await mountPage({ agentId: "a2", creating: false });
     expect(wrapper.find(".editor-double").text()).toBe("分析师");
     // The list is the column's: nothing here repeats it.
     expect(wrapper.find(".agent-row").exists()).toBe(false);
   });
 
   it("opens the first agent when the address names none", async () => {
-    const wrapper = await mountPage({ agentId: null, creating: false, capabilities: false });
+    const wrapper = await mountPage({ agentId: null, creating: false });
     expect(wrapper.find(".editor-double").text()).toBe("助理");
   });
 
-  it("opens a new agent and the capability library at their own addresses", async () => {
-    const creating = await mountPage({ agentId: null, creating: true, capabilities: false });
+  it("opens a new agent at its own address", async () => {
+    const creating = await mountPage({ agentId: null, creating: true });
     expect(creating.find(".editor-double").text()).toBe("new");
-    const library = await mountPage({ agentId: null, creating: false, capabilities: true });
-    expect(library.find(".capability-library").exists()).toBe(true);
-    expect(library.find(".editor-double").exists()).toBe(false);
   });
 });

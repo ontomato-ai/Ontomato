@@ -9,7 +9,8 @@ import ShellComposer from "./ShellComposer.vue";
 /**
  * One host page, rendered once and kept mounted while it moves between the two places it can sit (DESIGN "Agent
  * apps"): `full` fills the workspace with a composer floating at its foot; `side` sits beside the conversation at a
- * draggable width. Pages that are not declared `withConversation` only ever show full, without composer or controls.
+ * draggable width. Dragged on past its widest, released, the page expands; past its narrowest, it closes. Pages that
+ * are not declared `withConversation` only ever show full, without composer or controls.
  *
  * The page may put its own controls in the header row (`header`, in place of its title). Full, the composer floats over
  * the bottom of the page, the host's `composer-context` inside it before the input; the pane measures that dock and keeps
@@ -26,7 +27,10 @@ const emit = defineEmits<{ send: [text: string]; stop: []; expand: []; collapse:
 const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value);
 const slots = useSlots();
-const { width, resizing, startResize } = usePanelWidth();
+const { width, resizing, beyond, startResize } = usePanelWidth((edge) => {
+  if (edge === "expand") emit("expand");
+  else emit("close");
+});
 const paired = computed(() => props.feature?.withConversation === true);
 
 const dock = ref<HTMLElement | null>(null);
@@ -48,7 +52,7 @@ const paneStyle = computed(() => ({
 <template>
   <section
     class="page-pane"
-    :class="[view, { paired, resizing, 'scrolls-itself': feature?.scrollsItself }]"
+    :class="[view, beyond && `beyond-${beyond}`, { paired, resizing, 'scrolls-itself': feature?.scrollsItself }]"
     :style="paneStyle"
     :aria-label="feature?.label"
   >
@@ -124,6 +128,14 @@ const paneStyle = computed(() => ({
 }
 .pane-resize:hover {
   background: var(--el-color-primary-light-7);
+}
+/* Dragged past a bound: releasing now expands the page, or closes it (which the page fading says). */
+.beyond-expand .pane-resize,
+.beyond-close .pane-resize {
+  background: var(--el-color-primary);
+}
+.beyond-close .pane-body {
+  opacity: 0.5;
 }
 .pane-header {
   display: flex;

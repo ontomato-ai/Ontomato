@@ -19,6 +19,7 @@ import ShellConversation from "./ShellConversation.vue";
 import ShellNavBody from "./ShellNavBody.vue";
 import ShellPagePane from "./ShellPagePane.vue";
 import ShellSidePanel from "./ShellSidePanel.vue";
+import TaskDrawer from "./tasks/TaskDrawer.vue";
 
 /**
  * A conversation application inside the area the platform gives it: its own column, then the conversation with the right
@@ -40,7 +41,8 @@ import ShellSidePanel from "./ShellSidePanel.vue";
  * `pageContext` line, so the agent knows what "this" refers to. Such a page may fill `page-header` (its own controls, in
  * the row of the shell's expand and close buttons) and `composer-context` (with whichever composer is in view: above
  * the conversation's, `inline` in the full page's single row; `pageOpen` tells whether a message sent now carries the
- * page context).
+ * page context; `unstarted` tells that the conversation in view has not started: the shell holds no session for it and
+ * no message is on its way).
  *
  * `run` reports the open conversation's run starting and stopping, with the workspace commit a stopped run saved.
  */
@@ -77,6 +79,7 @@ const sessionId = defineModel<string | null>("sessionId", { default: null });
 /** Where a paired page sits: filling the workspace, or beside the conversation. Hosts may set it. */
 const pageView = defineModel<"full" | "side">("pageView", { default: "full" });
 const openArtifact = ref<OpenArtifact | null>(null);
+const taskFocus = ref<{ taskId: string; at: number } | null>(null);
 
 const conversation = useAgentConversation(() => props.client);
 const nav = props.nav;
@@ -86,6 +89,8 @@ const currentFeature = computed(() => props.workbench.features.find((feature) =>
 /** A page that sits in the agent-app states rather than replacing the conversation. */
 const pairedPage = computed(() => currentFeature.value?.withConversation === true);
 const pageFull = computed(() => pairedPage.value && pageView.value === "full");
+/** The conversation in view has not started: no session yet, and no message on its way to make one. */
+const unstarted = computed(() => !conversation.sending.value && conversation.state.sessionId === null);
 
 provide(shellContextKey, {
   labels: toRef(props, "labels"),
@@ -105,9 +110,12 @@ provide(shellContextKey, {
   resolveArtifact: conversation.resolveArtifact,
   artifactRevision: conversation.artifactRevision,
   readArtifact: (artifact) => props.client.readArtifact(artifact),
-  readRetrieval: (...args) => props.client.readRetrieval(...args),
-  readRetrievalRun: (...args) => props.client.readRetrievalRun(...args),
-  subscribeRetrieval: (...args) => props.client.subscribeRetrieval(...args),
+  tasks: props.client.tasks,
+  taskFocus,
+  openTasks: (runId) => {
+    taskRound.value = runId;
+    tasksOpen.value = true;
+  },
   openArtifact: (open) => {
     // The side holds one thing at a time: an expanded card replaces a page beside the conversation.
     if (pairedPage.value) featureId.value = null;
@@ -127,7 +135,19 @@ provide(shellContextKey, {
     if (conversation.busy.value) throw new Error(props.labels.working);
     await send(message);
   },
-  refreshConversation: async () => { await conversation.open(sessionId.value); },
+});
+
+/** The replies that delegated work, in order; a reply's own entry opens the task list at it. */
+const taskRounds = computed(() => [...new Set(conversation.tasks.value?.tasks.map((task) => task.root.runId) ?? [])]);
+const taskRound = ref<string | null>(null);
+const tasksOpen = ref(false);
+const shownRound = computed({
+  get: () => (taskRound.value && taskRounds.value.includes(taskRound.value) ? taskRound.value : taskRounds.value.at(-1)!),
+  set: (runId: string) => (taskRound.value = runId),
+});
+watch(sessionId, () => {
+  tasksOpen.value = false;
+  taskRound.value = null;
 });
 
 function report(error: unknown) {
@@ -256,6 +276,14 @@ onMounted(() => {
       >
         <PanelRightOpen :size="16" />
       </button>
+      <TaskDrawer
+        v-if="tasksOpen && (!featureId || pairedPage) && conversation.tasks.value && taskRounds.length"
+        v-model:run-id="shownRound"
+        :snapshot="conversation.tasks.value"
+        :rounds="taskRounds"
+        @locate="taskFocus = { taskId: $event, at: Date.now() }"
+        @close="tasksOpen = false"
+      />
       <div v-if="featureId && !pairedPage" class="feature-page">
         <slot name="feature" :feature-id="featureId" view="full" />
       </div>
@@ -280,7 +308,7 @@ onMounted(() => {
         @load-older="conversation.loadOlder"
       >
         <template v-if="slots['composer-context']" #composer-context>
-          <slot name="composer-context" :page-open="pairedPage" :inline="false" />
+          <slot name="composer-context" :page-open="pairedPage" :inline="false" :unstarted="unstarted" />
         </template>
       </ShellConversation>
     </main>
@@ -301,7 +329,7 @@ onMounted(() => {
         <slot name="page-header" :feature-id="featureId" :view="pageView" />
       </template>
       <template v-if="slots['composer-context']" #composer-context>
-        <slot name="composer-context" :page-open="true" :inline="true" />
+        <slot name="composer-context" :page-open="true" :inline="true" :unstarted="unstarted" />
       </template>
       <slot name="feature" :feature-id="featureId" :view="pageView" />
     </ShellPagePane>

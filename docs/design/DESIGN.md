@@ -192,7 +192,9 @@ it as a lighter card; tables, inputs, cards, toolbars and dialogs keep their sur
 
 An application owns the addresses under its prefix. Addresses that moved redirect in the front end:
 `/agents/dashboards` → `/dashboards`, `/agents/schedules` → `/schedules?app=agents` (the list filters by application
-only), `/agents/settings?tab=capabilities` → `/agents/settings/capabilities`.
+only); the capability library's addresses (`/agents/settings?tab=capabilities`, `/agents/settings/capabilities`,
+`/agents/settings/skills`, `/ontology/capabilities`) → `/ontology/skills`, and `/agents/settings/mcp`, `/ontology/mcp` →
+`/settings/external-mcp`.
 
 Application columns reference 244px; inspectors 320px. Continuous panels use 1px separators without shadows. At
 1440×900 use standard density; at 1280×720 retain usable actions; below 760px reflow/stack. Use container queries for
@@ -201,10 +203,12 @@ embedded pages. At 200% zoom no essential action or content may become inaccessi
 ## 7. Page architecture
 
 Ontology Manager navigation follows four layers: Facts (graph, object types, properties, relationships and visual
-modeling), Capabilities (metric views, functions, actions and the shared capability library), Governance (business
-knowledge review), Products (a heading reserved for future screens, with no entries). The capability
-library is mounted at `/ontology/capabilities` using the same implementation as agent settings. Cross-application links
-retain their destination frames and permissions. This navigation organization does not assert that the four-layer
+modeling), Capabilities (metric views, functions, actions, workflows and skills), Governance (business knowledge review),
+Products (a heading reserved for future screens, with no entries). Skills are managed only here (`/ontology/skills`): the
+list gives each skill's name and source, and a skill opens as its package, the files on the left and the chosen one read
+on the right; a package changes only by importing it again. External MCP services are connections, not business logic,
+and are registered in System settings (`/settings/external-mcp`). Agents only select skills and services in their own
+settings. Cross-application links retain their destination frames and permissions. This navigation organization does not assert that the four-layer
 runtime architecture or currently absent capability types have been implemented.
 
 Short page subtitles and single-line function summaries omit a trailing full stop in every locale. Multi-sentence
@@ -219,7 +223,7 @@ a single page — the Object Browser, whose graph and table are modes of one pag
 one System settings page — without tabs.
 
 Management pages use the shared `compact` header variant by default, including System Settings, permissions, dashboards,
-schedules, capability libraries and Ontology Manager catalogs, graph, modeling and business knowledge: a single
+schedules, skills, external MCP services and Ontology Manager catalogs, graph, modeling and business knowledge: a single
 title/actions row in the page gutter. A concise menu-function description follows the title on the same
 baseline in secondary text, wrapping naturally on narrow widths. The title/actions row uses 12px vertical padding;
 application tabs follow with an 8px gap. Detail headers show the selected
@@ -295,7 +299,7 @@ head is the agent switcher when the application runs on several agents — the c
 the agents, each with its name and one line of description, the current one checked — and the application's name when
 it runs on one. The Agent Platform's column holds only a new conversation, the recent conversations and Agent settings
 at the foot. Agent settings replace the column with their own navigation (back to the conversation, the agents, a new
-agent, the capability library) while the main area edits the chosen agent.
+agent) while the main area edits the chosen agent.
 
 User messages are right-aligned on sunken bubbles; assistant answers are plain reading text without a bubble, with
 maximum reading width around 960px. Answers dominate; process, tools and provenance are quiet expandable disclosures.

@@ -12,7 +12,6 @@ export interface ArtifactRendererProps {
   read: () => Promise<Blob>;
   openDetails?: () => void;
   continueConversation?: (message: string) => Promise<void>;
-  refreshConversation?: () => Promise<void>;
   /** The renderer this one replaces (shell default or file card), so an override can wrap it. */
   fallback?: Component | null;
 }
@@ -126,12 +125,14 @@ export interface MessageActionContext {
 
 /** Fixed shell text supplied by the host's i18n. */
 export interface ShellLabels {
-  analysisContext?: string;
   selectRow?: (row: number) => string;
   selectedRows?: (count: number) => string;
   analyzeSelection?: string;
   compareSelection?: string;
   clearSelection?: string;
+  /** The ordinary user message that continues from selected records; `rows` are 1-based positions in the source file. */
+  analyzeSelectionMessage?: (file: { title: string; path: string }, rows: number[]) => string;
+  compareSelectionMessage?: (file: { title: string; path: string }, rows: number[]) => string;
   newConversation: string;
   agent: string;
   sessions: string;
@@ -190,16 +191,52 @@ export interface ShellLabels {
   activityValues: string;
   activityQuery: string;
   activityKnowledge: string;
-  activityRetrieve: string;
   activityDataset: string;
   activityCompute: string;
   /** Dataset view switch: the rows, or the graph of how they were obtained. */
   datasetData: string;
   datasetLineage: string;
-  /** A finished response's status line. */
-  done: string;
-  /** Elapsed time phrase; `time` is already formatted as m:ss. */
+  /** Elapsed time phrase while a response runs; `time` is already formatted as m:ss. */
   elapsed: (time: string) => string;
+  /** A finished response's folded process line; `time` is the run's duration, formatted as m:ss. */
+  worked: (time: string) => string;
+  /** Required by a host that serves tasks (`AgentHostClientOptions.tasks`). */
+  tasks?: ShellTaskLabels;
+}
+
+/** Text of the delegated work a reply shows: its task cards, its quality reviews and the reply's task list. */
+export interface ShellTaskLabels {
+  /** The retrieval task's executor, the retriever agent. */
+  retriever: string;
+  status: Record<"running" | "completed" | "failed" | "cancelled", string>;
+  /** A retrieval round's branches: the metric binding results and the retriever's own. */
+  branch: Record<"binding" | "retriever", string>;
+  rows: (count: number) => string;
+  /** A dataset holds only the first `limit` rows of its result. */
+  truncatedRows: (limit: number) => string;
+  /** The quality review's own name, beside the reply. */
+  review: string;
+  reviewRunning: string;
+  reviewFailed: string;
+  /** A score in the folded line, e.g. "92 points"; `scoreLabel` names it in the opened review. */
+  score: (score: number) => string;
+  scoreLabel: string;
+  conclusion: string;
+  fittedQuestion: string;
+  /** What the check examined: one branch's results. */
+  checked: string;
+  checkedBranch: Record<"binding" | "retriever", string>;
+  /** The folded review's line names what it checked, e.g. "Checked: binding results". */
+  checkedSource: (source: string) => string;
+  /** A reply's entry to its delegated work, beside its process line; and the task list's own title. */
+  count: (count: number) => string;
+  listTitle: string;
+  round: (index: number, count: number) => string;
+  previousRound: string;
+  nextRound: string;
+  quality: string;
+  /** Reasons a task did not complete, by the code its owner gave; other codes show their own message. */
+  errors: Record<string, string>;
 }
 
 export interface OpenArtifact {

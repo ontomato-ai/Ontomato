@@ -5,7 +5,6 @@ import {
   runtimeSkillNamespaceSchema,
   runtimeSkillRefSchema,
 } from "./agent-runtime-skills";
-import { retrievalSnapshotSchema } from "./data-retrieval";
 import {
   runtimeKeySchema,
   runtimeIdSchema,
@@ -29,7 +28,6 @@ export const assistantSkillOptionSchema = z.object({
   skill: runtimeSkillRefSchema,
   title: z.string(),
   description: z.string(),
-  enabled: z.boolean(),
   tags: z.array(z.string()).default([]),
 }).strict();
 export const assistantSkillCatalogSchema = z.object({
@@ -60,10 +58,8 @@ export type AssistantAgentDefinition = z.infer<
 export type AssistantAgentInput = z.infer<typeof assistantAgentInputSchema>;
 /** Only accepted copied datasets receive a source; generic JSON files do not. */
 export const assistantDatasetSourceSchema = z.union([
-  z.object({ retrievalId: runtimeIdSchema, sourceArtifactId: runtimeIdSchema,
-    qualityCheck: retrievalSnapshotSchema.shape.qualityCheck }).strict(),
-  z.object({ retrievalId: runtimeIdSchema, sourceOutputId: runtimeIdSchema,
-    qualityCheck: retrievalSnapshotSchema.shape.qualityCheck }).strict(),
+  z.object({ retrievalId: runtimeIdSchema, sourceArtifactId: runtimeIdSchema }).strict(),
+  z.object({ retrievalId: runtimeIdSchema, sourceOutputId: runtimeIdSchema }).strict(),
 ]);
 export const assistantFeedbackTargetSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("message"), id: runtimeIdSchema }).strict(),

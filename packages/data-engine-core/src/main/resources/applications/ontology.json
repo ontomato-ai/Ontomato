@@ -12,8 +12,7 @@
     "ontology-modeling",
     "action-management",
     "business-knowledge",
-    "skill-management",
-    "mcp-service"
+    "skill-management"
   ],
   "scheduleAdapter": "java:ontology",
   "declaration": {
@@ -22,8 +21,8 @@
       "zh-CN": "本体管理器"
     },
     "descriptions": {
-      "en": "Model the ontology and manage actions, skills and MCP services",
-      "zh-CN": "建模本体，管理动作、技能与 MCP 服务"
+      "en": "Model the ontology and manage its metrics, functions, actions, workflows and skills",
+      "zh-CN": "建模本体，管理指标、函数、动作、流程与技能"
     },
     "icon": "ontology",
     "groups": [],

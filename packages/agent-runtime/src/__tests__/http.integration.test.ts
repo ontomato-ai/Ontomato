@@ -348,8 +348,10 @@ describe("standard runtime real HTTP/PG/processes", () => {
     expect(done.run.stopReason, logs).toBe("stop");
     const reply = await api(`/v1/runs/${first.id}/final-reply`);
     expect(reply.status).toBe(200);
-    expect(reply.body).toEqual(done.messages.filter(({message}) =>
-      message.role === "assistant" && message.content.some(part => part.type === "text" && part.text)).at(-1)?.message);
+    // The answer is the run's last assistant message, named by the run and its agent_end.
+    const answer = done.messages.filter(({ message }) => message.role === "assistant").at(-1)!;
+    expect(done.run.answerMessageId).toBe(answer.id);
+    expect(reply.body).toEqual(answer.message);
     expect(done.artifacts).toHaveLength(1);
     expect(
       done.messages.some(

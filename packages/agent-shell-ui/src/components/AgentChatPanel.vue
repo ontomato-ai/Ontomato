@@ -71,8 +71,8 @@ function sanitizeItem(item: ConversationItem): ConversationItem {
   if (item.kind !== "response") return item;
   return {
     ...item,
-    blocks: item.blocks.map((block) =>
-      block.kind === "process" ? { ...block, steps: block.steps.map(sanitizeStep) } : block
+    process: item.process.map((block) =>
+      block.kind === "steps" ? { ...block, steps: block.steps.map(sanitizeStep) } : block
     ),
   };
 }
@@ -91,9 +91,6 @@ provide(shellContextKey, {
   resolveArtifact: conversation.resolveArtifact,
   artifactRevision,
   readArtifact: (artifact) => props.client.readArtifact(artifact),
-  readRetrieval: (...args) => props.client.readRetrieval(...args),
-  readRetrievalRun: (...args) => props.client.readRetrievalRun(...args),
-  subscribeRetrieval: (...args) => props.client.subscribeRetrieval(...args),
   openArtifact: (open) => {
     void props.client
       .readArtifact(open.artifact)

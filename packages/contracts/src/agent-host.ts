@@ -30,20 +30,7 @@ export const agentHostAgentSchema = z
 export const agentHostAgentListSchema = z
   .object({ agents: z.array(agentHostAgentSchema) })
   .strict();
-export const agentHostRunSchema = runtimeRunViewSchema
-  .extend({
-    retrievals: z
-      .array(
-        z
-          .object({
-            retrievalId: runtimeIdSchema,
-            runId: runtimeIdSchema,
-          })
-          .strict(),
-      )
-      .optional(),
-  })
-  .strict();
+export const agentHostRunSchema = runtimeRunViewSchema;
 /** A session row names its latest run without carrying the run's body: lists stay one read per page. */
 export const agentHostRunStatusSchema = z
   .object({

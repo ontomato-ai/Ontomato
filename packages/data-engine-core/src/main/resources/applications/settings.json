@@ -13,7 +13,8 @@
     "system-config",
     "authorization-management",
     "audit-logs",
-    "system-monitoring"
+    "system-monitoring",
+    "mcp-service"
   ],
   "scheduleAdapter": null,
   "declaration": {
