@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 const ids = z.array(z.string().min(1).max(200)).max(100).refine(values => new Set(values).size === values.length);
+// Read legacy preferences without allowing a resource click to start an assistant run.
+const viewingMode = z.enum(["drawer", "page", "dialog", "conversation"]).transform(value => value === "page" ? "page" as const : "drawer" as const);
 export const workspaceSectionSchema = z.enum(["apps", "data", "conversations", "objects", "tasks", "recent"]);
 export type WorkspaceSection = z.infer<typeof workspaceSectionSchema>;
 const sectionList = z.array(workspaceSectionSchema).max(6).refine(items => new Set(items).size === items.length);
@@ -22,8 +24,8 @@ export const personalWorkspaceSchema = z.object({
     sessionId: z.string().uuid(), title: z.string().trim().min(1).max(200),
   }).strict()).max(20).refine(items => new Set(items.map(item => item.sessionId)).size === items.length).default([]),
   interactions: z.object({
-    metrics: z.enum(["drawer", "dialog", "page", "conversation"]).default("drawer"),
-    tasks: z.enum(["drawer", "dialog", "page", "conversation"]).default("drawer"),
+    metrics: viewingMode.default("drawer"),
+    tasks: viewingMode.default("drawer"),
   }).strict().default({ metrics: "drawer", tasks: "drawer" }),
 }).strict();
 export type PersonalWorkspace = z.infer<typeof personalWorkspaceSchema>;

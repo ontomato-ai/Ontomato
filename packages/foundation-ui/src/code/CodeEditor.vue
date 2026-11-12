@@ -17,7 +17,8 @@ import { useDarkMode } from "../theme";
  * Edits code and structured text (CodeMirror 6): line numbers, folding, highlighting for its language and wrapping.
  * Read-only, it still takes the focus, selects and searches (Ctrl/Cmd-F). It follows the page's dark mode, and takes
  * its one word of text, the search field's prompt, from the Element Plus locale the host installs. A placeholder is
- * only shown, never content.
+ * only shown, never content. A page that floats its own controls over the editor's foot says how much room to keep
+ * after the last line (`contentEndSpace`); the editor adds it to its own bottom padding.
  */
 const props = defineProps<{
   /** The text being edited; bind it with `v-model`. */
@@ -30,6 +31,11 @@ const props = defineProps<{
   minHeight?: number;
   /** The text can be selected, searched and copied, but not changed. */
   readonly?: boolean;
+  /**
+   * Room kept after the last line, in any CSS length, added to the editor's own bottom padding: the host's value when
+   * its controls float over the editor's foot.
+   */
+  contentEndSpace?: string;
 }>();
 
 const emit = defineEmits<{
@@ -245,7 +251,7 @@ onUnmounted(() => {
     ref="editorRef"
     class="code-editor"
     :class="{ 'readonly-mode': readonly }"
-    :style="{ minHeight: `${minHeight || 300}px` }"
+    :style="{ minHeight: `${minHeight || 300}px`, '--code-editor-end-space': contentEndSpace || '0px' }"
   />
 </template>
 
@@ -274,7 +280,7 @@ onUnmounted(() => {
 }
 
 .code-editor :deep(.cm-content) {
-  padding: 8px 0;
+  padding: 8px 0 calc(8px + var(--code-editor-end-space, 0px));
 }
 
 .code-editor :deep(.cm-line) {
@@ -291,7 +297,7 @@ onUnmounted(() => {
 }
 
 .code-editor.readonly-mode :deep(.cm-content) {
-  padding: 12px 0;
+  padding: 12px 0 calc(12px + var(--code-editor-end-space, 0px));
 }
 
 .code-editor.readonly-mode :deep(.cm-line) {
