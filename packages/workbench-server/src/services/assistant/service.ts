@@ -168,6 +168,9 @@ export const assistantService = {
           : null,
     };
   },
+  async canReadSession(owner: AssistantOwner, id: string) {
+    return assistantStore.canReadSession(id, owner);
+  },
   async history(id: string, owner: AssistantOwner, query: SessionHistoryQuery) {
     await assistantStore.session(id, owner);
     const page = await new RuntimeClient(owner.domainId, undefined, owner.userId).history(id, query);

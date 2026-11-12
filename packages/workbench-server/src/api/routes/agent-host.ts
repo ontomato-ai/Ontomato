@@ -1,10 +1,11 @@
 import { sessionHistoryQuerySchema } from "@ontomato/contracts/session-history";
 import { Router } from "express";
 import { z } from "zod";
-import { agentHostSessionPageQuerySchema, agentHostCreateSessionSchema, agentHostStartRunSchema, agentHostRenameSessionSchema } from "@ontomato/contracts/agent-host";
+import { agentHostSessionPageQuerySchema, agentHostCreateSessionSchema, agentHostStartRunSchema, agentHostRenameSessionSchema, agentHostSessionStatusRequestSchema, agentHostSessionRunSnapshotSchema } from "@ontomato/contracts/agent-host";
 import { runtimeRelativePathSchema } from "@ontomato/contracts/agent-runtime-values";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
-import { publicSnapshot, publicFrame } from "../../platform/agent-runtime/projection";
+import { publicSnapshot, publicFrame, runStatusView } from "../../platform/agent-runtime/projection";
+import { HttpError } from "../../utils/errors";
 import { buildAttachmentContentDisposition } from "../utils/http";
 import { context, id, wrap } from "../utils/agent-host";
 import type { AgentHostService } from "../../services/agent-host/types";
@@ -41,6 +42,61 @@ router.post(
           (workspaces ? agentHostCreateSessionSchema : agentHostCreateSessionSchema.omit({ workspaceId: true })).parse(req.body),
         ),
       );
+  }),
+);
+router.get(
+  "/sessions/run-events",
+  wrap(async (req, res) => {
+    const c = context(req),
+      abort = new AbortController();
+    res.set({
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "X-Accel-Buffering": "no",
+    });
+    res.flushHeaders();
+    res.on("close", () => abort.abort());
+    const heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 15000);
+    try {
+      await new RuntimeClient(c.owner.domainId).sessionRunEvents(
+        async (frame) => {
+          // `ready` is the upstream barrier and is always forwarded; notices are forwarded
+          // only under this entry's own session read rule.
+          if (
+            frame.type !== "ready" &&
+            !(await service.canReadSession(c.owner, frame.sessionId))
+          )
+            return;
+          res.write(`event: session-run\ndata: ${JSON.stringify(frame)}\n\n`);
+        },
+        abort.signal,
+      );
+    } finally {
+      clearInterval(heartbeat);
+      res.end();
+    }
+  }),
+);
+router.post(
+  "/sessions/status",
+  wrap(async (req, res) => {
+    const c = context(req),
+      { sessionIds } = agentHostSessionStatusRequestSchema.parse(req.body);
+    // One unreadable ID rejects the whole read, before any runtime call.
+    for (const sessionId of sessionIds)
+      if (!(await service.canReadSession(c.owner, sessionId)))
+        throw new HttpError(404, "Conversation not found", "NOT_FOUND");
+    const statuses = sessionIds.length
+      ? await new RuntimeClient(c.owner.domainId).sessionStatuses(sessionIds)
+      : [];
+    res.json(
+      agentHostSessionRunSnapshotSchema.parse({
+        sessions: statuses.map((status) => ({
+          sessionId: status.session.id,
+          latestRun: status.latestRun ? runStatusView(status.latestRun) : null,
+        })),
+      }),
+    );
   }),
 );
 router.get("/sessions/:sessionId/history", wrap(async (req, res) => {
