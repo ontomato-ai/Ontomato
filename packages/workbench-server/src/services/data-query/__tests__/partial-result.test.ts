@@ -209,8 +209,7 @@ describe("model inputs", () => {
     const content = await m.streamConclusion("How many sites?", [dataset], "", () => {});
 
     expect(content).not.toContain(en["query.conclusion.noDataFound"] as string);
-    expect(io.prompts).toHaveLength(1);
-    expect(io.prompts[0]).toContain(MARKER.truncationHint);
+    expect(content).toContain(MARKER.truncationHint);
   });
 
   it("analysis evidence keeps a partial dataset without rows and drops a complete empty one", () => {

@@ -31,7 +31,7 @@ public interface MetricViewService {
 	
 	public MetricViewContent test(MetricView metricView, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception;
 	
-	public List<MetricViewContent> generateGeneralContent(String sessionId, String question, String lang, User user, UserDataPermission permission, int timeoutMinutes, boolean test);
+	public List<MetricViewContent> generateGeneralContent(String sessionId, String question, String lang, User user, UserDataPermission permission, int timeoutMinutes, boolean test) throws Exception;
 	
 	public List<MetricViewContent> generateStaticContent(String question, String lang, User user, UserDataPermission permission, int timeoutMinutes);
 	

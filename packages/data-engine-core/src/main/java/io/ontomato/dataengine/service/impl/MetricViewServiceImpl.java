@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -41,7 +43,6 @@ import io.ontomato.dataengine.service.BackendSessionEntrance;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.MetricViewService;
-import io.ontomato.dataengine.service.SessionCancelledException;
 import io.ontomato.dataengine.service.ai.MultiThreadAIChatService;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.tools.MetricViewSubmitTools;
@@ -385,7 +386,7 @@ public class MetricViewServiceImpl implements MetricViewService {
 	}
 
 	@Override
-	public List<MetricViewContent> generateGeneralContent(String sessionId, String question, String lang, User user, UserDataPermission permission, int timeoutMinutes, boolean test) {
+	public List<MetricViewContent> generateGeneralContent(String sessionId, String question, String lang, User user, UserDataPermission permission, int timeoutMinutes, boolean test) throws Exception {
 		List<MetricViewContent> metricViewContents = new ArrayList<MetricViewContent>();
 		List<Object[]> oList = metricViewDao.find(question, MetricView.TYPE_GENERAL, null, 10, 0, user.getDomainId());
 		List<Function> functions = functionDao.queryList(null, null, user.getDomainId());
@@ -395,23 +396,19 @@ public class MetricViewServiceImpl implements MetricViewService {
 		}
 		List<MetricView> metricViews = new ArrayList<MetricView>();
 		for (Object[] o : oList) {
-			try {
-				MetricView metricView = (MetricView)o[0];
-				String fId = (String)o[1];
-				metricView.setFunction(functionMap.get(fId));
-				metricViews.add(metricView);
-			} catch (Exception e) {
-				log.error(e.getMessage(), e);
-			}
+			MetricView metricView = (MetricView)o[0];
+			String fId = (String)o[1];
+			metricView.setFunction(functionMap.get(fId));
+			metricViews.add(metricView);
 		}
-		
+
 		if (metricViews.size() > 0) {
 			OriginalQuestion originalQuestion = new OriginalQuestion();
 			originalQuestion.setId(sessionId);
 			originalQuestion.setQuestion(question);
 			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
 			Map<String, Object> jsonRule = adminService.getJSONRule(user.getDomainId());
-			String userMessage = UserMessageUtil.getReadFunctionInstancerUserMessage(question, metricViews, 
+			String userMessage = UserMessageUtil.getReadFunctionInstancerUserMessage(question, metricViews,
 					knowledgeDao, businessConfigService,
 					lang, langService, jsonRule, user.getDomainId());
 			String retStr = multiThreadAIChatService.chat(
@@ -421,87 +418,88 @@ public class MetricViewServiceImpl implements MetricViewService {
 					userMessage,
 					ModelResolver.resolve(businessConfig, AgentRole.CODING, langService),
 					user.getDomainId());
-			
-			if (retStr.indexOf("```json") >= 0) {
-				retStr = retStr.substring(retStr.indexOf("```json") + 7);
-				retStr = retStr.substring(0, retStr.lastIndexOf("```"));
-				JSONArray inputFunctions = JSONArray.parseArray(retStr);
-				for (int i = 0; i < inputFunctions.size(); i++) {
-					try {
-						JSONObject inputFunction = inputFunctions.getJSONObject(i);
-						String id = inputFunction.getString("id");
-						String functionQuestion = inputFunction.getString("question");
-						List<Parameter> parameters = inputFunction.getList("parameters", Parameter.class);
-						
-						MetricView metricView = null;
-						for (MetricView mv : metricViews) {
-							if (mv.getId().equals(id)) {
-								metricView = mv;
-								break;
-							}
+
+			String json = retStr.strip();
+			if (json.startsWith("```")) {
+				Matcher fence = Pattern.compile("\\A```(?:json)?\\s*\\R(.*?)\\R```\\z", Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(json);
+				if (!fence.matches()) {
+					throw new IllegalArgumentException("Expected one JSON array or one JSON code block");
+				}
+				json = fence.group(1);
+			}
+			Object parsed = JSON.parse(json);
+			if (!(parsed instanceof JSONArray inputFunctions)) {
+				throw new IllegalArgumentException("Expected a JSON array of metric instances");
+			}
+			for (int i = 0; i < inputFunctions.size(); i++) {
+				JSONObject inputFunction = inputFunctions.getJSONObject(i);
+				String id = inputFunction.getString("id");
+				String functionQuestion = inputFunction.getString("question");
+				List<Parameter> parameters = inputFunction.getList("parameters", Parameter.class);
+
+				MetricView metricView = null;
+				for (MetricView mv : metricViews) {
+					if (mv.getId().equals(id)) {
+						metricView = mv;
+						break;
+					}
+				}
+				if (metricView == null) {
+					throw new IllegalArgumentException("Instantiated metric is not a candidate: " + id);
+				}
+				Function function = metricView.getFunction();
+
+				// Enrich the metricView's matchQuestions
+				metricView.getMatchQuestions().add(question.trim());
+				metricViewDao.save(metricView);
+
+				// Generate the return content
+				MetricView staticMetricView = new MetricView();
+				Function staticFunction = new Function();
+				staticFunction.setName(functionQuestion);
+				staticFunction.setOrigin(Function.ORIGIN_USER);
+				staticFunction.setOperation(Function.OPERATION_READ);
+				List<Parameter> staticParameters = new ArrayList<Parameter>();
+				for (Parameter originParameter : function.getParameters()) {
+					Parameter parameter = null;
+					for (Parameter p : parameters) {
+						if (originParameter.getName().equals(p.getName())) {
+							parameter = p;
+							break;
 						}
-						if (metricView != null) {
-							Function function = metricView.getFunction();
-							
-							// Enrich the metricView's matchQuestions
-							metricView.getMatchQuestions().add(question.trim());
-							metricViewDao.save(metricView);
-							
-							// Generate the return content
-							MetricView staticMetricView = new MetricView();
-							Function staticFunction = new Function();
-							staticFunction.setName(functionQuestion);
-							staticFunction.setOrigin(Function.ORIGIN_USER);
-							staticFunction.setOperation(Function.OPERATION_READ);
-							List<Parameter> staticParameters = new ArrayList<Parameter>();
-							for (Parameter originParameter : function.getParameters()) {
-								Parameter parameter = null;
-								for (Parameter p : parameters) {
-									if (originParameter.getName().equals(p.getName())) {
-										parameter = p;
-										break;
-									}
-								}
-								if (parameter != null) {
-									originParameter.setValue(parameter.getValue());
-								}
-								staticParameters.add(originParameter);
-							}
-							staticFunction.setParameters(staticParameters);
-							staticFunction.setReturnDef(function.getReturnDef());
-							staticFunction.setCode(function.getCode());
-							staticFunction.setLogic(function.getLogic());
-							staticFunction.setDomainId(function.getDomainId());
-							staticMetricView.setName(functionQuestion);
-							staticMetricView.setOrigin(MetricView.ORIGIN_USER);
-							staticMetricView.setType(MetricView.TYPE_STATIC);
-							staticMetricView.setFunction(staticFunction);
-							staticMetricView.setStatus(MetricView.STATUS_PENDING_REVIEW);
-							Set<String> staticMatchQuestions = new HashSet<String>();
-							staticMatchQuestions.add(question.trim());
-							staticMetricView.setMatchQuestions(staticMatchQuestions);
-							staticMetricView.setDomainId(metricView.getDomainId());
-							staticMetricView.setOriginQuestion(metricView.getOriginQuestion());
-							staticMetricView.setOriginCheckResult(metricView.getOriginCheckResult());
-							
-							Object[] o = abcProgramService.execute(BackendSessionEntrance.derive(sessionId, "hot-exec-" + i), staticMetricView.getFunction(), user.getId(), permission, null, lang, timeoutMinutes, user.getDomainId());;
-							MetricViewContent metricViewContent = generateContent((JSONArray)o[0], (PythonExecuteResult)o[1], staticMetricView.getName(), staticMetricView, lang);
-							metricViewContents.add(metricViewContent);
-							
-							if (!test) {
-								// Generate an instantiated card of this general card
-								if (staticFunction.getParameters().size() > 0) {
-									staticFunction = functionDao.save(staticFunction);
-									staticMetricView.setFunction(staticFunction);
-									metricViewDao.save(staticMetricView);
-								}
-							}
-						}
-					} catch (SessionCancelledException e) {
-						// Cancelled: the remaining cards are no longer processed, and this session's stream ends directly.
-						throw e;
-					} catch (Exception e) {
-						log.error(e.getMessage(), e);
+					}
+					if (parameter != null) {
+						originParameter.setValue(parameter.getValue());
+					}
+					staticParameters.add(originParameter);
+				}
+				staticFunction.setParameters(staticParameters);
+				staticFunction.setReturnDef(function.getReturnDef());
+				staticFunction.setCode(function.getCode());
+				staticFunction.setLogic(function.getLogic());
+				staticFunction.setDomainId(function.getDomainId());
+				staticMetricView.setName(functionQuestion);
+				staticMetricView.setOrigin(MetricView.ORIGIN_USER);
+				staticMetricView.setType(MetricView.TYPE_STATIC);
+				staticMetricView.setFunction(staticFunction);
+				staticMetricView.setStatus(MetricView.STATUS_PENDING_REVIEW);
+				Set<String> staticMatchQuestions = new HashSet<String>();
+				staticMatchQuestions.add(question.trim());
+				staticMetricView.setMatchQuestions(staticMatchQuestions);
+				staticMetricView.setDomainId(metricView.getDomainId());
+				staticMetricView.setOriginQuestion(metricView.getOriginQuestion());
+				staticMetricView.setOriginCheckResult(metricView.getOriginCheckResult());
+
+				Object[] o = abcProgramService.execute(BackendSessionEntrance.derive(sessionId, "hot-exec-" + i), staticMetricView.getFunction(), user.getId(), permission, null, lang, timeoutMinutes, user.getDomainId());
+				MetricViewContent metricViewContent = generateContent((JSONArray)o[0], (PythonExecuteResult)o[1], staticMetricView.getName(), staticMetricView, lang);
+				metricViewContents.add(metricViewContent);
+
+				if (!test) {
+					// Generate an instantiated card of this general card
+					if (staticFunction.getParameters().size() > 0) {
+						staticFunction = functionDao.save(staticFunction);
+						staticMetricView.setFunction(staticFunction);
+						metricViewDao.save(staticMetricView);
 					}
 				}
 			}
