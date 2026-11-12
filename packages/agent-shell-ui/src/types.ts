@@ -12,7 +12,6 @@ export interface ArtifactRendererProps {
   read: () => Promise<Blob>;
   openDetails?: () => void;
   continueConversation?: (message: string) => Promise<void>;
-  refreshConversation?: () => Promise<void>;
   /** The renderer this one replaces (shell default or file card), so an override can wrap it. */
   fallback?: Component | null;
 }
@@ -126,12 +125,14 @@ export interface MessageActionContext {
 
 /** Fixed shell text supplied by the host's i18n. */
 export interface ShellLabels {
-  analysisContext?: string;
   selectRow?: (row: number) => string;
   selectedRows?: (count: number) => string;
   analyzeSelection?: string;
   compareSelection?: string;
   clearSelection?: string;
+  /** The ordinary user message that continues from selected records; `rows` are 1-based positions in the source file. */
+  analyzeSelectionMessage?: (file: { title: string; path: string }, rows: number[]) => string;
+  compareSelectionMessage?: (file: { title: string; path: string }, rows: number[]) => string;
   newConversation: string;
   agent: string;
   sessions: string;

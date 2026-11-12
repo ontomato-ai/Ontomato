@@ -3,27 +3,25 @@ import { expect, it, vi } from "vitest";
 import ElementPlus from "element-plus";
 import { workbenchI18n } from "../../../i18n";
 import DatasetDrilldown from "../components/DatasetDrilldown.vue";
-const api = vi.hoisted(() => ({ get: vi.fn(), fetch: vi.fn() }));
-vi.mock("../../../utils/api", () => ({ nodeApiGet: api.get, nodeApiFetch: api.fetch }));
-const preview = { question: "Payroll by department", groups: [{ label: "Department", value: "Information" }], filters: ["Active staff"], assumptions: ["Current staff"], truncated: true };
+import { shellContextKey } from "../../../../../agent-shell-ui/src/context";
+const api = vi.hoisted(() => ({ get: vi.fn() }));
+vi.mock("../../../utils/api", () => ({ nodeApiGet: api.get }));
+const preview = { question: "Payroll by department", groups: [{ label: "Department", value: "Information" }, { label: "Code", value: "001" }], filters: ["Active staff"], assumptions: ["Current staff"], truncated: true };
+const artifact = { id: "dataset", sessionId: "session", path: "outputs/retrievals/r/payroll.dataset.json" } as never;
+const global = (proceed: (message: string) => Promise<void>) => ({ plugins: [workbenchI18n(), ElementPlus], provide: { [shellContextKey as symbol]: { continueConversation: proceed } } });
 
-it("starts details with one click and retries only the row identity with the same admission key", async () => {
+it("asks for the details of the selected source row in one ordinary message with exact group values", async () => {
   api.get.mockResolvedValue(preview);
-  api.fetch.mockRejectedValueOnce(new Error("Response lost")).mockResolvedValueOnce({});
-  const refresh = vi.fn();
-  const wrapper = mount(DatasetDrilldown, { props: { artifact: { id: "dataset", sessionId: "session" } as never, selectedRowIndices: [2], refreshConversation: refresh }, global: { plugins: [workbenchI18n(), ElementPlus] } });
+  const proceed = vi.fn().mockRejectedValueOnce(new Error("Working")).mockResolvedValueOnce(undefined);
+  const wrapper = mount(DatasetDrilldown, { props: { artifact, title: "Payroll", selectedRowIndices: [2] }, global: global(proceed) });
   try {
     await flushPromises();
     expect(api.get).toHaveBeenCalledWith("/assistant/sessions/session/artifacts/dataset/drilldown?rowIndex=2");
     await wrapper.get(".dataset-selection-button").trigger("click"); await flushPromises();
-    expect(api.fetch).toHaveBeenCalledTimes(1);
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
-    expect(wrapper.get('[role="alert"]').text()).toBe("Response lost");
-    expect(refresh).not.toHaveBeenCalled();
+    expect(wrapper.get('[role="alert"]').text()).toBe("Working");
     await wrapper.get(".dataset-selection-button").trigger("click"); await flushPromises();
-    expect(api.fetch.mock.calls[0]![2]).toEqual({ rowIndex: 2 });
-    expect(api.fetch.mock.calls[0]![3]).toEqual(api.fetch.mock.calls[1]![3]);
-    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(proceed).toHaveBeenLastCalledWith('Show the detail records behind row 3 (Department: "Information" and Code: "001") of the data file "Payroll" (outputs/retrievals/r/payroll.dataset.json).');
     await wrapper.setProps({ selectedRowIndices: [1, 2] }); await flushPromises();
     expect(wrapper.find(".dataset-selection-button").exists()).toBe(false);
   } finally { wrapper.unmount(); }
@@ -32,7 +30,7 @@ it("starts details with one click and retries only the row identity with the sam
 it("ignores a late preview for a previous selection and hides unsupported datasets", async () => {
   let resolveOld!: (value: unknown) => void;
   api.get.mockReset().mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; })).mockRejectedValueOnce(new Error("Unsupported"));
-  const wrapper = mount(DatasetDrilldown, { props: { artifact: { id: "dataset", sessionId: "session" } as never, selectedRowIndices: [0] }, global: { plugins: [workbenchI18n(), ElementPlus] } });
+  const wrapper = mount(DatasetDrilldown, { props: { artifact, title: "Payroll", selectedRowIndices: [0] }, global: global(vi.fn()) });
   try {
     await wrapper.setProps({ selectedRowIndices: [1] }); await flushPromises();
     resolveOld(preview); await flushPromises();

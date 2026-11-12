@@ -10,7 +10,7 @@ import { readDatasetSource } from "../assistant-host";
 
 /** Actions on a dataset file of a conversation: its quality check and adding it to a dashboard. */
 /** `title` is the dataset's name as the conversation shows it, which the add-to-dashboard dialog repeats. */
-const props = defineProps<{ artifact: RuntimeArtifact; title: string; refreshConversation?: () => Promise<void> }>();
+const props = defineProps<{ artifact: RuntimeArtifact; title: string }>();
 const emit = defineEmits<{ openDashboard: [id: string] }>();
 const { t, locale } = useI18n();
 const source = ref<AssistantDatasetSource | null>(null);
@@ -26,7 +26,7 @@ onMounted(async () => {
 <template>
   <template v-if="source">
     <el-button class="scope-action" text size="small" :icon="SlidersHorizontal" @click="adjusting = true">{{ locale.startsWith('zh') ? '调整范围' : 'Adjust scope' }}</el-button>
-    <AnalysisScopeDialog v-model="adjusting" :artifact="artifact" :refresh="refreshConversation" />
+    <AnalysisScopeDialog v-model="adjusting" :artifact="artifact" :title="title" />
     <el-popover v-if="source.qualityCheck" trigger="click" width="360" placement="bottom-end">
       <template #reference>
         <button type="button" class="dataset-action" :title="t('assistant.qualityCheck')" :aria-label="t('assistant.qualityCheck')">

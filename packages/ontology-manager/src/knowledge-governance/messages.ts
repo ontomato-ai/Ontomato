@@ -124,5 +124,7 @@ export function shellLabels(t: GovernanceTranslate): ShellLabels {
     elapsed: (time: string) => t("governance.shell.elapsed", { time }),
     selectRow: undefined,
     selectedRows: undefined,
+    analyzeSelectionMessage: undefined,
+    compareSelectionMessage: undefined,
   };
 }

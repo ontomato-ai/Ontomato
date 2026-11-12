@@ -650,7 +650,31 @@ export default {
     "addingToDashboard": "Settling the metric and planning the chart. This can take a minute or two.",
     "qualityCheck": "Quality check",
     "exportPpt": "Export conversation as PPT",
-    "exportFailed": "Export failed"
+    "exportFailed": "Export failed",
+    "selectRow": "Select row {row}",
+    "selectedRows": "{count} selected",
+    "analyzeSelection": "Analyze selection",
+    "compareSelection": "Compare selection",
+    "clearSelection": "Clear selection",
+    "clarificationNeeded": "Your decision needed",
+    "clarificationNotes": "Additional notes (optional)",
+    "clarificationConfirm": "Confirm and continue",
+    "clarificationLoadFailed": "Unable to load clarification",
+    "clarificationReload": "Reload",
+    "continuation": {
+      "file": "the data file \"{title}\" ({path})",
+      "analyzeRows": "Analyze rows {rows} of {file}.",
+      "compareRows": "Compare rows {rows} of {file}.",
+      "adjustScope": "For {file}, change the query scope: {adjustment}",
+      "group": "{label}: {value}",
+      "details": "Show the detail records behind row {row} of {file}.",
+      "detailsOfGroups": "Show the detail records behind row {row} ({groups}) of {file}.",
+      "basedOn": "Based on: {files}",
+      "clarification": "My answers to the clarification \"{title}\" ({path}):",
+      "answer": "{question}: {answer}",
+      "notes": "Notes: {notes}",
+      "proceed": "Please continue."
+    }
   },
   "appBuilder": {
     "title": "App builder",

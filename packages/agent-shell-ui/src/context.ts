@@ -12,7 +12,7 @@ export interface ShellContext extends Pick<AgentHostClient, "readRetrieval" | "r
   labels: Ref<ShellLabels>;
   artifactRenderers: Ref<readonly ArtifactRendererOverride[]>;
   toolRenderers: Ref<readonly ToolRendererOverride[]>;
-  /** Host slots for business actions: `artifact-actions` ({artifact, title}) and `message-actions`. */
+  /** Host slots for business actions: `artifact-actions` ({artifact, title}), `dataset-selection-actions` ({artifact, title, selectedRowIndices}) and `message-actions`. */
   slots: { artifactActions?: Slot; messageActions?: Slot; datasetSelectionActions?: Slot };
   resolveArtifact(runId: string, path: string): Promise<RuntimeArtifact | null>;
   /** Changes whenever a run registers new artifacts, so unresolved references retry. */
@@ -24,7 +24,6 @@ export interface ShellContext extends Pick<AgentHostClient, "readRetrieval" | "r
   pageLink(href: string): (() => void) | null;
   /** Continue the current conversation from an explicit artifact action. */
   continueConversation?: (message: string) => Promise<void>;
-  refreshConversation?: () => Promise<void>;
 }
 
 /** The message whose Markdown is rendering; artifact references resolve within its run. */

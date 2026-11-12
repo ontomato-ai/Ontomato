@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
 import { afterEach, expect, it, vi } from "vitest";
 import type { DatasetPayload } from "@ontomato/contracts/data-retrieval";
-import { drilldownGroups, readDrilldown, startDrilldown } from "../drilldown";
+import { drilldownGroups, readDrilldown } from "../drilldown";
 import { assistantService } from "../service";
 
-vi.mock("../service", () => ({ assistantService: { dataset: vi.fn(), artifact: vi.fn(), start: vi.fn() } }));
+vi.mock("../service", () => ({ assistantService: { dataset: vi.fn() } }));
 afterEach(() => { vi.resetAllMocks(); });
 const examples = JSON.parse(readFileSync(new URL("../../../../../contracts/examples/query-subgraphs.json", import.meta.url), "utf8"));
 const owner = { domainId: "domain", userId: "user" };
@@ -15,7 +15,6 @@ function payload(value: unknown = "Information") {
 }
 function source(value: unknown = "Information") {
   vi.mocked(assistantService.dataset).mockResolvedValue({ payload: payload(value), source: { retrievalId: "retrieval" } } as never);
-  vi.mocked(assistantService.artifact).mockResolvedValue({ runId: "source-run", path: "outputs/payroll.dataset.json" } as never);
 }
 
 it("maps execution-owned group outputs to ontology fields and excludes aggregate values", () => {
@@ -30,25 +29,17 @@ it("maps execution-owned group outputs to ontology fields and excludes aggregate
   expect(() => drilldownGroups({ ...payload(), sourceAnalysis: multiple })).toThrow();
 });
 
-it.each([0, false, null, "001"])("preserves the exact group value %s in a fresh detail query", async (value) => {
+it.each([0, false, null, "001"])("previews the exact group value %s", async (value) => {
   source(value);
   const preview = await readDrilldown("session", "artifact", owner, 0);
   expect(preview.groups[0]!.value).toBe(value);
   expect(preview.filters).toEqual(["Active employees only"]);
   expect(preview.truncated).toBe(true);
-  await startDrilldown("session", "artifact", owner, {}, 0, "retry-run");
-  expect(assistantService.start).toHaveBeenCalledWith("session", "retry-run", expect.stringContaining('"attrName":"name","value":' + JSON.stringify(value)), owner, {});
-  const message = vi.mocked(assistantService.start).mock.calls[0]![2];
-  expect(message).toContain('"decisionIds":["decision"]');
-  expect(message).toContain("e.status = 'active'");
-  expect(message).toContain("not write authorization");
-  expect(message).toContain("fresh read, not a historical snapshot");
 });
 
-it("resolves row values server-side and refuses an unavailable row before admitting a query", async () => {
+it("resolves row values server-side and refuses an unavailable row", async () => {
   source();
-  await expect(startDrilldown("session", "artifact", owner, {}, 1, "run")).rejects.toMatchObject({ code: "INVALID_DRILLDOWN_ROW" });
-  expect(assistantService.start).not.toHaveBeenCalled();
+  await expect(readDrilldown("session", "artifact", owner, 1)).rejects.toMatchObject({ code: "INVALID_DRILLDOWN_ROW" });
   vi.mocked(assistantService.dataset).mockRejectedValue(new Error("Not authorized"));
   await expect(readDrilldown("session", "artifact", owner, 0)).rejects.toThrow("Not authorized");
 });

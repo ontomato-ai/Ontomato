@@ -61,7 +61,6 @@ const read = () => shell.readArtifact(resolved.value!);
     :read="read"
     :open-details="() => shell.openArtifact({ key: `${runId}:${path}`, artifact: resolved!, title })"
     :continue-conversation="shell.continueConversation"
-    :refresh-conversation="shell.refreshConversation"
     :fallback="renderer.component ? (renderer.fallback ?? FileRenderer) : null"
   />
 </template>

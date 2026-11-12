@@ -283,12 +283,12 @@ function appearanceSaved(value: WorkbenchAppearance) {
       />
       <slot v-else name="feature" :feature-id="page" />
     </template>
-    <template #dataset-selection-actions="{ artifact, selectedRowIndices, refreshConversation }">
-      <DatasetDrilldown :artifact="artifact" :selected-row-indices="selectedRowIndices" :refresh-conversation="refreshConversation" />
+    <template #dataset-selection-actions="{ artifact, title, selectedRowIndices }">
+      <DatasetDrilldown :artifact="artifact" :title="title" :selected-row-indices="selectedRowIndices" />
     </template>
-    <template #artifact-actions="{ artifact, title, refreshConversation }">
+    <template #artifact-actions="{ artifact, title }">
       <!-- A dataset added to a board opens the dashboards application, which is where boards live. -->
-      <DatasetActions :artifact="artifact" :title="title" :refresh-conversation="refreshConversation" @open-dashboard="openDashboardApplication" />
+      <DatasetActions :artifact="artifact" :title="title" @open-dashboard="openDashboardApplication" />
     </template>
     <template #message-actions="{ sessionId, runId }">
       <TurnDiagnoseButton v-if="sessionId && runId" :session-id="sessionId" :run-id="runId" />
