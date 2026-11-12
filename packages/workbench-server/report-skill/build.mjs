@@ -7,7 +7,7 @@ import { build } from "esbuild";
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
-const output = path.resolve(directory, "../resources/runtime-skills/assistant-report");
+const output = path.resolve(process.argv[2] ?? path.join(directory, "../resources/runtime-skills/assistant-report"));
 for (const name of ["scripts", "vendor", "licenses"]) {
   fs.rmSync(path.join(output, name), { recursive: true, force: true });
   fs.mkdirSync(path.join(output, name), { recursive: true });
