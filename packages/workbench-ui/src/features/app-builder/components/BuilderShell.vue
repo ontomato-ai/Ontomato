@@ -18,6 +18,7 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useShellLabels } from "../../../composables/useShellLabels";
 import { authHost } from "../../../utils/auth";
 import { builderApi, createBuilderClient, WORKSPACE_PAGE } from "../api";
+import { useColumnSessions } from "../column-sessions";
 import { PANEL_ID, PANEL_TABS, errorText, firstLine, shortCommit, type ChangeTarget, type PanelTab } from "../panel";
 import type { AppBuilderPlatform } from "../platform";
 import { selectedObject, usePreviewContext } from "../preview-context";
@@ -29,6 +30,7 @@ import PanelHeader from "./PanelHeader.vue";
 import PublishDrawer from "./PublishDrawer.vue";
 import WorkspaceColumn from "./WorkspaceColumn.vue";
 import WorkspacePanel from "./WorkspacePanel.vue";
+import WorkspacePicker from "./WorkspacePicker.vue";
 
 /**
  * 应用构建 as an agent app (DESIGN.md "Agent apps"): the builder agent's conversations, kept per workspace, and beside them
@@ -37,8 +39,10 @@ import WorkspacePanel from "./WorkspacePanel.vue";
  * sending from the page are the shell's; this page fills its column, its page and the two lines the shell leaves to it
  * (the page's header row and what a message carries).
  *
- * The address names the workspace (`/app-builder/<id>`) and the open conversation (`?sessionId=`). The layout the reader
- * chose — only the conversation, beside it, or full — stays while they change conversation or workspace.
+ * The address names the workspace (`/app-builder/<id>`) and the open conversation (`?sessionId=`); without a conversation
+ * it is the workspace's blank new conversation, which is where the builder opens. The layout the reader chose — only the
+ * conversation, beside it, or full — stays while they change conversation or workspace, and so does a blank
+ * conversation's composer with what was typed in it.
  */
 const props = defineProps<{ agent: AgentHostAgent; platform: AppBuilderPlatform }>();
 const { t, locale } = useI18n();
@@ -71,7 +75,7 @@ async function loadWorkspaces(more = false) {
   }
 }
 void loadWorkspaces();
-// An address without a workspace opens the most recent one.
+// An address without a workspace opens the most recent one, at its blank new conversation.
 watch(
   [workspaceId, workspacesState],
   () => {
@@ -120,31 +124,21 @@ watchEffect(() => {
     description: t(emptyWorkspace.value ? "appBuilder.descriptionEmpty" : "appBuilder.descriptionWorkspace"),
   }];
 });
+const columnSessions = useColumnSessions({ nav, workspaceId: () => workspaceId.value, workspaces: () => workspaces.value });
 /**
- * A workspace opened without a conversation in the address continues its latest one once its list is read, unless the
- * reader already chose a conversation meanwhile.
+ * Every way into a workspace: one of its conversations, or without one its blank new conversation. Another workspace
+ * is a new address; within the open one only the conversation changes. The workspace opened is expanded once it is the
+ * open one, so the column lists it from the nav and reads no snapshot of it.
  */
-let continueLatest = false;
-watch(
-  workspaceId,
-  async (id) => {
-    continueLatest = typeof route.query.sessionId !== "string";
-    if (!id) return;
-    await nav.loadSessions();
-    if (id !== workspaceId.value || !continueLatest) return;
-    continueLatest = false;
-    const latest = nav.sessions.value[0];
-    if (latest && sessionId.value === null) sessionId.value = latest.id;
-  },
-  { immediate: true },
-);
-function newConversation() {
-  continueLatest = false;
-  nav.startNew();
+async function openConversation(id: string, session: string | null) {
+  if (id === workspaceId.value) sessionId.value = session;
+  else await router.push({ path: builderPath(id), query: session ? { sessionId: session } : {} });
+  columnSessions.expand(id);
 }
-function selectSession(id: string) {
-  continueLatest = false;
-  nav.selectSession(id);
+/** A blank conversation in the open workspace; with no workspace open, a new workspace comes first. */
+function startConversation() {
+  if (workspaceId.value) void openConversation(workspaceId.value, null);
+  else void createWorkspace();
 }
 
 /* ---- The page: the workspace in four views, and the three states ---- */
@@ -290,7 +284,7 @@ async function createWorkspace() {
     const created = await builderApi.create(name);
     workspaces.value = [created, ...workspaces.value];
     tab.value = "preview";
-    void router.push(builderPath(created.id));
+    void openConversation(created.id, null);
   } catch (error) {
     ElMessage.error(errorText(error));
   }
@@ -320,6 +314,7 @@ async function deleteWorkspace(workspace: Workspace) {
   try {
     await builderApi.remove(workspace.id);
     workspaces.value = workspaces.value.filter((item) => item.id !== workspace.id);
+    columnSessions.forget(workspace.id);
     ElMessage.success(t("common.deleted"));
     if (workspace.id !== workspaceId.value) return;
     const next = workspaces.value[0];
@@ -328,32 +323,27 @@ async function deleteWorkspace(workspace: Workspace) {
     ElMessage.error(errorText(error));
   }
 }
-function selectWorkspace(id: string) {
-  if (id !== workspaceId.value) void router.push(builderPath(id));
-}
-
 const column = computed(() => ({
   workspaces: workspaces.value,
   workspacesState: workspacesState.value,
   moreWorkspaces: moreWorkspaces.value,
   workspaceId: workspaceId.value,
-  sessions: nav.sessions.value,
-  sessionsState: nav.sessionsState.value,
-  moreSessions: nav.nextCursor.value !== null,
+  expanded: columnSessions.expanded.value,
   sessionId: sessionId.value,
   privateWorkspaces,
 }));
 const columnEvents = {
+  startConversation,
   createWorkspace,
-  selectWorkspace,
+  toggleWorkspace: columnSessions.toggle,
+  newConversation: (id: string) => void openConversation(id, null),
+  openSession: (id: string, session: string) => void openConversation(id, session),
   renameWorkspace,
   deleteWorkspace,
   moreWorkspaces: () => void loadWorkspaces(true),
   retryWorkspaces: () => void loadWorkspaces(),
-  newConversation,
-  selectSession,
-  moreSessions: () => void nav.loadSessions(true),
-  retrySessions: () => void nav.loadSessions(),
+  moreSessions: columnSessions.more,
+  retrySessions: columnSessions.retry,
 };
 </script>
 
@@ -398,16 +388,26 @@ const columnEvents = {
         @show-changes="showChanges"
       />
     </template>
-    <template #composer-context="{ pageOpen, inline }">
-      <ComposerContext
-        :page-open="pageOpen"
-        :inline="inline"
-        :page="contextPage"
-        :icon="tabIcon"
-        :selection="contextObject"
-        :busy="busy"
-        @open-session="selectSession"
-      />
+    <template #composer-context="{ pageOpen, inline, unstarted }">
+      <!-- Until the conversation has started, it may still move to another workspace. -->
+      <div class="composer-line" :class="{ inline }">
+        <WorkspacePicker
+          v-if="unstarted"
+          :workspaces="workspaces"
+          :workspace-id="workspaceId!"
+          @select="openConversation($event, null)"
+          @create="createWorkspace"
+        />
+        <ComposerContext
+          :page-open="pageOpen"
+          :inline="inline"
+          :page="contextPage"
+          :icon="tabIcon"
+          :selection="contextObject"
+          :busy="busy"
+          @open-session="openConversation(workspaceId!, $event)"
+        />
+      </div>
     </template>
     <template #message-actions="{ workspaceCommit }">
       <CommitMark v-if="workspaceCommit" :commit="workspaceCommit" @open="showChanges" />
@@ -430,6 +430,21 @@ const columnEvents = {
 </template>
 
 <style scoped>
+/*
+ * The workspace picker, then what a message carries: wrapping above the conversation's composer, one line inside the
+ * full page's single-row composer, where both are cut short rather than wrapped.
+ */
+.composer-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+.composer-line.inline {
+  flex-wrap: nowrap;
+  align-items: center;
+}
 .builder-shell :deep(.page-pane.side) {
   border: 0;
   border-inline-start: 1px solid var(--el-border-color);
