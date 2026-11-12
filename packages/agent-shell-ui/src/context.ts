@@ -1,6 +1,6 @@
 import { inject, type InjectionKey, type Ref, type Slot } from "vue";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
-import type { AgentHostClient } from "./host";
+import type { ShellTaskPort } from "./host";
 import type {
   ArtifactRendererOverride,
   OpenArtifact,
@@ -8,8 +8,12 @@ import type {
   ToolRendererOverride,
 } from "./types";
 
-export interface ShellContext extends Pick<AgentHostClient, "readRetrieval" | "readRetrievalRun" | "subscribeRetrieval"> {
+export interface ShellContext {
   labels: Ref<ShellLabels>;
+  /** The host's task routes, when its conversations delegate work. */
+  tasks?: ShellTaskPort;
+  /** The task the reader asked to see (from the task list); its card or review opens and scrolls into view. */
+  taskFocus?: Ref<{ taskId: string; at: number } | null>;
   artifactRenderers: Ref<readonly ArtifactRendererOverride[]>;
   toolRenderers: Ref<readonly ToolRendererOverride[]>;
   /** Host slots for business actions: `artifact-actions` ({artifact, title}) and `message-actions`. */

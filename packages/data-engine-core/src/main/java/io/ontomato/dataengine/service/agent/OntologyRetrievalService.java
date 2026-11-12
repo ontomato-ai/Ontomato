@@ -26,6 +26,7 @@ public class OntologyRetrievalService {
   private final OntologyAgentAccess access;
   private final OntologyBindingRetrieval bindings;
   private final RetrievalResults results;
+  private final RetrievalTasks tasks;
   private final Set<String> launching = ConcurrentHashMap.newKeySet();
 
   private record AdmissionFlight(Owner owner, String hash, CompletableFuture<JSONObject> result) {}
@@ -45,7 +46,7 @@ public class OntologyRetrievalService {
       QueryOutputService outputs,
       QueryJobService jobs,
       QueryQualityService quality,
-      OntologyAgentAccess access, OntologyBindingRetrieval bindings, RetrievalResults results) {
+      OntologyAgentAccess access, OntologyBindingRetrieval bindings, RetrievalResults results, RetrievalTasks tasks) {
     this.store = store;
     this.runtime = runtime;
     this.definitions = definitions;
@@ -57,6 +58,7 @@ public class OntologyRetrievalService {
     this.access = access;
     this.bindings = bindings;
     this.results = results;
+    this.tasks = tasks;
   }
 
   private JSONObject admitOnce(
@@ -429,10 +431,7 @@ public class OntologyRetrievalService {
         "runtimeRunId",row.getBooleanValue("runtime_admitted")?row.getString("id"):null,
         "run",observed==null?null:state(observed),"pending",JSONObject.of("retriever",pending,"bindings",bindings.pending(id,owner)));
     response.put("bindings",bindings.snapshot(id,row.getString("id"),owner));
-    if(row.getString("qc_id")!=null) {
-      try { response.put("qualityCheck",jobs.get(row.getString("qc_id"),subject(owner),"quality")); }
-      catch(org.springframework.web.server.ResponseStatusException missing) { if(missing.getStatusCode().value()!=404) throw missing; }
-    }
+    response.put("qualityTasks",tasks.qualityReferences(id,row.getString("id"),owner));
     return response;
   }
 
@@ -614,13 +613,7 @@ public class OntologyRetrievalService {
     result.put("retrieverPending", !row.getBooleanValue("external")
         && deliveries.stream().noneMatch(delivery -> "retriever".equals(delivery.getString("source"))));
     result.put("admissionError",row.getString("admission_error"));
-    if (row.getString("qc_id") != null) {
-      try {
-        result.put("qualityCheck", jobs.get(row.getString("qc_id"), subject(owner), "quality"));
-      } catch (org.springframework.web.server.ResponseStatusException absent) {
-        if (absent.getStatusCode().value() != 404) throw absent;
-      }
-    }
+    result.put("qualityTasks", tasks.qualityReferences(id, runId, owner));
     return result;
   }
 

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Check, ChevronRight, CircleAlert, Copy, LoaderCircle, Square, ThumbsDown, ThumbsUp, TriangleAlert } from "lucide-vue-next";
 import type { ShellFeedbackPort, ShellFeedbackValue } from "../types";
 import SlotOutlet from "./SlotOutlet.vue";
-import RetrievalActivity from "./RetrievalActivity.vue";
+import TaskCard from "./tasks/TaskCard.vue";
+import QualityReview from "./tasks/QualityReview.vue";
 import { shellContextKey } from "../context";
 import type { ResponseItem } from "../view";
 import ShellMarkdown from "./ShellMarkdown.vue";
@@ -30,9 +31,19 @@ const target = computed(() =>
     ? { sessionId: props.sessionId, runId: props.item.runId, messageId: props.item.answerMessageId }
     : null,
 );
-const hasProcess = computed(() => props.item.process.length > 0 || props.item.retrievals.length > 0);
+const hasProcess = computed(() => props.item.process.length > 0);
 /** The process stays open while the run works and folds to one line once it stops; a stopped run mounts folded. */
-const { open, toggle } = useAutoFold(() => props.item.running);
+const { open, toggle, reveal } = useAutoFold(() => props.item.running);
+
+/** A task the reader picked from the task list: its card opens the process, its review is already in view. */
+watch(() => shell.taskFocus?.value, async (focus) => {
+  if (!focus) return;
+  const card = props.item.process.some((block) => block.kind === "task" && block.task.id === focus.taskId);
+  if (!card && !props.item.reviews.some((review) => review.task.id === focus.taskId)) return;
+  if (card) reveal();
+  await nextTick();
+  document.getElementById(`agent-task-${focus.taskId}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+});
 
 /** The main run's elapsed time: ticking while it is active, its duration once it stopped. */
 const now = ref(Date.now());
@@ -134,15 +145,9 @@ async function submit(value: ShellFeedbackValue) {
         <span>{{ status }}</span>
       </div>
       <div v-if="open && hasProcess" class="process-body">
-        <RetrievalActivity
-          v-for="link in item.retrievals"
-          :key="link.retrievalId"
-          :link="link"
-          :parent-run-id="item.runId"
-          :session-id="sessionId ?? ''"
-        />
         <template v-for="block in item.process" :key="block.key">
           <ShellProcess v-if="block.kind === 'steps'" :steps="block.steps" :active="block.active" />
+          <TaskCard v-else-if="block.kind === 'task'" :task="block.task" :session-id="sessionId ?? ''" />
           <div v-else class="process-note">
             <ShellMarkdown :content="block.text" :final="block.final" :run-id="block.runId" />
           </div>
@@ -209,7 +214,15 @@ async function submit(value: ShellFeedbackValue) {
         <button type="submit" class="primary" :disabled="!reason.trim() || feedbackBusy">{{ labels.submit }}</button>
       </div>
     </form>
-    <!-- Reviews by other parties (quality checks) go here: after the answer and its actions, never inside them. -->
+    <!-- Reviews by other parties come after the answer and its actions, never inside them. -->
+    <div v-if="item.reviews.length" class="reviews">
+      <QualityReview
+        v-for="review in item.reviews"
+        :key="review.task.id"
+        :review="review"
+        :named="item.reviews.length > 1"
+      />
+    </div>
   </div>
 </template>
 
@@ -341,6 +354,12 @@ button.process-toggle:focus-visible {
 }
 .reason {
   max-width: 480px;
+}
+.reviews {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin-top: calc(var(--conversation-block-gap) - var(--conversation-process-gap));
 }
 .reason textarea {
   width: 100%;

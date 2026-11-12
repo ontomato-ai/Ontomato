@@ -417,7 +417,6 @@ const ontologyEn = {
   actionProcessActivitySchema: "Inspect ontology",
   actionProcessActivityValues: "Probe values",
   actionProcessActivityQuery: "Run query",
-  actionProcessActivityRetrieve: "Retrieve data",
   actionProcessActivityDataset: "Prepare data",
   actionProcessActivityCompute: "Run calculation",
   actionProcessElapsed: "{time} elapsed",

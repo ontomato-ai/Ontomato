@@ -5,6 +5,8 @@ import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifact
 import { applyEnvelope, applyHistoryPage, applyRunSnapshot, emptyConversation } from "../conversation";
 import { createRunSubscription, type RunSubscription } from "../run-subscription";
 import { conversationItems } from "../view";
+import { stepActivity } from "../tools";
+import type { AgentTasksSnapshot } from "@ontomato/contracts/agent-tasks";
 
 const runId = "11111111-1111-4111-8111-111111111111";
 const sessionId = "22222222-2222-4222-8222-222222222222";
@@ -35,7 +37,7 @@ const frame = (value: RuntimeEventEnvelope): RuntimeStreamFrame => ({ type: "eve
 function run(overrides: Partial<AgentHostRun> = {}): AgentHostRun {
   return {
     id: runId, sessionId, status: "running", stopReason: null, errorMessage: null, answerMessageId: null,
-    workspaceCommit: null, createdAt: timestamp, finishedAt: null, resolvedSkills: [], retrievals: [], ...overrides,
+    workspaceCommit: null, createdAt: timestamp, finishedAt: null, resolvedSkills: [], ...overrides,
   };
 }
 
@@ -65,37 +67,36 @@ function history(
   };
 }
 
-describe("retrieval activity projection", () => {
-  it("uses the associated retrieval as the single entry while preserving other tools and thinking", () => {
-    const state = emptyConversation(sessionId);
-    applyRunSnapshot(state, snapshot({ pendingMessages: [{ id: partialId, message: {
-      ...partial,
-      content: [
-        { type: "thinking", thinking: "Find the requested data" },
-        { type: "toolCall", id: "ask", name: "bash", arguments: { command: "node skills/ontomato-analyst-assistant/ontomato.mjs ask 'Sales total'" } },
-        { type: "toolCall", id: "schema", name: "bash", arguments: { command: "node skills/ontomato-analyst-assistant/ontomato.mjs schema Sales" } },
-      ],
-    } }] }));
-    const steps = () => conversationItems(state).flatMap((item) => item.kind === "response"
-      ? item.process.flatMap((block) => block.kind === "steps" ? block.steps : []) : []);
-    expect(steps()).toHaveLength(3);
-    state.runs[runId]!.retrievals = [{ retrievalId: "retrieval", runId: "child" }];
-    expect(steps().map((step) => step.key)).toEqual([`${partialId}:0`, `${partialId}:2`]);
-    state.runs[runId]!.tools.ask = { toolCallId: "ask", toolName: "bash", args: {}, status: "failed", output: "Retrieval failed" };
-    expect(steps().map((step) => step.key)).toContain(`${partialId}:1`);
-  });
+describe("delegated tasks in a reply", () => {
+  const roundId = "77777777-7777-4777-8777-777777777777", checkId = "88888888-8888-4888-8888-888888888888";
+  const dataset = "99999999-9999-4999-8999-999999999999";
+  const at = (ms: number) => new Date(ms).toISOString();
+  const tasks: AgentTasksSnapshot = {
+    sessionId,
+    tasks: [
+      { kind: "retrieval", id: roundId, root: { sessionId, runId }, parentTaskId: null, status: "completed", error: null,
+        createdAt: at(3), process: { mode: "none" }, branches: [{ source: "retriever", status: "completed", error: null,
+          datasets: [{ id: dataset, title: "Sales", rowCount: 3, truncation: null }] }] },
+      { kind: "quality", id: checkId, root: { sessionId, runId }, parentTaskId: roundId, status: "completed", error: null,
+        createdAt: null, process: { mode: "none" }, checks: { source: "retriever", datasetIds: [dataset] } },
+    ],
+    qualityResults: [{ taskId: checkId, score: 92, conclusion: "Matches the question.", fittedQuestion: "Sales?" }],
+  };
 
-  it("removes an empty process group after consolidating an ask-only call", () => {
+  it("keeps the ask step, follows it with the retrieval's card and reviews the reply", () => {
     const state = emptyConversation(sessionId);
+    const ask = { ...partial, stopReason: "toolUse" as const, timestamp: 2, content: [
+      { type: "toolCall" as const, id: "ask", name: "bash", arguments: { command: "node skills/ontomato-analyst-assistant/ontomato.mjs ask 'Sales'" } },
+    ] };
     applyRunSnapshot(state, snapshot({
-      run: run({ retrievals: [{ retrievalId: "retrieval", runId: "child" }] }),
-      pendingMessages: [{ id: partialId, message: { ...partial, content: [
-        { type: "toolCall", id: "ask", name: "bash", arguments: { command: "node ontomato.mjs ask 'Sales total'" } },
-      ] } }],
+      messages: [user, { id: replyId, runId, messageSeq: 1, message: ask }],
+      pendingMessages: [{ id: partialId, message: { ...partial, timestamp: 4 } }],
     }));
-    const response = conversationItems(state).find((item) => item.kind === "response")!;
-    expect(response.retrievals).toHaveLength(1);
-    expect(response.process).toEqual([]);
+    const response = conversationItems(state, tasks).find((item) => item.kind === "response")!;
+    expect(response.process.map((block) => block.kind)).toEqual(["steps", "task", "note"]);
+    const step = response.process[0]!.kind === "steps" ? response.process[0]!.steps[0]! : null;
+    expect(stepActivity(step!)).toBe("skill");
+    expect(response.reviews).toEqual([{ task: tasks.tasks[1], result: tasks.qualityResults[0], datasets: [{ id: dataset, title: "Sales" }] }]);
   });
 });
 

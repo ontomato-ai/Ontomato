@@ -77,7 +77,6 @@ const labels = computed(() =>
     activitySchema: ot("actionProcessActivitySchema"),
     activityValues: ot("actionProcessActivityValues"),
     activityQuery: ot("actionProcessActivityQuery"),
-    activityRetrieve: ot("actionProcessActivityRetrieve"),
     activityDataset: ot("actionProcessActivityDataset"),
     activityCompute: ot("actionProcessActivityCompute"),
     elapsed: (time) => ot("actionProcessElapsed", { time }),

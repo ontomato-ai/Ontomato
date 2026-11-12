@@ -54,7 +54,6 @@ export function actionChatLabels(overrides: Partial<ShellLabels> = {}): ShellLab
     activityValues: "Probe values",
     activityQuery: "Run query",
     activityKnowledge: "Search metrics and knowledge",
-    activityRetrieve: "Retrieve data",
     activityDataset: "Prepare dataset",
     activityCompute: "Run calculation",
     datasetData: "Data",

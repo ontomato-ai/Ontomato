@@ -110,6 +110,7 @@ public class OntologyAgentHost {
             "stopReason",
             "errorMessage",
             "answerMessageId",
+            "workspaceCommit",
             "createdAt",
             "finishedAt",
             "resolvedSkills")) result.put(name, run.get(name));

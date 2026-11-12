@@ -190,7 +190,6 @@ export interface ShellLabels {
   activityValues: string;
   activityQuery: string;
   activityKnowledge: string;
-  activityRetrieve: string;
   activityDataset: string;
   activityCompute: string;
   /** Dataset view switch: the rows, or the graph of how they were obtained. */
@@ -200,6 +199,41 @@ export interface ShellLabels {
   elapsed: (time: string) => string;
   /** A finished response's folded process line; `time` is the run's duration, formatted as m:ss. */
   worked: (time: string) => string;
+  /** Required by a host that serves tasks (`AgentHostClientOptions.tasks`). */
+  tasks?: ShellTaskLabels;
+}
+
+/** Text of the delegated work a reply shows: its task cards, its quality reviews and the reply's task list. */
+export interface ShellTaskLabels {
+  /** The retrieval task's executor, the retriever agent. */
+  retriever: string;
+  status: Record<"running" | "completed" | "failed" | "cancelled", string>;
+  /** A retrieval round's branches: the metric binding results and the retriever's own. */
+  branch: Record<"binding" | "retriever", string>;
+  rows: (count: number) => string;
+  /** A dataset holds only the first `limit` rows of its result. */
+  truncatedRows: (limit: number) => string;
+  /** The quality review's own name, beside the reply. */
+  review: string;
+  reviewRunning: string;
+  reviewFailed: string;
+  /** A score in the folded line, e.g. "92 points"; `scoreLabel` names it in the opened review. */
+  score: (score: number) => string;
+  scoreLabel: string;
+  conclusion: string;
+  fittedQuestion: string;
+  /** What the check examined: one branch's results. */
+  checked: string;
+  checkedBranch: Record<"binding" | "retriever", string>;
+  /** The reply's task list: its button with the count, and the list's own title. */
+  list: (count: number) => string;
+  listTitle: string;
+  round: (index: number, count: number) => string;
+  previousRound: string;
+  nextRound: string;
+  quality: string;
+  /** Reasons a task did not complete, by the code its owner gave; other codes show their own message. */
+  errors: Record<string, string>;
 }
 
 export interface OpenArtifact {

@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { LayoutDashboard, ShieldCheck, SlidersHorizontal } from "lucide-vue-next";
+import { LayoutDashboard, SlidersHorizontal } from "lucide-vue-next";
 import AnalysisScopeDialog from "./AnalysisScopeDialog.vue";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { AssistantDatasetSource } from "@ontomato/contracts/assistant-chat";
 import { AddDatasetDialog } from "../../dashboard";
 import { readDatasetSource } from "../assistant-host";
 
-/** Actions on a dataset file of a conversation: its quality check and adding it to a dashboard. */
+/** Actions on a dataset file of a conversation: adjusting its scope and adding it to a dashboard. */
 /** `title` is the dataset's name as the conversation shows it, which the add-to-dashboard dialog repeats. */
 const props = defineProps<{ artifact: RuntimeArtifact; title: string; refreshConversation?: () => Promise<void> }>();
 const emit = defineEmits<{ openDashboard: [id: string] }>();
@@ -27,14 +27,6 @@ onMounted(async () => {
   <template v-if="source">
     <el-button class="scope-action" text size="small" :icon="SlidersHorizontal" @click="adjusting = true">{{ locale.startsWith('zh') ? '调整范围' : 'Adjust scope' }}</el-button>
     <AnalysisScopeDialog v-model="adjusting" :artifact="artifact" :refresh="refreshConversation" />
-    <el-popover v-if="source.qualityCheck" trigger="click" width="360" placement="bottom-end">
-      <template #reference>
-        <button type="button" class="dataset-action" :title="t('assistant.qualityCheck')" :aria-label="t('assistant.qualityCheck')">
-          <ShieldCheck :size="15" />
-        </button>
-      </template>
-      <pre class="qc">{{ JSON.stringify(source.qualityCheck, null, 2) }}</pre>
-    </el-popover>
     <button
       type="button"
       class="dataset-action"
@@ -74,13 +66,5 @@ onMounted(async () => {
 }
 .dataset-action:focus-visible {
   outline: 2px solid var(--el-color-primary);
-}
-.qc {
-  margin: 0;
-  max-height: 320px;
-  overflow: auto;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  white-space: pre-wrap;
 }
 </style>

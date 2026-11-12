@@ -90,14 +90,23 @@ Lookup is always host override → shell default → generic file card or step.
   breaks and only `~~` marks strikethrough, as in every delivery channel; raw
   HTML is escaped. The shell adds only its link and image nodes for `outputs/`
   files and host page links.
-- **Process and answer**: a response has two regions. The process holds the main
-  agent's own text, thinking and tool steps, and retrieval activity, in order; it is
+- **Process, answer and reviews**: a response has three regions. The process holds the main
+  agent's own text, thinking and tool steps, and the cards of the retrievals it delegated
+  (each after the work that started it), in order; it is
   open and grows while the run works, and folds to one "worked for" line with the
   main run's duration once the run stops, which the user can open again. The answer
   holds only the text of the message the runtime named as `answerMessageId`; its
   thinking stays in the process. A run stopped without an answer (length, error,
   aborted) keeps all its text in the process, with the stop shown beside it.
-  Copy, feedback and the `message-actions` slot target that answer message.
+  Copy, feedback and the `message-actions` slot target that answer message. After the
+  answer and its actions come the quality reviews of the reply's data, one per checked
+  branch, signed as another party's and folded to one line (score and first sentence);
+  they update as checks settle, whether or not the run or its process is open.
+- **Tasks**: a host that serves the [task routes](agent-tasks.md) sets `tasks` on its client
+  and supplies `labels.tasks`. A retrieval card names its executor, each branch's outcome
+  and, while the retriever runs, its live thinking, notes and steps, followed in their own
+  state with the same reducer; its files show as names only. The conversation's corner opens
+  the reply's task list, which leads to a card or a review.
 - **Artifacts**: `outputs/` image syntax renders inline, link syntax renders a
   card that opens the right panel; an unclosed reference shows a placeholder.
   Defaults by extension: `.chart.json` ECharts, `.csv`/`.json` in the foundation's
@@ -109,11 +118,11 @@ Lookup is always host override → shell default → generic file card or step.
   extension. Components are keyed by run and path.
 - **Tool calls**: consecutive thinking and tool steps collapse into one process
   row. Default step views for `read`, `write`, `edit` and `bash`; a bash command
-  that runs `skills/<name>/...` is shown as that skill. Analyst and retrieval
-  commands are named by their business action (inspect ontology, probe values,
-  run query, search metrics and knowledge, retrieve data, prepare dataset, run
-  calculation); a finished process row lists the distinct actions and the step
-  count, and retrieval activity uses the same step views and summary.
+  that runs `skills/<name>/...` is shown as that skill; asking for data is such a skill
+  call, followed by its retrieval's card. Analyst and retrieval commands are named by
+  their business action (inspect ontology, probe values, run query, search metrics and
+  knowledge, prepare dataset, run calculation); a finished process row lists the
+  distinct actions and the step count, and a retrieval card uses the same step views.
   Overrides (`ToolRendererOverride`) match a skill name first, then a tool name.
 - **Charts**: hosts may pass a native ECharts theme; the default follows the CSS
   tokens.
