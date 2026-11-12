@@ -22,7 +22,7 @@ const document = computed(() => {
   <section v-else-if="asset.document.kind === 'object-view'" class="product-object-view">
     <header><strong>{{asset.name}}</strong><span>{{asset.document.className}}</span></header>
     <form v-if="!asset.document.primaryKey" class="object-selector" @submit.prevent="activeObject=objectKey.trim()"><el-input v-model="objectKey" placeholder="输入对象主键，使用此类的已发布视图" aria-label="对象主键"/><el-button native-type="submit" :disabled="!objectKey.trim()">查看对象</el-button></form>
-    <ObjectViewPage v-if="activeObject" :reference="{className:asset.document.className,primaryKey:activeObject}" preview :read-only="preview"/>
+    <ObjectViewPage v-if="activeObject" :reference="{className:asset.document.className,primaryKey:activeObject}" preview capability-only :read-only="preview"/>
     <p v-else>选择对象后按同一个类视图呈现；切换对象不改变视图定义。</p>
   </section>
   <p v-else>{{ asset.name }}</p>

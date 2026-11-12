@@ -10,6 +10,7 @@ export function createProductsClient(request: Pick<ManagerRequest,"request">) {
   return {
     list: async () => ((await send("")).assets as unknown[]).map(asset=>productAssetSchema.parse(asset)),
     get: async (id:string) => productAssetSchema.parse((await send(`/${encodeURIComponent(id)}`)).asset),
+    dependencies: async(id:string)=>{const result=await send(`/${encodeURIComponent(id)}`);return {references:result.references as import('@ontomato/contracts/product-assets').ProductReference[],usedBy:result.usedBy as {id:string;name:string}[]};},
     home: async () => productAssetSchema.parse((await send("/home")).asset),
     save: async (id:string, input:ProductAssetInput, revision:number) => productAssetSchema.parse((await send(`/${encodeURIComponent(id)}`,"PUT",{...input,revision})).asset),
     copy: async (id:string,name:string) => productAssetSchema.parse((await send(`/${encodeURIComponent(id)}/copy`,"POST",{name})).asset),

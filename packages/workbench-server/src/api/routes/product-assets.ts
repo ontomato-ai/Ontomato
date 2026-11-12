@@ -6,7 +6,7 @@ import { context, wrap } from "../utils/agent-host";
 import { listProducts, getProduct, saveProduct, deleteProduct, personalHome } from "../../services/product-assets/store";
 import { HttpError } from "../../utils/errors";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import {productDependencies} from '@ontomato/contracts/product-dependencies';
+import {expandedProductDependencies} from '../../services/product-assets/dependencies';
 
 const router: ReturnType<typeof Router> = Router();
 router.post('/:id/create-page',wrap(async(req,res)=>{
@@ -23,7 +23,7 @@ router.get("/:id", wrap(async (req,res) => {
   const owner = context(req).owner;
   const asset = await getProduct(owner,String(req.params.id));
   const assets = await listProducts(owner);
-  res.json({asset,...productDependencies(asset,assets)});
+  res.json({asset,...await expandedProductDependencies(owner,context(req).credentials,asset,assets)});
 }));
 router.put("/:id", wrap(async (req,res) => {
   const {owner,credentials} = context(req);

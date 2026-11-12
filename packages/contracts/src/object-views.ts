@@ -2,9 +2,10 @@ import { z } from "zod";
 import { randomId } from "./random-id";
 
 export const viewBindingSchema = z.discriminatedUnion("source", [
-  z.object({ source: z.literal("literal"), value: z.unknown() }),
-  z.object({ source: z.literal("object"), path: z.string().max(200) }),
-  z.object({ source: z.literal("variable"), path: z.string().max(200) }),
+  z.object({ source: z.literal("literal"), value: z.unknown() }).strict(),
+  z.object({ source: z.literal("object"), path: z.string().max(200) }).strict(),
+  z.object({ source: z.literal("variable"), path: z.string().max(200) }).strict(),
+  z.object({ source: z.literal("context"), path: z.enum(["primaryKey", "className"]) }).strict(),
 ]);
 export type ViewBinding = z.infer<typeof viewBindingSchema>;
 
@@ -12,7 +13,7 @@ export const viewConditionSchema = z.object({
   binding: viewBindingSchema,
   operator: z.enum(["eq", "ne", "present", "empty"]),
   value: z.string().max(1000).default(""),
-});
+}).strict();
 export const viewWidgetSchema = z.object({
   id: z.string().min(1).max(100),
   kind: z.enum(["text", "properties", "metric", "table", "chart", "links", "input", "action", "button"]),
@@ -31,6 +32,7 @@ export const viewWidgetSchema = z.object({
   skillId: z.string().max(200).default("echarts"),
   parameters: z.record(z.string().max(200), viewBindingSchema).default({}),
   resultPath: z.string().max(200).default(""),
+  resultIndex: z.number().int().nonnegative().max(10000).default(0),
   valueField: z.string().max(200).default(""),
   labelField: z.string().max(200).default(""),
   chartType: z.enum(["bar", "line", "donut", "timeline", "graph", "leaflet-map"]).default("bar"),
@@ -43,7 +45,7 @@ export const viewWidgetSchema = z.object({
   variable: z.string().max(100).refine(value => !value || (/^[A-Za-z_][A-Za-z0-9_]*$/.test(value) && !["__proto__", "constructor", "prototype"].includes(value))).default(""),
   onClick: z.enum(["refresh", "setVariable", "openObject"]).default("refresh"),
   targetClass: z.string().max(200).default(""),
-});
+}).strict();
 export type ViewWidget = z.infer<typeof viewWidgetSchema>;
 export const objectViewDocumentSchema = z.object({
   schemaVersion: z.literal(1),
@@ -58,9 +60,9 @@ export const objectViewDocumentSchema = z.object({
       id: z.string().min(1).max(100),
       title: z.string().max(200),
       widgets: z.array(viewWidgetSchema).max(100),
-    })).min(1).max(30),
-  })).min(1).max(20),
-}).superRefine((document, context) => {
+    }).strict()).min(1).max(30),
+  }).strict()).min(1).max(20),
+}).strict().superRefine((document, context) => {
   const ids = new Set<string>();
   for (const tab of document.tabs) {
     for (const item of [tab, ...tab.sections, ...tab.sections.flatMap(section => section.widgets)]) {
@@ -114,14 +116,28 @@ export function readViewPath(value: unknown, path: string): unknown {
   }
   return value;
 }
-export function resolveViewBinding(binding: ViewBinding | undefined, object: Record<string, unknown>, variables: Record<string, unknown>): unknown {
+export function resolveViewBinding(binding: ViewBinding | undefined, object: Record<string, unknown>, variables: Record<string, unknown>, reference?: ObjectReference): unknown {
   if (!binding) return undefined;
   if (binding.source === "literal") return binding.value;
+  if (binding.source === "context") return reference?.[binding.path];
   return readViewPath(binding.source === "object" ? object : variables, binding.path);
 }
 /** A component's MetricView or Action parameter values, each binding resolved against the object and the variables. */
-export function resolveViewParameters(parameters: ViewWidget["parameters"], object: Record<string, unknown>, variables: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(parameters).map(([name, binding]) => [name, resolveViewBinding(binding, object, variables)]));
+export function resolveViewParameters(parameters: ViewWidget["parameters"], object: Record<string, unknown>, variables: Record<string, unknown>, reference?: ObjectReference): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(parameters).map(([name, binding]) => [name, resolveViewBinding(binding, object, variables, reference)]));
+}
+
+/** Legacy documents remain readable; authoring and product admission enforce this boundary. */
+export function objectViewProductIssues(document: ObjectViewDocument): string[] {
+  return document.tabs.flatMap(tab => tab.sections.flatMap(section => section.widgets.flatMap(widget => {
+    const issues: string[] = [];
+    if (widget.visibleWhen && !(widget.visibleWhen.binding.source === "variable" && !widget.visibleWhen.binding.path.includes(".") && ["present", "empty"].includes(widget.visibleWhen.operator))) issues.push("Visibility only checks presence of a local interaction variable; move business comparisons to a capability");
+    if (widget.binding?.source === "object" || Object.values(widget.parameters).some(binding => binding.source === "object")) issues.push("Bind the selected object with context.primaryKey, not object properties");
+    if (["properties", "links", "metric", "table", "chart", "action"].includes(widget.kind) && !widget.resourceId) issues.push("Bind a published capability before saving this view");
+    if (widget.resultPath || (widget.binding && ["properties", "links", "metric", "table", "chart", "action"].includes(widget.kind))) issues.push("Capability results cannot be replaced or transformed by view bindings");
+    if (widget.contextFields.length) issues.push("Use a MetricView to display Action context");
+    return issues.map(issue => `${widget.id}: ${issue}`);
+  })));
 }
 export function viewConditionMatches(condition: ViewWidget["visibleWhen"], object: Record<string, unknown>, variables: Record<string, unknown>): boolean {
   if (!condition) return true;

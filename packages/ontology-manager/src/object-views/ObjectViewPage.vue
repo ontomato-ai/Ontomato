@@ -1,24 +1,23 @@
 <script setup lang="ts">
 import { inject, onBeforeUnmount, ref, watch } from "vue";
-import { useI18n } from "vue-i18n";
 import { workspaceObjectHostKey, type WorkspaceObjectHost } from "@ontomato/contracts/workspace-objects";
 import { ElAlert, ElButton, ElSkeleton, vLoading } from "element-plus";
 import { ArrowLeft, Settings2, RefreshCw, Star } from "lucide-vue-next";
-import { createObjectView, objectViewDocumentSchema, type ObjectReference, type ObjectViewDocument } from "@ontomato/contracts/object-views";
-import { useManagerClient, useOntologyText } from "../context";
+import { createObjectView, objectViewDocumentSchema, objectViewProductIssues, type ObjectReference, type ObjectViewDocument } from "@ontomato/contracts/object-views";
+import { useManagerClient, useManagerContext, useOntologyText } from "../context";
 const { ot } = useOntologyText();
-const { locale } = useI18n();
+const managerContext = useManagerContext();
 import ObjectViewRuntime from "./ObjectViewRuntime.vue";
 import { computed } from "vue";
 import { instanceName, type InstanceNameAttribute } from "./instance-name";
-const props = defineProps<{ reference: ObjectReference; preview?: boolean; readOnly?:boolean }>();
+const props = defineProps<{ reference: ObjectReference; preview?: boolean; readOnly?:boolean; capabilityOnly?:boolean }>();
 const emit = defineEmits<{ open: [reference: ObjectReference]; edit: []; back: [] }>();
 const client = useManagerClient();
 const workspaceHost = inject<WorkspaceObjectHost | null>(workspaceObjectHostKey, null);
 const pinned = ref(false), pinBusy = ref(false), pinError = ref("");
 const pinLabel = computed(() => pinned.value
-  ? (locale.value.startsWith("zh") ? "取消收藏" : "Remove from favorites")
-  : (locale.value.startsWith("zh") ? "收藏到工作台" : "Add to workspace favorites"));
+  ? (managerContext.locale.startsWith("zh") ? "取消收藏" : "Remove from favorites")
+  : (managerContext.locale.startsWith("zh") ? "收藏到工作台" : "Add to workspace favorites"));
 async function togglePin() {
   if (!workspaceHost) return;
   const reference = { ...props.reference, title: (displayName.value || props.reference.primaryKey).slice(0, 200) };
@@ -50,19 +49,22 @@ async function load() {
   loading.value = true;
   error.value = "";
   try {
-    const [state, result] = await Promise.all([
-      client.objectViewRequest("read", props.reference.className, "full"),
-      client.queryInstanceInfo(`${props.reference.className}:${props.reference.primaryKey}`, props.reference.className),
-    ]);
+    const state = await client.objectViewRequest("read", props.reference.className, "full");
     if (current !== request) return;
     document.value = state.versions[0] ? objectViewDocumentSchema.parse(state.versions[0].document) : createObjectView(props.reference.className);
     if (!state.versions[0]) document.value.tabs[0].sections[0].widgets[0].title = ot('ovKindProperties');
+    const issues=objectViewProductIssues(document.value);
+    if(props.capabilityOnly&&issues.length){document.value=undefined;throw new Error(issues.join('; '));}
+    const result = issues.length
+      ? await client.queryInstanceInfo(`${props.reference.className}:${props.reference.primaryKey}`, props.reference.className) : {};
+    if (current !== request) return;
     object.value = (result.data || {}) as Record<string, unknown>;
     nameAttributes.value = (result.classDef as { attrs?: InstanceNameAttribute[] } | undefined)?.attrs || [];
   } catch (reason) { if (current === request) error.value = reason instanceof Error ? reason.message : String(reason); }
   finally { if (current === request) loading.value = false; }
 }
 async function refreshObject() {
+  if (document.value && !objectViewProductIssues(document.value).length) return;
   const current = ++request;
   try {
     const result = await client.queryInstanceInfo(`${props.reference.className}:${props.reference.primaryKey}`, props.reference.className);

@@ -84,6 +84,8 @@ public class ObjectViewStore {
         if (revision < 1 || expectedRevision < revision) throw new IllegalArgumentException("Invalid revision");
         Integer exists = jdbc.queryForObject("SELECT COUNT(*) FROM object_view_version WHERE domain_id=? AND class_name=? AND form=? AND revision=?", Integer.class, domain, className, form, revision);
         if (exists == null || exists != 1) throw new IllegalArgumentException("Object view revision does not exist");
+        String content = jdbc.queryForObject("SELECT document FROM object_view_version WHERE domain_id=? AND class_name=? AND form=? AND revision=?", String.class, domain, className, form, revision);
+        validateDocument(className, JSON.parseObject(content));
         int changed = jdbc.update("UPDATE object_view SET published_revision=? WHERE domain_id=? AND class_name=? AND form=? AND revision=?", revision, domain, className, form, expectedRevision);
         if (changed != 1) throw new ViewConflictException();
         return read(domain, className, form, true);
@@ -92,6 +94,7 @@ public class ObjectViewStore {
     public static void validateDocument(String className, JSONObject document) {
         if (document == null || document.toJSONString().length() > 1_000_000 || document.getIntValue("schemaVersion") != 1 || !className.equals(document.getString("className")))
             throw new IllegalArgumentException("Invalid object view document");
+        onlyFields(document, Set.of("schemaVersion", "className", "title", "titleField", "variables", "tabs"));
         JSONArray tabs = document.getJSONArray("tabs");
         if (tabs == null || tabs.isEmpty() || tabs.size() > 20) throw new IllegalArgumentException("A view requires between 1 and 20 tabs");
         Set<String> ids = new HashSet<>();
@@ -105,16 +108,19 @@ public class ObjectViewStore {
         }
         for (int t = 0; t < tabs.size(); t++) {
             JSONObject tab = tabs.getJSONObject(t);
+            onlyFields(tab, Set.of("id", "title", "sections"));
             checkId(tab, ids);
             JSONArray sections = tab.getJSONArray("sections");
             if (sections == null || sections.isEmpty() || sections.size() > 30) throw new IllegalArgumentException("Invalid sections");
             for (int s = 0; s < sections.size(); s++) {
                 JSONObject section = sections.getJSONObject(s);
+                onlyFields(section, Set.of("id", "title", "widgets"));
                 checkId(section, ids);
                 JSONArray widgets = section.getJSONArray("widgets");
                 if (widgets == null || widgets.size() > 100) throw new IllegalArgumentException("Invalid widgets");
                 for (int w = 0; w < widgets.size(); w++) {
                     JSONObject widget = widgets.getJSONObject(w);
+                    validateProductWidget(widget);
                     checkId(widget, ids);
                     if (widget.getString("kind") == null || !Set.of("text", "properties", "metric", "table", "chart", "links", "input", "action", "button").contains(widget.getString("kind"))
                             || widget.getIntValue("span") < 1 || widget.getIntValue("span") > 12)
@@ -171,6 +177,31 @@ public class ObjectViewStore {
         requireText(item, "title", 200);
     }
 
+    private static void validateProductWidget(JSONObject widget) {
+        onlyFields(widget, Set.of("id", "kind", "title", "span", "height", "fields", "fieldOptions", "fieldLabels", "readOnlyParameters", "contextFields", "text", "binding", "visibleWhen", "resourceId", "skillId", "parameters", "resultPath", "resultIndex", "valueField", "labelField", "chartType", "latitudeField", "longitudeField", "dateField", "descriptionField", "relation", "direction", "variable", "onClick", "targetClass"));
+        if(widget.containsKey("resultIndex") && (!(widget.get("resultIndex") instanceof Integer) || widget.getIntValue("resultIndex")<0 || widget.getIntValue("resultIndex")>10000))throw new IllegalArgumentException("Invalid result row index");
+        String kind = widget.getString("kind");
+        JSONObject visibility = widget.getJSONObject("visibleWhen");
+        boolean interactionVisibility = visibility != null && visibility.getJSONObject("binding") != null
+                && "variable".equals(visibility.getJSONObject("binding").getString("source"))
+                && visibility.getJSONObject("binding").getString("path") != null
+                && !visibility.getJSONObject("binding").getString("path").contains(".")
+                && Set.of("present", "empty").contains(visibility.getString("operator"));
+        if (widget.containsKey("sql") || widget.containsKey("dsl") || visibility != null && !interactionVisibility)
+            throw new IllegalArgumentException("Move business expressions and visibility conditions to a capability");
+        boolean capability = kind != null && Set.of("properties", "links", "metric", "table", "chart", "action").contains(kind);
+        if (capability && (widget.getString("resourceId") == null || widget.getString("resourceId").isBlank()))
+            throw new IllegalArgumentException("Bind a published capability before saving this view");
+        if (capability && (widget.get("binding") != null || widget.getString("resultPath") != null && !widget.getString("resultPath").isEmpty()))
+            throw new IllegalArgumentException("View bindings cannot replace capability results");
+        JSONArray context = widget.getJSONArray("contextFields");
+        if (context != null && !context.isEmpty()) throw new IllegalArgumentException("Use a MetricView for Action context");
+    }
+
+    private static void onlyFields(JSONObject object, Set<String> allowed) {
+        for (String key : object.keySet()) if (!allowed.contains(key)) throw new IllegalArgumentException("Unsupported product field: " + key);
+    }
+
     private static void requireText(JSONObject item, String key, int max) {
         if (!(item.get(key) instanceof String)) throw new IllegalArgumentException("Missing " + key);
         checkText(item, key, max);
@@ -188,8 +219,10 @@ public class ObjectViewStore {
     }
     private static void checkBinding(JSONObject binding) {
         if (binding == null) return;
+        onlyFields(binding, Set.of("source", "path", "value"));
         String source = binding.getString("source");
-        if (source == null || !Set.of("literal", "object", "variable").contains(source)) throw new IllegalArgumentException("Invalid binding source");
+        if (source == null || !Set.of("literal", "context", "variable").contains(source)) throw new IllegalArgumentException("Use literal, variable or object identity context bindings");
+        if ("context".equals(source) && !Set.of("primaryKey", "className").contains(binding.getString("path"))) throw new IllegalArgumentException("Invalid context binding");
         if (!"literal".equals(source)) {
             String path = binding.getString("path");
             if (path == null || path.length() > 200 || java.util.Arrays.stream(path.split("\\.")).anyMatch(part -> Set.of("__proto__", "constructor", "prototype").contains(part))) throw new IllegalArgumentException("Invalid binding path");

@@ -1,6 +1,6 @@
 import { BUILD_TEST_SAMPLE_DIRECTORY } from "@ontomato/contracts/build-tests";
 import { appSdkBuild } from "../app-builder/sdk";
-import { productManifestSchema } from "@ontomato/contracts/product-assets";
+import { sourceProductAdmission } from './product-admission';
 import { getProduct, saveProduct, validateChildren } from "../product-assets/store";
 import {validateProduct} from '../product-assets/validation';
 import { randomUUID } from "node:crypto";
@@ -85,8 +85,7 @@ export async function publishWorkspace(owner: AssistantOwner, workspaceId: strin
   const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
   await client.request(`/v1/workspaces/${workspaceId}`);
   const exported=workspaceExportSchema.parse(await client.request(`/v1/workspaces/${workspaceId}/export`,"POST",{commit}));
-  const manifestFile=exported.files.find(file=>file.path==="ontomato.products.json");
-  const productIds=manifestFile?productManifestSchema.parse(JSON.parse(Buffer.from(manifestFile.content,manifestFile.encoding).toString("utf8"))).assetIds:[];
+  const productIds=sourceProductAdmission(exported.files);
   for(const productId of productIds) {
     const product=await getProduct(owner,productId);
     if(!["page","widget","widget-group","operation-panel","dashboard","object-view"].includes(product.document.kind))throw new HttpError(400,"Application manifest must reference pages or runnable components","INVALID_PRODUCT_CHILD");
@@ -126,8 +125,7 @@ export async function rollbackWorkspace(owner: AssistantOwner, workspaceId: stri
   const release = (await workspaceReleases(owner, workspaceId)).find(r => r.releaseId === releaseId);
   if (!release) throw new HttpError(404, "Release not found", "NOT_FOUND");
   const exported=workspaceExportSchema.parse(await new RuntimeClient(owner.domainId,undefined,owner.userId).request(`/v1/workspaces/${workspaceId}/export`,"POST",{commit:release.commit}));
-  const file=exported.files.find(file=>file.path==="ontomato.products.json");
-  const ids=file?productManifestSchema.parse(JSON.parse(Buffer.from(file.content,file.encoding).toString("utf8"))).assetIds:[];
+  const ids=sourceProductAdmission(exported.files);
   for(const id of ids){const product=await getProduct(owner,id);await validateProduct(owner,product,credentials);await validateChildren(owner,product,credentials);}
   await writeHostedPublication(release.appId, releaseId, declaration, credentials);
   await registerApplicationProduct(owner,release.appId,workspaceId,declaration,ids,credentials);

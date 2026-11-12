@@ -54,6 +54,16 @@ The returned paths already include the deployment prefix. HTML module and styles
 
 ## Product assets and personal home
 
+Product parameters are default inputs and interaction preferences. Business windows, thresholds, legal values and operation eligibility must be defined and validated by capabilities, never solely by a page's literals, options or read-only fields. Deleting the page must not delete a business rule. Object views bind properties and relationship results to published MetricViews; pass the selected object using `{source:"context",path:"primaryKey"}` (or `className`). Legacy direct reads and `visibleWhen` business conditions must be migrated before saving or publishing the view.
+
+Before source publication or rollback, commit both `ontomato.products.json` (an empty `assetIds` array explicitly declares no product assets) and `ontomato.product-review.json`:
+
+```json
+{"schemaVersion":1,"checks":{"capabilityReads":true,"actionWrites":true,"noBusinessRules":true,"disposablePresentation":true}}
+```
+
+Review the actual source before setting these checks: all business reads use published MetricViews, all writes use Actions, no business calculation/threshold/eligibility rule lives only in source, and removing the application preserves business semantics. Formatting, selection, loading and error feedback remain presentation logic. This committed declaration is a delivery check, not static proof about arbitrary JavaScript.
+
 Reuse templates without replacing the user's home: `product create-page <template-id> <name>` creates a new private page with the template's layout and component references. The SDK exposes the same operation as `context.products.createPage(id, name)`. Use the returned ID to assemble an application and declare it in the product manifest. `product use-home` instead replaces the current personal home configuration.
 
 `product create-dashboard <name>` creates a dashboard through its existing owner service and registers a product reference, returning `data.id` and `data.productAssetId`. The SDK's `context.products.createDashboard(name)` returns the product asset. Reuse an existing dashboard when appropriate. The Manager's dashboard creation uses this same path. Add content through the existing dashboard authoring workflow rather than embedding SQL or duplicating the definition in product storage.
@@ -71,7 +81,7 @@ The SDK exposes `context.products.list/get/home/save/copy/useHome/delete` with t
 ## Workspace history and publication
 
 When custom source uses product assets, include `ontomato.products.json` in the committed tree:
-`{"schemaVersion":1,"assetIds":["<actual product ID>"]}`. The publisher validates these references and registers the application in the product catalog using its stable application ID. Rollback restores the references from that release's commit. An absent manifest declares no product dependencies; it is not proof that arbitrary source has no dependencies. Use the SDK product API and `context.navigate("/products/<pageAssetId>")` to reuse a declarative page. Never copy the capability logic into source.
+`{"schemaVersion":1,"assetIds":["<actual product ID>"]}`. The publisher validates these references and registers the application in the product catalog using its stable application ID. Rollback restores the references from that release's commit. Both publication and rollback require the manifest and review record described above. Use the SDK product API and `context.navigate("/products/<pageAssetId>")` to reuse a declarative page. Never copy the capability logic into source.
 
 | Command | Purpose |
 | --- | --- |

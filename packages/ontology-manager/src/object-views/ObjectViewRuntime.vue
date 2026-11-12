@@ -19,14 +19,14 @@ function reload() { refresh.value++; emit("refresh"); }
 /** Keep fixed-value text separate so Java can interpret it against the current definition. */
 function metricParameters(widget: ViewWidget) {
   return resolveViewParameters(Object.fromEntries(Object.entries(widget.parameters)
-    .filter(([, binding]) => !(binding.source === "literal" && typeof binding.value === "string"))), props.object, variables.value);
+     .filter(([, binding]) => !(binding.source === "literal" && typeof binding.value === "string"))), props.object, variables.value, props.reference);
 }
 function metricParameterTexts(widget: ViewWidget) {
   return Object.fromEntries(Object.entries(widget.parameters)
     .filter((entry): entry is [string, { source: "literal"; value: string }] => entry[1].source === "literal" && typeof entry[1].value === "string")
     .map(([name, binding]) => [name, binding.value]));
 }
-function readsMetricView(widget: ViewWidget) { return ["metric", "table", "chart"].includes(widget.kind) && !!widget.resourceId; }
+function readsMetricView(widget: ViewWidget) { return ["properties", "links", "metric", "table", "chart"].includes(widget.kind) && !!widget.resourceId; }
 </script>
 <template>
   <div class="object-view-runtime">

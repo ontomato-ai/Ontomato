@@ -47,7 +47,7 @@ watch(() => [props.reference.className, props.widget.kind, props.widget.relation
 let request = 0;
 let actionRequest = 0;
 onBeforeUnmount(() => { request++; actionRequest++; });
-const parameters = computed(() => resolveViewParameters(props.widget.parameters, props.object, props.variables));
+const parameters = computed(() => resolveViewParameters(props.widget.parameters, props.object, props.variables, props.reference));
 /** What this view binds to the Action's parameters; a binding that resolves to nothing is still bound, as null. */
 const actionBindings = computed(() => Object.fromEntries(Object.entries(parameters.value).map(([name, value]) => [name, value ?? null])));
 // Another object, Action or binding opens a new form: no draft carries over.
@@ -67,19 +67,23 @@ const actionFormFields = computed(() => actionFields.value.map((field): FormFiel
     }
     : { ...field, label };
 }));
-const bindingValue = computed(() => resolveViewBinding(props.widget.binding, props.object, props.variables));
+const bindingValue = computed(() => resolveViewBinding(props.widget.binding, props.object, props.variables, props.reference));
 // After a failed read the component shows no result rather than the one read for earlier parameters.
 const selectedData = computed(() => props.metricView?.error ? undefined : readViewPath(props.metricView?.data, props.widget.resultPath));
+watch(()=>[selectedData.value,props.widget.variable],()=>{
+  if(props.widget.kind==='properties'&&props.widget.resourceId&&props.widget.variable)emit('variable',props.widget.variable,Array.isArray(selectedData.value)?selectedData.value[props.widget.resultIndex]:undefined);
+},{immediate:true});
 // Shown loading and failure: the bound MetricView's read, otherwise the component's own relation read and Action.
 const busy = computed(() => props.metricView?.loading ?? loading.value);
 const loaded = computed(() => props.metricView ? props.metricView.data !== undefined : dataLoaded.value);
 const failure = computed(() => props.metricView?.error ? `${props.widget.title || props.widget.resourceId}: ${props.metricView.error.message}` : error.value);
 const rows = computed<Record<string, unknown>[]>(() => {
-  const value = props.widget.kind === "links" ? data.value : selectedData.value ?? bindingValue.value;
+  const value = props.widget.kind === "links" && !props.widget.resourceId ? data.value : selectedData.value ?? bindingValue.value;
   return Array.isArray(value) ? value.filter(row => row !== null && typeof row === "object") : [];
 });
 const fields = computed(() => props.widget.fields.length ? props.widget.fields : Object.keys(rows.value[0] || {}));
-const propertyFields = computed(() => props.widget.fields.length ? props.widget.fields : Object.keys(props.object));
+const propertyObject = computed(() => props.widget.resourceId ? rows.value[props.widget.resultIndex] ?? {} : props.object);
+const propertyFields = computed(() => props.widget.fields.length ? props.widget.fields : Object.keys(propertyObject.value));
 function format(value: unknown) {
   if (value == null) return "—";
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.0+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return value.slice(0, 10);
@@ -96,7 +100,7 @@ function displayField(field: string, value: unknown) {
 async function load() {
   const current = ++request;
   error.value = "";
-  if (props.widget.kind !== "links") { loading.value = false; return; }
+   if (props.widget.kind !== "links" || props.widget.resourceId) { loading.value = false; return; }
   loading.value = true;
   data.value = undefined;
   hasMore.value = false;
@@ -119,8 +123,8 @@ function selectRow(row: Record<string, unknown>) {
   if (props.widget.variable) emit("variable", props.widget.variable, row);
 }
 function openRow(row: Record<string, unknown>) {
-  const className = props.widget.kind === "links" ? linkTarget.value.className : props.widget.targetClass;
-  const key = props.widget.kind === "links" ? linkTarget.value.primaryKey : props.widget.valueField;
+  const className = props.widget.kind === "links" && !props.widget.resourceId ? linkTarget.value.className : props.widget.targetClass;
+  const key = props.widget.kind === "links" && !props.widget.resourceId ? linkTarget.value.primaryKey : props.widget.valueField;
   if (className && row[key] != null) emit("open", { className, primaryKey: String(row[key]) });
 }
 function click() {
@@ -184,18 +188,18 @@ async function openAction() {
     <el-skeleton v-if="busy && !loaded && isDataWidget" :rows="widget.kind === 'metric' ? 1 : 4" animated :aria-label="ot('ovLoading')" />
     <p v-else-if="widget.kind === 'text'" class="view-text">{{ widget.text }}{{ widget.binding ? format(bindingValue) : '' }}</p>
     <dl v-else-if="widget.kind === 'properties'" class="properties">
-      <template v-for="field in propertyFields" :key="field"><dt>{{ widget.fieldLabels[field] || fieldLabels[field] || field }}</dt><dd>{{ displayField(field, object[field]) }}</dd></template>
+      <template v-for="field in propertyFields" :key="field"><dt>{{ widget.fieldLabels[field] || fieldLabels[field] || field }}</dt><dd>{{ displayField(field, propertyObject[field]) }}</dd></template>
     </dl>
-    <strong v-else-if="widget.kind === 'metric'" class="metric">{{ format(widget.resourceId ? readViewPath(Array.isArray(selectedData) ? selectedData[0] : selectedData, widget.valueField) : bindingValue) }}</strong>
+    <strong v-else-if="widget.kind === 'metric'" class="metric">{{ format(widget.resourceId ? readViewPath(Array.isArray(selectedData) ? selectedData[widget.resultIndex] : selectedData, widget.valueField) : bindingValue) }}</strong>
     <template v-else-if="widget.kind === 'table' || widget.kind === 'links'">
       <el-table class="object-view-table" :data="rows" :max-height="widget.height" highlight-current-row @row-click="selectRow" @row-dblclick="openRow">
         <el-table-column v-for="field in fields" :key="field" :prop="field" :label="widget.fieldLabels[field] || fieldLabels[field] || field" min-width="130" show-overflow-tooltip><template #default="scope">{{ displayField(field, scope.row[field]) }}</template></el-table-column>
         <el-table-column v-if="widget.kind === 'links' || widget.targetClass" :label="ot('ovOperations')" min-width="140" align="center"><template #default="scope"><el-button class="object-view-row-action" type="primary" link :icon="Eye" :title="ot('ovOpenView')" @click.stop="openRow(scope.row)">{{ ot('ovViewDetails') }}</el-button></template></el-table-column>
       </el-table>
-      <div v-if="widget.kind === 'links' && (hasMore || offset > 0)" class="pages"><el-button :disabled="loading || offset === 0" @click="page(-50)">{{ ot('ovPrevious') }}</el-button><span>{{ rows.length ? offset + 1 : 0 }}–{{ offset + rows.length }}</span><el-button :disabled="loading || !hasMore" @click="page(50)">{{ ot('ovNext') }}</el-button></div>
+      <div v-if="widget.kind === 'links' && !widget.resourceId && (hasMore || offset > 0)" class="pages"><el-button :disabled="loading || offset === 0" @click="page(-50)">{{ ot('ovPrevious') }}</el-button><span>{{ rows.length ? offset + 1 : 0 }}–{{ offset + rows.length }}</span><el-button :disabled="loading || !hasMore" @click="page(50)">{{ ot('ovNext') }}</el-button></div>
     </template>
     <template v-else-if="widget.kind === 'chart' && !failure">
-      <ObjectViewVisualization :widget="widget" :rows="rows" :value="selectedData ?? bindingValue" />
+      <ObjectViewVisualization :widget="widget" :rows="rows" :value="widget.chartType==='graph' && Array.isArray(selectedData)?selectedData[widget.resultIndex]:selectedData ?? bindingValue" />
     </template>
     <el-input v-else-if="widget.kind === 'input'" :model-value="format(variables[widget.variable] ?? '')" :placeholder="widget.text" @update:model-value="emit('variable', widget.variable, $event)" />
     <el-button v-else-if="widget.kind === 'button'" @click="click">{{ widget.text || widget.title }}</el-button>

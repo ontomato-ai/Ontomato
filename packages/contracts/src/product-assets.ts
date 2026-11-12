@@ -10,13 +10,13 @@ export const productWidgetSchema = viewWidgetSchema.strict().superRefine((widget
     ctx.addIssue({ code: "custom", message: "Use a published MetricView to read business data" });
   if (["metric", "table", "chart", "action"].includes(widget.kind) && !widget.resourceId)
     ctx.addIssue({ code: "custom", message: "A published capability ID is required" });
-  if (widget.visibleWhen || widget.binding?.source === "object" || Object.values(widget.parameters).some(binding => binding.source === "object"))
+  if (widget.visibleWhen || widget.binding?.source === "object" || widget.binding?.source === "context" || Object.values(widget.parameters).some(binding => binding.source === "object" || binding.source === "context"))
     ctx.addIssue({ code: "custom", message: "Product widgets use capability parameters and local interaction variables, not business predicates" });
   if(widget.kind === "chart" && (!widget.valueField || !widget.labelField))
     ctx.addIssue({code:"custom",message:"Chart value and label fields are required"});
   if(widget.kind === "metric" && !widget.valueField)
     ctx.addIssue({code:"custom",message:"Metric value field is required"});
-  if(widget.resultPath)
+  if(widget.resultPath || widget.resultIndex)
     ctx.addIssue({code:"custom",message:"Leave resultPath empty: MetricViews return a row array"});
   if(widget.binding && ['metric','table','chart','action'].includes(widget.kind))
     ctx.addIssue({code:'custom',message:'Capability widgets cannot replace results with a local binding'});

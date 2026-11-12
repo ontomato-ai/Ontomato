@@ -30,7 +30,14 @@ const typeIcons={application:AppWindow,page:FileText,dashboard:Gauge,'object-vie
 const categories=computed(()=>typeOrder.map(value=>({kind:value,name:typeName(value),icon:typeIcons[value],count:assets.value.filter(asset=>asset.document.kind===value).length})));
 const groups=computed(()=>categories.value.map(category=>({...category,items:filtered.value.filter(asset=>asset.document.kind===category.kind)})).filter(group=>group.items.length));
 const dependencies=computed(()=>selected.value?productDependencies(selected.value,assets.value):{references:[],usedBy:[]});
-const references = computed(() => dependencies.value.references);
+const references = computed(() => expandedReferences.value.length?expandedReferences.value:dependencies.value.references);
+const expandedReferences=ref<import('@ontomato/contracts/product-assets').ProductReference[]>([]);
+watch(()=>selected.value,async asset=>{
+  expandedReferences.value=[];
+  if(!asset)return;
+  try{const result=await client.products.dependencies(asset.id);if(selected.value?.id===asset.id)expandedReferences.value=result.references;}
+  catch(reason){if(selected.value?.id===asset.id)error.value=reason instanceof Error?reason.message:String(reason);}
+});
 const usedBy = computed(() => assets.value.filter(asset=>dependencies.value.usedBy.some(parent=>parent.id===asset.id)));
 const children = computed(() => "children" in document.value ? document.value.children : []);
 const candidates = computed(() => assets.value.filter(asset => ["widget","widget-group","operation-panel","dashboard","object-view",...(document.value.kind==='application'?['page']:[])].includes(asset.document.kind) && asset.id !== selected.value?.id));
