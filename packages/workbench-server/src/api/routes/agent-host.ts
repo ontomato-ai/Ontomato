@@ -65,11 +65,12 @@ router.get(
         async (frame) => {
           // `ready` is the upstream barrier and is always forwarded; notices are forwarded
           // only under this entry's own session read rule.
-          if (
-            frame.type !== "ready" &&
-            !(await service.canReadSession(c.owner, frame.sessionId))
-          )
-            return;
+          if (frame.type !== "ready") {
+            const readable = await service.readableSessions(c.owner, [
+              frame.sessionId,
+            ]);
+            if (!readable.has(frame.sessionId)) return;
+          }
           res.write(`event: session-run\ndata: ${JSON.stringify(frame)}\n\n`);
         },
         abort.signal,
@@ -85,10 +86,13 @@ router.post(
   wrap(async (req, res) => {
     const c = context(req),
       { sessionIds } = agentHostSessionStatusRequestSchema.parse(req.body);
-    // One unreadable ID rejects the whole read, before any runtime call.
-    for (const sessionId of sessionIds)
-      if (!(await service.canReadSession(c.owner, sessionId)))
-        throw new HttpError(404, "Conversation not found", "NOT_FOUND");
+    // One query for the page's whole loaded set; one unreadable ID rejects the read
+    // before any runtime call.
+    const readable = sessionIds.length
+      ? await service.readableSessions(c.owner, sessionIds)
+      : new Set<string>();
+    if (sessionIds.some((sessionId) => !readable.has(sessionId)))
+      throw new HttpError(404, "Conversation not found", "NOT_FOUND");
     const statuses = sessionIds.length
       ? await new RuntimeClient(c.owner.domainId).sessionStatuses(sessionIds)
       : [];
