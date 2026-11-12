@@ -46,9 +46,10 @@ function rememberExpanded(ids: readonly string[]) {
 /**
  * The column's conversations, by workspace: which workspaces are expanded (kept in this browser) and what each expanded
  * one lists. The open workspace lists the nav's own conversations, which sending, renaming and run states keep current;
- * any other expanded workspace lists a snapshot, read when it is expanded and never polled. Entering a workspace drops
- * its snapshot and the nav reads it afresh with nothing of the workspace left behind; the workspace left, if still
- * expanded, is read again, so a conversation just made there stays under it. The two lists are never synchronised.
+ * any other expanded workspace lists a snapshot, read when it is expanded and never polled. When the open workspace
+ * changes, each side starts from what was last listed of it and is read again: the nav from the entered workspace's
+ * snapshot, which then goes, and the workspace left, if still expanded, from what the nav listed, so the column keeps
+ * its rows and a conversation just made there stays under it. After that hand-over neither list follows the other.
  *
  * Each workspace shows its first five conversations and five more on each "more", reading the next page only when what
  * was read runs out; only what is shown is cut, never the nav's list.
@@ -65,13 +66,19 @@ export function useColumnSessions(options: {
   const snapshots = shallowReactive(new Map<string, Snapshot>());
   const shown = reactive(new Map<string, number>());
 
+  /** Gives a workspace a new snapshot that shows `sessions` until its first page, read now, replaces them. */
+  function readAfresh(id: string, sessions: AgentHostSession[], nextCursor: string | null) {
+    snapshots.set(id, reactive<Snapshot>({ sessions, nextCursor, state: "loading" }));
+    void readSnapshot(id, false);
+  }
+
+  /** Reads the first page, or the next one, into the workspace's snapshot; what it shows stays until the page arrives. */
   async function readSnapshot(id: string, more: boolean) {
-    const snapshot = more ? snapshots.get(id)! : reactive<Snapshot>({ sessions: [], nextCursor: null, state: "loading" });
-    snapshots.set(id, snapshot);
+    const snapshot = snapshots.get(id)!;
     snapshot.state = "loading";
     try {
       const page = await builderApi.sessions(id, more ? snapshot.nextCursor : null);
-      // Entered or read again meanwhile: this read no longer is the workspace's list.
+      // Entered or handed a new snapshot meanwhile: this read no longer is the workspace's list.
       if (snapshots.get(id) !== snapshot) return;
       snapshot.sessions = more ? [...snapshot.sessions, ...page.sessions] : page.sessions;
       snapshot.nextCursor = page.nextCursor;
@@ -110,12 +117,15 @@ export function useColumnSessions(options: {
     return lists;
   });
 
-  // The nav lists the open workspace: what it listed of the one left goes before the new one is read.
+  // The nav lists the open workspace. The one left, still expanded, keeps what the nav listed of it while it is read
+  // again; the nav starts from the entered one's snapshot, or from nothing, until its own read replaces it.
   watch(
     workspaceId,
-    (id) => {
-      nav.sessions.value = [];
-      nav.nextCursor.value = null;
+    (id, left) => {
+      if (left && expandedIds.value.includes(left)) readAfresh(left, nav.sessions.value, nav.nextCursor.value);
+      const entered = id ? snapshots.get(id) : undefined;
+      nav.sessions.value = entered?.sessions ?? [];
+      nav.nextCursor.value = entered?.nextCursor ?? null;
       if (!id) return;
       // Nothing readable kept in this browser: the workspace opened first is the one expanded.
       if (chosen.value === null) chosen.value = [id];
@@ -124,16 +134,17 @@ export function useColumnSessions(options: {
     },
     { immediate: true },
   );
-  // Every other expanded workspace the column lists is read once it has no snapshot: expanded, or just left.
+  // Every other expanded workspace the column lists is read once it has no snapshot, as when it is expanded. After the
+  // render, so a workspace just left already has the snapshot the hand-over gave it.
   watch(
     () =>
       options
         .workspaces()
         .filter((item) => item.id !== workspaceId() && expandedIds.value.includes(item.id) && !snapshots.has(item.id)),
     (unread) => {
-      for (const item of unread) void readSnapshot(item.id, false);
+      for (const item of unread) readAfresh(item.id, [], null);
     },
-    { immediate: true },
+    { immediate: true, flush: "post" },
   );
 
   function setExpanded(ids: readonly string[]) {
