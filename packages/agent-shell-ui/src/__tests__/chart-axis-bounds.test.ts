@@ -18,3 +18,12 @@ it("leaves charts without axes as they are", () => {
   const pie = { title: { text: "Share" }, grid: { containLabel: true }, series: [{ type: "pie" }] };
   expect(chartAxisBounds(pie, 320)).toBe(pie);
 });
+
+it("cuts long category labels short instead of letting them squeeze the plot, unless the chart sets a width", () => {
+  const source = { xAxis: { type: "category", data: ["行为经济学与社会学学院"], axisLabel: { rotate: 45 } }, yAxis: [{ type: "value" }, { data: ["a"] }] };
+  const result = chartAxisBounds(source, 320);
+  expect(result.xAxis.axisLabel).toEqual({ rotate: 45, width: 96, overflow: "truncate" });
+  expect(result.yAxis).toEqual([{ type: "value" }, { data: ["a"], axisLabel: { width: 200, overflow: "truncate" } }]);
+  const own = { xAxis: { type: "category", axisLabel: { width: 300, overflow: "break" } } };
+  expect(chartAxisBounds(own, 320).xAxis.axisLabel).toEqual({ width: 300, overflow: "break" });
+});
