@@ -126,10 +126,10 @@ describe("ops agent MCP compatibility", () => {
     const client = await startClient(createOpsAgentMcpRouter({ timeoutMs: 0 }));
     expect(readToolPayload(await client.callTool({ name: "send", arguments: { sessionId } }))).toMatchObject({ status: "failed", sessionId });
   });
-  it("does not promote a length-limited run's partial text to its answer", async () => {
+  it("reports a length-limited run as unfinished rather than completing it without an answer", async () => {
     mocks.snapshot.mockResolvedValue(snapshot("stopped", "length", "Partial evidence"));
     const client = await startClient(createOpsAgentMcpRouter({ timeoutMs: 0 }));
-    expect(readToolPayload(await client.callTool({ name: "send", arguments: { sessionId } }))).toEqual({ status: "completed", sessionId, answer: "" });
+    expect(readToolPayload(await client.callTool({ name: "send", arguments: { sessionId } }))).toEqual({ status: "failed", sessionId, error: "Diagnosis stopped" });
   });
   it("retains invalid, missing and busy error shapes", async () => {
     const client = await startClient(createOpsAgentMcpRouter({ timeoutMs: 0 }));

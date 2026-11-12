@@ -96,8 +96,8 @@ public class GovernanceScheduleApplication implements ScheduleApplication {
     try {
       var status = runtime.status(owner.domainId(), execution.runId().toString());
       boolean running = "running".equals(status.getString("status"));
-      boolean completed =
-          !running && java.util.List.of("stop", "length").contains(status.getString("stopReason"));
+      // Only a normal stop completes; a length-limited run has no answer and did not finish.
+      boolean completed = !running && "stop".equals(status.getString("stopReason"));
       var state = ScheduleForms.execution(running ? "running" : completed ? "completed" : "failed");
       state.set("handle", object("sessionId", session));
       state.set("resultLink", link(session));
@@ -126,7 +126,8 @@ public class GovernanceScheduleApplication implements ScheduleApplication {
                 "code",
                 "aborted".equals(status.getString("stopReason")) ? "cancelled" : "run_failed",
                 "message",
-                status.getString("errorMessage")));
+                java.util.Objects.requireNonNullElse(
+                    status.getString("errorMessage"), "Model stopped: " + status.getString("stopReason"))));
       return state;
     } catch (AgentHttpException failure) {
       throw failure;

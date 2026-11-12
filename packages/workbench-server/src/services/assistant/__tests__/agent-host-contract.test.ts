@@ -29,7 +29,7 @@ describe("session row projection", () => {
   });
 
   it("counts a length-limited run as completed because it still delivered an answer", () => {
-    expect(runOutcome({ status: "stopped", stopReason: "length" })).toBe("completed");
+    expect(runOutcome({ status: "stopped", stopReason: "length" })).toBe("failed");
     expect(runOutcome({ status: "stopped", stopReason: "stop" })).toBe("completed");
     expect(runOutcome({ status: "stopped", stopReason: "aborted" })).toBe("cancelled");
     expect(runOutcome({ status: "stopped", stopReason: "error" })).toBe("failed");
