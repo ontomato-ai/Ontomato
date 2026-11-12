@@ -282,7 +282,7 @@ export const assistantService = {
   async start(sessionId: string, id: string, message: string, owner: AssistantOwner, credentials: AssistantCredentials) {
     const session = await assistantStore.session(sessionId, owner), a = await assistantStore.agent(session.agent_id, owner);
     const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
-    const actor = await openAgentCaller(owner, credentials, id), agent = { providerId: "workbench", agentId: session.agent_id };
+    const actor = await openAgentCaller(owner, credentials), agent = { providerId: "workbench", agentId: session.agent_id };
     await client.request(`/v1/channel/sessions/${sessionId}/bind`, "POST", { agent, actor });
     const channel: AgentRunContext = { agent, actor, authority: { classNames: a.class_names, executionKind: a.kind === "app-builder" ? "build-test" : "live" }, requestedBy: null, root: { session: { providerId: "workbench", sessionId }, runId: id } };
     await client.request(`/v1/channel/sessions/${sessionId}/runs`, "POST", { channel, language: resolveLocale(credentials.locale), input: { role: "user", content: message, timestamp: Date.now() }, ...(session.workspace_id ? { context: { workspaceId: session.workspace_id } } : {}) }, id);

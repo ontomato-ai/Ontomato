@@ -7,7 +7,7 @@ type ConversationMessage = {
 
 /**
  * The host supplies the user's own words to the caller scope. The current turn is
- * not in the runtime session yet, so append it and keep only the last ten.
+ * has not been consumed by the runtime yet, so append it once and keep only the last ten.
  */
 export function recentUserMessages(
   messages: readonly ConversationMessage[],
@@ -17,7 +17,7 @@ export function recentUserMessages(
 ): string[] {
   const quotes = messages
     .filter(
-      (record) => record.message.role === "user" && record.runId !== currentRunId,
+      (record) => record.message.role === "user" && record.runId !== null && record.runId !== currentRunId,
     )
     .map((record) => ({
       text: messageText(record.message),

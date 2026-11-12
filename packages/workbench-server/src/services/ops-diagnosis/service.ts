@@ -119,7 +119,7 @@ export const diagnosisService: AgentHostService = {
     return snapshot;
   },
   async start(session, run, message, owner, credentials) {
-    const actor = await openAgentCaller(owner, credentials, run), agent = { providerId: "observe", agentId: DIAGNOSIS_AGENT_ID };
+    const actor = await openAgentCaller(owner, credentials), agent = { providerId: "observe", agentId: DIAGNOSIS_AGENT_ID };
     const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
     await client.request(`/v1/channel/sessions/${session}/bind`, "POST", { agent, actor });
     const channel: AgentRunContext = { agent, actor, authority: { classNames: [], executionKind: "live" }, requestedBy: null, root: { session: { providerId: "observe", sessionId: session }, runId: run } };

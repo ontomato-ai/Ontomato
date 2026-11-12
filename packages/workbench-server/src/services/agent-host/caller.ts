@@ -16,7 +16,8 @@ async function platform(path: string, input: unknown, headers: Record<string,str
   return body;
 }
 /** Uses the scheduling credential owner and encrypted store; callers retain no credentials. */
-export async function openAgentCaller(owner: AgentHostOwner, credentials: AssistantCredentials, id: string = randomUUID()) {
+export async function openAgentCaller(owner: AgentHostOwner, credentials: AssistantCredentials) {
+  const id = randomUUID();
   const actor = agentActorRefSchema.parse(await platform("callers", { id, deadlineAt: new Date(Date.now() + getQueryTimeoutMs()).toISOString() }, buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey)));
   if (actor.domainId !== owner.domainId) throw new HttpError(403, "Caller credential belongs to another domain", "CROSS_DOMAIN");
   return actor;

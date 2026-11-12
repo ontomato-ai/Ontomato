@@ -396,3 +396,7 @@ Node auxiliary one-shot model calls are also still raw start consumers; they exp
 Failed preparations are projected from the existing admission intent in `preparationFailures`.
 The conversation shows the failure beside its received input, including when an expired actor
 prevents an automatic wake. Diagnostics are not new model inputs and cannot trigger another wake.
+
+An agent caller ID is an independent authorization reference, not a run or retrieval-scope ID.
+Keep these identities distinct when migrating retrieval: its old caller row owns business input
+and closure, while the agent caller's lifetime also covers children after their parent stops.

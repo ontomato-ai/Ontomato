@@ -76,3 +76,9 @@ it("keeps pending notifications and the current agent input out of user quotes",
   ];
   expect(recentUserMessages(messages,"current",null,3)).toEqual(["The user's actual request"]);
 });
+
+
+it("does not duplicate the current input already received while the host prepares", () => {
+  const messages = [{ runId: null,message: { role: "user",content: "Use this period",timestamp: 1 } }];
+  expect(recentUserMessages(messages,"current","Use this period",1)).toEqual(["Use this period"]);
+});

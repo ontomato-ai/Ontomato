@@ -130,7 +130,7 @@ public class KnowledgeGovernanceService {
 
   public boolean start(String id,String run,String message,OntologyAgentAccess.Context context) throws Exception {
     validateMessage(message);
-    var actor=callers.open(run,context);
+    var actor=callers.open(UUID.randomUUID().toString(),context);
     var agent=JSONObject.of("providerId","ontology","agentId",AGENT);
     runtime.json(context.owner().domainId(),run,"/v1/channel/sessions/"+id+"/bind","POST",JSONObject.of("agent",agent,"actor",actor),null);
     var source=JSONObject.of("session",JSONObject.of("providerId","ontology","sessionId",id),"runId",run);
