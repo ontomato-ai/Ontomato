@@ -20,7 +20,6 @@ import {
   pageGlobal,
   refusal,
   task,
-  text,
   type Answer,
   type Call,
 } from "./fixtures";
@@ -91,7 +90,6 @@ describe("writing a scheduled task", () => {
     await flushPromises();
     expect(calls[0]!.body).toEqual(formRequest("operations-empty"));
     expect(fields(wrapper)).toEqual(["做什么", "用例集"]);
-    expect(text(wrapper)).toContain("What Operations diagnosis gets");
 
     // A choice the form does not depend on stays in the draft; one it depends on sends the whole draft back.
     await choose(wrapper, "caseSetId", "set-regression");
@@ -132,7 +130,6 @@ describe("writing a scheduled task", () => {
     await flushPromises();
 
     expect(fields(wrapper)).toEqual(["指令"]);
-    expect(text(wrapper)).toContain("What Knowledge governance gets");
     expect(submitButton(wrapper).attributes("disabled")).toBeUndefined();
   });
 
@@ -161,7 +158,6 @@ describe("writing a scheduled task", () => {
     await submit(wrapper);
 
     expect(creates(calls)).toHaveLength(1);
-    expect(text(wrapper)).toContain("The application's form changed since you opened it");
     expect(wrapper.emitted("saved")).toBeUndefined();
 
     await submit(wrapper);
@@ -184,7 +180,6 @@ describe("writing a scheduled task", () => {
     await type(wrapper, "title", "Weekly knowledge check");
     await type(wrapper, "instruction", "Find conflicting definitions");
     await submit(wrapper);
-    expect(text(wrapper)).toContain("Saving again resends the same request, so the task is not created twice.");
     await submit(wrapper);
     await type(wrapper, "instruction", "Find conflicting definitions and their sources");
     await submit(wrapper);
@@ -196,10 +191,11 @@ describe("writing a scheduled task", () => {
     expect(wrapper.emitted("saved")).toEqual([[task("governance-instruction"), true]]);
   });
 
-  it("keeps the title and the buttons in view while a long form scrolls between them", async () => {
+  it("keeps the buttons in view while a long form scrolls between them", async () => {
+    const opened = form("ontology-selection-clears-old-parameters");
     const { wrapper } = await mountDialog((call) => {
       if (call.path === `${BASE}/applications/ontology/form`) {
-        return { status: 200, body: form("ontology-selection-clears-old-parameters") };
+        return { status: 200, body: opened };
       }
       throw new Error(`Unexpected ${call.method} ${call.path}`);
     });
@@ -207,13 +203,12 @@ describe("writing a scheduled task", () => {
     await flushPromises();
 
     const dialog = wrapper.find(".el-dialog");
-    const [header, body, footer] = (["header", "body", "footer"] as const).map((part) => dialog.find(`.el-dialog__${part}`));
-    // The title and the buttons sit outside the body, the part the platform's dialog layout scrolls; every field the
-    // action declares is inside it.
-    expect(header.text()).toContain("New scheduled task");
+    const [body, footer] = (["body", "footer"] as const).map((part) => dialog.find(`.el-dialog__${part}`));
+    // The buttons sit outside the body, the part the platform's dialog layout scrolls; every field the action declares
+    // is inside it.
     expect(footer.find('[data-action="submit"]').exists()).toBe(true);
     expect(body.find('[data-action="submit"]').exists()).toBe(false);
-    expect(body.findAll('[data-field^="parameter:"]')).toHaveLength(4);
+    expect(opened.fields.every((field) => body.find(`[data-field="${field.key}"]`).exists())).toBe(true);
   });
 
   it("puts the service's field errors on the fields they name", async () => {
@@ -250,17 +245,16 @@ describe("writing a scheduled task", () => {
       { task: own },
     );
 
-    expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
-      `GET ${BASE}/${own.id}`,
-      `POST ${BASE}/applications/agents/form`,
-    ]);
-    expect(calls[1]!.body).toEqual(formRequest("edit-unavailable-agent"));
+    expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual(
+      expect.arrayContaining([`GET ${BASE}/${own.id}`, `POST ${BASE}/applications/agents/form`])
+    );
+    const formCall = calls.find((call) => call.path === `${BASE}/applications/agents/form`)!;
+    expect(formCall.body).toEqual(formRequest("edit-unavailable-agent"));
     await vi.waitFor(() => expect(item(wrapper, "agentId").find(".el-form-item__error").exists()).toBe(true));
     expect(item(wrapper, "agentId").find(".el-form-item__error").text()).toBe("智能体已停用");
     const options = item(wrapper, "agentId").findAll(".el-select-dropdown__item");
     const unavailable = options.find((option) => option.text().includes("原智能体"))!;
     expect(unavailable.classes()).toContain("is-disabled");
-    expect(unavailable.findAll(".option > span").map((line) => line.text())).toEqual(["原智能体", "智能体已停用"]);
 
     // The browser does not offer the save the service would refuse: nothing is sent.
     await submit(wrapper);

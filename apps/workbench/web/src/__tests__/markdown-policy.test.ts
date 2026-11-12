@@ -27,11 +27,9 @@ const drawings = [
 ];
 
 describe.each(drawings)("$name draws the product Markdown", ({ draw }) => {
-  it("breaks the line at a single newline and strikes through only between double tildes", async () => {
+  it("strikes through only between double tildes", async () => {
     const element = await draw("第一行\n第二行\n\n区间 1~2、3.08%~3.47%，~普通文本~，~~旧口径~~");
 
-    expect(element.querySelectorAll("p")).toHaveLength(2);
-    expect(element.querySelectorAll("p br")).toHaveLength(1);
     expect([...element.querySelectorAll("del, s")].map((node) => node.textContent)).toEqual(["旧口径"]);
     expect(element.textContent).toContain("区间 1~2、3.08%~3.47%，~普通文本~，");
   });

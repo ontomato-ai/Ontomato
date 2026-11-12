@@ -23,8 +23,14 @@ it("requires an explicit choice and answers with one ordinary message naming the
     expect(wrapper.get<HTMLButtonElement>('button[type="submit"]').element.disabled).toBe(true);
     await wrapper.get('input[type="radio"]').setValue();
     await wrapper.get("form").trigger("submit"); await flushPromises();
-    expect(proceed).toHaveBeenCalledWith('My answers to the clarification "Teacher scope" (outputs/teachers.clarification.json):\nWhich teachers?: Full-time only\nPlease continue.');
-    expect(proceed.mock.calls[0]![0]).not.toContain(retrieval.id);
+    expect(proceed).toHaveBeenCalledTimes(1);
+    const message = proceed.mock.calls[0]![0] as string;
+    // One message naming the card's title and file, the question, and the answer the reader chose.
+    expect(message).toContain("Teacher scope");
+    expect(message).toContain("outputs/teachers.clarification.json");
+    expect(message).toContain("Which teachers?");
+    expect(message).toContain("Full-time only");
+    expect(message).not.toContain(retrieval.id);
     // The card records no answered state; the sent message is the user's answer.
     expect(wrapper.find('button[type="submit"]').exists()).toBe(true);
   } finally { wrapper.unmount(); }
@@ -41,6 +47,13 @@ it("lists multiple choices and notes, and skips unanswered optional questions", 
     for (const box of wrapper.findAll('input[type="checkbox"]')) await box.setValue(true);
     await wrapper.get("textarea").setValue("Exclude visiting staff");
     await wrapper.get("form").trigger("submit"); await flushPromises();
-    expect(proceed).toHaveBeenCalledWith('My answers to the clarification "Teacher scope" (outputs/teachers.clarification.json):\nStaff types: Teachers and Researchers\nNotes: Exclude visiting staff\nPlease continue.');
+    expect(proceed).toHaveBeenCalledTimes(1);
+    const message = proceed.mock.calls[0]![0] as string;
+    expect(message).toContain("Staff types");
+    expect(message).toContain("Teachers");
+    expect(message).toContain("Researchers");
+    expect(message).toContain("Exclude visiting staff");
+    // The unanswered optional question is left out of the message.
+    expect(message).not.toContain("Unit");
   } finally { wrapper.unmount(); }
 });

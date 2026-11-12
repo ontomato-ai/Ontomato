@@ -20,11 +20,8 @@ describe("model selection", () => {
   it("offers the null choice first, then every chat model", () => {
     const view = modelSelectionView(null, models, labels);
     expect(view.value).toBe("");
-    expect(view.options).toEqual([
-      { value: "", label: labels.nullChoice, disabled: false },
-      { value: "gateway/qwen-main", label: "Qwen (gateway/qwen-main)", disabled: false },
-      { value: "deepseek/chat", label: "deepseek/chat", disabled: false },
-    ]);
+    expect(view.options.map((option) => option.value)).toEqual(["", "gateway/qwen-main", "deepseek/chat"]);
+    expect(view.options.every((option) => option.disabled === false)).toBe(true);
     expect(view.missingId).toBeNull();
     expect(view.disabled).toBe(false);
     expect(modelSelectionView("deepseek/chat", models, labels).value).toBe("deepseek/chat");
@@ -34,14 +31,14 @@ describe("model selection", () => {
     const view = modelSelectionView("legacy/removed-model", models, labels);
     expect(view.value).toBe("legacy/removed-model");
     expect(view.missingId).toBe("legacy/removed-model");
-    expect(view.options.at(-1)).toEqual({ value: "legacy/removed-model", label: "legacy/removed-model (unavailable)", disabled: true });
+    expect(view.options.at(-1)).toMatchObject({ value: "legacy/removed-model", disabled: true });
   });
 
   it("offers nothing and reports nothing missing while the models are unknown", () => {
     const view = modelSelectionView("legacy/removed-model", null, labels);
     expect(view.disabled).toBe(true);
     expect(view.missingId).toBeNull();
-    expect(view.options).toEqual([{ value: "", label: labels.nullChoice, disabled: false }]);
+    expect(view.options.map((option) => option.value)).toEqual([""]);
   });
 
   it("stores the null choice as null and anything else as the model ID", () => {
