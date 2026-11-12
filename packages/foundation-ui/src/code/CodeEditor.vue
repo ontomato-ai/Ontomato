@@ -32,8 +32,8 @@ const props = defineProps<{
   /** The text can be selected, searched and copied, but not changed. */
   readonly?: boolean;
   /**
-   * Room kept after the last line, in any CSS length, added to the editor's own bottom padding; the host's value when
-   * controls float over the editor's foot. `var(--pane-dock-space, 0px)` follows the host as it measures them.
+   * Room kept after the last line, in any CSS length, added to the editor's own bottom padding: the host's value when
+   * its controls float over the editor's foot.
    */
   contentEndSpace?: string;
 }>();
