@@ -25,6 +25,13 @@ A host owns its routes under its own prefix, credentials, menu authorization,
 feature pages, agent definitions, rendering overrides and business actions.
 Hiding an entry never authorizes its server operation.
 
+A message belongs to the client and agent it was sent with. When the host moves
+to another client or agent while one is on its way, the shell drops it and shows
+the new context's blank conversation; a conversation whose first run was refused
+is still handed to the host. A host that changes the client or agent and then
+calls the shell's exposed `send` lets the change take effect first (after
+`nextTick`), or the shell takes it for a change made while sending.
+
 ## Host proxy interface
 
 The shell talks to every host through one interface shape, the agent-host
