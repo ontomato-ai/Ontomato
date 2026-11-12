@@ -34,6 +34,10 @@ const emit = defineEmits<{
   "update:selected": [rows: number[]];
 }>();
 
+/** A column's least width; an arranged column adds the room its filter button and sort carets take (44px). */
+const MIN_WIDTH = 120;
+const ARRANGED_MIN_WIDTH = MIN_WIDTH + 44;
+
 type Order = "ascending" | "descending";
 const sort = ref<{ column: number; order: Order } | null>(null);
 /** The values each filtered column keeps; a column not in the map keeps every value. */
@@ -145,7 +149,7 @@ function toggle(row: number, selected: number[]) {
         :sortable="arrange ? 'custom' : false"
         :sort-orders="['ascending', 'descending', null]"
         :label-class-name="arrange ? 'table-preview-arranged' : undefined"
-        min-width="120"
+        :min-width="arrange ? ARRANGED_MIN_WIDTH : MIN_WIDTH"
       >
         <template v-if="arrange" #header>
           <span class="table-preview-heading" :title="column">{{ column }}</span>
