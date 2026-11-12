@@ -76,3 +76,11 @@ it("message reads expose conversation progress without transferring the child's 
   const result = await port.execute(scope,run,{ op: "read",taskId: inputId,view: "messages" }) as { messages: Array<{ id: string }> };
   expect(result.messages.map(message => message.id)).toEqual([inputId]);
 });
+
+it("does not prepare a child intent cancelled concurrently with its admission", async () => {
+  const { channel: port } = channel();
+  const pending = vi.spyOn(port.facts,"pending").mockResolvedValue([]);
+  vi.spyOn(port.facts,"reserve").mockImplementation(async (_scope,sessionId,id,inputId,channel,options) => ({ id,session: { providerId: channel.agent.providerId,sessionId },channel,language: options.language,inputId,status: "cancelled",createdAt: new Date(0).toISOString(),error: null,cancelled: true }));
+  await expect(port.execute(scope,run,{ op: "start",agent: context.agent,message: "Inspect knowledge" })).resolves.toMatchObject({ status: "cancelled" });
+  expect(pending).not.toHaveBeenCalled();
+});

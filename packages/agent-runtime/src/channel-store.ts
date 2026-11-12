@@ -35,14 +35,14 @@ export class ChannelStore {
     await this.store.transaction(async c => {
       if (channel.requestedBy) {
         const parent = (await c.query(`SELECT intent FROM ${this.store.table("admissions")} WHERE domain_id=$1 AND key=$2 AND intent->'session'=$3::jsonb FOR UPDATE`, [scope.domainId,channel.requestedBy.runId,JSON.stringify(channel.requestedBy.session)])).rows[0];
-        if (parent.intent.cancelled) throw new RuntimeError(409,"RUN_CLOSED","The delegating execution was cancelled");
+        if (parent.intent.cancelled) { intent.cancelled = true; intent.status = "cancelled"; }
       }
       if (options.create) {
         await this.store.admission(c,scope,sessionId,"session",digest({}),sessionId);
         await c.query(`INSERT INTO ${this.store.table("sessions")} (host_id,domain_id,id,channel,message_seq) VALUES($1,$2,$3,$4,1)`,[...this.key(scope),sessionId,options.create.binding]);
         await c.query(`INSERT INTO ${this.store.table("messages")} (host_id,domain_id,id,session_id,run_id,seq,message) VALUES($1,$2,$3,$4,NULL,1,$5)`,[...this.key(scope),inputId,sessionId,options.create.input]);
       }
-      const occupied = await c.query(`UPDATE ${this.store.table("sessions")} SET preparing_run_id=$4 WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND active_run_id IS NULL AND preparing_run_id IS NULL RETURNING id`, [...this.key(scope), sessionId, runId]);
+      const occupied = await c.query(`UPDATE ${this.store.table("sessions")} SET preparing_run_id=$4 WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND active_run_id IS NULL AND preparing_run_id IS NULL RETURNING id`, [...this.key(scope), sessionId, intent.cancelled ? null : runId]);
       if (!occupied.rowCount) throw new RuntimeError(409, "SESSION_BUSY", "Session already has an execution intent");
       await c.query(`UPDATE ${this.store.table("messages")} SET intent_id=$4 WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND run_id IS NULL AND intent_id IS NULL`, [...this.key(scope),sessionId,runId]);
       await c.query(`INSERT INTO ${this.store.table("admissions")} (host_id,domain_id,key,operation,fingerprint,session_id,intent) VALUES($1,$2,$3,'run','',$4,$5)`, [...this.key(scope), runId, sessionId, intent]);

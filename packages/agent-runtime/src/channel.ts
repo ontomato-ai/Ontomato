@@ -117,6 +117,7 @@ export class AgentChannel {
     }
   }
   private launch(intent: AgentRunIntent) {
+    if (intent.cancelled) return;
     void this.prepare(intent).catch(error => runtimeLogger.error("Agent preparation failed", runtimeDiagnostic(error)));
   }
   /** All addressed inputs use this path, irrespective of whether they carry a result or a question. */
@@ -231,7 +232,7 @@ export class AgentChannel {
         { language: run.language,context: command.context, title: command.title, create: { binding: { agent: command.agent, actor: channel.actor, parent: source, context: command.context },
           input: { role: "notification", kind: "agent-message", source, content: command.message, timestamp: Date.now() } } }));
       this.announce(intent); this.launch(intent);
-      return { taskId: intent.id, sessionRef: target, status: "starting" };
+      return { taskId: intent.id, sessionRef: target, status: intent.status };
     }
     if (command.op === "send") {
       const binding = await this.facts.binding(this.scope(command.session, scope.domainId), command.session.sessionId);
