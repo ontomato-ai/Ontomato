@@ -74,7 +74,10 @@ declares `scrollsItself` and keeps that room after its own scrolling content,
 reading it as `--pane-dock-space` or `usePageDockSpace()` (the app builder hands
 it to the app in its preview frame). The host's `composer-context` shows above
 the conversation's composer and, `inline`, inside the full page's one-row
-composer before the input. While such a page is open, a sent message ends with the host's
+composer before the input. Its `unstarted` is true while the conversation in view
+has not started: the shell holds no session for it and no message is on its way;
+the app builder shows its workspace selection beside the composer only then.
+While such a page is open, a sent message ends with the host's
 `pageContext` line (plain text, visible in the message), so the agent knows what
 "this" means. `pageLinks(href)` lets a host recognise its own addresses in
 answers; a recognised link opens its page beside the conversation. The agent
