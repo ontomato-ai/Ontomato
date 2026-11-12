@@ -1,6 +1,12 @@
 import { z } from "zod";
 
+/**
+ * A preview request that runs on test data carries this header. The receiving Java method or
+ * Node route must declare that it supports test data or only reads definitions, metadata,
+ * parameters or identity; otherwise the request is refused with {@link BUILD_TEST_UNSUPPORTED}.
+ */
 export const BUILD_TEST_HEADER = "X-Ontomato-Execution-Context";
+export const BUILD_TEST_UNSUPPORTED = "BUILD_TEST_UNSUPPORTED";
 export const BUILD_TEST_SAMPLE_DIRECTORY = "test-data";
 export const BUILD_TEST_SDK_CAPABILITY = 1;
 export const buildTestContextSchema = z.object({
