@@ -559,9 +559,12 @@ async function submit() {
   color: var(--el-text-color-secondary);
   white-space: normal;
 }
-/* An application that cannot run on a schedule now stays listed, dimmed, with the reason under its name. */
-:global(.schedule-app-options .el-select-dropdown__item.is-disabled) .app-option-name,
-:global(.schedule-app-options .el-select-dropdown__item.is-disabled) .app-option-icon {
+/*
+ * An application that cannot run on a schedule now stays listed, dimmed, with the reason under its name. The dropdown's
+ * classes are named plainly, not through `:global()`: in a scoped block `:global(.a) .x` compiles to a bare `.a` rule.
+ */
+.schedule-app-options .el-select-dropdown__item.is-disabled .app-option-name,
+.schedule-app-options .el-select-dropdown__item.is-disabled .app-option-icon {
   color: var(--el-text-color-disabled);
 }
 .app-option-check {

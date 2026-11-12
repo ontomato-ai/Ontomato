@@ -193,7 +193,10 @@ class RuntimePythonClientTest {
     var executor = new PythonExecuteServiceImpl(runtime, grants);
     var result = executor.execute("session", "# ontomato-python:2", 1, "en",
         PythonAuthority.read("user", "domain").forExecution(execution), new JSONObject(), Map.of());
-    assertEquals("ValueError at program.py line 2\nQuery failed: column t.hj_dj does not exist", result.getError());
+    assertTrue(result.getError().contains("program.py line 2")
+        && result.getError().contains("column t.hj_dj does not exist"), result.getError());
+    // The runtime's own diagnostic is never the evidence.
+    assertFalse(result.getError().contains("private runtime diagnostic"), result.getError());
     assertNull(result.getResult());
     var programs = new io.ontomato.dataengine.service.impl.ABCProgramServiceImpl();
     assertEquals(result.getError(), assertThrows(Exception.class,

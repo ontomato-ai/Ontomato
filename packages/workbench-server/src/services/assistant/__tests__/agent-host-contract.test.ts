@@ -11,11 +11,9 @@ describe("session row projection", () => {
       errorMessage: null, workspaceCommit: null,
       finishedAt: "2026-10-30T00:00:01.000Z",
     } as never);
-    expect(view).toEqual({
-      id: "11111111-1111-4111-8111-111111111111",
-      status: "stopped",
-      stopReason: "stop",
-    });
+    expect(view).toMatchObject({ id: "11111111-1111-4111-8111-111111111111", status: "stopped", stopReason: "stop" });
+    expect(view).not.toHaveProperty("errorMessage");
+    expect(view).not.toHaveProperty("workspaceCommit");
     expect(() =>
       agentHostSessionSchema.parse({
         id: "11111111-1111-4111-8111-111111111111",

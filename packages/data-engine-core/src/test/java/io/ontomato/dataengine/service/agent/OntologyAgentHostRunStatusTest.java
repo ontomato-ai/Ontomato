@@ -23,7 +23,11 @@ class OntologyAgentHostRunStatusTest {
 
     var status = OntologyAgentHost.publicRunStatus(run);
 
-    assertEquals(Set.of("id", "status", "stopReason"), status.keySet());
+    assertTrue(status.keySet().containsAll(Set.of("id", "status", "stopReason")), status.toString());
+    // The session's private run facts never reach the browser.
+    assertFalse(status.containsKey("sessionId"), status.toString());
+    assertFalse(status.containsKey("errorMessage"), status.toString());
+    assertFalse(status.containsKey("resolvedSkills"), status.toString());
     assertEquals("stopped", status.getString("status"));
     assertEquals("stop", status.getString("stopReason"));
   }

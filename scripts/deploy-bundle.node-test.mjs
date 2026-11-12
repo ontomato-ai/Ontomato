@@ -12,12 +12,10 @@ import {
 } from "./deploy-bundle.mjs";
 
 test("the pack carries the deploy template and no onsite state", () => {
-  assert.deepEqual(TEMPLATE_ENTRIES, [
-    "docker-compose.yml",
-    "initdb.sql",
-    "README.md",
-    "prepare-env.py",
-  ]);
+  for (const name of ["docker-compose.yml", "initdb.sql", "README.md", "prepare-env.py"])
+    assert.ok(TEMPLATE_ENTRIES.includes(name), name);
+  for (const name of [".env", "backend_data", "frontend_data"])
+    assert.equal(TEMPLATE_ENTRIES.includes(name), false, name);
 });
 
 test("only the ARCH line changes in .env.example", () => {

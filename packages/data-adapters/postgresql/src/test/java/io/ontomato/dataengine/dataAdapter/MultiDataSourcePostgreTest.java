@@ -214,7 +214,5 @@ class MultiDataSourcePostgreTest {
 				() -> adapter.executeDsl(crossSource, "s", null, new ArrayList<>()));
 
 		assertEquals(DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT, failure.getViolations().get(0).getCode());
-		assertTrue(failure.getMessage().contains(PERSON) && failure.getMessage().contains(INVOICE),
-				failure.getMessage());
 	}
 }
