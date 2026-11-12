@@ -1,8 +1,10 @@
 import express from "express";
 import { createServer } from "node:http";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { BUILD_TEST_HEADER, BUILD_TEST_UNSUPPORTED } from "@ontomato/contracts/build-tests";
 import { buildTestAccess } from "../build-test-access";
+import { agentChannelRouter } from "../routes/agent-channel";
+vi.mock("../../services/agent-host/channel",()=>({agentChannelService:{}}));
 import { errorHandler } from "../middleware";
 
 let server: ReturnType<typeof createServer>;
@@ -13,6 +15,7 @@ beforeEach(async () => {
   executed = [];
   const app = express();
   app.use("/api", buildTestAccess);
+  app.use("/internal/agent-channel",agentChannelRouter);
   app.post("/api/dashboards/query-card", (_req, res) => {
     executed.push("query-card");
     res.json({ success: true, data: [] });
@@ -73,4 +76,9 @@ it("keeps a request without the build-test header on its original path", async (
   const response = await fetch(`${base}/api/dashboards/query-card`, { method: "POST" });
   expect(response.status).toBe(200);
   expect(executed).toEqual(["query-card"]);
+});
+
+it.each(["list","prepare","settle","read","cancel"])("refuses headed provider %s callbacks before service authorization",async action=>{
+  const response=await fetch(`${base}/internal/agent-channel/${action}`,{method:"POST",headers:testHeader()});
+  expect(response.status).toBe(422);expect(await response.json()).toMatchObject({code:BUILD_TEST_UNSUPPORTED});expect(executed).toEqual([]);
 });
