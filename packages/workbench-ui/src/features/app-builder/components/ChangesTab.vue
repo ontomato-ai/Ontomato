@@ -149,7 +149,8 @@ watch(
   gap: var(--spacing-md);
   height: 100%;
   box-sizing: border-box;
-  padding: var(--spacing-md) var(--spacing-lg) var(--spacing-xl);
+  /* Full, the shell's composer floats over the foot; the list keeps that room after its content. */
+  padding: var(--spacing-md) var(--spacing-lg) calc(var(--spacing-xl) + var(--pane-dock-space, 0px));
   overflow-y: auto;
 }
 .changes-bar {

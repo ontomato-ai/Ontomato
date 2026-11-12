@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { reactive } from "vue";
+import { reactive, ref } from "vue";
+import { pageDockSpaceKey } from "@ontomato/agent-shell-ui";
 import { flushPromises, mount } from "@vue/test-utils";
 import ElementPlus from "element-plus";
 import publicEn from "../../../locales/en";
@@ -76,7 +77,7 @@ async function openPreview({ files = ["index.html"], flash = null as string | nu
     loadFiles: vi.fn(),
   });
   const platform: AppBuilderPlatform = {
-    registerPreviewFrame: () => ({ update: vi.fn(), dispose: vi.fn() }),
+    registerPreviewFrame: () => ({ update: vi.fn(), setInsets: vi.fn(), dispose: vi.fn() }),
     subscribePageContext: () => () => {},
     catalog: { applications: { value: [] }, error: { value: null }, loading: { value: false }, refresh: async () => {} },
     openApplication: vi.fn(),
@@ -84,7 +85,7 @@ async function openPreview({ files = ["index.html"], flash = null as string | nu
   } as unknown as AppBuilderPlatform;
   const wrapper = mount(PreviewTab, {
     props: { view: view as unknown as WorkspaceView, reload: 0, flash, frameWindow: null },
-    global: { plugins: [ElementPlus, workbenchI18n()], provide: { [builderPlatformKey as symbol]: platform } },
+    global: { plugins: [ElementPlus, workbenchI18n()], provide: { [builderPlatformKey as symbol]: platform, [pageDockSpaceKey as symbol]: ref(0) } },
   });
   wrappers.push(wrapper);
   await flushPromises();

@@ -54,7 +54,8 @@ defineExpose({ focus: () => input.value?.focus() });
 </script>
 
 <template>
-  <form class="composer" :class="{ disabled }" @submit.prevent="submit">
+  <form class="composer" :class="{ disabled, 'with-context': $slots.context }" @submit.prevent="submit">
+    <div v-if="$slots.context" class="composer-context"><slot name="context" /></div>
     <textarea
       ref="input"
       v-model="text"
@@ -92,15 +93,19 @@ defineExpose({ focus: () => input.value?.focus() });
 
 <style scoped>
 /*
- * The chat composer: a pill of the composer height (radius = height / 2) with a round send button. The conversation
- * shell raises it through --shell-composer-shadow; embedded chats keep it flat.
+ * The chat composer: a pill of the composer height (radius = height / 2) around one row of controls of
+ * --shell-composer-control (the input line and the round send button), so a host makes it compact by setting the two
+ * heights. The conversation shell raises it through --shell-composer-shadow; embedded chats keep it flat. What a message
+ * carries (`context`) may sit in the row before the input.
  */
 .composer {
+  --composer-control: var(--shell-composer-control, var(--control-height-lg));
+  --composer-inset: calc((var(--shell-composer-height) - var(--composer-control) - 2px) / 2);
   display: flex;
   align-items: flex-end;
   gap: 8px;
   min-height: var(--shell-composer-height);
-  padding: 7px 7px 7px 20px;
+  padding: var(--composer-inset) var(--composer-inset) var(--composer-inset) 20px;
   box-sizing: border-box;
   border: 1px solid var(--el-border-color-dark);
   border-radius: calc(var(--shell-composer-height) / 2);
@@ -116,11 +121,25 @@ defineExpose({ focus: () => input.value?.focus() });
 .composer.disabled {
   opacity: 0.6;
 }
+.composer.with-context {
+  padding-left: 12px;
+}
+/* Kept to its line beside the input, centred on the input's last line; the input takes the rest of the row. */
+.composer-context {
+  flex: 0 1 auto;
+  max-width: 55%;
+  min-width: 0;
+  margin-bottom: calc((var(--composer-control) - 24px) / 2);
+}
+.composer-context:empty {
+  display: none;
+}
 textarea {
   flex: 1;
-  min-height: var(--control-height-lg);
+  min-width: 0;
+  min-height: var(--composer-control);
   max-height: 220px;
-  padding: 9px 0;
+  padding: calc((var(--composer-control) - var(--leading-base)) / 2) 0;
   box-sizing: border-box;
   border: 0;
   outline: none;
@@ -137,8 +156,8 @@ textarea::placeholder {
 .composer-button {
   display: grid;
   place-items: center;
-  width: var(--control-height-lg);
-  height: var(--control-height-lg);
+  width: var(--composer-control);
+  height: var(--composer-control);
   flex-shrink: 0;
   border: 0;
   border-radius: var(--radius-full);

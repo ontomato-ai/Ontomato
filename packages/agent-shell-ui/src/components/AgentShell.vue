@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
+import { PanelRightOpen } from "lucide-vue-next";
 import { shellContextKey, type ShellContext } from "../context";
 import type { AgentHostClient } from "../host";
 import type { AgentNav } from "../useAgentNav";
@@ -34,10 +35,12 @@ import ShellSidePanel from "./ShellSidePanel.vue";
  * `message-actions`.
  *
  * A feature declared `withConversation` follows the agent-app states (DESIGN "Agent apps"): conversation only, the
- * page beside the conversation, or the page full with a composer. Messages sent while such a page is open end with the
- * host's `pageContext` line, so the agent knows what "this" refers to. Such a page may fill `page-header` (its own
- * controls, in the row of the shell's expand and close buttons) and `composer-context` (shown above whichever composer
- * is in view; `pageOpen` tells whether a message sent now carries the page context).
+ * page beside the conversation, or the page full with a composer. Once such a page is closed, the conversation's top
+ * right corner opens it beside the conversation again. Messages sent while such a page is open end with the host's
+ * `pageContext` line, so the agent knows what "this" refers to. Such a page may fill `page-header` (its own controls, in
+ * the row of the shell's expand and close buttons) and `composer-context` (with whichever composer is in view: above
+ * the conversation's, `inline` in the full page's single row; `pageOpen` tells whether a message sent now carries the
+ * page context).
  *
  * `run` reports the open conversation's run starting and stopping, with the workspace commit a stopped run saved.
  */
@@ -145,6 +148,16 @@ function closePage() {
   pageView.value = "full";
 }
 
+/** The paired page that left the side last, closed or replaced by a card: the conversation's corner reopens it. */
+const closedPage = ref<string | null>(null);
+watch(featureId, (_, previous) => {
+  if (previous && props.workbench.features.find((feature) => feature.id === previous)?.withConversation) closedPage.value = previous;
+});
+function reopenPage() {
+  featureId.value = closedPage.value;
+  pageView.value = "side";
+}
+
 /** Sending from a full page brings the conversation back beside it, so the reply is visible. */
 function sendFromPage(text: string) {
   pageView.value = "side";
@@ -233,6 +246,16 @@ onMounted(() => {
     </ShellColumn>
 
     <main v-show="!pageFull" class="shell-main">
+      <button
+        v-if="closedPage && !featureId && !openArtifact"
+        type="button"
+        class="reopen-page"
+        :title="labels.open"
+        :aria-label="labels.open"
+        @click="reopenPage"
+      >
+        <PanelRightOpen :size="16" />
+      </button>
       <div v-if="featureId && !pairedPage" class="feature-page">
         <slot name="feature" :feature-id="featureId" view="full" />
       </div>
@@ -257,7 +280,7 @@ onMounted(() => {
         @load-older="conversation.loadOlder"
       >
         <template v-if="slots['composer-context']" #composer-context>
-          <slot name="composer-context" :page-open="pairedPage" />
+          <slot name="composer-context" :page-open="pairedPage" :inline="false" />
         </template>
       </ShellConversation>
     </main>
@@ -278,7 +301,7 @@ onMounted(() => {
         <slot name="page-header" :feature-id="featureId" :view="pageView" />
       </template>
       <template v-if="slots['composer-context']" #composer-context>
-        <slot name="composer-context" :page-open="true" />
+        <slot name="composer-context" :page-open="true" :inline="true" />
       </template>
       <slot name="feature" :feature-id="featureId" :view="pageView" />
     </ShellPagePane>
@@ -313,6 +336,29 @@ onMounted(() => {
   flex: 1;
   min-width: 0;
   overflow: hidden;
+}
+/* In the corner the page's close button left, over the conversation. */
+.reopen-page {
+  position: absolute;
+  z-index: 2;
+  top: var(--spacing-md);
+  right: var(--spacing-md);
+  display: grid;
+  place-items: center;
+  width: var(--control-height);
+  height: var(--control-height);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+}
+.reopen-page:hover {
+  background: var(--el-fill-color);
+  color: var(--el-text-color-primary);
+}
+.reopen-page:focus-visible {
+  outline: 2px solid var(--el-color-primary);
 }
 .feature-page {
   flex: 1;

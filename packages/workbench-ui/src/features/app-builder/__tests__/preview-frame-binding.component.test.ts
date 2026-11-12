@@ -3,6 +3,7 @@ import { defineComponent, h, reactive, ref, shallowRef } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 import ElementPlus from "element-plus";
 import type { Router } from "vue-router";
+import { pageDockSpaceKey } from "@ontomato/agent-shell-ui";
 import { APP_HOST_GLOBAL, type AppHost } from "@ontomato/contracts/app-host";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { createManagerRequest, createMetricViewsClient } from "../../../../../ontology-manager/src/clients/index";
@@ -41,7 +42,7 @@ it("binds the actual iframe under controlled v-model across start, READY, replac
   const view=reactive({workspace:{id:"w1",headCommit:"head",activeRunId:null},files:[{path:"index.html",size:1}],filesState:"ready"}) as unknown as WorkspaceView;
   // A real parent-controlled model updates the prop on the next render, not during the child's emit.
   const Parent=defineComponent({setup(){const frameWindow=shallowRef<Window|null>(null);return ()=>h(PreviewTab,{view,reload:0,flash:null,frameWindow:frameWindow.value,"onUpdate:frameWindow":(value:Window|null)=>{frameWindow.value=value;}});}});
-  wrapper=mount(Parent,{attachTo:document.body,global:{plugins:[ElementPlus,workbenchI18n()],provide:{[builderPlatformKey as symbol]:platform}}});
+  wrapper=mount(Parent,{attachTo:document.body,global:{plugins:[ElementPlus,workbenchI18n()],provide:{[builderPlatformKey as symbol]:platform,[pageDockSpaceKey as symbol]:ref(0)}}});
   await flushPromises();
   const frame=()=>wrapper.get("iframe").element as HTMLIFrameElement;
   const initial=frame().contentWindow!;expect(initial).not.toBeNull();
@@ -61,4 +62,22 @@ it("binds the actual iframe under controlled v-model across start, READY, replac
   button.addEventListener("click",()=>{void client.read({id:"metric",parameters:{}});});replaced.document.body.append(button);
   button.click();await flushPromises();
   expect(requests).toHaveLength(1);expect(JSON.parse(requests[0]![BUILD_TEST_HEADER]!)).toEqual({kind:"build-test",contextId:"context-b"});
+});
+/** Full, the shell's composer floats over the preview's foot: the app in the frame hears how much it covers (AppHost). */
+it("tells the app in the frame how much of its foot the full composer covers",async()=>{
+  installAppHost({credential:{type:"anonymous"},preferences:{locale:ref("en"),theme:ref("light")} as Parameters<typeof installAppHost>[0]["preferences"],
+    router:{push:vi.fn()} as unknown as Router,onAuthFailure:vi.fn()});
+  const host=(window as unknown as Record<string,AppHost>)[APP_HOST_GLOBAL]!;
+  const platform={registerPreviewFrame:registerBuildPreview} as AppBuilderPlatform;
+  const view=reactive({workspace:{id:"w1",headCommit:"head",activeRunId:null},files:[{path:"index.html",size:1}],filesState:"ready"}) as unknown as WorkspaceView;
+  const dockSpace=ref(0);
+  current=context("READY");
+  wrapper=mount(PreviewTab,{props:{view,reload:0,flash:null,frameWindow:null},attachTo:document.body,
+    global:{plugins:[ElementPlus,workbenchI18n()],provide:{[builderPlatformKey as symbol]:platform,[pageDockSpaceKey as symbol]:dockSpace}}});
+  await flushPromises();
+  const heard: number[]=[];
+  host.subscribeFrameInsets((wrapper.get("iframe").element as HTMLIFrameElement).contentWindow!,({bottom})=>heard.push(bottom));
+  dockSpace.value=56;await flushPromises();
+  dockSpace.value=0;await flushPromises();
+  expect(heard).toEqual([0,56,0]);
 });

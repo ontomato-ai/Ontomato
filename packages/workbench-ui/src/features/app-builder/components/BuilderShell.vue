@@ -151,7 +151,8 @@ function selectSession(id: string) {
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: "app-builder",
   label: t("appBuilder.title"),
-  features: [{ id: PANEL_ID, label: t("appBuilder.panel"), icon: "pages", availability: "page", withConversation: true }],
+  // Each view scrolls itself (the preview inside the app's frame), so full, the composer floats over the whole view.
+  features: [{ id: PANEL_ID, label: t("appBuilder.panel"), icon: "pages", availability: "page", withConversation: true, scrollsItself: true }],
 }));
 /** The builder opens beside the conversation; closing the page leaves only the conversation, expanding fills it. */
 const featureId = ref<string | null>(PANEL_ID);
@@ -397,14 +398,14 @@ const columnEvents = {
         @show-changes="showChanges"
       />
     </template>
-    <template #composer-context="{ pageOpen }">
+    <template #composer-context="{ pageOpen, inline }">
       <ComposerContext
         :page-open="pageOpen"
+        :inline="inline"
         :page="contextPage"
         :icon="tabIcon"
         :selection="contextObject"
         :busy="busy"
-        @open-page="openPage('preview')"
         @open-session="selectSession"
       />
     </template>

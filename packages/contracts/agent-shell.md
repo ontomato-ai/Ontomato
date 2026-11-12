@@ -61,11 +61,18 @@ it in the main area through the `feature` slot, keyed by feature ID), `action`
 scheduled tasks are a `page`. Editions supply their own entries to the same workbench.
 
 A `page` declared `withConversation` follows the agent-app states (DESIGN.md
-"Agent apps"): picking it opens it full with a composer below; it can collapse
-beside the conversation and expand again (`pageView` model: `full` | `side`,
-which hosts may also set), and closing it returns to the conversation. The page
-renders once and keeps its state while it moves; the `feature` slot also gets
-`view`. While such a page is open, a sent message ends with the host's
+"Agent apps"): picking it opens it full with a composer floating over its foot;
+it can collapse beside the conversation and expand again (`pageView` model:
+`full` | `side`, which hosts may also set), and closing it returns to the
+conversation, whose top right corner then opens it beside the conversation again.
+The page renders once and keeps its state while it moves; the `feature` slot also
+gets `view`. Full, the pane keeps the composer's height (`--pane-dock-space`)
+after the page's content; a page that fills the pane and scrolls inside itself
+declares `scrollsItself` and keeps that room after its own scrolling content,
+reading it as `--pane-dock-space` or `usePageDockSpace()` (the app builder hands
+it to the app in its preview frame). The host's `composer-context` shows above
+the conversation's composer and, `inline`, inside the full page's one-row
+composer before the input. While such a page is open, a sent message ends with the host's
 `pageContext` line (plain text, visible in the message), so the agent knows what
 "this" means. `pageLinks(href)` lets a host recognise its own addresses in
 answers; a recognised link opens its page beside the conversation. The agent

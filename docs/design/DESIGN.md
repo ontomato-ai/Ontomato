@@ -305,7 +305,8 @@ Rhythm: question→response 24px; response→next question 36px; answer blocks 1
 gap. Elapsed status and process rows share the 8px rhythm; process→answer uses 12px. Expanded thinking shows the
 content directly without repeating the disclosure's thinking label or adding an icon-sized text indent.
 Tools use 13px/20px and restrained inset details. All message actions, including host slots, share
-`shell-message-action`. Composer has a 40px minimum control, pill geometry, owned elevation, focus and multiline growth.
+`shell-message-action`. Composer has a 40px minimum control, pill geometry, owned elevation, focus and multiline growth;
+the composer floating over a full agent-app page is one compact row (32px control) with what the message carries inside.
 Never apply composer geometry to ordinary inputs. Preserve streaming, cancellation, feedback and artifact behaviour.
 
 Read-only continuation suggestions show at most three short business-labelled buttons after an answer. They retain
