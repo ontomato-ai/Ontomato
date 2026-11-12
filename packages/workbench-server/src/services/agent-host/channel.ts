@@ -1,5 +1,4 @@
-import { z } from "zod";
-import { agentPrepareRequestSchema, agentProviderExecutionSchema, agentActorRefSchema, type AgentRunContext } from "@ontomato/contracts/agent-channel";
+import { agentPrepareRequestSchema, agentProviderExecutionSchema, agentProviderListRequestSchema, type AgentRunContext } from "@ontomato/contracts/agent-channel";
 import { DIAGNOSIS_AGENT_ID } from "@ontomato/contracts/ops-diagnosis";
 import { assistantService } from "../assistant/service";
 import { assistantStore } from "../assistant/store";
@@ -16,15 +15,19 @@ async function caller(body: { actor: AgentRunContext["actor"] }, domain: string,
 }
 export const agentChannelService = {
   async list(raw: unknown, domain: string) {
-    const body = z.object({ actor: agentActorRefSchema }).strict().parse(raw);
+    const body = agentProviderListRequestSchema.parse(raw);
+    if (!["workbench","observe"].includes(body.providerId)) throw new HttpError(404,"Agent provider not found","NOT_FOUND");
     const { owner, credentials } = await caller(body, domain);
     const agents = [];
-    for (const agent of await assistantStore.agents(domain)) {
-      if (!agent.enabled) continue;
-      try { await assistantService.admitAgent(agent.id, owner, credentials); }
-      catch (error) { if (error instanceof HttpError && error.status === 403) continue; throw error; }
-      agents.push({ ref: { providerId: "workbench", agentId: agent.id }, name: agent.name, description: agent.description,
-        ...(agent.kind === "app-builder" ? { contextSchema: { type: "object", properties: { workspaceId: { type: "string", format: "uuid" } }, required: ["workspaceId"], additionalProperties: false } } : {}) });
+    if (body.providerId === "workbench") {
+      for (const agent of await assistantStore.agents(domain)) {
+        if (!agent.enabled) continue;
+        try { await assistantService.admitAgent(agent.id, owner, credentials); }
+        catch (error) { if (error instanceof HttpError && error.status === 403) continue; throw error; }
+        agents.push({ ref: { providerId: "workbench", agentId: agent.id }, name: agent.name, description: agent.description,
+          ...(agent.kind === "app-builder" ? { contextSchema: { type: "object", properties: { workspaceId: { type: "string", format: "uuid" } }, required: ["workspaceId"], additionalProperties: false } } : {}) });
+      }
+      return { agents };
     }
     try {
       await workbenchIdentity().assertObserveAccess({ domainId: domain, ...credentials });

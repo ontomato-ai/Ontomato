@@ -13,7 +13,6 @@ import { RuntimeError, safeMessage } from "./errors";
 import { runtimeLogger, runtimeDiagnostic } from "./logging";
 
 export interface AgentProvider { id: string; hostId: string; url: string; token: string }
-export interface AgentDirectoryPort { url: string; token: string }
 type Listener = () => void;
 export class AgentChannel {
   readonly facts: ChannelStore;
@@ -220,10 +219,12 @@ export class AgentChannel {
     if (!channel) throw new RuntimeError(403, "ACTOR_REQUIRED", "The host did not supply an agent caller");
     const source: AgentExecutionRef = { session: { providerId: channel.agent.providerId, sessionId: run.sessionId }, runId: run.id };
     if (command.op === "list") {
-      const directory = this.runtime.options.agentDirectory;
-      if (!directory) throw new RuntimeError(503, "DIRECTORY_UNAVAILABLE", "Agent directory is not configured");
-      const result = agentDirectorySchema.parse(await this.post(directory, "", { actor: channel.actor }, scope.domainId));
-      return { agents: result.agents.filter(entry => !command.query || `${entry.name} ${entry.description}`.toLowerCase().includes(command.query.toLowerCase())) };
+      const directories = await Promise.all((this.runtime.options.agentProviders ?? []).map(async provider => {
+        const result = agentDirectorySchema.parse(await this.post(provider,"/list",{ providerId: provider.id,actor: channel.actor },scope.domainId));
+        if (result.agents.some(entry => entry.ref.providerId !== provider.id)) throw new RuntimeError(502,"INVALID_PROVIDER_DIRECTORY","A provider must list only its own agents");
+        return result.agents;
+      }));
+      return { agents: directories.flat().filter(entry => !command.query || `${entry.name} ${entry.description}`.toLowerCase().includes(command.query.toLowerCase())) };
     }
     if (command.op === "start") {
       const target = { providerId: command.agent.providerId, sessionId: randomUUID() }, targetScope = this.scope(target, scope.domainId);
@@ -242,9 +243,8 @@ export class AgentChannel {
       if (!child && !parent) throw new RuntimeError(403, "FORBIDDEN", "Messages may only address your creator or a session you created");
       return this.deliver(command.session, channel.actor, { role: "notification", kind: command.kind ?? "agent-message", source, content: command.message, timestamp: Date.now(), replyTo: command.replyTo, defaultAssumption: command.defaultAssumption }, child ? source : undefined);
     }
-    const entries = await this.facts.intents(scope.domainId);
-    const entry = entries.find(entry => entry.intent.id === command.taskId);
-    if (!entry || !this.accessible(entries, source.session).has(command.taskId)) throw new RuntimeError(403, "FORBIDDEN", "Execution is outside your delegation tree");
+    const entry = await this.facts.task(scope.domainId,command.taskId);
+    if (!entry || !await this.accessible(entry.intent,source.session,scope.domainId)) throw new RuntimeError(403, "FORBIDDEN", "Execution is outside your delegation tree");
     if (command.op === "cancel") { await this.cancel(entry.scope, entry.intent); return { taskId: command.taskId, accepted: true }; }
     const intent = entry.intent;
     if (intent.status === "starting" || intent.status === "failed" || intent.status === "cancelled") return { taskId: intent.id, status: intent.status, error: intent.error };
@@ -253,16 +253,16 @@ export class AgentChannel {
     const messages = (await this.runtime.store.messages(entry.scope, intent.session.sessionId)).filter(row => row.runId === intent.id && row.message.role !== "system" && row.messageSeq > (command.cursor ?? 0)).slice(0, command.limit ?? 50);
     return { taskId: intent.id, ...result, messages, cursor: messages.at(-1)?.messageSeq ?? command.cursor ?? 0 };
   }
-  private accessible(entries: Array<{ intent: AgentRunIntent }>, source: AgentSessionRef) {
-    const key = (ref: AgentSessionRef) => JSON.stringify([ref.providerId,ref.sessionId]);
-    const sessions = new Set([key(source)]), ids = new Set<string>();
-    for (let previous = -1; previous !== ids.size;) {
-      previous = ids.size;
-      for (const { intent } of entries) if (sessions.has(key(intent.session)) || (intent.channel.requestedBy && sessions.has(key(intent.channel.requestedBy.session)))) {
-        ids.add(intent.id); sessions.add(key(intent.session));
-      }
+  private async accessible(intent: AgentRunIntent, source: AgentSessionRef, domainId: string) {
+    const sameSession = (ref: AgentSessionRef) => ref.providerId === source.providerId && ref.sessionId === source.sessionId;
+    if (sameSession(intent.session)) return true;
+    let current = intent;
+    while (current.channel.requestedBy) {
+      const parent = current.channel.requestedBy;
+      if (sameSession(parent.session)) return true;
+      current = await this.facts.intent(this.scope(parent.session,domainId),parent.runId);
     }
-    return ids;
+    return false;
   }
   async cancel(scope: Scope, intent: AgentRunIntent) {
     const descendants: Array<{ scope: Scope; intent: AgentRunIntent }> = [];
@@ -295,20 +295,15 @@ export class AgentChannel {
   }
   async tasks(scope: Scope, sessionId: string) {
     await this.runtime.store.session(scope, sessionId);
-    const all = await this.facts.intents(scope.domainId);
-    const own = (source: AgentExecutionRef | null) => source && source.session.sessionId === sessionId && this.provider(source.session.providerId).hostId === scope.hostId;
-    const direct = all.filter(entry => own(entry.intent.channel.requestedBy));
-    const selected = new Set(direct.map(entry => entry.intent.id));
-    for (let previous = -1; previous !== selected.size;) { previous = selected.size; for (const entry of all) if (entry.intent.channel.requestedBy && selected.has(entry.intent.channel.requestedBy.runId)) selected.add(entry.intent.id); }
-    const roots = all.filter(entry => selected.has(entry.intent.id));
+    const sessions = (this.runtime.options.agentProviders ?? []).filter(provider => provider.hostId === scope.hostId).map(provider => ({ providerId: provider.id,sessionId }));
+    const roots = await this.facts.descendants(scope.domainId,sessions);
+    const own = (source: AgentExecutionRef) => sessions.some(session => session.providerId === source.session.providerId && session.sessionId === source.session.sessionId);
     const tasks: ChannelAgentTask[] = [];
-    for (const { intent } of roots) {
+    for (const { intent,rootRunId } of roots) {
       const requestedBy = intent.channel.requestedBy!;
       const delivery = intent.status === "starting" || intent.status === "failed" || intent.status === "cancelled" ? null : agentDeliverySchema.parse(await this.callback(intent, "read"));
-      let ancestor = intent;
-      while (!own(ancestor.channel.requestedBy)) ancestor = all.find(entry => entry.intent.id === ancestor.channel.requestedBy!.runId)!.intent;
       const input = (await this.runtime.store.messages(this.scope(intent.session,scope.domainId),intent.session.sessionId)).find(row => row.id === intent.inputId)!.message;
-      tasks.push({ id: intent.id, kind: "agent", root: { sessionId, runId: ancestor.channel.requestedBy!.runId }, requestedBy, parentTaskId: own(requestedBy) ? null : requestedBy.runId,
+      tasks.push({ id: intent.id, kind: "agent", root: { sessionId, runId: rootRunId }, requestedBy, parentTaskId: own(requestedBy) ? null : requestedBy.runId,
         title: intent.title ?? (typeof input.content === "string" ? input.content.split("\n")[0] : intent.channel.agent.agentId), status: delivery?.status ?? intent.status, error: intent.error ? { code: "AGENT_EXECUTION_FAILED", message: intent.error } : null,
         createdAt: intent.createdAt, agentRef: intent.channel.agent, sessionRef: intent.session, runId: intent.id, process: delivery?.process ?? { mode: "none" }, results: delivery?.results ?? [] });
     }

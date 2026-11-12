@@ -48,7 +48,6 @@ services:
       ONTOMATO_QUERY_SERVICE_TOKEN: ${ONTOMATO_QUERY_SERVICE_TOKEN:?Run the deployment configuration preparation first}
       ONTOMATO_QUERY_SIGNING_KEY: ${ONTOMATO_QUERY_SIGNING_KEY:?Run the deployment configuration preparation first}
       ONTOMATO_QUERY_CALLBACK_URL: http://datarag:18087
-      ONTOMATO_WORKBENCH_URL: http://ontomato:3000
       PUBLIC_BASE_PATH: ${PUBLIC_BASE_PATH:-}
       NODE_ID: ${NODE_ID:-datarag}
       TZ: ${TZ:-UTC}
@@ -85,8 +84,6 @@ services:
       AGENT_RUNTIME_SCHEMA: agent_runtime
       AGENT_RUNTIME_HOSTS: '[{"id":"workbench","token":"${AGENT_RUNTIME_SERVICE_TOKEN:?Run the deployment configuration preparation first}","providers":["workbench","ontology"],"publishProviders":["workbench"],"domainSkills":true},{"id":"ontology","token":"${AGENT_RUNTIME_ONTOLOGY_TOKEN:?Run the deployment configuration preparation first}","providers":["ontology"],"publishProviders":["ontology"],"domainHistory":true}]'
       AGENT_CHANNEL_PROVIDERS: '[{"id":"workbench","hostId":"workbench","url":"http://ontomato:3000/internal/agent-channel","token":"${ONTOMATO_QUERY_SERVICE_TOKEN:?Run the deployment configuration preparation first}"},{"id":"observe","hostId":"workbench","url":"http://ontomato:3000/internal/agent-channel","token":"${ONTOMATO_QUERY_SERVICE_TOKEN:?Run the deployment configuration preparation first}"},{"id":"ontology","hostId":"ontology","url":"http://datarag:18087/platform/agent-channel","token":"${ONTOMATO_QUERY_SERVICE_TOKEN:?Run the deployment configuration preparation first}"}]'
-      AGENT_CHANNEL_DIRECTORY_URL: http://datarag:18087/platform/agent-channel/directory
-      ONTOMATO_QUERY_SERVICE_TOKEN: ${ONTOMATO_QUERY_SERVICE_TOKEN:?Run the deployment configuration preparation first}
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-}

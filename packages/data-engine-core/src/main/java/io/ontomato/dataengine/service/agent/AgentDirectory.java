@@ -9,21 +9,10 @@ import org.springframework.stereotype.Service;
 public class AgentDirectory {
   private final AgentCaller callers;
   private final IdentityService identity;
-  private final org.springframework.web.client.RestClient workbench;
-  public AgentDirectory(AgentCaller callers,IdentityService identity,
-      @org.springframework.beans.factory.annotation.Value("${ONTOMATO_WORKBENCH_URL:http://127.0.0.1:3000}") String url,
-      @org.springframework.beans.factory.annotation.Value("${ONTOMATO_QUERY_SERVICE_TOKEN:}") String token) {
+  public AgentDirectory(AgentCaller callers,IdentityService identity) {
     this.callers=callers; this.identity=identity;
-    this.workbench=org.springframework.web.client.RestClient.builder().baseUrl(url).defaultHeader("X-Ontomato-Query-Service-Token",token).build();
   }
   public JSONObject list(JSONObject actor,String domain) {
-    var result=ontology(actor,domain);
-    String response=workbench.post().uri("/internal/agent-channel/list").header("X-Domain-Id",domain)
-      .contentType(org.springframework.http.MediaType.APPLICATION_JSON).body(JSONObject.of("actor",actor).toJSONString()).retrieve().body(String.class);
-    result.getJSONArray("agents").addAll(JSON.parseObject(response).getJSONArray("agents"));
-    return result;
-  }
-  public JSONObject ontology(JSONObject actor,String domain) {
     var restored=callers.restore(actor,domain);
     var agents=new JSONArray();
     if (identity.hasKnowledgeGovernanceAccess(restored.user().getId(),domain)) agents.add(JSONObject.of(

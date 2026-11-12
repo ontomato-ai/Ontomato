@@ -34,7 +34,7 @@ export class ChannelStore {
     const intent: AgentRunIntent = { id: runId, session: { providerId: channel.agent.providerId, sessionId }, channel, language: options.language, inputId, context: options.context, title: options.title, status: "starting", createdAt: new Date().toISOString(), error: null, cancelled: false };
     await this.store.transaction(async c => {
       if (channel.requestedBy) {
-        const parent = (await c.query(`SELECT intent FROM ${this.store.table("admissions")} WHERE domain_id=$1 AND key=$2 AND intent->'session'=$3::jsonb FOR UPDATE`, [scope.domainId,channel.requestedBy.runId,JSON.stringify(channel.requestedBy.session)])).rows[0];
+        const parent = (await c.query(`SELECT intent FROM ${this.store.table("admissions")} WHERE domain_id=$1 AND key=$2 AND intent IS NOT NULL AND intent->'session'=$3::jsonb FOR UPDATE`, [scope.domainId,channel.requestedBy.runId,JSON.stringify(channel.requestedBy.session)])).rows[0];
         if (parent.intent.cancelled) { intent.cancelled = true; intent.status = "cancelled"; }
       }
       if (options.create) {
@@ -67,16 +67,30 @@ export class ChannelStore {
     const row = (await this.store.pool.query(`SELECT intent FROM ${this.store.table("admissions")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND intent IS NOT NULL ORDER BY intent->>'createdAt' DESC,key DESC LIMIT 1`, [...this.key(scope),sessionId])).rows[0];
     return agentRunIntentSchema.parse(row.intent);
   }
-  async intents(domainId: string): Promise<Array<{ scope: Scope; intent: AgentRunIntent }>> {
-    const { rows } = await this.store.pool.query(`SELECT host_id,intent FROM ${this.store.table("admissions")} WHERE domain_id=$1 AND intent IS NOT NULL ORDER BY intent->>'createdAt',key`, [domainId]);
-    return rows.map(row => ({ scope: { hostId: row.host_id, domainId }, intent: agentRunIntentSchema.parse(row.intent) }));
+  async task(domainId: string, taskId: string): Promise<{ scope: Scope; intent: AgentRunIntent } | null> {
+    const row = (await this.store.pool.query(`SELECT host_id,intent FROM ${this.store.table("admissions")} WHERE domain_id=$1 AND key=$2 AND intent IS NOT NULL`,[domainId,taskId])).rows[0];
+    return row ? { scope: { hostId: row.host_id,domainId },intent: agentRunIntentSchema.parse(row.intent) } : null;
+  }
+  /** Only this conversation's direct delegations and their execution descendants. */
+  async descendants(domainId: string, sessions: AgentExecutionRef["session"][]): Promise<Array<{ scope: Scope; intent: AgentRunIntent; rootRunId: string }>> {
+    const { rows } = await this.store.pool.query(`WITH RECURSIVE delegated AS (
+      SELECT a.host_id,a.intent,a.intent->'channel'->'requestedBy'->>'runId' AS root_run_id
+      FROM ${this.store.table("admissions")} a
+      WHERE a.domain_id=$1 AND a.intent IS NOT NULL AND a.intent->'channel'->'requestedBy'->'session'=ANY($2::jsonb[])
+      UNION ALL
+      SELECT child.host_id,child.intent,parent.root_run_id
+      FROM delegated parent JOIN ${this.store.table("admissions")} child
+        ON child.domain_id=$1 AND child.intent IS NOT NULL
+        AND child.intent->'channel'->'requestedBy'=jsonb_build_object('session',parent.intent->'session','runId',parent.intent->>'id')
+    ) SELECT host_id,intent,root_run_id FROM delegated ORDER BY intent->>'createdAt',intent->>'id'`,[domainId,sessions.map(session => JSON.stringify(session))]);
+    return rows.map(row => ({ scope: { hostId: row.host_id,domainId },intent: agentRunIntentSchema.parse(row.intent),rootRunId: row.root_run_id }));
   }
   async preparationFailures(scope: Scope, sessionId: string) {
-    const { rows } = await this.store.pool.query(`SELECT a.intent FROM ${this.store.table("admissions")} a LEFT JOIN ${this.store.table("runs")} r ON r.host_id=a.host_id AND r.domain_id=a.domain_id AND r.id=a.key WHERE a.host_id=$1 AND a.domain_id=$2 AND a.session_id=$3 AND a.intent->>'status'='failed' AND r.id IS NULL ORDER BY a.intent->>'createdAt',a.key`,[...this.key(scope),sessionId]);
+    const { rows } = await this.store.pool.query(`SELECT a.intent FROM ${this.store.table("admissions")} a LEFT JOIN ${this.store.table("runs")} r ON r.host_id=a.host_id AND r.domain_id=a.domain_id AND r.id=a.key WHERE a.host_id=$1 AND a.domain_id=$2 AND a.session_id=$3 AND a.intent IS NOT NULL AND a.intent->>'status'='failed' AND r.id IS NULL ORDER BY a.intent->>'createdAt',a.key`,[...this.key(scope),sessionId]);
     return rows.map(row => ({ runId: row.intent.id,inputId: row.intent.inputId,error: row.intent.error as string,createdAt: row.intent.createdAt as string }));
   }
   async children(domainId: string, source: AgentExecutionRef): Promise<Array<{ scope: Scope; intent: AgentRunIntent }>> {
-    const { rows } = await this.store.pool.query(`SELECT host_id,intent FROM ${this.store.table("admissions")} WHERE domain_id=$1 AND intent->'channel'->'requestedBy'=$2::jsonb ORDER BY key`,[domainId,JSON.stringify(source)]);
+    const { rows } = await this.store.pool.query(`SELECT host_id,intent FROM ${this.store.table("admissions")} WHERE domain_id=$1 AND intent IS NOT NULL AND intent->'channel'->'requestedBy'=$2::jsonb ORDER BY key`,[domainId,JSON.stringify(source)]);
     return rows.map(row => ({ scope: { hostId: row.host_id,domainId },intent: agentRunIntentSchema.parse(row.intent) }));
   }
   async consume(scope: Scope, sessionId: string, runId: string, ids: string[]) {

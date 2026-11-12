@@ -366,8 +366,11 @@ intent under the session lock, calls prepare outside it, then confirms admission
 At a terminal loop boundary it atomically consumes inputs or seals the loop. Later input belongs
 to the next intent. Each execution fixes requestedBy and root independently of the creation tree.
 
-Callbacks are POST prepare/settle/read/cancel beneath the configured provider URL. Prepare
-returns a runtime start request; steer acknowledges the host's input recording. Settle closes
+Callbacks are POST list/prepare/settle/read/cancel beneath the configured provider URL. List
+receives `{providerId,actor}` and returns only that provider's accessible entries. The runtime
+calls every registered provider directly and merges their lists; Java answers only the ontology
+provider's list and identity recovery. There is no separate directory port or Java-to-Node lookup.
+Prepare returns a runtime start request; steer acknowledges the host's input recording. Settle closes
 business eligibility; read returns the host's delivery projection. Cancel closes eligibility
 before runtime cancellation. Runtime cancellation includes execution descendants and suppresses
 automatic wakeup from that cancellation. No platform task table or delegation budget is added.
@@ -400,3 +403,8 @@ prevents an automatic wake. Diagnostics are not new model inputs and cannot trig
 An agent caller ID is an independent authorization reference, not a run or retrieval-scope ID.
 Keep these identities distinct when migrating retrieval: its old caller row owns business input
 and closure, while the agent caller's lifetime also covers children after their parent stops.
+
+Intent reads are scoped to their use: task IDs use a domain/task lookup, read/cancel authorization
+walks requestedBy ancestors, and task snapshots use a recursive CTE seeded by this conversation's
+direct delegations. Direct child reads and recursive joins use requestedBy expression indexes;
+conversation seeds use a requester-session expression index. No domain-wide intent list is read.

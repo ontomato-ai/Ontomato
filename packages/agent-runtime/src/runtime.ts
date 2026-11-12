@@ -1,4 +1,4 @@
-import { AgentChannel, type AgentProvider, type AgentDirectoryPort } from "./channel";
+import { AgentChannel, type AgentProvider } from "./channel";
 import { agentNotificationSchema, type AgentRunIntent } from "@ontomato/contracts/agent-channel";
 import { Workspaces } from "./workspaces";
 import type { RuntimeSessionHistory, SessionHistoryQuery } from "@ontomato/contracts/session-history";
@@ -95,7 +95,6 @@ export interface RuntimeOptions {
   modelSeed?: { baseUrl?: string; apiKey?: string; modelName?: string };
   eventBufferSize?: number;
   agentProviders?: AgentProvider[];
-  agentDirectory?: AgentDirectoryPort;
 }
 
 /** Only the wire profile is persisted; provider diagnostics are deliberately not part of it. */

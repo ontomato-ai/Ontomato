@@ -59,7 +59,7 @@ it("rejects an unrelated recipient before receiving an input or calling a provid
 it("a later parent run can read work its conversation delegated in an earlier run", async () => {
   const { channel: port } = channel();
   const child = { id: inputId, session: { providerId: source.session.providerId, sessionId: inputId }, channel: { ...context, root: { ...source,runId: "44444444-4444-4444-8444-444444444444" }, requestedBy: { ...source, runId: "44444444-4444-4444-8444-444444444444" } }, inputId, status: "completed" as const, language: "en", createdAt: new Date(0).toISOString(), error: null, cancelled: false };
-  vi.spyOn(port.facts, "intents").mockResolvedValue([{ scope,intent: child }]);
+  vi.spyOn(port.facts, "task").mockResolvedValue({ scope,intent: child });
   vi.spyOn(port, "callback").mockResolvedValue({ status: "completed", summary: "Saved", process: { mode: "none" }, results: [] });
   await expect(port.execute(scope,run,{ op: "read",taskId: inputId })).resolves.toMatchObject({ taskId: inputId,status: "completed" });
 });
@@ -67,7 +67,7 @@ it("a later parent run can read work its conversation delegated in an earlier ru
 it("message reads expose conversation progress without transferring the child's system prompt", async () => {
   const { runtime,channel: port } = channel();
   const child = { id: inputId, session: { providerId: source.session.providerId,sessionId: inputId },channel: { ...context,requestedBy: source },inputId,language: "en",status: "completed" as const,createdAt: new Date(0).toISOString(),error: null,cancelled: false };
-  vi.spyOn(port.facts,"intents").mockResolvedValue([{ scope,intent: child }]);
+  vi.spyOn(port.facts,"task").mockResolvedValue({ scope,intent: child });
   vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",summary: "Saved",process: { mode: "none" },results: [] });
   vi.spyOn(runtime.store,"messages").mockResolvedValue([
     { id: runId,runId: inputId,messageSeq: 1,message: { role: "system",content: "Private host instructions",timestamp: 1 } },
@@ -83,4 +83,59 @@ it("does not prepare a child intent cancelled concurrently with its admission", 
   vi.spyOn(port.facts,"reserve").mockImplementation(async (_scope,sessionId,id,inputId,channel,options) => ({ id,session: { providerId: channel.agent.providerId,sessionId },channel,language: options.language,inputId,status: "cancelled",createdAt: new Date(0).toISOString(),error: null,cancelled: true }));
   await expect(port.execute(scope,run,{ op: "start",agent: context.agent,message: "Inspect knowledge" })).resolves.toMatchObject({ status: "cancelled" });
   expect(pending).not.toHaveBeenCalled();
+});
+
+
+it("authorizes a deep task by reading only the requested intent and its ancestors", async () => {
+  const { channel: port } = channel();
+  const middleId = "44444444-4444-4444-8444-444444444444";
+  const middle = { id: middleId,session: { providerId: source.session.providerId,sessionId: middleId },channel: { ...context,requestedBy: source },inputId: middleId,language: "en",status: "completed" as const,createdAt: new Date(0).toISOString(),error: null,cancelled: false };
+  const child = { ...middle,id: inputId,session: { ...middle.session,sessionId: inputId },channel: { ...context,requestedBy: { session: middle.session,runId: middleId } } };
+  const task = vi.spyOn(port.facts,"task").mockResolvedValue({ scope,intent: child });
+  vi.mocked(port.facts.intent).mockResolvedValue(middle);
+  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",summary: "Saved",process: { mode: "none" },results: [] });
+  await expect(port.execute(scope,run,{ op: "read",taskId: inputId })).resolves.toMatchObject({ taskId: inputId });
+  expect(task).toHaveBeenCalledWith(scope.domainId,inputId);
+  expect(port.facts.intent).toHaveBeenCalledTimes(1);
+  expect(port.facts.intent).toHaveBeenCalledWith(scope,middleId);
+});
+
+it.each(["read","cancel"])("rejects %s outside the caller's delegation chain before provider access", async op => {
+  const { channel: port } = channel();
+  const unrelated = { id: inputId,session: { ...source.session,sessionId: inputId },channel: context,inputId,language: "en",status: "completed" as const,createdAt: new Date(0).toISOString(),error: null,cancelled: false };
+  vi.spyOn(port.facts,"task").mockResolvedValue({ scope,intent: unrelated });
+  const callback = vi.spyOn(port,"callback");
+  await expect(port.execute(scope,run,{ op,taskId: inputId })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  expect(callback).not.toHaveBeenCalled();
+});
+
+it("merges each registered provider's own list directly and then applies the query", async () => {
+  const { runtime,channel: port } = channel();
+  runtime.options.agentProviders!.push({ id: "another-provider",hostId: "another-host",url: "http://another.test/channel",token: "another-service" });
+  const fetch = vi.fn(async (_url: unknown,init: { body?: string }) => {
+    const body = JSON.parse(init.body!);
+    expect(body.actor).toEqual(context.actor);
+    return Response.json({ agents: [{ ref: { providerId: body.providerId,agentId: "agent" },name: body.providerId === "registered-custom" ? "Reviewer" : "Writer",description: "" }] });
+  });
+  vi.stubGlobal("fetch",fetch);
+  await expect(port.execute(scope,run,{ op: "list",query: "review" })).resolves.toEqual({ agents: [{ ref: { providerId: "registered-custom",agentId: "agent" },name: "Reviewer",description: "" }] });
+  expect(fetch.mock.calls.map(call => call[0])).toEqual(["http://provider.test/channel/list","http://another.test/channel/list"]);
+});
+
+it("projects only the conversation subtree returned by the store, retaining its root reply", async () => {
+  const { runtime,channel: port } = channel();
+  const middleId = "44444444-4444-4444-8444-444444444444";
+  const middle = { id: middleId,session: { providerId: source.session.providerId,sessionId: middleId },channel: { ...context,requestedBy: source },inputId: middleId,language: "en",status: "completed" as const,createdAt: new Date(0).toISOString(),error: null,cancelled: false };
+  const child = { ...middle,id: inputId,inputId,session: { ...middle.session,sessionId: inputId },channel: { ...context,requestedBy: { session: middle.session,runId: middleId } } };
+  runtime.store.session = vi.fn(async () => ({ id: sessionId,domainId: scope.domainId,activeRunId: null,latestRunId: runId,createdAt: new Date(0).toISOString(),updatedAt: new Date(0).toISOString() }));
+  const descendants = vi.spyOn(port.facts,"descendants").mockResolvedValue([{ scope,intent: middle,rootRunId: runId },{ scope,intent: child,rootRunId: runId }]);
+  vi.spyOn(port.facts,"preparationFailures").mockResolvedValue([]);
+  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",summary: "Saved",process: { mode: "none" },results: [] });
+  vi.spyOn(runtime.store,"messages").mockImplementation(async (_scope,id) => id === sessionId ? [] : [{ id,runId: id,messageSeq: 1,message: notification }]);
+  const result = await port.tasks(scope,sessionId);
+  expect(descendants).toHaveBeenCalledWith(scope.domainId,[source.session]);
+  expect(result.tasks.map(task => ({ id: task.id,root: task.root,parentTaskId: task.parentTaskId }))).toEqual([
+    { id: middleId,root: { sessionId,runId },parentTaskId: null },
+    { id: inputId,root: { sessionId,runId },parentTaskId: middleId },
+  ]);
 });

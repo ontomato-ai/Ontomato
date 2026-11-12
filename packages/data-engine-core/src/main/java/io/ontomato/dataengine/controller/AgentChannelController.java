@@ -35,9 +35,11 @@ public class AgentChannelController {
   public JSONObject restore(@RequestBody Map<String,Object> input,HttpServletRequest request) {
     var body=body(input); return callers.workbench(body.getJSONObject("actor"),domain(request),body.getBooleanValue("readOnly"));
   }
-  @PostMapping("/directory")
+  @PostMapping("/list")
   public JSONObject list(@RequestBody Map<String,Object> input,HttpServletRequest request) {
-    return directory.list(body(input).getJSONObject("actor"),domain(request));
+    var body=body(input); AgentJson.fields(body,"providerId","actor");
+    if (!"ontology".equals(AgentJson.text(body,"providerId"))) throw AgentHttpException.missing();
+    return directory.list(body.getJSONObject("actor"),domain(request));
   }
   @PostMapping("/prepare")
   public JSONObject prepare(@RequestBody Map<String,Object> input,HttpServletRequest request) throws Exception {

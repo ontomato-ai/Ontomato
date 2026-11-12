@@ -17,10 +17,11 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class AgentChannelBoundaryTest {
   private static final String SESSION="11111111-1111-4111-8111-111111111111", RUN="22222222-2222-4222-8222-222222222222";
   private final AgentCaller callers=mock(AgentCaller.class);
+  private final AgentDirectory directory=mock(AgentDirectory.class);
   private final KnowledgeGovernanceService governance=mock(KnowledgeGovernanceService.class);
   private final OntologyAgentStore store=mock(OntologyAgentStore.class);
   private org.springframework.test.web.servlet.MockMvc mvc() {
-    return MockMvcBuilders.standaloneSetup(new AgentChannelController(callers,mock(AgentDirectory.class),governance,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class)))
+    return MockMvcBuilders.standaloneSetup(new AgentChannelController(callers,directory,governance,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class)))
       .setControllerAdvice(new OntologyAgentErrors()).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
   }
   private String input(String mode,String role) {
@@ -58,6 +59,26 @@ class AgentChannelBoundaryTest {
     when(callers.open(anyString(),eq(context))).thenAnswer(call -> JSONObject.of("id",call.getArgument(0),"domainId","a"));
     host.start(SESSION,RUN,"Review knowledge",context);
     verify(callers).open(argThat(id -> !id.equals(RUN)),eq(context));
+  }
+
+  @Test void listUsesTheOntologyProviderProtocol() throws Exception {
+    var actor=JSONObject.of("id",RUN,"domainId","a");
+    when(directory.list(actor,"a")).thenReturn(JSONObject.of("agents",java.util.List.of()));
+    mvc().perform(post("/platform/agent-channel/list").header("X-Domain-Id","a").contentType(MediaType.APPLICATION_JSON)
+      .content(JSONObject.of("providerId","ontology","actor",actor).toJSONString())).andExpect(status().isOk());
+    verify(directory).list(actor,"a");
+  }
+  @Test void ontologyDirectoryReturnsOnlyItsOwnAuthorizedDefinition() {
+    var actor=JSONObject.of("id",RUN,"domainId","a");
+    var identity=mock(io.ontomato.dataengine.service.IdentityService.class);
+    when(callers.restore(actor,"a")).thenReturn(new AgentCaller.Actor(RUN,new io.ontomato.dataengine.service.QueryAccessService.GrantUser("user","a"),1000L));
+    when(identity.hasKnowledgeGovernanceAccess("user","a")).thenReturn(true);
+    var own=new AgentDirectory(callers,identity);
+    var agents=own.list(actor,"a").getJSONArray("agents");
+    assertEquals(1,agents.size());
+    assertEquals("ontology",agents.getJSONObject(0).getJSONObject("ref").getString("providerId"));
+    when(identity.hasKnowledgeGovernanceAccess("user","a")).thenReturn(false);
+    assertTrue(own.list(actor,"a").getJSONArray("agents").isEmpty());
   }
 
 }

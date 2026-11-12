@@ -182,6 +182,12 @@ export class RuntimeStore {
           UPDATE ${this.table("messages")} SET context_seq=seq WHERE run_id IS NOT NULL;
           INSERT INTO ${this.table("schema_migrations")} VALUES(5)`);
       }
+      await c.query(`
+        CREATE INDEX IF NOT EXISTS admissions_channel_task_idx ON ${this.table("admissions")}(domain_id,key) WHERE intent IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS admissions_channel_session_idx ON ${this.table("admissions")}(host_id,domain_id,session_id) WHERE intent IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS admissions_requested_by_idx ON ${this.table("admissions")}(domain_id,(intent->'channel'->'requestedBy')) WHERE intent IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS admissions_requester_session_idx ON ${this.table("admissions")}(domain_id,(intent->'channel'->'requestedBy'->'session')) WHERE intent IS NOT NULL;
+      `);
       // Every per-run and per-session read path needs its own index; without them each read scans the whole table.
       await c.query(`
         CREATE INDEX IF NOT EXISTS messages_run_idx ON ${this.table("messages")}(host_id,domain_id,run_id,seq);
