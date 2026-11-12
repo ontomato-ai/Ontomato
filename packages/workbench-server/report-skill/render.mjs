@@ -55,14 +55,17 @@ async function main() {
   const [planFile, ...args] = process.argv.slice(2);
   if (!planFile || args.length && (args.length !== 2 || args[0] !== "--font-root"))
     throw new Error("Usage: node skills/assistant-report/scripts/render.cjs work/slides.json [--font-root /usr/share/fonts/truetype]");
+  const plan = planSchema.parse(JSON.parse(fs.readFileSync(planFile, "utf8")));
+  const referenced = references(parseProductMarkdown(fs.readFileSync(plan.report, "utf8")));
+  const used = new Set(plan.slides.flatMap(entry => entry.layout === "chart" ? [entry.chart] : entry.layout === "table" ? [entry.dataset] : []));
+  const missing = [...referenced].filter(file => (file.endsWith(".chart.json") || file.endsWith(".dataset.json")) && !used.has(file));
+  if (missing.length) throw new Error(`Report sources missing from slides:\n${missing.join("\n")}`);
   const fontRoot = args[1] ?? FONT_ROOT;
   const fontBuffers = FONT_FILES.map(file => fs.readFileSync(path.join(fontRoot, file)));
   const skillRoot = path.resolve(__dirname, "..");
   const echarts = createRequire(path.join(skillRoot, "vendor/echarts.cjs"))(path.join(skillRoot, "vendor/echarts.cjs"));
   await initWasm(Buffer.from(fs.readFileSync(path.join(skillRoot, "vendor/resvg.wasm.b64"), "utf8"), "base64"));
   const theme = JSON.parse(fs.readFileSync(path.join(skillRoot, "resources/chart-theme.json"), "utf8"));
-  const plan = planSchema.parse(JSON.parse(fs.readFileSync(planFile, "utf8")));
-  const referenced = references(parseProductMarkdown(fs.readFileSync(plan.report, "utf8")));
   const deck = new PptxGenJS();
   deck.layout = "LAYOUT_WIDE";
   deck.title = plan.title;

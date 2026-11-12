@@ -6,16 +6,20 @@ description: Write an evidence-based report and, when requested, turn that repor
 Write the report to outputs/reports/<name>/report.md and link it in the final reply
 body. Use ordinary read/write/edit/bash tools. Keep drafts in work/. Explain the
 question, observations, calculations, sources, limitations and conclusions. Use
-verified dataset files, preserve units and truncation warnings, and reference
-original charts/data with workspace-relative outputs/ paths under the host's
-Markdown rule. Do not invent facts or publish a second report body.
+verified dataset files and preserve units and truncation warnings. Embed every
+chart and dataset in the report using image syntax: ![title](outputs/...). Do not
+put data file paths in inline code or table text. Use the original files and
+workspace-relative outputs/ paths under the host's Markdown rule. Do not invent
+facts or publish a second report body.
 
 After completing a report, include “Make into PPT” in the same .follow-ups.json
-card as the other suggestions (at most three total). Use the user's language for
+card as the other suggestions, respecting the host's follow-up limits. Use the user's language for
 label and question; the question must name the actual report, e.g. “Please turn
 outputs/reports/sales/report.md into PPT.” Set datasetPaths to [] for this item.
 Reference the card in the final reply body using the host's follow-up format.
 
+Generate PPT only when the user's message requests it. After writing a report,
+offer it in the follow-up suggestions; do not proactively generate a PPT.
 When the user requests PPT, read references/presentation.md, read the report and
 write a slide list in work/. Run:
 `node skills/assistant-report/scripts/render.cjs work/slides.json`

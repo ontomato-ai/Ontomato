@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -20,4 +20,23 @@ test("committed report skill artifacts match the source and locked dependencies"
     assert.equal(Buffer.compare(generated, committed), 0,
       `${file} is stale: run pnpm --filter @ontomato/workbench-server build:report-skill`);
   }
+});
+
+test("rejects a slide list that omits a dataset referenced by the report before reading fonts", async (t) => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "report-skill-coverage-"));
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+  const report = "outputs/reports/sample/report.md";
+  const dataset = "outputs/omitted.dataset.json";
+  await mkdir(path.join(workspace, path.dirname(report)), { recursive: true });
+  await writeFile(path.join(workspace, report), `# Report\n\n![Evidence](${dataset})\n`);
+  await writeFile(path.join(workspace, "slides.json"), JSON.stringify({ report, title: "Report", slides: [
+    { layout: "text", title: "Summary", bullets: ["Conclusion"] },
+  ] }));
+  await assert.rejects(promisify(execFile)(process.execPath, [
+    path.join(server, "resources/runtime-skills/assistant-report/scripts/render.cjs"), "slides.json",
+  ], { cwd: workspace }), (error) => {
+    assert.notEqual(error.code, 0);
+    assert.ok(error.stderr.includes(dataset), error.stderr);
+    return true;
+  });
 });

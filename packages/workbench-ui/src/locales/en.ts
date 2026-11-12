@@ -638,6 +638,7 @@ export default {
     "clarificationNotes": "Additional notes (optional)",
     "clarificationConfirm": "Confirm and continue",
     "clarificationLoadFailed": "Unable to load clarification",
+    "followUpsLoadFailed": "Unable to load follow-up suggestions",
     "clarificationReload": "Reload",
     "adjustScope": "Adjust scope",
     "adjustScopeTitle": "Adjust scope and run a new query",

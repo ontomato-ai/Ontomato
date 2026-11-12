@@ -5,6 +5,8 @@ and limitations faithful to it. Carry its conclusions, charts and tables into th
 deck, splitting slides when needed. Write a JSON slide list in `work/slides.json`;
 this is a plan for the deterministic helper, not another report or data store.
 Use one point per slide. Text is plain text, not arbitrary Markdown or HTML.
+Every chart and dataset embedded in the report must appear in the PPT; the helper
+rejects the slide list if any are missing.
 
 ```json
 {

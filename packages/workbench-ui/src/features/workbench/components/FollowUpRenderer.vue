@@ -13,7 +13,7 @@ const busy = ref(false);
 const error = ref("");
 watch(() => props.artifact.id, async () => {
   try { suggestions.value = assistantFollowUpsSchema.parse(JSON.parse(await (await props.read()).text())).suggestions; }
-  catch { error.value = "Unable to load follow-up suggestions"; }
+  catch { error.value = t("assistant.followUpsLoadFailed"); }
 }, { immediate: true });
 async function proceed(item: typeof suggestions.value[number]) {
   if (!continueConversation.value || busy.value) return;
