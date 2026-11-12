@@ -5,4 +5,5 @@ export { default as DslViewer } from "./components/DslViewer.vue";
 export { fetchDashboardList } from "./api";
 export { useDashboardStore } from "./stores/dashboard";
 export { default as DashboardMetricPreview } from "./components/DashboardMetricPreview.vue";
+export { default as DashboardCardPicker } from "./components/DashboardCardPicker.vue";
 export { default as DashboardMetricDetail } from "./components/DashboardMetricDetail.vue";

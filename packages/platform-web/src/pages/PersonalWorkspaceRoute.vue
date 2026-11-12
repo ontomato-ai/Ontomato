@@ -4,7 +4,7 @@ import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { nodeApiRequest } from "@ontomato/workbench-ui";
 import { defaultPersonalWorkspace, personalWorkspaceSchema, recentWorkListSchema, type RecentWork } from "@ontomato/contracts/personal-workspace";
-import { DashboardMetricPreview } from "@ontomato/workbench-ui/features/dashboard";
+import { DashboardCardPicker, DashboardMetricPreview } from "@ontomato/workbench-ui/features/dashboard";
 import type { DashboardListItem } from "@ontomato/contracts/dashboard";
 import { platformSchedulesPath, platformTaskListSchema, type PlatformTask } from "@ontomato/contracts/platform-schedules";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
@@ -160,7 +160,7 @@ async function refresh() {
 onMounted(() => { void readConfig(); void refresh(); });
 function configure() {
   delete errors.value.save;
-  draft.value = { ...config.value, interactions: { ...config.value.interactions }, dashboardIds: [...config.value.dashboardIds], applicationIds: [...config.value.applicationIds] };
+  draft.value = { ...config.value, dashboardCards: Object.fromEntries(Object.entries(config.value.dashboardCards).map(([id, cards]) => [id, [...cards]])), interactions: { ...config.value.interactions }, dashboardIds: [...config.value.dashboardIds], applicationIds: [...config.value.applicationIds] };
   editing.value = true;
 }
 async function save() {
@@ -195,7 +195,6 @@ const actions = computed(() => [
   ...(ready.value ? [{ id: "configure", label: text.value.configure, icon: Settings2, onClick: configure }] : []),
 ]);
 </script>
-
 <template>
   <AppPage :title="text.title" :description="text.intro" :actions="actions" :labels="{ save: text.save, discard: text.cancel, unsavedChanges: text.unsaved }">
     <div v-if="errors.config" role="alert" class="workspace-error">{{ errors.config }} <el-button @click="readConfig">{{ text.retry }}</el-button></div>
@@ -220,6 +219,7 @@ const actions = computed(() => [
               <span><strong>{{ resultTasks.length }}</strong>{{ text.results }}</span>
               <span><strong>{{ runningTasks.length }}</strong>{{ text.runningTasks }}</span>
             </div>
+            <p v-if="resultTasks.length" class="execution-note">{{ locale.startsWith('zh') ? '执行完成表示运行已结束，数据是否取到及结论是否可用请查看结果' : 'Completed means the run ended. Check the result for data availability and usable conclusions.' }}</p>
             <p v-if="!attentionTasks.length" class="workspace-empty">{{ text.clear }}<br>{{ text.noAttention }}</p>
             <template v-for="(task, taskIndex) in attentionTasks" :key="task.id">
             <h3 v-if="taskIndex === 0 || taskGroup(task) !== taskGroup(attentionTasks[taskIndex - 1]!)">{{ taskGroup(task) }}</h3>
@@ -259,7 +259,7 @@ const actions = computed(() => [
             <article v-for="(board, index) in selectedDashboards" :key="board.id" class="workspace-board">
               <button v-if="board.resource" class="resource-link board-link" @click="router.push({ path: platformRoutes.dashboards.path, query: { dashboardId: board.id } })"><LayoutDashboard :size="16" aria-hidden="true" /><span>{{ board.resource.name }}</span><ArrowUpRight :size="14" aria-hidden="true" /></button>
               <p v-else>{{ text.unavailable }}</p>
-              <DashboardMetricPreview v-if="board.resource && index < 4" :dashboard-id="board.id" :revision="previewRevision" @select="openMetric(board.id, $event)" />
+              <DashboardMetricPreview v-if="board.resource && index < 4" :dashboard-id="board.id" :card-ids="config.dashboardCards[board.id]" :revision="previewRevision" @select="openMetric(board.id, $event)" />
             </article>
           </template>
         </template>
@@ -299,6 +299,10 @@ const actions = computed(() => [
             <el-option v-for="id in draft.dashboardIds.filter(id => !dashboards.some(board => board.id === id))" :key="id" :value="id" :label="text.unavailable" />
           </el-select>
         </el-form-item>
+        <el-form-item v-for="id in draft.dashboardIds.filter(id => dashboards.some(board => board.id === id))" :key="id" :label="`${dashboards.find(board => board.id === id)?.name} · ${locale.startsWith('zh') ? '关注内容' : 'Followed cards'}`">
+          <DashboardCardPicker v-model="draft.dashboardCards[id]" :dashboard-id="id" />
+          <el-button v-if="draft.dashboardCards[id] !== undefined" text @click="delete draft.dashboardCards[id]">{{ locale.startsWith('zh') ? '恢复默认展示' : 'Use default selection' }}</el-button>
+        </el-form-item>
         <el-form-item :label="text.apps">
           <el-select v-model="draft.applicationIds" multiple filterable :disabled="catalog.loading.value || !!catalog.error.value">
             <el-option v-for="app in apps" :key="app.id" :value="app.id" :label="app.names[locale] ?? app.names.en" />
@@ -330,7 +334,6 @@ const actions = computed(() => [
     </component>
   </AppPage>
 </template>
-
 <style scoped>
 .workspace-grid { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(300px, 1fr); gap: var(--spacing-xl); align-items: start; }
 .workspace-grid.tasks-first { grid-template-columns: minmax(300px, 1fr) minmax(0, 2.2fr); }
@@ -381,6 +384,7 @@ p { color: var(--el-text-color-secondary); line-height: 1.6; overflow-wrap: anyw
 .resource-link { border: 0; padding: 0; background: transparent; color: var(--el-text-color-primary); font: inherit; font-size: var(--text-sm); line-height: 20px; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
 .resource-link:hover { color: var(--brand-link, var(--el-color-primary)); text-decoration: underline; }
 .workspace-empty { font-size: var(--text-sm); padding-block: var(--spacing-md); }
+.execution-note { margin: 0 0 var(--spacing-md); font-size: var(--text-xs); line-height: 1.5; }
 .recent-item { align-items: flex-start; }
 .recent-item .resource-icon { margin-top: 2px; }
 .activity-column .workspace-item { align-items: flex-start; }

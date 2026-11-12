@@ -64,7 +64,7 @@ describe("personal workspace HTTP persistence", () => {
     expect(database.query.mock.calls.length).toBe(calls);
   });
   it("saves ordered resource references and isolates both users and domains", async () => {
-    const config = { ...defaultPersonalWorkspace(), layout: "data", dashboardIds: ["second", "first"], applicationIds: ["app-a"] };
+    const config = { ...defaultPersonalWorkspace(), layout: "data", dashboardIds: ["second", "first"], dashboardCards: { second: ["chart-b", "metric-a"], first: [] }, applicationIds: ["app-a"] };
     const saved = await fetch(base, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config) });
     expect(saved.status).toBe(200);
     expect(await (await fetch(base)).json()).toEqual({ data: config });

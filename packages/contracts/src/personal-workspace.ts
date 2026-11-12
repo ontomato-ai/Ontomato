@@ -6,6 +6,7 @@ export const personalWorkspaceSchema = z.object({
   layout: z.enum(["tasks", "data", "assistant"]),
   dashboardIds: ids,
   applicationIds: ids,
+  dashboardCards: z.record(z.string().min(1).max(200), ids).default({}),
   interactions: z.object({
     metrics: z.enum(["drawer", "dialog", "page", "conversation"]).default("drawer"),
     tasks: z.enum(["drawer", "dialog", "page", "conversation"]).default("drawer"),
@@ -13,7 +14,7 @@ export const personalWorkspaceSchema = z.object({
 }).strict();
 export type PersonalWorkspace = z.infer<typeof personalWorkspaceSchema>;
 export const defaultPersonalWorkspace = (): PersonalWorkspace => ({
-  schemaVersion: 1, layout: "assistant", dashboardIds: [], applicationIds: [], interactions: { metrics: "drawer", tasks: "drawer" },
+  schemaVersion: 1, layout: "assistant", dashboardIds: [], applicationIds: [], dashboardCards: {}, interactions: { metrics: "drawer", tasks: "drawer" },
 });
 
 /** Only business navigation is retained; credentials and arbitrary query strings never enter history. */
