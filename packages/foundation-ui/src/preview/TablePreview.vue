@@ -107,6 +107,8 @@ function sorted({ prop, order: direction }: { prop: string | null; order: Order 
   sort.value = prop !== null && direction ? { column: Number(prop), order: direction } : null;
 }
 
+/** Rows keep their source index as identity, so a row's checkbox follows its record when the order changes. */
+const sourceIndex = (row: { source: number }) => String(row.source);
 const chosenRow = ({ row }: { row: { source: number } }) => (props.selected?.includes(row.source) ? "is-chosen" : "");
 
 function toggle(row: number, selected: number[]) {
@@ -116,7 +118,14 @@ function toggle(row: number, selected: number[]) {
 
 <template>
   <div class="table-preview">
-    <el-table ref="tableRef" v-bind="$attrs" :data="rows" :row-class-name="chosenRow" @sort-change="sorted">
+    <el-table
+      ref="tableRef"
+      v-bind="$attrs"
+      :data="rows"
+      :row-key="sourceIndex"
+      :row-class-name="chosenRow"
+      @sort-change="sorted"
+    >
       <el-table-column v-if="selected" width="44" class-name="table-preview-choice">
         <template #default="{ row }">
           <el-checkbox
@@ -135,10 +144,11 @@ function toggle(row: number, selected: number[]) {
         :align="numeric[index] ? 'right' : 'left'"
         :sortable="arrange ? 'custom' : false"
         :sort-orders="['ascending', 'descending', null]"
+        :label-class-name="arrange ? 'table-preview-arranged' : undefined"
         min-width="120"
       >
         <template v-if="arrange" #header>
-          <span class="table-preview-heading">{{ column }}</span>
+          <span class="table-preview-heading" :title="column">{{ column }}</span>
           <ColumnFilter
             :column="column"
             :cells="columnCells[index]!"
@@ -186,8 +196,25 @@ function toggle(row: number, selected: number[]) {
   white-space: nowrap;
 }
 
+/* In a narrow column the name gives way and ends in an ellipsis; the filter and the sort carets keep their place. */
+.table-preview :deep(th.table-preview-arranged > .cell) {
+  display: flex;
+  align-items: center;
+}
+
+.table-preview :deep(th.table-preview-arranged.is-right > .cell) {
+  justify-content: flex-end;
+}
+
+.table-preview :deep(th.table-preview-arranged > .cell > *:not(.table-preview-heading)) {
+  flex: none;
+}
+
 .table-preview-heading {
-  vertical-align: middle;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Element Plus gives a checkbox a 32px line of its own; here it is only as tall as its box and sits in the middle of
