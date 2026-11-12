@@ -257,7 +257,7 @@ export default {
     "dslExecNoData": "DSL execution failed, no data returned"
   },
   "mcp": {
-    "publishedSettingsTitle": "MCP services",
+    "publishedSettingsTitle": "Published MCP services",
     "noPublishedServices": "No published MCP services",
     "externalTab": "Agent tools",
     "externalHint": "Add a service, then select it in the agent configuration.",

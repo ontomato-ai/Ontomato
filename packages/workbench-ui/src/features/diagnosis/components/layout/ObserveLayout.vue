@@ -39,7 +39,7 @@ const pages = [
 /** The model the diagnosis runs on: the application's own entry at the foot of its column, not one of its pages. */
 const MODEL = { id: "model", path: "/ops/model" } as const;
 const modelLabels = useAgentModelLabels();
-const bottomEntry = computed(() => ({ label: modelLabels.value.title, icon: "settings" }));
+const bottomEntry = computed(() => ({ label: modelLabels.value.title, icon: "models" }));
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: "operations",
   // The application's name is the platform's (the rail and this column read one entry): the platform decides it.
