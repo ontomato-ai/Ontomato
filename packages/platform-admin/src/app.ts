@@ -2,7 +2,7 @@ import { watchEffect, type App } from "vue";
 import type { Router, RouteRecordRaw } from "vue-router";
 import { installPageGuard } from "./router";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { platformHostKey, providePageActions, type PlatformPageHost, type PlatformTheme } from "./context";
+import { platformHostKey, type PlatformPageHost, type PlatformTheme } from "./context";
 import type { PlatformNavigation } from "./navigation";
 import "./styles/platform.css";
 import "./styles/admin-common.css";
@@ -25,7 +25,6 @@ export interface PlatformAdminOptions {
 export function installPlatformPages(app: App, router: Router, options: PlatformAdminOptions): RouteRecordRaw[] {
   const { host } = options;
   app.provide(platformHostKey, host);
-  providePageActions(app);
   installPageGuard(router, options.navigation, host.access, options.home);
   // Apply the service's document tokens only while displaying its pages, including teleported dialogs.
   watchEffect((cleanup) => {

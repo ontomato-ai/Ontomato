@@ -2,12 +2,10 @@ import platformSchedules from "@ontomato/platform-schedules/locales/en";
 
 // Generated from the original frontend messages using the keys the migrated pages actually use; extended as more pages are migrated.
 export default {
-  ops: {"title": "Operations", "turns": "Turn evidence", "logs": "Live logs", "tests": "Automatic tests", "results": "Test results", "cases": "Test cases", "dsl": "DSL execution", "knowledge": "Operations knowledge", "modelSettings": "Model selection", "back": "Back to chat", "references": "Evidence references", "referenceHint": "This package contains references, not archived logs. Source authorization and retention still apply.", "legacy": "This older workspace has no runtime references. Refresh it to resolve current evidence.", "diagnose": "Diagnose", "refresh": "Refresh references", "greeting": "What should we diagnose?", "placeholder": "Describe what went wrong, or paste a Turn key…", "context": "(Current page: {page})", "contextTurn": "Turn {key}", "contextRun": "test run {run}", "contextCase": "case {case} of test run {run}"},
+  ops: {"title": "Operations", "turns": "Turn evidence", "logs": "Live logs", "tests": "Automatic tests", "results": "Test results", "cases": "Test cases", "dsl": "DSL execution", "knowledge": "Operations knowledge", "back": "Back to chat", "references": "Evidence references", "referenceHint": "This package contains references, not archived logs. Source authorization and retention still apply.", "legacy": "This older workspace has no runtime references. Refresh it to resolve current evidence.", "diagnose": "Diagnose", "refresh": "Refresh references", "greeting": "What should we diagnose?", "placeholder": "Describe what went wrong, or paste a Turn key…", "context": "(Current page: {page})", "contextTurn": "Turn {key}", "contextRun": "test run {run}", "contextCase": "case {case} of test run {run}"},
   "admin": {
     "agentEditorEnabledHint": "Allow this agent to be selected and used in the workspace.",
     "agentEditorPreview": "Preview",
-    "agentEditorUnsaved": "Unsaved changes",
-    "agentEditorSaved": "No unsaved changes",
     "agentEditorDiscard": "Discard your unsaved changes and leave the editor?",
     "agentEditorDiscardAction": "Discard changes",
     "agentEditorCharacters": "{count} characters",
@@ -812,7 +810,6 @@ export default {
     "modelUnavailable": "{id} (unavailable)",
     "modelSelectionMissing": "Model \"{id}\" is no longer configured. Choose another model; until then this agent cannot run.",
     "modelOptionsLoadFailed": "Couldn't load the models to choose from.",
-    "modelSaved": "Model saved",
     "agentsTab": "Agents",
     "agentsGroup": "Agents",
     "capabilities": "Capabilities",
@@ -827,9 +824,7 @@ export default {
     "dataScopeIncludeAdjacent": "Include the adjacent object types",
     "dataScopeList": "Object types",
     "dataScopeNoClasses": "This domain has no object types yet",
-    "dataScopeReset": "Reset view",
-    "opsAgentModelHint": "The model the operations agent uses when diagnosing issues.",
-    "opsAgentModelLoadFailed": "Couldn't load the operations agent's model."
+    "dataScopeReset": "Reset view"
   },
   "scheduledTasks": {
     "title": "Scheduled tasks",

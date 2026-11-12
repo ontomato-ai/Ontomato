@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { RefreshCw } from "lucide-vue-next";
-import { PlatformPageHeader } from "@ontomato/platform-shell";
+import { usePageActions } from "@ontomato/platform-shell";
 import { workbenchContent } from "../../../content";
 import { listPublishedMcpServices, type PublishedMcpService } from "../api";
 import McpToolList from "./McpToolList.vue";
@@ -27,6 +27,10 @@ async function load() {
 }
 onMounted(load);
 watch(locale, load);
+// The system settings draw the page's header; refreshing the list is its one action there.
+usePageActions(() => ({
+  actions: [{ id: "refresh", label: t("common.refresh"), icon: RefreshCw, loading: loading.value, onClick: () => void load() }],
+}));
 const content = workbenchContent();
 const cards = computed(() => services.value.map(service => {
   const keys = service.name === content.analysisMcpServerName
@@ -39,12 +43,7 @@ const cards = computed(() => services.value.map(service => {
 
 <template>
   <div class="published-mcp-services platform-page">
-    <PlatformPageHeader :title="t('mcp.publishedSettingsTitle')" :description="t('mcp.publishedHint')">
-      <template #actions>
-        <el-button :icon="RefreshCw" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
-      </template>
-    </PlatformPageHeader>
-    <div v-loading="loading" class="published-body platform-page-gutter">
+    <div v-loading="loading" class="published-body">
       <el-alert v-if="failed" type="error" :closable="false" show-icon :title="t('mcp.loadFailed')">
         <el-button text @click="load">{{ t('common.retry') }}</el-button>
       </el-alert>
@@ -65,7 +64,7 @@ const cards = computed(() => services.value.map(service => {
 </template>
 
 <style scoped>
-.published-body { display: grid; gap: var(--spacing-md); padding-block: var(--page-content-gap); }
+.published-body { display: grid; gap: var(--spacing-md); }
 .published-card { padding: var(--page-section-padding); border: 1px solid var(--el-border-color-light); border-radius: var(--radius-md); }
 .published-card h3 { margin: 0 0 var(--spacing-sm); font-size: var(--text-sm); }
 .published-address { overflow-wrap: anywhere; }

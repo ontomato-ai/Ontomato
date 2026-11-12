@@ -5,9 +5,10 @@ import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { AgentShell, useAgentNav, type ShellFeatureDeclaration, type ShellWorkbenchDeclaration } from "@ontomato/agent-shell-ui";
+import { AgentModelsPage, ontologyAgentModelPages, ontologyAgentModelSource } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
-import { AgentSettingsNav, AgentSettingsPage } from "../../agents";
+import { AgentSettingsNav, AgentSettingsPage, dataEngineTransport } from "../../agents";
 import { getWorkbenchAppearance } from "../api";
 import { createAssistantClient, createAssistantFeedback } from "../assistant-host";
 import { readRememberedAgent, rememberAgent } from "../remembered-agent";
@@ -81,6 +82,10 @@ const inSettings = computed(() => route.path === SETTINGS_PATH || route.path.sta
 const creatingAgent = computed(
   () => route.name === routes.agentSettingsNew.name || route.path === `${SETTINGS_PATH}/new`,
 );
+/** The models of the ontology service agents the conversations run on: the settings' own entry at their column's foot. */
+const modelsOpen = computed(() => route.path === routes.agentModels.path);
+const modelsPage = ontologyAgentModelPages.find((page) => page.app === "agents")!;
+const modelSource = ontologyAgentModelSource(dataEngineTransport, modelsPage);
 const settingsAgentId = computed(() => {
   const id = route.params.agentId;
   return typeof id === "string" && !creatingAgent.value ? id : null;
@@ -170,6 +175,10 @@ function createSettingsAgent() {
   void router.push(settingsPath("/new"));
 }
 
+function openModels() {
+  void router.push(routes.agentModels.path);
+}
+
 /** The column's own entry at the foot: the agent settings, which replace the column while they are open. */
 const bottomEntry = computed(() => ({ label: t("assistant.featureAgents"), icon: "agents" }));
 
@@ -256,14 +265,17 @@ function appearanceSaved(value: WorkbenchAppearance) {
       <AgentSettingsNav
         :agent-id="settingsAgentId"
         :creating="creatingAgent"
+        :models="modelsOpen"
         @back="backToChat"
         @select-agent="selectSettingsAgent"
         @create-agent="createSettingsAgent"
+        @open-models="openModels"
       />
     </template>
     <template #feature="{ featureId: page }">
+      <AgentModelsPage v-if="page === 'agents' && modelsOpen" :source="modelSource" :path="modelsPage.path" />
       <AgentSettingsPage
-        v-if="page === 'agents'"
+        v-else-if="page === 'agents'"
         :agent-id="settingsAgentId"
         :creating="creatingAgent"
         @changed="shell?.reloadAgents()"

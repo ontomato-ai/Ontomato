@@ -12,6 +12,7 @@ import {
   User,
   Gauge,
 } from "lucide-vue-next";
+import { usePageActions } from "@ontomato/platform-shell";
 import { usePlatformHost } from "../context";
 import { useI18n } from "vue-i18n";
 import { formatMemoryGB, formatUptime, type SystemStatus } from "../system-monitor";
@@ -64,6 +65,11 @@ const diskColor = computed(() => usageColor(diskUsage.value));
 const diskTooltip = computed(() =>
   (status.value?.server.disk ?? []).map((d) => `${d.partition} ${d.usage_percent}%`).join("\n")
 );
+
+// The service status is shown in the system settings and in the super admin console: either frame's header refreshes it.
+usePageActions(() => ({
+  actions: [{ id: "refresh", label: t("common.refresh"), icon: RefreshCw, loading: loading.value, onClick: () => void fetchStatus() }],
+}));
 
 onMounted(() => {
   fetchStatus();
@@ -171,9 +177,6 @@ onUnmounted(() => {
           <span v-if="lastRefresh" class="last-refresh">
             {{ t("hotData.lastRefresh") }}: {{ lastRefresh }}
           </span>
-          <el-button size="small" :icon="RefreshCw" :loading="loading" @click="fetchStatus">
-            {{ t("common.refresh") }}
-          </el-button>
         </div>
       </div>
 

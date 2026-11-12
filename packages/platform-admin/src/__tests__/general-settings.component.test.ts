@@ -3,18 +3,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ElMessageBox } from "element-plus";
 import { computed, defineComponent, h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
-import { ossPlatformPages, systemSettingsTabs } from "../pages";
-import { pageActionsKey, providePlatformHost, type PlatformPageActions, type PlatformPageHost } from "../context";
-import { shallowRef } from "vue";
-import SystemSettingsPage from "../pages/SystemSettingsPage.vue";
+import { ossPlatformPages, platformPages } from "../pages";
+import { providePlatformHost, type PlatformPageHost } from "../context";
+import GeneralSettingsPage from "../pages/GeneralSettingsPage.vue";
+import DataAdaptersPage from "../pages/DataAdaptersPage.vue";
 import type { PlatformApi } from "../api";
-import { PageHeaderStandIn, pageGlobal, testHost } from "./host";
+import { PageFrameStandIn, headerButton, pageGlobal, testHost } from "./host";
 import { ossSystemConfig } from "../../../../apps/workbench/web/src/manager/system-config";
 
 /*
- * The general screen of the system settings: one draft of the whole screen, one Save in the layout's page header, and
- * only the changed settings posted (the data engine takes one setting per request). The DSL timeout is shown in
- * seconds and stored in milliseconds. The screen has no header of its own: the layout's is the only one.
+ * The general page of the system settings: one draft of the whole page, one Save in the frame's page header, and only
+ * the changed settings posted (the data engine takes one setting per request). The DSL timeout is shown in seconds and
+ * stored in milliseconds. The page has no header of its own: the frame's is the only one.
  */
 
 const sent: { path: string; body: unknown }[] = [];
@@ -54,30 +54,26 @@ async function mountPage(config: Record<string, unknown> = {}) {
     routes: [
       {
         path: "/",
-        // The frame belongs to the platform shell; the test draws the header's contract by hand around the page.
-        component: {
-          render: () => h("div", [h(PageHeaderStandIn, { title: "System Settings" }), h(RouterView)]),
-        },
+        // The frame belongs to the platform; the test assembles the shell's header and leave check around the page.
+        component: { render: () => h(PageFrameStandIn, { title: "General" }) },
         children: [
-          { path: systemSettingsTabs.general.path, component: SystemSettingsPage, meta: { page: "/settings/system-config" } },
+          { path: platformPages.general.path, component: GeneralSettingsPage, meta: { page: platformPages.general.path } },
           {
-            path: systemSettingsTabs.dataAdapters.path,
-            component: SystemSettingsPage,
-            meta: { page: "/settings/system-config" },
+            path: platformPages.dataAdapters.path,
+            component: DataAdaptersPage,
+            meta: { page: platformPages.dataAdapters.path },
           },
         ],
       },
     ],
   });
-  await router.push(systemSettingsTabs.general.path);
+  await router.push(platformPages.general.path);
   const page = pageGlobal(host);
-  // The app provides the header-action slot once; the page writes it and the layout draws it.
-  const actions = shallowRef<PlatformPageActions | null>(null);
   const wrapper = mount(defineComponent({ render: () => h(RouterView) }), {
     global: {
       ...page,
       plugins: [...page.plugins, router],
-      provide: { ...page.provide, ...providePlatformHost(host), [pageActionsKey as symbol]: actions },
+      provide: { ...page.provide, ...providePlatformHost(host) },
     },
     attachTo: document.body,
   });
@@ -86,23 +82,22 @@ async function mountPage(config: Record<string, unknown> = {}) {
   return { wrapper, router };
 }
 
-const headerSave = (wrapper: VueWrapper) =>
-  wrapper.findAll(".page-header .page-actions button").find((button) => button.text() === "Save")!;
+const headerSave = (wrapper: VueWrapper) => headerButton(wrapper, "Save")!;
 
-describe("system settings, general screen", () => {
+describe("system settings, general page", () => {
   it.each([
     {},
     { knowledgeMaxResult: "10", dslCookerTimeout: "300000" },
     { knowledgeMaxResult: 0, dslCookerTimeout: 0 },
     { knowledgeMaxResult: null, dslCookerTimeout: null },
-  ])("switches tabs without a warning or writes after loading %j", async (config) => {
+  ])("moves to another page without a warning or writes after loading %j", async (config) => {
     const confirm = vi.spyOn(ElMessageBox, "confirm").mockRejectedValue("cancel");
     const { wrapper, router } = await mountPage(config);
     expect(headerSave(wrapper).attributes("disabled")).toBeDefined();
-    await router.push(systemSettingsTabs.dataAdapters.path);
+    await router.push(platformPages.dataAdapters.path);
     await flushPromises();
-    expect(router.currentRoute.value.path).toBe(systemSettingsTabs.dataAdapters.path);
-    await router.push(systemSettingsTabs.general.path);
+    expect(router.currentRoute.value.path).toBe(platformPages.dataAdapters.path);
+    await router.push(platformPages.general.path);
     await flushPromises();
     expect(headerSave(wrapper).attributes("disabled")).toBeDefined();
     expect(confirm).not.toHaveBeenCalled();
@@ -119,18 +114,29 @@ describe("system settings, general screen", () => {
     input.vm.$emit("update:modelValue", 10);
     await flushPromises();
     expect(headerSave(wrapper).attributes("disabled")).toBeDefined();
-    await router.push(systemSettingsTabs.dataAdapters.path);
+    await router.push(platformPages.dataAdapters.path);
     expect(confirm).not.toHaveBeenCalled();
-    expect(router.currentRoute.value.path).toBe(systemSettingsTabs.dataAdapters.path);
+    expect(router.currentRoute.value.path).toBe(platformPages.dataAdapters.path);
   });
 
-  it("has one page header: the layout's, with the Save in it and the tabs right under it", async () => {
+  it("has one page header: the frame's, with only a disabled Save while nothing changed", async () => {
     const { wrapper } = await mountPage();
-    expect(wrapper.findAll(".page-header")).toHaveLength(1);
-    expect(wrapper.find(".page-header .page-title").text()).toBe("System Settings");
-    // No second title inside the page body.
-    expect(wrapper.findAll(".page-body h1")).toHaveLength(0);
+    expect(wrapper.findAll(".platform-page-header")).toHaveLength(1);
+    expect(wrapper.find(".platform-page-header .page-title").text()).toBe("General");
+    // No second title inside the page.
+    expect(wrapper.findAll(".settings-page h1, .settings-page h2")).toHaveLength(0);
     expect(headerSave(wrapper).attributes("disabled")).toBeDefined();
+    expect(headerButton(wrapper, "Discard")).toBeUndefined();
+    expect(wrapper.find(".platform-page-header .unsaved").exists()).toBe(false);
+  });
+
+  it("shows Discard and the unsaved marker once something changed", async () => {
+    const { wrapper } = await mountPage();
+    wrapper.findAll(".setting-row")[0]!.findComponent({ name: "ElInputNumber" }).vm.$emit("update:modelValue", 20);
+    await flushPromises();
+    expect(headerSave(wrapper).attributes("disabled")).toBeUndefined();
+    expect(headerButton(wrapper, "Discard")).toBeDefined();
+    expect(wrapper.find(".platform-page-header .unsaved").text()).toBe("Unsaved changes");
   });
 
   it("posts only the changed settings, the timeout in milliseconds", async () => {
@@ -171,14 +177,14 @@ describe("system settings, general screen", () => {
     const { wrapper, router } = await mountPage();
     await wrapper.findAll(".setting-row")[0]!.findComponent({ name: "ElInputNumber" }).vm.$emit("update:modelValue", 20);
     await flushPromises();
-    await router.push(systemSettingsTabs.dataAdapters.path);
+    await router.push(platformPages.dataAdapters.path);
     await flushPromises();
     expect(String(confirm.mock.calls[0]![0])).toContain("unsaved changes");
-    expect(router.currentRoute.value.path).toBe(systemSettingsTabs.general.path);
+    expect(router.currentRoute.value.path).toBe(platformPages.general.path);
 
     confirm.mockResolvedValue("confirm" as never);
-    await router.push(systemSettingsTabs.dataAdapters.path);
+    await router.push(platformPages.dataAdapters.path);
     await flushPromises();
-    expect(router.currentRoute.value.path).toBe(systemSettingsTabs.dataAdapters.path);
+    expect(router.currentRoute.value.path).toBe(platformPages.dataAdapters.path);
   });
 });

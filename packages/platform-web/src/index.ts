@@ -15,6 +15,7 @@ export {
   serviceNavigation,
   ontologyWorkspacePages,
   systemIntegrationPages,
+  agentModelPages,
   startPage,
   startShellPreferences,
   stopPage,

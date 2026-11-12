@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createApp, h, nextTick, reactive, ref, type App } from "vue";
+import { computed, createApp, h, nextTick, reactive, ref, type App } from "vue";
+import { agentModelLabelsKey, platformPageAccessKey, type AgentModelLabels } from "@ontomato/platform-shell";
 import { createI18n } from "vue-i18n";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { createManager } from "../context";
@@ -21,6 +22,9 @@ const json = (body: unknown) =>
 function installManager(app: App) {
   const i18n = createI18n({ legacy: false, locale: "en", messages: { en: managerMessageTree(englishMessages) } as never });
   app.use(i18n);
+  // What the platform answers around the application: every page may be opened, and the model page's name.
+  app.provide(platformPageAccessKey, () => true);
+  app.provide(agentModelLabelsKey, computed(() => ({ title: "Models" }) as AgentModelLabels));
   createManager({
     apiBase: "/manager-api",
     credential: { type: "token", token: "t-1" },

@@ -12,7 +12,8 @@ import {
 import { modelLabel } from "@ontomato/contracts/model-selection";
 import { modelApiBaseUrls, modelApiLabels } from "../apis";
 import type { RuntimeModelDiscoveryResponse } from "@ontomato/contracts/runtime-model-test";
-import { useAgentModelsDraft } from "../agents";
+import { agentModelPage, useApplicationName } from "@ontomato/platform-shell";
+import { useOntologyAgents } from "../agents";
 import { usePlatformHost } from "../../context";
 import { useModelErrors } from "../errors";
 import {
@@ -35,16 +36,13 @@ import ModelEditDialog from "./ModelEditDialog.vue";
  * its chat and embedding models. Every change stays in the page draft until the page is saved.
  */
 const props = defineProps<{ providerId: string }>();
-const emit = defineEmits<{
-  /** A model of this provider was renamed: references to `from` follow it to `to`. */
-  renamed: [from: string, to: string];
-  removed: [];
-}>();
-const { t, te } = useI18n();
+const emit = defineEmits<{ removed: [] }>();
+const { t, te, locale } = useI18n();
 const { api } = usePlatformHost();
 const describeError = useModelErrors();
 const draft = useModelDraft();
-const agentDraft = useAgentModelsDraft();
+const ontologyAgents = useOntologyAgents();
+const applicationName = useApplicationName();
 
 // The provider lives in the shared draft and the panel edits it there. The page shows the panel only for a provider of
 // the draft; right after the provider is removed, until the page drops the panel, the last one found stands in.
@@ -177,12 +175,29 @@ async function beforeSaveModel(model: ModelEntry): Promise<boolean> {
   const from = modelRef(provider.value.id, provider.value.models[index]!.id);
   const to = modelRef(provider.value.id, model.id);
   const lines = [
-    ...(from !== to && draft.savedRefs.includes(from) ? [t("admin.modelRenameConfirm", { from, to })] : []),
+    ...(from !== to && draft.savedRefs.includes(from) ? [t("admin.modelRenameConfirm", { from, to }), ...renameAffects(from)] : []),
     ...clearedText(defaultsClearedBy(draft, replaceChange(index, model))),
   ];
   if (lines.length === 0) return true;
   const title = from !== to ? t("admin.modelRenameTitle") : t("admin.clearDefaultsTitle");
   return confirmChange(title, [...lines, t("admin.continueConfirm")], t("common.confirm"));
+}
+
+/**
+ * The ontology service agents that chose the model about to be renamed, and the model page each is chosen again on: the
+ * model library is saved alone, so their choice keeps the old ID and shows as unavailable until then.
+ */
+function renameAffects(from: string): string[] {
+  const affected = (ontologyAgents.value ?? []).filter((agent) => agent.modelSelection.modelId === from);
+  if (affected.length === 0) return [];
+  const where = affected.map((agent) => {
+    const page = agentModelPage(agent.kind);
+    const name = agentName(agent);
+    return page
+      ? t("admin.agentModelLocation", { agent: name, application: applicationName(page.app), page: t("platform.agentModels.title") })
+      : name;
+  });
+  return [t("admin.modelRenameAffects", { agents: new Intl.ListFormat(locale.value).format(where) })];
 }
 
 function saveModel(model: ModelEntry) {
@@ -191,8 +206,7 @@ function saveModel(model: ModelEntry) {
     provider.value.models.push(model);
     return;
   }
-  const moved = applyDraftChange(draft, replaceChange(index, model));
-  if (moved && moved.from !== moved.to) emit("renamed", moved.from, moved.to);
+  applyDraftChange(draft, replaceChange(index, model));
 }
 
 async function removeModel(model: ModelEntry) {
@@ -223,7 +237,7 @@ async function removeProvider() {
   if (await confirmChange(t("admin.removeProvider"), lines, t("common.delete"))) emit("removed");
 }
 
-// ---- Who uses this provider's models: the domain defaults and the ontology agents (Agent Platform agents are its own) ----
+// ---- Who uses this provider's models: the domain defaults and the ontology agents as saved (Agent Platform agents are its own) ----
 const usages = computed(() => {
   const providerId = provider.value.id;
   const owns = (ref: string | null) => ref !== null && ref.startsWith(`${providerId}/`);
@@ -234,8 +248,8 @@ const usages = computed(() => {
   if (owns(draft.embeddingModelId)) {
     rows.push({ kind: "embeddingDefault", name: t("admin.embeddingModel"), ref: draft.embeddingModelId! });
   }
-  for (const agent of agentDraft.saved ?? []) {
-    const ref = agentDraft.selections[agent.id] ?? null;
+  for (const agent of ontologyAgents.value ?? []) {
+    const ref = agent.modelSelection.modelId;
     if (owns(ref)) rows.push({ kind: "agent", name: agentName(agent), ref: ref! });
   }
   return rows;

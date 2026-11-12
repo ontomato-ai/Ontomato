@@ -59,22 +59,11 @@ export interface PlatformPanelPage {
   unavailableHint?: string;
 }
 
-/** A titled group of pages in the application panel. */
+/** A group of pages in the application's column; a group without a label lists its pages under no heading. */
 export interface PlatformPanelGroup {
   key: string;
-  label: string;
+  label?: string;
   pages: readonly PlatformPanelPage[];
-}
-
-/**
- * What a page hands to the platform's page header: the unsaved marker and the Save / Discard actions of a page that
- * holds one draft. The same shape the platform pages have always provided, so their pages do not change.
- */
-export interface PlatformPageActions {
-  readonly dirty: boolean;
-  readonly saving: boolean;
-  save(): void;
-  discard(): void;
 }
 
 /** Fixed text the shell draws; the host supplies it from its own i18n. */

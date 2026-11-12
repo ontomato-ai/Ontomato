@@ -1,7 +1,7 @@
 import { managerPaths } from "@ontomato/ontology-manager";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import type { AppPartition } from "./partition";
-export type NativeLayout = Pick<AppPartition, "sections" | "frame" | "home" | "homePage" | "open" | "descriptionKey">;
+export type NativeLayout = Pick<AppPartition, "sections" | "foot" | "frame" | "home" | "homePage" | "open" | "descriptionKey">;
 const layouts: readonly (NativeLayout & { renderer: string })[] = [
   // The platform's home draws its own page: no column, no header of the shell's.
   { renderer: "home", sections: [] },
@@ -33,8 +33,9 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
         // Business knowledge stays with the ontology it describes.
         paths: [managerPaths.knowledge, managerPaths.capabilityMap],
       },
-      { key: "ontology:products", titleKey: "platform.layers.products", paths: [], showWhenEmpty: true },
     ],
+    // The models of the modeling agents, at the foot of the menu like every application's own settings.
+    foot: platformRoutes.ontologyModels.path,
   },
   {
     renderer: "browser",
@@ -84,6 +85,8 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
         paths: [platformRoutes.feedback.path],
       },
     ],
+    // Drawn at the foot of the application's own column; listed here so an account that may open only it lands there.
+    foot: platformRoutes.governanceModels.path,
   },
   {
     renderer: "app-builder",
@@ -100,15 +103,18 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
   },
   {
     renderer: "settings",
-    // The settings page is entered at its first tab; the address without one is not a page of its own.
-    home: platformRoutes.usage.path,
-    homePage: platformRoutes.models.path,
+    // Its pages are its own menu, by group; an account enters at the first page it may open.
+    frame: "menu",
     sections: [
+      { key: "settings:models", titleKey: "platform.settingsGroups.models", paths: [platformRoutes.usage.path, platformRoutes.providers.path] },
+      // The licence is the enterprise edition's; the open-source navigation has no such page, so it is not listed.
+      { key: "settings:system", titleKey: "platform.settingsGroups.system", paths: [platformRoutes.general.path, platformRoutes.license.path] },
       {
-        key: "settings:platform",
-        titleKey: "platform.settings",
-        paths: [platformRoutes.models.path, platformRoutes.settings.path, platformRoutes.externalMcp.path, platformRoutes.publishedMcp.path, platformRoutes.records.path],
+        key: "settings:connections",
+        titleKey: "platform.settingsGroups.connections",
+        paths: [platformRoutes.adapters.path, platformRoutes.externalMcp.path, platformRoutes.publishedMcp.path],
       },
+      { key: "settings:records", titleKey: "platform.settingsGroups.records", paths: [platformRoutes.audit.path, platformRoutes.monitor.path] },
     ],
   },
 ];

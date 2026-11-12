@@ -5,6 +5,7 @@ import { useRoute, useRouter, type LocationQueryRaw } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import { AgentShell, useAgentNav, type ShellWorkbenchDeclaration } from "@ontomato/agent-shell-ui";
+import { useAgentModelLabels, useLeaveConfirmation } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import { DIAGNOSIS_AGENT_ID, type DiagnosisTarget } from "@ontomato/contracts/ops-diagnosis";
 import { useShellLabels } from "../../../../composables/useShellLabels";
@@ -34,22 +35,21 @@ const pages = [
   { id: "live-logs", path: "/ops/live-logs", label: "ops.logs", icon: "logs", match: ["/ops/live-logs"] },
   { id: "dsl", path: "/ops/dsl", label: "ops.dsl", icon: "query", match: ["/ops/dsl"] },
   { id: "knowledge", path: "/ops/knowledge", label: "ops.knowledge", icon: "knowledge", match: ["/ops/knowledge"] },
-  // The model the diagnosis runs on, reached from the column's foot rather than listed among the pages.
-  { id: "model", path: "/ops/model", label: "ops.modelSettings", icon: "settings", match: ["/ops/model"] },
 ] as const;
-
-/** The pages the column lists: the model is a setting, not a page of the application one browses. */
-const listedPages = pages.filter((page) => page.id !== "model");
-/** The application's own entry at the foot of its column: the model the diagnosis runs on. */
-const bottomEntry = computed(() => ({ label: t("ops.modelSettings"), icon: "settings" }));
+/** The model the diagnosis runs on: the application's own entry at the foot of its column, not one of its pages. */
+const MODEL = { id: "model", path: "/ops/model" } as const;
+const modelLabels = useAgentModelLabels();
+const bottomEntry = computed(() => ({ label: modelLabels.value.title, icon: "settings" }));
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: "operations",
   // The application's name is the platform's (the rail and this column read one entry): the platform decides it.
   label: t("platform.operations"),
-  features: listedPages.map(({ id, label, icon }) => ({ id, label: t(label), icon, availability: "page" as const, withConversation: true })),
+  features: pages.map(({ id, label, icon }) => ({ id, label: t(label), icon, availability: "page" as const, withConversation: true })),
 }));
 const pageOf = (path: string) =>
-  pages.find((page) => page.match.some((prefix) => path === prefix || path.startsWith(prefix + "/")))?.id ?? null;
+  path === MODEL.path
+    ? MODEL.id
+    : (pages.find((page) => page.match.some((prefix) => path === prefix || path.startsWith(prefix + "/")))?.id ?? null);
 
 /*
  * The shell may set the page and the conversation in one gesture (opening a session closes the page); both land in
@@ -68,7 +68,7 @@ function navigate() {
     scheduled = false;
     const page = pendingPage.value;
     const changesPage = page !== undefined && page !== pageOf(route.path);
-    const path = !changesPage ? route.path : pages.find((item) => item.id === page)?.path ?? "/ops/diagnosis";
+    const path = !changesPage ? route.path : [...pages, MODEL].find((item) => item.id === page)?.path ?? "/ops/diagnosis";
     const rest = { ...route.query };
     delete rest.sessionId;
     const query: LocationQueryRaw = { ...(changesPage ? {} : rest), ...(conversation.value ? { sessionId: conversation.value } : {}) };
@@ -76,11 +76,18 @@ function navigate() {
     void done.catch(() => {}).finally(() => (pendingPage.value = undefined));
   });
 }
+/** A page holding unsaved changes (the model) stays until the reader confirms leaving it. */
+const leave = useLeaveConfirmation();
+function openPage(id: string | null) {
+  pendingPage.value = id;
+  navigate();
+}
 const featureId = computed({
   get: () => (pendingPage.value !== undefined ? pendingPage.value : pageOf(route.path)),
   set: (id: string | null) => {
-    pendingPage.value = id;
-    navigate();
+    const target = [...pages, MODEL].find((item) => item.id === id)?.path ?? "/ops/diagnosis";
+    if (!leave.leaves(target)) return openPage(id);
+    void leave.confirm().then((confirmed) => confirmed && openPage(id));
   },
 });
 const sessionId = computed({

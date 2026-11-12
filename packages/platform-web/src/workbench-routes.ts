@@ -33,7 +33,7 @@ export function workbenchPages(
   return [
     { ...routes.publishedMcp,
       component: () => import("@ontomato/workbench-ui/features/workbench").then(module => module.PublishedMcpServices),
-      meta: { service: true, page: routes.publishedMcp.path, ownHeader: true } },
+      meta: { service: true, page: routes.publishedMcp.path } },
     { ...routes.externalMcp,
       component: () => import("./pages/ExternalMcpRoute.vue"),
       meta: { service: true, page: routes.externalMcp.path, ownHeader: true } },
@@ -60,6 +60,8 @@ export function workbenchPages(
     ...[routes.agentSettingsNew, routes.agentSettings].map(
       (location) => ({ ...location, component, meta: { workbench: true } }),
     ),
+    // The models of the platform's ontology service agents: a page of its navigation, so it opens with its permission.
+    { ...routes.agentModels, component, meta: { workbench: true, page: routes.agentModels.path } },
     { ...observeRoutes.root, ...observe, children: observeRoutes.children },
   ];
 }

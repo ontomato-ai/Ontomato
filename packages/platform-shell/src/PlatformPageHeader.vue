@@ -1,33 +1,25 @@
 <script setup lang="ts">
-import type { Component } from "vue";
-import type { PlatformPageActions } from "./types";
+import type { PlatformPageAction, PlatformPageDraft } from "./page-actions";
 
 /**
- * The one page header every page of the platform uses: the title on top, one line of description under it, the page's
- * own actions on the right, and — for an application of several pages — its tabs in a row below them (DESIGN.md
- * "Admin page anatomy").
+ * The one page header every page of the platform uses (DESIGN.md "Page architecture"): one row in the page gutter, the
+ * page's name with one line of description after it on the left, the page's own actions on the right. The application's
+ * name is not here: it heads the application's own column.
  *
- * It is the only header: a page either uses it or, for a page that draws its own toolbars, the application passes no
- * title and only the tabs appear above it. A second-level tab of one page stays in the page's content, under this.
+ * A page holding a draft saves it here: without changes only a disabled Save shows; with changes the unsaved marker,
+ * Discard and Save. A page either shows under a frame that draws this header for it, or draws it itself; never both.
  */
 withDefaults(
   defineProps<{
-    /** The page's title; absent on a header that carries only its tabs (a page that draws its own title below). */
+    /** The page's title; absent on a header that only carries actions. */
     title?: string;
     description?: string | null;
     /** Dense technical pages keep the shared title/actions in a single compact row. */
     compact?: boolean;
-    /**
-     * The pages of an application that holds several, in its own order: the header switches between them, so an
-     * application with two screens is one header with two tabs rather than a second navigation band.
-     */
-    tabs?: readonly { path: string; label: string }[];
-    /** The address the tabs mark as current. */
-    activePath?: string;
     /** The page's own buttons at the right of the title row. */
-    actions?: readonly { id: string; label: string; primary?: boolean; icon?: Component; onClick: () => void }[];
+    actions?: readonly PlatformPageAction[];
     /** The one Save of a page holding a draft, with its unsaved marker. */
-    draft?: PlatformPageActions | null;
+    draft?: PlatformPageDraft | null;
     /** The header's own words, from the host's i18n; read only by the draft's Save and its unsaved marker. */
     labels?: { save: string; discard: string; unsavedChanges: string };
   }>(),
@@ -35,19 +27,17 @@ withDefaults(
     title: "",
     description: null,
     compact: true,
-    tabs: undefined,
-    activePath: undefined,
     actions: undefined,
     draft: null,
     labels: () => ({ save: "", discard: "", unsavedChanges: "" }),
   },
 );
 
-const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>();
+const emit = defineEmits<{ discard: []; save: [] }>();
 </script>
 
 <template>
-  <header class="platform-page-header platform-page-gutter" :class="{ 'has-tabs': tabs && tabs.length > 0, compact }">
+  <header class="platform-page-header platform-page-gutter" :class="{ compact }">
     <div v-if="title || description || actions?.length || draft || $slots.actions" class="header-row">
       <div class="header-text">
         <h1 v-if="title" class="page-title">{{ title }}</h1>
@@ -55,11 +45,26 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
       </div>
       <div v-if="actions?.length || draft || $slots.actions" class="page-actions">
         <span v-if="draft?.dirty" class="unsaved" role="status">{{ labels.unsavedChanges }}</span>
+        <!-- A page's own buttons, when it hands over markup rather than a list of actions. -->
+        <slot name="actions" />
         <button
-          v-if="draft"
+          v-for="action in actions ?? []"
+          :key="action.id"
+          type="button"
+          class="action"
+          :class="action.primary ? 'primary' : action.danger ? 'danger' : 'secondary'"
+          :disabled="action.disabled || action.loading"
+          :aria-busy="action.loading || undefined"
+          @click="action.onClick()"
+        >
+          <component :is="action.icon" v-if="action.icon" :size="16" aria-hidden="true" />
+          <span>{{ action.label }}</span>
+        </button>
+        <button
+          v-if="draft?.dirty"
           type="button"
           class="action secondary"
-          :disabled="!draft.dirty || draft.saving"
+          :disabled="draft.saving"
           @click="emit('discard')"
         >
           {{ labels.discard }}
@@ -69,47 +74,20 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
           type="button"
           class="action primary"
           :disabled="!draft.dirty || draft.saving"
+          :aria-busy="draft.saving || undefined"
           @click="emit('save')"
         >
           {{ labels.save }}
         </button>
-        <!-- A page's own buttons, when it hands over markup rather than a list of actions. -->
-        <slot name="actions" />
-        <button
-          v-for="action in actions ?? []"
-          :key="action.id"
-          type="button"
-          class="action"
-          :class="action.primary ? 'primary' : 'secondary'"
-          @click="action.onClick()"
-        >
-          <component :is="action.icon" v-if="action.icon" :size="16" aria-hidden="true" />
-          <span>{{ action.label }}</span>
-        </button>
       </div>
-    </div>
-    <!-- The pages of one application, switched in its header: a tab is the page's own address. -->
-    <div v-if="tabs && tabs.length > 0" class="page-tabs" role="tablist" :aria-label="title">
-      <button
-        v-for="tab in tabs"
-        :key="tab.path"
-        type="button"
-        role="tab"
-        class="page-tab"
-        :class="{ active: tab.path === activePath }"
-        :aria-selected="tab.path === activePath"
-        @click="emit('selectTab', tab.path)"
-      >
-        {{ tab.label }}
-      </button>
     </div>
   </header>
 </template>
 
 <style scoped>
 /*
- * One header for every page: the title and its description in one block, actions at the right, tabs under a hairline
- * (DESIGN.md "Admin page anatomy"). Its side padding is the page gutter (`platform-page-gutter`), the one the content
+ * One header for every page: the title and its description in one block, actions at the right (DESIGN.md "Page
+ * architecture"). Its side padding is the page gutter (`platform-page-gutter`), the one the content
  * under it takes too, so a title and the content start at the same place.
  */
 .platform-page-header {
@@ -193,6 +171,14 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
 .action.primary:not(:disabled):active {
   background: var(--el-color-primary-dark-2);
 }
+.action.danger {
+  border: 1px solid var(--el-border-color-dark);
+  background: var(--el-bg-color);
+  color: var(--el-color-danger);
+}
+.action.danger:not(:disabled):hover {
+  background: var(--el-color-danger-light-9);
+}
 .action:disabled {
   cursor: not-allowed;
   color: var(--el-disabled-text-color);
@@ -203,47 +189,10 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
   outline: 2px solid var(--el-color-primary);
   outline-offset: -2px;
 }
-.page-tabs {
-  display: flex;
-  gap: var(--spacing-xl);
-  border-bottom: 1px solid var(--el-border-color);
-  overflow-x: auto;
-}
-.page-tab {
-  flex-shrink: 0;
-  height: 40px;
-  padding: 0;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: none;
-  color: var(--el-text-color-regular);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-.page-tab:hover {
-  color: var(--el-text-color-primary);
-}
-.page-tab.active {
-  border-bottom-color: var(--el-color-primary);
-  color: var(--brand-link);
-  font-weight: var(--font-medium);
-}
-.page-tab:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: -2px;
-}
 /* The compact row is denser only vertically: its sides are the page gutter, like every header's and the content's. */
 .platform-page-header.compact {
   padding-block: var(--spacing-md);
   border-bottom: 1px solid var(--el-border-color);
-}
-.platform-page-header.compact.has-tabs {
-  padding-bottom: 0;
-  border-bottom: 0;
-}
-.compact .page-tabs {
-  margin-top: var(--spacing-sm);
 }
 .compact .header-row {
   min-height: var(--control-height);

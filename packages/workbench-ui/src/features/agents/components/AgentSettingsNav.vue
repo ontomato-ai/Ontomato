@@ -1,28 +1,36 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
-import { ArrowLeft, Plus } from "lucide-vue-next";
+import { ArrowLeft, Cpu, Plus } from "lucide-vue-next";
+import { useAgentModelLabels, usePageAccess } from "@ontomato/platform-shell";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useAgentDefinitions } from "../definitions";
 
 /**
  * The agent platform's settings navigation, drawn in the application's column when the settings are open.
  *
  * It replaces the conversation column for as long as the settings are shown: back to the conversation, the agents (one
- * click opens it in the editor beside) and a new agent. Skills and external MCP services are the platform's, managed in
- * the ontology manager and the system settings; an agent only selects them. The main area holds the editor only —
- * the list is here, never a second time beside it (DESIGN.md "Applications and shells").
+ * click opens it in the editor beside), a new agent, and at the foot the models of the ontology service agents the
+ * platform's conversations run on, for an account that may open them. Skills and external MCP services are the
+ * platform's, managed in the ontology manager and the system settings; an agent only selects them. The main area holds
+ * the editor only — the list is here, never a second time beside it (DESIGN.md "Applications and shells").
  */
 const props = defineProps<{
-  /** The agent being edited, or null while creating one. */
+  /** The agent being edited, or null while creating one or while the models are open. */
   agentId: string | null;
   creating: boolean;
+  /** The models page is open. */
+  models: boolean;
 }>();
 const emit = defineEmits<{
   back: [];
   selectAgent: [id: string];
   createAgent: [];
+  openModels: [];
 }>();
 const { t } = useI18n();
+const canOpen = usePageAccess();
+const modelLabels = useAgentModelLabels();
 const { agents, loading, loadFailed, ensureLoaded } = useAgentDefinitions();
 
 // The column and the editor share one read: whichever is mounted first starts it and the other reads the same list.
@@ -67,6 +75,18 @@ const heading = computed(() => t("agents.title"));
       <span>{{ t("agents.newAgent") }}</span>
     </button>
 
+    <div v-if="canOpen(platformRoutes.agentModels.path)" class="nav-foot">
+      <button
+        type="button"
+        class="foot-row"
+        :class="{ active: props.models }"
+        :aria-current="props.models ? 'page' : undefined"
+        @click="emit('openModels')"
+      >
+        <Cpu :size="16" aria-hidden="true" />
+        <span>{{ modelLabels.title }}</span>
+      </button>
+    </div>
   </div>
 </template>
 
@@ -178,6 +198,36 @@ const heading = computed(() => t("agents.title"));
   font: inherit;
   cursor: pointer;
 }
+/* The application's own entry stays at the foot of the column, under a hairline. */
+.nav-foot {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--el-border-color-light);
+}
+.foot-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: var(--nav-row-height);
+  padding: 0 10px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--el-text-color-regular);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.foot-row:hover {
+  background: var(--shell-nav-hover, var(--el-fill-color-light));
+}
+.foot-row.active {
+  background: var(--shell-nav-selected, var(--el-color-primary-light-9));
+  color: var(--el-text-color-primary);
+  font-weight: var(--font-semibold);
+}
 .note {
   padding: 6px 10px;
   color: var(--el-text-color-secondary);
@@ -205,7 +255,8 @@ const heading = computed(() => t("agents.title"));
 }
 .back:focus-visible,
 .agent-row:focus-visible,
-.new-agent:focus-visible {
+.new-agent:focus-visible,
+.foot-row:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: -2px;
 }

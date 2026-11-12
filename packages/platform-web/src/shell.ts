@@ -4,9 +4,10 @@ import "element-plus/theme-chalk/dark/css-vars.css";
 // Design foundation shared with the workbench (type, spacing, shape, density, elevation, motion, component variables).
 import "@ontomato/design-tokens/foundation.css";
 import { computed } from "vue";
-import { Cable, Puzzle, Plug } from "lucide-vue-next";
+import { Cable, Cpu, Puzzle, Plug } from "lucide-vue-next";
 import { skillLibraryCount } from "@ontomato/workbench-ui/features/workbench";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
+import { ontologyAgentModelPages } from "@ontomato/platform-shell";
 import { useTheme } from "@ontomato/workbench-ui/composables/useTheme";
 import { workbenchI18n, type SupportedLocale } from "@ontomato/workbench-ui/i18n";
 import { managerDestination } from "@ontomato/platform-admin/legacy-manager";
@@ -160,10 +161,29 @@ export const ontologyWorkspacePages: readonly PlatformPage[] = [
   { path: platformRoutes.ontologySkills.path, titleKey: "capabilities.skillTitle", icon: Puzzle, permissions: ["skill-management"], group: "assets", ownHeader: true, count: skillLibraryCount },
 ];
 
+/**
+ * The system settings' connections the agent platform's pages draw: the external MCP services agents may call (its page
+ * draws its own header) and the MCP services the platform publishes (under the settings' header).
+ */
 export const systemIntegrationPages: readonly PlatformPage[] = [
   { path: platformRoutes.externalMcp.path, titleKey: "capabilities.mcpTitle", icon: Cable, permissions: ["mcp-service"], group: "platform", ownHeader: true },
-  { path: platformRoutes.publishedMcp.path, titleKey: "mcp.publishedSettingsTitle", icon: Plug, permissions: ["mcp-service"], group: "platform", ownHeader: true },
+  { path: platformRoutes.publishedMcp.path, titleKey: "mcp.publishedSettingsTitle", descriptionKey: "mcp.publishedHint", icon: Plug, permissions: ["mcp-service"], group: "platform" },
 ];
+
+/**
+ * Each application's "Models" page of its ontology service agents. It keeps the permission those agents' choices have
+ * always had (`system-config`), so only an account that holds it sees the entry or may open the page, without being given
+ * any other page of the application. The page draws its own header.
+ */
+export const agentModelPages: readonly PlatformPage[] = ontologyAgentModelPages.map((page) => ({
+  path: page.path,
+  titleKey: "platform.agentModels.title",
+  descriptionKey: "platform.agentModels.description",
+  icon: Cpu,
+  permissions: ["system-config"],
+  group: page.app,
+  ownHeader: true,
+}));
 
 export function serviceNavigation(
   manager: ReturnType<typeof createManager>,
@@ -171,7 +191,10 @@ export function serviceNavigation(
   platformPages: readonly PlatformPage[]
 ): PlatformNavigation {
   const ontology = managerNavigation(manager.counts);
-  return { groups: [...ontology.groups, platformGroup], pages: [...ontology.pages, ...platformPages, ...ontologyWorkspacePages, ...systemIntegrationPages] };
+  return {
+    groups: [...ontology.groups, platformGroup],
+    pages: [...ontology.pages, ...platformPages, ...ontologyWorkspacePages, ...systemIntegrationPages, ...agentModelPages],
+  };
 }
 
 /** The root address's landing page for this deployment (see `serviceHome`). */

@@ -1,4 +1,5 @@
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
+import { AgentModelsPage, ontologyAgentModelPages, ontologyAgentModelSource } from "@ontomato/platform-shell";
 import { defineAsyncComponent, defineComponent, h, ref, watch, type Component, type PropType } from "vue";
 import { useRoute, useRouter, type RouteLocationRaw, type RouteRecordRaw } from "vue-router";
 import type { ObjectReference } from "@ontomato/contracts/object-views";
@@ -258,6 +259,16 @@ const VisualModelingPage = defineComponent({
   },
 });
 
+/** The ontology manager's models: the modeling agents', at the foot of its menu, over the Manager's own requests. */
+const OntologyModelsPage = defineComponent({
+  name: "ManagerOntologyModelsPage",
+  setup() {
+    const page = ontologyAgentModelPages.find((candidate) => candidate.app === "ontology")!;
+    const source = ontologyAgentModelSource(useManagerClient().dataEngine, page);
+    return () => h("section", { class: "models-surface" }, [h(AgentModelsPage, { source, path: page.path })]);
+  },
+});
+
 const KnowledgePage = defineComponent({
   name: "ManagerKnowledgePage",
   setup() {
@@ -288,6 +299,7 @@ export function registerGovernanceScreen(id: "feedback", screen: Component) {
 const governancePageRoutes: Record<string, { name: string; path: string } | null> = {
   report: null,
   feedback: routes.feedback,
+  models: routes.governanceModels,
 };
 
 /**
@@ -395,6 +407,7 @@ export function managerRoutes(): RouteRecordRaw[] {
         { ...routes.capabilityMap, component: CapabilityMapPage, meta: { page: managerPaths.capabilityMap } },
         { ...routes.modeling, component: VisualModelingPage, meta: { page: managerPaths.visualModeling } },
         { ...routes.knowledge, component: KnowledgePage, meta: { page: managerPaths.knowledge } },
+        { ...routes.ontologyModels, component: OntologyModelsPage, meta: { page: routes.ontologyModels.path } },
       ],
     },
   ];
@@ -435,6 +448,23 @@ export function managerStandaloneRoutes(): RouteRecordRaw[] {
             sessionId: typeof route.query.sessionId === "string" ? route.query.sessionId : "",
           }),
           meta: { page: routes.feedback.path },
+        },
+      ],
+    },
+    // The models of the governance agents, at the foot of the same column.
+    {
+      path: "/governance/models",
+      meta: { service: true },
+      component: ManagerFrame,
+      children: [
+        {
+          ...routes.governanceModels,
+          component: KnowledgeGovernancePage,
+          props: (route: { query: Record<string, unknown> }) => ({
+            page: "models",
+            sessionId: typeof route.query.sessionId === "string" ? route.query.sessionId : "",
+          }),
+          meta: { page: routes.governanceModels.path },
         },
       ],
     },

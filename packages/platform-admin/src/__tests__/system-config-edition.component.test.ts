@@ -2,14 +2,13 @@ import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { computed, defineComponent, h, shallowRef } from "vue";
+import { computed, defineComponent, h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { ossSystemConfig as businessConfig } from "../../../../apps/workbench/web/src/manager/system-config";
 import { createPlatformClient, platformApi } from "../api";
-import { pageActionsKey, type PlatformPageActions } from "../context";
-import { ossPlatformPages, systemSettingsTabs } from "../pages";
-import SystemSettingsPage from "../pages/SystemSettingsPage.vue";
-import { PageHeaderStandIn, pageGlobal, testHost } from "./host";
+import { ossPlatformPages, platformPages } from "../pages";
+import GeneralSettingsPage from "../pages/GeneralSettingsPage.vue";
+import { PageFrameStandIn, headerButton, pageGlobal, testHost } from "./host";
 
 /** Language resources the open-source data engine ships (conf-defaults/lang/*.json); tests run from this package. */
 const shippedLanguages = readdirSync(resolve(process.cwd(), "../data-engine-core/conf-defaults/lang"))
@@ -46,7 +45,7 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-/** The general screen mounted as the page shows it: inside the layout, whose header carries the one Save. */
+/** The general page mounted as it shows: inside the frame, whose header carries the one Save. */
 async function mountPage() {
   const api = platformApi(createPlatformClient({ apiBase: "/api", credential: { type: "anonymous" }, locale: () => "en" }));
   const host = testHost(api, {
@@ -58,24 +57,20 @@ async function mountPage() {
     routes: [
       {
         path: "/",
-        // The frame belongs to the platform shell; the test draws the header's contract by hand around the page.
-        component: {
-          render: () => h("div", [h(PageHeaderStandIn, { title: "System Settings" }), h(RouterView)]),
-        },
+        // The frame belongs to the platform; the test assembles the shell's header around the page.
+        component: { render: () => h(PageFrameStandIn, { title: "General" }) },
         children: [
-          { path: systemSettingsTabs.general.path, component: SystemSettingsPage, meta: { page: "/settings/system-config" } },
+          { path: platformPages.general.path, component: GeneralSettingsPage, meta: { page: platformPages.general.path } },
         ],
       },
     ],
   });
-  await router.push(systemSettingsTabs.general.path);
-  const actions = shallowRef<PlatformPageActions | null>(null);
+  await router.push(platformPages.general.path);
   const page = pageGlobal(host);
   const wrapper = mount(defineComponent({ render: () => h(RouterView) }), {
     global: {
       ...page,
       plugins: [...page.plugins, router],
-      provide: { ...page.provide, [pageActionsKey as symbol]: actions },
     },
     attachTo: document.body,
   });
@@ -85,8 +80,7 @@ async function mountPage() {
 }
 
 const general = (wrapper: VueWrapper) => wrapper.findAll(".setting-row")[2]!;
-const headerSave = (wrapper: VueWrapper) =>
-  wrapper.findAll(".page-header .page-actions button").find((button) => button.text() === "Save")!;
+const headerSave = (wrapper: VueWrapper) => headerButton(wrapper, "Save")!;
 
 describe("open-source general settings in the Ontology Manager", () => {
   it("offers only the backend languages the data engine ships; a stored unsupported value shows en and is saved only on request", async () => {
