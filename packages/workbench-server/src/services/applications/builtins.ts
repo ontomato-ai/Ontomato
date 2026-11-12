@@ -2,6 +2,15 @@ import type { BuiltinApplication } from "@ontomato/contracts/platform-identity";
 
 export const workbenchApplications: BuiltinApplication[] = [
   {
+    id: "personal-workspace", kind: "native", rail: "top", category: "business", sort: 5,
+    entry: { path: "/workspace", renderer: "personal-workspace", home: "/workspace" },
+    entryAccess: ["domain-member"], scheduleAdapter: null,
+    declaration: {
+      names: { en: "Personal workspace", "zh-CN": "个人工作台" }, descriptions: {},
+      icon: "dashboards", groups: [], permissions: [],
+    },
+  },
+  {
     "id": "home",
     "kind": "native",
     "rail": "top",

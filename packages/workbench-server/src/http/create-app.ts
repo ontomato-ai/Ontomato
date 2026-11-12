@@ -35,6 +35,7 @@ import mcpRouter from "../api/routes/mcp";
 import analysisAgentMcpRouter from "../api/routes/analysis-agent-mcp";
 import opsAgentMcpRouter from "../api/routes/ops-agent-mcp";
 import preferencesRouter from "../api/routes/preferences";
+import personalWorkspaceRouter from "../api/routes/personal-workspace";
 import platformHomeRouter from "../api/routes/platform-home";
 import queryHistoryRouter from "../api/routes/query-history";
 import pptRouter from "../api/routes/ppt";
@@ -207,6 +208,7 @@ export function createWorkbenchApp(): Express {
   app.use("/api/dashboards", dashboardsRouter);
   app.use("/api/feedback", feedbackRouter);
   app.use("/api/preferences", preferencesRouter);
+  app.use("/api/personal-workspace", personalWorkspaceRouter);
   app.use("/api/memories", memoriesRouter);
 
   app.use("/api/ppt", pptRouter);

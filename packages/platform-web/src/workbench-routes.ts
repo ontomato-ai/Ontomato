@@ -94,3 +94,7 @@ export const dashboardPages = (): RouteRecordRaw[] => [
   { ...routes.dashboards, component: DashboardsPage, meta: { workbench: true } },
   { path: "/agents/dashboards", redirect: (to) => ({ path: routes.dashboards.path, query: to.query }) },
 ];
+
+export const personalWorkspacePages = (): RouteRecordRaw[] => [
+  { ...routes.personalWorkspace, component: () => import("./pages/PersonalWorkspaceRoute.vue"), meta: { workbench: true } },
+];
