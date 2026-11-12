@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import type { PlatformAccount, PlatformApp, PlatformPreferences, PlatformShellLabels } from "./types";
+import type { PlatformAccount, PlatformApp, PlatformBrand, PlatformPreferences, PlatformShellLabels } from "./types";
 import PlatformRail from "./PlatformRail.vue";
 
 /**
@@ -19,7 +19,7 @@ const props = withDefaults(
     account: PlatformAccount | null;
     preferences: PlatformPreferences;
     labels: PlatformShellLabels;
-    brand?: { name: string; logo?: string };
+    brand?: PlatformBrand;
     /** The name of each supported language, for the account menu. */
     localeNames?: Readonly<Record<string, string>>;
     /** Controlled from outside; when absent the shell remembers the choice itself. */
