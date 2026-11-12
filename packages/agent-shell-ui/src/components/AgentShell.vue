@@ -40,8 +40,8 @@ import ShellSidePanel from "./ShellSidePanel.vue";
  * `pageContext` line, so the agent knows what "this" refers to. Such a page may fill `page-header` (its own controls, in
  * the row of the shell's expand and close buttons) and `composer-context` (with whichever composer is in view: above
  * the conversation's, `inline` in the full page's single row; `pageOpen` tells whether a message sent now carries the
- * page context; `sending` tells that a message is on its way and its run not admitted yet, so a new conversation may
- * not have its id while it is true).
+ * page context; `unstarted` tells that the conversation in view has not started: the shell holds no session for it and
+ * no message is on its way).
  *
  * `run` reports the open conversation's run starting and stopping, with the workspace commit a stopped run saved.
  */
@@ -87,6 +87,8 @@ const currentFeature = computed(() => props.workbench.features.find((feature) =>
 /** A page that sits in the agent-app states rather than replacing the conversation. */
 const pairedPage = computed(() => currentFeature.value?.withConversation === true);
 const pageFull = computed(() => pairedPage.value && pageView.value === "full");
+/** The conversation in view has not started: no session yet, and no message on its way to make one. */
+const unstarted = computed(() => !conversation.sending.value && conversation.state.sessionId === null);
 
 provide(shellContextKey, {
   labels: toRef(props, "labels"),
@@ -281,7 +283,7 @@ onMounted(() => {
         @load-older="conversation.loadOlder"
       >
         <template v-if="slots['composer-context']" #composer-context>
-          <slot name="composer-context" :page-open="pairedPage" :inline="false" :sending="conversation.sending.value" />
+          <slot name="composer-context" :page-open="pairedPage" :inline="false" :unstarted="unstarted" />
         </template>
       </ShellConversation>
     </main>
@@ -302,7 +304,7 @@ onMounted(() => {
         <slot name="page-header" :feature-id="featureId" :view="pageView" />
       </template>
       <template v-if="slots['composer-context']" #composer-context>
-        <slot name="composer-context" :page-open="true" :inline="true" :sending="conversation.sending.value" />
+        <slot name="composer-context" :page-open="true" :inline="true" :unstarted="unstarted" />
       </template>
       <slot name="feature" :feature-id="featureId" :view="pageView" />
     </ShellPagePane>

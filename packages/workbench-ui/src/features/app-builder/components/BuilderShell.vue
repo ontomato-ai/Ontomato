@@ -388,11 +388,11 @@ const columnEvents = {
         @show-changes="showChanges"
       />
     </template>
-    <template #composer-context="{ pageOpen, inline, sending }">
-      <!-- Until the first message is on its way, a blank conversation may still move to another workspace. -->
+    <template #composer-context="{ pageOpen, inline, unstarted }">
+      <!-- Until the conversation has started, it may still move to another workspace. -->
       <div class="composer-line" :class="{ inline }">
         <WorkspacePicker
-          v-if="sessionId === null && !sending"
+          v-if="unstarted"
           :workspaces="workspaces"
           :workspace-id="workspaceId!"
           @select="openConversation($event, null)"
