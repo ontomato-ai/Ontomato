@@ -68,12 +68,12 @@ jobs:
       - name: Build the final images
         env:
           BUILD_CACHE_READ_ONLY: ${{ github.ref_type == 'branch' }}
-        run: |
+        run: &build-images |
           if [ "$GITHUB_REF_TYPE" = tag ]; then version="${GITHUB_REF_NAME#v}"; elif [ "$GITHUB_REF_NAME" = develop ]; then version=edge; else version="${GITHUB_REF_NAME//\//-}"; fi
-          BUILD_CACHE_REF="$REGISTRY/ontomato-workbench:cache-$version-$ARCH" make workbench ARCH="$ARCH"
-          BUILD_CACHE_REF="$REGISTRY/ontomato-data-engine:cache-$version-$ARCH" make data-engine ARCH="$ARCH"
-          BUILD_CACHE_REF="$REGISTRY/ontomato-agent-runtime:cache-$version-$ARCH" make agent-runtime ARCH="$ARCH"
-          BUILD_CACHE_REF="$REGISTRY/ontomato-gateway:cache-$version-$ARCH" make gateway ARCH="$ARCH"
+          BUILD_CACHE_REF="$REGISTRY/ontomato-workbench:cache-$version-$ARCH" $GHCR_RETRY make workbench ARCH="$ARCH"
+          BUILD_CACHE_REF="$REGISTRY/ontomato-data-engine:cache-$version-$ARCH" $GHCR_RETRY make data-engine ARCH="$ARCH"
+          BUILD_CACHE_REF="$REGISTRY/ontomato-agent-runtime:cache-$version-$ARCH" $GHCR_RETRY make agent-runtime ARCH="$ARCH"
+          BUILD_CACHE_REF="$REGISTRY/ontomato-gateway:cache-$version-$ARCH" $GHCR_RETRY make gateway ARCH="$ARCH"
 
       - name: Wait for source checks before publishing
         if: github.ref_type == 'branch'
@@ -85,12 +85,9 @@ jobs:
       # the same runner reuses the layers built above.
       - name: Export the build caches
         if: github.ref_type == 'branch'
-        run: |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then version="${GITHUB_REF_NAME#v}"; elif [ "$GITHUB_REF_NAME" = develop ]; then version=edge; else version="${GITHUB_REF_NAME//\//-}"; fi
-          BUILD_CACHE_REF="$REGISTRY/ontomato-workbench:cache-$version-$ARCH" bash scripts/ci-retry-ghcr.sh make workbench ARCH="$ARCH"
-          BUILD_CACHE_REF="$REGISTRY/ontomato-data-engine:cache-$version-$ARCH" bash scripts/ci-retry-ghcr.sh make data-engine ARCH="$ARCH"
-          BUILD_CACHE_REF="$REGISTRY/ontomato-agent-runtime:cache-$version-$ARCH" bash scripts/ci-retry-ghcr.sh make agent-runtime ARCH="$ARCH"
-          BUILD_CACHE_REF="$REGISTRY/ontomato-gateway:cache-$version-$ARCH" bash scripts/ci-retry-ghcr.sh make gateway ARCH="$ARCH"
+        env:
+          GHCR_RETRY: bash scripts/ci-retry-ghcr.sh
+        run: *build-images
 
       # Branch guard: an outdated branch run must not publish after the branch
       # has advanced. Release-tag builds do not track a branch.
