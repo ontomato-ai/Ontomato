@@ -68,11 +68,24 @@ conversation, whose top right corner then opens it beside the conversation again
 Beside the conversation its width is dragged between bounds; dragged on 80px past
 the widest and released, it expands, past the narrowest, it closes.
 The page renders once and keeps its state while it moves; the `feature` slot also
-gets `view`. Full, the pane keeps the composer's height (`--pane-dock-space`)
-after the page's content; a page that fills the pane and scrolls inside itself
-declares `scrollsItself` and keeps that room after its own scrolling content,
-reading it as `--pane-dock-space` or `usePageDockSpace()` (the app builder hands
-it to the app in its preview frame). The host's `composer-context` shows above
+gets `view`. Full, the composer floats over the page's foot and the shell measures
+it once (`--pane-dock-space`, 0 beside the conversation). A page that scrolls in the
+pane needs nothing: the pane keeps that room after its content. A page that fills the
+pane and scrolls inside itself declares `scrollsItself` and says where its content
+ends, in one of two forms of the same rule:
+
+- the `.shell-dock-room` class, on the vertical scroll area whose content runs to the
+  page's foot; the room follows the content, so it scrolls away with it;
+- `ShellDockRoom`, for a place the class cannot reach — the last item of a container
+  that spaces its children with `gap`, an `el-table`'s `append` slot, or under a bar
+  fixed to the page's foot, which lifts the bar clear of the composer.
+
+Both read the one measured value; the component draws nothing at 0, so a `gap` does
+not leave a slot beside the conversation. Only the layer that actually scrolls keeps
+the room: narrow, a page that hands its scroll to an outer element drops the room
+inside. `usePageDockSpace()` reads the same value for a page that passes it on (the
+app builder hands it to the app in its preview frame, where the SDK stylesheet keeps
+it after the document's content). The host's `composer-context` shows above
 the conversation's composer and, `inline`, inside the full page's one-row
 composer before the input. While such a page is open, a sent message ends with the host's
 `pageContext` line (plain text, visible in the message), so the agent knows what

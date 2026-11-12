@@ -43,7 +43,7 @@ defineExpose({ scrollToBottom });
       <div class="log-empty-main">{{ t("diagnosis.waitingLog") }}</div>
       <div class="log-empty-sub">{{ t("diagnosis.startTestLogHint") }}</div>
     </div>
-    <pre v-else ref="logContainer" class="log-terminal"><span
+    <pre v-else ref="logContainer" class="log-terminal shell-dock-room"><span
   v-for="(line, i) in logLines"
   :key="i"
   :class="'log-' + line.level"

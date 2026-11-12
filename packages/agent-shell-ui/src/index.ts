@@ -2,6 +2,7 @@ export { default as AgentShell } from "./components/AgentShell.vue";
 export { default as DatasetSelectionButton } from "./components/DatasetSelectionButton.vue";
 export { default as AgentChatPanel } from "./components/AgentChatPanel.vue";
 export { default as ShellComposer } from "./components/ShellComposer.vue";
+export { default as ShellDockRoom } from "./components/ShellDockRoom.vue";
 export { default as AgentAvatar } from "./components/AgentAvatar.vue";
 export { default as AgentPicker } from "./components/AgentPicker.vue";
 export {

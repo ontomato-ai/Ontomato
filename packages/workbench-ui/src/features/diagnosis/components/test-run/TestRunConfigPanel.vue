@@ -4,6 +4,7 @@ import type {
   RunSummary,
 } from "@ontomato/contracts/autotest";
 import { useI18n } from "vue-i18n";
+import { ShellDockRoom } from "@ontomato/agent-shell-ui";
 
 defineProps<{
   width: number;
@@ -223,6 +224,9 @@ const { t } = useI18n();
         </span>
       </div>
     </div>
+
+    <!-- The progress bar sits at the panel's foot: the room the shell's composer covers goes under it, lifting it. -->
+    <ShellDockRoom class="progress-dock" />
   </div>
 </template>
 
@@ -278,6 +282,13 @@ const { t } = useI18n();
 
 .case-set-select {
   width: 100%;
+}
+
+/* Stacked narrow, the page scrolls outside the panels and the progress bar leaves the foot: that scroll keeps the room. */
+@container page (max-width: 720px) {
+  .progress-dock {
+    display: none;
+  }
 }
 
 .left-form {

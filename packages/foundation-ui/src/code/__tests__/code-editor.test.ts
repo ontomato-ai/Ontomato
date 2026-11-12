@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, expect, it } from "vitest";
 import { mount } from "@vue/test-utils";
 import { nextTick } from "vue";
@@ -52,6 +53,27 @@ it.each([true, false])("opens the same search panel from the keyboard (read-only
   } finally {
     wrapper.unmount();
   }
+});
+
+// A page whose own controls float over the editor's foot says how much room to keep there; the editor adds it to its
+// own bottom padding, so the last line scrolls above them and nothing is left when nothing floats.
+it.each([
+  ["readonly", true, "var(--pane-dock-space, 0px)"],
+  ["editable", false, "40px"],
+])("takes the room the page names into the padding after the last line when %s", (_, readonly, space) => {
+  const wrapper = mount(CodeEditor, { props: { modelValue: "line", language: "text", readonly, contentEndSpace: space } });
+  try {
+    const root = wrapper.get(".code-editor").element as HTMLElement;
+    expect(root.style.getPropertyValue("--code-editor-end-space")).toBe(space);
+  } finally {
+    wrapper.unmount();
+  }
+});
+
+it("adds that room to the bottom padding it already had, in both modes", () => {
+  const source = readFileSync("src/code/CodeEditor.vue", "utf8");
+  expect(source).toContain("padding: 8px 0 calc(8px + var(--code-editor-end-space, 0px));");
+  expect(source).toContain("padding: 12px 0 calc(12px + var(--code-editor-end-space, 0px));");
 });
 
 it("follows the page's dark mode", async () => {

@@ -154,7 +154,7 @@ onMounted(loadTree);
         />
       </div>
 
-      <div v-loading="loadingTree" class="tree-body">
+      <div v-loading="loadingTree" class="tree-body shell-dock-room">
         <el-tree
           ref="treeRef"
           :data="treeData"
@@ -189,7 +189,7 @@ onMounted(loadTree);
           </div>
           <span class="content-time">{{ formatRelativeTime(selectedFile.updatedAt) }}</span>
         </div>
-        <div v-loading="loadingContent" class="markdown-scroll">
+        <div v-loading="loadingContent" class="markdown-scroll shell-dock-room">
           <!-- A link to another .md file of the knowledge base opens it here (handleMarkdownClick). -->
           <article class="markdown-body" @click="handleMarkdownClick">
             <MarkdownView :content="selectedFile.content" />
@@ -369,10 +369,12 @@ onMounted(loadTree);
     padding: 16px;
   }
 }
-/* In the narrow side panel (DESIGN "Agent apps") the split panes stack. */
+/* In the narrow side panel (DESIGN "Agent apps") the split panes stack and the page scrolls as a whole: the tree leaves
+   the foot, so the room below the note goes, kept by the note's own scroll only. */
 @container page (max-width: 720px) {
   .knowledge-page { flex-direction: column; overflow: auto; }
   .tree-panel { width: 100%; height: 40%; min-height: 200px; }
+  .tree-body { --pane-dock-space: 0px; }
   .content-panel { flex: 1 0 320px; }
 }
 </style>

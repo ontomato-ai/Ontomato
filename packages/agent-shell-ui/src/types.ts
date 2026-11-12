@@ -70,8 +70,10 @@ export interface ShellFeatureDeclaration {
   withConversation?: boolean;
   /**
    * The page fills the pane's height and scrolls inside itself (an app frame, an editor). Full, the composer floats over
-   * its foot and the pane leaves the page its whole height: the page keeps the covered room after its own scrolling
-   * content (`--pane-dock-space`, `usePageDockSpace()`). Other pages scroll in the pane, which keeps that room for them.
+   * its foot and the pane leaves the page its whole height: the page marks where its content ends, with the shell's
+   * `shell-dock-room` class on a vertical scroll area or the `ShellDockRoom` component where a class cannot reach, and
+   * the shell keeps the covered room there (`--pane-dock-space`, `usePageDockSpace()`). Other pages scroll in the pane,
+   * which keeps that room for them.
    */
   scrollsItself?: boolean;
 }

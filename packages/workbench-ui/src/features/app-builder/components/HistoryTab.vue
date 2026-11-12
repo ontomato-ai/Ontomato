@@ -41,7 +41,7 @@ async function restore(commit: WorkspaceCommit) {
 </script>
 
 <template>
-  <div class="history">
+  <div class="history shell-dock-room">
     <p class="history-hint"><Info :size="13" aria-hidden="true" /><span>{{ t("appBuilder.historyHint") }}</span></p>
     <div v-if="view.commitsState === 'error' && view.commits.length === 0" class="history-state" role="alert">
       {{ t("assistant.loadFailed") }}
@@ -96,8 +96,8 @@ async function restore(commit: WorkspaceCommit) {
 .history {
   height: 100%;
   box-sizing: border-box;
-  /* Full, the shell's composer floats over the foot; the list keeps that room after its content. */
-  padding: var(--spacing-md) var(--spacing-md) calc(var(--spacing-xl) + var(--pane-dock-space, 0px)) var(--spacing-lg);
+  /* Full, the shell's composer floats over the foot; the list marks where its content ends. */
+  padding: var(--spacing-md) var(--spacing-md) var(--spacing-xl) var(--spacing-lg);
   overflow-y: auto;
 }
 .history-hint {

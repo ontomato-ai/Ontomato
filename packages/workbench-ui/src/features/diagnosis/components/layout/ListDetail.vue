@@ -15,7 +15,7 @@ const { t } = useI18n();
   <div class="list-detail" :class="{ selected }">
     <aside class="ld-list">
       <div v-if="$slots.toolbar" class="ld-toolbar"><slot name="toolbar" /></div>
-      <div class="ld-items"><slot name="list" /></div>
+      <div class="ld-items shell-dock-room"><slot name="list" /></div>
     </aside>
     <section class="ld-detail">
       <button v-if="selected" type="button" class="ld-back" @click="emit('back')">
