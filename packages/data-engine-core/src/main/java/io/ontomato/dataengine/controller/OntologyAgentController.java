@@ -1,8 +1,11 @@
 package io.ontomato.dataengine.controller;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.service.agent.*;
 import jakarta.servlet.http.HttpServletRequest;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.util.*;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
@@ -54,6 +57,55 @@ public class OntologyAgentController {
       HttpServletRequest req)
       throws Exception {
     return host.list(agentId, limit, cursor, access.forAgent(req,agentId).owner());
+  }
+
+  @PostMapping("/sessions/status")
+  public Object statuses(@RequestBody JSONObject body, HttpServletRequest req) throws Exception {
+    AgentJson.fields(body, "sessionIds");
+    // Jackson binds a JSON array to java.util.List, not a fastjson JSONArray.
+    if (!(body.get("sessionIds") instanceof List<?> values))
+      throw AgentHttpException.invalid("sessionIds must be an array of UUIDs");
+    var ids = new ArrayList<String>(values.size());
+    for (Object value : values) {
+      if (!(value instanceof String id))
+        throw AgentHttpException.invalid("sessionIds must contain UUIDs");
+      ids.add(AgentJson.id(id));
+    }
+    var context = access.authenticated(req);
+    // Every ID must pass the entry's own session read rule; one failure rejects the whole read.
+    for (String id : ids) access.reader(req, id, null);
+    return JSONObject.of("sessions", host.sessionStatuses(ids, context.owner()));
+  }
+
+  @GetMapping("/sessions/run-events")
+  public ResponseEntity<StreamingResponseBody> runEvents(HttpServletRequest req) throws Exception {
+    var reads = access.sessionReads(req);
+    WebAsyncUtils.getAsyncManager(req).getAsyncWebRequest().setTimeout(0L);
+    var response = runtime.sessionRunEvents(reads.domainId(), req.getHeader("X-Correlation-Id"));
+    StreamingResponseBody body =
+        out -> {
+          try (var reader =
+              new BufferedReader(
+                  new InputStreamReader(response.body(), java.nio.charset.StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+              if (line.startsWith("data: ")) {
+                var frame = JSON.parseObject(line.substring(6));
+                if (!"ready".equals(frame.getString("type"))
+                    && !reads.readable(AgentJson.id(frame.getString("sessionId")))) continue;
+                out.write((line + "\n\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+              } else if (line.startsWith(":")) {
+                out.write((line + "\n\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+              }
+              out.flush();
+            }
+          }
+        };
+    return ResponseEntity.ok()
+        .contentType(MediaType.TEXT_EVENT_STREAM)
+        .header("Cache-Control", "no-cache, no-transform")
+        .header("X-Accel-Buffering", "no")
+        .body(body);
   }
 
   @GetMapping("/sessions/{id}/history")
