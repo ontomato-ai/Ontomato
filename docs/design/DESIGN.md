@@ -226,9 +226,9 @@ embedded pages. At 200% zoom no essential action or content may become inaccessi
 Ontology Manager navigation follows its layers: Facts (graph, object types, properties, relationships and visual
 modeling), Capabilities (metric views, functions, actions, workflows and skills), Governance (business knowledge review
 and the capability map), and its models at the foot of the menu. A layer without a page shows no heading. Skills are
-managed only here (`/ontology/skills`): the
-list gives each skill's name and source, and a skill opens as its package, the files on the left and the chosen one read
-on the right; a package changes only by importing it again. External MCP services are connections, not business logic,
+managed only here (`/ontology/skills`): skills show as cards (name, source and one line of what the skill is for), and a
+skill opens as its package, its folders and files as a tree on the left and the chosen file read on the right; a package
+changes only by importing it again. External MCP services are connections, not business logic,
 and are registered in System settings (`/settings/external-mcp`). Agents only select skills and services in their own
 settings. Cross-application links retain their destination frames and permissions. This navigation organization does not assert that the four-layer
 runtime architecture or currently absent capability types have been implemented.
