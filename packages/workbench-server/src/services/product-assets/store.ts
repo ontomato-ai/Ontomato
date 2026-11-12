@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
-import { productAssetSchema, productAssetInputSchema, productReferences, type ProductAsset, type ProductAssetInput } from "@ontomato/contracts/product-assets";
+import { productAssetSchema, productAssetInputSchema, productReferences, type ProductAsset, type ProductAssetInput, type ProductQuery } from "@ontomato/contracts/product-assets";
 import { defaultPersonalWorkspace, personalWorkspaceSchema, type PersonalWorkspace } from "@ontomato/contracts/personal-workspace";
 import { getPostgresPool as db, qualifiedTable as t } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
@@ -17,6 +17,31 @@ function asset(row: Record<string, unknown>, owner: ProductOwner): ProductAsset 
 export async function listProducts(owner: ProductOwner, client = db()) {
   const result = await client.query(`SELECT ${columns} FROM ${t("product_assets")} WHERE domain_id=$1 AND (owner_id=$2 OR visibility='domain') ORDER BY updated_at DESC,id`, [owner.domainId, owner.userId]);
   return result.rows.map(row => asset(row, owner));
+}
+export async function queryProducts(owner:ProductOwner,query:ProductQuery){
+  const args:unknown[]=[owner.domainId,owner.userId];
+  const clauses=["domain_id=$1 AND (owner_id=$2 OR visibility='domain')"];
+  if(query.scope==='mine')clauses.push('owner_id=$2');
+  if(query.scope==='shared')clauses.push("visibility='domain'");
+  if(query.kind){args.push(query.kind);clauses.push(`document->>'kind'=$${args.length}`);}
+  if(query.search){args.push(query.search);clauses.push(`strpos(lower(name),lower($${args.length}))>0`);}
+  const where=clauses.join(' AND ');
+  const count=await db().query(`SELECT count(*)::int AS total FROM ${t('product_assets')} WHERE ${where}`,args);
+  const result=await db().query(`SELECT id,owner_id AS "ownerId",name,description,visibility,revision,created_at AS "createdAt",updated_at AS "updatedAt",document->>'kind' AS kind FROM ${t('product_assets')} WHERE ${where} ORDER BY updated_at DESC,id LIMIT $${args.length+1} OFFSET $${args.length+2}`,[...args,query.pageSize,(query.page-1)*query.pageSize]);
+  return {items:result.rows.map(row=>({...row,createdAt:row.createdAt.toISOString(),updatedAt:row.updatedAt.toISOString(),editable:row.ownerId===owner.userId})),total:count.rows[0].total,page:query.page,pageSize:query.pageSize};
+}
+export async function countProductTypes(owner:ProductOwner){
+  const result=await db().query(`SELECT document->>'kind' AS kind,count(*)::int AS count FROM ${t('product_assets')} WHERE domain_id=$1 AND (owner_id=$2 OR visibility='domain') GROUP BY document->>'kind'`,[owner.domainId,owner.userId]);
+  return Object.fromEntries(result.rows.map(row=>[row.kind,row.count]));
+}
+/** Walk the requested composition in SQL instead of loading every visible document. */
+export async function dependencyProducts(owner:ProductOwner,id:string){
+  const result=await db().query(`WITH RECURSIVE visible AS (SELECT * FROM ${t('product_assets')} WHERE domain_id=$1 AND (owner_id=$2 OR visibility='domain')),
+    edges AS (SELECT p.id AS parent,child->>'assetId' AS child FROM visible p CROSS JOIN LATERAL jsonb_array_elements(COALESCE(p.document->'children','[]'::jsonb)) child),
+    descendants(id) AS (SELECT id FROM visible WHERE id=$3 UNION SELECT e.child FROM edges e JOIN descendants d ON e.parent=d.id),
+    ancestors(id) AS (SELECT id FROM visible WHERE id=$3 UNION SELECT e.parent FROM edges e JOIN ancestors a ON e.child=a.id)
+    SELECT ${columns} FROM visible WHERE id IN (SELECT id FROM descendants UNION SELECT id FROM ancestors)`,[owner.domainId,owner.userId,id]);
+  return result.rows.map(row=>asset(row,owner));
 }
 export async function getProduct(owner: ProductOwner, id: string, client: Pick<PoolClient, "query"> = db()) {
   const result = await client.query(`SELECT ${columns} FROM ${t("product_assets")} WHERE domain_id=$1 AND id=$2 AND (owner_id=$3 OR visibility='domain')`, [owner.domainId, id, owner.userId]);

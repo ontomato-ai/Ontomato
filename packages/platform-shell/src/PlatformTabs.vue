@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import type { Component } from 'vue';
 defineProps<{
-  tabs: readonly { id: string; label: string }[];
+  tabs: readonly { id: string; label: string; icon?:Component }[];
   activeId?: string;
   label: string;
 }>();
@@ -18,7 +19,7 @@ const emit = defineEmits<{ select: [id: string] }>();
       :class="{ active: tab.id === activeId }"
       :aria-selected="tab.id === activeId"
       @click="tab.id !== activeId && emit('select', tab.id)"
-    >{{ tab.label }}</button>
+    ><component :is="tab.icon" v-if="tab.icon" :size="16" aria-hidden="true"/>{{ tab.label }}</button>
   </div>
 </template>
 
@@ -31,6 +32,9 @@ const emit = defineEmits<{ select: [id: string] }>();
   overflow-x: auto;
 }
 .page-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
   flex-shrink: 0;
   height: 40px;
   padding: 0;
@@ -42,6 +46,7 @@ const emit = defineEmits<{ select: [id: string] }>();
   font-size: var(--text-sm);
   cursor: pointer;
 }
+.page-tab>svg{flex-shrink:0}
 .page-tab:hover { color: var(--el-text-color-primary); }
 .page-tab.active {
   border-bottom-color: var(--el-color-primary);

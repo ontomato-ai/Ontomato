@@ -13,6 +13,7 @@ import {
   Workflow as WorkflowIcon,
   GitBranch,
   Share2,
+  Shapes,
 } from "lucide-vue-next";
 import type { ManagerCounts } from "./context";
 import type { OntologyResourceCounts } from "./workspace";
@@ -93,7 +94,7 @@ const pages = [
   { ...page(managerPaths.dataBrowser, "nav.dataBrowser", Table2, "ontology", ["data-browser"]), ownHeader: false },
   page(managerPaths.metrics, "nav.metrics", ChartColumn, "assets", MODELING, "metrics"),
   page(managerPaths.functions, "nav.functionDefinitions", SquareFunction, "assets", MODELING, "functions"),
-  page(managerPaths.products, "platform.productAssets", Boxes, "assets", MODELING),
+  page(managerPaths.products, "platform.productAssets", Shapes, "assets", MODELING),
   page(managerPaths.knowledge, "nav.businessKnowledge", BookOpen, "knowledge", ["business-knowledge"]),
 ];
 

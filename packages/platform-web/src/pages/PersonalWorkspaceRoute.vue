@@ -16,6 +16,7 @@ import { DashboardCardPicker, DashboardMetricPreview } from "@ontomato/workbench
 import type { DashboardListItem } from "@ontomato/contracts/dashboard";
 import { platformSchedulesPath, platformTaskListSchema, type PlatformTask } from "@ontomato/contracts/platform-schedules";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
+import {dropdownBoundaryOptions} from '@ontomato/ontology-manager';
 import { useApplicationCatalog } from "../catalog";
 import {openApplicationKey} from '../apps';
 import {HOME_PREFERENCES_CHANGED} from '../features/home/api';
@@ -388,9 +389,7 @@ const actions = computed(() => [
     <WorkspaceSkeleton v-if="!ready && busy.config" :label="text.loading" :rows="6" />
     <el-alert v-if="analysisError" :title="analysisError" type="error" :closable="false" />
     <el-alert v-if="errors.products" :title="errors.products" type="error" :closable="false" />
-    <div v-if="ready" class="workspace-grid" :class="{ 'tasks-first': config.layout === 'tasks' }">
-      <div v-for="(sections, column) in columns" :key="column" class="workspace-column" :class="{ 'activity-column': sections.includes('tasks') }">
-    <section v-if="column === 0 && canChat" class="workspace-welcome">
+    <section v-if="ready && canChat" class="workspace-welcome">
       <div class="workspace-heading"><Sparkles :size="20" aria-hidden="true" /><h1>{{ workspaceText.heading }}</h1></div>
       <p>{{ workspaceText.description }}</p>
       <WorkspaceSkeleton v-if="busy.agents" :label="text.loading" :rows="1" composer />
@@ -404,7 +403,9 @@ const actions = computed(() => [
       </div>
       <p v-else>{{ workspaceText.noAgent }}</p>
     </section>
-      <section v-for="child in productChildren(column)" :key="child.id" class="workspace-section"><ManagerFrame v-if="child.asset"><ProductAssetRuntime :asset="child.asset" :revision="previewRevision" @refresh="previewRevision++"/></ManagerFrame><p v-else>{{text.unavailable}}</p></section>
+    <div v-if="ready" class="workspace-grid" :class="{ 'tasks-first': config.layout === 'tasks' }">
+      <div v-for="(sections, column) in columns" :key="column" class="workspace-column" :class="{ 'activity-column': sections.includes('tasks') }">
+      <section v-for="child in productChildren(column)" :key="child.id" class="workspace-section workspace-product"><ManagerFrame v-if="child.asset"><ProductAssetRuntime :asset="child.asset" :revision="previewRevision" @refresh="previewRevision++"/></ManagerFrame><p v-else>{{text.unavailable}}</p></section>
       <section v-for="section in sections" :key="section" class="workspace-section" :data-section="section">
         <header><h2>{{ section === 'objects' ? (locale.startsWith('zh') ? '收藏的对象' : 'Pinned objects') : section === 'conversations' ? workspaceText.continue : section === 'apps' ? workspaceText.resources : section === 'recent' ? workspaceText.recent : section === 'tasks' ? text.attention : text.data }}</h2>
           <div v-if="section === 'apps' || section === 'data' || section === 'tasks'" class="section-actions">
@@ -422,7 +423,7 @@ const actions = computed(() => [
             </div>
             <div class="object-row-actions">
               <el-button v-if="canChat && enabledAgents.length" size="small" :icon="Sparkles" @click="askObject(item)">{{ locale.startsWith('zh') ? '提问' : 'Ask' }}</el-button>
-              <el-dropdown trigger="click" :disabled="saving" @command="removeObject(item)">
+              <el-dropdown trigger="click" placement="bottom-end" :popper-options="dropdownBoundaryOptions" :disabled="saving" @command="removeObject(item)">
                 <el-button class="row-icon-action" text :icon="MoreHorizontal" :disabled="saving" :aria-label="locale.startsWith('zh') ? `管理对象：${item.title}` : `Manage object: ${item.title}`" :title="locale.startsWith('zh') ? '更多操作' : 'More actions'" />
                 <template #dropdown><el-dropdown-menu><el-dropdown-item>{{ locale.startsWith('zh') ? '取消收藏' : 'Unpin' }}</el-dropdown-item></el-dropdown-menu></template>
               </el-dropdown>
@@ -437,7 +438,7 @@ const actions = computed(() => [
             <article v-for="(item, index) in (busy.pins ? [] : pinned)" :key="item.sessionId" class="workspace-item pinned-analysis">
               <div class="resource-body"><button class="resource-link" :disabled="!item.session || !enabledAgents.some(agent => agent.id === item.session?.agentId)" @click="router.push({ path: platformRoutes.chat.path, query: { agentId: item.session!.agentId, sessionId: item.sessionId } })">{{ item.title }}</button><p v-if="pinErrors[item.sessionId]">{{ pinErrors[item.sessionId] }}</p><p v-else-if="item.session && !busy.agents && !enabledAgents.some(agent => agent.id === item.session?.agentId)">{{ workspaceText.noAgent }}</p><p v-else-if="item.session">{{ date(item.session.updatedAt) }}</p>
               </div>
-              <el-dropdown trigger="click" :disabled="saving" @command="(command: string) => command === 'rename' ? renamePin(item.sessionId) : command === 'up' ? movePin(index, -1) : command === 'down' ? movePin(index, 1) : updatePins(config.pinnedAnalyses.filter(pin => pin.sessionId !== item.sessionId))">
+              <el-dropdown trigger="click" placement="bottom-end" :popper-options="dropdownBoundaryOptions" :disabled="saving" @command="(command: string) => command === 'rename' ? renamePin(item.sessionId) : command === 'up' ? movePin(index, -1) : command === 'down' ? movePin(index, 1) : updatePins(config.pinnedAnalyses.filter(pin => pin.sessionId !== item.sessionId))">
                 <el-button class="row-icon-action" text :disabled="saving" :icon="MoreHorizontal" :aria-label="locale.startsWith('zh') ? `管理分析：${item.title}` : `Manage analysis: ${item.title}`" :title="locale.startsWith('zh') ? '更多操作' : 'More actions'" />
                 <template #dropdown><el-dropdown-menu>
                   <el-dropdown-item command="rename">{{ locale.startsWith('zh') ? '重命名' : 'Rename' }}</el-dropdown-item>
@@ -658,9 +659,9 @@ const actions = computed(() => [
 .workspace-section + .workspace-section { padding-top: var(--spacing-md); border-top: 1px solid var(--el-border-color-lighter); }
 .workspace-section > .workspace-item:first-of-type, .task-group > .workspace-item:first-of-type { border-top: 0; padding-top: var(--spacing-xs); }
 .workspace-section > .workspace-item:last-child, .task-group > .workspace-item:last-child { padding-bottom: 0; }
-header, .workspace-item { display: flex; justify-content: space-between; align-items: center; gap: var(--spacing-md); }
-header { min-height: var(--control-height); margin-bottom: var(--spacing-md); }
-header > .el-button, .section-actions :deep(.el-button) { padding-inline: var(--spacing-sm); }
+.workspace-section > header, .workspace-item { display: flex; justify-content: space-between; align-items: center; gap: var(--spacing-md); }
+.workspace-section > header { min-height: var(--control-height); margin-bottom: var(--spacing-md); flex-wrap:wrap; }
+.workspace-section > header > .el-button, .section-actions :deep(.el-button) { padding-inline: var(--spacing-sm); }
 h2 { margin: 0; font-size: var(--text-base); font-weight: var(--font-semibold); line-height: 1.4; }
 h3 { margin: var(--spacing-lg) 0 var(--spacing-sm); font-size: var(--text-sm); line-height: 1.5; font-weight: var(--font-semibold); color: var(--el-text-color-secondary); }
 p { color: var(--el-text-color-secondary); line-height: 1.6; overflow-wrap: anywhere; }
@@ -707,4 +708,22 @@ p { color: var(--el-text-color-secondary); line-height: 1.6; overflow-wrap: anyw
 .el-select { width: 100%; }
 @container platform-page (max-width: 1050px) { .workspace-grid { grid-template-columns: minmax(0, 1fr); } .workspace-column + .workspace-column { border-left: 0; padding-left: 0; padding-top: var(--spacing-xl); border-top: 1px solid var(--el-border-color); } }
 @container platform-page (max-width: 600px) { .application-grid { grid-template-columns: minmax(0, 1fr); } .workspace-heading h1 { font-size: var(--text-title); } }
+
+/* The question entry is shared by both columns; content starts on one baseline. */
+.workspace-welcome{margin-bottom:var(--page-content-gap);max-width:100%;min-width:0}
+.workspace-heading h1{font-size:var(--text-title);line-height:1.4}
+.workspace-welcome>p{margin:var(--spacing-xs) 0 var(--spacing-lg)}
+.workspace-grid{grid-template-columns:minmax(0,2fr) minmax(280px,1fr)}
+.workspace-column{gap:var(--page-content-gap)}
+.workspace-section+.workspace-section{padding-top:0;border-top:0}
+.workspace-section:not(.workspace-product){padding-top:var(--spacing-lg);border-top:1px solid var(--el-border-color-light)}
+.workspace-column>.workspace-section:first-child:not(.workspace-product){padding-top:0;border-top:0}
+.workspace-section>header{gap:var(--spacing-sm)}
+.section-actions{gap:var(--spacing-xs)}
+.application-card{min-height:88px;background:var(--el-bg-color);padding:var(--spacing-lg);gap:var(--spacing-sm)}
+.application-card .resource-body>span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.workspace-empty{margin:0;padding-block:var(--spacing-sm)}
+.workspace-product :deep(.view-grid){gap:var(--manager-content-gap)}
+.workspace-column:nth-child(2) .object-row-actions{gap:var(--spacing-xs)}
+@container platform-page (max-width:1000px){.workspace-grid{grid-template-columns:minmax(0,1fr)}.workspace-column+.workspace-column{border-inline-start:0;padding-inline-start:0;padding-top:var(--page-content-gap);border-top:1px solid var(--el-border-color)}}
 </style>

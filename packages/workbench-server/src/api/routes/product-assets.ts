@@ -1,9 +1,9 @@
 import { Router } from "express";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { productSaveSchema, productTypes } from "@ontomato/contracts/product-assets";
+import { productSaveSchema, productTypes,productQuerySchema } from "@ontomato/contracts/product-assets";
 import { context, wrap } from "../utils/agent-host";
-import { listProducts, getProduct, saveProduct, deleteProduct, personalHome } from "../../services/product-assets/store";
+import { listProducts, getProduct, saveProduct, deleteProduct, personalHome,queryProducts,dependencyProducts,countProductTypes } from "../../services/product-assets/store";
 import { HttpError } from "../../utils/errors";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import {expandedProductDependencies} from '../../services/product-assets/dependencies';
@@ -17,14 +17,16 @@ router.post('/:id/create-page',wrap(async(req,res)=>{
   res.json({asset:await saveProduct(owner,randomUUID(),{name,description:source.description,visibility:'private',document:{...source.document,kind:'page'}},0,credentials)});
 }));
 router.get("/types", wrap(async (_req,res) => { res.json({types:productTypes,schema:zodToJsonSchema(productSaveSchema,{target:"jsonSchema7"})}); }));
+router.get('/query',wrap(async(req,res)=>{res.json(await queryProducts(context(req).owner,productQuerySchema.parse(req.query)));}));
+router.get('/counts',wrap(async(req,res)=>{res.json({counts:await countProductTypes(context(req).owner)});}));
 router.get("/home", wrap(async (req,res) => { const c=context(req);res.json({asset:await personalHome(c.owner,c.credentials)}); }));
 router.get("/", wrap(async (req,res) => { res.json({assets:await listProducts(context(req).owner)}); }));
 router.get("/:id", wrap(async (req,res) => {
   const owner = context(req).owner;
   const asset = await getProduct(owner,String(req.params.id));
-  const assets = await listProducts(owner);
-  res.json({asset,...await expandedProductDependencies(owner,context(req).credentials,asset,assets)});
+  res.json({asset});
 }));
+router.get('/:id/dependencies',wrap(async(req,res)=>{const c=context(req),id=String(req.params.id);const asset=await getProduct(c.owner,id);res.json(await expandedProductDependencies(c.owner,c.credentials,asset,await dependencyProducts(c.owner,id)));}));
 router.put("/:id", wrap(async (req,res) => {
   const {owner,credentials} = context(req);
   const {revision,...input} = productSaveSchema.parse(req.body);

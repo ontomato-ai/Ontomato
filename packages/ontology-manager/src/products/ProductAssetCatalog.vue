@@ -1,20 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { PlatformPageHeader } from "@ontomato/platform-shell";
+import {dropdownBoundaryOptions} from '@ontomato/foundation-ui/overlay';
 import { Plus, RefreshCw, ChevronRight, MoreHorizontal, AppWindow, FileText, PanelsTopLeft, Puzzle, SlidersHorizontal, Gauge, ContactRound, Layers } from "lucide-vue-next";
 import { randomId } from "@ontomato/contracts/random-id";
 import { ElMessageBox } from "element-plus";
 import { productAssetInputSchema, productTypes, productWidgets, type ProductAsset, type ProductDocument } from "@ontomato/contracts/product-assets";
 import { defaultPersonalWorkspace } from "@ontomato/contracts/personal-workspace";
-import {productDependencies} from '@ontomato/contracts/product-dependencies';
 import { createViewWidget } from "@ontomato/contracts/object-views";
 import { useManagerClient } from "../context";
 import ProductAssetRuntime from "./ProductAssetRuntime.vue";
 const client = useManagerClient();
-const props=defineProps<{assetId?:string}>();
-const emit=defineEmits<{select:[id:string];home:[];open:[id:string]}>();
+const props=defineProps<{assetId?:string;createKind?:string}>();
+const emit=defineEmits<{select:[id:string];home:[];open:[id:string];back:[]}>();
 const assets = ref<ProductAsset[]>([]), selected = ref<ProductAsset|null>(null);
-const kind = ref(""), search = ref(""), error = ref(""), busy = ref(false), editing = ref(false), showTypes=ref(false);
+const error = ref(""), busy = ref(false), editing = ref(false), showTypes=ref(false);
 const capabilities=ref<{id?:string;name:string;status?:string}[]>([]);
 const classes=ref<{className:string;showName?:string}[]>([]);
 const name = ref(""), description = ref(""), visibility = ref<"private"|"domain">("private");
@@ -22,44 +22,44 @@ const document = ref<ProductDocument>({kind:"page",workspace:defaultPersonalWork
 const advanced = ref(false), raw = ref("");
 const metricId = ref(""), valueField = ref(""), labelField=ref(""), parameters = ref("{}");
 const childId = ref(""), childColumn = ref<"main"|"sidebar">("main");
+const childOptions=ref<{id:string;name:string}[]>([]);
+async function searchChildren(search=''){try{const result=await client.products.query({search,pageSize:50});childOptions.value=result.items.filter(asset=>['widget','widget-group','operation-panel','dashboard','object-view',...(document.value.kind==='application'?['page']:[])].includes(asset.kind)&&asset.id!==selected.value?.id);}catch(reason){error.value=reason instanceof Error?reason.message:String(reason);}}
 const widgetIndex=ref(0);
 const editorWidgets=computed(()=>productWidgets(document.value));
-const filtered = computed(() => assets.value.filter(asset => (!kind.value || asset.document.kind === kind.value) && asset.name.toLowerCase().includes(search.value.toLowerCase())));
-const typeOrder=['application','page','dashboard','object-view','widget','widget-group','operation-panel','layout-template'] as const;
 const typeIcons={application:AppWindow,page:FileText,dashboard:Gauge,'object-view':ContactRound,widget:Puzzle,'widget-group':Layers,'operation-panel':SlidersHorizontal,'layout-template':PanelsTopLeft};
-const categories=computed(()=>typeOrder.map(value=>({kind:value,name:typeName(value),icon:typeIcons[value],count:assets.value.filter(asset=>asset.document.kind===value).length})));
-const groups=computed(()=>categories.value.map(category=>({...category,items:filtered.value.filter(asset=>asset.document.kind===category.kind)})).filter(group=>group.items.length));
-const dependencies=computed(()=>selected.value?productDependencies(selected.value,assets.value):{references:[],usedBy:[]});
-const references = computed(() => expandedReferences.value.length?expandedReferences.value:dependencies.value.references);
+const references = computed(() => expandedReferences.value);
+const parentAssets=ref<{id:string;name:string}[]>([]);
 const expandedReferences=ref<import('@ontomato/contracts/product-assets').ProductReference[]>([]);
-watch(()=>selected.value,async asset=>{
+watch(()=>selected.value,()=>{
   expandedReferences.value=[];
-  if(!asset)return;
-  try{const result=await client.products.dependencies(asset.id);if(selected.value?.id===asset.id)expandedReferences.value=result.references;}
-  catch(reason){if(selected.value?.id===asset.id)error.value=reason instanceof Error?reason.message:String(reason);}
+   parentAssets.value=[];
 });
-const usedBy = computed(() => assets.value.filter(asset=>dependencies.value.usedBy.some(parent=>parent.id===asset.id)));
+const usedBy = computed(() => parentAssets.value);
+async function loadDependencies(event:Event){const target=event.target as HTMLDetailsElement;if(!target.classList.contains('asset-relations')||!target.open||!selected.value)return;const id=selected.value.id;try{const result=await client.products.dependencies(id);if(selected.value?.id===id){expandedReferences.value=result.references;parentAssets.value=result.usedBy;}}catch(reason){error.value=reason instanceof Error?reason.message:String(reason);}}
 const children = computed(() => "children" in document.value ? document.value.children : []);
-const candidates = computed(() => assets.value.filter(asset => ["widget","widget-group","operation-panel","dashboard","object-view",...(document.value.kind==='application'?['page']:[])].includes(asset.document.kind) && asset.id !== selected.value?.id));
+const candidates = computed(() => childOptions.value);
 const widget=computed(()=>editorWidgets.value[widgetIndex.value]);
 const headerTitle=computed(()=>editing.value?`${selected.value?'编辑':'创建'}${typeName(document.value.kind)}`:'产品资产');
 const previewTitle=computed(()=>selected.value&&['application','dashboard'].includes(selected.value.document.kind)?'打开入口':selected.value&&['page','layout-template'].includes(selected.value.document.kind)?'页面组合':'运行预览');
+const compositionColumns=computed(()=>selected.value&&'children' in selected.value.document?(['main','sidebar'] as const).map(column=>({column,label:column==='main'?'主栏':'侧栏',children:selected.value&&'children' in selected.value.document?selected.value.document.children.filter(child=>child.column===column):[]})):[]);
+const layoutLabel=(layout:string)=>({data:'数据优先',tasks:'任务优先',assistant:'应用优先'}[layout]??layout);
 const headerActions=computed(()=>[{id:'refresh',label:'刷新',icon:RefreshCw,disabled:busy.value||editing.value,onClick:()=>void run(load)}]);
 const typeName = (value:string) => productTypes.find(type => type.kind === value)?.name ?? value;
 async function run(action:()=>Promise<void>) { if(busy.value)return; busy.value=true;error.value="";try{await action();}catch(e){if(e!=="cancel"&&e!=="close")error.value=e instanceof Error?e.message:String(e);}finally{busy.value=false;} }
 async function load() {
-  assets.value=await client.products.list();
-  const id = selected.value?.id ?? props.assetId;
-  selected.value=assets.value.find(asset=>asset.id===id) ?? filtered.value[0] ?? null;
+  const id=selected.value?.id??props.assetId;
+  if(!id)return;
+  selected.value=await client.products.get(id);
+  const children='children' in selected.value.document?selected.value.document.children:[];
+  assets.value=await Promise.all(children.map(child=>client.products.get(child.assetId)));
 }
-onMounted(()=>void run(load));
-watch(()=>props.assetId,id=>{if(!editing.value)selected.value=assets.value.find(asset=>asset.id===id)??null;});
+onMounted(()=>{if(props.createKind)void createAsset(props.createKind);else void run(load);});
+watch(()=>props.assetId,id=>{if(!editing.value&&id!==selected.value?.id){selected.value=null;void run(load);}});
 watch(()=>widget.value?.kind,async value=>{
   if(!value)return;
   try{capabilities.value=await client.loadSmartAssets(value==='action'?'actions':'metrics');}catch{capabilities.value=[];}
 });
-function select(asset:ProductAsset) { if(!asset)return;selected.value=asset;editing.value=false;emit('select',asset.id); }
-watch([kind,search],()=>{if(!editing.value&&selected.value&&!filtered.value.some(asset=>asset.id===selected.value!.id))selected.value=filtered.value[0]??null;});
+function select(asset:{id:string}|undefined) { if(!asset)return;editing.value=false;emit('select',asset.id); }
 function more(command:string){if(command==='copy')void copy();else if(command==='template')void saveTemplate();else if(command==='delete')void remove();else showTypes.value=!showTypes.value;}
 async function createPage(){if(!selected.value)return;await run(async()=>{const source=selected.value!;const result=await ElMessageBox.prompt('页面名称','使用模板创建页面',{inputValue:source.name+' · 页面'});selected.value=await client.products.createPage(source.id,result.value);await load();emit('select',selected.value!.id);});}
 async function createAsset(value:string){if(value!=='dashboard'){edit(null,value);return;}await run(async()=>{const result=await ElMessageBox.prompt('仪表盘名称','创建仪表盘');selected.value=await client.products.createDashboard(result.value);await load();emit('select',selected.value!.id);});}
@@ -83,6 +83,7 @@ function edit(asset:ProductAsset|null,newKind="page") {
   labelField.value=widget?.labelField ?? "";
   parameters.value=JSON.stringify(widget?.parameters ?? {},null,2);
   editing.value=true;
+  if('children' in document.value)void searchChildren();
   if(document.value.kind==='object-view')void client.loadOntology().then(ontology=>{classes.value=ontology.objects;}).catch(()=>{});
 }
 function toggleAdvanced() {
@@ -105,7 +106,7 @@ function applyWidgetFields(){
 function chooseWidget(index:number){try{applyWidgetFields();widgetIndex.value=index;readWidgetFields();}catch{error.value='请先修正当前组件的参数 JSON';}}
 function addWidget(){if(!('widgets' in document.value))return;try{applyWidgetFields();document.value.widgets.push(createViewWidget(document.value.kind==='operation-panel'?'action':'metric'));widgetIndex.value=document.value.widgets.length-1;readWidgetFields();}catch{error.value='请先修正参数 JSON';}}
 function removeWidget(){if(!('widgets' in document.value))return;document.value.widgets.splice(widgetIndex.value,1);widgetIndex.value=0;readWidgetFields();}
-function addChild() { if(childId.value && "children" in document.value && !children.value.some(child=>child.assetId===childId.value)) document.value.children.push({assetId:childId.value,column:childColumn.value}); }
+async function addChild() { if(childId.value && "children" in document.value && !children.value.some(child=>child.assetId===childId.value)){try{const asset=await client.products.get(childId.value);assets.value.push(asset);document.value.children.push({assetId:childId.value,column:childColumn.value});}catch(reason){error.value=reason instanceof Error?reason.message:String(reason);}} }
 async function save() { await run(async()=>{
   if(advanced.value) document.value=JSON.parse(raw.value);
   else applyWidgetFields();
@@ -113,6 +114,7 @@ async function save() { await run(async()=>{
   const input=productAssetInputSchema.parse({name:name.value,description:description.value,visibility:visibility.value,document:document.value});
   const saved=await client.products.save(selected.value?.id ?? randomId(),input,selected.value?.revision ?? 0);
   selected.value=saved;editing.value=false;await load();
+  emit('select',saved.id);
 }); }
 async function saveTemplate(){if(!selected.value||selected.value.document.kind!=='page')return;await run(async()=>{
   const result=await ElMessageBox.prompt('模板名称','保存为布局模板',{inputValue:selected.value!.name+' · 模板'});
@@ -122,24 +124,20 @@ async function saveTemplate(){if(!selected.value||selected.value.document.kind!=
 });}
 async function copy() { if(!selected.value)return;await run(async()=>{const result=await ElMessageBox.prompt("新资产名称","复制资产",{inputValue:selected.value!.name+" · 副本"});selected.value=await client.products.copy(selected.value!.id,result.value);await load();}); }
 async function useHome() { if(!selected.value)return;await run(async()=>{await ElMessageBox.confirm("将此布局复制到我的主页，替换当前主页配置。共享组件继续按引用使用。","应用模板");const home=await client.products.home();await client.products.useHome(selected.value!.id,home.revision);emit('home');}); }
-async function remove() { if(!selected.value)return;await run(async()=>{await ElMessageBox.confirm("删除这个产品资产？","删除资产");await client.products.delete(selected.value!.id,selected.value!.revision);selected.value=null;await load();}); }
+async function remove() { if(!selected.value)return;await run(async()=>{await ElMessageBox.confirm("删除这个产品资产？","删除资产");await client.products.delete(selected.value!.id,selected.value!.revision);selected.value=null;emit('back');}); }
 </script>
 <template>
   <section class="product-catalog">
     <PlatformPageHeader :title="headerTitle" description="选择视图与能力，组合页面和应用" :actions="headerActions">
       <template #actions>
+        <el-button text @click="emit('back')">返回资产目录</el-button>
         <el-button v-if="editing" :disabled="busy" @click="editing=false">取消</el-button><el-button v-if="editing" type="primary" :loading="busy" @click="save">保存</el-button>
-         <template v-else><el-dropdown :disabled="busy" @command="createAsset"><el-button type="primary" :icon="Plus">创建资产</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item v-for="type in productTypes" :key="type.kind" :command="type.kind">{{ type.name }}</el-dropdown-item></el-dropdown-menu></template></el-dropdown></template>
+         <template v-else><el-dropdown placement="bottom-end" :popper-options="dropdownBoundaryOptions" :disabled="busy" @command="createAsset"><el-button type="primary" :icon="Plus">创建资产</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item v-for="type in productTypes" :key="type.kind" :command="type.kind">{{ type.name }}</el-dropdown-item></el-dropdown-menu></template></el-dropdown></template>
       </template>
     </PlatformPageHeader>
     <div v-if="error" class="product-alert"><el-alert :title="error" type="error" :closable="false" /></div>
     <div v-if="showTypes" class="product-types"><article v-for="type in productTypes" :key="type.kind"><strong>{{type.name}}</strong><span>{{type.description}}</span></article></div>
-    <nav class="asset-categories" aria-label="资产类型">
-      <button :class="{active:!kind}" :disabled="editing" :aria-pressed="!kind" @click="kind=''">全部<span>{{assets.length}}</span></button>
-      <button v-for="category in categories" :key="category.kind" :class="{active:kind===category.kind}" :disabled="editing" :aria-pressed="kind===category.kind" @click="kind=category.kind"><component :is="category.icon" :size="16" aria-hidden="true"/>{{category.name}}<span>{{category.count}}</span></button>
-    </nav>
-    <div class="product-body">
-      <aside><div class="list-tools"><el-input v-model="search" placeholder="搜索名称" clearable aria-label="搜索产品资产"/><span class="resource-count">{{kind?typeName(kind):'全部资产'}} · {{filtered.length}}</span></div><div class="asset-list"><section v-for="group in groups" :key="group.kind" class="asset-group"><header v-if="!kind" class="asset-group-title"><component :is="group.icon" :size="15" aria-hidden="true"/><span>{{group.name}}</span><small>{{group.items.length}}</small></header><button v-for="asset in group.items" :key="asset.id" class="asset-row" :class="{active:selected?.id===asset.id}" :disabled="editing" @click="select(asset)"><span class="asset-label"><strong>{{asset.name}}</strong><small>{{asset.description || (asset.visibility==='domain'?'可在域内复用':'个人资产')}}</small></span><ChevronRight :size="14"/></button></section><el-empty v-if="!filtered.length" description="暂无匹配资产" :image-size="48"/></div></aside>
+    <div class="product-body" @toggle.capture="loadDependencies">
       <main v-if="editing" class="asset-editor">
         <h2>基本信息</h2>
         <el-form label-position="top" :disabled="busy"><el-form-item label="名称"><el-input v-model="name"/></el-form-item><el-form-item label="说明"><el-input v-model="description" type="textarea"/></el-form-item><el-form-item label="可见范围"><el-select v-model="visibility"><el-option value="private" label="仅自己"/><el-option value="domain" label="域内共享（使用者仍按自己的权限访问数据）"/></el-select></el-form-item>
@@ -152,20 +150,24 @@ async function remove() { if(!selected.value)return;await run(async()=>{await El
           <template v-if="document.kind==='page'||document.kind==='layout-template'"><el-form-item label="布局重点"><el-select v-model="document.workspace.layout"><el-option value="data" label="数据优先"/><el-option value="tasks" label="任务优先"/><el-option value="assistant" label="应用优先"/></el-select></el-form-item><p>个人主页的资源选择、区块排序与打开方式也可在主页中手动调整。</p></template>
           <el-form-item v-if="document.kind==='dashboard'" label="现有仪表盘 ID"><el-input v-model="document.dashboardId"/></el-form-item>
           <el-form-item v-if="document.kind==='application'" label="平台应用 ID"><el-input v-model="document.applicationId"/></el-form-item>
-          <template v-if="'children' in document"><h3>组合组件</h3><div v-for="(child,index) in children" :key="child.assetId" class="child-row"><span>{{assets.find(asset=>asset.id===child.assetId)?.name ?? child.assetId}}</span><el-select v-model="child.column"><el-option value="main" label="主栏"/><el-option value="sidebar" label="侧栏"/></el-select><el-button :disabled="index===0" @click="children.splice(index-1,0,...children.splice(index,1))">上移</el-button><el-button @click="children.splice(index,1)">移除</el-button></div><div class="child-row"><el-select v-model="childId" filterable placeholder="选择可复用组件"><el-option v-for="asset in candidates" :key="asset.id" :label="asset.name" :value="asset.id"/></el-select><el-select v-model="childColumn"><el-option value="main" label="主栏"/><el-option value="sidebar" label="侧栏"/></el-select><el-button @click="addChild">添加</el-button></div></template>
+           <template v-if="'children' in document"><h3>组合组件</h3><div v-for="(child,index) in children" :key="child.assetId" class="child-row"><span>{{assets.find(asset=>asset.id===child.assetId)?.name ?? child.assetId}}</span><el-select v-model="child.column"><el-option value="main" label="主栏"/><el-option value="sidebar" label="侧栏"/></el-select><el-button :disabled="index===0" @click="children.splice(index-1,0,...children.splice(index,1))">上移</el-button><el-button @click="children.splice(index,1)">移除</el-button></div><div class="child-row"><el-select v-model="childId" filterable remote :remote-method="searchChildren" placeholder="搜索可复用组件"><el-option v-for="asset in candidates" :key="asset.id" :label="asset.name" :value="asset.id"/></el-select><el-select v-model="childColumn"><el-option value="main" label="主栏"/><el-option value="sidebar" label="侧栏"/></el-select><el-button @click="addChild">添加</el-button></div></template>
         </template>
         <el-button text @click="toggleAdvanced">{{advanced?'返回表单':'编辑完整配置 JSON'}}</el-button><el-input v-if="advanced" v-model="raw" type="textarea" :rows="22" spellcheck="false"/>
          </el-form>
       </main>
       <main v-else-if="selected" :key="selected.id"><header class="detail-heading"><div class="detail-identity"><component :is="typeIcons[selected.document.kind]" :size="22" class="detail-type-icon" aria-hidden="true"/><div><h2>{{selected.name}}</h2><div class="asset-meta"><span>{{typeName(selected.document.kind)}}</span><span>{{selected.visibility==='domain'?'域内共享':'仅自己'}}</span></div></div></div><div class="toolbar"><el-button v-if="selected.editable" @click="edit(selected)">编辑</el-button><el-button v-if="['page','layout-template'].includes(selected.document.kind)" @click="useHome">用作主页</el-button><el-button v-if="selected.document.kind==='page'" type="primary" @click="emit('open',selected.id)">打开页面</el-button><el-dropdown @command="more"><el-button text :icon="MoreHorizontal" aria-label="更多资产操作"/><template #dropdown><el-dropdown-menu><el-dropdown-item command="copy">复制</el-dropdown-item><el-dropdown-item v-if="selected.document.kind==='page'" command="template">保存为模板</el-dropdown-item><el-dropdown-item v-if="selected.editable" command="delete" divided>删除</el-dropdown-item></el-dropdown-menu></template></el-dropdown></div></header><p v-if="selected.description" class="asset-description">{{selected.description}}</p>
-      <el-button v-if="selected.document.kind==='layout-template'" type="primary" @click="createPage">使用模板创建页面</el-button>
-      <h3>{{previewTitle}}</h3><ProductAssetRuntime v-if="['widget','widget-group','operation-panel','dashboard','application','object-view'].includes(selected.document.kind)" :asset="selected" preview/><div v-else class="composition-preview"><p>布局：{{'workspace' in selected.document?selected.document.workspace.layout:''}}；组合组件：{{'children' in selected.document?selected.document.children.length:0}}</p><template v-if="'children' in selected.document"><div v-for="child in selected.document.children" :key="child.assetId" class="composition-row"><span>{{child.column==='main'?'主栏':'侧栏'}}</span><button class="text-button" @click="select(assets.find(asset=>asset.id===child.assetId)!)">{{assets.find(asset=>asset.id===child.assetId)?.name??child.assetId}}</button></div></template></div>
+      <section class="asset-preview" :aria-label="previewTitle">
+        <header class="preview-heading"><h3>{{previewTitle}}</h3><el-button v-if="selected.document.kind==='layout-template'" type="primary" :disabled="busy" @click="createPage">使用模板创建页面</el-button></header>
+        <ProductAssetRuntime v-if="['widget','widget-group','operation-panel','dashboard','application','object-view'].includes(selected.document.kind)" :asset="selected" preview/>
+        <div v-else class="composition-preview"><p v-if="'workspace' in selected.document" class="composition-meta">{{layoutLabel(selected.document.workspace.layout)}}<span>{{'children' in selected.document?selected.document.children.length:0}} 个组件</span></p><div v-if="'children' in selected.document&&selected.document.children.length" class="composition-columns"><section v-for="column in compositionColumns" :key="column.column" class="composition-column"><h4>{{column.label}}</h4><button v-for="child in column.children" :key="child.assetId" class="composition-item" :disabled="!assets.some(asset=>asset.id===child.assetId)" @click="select(assets.find(asset=>asset.id===child.assetId)!)"><component :is="typeIcons[assets.find(asset=>asset.id===child.assetId)?.document.kind??'widget']" :size="16" aria-hidden="true"/><span>{{assets.find(asset=>asset.id===child.assetId)?.name??'组件不可用'}}</span><ChevronRight :size="14" aria-hidden="true"/></button><p v-if="!column.children.length" class="composition-empty">未放置额外组件</p></section></div><p v-else class="composition-empty">暂无额外组件，可通过编辑添加。</p></div>
+      </section>
       <details class="asset-relations"><summary><ChevronRight :size="16" class="disclosure-chevron" aria-hidden="true"/><strong>引用关系</strong><span>{{references.length}} 项引用 · {{usedBy.length}} 处使用</span></summary><div class="disclosure-content"><h3>引用</h3><ul><li v-for="dependency in references" :key="dependency.kind+dependency.id"><button v-if="dependency.kind==='asset'" class="text-button" @click="select(assets.find(asset=>asset.id===dependency.id)!)">{{assets.find(asset=>asset.id===dependency.id)?.name ?? dependency.id}}</button><span v-else>{{dependency.kind}} · {{dependency.id}}</span></li></ul><p v-if="!references.length">暂无引用</p><h3>使用此资产</h3><div class="parent-links"><button v-for="parent in usedBy" :key="parent.id" class="text-button" @click="select(parent)">{{parent.name}}</button></div><p v-if="!usedBy.length">暂无其他可见资产引用</p></div></details><details class="asset-configuration"><summary><ChevronRight :size="16" class="disclosure-chevron" aria-hidden="true"/><strong>配置详情</strong><span>修订 {{selected.revision}}</span></summary><div class="disclosure-content"><pre>{{JSON.stringify(selected,null,2)}}</pre></div></details></main>
       <main v-else class="empty-detail"><el-empty description="选择资产查看预览、配置和引用关系" :image-size="64"/><el-button text @click="showTypes=!showTypes">查看类型说明</el-button></main>
     </div>
   </section>
 </template>
 <style scoped>
+.product-body{display:flex!important;flex-direction:column}.product-body>main{flex:1;width:100%}.product-body>main.asset-editor{max-width:1100px}.product-body>main:not(.asset-editor){padding-inline:var(--page-gutter)}
 .asset-categories{display:flex;flex-shrink:0;align-items:center;gap:var(--spacing-xs);padding:var(--manager-control-gap) var(--page-gutter);border-bottom:1px solid var(--el-border-color);overflow-x:auto;scrollbar-width:thin}.asset-categories button{display:flex;align-items:center;gap:var(--spacing-sm);flex-shrink:0;min-height:var(--control-height);padding:var(--spacing-xs) var(--spacing-md);border:0;border-radius:var(--radius-sm);background:transparent;color:var(--el-text-color-secondary);font:inherit;cursor:pointer}.asset-categories button:hover{background:var(--el-fill-color-light)}.asset-categories button.active{color:var(--el-color-primary);background:var(--el-color-primary-light-9);font-weight:var(--font-semibold)}.asset-categories button>span{font-size:var(--text-xs);font-variant-numeric:tabular-nums;color:var(--el-text-color-secondary)}.asset-categories button:focus-visible{outline:2px solid var(--el-color-primary);outline-offset:-2px}.asset-group-title{display:flex;align-items:center;gap:var(--spacing-sm);padding:var(--spacing-md) var(--manager-content-gap) var(--spacing-sm);color:var(--el-text-color-secondary);font-size:var(--text-xs);background:var(--el-fill-color-light);border-bottom:1px solid var(--el-border-color-light)}.asset-group-title span{flex:1;font-weight:var(--font-semibold)}.asset-group-title small{font-size:inherit}.detail-identity{display:flex;align-items:flex-start;gap:var(--manager-control-gap);min-width:0}.detail-identity>div{min-width:0}.detail-identity h2{overflow-wrap:anywhere}.detail-type-icon{flex-shrink:0;margin-top:2px;color:var(--el-text-color-secondary)}
 .detail-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--manager-content-gap);flex-wrap:wrap}.detail-heading h2{margin-bottom:var(--manager-control-gap)}.asset-description{margin:0 0 var(--manager-module-gap);max-width:70ch}.parent-links{display:flex;flex-direction:column;align-items:flex-start;gap:var(--spacing-xs)}summary{cursor:pointer;line-height:var(--leading-sm);font-weight:var(--font-medium)}summary>span{margin-inline-start:var(--manager-control-gap);font-size:var(--text-xs);font-weight:var(--font-normal);color:var(--el-text-color-secondary)}.asset-relations{padding-top:var(--manager-content-gap);border-top:1px solid var(--el-border-color-light)}
 .product-catalog{display:flex;flex-direction:column;height:100%;min-height:0;min-width:0;overflow:hidden;color:var(--el-text-color-primary);font-size:var(--text-sm)}
@@ -241,4 +243,30 @@ details[open]>summary .disclosure-chevron{transform:rotate(90deg)}
 .empty-detail{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:var(--manager-content-gap)}
 .empty-detail :deep(.el-empty){padding:0}
 @container ontology-manager (max-width:520px){.list-tools{padding:var(--manager-control-gap)}}
+
+/* Details remain a continuous working surface; only the preview owns its content boundaries. */
+.detail-heading{display:grid;grid-template-columns:minmax(180px,1fr) auto;align-items:start;gap:var(--manager-content-gap)}
+.detail-identity{min-width:0}.detail-identity>div{flex:1}.detail-heading .toolbar{justify-content:flex-end;flex-shrink:0;max-width:100%}
+.asset-meta>span+span::before{content:'·';margin-inline-end:var(--manager-control-gap);color:var(--el-text-color-placeholder)}
+.asset-description{max-width:80ch;white-space:pre-line;overflow-wrap:anywhere}
+.asset-preview{display:flex;flex-direction:column;gap:var(--manager-content-gap);min-width:0;margin-top:var(--manager-module-gap)}
+.asset-description+.asset-preview{margin-top:0}
+.preview-heading{display:flex;justify-content:space-between;align-items:center;gap:var(--manager-control-gap);flex-wrap:wrap;min-width:0}
+.product-body .preview-heading h3{margin:0;font-size:var(--text-sm);font-weight:var(--font-semibold)}
+.composition-meta{display:flex;align-items:center;flex-wrap:wrap;gap:var(--manager-control-gap);margin:0;font-size:var(--text-sm)}
+.composition-meta>span{font-size:var(--text-xs);color:var(--el-text-color-secondary)}
+.composition-columns{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:var(--manager-content-gap);min-width:0}
+.composition-column{min-width:0;border:1px solid var(--el-border-color);border-radius:var(--radius-md);overflow:hidden;background:var(--el-bg-color)}
+.composition-column h4{font-size:var(--text-xs);font-weight:var(--font-medium);color:var(--el-text-color-secondary);margin:0;padding:var(--spacing-md);border-bottom:1px solid var(--el-border-color-light)}
+.composition-item{display:flex;width:100%;min-width:0;align-items:center;gap:var(--manager-control-gap);padding:var(--spacing-md);min-height:var(--list-row-height);border:0;background:transparent;color:var(--el-text-color-primary);font:inherit;text-align:start;cursor:pointer}
+.composition-item+.composition-item{border-top:1px solid var(--el-border-color-light)}.composition-item:hover{background:var(--el-fill-color-light)}
+.composition-item>span{min-width:0;flex:1;overflow-wrap:anywhere}.composition-item>svg{flex-shrink:0;color:var(--el-text-color-secondary)}
+.composition-item:focus-visible{outline:2px solid var(--el-color-primary);outline-offset:-2px}.composition-item:disabled{color:var(--el-text-color-secondary);cursor:default}
+.composition-empty{margin:0;padding:var(--spacing-md);font-size:var(--text-sm)}
+.disclosure-content{box-sizing:border-box;max-width:100%;overflow-wrap:anywhere}.disclosure-content li{min-width:0;overflow-wrap:anywhere}
+.disclosure-content pre{max-width:100%;min-width:0;max-height:480px;overflow:auto;white-space:pre;font-family:var(--font-mono);line-height:1.6}
+summary>strong{min-width:0;flex-shrink:0}summary>span{min-width:0;overflow-wrap:anywhere}
+.asset-editor .toolbar{display:flex;flex-wrap:wrap;gap:var(--manager-control-gap);margin:0}.asset-editor .toolbar>.el-select{width:auto;flex:1 1 200px;min-width:0}
+@container ontology-manager (max-width:900px){.detail-heading{grid-template-columns:minmax(0,1fr)}.detail-heading .toolbar{justify-content:flex-start}.composition-columns{grid-template-columns:minmax(0,1fr)}}
+@container ontology-manager (max-width:520px){.preview-heading>.el-button{max-width:100%;white-space:normal;height:auto;min-height:var(--control-height)}.disclosure-content{padding-inline:var(--spacing-md)}summary{flex-wrap:wrap;row-gap:var(--spacing-xs)}summary>span{flex-basis:100%;padding-inline-start:24px;text-align:start}.asset-editor .child-row .el-select{flex:1 1 120px}}
 </style>

@@ -91,12 +91,24 @@ export function productReferences(document: ProductDocument): ProductReference[]
 export function productWidgets(document:ProductDocument){return document.kind==='widget'?[document.widget]:document.kind==='operation-panel'||document.kind==='widget-group'?document.widgets:[];}
 
 export const productTypes = [
+  { kind: "application", name: "应用", description: "关联平台应用入口与产品资产" },
   { kind: "page", name: "页面", description: "工作台区块、组件引用与布局" },
   { kind: "layout-template", name: "布局模板", description: "复制后形成独立的个人页面" },
-  { kind: "widget", name: "组件", description: "展示已发布指标或调用已发布操作" },
-  { kind: "operation-panel", name: "操作板", description: "操作入口、参数输入与执行后刷新" },
-  { kind: "widget-group", name: "组件组", description: "组合指标、图表和说明，不包含业务操作" },
   { kind: "dashboard", name: "仪表盘", description: "引用现有仪表盘，复用其指标与展示" },
   { kind: "object-view", name: "对象视图", description: "复用对象类的已发布视图，可绑定具体对象" },
-  { kind: "application", name: "应用", description: "关联平台应用入口与产品资产" },
+  { kind: "operation-panel", name: "操作板", description: "操作入口、参数输入与执行后刷新" },
+  { kind: "widget-group", name: "组件组", description: "组合指标、图表和说明，不包含业务操作" },
+  { kind: "widget", name: "组件", description: "展示已发布指标或调用已发布操作" },
 ] as const;
+
+export const productQuerySchema=z.object({
+  search:z.string().trim().max(200).default(''),
+  kind:z.enum(['page','layout-template','widget','widget-group','operation-panel','dashboard','object-view','application']).optional(),
+  scope:z.enum(['all','mine','shared']).default('all'),
+  page:z.coerce.number().int().min(1).max(100000).default(1),
+  pageSize:z.coerce.number().int().min(1).max(100).default(20),
+}).strict();
+export type ProductQuery=z.infer<typeof productQuerySchema>;
+export const productSummarySchema=productAssetSchema.omit({document:true}).extend({kind:productQuerySchema.shape.kind.unwrap()});
+export type ProductSummary=z.infer<typeof productSummarySchema>;
+export const productPageSchema=z.object({items:z.array(productSummarySchema),total:z.number().int().nonnegative(),page:z.number(),pageSize:z.number()});

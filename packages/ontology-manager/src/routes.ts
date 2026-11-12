@@ -29,9 +29,12 @@ const OntologyPlayground = defineAsyncComponent(() => import("./components/Ontol
 const ObjectViewPage = defineAsyncComponent(() => import("./object-views/ObjectViewPage.vue"));
 const ObjectViewBuilder = defineAsyncComponent(() => import("./object-views/ObjectViewBuilder.vue"));
 const ProductAssetCatalog=defineAsyncComponent(()=>import("./products/ProductAssetCatalog.vue"));
+const ProductAssetDirectory=defineAsyncComponent(()=>import('./products/ProductAssetDirectory.vue'));
 const ProductAssetRoute=defineComponent({setup(){
-  const route=useRoute(),router=useRouter();
-  return ()=>h(ProductAssetCatalog,{assetId:String(route.query.id ?? ""),onSelect:(id:string)=>void router.replace({query:{id}}),onHome:()=>void router.push("/home"),onOpen:(id:string)=>void router.push(`/products/${encodeURIComponent(id)}`)});
+   const route=useRoute(),router=useRouter();
+  const directoryQuery=()=>Object.fromEntries(Object.entries(route.query).filter(([key])=>['search','kind','scope','page','pageSize'].includes(key)));
+  const open=(id:string)=>void router.push({path:`${routes.products.path}/${encodeURIComponent(id)}`,query:directoryQuery()});
+  return ()=>route.params.productId||route.query.create||route.query.id?h(ProductAssetCatalog,{key:String(route.params.productId??route.query.create??route.query.id),assetId:String(route.params.productId??route.query.id??''),createKind:typeof route.query.create==='string'?route.query.create:undefined,onSelect:open,onHome:()=>void router.push('/home'),onOpen:(id:string)=>void router.push(`/products/${encodeURIComponent(id)}`),onBack:()=>void router.push({path:routes.products.path,query:directoryQuery()})}):h(ProductAssetDirectory,{query:{...directoryQuery(),page:Number(route.query.page??1),pageSize:Number(route.query.pageSize??20)},onQuery:(query:Record<string,unknown>)=>void router.replace({query:Object.fromEntries(Object.entries(query).filter(([,value])=>value!==undefined&&value!=='').map(([key,value])=>[key,String(value)]))}),onOpen:open,onCreate:(kind:string)=>void router.push({path:routes.products.path,query:{...directoryQuery(),create:kind}})});
 }});
 
 function objectViewLocation(reference: ObjectReference) {
@@ -368,6 +371,7 @@ export function managerRoutes(): RouteRecordRaw[] {
       component: ManagerFrame,
       children: [
         { ...routes.products, component: ProductAssetRoute, meta: {page:managerPaths.products} },
+        {path:routes.products.path+'/:productId',component:ProductAssetRoute,meta:{page:managerPaths.products}},
         { ...routes.objectView, component: ObjectViewRoute, meta: { page: managerPaths.dataBrowser, ownHeader: true } },
         { ...routes.objectViewEditor, component: ObjectViewEditorRoute, meta: { page: managerPaths.objects } },
         { path: "/views/:className", redirect: (to) => ({ name: to.query.edit === "true" ? routes.objectViewEditor.name : routes.objectView.name, params: to.params, query: to.query }) },

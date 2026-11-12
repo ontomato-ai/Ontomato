@@ -3,6 +3,7 @@ import { computed, type Component } from "vue";
 import { ArrowRight, Clock, Ellipsis } from "lucide-vue-next";
 import type { PlatformTask } from "@ontomato/contracts/platform-schedules";
 import { useScheduleText } from "../text";
+import {dropdownBoundaryOptions} from '@ontomato/foundation-ui/overlay';
 
 /**
  * One task as a card: its application, its title, what it was given, why it is paused, when it runs, how its last run
@@ -118,7 +119,7 @@ function command(name: string | number | object) {
         <span>{{ t("card.viewResult") }}</span>
         <ArrowRight :size="14" aria-hidden="true" />
       </button>
-      <el-dropdown trigger="click" :disabled="busy" @command="command">
+      <el-dropdown trigger="click" placement="bottom-end" :popper-options="dropdownBoundaryOptions" :disabled="busy" @command="command">
         <button type="button" class="more" :aria-label="t('card.more', { title: task.title })" :disabled="busy">
           <Ellipsis :size="16" aria-hidden="true" />
         </button>
