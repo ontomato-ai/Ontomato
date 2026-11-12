@@ -202,12 +202,13 @@ async function send(input: string) {
   const created = result.createdSession;
   if (created) {
     // The state already carries this session and its admitted run; linking the id afterwards keeps
-    // the watch from opening it again and discarding the pending message.
+    // the watch from opening it again and discarding the pending message. A reader who opened another
+    // conversation meanwhile stays in it; the new one is listed.
     nav.promoteSession(created, text, latestRun);
-    sessionId.value = created.id;
+    if (sessionId.value === null) sessionId.value = created.id;
     return;
   }
-  nav.markRun(latestRun);
+  nav.markRun(latestRun, text);
 }
 
 /*
