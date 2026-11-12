@@ -312,6 +312,11 @@ const notice = computed(() => {
   flex-shrink: 0;
   padding: var(--spacing-sm);
 }
+/* A notice with a detail or an action keeps the size of one without: a line about the test data, not a headline. */
+.frame-notice :deep(.el-alert) {
+  --el-alert-title-with-description-font-size: var(--el-alert-title-font-size);
+  --el-alert-icon-large-size: var(--el-alert-icon-size);
+}
 .notice-detail {
   margin: 0 0 var(--spacing-sm);
 }
