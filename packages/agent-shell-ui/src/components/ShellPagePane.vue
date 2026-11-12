@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, ref, useSlots, watch } from "vue";
+import { computed, inject, onBeforeUnmount, provide, ref, useSlots, watch } from "vue";
 import { Maximize2, Menu, Minimize2, X } from "lucide-vue-next";
-import { shellContextKey } from "../context";
+import { pageDockSpaceKey, shellContextKey } from "../context";
 import type { ShellFeatureDeclaration } from "../types";
 import { usePanelWidth } from "../usePanelWidth";
 import ShellComposer from "./ShellComposer.vue";
@@ -9,11 +9,13 @@ import ShellComposer from "./ShellComposer.vue";
 /**
  * One host page, rendered once and kept mounted while it moves between the two places it can sit (DESIGN "Agent
  * apps"): `full` fills the workspace with a composer floating at its foot; `side` sits beside the conversation at a
- * draggable width. Pages that are not declared `withConversation` only ever show full, without composer or controls.
+ * draggable width. Dragged on past its widest, released, the page expands; past its narrowest, it closes. Pages that
+ * are not declared `withConversation` only ever show full, without composer or controls.
  *
  * The page may put its own controls in the header row (`header`, in place of its title). Full, the composer floats over
- * the bottom of the page with the host's `composer-context` line above it; the pane measures that dock and keeps as much
- * room under the page's content, so multiline input or a longer context line never covers the end of the page.
+ * the bottom of the page, the host's `composer-context` inside it before the input; the pane measures that dock and keeps
+ * as much room under the page's content, so multiline input never covers the end of the page. A page that scrolls itself
+ * keeps the room on its own (`scrollsItself`): the pane gives it its whole height and the measured space.
  */
 const props = defineProps<{
   feature: ShellFeatureDeclaration | null;
@@ -25,7 +27,10 @@ const emit = defineEmits<{ send: [text: string]; stop: []; expand: []; collapse:
 const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value);
 const slots = useSlots();
-const { width, startResize } = usePanelWidth();
+const { width, resizing, beyond, startResize } = usePanelWidth((edge) => {
+  if (edge === "expand") emit("expand");
+  else emit("close");
+});
 const paired = computed(() => props.feature?.withConversation === true);
 
 const dock = ref<HTMLElement | null>(null);
@@ -37,6 +42,7 @@ watch(dock, (element, previous) => {
   else dockSpace.value = 0;
 }, { flush: "post" });
 onBeforeUnmount(() => dockObserver.disconnect());
+provide(pageDockSpaceKey, dockSpace);
 const paneStyle = computed(() => ({
   ...(props.view === "side" ? { "--panel-width": `${width.value}px` } : {}),
   "--pane-dock-space": `${dockSpace.value}px`,
@@ -46,7 +52,7 @@ const paneStyle = computed(() => ({
 <template>
   <section
     class="page-pane"
-    :class="[view, { paired }]"
+    :class="[view, beyond && `beyond-${beyond}`, { paired, resizing, 'scrolls-itself': feature?.scrollsItself }]"
     :style="paneStyle"
     :aria-label="feature?.label"
   >
@@ -75,8 +81,9 @@ const paneStyle = computed(() => ({
     </header>
     <div class="pane-body"><slot /></div>
     <div v-if="paired && view === 'full'" ref="dock" class="pane-dock">
-      <div v-if="slots['composer-context']" class="composer-context"><slot name="composer-context" /></div>
-      <ShellComposer :busy="busy" :disabled="disabled" @send="emit('send', $event)" @stop="emit('stop')" />
+      <ShellComposer :busy="busy" :disabled="disabled" :labels="labels" @send="emit('send', $event)" @stop="emit('stop')">
+        <template v-if="slots['composer-context']" #context><slot name="composer-context" /></template>
+      </ShellComposer>
     </div>
   </section>
 </template>
@@ -121,6 +128,14 @@ const paneStyle = computed(() => ({
 }
 .pane-resize:hover {
   background: var(--el-color-primary-light-7);
+}
+/* Dragged past a bound: releasing now expands the page, or closes it (which the page fading says). */
+.beyond-expand .pane-resize,
+.beyond-close .pane-resize {
+  background: var(--el-color-primary);
+}
+.beyond-close .pane-body {
+  opacity: 0.5;
 }
 .pane-header {
   display: flex;
@@ -180,26 +195,32 @@ const paneStyle = computed(() => ({
   overflow: auto;
   padding-bottom: var(--pane-dock-space);
 }
-/* Full, the composer floats over the page; only its own controls take the pointer, the page shows around them. */
+.scrolls-itself .pane-body {
+  padding-bottom: 0;
+}
+/* While the edge is dragged, a frame in the page (an app's preview) must not take the pointer from it. */
+.resizing .pane-body {
+  pointer-events: none;
+}
+/*
+ * Full, the composer floats over the page, one compact row with what a message carries inside it; only the composer
+ * takes the pointer, the page shows around it.
+ */
 .pane-dock {
+  --shell-composer-control: var(--control-height);
+  --shell-composer-height: calc(var(--control-height) + 12px);
   position: absolute;
   z-index: 3;
   left: 50%;
   bottom: 0;
   transform: translateX(-50%);
   width: min(760px, 100%);
-  padding: 8px 16px 16px;
+  padding: 0 16px 12px;
   box-sizing: border-box;
   pointer-events: none;
 }
 .pane-dock > * {
   pointer-events: auto;
-}
-.composer-context {
-  margin: 0 0 8px;
-}
-.composer-context:empty {
-  display: none;
 }
 @media (max-width: 1100px) {
   .page-pane.side {

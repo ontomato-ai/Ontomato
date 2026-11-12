@@ -67,7 +67,7 @@ interface Edge {
   to: string;
   /** A derived edge is computed from stored rows rather than stored itself. */
   derived?: boolean;
-  label?: string;
+  label: string;
 }
 
 const COLUMNS: Array<{ key: Column; titleKey: Parameters<typeof ot>[0] }> = [
@@ -328,8 +328,6 @@ interface DrawnEdge {
   derived: boolean;
   dimmed: boolean;
   label: string;
-  labelX: number;
-  labelY: number;
 }
 
 const drawnEdges = computed<DrawnEdge[]>(() => {
@@ -352,13 +350,13 @@ const drawnEdges = computed<DrawnEdge[]>(() => {
       path,
       derived: Boolean(edge.derived),
       dimmed: !related,
-      label: edge.label ?? "",
-      labelX: mid,
-      labelY: (y1 + y2) / 2 - 4,
+      label: `${from.node.label} · ${edge.label} → ${to.node.label}`,
     });
   }
   return lines;
 });
+
+const selectedRelations = computed(() => selected.value ? drawnEdges.value.filter(line => !line.dimmed) : []);
 
 const summary = computed(() => ({
   subjects: subjects.value.length,
@@ -432,6 +430,10 @@ onMounted(() => void refresh());
       <el-tag size="small" effect="plain">{{ ot("mapCountEdge") }} {{ summary.edges }}</el-tag>
     </div>
 
+    <ul v-if="selectedRelations.length" class="map-relations" :aria-label="ot('mapCountEdge')">
+      <li v-for="line in selectedRelations" :key="line.key">{{ line.label }}</li>
+    </ul>
+
     <div v-if="!loading && nodes.length === 0" class="map-empty">
       <el-empty :description="ot('mapEmpty')" />
     </div>
@@ -454,15 +456,13 @@ onMounted(() => void refresh());
               :class="['map-edge', { derived: line.derived }]"
               fill="none"
             />
-            <text v-if="line.label && !line.dimmed" :x="line.labelX" :y="line.labelY" class="map-edge-label">
-              {{ line.label }}
-            </text>
           </g>
         </svg>
 
         <button
           v-for="item in placed"
           :key="item.node.key"
+          :aria-pressed="selected === item.node.key"
           :class="['map-node', `column-${item.node.column}`, { selected: selected === item.node.key }]"
           :style="{ left: `${item.x}px`, top: `${item.y}px`, width: `${COLUMN_WIDTH - 16}px` }"
           @click="selected = selected === item.node.key ? null : item.node.key"
@@ -592,10 +592,17 @@ g.dimmed {
   opacity: 0.16;
 }
 
-.map-edge-label {
-  font-size: 10px;
-  text-anchor: middle;
-  fill: var(--el-text-color-secondary);
+.map-relations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  max-block-size: 7rem;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .map-node {

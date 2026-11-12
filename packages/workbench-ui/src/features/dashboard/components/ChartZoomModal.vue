@@ -10,7 +10,7 @@
     body-class="chart-zoom-body"
     @close="emit('close')"
   >
-    <EChart v-if="mode === 'chart' && option" :option="modalOption" :theme="theme" height="100%" />
+    <EChart v-if="mode === 'chart' && option" :option="modalOption" :theme="theme" height="100%" @resize="drawn.track" />
     <TablePreview
       v-if="mode === 'table'"
       :table="table"
@@ -27,6 +27,7 @@ import { TablePreview } from "@ontomato/foundation-ui/preview";
 import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
 import { useI18n } from "vue-i18n";
 import { workbenchContent } from "../../../content";
+import { fitChart, useDrawnSize } from "./utils/chartFit";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -43,12 +44,16 @@ const { t } = useI18n();
 const { zoomChartTheme } = workbenchContent().dashboard;
 const chartTheme = useChartTheme();
 const theme = computed(() => (zoomChartTheme === "dashboard" ? chartTheme.value : undefined));
+const drawn = useDrawnSize();
 /**
- * The card's chart on the dialog's background, without the title the dialog header shows; brand colours come from
- * the platform's chart theme in either zoom theme.
+ * The card's own option (its formatters included) on the dialog's background, without the title the dialog header
+ * shows, laid out for the dialog's size; brand colours come from the platform's chart theme in either zoom theme.
  */
 const modalOption = computed(() =>
-  chartBrandColors({ ...props.option, backgroundColor: "transparent", title: undefined }, chartTheme.value)
+  fitChart(
+    chartBrandColors({ ...props.option, backgroundColor: "transparent", title: undefined }, chartTheme.value),
+    drawn.size.value
+  )
 );
 </script>
 
@@ -69,6 +74,11 @@ const modalOption = computed(() =>
 .chart-zoom-body {
   display: flex;
   flex-direction: column;
+}
+
+.chart-zoom-dialog .chart-zoom-body .table-preview .el-table__header .cell {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .chart-zoom-body > * {

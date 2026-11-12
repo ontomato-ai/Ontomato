@@ -8,7 +8,6 @@ metadata:
   ontomato.tags: '["ppt","powerpoint","presentation"]'
   ontomato.version: 1.0.0
   ontomato.outputType: json
-  ontomato.defaultEnabled: "false"
   ontomato.useCases: '["Create a PPT from the conversation"]'
 ---
 

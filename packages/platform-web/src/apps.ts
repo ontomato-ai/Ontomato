@@ -1,4 +1,5 @@
-import type { InjectionKey } from "vue";
+import type { InjectionKey, Ref } from "vue";
+import type { CatalogApplication } from "@ontomato/contracts/platform-identity";
 import type { PlatformApp, PlatformPanelGroup, PlatformRailSection } from "@ontomato/platform-shell";
 
 /**
@@ -22,6 +23,8 @@ export interface PlatformAppDeclaration {
    * declaration made outside this module may leave it out, which puts the application among the business ones.
    */
   rail?: PlatformRailSection;
+  /** The functional group the home's square files it under; the rail's section does not decide it. */
+  category: CatalogApplication["category"];
   /** The application owns the addresses under this prefix. */
   prefix: string;
   /** How its pages are shown when it holds several; absent means header tabs. */
@@ -41,15 +44,25 @@ export interface PlatformAppDeclaration {
  */
 export const openApplicationKey: InjectionKey<(id: string) => void> = Symbol("open-application");
 
-/** The rail entry of one declaration, carrying how the rail opens it: a page, a fixed address, or the host's resolver. */
-export function railApp(declaration: PlatformAppDeclaration): PlatformApp {
+/** The edition's brand the shell shows (its name, and its logo when it has one); the home shows the same mark. */
+export const platformBrandKey: InjectionKey<{ name: string; logo?: string }> = Symbol("platform-brand");
+
+/** The applications the shell's rail shows, in rail order; the shell's layout provides them to the pages inside it. */
+export const platformApplicationsKey: InjectionKey<Readonly<Ref<readonly PlatformAppDeclaration[]>>> =
+  Symbol("platform-applications");
+
+/**
+ * The rail entry of one declaration. An external application (a fixed address or the host's resolver) is opened by
+ * `open`, which the caller points at the platform's one application entry, so the rail's click is recorded like any
+ * other opening; an application of the platform's own is selected through the rail's `selectApp`.
+ */
+export function railApp(declaration: PlatformAppDeclaration, open: () => void): PlatformApp {
   return {
     id: declaration.id,
     label: declaration.label,
     icon: declaration.icon,
     rail: declaration.rail,
-    href: declaration.href,
-    open: declaration.open,
+    open: declaration.href || declaration.open ? open : undefined,
   };
 }
 

@@ -1,3 +1,5 @@
+import { platformRoutes } from "@ontomato/platform-shell/routes";
+
 function normalizeInitialRoute(value: string) {
   const trimmed = value.trim().replace(/^#/, "");
   return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
@@ -16,7 +18,7 @@ function visualModelingQuery(params: URLSearchParams) {
 
 /**
  * Where the root address (`#/` or no hash) lands: the view passed by the main system's old launch links
- * (`?view=...`), then the deployment's initial route, then the personal workspace. Any other hash is a route of its own.
+ * (`?view=...`), then the deployment's initial route, then the platform's home. Any other hash is a route of its own.
  */
 export function serviceHome(initialRoute: string) {
   const params = new URLSearchParams(window.location.search);
@@ -25,5 +27,5 @@ export function serviceHome(initialRoute: string) {
   if (view === "assets") return "/assets/metrics";
   if (view === "knowledge") return "/knowledge";
   if (view === "visual-modeling") return `/visual-modeling${visualModelingQuery(params)}`;
-  return initialRoute ? normalizeInitialRoute(initialRoute) : "/workspace";
+  return initialRoute ? normalizeInitialRoute(initialRoute) : platformRoutes.home.path;
 }

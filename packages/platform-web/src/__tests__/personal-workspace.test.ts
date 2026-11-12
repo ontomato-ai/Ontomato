@@ -11,7 +11,7 @@ const api = vi.hoisted(() => ({ request: vi.fn(), failTasks: false, failSave: fa
 vi.mock("@ontomato/workbench-ui", () => ({ nodeApiRequest: api.request }));
 vi.mock("@ontomato/workbench-ui/features/dashboard", () => ({ DashboardMetricDetail: { template: '<div>Live metric details</div>' }, DashboardMetricPreview: { name: "DashboardMetricPreview", props: ["dashboardId", "revision"], template: '<div class="metric-preview-stub">{{ dashboardId }}<button class="select-metric" @click="$emit(\'select\', {id: \'card-a\', name: \'Revenue\'})">Revenue</button></div>' } }));
 
-const application = { id: "app-orders", kind: "hosted", names: { en: "Orders" }, descriptions: {}, icon: "pages", rail: "apps", sort: 0, entry: { path: "/orders" }, entryAccess: ["orders"], scheduleAdapter: null, releaseId: "release" };
+const application = { id: "app-orders", kind: "hosted", category: "business", names: { en: "Orders" }, descriptions: {}, icon: "pages", rail: "apps", sort: 0, entry: { path: "/orders" }, entryAccess: ["orders"], scheduleAdapter: null, releaseId: "release" };
 beforeEach(() => {
   api.failTasks = false;
   api.failSave = false;

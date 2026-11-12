@@ -3,7 +3,7 @@ import { createApp, defineComponent, h, nextTick, type PropType } from "vue";
 import { artifactPath } from "@ontomato/contracts/agent-artifact-markdown";
 import { MarkdownView } from "@ontomato/foundation-ui/markdown";
 import { resolveArtifactRenderer } from "../artifacts";
-import { runsAnalystAsk, skillOfCommand, stepActivity } from "../tools";
+import { skillOfCommand, stepActivity } from "../tools";
 
 /** The artifact Markdown contract: which destinations are files, and which renderer gets them. */
 describe("artifact references", () => {
@@ -38,15 +38,10 @@ describe("artifact references", () => {
     expect(skillOfCommand("python outputs/skills.py")).toBeNull();
   });
 
-  it("reads a retrieval and its ask command from the same script", () => {
+  it("shows asking for data as calling the skill, and reading the script as neither", () => {
     const step = (command: string) => ({ toolName: "bash", skill: "ontomato-analyst", args: { command } });
-    const retrieve = "cd skills/ontomato-analyst && node ontomato.mjs ask --question q";
-    expect(stepActivity(step(retrieve))).toBe("retrieve");
-    expect(runsAnalystAsk(retrieve)).toBe(true);
-    // Reading the script is neither a retrieval nor a run of it.
-    const reading = "cat skills/ontomato-analyst/ontomato.mjs";
-    expect(stepActivity(step(reading))).toBe("run");
-    expect(runsAnalystAsk(reading)).toBe(false);
+    expect(stepActivity(step("cd skills/ontomato-analyst && node ontomato.mjs ask --question q"))).toBe("skill");
+    expect(stepActivity(step("cat skills/ontomato-analyst/ontomato.mjs"))).toBe("run");
   });
 
   it("keeps unclosed references pending while streaming", async () => {

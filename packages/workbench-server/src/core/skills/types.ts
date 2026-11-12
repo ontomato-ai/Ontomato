@@ -14,5 +14,4 @@ export interface SkillMeta {
 export interface SkillQuery {
   type?: SkillTypeValue;
   category?: SkillCategoryValue;
-  includeDisabled?: boolean;
 }

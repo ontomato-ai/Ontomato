@@ -48,7 +48,6 @@ function client() {
       createdAt: new Date(0).toISOString(),
       finishedAt: null,
       resolvedSkills: [],
-      retrievals: [],
     },
     cursor: { runId, seq: 1, streamId },
     messages: [],
@@ -68,9 +67,6 @@ function client() {
     cancel: vi.fn(),
     resolveArtifact: vi.fn(),
     readArtifact: vi.fn(),
-    readRetrieval: vi.fn(),
-    readRetrievalRun: vi.fn(),
-    subscribeRetrieval: vi.fn(),
   } as unknown as AgentHostClient;
   return { port, read };
 }

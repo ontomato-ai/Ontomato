@@ -17,6 +17,7 @@ import {
   deepSanitize,
   getThemeColor,
   mergeDeep,
+  pieLabels,
   truncateLabel,
 } from "./echartsGenerator";
 
@@ -62,10 +63,6 @@ export function cardErrorHeadline(error: CardError, t: (key: string) => string):
   return error.code !== null && HEADLINED.has(error.code) ? t(`dashboard.cardErrors.${error.code}`) : null;
 }
 
-/** What "view metric" shows for a card: the metric it references, as this refresh read it, and the card's parameters. */
-export function metricCardSource(card: MetricCardView) {
-  return { metricId: card.query.metricId, metric: card.metric, parameters: card.query.parameters };
-}
 
 function compare(a: Value, b: Value): number {
   if (typeof a === "number" && typeof b === "number") return a - b;
@@ -165,8 +162,14 @@ function itemTooltip(d: Drawing, valueKey: string, shareKey: string | undefined)
   };
 }
 
+/**
+ * Ticks are axis positions, not metric values: they keep the format's kind and scale but not its fixed decimals,
+ * so a 0.5 tick under a whole-number format reads 0.5 instead of a second "1".
+ */
 function valueAxis(d: Drawing, key: string) {
-  return mergeDeep(axisValueBase(), { axisLabel: { formatter: (v: number) => fmt(d, key)(v) } });
+  const format = d.card.formats?.[key];
+  const tickFormat = format && (({ decimals: _, ...rest }) => rest)(format);
+  return mergeDeep(axisValueBase(), { axisLabel: { formatter: (v: number) => formatValue(v, tickFormat) } });
 }
 
 function axisChart(d: Drawing, kind: "bar" | "line" | "area-line") {
@@ -208,7 +211,7 @@ function barLine(d: Drawing) {
   return {
     tooltip: { trigger: "axis", axisPointer: { type: "cross" } },
     legend: { show: true, top: 0, type: "scroll" },
-    grid: { left: 20, right: 20, top: 36, bottom: 20, containLabel: true },
+    grid: { left: 20, right: 20, top: 36, bottom: 20 },
     xAxis: mergeDeep(axisCategoryBase(), { data: category(d, x) }),
     yAxis: [valueAxis(d, bars[0]!), valueAxis(d, line)],
     series: [
@@ -246,20 +249,19 @@ function itemChart(d: Drawing, kind: "pie" | "nightingale-rose" | "funnel" | "tr
     ...(share ? { share: row[share] } : {}),
     itemStyle: { color: color(d, i) },
   }));
-  const itemLabel = (p: { name: string; data: { value: Value } }) =>
-    `${truncateLabel(p.name, 10)}  ${fmt(d, value)(p.data.value)}`;
+  type Item = { name: string; data: { value: Value } };
+  const itemValue = (p: Item) => fmt(d, value)(p.data.value);
   const series =
     kind === "funnel"
-      ? { type: "funnel", sort: "none", left: "8%", top: 24, width: "84%", gap: 6, label: { show: true, position: "outside", formatter: itemLabel } }
+      ? { type: "funnel", sort: "none", left: "8%", top: 24, width: "84%", gap: 6, label: { show: true, position: "outside", formatter: (p: Item) => `${truncateLabel(p.name, 10)}  ${itemValue(p)}` } }
       : kind === "treemap"
         ? { type: "treemap", breadcrumb: { show: false }, roam: false, nodeClick: false, label: { show: true, formatter: (p: { name: string }) => truncateLabel(p.name, 10) } }
         : {
             type: "pie",
             radius: kind === "pie" ? "60%" : ["35%", "60%"],
             ...(kind === "nightingale-rose" ? { roseType: "radius" } : {}),
-            avoidLabelOverlap: true,
             itemStyle: { borderRadius: 10, borderColor: chartColors().surface, borderWidth: 3 },
-            label: { show: true, color: chartColors().textSecondary, formatter: itemLabel },
+            ...pieLabels(itemValue),
           };
   return { tooltip: { trigger: "item", formatter: itemTooltip(d, value, share) }, series: [{ ...series, data }] };
 }

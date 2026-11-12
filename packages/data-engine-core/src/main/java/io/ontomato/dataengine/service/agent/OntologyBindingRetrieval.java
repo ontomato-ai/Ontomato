@@ -156,7 +156,8 @@ public class OntologyBindingRetrieval {
   public JSONObject dataset(String retrieval, String id, Owner owner) {
     var row = row(retrieval,id,owner);
     var result = JSONObject.of("id",id,"payload",JSON.parseObject(row.getString("dataset")),"source","binding","sha256",row.getString("sha256"));
-    if (row.getBooleanValue("qc_admitted")) result.put("qualityCheck",jobs.get(row.getString("qc_id"),subject(owner),"quality"));
+    // The dataset names the quality task that checked its branch; the conclusion is that task's to report.
+    if (row.getBooleanValue("qc_admitted")) result.put("qualityTaskId",row.getString("qc_id"));
     return result;
   }
 
@@ -167,9 +168,7 @@ public class OntologyBindingRetrieval {
     var datasets=new JSONArray();
     for(var output:store.rows("SELECT id FROM ontology_binding_outputs WHERE run_id=? AND dataset IS NOT NULL ORDER BY id",uuid(run))) {
       var d=dataset(retrieval,output.getString("id"),owner);
-      var meta=JSONObject.of("id",d.getString("id"),"sha256",d.getString("sha256"),"title",d.getJSONObject("payload").getString("title"));
-      if(d.containsKey("qualityCheck")) meta.put("qualityCheck",d.get("qualityCheck"));
-      datasets.add(meta);
+      datasets.add(JSONObject.of("id",d.getString("id"),"sha256",d.getString("sha256"),"title",d.getJSONObject("payload").getString("title")));
     }
     branch.put("datasets",datasets); return branch;
   }

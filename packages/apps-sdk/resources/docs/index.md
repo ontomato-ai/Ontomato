@@ -54,6 +54,11 @@ The paths start at the platform's root. When the platform is deployed under a pa
 The stylesheet gives the page the platform's text and background: its font, size, line height, text colour and page
 background, in both the light and the dark theme. Don't set them on `body` again; style only what is your page's own.
 
+The platform may float its own controls over the foot of the page: in the builder's full preview, the composer covers
+its bottom. Once `createAppContext()` runs, the stylesheet keeps that much room after the page's content, so its end
+scrolls clear. A page that scrolls inside its own container instead of the document adds the room to that container:
+`padding-bottom: var(--app-inset-bottom)`.
+
 ```html
 <div id="app" v-cloak>
   <el-button type="primary" @click="count++">Clicked {{ count }} times</el-button>

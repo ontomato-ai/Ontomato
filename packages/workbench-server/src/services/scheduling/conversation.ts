@@ -19,7 +19,7 @@ export async function scheduledConversationStatus(host: AgentHostService, owner:
     state.result = reply ? messageText(reply) : "";
     state.resultSummary = state.result.slice(0, 160);
   } else if (outcome === "failed" || outcome === "cancelled") {
-    state.error = { code: outcome === "cancelled" ? "cancelled" : "run_failed", message: run.errorMessage ?? run.stopReason };
+    state.error = { code: outcome === "cancelled" ? "cancelled" : "run_failed", message: run.errorMessage ?? `Model stopped: ${run.stopReason}` };
   }
   return state;
 }

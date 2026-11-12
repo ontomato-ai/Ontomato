@@ -84,8 +84,9 @@ public class MetricViewDao extends BaseDao {
         jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_" + TABLE_NAME + "_domain_id ON " + TABLE_NAME + "(domain_id)");
         jdbcTemplate.execute("CREATE TABLE IF NOT EXISTS metric_view_binding ("
             + "id VARCHAR(64) PRIMARY KEY, metric_view_id VARCHAR(64) NOT NULL REFERENCES metric_view(id) ON DELETE CASCADE, "
-            + "name VARCHAR(255), description TEXT, parameters JSONB NOT NULL CHECK(jsonb_typeof(parameters)='object'), "
+            + "name TEXT, description TEXT, parameters JSONB NOT NULL CHECK(jsonb_typeof(parameters)='object'), "
             + "match_questions TEXT, brief TEXT, brief_vector vector)");
+        jdbcTemplate.execute("ALTER TABLE metric_view_binding ALTER COLUMN name TYPE TEXT");
         jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_metric_view_binding_owner ON metric_view_binding(metric_view_id)");
 	}
 

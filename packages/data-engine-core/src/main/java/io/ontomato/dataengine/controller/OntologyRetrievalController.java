@@ -13,12 +13,14 @@ public class OntologyRetrievalController {
   private final OntologyRetrievalService retrieval;
   private final OntologyAgentStore store;
   private final OntologyAgentAccess access;
+  private final RetrievalTasks tasks;
 
   public OntologyRetrievalController(
-      OntologyRetrievalService retrieval, OntologyAgentStore store, OntologyAgentAccess access) {
+      OntologyRetrievalService retrieval, OntologyAgentStore store, OntologyAgentAccess access, RetrievalTasks tasks) {
     this.retrieval = retrieval;
     this.store = store;
     this.access = access;
+    this.tasks = tasks;
   }
 
   @PostMapping("/ontology/retrievals")
@@ -167,6 +169,12 @@ public class OntologyRetrievalController {
     Instant.parse(AgentJson.text(body, "deadlineAt"));
     for (String id : body.getList("continuationIds", String.class)) AgentJson.id(id);
     return store.openCaller(AgentJson.id(key), context.owner(), body);
+  }
+
+  /** The workbench reads the tasks of a conversation's callers; it, not this service, knows which conversation they are. */
+  @GetMapping("/ontology/retrieval-callers/tasks")
+  public Object callerTasks(@RequestParam List<String> callerIds, HttpServletRequest req) {
+    return tasks.forCallers(callerIds, access.serviceDomain(req));
   }
 
   @GetMapping("/ontology/retrieval-callers/{id}")

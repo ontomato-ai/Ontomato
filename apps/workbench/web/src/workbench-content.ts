@@ -9,28 +9,11 @@ import { ossProduct } from "../../src/product";
 export const workbenchContent: WorkbenchContent = {
   analysisMcpServerName: ossProduct.analysisMcpServerName,
   opsMcpServerName: ossProduct.opsMcpServerName,
-  skillDebugEchartsInput: JSON.stringify(
-    {
-      data: [
-        { category: "Electronics", sales: 15000 },
-        { category: "Clothing", sales: 12000 },
-        { category: "Food", sales: 8000 },
-        { category: "Home", sales: 6000 },
-      ],
-      chartType: "bar",
-      xField: "category",
-      yField: "sales",
-      title: "Sales comparison by category",
-    },
-    null,
-    2
-  ),
   observe: {
     appLogSource: ossProduct.logSource,
   },
   text: {
     createDashboardFailed: "Failed to create dashboard",
-    skillsListInvalid: "Invalid skills list response format: missing skills array",
     unknownError: "Unknown error",
     feedback: {
       like: "Like",

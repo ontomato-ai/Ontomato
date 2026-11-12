@@ -30,24 +30,20 @@ export interface ToolExecutionView {
   output: string;
 }
 
-export interface RetrievalLink {
-  retrievalId: string;
-  runId: string;
-}
-
 export interface RunView {
   id: string;
   status: RuntimeRunStatus;
   stopReason: RuntimeStopReason | null;
   errorMessage: string | null;
+  /** The message the runtime named as the run's answer once it stopped; every other message is process. */
+  answerMessageId: string | null;
   workspaceCommit: string | null;
-  /** Run start and stop times (ISO), from the snapshot or the agent_start/agent_end envelopes. */
+  /** Run start and stop times (ISO), from snapshots, history pages or the agent_start/agent_end envelopes. */
   createdAt: string | null;
   finishedAt: string | null;
   cursor: { seq: number; streamId: string } | null;
   artifacts: RuntimeArtifact[];
   tools: Record<string, ToolExecutionView>;
-  retrievals: RetrievalLink[];
 }
 
 export interface ConversationState {
@@ -83,13 +79,13 @@ function ensureRun(state: ConversationState, runId: string): RunView {
     status: "running",
     stopReason: null,
     errorMessage: null,
+    answerMessageId: null,
     workspaceCommit: null,
     createdAt: null,
     finishedAt: null,
     cursor: null,
     artifacts: [],
     tools: {},
-    retrievals: [],
   });
 }
 
@@ -110,13 +106,13 @@ export function applyRunSnapshot(state: ConversationState, snapshot: AgentHostRu
   run.status = snapshot.run.status;
   run.stopReason = snapshot.run.stopReason;
   run.errorMessage = snapshot.run.errorMessage;
+  run.answerMessageId = snapshot.run.answerMessageId;
   run.workspaceCommit = snapshot.run.workspaceCommit;
   run.createdAt = snapshot.run.createdAt;
   run.finishedAt = snapshot.run.finishedAt;
   run.cursor = { seq: snapshot.cursor.seq, streamId: snapshot.cursor.streamId };
   run.artifacts = [...snapshot.artifacts];
   run.tools = {};
-  run.retrievals = snapshot.run.retrievals ?? [];
   for (const tool of snapshot.toolExecutions) {
     run.tools[tool.toolCallId] = {
       toolCallId: tool.toolCallId,
@@ -146,8 +142,10 @@ export function applyHistoryPage(state: ConversationState, page: AgentHostSessio
       run.status = value.status;
       run.stopReason = value.stopReason;
       run.errorMessage = value.errorMessage;
+      run.answerMessageId = value.answerMessageId;
       run.workspaceCommit = value.workspaceCommit;
-      run.retrievals = value.retrievals ?? [];
+      run.createdAt = value.createdAt;
+      run.finishedAt = value.finishedAt;
     }
   }
   for (const record of page.messages) {
@@ -282,6 +280,7 @@ export function applyEnvelope(state: ConversationState, envelope: RuntimeEventEn
       run.status = event.status;
       run.stopReason = event.stopReason;
       run.errorMessage = event.errorMessage;
+      run.answerMessageId = event.answerMessageId;
       run.workspaceCommit = event.workspaceCommit;
       run.finishedAt = envelope.timestamp;
       for (const tool of Object.values(run.tools))

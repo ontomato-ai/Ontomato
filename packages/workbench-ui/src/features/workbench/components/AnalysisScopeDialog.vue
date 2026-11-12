@@ -3,34 +3,35 @@ import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { z } from "zod";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
-import { randomId } from "@ontomato/contracts/random-id";
-import { nodeApiFetch, nodeApiGet } from "../../../utils/api";
-const props = defineProps<{ artifact: RuntimeArtifact; refresh?: () => Promise<void> }>();
+import { useConversationContinuation } from "@ontomato/agent-shell-ui";
+import { nodeApiGet } from "../../../utils/api";
+/** `title` is the dataset's name as the conversation shows it; the new query's message names the file by it and its path. */
+const props = defineProps<{ artifact: RuntimeArtifact; title: string }>();
 const visible = defineModel<boolean>({ default: false });
-const { locale } = useI18n();
+const continueConversation = useConversationContinuation();
+const { t, locale } = useI18n();
 const zh = computed(() => locale.value.startsWith("zh"));
 const scopeSchema = z.object({ question: z.string(), assumptions: z.array(z.string()), filters: z.array(z.object({ id: z.string(), label: z.string(), expression: z.string() })) });
 const scope = ref<z.infer<typeof scopeSchema> | null>(null);
 const adjustment = ref(""); const error = ref(""); const loading = ref(false); const busy = ref(false);
-const requestId = ref(randomId());
 const endpoint = computed(() => `/assistant/sessions/${props.artifact.sessionId}/artifacts/${props.artifact.id}/analysis-scope`);
 watch(visible, async (open) => {
   if (!open) return;
-  loading.value = true; scope.value = null; adjustment.value = ""; error.value = ""; requestId.value = randomId();
+  loading.value = true; scope.value = null; adjustment.value = ""; error.value = "";
   try {
     scope.value = scopeSchema.parse(await nodeApiGet(`${endpoint.value}?locale=${encodeURIComponent(locale.value)}`));
   }
   catch (e) { error.value = e instanceof Error ? e.message : (zh.value ? "无法读取原查询范围" : "Unable to read scope"); }
   finally { loading.value = false; }
 });
-watch(adjustment, () => { requestId.value = randomId(); });
 async function submit() {
   if (!scope.value || loading.value || !adjustment.value.trim() || busy.value) return;
   busy.value = true; error.value = "";
   try {
-    await nodeApiFetch(endpoint.value, "POST", { adjustment: adjustment.value.trim() }, { headers: { "Idempotency-Key": requestId.value } });
-    visible.value = false; await props.refresh?.();
-  } catch (e) { error.value = e instanceof Error ? e.message : (zh.value ? "查询未能启动，请重试" : "Unable to start query"); }
+    await continueConversation!(t("assistant.continuation.adjustScope", {
+      file: t("assistant.continuation.file", { title: props.title, path: props.artifact.path }), adjustment: adjustment.value.trim() }));
+    visible.value = false;
+  } catch (e) { error.value = (e as Error).message; }
   finally { busy.value = false; }
 }
 </script>

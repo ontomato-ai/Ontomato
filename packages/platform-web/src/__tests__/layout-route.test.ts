@@ -4,7 +4,7 @@ import { platformLayoutRoute } from "../layout-route";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 
 describe("platform root landing", () => {
-  it("redirects the root to the personal workspace even with an empty-path manager frame", async () => {
+  it("redirects the root to the home even with an empty-path manager frame", async () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [platformLayoutRoute([
@@ -16,13 +16,13 @@ describe("platform root landing", () => {
       ])],
     });
     await router.push("/");
-    expect(router.currentRoute.value.path).toBe("/workspace");
+    expect(router.currentRoute.value.path).toBe("/home");
     await router.push("/agents/chat?sessionId=existing");
     expect(router.currentRoute.value.fullPath).toBe("/agents/chat?sessionId=existing");
     await router.push("/ontology/objects");
     expect(router.currentRoute.value.path).toBe("/ontology/objects");
   });
-  it("uses the workspace as the login return destination when entering from the root", async () => {
+  it("uses the workspace as the login return destination when entering it directly", async () => {
     let authenticated = false;
     const router = createRouter({ history: createMemoryHistory(), routes: [
       { path: "/login", component: RouterView },
@@ -34,7 +34,7 @@ describe("platform root landing", () => {
     router.beforeEach(to => {
       if (!authenticated && to.meta.workbench) return { path: "/login", query: { redirect: to.fullPath } };
     });
-    await router.push("/");
+    await router.push("/workspace");
     expect(router.currentRoute.value.fullPath).toBe("/login?redirect=/workspace");
     const redirect = String(router.currentRoute.value.query.redirect);
     authenticated = true;

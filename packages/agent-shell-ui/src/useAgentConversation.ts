@@ -1,5 +1,6 @@
 import { historyCursor } from "@ontomato/contracts/session-history";
-import { computed, onBeforeUnmount, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, reactive, ref, shallowRef } from "vue";
+import type { AgentTasksSnapshot } from "@ontomato/contracts/agent-tasks";
 import type { AgentHostRunSnapshot, AgentHostSessionHistory, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "./host";
 import type { RuntimeEventEnvelope } from "@ontomato/contracts/agent-runtime-events";
@@ -14,8 +15,9 @@ import {
   type ConversationState,
 } from "./conversation";
 import { conversationItems } from "./view";
-import { runsAnalystAsk } from "./tools";
 
+/** A task stream that broke before settling is opened again after this long, and reads the whole snapshot again. */
+const TASK_RECONNECT_MS = 2000;
 
 /**
  * Drives one selected conversation through the host port. Every async continuation checks the
@@ -39,18 +41,48 @@ export function useAgentConversation(port: () => AgentHostClient) {
   const olderError = ref<string | null>(null);
   const historyRevision = ref(0);
   let knownMessageSeq = 0;
-  // Running ask calls, by tool call: true once their retrieval association has been read.
-  const askCalls = new Map<string, boolean>();
+  /** The conversation's delegated work, as the host's task stream last reported it. */
+  const tasks = shallowRef<AgentTasksSnapshot | null>(null);
+  let detachTasks: (() => void) | null = null;
+  let taskTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const items = computed(() => conversationItems(state));
+  const items = computed(() => conversationItems(state, tasks.value));
   const activeRunId = computed(
     () => Object.values(state.runs).find((run) => run.status === "running")?.id ?? null,
   );
   const busy = computed(() => sending.value || activeRunId.value !== null);
 
+  function stopTasks() {
+    detachTasks?.();
+    detachTasks = null;
+    if (taskTimer !== null) clearTimeout(taskTimer);
+    taskTimer = null;
+  }
+
+  /**
+   * Follows the conversation's tasks until they settle. The stream outlives the run that delegated them, so a review
+   * that arrives after the reply still shows; each new run opens it again.
+   */
+  function followTasks(sessionId: string) {
+    stopTasks();
+    const host = port().tasks, selection = token;
+    if (!host) return;
+    detachTasks = host.subscribe(sessionId, {
+      frame(frame) {
+        if (selection === token) tasks.value = { sessionId: frame.sessionId, tasks: frame.tasks, qualityResults: frame.qualityResults };
+      },
+      error() {
+        if (selection !== token) return;
+        detachTasks = null;
+        taskTimer = setTimeout(() => followTasks(sessionId), TASK_RECONNECT_MS);
+      },
+    });
+  }
+
   function reset(sessionId: string | null) {
     token++;
-    askCalls.clear();
+    stopTasks();
+    tasks.value = null;
     stream.stop();
     Object.assign(state, emptyConversation(sessionId));
     loading.value = false;
@@ -78,6 +110,7 @@ export function useAgentConversation(port: () => AgentHostClient) {
       knownMessageSeq = snapshot.page.messageSeq;
       olderCursor.value = snapshot.page.olderCursor;
       artifactRevision.value++;
+      followTasks(sessionId);
       if (snapshot.latestRun?.run.status === "running") stream.start(subscription(snapshot.latestRun.run.id));
     } catch (error) {
       if (current === token) loadError.value = errorText(error);
@@ -109,38 +142,6 @@ export function useAgentConversation(port: () => AgentHostClient) {
     const type = envelope.event.type;
     if (envelope.event.type === "message_end") knownMessageSeq = Math.max(knownMessageSeq, envelope.event.messageSeq);
     if (type === "artifact_registered") artifactRevision.value++;
-    if (type === "tool_execution_start") {
-      // The ask command blocks until the retrieval ends, so tool_execution_end is too late on its own.
-      // A wrapper script that hides the analyst entry is not covered; its retrievals arrive on the next
-      // history read.
-      const event = envelope.event;
-      const command = event.args.command;
-      if (event.toolName === "bash" && typeof command === "string" && runsAnalystAsk(command))
-        askCalls.set(event.toolCallId, false);
-    }
-    // The ask command prints the retrieval it opened; that line is the moment the association exists.
-    if (type === "tool_execution_update" && askCalls.get(envelope.event.toolCallId) === false
-      && envelope.event.partialResult.text.includes('"retrievalId"')) {
-      askCalls.set(envelope.event.toolCallId, true);
-      void readRetrievals(envelope.cursor.runId, token);
-    }
-    if (type === "tool_execution_end" && askCalls.has(envelope.event.toolCallId)) {
-      askCalls.delete(envelope.event.toolCallId);
-      void readRetrievals(envelope.cursor.runId, token);
-    }
-  }
-
-  /** Reads the run's retrieval associations once, then the activity area follows the child run. */
-  async function readRetrievals(runId: string, current: number) {
-    const sessionId = state.sessionId;
-    if (!sessionId) return;
-    try {
-      const snapshot = await port().readRun(sessionId, runId);
-      const run = state.runs[runId];
-      if (current === token && run) run.retrievals = snapshot.run.retrievals ?? [];
-    } catch {
-      // The next history read carries the associations.
-    }
   }
 
   function subscription(runId: string): RunSubscription<AgentHostSessionHistory[]> {
@@ -198,6 +199,7 @@ export function useAgentConversation(port: () => AgentHostClient) {
       for (const message of snapshot.messages) knownMessageSeq = Math.max(knownMessageSeq, message.messageSeq);
       pendingInput.value = null;
       artifactRevision.value++;
+      followTasks(state.sessionId!);
       stream.start(subscription(snapshot.run.id));
       return { createdSession, snapshot };
     } catch (error) {
@@ -233,11 +235,13 @@ export function useAgentConversation(port: () => AgentHostClient) {
   onBeforeUnmount(() => {
     token++;
     stream.stop();
+    stopTasks();
   });
 
   return {
     state,
     items,
+    tasks,
     loading,
     loadError,
     olderCursor,

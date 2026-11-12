@@ -2,6 +2,7 @@
   "id": "ontology",
   "kind": "native",
   "rail": "apps",
+  "category": "build",
   "sort": 10,
   "entry": {
     "path": "/ontology",
@@ -11,8 +12,7 @@
     "ontology-modeling",
     "action-management",
     "business-knowledge",
-    "skill-management",
-    "mcp-service"
+    "skill-management"
   ],
   "scheduleAdapter": "java:ontology",
   "declaration": {
@@ -20,7 +20,10 @@
       "en": "Ontology manager",
       "zh-CN": "本体管理器"
     },
-    "descriptions": {},
+    "descriptions": {
+      "en": "Model the ontology and manage its metrics, functions, actions, workflows and skills",
+      "zh-CN": "建模本体，管理指标、函数、动作、流程与技能"
+    },
     "icon": "ontology",
     "groups": [],
     "permissions": []

@@ -23,6 +23,7 @@ describe("the apps SDK's chart theme", () => {
       navigate: () => {},
       onAuthFailure: () => {},
       setPageContext: () => {},
+      subscribeFrameInsets: () => () => {},
     };
     Object.assign(window, { [APP_HOST_GLOBAL]: host });
     const context = createAppContext();

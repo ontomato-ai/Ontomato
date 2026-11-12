@@ -29,6 +29,8 @@ class OntologyRetrievalContractTest {
   String schema, jdbcUrl, username, password;
   OntologyAgentStore store;
   OntologyRetrievalService retrieval;
+  RetrievalTasks tasks;
+  RetrievalResults results;
   QueryJobService jobs;
   QueryQualityService quality;
   QueryGrantService grants;
@@ -168,6 +170,8 @@ class OntologyRetrievalContractTest {
     var definitions = new OntologyAgentDefinitions(runtime, new RuntimeCodeClient(runtime), org.mockito.Mockito.mock(OntologyAgentModelSettings.class));
     var bindings = mock(OntologyBindingRetrieval.class);
     when(bindings.snapshot(any(),any(),any())).thenReturn(JSONObject.of("status","completed","error",null,"datasets",new JSONArray()));
+    results = new RetrievalResults(store);
+    tasks = new RetrievalTasks(store, jobs, results);
     retrieval =
         new OntologyRetrievalService(
             store,
@@ -178,7 +182,7 @@ class OntologyRetrievalContractTest {
             mock(QueryOutputService.class),
             jobs,
             quality,
-            authorization, bindings, new RetrievalResults(store));
+            authorization, bindings, results, tasks);
     var host =
         new OntologyAgentHost(
             store,
@@ -190,7 +194,7 @@ class OntologyRetrievalContractTest {
     http =
         MockMvcBuilders.standaloneSetup(
                 new OntologyAgentController(host, authorization, runtime, retrieval),
-                new OntologyRetrievalController(retrieval, store, authorization))
+                new OntologyRetrievalController(retrieval, store, authorization, tasks))
             .setControllerAdvice(new OntologyAgentErrors())
             .addFilters(new QueryGrantFilter(grants))
             .build();
@@ -366,6 +370,28 @@ class OntologyRetrievalContractTest {
         () ->
             store.session(
                 retrievalId, new OntologyAgentStore.Owner(owner.userId(), "other-domain")));
+  }
+
+  @Test
+  void aRetrieverCancelledWithItsCallerIsObservedStoppedAndEndsItsTask() throws Exception {
+    String caller = id();
+    store.openCaller(caller, owner, JSONObject.of("classNames", List.of(), "continuationIds", List.of(),
+        "deadlineAt", Instant.now().plusSeconds(60).toString(), "recentUserMessages", List.of()));
+    String retrievalId = id();
+    String run = postJson("/ontology/retrievals", retrievalId, Map.of("question", "Sales?"), caller).getString("runtimeRunId");
+    // The reply ended: closing its caller cancels the running retriever and confirms the cancel.
+    retrieval.closeCaller(caller, owner);
+    assertTrue(store.run(retrievalId, run, owner).getBooleanValue("cancel_confirmed"));
+    // The scheduled recovery pass is what observes it; it repeats until the stop is recorded.
+    for (int attempt = 0; attempt < 200 && results.forRun(retrievalId, run, owner).isEmpty(); attempt++) {
+      retrieval.recover();
+      Thread.sleep(10);
+    }
+    var read = tasks.forCallers(List.of(caller), owner.domainId());
+    var task = read.getJSONArray("tasks").getJSONObject(0);
+    assertEquals("cancelled", task.getJSONArray("branches").getJSONObject(0).getString("status"));
+    assertEquals("cancelled", task.getString("status"));
+    assertTrue(read.getBooleanValue("settled"));
   }
 
   @Test

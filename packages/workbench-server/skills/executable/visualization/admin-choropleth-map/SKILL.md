@@ -8,7 +8,6 @@ metadata:
   ontomato.tags: '["visualization","choropleth","administrative map","geospatial","GeoJSON","Leaflet","China provinces"]'
   ontomato.version: 1.1.1
   ontomato.outputType: html
-  ontomato.defaultEnabled: "false"
 ---
 
 ## Standard CLI

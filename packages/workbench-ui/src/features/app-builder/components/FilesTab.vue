@@ -96,10 +96,11 @@ watch([() => props.view.workspace?.id, () => props.view.workspace?.headCommit, f
   height: 100%;
   min-height: 0;
 }
+/* Full, the shell's composer floats over the foot of each scrolling part, which keeps that room after its content. */
 .tree {
   flex: 0 0 200px;
   margin: 0;
-  padding: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-sm) calc(var(--spacing-sm) + var(--pane-dock-space, 0px));
   overflow-y: auto;
   list-style: none;
   border-right: 1px solid var(--el-border-color-lighter);
@@ -158,6 +159,9 @@ watch([() => props.view.workspace?.id, () => props.view.workspace?.headCommit, f
 }
 .code :deep(.cm-editor) {
   height: 100%;
+}
+.code :deep(.cm-content) {
+  padding-bottom: var(--pane-dock-space, 0px);
 }
 .files-state {
   display: flex;

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { submissionConditionRows } from "./submissionConditions";
 import { computed, ref } from "vue";
 import { ElTag } from "element-plus";
 import { useOntologyText } from "../../context";
@@ -110,23 +111,10 @@ function guardText(condition: any): string {
 }
 
 const submissionCriteria = computed(() => definition.value?.submissionCriteria ?? null);
-const criteriaConditions = computed(() => submissionCriteria.value?.conditions || []);
+const criteriaConditions = computed(() => submissionConditionRows(submissionCriteria.value?.conditions || [], ot));
 const criteriaOperator = computed(() => submissionCriteria.value?.operator || "AND");
 const criteriaUnrepresentable = computed(() => submissionCriteria.value?.unrepresentable || []);
-function criterionText(condition: any): string {
-  if (!condition) return "";
-  if (condition.kind === "PROPERTY")
-    return `${condition.className || condition.objectParameter || "?"}.${condition.field} ${condition.operator} ${JSON.stringify(condition.value)}`;
-  if (condition.kind === "LINK_EXISTS")
-    return ot("actionDefinitionLinkExists", {
-      source: condition.from || condition.objectParameter || "?",
-      relation: condition.relation,
-    });
-  return condition.description || condition.kind || "—";
-}
-function criterionMessage(condition: any): string {
-  return condition?.message || condition?.failureMessage || "";
-}
+
 
 const negativeEffect = computed(() => definition.value?.businessMeaning?.negativeEffect ?? "");
 </script>
@@ -212,12 +200,12 @@ const negativeEffect = computed(() => definition.value?.businessMeaning?.negativ
         <template v-if="submissionCriteria">
           <div v-if="criteriaConditions.length" class="criteria-list">
             <div v-for="(condition, index) in criteriaConditions" :key="index" class="criteria-row">
-              <div class="criteria-main">
-                <span class="kt">{{ criteriaOperator }}</span>
-                <code class="rule-guard">{{ criterionText(condition) }}</code>
+              <div v-if="condition.expression" class="criteria-main">
+                <span v-if="index > 0" class="kt">{{ criteriaOperator }}</span>
+                <code class="rule-guard">{{ condition.expression }}</code>
               </div>
-              <div v-if="criterionMessage(condition)" class="criteria-msg">
-                {{ criterionMessage(condition) }}
+              <div v-if="condition.message" class="criteria-msg">
+                {{ condition.message }}
               </div>
             </div>
           </div>

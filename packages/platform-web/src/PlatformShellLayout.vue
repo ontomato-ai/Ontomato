@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, provide, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { usePageActionsOf, usePlatformHost, type PlatformPage } from "@ontomato/platform-admin";
 import PlatformLayout from "./PlatformLayout.vue";
@@ -8,11 +8,13 @@ import { localeAutonyms } from "./locale-names";
 import type { PlatformShownPage } from "./PlatformLayout.vue";
 import { appDeclarations } from "./partition";
 import { catalogPartition, type NativeLayout } from "./native-layouts";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useApplicationCatalog } from "./catalog";
-import { openApplicationKey, type PlatformAppDeclaration } from "./apps";
 import { nodeApiRequest } from "@ontomato/workbench-ui";
 import { appAt } from "./apps";
 import { recentDestination } from "./recent-work";
+import { openApplicationKey, platformApplicationsKey, platformBrandKey, type PlatformAppDeclaration } from "./apps";
+import { useApplicationOpening } from "./application-opening";
 
 /**
  * The platform's one shell around the router: the rail, the current application's column and the page area, with the
@@ -30,10 +32,12 @@ const props = defineProps<{
 const host = usePlatformHost();
 const { t } = useI18n();
 const route = useRoute();
-const router = useRouter();
 
 const catalog = useApplicationCatalog();
 watch(() => host.navigation.value, () => { void catalog.refresh(); }, { immediate: true, deep: true });
+// The home lists every application, so returning to it reads the catalog again; the first read above covers a shell
+// mounted on the home.
+watch(() => route.path === platformRoutes.home.path, (home) => { if (home) void catalog.refresh(); });
 /** The rail's placeholders stand in for a list it does not have yet; a later read keeps the rows it shows. */
 const railLoading = computed(() => catalog.loading.value && catalog.applications.value.length === 0);
 const partition = computed(() => catalogPartition(catalog.applications.value, host.preferences.locale.value, props.renderers));
@@ -85,19 +89,12 @@ const labels = computed(() => ({
   unsavedChanges: t("platform.unsavedChanges"),
 }));
 
-/** Where an application's rail row goes: the address its declaration carries (worked out in `appDeclarations`). */
-function homeOf(app: PlatformAppDeclaration): string | null {
-  return app.home ?? null;
-}
-
-function selectApp(id: string) {
-  const app = declarations.value.find((candidate) => candidate.id === id);
-  // An external application is opened by the rail itself; nothing here makes it current.
-  const path = app ? homeOf(app) : null;
-  if (path) void router.push(path);
-}
-// A page inside opens an application through the same entry as its rail row (the app builder, for what it published).
-provide(openApplicationKey, selectApp);
+/** The rail's rows and every page inside (the home's cards, the app builder) open applications through this entry. */
+const openApplication = useApplicationOpening(declarations);
+provide(openApplicationKey, openApplication);
+provide(platformApplicationsKey, declarations);
+const shellBrand = props.brand ?? { name: "Ontomato" };
+provide(platformBrandKey, shellBrand);
 
 const recentVisit = computed(() => {
   if (catalog.loading.value || catalog.error.value || host.blocked?.value) return null;
@@ -138,9 +135,9 @@ const blocked = computed(() => {
     :preferences="preferences"
     :locale-names="localeNames"
     :labels="labels"
-    :brand="brand ?? { name: 'Ontomato' }"
+    :brand="shellBrand"
     :page-actions="pageActions"
     :blocked="catalog.error.value ? { reason: 'no-pages', message: catalog.error.value } : blocked"
-    @select-app="selectApp"
+    @select-app="openApplication"
   />
 </template>

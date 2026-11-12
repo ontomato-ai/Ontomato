@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch, inject } from "vue";
 import { useI18n } from "vue-i18n";
 import { Check, CircleAlert, Files, LoaderCircle } from "lucide-vue-next";
+import { usePageDockSpace } from "@ontomato/agent-shell-ui";
 import { apiUrl } from "../../../utils/api-base";
 import { getSynchronizedNow } from "../../../utils/server-time";
 import { builderPlatformKey } from "../platform";
@@ -18,10 +19,14 @@ import type { WorkspaceView } from "../workspace-view";
  * when Java answers another context or stage, or when the reader asks. A failed read leaves the frame as it is.
  *
  * The frame's top line says at all times that the preview runs on test data: from which sample and until when, or why
- * there is none to run on. What the agent's run does to the files shares that line instead of covering it. Real data
+ * there is none to run on. Once a round has expired or ended, the notice under it starts the next one from the same
+ * sample, as the agent's `test start` does. What the agent's run does to the files shares that line instead of covering it. Real data
  * has no switch here; it shows once the application is published.
  *
  * `frameWindow` is the window of the frame shown now, null without one: the app speaks for the preview only from there.
+ *
+ * The frame takes the page's whole height; full, the shell's composer floats over its foot, and the app is told how much
+ * it covers so it keeps that room after its content.
  */
 const props = defineProps<{ view: WorkspaceView; reload: number; flash: string | null }>();
 const frameWindow = defineModel<Window | null>("frameWindow", { required: true });
@@ -34,6 +39,7 @@ const error = ref<string | null>(null);
 const hasPage = computed(() => props.view.files.some((file) => file.path === "index.html"));
 const workspace = computed(() => props.view.workspace);
 const platform=inject(builderPlatformKey)!;
+const dockSpace = usePageDockSpace();
 const testState=useBuildTestState(()=>workspace.value?.id ?? null);
 defineExpose({buildTestState:testState.state,refreshBuildTestState:testState.refresh,previewError:computed(()=>error.value)});
 /** What the frame runs on: Java's last answer for the workspace shown, none before the first; a failed read keeps it. */
@@ -78,8 +84,12 @@ watch(iframe, (element) => {
   const source = element?.contentWindow ?? null;
   // A controlled model's prop updates on the parent's next render; register the actual new frame now.
   frameWindow.value = source;
-  if(source) registration=platform.registerPreviewFrame(source,binding.value!);
+  if(source) {
+    registration=platform.registerPreviewFrame(source,binding.value!);
+    registration.setInsets({ bottom: dockSpace.value });
+  }
 }, { flush: "post" });
+watch(dockSpace, (bottom) => registration?.setInsets({ bottom }));
 onBeforeUnmount(() => {registration?.dispose();frameWindow.value=null;});
 
 /* ---- The frame's top line and notice: the test data the app runs on ---- */
@@ -130,6 +140,28 @@ const NOTICES = {
   CLOSED: { type: "warning", title: "appBuilder.testClosedHint" },
   UNAVAILABLE: { type: "error", title: "appBuilder.testUnavailableHint" },
 } as const;
+/**
+ * The sample an expired or ended round was prepared from, which a restart prepares again as the workspace holds it now;
+ * null in other stages, and when Java's record names no sample (then only the agent can start one).
+ */
+const restartSample = computed(() =>
+  phase.value === "EXPIRED" || phase.value === "CLOSED" ? (test.value.sampleSummary?.name ?? null) : null,
+);
+const restarting = ref(false);
+const restartError = ref<string | null>(null);
+async function restart() {
+  restarting.value = true;
+  restartError.value = null;
+  try {
+    await builderApi.startBuildTest(workspace.value!.id, restartSample.value!);
+    await testState.refresh();
+  } catch (reason) {
+    restartError.value = errorText(reason);
+  } finally {
+    restarting.value = false;
+  }
+}
+
 /** The notice under the line, with the failure's reason as its detail when there is one. */
 const notice = computed(() => {
   const stage = phase.value;
@@ -165,7 +197,15 @@ const notice = computed(() => {
         </span>
       </div>
       <div v-if="notice" class="frame-notice">
-        <el-alert :type="notice.type" :title="notice.title" :description="notice.detail ?? undefined" :closable="false" show-icon />
+        <el-alert :type="notice.type" :title="notice.title" :description="notice.detail ?? undefined" :closable="false" show-icon>
+          <template v-if="restartSample" #default>
+            <p v-if="notice.detail" class="notice-detail">{{ notice.detail }}</p>
+            <div class="notice-actions">
+              <el-button size="small" :loading="restarting" @click="restart">{{ t("appBuilder.testRestart") }}</el-button>
+              <span v-if="restartError" class="notice-error" role="alert">{{ restartError }}</span>
+            </div>
+          </template>
+        </el-alert>
       </div>
       <div class="frame-body">
         <iframe v-if="src" :key="frame" ref="iframe" :src="src" :title="t('appBuilder.tabPreview')" class="app-frame" />
@@ -271,6 +311,24 @@ const notice = computed(() => {
 .frame-notice {
   flex-shrink: 0;
   padding: var(--spacing-sm);
+}
+/* A notice with a detail or an action keeps the size of one without: a line about the test data, not a headline. */
+.frame-notice :deep(.el-alert) {
+  --el-alert-title-with-description-font-size: var(--el-alert-title-font-size);
+  --el-alert-icon-large-size: var(--el-alert-icon-size);
+}
+.notice-detail {
+  margin: 0 0 var(--spacing-sm);
+}
+.notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-xs);
+}
+.notice-error {
+  color: var(--el-color-danger);
 }
 .frame-body {
   display: flex;

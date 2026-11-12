@@ -34,7 +34,7 @@ const RELEASES: HostedRelease[] = [
 ];
 const APPLICATION: CatalogApplication = {
   id: APP_ID, kind: "hosted", names: { en: "Overdue board", "zh-CN": "逾期看板" }, descriptions: {}, icon: "pages",
-  rail: "apps", sort: 100, entry: { path: `/apps/${APP_ID}/` }, entryAccess: [`app:${APP_ID}:entry`],
+  rail: "apps", category: "business", sort: 100, entry: { path: `/apps/${APP_ID}/` }, entryAccess: [`app:${APP_ID}:entry`],
   scheduleAdapter: null, releaseId: "release-2",
 };
 
@@ -62,7 +62,7 @@ function openDrawer(catalog: ReturnType<typeof catalogOf>, permissions: BuilderP
     commitsState: "ready",
   }) as unknown as WorkspaceView;
   const platform: AppBuilderPlatform = {
-    registerPreviewFrame: () => ({update:vi.fn(),dispose:vi.fn()}),
+    registerPreviewFrame: () => ({update:vi.fn(),setInsets:vi.fn(),dispose:vi.fn()}),
     subscribePageContext: () => () => {}, catalog, openApplication: vi.fn(), permissions: shallowRef(permissions),
   };
   const scope = effectScope();

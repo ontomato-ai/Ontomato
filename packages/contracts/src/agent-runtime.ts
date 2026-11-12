@@ -104,6 +104,11 @@ const runtimeRunFields = {
   finishedAt: runtimeTimestampSchema.nullable(),
   stopReason: runtimeStopReasonSchema.nullable(),
   errorMessage: z.string().nullable(),
+  /**
+   * The run's final answer message, set when the run stops: on a normal stop, its last model assistant message
+   * when that message has text and no tool call; otherwise null. Every other message is process.
+   */
+  answerMessageId: runtimeIdSchema.nullable(),
   /** Commit created by this run, never the workspace HEAD from another run. */
   workspaceCommit: workspaceCommitSchema.nullable(),
   resolvedSkills: z.array(runtimeRegisteredSkillSchema),
@@ -129,6 +134,7 @@ export const runtimeRunViewSchema = z.object({
   status: runtimeRunFields.status,
   stopReason: runtimeRunFields.stopReason,
   errorMessage: runtimeRunFields.errorMessage,
+  answerMessageId: runtimeRunFields.answerMessageId,
   workspaceCommit: runtimeRunFields.workspaceCommit,
   createdAt: runtimeRunFields.createdAt,
   finishedAt: runtimeRunFields.finishedAt,

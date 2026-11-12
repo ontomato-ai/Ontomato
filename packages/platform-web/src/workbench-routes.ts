@@ -7,14 +7,14 @@ import PlatformSchedulesPage from "./pages/PlatformSchedulesRoute.vue";
 type PageComponent = NonNullable<RouteRecordSingleView["component"]>;
 
 /**
- * The capability library's old address: before it had one of its own it was the agents page's `?tab=capabilities`, on
- * `/agents/settings` or on the bare `/agents`. Such a link (a bookmark, an old page) lands on the library's own address,
- * keeping the rest of its query; any other address is not this link.
+ * The capability library's oldest address: the agents page's `?tab=capabilities`, on `/agents/settings` or on the bare
+ * `/agents`. Such a link (a bookmark, an old page) lands on the skills, keeping the rest of its query; any other address
+ * is not this link.
  */
 function capabilityTabLink(to: { query: LocationQuery }): RouteLocationRaw | undefined {
   if (to.query.tab !== "capabilities") return undefined;
   const { tab: _tab, ...query } = to.query;
-  return { name: routes.agentSettingsCapabilities.name, query };
+  return { name: routes.ontologySkills.name, query };
 }
 
 /**
@@ -22,9 +22,9 @@ function capabilityTabLink(to: { query: LocationQuery }): RouteLocationRaw | und
  * the platform assembles.
  *
  * The settings keep one address per screen on purpose: `/agents/settings` (the first agent), `/agents/settings/:agentId`
- * (that agent), `/agents/settings/new` (a new one) and `/agents/settings/capabilities` (the capability library). Each is
- * a page of the same component, and the router has to serve every one of them, so they are registered as siblings under
- * the workbench's component rather than as children of the settings address.
+ * (that agent) and `/agents/settings/new` (a new one). Each is a page of the same component, and the router has to
+ * serve every one of them, so they are registered as siblings under the workbench's component rather than as children
+ * of the settings address.
  */
 export function workbenchPages(
   component: PageComponent,
@@ -34,20 +34,30 @@ export function workbenchPages(
     { ...routes.publishedMcp,
       component: () => import("@ontomato/workbench-ui/features/workbench").then(module => module.PublishedMcpServices),
       meta: { service: true, page: routes.publishedMcp.path, ownHeader: true } },
-    { ...routes.ontologyCapabilities, redirect: { name: routes.ontologySkills.name } },
-    { ...routes.ontologyMcp, redirect: { name: routes.agentSettingsMcp.name } },
+    { ...routes.externalMcp,
+      component: () => import("./pages/ExternalMcpRoute.vue"),
+      meta: { service: true, page: routes.externalMcp.path, ownHeader: true } },
     { ...routes.ontologySkills,
-       component: () => import("@ontomato/workbench-ui/features/workbench").then(module => module.CapabilityLibrary),
-       props: { kind: "skill" },
-       meta: { service: true, page: routes.ontologySkills.path, ownHeader: true } },
+      component: () => import("@ontomato/workbench-ui/features/workbench").then(module => module.SkillLibrary),
+      meta: { service: true, page: routes.ontologySkills.path, ownHeader: true } },
+    { ...routes.ontologySkill,
+      component: () => import("@ontomato/workbench-ui/features/workbench").then(module => module.SkillDetail),
+      props: true,
+      meta: { service: true, page: routes.ontologySkills.path, ownHeader: true } },
+    // The capability library's earlier addresses: skills are the ontology manager's, external MCP the system settings'.
+    ...[routes.ontologyCapabilities, routes.agentSettingsCapabilities, routes.agentSettingsSkills].map(
+      (location) => ({ ...location, redirect: { name: routes.ontologySkills.name } }),
+    ),
+    ...[routes.ontologyMcp, routes.agentSettingsMcp].map(
+      (location) => ({ ...location, redirect: { name: routes.externalMcp.name } }),
+    ),
     { ...routes.chat, component, meta: { workbench: true } },
     // The application's prefix is no page: it opens the conversation, which is where the platform is entered.
     { path: "/agents", redirect: (to) => capabilityTabLink(to) ?? { name: routes.chat.name, query: to.query } },
     // The first agent's screen is a page, so its old tab link moves on as the screen is entered: from a bookmark, a
-    // reload or another page. The platform's own links name the library's address.
+    // reload or another page.
     { ...routes.agents, component, meta: { workbench: true }, beforeEnter: (to) => capabilityTabLink(to) ?? true },
-    { ...routes.agentSettingsCapabilities, redirect: { name: routes.agentSettingsSkills.name } },
-    ...[routes.agentSettingsNew, routes.agentSettingsSkills, routes.agentSettingsMcp, routes.agentSettings].map(
+    ...[routes.agentSettingsNew, routes.agentSettings].map(
       (location) => ({ ...location, component, meta: { workbench: true } }),
     ),
     { ...observeRoutes.root, ...observe, children: observeRoutes.children },

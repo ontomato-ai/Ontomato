@@ -1,11 +1,22 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, useSlots, watch } from "vue";
 import { ArrowUp, Square } from "lucide-vue-next";
-import { shellContextKey } from "../context";
+import type { ShellLabels } from "../types";
 
-const props = defineProps<{ busy: boolean; disabled?: boolean; autofocus?: boolean }>();
+/**
+ * The one message box of the platform: the conversation shell's, and the platform home's question box. Its words come
+ * from the host that places it. A host may put controls at its lower left (`tools`, the home's agent picker); the box
+ * then holds the message above a row with those controls and the send button, otherwise it is one row.
+ */
+const props = defineProps<{
+  busy: boolean;
+  disabled?: boolean;
+  autofocus?: boolean;
+  labels: Pick<ShellLabels, "placeholder" | "send" | "stop">;
+}>();
 const emit = defineEmits<{ send: [text: string]; stop: [] }>();
-const shell = inject(shellContextKey)!;
+const slots = useSlots();
+const stacked = computed(() => slots.tools !== undefined);
 const text = ref("");
 const input = ref<HTMLTextAreaElement | null>(null);
 const composing = ref(false);
@@ -29,7 +40,7 @@ function textHeight(el: HTMLTextAreaElement) {
   return height;
 }
 // After the textarea shows the change; a composer closed meanwhile (sent from the full page) is not measured.
-watch([text, () => shell.labels.value.placeholder], resize, { flush: "post" });
+watch([text, () => props.labels.placeholder], resize, { flush: "post" });
 const sizer = new ResizeObserver(() => resize());
 onMounted(() => {
   resize();
@@ -54,25 +65,27 @@ defineExpose({ focus: () => input.value?.focus() });
 </script>
 
 <template>
-  <form class="composer" :class="{ disabled }" @submit.prevent="submit">
+  <form class="composer" :class="{ disabled, stacked, 'with-context': $slots.context }" @submit.prevent="submit">
+    <div v-if="$slots.context" class="composer-context"><slot name="context" /></div>
     <textarea
       ref="input"
       v-model="text"
       rows="1"
-      :placeholder="shell.labels.value.placeholder"
-      :aria-label="shell.labels.value.placeholder"
+      :placeholder="labels.placeholder"
+      :aria-label="labels.placeholder"
       :disabled="disabled"
       :autofocus="autofocus"
       @keydown="onKeydown"
       @compositionstart="composing = true"
       @compositionend="composing = false"
     />
+    <div v-if="stacked" class="composer-tools"><slot name="tools" /></div>
     <button
       v-if="busy"
       type="button"
       class="composer-button stop"
-      :title="shell.labels.value.stop"
-      :aria-label="shell.labels.value.stop"
+      :title="labels.stop"
+      :aria-label="labels.stop"
       @click="emit('stop')"
     >
       <Square :size="12" fill="currentColor" />
@@ -82,8 +95,8 @@ defineExpose({ focus: () => input.value?.focus() });
       type="submit"
       class="composer-button"
       :disabled="!canSend"
-      :title="shell.labels.value.send"
-      :aria-label="shell.labels.value.send"
+      :title="labels.send"
+      :aria-label="labels.send"
     >
       <ArrowUp :size="17" />
     </button>
@@ -92,15 +105,19 @@ defineExpose({ focus: () => input.value?.focus() });
 
 <style scoped>
 /*
- * The chat composer: a pill of the composer height (radius = height / 2) with a round send button. The conversation
- * shell raises it through --shell-composer-shadow; embedded chats keep it flat.
+ * The chat composer: a pill of the composer height (radius = height / 2) around one row of controls of
+ * --shell-composer-control (the input line and the round send button), so a host makes it compact by setting the two
+ * heights. The conversation shell raises it through --shell-composer-shadow; embedded chats keep it flat. What a message
+ * carries (`context`) may sit in the row before the input.
  */
 .composer {
+  --composer-control: var(--shell-composer-control, var(--control-height-lg));
+  --composer-inset: calc((var(--shell-composer-height) - var(--composer-control) - 2px) / 2);
   display: flex;
   align-items: flex-end;
   gap: 8px;
   min-height: var(--shell-composer-height);
-  padding: 7px 7px 7px 20px;
+  padding: var(--composer-inset) var(--composer-inset) var(--composer-inset) 20px;
   box-sizing: border-box;
   border: 1px solid var(--el-border-color-dark);
   border-radius: calc(var(--shell-composer-height) / 2);
@@ -116,11 +133,50 @@ defineExpose({ focus: () => input.value?.focus() });
 .composer.disabled {
   opacity: 0.6;
 }
+/* With controls of the host's: the message on its own row, the controls and the send button under it. */
+.composer.stacked {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "input input"
+    "tools send";
+  align-items: center;
+  row-gap: 4px;
+  padding: 10px 10px 10px 20px;
+}
+.composer.stacked textarea {
+  grid-area: input;
+}
+.composer.stacked .composer-button {
+  grid-area: send;
+}
+.composer-tools {
+  grid-area: tools;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  min-width: 0;
+  margin-left: -10px;
+}
+.composer.with-context {
+  padding-left: 12px;
+}
+/* Kept to its line beside the input, centred on the input's last line; the input takes the rest of the row. */
+.composer-context {
+  flex: 0 1 auto;
+  max-width: 55%;
+  min-width: 0;
+  margin-bottom: calc((var(--composer-control) - 24px) / 2);
+}
+.composer-context:empty {
+  display: none;
+}
 textarea {
   flex: 1;
-  min-height: var(--control-height-lg);
+  min-width: 0;
+  min-height: var(--composer-control);
   max-height: 220px;
-  padding: 9px 0;
+  padding: calc((var(--composer-control) - var(--leading-base)) / 2) 0;
   box-sizing: border-box;
   border: 0;
   outline: none;
@@ -137,8 +193,8 @@ textarea::placeholder {
 .composer-button {
   display: grid;
   place-items: center;
-  width: var(--control-height-lg);
-  height: var(--control-height-lg);
+  width: var(--composer-control);
+  height: var(--composer-control);
   flex-shrink: 0;
   border: 0;
   border-radius: var(--radius-full);

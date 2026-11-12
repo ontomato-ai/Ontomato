@@ -25,12 +25,12 @@ export function runStatusView(run: {
 }
 /**
  * The business outcome of a run: the runtime only reports running/stopped, the stop reason says why.
- * A length-limited run still delivered its answer, so it counts as completed, not failed.
+ * Only a normal stop completes: a length-limited run has no answer, so it did not finish its work and counts as failed.
  */
 export type RunOutcome = "running" | "completed" | "cancelled" | "failed";
 export function runOutcome(run: { status: "running" | "stopped"; stopReason: string | null }): RunOutcome {
   if (run.status === "running") return "running";
-  if (run.stopReason === "stop" || run.stopReason === "length") return "completed";
+  if (run.stopReason === "stop") return "completed";
   if (run.stopReason === "aborted") return "cancelled";
   return "failed";
 }

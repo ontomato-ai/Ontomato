@@ -4,8 +4,11 @@ import ElementPlus from "element-plus";
 import ChartCard from "../ChartCard.vue";
 import MetricCard from "../MetricCard.vue";
 import CardParameterDialog from "../CardParameterDialog.vue";
+import MetricSourceDialog from "../MetricSourceDialog.vue";
+import { createMemoryHistory, createRouter } from "vue-router";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { createDashboardLoader } from "../utils/dashboardHelper";
-import { formatValue } from "../utils/metricCard";
+import { formatValue, metricChartOption, type MetricCardView } from "../utils/metricCard";
 import { ApiRequestError } from "../../../../utils/api";
 import { workbenchI18n } from "../../../../i18n";
 
@@ -153,6 +156,38 @@ describe("metric-reference cards on a dashboard", () => {
     expect(chartCard.find(".chart-mask--error").text()).toContain("Column total is not numeric");
   });
 
+  it("labels value-axis ticks by their own value, keeping the format's decimals for the data", () => {
+    const option: any = metricChartOption(
+      {
+        id: "c",
+        name: "Bodies by type",
+        query: { kind: "metric", metricId: "m", parameters: {} },
+        chartType: "bar",
+        fields: { xAxis: "type", yAxis: "count" },
+        formats: { count: { kind: "number", decimals: 0 }, share: { kind: "percent", scale: 100, decimals: 0 } },
+      },
+      { columns: [], rows: [{ type: "Planet", count: 3 }, { type: "Moon", count: 1 }] },
+    );
+    const ticks = [0, 0.5, 1, 1.5, 2, 2.5, 3].map(option.yAxis.axisLabel.formatter);
+    expect(new Set(ticks).size).toBe(ticks.length);
+    expect(ticks[1]).toBe("0.5");
+    expect(option.series[0].label.formatter({ value: 3 })).toBe("3");
+
+    const scatter: any = metricChartOption(
+      {
+        id: "s",
+        name: "Share",
+        query: { kind: "metric", metricId: "m", parameters: {} },
+        chartType: "scatter",
+        fields: { xAxis: "count", yAxis: "share" },
+        formats: { count: { kind: "number", decimals: 0 }, share: { kind: "percent", scale: 100, decimals: 0 } },
+      },
+      { columns: [], rows: [{ count: 1, share: 0.25 }] },
+    );
+    expect(scatter.xAxis.axisLabel.formatter(0.5)).toBe("0.5");
+    expect(scatter.yAxis.axisLabel.formatter(0.025)).toBe("2.5%");
+  });
+
   it("formats only as the card says: no format keeps the value, a missing value is not zero", () => {
     expect(formatValue(0.1234)).toBe("0.1234");
     expect(formatValue(null, { kind: "number", decimals: 2 })).toBe("—");
@@ -202,6 +237,46 @@ describe("the card parameter form", () => {
       expect(document.querySelector("[data-field='year'] .el-form-item__error")?.textContent).toContain("Not a year"),
     );
     expect(wrapper.emitted("saved")).toBeUndefined();
+    wrapper.unmount();
+  });
+});
+
+describe("view metric", () => {
+  it("reads as the metric's name, localized status and parameter values, and opens the metric", async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: "/", component: { render: () => null } },
+        { ...platformRoutes.metric, component: { render: () => null } },
+      ],
+    });
+    await router.push("/");
+    const card = {
+      id: "c-new",
+      name: "Revenue by region",
+      title: "Revenue by region",
+      query: { kind: "metric", metricId: "m-1", parameters: { year: 2026, region: null } },
+      chartType: "bar",
+      fields: { xAxis: "region", yAxis: "revenue" },
+      metric: { id: "m-1", name: "Revenue", revision: "rev-internal-42", status: "PENDING_REVIEW" },
+    };
+    const wrapper = mount(MetricSourceDialog, {
+      props: { modelValue: true, card: card as unknown as MetricCardView },
+      global: { plugins: [...plugins, router], stubs: { transition: false } },
+    });
+    await flushPromises();
+    const text = document.querySelector(".el-dialog")!.textContent!;
+    expect(text).toContain("Revenue");
+    expect(text).toContain(t("dashboard.metricStatus.PENDING_REVIEW"));
+    expect(text).toContain("2026");
+    expect(text).toContain("—");
+    expect(text).not.toContain("rev-internal-42");
+    expect(text).not.toContain("{");
+
+    document.querySelector<HTMLButtonElement>(".el-dialog__footer .el-button--primary")!.click();
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe(platformRoutes.metric.name);
+    expect(router.currentRoute.value.params.id).toBe("m-1");
     wrapper.unmount();
   });
 });

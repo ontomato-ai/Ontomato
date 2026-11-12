@@ -61,7 +61,7 @@ SSE uses `event: runtime`, JSON `AgentHostStreamFrame` and `id: <cursor.seq>` fo
 event frames. Preserve IDs, cursors and deltas; heartbeat comments carry no state.
 Broken transport resumes from the last applied event cursor. On snapshot_required,
 the conversation shell repairs the missing history range and the current live remainder
-before resuming; retrieval activity retains its run-local snapshot recovery. A stopped final snapshot needs no stream. Disconnect never cancels. Cancel
+before resuming; a task's process retains its run-local snapshot recovery. A stopped final snapshot needs no stream. Disconnect never cancels. Cancel
 stops owned work and returns a stopped run, or null if admission was prevented.
 HTTP errors never invent PI state; stop may be an ordinary question.
 
@@ -69,7 +69,7 @@ HTTP errors never invent PI state; stop may be an ordinary question.
 
 `session-history.ts` owns the shared request, cursor and page-boundary contract.
 Runtime selects the page; hosts authenticate the session and project only their
-own session metadata and the page's retrieval associations. Both the workbench
+own session metadata. Both the workbench
 assistant (and operations diagnosis) and ontology knowledge governance expose
 this route. Model context, evidence and full exports keep their complete reads.
 

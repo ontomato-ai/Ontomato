@@ -121,7 +121,7 @@ services:
       ONTOMATO_QUERY_SERVICE_TOKEN: ${ONTOMATO_QUERY_SERVICE_TOKEN:?Run the deployment configuration preparation first}
       AGENT_RUNTIME_CALLBACK_URL: http://ontomato:3000
       PORT: "3000"
-      ONTOLOGY_INITIAL_ROUTE: ${ONTOLOGY_INITIAL_ROUTE:-/workspace}
+      ONTOLOGY_INITIAL_ROUTE: ${ONTOLOGY_INITIAL_ROUTE:-}
       NODE_ENV: production
       TZ: ${TZ:-UTC}
     shm_size: "1gb"

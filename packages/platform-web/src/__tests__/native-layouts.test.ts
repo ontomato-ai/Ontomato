@@ -52,8 +52,8 @@ describe("the platform's applications", () => {
       label: "platform.layers.products", pages: [],
     });
   });
-  it("sits in three sections: the ontology applications, the business ones, and the settings above the account", () => {
-    expect(named("top")).toEqual(["personal-workspace", "agents", "dashboards", "schedules", "browser"]);
+  it("sits in three sections: the home and the everyday applications, the business ones, and the settings above the account", () => {
+    expect(named("top")).toEqual(["home", "personal-workspace", "agents", "dashboards", "schedules", "browser"]);
     // 应用构建 comes after the operations diagnosis.
     expect(named("apps")).toEqual(["ontology", "governance", "operations", "app-builder"]);
     expect(named("bottom")).toEqual(["settings"]);

@@ -22,9 +22,9 @@ describe("where the root address lands", () => {
     );
   });
 
-  it("next comes the deployment's initial route normalized to a path, and finally the personal workspace", () => {
+  it("next comes the deployment's initial route normalized to a path, and finally the platform's home", () => {
     expect(home("/?view=other", "#objects/A")).toBe("/objects/A");
     expect(home("/", " /data ")).toBe("/data");
-    expect(home("/")).toBe("/workspace");
+    expect(home("/")).toBe("/home");
   });
 });

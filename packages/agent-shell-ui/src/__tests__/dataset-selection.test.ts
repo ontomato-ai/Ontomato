@@ -3,7 +3,7 @@ import { expect, it, vi } from "vitest";
 import TableRenderer from "../renderers/TableRenderer.vue";
 import { shellContextKey, type ShellContext } from "../context";
 
-it("preserves raw selected rows and dataset scope across pagination when continuing analysis", async () => {
+it("continues from selected source rows across pagination with one ordinary message", async () => {
   const root = document.createElement("div"); document.body.append(root);
   const proceed = vi.fn().mockResolvedValue(undefined);
   const rows = Array.from({ length: 10 }, (_, n) => ({ id: `000${n}`, value: n === 0 ? false : n, note: n === 0 ? null : "text" }));
@@ -23,10 +23,6 @@ it("preserves raw selected rows and dataset scope across pagination when continu
     [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Compare selection")!.click();
     await nextTick();
     expect(proceed).toHaveBeenCalledTimes(1);
-    const context = JSON.parse(proceed.mock.calls[0]![0].split("\n").at(-1));
-    expect(context.rows).toEqual([rows[0], rows[8]]);
-    expect(context.artifactId).toBe("artifact");
-    expect(context.question).toBe("Active staff in 2025");
-    expect(context.assumptions).toEqual(["Active only"]);
+    expect(proceed).toHaveBeenCalledWith('Compare rows 1, 9 of the data file "Staff" (outputs/data.dataset.json).');
   } finally { app.unmount(); root.remove(); }
 });

@@ -1,29 +1,26 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
-import { ArrowLeft, Plus, Puzzle, Plug } from "lucide-vue-next";
+import { ArrowLeft, Plus } from "lucide-vue-next";
 import { useAgentDefinitions } from "../definitions";
 
 /**
  * The agent platform's settings navigation, drawn in the application's column when the settings are open.
  *
  * It replaces the conversation column for as long as the settings are shown: back to the conversation, the agents (one
- * click opens it in the editor beside), a new agent, and the capability library. The main area holds the editor only —
+ * click opens it in the editor beside) and a new agent. Skills and external MCP services are the platform's, managed in
+ * the ontology manager and the system settings; an agent only selects them. The main area holds the editor only —
  * the list is here, never a second time beside it (DESIGN.md "Applications and shells").
  */
 const props = defineProps<{
   /** The agent being edited, or null while creating one. */
   agentId: string | null;
   creating: boolean;
-  /** The capability library is open instead of an agent. */
-  capabilities: boolean;
-  capabilityKind?: "skill" | "tool";
 }>();
 const emit = defineEmits<{
   back: [];
   selectAgent: [id: string];
   createAgent: [];
-  openCapabilities: [kind: "skill" | "tool"];
 }>();
 const { t } = useI18n();
 const { agents, loading, loadFailed, ensureLoaded } = useAgentDefinitions();
@@ -56,8 +53,8 @@ const heading = computed(() => t("agents.title"));
         <button
           type="button"
           class="agent-row"
-          :class="{ active: !props.creating && !props.capabilities && agent.id === props.agentId }"
-          :aria-current="!props.creating && !props.capabilities && agent.id === props.agentId ? 'page' : undefined"
+          :class="{ active: !props.creating && agent.id === props.agentId }"
+          :aria-current="!props.creating && agent.id === props.agentId ? 'page' : undefined"
           @click="emit('selectAgent', agent.id)"
         >
           <span class="row-name">{{ agent.name }}</span>
@@ -70,19 +67,6 @@ const heading = computed(() => t("agents.title"));
       <span>{{ t("agents.newAgent") }}</span>
     </button>
 
-    <p class="group-title">{{ t("agents.capabilityGroup") }}</p>
-    <button
-      v-for="kind in (['skill', 'tool'] as const)"
-      :key="kind"
-      type="button"
-      class="plain-row"
-      :class="{ active: props.capabilities && (props.capabilityKind ?? 'skill') === kind }"
-      :aria-current="props.capabilities && (props.capabilityKind ?? 'skill') === kind ? 'page' : undefined"
-      @click="emit('openCapabilities', kind)"
-    >
-      <component :is="kind === 'skill' ? Puzzle : Plug" :size="16" aria-hidden="true" />
-      <span>{{ t(kind === 'skill' ? 'capabilities.skillTitle' : 'capabilities.mcpTitle') }}</span>
-    </button>
   </div>
 </template>
 
@@ -173,12 +157,10 @@ const heading = computed(() => t("agents.title"));
 }
 .agent-row:hover,
 .new-agent:hover,
-.plain-row:hover,
 .back:hover {
   background: var(--shell-nav-hover, var(--el-fill-color-light));
 }
 .agent-row.active,
-.plain-row.active,
 .new-agent.active {
   background: var(--shell-nav-selected, var(--el-color-primary-light-9));
 }
@@ -195,26 +177,6 @@ const heading = computed(() => t("agents.title"));
   color: var(--brand-link);
   font: inherit;
   cursor: pointer;
-}
-.plain-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  height: var(--nav-row-height);
-  padding: 0 10px;
-  box-sizing: border-box;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--el-text-color-regular);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.plain-row.active {
-  color: var(--el-text-color-primary);
-  font-weight: var(--font-semibold);
 }
 .note {
   padding: 6px 10px;
@@ -243,8 +205,7 @@ const heading = computed(() => t("agents.title"));
 }
 .back:focus-visible,
 .agent-row:focus-visible,
-.new-agent:focus-visible,
-.plain-row:focus-visible {
+.new-agent:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: -2px;
 }

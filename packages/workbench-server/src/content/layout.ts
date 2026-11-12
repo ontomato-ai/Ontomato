@@ -44,6 +44,11 @@ export function runtimeDataDir(...segments: string[]): string {
   return path.join(installedLayout().runtimeRoot, "data", ...segments);
 }
 
+/** Where each domain's own skill packages live, one directory per domain. */
+export function domainSkillsRoot(): string {
+  return runtimeDataDir("domain-skills");
+}
+
 export function webDistDir(): string {
   return path.join(installedLayout().runtimeRoot, "dist", "web");
 }

@@ -2,14 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import AdmZip from "adm-zip";
-import type { SkillInfo, SkillDeleteResult } from "@ontomato/contracts/skills";
-import type { StandardSkillFrontmatter, RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import type { SkillInfo, SkillDeleteResult, SkillFile } from "@ontomato/contracts/skills";
+import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { skillRegistryManager, type SkillRegistryManager } from "../../core/skills/registry/manager";
 import type { SkillMeta } from "../../core/skills/types";
-import { loadSkillContent, resolveSkillPackageFile } from "../../core/skills/discovery/loader";
+import { resolveSkillPackageFile } from "../../core/skills/discovery/loader";
 import { readSkillPackage } from "../../core/skills/package";
-import { InvalidSkillPackageError, normalizeSkillPackagePath, parseSkillMarkdown, readSkillMarkdown, readSkillLabels,
-  SkillIdSchema, writeSkillMarkdown, parseSkillMarkdownFrontmatter } from "../../core/skills/manifest";
+import { InvalidSkillPackageError, normalizeSkillPackagePath, parseSkillMarkdown, parseSkillMarkdownFrontmatter,
+  readSkillLabels } from "../../core/skills/manifest";
 import { publicSkillLabelsPath, publicSkillTranslationsRoot, publicSkillsRoot } from "../../content/layout";
 import { resolveLocale } from "../../i18n";
 import { createLogger } from "../../logging/logger";
@@ -19,11 +19,6 @@ import { listAnalysisAgentSkillReferences, removeAnalysisAgentSkillReferences,
   restoreAnalysisAgentSkillReferences } from "../assistant/skill-references";
 
 const logger = createLogger("skill-manager");
-type SkillOptions = {
-  title?: string; description?: string; tags?: string[]; version?: string;
-  outputType?: "html" | "json" | "text"; scriptCode?: string; skillContent?: string;
-};
-
 export function skillReference(skill: SkillMeta, domainId: string): RuntimeSkillRef {
   return { name: skill.id, namespace: skill.isPublic
     ? { kind: "provider", provider: "workbench" } : { kind: "domain", domainId } };
@@ -36,52 +31,26 @@ function requireSkill(registry: SkillRegistryManager, id: string) {
   if (!skill) throw new HttpError(404, `Skill not found: ${id}`, "SKILL_NOT_FOUND");
   return skill;
 }
-function metadata(options: SkillOptions, previous: Record<string, string> = {}) {
-  const next = { ...previous };
-  for (const key of ["title", "version", "outputType"] as const)
-    if (options[key] !== undefined) next[`ontomato.${key}`] = options[key];
-  if (options.tags !== undefined) next["ontomato.tags"] = JSON.stringify(options.tags);
-  return next;
-}
-function newScript() {
-  return `import { readFile, mkdir, writeFile } from "node:fs/promises";
-
-const input = JSON.parse(await readFile(process.argv[2], "utf8"));
-await mkdir("outputs", { recursive: true });
-await writeFile("outputs/result.json", JSON.stringify(input, null, 2));
-console.log("outputs/result.json");
-`;
-}
-
 class SkillManager {
-  private info(skill: SkillMeta, registry: SkillRegistryManager, domainId: string, locale?: string): SkillInfo {
+  private info(skill: SkillMeta, domainId: string, locale?: string): SkillInfo {
     const labelPath = publicSkillLabelsPath();
     const labels = skill.isPublic && labelPath && resolveLocale(locale).toLowerCase().startsWith("zh")
       ? readSkillLabels(labelPath)[skill.id] : undefined;
     const m = skill.manifest;
     return { id: skill.id, skill: skillReference(skill, domainId), type: m.type, category: m.category,
       title: labels?.title ?? m.title, description: labels?.description ?? m.description,
-      tags: labels?.tags ?? m.tags, enabled: registry.isSkillEnabled(skill.id), isPublic: skill.isPublic,
+      tags: labels?.tags ?? m.tags, isPublic: skill.isPublic,
       path: skill.path, version: m.version, outputType: m.outputType };
   }
   async getAllSkills(domainId: string, locale?: string): Promise<SkillInfo[]> {
     const registry = await skillRegistryManager.forDomain(domainId);
-    return registry.getSkills({ includeDisabled: true }).map((s) => this.info(s, registry, domainId, locale));
+    return registry.getSkills().map((s) => this.info(s, domainId, locale));
   }
   async searchSkills(domainId: string, query: string, locale?: string) {
     const needle = query.trim().toLowerCase();
     if (!needle) return [];
     return (await this.getAllSkills(domainId, locale)).filter((s) =>
       [s.id, s.title, s.description, ...s.tags].some((v) => v?.toLowerCase().includes(needle)));
-  }
-  async toggleSkill(domainId: string, id: string) {
-    return withDomainSkills(domainId, async () => {
-      const registry = await skillRegistryManager.forDomain(domainId);
-      requireSkill(registry, id);
-      const enabled = !registry.isSkillEnabled(id);
-      registry.setSkillEnabled(id, enabled);
-      return { enabled };
-    });
   }
   async getSkillReferences(domainId: string, id: string) {
     const skill = requireSkill(await skillRegistryManager.forDomain(domainId), id);
@@ -93,7 +62,6 @@ class SkillManager {
       const skill = requireSkill(registry, id);
       requireWritable(skill);
       const affectedAgents = await listAnalysisAgentSkillReferences(domainId, skillReference(skill, domainId));
-      const enabled = registry.isSkillEnabled(id);
       const trash = path.join(skillRegistryManager.getDomainSkillsRoot(domainId), ".trash", randomUUID());
       fs.mkdirSync(path.dirname(trash), { recursive: true });
       fs.renameSync(skill.path, trash);
@@ -101,12 +69,10 @@ class SkillManager {
       try {
         const cleanedAgentCount = await removeAnalysisAgentSkillReferences(domainId, id);
         referencesRemoved = true;
-        registry.removeSkillState(id);
         fs.rmSync(trash, { recursive: true, force: true });
         return { affectedAgents, cleanedAgentCount };
       } catch (error) {
         if (fs.existsSync(trash)) fs.renameSync(trash, skill.path);
-        registry.setSkillEnabled(id, enabled);
         if (referencesRemoved) await restoreAnalysisAgentSkillReferences(domainId, id, affectedAgents);
         throw error;
       }
@@ -136,7 +102,7 @@ class SkillManager {
       }
       try {
         const registry = await skillRegistryManager.forDomain(domainId);
-        return this.info(requireSkill(registry, id), registry, domainId);
+        return this.info(requireSkill(registry, id), domainId);
       } catch (error) {
         fs.rmSync(destination, { recursive: true, force: true });
         if (previous) fs.renameSync(backup, destination);
@@ -148,62 +114,30 @@ class SkillManager {
     }
   }
 
-  async createSkill(domainId: string, id: string, type: SkillInfo["type"], category: SkillInfo["category"], options: SkillOptions) {
-    SkillIdSchema.parse(id);
-    return withDomainSkills(domainId, async () => {
-      const registry = await skillRegistryManager.forDomain(domainId);
-      const existing = registry.getSkillById(id);
-      if (existing) {
-        requireWritable(existing);
-        throw new HttpError(409, `Skill already exists: ${id}`, "SKILL_EXISTS", { skillId: id });
-      }
-      return this.replace(domainId, id, null, (directory) => {
-        const frontmatter: StandardSkillFrontmatter = { name: id, description: options.description!,
-          metadata: { ...metadata(options), "ontomato.type": type, "ontomato.category": category } };
-        if (type === "executable") {
-          fs.mkdirSync(path.join(directory, "scripts"));
-          fs.writeFileSync(path.join(directory, "scripts/index.mjs"), options.scriptCode || newScript());
-        }
-        const instructions = type === "executable"
-          ? `Write the task input to a JSON file, then run:\n\n\`node skills/${id}/scripts/index.mjs work/input.json\`\n\nRead the output and reference produced files using workspace-relative outputs/ paths.\n`
-          : "Describe the method and when to apply it here.\n";
-        writeSkillMarkdown(path.join(directory, "SKILL.md"), frontmatter,
-          options.skillContent || `# ${options.title || id}\n\n${instructions}`);
-      });
-    });
-  }
-  async updateSkill(domainId: string, id: string, options: SkillOptions) {
-    return withDomainSkills(domainId, async () => {
-      const registry = await skillRegistryManager.forDomain(domainId);
-      const skill = requireSkill(registry, id);
-      requireWritable(skill);
-      return this.replace(domainId, id, skill, (directory) => {
-        const file = path.join(directory, "SKILL.md");
-        const current = readSkillMarkdown(file)!;
-        const frontmatter = { ...current.frontmatter,
-          description: options.description ?? current.frontmatter.description,
-          metadata: metadata(options, current.frontmatter.metadata) };
-        if (options.scriptCode !== undefined && current.manifest.scriptPath)
-          fs.writeFileSync(path.join(directory, current.manifest.scriptPath), options.scriptCode);
-        writeSkillMarkdown(file, frontmatter, options.skillContent ?? current.content);
-      });
-    });
-  }
-  async getSkillScript(domainId: string, id: string): Promise<string | null> {
+  /** The package's files, relative to its root, for a reader to browse. */
+  async listSkillFiles(domainId: string, id: string): Promise<SkillFile[]> {
     const skill = requireSkill(await skillRegistryManager.forDomain(domainId), id);
-    return skill.manifest.scriptPath
-      ? fs.readFileSync(await resolveSkillPackageFile(skill, skill.manifest.scriptPath), "utf8") : null;
+    const entries = await fs.promises.readdir(skill.path, { recursive: true, withFileTypes: true });
+    return entries.filter((entry) => entry.isFile()).map((entry) => {
+      const file = path.join(entry.parentPath, entry.name);
+      return { path: path.relative(skill.path, file).split(path.sep).join("/"), size: fs.statSync(file).size };
+    }).sort((a, b) => (a.path < b.path ? -1 : 1));
   }
-  async getSkillContent(domainId: string, id: string, locale?: string) {
+  /**
+   * One file of the package as text (packages are UTF-8 throughout). A public skill's instructions are shown in the
+   * reader's language when the edition ships a translation: the package's own frontmatter over the translated body.
+   */
+  async readSkillFile(domainId: string, id: string, requestedPath: string, locale?: string): Promise<string> {
+    const relative = normalizeSkillPackagePath(requestedPath);
+    if (!relative) throw new HttpError(400, `Invalid skill file path: ${requestedPath}`, "INVALID_SKILL_FILE_PATH");
     const skill = requireSkill(await skillRegistryManager.forDomain(domainId), id);
+    const source = fs.readFileSync(await resolveSkillPackageFile(skill, relative), "utf8");
     const translations = publicSkillTranslationsRoot();
-    if (skill.isPublic && translations) {
-      const relative = path.relative(publicSkillsRoot(), skill.skillMdPath);
-      const translated = path.join(translations, resolveLocale(locale), relative);
-      if (fs.existsSync(translated))
-        return parseSkillMarkdownFrontmatter(fs.readFileSync(translated, "utf8"))?.content ?? null;
-    }
-    return loadSkillContent(skill);
+    const translated = skill.isPublic && translations
+      ? path.join(translations, resolveLocale(locale), path.relative(publicSkillsRoot(), skill.path), relative) : null;
+    if (!translated || !fs.existsSync(translated)) return source;
+    const frontmatter = source.match(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/)?.[0] ?? "";
+    return frontmatter + parseSkillMarkdownFrontmatter(fs.readFileSync(translated, "utf8"))!.content;
   }
   async exportSkill(domainId: string, id: string): Promise<Buffer> {
     const skill = requireSkill(await skillRegistryManager.forDomain(domainId), id);

@@ -53,6 +53,12 @@ export interface AppPageContext {
   selection: AppPageSelection | null;
 }
 
+/** Room the platform shell's own controls cover along the edges of an app frame, in CSS pixels. */
+export interface AppFrameInsets {
+  /** The height of the frame's foot that the platform's own controls cover; 0 when nothing covers it. */
+  bottom: number;
+}
+
 export interface AppHost {
   snapshot(): AppHostSnapshot;
   /** The calling frame's explicit execution binding; unregistered sources throw. */
@@ -73,4 +79,9 @@ export interface AppHost {
    * has no effect.
    */
   setPageContext(source: object, context: AppPageContext): void;
+  /**
+   * Calls the listener with the calling frame's insets now and on every change; the returned function stops it. The app
+   * keeps that much room after its scrolling content, so its end can be scrolled clear of the shell's controls.
+   */
+  subscribeFrameInsets(source: object, listener: (insets: AppFrameInsets) => void): () => void;
 }

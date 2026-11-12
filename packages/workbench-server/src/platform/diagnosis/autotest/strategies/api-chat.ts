@@ -5,7 +5,7 @@ import {
 } from "@ontomato/contracts/agent-host";
 import { environment } from "../../../../config/environment";
 import { buildTurnKey } from "../../../../logging/log-context";
-import { finalText } from "../../../agent-runtime/runtime";
+import { answerText } from "../../../agent-runtime/runtime";
 import { runOutcome } from "../../../agent-runtime/projection";
 import type { ExecutionResult } from "../types";
 import { autotestConfig } from "../config";
@@ -85,7 +85,7 @@ export async function executeApiChat(
               : outcome === "cancelled"
                 ? "cancelled"
                 : "error",
-          finalAnswer: finalText(s),
+          finalAnswer: answerText(s),
           error: s.run.errorMessage ?? undefined,
         };
       }

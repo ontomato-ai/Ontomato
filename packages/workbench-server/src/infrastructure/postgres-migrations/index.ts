@@ -1,5 +1,5 @@
 import { ensureWorkspacesSchema } from "./20261109-workspaces/schema";
-import { ensureAssistantDecisionsSchema } from "./20261110-assistant-decisions/schema";
+import { ensurePlatformHomeSchema } from "./20261111-platform-home/schema";
 import { ensurePlatformEventCursorSchema } from "./20261103-platform-events/schema";
 import { ensureOpsDiagnosisSchema } from "./20261029-ops-diagnosis/schema";
 import { ensureAssistantSchema } from "./20261028-assistant/schema";
@@ -10,6 +10,13 @@ import {
   ASSISTANT_DEFAULT_PROMPTS_VERSION,
   migrateAssistantDefaultPrompts,
 } from "./20261105-assistant-default-prompts/migration";
+import {
+  SKILL_ENABLE_RETIREMENT_NAME,
+  SKILL_ENABLE_RETIREMENT_VERSION,
+  migrateSkillEnableRetirement,
+  removeRetiredSkillStates,
+} from "./20261112-skill-enable-retirement/migration";
+import { domainSkillsRoot } from "../../content/layout";
 import { workbenchProduct } from "../../product/installed";
 import { ensureAnalysisHarnessLinks } from "./20260923-analysis-harness-links/schema";
 import {
@@ -92,8 +99,8 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
   { directory: "20261029-ops-diagnosis", ensureSchema: ensureOpsDiagnosisSchema },
   { directory: "20261028-assistant", ensureSchema: ensureAssistantSchema },
   { directory: "20261109-workspaces", ensureSchema: ensureWorkspacesSchema },
+  { directory: "20261111-platform-home", ensureSchema: ensurePlatformHomeSchema },
   { directory: "20261107-assistant-actions", ensureSchema: ensureAssistantActionsSchema },
-  { directory: "20261110-assistant-decisions", ensureSchema: ensureAssistantDecisionsSchema },
   {
     directory: "20261105-assistant-default-prompts",
     ensureSchema: ensureAssistantDefaultPromptSchema,
@@ -101,6 +108,15 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
       version: ASSISTANT_DEFAULT_PROMPTS_VERSION,
       name: ASSISTANT_DEFAULT_PROMPTS_NAME,
       run: runAssistantDefaultPrompts,
+    },
+  },
+  {
+    directory: "20261112-skill-enable-retirement",
+    ensureSchema: () => Promise.resolve(),
+    migration: {
+      version: SKILL_ENABLE_RETIREMENT_VERSION,
+      name: SKILL_ENABLE_RETIREMENT_NAME,
+      run: runSkillEnableRetirement,
     },
   },
   {
@@ -385,6 +401,20 @@ async function runAssistantDefaultPrompts(
     version: migration.version,
     cleared: result.cleared,
   });
+}
+
+async function runSkillEnableRetirement(
+  client: QueryableClient,
+  migration: MigrationIdentity,
+): Promise<void> {
+  if (await isMigrationApplied(client, migration.version)) return;
+  const result = await inMigrationTransaction(client, async () => {
+    const migrated = await migrateSkillEnableRetirement(client, domainSkillsRoot());
+    await recordMigration(client, migration.version, migration.name);
+    return migrated;
+  });
+  removeRetiredSkillStates(domainSkillsRoot());
+  logger.info("Skill enablement retired", { version: migration.version, agents: result.agents });
 }
 
 async function runAnalysisConversationTurns(

@@ -8,13 +8,16 @@
 export const platformRoutes = {
   layout: { name: "PlatformLayout", path: "/" },
   personalWorkspace: { name: "PersonalWorkspace", path: "/workspace" },
+  /** The platform's home: everyone's starting point, with their favourites, dashboards and every application. */
+  home: { name: "Home", path: "/home" },
   chat: { name: "Chat", path: "/agents/chat" },
   /** The dashboards are an application of their own: the charts and datasets conversations add to. */
   dashboards: { name: "Dashboards", path: "/dashboards" },
   agents: { name: "AgentSettings", path: "/agents/settings" },
   /**
-   * The settings screens: a new agent, the capability library, and one agent's editor. The two fixed addresses come
-   * before the parameter, so `/agents/settings/new` is the new agent and never an agent whose id is "new".
+   * The settings screens: a new agent and one agent's editor. The fixed addresses come before the parameter, so
+   * `/agents/settings/new` is the new agent and never an agent whose id is "new"; the library's old addresses
+   * (capabilities, skills, mcp) now forward to the skills and the external MCP services, which are the platform's.
    */
   agentSettingsNew: { name: "AgentSettingsNew", path: "/agents/settings/new" },
   agentSettingsCapabilities: { name: "AgentSettingsCapabilities", path: "/agents/settings/capabilities" },
@@ -43,6 +46,8 @@ export const platformRoutes = {
   ontology: { name: "OntologyHome", path: "/ontology" },
   ontologyCapabilities: { name: "OntologyCapabilities", path: "/ontology/capabilities" },
   ontologySkills: { name: "OntologySkills", path: "/ontology/skills" },
+  /** One skill, read as its package. */
+  ontologySkill: { name: "OntologySkill", path: "/ontology/skills/:skillId" },
   ontologyMcp: { name: "OntologyMcp", path: "/ontology/mcp" },
   playground: { name: "OntologyGraph", path: "/ontology/playground" },
   objects: { name: "Objects", path: "/ontology/objects" },
@@ -69,6 +74,8 @@ export const platformRoutes = {
   usage: { name: "ModelUsage", path: "/settings/model-config/usage" },
   providers: { name: "ModelProviders", path: "/settings/model-config/providers" },
   settings: { name: "SystemConfig", path: "/settings/system-config" },
+  /** The external MCP services agents may call, registered once for the platform. */
+  externalMcp: { name: "ExternalMcpServices", path: "/settings/external-mcp" },
   publishedMcp: { name: "PublishedMcpServices", path: "/settings/mcp-services" },
   general: { name: "GeneralSettings", path: "/settings/system-config/general" },
   adapters: { name: "DataAdapters", path: "/settings/system-config/data-adapters" },

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
@@ -10,6 +10,7 @@ import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearan
 import { AgentSettingsNav, AgentSettingsPage } from "../../agents";
 import { getWorkbenchAppearance } from "../api";
 import { createAssistantClient, createAssistantFeedback } from "../assistant-host";
+import { readRememberedAgent, rememberAgent } from "../remembered-agent";
 import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
 import ConversationActions from "./ConversationActions.vue";
@@ -47,7 +48,6 @@ const props = withDefaults(
 const emit = defineEmits<{ featureAction: [id: string] }>();
 
 const WORKBENCH_ID = "business";
-const AGENT_KEY = "ontomato.workbench.agent";
 
 const { t, locale } = useI18n();
 const route = useRoute();
@@ -56,13 +56,21 @@ const client = createAssistantClient();
 const feedback = createAssistantFeedback();
 const appearance = ref<WorkbenchAppearance | null>(null);
 const editingBrand = ref(false);
-const agentId = ref<string | null>(readRemembered());
+/**
+ * `?agentId=` names the agent a link from elsewhere (the platform home) asks for: alone it opens a new conversation with
+ * it, with `&prompt=` that conversation starts with the text, with `&sessionId=` it reopens that conversation. The page
+ * starts from its own choice (the remembered agent, settled against the agent list as always) and the request replaces
+ * it once the list shows the agent enabled; no conversation is opened before that.
+ */
+const queryText = (value: unknown) => (typeof value === "string" ? value : null);
+const requestedAgent = () => queryText(route.query.agentId);
+const agentId = ref<string | null>(readRememberedAgent());
 /**
  * The application's own pages, by the name the shell shows for them. The dashboards and the scheduled tasks are
  * applications of their own now, so nothing here leaves this application.
  */
 const featureRoutes = { agents: routes.agents };
-/** The settings' addresses: the editor of one agent, a new one, or the capability library. */
+/** The settings' addresses: the editor of one agent or a new one. */
 const SETTINGS_PATH = routes.agents.path;
 const settingsPath = (suffix = "") => `${SETTINGS_PATH}${suffix}`;
 const inSettings = computed(() => route.path === SETTINGS_PATH || route.path.startsWith(`${SETTINGS_PATH}/`));
@@ -77,8 +85,6 @@ const settingsAgentId = computed(() => {
   const id = route.params.agentId;
   return typeof id === "string" && !creatingAgent.value ? id : null;
 });
-const capabilityKind = computed(() => route.path === routes.agentSettingsMcp.path ? "tool" : "skill");
-const capabilitiesOpen = computed(() => [routes.agentSettingsSkills.path, routes.agentSettingsMcp.path, routes.agentSettingsCapabilities.path].some(path => path === route.path));
 /**
  * The page the shell shows: the settings are the `agents` page, whose addresses are the settings' own screens; every
  * other page names its route. Closing the page (a new conversation) returns to the conversation.
@@ -98,28 +104,19 @@ const featureId = computed<string | null>({
  * The open conversation. The address carries it while the settings are shown, so leaving them (or reloading) returns to
  * the conversation the reader came from instead of to a blank one.
  */
-const conversationId = ref<string | null>(typeof route.query.sessionId === "string" ? route.query.sessionId : null);
+const conversationId = ref<string | null>(
+  !requestedAgent() && typeof route.query.sessionId === "string" ? route.query.sessionId : null,
+);
 watch(
   () => route.query.sessionId,
   (id) => {
     if (typeof id === "string" && id !== conversationId.value) conversationId.value = id;
   },
 );
-const shell = ref<{ reloadAgents: () => Promise<void> } | null>(null);
+const shell = ref<InstanceType<typeof AgentShell> | null>(null);
 
-function readRemembered(): string | null {
-  try {
-    return localStorage.getItem(AGENT_KEY);
-  } catch {
-    return null;
-  }
-}
 watch(agentId, (id) => {
-  try {
-    if (id) localStorage.setItem(AGENT_KEY, id);
-  } catch {
-    // Remembering the agent is a convenience only.
-  }
+  if (id) rememberAgent(id);
 });
 
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
@@ -173,13 +170,44 @@ function createSettingsAgent() {
   void router.push(settingsPath("/new"));
 }
 
-/** The capability library, from the column's row and from the editor's button alike. */
-function openCapabilities(kind: "skill" | "tool" = "skill") {
-  void router.push({ name: kind === "tool" ? routes.agentSettingsMcp.name : routes.agentSettingsSkills.name });
-}
-
 /** The column's own entry at the foot: the agent settings, which replace the column while they are open. */
 const bottomEntry = computed(() => ({ label: t("assistant.featureAgents"), icon: "agents" }));
+
+/**
+ * Applies `?agentId=` once the agents are known. The link's parameters leave the address first, so a reload neither
+ * sends its question again nor reopens what it named; the page then follows its own conversation behaviour. A disabled
+ * or missing agent is reported and the page keeps the agent its own rule chose. An enabled one is selected, and then the
+ * named conversation opens, or a new one starts and, with a question, sends it as its first message.
+ */
+async function openRequestedAgent() {
+  const id = requestedAgent();
+  if (!id) return;
+  const session = queryText(route.query.sessionId);
+  const prompt = queryText(route.query.prompt);
+  const query = { ...route.query };
+  delete query.agentId;
+  delete query.sessionId;
+  delete query.prompt;
+  void router.replace({ query });
+  if (!nav.agents.value.some((agent) => agent.id === id && agent.enabled)) {
+    ElMessage.error(t("assistant.agentUnavailable"));
+    return;
+  }
+  agentId.value = id;
+  // Switching agents starts a new conversation in the navigation; what the link names comes after that.
+  await nextTick();
+  if (session) {
+    nav.selectSession(session);
+    return;
+  }
+  nav.startNew();
+  if (!prompt) return;
+  // The shell sends in the conversation it has open: let it take the agent and the new conversation first.
+  await nextTick();
+  await shell.value!.send(prompt);
+}
+// The same address entered while the page is open (another link to an agent) does the same.
+watch(() => route.query.agentId, openRequestedAgent);
 
 /** The board a conversation just added a dataset to: the dashboards application, opened on that board. */
 function openDashboardApplication(dashboardId: string) {
@@ -193,7 +221,7 @@ onMounted(async () => {
     ElMessage.error(t("appearance.loadFailed"));
   }
   // The column shows the list, so the agent platform loads it; the conversation only reads the state.
-  await nav.loadAgents().catch((error) => ElMessage.error(error instanceof Error ? error.message : String(error)));
+  await nav.loadAgents().then(openRequestedAgent, (error) => ElMessage.error(error instanceof Error ? error.message : String(error)));
   await nav.loadSessions();
 });
 
@@ -228,12 +256,9 @@ function appearanceSaved(value: WorkbenchAppearance) {
       <AgentSettingsNav
         :agent-id="settingsAgentId"
         :creating="creatingAgent"
-        :capabilities="capabilitiesOpen"
-        :capability-kind="capabilityKind"
         @back="backToChat"
         @select-agent="selectSettingsAgent"
         @create-agent="createSettingsAgent"
-        @open-capabilities="openCapabilities"
       />
     </template>
     <template #feature="{ featureId: page }">
@@ -241,19 +266,16 @@ function appearanceSaved(value: WorkbenchAppearance) {
         v-if="page === 'agents'"
         :agent-id="settingsAgentId"
         :creating="creatingAgent"
-        :capabilities="capabilitiesOpen"
-        :capability-kind="capabilityKind"
         @changed="shell?.reloadAgents()"
-        @open-capabilities="openCapabilities"
       />
       <slot v-else name="feature" :feature-id="page" />
     </template>
-    <template #dataset-selection-actions="{ artifact, selectedRowIndices, refreshConversation }">
-      <DatasetDrilldown :artifact="artifact" :selected-row-indices="selectedRowIndices" :refresh-conversation="refreshConversation" />
+    <template #dataset-selection-actions="{ artifact, title, selectedRowIndices }">
+      <DatasetDrilldown :artifact="artifact" :title="title" :selected-row-indices="selectedRowIndices" />
     </template>
-    <template #artifact-actions="{ artifact, refreshConversation }">
+    <template #artifact-actions="{ artifact, title }">
       <!-- A dataset added to a board opens the dashboards application, which is where boards live. -->
-      <DatasetActions :artifact="artifact" :refresh-conversation="refreshConversation" @open-dashboard="openDashboardApplication" />
+      <DatasetActions :artifact="artifact" :title="title" @open-dashboard="openDashboardApplication" />
     </template>
     <template #message-actions="{ sessionId, runId }">
       <TurnDiagnoseButton v-if="sessionId && runId" :session-id="sessionId" :run-id="runId" />
