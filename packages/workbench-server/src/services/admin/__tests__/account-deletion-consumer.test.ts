@@ -22,11 +22,11 @@ describe("account deletion delivery", () => {
     };
     await expect(consumeAccountDeletions(deps)).rejects.toThrow("runtime unavailable");
     expect(cursor).toBe("1");
-    expect(clean.mock.calls).toEqual([[ ["user-1"] ], [ ["user-2"] ]]);
+    expect(clean.mock.calls.map(([users]) => users)).toEqual([["user-1"], ["user-2"]]);
     clean.mockImplementation(async () => {});
     await consumeAccountDeletions(deps);
     expect(cursor).toBe("3");
-    expect(clean.mock.calls.slice(2)).toEqual([[ ["user-2"] ], [ ["user-3"] ]]);
+    expect(clean.mock.calls.slice(2).map(([users]) => users)).toEqual([["user-2"], ["user-3"]]);
   });
 
   it("repeats completed cleanup if cursor persistence failed", async () => {
@@ -46,7 +46,7 @@ describe("account deletion delivery", () => {
     const saveCursor = vi.fn(); const cleanup = vi.fn();
     const deps = { readCursor: async () => "0", readEvents, saveCursor, cleanup };
     await consumeAccountDeletions(deps);
-    expect(readEvents.mock.calls).toEqual([["0"], ["2"]]);
+    expect(readEvents.mock.calls.map(([after]) => after)).toEqual(["0", "2"]);
     readEvents.mockResolvedValue({ events: [event("2")], nextCursor: "9", hasMore: false });
     cleanup.mockClear();
     await expect(consumeAccountDeletions(deps)).rejects.toThrow("cursor");

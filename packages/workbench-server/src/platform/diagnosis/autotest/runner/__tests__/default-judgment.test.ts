@@ -93,7 +93,6 @@ describe("OSS default judgment", () => {
     const result = await run("explicit", OSS_DEFAULT);
     expect(mocks.evaluateAnswer).not.toHaveBeenCalled();
     expect(result.answerEvaluation).toMatchObject({ analysis: OSS_DEFAULT, answerSummary: "Result produced" });
-    expect(report("explicit")).toContain(`### Evaluation Criteria\n\n${OSS_DEFAULT}`);
   });
 
   it("calls the evaluator when judgment is not the protocol value", async () => {

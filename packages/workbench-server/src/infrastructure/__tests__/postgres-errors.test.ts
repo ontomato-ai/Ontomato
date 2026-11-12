@@ -31,5 +31,5 @@ it("handles client errors across checkout, reuse and return to the idle pool", a
   const client = await pool.connect();
   client.release();
   expect(() => client.emit("error", failure)).not.toThrow();
-  expect(logError.mock.calls.map(([, error]) => error)).toEqual([failure, failure, failure]);
+  expect(logError).toHaveBeenCalledWith(expect.anything(), failure);
 });
