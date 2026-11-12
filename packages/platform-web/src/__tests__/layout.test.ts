@@ -93,6 +93,42 @@ describe("the platform layout", () => {
     expect(wrapper.findAll(".rail-row")).toHaveLength(2);
   });
 
+  /*
+   * Which application draws its own menu is known only when the catalog arrives, after the page is already drawn. The
+   * menu is then inserted beside the page; the page is not mounted a second time (a second mount loses the clicks of
+   * its first second and sends its first requests twice).
+   */
+  it("keeps the page mounted when the catalog later gives its application a menu", async () => {
+    let mounts = 0;
+    const counted = defineComponent({ name: "counted", mounted: () => { mounts += 1; }, render: () => h("p", { class: "page-double" }, "counted") });
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: "/", component: { render: () => h(RouterView) }, children: [{ path: "/ontology/objects", component: counted }] }],
+    });
+    await router.push("/ontology/objects");
+    const wrapper = mount(PlatformLayout, {
+      props: {
+        apps: [],
+        shownPage: { title: "nav.objectTypes", ownHeader: true },
+        account: null,
+        preferences: { locales: ["en"], locale: "en", setLocale: () => {}, theme: "light", setTheme: () => {} },
+        labels,
+        pageActions: null,
+      },
+      global: { plugins: [router] },
+    });
+    mounted.push(wrapper);
+    await flushPromises();
+    expect(wrapper.find(".platform-app-menu").exists()).toBe(false);
+
+    const withMenu = partitionOf().map((app) => (app.id === "ontology" ? { ...app, frame: "menu" as const } : app));
+    await wrapper.setProps({ apps: appDeclarations(generatedNavigation(), closedAccess(["ontology-modeling"]), withMenu, t) });
+    await flushPromises();
+    expect(wrapper.find(".platform-app-menu").exists()).toBe(true);
+    expect(wrapper.find(".platform-page-body .page-double").exists()).toBe(true);
+    expect(mounts).toBe(1);
+  });
+
   it("marks the current application by the address, keeping it marked on a detail address", async () => {
     const { wrapper, router } = await mountLayout("/ontology/objects/Order", ["ontology-modeling"]);
     expect(rowName(wrapper.find(".rail-row.active"))).toBe("platform.ontologyManager");

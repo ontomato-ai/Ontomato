@@ -109,9 +109,13 @@ const headerShown = computed(
     :brand="brand"
     @select-app="emit('selectApp', $event)"
   >
-    <!-- The application's menu of its own (the ontology manager): its groups in their band, the page beside it. -->
-    <div v-if="menuPages.length > 0 && !blocked" class="platform-app-body has-menu">
-      <aside class="platform-app-menu">
+    <!--
+      One page area for every application, so the page is mounted once: the menu of an application that has its own (the
+      ontology manager) is inserted beside the page, never around it. Which application has a menu is known only when the
+      catalog arrives, after the page has been drawn; a page area per case would mount the page a second time then.
+    -->
+    <div class="platform-app-body" :class="{ 'has-menu': menuPages.length > 0 && !blocked }">
+      <aside v-if="menuPages.length > 0 && !blocked" class="platform-app-menu">
         <h2 class="app-menu-title">{{ activeApp?.label }}</h2>
         <AppPanelPages
           :groups="menuPages"
@@ -132,7 +136,12 @@ const headerShown = computed(
           @discard="pageActions?.discard()"
           @select-tab="router.push($event)"
         />
+        <div v-if="blocked" class="platform-blocked" role="alert">{{ blocked.message }}</div>
+        <!--
+          A page that draws its own header carries its own gutter; every other page gets it here, once, with the header's.
+        -->
         <div
+          v-else
           class="platform-page-body platform-page-gutter"
           :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null, 'browser-workspace': browserWorkspace, 'tabbed-workspace': pageTabs.length > 0 }"
         >
@@ -140,31 +149,6 @@ const headerShown = computed(
         </div>
       </div>
     </div>
-    <template v-else>
-      <PlatformPageHeader
-        v-if="headerShown"
-        :title="headerTitle"
-        :description="headerDescription"
-        :tabs="pageTabs.length > 0 ? pageTabs : undefined"
-        :active-path="activeTabPath"
-        :draft="pageActions"
-        :labels="{ save: labels.save, discard: labels.discard, unsavedChanges: labels.unsavedChanges }"
-        @save="pageActions?.save()"
-        @discard="pageActions?.discard()"
-        @select-tab="router.push($event)"
-      />
-      <div v-if="blocked" class="platform-blocked" role="alert">{{ blocked.message }}</div>
-      <!--
-        A page that draws its own header carries its own gutter; every other page gets it here, once, with the header's.
-      -->
-      <div
-        v-else
-        class="platform-page-body platform-page-gutter"
-        :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null, 'browser-workspace': browserWorkspace, 'tabbed-workspace': pageTabs.length > 0 }"
-      >
-        <RouterView />
-      </div>
-    </template>
   </PlatformShell>
 </template>
 
