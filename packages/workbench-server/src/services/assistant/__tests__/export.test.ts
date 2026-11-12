@@ -18,9 +18,6 @@ vi.mock("../service", () => ({
     content: async (_sessionId: string, id: string) => Buffer.from(files[id]),
   },
 }));
-vi.mock("../store", () => ({ assistantStore: {} }));
-vi.mock("../evidence", () => ({ readAssistantHistory: vi.fn() }));
-vi.mock("../../analysis-agent/delivery/ppt-generator", () => ({ generatePpt: vi.fn() }));
 vi.mock("../../analysis-agent/delivery/chart-renderer", () => ({ renderChartHtmlToDataUrl: vi.fn() }));
 
 describe("assistant report export references", () => {

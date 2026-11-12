@@ -1,4 +1,8 @@
 import "./env";
+import { installChartTheme } from "@ontomato/workbench-server/services/chart-theme";
+import { ossBrand } from "@ontomato/design-tokens/oss";
+installChartTheme({ color: [...ossBrand.dataviz.light], textStyle: { color: ossBrand.light.ink },
+  visualMap: { inRange: { color: [ossBrand.dataviz.light[7], ossBrand.light.primary] } } });
 import {
   installContentLayout,
   installRuntimeDefaults,

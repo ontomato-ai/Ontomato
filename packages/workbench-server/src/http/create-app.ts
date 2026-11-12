@@ -38,7 +38,6 @@ import preferencesRouter from "../api/routes/preferences";
 import personalWorkspaceRouter from "../api/routes/personal-workspace";
 import platformHomeRouter from "../api/routes/platform-home";
 import queryHistoryRouter from "../api/routes/query-history";
-import pptRouter from "../api/routes/ppt";
 import skillsRouter from "../api/routes/skills";
 import autotestRouter from "../platform/diagnosis/autotest/routes";
 import observeRouter from "../platform/diagnosis/observe/routes";
@@ -211,7 +210,6 @@ export function createWorkbenchApp(): Express {
   app.use("/api/personal-workspace", personalWorkspaceRouter);
   app.use("/api/memories", memoriesRouter);
 
-  app.use("/api/ppt", pptRouter);
   app.use("/api/skills", skillsRouter);
   app.use("/api/mcp", mcpRouter);
   app.use("/api/query-history", queryHistoryRouter);

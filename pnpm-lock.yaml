@@ -66,6 +66,9 @@ importers:
 
   apps/workbench:
     dependencies:
+      '@ontomato/design-tokens':
+        specifier: workspace:*
+        version: link:../../packages/design-tokens
       '@ontomato/workbench-server':
         specifier: workspace:*
         version: link:../../packages/workbench-server
@@ -82,9 +85,6 @@ importers:
       '@ontomato/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@ontomato/design-tokens':
-        specifier: workspace:*
-        version: link:../../packages/design-tokens
       '@ontomato/foundation-ui':
         specifier: workspace:*
         version: link:../../packages/foundation-ui
@@ -751,9 +751,6 @@ importers:
       playwright:
         specifier: 1.59.1
         version: 1.59.1
-      pptxgenjs:
-        specifier: 4.0.1
-        version: 4.0.1
       undici:
         specifier: 6.27.0
         version: 6.27.0
@@ -773,6 +770,9 @@ importers:
         specifier: 3.25.2
         version: 3.25.2(zod@3.25.76)
     devDependencies:
+      '@resvg/resvg-wasm':
+        specifier: 2.6.2
+        version: 2.6.2
       '@types/adm-zip':
         specifier: 0.5.8
         version: 0.5.8
@@ -800,6 +800,15 @@ importers:
       '@types/ws':
         specifier: 8.18.1
         version: 8.18.1
+      echarts:
+        specifier: 6.0.0
+        version: 6.0.0
+      esbuild:
+        specifier: 0.27.4
+        version: 0.27.4
+      pptxgenjs:
+        specifier: 4.0.1
+        version: 4.0.1
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -848,9 +857,6 @@ importers:
       pinia:
         specifier: 3.0.4
         version: 3.0.4(typescript@5.9.3)(vue@3.5.30(typescript@5.9.3))
-      pptxgenjs:
-        specifier: 4.0.1
-        version: 4.0.1
       prismjs:
         specifier: 1.30.0
         version: 1.30.0
@@ -1677,6 +1683,10 @@ packages:
 
   '@protobufjs/utf8@1.1.2':
     resolution: {integrity: sha512-b1UQwcEZ4yCnMCD8DAL1VlbvBJE9/IX4FTIp7BG1xYpf29SLazLSrqUkj4w7Y5y7cCVP6E5tcqqcI0xemPkHug==}
+
+  '@resvg/resvg-wasm@2.6.2':
+    resolution: {integrity: sha512-FqALmHI8D4o6lk/LRWDnhw95z5eO+eAa6ORjVg09YRR7BkcM6oPHU9uyC0gtQG5vpFLvgpeU4+zEAz2H8APHNw==}
+    engines: {node: '>= 10'}
 
   '@rollup/rollup-android-arm-eabi@4.63.4':
     resolution: {integrity: sha512-I+BSHzTAhKN2n7ZwGZsegGcZjDpLqFOMAtJz/u6uFGe0pUFbq56dEHjqJV/ZUdRJtNXNxA+hREUatZBvMR3Oiw==}
@@ -5681,6 +5691,8 @@ snapshots:
   '@protobufjs/pool@1.1.0': {}
 
   '@protobufjs/utf8@1.1.2': {}
+
+  '@resvg/resvg-wasm@2.6.2': {}
 
   '@rollup/rollup-android-arm-eabi@4.63.4':
     optional: true

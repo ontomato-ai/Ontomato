@@ -631,8 +631,6 @@ export default {
     "taskErrorAdmissionFailed": "Could not start",
     "taskErrorRunUnavailable": "The run is no longer available",
     "taskErrorInterrupted": "Interrupted",
-    "exportPpt": "Export conversation as PPT",
-    "exportFailed": "Export failed",
     "selectRow": "Select row {row}",
     "selectedRows": "{count} selected",
     "analyzeSelection": "Analyze selection",

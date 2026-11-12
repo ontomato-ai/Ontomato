@@ -16,12 +16,12 @@
   "dependencies": {
     "@ontomato/workbench-server": "workspace:*",
     "dotenv": "16.6.1",
-    "tsx": "4.21.0"
+    "tsx": "4.21.0",
+    "@ontomato/design-tokens": "workspace:*"
   },
   "devDependencies": {
     "@ontomato/apps-sdk": "workspace:*",
     "@ontomato/contracts": "workspace:*",
-    "@ontomato/design-tokens": "workspace:*",
     "@ontomato/foundation-ui": "workspace:*",
     "@ontomato/markdown": "workspace:*",
     "@ontomato/ontology-manager": "workspace:*",

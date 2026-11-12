@@ -1,7 +1,5 @@
 import { modelSelectionSchema } from "@ontomato/contracts/model-settings";
 import { readDiagnosisModel, saveDiagnosisModel } from "../../services/ops-diagnosis/model-settings";
-import { exportConversationPpt } from "../../services/assistant/export";
-import { safePptFileName } from "../../services/analysis-agent/delivery/ppt-artifacts";
 import { requirePermission } from "../../identity/installed";
 import { assertAppBuilderAccess } from "../../services/app-builder/access";
 import { assistantSkillCatalog } from "../../services/assistant/skills";
@@ -26,7 +24,6 @@ import { agentTasksFrameSchema } from "@ontomato/contracts/agent-tasks";
 import { setTimeout as delay } from "node:timers/promises";
 import { publicFrame, publicSnapshot } from "../../platform/agent-runtime/projection";
 import { readRuntimeFrames } from "../../infrastructure/agent-runtime/client";
-import { buildAttachmentContentDisposition } from "../utils/http";
 const router: ReturnType<typeof Router> = Router(),
   uuid = z.string().uuid(),
   TASK_READ_MS = 2000;
@@ -179,29 +176,6 @@ router.put(
         context(req).credentials.locale,
       ),
     );
-  }),
-);
-router.post(
-  "/sessions/:sessionId/export/ppt",
-  wrap(async (req, res) => {
-    const controller = new AbortController();
-    res.on("close", () => {
-      if (!res.writableEnded) controller.abort();
-    });
-    const { buffer } = await exportConversationPpt(
-      id(req, "sessionId"),
-      context(req).owner,
-      controller.signal,
-    );
-    res
-      .set({
-        "Content-Type":
-          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        "Content-Disposition": buildAttachmentContentDisposition(
-          safePptFileName("conversation"),
-        ),
-      })
-      .send(buffer);
   }),
 );
 router.get(

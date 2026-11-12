@@ -2,7 +2,6 @@ import { withScheduledUserActivity } from "../assistant/scheduled-activity";
 import { deleteUserState } from "../assistant/user-state";
 import { createLogger } from "../../logging/logger";
 import { toErrorMessage } from "../../utils/errors";
-import { pptArtifactStore } from "../analysis-agent/delivery/ppt-artifacts";
 import { deleteUserAssistantSessions } from "../assistant/cleanup";
 import { deleteUserDashboards } from "../dashboard/store";
 import { deleteUserHomeData } from "../platform-home/store";
@@ -13,7 +12,6 @@ const stages: [string, (userId: string) => Promise<void>][] = [
   ["dashboards", deleteUserDashboards],
   ["home preferences and application usage", deleteUserHomeData],
   ["memory and preferences", deleteUserState],
-  ["PPT artifacts", (id) => pptArtifactStore().deleteByUser(id)],
 ];
 
 /** Complete cleanup of a deleted global account; any failed stage leaves its event unacknowledged. */

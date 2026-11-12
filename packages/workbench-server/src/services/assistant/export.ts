@@ -1,9 +1,6 @@
-import type { PptSourceSection } from "@ontomato/contracts/ppt";
-import { assistantStore, type AssistantOwner } from "./store";
+import { type AssistantOwner } from "./store";
 import { assistantService } from "./service";
-import { readAssistantHistory } from "./evidence";
 import { renderChartHtmlToDataUrl } from "../analysis-agent/delivery/chart-renderer";
-import { generatePpt } from "../analysis-agent/delivery/ppt-generator";
 import { HttpError } from "../../utils/errors";
 import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
 import { exportChartTheme } from "../chart-theme";
@@ -58,58 +55,4 @@ export async function exportMarkdown(
     markdown = markdown.replace(match[0], rendered);
   }
   return markdown;
-}
-export async function exportConversationPpt(
-  sessionId: string,
-  owner: AssistantOwner,
-  signal?: AbortSignal,
-) {
-  const session = await assistantStore.session(sessionId, owner),
-    history = await readAssistantHistory(sessionId, owner),
-    sections: PptSourceSection[] = [];
-  for (const turn of history.turns) {
-    sections.push({
-      id: turn.turnId,
-      heading: turn.question,
-      content: await exportMarkdown(
-        sessionId,
-        turn.turnId,
-        turn.answer,
-        owner,
-        signal,
-      ),
-    });
-    for (const q of turn.queries)
-      for (const d of q.datasetsPayload ?? []) {
-        const columns = [
-          ...new Set(
-            (d.rows as Record<string, unknown>[]).flatMap((r) =>
-              Object.keys(r),
-            ),
-          ),
-        ];
-        sections.push({
-          id: d.id,
-          heading: d.title,
-          content: d.truncationHint ?? "",
-          tables: [
-            {
-              columns,
-              rows: d.rows.map((r: Record<string, unknown>) =>
-                columns.map((c) => r[c]),
-              ),
-            },
-          ],
-          ...(d.truncated
-            ? {
-                truncated: d.truncated,
-                rowLimit: d.rowLimit,
-                truncationHint: d.truncationHint,
-              }
-            : {}),
-        });
-      }
-  }
-  if (!sections.length) throw new HttpError(400, "Conversation is empty");
-  return generatePpt(session.title, sections, {}, signal);
 }
