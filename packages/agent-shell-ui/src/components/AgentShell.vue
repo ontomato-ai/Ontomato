@@ -40,7 +40,8 @@ import ShellSidePanel from "./ShellSidePanel.vue";
  * `pageContext` line, so the agent knows what "this" refers to. Such a page may fill `page-header` (its own controls, in
  * the row of the shell's expand and close buttons) and `composer-context` (with whichever composer is in view: above
  * the conversation's, `inline` in the full page's single row; `pageOpen` tells whether a message sent now carries the
- * page context).
+ * page context; `sending` tells that a message is on its way and its run not admitted yet, so a new conversation may
+ * not have its id while it is true).
  *
  * `run` reports the open conversation's run starting and stopping, with the workspace commit a stopped run saved.
  */
@@ -280,7 +281,7 @@ onMounted(() => {
         @load-older="conversation.loadOlder"
       >
         <template v-if="slots['composer-context']" #composer-context>
-          <slot name="composer-context" :page-open="pairedPage" :inline="false" />
+          <slot name="composer-context" :page-open="pairedPage" :inline="false" :sending="conversation.sending.value" />
         </template>
       </ShellConversation>
     </main>
@@ -301,7 +302,7 @@ onMounted(() => {
         <slot name="page-header" :feature-id="featureId" :view="pageView" />
       </template>
       <template v-if="slots['composer-context']" #composer-context>
-        <slot name="composer-context" :page-open="true" :inline="true" />
+        <slot name="composer-context" :page-open="true" :inline="true" :sending="conversation.sending.value" />
       </template>
       <slot name="feature" :feature-id="featureId" :view="pageView" />
     </ShellPagePane>
