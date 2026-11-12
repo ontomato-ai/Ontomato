@@ -10,6 +10,9 @@ import { appDeclarations } from "./partition";
 import { catalogPartition, type NativeLayout } from "./native-layouts";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useApplicationCatalog } from "./catalog";
+import { nodeApiRequest } from "@ontomato/workbench-ui";
+import { appAt } from "./apps";
+import { recentDestination } from "./recent-work";
 import { openApplicationKey, platformApplicationsKey, platformBrandKey, type PlatformAppDeclaration } from "./apps";
 import { useApplicationOpening } from "./application-opening";
 
@@ -92,6 +95,17 @@ provide(openApplicationKey, openApplication);
 provide(platformApplicationsKey, declarations);
 const shellBrand = props.brand ?? { name: "Ontomato" };
 provide(platformBrandKey, shellBrand);
+
+const recentVisit = computed(() => {
+  if (catalog.loading.value || catalog.error.value || host.blocked?.value) return null;
+  const destination = recentDestination(route, appAt(declarations.value, route.path) ?? undefined);
+  return destination ? JSON.stringify(destination) : null;
+});
+watch(recentVisit, destination => {
+  if (destination) void nodeApiRequest("/api/personal-workspace/recent", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: destination,
+  }).catch(() => { /* Recording a visit must not interrupt the page being opened. */ });
+}, { immediate: true });
 
 /** Each language retains its own name when the UI locale changes. */
 const localeNames = computed(() =>

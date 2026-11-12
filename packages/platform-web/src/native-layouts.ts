@@ -3,6 +3,7 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import type { AppPartition } from "./partition";
 export type NativeLayout = Pick<AppPartition, "sections" | "frame" | "home" | "homePage" | "open" | "descriptionKey">;
 const layouts: readonly (NativeLayout & { renderer: string })[] = [
+  { renderer: "personal-workspace", sections: [] },
   // The platform's home draws its own page: no column, no header of the shell's.
   { renderer: "home", sections: [] },
   {
@@ -117,9 +118,14 @@ export const nativeLayouts: Record<string, NativeLayout> = Object.fromEntries(la
 
 export function catalogPartition(applications: import("@ontomato/contracts/platform-identity").CatalogApplication[], locale: string,
   renderers: Record<string, NativeLayout> = {}): AppPartition[] {
-  return applications.map((app) => {
+  return applications.filter(app => app.kind === "hosted" || app.kind === "connected"
+    || Boolean(nativeLayouts[app.entry.renderer!] || renderers[app.entry.renderer!])).map((app) => {
     const embedded = app.kind === "hosted" || app.kind === "connected";
-    const layout = embedded ? { sections: [] } : { ...nativeLayouts[app.entry.renderer!], ...renderers[app.entry.renderer!] };
+    // Catalog entries may precede their renderer or an edition's asynchronous layout registration.
+    const layout: NativeLayout = embedded ? { sections: [] } : {
+      ...nativeLayouts[app.entry.renderer!], ...renderers[app.entry.renderer!],
+      sections: renderers[app.entry.renderer!]?.sections ?? nativeLayouts[app.entry.renderer!]?.sections ?? [],
+    };
     return { ...layout, id: app.id, label: app.names[locale] ?? app.names.en!, description: app.descriptions[locale] ?? ("descriptionKey" in layout && layout.descriptionKey ? undefined : app.descriptions.en ?? null), icon: app.icon, rail: app.rail, category: app.category,
       prefix: embedded ? `/applications/${app.id}` : app.entry.path,
       home: embedded ? `/applications/${app.id}` : app.entry.home ?? layout.home };
