@@ -51,4 +51,7 @@ it("cuts a long title to the drawn width and hides overlapping category labels, 
   expect(result.yAxis).toEqual({ type: "value" });
   expect(chartReadingLayout({ ...source, xAxis: [{ data: ["a"], axisLabel: { hideOverlap: false } }] }, 320, "inline").xAxis[0].axisLabel.hideOverlap).toBe(false);
   expect(chartReadingLayout(source, 320, "inline").title).toEqual(source.title);
+  // A forced interval would keep every label on a narrow column; spacing them out is left to ECharts.
+  expect(chartReadingLayout({ xAxis: { type: "category", axisLabel: { interval: 0, rotate: 25 } } }).xAxis.axisLabel)
+    .toMatchObject({ interval: "auto", rotate: 25, hideOverlap: true });
 });

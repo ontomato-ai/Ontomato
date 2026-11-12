@@ -10,13 +10,16 @@ export function chartReadingLayout(source: Option, height = 320, presentation: "
   const option = structuredClone(source);
   // The card header names the chart and the tooltip names each category, so neither is lost on screen.
   const each = (value: Option | Option[], change: (item: Option) => Option) => Array.isArray(value) ? value.map(change) : change(value);
+  // Forcing every label (interval 0) stops ECharts from spacing them out; where they fit, they all still show.
+  const hideOverlapping = (label: Option | undefined) => label?.hideOverlap === false ? label
+    : { ...label, hideOverlap: true, ...(label?.interval === 0 ? { interval: "auto" } : {}) };
   if (width && option.title) {
     const fit = (style: Option | undefined) => ({ ...style, width: width - 24, overflow: style?.overflow ?? "truncate" });
     option.title = each(option.title, (title) => ({ ...title, textStyle: fit(title.textStyle), subtextStyle: fit(title.subtextStyle) }));
   }
   for (const key of ["xAxis", "yAxis"]) if (option[key]) option[key] = each(option[key], (axis) =>
     axis.type === "category" || (axis.type == null && Array.isArray(axis.data))
-      ? { ...axis, axisLabel: { ...axis.axisLabel, hideOverlap: axis.axisLabel?.hideOverlap ?? true } }
+      ? { ...axis, axisLabel: hideOverlapping(axis.axisLabel) }
       : axis);
   const series = [option.series ?? []].flat();
   const pies = series.filter((item) => item.type === "pie");
