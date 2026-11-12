@@ -15,7 +15,7 @@ import type {
 
 export interface ConversationMessage {
   id: string;
-  runId: string;
+  runId: string | null;
   /** Session message sequence once settled; pending partials sort after settled history. */
   messageSeq: number | null;
   arrival: number;
@@ -60,13 +60,14 @@ export function emptyConversation(sessionId: string | null = null): Conversation
 function upsertMessage(
   state: ConversationState,
   id: string,
-  runId: string,
+  runId: string | null,
   message: RuntimeMessage,
   messageSeq: number | null,
 ) {
   const existing = state.messages[id];
   if (existing) {
     existing.message = message;
+    existing.runId = runId ?? existing.runId;
     if (messageSeq !== null) existing.messageSeq = messageSeq;
     return;
   }
@@ -150,6 +151,7 @@ export function applyHistoryPage(state: ConversationState, page: AgentHostSessio
   }
   for (const record of page.messages) {
     upsertMessage(state, record.id, record.runId, record.message, record.messageSeq);
+    if (!record.runId) continue;
     const run = ensureRun(state, record.runId), message = record.message;
     if (message.role === "assistant") {
       for (const block of message.content) {
@@ -234,6 +236,10 @@ export function applyEnvelope(state: ConversationState, envelope: RuntimeEventEn
     return false;
   run.cursor = { seq: envelope.cursor.seq, streamId: envelope.cursor.streamId };
   const event = envelope.event;
+  if (event.type === "notification_received") {
+    upsertMessage(state, event.messageId, null, event.message, event.messageSeq);
+    return true;
+  }
   switch (event.type) {
     case "agent_start":
       run.status = "running";
@@ -309,4 +315,9 @@ export function orderedMessages(state: ConversationState): ConversationMessage[]
     if (b.messageSeq !== null) return 1;
     return a.arrival - b.arrival;
   });
+}
+
+/** Receipt and later consumption merge by the same identity, even before there is a run. */
+export function applyNotifications(state: ConversationState, records: AgentHostSessionHistory["messages"]) {
+  for (const record of records) upsertMessage(state, record.id, record.runId, record.message, record.messageSeq);
 }

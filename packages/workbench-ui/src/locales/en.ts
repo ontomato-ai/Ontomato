@@ -602,6 +602,7 @@ export default {
     "addingToDashboard": "Settling the metric and planning the chart. This can take a minute or two.",
     "taskRetriever": "Retriever",
     "taskRunning": "Running",
+    "taskStarting": "Preparing",
     "taskCompleted": "Done",
     "taskFailed": "Failed",
     "taskCancelled": "Cancelled",

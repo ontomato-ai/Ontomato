@@ -1,5 +1,5 @@
 import type { RuntimeJsonValue, RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
-import type { AgentTasksSnapshot, QualityResult, QualityTask, RetrievalTask } from "@ontomato/contracts/agent-tasks";
+import type { AgentTasksSnapshot, QualityResult, QualityTask, RetrievalTask, ChannelAgentTask } from "@ontomato/contracts/agent-tasks";
 import { orderedMessages, type ConversationState } from "./conversation";
 import { skillOfCommand } from "./tools";
 import type { ProcessStepView } from "./types";
@@ -13,7 +13,7 @@ export type ProcessStep = ProcessStepView;
 export type ProcessBlock =
   | { kind: "note"; key: string; text: string; final: boolean; runId: string }
   | { kind: "steps"; key: string; steps: ProcessStep[]; active: boolean }
-  | { kind: "task"; key: string; task: RetrievalTask };
+  | { kind: "task"; key: string; task: RetrievalTask | ChannelAgentTask };
 
 /** Another party's review of the reply's data: one quality check of one retrieval branch. */
 export interface ResponseReview {
@@ -49,7 +49,7 @@ export interface ResponseItem {
   finishedAt: number | null;
 }
 
-export type ConversationItem = UserItem | ResponseItem;
+export type ConversationItem = UserItem | ResponseItem | { kind: "notification"; key: string; text: string; error?: boolean };
 
 /** Generic one-line summary of a tool call: the first short string argument. */
 export function toolSummary(args: Record<string, RuntimeJsonValue>): string {
@@ -75,10 +75,11 @@ function userText(content: string | { type: string; text?: string }[]): string {
  */
 export function conversationItems(state: ConversationState, tasks: AgentTasksSnapshot | null = null): ConversationItem[] {
   const items: ConversationItem[] = [];
-  const retrievals = new Map<string, RetrievalTask[]>();
+  const retrievals = new Map<string, Array<RetrievalTask | ChannelAgentTask>>();
   const reviews = new Map<string, ResponseReview[]>();
   for (const task of tasks?.tasks ?? []) {
-    if (task.kind === "retrieval") {
+    if (task.kind === "retrieval" || task.kind === "agent") {
+      if (task.kind === "agent" && task.parentTaskId !== null) continue;
       retrievals.set(task.root.runId, [...(retrievals.get(task.root.runId) ?? []), task]);
       continue;
     }
@@ -132,8 +133,15 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
     if (message.role === "user") {
       response = null;
       items.push({ kind: "user", key: entry.id, text: userText(message.content) });
+      for (const failure of tasks?.preparationFailures ?? []) if (failure.inputId === entry.id) items.push({ kind: "notification",key: `preparation:${failure.runId}`,text: failure.error,error: true });
       continue;
     }
+    if (message.role === "notification") {
+      items.push({ kind: "notification", key: entry.id, text: message.content });
+      for (const failure of tasks?.preparationFailures ?? []) if (failure.inputId === entry.id) items.push({ kind: "notification",key: `preparation:${failure.runId}`,text: failure.error,error: true });
+      continue;
+    }
+    if (!entry.runId) continue;
     const current = openResponse(entry.runId);
     place(current, message.timestamp);
     const run = state.runs[entry.runId];
@@ -151,7 +159,7 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
       const key = `${entry.id}:${index}`;
       if (block.type === "text") {
         if (!block.text || answer) return;
-        current.process.push({ kind: "note", key, text: block.text, final: settled, runId: entry.runId });
+        current.process.push({ kind: "note", key, text: block.text, final: settled, runId: current.runId });
         return;
       }
       let process = current.process.at(-1);

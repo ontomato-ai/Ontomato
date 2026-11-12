@@ -86,6 +86,7 @@ return computed<ShellLabels>(() => ({
   tasks: {
     retriever: t("assistant.taskRetriever"),
     status: {
+      starting: t("assistant.taskStarting"),
       running: t("assistant.taskRunning"),
       completed: t("assistant.taskCompleted"),
       failed: t("assistant.taskFailed"),

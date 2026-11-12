@@ -50,6 +50,8 @@ verbatim; there is no model-generated title and no follow-up suggestion.
 
 ## List run state
 
+When another entry point starts a new run in the currently open conversation, the shell attaches to its snapshot and event stream through the page's existing feed.
+
 A row's `latestRun` follows the runtime, not the conversation that happens to be
 open. The host's own notice routes ([agent-host.md](agent-host.md)) are the source:
 `sessionRuns` on the client is a passive port whose `subscribe` opens the one

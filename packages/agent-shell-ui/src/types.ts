@@ -223,7 +223,7 @@ export interface ShellLabels {
 export interface ShellTaskLabels {
   /** The retrieval task's executor, the retriever agent. */
   retriever: string;
-  status: Record<"running" | "completed" | "failed" | "cancelled", string>;
+  status: Record<"starting" | "running" | "completed" | "failed" | "cancelled", string>;
   /** A retrieval round's branches: the metric binding results and the retriever's own. */
   branch: Record<"binding" | "retriever", string>;
   rows: (count: number) => string;

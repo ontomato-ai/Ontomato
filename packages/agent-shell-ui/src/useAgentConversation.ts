@@ -11,6 +11,7 @@ import {
   applyHistoryPage,
   applyHistoryLive,
   emptyConversation,
+  applyNotifications,
   findArtifact,
   type ConversationState,
 } from "./conversation";
@@ -69,7 +70,10 @@ export function useAgentConversation(port: () => AgentHostClient, agent: () => s
     if (!host) return;
     detachTasks = host.subscribe(sessionId, {
       frame(frame) {
-        if (selection === token) tasks.value = { sessionId: frame.sessionId, tasks: frame.tasks, qualityResults: frame.qualityResults };
+        if (selection === token) {
+          tasks.value = { sessionId: frame.sessionId, tasks: frame.tasks, qualityResults: frame.qualityResults, preparationFailures: frame.preparationFailures };
+          if (frame.notifications) applyNotifications(state, frame.notifications);
+        }
       },
       error() {
         if (selection !== token) return;
@@ -207,12 +211,8 @@ export function useAgentConversation(port: () => AgentHostClient, agent: () => s
       if (createdSession) state.sessionId = createdSession.id;
       const snapshot = await client.startRun(state.sessionId!, text);
       if (current !== token) return moved() ? null : { createdSession, snapshot };
-      applyRunSnapshot(state, snapshot);
-      for (const message of snapshot.messages) knownMessageSeq = Math.max(knownMessageSeq, message.messageSeq);
+      attach(snapshot);
       pendingInput.value = null;
-      artifactRevision.value++;
-      followTasks(state.sessionId!);
-      stream.start(subscription(snapshot.run.id));
       return { createdSession, snapshot };
     } catch (error) {
       if (current === token) {
@@ -224,6 +224,21 @@ export function useAgentConversation(port: () => AgentHostClient, agent: () => s
     } finally {
       if (current === token) sending.value = false;
     }
+  }
+
+  function attach(snapshot: AgentHostRunSnapshot) {
+    applyRunSnapshot(state, snapshot);
+    for (const message of snapshot.messages) knownMessageSeq = Math.max(knownMessageSeq, message.messageSeq);
+    artifactRevision.value++;
+    followTasks(state.sessionId!);
+    stream.start(subscription(snapshot.run.id));
+  }
+  async function followRun(runId: string) {
+    const selected = token, session = state.sessionId;
+    if (!session || sending.value || state.runs[runId] || activeRunId.value === runId) return;
+    const snapshot = await port().readRun(session, runId);
+    if (selected !== token || sending.value || state.runs[runId]) return;
+    attach(snapshot);
   }
 
   /*
@@ -278,6 +293,7 @@ export function useAgentConversation(port: () => AgentHostClient, agent: () => s
     activeRunId,
     artifactRevision,
     open,
+    followRun,
     send,
     cancel,
     resolveArtifact,

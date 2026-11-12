@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
+import { computed, inject, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
 import { PanelRightOpen } from "lucide-vue-next";
 import { shellContextKey, type ShellContext } from "../context";
 import type { AgentHostClient } from "../host";
@@ -13,6 +13,7 @@ import type {
   ShellWorkbenchDeclaration,
   ToolRendererOverride,
 } from "../types";
+import { sessionRunNotices } from "../session-run-notices";
 import { useAgentConversation } from "../useAgentConversation";
 import ShellColumn from "./ShellColumn.vue";
 import ShellConversation from "./ShellConversation.vue";
@@ -84,6 +85,11 @@ const openArtifact = ref<OpenArtifact | null>(null);
 const taskFocus = ref<{ taskId: string; at: number } | null>(null);
 
 const conversation = useAgentConversation(() => props.client, () => agentId.value);
+const notice = inject(sessionRunNotices, null);
+if (notice) watch(notice, frame => {
+  if (frame?.type !== "run_started" || frame.sessionId !== conversation.state.sessionId || conversation.sending.value || frame.runId in conversation.state.runs || frame.runId === conversation.activeRunId.value) return;
+  void conversation.followRun(frame.runId).catch(report);
+});
 const nav = props.nav;
 const { currentAgent } = nav;
 const currentFeature = computed(() => props.workbench.features.find((feature) => feature.id === featureId.value) ?? null);

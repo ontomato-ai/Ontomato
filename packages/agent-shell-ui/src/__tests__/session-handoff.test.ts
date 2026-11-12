@@ -1,6 +1,9 @@
+import { useSessionRunFeed } from "../useSessionRunFeed";
+import type { SessionRunPort, SessionRunHandlers } from "../host";
 import { afterEach, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick, ref, shallowRef, type App } from "vue";
 import AgentShell from "../components/AgentShell.vue";
+import type { AgentHostRunSnapshot } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "../host";
 import { useAgentNav, type AgentNav } from "../useAgentNav";
 import type { ShellLabels, ShellWorkbenchDeclaration } from "../types";
@@ -14,9 +17,9 @@ const runId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const otherSessionId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const other = { id: otherSessionId, agentId, title: "Earlier", origin: "user", createdAt: new Date(0).toISOString(), latestRun: null };
 const created = { id: createdSessionId, agentId, title: "", origin: "user", createdAt: new Date(0).toISOString(), latestRun: null };
-const admitted = {
+const admitted: AgentHostRunSnapshot = {
   run: {
-    id: runId, sessionId: createdSessionId, status: "running", stopReason: null, errorMessage: null, workspaceCommit: null,
+    id: runId, sessionId: createdSessionId, status: "running", stopReason: null, errorMessage: null, answerMessageId: null, workspaceCommit: null,
     createdAt: new Date(0).toISOString(), finishedAt: null, resolvedSkills: [],
   },
   cursor: { runId, seq: 1, streamId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd" },
@@ -53,7 +56,7 @@ async function settle() {
 }
 
 /** The app builder's arrangement: one shell whose `client` changes with the workspace, the host owning the session. */
-function render(first: AgentHostClient) {
+function render(first: AgentHostClient, feed?: SessionRunPort) {
   const client = shallowRef(first);
   const sessionId = ref<string | null>(null);
   const shell = ref<{ send(text: string): Promise<void> } | null>(null);
@@ -67,6 +70,7 @@ function render(first: AgentHostClient) {
         sessionId: () => sessionId.value,
         setSessionId: (id) => (sessionId.value = id),
       });
+      if (feed) useSessionRunFeed({ port: feed, sessions: () => nav.sessions.value, onError: error => { throw error; } });
       return () =>
         h(
           AgentShell,
@@ -169,4 +173,47 @@ it("drops a first message on its way as soon as the host moves to another contex
   expect(sessionId.value).toBeNull();
   expect(root.querySelector(".unstarted")!.textContent).toBe("true");
   expect(root.textContent).not.toContain("for workspace A");
+});
+
+
+it("attaches an externally started run through the page feed without reopening history", async () => {
+  let handlers!: SessionRunHandlers;
+  const host = port(async () => admitted);
+  host.readRun = vi.fn(async () => admitted) as AgentHostClient["readRun"];
+  host.subscribe = vi.fn(() => () => {});
+  (host.readHistory as ReturnType<typeof vi.fn>).mockResolvedValue({ session: created, messages: [], runs: [], latestRun: null, page: { messageSeq: 0, olderCursor: null } });
+  const feed: SessionRunPort = { read: vi.fn(async () => ({ sessions: [] })), subscribe: vi.fn(value => { handlers = value; return () => {}; }) };
+  const view = render(host, feed);
+  view.sessionId.value = createdSessionId;
+  await settle();
+  await handlers.frame({ type: "run_started", sessionId: createdSessionId, runId });
+  await settle();
+  expect(host.readRun).toHaveBeenCalledTimes(1);
+  expect(host.readHistory).toHaveBeenCalledTimes(1);
+  expect(host.subscribe).toHaveBeenCalledTimes(1);
+  await handlers.frame({ type: "run_started", sessionId: createdSessionId, runId });
+  await settle();
+  expect(host.readRun).toHaveBeenCalledTimes(1);
+  expect(feed.subscribe).toHaveBeenCalledTimes(1);
+});
+
+it("does not attach its own start notice before the send response and preserves first-message handoff", async () => {
+  let admit!: (snapshot: unknown) => void, handlers!: SessionRunHandlers;
+  const host = port(() => new Promise(resolve => { admit = resolve; }));
+  host.readRun = vi.fn() as AgentHostClient["readRun"];
+  host.subscribe = vi.fn(() => () => {});
+  const feed: SessionRunPort = { read: vi.fn(async () => ({ sessions: [] })), subscribe: value => { handlers = value; return () => {}; } };
+  const view = render(host, feed);
+  await settle();
+  const sent = view.shell.value!.send("hello");
+  await settle();
+  await handlers.frame({ type: "run_started", sessionId: createdSessionId, runId });
+  await settle();
+  expect(host.readRun).not.toHaveBeenCalled();
+  admit(admitted);
+  await sent;
+  await settle();
+  expect(view.sessionId.value).toBe(createdSessionId);
+  expect(host.subscribe).toHaveBeenCalledTimes(1);
+  expect(view.root.querySelector(".unstarted")!.textContent).toBe("false");
 });
