@@ -338,13 +338,8 @@ export class AgentRuntime {
   }
   private publishSessionRun(scope: Scope, frame: RuntimeSessionRunFrame) {
     const id = canonical([scope.hostId, scope.domainId]);
-    for (const subscriber of this.sessionRunSubscribers.get(id) ?? []) {
-      try {
-        subscriber(frame);
-      } catch {
-        this.sessionRunSubscribers.get(id)?.delete(subscriber);
-      }
-    }
+    for (const subscriber of this.sessionRunSubscribers.get(id) ?? [])
+      subscriber(frame);
   }
   private async emit(active: Active, event: RuntimeAgentEvent) {
     return this.locked(active.scope, active.run.sessionId, async () => {

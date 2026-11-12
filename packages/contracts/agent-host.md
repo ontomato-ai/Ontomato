@@ -52,11 +52,11 @@ The upstream `ready` is forwarded only after the runtime registered the subscrip
 Later `run_started`/`run_stopped` frames carry `sessionId` and `runId` only and are
 forwarded only while the entry's existing session read rule allows that caller;
 unreadable sessions are dropped and nothing is replayed. `POST /sessions/status`
-returns the requested readable sessions in request order, empty input gives an empty
-list, and `latestRun:null` only means a readable session has no run yet. One
-unreadable ID rejects the whole read with the entry's normal 404. After `ready` or a
-notice the shell reads this snapshot; a send response and the currently open
-conversation do not write list state.
+returns only the requested sessions this caller may read, in request order; IDs that
+are missing or hidden are dropped without an error, and all-unreadable or empty input
+gives an empty list. `latestRun:null` only means a readable session has no run yet.
+After `ready` or a notice the shell reads this snapshot; a send response and the
+currently open conversation do not write list state.
 
 Sessions retain their agent and may carry `origin`: absent or `user` when the user
 started them, `scheduled` when one of the user's scheduled tasks did (workbench

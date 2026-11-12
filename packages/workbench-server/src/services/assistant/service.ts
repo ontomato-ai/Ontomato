@@ -168,8 +168,8 @@ export const assistantService = {
           : null,
     };
   },
-  async canReadSession(owner: AssistantOwner, id: string) {
-    return assistantStore.canReadSession(id, owner);
+  async readableSessions(owner: AssistantOwner, ids: string[]) {
+    return assistantStore.readableSessions(owner, ids);
   },
   async history(id: string, owner: AssistantOwner, query: SessionHistoryQuery) {
     await assistantStore.session(id, owner);

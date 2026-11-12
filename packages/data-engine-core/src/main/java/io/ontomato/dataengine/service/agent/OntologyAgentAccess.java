@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.service.*;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 /** Authenticated request context is captured before leaving the servlet thread. */
 @Service
@@ -174,8 +175,8 @@ public class OntologyAgentAccess {
       }
     }
 
-    public String domainId() {
-      return owner.domainId();
+    public OntologyAgentStore.Owner owner() {
+      return owner;
     }
   }
 
@@ -186,13 +187,14 @@ public class OntologyAgentAccess {
         context.owner(), identity.hasKnowledgeGovernanceAccess(), queryAllowed());
   }
 
-  /** The capability check denies by throwing; session and storage failures still propagate. */
+  /** Only the capability's own 403 means no query permission; every other failure propagates. */
   private boolean queryAllowed() {
     try {
       identity.requireQueryAccess();
       return true;
-    } catch (RuntimeException denied) {
-      return false;
+    } catch (ResponseStatusException denied) {
+      if (denied.getStatusCode().value() == 403) return false;
+      throw denied;
     }
   }
 }

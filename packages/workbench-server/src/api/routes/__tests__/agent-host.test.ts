@@ -51,10 +51,17 @@ function fakeService() {
     service: {
       agents: async (caller: AgentHostOwner) => (own(caller), { agents: [] }),
       list: async (caller: AgentHostOwner) => (own(caller), { sessions: [view], nextCursor: null }),
-      canReadSession: async (caller: AgentHostOwner, session: string) =>
-        caller.domainId === owner.domainId &&
-        caller.userId === owner.userId &&
-        readable.has(session),
+      readableSessions: async (caller: AgentHostOwner, ids: string[]) => {
+        readableCalls.push(ids);
+        return new Set(
+          ids.filter(
+            (id) =>
+              caller.domainId === owner.domainId &&
+              caller.userId === owner.userId &&
+              readable.has(id),
+          ),
+        );
+      },
       snapshot: async (id: string, caller: AgentHostOwner) => (
         own(caller), { session: { ...view, id }, messages: [], latestRun: null }
       ),
@@ -73,6 +80,7 @@ let server: Server, url: string, fake: ReturnType<typeof fakeService>;
 let runtimeServer: Server;
 let runtimeHeaderCalls: Array<Record<string, string | string[] | undefined>> = [];
 let statusCalls: Array<{ sessionIds: string[] }> = [];
+let readableCalls: string[][] = [];
 
 beforeAll(async () => {
   installWorkbenchIdentity(identity);
@@ -183,8 +191,9 @@ it("renames only the caller's conversation and rejects blank or oversized titles
   expect((await (await fetch(url + `/sessions/${sessionId}`, { headers: auth })).json()).session.title).toBe("Renamed conversation");
 });
 
-it("returns ordered light run state for readable sessions and rejects the whole read otherwise", async () => {
+it("returns ordered light run state for readable sessions and drops unreadable IDs", async () => {
   statusCalls = [];
+  readableCalls = [];
   const statuses = (sessionIds: string[], headers = auth) =>
     fetch(url + "/sessions/status", {
       method: "POST",
@@ -200,17 +209,40 @@ it("returns ordered light run state for readable sessions and rejects the whole 
     ],
   });
   expect(statusCalls).toEqual([{ sessionIds: [sessionId, secondSessionId] }]);
-  // The runtime receives the IDs only after every one passed this entry's read rule.
+  // The page's whole loaded set is one readability query, and the runtime only sees the
+  // subset that passed this entry's read rule.
+  expect(readableCalls).toEqual([[sessionId, secondSessionId]]);
   const empty = await statuses([]);
   expect(empty.status).toBe(200);
   expect(await empty.json()).toEqual({ sessions: [] });
   expect(statusCalls).toHaveLength(1);
+  expect(readableCalls).toHaveLength(1);
+  // A deleted or foreign ID in the loaded set is dropped, not failed: the rest still
+  // updates and the reader cannot tell missing from someone else's.
   const foreign = await statuses([sessionId, foreignSessionId]);
-  expect(foreign.status).toBe(404);
-  expect(statusCalls).toHaveLength(1);
+  expect(foreign.status).toBe(200);
+  expect(await foreign.json()).toEqual({
+    sessions: [
+      { sessionId, latestRun: { id: runId, status: "running", stopReason: null } },
+    ],
+  });
+  expect(statusCalls).toEqual([
+    { sessionIds: [sessionId, secondSessionId] },
+    { sessionIds: [sessionId] },
+  ]);
+  expect(readableCalls).toEqual([
+    [sessionId, secondSessionId],
+    [sessionId, foreignSessionId],
+  ]);
   const other = await statuses([sessionId], { ...auth, "fixture-auth": "bob" });
-  expect(other.status).toBe(404);
-  expect(statusCalls).toHaveLength(1);
+  expect(other.status).toBe(200);
+  expect(await other.json()).toEqual({ sessions: [] });
+  expect(statusCalls).toHaveLength(2);
+  expect(readableCalls).toEqual([
+    [sessionId, secondSessionId],
+    [sessionId, foreignSessionId],
+    [sessionId],
+  ]);
 });
 
 it("forwards ready and only the caller's readable run notices", async () => {

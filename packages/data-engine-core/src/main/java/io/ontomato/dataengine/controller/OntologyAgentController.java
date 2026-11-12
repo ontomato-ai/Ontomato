@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.controller;
 
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.service.agent.*;
 import jakarta.servlet.http.HttpServletRequest;
@@ -71,17 +72,19 @@ public class OntologyAgentController {
         throw AgentHttpException.invalid("sessionIds must contain UUIDs");
       ids.add(AgentJson.id(id));
     }
-    var context = access.authenticated(req);
-    // Every ID must pass the entry's own session read rule; one failure rejects the whole read.
-    for (String id : ids) access.reader(req, id, null);
-    return JSONObject.of("sessions", host.sessionStatuses(ids, context.owner()));
+    var reads = access.sessionReads(req);
+    // IDs this user may not read are dropped, whether missing or someone else's; the
+    // remaining subset keeps request order.
+    var permitted = ids.stream().filter(reads::readable).toList();
+    if (permitted.isEmpty()) return JSONObject.of("sessions", new JSONArray());
+    return JSONObject.of("sessions", host.sessionStatuses(permitted, reads.owner()));
   }
 
   @GetMapping("/sessions/run-events")
   public ResponseEntity<StreamingResponseBody> runEvents(HttpServletRequest req) throws Exception {
     var reads = access.sessionReads(req);
     WebAsyncUtils.getAsyncManager(req).getAsyncWebRequest().setTimeout(0L);
-    var response = runtime.sessionRunEvents(reads.domainId(), req.getHeader("X-Correlation-Id"));
+    var response = runtime.sessionRunEvents(reads.owner().domainId(), req.getHeader("X-Correlation-Id"));
     StreamingResponseBody body =
         out -> {
           try (var reader =

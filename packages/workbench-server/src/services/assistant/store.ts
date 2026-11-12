@@ -136,14 +136,14 @@ export const assistantStore = {
       throw new HttpError(404, "Conversation not found", "NOT_FOUND");
     return r.rows[0];
   },
-  /** The same owner/domain rule as session(), for callers that only decide whether a read is allowed. */
-  async canReadSession(id: string, owner: AssistantOwner): Promise<boolean> {
-    return (
-      (await db().query(
-        `SELECT 1 FROM ${table("assistant_sessions")} WHERE id=$1 AND domain_id=$2 AND owner_id=$3`,
-        [id, owner.domainId, owner.userId],
-      )).rowCount ?? 0
-    ) > 0;
+  /** The same owner/domain rule as session(), batched for a list's readability check. */
+  async readableSessions(owner: AssistantOwner, ids: string[]): Promise<Set<string>> {
+    if (!ids.length) return new Set();
+    const rows = (await db().query(
+      `SELECT id FROM ${table("assistant_sessions")} WHERE id=ANY($1::uuid[]) AND domain_id=$2 AND owner_id=$3`,
+      [ids, owner.domainId, owner.userId],
+    )).rows;
+    return new Set(rows.map((row) => row.id));
   },
   async domainSession(id: string, domainId: string): Promise<SessionRow> {
     const r = await db().query(
