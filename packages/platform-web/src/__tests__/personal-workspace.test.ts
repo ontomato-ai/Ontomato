@@ -4,6 +4,7 @@ import { createI18n } from "vue-i18n";
 import { createMemoryHistory, createRouter } from "vue-router";
 import ElementPlus from "element-plus";
 import { defaultPersonalWorkspace } from "@ontomato/contracts/personal-workspace";
+import { randomId } from "@ontomato/contracts/random-id";
 import { openApplicationKey } from "../apps";
 import Workspace from "../pages/PersonalWorkspaceRoute.vue";
 
@@ -106,10 +107,10 @@ describe("personal workspace", () => {
   });
   it("prioritizes intervention and recent results while leaving normal schedules in the task application", async () => {
     const now = new Date().toISOString();
-    const task = (title: string, extra = {}) => ({ id: crypto.randomUUID(), title, appId: "agents", content: {}, formRevision: "1", frequency: { kind: "daily", time: "09:00" }, timeZone: "UTC", notifyEmail: null,
+    const task = (title: string, extra = {}) => ({ id: randomId(), title, appId: "agents", content: {}, formRevision: "1", frequency: { kind: "daily", time: "09:00" }, timeZone: "UTC", notifyEmail: null,
       creatorId: "alice", summary: [], enabled: true, pause: null, nextRunAt: null, revision: 1, createdAt: now, updatedAt: now, activeRunId: null, lastRun: null, latestResult: null, ...extra });
-    const reportId = crypto.randomUUID();
-    const runId = crypto.randomUUID();
+    const reportId = randomId();
+    const runId = randomId();
     api.tasks = [task("Normal schedule"), task("Paused schedule", { pause: { code: "permission_denied", message: "Access changed" } }), task("Report ready", {
       id: reportId,
       lastRun: { id: runId, taskId: reportId, trigger: "schedule", status: "completed", scheduledAt: now, startedAt: now, finishedAt: now, error: null, resultSummary: "Report generated", resultLink: { appId: "agents", path: "/agents/chat?sessionId=report" }, spendTime: 10 },
