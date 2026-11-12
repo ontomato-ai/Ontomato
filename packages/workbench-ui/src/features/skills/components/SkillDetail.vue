@@ -132,9 +132,13 @@ async function remove() {
       <span v-if="skill?.description" class="title-description">{{ skill.description }}</span>
       <span class="title-spacer"></span>
       <el-button :icon="Download" @click="exportSkill(skillId)">{{ t("common.export") }}</el-button>
-      <el-button v-if="skill && !skill.isPublic" type="danger" plain :icon="Trash2" @click="remove">
-        {{ t("common.delete") }}
-      </el-button>
+      <el-tooltip v-if="skill" :disabled="!skill.isPublic" :content="t('capabilities.builtInNoDelete')" placement="bottom">
+        <span>
+          <el-button type="danger" plain :icon="Trash2" :disabled="skill.isPublic" @click="remove">
+            {{ t("common.delete") }}
+          </el-button>
+        </span>
+      </el-tooltip>
     </header>
     <div class="detail-body platform-page-gutter">
       <el-alert v-if="loadFailed" type="error" :closable="false" show-icon :title="t('capabilities.loadFailed')">

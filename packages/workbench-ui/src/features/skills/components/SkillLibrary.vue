@@ -113,9 +113,14 @@ async function upload(uploaded: UploadFile) {
           </button>
           <span class="card-actions">
             <el-button size="small" text :icon="Download" @click="exportSkill(skill.id)">{{ t("common.export") }}</el-button>
-            <el-button v-if="!skill.isPublic" size="small" text type="danger" :icon="Trash2" @click="remove(skill)">
-              {{ t("common.delete") }}
-            </el-button>
+            <!-- A built-in skill comes with the product and stays: its delete is there, greyed, and says why. -->
+            <el-tooltip :disabled="!skill.isPublic" :content="t('capabilities.builtInNoDelete')" placement="top">
+              <span>
+                <el-button size="small" text type="danger" :icon="Trash2" :disabled="skill.isPublic" @click="remove(skill)">
+                  {{ t("common.delete") }}
+                </el-button>
+              </span>
+            </el-tooltip>
           </span>
         </li>
       </ul>
