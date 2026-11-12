@@ -143,7 +143,7 @@ it("lists a first message's conversation but leaves the reader in the conversati
   ]);
 });
 
-it("drops a first message's conversation once the host has moved to another context, keeping the new draft", async () => {
+it("drops a first message on its way as soon as the host moves to another context, and ignores its return", async () => {
   let admit!: (snapshot: unknown) => void;
   const a = port(() => new Promise((resolve) => (admit = resolve)));
   const b = port(() => Promise.resolve(admitted));
@@ -154,9 +154,11 @@ it("drops a first message's conversation once the host has moved to another cont
   await settle();
   client.value = b;
   await settle();
-  const composer = root.querySelector<HTMLTextAreaElement>("textarea")!;
-  composer.value = "draft for B";
-  composer.dispatchEvent(new Event("input"));
+
+  // Before A's send returns, the shell is already B's blank conversation.
+  expect(root.querySelector(".unstarted")!.textContent).toBe("true");
+  expect(root.textContent).not.toContain("for workspace A");
+
   admit(admitted);
   await sent;
   await settle();
@@ -164,5 +166,4 @@ it("drops a first message's conversation once the host has moved to another cont
   expect(sessionId.value).toBeNull();
   expect(root.querySelector(".unstarted")!.textContent).toBe("true");
   expect(root.textContent).not.toContain("for workspace A");
-  expect(composer.value).toBe("draft for B");
 });
