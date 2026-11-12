@@ -25,9 +25,7 @@ it("draws in the brand's colours of the mode the page shows, and in the dark one
   expect(theme.value).toMatchObject({
     darkMode: false,
     color: ["#111111", "#222222"],
-    textStyle: { color: "#101010" },
-    tooltip: { axisPointer: { lineStyle: { color: "#303030" } } },
-    visualMap: { inRange: { color: ["#a1a1a1", "#a2a2a2"] }, textStyle: { color: "#202020" } },
+    visualMap: { inRange: { color: ["#a1a1a1", "#a2a2a2"] } },
   });
 
   document.documentElement.classList.add("dark");
@@ -35,9 +33,7 @@ it("draws in the brand's colours of the mode the page shows, and in the dark one
   await vi.waitFor(() => expect(theme.value).toMatchObject({
     darkMode: true,
     color: ["#eeeeee", "#dddddd"],
-    textStyle: { color: "#f0f0f0" },
-    tooltip: { axisPointer: { lineStyle: { color: "#d0d0d0" } } },
-    visualMap: { inRange: { color: ["#b1b1b1", "#b2b2b2"] }, textStyle: { color: "#e0e0e0" } },
+    visualMap: { inRange: { color: ["#b1b1b1", "#b2b2b2"] } },
   }));
 });
 

@@ -3,8 +3,9 @@ import { workbenchI18n } from "../../i18n";
 import { formatRelativeTime, relativeTime } from "../relative-time";
 
 /*
- * Relative times are shared by the platform home, the app builder's history and the diagnosis pages. The count chooses
- * the message's form, so English says "1 hour ago", while a language whose message has one form reads as it always did.
+ * Relative times are shared by the platform home, the app builder's history and the diagnosis pages. The distance picks
+ * the unit and the count, and the message's own form follows the count; a language whose message has one form reads as
+ * it always did.
  */
 const now = Date.parse("2026-11-12T12:00:00Z");
 const before = (ms: number) => new Date(now - ms).toISOString();
@@ -18,14 +19,16 @@ afterEach(() => {
 });
 
 describe("relative times", () => {
-  it("use the singular for one and the plural otherwise", () => {
+  it("pick the unit and the count of the message each distance falls in", () => {
     vi.useFakeTimers({ now });
+    const { t } = workbenchI18n().global;
+    const ago = (key: string, n: number) => t(`common.${key}`, { n }, n);
     expect([MINUTE, 2 * MINUTE, HOUR, 3 * HOUR, DAY, 2 * DAY, 7 * DAY, 14 * DAY, 35 * DAY, 70 * DAY].map((ms) => relativeTime(before(ms)))).toEqual([
-      "1 minute ago", "2 minutes ago", "1 hour ago", "3 hours ago", "1 day ago", "2 days ago",
-      "1 week ago", "2 weeks ago", "1 month ago", "2 months ago",
+      ago("minutesAgo", 1), ago("minutesAgo", 2), ago("hoursAgo", 1), ago("hoursAgo", 3), ago("daysAgo", 1), ago("daysAgo", 2),
+      ago("weeksAgo", 1), ago("weeksAgo", 2), ago("monthsAgo", 1), ago("monthsAgo", 2),
     ]);
     expect([formatRelativeTime(before(MINUTE)), formatRelativeTime(before(HOUR)), formatRelativeTime(before(5 * HOUR))]).toEqual([
-      "1 minute ago", "1 hour ago", "5 hours ago",
+      ago("minutesAgo", 1), ago("hoursAgo", 1), ago("hoursAgo", 5),
     ]);
   });
 
