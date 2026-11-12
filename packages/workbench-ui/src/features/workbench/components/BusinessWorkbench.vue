@@ -13,16 +13,13 @@ import { createAssistantClient, createAssistantFeedback } from "../assistant-hos
 import { readRememberedAgent, rememberAgent } from "../remembered-agent";
 import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
-import ConversationActions from "./ConversationActions.vue";
 import DatasetActions from "./DatasetActions.vue";
 import DatasetDrilldown from "./DatasetDrilldown.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
 import { workbenchFeatures } from "../features";
-import ActionProposalRenderer from "./ActionProposalRenderer.vue";
 import FollowUpRenderer from "./FollowUpRenderer.vue";
 import ClarificationRenderer from "./ClarificationRenderer.vue";
 const artifactRenderers = [
-  { path: /(?:\.action\.json$|(?:^|\/)action-[^/]+\.json$)/i, component: ActionProposalRenderer },
   { path: /\.follow-ups\.json$/i, component: FollowUpRenderer },
   { path: /\.clarification\.json$/i, component: ClarificationRenderer },
 ];
@@ -285,7 +282,6 @@ function appearanceSaved(value: WorkbenchAppearance) {
     </template>
     <template #message-actions="{ sessionId, runId }">
       <TurnDiagnoseButton v-if="sessionId && runId" :session-id="sessionId" :run-id="runId" />
-      <ConversationActions v-if="sessionId" :session-id="sessionId" />
     </template>
   </AgentShell>
   <WorkbenchAppearanceDialog

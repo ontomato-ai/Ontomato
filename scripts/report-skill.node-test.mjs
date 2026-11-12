@@ -1,0 +1,23 @@
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { test } from "node:test";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+
+const root = fileURLToPath(new URL("../", import.meta.url));
+const server = path.join(root, "packages/workbench-server");
+
+test("committed report skill artifacts match the source and locked dependencies", async (t) => {
+  const output = await mkdtemp(path.join(os.tmpdir(), "report-skill-build-"));
+  t.after(() => rm(output, { recursive: true, force: true }));
+  await promisify(execFile)(process.execPath, [path.join(server, "report-skill/build.mjs"), output], { cwd: root });
+  for (const file of ["scripts/render.cjs", "vendor/echarts.cjs", "vendor/resvg.wasm.b64"]) {
+    const generated = await readFile(path.join(output, file));
+    const committed = await readFile(path.join(server, "resources/runtime-skills/assistant-report", file));
+    assert.equal(Buffer.compare(generated, committed), 0,
+      `${file} is stale: run pnpm --filter @ontomato/workbench-server build:report-skill`);
+  }
+});

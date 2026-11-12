@@ -1,0 +1,19 @@
+@resvg/resvg-wasm 2.6.2: MPL-2.0
+core-util-is 1.0.3: MIT
+echarts 6.0.0: Apache-2.0
+immediate 3.0.6: MIT
+inherits 2.0.4: ISC
+isarray 1.0.0: MIT
+jszip 3.10.1: (MIT OR GPL-3.0-or-later)
+lie 3.3.0: MIT
+pako 1.0.11: (MIT AND Zlib)
+pptxgenjs 4.0.1: MIT
+process-nextick-args 2.0.1: MIT
+readable-stream 2.3.8: MIT
+safe-buffer 5.1.2: MIT
+setimmediate 1.0.5: MIT
+stream-markdown-parser 1.2.20: MIT
+string_decoder 1.1.1: MIT
+util-deprecate 1.0.2: MIT
+zod 3.25.76: MIT
+zrender 6.0.0: BSD-3-Clause

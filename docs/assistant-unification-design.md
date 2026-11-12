@@ -64,7 +64,7 @@ dataset. Rows are not copied into business tables or token events. QC remains
 asynchronous and attaches through the existing retrieval owner; it does not delay
 the assistant's stop or change PI state.
 
-History, feedback, dashboard creation, PPT export, governance and diagnosis use one
+History, feedback, dashboard creation, governance and diagnosis use one
 owned session/evidence reader instead of checkpoint parsing. Markdown paths resolve
 at run granularity: the final file version for a stopped run, the current version
 for a running run. No message projection change or per-message artifact boundary
@@ -92,11 +92,14 @@ and calls. Renames keep selections intact. The separate
 Reports are files, normally `outputs/reports/<name>/report.md`, referenced with a
 Markdown link. The report skill guides writing; no section/publish tools, delivery
 check, report-required switch or automatic rerun remains. A missing file stays
-unavailable. PDF/PPT delivery reads the selected immutable file and its authorized
-sources, without another stored report body.
+unavailable. PDF delivery reads the selected immutable file and its authorized sources.
+PPT is derived by the host-owned assistant-report skill: the assistant plans slides
+from that report, then the bundled script reads its original charts and datasets
+and writes report.pptx in the same report directory. The follow-up card offers
+this as the next conversation message; the host has no PPT generator or export API.
 
 Titles are the exact first user message, truncated only for display. Remove model
-title generation and follow-up suggestions. Delete `analysis-agent/follow-up.ts`;
+title generation and the legacy follow-up model. Delete `analysis-agent/follow-up.ts`;
 asking about a report is the next message in the same conversation.
 
 **Approved:** retain these functions and move their surviving model calls
@@ -105,7 +108,6 @@ model invocation. No new runtime endpoint is needed:
 
 | Consumer | Treatment |
 | --- | --- |
-| `analysis-agent/delivery/ppt-summarizer.ts` | Ordinary run per existing summary step; keep source limitations and outline validation |
 | `dashboard/planning/core/chart-recommender.ts` | Ordinary run for create/append/field planning; keep business parsers and chart definitions |
 | `diagnosis/autotest/evaluation/answer-evaluator.ts` | Ordinary scoring run; autotest question execution calls the new assistant service |
 
@@ -131,7 +133,7 @@ Paths below are relative to `packages/workbench-server/src` unless qualified.
 | --- | --- |
 | Backend A | `services/chat/graph/**`, graph planner/nodes/render snapshots, old chat/thread streaming and `api/utils/title.ts`; replace with assistant session/admission/history/file services |
 | Backend A | `data-query/base-query-executor`, `branches/**`, `abc-tool`, `hot-data/**`, hot/static judgment models and traditional Node `/streamSplitQuestion`/`/streamchatV1` clients; remove `abcQuestionMode` from server/contracts; retain retrieval, dataset completeness, formal outputs and timeout policy |
-| Backend A/B | Replace all checkpointer/BaseStore users: chat/history, dashboard mutations/create-from-analysis, conversation PPT, admin history/cleanup, governance materials/tools, diagnosis observe workspaces/routes, memories/preferences, analysis routes/task service; remove initialization from `infrastructure/connection.ts` and `http/create-app.ts`, then saver/store packages with no imports |
+| Backend A/B | Replace all checkpointer/BaseStore users: chat/history, dashboard mutations/create-from-analysis, admin history/cleanup, governance materials/tools, diagnosis observe workspaces/routes, memories/preferences, analysis routes/task service; remove initialization from `infrastructure/connection.ts` and `http/create-app.ts`, then saver/store packages with no imports |
 | Backend B | `analysis-agent/loop/**`, `dimension/**`, `runtime/deep-analysis-tool.ts`, `follow-up.ts`, in-process report/chapter tools, old task runner and duplicate report/message stores; keep useful export utilities and MCP boundary adapters |
 | Backend B | Stop scheduler startup/recovery/polling and disable schedule create/update/trigger paths; retain stored tasks/rules untouched. Remove analysis-plan-reuse execution links, retain its data. Frontend declares scheduling “Temporarily unavailable” |
 | Contracts | Remove obsolete chat planner/race/ABC events, internal execution-mode/dimension/analysis payloads with their last consumers; keep query completeness, exports, diagnosis and narrow external MCP shapes |

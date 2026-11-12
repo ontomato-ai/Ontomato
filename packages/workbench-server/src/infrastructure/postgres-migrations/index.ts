@@ -3,7 +3,6 @@ import { ensurePlatformHomeSchema } from "./20261111-platform-home/schema";
 import { ensurePlatformEventCursorSchema } from "./20261103-platform-events/schema";
 import { ensureOpsDiagnosisSchema } from "./20261029-ops-diagnosis/schema";
 import { ensureAssistantSchema } from "./20261028-assistant/schema";
-import { ensureAssistantActionsSchema } from "./20261107-assistant-actions/schema";
 import { ensureAssistantDefaultPromptSchema } from "./20261105-assistant-default-prompts/schema";
 import {
   ASSISTANT_DEFAULT_PROMPTS_NAME,
@@ -17,6 +16,7 @@ import {
   removeRetiredSkillStates,
 } from "./20261112-skill-enable-retirement/migration";
 import { domainSkillsRoot } from "../../content/layout";
+import { REPORT_PPT_SKILL_NAME, REPORT_PPT_SKILL_VERSION, migrateReportPptSkill } from "./20261112-report-ppt-skill/migration";
 import { workbenchProduct } from "../../product/installed";
 import { ensureAnalysisHarnessLinks } from "./20260923-analysis-harness-links/schema";
 import {
@@ -100,7 +100,6 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
   { directory: "20261028-assistant", ensureSchema: ensureAssistantSchema },
   { directory: "20261109-workspaces", ensureSchema: ensureWorkspacesSchema },
   { directory: "20261111-platform-home", ensureSchema: ensurePlatformHomeSchema },
-  { directory: "20261107-assistant-actions", ensureSchema: ensureAssistantActionsSchema },
   {
     directory: "20261105-assistant-default-prompts",
     ensureSchema: ensureAssistantDefaultPromptSchema,
@@ -117,6 +116,23 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
       version: SKILL_ENABLE_RETIREMENT_VERSION,
       name: SKILL_ENABLE_RETIREMENT_NAME,
       run: runSkillEnableRetirement,
+    },
+  },
+  {
+    directory: "20261112-report-ppt-skill",
+    ensureSchema: () => Promise.resolve(),
+    migration: {
+      version: REPORT_PPT_SKILL_VERSION,
+      name: REPORT_PPT_SKILL_NAME,
+      run: async (client, migration) => {
+        if (await isMigrationApplied(client, migration.version)) return;
+        const result = await inMigrationTransaction(client, async () => {
+          const migrated = await migrateReportPptSkill(client);
+          await recordMigration(client, migration.version, migration.name);
+          return migrated;
+        });
+        logger.info("Report presentation skills replaced", { version: migration.version, agents: result.agents });
+      },
     },
   },
   {

@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --exclude '**/*.integration.test.ts'",
     "test:integration": "vitest run src/services/ops-diagnosis/__tests__/runtime-http.integration.test.ts src/services/assistant/__tests__/definitions.integration.test.ts",
-    "test:wire": "vitest run src/services/assistant/__tests__/ontology-wire.integration.test.ts"
+    "test:wire": "vitest run src/services/assistant/__tests__/ontology-wire.integration.test.ts",
+    "build:report-skill": "node report-skill/build.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
@@ -24,7 +25,6 @@
     "multer": "2.1.1",
     "pg": "8.20.0",
     "playwright": "1.59.1",
-    "pptxgenjs": "4.0.1",
     "undici": "6.27.0",
     "uuid": "14.0.0",
     "ws": "8.20.0",
@@ -44,6 +44,10 @@
     "@types/uuid": "11.0.0",
     "@types/ws": "8.18.1",
     "typescript": "5.9.3",
-    "vitest": "1.6.0"
+    "vitest": "1.6.0",
+    "@resvg/resvg-wasm": "2.6.2",
+    "echarts": "6.0.0",
+    "esbuild": "0.27.4",
+    "pptxgenjs": "4.0.1"
   }
 }
