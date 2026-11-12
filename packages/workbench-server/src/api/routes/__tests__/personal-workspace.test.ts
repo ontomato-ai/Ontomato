@@ -47,7 +47,10 @@ describe("personal workspace HTTP persistence", () => {
     expect(personalWorkspaceSchema.parse(old).sections).toBeUndefined();
     const config = { ...defaultPersonalWorkspace(), objectOpening: "drawer", sections: { main: ["data", "apps"], sidebar: ["objects", "conversations", "tasks"], hidden: ["recent"] }, interactions: { metrics: "dialog", tasks: "conversation" } };
     expect((await fetch(base, { method: "PUT", headers: { "Content-Type": "application/json", "test-user": "interaction-user" }, body: JSON.stringify(config) })).status).toBe(200);
-    expect(await (await fetch(base, { headers: { "test-user": "interaction-user" } })).json()).toEqual({ data: config });
+    expect(await (await fetch(base, { headers: { "test-user": "interaction-user" } })).json()).toEqual({ data: { ...config, interactions: { metrics: "drawer", tasks: "drawer" } } });
+    const pageConfig = { ...config, interactions: { metrics: "page", tasks: "drawer" } };
+    await fetch(base, { method: "PUT", headers: { "Content-Type": "application/json", "test-user": "interaction-user" }, body: JSON.stringify(pageConfig) });
+    expect(await (await fetch(base, { headers: { "test-user": "interaction-user" } })).json()).toEqual({ data: pageConfig });
   });
   it("retains bounded recent work per user and domain and moves repeat visits to the front", async () => {
     for (let index = 0; index < 10; index++) {

@@ -35,13 +35,13 @@ const tasks = ref<PlatformTask[]>([]);
 const recent = ref<RecentWork[]>([]);
 const previewRevision = ref(0);
 const resource = ref<WorkspaceResource | null>(null);
-const presentation = ref<"drawer" | "dialog">("drawer");
 const resourceOpen = ref(false);
 const analysisBusy = ref(false);
 const analysisError = ref("");
 const objectPreview = ref<WorkspaceObjectReference | null>(null);
 const objectPreviewOpen = ref(false);
 const settingsTab = ref("layout");
+const refreshing = ref(false);
 function sectionName(section: WorkspaceSection) {
   return ({ apps: workspaceText.value.resources, data: text.value.data, conversations: workspaceText.value.continue,
     objects: locale.value.startsWith("zh") ? "收藏的对象" : "Pinned objects", tasks: text.value.attention, recent: workspaceText.value.recent })[section];
@@ -79,7 +79,7 @@ async function readPinned() {
   });
 }
 async function updatePins(next: typeof config.value.pinnedAnalyses) {
-  if (saving.value || editing.value) return;
+  if (saving.value || editing.value || refreshing.value) return;
   saving.value = true;
   await load("pinsSave", async () => {
     const result = await json("/api/personal-workspace", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...config.value, pinnedAnalyses: next }) });
@@ -106,7 +106,7 @@ function movePin(index: number, offset: number) {
   const [item] = next.splice(index, 1); next.splice(index + offset, 0, item!); void updatePins(next);
 }
 async function removeObject(item: WorkspaceObjectReference) {
-  if (saving.value) return;
+  if (saving.value || editing.value || refreshing.value) return;
   saving.value = true;
   await load("objectsSave", async () => {
     const next = { ...config.value, pinnedObjects: config.value.pinnedObjects.filter(value => value.className !== item.className || value.primaryKey !== item.primaryKey) };
@@ -126,6 +126,7 @@ function askObject(item: WorkspaceObjectReference) {
   const question = locale.value.startsWith("zh")
     ? `请分析对象「${item.title}」。对象引用：${JSON.stringify({ className: item.className, primaryKey: item.primaryKey })}。请先按现有权限读取并核实该对象，说明可获得的信息与数据限制；不要将该对象默认扩展为全学院或其他对象集合。`
     : `Analyze object "${item.title}". Reference: ${JSON.stringify({ className: item.className, primaryKey: item.primaryKey })}. First read and verify the object through existing permissions. Explain available evidence and limitations; do not silently expand its scope.`;
+  objectPreviewOpen.value = false;
   void ask(question);
 }
 /** Older sessions may use the resource-analysis request as their title. Show its business label only. */
@@ -138,7 +139,8 @@ function conversationTitle(title: string) {
     .replace(/\s*[（(][^()（）]*(?:dashboardId|cardId|sessionId|taskId|runId)\s*[:：][^()（）]*[）)]/gi, "")
     .split(/\n|\{\s*"|(?:dashboardId|cardId|sessionId|taskId|runId)\s*[:：]/i)[0]!
     .replace(/(?:个人工作台协作请求|分析上下文)\s*[:：]\s*/g, "")
-    .replace(/请先读取当前信息[\s\S]*$/, "")
+    .replace(/(?:请先读取当前信息|对象引用)\s*[:：]?[\s\S]*$/, "")
+    .replace(/^请分析对象[「“]([^」”]+)[」”][。.]?$/, "$1 · 对象分析")
     .replace(/[\s，,；;：:]+$/, "").trim();
   return readable || workspaceText.value.untitled;
 }
@@ -150,19 +152,19 @@ async function ask(question: string) {
   await router.push({ path: platformRoutes.chat.path, query: { agentId: agentId.value, prompt: question } });
 }
 const interactionLabels = computed(() => locale.value.startsWith("zh") ? {
-  title: "打开方式", metrics: "指标详情", tasks: "任务结果", drawer: "侧滑面板", dialog: "弹窗", page: "完整页面", conversation: "助手对话",
-  analyze: "交给助手分析", openPage: "在完整页面打开", intervention: "需要处理", finished: "最近完成", density: "展示密度", help: "点击指标或任务时使用所选方式；打开后仍可切换", configure: "选择资源",
-} : { title: "Open with", metrics: "Metric details", tasks: "Task results", drawer: "Side panel", dialog: "Dialog", page: "Full page", conversation: "Assistant conversation",
-  analyze: "Analyze with assistant", openPage: "Open full page", intervention: "Needs intervention", finished: "Recently completed", density: "Display density", help: "Choose how metrics and tasks open. You can also switch after opening.", configure: "Choose resources" });
+  title: "默认查看方式", metrics: "指标详情", tasks: "任务结果", drawer: "侧栏", page: "完整页面",
+  analyze: "交给助手分析", openPage: "在完整页面打开", intervention: "需要处理", finished: "最近完成", density: "展示密度", help: "点击资源标题时查看内容；需要分析时，使用独立的提问或分析按钮", configure: "选择资源",
+} : { title: "Default view", metrics: "Metric details", tasks: "Task results", drawer: "Side panel", page: "Full page",
+  analyze: "Analyze with assistant", openPage: "Open full page", intervention: "Needs intervention", finished: "Recently completed", density: "Display density", help: "Resource titles open content. Use the separate question or analysis actions to start an analysis.", configure: "Choose resources" });
 async function analyze(target: WorkspaceResource, intent: "analyze" | "explain" = "analyze") {
   if (analysisBusy.value || !canChat.value) return;
   analysisBusy.value = true; analysisError.value = "";
   try {
+    const agent = enabledAgents.value.find(item => item.id === agentId.value);
+    if (!agent) throw new Error(locale.value.startsWith("zh") ? "没有可用的智能体" : "No enabled assistant available");
     const evidence = target.kind === "metric"
       ? await json("/api/dashboards/query-card", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dashboardId: target.dashboardId, cardId: target.cardId }) })
       : target.runId ? await json(`${platformSchedulesPath}/${target.taskId}/runs/${target.runId}`) : null;
-    const agent = enabledAgents.value.find(item => item.id === agentId.value);
-    if (!agent) throw new Error(locale.value.startsWith("zh") ? "没有可用的智能体" : "No enabled assistant available");
     const session = agentHostCreateSessionResponseSchema.parse(await json("/api/assistant/sessions", {
       method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ agentId: agent.id }),
     })).session;
@@ -181,14 +183,15 @@ function openResource(target: WorkspaceResource) {
   resource.value = target; analysisError.value = "";
   const mode = config.value.interactions[target.kind === "metric" ? "metrics" : "tasks"];
   if (mode === "page") { void router.push(target.path); return; }
-  if (mode === "conversation" && canChat.value) { void analyze(target); return; }
-  presentation.value = mode === "dialog" ? "dialog" : "drawer"; resourceOpen.value = true;
+  resourceOpen.value = true;
 }
 function openMetric(boardId: string, card: { id: string; name: string }) {
   openResource({ kind: "metric", title: card.name, dashboardId: boardId, cardId: card.id, path: router.resolve({ path: platformRoutes.dashboards.path, query: { dashboardId: boardId } }).fullPath });
 }
 function openTask(task: PlatformTask) {
-  openResource({ kind: "task", title: task.title, taskId: task.id, runId: task.lastRun?.id ?? null, path: task.latestResult?.link.path ?? router.resolve({ path: platformRoutes.schedules.path, query: { taskId: task.id } }).fullPath });
+  const runId = task.activeRunId ?? task.lastRun?.id ?? null;
+  openResource({ kind: "task", title: task.title, taskId: task.id, runId, pauseMessage: task.pause?.message,
+    path: router.resolve({ path: platformRoutes.schedules.path, query: { taskId: task.id, ...(runId ? { runId } : {}) } }).fullPath });
 }
 const text = computed(() => locale.value.startsWith("zh") ? {
   title: "个人工作台", intro: "问数、关注数据，继续日常工作", configure: "配置工作台", refresh: "刷新",
@@ -230,7 +233,7 @@ const needsIntervention = (task: PlatformTask) => !task.activeRunId && (!!task.p
 const issueTasks = computed(() => tasks.value.filter(needsIntervention));
 const runningTasks = computed(() => tasks.value.filter(task => task.activeRunId));
 const resultTasks = computed(() => tasks.value.filter(task => task.latestResult?.runId === task.lastRun?.id
-  && task.lastRun?.status === "completed" && Date.parse(task.lastRun.finishedAt ?? "") >= Date.now() - 7 * 86400000));
+  && !task.activeRunId && !needsIntervention(task) && task.lastRun?.status === "completed" && Date.parse(task.lastRun.finishedAt ?? "") >= Date.now() - 7 * 86400000));
 const taskGroups = computed(() => [
   { id: "issues", label: interactionLabels.value.intervention, items: issueTasks.value.slice(0, 3) },
   { id: "running", label: text.value.running, items: runningTasks.value.slice(0, 2) },
@@ -241,6 +244,11 @@ const recentApps = computed(() => [...new Set(availableRecent.value.map(item => 
 function recentTitle(item: RecentWork) {
   const url = new URL(item.path, "https://workspace.invalid");
   const board = dashboards.value.find(board => board.id === url.searchParams.get("dashboardId"));
+  const objectKey = url.searchParams.get("key");
+  if (objectKey) {
+    const object = config.value.pinnedObjects.find(object => object.primaryKey === objectKey && url.pathname.endsWith(encodeURIComponent(object.className)));
+    if (object) return object.title;
+  }
   return board?.name ?? (item.title !== catalog.applications.value.find(app => app.id === item.appId)?.names.en ? item.title : null)
     ?? catalog.applications.value.find(app => app.id === item.appId)?.names[locale.value] ?? item.title;
 }
@@ -268,7 +276,7 @@ async function load(key: string, action: () => Promise<void>) {
 const readConfig = () => load("config", async () => {
   config.value = personalWorkspaceSchema.parse((await json("/api/personal-workspace")).data);
   ready.value = true;
-  void readPinned();
+  await readPinned();
 });
 const readDashboards = () => load("data", async () => { dashboards.value = (await json("/api/dashboards")).data; });
 const readTasks = () => load("tasks", async () => { tasks.value = platformTaskListSchema.parse(await json(platformSchedulesPath)).tasks; });
@@ -279,12 +287,16 @@ const readAgents = () => load("agents", async () => {
 });
 const readConversations = () => load("conversations", async () => { homeState.value = homeStateSchema.parse(await json("/api/platform/home")); });
 async function refresh() {
-  previewRevision.value++;
-  await Promise.all([readTasks(), readDashboards(), readRecent(), readAgents(), readConversations(), catalog.refresh()]);
-  if (ready.value) await readPinned();
+  if (refreshing.value || saving.value || editing.value) return;
+  refreshing.value = true;
+  try {
+    previewRevision.value++;
+    await Promise.all([readConfig(), readTasks(), readDashboards(), readRecent(), readAgents(), readConversations(), catalog.refresh()]);
+  } finally { refreshing.value = false; }
 }
-onMounted(() => { void readConfig(); void refresh(); });
+onMounted(() => { void refresh(); });
 function configure() {
+  if (saving.value || refreshing.value) return;
   delete errors.value.save;
   draft.value = { ...config.value, dashboardCards: Object.fromEntries(Object.entries(config.value.dashboardCards).map(([id, cards]) => [id, [...cards]])), interactions: { ...config.value.interactions }, dashboardIds: [...config.value.dashboardIds], applicationIds: [...config.value.applicationIds] };
   editing.value = true;
@@ -293,6 +305,7 @@ function configure() {
   settingsTab.value = "layout";
 }
 async function save() {
+  if (saving.value) return;
   saving.value = true;
   await load("save", async () => {
     const body = await json("/api/personal-workspace", {
@@ -313,7 +326,7 @@ function date(value: string) { return new Date(value).toLocaleString(locale.valu
 /** A task preview is a short sentence; full formatting and attachments belong to its result page. */
 function taskSummary(value: string) {
   return value.replace(/!\[[\s\S]*$/, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-    .replace(/[*#`]/g, "").replace(/\s+/g, " ").trim();
+    .split(/\n\s*\n/)[0]!.replace(/[*#`]/g, "").replace(/\s+/g, " ").trim();
 }
 const actions = computed(() => [
   { id: "refresh", label: text.value.refresh, icon: RefreshCw, onClick: () => void refresh() },
@@ -370,7 +383,7 @@ const actions = computed(() => [
             <h3>{{ locale.startsWith('zh') ? '已固定' : 'Pinned' }}</h3>
             <WorkspaceSkeleton v-if="busy.pins" :label="text.loading" :rows="Math.min(pinned.length, 3)" />
             <article v-for="(item, index) in (busy.pins ? [] : pinned)" :key="item.sessionId" class="workspace-item pinned-analysis">
-              <div class="resource-body"><button class="resource-link" :disabled="!item.session || !enabledAgents.some(agent => agent.id === item.session?.agentId)" @click="router.push({ path: platformRoutes.chat.path, query: { agentId: item.session!.agentId, sessionId: item.sessionId } })">{{ item.title }}</button><p v-if="pinErrors[item.sessionId]">{{ pinErrors[item.sessionId] }}</p><p v-else-if="item.session">{{ date(item.session.updatedAt) }}</p>
+              <div class="resource-body"><button class="resource-link" :disabled="!item.session || !enabledAgents.some(agent => agent.id === item.session?.agentId)" @click="router.push({ path: platformRoutes.chat.path, query: { agentId: item.session!.agentId, sessionId: item.sessionId } })">{{ item.title }}</button><p v-if="pinErrors[item.sessionId]">{{ pinErrors[item.sessionId] }}</p><p v-else-if="item.session && !busy.agents && !enabledAgents.some(agent => agent.id === item.session?.agentId)">{{ workspaceText.noAgent }}</p><p v-else-if="item.session">{{ date(item.session.updatedAt) }}</p>
               </div>
               <el-dropdown trigger="click" :disabled="saving" @command="(command: string) => command === 'rename' ? renamePin(item.sessionId) : command === 'up' ? movePin(index, -1) : command === 'down' ? movePin(index, 1) : updatePins(config.pinnedAnalyses.filter(pin => pin.sessionId !== item.sessionId))">
                 <el-button class="row-icon-action" text :disabled="saving" :icon="MoreHorizontal" :aria-label="locale.startsWith('zh') ? `管理分析：${item.title}` : `Manage analysis: ${item.title}`" :title="locale.startsWith('zh') ? '更多操作' : 'More actions'" />
@@ -400,15 +413,15 @@ const actions = computed(() => [
             <div class="attention-summary" aria-live="polite">
               <span :class="{ 'has-issues': issueTasks.length }"><strong>{{ issueTasks.length }}</strong><CircleAlert v-if="issueTasks.length" :size="14" aria-hidden="true" />{{ text.issues }}</span>
               <span><strong>{{ resultTasks.length }}</strong>{{ text.results }}</span>
-              <span><strong>{{ runningTasks.length }}</strong>{{ text.runningTasks }}</span>
+              <span v-if="runningTasks.length"><strong>{{ runningTasks.length }}</strong>{{ text.runningTasks }}</span>
             </div>
-            <p v-if="resultTasks.length" class="execution-note">{{ locale.startsWith('zh') ? '执行完成表示运行已结束，数据是否取到及结论是否可用请查看结果' : 'Completed means the run ended. Check the result for data availability and usable conclusions.' }}</p>
             <p v-if="!taskGroups.length" class="workspace-empty">{{ text.clear }}<br>{{ text.noAttention }}</p>
             <div v-for="group in taskGroups" :key="group.id" class="task-group" :data-task-group="group.id">
             <h3>{{ group.label }}</h3>
             <article v-for="task in group.items" :key="task.id" class="workspace-item" :class="{ 'needs-intervention': needsIntervention(task) }">
               <div class="resource-body"><button class="resource-link" @click="openTask(task)">{{ task.title }}</button>
-                <p><span class="task-status" :class="{ 'is-paused': !!task.pause, 'is-failed': !task.activeRunId && !task.pause && task.lastRun?.status === 'failed' }">{{ taskStatus(task) }}</span><span v-if="task.nextRunAt"> · {{ text.next }} {{ date(task.nextRunAt) }}</span></p>
+                <p v-if="group.id === 'results' && task.lastRun?.finishedAt">{{ locale.startsWith('zh') ? '生成于' : 'Generated' }} {{ date(task.lastRun.finishedAt) }}</p>
+                <p v-else><span class="task-status" :class="{ 'is-paused': !!task.pause, 'is-failed': !task.activeRunId && !task.pause && task.lastRun?.status === 'failed' }">{{ taskStatus(task) }}</span><span v-if="task.nextRunAt"> · {{ text.next }} {{ date(task.nextRunAt) }}</span></p>
                 <p v-if="task.pause" class="task-summary" :title="task.pause.message">{{ task.pause.message }}</p>
                 <p v-else-if="task.lastRun?.error?.message" class="task-summary" :title="task.lastRun.error.message">{{ task.lastRun.error.message }}</p>
                 <p v-else-if="task.lastRun?.resultSummary" class="task-summary">{{ taskSummary(task.lastRun.resultSummary) }}</p>
@@ -442,6 +455,7 @@ const actions = computed(() => [
               <button v-if="board.resource" class="resource-link board-link" @click="router.push({ path: platformRoutes.dashboards.path, query: { dashboardId: board.id } })"><LayoutDashboard :size="16" aria-hidden="true" /><span>{{ board.resource.name }}</span><ArrowUpRight :size="14" aria-hidden="true" /></button>
               <p v-else>{{ text.unavailable }}</p>
               <DashboardMetricPreview v-if="board.resource && index < 4" :dashboard-id="board.id" :card-ids="config.dashboardCards[board.id]" :revision="previewRevision" @select="openMetric(board.id, $event)" />
+              <p v-else-if="board.resource" class="execution-note">{{ locale.startsWith('zh') ? '工作台预览前 4 个仪表盘，点击标题查看此仪表盘' : 'The workspace previews the first 4 dashboards. Open this title to view more.' }}</p>
             </article>
           </template>
         </template>
@@ -512,11 +526,11 @@ const actions = computed(() => [
         <p>{{ interactionLabels.help }}</p>
         <el-form-item v-for="kind in (['metrics', 'tasks'] as const)" :key="kind" :label="interactionLabels[kind]">
           <el-select v-model="draft.interactions[kind]">
-            <el-option v-for="mode in (['drawer', 'dialog', 'page', 'conversation'] as const)" :key="mode" :value="mode" :label="interactionLabels[mode]" :disabled="mode === 'conversation' && !canChat" />
+            <el-option v-for="mode in (['drawer', 'page'] as const)" :key="mode" :value="mode" :label="interactionLabels[mode]" />
           </el-select>
         </el-form-item>
         <el-form-item :label="locale.startsWith('zh') ? '收藏对象' : 'Pinned objects'">
-          <el-select v-model="draft.objectOpening"><el-option value="page" :label="interactionLabels.page" /><el-option value="drawer" :label="locale.startsWith('zh') ? '侧栏预览' : 'Side preview'" /></el-select>
+          <el-select v-model="draft.objectOpening"><el-option value="drawer" :label="interactionLabels.drawer" /><el-option value="page" :label="interactionLabels.page" /></el-select>
         </el-form-item>
         <p class="settings-note">{{ locale.startsWith('zh') ? '对象内容使用已配置的对象视图；在对象详情中通过「配置视图」维护。完整页面可返回工作台。' : 'Objects use their configured object views. Edit them from the object page. Full pages can return to the workspace.' }}</p>
         </el-tab-pane>
@@ -531,21 +545,17 @@ const actions = computed(() => [
         <ManagerFrame class="workspace-preview-frame"><ObjectViewPage class="workspace-object-preview" :reference="objectPreview" preview @open="objectPreview = { ...$event, title: locale.startsWith('zh') ? '关联对象' : 'Related object' }" /></ManagerFrame>
       </template>
     </el-drawer>
-    <component :is="presentation === 'drawer' ? 'el-drawer' : 'el-dialog'" v-model="resourceOpen" :title="resource?.title" :size="'min(680px, 100vw)'" :width="'min(760px, 94vw)'" destroy-on-close>
+    <el-drawer v-model="resourceOpen" :title="resource?.title" size="min(680px, 100vw)" destroy-on-close>
       <template v-if="resource">
         <div class="resource-toolbar">
           <el-button @click="resourceOpen = false; router.push(resource.path)">{{ interactionLabels.openPage }}</el-button>
-          <el-button v-if="canChat" type="primary" :loading="analysisBusy" @click="analyze(resource)">{{ interactionLabels.analyze }}</el-button>
-          <el-button v-if="canChat && resource.kind === 'metric'" :loading="analysisBusy" @click="analyze(resource, 'explain')">{{ locale.startsWith('zh') ? '解释指标口径' : 'Explain metric definition' }}</el-button>
-          <el-dropdown trigger="click" @command="presentation = presentation === 'drawer' ? 'dialog' : 'drawer'">
-            <el-button :icon="MoreHorizontal" :aria-label="locale.startsWith('zh') ? '更多查看方式' : 'More viewing options'" :title="locale.startsWith('zh') ? '更多查看方式' : 'More viewing options'" />
-            <template #dropdown><el-dropdown-menu><el-dropdown-item>{{ presentation === 'drawer' ? interactionLabels.dialog : interactionLabels.drawer }}</el-dropdown-item></el-dropdown-menu></template>
-          </el-dropdown>
+          <el-button v-if="canChat" type="primary" :disabled="!enabledAgents.length" :loading="analysisBusy" @click="analyze(resource)">{{ interactionLabels.analyze }}</el-button>
+          <el-button v-if="canChat && resource.kind === 'metric'" :disabled="!enabledAgents.length" :loading="analysisBusy" @click="analyze(resource, 'explain')">{{ locale.startsWith('zh') ? '解释指标口径' : 'Explain metric definition' }}</el-button>
         </div>
         <el-alert v-if="analysisError" :title="analysisError" type="error" :closable="false" />
         <WorkspaceResourceDetail :resource="resource" />
       </template>
-    </component>
+    </el-drawer>
   </AppPage>
 </template>
 <style scoped>
