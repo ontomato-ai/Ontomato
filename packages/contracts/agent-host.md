@@ -15,6 +15,8 @@ projection, using the runtime's stored namespace/name/digest/description.
 | --- | --- | --- |
 | GET `/agents` | — | `AgentHostAgentList` |
 | GET `/sessions` | `agentId`, optional opaque cursor/limit (30 default, 100 max) | `AgentHostSessionPage` |
+| GET `/sessions/run-events` | — | SSE lifecycle notices for the caller's readable sessions |
+| POST `/sessions/status` | `AgentHostSessionStatusRequest` (`{sessionIds}`) | `AgentHostSessionRunSnapshot` |
 | POST `/sessions` | `AgentHostCreateSession` | 201 `AgentHostCreateSessionResponse` |
 | GET `S` | — | `AgentHostSessionSnapshot` for complete evidence/history consumers |
 | GET `S/history` | optional before/after/through cursor, recovery runId | `AgentHostSessionHistory` for the shared conversation shell |
@@ -41,8 +43,20 @@ messages use the same endpoint/session. No completion or `needs_input` protocol.
 `{id,status,stopReason}` only, so a list page costs one status read rather than one
 full run read per row; the run's body arrives with `AgentHostSessionHistory` or
 `AgentHostSessionSnapshot`. Hosts project a run into that shape whenever they build
-a session row, including the row returned by session creation and the list entries
-the shell adds after a send.
+a session row, including the row returned by session creation.
+
+The two list routes are user-level and accept no agent, workspace or other list
+selector. `GET /sessions/run-events` keeps one SSE connection per page; each frame is
+one `data:` JSON value with no `id` or cursor, and the event name is `session-run`.
+The upstream `ready` is forwarded only after the runtime registered the subscription.
+Later `run_started`/`run_stopped` frames carry `sessionId` and `runId` only and are
+forwarded only while the entry's existing session read rule allows that caller;
+unreadable sessions are dropped and nothing is replayed. `POST /sessions/status`
+returns the requested readable sessions in request order, empty input gives an empty
+list, and `latestRun:null` only means a readable session has no run yet. One
+unreadable ID rejects the whole read with the entry's normal 404. After `ready` or a
+notice the shell reads this snapshot; a send response and the currently open
+conversation do not write list state.
 
 Sessions retain their agent and may carry `origin`: absent or `user` when the user
 started them, `scheduled` when one of the user's scheduled tasks did (workbench
