@@ -222,6 +222,9 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     grants.initialize();
     var captured = new AtomicReference<com.alibaba.fastjson2.JSONObject>();
     var fixtureError = new AtomicReference<Throwable>();
+    var providerHost = new AtomicReference<io.ontomato.dataengine.service.agent.KnowledgeGovernanceService>();
+    var providerContext = new AtomicReference<io.ontomato.dataengine.service.agent.OntologyAgentAccess.Context>();
+    var fixtureExecutor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
     var fixture = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     fixture.createContext(
         "/v1",
@@ -233,6 +236,9 @@ class PlatformScheduleTest extends PostgresTestDatabase {
               var request =
                   com.alibaba.fastjson2.JSON.parseObject(exchange.getRequestBody().readAllBytes());
               String run = exchange.getRequestHeaders().getFirst("Idempotency-Key");
+              if (path.contains("/channel/")) request = providerHost.get().prepare(
+                  request.getJSONObject("channel").getJSONObject("root").getJSONObject("session").getString("sessionId"),
+                  run,request.getJSONObject("input"),providerContext.get());
               String token =
                   request
                       .getJSONObject("environment")
@@ -262,6 +268,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
             exchange.close();
           }
         });
+    fixture.setExecutor(fixtureExecutor);
     fixture.start();
     try {
       var runtime =
@@ -271,6 +278,12 @@ class PlatformScheduleTest extends PostgresTestDatabase {
       when(definitions.resource(anyString())).thenCallRealMethod();
       when(definitions.governance(anyString(), anyString(), anyLong()))
           .thenReturn(new com.alibaba.fastjson2.JSONObject());
+      var callers = mock(io.ontomato.dataengine.service.agent.AgentCaller.class);
+      when(callers.open(anyString(),any(io.ontomato.dataengine.service.agent.OntologyAgentAccess.Context.class))).thenAnswer(call -> {
+        var context = (io.ontomato.dataengine.service.agent.OntologyAgentAccess.Context)call.getArgument(1);
+        providerContext.set(context);
+        return com.alibaba.fastjson2.JSONObject.of("id",call.getArgument(0),"domainId",context.owner().domainId());
+      });
       var governance =
           new io.ontomato.dataengine.service.agent.KnowledgeGovernanceService(
               agentStore,
@@ -278,7 +291,9 @@ class PlatformScheduleTest extends PostgresTestDatabase {
               definitions,
               grants,
               mock(KnowledgeService.class),
-              mock(AdminService.class));
+              mock(AdminService.class),
+              callers);
+      providerHost.set(governance);
       governance.initialize();
       when(identities.hasKnowledgeGovernanceAccess("alice", "sales")).thenReturn(true);
       var access =
@@ -329,6 +344,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
       }
     } finally {
       fixture.stop(0);
+      fixtureExecutor.close();
     }
   }
 

@@ -14,6 +14,7 @@ import org.springframework.web.server.ResponseStatusException;
 @RestControllerAdvice(
     assignableTypes = {
       OntologyAgentController.class,
+      AgentChannelController.class,
       OntologyRetrievalController.class,
       OntologyGenerationController.class,
       MetricSettlementController.class,
