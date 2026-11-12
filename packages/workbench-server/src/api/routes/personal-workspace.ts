@@ -3,6 +3,9 @@ import { personalWorkspaceSchema, recentWorkInputSchema } from "@ontomato/contra
 import { personalWorkspaceStore, type PersonalWorkspaceOwner } from "../../services/personal-workspace/store";
 import { requireDomainId, type AuthenticatedRequest } from "../../utils/request-identity";
 import { asyncHandler } from "../utils/http";
+import { personalHome, saveHomeWorkspace } from "../../services/product-assets/store";
+import { wrap } from "../utils/agent-host";
+import { context } from "../utils/agent-host";
 
 const router: ReturnType<typeof Router> = Router();
 function owner(req: AuthenticatedRequest): PersonalWorkspaceOwner {
@@ -18,13 +21,19 @@ router.post("/recent", asyncHandler(async (req, res) => {
   await personalWorkspaceStore.recordVisit(owner(req as AuthenticatedRequest), item);
   res.json({ data: item });
 }));
-router.get("/", asyncHandler(async (req, res) => {
-  res.json({ data: await personalWorkspaceStore.read(owner(req as AuthenticatedRequest)) });
+router.get("/", wrap(async (req, res) => {
+  const asset = await personalHome(owner(req as AuthenticatedRequest),context(req).credentials);
+  if (asset.document.kind !== "page") throw new Error("Home must be a page");
+  res.json({ data: asset.document.workspace, revision:asset.revision, assetId:asset.id });
 }));
-router.put("/", asyncHandler(async (req, res) => {
+router.put("/", wrap(async (req, res) => {
   const parsed = personalWorkspaceSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "INVALID_PERSONAL_WORKSPACE" }); return; }
-  await personalWorkspaceStore.save(owner(req as AuthenticatedRequest), parsed.data);
-  res.json({ data: parsed.data });
+  const revisionHeader = req.header("If-Match");
+  if(!revisionHeader){res.status(428).json({error:{code:'REVISION_REQUIRED',message:'Read the current home and supply If-Match'}});return;}
+  const revision = Number(revisionHeader);
+  if (revision !== undefined && (!Number.isInteger(revision) || revision < 1)) { res.status(400).json({error:"INVALID_REVISION"}); return; }
+  const asset = await saveHomeWorkspace(owner(req as AuthenticatedRequest), parsed.data, revision,context(req).credentials);
+  res.json({ data: parsed.data, revision:asset.revision, assetId:asset.id });
 }));
 export default router;

@@ -21,3 +21,4 @@ export {
 export { default as ObjectViewRuntime } from "./object-views/ObjectViewRuntime.vue";
 export { default as ObjectViewPage } from "./object-views/ObjectViewPage.vue";
 export { default as ManagerFrame } from "./ManagerFrame.vue";
+export { default as ProductAssetRuntime } from "./products/ProductAssetRuntime.vue";

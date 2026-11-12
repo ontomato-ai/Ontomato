@@ -17,6 +17,7 @@ export const personalWorkspaceSchema = z.object({
   objectOpening: z.enum(["page", "drawer"]).default("page"),
   dashboardIds: ids,
   applicationIds: ids,
+  agentIds: ids.default([]),
   dashboardCards: z.record(z.string().min(1).max(200), ids).default({}),
   pinnedObjects: z.array(z.object({ className: z.string().min(1).max(200), primaryKey: z.string().min(1).max(1000), title: z.string().trim().min(1).max(200) }).strict()).max(30)
     .refine(items => new Set(items.map(item => JSON.stringify([item.className, item.primaryKey]))).size === items.length).default([]),
@@ -30,7 +31,7 @@ export const personalWorkspaceSchema = z.object({
 }).strict();
 export type PersonalWorkspace = z.infer<typeof personalWorkspaceSchema>;
 export const defaultPersonalWorkspace = (): PersonalWorkspace => ({
-  schemaVersion: 1, layout: "assistant", objectOpening: "page", dashboardIds: [], applicationIds: [], dashboardCards: {}, pinnedObjects: [], pinnedAnalyses: [], interactions: { metrics: "drawer", tasks: "drawer" },
+  schemaVersion: 1, layout: "assistant", objectOpening: "page", dashboardIds: [], applicationIds: [], agentIds: [], dashboardCards: {}, pinnedObjects: [], pinnedAnalyses: [], interactions: { metrics: "drawer", tasks: "drawer" },
 });
 
 /** Only business navigation is retained; credentials and arbitrary query strings never enter history. */

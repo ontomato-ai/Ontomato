@@ -99,5 +99,5 @@ export const dashboardPages = (): RouteRecordRaw[] => [
 ];
 
 export const personalWorkspacePages = (): RouteRecordRaw[] => [
-  { ...routes.personalWorkspace, component: () => import("./pages/PersonalWorkspaceRoute.vue"), meta: { workbench: true } },
+  { ...routes.personalWorkspace, redirect: {name:routes.home.name} },
 ];

@@ -147,7 +147,7 @@ function normalizeTimeText(value) {
   return simplified || value;
 }
 
-function generateBasicChartOption(chartType, title, xField, yField, seriesField, data, theme) {
+function generateBasicChartOption(chartType, title, xField, yField, seriesField, data, theme, compact = false) {
   const baseOption = {
     backgroundColor: theme.bgColor,
 
@@ -397,7 +397,7 @@ function generateBasicChartOption(chartType, title, xField, yField, seriesField,
     ...baseOption,
     grid:
       finalChartType === "bar"
-        ? { ...baseOption.grid, bottom: barLayout?.gridBottom ?? 60 }
+        ? { ...baseOption.grid, bottom: compact ? 12 : (barLayout?.gridBottom ?? 60) }
         : baseOption.grid,
     xAxis: {
       ...baseOption.xAxis,
@@ -1114,7 +1114,7 @@ function generateTimelineOption(data, config, theme) {
 function renderEcharts(data, config, theme) {
   const { chartType, title, xField, yField, seriesField, indicators } = config;
   const renderers = {
-    bar: () => generateBasicChartOption("bar", title, xField, yField, seriesField, data, theme),
+    bar: () => generateBasicChartOption("bar", title, xField, yField, seriesField, data, theme, config.compact === true),
     line: () => generateBasicChartOption("line", title, xField, yField, seriesField, data, theme),
     pie: () => generateBasicChartOption("pie", title, xField, yField, seriesField, data, theme),
     donut: () => {
@@ -1139,9 +1139,17 @@ function renderEcharts(data, config, theme) {
   const renderer = renderers[chartType];
   if (!renderer) throw new Error(`Unsupported chart type: ${chartType}`);
   const option = renderer();
+  if (config.compact === true && ["bar", "line", "area", "scatter"].includes(chartType)) {
+    option.grid = { ...option.grid, left: 8, right: 8, bottom: 8, containLabel: true };
+  }
+  if (config.compact === true && ["pie", "donut"].includes(chartType)) {
+    option.legend = { ...option.legend, top: undefined, bottom: 0, type: "scroll" };
+    option.series[0].center = ["50%", "46%"];
+    option.series[0].radius = chartType === "donut" ? ["42%", "76%"] : ["35%", "76%"];
+  }
   if (config.showTitle === false) {
     option.title = { show: false };
-    if (option.grid && chartType !== "timeline") option.grid.top = 32;
+    if (option.grid && chartType !== "timeline") option.grid.top = config.compact === true ? 12 : 32;
     if (option.legend) option.legend.top = 4;
   }
   return option;
@@ -1469,7 +1477,7 @@ export async function execute(input) {
     }
   }
 
-  const config = { chartType, title, xField, yField, seriesField, indicators, showTitle: input.showTitle, dateField: input.dateField, descriptionField: input.descriptionField, locale: input.locale };
+  const config = { chartType, title, xField, yField, seriesField, indicators, showTitle: input.showTitle, compact: input.compact === true, dateField: input.dateField, descriptionField: input.descriptionField, locale: input.locale };
 
   const html = generateHTML(processedData, config);
 

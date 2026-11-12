@@ -189,13 +189,16 @@ const headerLabels = computed(() => ({
   padding: 14px 10px 12px;
   background: var(--shell-panel-bg);
   border-right: 1px solid var(--el-border-color);
-  overflow-y: auto;
+  overflow: hidden;
+  min-height: 0;
 }
 /* The groups fill the column, so the application's own entry sits at its foot. */
 .app-menu-pages {
-  flex: 1 0 auto;
+  flex: 1;
+  height: auto;
 }
 .app-menu-title {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   min-height: 36px;

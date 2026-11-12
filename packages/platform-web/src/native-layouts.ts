@@ -34,6 +34,7 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
         // Business knowledge stays with the ontology it describes.
         paths: [managerPaths.knowledge, managerPaths.capabilityMap],
       },
+      { key: "ontology:products", titleKey: "platform.layers.products", paths: [managerPaths.products] },
     ],
     // The models of the modeling agents, at the foot of the menu like every application's own settings.
     foot: platformRoutes.ontologyModels.path,

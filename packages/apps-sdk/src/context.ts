@@ -15,6 +15,7 @@ import {
 import MetricViewData from "@ontomato/ontology-manager/app-components/MetricViewData.vue";
 import {
   createActionsClient,
+  createProductsClient,
   createManagerRequest,
   createMetricViewsClient,
   metricViewsKey,
@@ -47,6 +48,8 @@ export interface AppContext {
    * parameters that `execute({ id, parameters })` takes. `execute` resolves to the execution result.
    */
   readonly actions: ActionsClient;
+  /** Product assets use the same IDs and revision checks as manual authoring. */
+  readonly products: ReturnType<typeof createProductsClient>;
   /** Opens a platform page in the shell, e.g. `navigate("/ontology/objects")`. */
   navigate(path: string): void;
   /**
@@ -152,6 +155,7 @@ export function createAppContext(): AppContext {
     chartTheme: charts,
     metricViews,
     actions: createActionsClient(transport),
+    products: createProductsClient(transport),
     navigate: (path) => host.navigate(path),
     // The page's own window tells the shell which of its app frames speaks.
     setPageContext(value) {

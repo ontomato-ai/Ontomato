@@ -4,7 +4,7 @@ import { ElTabs, ElTabPane } from "element-plus";
 import { resolveViewParameters, viewConditionMatches, type ObjectViewDocument, type ObjectReference, type ViewWidget } from "@ontomato/contracts/object-views";
 import MetricViewData from "../app-components/MetricViewData.vue";
 import ObjectViewWidget from "./ObjectViewWidget.vue";
-const props = defineProps<{ document: ObjectViewDocument; object: Record<string, unknown>; reference: ObjectReference; preview?: boolean }>();
+const props = defineProps<{ document: ObjectViewDocument; object: Record<string, unknown>; reference: ObjectReference; preview?: boolean; revision?:number }>();
 const emit = defineEmits<{ open: [reference: ObjectReference]; refresh: [] }>();
 const variables = ref<Record<string, unknown>>({});
 const refresh = ref(0);
@@ -14,6 +14,7 @@ watch(() => props.document, document => {
   if (!document.tabs.some(tab => tab.id === activeTab.value)) activeTab.value = document.tabs[0]?.id || "";
 }, { immediate: true });
 watch(() => JSON.stringify([props.reference.className, props.reference.primaryKey]), () => { variables.value = { ...props.document.variables }; });
+watch(()=>props.revision,()=>{refresh.value++;});
 function reload() { refresh.value++; emit("refresh"); }
 /** Keep fixed-value text separate so Java can interpret it against the current definition. */
 function metricParameters(widget: ViewWidget) {

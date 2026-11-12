@@ -53,6 +53,17 @@ async function page() {
   return { wrapper, router, open };
 }
 describe("personal workspace", () => {
+  it('allows configuration while unrelated task loading is still pending',async()=>{
+    const previous=api.request.getMockImplementation()!;
+    let finish!:(value:Response)=>void;
+    api.request.mockImplementation((path:string,init?:RequestInit)=>path.includes('scheduled-tasks')?new Promise<Response>(resolve=>{finish=resolve;}):previous(path,init));
+    const {wrapper}=await page();
+    const configure=wrapper.findAll('button').find(button=>button.text()==='Configure workspace')!;
+    expect(configure.attributes('disabled')).toBeUndefined();
+    await configure.trigger('click');await flushPromises();
+    expect(wrapper.findComponent({name:'ElDialog'}).props('modelValue')).toBe(true);
+    finish(Response.json({tasks:[],timeZone:'UTC'}));await flushPromises();wrapper.unmount();
+  });
   it("pins an accessible analysis and removes it from the recent list without duplicating it", async () => {
     api.conversations = [{ sessionId: "22222222-2222-4222-8222-222222222222", agentId: "11111111-1111-4111-8111-111111111111", title: "Faculty analysis", updatedAt: new Date().toISOString() }];
     const { wrapper } = await page();

@@ -11,7 +11,7 @@ const { locale } = useI18n();
 import ObjectViewRuntime from "./ObjectViewRuntime.vue";
 import { computed } from "vue";
 import { instanceName, type InstanceNameAttribute } from "./instance-name";
-const props = defineProps<{ reference: ObjectReference; preview?: boolean }>();
+const props = defineProps<{ reference: ObjectReference; preview?: boolean; readOnly?:boolean }>();
 const emit = defineEmits<{ open: [reference: ObjectReference]; edit: []; back: [] }>();
 const client = useManagerClient();
 const workspaceHost = inject<WorkspaceObjectHost | null>(workspaceObjectHostKey, null);
@@ -90,7 +90,7 @@ watch(() => JSON.stringify([props.reference.className, props.reference.primaryKe
       <el-alert type="error" :title="error" :closable="false" />
     </div>
     <div v-if="loading && !document" class="page-skeleton" role="status" :aria-label="ot('ovLoading')"><el-skeleton :rows="10" animated /></div>
-    <ObjectViewRuntime v-else-if="document" :document="document" :object="object" :reference="reference" @open="emit('open', $event)" @refresh="refreshObject" />
+    <ObjectViewRuntime v-else-if="document" :document="document" :object="object" :reference="reference" :preview="readOnly" @open="emit('open', $event)" @refresh="refreshObject" />
     </div>
   </section>
 </template>

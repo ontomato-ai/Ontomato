@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { randomId } from "@ontomato/contracts/random-id";
+import { productAssetSchema, type ProductAsset } from "@ontomato/contracts/product-assets";
 import { AgentPicker, ShellComposer } from "@ontomato/agent-shell-ui";
 import { ElMessageBox } from "element-plus";
 import { readRememberedAgent } from "@ontomato/workbench-ui";
@@ -9,7 +11,7 @@ import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { nodeApiRequest } from "@ontomato/workbench-ui";
 import { defaultPersonalWorkspace, personalWorkspaceSchema, recentWorkListSchema, type RecentWork, type WorkspaceSection } from "@ontomato/contracts/personal-workspace";
-import { ManagerFrame, ObjectViewPage } from "@ontomato/ontology-manager";
+import { ManagerFrame, ObjectViewPage, ProductAssetRuntime } from "@ontomato/ontology-manager";
 import { DashboardCardPicker, DashboardMetricPreview } from "@ontomato/workbench-ui/features/dashboard";
 import type { DashboardListItem } from "@ontomato/contracts/dashboard";
 import { platformSchedulesPath, platformTaskListSchema, type PlatformTask } from "@ontomato/contracts/platform-schedules";
@@ -21,10 +23,46 @@ import { AppWindow, ArrowUpRight, CircleAlert, Clock3, LayoutDashboard, MoreHori
 import WorkspaceResourceDetail, { type WorkspaceResource } from "./WorkspaceResourceDetail.vue";
 import { agentHostAgentListSchema, agentHostCreateSessionResponseSchema, agentHostSessionSnapshotSchema, type AgentHostAgent, type AgentHostSession } from "@ontomato/contracts/agent-host";
 const { locale } = useI18n();
+const props=defineProps<{productAssetId?:string}>();
 const router = useRouter();
 const catalog = useApplicationCatalog();
 const config = ref(defaultPersonalWorkspace());
+const homeAsset = ref<ProductAsset | null>(null);
+const productAssets = ref<ProductAsset[]>([]);
+const configRevision = ref<number>();
+function acceptConfig(body: {data:unknown;revision?:number}) {
+  config.value=personalWorkspaceSchema.parse(body.data);configRevision.value=body.revision;
+}
+async function saveConfiguration(workspace:unknown) {
+  if(props.productAssetId && homeAsset.value?.document.kind==='page') {
+    const current=homeAsset.value;
+    const saved=productAssetSchema.parse((await json(`/api/product-assets/${encodeURIComponent(current.id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:current.name,description:current.description,visibility:current.visibility,revision:configRevision.value,document:{...current.document,workspace}})})).asset);
+    homeAsset.value=saved;
+    return {data:saved.document.kind==='page'?saved.document.workspace:workspace,revision:saved.revision};
+  }
+  return json('/api/personal-workspace',{method:'PUT',headers:configurationHeaders(),body:JSON.stringify(workspace)});
+}
+const configurationHeaders = () => ({"Content-Type":"application/json",...(configRevision.value ? {"If-Match":String(configRevision.value)} : {})});
+async function readProducts() {
+  await load("products",async()=>{
+    const home=await json(props.productAssetId?`/api/product-assets/${encodeURIComponent(props.productAssetId)}`:"/api/product-assets/home");homeAsset.value=productAssetSchema.parse(home.asset);
+    productAssets.value=(await json("/api/product-assets")).assets.map((asset:unknown)=>productAssetSchema.parse(asset));
+  });
+}
+const productChildren = (column:number) => homeAsset.value?.document.kind === "page"
+  ? homeAsset.value.document.children.filter(child=>child.column===(column===0?"main":"sidebar")).map(child=>({id:child.assetId,asset:productAssets.value.find(asset=>asset.id===child.assetId)})) : [];
 const draft = ref(defaultPersonalWorkspace());
+const draftChildren=ref<Array<{assetId:string;column:'main'|'sidebar'}>>([]);
+const addProductId=ref('');
+const reusableProducts=computed(()=>productAssets.value.filter(asset=>['widget','widget-group','operation-panel','dashboard','object-view'].includes(asset.document.kind)));
+function addProduct(){if(addProductId.value&&!draftChildren.value.some(child=>child.assetId===addProductId.value))draftChildren.value.push({assetId:addProductId.value,column:'main'});}
+async function saveComposition(){
+  if(!homeAsset.value || homeAsset.value.document.kind!=='page')throw new Error('Page unavailable');
+  const current=homeAsset.value;
+  const response=await json(`/api/product-assets/${encodeURIComponent(current.id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:current.name,description:current.description,visibility:current.visibility,revision:configRevision.value,document:{...current.document,workspace:personalWorkspaceSchema.parse(draft.value),children:draftChildren.value}})});
+  const saved=productAssetSchema.parse(response.asset);homeAsset.value=saved;
+  return {data:saved.document.kind==='page'?saved.document.workspace:draft.value,revision:saved.revision};
+}
 const editing = ref(false);
 const saving = ref(false);
 const ready = ref(false);
@@ -79,11 +117,11 @@ async function readPinned() {
   });
 }
 async function updatePins(next: typeof config.value.pinnedAnalyses) {
-  if (saving.value || editing.value || refreshing.value) return;
+  if (saving.value || editing.value || refreshing.value || homeAsset.value?.editable===false) return;
   saving.value = true;
   await load("pinsSave", async () => {
-    const result = await json("/api/personal-workspace", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...config.value, pinnedAnalyses: next }) });
-    config.value = personalWorkspaceSchema.parse(result.data);
+    const result = await saveConfiguration({ ...config.value, pinnedAnalyses: next });
+    acceptConfig(result);
     await readPinned();
   });
   saving.value = false;
@@ -106,11 +144,11 @@ function movePin(index: number, offset: number) {
   const [item] = next.splice(index, 1); next.splice(index + offset, 0, item!); void updatePins(next);
 }
 async function removeObject(item: WorkspaceObjectReference) {
-  if (saving.value || editing.value || refreshing.value) return;
+  if (saving.value || editing.value || refreshing.value || homeAsset.value?.editable===false) return;
   saving.value = true;
   await load("objectsSave", async () => {
     const next = { ...config.value, pinnedObjects: config.value.pinnedObjects.filter(value => value.className !== item.className || value.primaryKey !== item.primaryKey) };
-    config.value = personalWorkspaceSchema.parse((await json("/api/personal-workspace", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) })).data);
+    acceptConfig(await saveConfiguration(next));
   });
   saving.value = false;
 }
@@ -166,13 +204,13 @@ async function analyze(target: WorkspaceResource, intent: "analyze" | "explain" 
       ? await json("/api/dashboards/query-card", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dashboardId: target.dashboardId, cardId: target.cardId }) })
       : target.runId ? await json(`${platformSchedulesPath}/${target.taskId}/runs/${target.runId}`) : null;
     const session = agentHostCreateSessionResponseSchema.parse(await json("/api/assistant/sessions", {
-      method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ agentId: agent.id }),
+      method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": randomId() }, body: JSON.stringify({ agentId: agent.id }),
     })).session;
     const message = intent === "explain"
       ? (locale.value.startsWith("zh") ? "请解释这个指标的业务含义、统计口径、实际查询参数及结果中的空值。以当前资源和查询证据为依据，缺少的说明请明确指出，不推测定义。" : "Explain this metric's business meaning, definition, saved parameters and missing values using the resource and query evidence. Explicitly identify unavailable definitions.")
       : (locale.value.startsWith("zh") ? "请分析当前指标或任务结果，以查询证据为依据解释主要发现和数据限制，并提出可继续核实的问题。区分执行状态与业务结论，不推断缺失数据。本次只分析，不执行写入。" : "Analyze this metric or task result using its evidence. Explain findings and limitations and suggest questions to verify. Distinguish run status from business conclusions; do not infer missing data or write data.");
     await json(`/api/assistant/sessions/${session.id}/runs`, {
-      method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ message: `${message}\n${JSON.stringify({ resource: target, evidence })}` }),
+      method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": randomId() }, body: JSON.stringify({ message: `${message}\n${JSON.stringify({ resource: target, evidence })}` }),
     });
     resourceOpen.value = false;
     await router.push({ path: platformRoutes.chat.path, query: { agentId: agent.id, sessionId: session.id } });
@@ -194,7 +232,7 @@ function openTask(task: PlatformTask) {
     path: router.resolve({ path: platformRoutes.schedules.path, query: { taskId: task.id, ...(runId ? { runId } : {}) } }).fullPath });
 }
 const text = computed(() => locale.value.startsWith("zh") ? {
-  title: "个人工作台", intro: "问数、关注数据，继续日常工作", configure: "配置工作台", refresh: "刷新",
+  title: "我的主页", intro: "问数、关注数据，继续日常工作", configure: "配置主页", refresh: "刷新",
   save: "保存", cancel: "取消", unsaved: "有未保存的修改", layout: "布局重点", tasks: "我的定时任务", data: "关注的数据",
   apps: "常用应用", tasksLayout: "任务优先", dataLayout: "数据优先", assistantLayout: "应用优先",
   appsDescription: "固定工作中常用的应用，快速进入业务流程", dataDescription: "集中查看关注的仪表盘与关键指标", tasksDescription: "查看需要介入的任务和最近的执行结果", recentDescription: "回到最近打开的应用、会话与数据", application: "应用", dashboard: "仪表盘",
@@ -216,13 +254,14 @@ const text = computed(() => locale.value.startsWith("zh") ? {
   unavailable: "This resource was removed or is unavailable. Choose a replacement in settings.", selection: "Items appear in selection order. Deselect and select again to reorder.",
   attention: "Task activity", issues: "Need intervention", results: "Recent results", runningTasks: "Running", clear: "No scheduled tasks need intervention", recent: "Recent work", emptyRecent: "Open an application, dashboard or analysis conversation to resume it here", recentApps: "Recently used", pinned: "Pinned", updated: "Last visited", noAttention: "Task issues and results from the last 7 days appear here", assistantHint: "Assistant", assistantDescription: "Query data and investigate questions in a conversation", noApps: "No frequently used applications yet",
 });
-const apps = computed(() => catalog.applications.value.filter(app => app.kind === "hosted" || app.kind === "connected"));
+const apps = computed(() => catalog.applications.value.filter(app => app.id !== "personal-workspace" && app.id !== "home"));
 const canBuild = computed(() => catalog.applications.value.some(app => app.id === "app-builder"));
 const canChat = computed(() => catalog.applications.value.some(app => app.id === "agents"));
 const selectedDashboards = computed(() => config.value.dashboardIds.map(id => ({ id, resource: dashboards.value.find(board => board.id === id) })));
 const selectedApps = computed(() => config.value.applicationIds.map(id => ({ id, resource: apps.value.find(app => app.id === id) })));
 function applicationHref(id: string) {
-  return router.resolve({ path: `/applications/${encodeURIComponent(id)}` }).href;
+  const app=catalog.applications.value.find(app=>app.id===id);
+  return router.resolve({ path: app?.kind==='native' ? app.entry.home ?? app.entry.path : `/applications/${encodeURIComponent(id)}` }).href;
 }
 /** Keep data on a wide working surface and activity in a compact supporting column. */
 const columns = computed(() => {
@@ -260,7 +299,7 @@ function recentContext(item: RecentWork) {
   if (session) return `${locale.value.startsWith("zh") ? "会话" : "Conversation"} · ${session.slice(0, 8)}`;
   return "";
 }
-async function json(path: string, init: RequestInit = {}) {
+async function json(path: string, init: globalThis.RequestInit = {}) {
   const response = await nodeApiRequest(path, init);
   const body = await response.json();
   if (!response.ok) throw new Error(body.message ?? body.error ?? `HTTP ${response.status}`);
@@ -274,7 +313,11 @@ async function load(key: string, action: () => Promise<void>) {
   finally { busy.value[key] = false; }
 }
 const readConfig = () => load("config", async () => {
-  config.value = personalWorkspaceSchema.parse((await json("/api/personal-workspace")).data);
+  if(props.productAssetId) {
+    const asset=productAssetSchema.parse((await json(`/api/product-assets/${encodeURIComponent(props.productAssetId)}`)).asset);
+    if(asset.document.kind!=='page')throw new Error('Expected a page asset');
+    homeAsset.value=asset;acceptConfig({data:asset.document.workspace,revision:asset.revision});
+  } else acceptConfig(await json("/api/personal-workspace"));
   ready.value = true;
   await readPinned();
 });
@@ -291,28 +334,28 @@ async function refresh() {
   refreshing.value = true;
   try {
     previewRevision.value++;
-    await Promise.all([readConfig(), readTasks(), readDashboards(), readRecent(), readAgents(), readConversations(), catalog.refresh()]);
+    await Promise.all([readConfig(), readProducts(), readTasks(), readDashboards(), readRecent(), readAgents(), readConversations(), catalog.refresh()]);
   } finally { refreshing.value = false; }
 }
 onMounted(() => { void refresh(); });
 function configure(tab: "layout" | "resources" | "opening" = "layout") {
-  if (saving.value || refreshing.value) return;
+  if (saving.value || busy.value.config || busy.value.products || homeAsset.value?.editable===false) return;
   delete errors.value.save;
   draft.value = { ...config.value, dashboardCards: Object.fromEntries(Object.entries(config.value.dashboardCards).map(([id, cards]) => [id, [...cards]])), interactions: { ...config.value.interactions }, dashboardIds: [...config.value.dashboardIds], applicationIds: [...config.value.applicationIds] };
   editing.value = true;
   const sections = config.value.sections ?? presetSections(config.value.layout);
   draft.value.sections = { main: [...sections.main], sidebar: [...sections.sidebar], hidden: [...sections.hidden] };
   settingsTab.value = tab;
+  draftChildren.value=homeAsset.value?.document.kind==='page'?homeAsset.value.document.children.map(child=>({...child})):[];
 }
 async function save() {
   if (saving.value) return;
   saving.value = true;
   await load("save", async () => {
-    const body = await json("/api/personal-workspace", {
-      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(personalWorkspaceSchema.parse(draft.value)),
-    });
-    config.value = personalWorkspaceSchema.parse(body.data);
+    const body = homeAsset.value ? await saveComposition() : await saveConfiguration(personalWorkspaceSchema.parse(draft.value));
+    acceptConfig(body);
     editing.value = false;
+    await readProducts();
   });
   saving.value = false;
 }
@@ -329,15 +372,17 @@ function taskSummary(value: string) {
     .split(/\n\s*\n/)[0]!.replace(/[*#`]/g, "").replace(/\s+/g, " ").trim();
 }
 const actions = computed(() => [
-  { id: "refresh", label: text.value.refresh, icon: RefreshCw, onClick: () => void refresh() },
-  ...(ready.value ? [{ id: "configure", label: text.value.configure, icon: Settings2, onClick: () => configure() }] : []),
+  {id:'applications',label:locale.value.startsWith('zh')?'全部应用':'All applications',icon:AppWindow,onClick:()=>void router.push('/applications')},
+  { id: "refresh", label: text.value.refresh, icon: RefreshCw, disabled:refreshing.value||saving.value||editing.value, onClick: () => void refresh() },
+    ...(ready.value && homeAsset.value?.editable!==false ? [{ id: "configure", label: text.value.configure, icon: Settings2, disabled:saving.value||!!busy.value.config||!!busy.value.products, onClick: () => configure() }] : []),
 ]);
 </script>
 <template>
-  <AppPage :title="text.title" :description="text.intro" :actions="actions" :labels="{ save: text.save, discard: text.cancel, unsavedChanges: text.unsaved }">
+  <AppPage :title="props.productAssetId?homeAsset?.name ?? text.title:text.title" :description="text.intro" :actions="actions" :labels="{ save: text.save, discard: text.cancel, unsavedChanges: text.unsaved }">
     <div v-if="errors.config" role="alert" class="workspace-error">{{ errors.config }} <el-button @click="readConfig">{{ text.retry }}</el-button></div>
     <WorkspaceSkeleton v-if="!ready && busy.config" :label="text.loading" :rows="6" />
     <el-alert v-if="analysisError" :title="analysisError" type="error" :closable="false" />
+    <el-alert v-if="errors.products" :title="errors.products" type="error" :closable="false" />
     <div v-if="ready" class="workspace-grid" :class="{ 'tasks-first': config.layout === 'tasks' }">
       <div v-for="(sections, column) in columns" :key="column" class="workspace-column" :class="{ 'activity-column': sections.includes('tasks') }">
     <section v-if="column === 0 && canChat" class="workspace-welcome">
@@ -354,6 +399,7 @@ const actions = computed(() => [
       </div>
       <p v-else>{{ workspaceText.noAgent }}</p>
     </section>
+      <section v-for="child in productChildren(column)" :key="child.id" class="workspace-section"><ManagerFrame v-if="child.asset"><ProductAssetRuntime :asset="child.asset" :revision="previewRevision" @refresh="previewRevision++"/></ManagerFrame><p v-else>{{text.unavailable}}</p></section>
       <section v-for="section in sections" :key="section" class="workspace-section" :data-section="section">
         <header><h2>{{ section === 'objects' ? (locale.startsWith('zh') ? '收藏的对象' : 'Pinned objects') : section === 'conversations' ? workspaceText.continue : section === 'apps' ? workspaceText.resources : section === 'recent' ? workspaceText.recent : section === 'tasks' ? text.attention : text.data }}</h2>
           <div v-if="section === 'apps' || section === 'data' || section === 'tasks'" class="section-actions">
@@ -504,6 +550,11 @@ const actions = computed(() => [
         </section>
         </el-tab-pane>
         <el-tab-pane name="resources" :label="locale.startsWith('zh') ? '资源内容' : 'Resources'">
+        <el-button v-if="catalog.applications.value.some(app=>app.id==='ontology')" text @click="editing=false;router.push({path:platformRoutes.products.path,query:homeAsset?{id:homeAsset.id}:{}})">{{locale.startsWith('zh')?'管理组件与模板':'Manage components and templates'}}</el-button>
+        <h3>{{locale.startsWith('zh')?'产品层组件':'Product components'}}</h3>
+        <p class="settings-note">{{locale.startsWith('zh')?'选择已保存的指标展示、操作板、对象视图或仪表盘，按引用组合到主页。':'Compose saved metric views, operation panels, object views and dashboards by reference.'}}</p>
+        <div v-for="(child,index) in draftChildren" :key="child.assetId" class="section-editor-row"><span>{{productAssets.find(asset=>asset.id===child.assetId)?.name??text.unavailable}}</span><el-select v-model="child.column" aria-label="组件位置"><el-option value="main" label="主栏"/><el-option value="sidebar" label="侧栏"/></el-select><el-button :disabled="index===0" @click="draftChildren.splice(index-1,0,...draftChildren.splice(index,1))">上移</el-button><el-button @click="draftChildren.splice(index,1)">移除</el-button></div>
+        <div class="resource-toolbar"><el-select v-model="addProductId" filterable placeholder="选择产品资产" aria-label="选择产品资产"><el-option v-for="asset in reusableProducts" :key="asset.id" :value="asset.id" :label="asset.name"/></el-select><el-button :disabled="!addProductId" @click="addProduct">添加组件</el-button></div>
         <el-form-item :label="text.data">
           <el-select v-model="draft.dashboardIds" multiple filterable :disabled="busy.data || !!errors.data">
             <el-option v-for="board in dashboards" :key="board.id" :value="board.id" :label="board.name" />
@@ -596,6 +647,8 @@ const actions = computed(() => [
 .workspace-column { display: flex; flex-direction: column; gap: var(--spacing-xl); min-width: 0; }
 .workspace-column + .workspace-column { border-left: 1px solid var(--el-border-color); padding-left: var(--page-section-padding); }
 .workspace-section { min-width: 0; }
+.workspace-section > :deep(.ontology-manager){height:auto;container-type:inline-size;contain:none}
+.workspace-section > :deep(.ontology-manager > .ontology-manager-shell){height:auto;overflow:visible}
 .workspace-section + .workspace-section { padding-top: var(--spacing-md); border-top: 1px solid var(--el-border-color-lighter); }
 .workspace-section > .workspace-item:first-of-type, .task-group > .workspace-item:first-of-type { border-top: 0; padding-top: var(--spacing-xs); }
 .workspace-section > .workspace-item:last-child, .task-group > .workspace-item:last-child { padding-bottom: 0; }

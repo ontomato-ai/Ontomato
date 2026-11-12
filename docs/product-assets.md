@@ -1,0 +1,27 @@
+# Product assets — implementation notes
+
+Responsibility correction: display-only `operation-panel` assets migrate to `widget-group` without changing IDs. An operation panel requires an Action; a widget group permits only text, metrics, tables and charts. The common save service validates structure, referenced capabilities and recursive visible children; publication and rollback check dependencies before switching. Personal-workspace PUT requires If-Match. Product result paths must be empty because the MetricView client returns row arrays. Product dependency queries traverse visible product children and include indirect parents; internal object-view/dashboard dependencies and the unified governance graph remain outside this implementation.
+
+Product assets are presentation documents in the Node product service, not business ObjectTypes. Their fixed discriminated schemas live in `packages/contracts/src/product-assets.ts`. Pages and templates compose widgets, operation panels and personal dashboard references; application assets can also reference pages. Dependency edges are derived from these documents. Source applications declare explicit product dependencies in their committed `ontomato.products.json`; arbitrary JavaScript is not statically analyzed.
+
+The Manager's product catalog, App Builder's `product` commands and SDK `context.products` share `/api/product-assets`, authenticated with the current domain and user. Published MetricViews supply business data, and Actions supply writes. Product configuration does not execute SQL, DSL, business predicates or direct object reads. Display variables and parameter bindings are interaction state. Chart renderers and the existing object-view runtime are reused.
+
+## Personal home and templates
+
+`/home` renders the personal page; `/workspace` redirects there. `/products/<assetId>` renders a standalone page or application composition. The application square remains at `/applications`. Personal workspace and old home preferences are merged once into a page registered in `product_home`. Existing legacy rows are retained for rollback; current home and compatibility APIs read/write the product page. Visits, conversations, task results and business data remain in their existing services.
+
+Product assets are isolated by domain. Private assets belong to their owner, who alone can edit/delete them. Domain assets can be discovered and reused by other domain members, with all underlying reads and writes still using the viewer's identity. A personal home cannot be shared directly. Shared templates reject personal dashboards, object/conversation/agent bookmarks and private children. Applying a template copies its layout/configuration into the personal page and keeps shared component references. Copy a component before making independent changes. Product visibility is the initial collaboration policy, not a new grant of business permissions.
+
+Every product save includes the current revision; stale updates return `PRODUCT_CONFLICT`. The personal workspace compatibility API carries the revision in `If-Match`. Referenced product assets and active homes cannot be deleted. Product revisions are editing concurrency tokens, not immutable capability releases or an approval workflow.
+
+## AI and source applications
+
+App Builder discovers `product types` (including JSON Schema), lists/reads assets, and saves the same documents that the manual editor edits. The authoring CLI is available during a build; product authoring through an embedded build-test SDK context is rejected. Custom source stays in the existing Git workspace and publication flow. Publishing/rolling back a source application reads its committed product manifest and registers the application under the existing platform application ID. Only explicit manifest references participate in product impact analysis.
+
+## Verification and remaining scope
+
+Verification covers a migrated home, live published metric cards/table, manual edit after AI edit, stale revisions, invalid output mappings, SQL/DSL/direct-read rejection, private dependencies, referenced deletion, template copy/application, and Action form loading. The follow-up adds an `object-view` adapter to a published class view, runtime selection of different objects, manual chart-style switching against the same MetricView, and direct product composition in home settings. Business writes continue through the existing executor. The catalog uses a fixed shared header with independent bounded list/detail scrolling.
+
+This implementation does not claim four-layer kernel migration: product metadata is owned by the product service and surfaced in the Manager, not yet stored in the data engine's logical ontology graph. Capability version selection, full graph-wide impact analysis, configurable workspace section instances, per-role product grants, deep component copy and full source-code round trips remain separate work. Existing personal dashboards retain their own editing APIs; their product entries are references. Existing object views remain in their owner service and their product entries reference them without migration. Their direct property/relationship reads retain the existing server controls; this compatibility path is not a claim that all reads now pass through MetricViews. Do not interpret a product revision as a pinned capability version.
+
+See [产品层设计与整合说明](产品层设计与整合说明.md) for the complete Chinese design, meeting mapping and acceptance notes.

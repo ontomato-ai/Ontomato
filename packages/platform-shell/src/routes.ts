@@ -48,6 +48,7 @@ export const platformRoutes = {
   objectView: { name: "manager-object-view", path: "/browser/views/:className" },
   objectViewEditor: { name: "manager-object-view-editor", path: "/ontology/objects/:className/view" },
   ontology: { name: "OntologyHome", path: "/ontology" },
+  products: { name: "Products", path: "/ontology/products" },
   ontologyCapabilities: { name: "OntologyCapabilities", path: "/ontology/capabilities" },
   ontologySkills: { name: "OntologySkills", path: "/ontology/skills" },
   /** One skill, read as its package. */

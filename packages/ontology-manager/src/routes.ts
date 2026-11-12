@@ -28,6 +28,11 @@ const OntologyAssetDetail = defineAsyncComponent(() => import("./components/Onto
 const OntologyPlayground = defineAsyncComponent(() => import("./components/OntologyPlayground.vue"));
 const ObjectViewPage = defineAsyncComponent(() => import("./object-views/ObjectViewPage.vue"));
 const ObjectViewBuilder = defineAsyncComponent(() => import("./object-views/ObjectViewBuilder.vue"));
+const ProductAssetCatalog=defineAsyncComponent(()=>import("./products/ProductAssetCatalog.vue"));
+const ProductAssetRoute=defineComponent({setup(){
+  const route=useRoute(),router=useRouter();
+  return ()=>h(ProductAssetCatalog,{assetId:String(route.query.id ?? ""),onSelect:(id:string)=>void router.replace({query:{id}}),onHome:()=>void router.push("/home"),onOpen:(id:string)=>void router.push(`/products/${encodeURIComponent(id)}`)});
+}});
 
 function objectViewLocation(reference: ObjectReference) {
   return { name: routes.objectView.name, params: { className: reference.className }, query: { key: reference.primaryKey } };
@@ -362,6 +367,7 @@ export function managerRoutes(): RouteRecordRaw[] {
       path: "",
       component: ManagerFrame,
       children: [
+        { ...routes.products, component: ProductAssetRoute, meta: {page:managerPaths.products} },
         { ...routes.objectView, component: ObjectViewRoute, meta: { page: managerPaths.dataBrowser, ownHeader: true } },
         { ...routes.objectViewEditor, component: ObjectViewEditorRoute, meta: { page: managerPaths.objects } },
         { path: "/views/:className", redirect: (to) => ({ name: to.query.edit === "true" ? routes.objectViewEditor.name : routes.objectView.name, params: to.params, query: to.query }) },

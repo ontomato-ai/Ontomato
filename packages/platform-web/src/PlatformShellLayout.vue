@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, provide, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, provide, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessageBox } from "element-plus";
@@ -43,6 +43,8 @@ const props = defineProps<{
 }>();
 
 const host = usePlatformHost();
+// Conversation and home routes do not pass through a permission-bearing page guard.
+onMounted(() => { void host.access.load(); });
 const { t, te } = useI18n();
 const route = useRoute();
 const router = useRouter();

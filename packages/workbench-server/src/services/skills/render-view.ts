@@ -19,7 +19,7 @@ export async function renderObjectView(owner: { domainId: string; userId: string
     const skills = await prepareAssistantSkills(owner.domainId, [skillReference(skill, owner.domainId)]);
     const request = codeExecutionRequestSchema.parse({
       language: "python", locale: credentials.locale || "en",
-      files: [{ path: "input.json", content: JSON.stringify({ ...input, locale: credentials.locale }) }, {
+      files: [{ path: "input.json", content: JSON.stringify({ compact: true, ...input, locale: credentials.locale }) }, {
         path: "render.py", content: `import os, subprocess\nfrom pathlib import Path\nroot = os.environ["PYTHONPATH"].split(os.pathsep)[0]\nscript = "import {execute} from " + repr(Path(root, "index.mjs").as_uri()) + "; import fs from 'node:fs'; const r=await execute(JSON.parse(fs.readFileSync('input.json','utf8'))); if(!r.html || r.meta?.error) throw new Error('Visualization failed'); fs.writeFileSync('result.html',r.html);"\nsubprocess.run(["node", "--input-type=module", "-e", script], check=True)\n`,
       }],
       entry: "render.py", arguments: [], outputPaths: ["result.html"],

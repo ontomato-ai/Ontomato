@@ -104,6 +104,13 @@ the page is not inside the shell. `app.use(context)` installs the platform's wor
   permission: an app sees and changes only what its user may. When the sign-in expires, the shell takes over.
 - `context.navigate(path)` opens a platform page in the shell, such as `context.navigate("/ontology/assets/metrics")`.
 - `context.setPageContext({ page, selection })` tells the platform what the reader looks at; see the next section.
+- `context.products` reads and edits the same product assets as the Manager and App Builder. `list()`, `get(id)` and
+  `home()` return assets; `save(id, {name, description, visibility, document}, revision)` creates at revision 0 or updates
+  an existing revision. `copy(id, name)` creates a private copy, `useHome(id, homeRevision)` applies a page/template and
+  `delete(id, revision)` refuses assets in use. Discover the current asset document before editing; business logic stays
+  in published MetricViews and Actions. A shared component uses the reader's identity and grants no data access.
+  These authoring calls are unavailable in a build-test preview. Navigate to `/products/<pageAssetId>` to render a
+  declarative page in the platform's shared runtime.
 - An app reaches the platform only through the SDK: `context.metricViews` to read, `context.actions` to change data and
   `createAssistantClient(context)` for conversations. Other platform paths are internal and change between versions.
 
