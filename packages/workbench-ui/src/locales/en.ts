@@ -723,7 +723,6 @@ export default {
     "restoreAction": "Go back",
     "restored": "Back at {commit}, as the new commit {created}",
     "autoCommitted": "Round ended, committed automatically",
-    "openPreview": "Open preview",
     "carries": "Sent with",
     "context": "Current page: {page}",
     "contextSelection": "Current page: {page}; selected object: {object}.",

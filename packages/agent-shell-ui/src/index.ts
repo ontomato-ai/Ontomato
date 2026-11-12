@@ -15,7 +15,7 @@ export {
 export { default as ShellNavBody } from "./components/ShellNavBody.vue";
 export { default as ShellColumn } from "./components/ShellColumn.vue";
 export { default as ToolStep } from "./components/ToolStep.vue";
-export { useConversationContinuation } from "./context";
+export { pageDockSpaceKey, useConversationContinuation, usePageDockSpace } from "./context";
 export { continuationMessage } from "./continuation-message";
 export { useAgentNav, type AgentNav, type AgentNavOptions } from "./useAgentNav";
 export {

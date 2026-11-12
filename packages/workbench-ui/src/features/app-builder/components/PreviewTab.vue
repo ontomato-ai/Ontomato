@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch, inject } from "vue";
 import { useI18n } from "vue-i18n";
 import { Check, CircleAlert, Files, LoaderCircle } from "lucide-vue-next";
+import { usePageDockSpace } from "@ontomato/agent-shell-ui";
 import { apiUrl } from "../../../utils/api-base";
 import { getSynchronizedNow } from "../../../utils/server-time";
 import { builderPlatformKey } from "../platform";
@@ -22,6 +23,9 @@ import type { WorkspaceView } from "../workspace-view";
  * has no switch here; it shows once the application is published.
  *
  * `frameWindow` is the window of the frame shown now, null without one: the app speaks for the preview only from there.
+ *
+ * The frame takes the page's whole height; full, the shell's composer floats over its foot, and the app is told how much
+ * it covers so it keeps that room after its content.
  */
 const props = defineProps<{ view: WorkspaceView; reload: number; flash: string | null }>();
 const frameWindow = defineModel<Window | null>("frameWindow", { required: true });
@@ -34,6 +38,7 @@ const error = ref<string | null>(null);
 const hasPage = computed(() => props.view.files.some((file) => file.path === "index.html"));
 const workspace = computed(() => props.view.workspace);
 const platform=inject(builderPlatformKey)!;
+const dockSpace = usePageDockSpace();
 const testState=useBuildTestState(()=>workspace.value?.id ?? null);
 defineExpose({buildTestState:testState.state,refreshBuildTestState:testState.refresh,previewError:computed(()=>error.value)});
 /** What the frame runs on: Java's last answer for the workspace shown, none before the first; a failed read keeps it. */
@@ -78,8 +83,12 @@ watch(iframe, (element) => {
   const source = element?.contentWindow ?? null;
   // A controlled model's prop updates on the parent's next render; register the actual new frame now.
   frameWindow.value = source;
-  if(source) registration=platform.registerPreviewFrame(source,binding.value!);
+  if(source) {
+    registration=platform.registerPreviewFrame(source,binding.value!);
+    registration.setInsets({ bottom: dockSpace.value });
+  }
 }, { flush: "post" });
+watch(dockSpace, (bottom) => registration?.setInsets({ bottom }));
 onBeforeUnmount(() => {registration?.dispose();frameWindow.value=null;});
 
 /* ---- The frame's top line and notice: the test data the app runs on ---- */

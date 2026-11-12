@@ -69,6 +69,12 @@ export interface ShellFeatureDeclaration {
    * collapsed into the side panel and expanded again, and messages sent while it is open carry the host's page context.
    */
   withConversation?: boolean;
+  /**
+   * The page fills the pane's height and scrolls inside itself (an app frame, an editor). Full, the composer floats over
+   * its foot and the pane leaves the page its whole height: the page keeps the covered room after its own scrolling
+   * content (`--pane-dock-space`, `usePageDockSpace()`). Other pages scroll in the pane, which keeps that room for them.
+   */
+  scrollsItself?: boolean;
 }
 
 /** A workbench is a code declaration; its agents come from the host. */

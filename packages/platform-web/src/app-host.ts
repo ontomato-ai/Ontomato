@@ -3,6 +3,7 @@ import { watch } from "vue";
 import type { Router } from "vue-router";
 import {
   APP_HOST_GLOBAL,
+  type AppFrameInsets,
   type AppHost,
   type AppHostCredential,
   type AppHostPreferences,
@@ -13,6 +14,9 @@ import { readRuntimeConfig } from "./config";
 
 const executionBindings = new WeakMap<object, AppExecutionContext>();
 const executionListeners = new WeakMap<object, Set<(context: AppExecutionContext) => void>>();
+const frameInsets = new WeakMap<object, AppFrameInsets>();
+const insetListeners = new WeakMap<object, Set<(insets: AppFrameInsets) => void>>();
+const NO_INSETS: AppFrameInsets = { bottom: 0 };
 function assertFrameBinding(previous: AppExecutionContext | undefined, next: AppExecutionContext) {
   if(previous && (previous.kind!==next.kind || previous.kind==="build-test" && next.kind==="build-test" && (previous.contextId!==next.contextId || previous.workspaceId!==next.workspaceId)))
     throw new Error("Reload the preview frame to change its execution context");
@@ -28,8 +32,13 @@ function registerFrame(source: object, context: AppExecutionContext) {
       executionBindings.set(source,next);
       for(const listener of executionListeners.get(source) ?? []) listener(next);
     },
+    /** The room the shell's own controls now cover over the frame. */
+    setInsets(insets: AppFrameInsets) {
+      frameInsets.set(source, insets);
+      for (const listener of insetListeners.get(source) ?? []) listener(insets);
+    },
     // Keep the last binding until the Window is collected: detached frames must never become live.
-    dispose() { executionListeners.delete(source); },
+    dispose() { executionListeners.delete(source); insetListeners.delete(source); },
   };
 }
 
@@ -99,6 +108,14 @@ export function installAppHost(options: {
     onAuthFailure: options.onAuthFailure,
     setPageContext(source, context) {
       for (const listener of pageContextListeners) listener(source, context);
+    },
+    subscribeFrameInsets(source, listener) {
+      executionContext(source);
+      const listeners = insetListeners.get(source) ?? new Set();
+      insetListeners.set(source, listeners);
+      listeners.add(listener);
+      listener(frameInsets.get(source) ?? NO_INSETS);
+      return () => { listeners.delete(listener); };
     },
   };
 }

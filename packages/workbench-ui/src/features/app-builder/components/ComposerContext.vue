@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { computed, type Component } from "vue";
 import { useI18n } from "vue-i18n";
-import { Info, PanelRightOpen, SquareMousePointer } from "lucide-vue-next";
+import { Info, SquareMousePointer } from "lucide-vue-next";
 
 /**
- * Above the composer: what a message sent now carries (the open view of the workspace and the object selected in the
- * preview's app), or, with only the conversation shown, the way back to the workspace page as a button of the ordinary
- * size, so it is not missed. When another conversation's run occupies the workspace it says which, and opens it; this
- * conversation's message would be refused until that run ends.
+ * With the composer: what a message sent now carries (the open view of the workspace and the object selected in the
+ * preview's app), while the page is open. When another conversation's run occupies the workspace it says which, and
+ * opens it; this conversation's message would be refused until that run ends. Above the conversation's composer each
+ * part may take its own line; `inline`, inside the full page's one-row composer, everything stays on one line and a part
+ * that does not fit is cut short, its whole text in its title.
  */
 const props = defineProps<{
   pageOpen: boolean;
+  inline: boolean;
   /** The open view, as the message names it. */
   page: string;
   icon: Component;
@@ -18,16 +20,20 @@ const props = defineProps<{
   selection: string | null;
   busy: { title: string | null; sessionId: string | null } | null;
 }>();
-const emit = defineEmits<{ openPage: []; openSession: [id: string] }>();
+const emit = defineEmits<{ openSession: [id: string] }>();
 const { t } = useI18n();
 const selected = computed(() => props.selection && t("appBuilder.selected", { object: props.selection }));
+/** Read only while busy is shown. */
+const busyText = computed(() =>
+  props.busy?.title ? t("appBuilder.busyElsewhere", { title: props.busy.title }) : t("appBuilder.busyUnknown"),
+);
 </script>
 
 <template>
-  <div class="composer-context-line">
+  <div class="composer-context-line" :class="{ inline }">
     <p v-if="busy" class="busy" role="status">
       <Info :size="14" aria-hidden="true" />
-      <span>{{ busy.title ? t("appBuilder.busyElsewhere", { title: busy.title }) : t("appBuilder.busyUnknown") }}</span>
+      <span class="busy-text" :title="busyText">{{ busyText }}</span>
       <button v-if="busy.sessionId" type="button" class="link" @click="emit('openSession', busy.sessionId)">
         {{ t("appBuilder.openBusy") }}
       </button>
@@ -39,7 +45,6 @@ const selected = computed(() => props.selection && t("appBuilder.selected", { ob
         <SquareMousePointer :size="13" aria-hidden="true" /><span class="chip-text">{{ selected }}</span>
       </span>
     </div>
-    <el-button v-else :icon="PanelRightOpen" @click="emit('openPage')">{{ t("appBuilder.openPreview") }}</el-button>
   </div>
 </template>
 
@@ -77,6 +82,31 @@ const selected = computed(() => props.selection && t("appBuilder.selected", { ob
   gap: 6px;
   max-width: 100%;
   min-width: 0;
+}
+/* Inside the one-row composer: everything on one line, each part cut short rather than wrapped. */
+.composer-context-line.inline {
+  flex-direction: row;
+  align-items: center;
+}
+.inline .busy {
+  align-items: center;
+  min-width: 0;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+}
+.inline .busy svg {
+  margin-top: 0;
+}
+.inline .busy-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inline .carries {
+  flex-wrap: nowrap;
 }
 .carries-label {
   flex-shrink: 0;

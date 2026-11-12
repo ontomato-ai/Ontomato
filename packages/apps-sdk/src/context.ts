@@ -117,9 +117,15 @@ export function createAppContext(): AppContext {
     charts.value = chartTheme();
   });
   const stop = host.subscribePreferences(follow);
-  // The shell outlives this frame: stop its listener when the frame goes away, not when the page is only cached.
+  // The room the shell's own controls cover at the frame's foot, which the stylesheet keeps after the page's content.
+  const stopInsets = host.subscribeFrameInsets(window, ({ bottom }) =>
+    document.documentElement.style.setProperty("--app-inset-bottom", `${bottom}px`),
+  );
+  // The shell outlives this frame: stop its listeners when the frame goes away, not when the page is only cached.
   window.addEventListener("pagehide", (event) => {
-    if (!event.persisted) stop();
+    if (event.persisted) return;
+    stop();
+    stopInsets();
   });
 
   const transport = createManagerRequest(

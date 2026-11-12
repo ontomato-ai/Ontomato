@@ -37,6 +37,20 @@ export const messageContextKey: InjectionKey<Ref<MessageContext>> = Symbol("agen
 /** Each artifact provides its own header outlet for renderer-specific controls. */
 export const artifactHeaderKey: InjectionKey<Ref<HTMLElement | null>> = Symbol("artifact-header");
 
+/**
+ * How much of a full page's foot the shell's floating composer covers, in pixels; 0 beside the conversation. The pane
+ * also sets it on itself as `--pane-dock-space`, for the page's styles.
+ */
+export const pageDockSpaceKey: InjectionKey<Readonly<Ref<number>>> = Symbol("page-dock-space");
+
+/**
+ * The room a page in the shell's page pane keeps after its own scrolling content, for a page that scrolls itself
+ * (`ShellFeatureDeclaration.scrollsItself`) and hands it on, e.g. to the app in a frame.
+ */
+export function usePageDockSpace() {
+  return inject(pageDockSpaceKey)!;
+}
+
 /** Artifact overrides can use the conversation capability even through a renderer wrapper. */
 export function useConversationContinuation() {
   return inject(shellContextKey, undefined)?.continueConversation;

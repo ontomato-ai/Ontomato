@@ -5,3 +5,11 @@
 @import "element-plus/theme-chalk/dark/css-vars.css";
 @import "@ontomato/design-tokens/foundation.css";
 @import "@ontomato/agent-shell-ui/style.css";
+
+/* The room the platform's own controls cover at the foot of the frame (createAppContext() sets it), after the page's
+   content, so its end scrolls clear of them. */
+body::after {
+  content: "";
+  display: block;
+  height: var(--app-inset-bottom, 0px);
+}

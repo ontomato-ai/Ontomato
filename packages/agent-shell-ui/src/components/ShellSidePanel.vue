@@ -15,7 +15,7 @@ const emit = defineEmits<{ close: [] }>();
 const shell = inject(shellContextKey)!;
 const headerControls = ref<HTMLElement | null>(null);
 provide(artifactHeaderKey, headerControls);
-const { width, startResize } = usePanelWidth();
+const { width, resizing, startResize } = usePanelWidth();
 const icon = computed(() => artifactIcon(props.open.artifact.path));
 const title = computed(() => props.open.title || fileName(props.open.artifact.path));
 
@@ -25,7 +25,7 @@ async function download() {
 </script>
 
 <template>
-  <aside class="side-panel" :style="{ '--panel-width': `${width}px` }" @keydown.escape="emit('close')">
+  <aside class="side-panel" :class="{ resizing }" :style="{ '--panel-width': `${width}px` }" @keydown.escape="emit('close')">
     <div class="panel-resize" role="separator" aria-orientation="vertical" @pointerdown.prevent="startResize" />
     <header class="panel-header">
       <span class="panel-icon"><component :is="icon" :size="17" /></span>
@@ -141,6 +141,10 @@ async function download() {
   min-height: 0;
   overflow: auto;
   padding: 16px;
+}
+/* While the edge is dragged, an HTML card's frame must not take the pointer from it. */
+.resizing .panel-body {
+  pointer-events: none;
 }
 @keyframes slide-in {
   from {
