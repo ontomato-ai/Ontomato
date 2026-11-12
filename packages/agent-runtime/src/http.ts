@@ -1,3 +1,4 @@
+import { agentInputSchema, agentRunContextSchema, agentRefSchema, agentActorRefSchema } from "@ontomato/contracts/agent-channel";
 import { workspaceRouter, workspaceOwner } from "./workspace-http";
 import { runtimeCreateSessionRequestSchema } from "@ontomato/contracts/agent-runtime";
 import { sessionHistoryQuerySchema } from "@ontomato/contracts/session-history";
@@ -327,6 +328,54 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
       });
     }),
   );
+  app.post("/v1/channel/sessions/:sessionId/workspace", route(async (req, res) => {
+    const ctx = scope(req), id = runtimeIdSchema.parse(req.params.sessionId);
+    const { workspaceId, ownerId } = z.object({ workspaceId: runtimeIdSchema, ownerId: z.string().min(1) }).strict().parse(req.body);
+    await runtime.workspaces.get(ctx.scope, ownerId, workspaceId);
+    const result = await runtime.store.pool.query(`UPDATE ${runtime.store.table("sessions")} SET workspace_id=$4 WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND (workspace_id IS NULL OR workspace_id=$4) AND active_run_id IS NULL RETURNING id`, [ctx.scope.hostId,ctx.scope.domainId,id,workspaceId]);
+    if (!result.rowCount) throw new RuntimeError(409,"WORKSPACE_CHANGED","Session workspace cannot change");
+    res.json({ accepted: true });
+  }));
+  app.get("/v1/channel/sessions/:sessionId/tasks/:taskId/process", route(async (req, res) => {
+    const target = await runtime.channel.process(scope(req).scope, runtimeIdSchema.parse(req.params.sessionId), runtimeIdSchema.parse(req.params.taskId));
+    res.json(await runtime.snapshot(target.scope, target.runId));
+  }));
+  app.get("/v1/channel/sessions/:sessionId/tasks/:taskId/process/events", route(async (req, res) => {
+    const target = await runtime.channel.process(scope(req).scope, runtimeIdSchema.parse(req.params.sessionId), runtimeIdSchema.parse(req.params.taskId));
+    const after = runtimeEventSubscriptionSchema.parse(req.query);
+    res.set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" }); res.flushHeaders();
+    const detach = await runtime.subscribe(target.scope, target.runId, after.afterSeq, after.streamId, frame => res.write(`event: runtime\ndata: ${JSON.stringify(frame)}\n\n`));
+    const timer = setInterval(() => res.write(": heartbeat\n\n"),15000); timer.unref();
+    res.on("close", () => { clearInterval(timer); detach(); });
+  }));
+  app.post("/v1/channel/sessions/:sessionId/bind", route(async (req, res) => {
+    const ctx = scope(req), id = runtimeIdSchema.parse(req.params.sessionId);
+    const body = z.object({ agent: agentRefSchema, actor: agentActorRefSchema }).strict().parse(req.body);
+    if (ctx.scope.domainId !== body.actor.domainId || runtime.channel.provider(body.agent.providerId).hostId !== ctx.scope.hostId) throw new RuntimeError(403, "CROSS_DOMAIN", "Caller and provider must belong to this scope");
+    await runtime.store.session(ctx.scope,id);
+    const previous = (await runtime.store.pool.query(`SELECT channel FROM ${runtime.store.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [ctx.scope.hostId,ctx.scope.domainId,id])).rows[0].channel;
+    await runtime.channel.facts.bind(ctx.scope, id, { ...body, parent: previous?.parent ?? null });
+    res.json({ accepted: true });
+  }));
+  app.post("/v1/channel/sessions/:sessionId/runs", route(async (req, res) => {
+    const ctx = scope(req), headers = runtimeAdmissionHeadersSchema.parse(req.headers);
+    const body = z.object({ channel: agentRunContextSchema, language: z.string().min(1), input: agentInputSchema, context: z.record(z.unknown()).optional() }).strict().parse(req.body);
+    res.status(202).json(await runtime.channel.request(ctx.scope, runtimeIdSchema.parse(req.params.sessionId), headers["idempotency-key"], body.channel, body.input, body.language, body.context as import("@ontomato/contracts/agent-channel").AgentRunIntent["context"]));
+  }));
+  app.get("/v1/channel/sessions/:sessionId/tasks", route(async (req, res) => {
+    res.json(await runtime.channel.tasks(scope(req).scope, runtimeIdSchema.parse(req.params.sessionId)));
+  }));
+  app.get("/v1/channel/sessions/:sessionId/events", route(async (req, res) => {
+    const ctx = scope(req), sessionId = runtimeIdSchema.parse(req.params.sessionId);
+    await runtime.store.session(ctx.scope, sessionId);
+    res.set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" }); res.flushHeaders();
+    let closed = false, queue = Promise.resolve();
+    const send = () => { queue = queue.then(async () => { if (closed) return; const snapshot = await runtime.channel.tasks(ctx.scope, sessionId); if (!closed) res.write(`event: tasks\ndata: ${JSON.stringify({ ...snapshot, type: "tasks_snapshot", settled: false })}\n\n`); }).catch(error => { runtimeLogger.error("Channel projection failed", runtimeDiagnostic(error)); res.destroy(error); }); };
+    const detach = runtime.channel.subscribe(ctx.scope, sessionId, send);
+    res.write('event: ready\ndata: {"type":"ready"}\n\n'); send();
+    const timer = setInterval(() => res.write(": heartbeat\n\n"), 15000); timer.unref();
+    res.on("close", () => { closed = true; clearInterval(timer); detach(); });
+  }));
   app.get("/v1/sessions/:sessionId/history", route(async (req, res) => {
     res.json(await runtime.history(scope(req).scope, runtimeIdSchema.parse(req.params.sessionId), sessionHistoryQuerySchema.parse(req.query)));
   }));
