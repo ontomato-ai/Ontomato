@@ -809,10 +809,11 @@ export default {
     "backToSkills": "All skills",
     "importIntro": "Upload one skill package as a .zip file.",
     "importRuleRoot": "SKILL.md sits at the package root: directly in the zip, or inside its single top-level folder.",
-    "importRuleFrontmatter": "SKILL.md starts with frontmatter giving name (the skill ID: lowercase letters, digits and single hyphens) and description.",
+    "importRuleFrontmatter": "SKILL.md starts with frontmatter giving name (the skill ID: lowercase letters, digits and single hyphens) and description; the platform reads only these two, and other metadata, including the ontomato.* fields of older packages, is not used.",
     "importRuleText": "Scripts and references go in the same package; every file must be UTF-8 text, so images and other binary files cannot be included.",
     "importRuleOverwrite": "If a skill with the same name exists, you are asked first; confirming replaces the whole package.",
-    "importChoose": "Choose ZIP file"
+    "importChoose": "Choose ZIP file",
+    "builtInNoDelete": "Built-in skills come with the product and cannot be deleted"
   },
   "agents": {
     "title": "Agent settings",

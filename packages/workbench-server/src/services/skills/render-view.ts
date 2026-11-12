@@ -15,7 +15,7 @@ export async function renderObjectView(owner: { domainId: string; userId: string
   let execution = await withDomainSkills(owner.domainId, async () => {
     const registry = await skillRegistryManager.forDomain(owner.domainId);
     const skill = registry.getSkillById(id);
-    if (!skill || skill.manifest.type !== "executable" || skill.manifest.category !== "visualization") throw new HttpError(404, "Visualization skill not found");
+    if (!skill) throw new HttpError(404, "Skill not found");
     const skills = await prepareAssistantSkills(owner.domainId, [skillReference(skill, owner.domainId)]);
     const request = codeExecutionRequestSchema.parse({
       language: "python", locale: credentials.locale || "en",

@@ -1,13 +1,6 @@
 ---
 name: leaflet
 description: Interactive Leaflet base map for geospatial points with value-scaled markers and detail popups.
-metadata:
-  ontomato.type: executable
-  ontomato.category: visualization
-  ontomato.title: Leaflet Base Map
-  ontomato.tags: '["visualization","map","leaflet","geospatial"]'
-  ontomato.version: 1.0.0
-  ontomato.outputType: html
 ---
 
 ## Standard CLI

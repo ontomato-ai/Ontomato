@@ -6,7 +6,7 @@ import { workbenchI18n } from "../../../i18n";
 import SkillDetail from "../components/SkillDetail.vue";
 import { skillsApi } from "../api";
 
-/** A skill is read as its package: SKILL.md opens first, and a built-in package offers no deletion. */
+/** A skill is read as its package: SKILL.md opens first, and a built-in package's delete is there but greyed. */
 vi.mock("@ontomato/foundation-ui/code", () => ({ CodeEditor: { props: ["modelValue"], template: '<pre class="code-double">{{ modelValue }}</pre>' } }));
 vi.mock("@ontomato/foundation-ui/markdown", () => ({ MarkdownView: { props: ["content"], template: '<div class="markdown-double">{{ content }}</div>' } }));
 
@@ -27,7 +27,7 @@ async function mountDetail(isPublic: boolean) {
 }
 
 it("opens SKILL.md first, with its frontmatter as written above the drawn body, and shows other files as code", async () => {
-  const { wrapper, read, i18n } = await mountDetail(false);
+  const { wrapper, read } = await mountDetail(false);
   expect(read).toHaveBeenCalledWith("growth", "SKILL.md");
   expect(wrapper.find(".frontmatter").text()).toBe("name: growth");
   expect(wrapper.find(".markdown-double").text()).toBe("# Growth");
@@ -38,8 +38,8 @@ it("opens SKILL.md first, with its frontmatter as written above the drawn body, 
   await wrapper.findAll(".tree-node").find((node) => node.text() === "index.mjs")!.trigger("click");
   await flushPromises();
   expect(wrapper.find(".code-double").text()).toBe("export {};");
-  // A skill the domain owns offers the delete action, whatever the label reads in the current language.
-  expect(wrapper.text()).toContain(i18n.global.t("common.delete"));
+  // A skill the domain owns can be deleted.
+  expect(wrapper.find(".detail-titlebar .el-button--danger").attributes("disabled")).toBeUndefined();
   wrapper.unmount();
 });
 
@@ -54,8 +54,8 @@ it("keeps the file being read when the skill is read again", async () => {
   wrapper.unmount();
 });
 
-it("offers no deletion for a built-in skill", async () => {
-  const { wrapper, i18n } = await mountDetail(true);
-  expect(wrapper.text()).not.toContain(i18n.global.t("common.delete"));
+it("shows a built-in skill's delete greyed", async () => {
+  const { wrapper } = await mountDetail(true);
+  expect(wrapper.find(".detail-titlebar .el-button--danger").attributes("disabled")).toBe("");
   wrapper.unmount();
 });

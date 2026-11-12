@@ -137,16 +137,11 @@ export function createWorkbenchApp(): Express {
           { domainId, token: verification.token, apiKey: verification.apiKey },
           async () => {
             const registry = await skillRegistryManager.forDomain(domainId);
-            const [, type, category, id, ...segments] = decodeURIComponent(
-              req.path,
-            ).split("/");
+            // The two segments before the ID are the historical shape of these addresses, kept for HTML already saved
+            // with them; they no longer say anything about the package.
+            const [, , , id, ...segments] = decodeURIComponent(req.path).split("/");
             const skill = registry.getSkillById(id);
-            if (
-              !skill ||
-              skill.manifest.type !== type ||
-              skill.manifest.category !== category ||
-              !segments.length
-            ) {
+            if (!skill || !segments.length) {
               res.sendStatus(404);
               return;
             }
