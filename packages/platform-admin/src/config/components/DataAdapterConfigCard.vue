@@ -22,7 +22,6 @@ import MultiDataSourceEditor from "./MultiDataSourceEditor.vue";
 const { t } = useI18n();
 
 const props = defineProps<{
-  saving: boolean;
   testing: boolean;
   /** Outcome of the last connection test; null when none is shown. */
   test: DataAdapterTestOutcome | null;
@@ -42,7 +41,6 @@ const mode = defineModel<string>("mode", { required: true });
 const multiDraft = defineModel<MultiDataSourceDraft>("multiDraft", { required: true });
 
 const emit = defineEmits<{
-  save: [];
   test: [];
   retryOntology: [];
 }>();
@@ -57,7 +55,6 @@ function connection(type: string): DataAdapterConnection {
 
 <template>
   <section class="adapter-settings" :aria-label="t('admin.dataAdapterConfig')">
-    <h2 class="settings-heading">{{ t("admin.dataAdapterConfig") }}</h2>
     <div class="card-body">
       <el-form
         class="config-form"
@@ -90,23 +87,10 @@ function connection(type: string): DataAdapterConnection {
           :adapter-display="adapterDisplay"
         />
 
-        <el-form-item class="form-actions">
-          <el-button
-            v-if="selected && mode !== multiDataSourceType"
-            :loading="testing"
-            :disabled="disabled"
-            @click="emit('test')"
-          >
+        <!-- The form is saved from the page header; testing a connection reads it without saving. -->
+        <el-form-item v-if="selected && mode !== multiDataSourceType" class="form-actions">
+          <el-button :loading="testing" :disabled="disabled" @click="emit('test')">
             {{ t("common.testConnection") }}
-          </el-button>
-          <!-- The multi-source definition is saved with the routes of the current ontology, so it waits for the ontology. -->
-          <el-button
-            type="primary"
-            :loading="saving"
-            :disabled="disabled || !selected || (mode === multiDataSourceType && !ontology)"
-            @click="emit('save')"
-          >
-            {{ t("common.saveAdapterConfig") }}
           </el-button>
         </el-form-item>
       </el-form>
@@ -139,13 +123,6 @@ function connection(type: string): DataAdapterConnection {
   width: 100%;
   max-width: 960px;
   min-width: 0;
-}
-
-.settings-heading {
-  margin: 0 0 var(--spacing-lg);
-  color: var(--el-text-color-primary);
-  font-size: var(--text-base);
-  font-weight: var(--font-semibold);
 }
 
 .config-form :deep(.el-form-item) {

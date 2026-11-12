@@ -12,7 +12,8 @@
     "ontology-modeling",
     "action-management",
     "business-knowledge",
-    "skill-management"
+    "skill-management",
+    "system-config"
   ],
   "scheduleAdapter": "java:ontology",
   "declaration": {

@@ -187,8 +187,8 @@ export interface DraftProblem {
   params: Record<string, string>;
   /** The provider to select; absent for problems of the usage screen. */
   providerId?: string;
-  /** The model screen the problem belongs to: the provider's connection and models, or the defaults and the call policy. */
-  tab: "providers" | "usage";
+  /** The model page the problem belongs to: the provider's connection and models, or the defaults and the call policy. */
+  page: "providers" | "usage";
 }
 
 /**
@@ -199,19 +199,19 @@ export function draftProblem(draft: ModelSettingsDraft): DraftProblem | null {
   for (const provider of draft.providers) {
     const names = provider.headers.map((h) => h.name.trim()).filter((name) => name !== "");
     const repeated = names.find((name, i) => names.indexOf(name) !== i);
-    if (repeated) return { key: "admin.draftProblems.headerRepeated", params: { name: repeated }, providerId: provider.id, tab: "providers" };
+    if (repeated) return { key: "admin.draftProblems.headerRepeated", params: { name: repeated }, providerId: provider.id, page: "providers" };
   }
   const result = modelSettingsWriteSchema.safeParse(settingsWrite(draft));
   if (result.success) return null;
   const issue = result.error.issues[0]!;
   const [area, providerId, field, index] = issue.path.map(String);
   const detail = { detail: issue.message };
-  if (area === "defaultModelId") return { key: "admin.draftProblems.defaultModel", params: {}, tab: "usage" };
-  if (area === "embeddingModelId") return { key: "admin.draftProblems.embeddingModel", params: {}, tab: "usage" };
-  if (area !== "providers" || providerId === undefined) return { key: "admin.draftProblems.retry", params: detail, tab: "usage" };
+  if (area === "defaultModelId") return { key: "admin.draftProblems.defaultModel", params: {}, page: "usage" };
+  if (area === "embeddingModelId") return { key: "admin.draftProblems.embeddingModel", params: {}, page: "usage" };
+  if (area !== "providers" || providerId === undefined) return { key: "admin.draftProblems.retry", params: detail, page: "usage" };
   const provider = draft.providers.find((p) => p.id === providerId);
   const at = { provider: provider?.name || providerId, ...detail };
-  const place = { providerId, tab: "providers" as const };
+  const place = { providerId, page: "providers" as const };
   if (field === "models") {
     const model = provider?.models[Number(index)];
     const params = { ...at, model: model ? modelName(model) : String(index) };

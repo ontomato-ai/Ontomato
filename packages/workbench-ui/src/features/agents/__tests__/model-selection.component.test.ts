@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import ElementPlus, { ElMessage } from "element-plus";
 import { defineComponent } from "vue";
+import { createMemoryHistory, createRouter } from "vue-router";
 import { lightAvatarColorOptions } from "@ontomato/agent-shell-ui";
 import type { AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
 import type { ModelOptions } from "@ontomato/contracts/model-settings";
@@ -25,8 +26,11 @@ const options: ModelOptions = {
 
 // The skill selector reports ready at once; the prompt editor is a plain stand-in.
 const SkillSelector = defineComponent({ emits: ["ready"], mounted() { this.$emit("ready", true); }, template: "<div />" });
+// The editor sits at its agent's address: leaving it is what its unsaved changes are checked against.
+const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/agents/settings/:agentId", component: { template: "<div />" } }] });
+await router.push("/agents/settings/agent-1");
 const global = {
-  plugins: [i18n, ElementPlus],
+  plugins: [i18n, ElementPlus, router],
   stubs: { SkillSelector, CodeEditor: { template: "<div />" } },
 };
 
@@ -77,12 +81,13 @@ async function choose(control: Pick<VueWrapper, "findComponent">, value: string)
 
 const selected = (control: Pick<VueWrapper, "find">) => control.find(".el-select__selected-item:not(.is-hidden)").text();
 const saveButton = (wrapper: VueWrapper) =>
-  wrapper.findAll(".editor-bar button").find((button) => button.text() === t("common.save"))!;
+  wrapper.findAll(".platform-page-header button").find((button) => button.text() === t("common.save"))!;
 
 describe("workbench agent model selection", () => {
   it("saves edits across configuration sections, with the avatar chosen in the agent's icon", async () => {
     const { wrapper, update } = await mountEditor(null);
-    expect(wrapper.find('.editor-avatar').exists()).toBe(true);
+    // The avatar stands before the agent's name in the page header.
+    expect(wrapper.find('.platform-page-header .header-leading').exists()).toBe(true);
     await wrapper.findAll('.avatar-icon-option').find((option) => option.attributes('aria-label') === 'Database')!.trigger('click');
     await wrapper.findAll('.avatar-color-option')[2]!.trigger('click');
     await wrapper.find('input').setValue('Updated analyst');

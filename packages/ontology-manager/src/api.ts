@@ -774,6 +774,12 @@ export function createManagerClient(
   }
 
   return {
+    /** The data engine's endpoints as the platform's shared pages read them (the agents' model pages): the `data`. */
+    dataEngine: {
+      get: async (path: string): Promise<unknown> => (await send(path, { method: "GET" })).data,
+      put: async (path: string, body: unknown): Promise<unknown> =>
+        (await send(path, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).data,
+    },
     objectViewRequest,
     saveObjectView,
     /** Published MetricView reads: the same client apps get from the SDK. */

@@ -3,10 +3,8 @@ import type { WorkbenchProduct } from "@ontomato/workbench-server/product/types"
 export const ossProduct: WorkbenchProduct = {
   migrationLockKey: "ontomato:postgres-business-migrations",
   subgraphFence: "ontomato-subgraph",
-  mcpClientName: "ontomato",
   analysisMcpServerName: "ontomato-analysis-agents",
   opsMcpServerName: "ontomato-ops-agent",
-  systemMcpCatalogName: "ontomato-mcp",
   logDirEnvName: "ONTOMATO_LOG_DIR",
   logSource: "ontomato",
   appLogSourceType: "ontomato-app",

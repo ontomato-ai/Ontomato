@@ -37,6 +37,7 @@ const props = defineProps<{
   localeNames?: Readonly<Record<string, string>>;
   labels: PlatformShellLabels;
   brand?: PlatformBrand;
+  /** What the shown page handed to its header: its own buttons and its draft's Save. */
   pageActions: PlatformPageActions | null;
   /** The host shows no application at all (its licence is not in force, or the account holds no page). */
   blocked?: { reason: "licence" | "no-pages"; message: string } | null;
@@ -63,37 +64,28 @@ const activeApp = computed(() => props.apps.find((app) => app.id === activeAppId
 const browserWorkspace = computed(() => route.path === "/browser/data" || route.path.startsWith("/browser/data/"));
 
 /**
- * The pages of the current application, in its own order, as one row: an application of several pages switches between
- * them in its header (DESIGN.md "Applications and shells"). An application whose pages are its own menu (the ontology
- * manager) draws that menu in the area instead, so the platform draws no tabs for it.
+ * An application whose pages are its own menu (the ontology manager, the system settings, the permissions) draws that
+ * menu in its column, headed by the application's name, with its own entry at the foot (DESIGN.md "Platform shell and
+ * layout"). The current row is the page the address shows: a screen of a page (a detail) marks that page.
  */
-const pageTabs = computed(() => {
-  // An application whose pages are its own menu draws that menu instead; its groups are not header tabs.
-  if (activeApp.value?.frame === "menu") return [];
-  const pages = (activeApp.value?.groups ?? []).flatMap((group) => group.pages);
-  // One page is not a tab: a single-screen application is its header and its page.
-  return pages.length > 1 ? pages.map((page) => ({ path: page.id, label: page.label })) : [];
-});
-/** The tab the current address is in: a screen of a page (a tab of it, a detail row) marks that page. */
-const activeTabPath = computed(() => (route.meta.page as string | undefined) ?? route.path);
-const menuPages = computed(() => (activeApp.value?.frame === "menu" ? (activeApp.value.groups ?? []) : []));
+const menu = computed(() => (activeApp.value?.frame === "menu" ? activeApp.value : null));
+const activePageId = computed(() => (route.meta.page as string | undefined) ?? route.path);
 
 /**
- * The one header: an application of several pages shows the application's name, its one line of description and its
- * pages as tabs; a single-page application shows its page's name and description. An application that declares a line
- * of its own (the object browser, the system settings) is named in the header however many of its pages there are: with
- * one — the open-source object browser, or an account that may open only one — it is the same header without tabs. A
- * page that draws its own title (the ontology manager's) is left to draw it, and its application's tabs, if any, still
- * sit above it.
+ * The one header above the page: in a menu application it names the page (the application's name heads the column);
+ * an application of one page is named by its own header (the object browser). A page that draws its own header (the
+ * ontology manager's, the external MCP services) is left to draw it, so no page has two.
  */
-const namedByApp = computed(() => pageTabs.value.length > 0 || activeApp.value?.description != null);
-const headerTitle = computed(() => (namedByApp.value ? (activeApp.value?.label ?? "") : (props.shownPage?.title ?? "")));
+const headerTitle = computed(() => (menu.value ? (props.shownPage?.title ?? "") : (activeApp.value?.label ?? "")));
 const headerDescription = computed(() =>
-  namedByApp.value ? (activeApp.value?.description ?? null) : (props.shownPage?.description ?? null),
+  menu.value ? (props.shownPage?.description ?? null) : (activeApp.value?.description ?? null),
 );
-const headerShown = computed(
-  () => !props.blocked && (pageTabs.value.length > 0 || (props.shownPage !== null && !props.shownPage.ownHeader)),
-);
+const headerShown = computed(() => !props.blocked && props.shownPage !== null && !props.shownPage.ownHeader);
+const headerLabels = computed(() => ({
+  save: props.labels.save,
+  discard: props.labels.discard,
+  unsavedChanges: props.labels.unsavedChanges,
+}));
 </script>
 
 <template>
@@ -114,12 +106,14 @@ const headerShown = computed(
       ontology manager) is inserted beside the page, never around it. Which application has a menu is known only when the
       catalog arrives, after the page has been drawn; a page area per case would mount the page a second time then.
     -->
-    <div class="platform-app-body" :class="{ 'has-menu': menuPages.length > 0 && !blocked }">
-      <aside v-if="menuPages.length > 0 && !blocked" class="platform-app-menu">
-        <h2 class="app-menu-title">{{ activeApp?.label }}</h2>
+    <div class="platform-app-body" :class="{ 'has-menu': menu !== null && !blocked }">
+      <aside v-if="menu && !blocked" class="platform-app-menu" :aria-label="labels.pages">
+        <h2 class="app-menu-title">{{ menu.label }}</h2>
         <AppPanelPages
-          :groups="menuPages"
-          :active-page-id="(route.meta.page as string | undefined) ?? route.path"
+          class="app-menu-pages"
+          :groups="menu.groups ?? []"
+          :foot="menu.foot"
+          :active-page-id="activePageId"
           @select-page="router.push($event)"
         />
       </aside>
@@ -128,13 +122,11 @@ const headerShown = computed(
           v-if="headerShown"
           :title="headerTitle"
           :description="headerDescription"
-          :tabs="pageTabs.length > 0 ? pageTabs : undefined"
-          :active-path="activeTabPath"
-          :draft="pageActions"
-          :labels="{ save: labels.save, discard: labels.discard, unsavedChanges: labels.unsavedChanges }"
-          @save="pageActions?.save()"
-          @discard="pageActions?.discard()"
-          @select-tab="router.push($event)"
+          :actions="pageActions?.actions"
+          :draft="pageActions?.draft ?? null"
+          :labels="headerLabels"
+          @save="pageActions?.draft?.save()"
+          @discard="pageActions?.draft?.discard()"
         />
         <div v-if="blocked" class="platform-blocked" role="alert">{{ blocked.message }}</div>
         <!--
@@ -143,7 +135,7 @@ const headerShown = computed(
         <div
           v-else
           class="platform-page-body platform-page-gutter"
-          :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null, 'browser-workspace': browserWorkspace, 'tabbed-workspace': pageTabs.length > 0 }"
+          :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null, 'browser-workspace': browserWorkspace }"
         >
           <RouterView />
         </div>
@@ -167,9 +159,6 @@ const headerShown = computed(
   padding-block: var(--page-content-gap) var(--spacing-xl);
   container: platform-page / inline-size;
 }
-.platform-page-body.tabbed-workspace {
-  padding-top: var(--spacing-sm);
-}
 /*
  * A page with a header of its own carries that header's gutter, and so does an application whose pages are not in the
  * navigation (the dashboards, the scheduled tasks): its own frame takes the gutter, so it is not given twice.
@@ -192,6 +181,8 @@ const headerShown = computed(
 }
 /* An application with a menu of its own: the menu in its band, the page on the application's surface. */
 .platform-app-menu {
+  display: flex;
+  flex-direction: column;
   flex: 0 0 var(--shell-app-column);
   width: var(--shell-app-column);
   box-sizing: border-box;
@@ -199,6 +190,10 @@ const headerShown = computed(
   background: var(--shell-panel-bg);
   border-right: 1px solid var(--el-border-color);
   overflow-y: auto;
+}
+/* The groups fill the column, so the application's own entry sits at its foot. */
+.app-menu-pages {
+  flex: 1 0 auto;
 }
 .app-menu-title {
   display: flex;

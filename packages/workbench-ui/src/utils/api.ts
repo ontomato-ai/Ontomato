@@ -150,10 +150,19 @@ export async function apiGet(path: string, opts?: any): Promise<any> {
 }
 
 export async function apiPost(path: string, body?: any, opts?: any): Promise<any> {
+  return sendJson("POST", path, body, opts);
+}
+
+export async function apiPut(path: string, body?: any, opts?: any): Promise<any> {
+  return sendJson("PUT", path, body, opts);
+}
+
+/** A data engine request with a JSON body, answered in the data engine's envelope. */
+async function sendJson(method: "POST" | "PUT", path: string, body?: any, opts?: any): Promise<any> {
   const credential = currentCredential();
   const extraHeaders = (opts && opts.headers) || {};
   const res = await fetch(`${API_BASE}/data-query${normalizePath(path)}`, {
-    method: "POST",
+    method,
     ...opts,
     headers: buildBaseHeaders({ "Content-Type": "application/json", ...extraHeaders }),
     body: JSON.stringify(body ?? {}),

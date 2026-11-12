@@ -1,19 +1,24 @@
 <script setup lang="ts">
-import type { PlatformPanelGroup } from "./types";
+import type { PlatformPanelGroup, PlatformPanelPage } from "./types";
 import { resolveIcon } from "./icons";
 
 /**
- * The pages of an application whose pages are its own menu (the ontology manager), listed by group in the order the host
- * gives. Groups and their order belong to the application, not to this component.
+ * The pages of an application whose pages are its own menu (the ontology manager, the system settings, the
+ * permissions), listed by group in the order the host gives, and the application's own entry at the foot of the column
+ * (its models), like the foot of a conversation application's column. Groups and their order belong to the application,
+ * not to this component.
  */
-defineProps<{ groups: readonly PlatformPanelGroup[]; activePageId: string | null }>();
+withDefaults(
+  defineProps<{ groups: readonly PlatformPanelGroup[]; foot?: PlatformPanelPage | null; activePageId: string | null }>(),
+  { foot: null },
+);
 const emit = defineEmits<{ selectPage: [id: string] }>();
 </script>
 
 <template>
   <div class="app-panel-pages">
     <section v-for="group in groups" :key="group.key" class="page-group">
-      <p class="group-heading">{{ group.label }}</p>
+      <p v-if="group.label" class="group-heading">{{ group.label }}</p>
       <template v-for="page in group.pages" :key="page.id">
         <span
           v-if="page.unavailableHint"
@@ -38,6 +43,18 @@ const emit = defineEmits<{ selectPage: [id: string] }>();
         </button>
       </template>
     </section>
+    <div v-if="foot" class="page-foot">
+      <button
+        type="button"
+        class="page-row"
+        :class="{ active: foot.id === activePageId }"
+        :aria-current="foot.id === activePageId ? 'page' : undefined"
+        @click="emit('selectPage', foot.id)"
+      >
+        <component :is="resolveIcon(foot.icon)" class="page-icon" :size="16" aria-hidden="true" />
+        <span class="page-label">{{ foot.label }}</span>
+      </button>
+    </div>
   </div>
 </template>
 
@@ -46,7 +63,15 @@ const emit = defineEmits<{ selectPage: [id: string] }>();
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 100%;
+  box-sizing: border-box;
   padding: 4px 0 8px;
+}
+/* The application's own entry stays at the foot of the column, under a hairline. */
+.page-foot {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--el-border-color-light);
 }
 .page-group {
   display: flex;

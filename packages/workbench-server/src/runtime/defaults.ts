@@ -3,7 +3,6 @@ import type { Locale } from "../i18n/index";
 /** Each edition's historical runtime defaults, installed by the app before startup; the shared package embeds neither edition's values. */
 export interface RuntimeDefaults {
   postgresFallback: string;
-  systemMcpUrlFallback: string;
   /** Historical fallback when the request gives no explicit locale: enterprise zh-CN, OSS en. */
   requestLocaleFallback: Locale;
 }

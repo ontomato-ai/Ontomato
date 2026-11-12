@@ -1,8 +1,17 @@
-import { computed, h, ref } from "vue";
-import ElementPlus from "element-plus";
+import { computed, defineComponent, h, ref, type Component, type Ref } from "vue";
+import type { VueWrapper } from "@vue/test-utils";
+import { RouterView, useRouter } from "vue-router";
+import { useI18n } from "vue-i18n";
+import ElementPlus, { ElMessageBox } from "element-plus";
 import en from "element-plus/es/locale/lang/en";
+import {
+  PlatformPageHeader,
+  providePageActions,
+  provideUnsavedChanges,
+  type PlatformPageActions,
+} from "@ontomato/platform-shell";
 import { createPlatformI18n } from "../i18n";
-import { providePlatformHost, usePageActionsOf, type PlatformPageHost } from "../context";
+import { providePlatformHost, type PlatformPageHost } from "../context";
 import { openAccess } from "../navigation";
 import { ossPlatformPages, platformGroups } from "../pages";
 import type { PlatformApi } from "../api";
@@ -41,23 +50,52 @@ export function pageGlobal(host: PlatformPageHost, i18n = testI18n()) {
 }
 
 /**
- * A stand-in for the platform layout's page header: the page under test draws no header of its own, so a test that reads
- * the Save in the header has to draw one somewhere. The real header is @ontomato/platform-shell's, drawn by
- * @ontomato/platform-web; this package cannot import it (the dependency runs the other way), so the test draws the same
- * contract by hand: the title, and the Save / Discard the page handed over through `pageActionsKey`.
+ * A stand-in for the platform's frame around the page under test: the shell's page header with what the page handed
+ * over, and the frame's question before the address leaves a dirty draft. The real frame is @ontomato/platform-web's;
+ * this package cannot import it (the dependency runs the other way), so the test assembles the same shell parts.
  */
-export const PageHeaderStandIn = {
-  name: "PageHeaderStandIn",
+export const PageFrameStandIn = defineComponent({
+  name: "PageFrameStandIn",
   props: { title: { type: String, required: true } },
-  setup(props: { title: string }) {
-    const actions = usePageActionsOf();
+  setup(props) {
+    const actions = providePageActions();
+    const { t } = useI18n();
+    const unsaved = provideUnsavedChanges(() =>
+      ElMessageBox.confirm(t("admin.leaveUnsavedConfirm"), t("admin.unsavedChanges")).then(
+        () => true,
+        () => false
+      )
+    );
+    useRouter().beforeEach((to) => unsaved.allows(to.path));
     return () =>
-      h("header", { class: "page-header" }, [
-        h("h1", { class: "page-title" }, props.title),
-        h("div", { class: "page-actions" }, [
-          h("button", { disabled: !actions.value?.dirty || actions.value?.saving, onClick: () => actions.value?.discard() }, "Discard"),
-          h("button", { disabled: !actions.value?.dirty || actions.value?.saving, onClick: () => actions.value?.save() }, "Save"),
-        ]),
+      h("div", [
+        h(PlatformPageHeader, {
+          title: props.title,
+          actions: actions.value?.actions,
+          draft: actions.value?.draft ?? null,
+          labels: { save: "Save", discard: "Discard", unsavedChanges: "Unsaved changes" },
+          onSave: () => actions.value?.draft?.save(),
+          onDiscard: () => actions.value?.draft?.discard(),
+        }),
+        h(RouterView),
       ]);
   },
-};
+});
+
+/** A page mounted under a frame that only collects what it hands to its header, without a router. */
+export function framedPage(page: Component) {
+  let actions: Readonly<Ref<PlatformPageActions | null>> | null = null;
+  const Frame = defineComponent({
+    name: "FrameStandIn",
+    setup() {
+      actions = providePageActions();
+      provideUnsavedChanges(async () => true);
+      return () => h(page);
+    },
+  });
+  return { Frame, actions: () => actions!.value };
+}
+
+/** A button of the header the frame stand-in draws, by its text. */
+export const headerButton = (wrapper: VueWrapper, text: string) =>
+  wrapper.findAll(".platform-page-header .page-actions button").find((button) => button.text() === text);

@@ -1,4 +1,4 @@
-import { computed, inject, provide, reactive, ref, type InjectionKey } from "vue";
+import { computed, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import type { BusinessConfig, GeneralConfigKey } from "./types";
@@ -38,11 +38,6 @@ const fields: readonly GeneralField[] = [
   },
   { key: "lang", value: (draft) => draft.lang, take: (draft, value) => (draft.lang = value as string) },
 ];
-
-/** The screen's one draft, shared with the tab that edits it and the header's Save. */
-export type GeneralSettings = ReturnType<typeof useGeneralSettings>;
-
-export const generalSettingsKey: InjectionKey<GeneralSettings> = Symbol("general-settings");
 
 export function useGeneralSettings(options: {
   api: Pick<PlatformApi, "getBusinessConfig" | "saveGeneralConfig">;
@@ -123,14 +118,5 @@ export function useGeneralSettings(options: {
     return true;
   }
 
-  const settings = { draft, loading, saving, loadError, loaded, dirty, load, save };
-  provide(generalSettingsKey, settings);
-  return settings;
-}
-
-/** The general screen's draft as the tab reads it (the page provides it; a tab outside the page is a mistake). */
-export function useGeneralDraft(): GeneralSettings {
-  const settings = inject(generalSettingsKey);
-  if (!settings) throw new Error("The general settings tab must be mounted inside the system settings page");
-  return settings;
+  return { draft, loading, saving, loadError, loaded, dirty, load, save };
 }

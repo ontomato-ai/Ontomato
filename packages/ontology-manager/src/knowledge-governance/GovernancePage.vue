@@ -2,18 +2,29 @@
 import { computed, onMounted, ref, watch, type Component } from "vue";
 import { X } from "lucide-vue-next";
 import { AgentShell, createAgentHostClient, useAgentNav, useSessionRunFeed } from "@ontomato/agent-shell-ui";
+import {
+  AgentModelsPage,
+  ontologyAgentModelPages,
+  ontologyAgentModelSource,
+  useAgentModelLabels,
+  useLeaveConfirmation,
+  usePageAccess,
+} from "@ontomato/platform-shell";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
 import "@ontomato/agent-shell-ui/style.css";
 import {
   governanceSourceReadSchema, governanceWorkResponseSchema,
   type GovernanceSourceRead, type GovernanceWork,
 } from "@ontomato/contracts/knowledge-governance";
 import { useGovernanceText, useManagerClient, usePlatformText } from "../context";
+import { managerPaths } from "../navigation";
 import { governanceAgentId } from "./messages";
 
 /**
  * Knowledge governance as an agent app (DESIGN.md "Agent apps"): the governance agent plus its pages, the report of
- * findings and the feedback the conversations were given on. The report sits full or beside the conversation; the
- * finding the reader selects is what "this" means in the next message. Sources open inside the finding that cites them.
+ * findings and the feedback the conversations were given on, and its agents' models at the foot of its column. The
+ * report sits full or beside the conversation; the finding the reader selects is what "this" means in the next message.
+ * Sources open inside the finding that cites them. The column lists a page only to an account that may open it.
  */
 const props = defineProps<{
   sessionId: string | null;
@@ -32,17 +43,48 @@ const { t, labels } = useGovernanceText();
 const { pt } = usePlatformText();
 const agentId = ref<string | null>(governanceAgentId);
 const sessionId = computed({ get: () => props.sessionId, set: (id) => emit("session", id) });
-const featureId = ref<string | null>(props.page ?? null);
+/** The page shown beside the column; the address's page arrives through `page`. */
+const shownPage = ref<string | null>(props.page ?? null);
+/** A page holding unsaved changes (the models) stays until the reader confirms leaving it. */
+const leave = useLeaveConfirmation();
+const pagePaths: Readonly<Record<string, string>> = {
+  feedback: platformRoutes.feedback.path,
+  models: platformRoutes.governanceModels.path,
+};
+const featureId = computed({
+  get: () => shownPage.value,
+  set: (id: string | null) => {
+    const target = (id && pagePaths[id]) || platformRoutes.governance.path;
+    if (!leave.leaves(target)) {
+      shownPage.value = id;
+      return;
+    }
+    void leave.confirm().then((confirmed) => {
+      if (confirmed) shownPage.value = id;
+    });
+  },
+});
 const work = ref<GovernanceWork | null>(null);
 const error = ref(""), loading = ref(false);
 const selectedIssue = ref<string | null>(null);
 /** The source being read and where it shows: under a finding, or under the source list ("all"). */
 const source = ref<{ read: GovernanceSourceRead; anchor: string } | null>(null);
+const canOpen = usePageAccess();
+/**
+ * The governance conversation and its report are pages of business knowledge (the conversation's route is): an account
+ * without it holds no conversation here, and the column lists only the pages it may open.
+ */
+const conversing = computed(() => canOpen(managerPaths.knowledge));
 const pages = computed(() => {
-  const entries = [{ id: "report", label: t("report"), icon: "report" }];
-  if (props.screens?.feedback) entries.push({ id: "feedback", label: t("feedback"), icon: "feedback" });
+  const entries = conversing.value ? [{ id: "report", label: t("report"), icon: "report" }] : [];
+  if (props.screens?.feedback && canOpen(platformRoutes.feedback.path)) entries.push({ id: "feedback", label: t("feedback"), icon: "feedback" });
   return entries;
 });
+/** The governance agents' models: the platform's model page over this application's requests, at the column's foot. */
+const modelsPage = ontologyAgentModelPages.find((page) => page.app === "governance")!;
+const modelSource = ontologyAgentModelSource(manager.dataEngine, modelsPage);
+const modelLabels = useAgentModelLabels();
+const bottom = computed(() => (canOpen(modelsPage.path) ? { label: modelLabels.value.title, icon: "settings" } : null));
 const workbench = computed(() => ({
   id: "knowledge-governance", label: pt("platform.governance"),
   features: pages.value.map((page) => ({ ...page, availability: "page" as const, withConversation: true })),
@@ -104,6 +146,7 @@ useSessionRunFeed({
 });
 
 onMounted(async () => {
+  if (!conversing.value) return;
   await nav.loadAgents().catch(() => {});
   await nav.loadSessions();
 });
@@ -120,7 +163,7 @@ watch(featureId, (value) => {
 watch(
   () => props.page,
   (value) => {
-    if (value && value !== featureId.value) featureId.value = value;
+    if (value && value !== shownPage.value) shownPage.value = value;
   },
 );
 
@@ -143,13 +186,15 @@ function toggleIssue(id: string) {
     </p>
     <AgentShell v-model:session-id="sessionId" v-model:agent-id="agentId" v-model:feature-id="featureId"
       :workbench="workbench" :title="pt('platform.governance')" :client="client" :labels="labels" :nav="nav"
-      :page-context="pageContext" @error="fail">
+      :page-context="pageContext" :bottom="bottom" :conversations="conversing" @error="fail"
+      @open-bottom="featureId = 'models'">
       <template #feature>
+        <AgentModelsPage v-if="featureId === 'models'" :source="modelSource" :path="modelsPage.path" />
         <!--
           The page the address names: another package's screen when the edition handed one over, else the report. A
           handed-over screen is a platform page, so it takes the page gutter here, like every page does from its frame.
         -->
-        <div v-if="screen" class="governance-screen platform-page-gutter">
+        <div v-else-if="screen" class="governance-screen platform-page-gutter">
           <component :is="screen" />
         </div>
         <div v-else class="report platform-page-gutter" :aria-busy="loading">

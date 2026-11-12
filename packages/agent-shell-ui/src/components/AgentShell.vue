@@ -68,8 +68,10 @@ const props = withDefaults(
     title?: string;
     /** The application's own entry at the foot of its column (its settings, the model the diagnosis runs on). */
     bottom?: { label: string; icon: string } | null;
+    /** Whether the reader may hold conversations here; without it the column lists only the pages and the foot. */
+    conversations?: boolean;
   }>(),
-  { artifactRenderers: () => [], toolRenderers: () => [], title: "", bottom: null },
+  { artifactRenderers: () => [], toolRenderers: () => [], title: "", bottom: null, conversations: true },
 );
 const slots = useSlots();
 const emit = defineEmits<{ error: [message: string]; featureAction: [id: string]; openBottom: []; run: [change: ShellRunChange] }>();
@@ -258,6 +260,7 @@ onMounted(() => {
           :session-id="sessionId"
           :feature-id="featureId"
           :bottom="bottom"
+          :conversations="conversations"
           :labels="labels"
           @new-conversation="nav.startNew()"
           @select-feature="featureId = $event"

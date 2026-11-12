@@ -385,7 +385,6 @@ export const en = {
   "assistant.skills.analyst.description": "Read ontology metadata and ask data questions",
   "mcp.catalog.analysisTitle": "Agent Platform Agents MCP",
   "mcp.catalog.opsTitle": "Agent Platform Ops Agent MCP",
-  "mcp.catalog.systemTitle": "Agent Platform MCP",
 } satisfies import("../index").TranslationMessages;
 
 export const enLocaleMeta = {

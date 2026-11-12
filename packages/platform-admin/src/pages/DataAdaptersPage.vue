@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from "vue";
-import { ElMessage } from "element-plus";
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { usePageActions, useUnsavedChanges } from "@ontomato/platform-shell";
 import { useI18n } from "vue-i18n";
 import { dataAdapterTestResultSchema, multiDataSourceRejectionSchema, multiDataSourceType } from "@ontomato/contracts/data-adapters";
 import type { DataAdapterInfo, DataAdapterRequest, DataAdaptersData } from "@ontomato/contracts/data-adapters";
-import DataAdapterConfigCard from "./DataAdapterConfigCard.vue";
-import { PlatformBusinessError } from "../../api";
-import { usePlatformHost } from "../../context";
+import DataAdapterConfigCard from "../config/components/DataAdapterConfigCard.vue";
+import { PlatformBusinessError } from "../api";
+import { usePlatformHost } from "../context";
+import { platformPages } from "../pages";
 import {
   dataAdapterRequest,
   multiDataSourceDefinition,
@@ -17,11 +19,12 @@ import {
   type MultiDataSourceSaveFailure,
   type OntologyOutline,
   type SystemSettings,
-} from "../types";
+} from "../config/types";
 
 /*
  * The data adapter of this domain: one connection, or several sources routed by class. Testing reads a candidate
  * connection without saving it or switching the domain's adapter; saving switches the domain to what the form holds.
+ * The form is the page's one draft, saved from the page header; the connection test stays in the form.
  */
 const { t } = useI18n();
 const { api, separators, systemConfig: businessConfig } = usePlatformHost();
@@ -50,6 +53,7 @@ async function loadConfig() {
       config.dataAdapterConnections = data.dataAdapterConnections;
       multiDraft.value = multiDataSourceDraft(data.multiDataSource);
       dataAdapterMode.value = config.dataAdapter;
+      baseline.value = submitted();
     } else {
       loadError.value = res?.message || t("admin.loadConfigFailed");
     }
@@ -94,6 +98,7 @@ async function saveDataAdapter() {
     await api.useDataAdapter(singleSourceRequest(adapter));
     ElMessage.success(t("admin.switchedDataAdapter", { name: adapter.label }));
     config.dataAdapter = dataAdapterMode.value;
+    baseline.value = submitted();
   } catch (e: any) {
     ElMessage.error(e.message || t("admin.saveFailed"));
   } finally {
@@ -153,6 +158,7 @@ async function saveMultiDataSource() {
     await api.useMultiDataSource(multiDataSourceDefinition(multiDraft.value, ontology.value!));
     ElMessage.success(t("admin.switchedDataAdapter", { name: selectedDataAdapter().label }));
     config.dataAdapter = multiDataSourceType;
+    baseline.value = submitted();
   } catch (e) {
     const rejection = e instanceof PlatformBusinessError ? multiDataSourceRejectionSchema.safeParse(e.body) : null;
     multiSaveFailure.value = {
@@ -164,11 +170,50 @@ async function saveMultiDataSource() {
   }
 }
 
+/**
+ * What a save would submit, for the unsaved marker: the chosen adapter with its connection, or the multi-source
+ * draft. Edits to the fields of an adapter that is not chosen are not saved, so they are no change either.
+ */
+function submitted(): string {
+  const mode = dataAdapterMode.value;
+  if (mode === multiDataSourceType) return JSON.stringify({ mode, draft: multiDraft.value });
+  const adapter = dataAdapters.value.find(({ type }) => type === mode);
+  return JSON.stringify({ mode, request: adapter ? dataAdapterRequest(adapter, config.dataAdapterConnections[mode] ?? {}) : null });
+}
+const baseline = ref<string | null>(null);
+const dirty = computed(() => baseline.value !== null && submitted() !== baseline.value);
+
+async function discard() {
+  const confirmed = await ElMessageBox.confirm(t("admin.discardChangesConfirm"), t("admin.discardChanges"), {
+    type: "warning",
+    confirmButtonText: t("admin.discardChanges"),
+    cancelButtonText: t("common.cancel"),
+  }).then(
+    () => true,
+    () => false
+  );
+  if (confirmed) await loadConfig();
+}
+
+usePageActions(() => ({
+  draft:
+    baseline.value === null
+      ? null
+      : {
+          dirty: dirty.value,
+          // The multi-source definition is saved with the routes of the current ontology, so it waits for the ontology.
+          saving: savingAdapter.value || (dataAdapterMode.value === multiDataSourceType && !ontology.value),
+          save: () => void saveDataAdapter(),
+          discard: () => void discard(),
+        },
+}));
+useUnsavedChanges({ dirty: () => dirty.value, paths: () => [platformPages.dataAdapters.path] });
+
 onMounted(loadConfig);
 </script>
 
 <template>
-  <div class="settings-tab">
+  <div class="settings-page">
     <div v-if="loadError" class="config-load-error" role="alert">
       <span>{{ t("admin.loadConfigFailed") }}{{ separators.detail }}{{ loadError }}</span>
       <el-button size="small" @click="loadConfig">{{ t("common.retry") }}</el-button>
@@ -180,7 +225,6 @@ onMounted(loadConfig);
       v-model:multi-draft="multiDraft"
       :adapters="dataAdapters"
       :adapter-display="businessConfig.adapterDisplay"
-      :saving="savingAdapter"
       :testing="testingAdapter"
       :test="adapterTest"
       :disabled="loading || !!loadError"
@@ -188,17 +232,16 @@ onMounted(loadConfig);
       :ontology-load-error="ontologyLoadError"
       :test-connection="testConnection"
       :multi-save-failure="multiSaveFailure"
-      @save="saveDataAdapter"
       @test="testDataAdapter"
       @retry-ontology="loadOntology"
     />
   </div>
 </template>
 
-<style scoped src="./config.css"></style>
+<style scoped src="../config/components/config.css"></style>
 
 <style scoped>
-.settings-tab {
+.settings-page {
   display: flex;
   min-width: 0;
   flex-direction: column;

@@ -1,21 +1,47 @@
 <script setup lang="ts">
+import { onMounted } from "vue";
+import { ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
-import { usePlatformHost } from "../../context";
-import { useGeneralDraft } from "../general-settings";
+import { usePageActions, useUnsavedChanges } from "@ontomato/platform-shell";
+import { usePlatformHost } from "../context";
+import { platformPages } from "../pages";
+import { useGeneralSettings } from "../config/general-settings";
 
 /*
  * The general parameters and the backend language, as rows of the data shell (label and one line of help on the left,
- * the control on the right, a hairline between). The draft and its Save belong to the page: one Save in the page header
- * writes every changed setting, and the tab only edits the draft.
+ * the control on the right, a hairline between). The screen is one draft saved from the page header: one Save writes
+ * every changed setting.
  */
 const { t } = useI18n();
-const { separators, systemConfig: businessConfig } = usePlatformHost();
-// The draft and its Save are the page's: one Save in the page header writes every changed setting.
-const { draft, loading, loaded, loadError, load } = useGeneralDraft();
+const host = usePlatformHost();
+const { separators, systemConfig: businessConfig } = host;
+const general = useGeneralSettings({ api: host.api, businessConfig, detail: separators.detail });
+const { draft, loading, loaded, loadError, load } = general;
+
+async function discard() {
+  const confirmed = await ElMessageBox.confirm(t("admin.discardChangesConfirm"), t("admin.discardChanges"), {
+    type: "warning",
+    confirmButtonText: t("admin.discardChanges"),
+    cancelButtonText: t("common.cancel"),
+  }).then(
+    () => true,
+    () => false
+  );
+  if (confirmed) await load();
+}
+
+usePageActions(() => ({
+  draft: loaded.value
+    ? { dirty: general.dirty.value, saving: general.saving.value, save: () => void general.save(), discard: () => void discard() }
+    : null,
+}));
+useUnsavedChanges({ dirty: () => general.dirty.value, paths: () => [platformPages.general.path] });
+
+onMounted(load);
 </script>
 
 <template>
-  <div class="settings-tab">
+  <div class="settings-page">
     <div v-if="loadError" class="config-load-error" role="alert">
       <span>{{ t("admin.loadConfigFailed") }}{{ separators.detail }}{{ loadError }}</span>
       <el-button size="small" @click="load">{{ t("common.retry") }}</el-button>
@@ -24,7 +50,6 @@ const { draft, loading, loaded, loadError, load } = useGeneralDraft();
     <el-skeleton v-if="loading && !loaded" :rows="4" animated />
 
     <section v-else class="setting-rows" :aria-label="t('admin.generalParamConfig')">
-      <h2 class="settings-heading">{{ t("admin.generalParamConfig") }}</h2>
       <div class="setting-row">
         <div class="setting-text">
           <span class="setting-label">{{ t("admin.knowledgeMaxResults") }}</span>
@@ -78,8 +103,8 @@ const { draft, loading, loaded, loadError, load } = useGeneralDraft();
 </template>
 
 <style scoped>
-@import "../../styles/settings-rows.css";
-.settings-tab {
+@import "../styles/settings-rows.css";
+.settings-page {
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -108,16 +133,13 @@ const { draft, loading, loaded, loadError, load } = useGeneralDraft();
   flex-direction: column;
 }
 
-.settings-heading {
-  margin: 0 0 var(--spacing-xs);
-  color: var(--el-text-color-primary);
-  font-size: var(--text-base);
-  font-weight: var(--font-semibold);
-}
-
 .setting-row {
   grid-template-columns: minmax(0, 1fr) minmax(0, 240px);
   padding-block: var(--spacing-lg);
+}
+
+.setting-row:first-child {
+  padding-top: 0;
 }
 
 .setting-row:last-child {

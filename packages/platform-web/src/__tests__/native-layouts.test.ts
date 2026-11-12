@@ -35,22 +35,27 @@ describe("the platform's applications", () => {
   it("opens knowledge governance in the conversation rather than feedback records", () => {
     expect(declarations.find(app => app.id === "governance")?.home).toBe("/governance/chat");
   });
-  it("organizes the ontology menu into four layers with the capability library", () => {
+  it("organizes the ontology menu into its layers with the capability library, and its models at the foot", () => {
     const ontology = appPartition().find(app => app.id === "ontology")!;
     expect(ontology.sections.map(section => section.key)).toEqual([
-      "ontology:facts", "ontology:capabilities", "ontology:governance", "ontology:products",
+      "ontology:facts", "ontology:capabilities", "ontology:governance",
     ]);
     expect(ontology.sections[0]!.paths).not.toContain("/ontology/assets/actions");
     expect(ontology.sections[1]!.paths).toEqual([
       "/ontology/assets/metrics", "/ontology/assets/functions", "/ontology/assets/actions", "/ontology/assets/workflows", "/ontology/skills",
     ]);
     expect(ontology.sections[2]!.paths).toEqual(["/ontology/knowledge", "/ontology/assets/capability-map"]);
-    expect(ontology.sections[3]!.paths).toEqual([]);
-    const menu = appDeclarations(generatedNavigation(), closedAccess(["ontology-modeling"]), appPartition(), t)
-      .find(app => app.id === "ontology")!;
-    expect(menu.groups?.find(group => group.key === "ontology:products")).toMatchObject({
-      label: "platform.layers.products", pages: [],
-    });
+    expect(ontology.foot).toBe("/ontology/models");
+  });
+  it("lists the system settings' pages in their groups, without tabs", () => {
+    const settings = appPartition().find(app => app.id === "settings")!;
+    expect(settings.frame).toBe("menu");
+    expect(settings.sections.map(section => [section.key, section.paths])).toEqual([
+      ["settings:models", ["/settings/model-config/usage", "/settings/model-config/providers"]],
+      ["settings:system", ["/settings/system-config/general", "/settings/system-config/authorization"]],
+      ["settings:connections", ["/settings/system-config/data-adapters", "/settings/external-mcp", "/settings/mcp-services"]],
+      ["settings:records", ["/settings/records/audit-log", "/settings/records/system-monitor"]],
+    ]);
   });
   it("sits in three sections: the home and the everyday applications, the business ones, and the settings above the account", () => {
     expect(named("top")).toEqual(["home", "personal-workspace", "agents", "dashboards", "schedules", "browser"]);

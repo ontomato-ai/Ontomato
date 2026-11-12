@@ -6,8 +6,7 @@
   "sort": 20,
   "entry": {
     "path": "/settings",
-    "renderer": "settings",
-    "home": "/settings/model-config/usage"
+    "renderer": "settings"
   },
   "entryAccess": [
     "system-config",
@@ -23,8 +22,8 @@
       "zh-CN": "系统设置"
     },
     "descriptions": {
-      "en": "Configure models, access, audit and system monitoring",
-      "zh-CN": "配置模型、权限、审计与系统监控"
+      "en": "Models, general settings, connections, logs and monitoring",
+      "zh-CN": "模型、通用设置、连接、日志与监控"
     },
     "icon": "settings",
     "groups": [],

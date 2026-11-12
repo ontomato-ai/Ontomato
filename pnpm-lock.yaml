@@ -574,6 +574,9 @@ importers:
 
   packages/platform-shell:
     dependencies:
+      '@ontomato/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       lucide-vue-next:
         specifier: 1.0.0
         version: 1.0.0(vue@3.5.30(typescript@5.9.3))
@@ -590,6 +593,9 @@ importers:
       '@vue/test-utils':
         specifier: 2.5.1
         version: 2.5.1(@vue/compiler-dom@3.5.30)(@vue/server-renderer@3.5.30(vue@3.5.30(typescript@5.9.3)))(vue@3.5.30(typescript@5.9.3))
+      element-plus:
+        specifier: 2.13.6
+        version: 2.13.6(typescript@5.9.3)(vue@3.5.30(typescript@5.9.3))
       happy-dom:
         specifier: 20.14.3
         version: 20.14.3

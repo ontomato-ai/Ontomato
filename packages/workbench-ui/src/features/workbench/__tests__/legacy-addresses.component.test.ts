@@ -5,6 +5,7 @@ import { mount } from "@vue/test-utils";
 import ElementPlus from "element-plus";
 import { workbenchI18n } from "../../../i18n";
 import { ontologyServiceAccessKey, openOntologyServiceAccess } from "../../../app/ontology-service";
+import { platformPageAccessKey } from "@ontomato/platform-shell";
 import BusinessWorkbench from "../components/BusinessWorkbench.vue";
 import { legacyAdminRoutes } from "@ontomato/platform-web";
 
@@ -85,7 +86,11 @@ async function openAddress(
     props: { defaultLogo: "", defaultBrandName: "Ontomato" },
     global: {
       plugins: [i18n, ElementPlus, router],
-      provide: { [ontologyServiceAccessKey as symbol]: openOntologyServiceAccess },
+      provide: {
+        [ontologyServiceAccessKey as symbol]: openOntologyServiceAccess,
+        // The platform answers which of its pages the account may open; here, every one.
+        [platformPageAccessKey as symbol]: () => true,
+      },
     },
   });
   wrappers.push(wrapper);

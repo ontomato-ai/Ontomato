@@ -35,6 +35,11 @@ vi.mock("../../../../../../packages/ontology-manager/src/knowledge-governance/Go
   __esModule: true,
   default: { name: "GovernanceDouble", template: '<p class="page-double">governance</p>' },
 }));
+// The service status draws only from a full status report of the data engine; its own page reads it.
+vi.mock("../../../../../../packages/platform-admin/src/pages/SystemMonitorPage.vue", () => ({
+  __esModule: true,
+  default: { name: "SystemMonitorDouble", template: '<p class="page-double">system monitor</p>' },
+}));
 
 const { isolateShellPerTest } = await import("./isolation");
 const { startPlatform } = await import("../../platform");
@@ -57,6 +62,11 @@ const NODE_ANSWERS: Readonly<Record<string, unknown>> = {
   "GET /app-builder/bootstrap": appBuilderBootstrapSchema.parse({ agent: AGENT }),
   "GET /workspaces": { items: [] },
 };
+/** The data engine's answers a page needs in its own shape to draw: the domain's configuration and its adapters. */
+const DATA_ENGINE_ANSWERS: Readonly<Record<string, unknown>> = {
+  "GET /data-query/businessConfig/getConfig": { knowledgeMaxResult: 10, dslCookerTimeout: 300000, lang: "en", dataAdapter: "", dataAdapterConnections: {} },
+  "GET /data-query/businessConfig/dataAdapters": { adapters: [], currentType: "" },
+};
 
 type FetchInput = Parameters<typeof fetch>[0];
 type FetchInit = Parameters<typeof fetch>[1];
@@ -65,7 +75,9 @@ function answer(input: FetchInput, init?: FetchInit): Response {
   const request = input instanceof Request ? input : null;
   const url = new URL(request ? request.url : String(input), window.location.origin);
   const key = `${init?.method ?? request?.method ?? "GET"} ${url.pathname.replace(/^\/custom-base\/api/, "")}`;
-  const body = url.pathname.endsWith("/platform/applications") ? { success: true, data: catalogFixture() } : key in NODE_ANSWERS ? NODE_ANSWERS[key] : { success: true, data: [] };
+  const body = url.pathname.endsWith("/platform/applications") ? { success: true, data: catalogFixture() }
+    : key in NODE_ANSWERS ? NODE_ANSWERS[key]
+      : { success: true, data: key in DATA_ENGINE_ANSWERS ? DATA_ENGINE_ANSWERS[key] : [] };
   return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
@@ -107,13 +119,15 @@ async function open(path: string) {
 /** The address in the bar, without the query: that is what a rail row navigates to. */
 const landedAt = () => window.location.hash.replace(/^#/, "").split("?")[0]!;
 
-/** Every page address the applications own in this edition, deduplicated in rail order. */
+/** Every page address the applications own in this edition, deduplicated in rail order, their columns' feet included. */
 const pagePaths = [
   ...new Set(
     appPartition()
-      .flatMap((app) => app.sections.flatMap((section) => section.paths))
+      .flatMap((app) => [...app.sections.flatMap((section) => section.paths), ...(app.foot ? [app.foot] : [])])
       // The addresses are route patterns; the ones with parameters are covered by their own page tests.
       .filter((path) => !path.includes(":"))
+      // The licence is the enterprise edition's page: this edition's navigation holds no such page, so no column lists it.
+      .filter((path) => path !== platformRoutes.license.path)
   ),
 ];
 
@@ -221,13 +235,30 @@ describe("the open-source platform's conversations", () => {
 });
 
 describe("the open-source platform's page headers", () => {
-  it("switches the system settings' screens in the application's header", async () => {
+  it("lists the system settings' pages by group in the application's column, and names the page in its header", async () => {
     await open("/settings/records/audit-log");
-    // An application of several pages is one header with its pages as tabs; the page keeps its own second-level tabs.
-    const tabs = [...document.querySelectorAll(".platform-page-header .page-tab")].map((tab) => tab.textContent?.trim());
-    // The page under the application is named for what it holds; repeating the application's own name says nothing.
-    expect(tabs).toEqual(["Models", "General settings", "External MCP services", "MCP services", "Run Records"]);
-    expect(document.querySelector(".platform-page-header .page-tab.active")?.textContent?.trim()).toBe("Run Records");
+    // The application's name heads its column; its pages are the column's rows, by group, and no header carries tabs.
+    expect(document.querySelector(".platform-app-menu .app-menu-title")?.textContent?.trim()).toBe("System settings");
+    const headings = [...document.querySelectorAll(".platform-app-menu .group-heading")].map((heading) => heading.textContent?.trim());
+    expect(headings).toEqual(["Models", "System", "Connections", "Logs and monitoring"]);
+    const rows = [...document.querySelectorAll(".platform-app-menu .page-row")].map((row) => row.textContent?.trim());
+    expect(rows).toEqual([
+      "Model usage", "Providers", "General", "Data adapters", "External MCP services", "MCP services", "Audit log",
+      "System monitoring",
+    ]);
+    expect(document.querySelector(".platform-app-menu .page-row.active")?.textContent?.trim()).toBe("Audit log");
+    expect(document.querySelectorAll(".platform-page-header")).toHaveLength(1);
+    expect(document.querySelector(".platform-page-header .page-title")?.textContent).toBe("Audit log");
+    expect(document.querySelector(".page-tab")).toBeNull();
+  });
+
+  it("forwards the former parent pages' addresses to their first page", async () => {
+    await open("/settings/model-config");
+    expect(landedAt()).toBe("/settings/model-config/usage");
+    await open("/settings/system-config");
+    expect(landedAt()).toBe("/settings/system-config/general");
+    await open("/settings/records");
+    expect(landedAt()).toBe("/settings/records/audit-log");
   });
 
   it("gives a single-page application its header and its page, with no tabs", async () => {
@@ -259,9 +290,9 @@ describe("the open-source platform's column", () => {
     expect(landedAt()).toBe("/ops/model");
     const body = document.querySelector(".platform-page-body")!.innerHTML;
     expect(body).not.toBe("");
-    // The model the diagnosis runs on is the operations application's own page, not the platform's model division
-    // (model-config), which answers a different question and needs a different permission.
-    expect(body).toContain("diagnosis-model");
+    // The model the diagnosis runs on is the operations application's own page, not the system settings' model library,
+    // which answers a different question and needs a different permission: the platform's model page over its endpoint.
+    expect(body).toContain("agent-models-page");
   });
 });
 

@@ -40,7 +40,6 @@ installContentLayout({
 
 installRuntimeDefaults({
   postgresFallback: "postgresql://localhost/dummy",
-  systemMcpUrlFallback: "",
   requestLocaleFallback: "en",
 });
 

@@ -31,7 +31,7 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
     const port = Number(new URL(kind === "host" ? hostUrl : runtimeUrl).port);
     const child = spawn(process.execPath, ["--import", tsx, kind === "runtime" ? path.join(repo, "apps/agent-runtime/src/index.ts") : path.join(repo, "packages/workbench-server/src/services/ops-diagnosis/__tests__/host-process.ts")], {
       cwd: repo, env: { ...process.env, NODE_ENV: "test", HTTP_PROXY: "", HTTPS_PROXY: "", ALL_PROXY: "", NO_PROXY: "127.0.0.1,localhost",
-        DATABASE_URL: database, PG_SCHEMA: schema, OPS_TEST_ROOT: path.join(root, "host"), PORT: String(port), DATA_QUERY_BASE_URL: modelUrl, DATA_QUERY_API_KEY: "", MCP_SERVER_URL: "",
+        DATABASE_URL: database, PG_SCHEMA: schema, OPS_TEST_ROOT: path.join(root, "host"), PORT: String(port), DATA_QUERY_BASE_URL: modelUrl, DATA_QUERY_API_KEY: "",
         OBSERVE_TRACE_WORKSPACE_ROOT: path.join(root, "traces"), AGENT_RUNTIME_DATABASE_URL: database, AGENT_RUNTIME_SCHEMA: schema + "_runtime", AGENT_RUNTIME_ROOT: path.join(root, "runtime"),
         ONTOMATO_MODEL_RUNTIME_TOKEN: "fixture-runtime-token", AGENT_RUNTIME_PORT: String(port),
         // The runtime owns conversation model settings: a complete LLM_* seed is the first

@@ -1,18 +1,10 @@
 import { workbenchProduct } from "../../product/installed";
-import type {
-  SystemMcpTool,
-  SystemMcpService,
-  SystemMcpToolsResponse,
-  McpToolsResponse,
-} from "@ontomato/contracts/mcp";
+import type { SystemMcpTool, SystemMcpService, SystemMcpToolsResponse } from "@ontomato/contracts/mcp";
 import type { McpToolDesc } from "@ontomato/contracts/mcp";
 import { config } from "../../config/application";
-import { getAnalysisAgentMcpUrlOverride, getSystemMcpUrl } from "../../config/mcp";
-import { createLogger } from "../../logging/logger";
-import { t, tApp } from "../../i18n";
-import { listMcpTools } from "./client";
+import { getAnalysisAgentMcpUrlOverride } from "../../config/mcp";
+import { t } from "../../i18n";
 
-const logger = createLogger("api:mcp");
 const ANALYSIS_AGENT_MCP_SUFFIX = "/mcp/analysis-agents";
 const OPS_AGENT_MCP_SUFFIX = "/mcp/ops-agent";
 
@@ -73,7 +65,6 @@ export async function buildMcpSystemToolsResponse(
   analysisAgentMcpTools: McpToolDesc[],
   opsAgentMcpTools: McpToolDesc[]
 ): Promise<SystemMcpToolsResponse> {
-  const mcpServerUrl = getSystemMcpUrl();
   const analysisMcpUrl = getAnalysisAgentMcpUrl(req);
   const opsMcpUrl = getOpsAgentMcpUrl(req);
   const product = workbenchProduct();
@@ -91,53 +82,8 @@ export async function buildMcpSystemToolsResponse(
       tools: opsAgentMcpTools.map(toolToClient),
     },
   ];
-  let tools: Awaited<ReturnType<typeof listMcpTools>> = [];
-  if (mcpServerUrl) {
-    try {
-      tools = await listMcpTools(mcpServerUrl);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.warn(tApp("foundation.log.mcp.catalogFallback"), {
-        mcpServerUrl,
-        error: errorMessage,
-      });
-    }
-    services.unshift({
-      name: product.systemMcpCatalogName,
-      title: t("mcp.catalog.systemTitle"),
-      mcpUrl: mcpServerUrl,
-      tools: tools.map(toolToClient),
-    });
-  }
   return {
     success: true,
-    mcpUrl: mcpServerUrl,
-    tools: tools.map(toolToClient),
     services,
   };
 }
-
-export async function buildMcpToolsResponse(
-  analysisAgentMcpTools: McpToolDesc[]
-): Promise<McpToolsResponse> {
-  try {
-    const mcpServerUrl = getSystemMcpUrl();
-    const tools = mcpServerUrl ? await listMcpTools(mcpServerUrl) : [];
-    return {
-      tools: [...tools, ...analysisAgentMcpTools].map((t) => ({
-        name: t.name,
-        title: t.title || t.name,
-        description: t.description || "",
-      })),
-    };
-  } catch {
-    return {
-      tools: analysisAgentMcpTools.map((t) => ({
-        name: t.name,
-        title: t.title || t.name,
-        description: t.description || "",
-      })),
-    };
-  }
-}
-

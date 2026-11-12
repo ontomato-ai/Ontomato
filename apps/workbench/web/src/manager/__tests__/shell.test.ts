@@ -102,13 +102,15 @@ describe("open-source Ontology Service page", () => {
     expect(document.querySelector(".app-panel")).toBeNull();
     expect(document.querySelector(".panel-title")).toBeNull();
     expect(document.querySelector(".platform-app-menu")).not.toBeNull();
+    // No empty group: a heading shows only with a page under it.
     expect([...document.querySelectorAll(".platform-app-menu .group-heading")].map((heading) => heading.textContent)).toEqual([
       "Facts",
       "Capabilities",
       "Governance",
-      "Products",
     ]);
     expect(document.querySelector(".platform-app-menu .page-row.active .page-label")?.textContent).toBe("Object Types");
+    // The application's own models, at the foot of its menu like every application's own settings.
+    expect(document.querySelector(".platform-app-menu .page-foot .page-label")?.textContent).toBe("Models");
     // The manager's own frame fills the page beside that menu.
     expect(app!.querySelector(".ontology-manager")).not.toBeNull();
   });
@@ -159,13 +161,14 @@ describe("open-source Ontology Service page", () => {
   it("the current application is marked in the rail, and the platform pages get the 48px page header", async () => {
     await start("/#/admin/audit-log");
     expect(document.querySelector(".rail-row.active")?.getAttribute("aria-label")).toBe("System settings");
-    // The application's own header names the application and its pages as tabs; the page's title is the tab it is in.
-    expect(document.querySelector(".platform-page-header .page-title")?.textContent).toBe("System settings");
-    expect(document.querySelector(".platform-page-header .page-tab.active")?.textContent?.trim()).toBe("Run Records");
+    // The header names the page; the application's name heads its column, where the page is the current row.
+    expect(document.querySelector(".platform-page-header .page-title")?.textContent).toBe("Audit log");
+    expect(document.querySelector(".platform-app-menu .app-menu-title")?.textContent).toBe("System settings");
+    expect(document.querySelector(".platform-app-menu .page-row.active")?.textContent?.trim()).toBe("Audit log");
     await start("/#/settings/system-config/general");
-    const tabs = [...document.querySelectorAll(".platform-page-header .page-tab")].map((tab) => tab.textContent?.trim());
     // The page under the application is the general settings, not a second "System settings".
-    expect(tabs).toEqual(["Models", "General settings", "External MCP services", "MCP services", "Run Records"]);
+    expect(document.querySelector(".platform-page-header .page-title")?.textContent).toBe("General");
+    expect(document.querySelector(".page-tab")).toBeNull();
     await start("/#/ontology/objects");
     expect(document.querySelector(".rail-row.active")?.getAttribute("aria-label")).toBe("Ontology manager");
     // The Manager's pages use the platform's one header too: the shell draws none for them, and their own page does.

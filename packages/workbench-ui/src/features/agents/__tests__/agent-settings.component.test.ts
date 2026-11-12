@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import ElementPlus from "element-plus";
+import { computed } from "vue";
+import { agentModelLabelsKey, platformPageAccessKey, type AgentModelLabels } from "@ontomato/platform-shell";
 import { workbenchI18n } from "../../../i18n";
 import AgentSettingsNav from "../components/AgentSettingsNav.vue";
 import AgentSettingsPage from "../components/AgentSettingsPage.vue";
@@ -40,8 +42,23 @@ afterEach(() => {
 
 type SettingsProps = { agentId: string | null; creating: boolean };
 
-async function mountNav(props: SettingsProps) {
-  const wrapper = mount(AgentSettingsNav, { props, global: { plugins: [i18n, ElementPlus] }, attachTo: document.body });
+/** The platform's answers the column reads: which pages the account may open, and the model page's words. */
+function platform(granted: readonly string[]) {
+  return {
+    [platformPageAccessKey as symbol]: (path: string) => granted.includes(path),
+    [agentModelLabelsKey as symbol]: computed(() => ({ title: "Models" }) as AgentModelLabels),
+  };
+}
+
+/** The agents' settings, which an account with the agents' permission may open. */
+const AGENT_SETTINGS = "/agents/settings";
+
+async function mountNav(props: SettingsProps, granted: readonly string[] = [AGENT_SETTINGS]) {
+  const wrapper = mount(AgentSettingsNav, {
+    props: { ...props, models: false },
+    global: { plugins: [i18n, ElementPlus], provide: platform(granted) },
+    attachTo: document.body,
+  });
   wrappers.push(wrapper);
   await flushPromises();
   return wrapper;
@@ -75,6 +92,22 @@ describe("the agent settings column", () => {
     expect(wrapper.emitted("selectAgent")).toEqual([["a2"]]);
     expect(wrapper.emitted("createAgent")).toHaveLength(1);
     expect(wrapper.emitted("back")).toHaveLength(1);
+  });
+
+  it("lists the models at its foot only for an account that may open them", async () => {
+    expect((await mountNav({ agentId: "a1", creating: false })).find(".nav-foot").exists()).toBe(false);
+    const wrapper = await mountNav({ agentId: "a1", creating: false }, [AGENT_SETTINGS, "/agents/settings/models"]);
+    await wrapper.find(".nav-foot .foot-row").trigger("click");
+    expect(wrapper.find(".nav-foot").text()).toBe("Models");
+    expect(wrapper.emitted("openModels")).toHaveLength(1);
+  });
+
+  it("lists neither the agents nor a new one to an account without the agents' permission", async () => {
+    const wrapper = await mountNav({ agentId: null, creating: false }, ["/agents/settings/models"]);
+    expect(wrapper.find(".agent-rows").exists()).toBe(false);
+    expect(wrapper.find(".new-agent").exists()).toBe(false);
+    expect(wrapper.find(".note").exists()).toBe(false);
+    expect(wrapper.find(".nav-foot").text()).toBe("Models");
   });
 });
 
