@@ -58,6 +58,7 @@ public class VectorResourceController {
 		return ret;
 	}
 	
+	@BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
 	@PostMapping("/vectorResource/delete")
 	@ResponseBody
 	public JSONObject delete(@RequestBody JSONObject param, HttpServletRequest request) {
@@ -85,6 +86,7 @@ public class VectorResourceController {
 		return ret;
 	}
 
+	@BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
 	@PostMapping("/vectorResource/upload")
 	@ResponseBody
 	public JSONObject upload(

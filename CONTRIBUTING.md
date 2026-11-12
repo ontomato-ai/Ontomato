@@ -27,6 +27,7 @@ fits real business data.
    pnpm typecheck:workbench
    pnpm test:workbench
    pnpm lint:workbench
+   pnpm lint:runtime   # agent runtime
    pnpm test:scripts   # build, packaging and dev scripts
    pnpm lint:scripts
    ```

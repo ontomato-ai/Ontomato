@@ -264,14 +264,8 @@ button.process-toggle {
   cursor: pointer;
   transition: background-color var(--transition-fast, 150ms);
 }
-/* The reply's delegated work, right after its process line's chevron: "Worked for 0:25 › · 2 tasks". */
-.tasks-entry {
-  padding-left: 0;
-}
-.tasks-entry::before {
-  content: "·";
-  margin-right: 4px;
-}
+/* The reply's delegated work, right after its process line's chevron: "Worked for 0:25 › 2 tasks". Its own padding
+   is the space from the chevron, so every language's label stands as written, with no separator glyph inside it. */
 button.process-toggle:hover {
   background: var(--el-fill-color);
   color: var(--el-text-color-regular);

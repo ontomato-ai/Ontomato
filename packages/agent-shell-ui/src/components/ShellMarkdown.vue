@@ -4,9 +4,10 @@ import { MarkdownView } from "@ontomato/foundation-ui/markdown";
 import { messageContextKey } from "../context";
 import ArtifactImageNode from "./ArtifactImageNode.vue";
 import ArtifactLinkNode from "./ArtifactLinkNode.vue";
+import ArtifactParagraphNode from "./ArtifactParagraphNode.vue";
 
 /** A run's `outputs/` files and the host's page addresses are the conversation's own: its nodes draw them. */
-const artifactNodes = { image: ArtifactImageNode, link: ArtifactLinkNode };
+const artifactNodes = { image: ArtifactImageNode, link: ArtifactLinkNode, paragraph: ArtifactParagraphNode };
 
 /** One assistant text block in the product Markdown; files go through renderers. */
 const props = defineProps<{ content: string; final: boolean; runId: string }>();

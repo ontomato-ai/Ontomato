@@ -1237,7 +1237,9 @@ public abstract class AbstractDataAdapterTest {
 		String result = adapter.executeDsl(singleStepDsl(objects, relationships, fields, null, null, null),
 				"test-session", null, mqls);
 		JSONArray answer = JSON.parseArray(result).getJSONObject(0).getJSONArray("answer");
-		return !answer.isEmpty();
+		// An adapter may answer an empty relation with null; the engine (HttpRequestUtil) reads that
+		// as an empty array, so the probe reads it the same way.
+		return answer != null && !answer.isEmpty();
 	}
 
 	// ----------------------------------------------------------------------------------

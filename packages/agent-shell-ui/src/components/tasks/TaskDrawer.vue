@@ -71,7 +71,7 @@ const result = (task: AgentTask) => props.snapshot.qualityResults.find((value) =
   bottom: 0;
   display: flex;
   flex-direction: column;
-  width: min(320px, 100%);
+  width: var(--shell-task-drawer-width);
   border-left: 1px solid var(--el-border-color-lighter);
   background: var(--el-bg-color);
   box-shadow: var(--el-box-shadow-light);

@@ -4,6 +4,7 @@ import { createI18n } from "vue-i18n";
 import { createMemoryHistory, createRouter } from "vue-router";
 import ElementPlus from "element-plus";
 import { defaultPersonalWorkspace } from "@ontomato/contracts/personal-workspace";
+import { randomId } from "@ontomato/contracts/random-id";
 import { openApplicationKey } from "../apps";
 import Workspace from "../pages/PersonalWorkspaceRoute.vue";
 
@@ -39,13 +40,14 @@ beforeEach(() => {
     return Response.json({ data: { ...defaultPersonalWorkspace(), dashboardIds: ["board-a"], applicationIds: ["app-orders"] } });
   });
 });
-async function page() {
+async function page(stubs: Record<string, boolean> = {}) {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: "/workspace", component: Workspace }, { path: "/dashboards", component: { template: "<div />" } }, { path: "/agents/chat", component: { template: "<div />" } },
   ] });
   await router.push("/workspace");
   const open = vi.fn();
   const wrapper = mount(Workspace, { global: {
+    stubs,
     plugins: [router, ElementPlus, createI18n({ legacy: false, locale: "en", messages: { en: {} } })],
     provide: { [openApplicationKey as symbol]: open },
   } });
@@ -106,10 +108,10 @@ describe("personal workspace", () => {
   });
   it("prioritizes intervention and recent results while leaving normal schedules in the task application", async () => {
     const now = new Date().toISOString();
-    const task = (title: string, extra = {}) => ({ id: crypto.randomUUID(), title, appId: "agents", content: {}, formRevision: "1", frequency: { kind: "daily", time: "09:00" }, timeZone: "UTC", notifyEmail: null,
+    const task = (title: string, extra = {}) => ({ id: randomId(), title, appId: "agents", content: {}, formRevision: "1", frequency: { kind: "daily", time: "09:00" }, timeZone: "UTC", notifyEmail: null,
       creatorId: "alice", summary: [], enabled: true, pause: null, nextRunAt: null, revision: 1, createdAt: now, updatedAt: now, activeRunId: null, lastRun: null, latestResult: null, ...extra });
-    const reportId = crypto.randomUUID();
-    const runId = crypto.randomUUID();
+    const reportId = randomId();
+    const runId = randomId();
     api.tasks = [task("Normal schedule"), task("Paused schedule", { pause: { code: "permission_denied", message: "Access changed" } }), task("Report ready", {
       id: reportId,
       lastRun: { id: runId, taskId: reportId, trigger: "schedule", status: "completed", scheduledAt: now, startedAt: now, finishedAt: now, error: null, resultSummary: "Report generated", resultLink: { appId: "agents", path: "/agents/chat?sessionId=report" }, spendTime: 10 },
@@ -141,8 +143,14 @@ describe("personal workspace", () => {
     wrapper.unmount();
   });
   it("keeps the settings open on failed saves and persists the draft on retry", async () => {
-    const { wrapper } = await page();
+    // Select popup rendering is outside the save/retry contract.
+    const { wrapper } = await page({ ElSelect: true });
     await wrapper.findAll("button").find(button => button.text() === "Configure workspace")!.trigger("click");
+    await flushPromises();
+    const dialog = wrapper.findComponent({ name: "ElDialog" });
+    const layout = dialog.findComponent({ name: "ElSelect" });
+    layout.vm.$emit("update:modelValue", "tasks");
+    layout.vm.$emit("change", "tasks");
     await flushPromises();
     api.failSave = true;
     const save = () => wrapper.findAll("button").find(button => button.text() === "Save")!;
@@ -150,10 +158,13 @@ describe("personal workspace", () => {
     await flushPromises();
     expect(wrapper.text()).toContain("Save failed");
     expect(api.saved).toBeNull();
+    expect(dialog.props("modelValue")).toBe(true);
+    expect(layout.props("modelValue")).toBe("tasks");
     api.failSave = false;
     await save().trigger("click");
     await flushPromises();
-    expect(api.saved).toEqual({ ...defaultPersonalWorkspace(), dashboardIds: ["board-a"], applicationIds: ["app-orders"], sections: { main: ["apps", "data"], sidebar: ["conversations", "objects", "tasks", "recent"], hidden: [] } });
+    expect(api.saved).toEqual({ ...defaultPersonalWorkspace(), layout: "tasks", dashboardIds: ["board-a"], applicationIds: ["app-orders"], sections: { main: ["tasks", "data"], sidebar: ["conversations", "objects", "apps", "recent"], hidden: [] } });
+    expect(dialog.props("modelValue")).toBe(false);
     wrapper.unmount();
   });
 });

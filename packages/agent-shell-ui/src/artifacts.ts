@@ -39,6 +39,28 @@ export function fileName(path: string): string {
   return path.split("/").at(-1) ?? path;
 }
 
+/** A Markdown inline node as markstream hands it to a card: its own words, or the nodes it wraps. */
+export interface InlineMarkdownNode {
+  type: string;
+  content?: string;
+  code?: string;
+  children?: readonly InlineMarkdownNode[];
+}
+
+/**
+ * The words an inline Markdown node shows, without its marks: a file card and the panel it opens name a file with the
+ * text of its label, so `*emphasis*` reads as emphasis, `**strong**` as strong and `` `code` `` as code.
+ */
+export function plainText(nodes: readonly InlineMarkdownNode[]): string {
+  return nodes
+    .map((node) => {
+      if (node.type === "text") return node.content ?? "";
+      if (node.type === "inline_code") return node.code ?? "";
+      return plainText(node.children ?? []);
+    })
+    .join("");
+}
+
 /** Display extension for file cards, e.g. "CHART" for x.chart.json or "CSV". */
 export function fileKind(path: string): string {
   const name = fileName(path).toLowerCase();

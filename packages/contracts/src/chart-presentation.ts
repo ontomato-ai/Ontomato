@@ -77,6 +77,37 @@ export function chartBrandColors(source: Option, theme: Record<string, unknown>)
   return option;
 }
 
+/**
+ * A grid that contains its labels also contains its axis names, a titled chart starts its grid below the title,
+ * and long category labels are cut short so that containing them cannot squeeze the plot away.
+ */
+export function chartAxisBounds(source: Option, height: number): Option {
+  if (!source.xAxis && !source.yAxis) return source;
+  // A rotated x label of this width takes at most about a fifth of the chart's height.
+  const capped = (axes: Option | Option[], width: number) => {
+    const list = [axes].flat().map((axis: Option) => axis && (axis.type === "category" || (axis.type == null && Array.isArray(axis.data))) && axis.axisLabel?.width == null
+      ? { ...axis, axisLabel: { ...axis.axisLabel, width, overflow: axis.axisLabel?.overflow ?? "truncate" } }
+      : axis);
+    return Array.isArray(axes) ? list : list[0];
+  };
+  const titles = [source.title].flat().filter((title) => title && title.show !== false && (title.text || title.subtext));
+  const titleBand = titles.some((title) => title.subtext) ? 64 : titles.length ? 48 : 0;
+  const pixels = (value: unknown) => typeof value === "number" ? value : typeof value === "string" && value.endsWith("%") ? parseFloat(value) * height / 100 : Number(value) || 0;
+  const grids = [source.grid ?? {}].flat().map(({ containLabel, ...grid }) => ({
+    ...grid,
+    // ECharts 6 treats containLabel as "labels only", so a long axis name still leaves the canvas.
+    ...(containLabel ? { outerBoundsMode: "same", outerBoundsContain: "all" } : {}),
+    // An unset top keeps the ECharts default, which already clears a title.
+    ...(titleBand && grid.top != null && pixels(grid.top) < titleBand ? { top: titleBand } : {}),
+  }));
+  return {
+    ...source,
+    grid: Array.isArray(source.grid) ? grids : grids[0],
+    ...(source.xAxis ? { xAxis: capped(source.xAxis, Math.max(72, Math.round(height * 0.3))) } : {}),
+    ...(source.yAxis ? { yAxis: capped(source.yAxis, 200) } : {}),
+  };
+}
+
 /** Runs inside an HTML artifact's sandbox; no access to the parent document or credentials. */
 function installChartTheme(theme: Record<string, any>, apply: typeof chartBrandColors) {
   const browser = globalThis as any;

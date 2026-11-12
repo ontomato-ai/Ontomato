@@ -3,7 +3,7 @@ import path from "node:path";
 import { domainSkillsRoot, publicSkillsRoot } from "../../../content/layout";
 import { SkillScanner } from "../discovery/scanner";
 import { InvalidSkillPackageError } from "../manifest";
-import type { SkillMeta, SkillQuery } from "../types";
+import type { SkillMeta } from "../types";
 
 export class SkillRegistryManager {
   private skills: SkillMeta[] = [];
@@ -15,10 +15,8 @@ export class SkillRegistryManager {
       throw new InvalidSkillPackageError("A domain skill conflicts with a public skill name");
   }
 
-  getSkills(query: SkillQuery = {}) {
-    return this.skills.filter((skill) =>
-      (!query.type || skill.manifest.type === query.type) &&
-      (!query.category || skill.manifest.category === query.category));
+  getSkills() {
+    return this.skills;
   }
   getSkillById(id: string) { return this.skills.find((skill) => skill.id === id) ?? null; }
 }

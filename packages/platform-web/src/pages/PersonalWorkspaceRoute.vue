@@ -5,6 +5,7 @@ import { ElMessageBox } from "element-plus";
 import { readRememberedAgent } from "@ontomato/workbench-ui";
 import { homeStateSchema, type HomeState } from "@ontomato/contracts/platform-home";
 import type { WorkspaceObjectReference } from "@ontomato/contracts/workspace-objects";
+import { randomId } from "@ontomato/contracts/random-id";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { nodeApiRequest } from "@ontomato/workbench-ui";
@@ -166,13 +167,13 @@ async function analyze(target: WorkspaceResource, intent: "analyze" | "explain" 
       ? await json("/api/dashboards/query-card", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dashboardId: target.dashboardId, cardId: target.cardId }) })
       : target.runId ? await json(`${platformSchedulesPath}/${target.taskId}/runs/${target.runId}`) : null;
     const session = agentHostCreateSessionResponseSchema.parse(await json("/api/assistant/sessions", {
-      method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ agentId: agent.id }),
+      method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": randomId() }, body: JSON.stringify({ agentId: agent.id }),
     })).session;
     const message = intent === "explain"
       ? (locale.value.startsWith("zh") ? "请解释这个指标的业务含义、统计口径、实际查询参数及结果中的空值。以当前资源和查询证据为依据，缺少的说明请明确指出，不推测定义。" : "Explain this metric's business meaning, definition, saved parameters and missing values using the resource and query evidence. Explicitly identify unavailable definitions.")
       : (locale.value.startsWith("zh") ? "请分析当前指标或任务结果，以查询证据为依据解释主要发现和数据限制，并提出可继续核实的问题。区分执行状态与业务结论，不推断缺失数据。本次只分析，不执行写入。" : "Analyze this metric or task result using its evidence. Explain findings and limitations and suggest questions to verify. Distinguish run status from business conclusions; do not infer missing data or write data.");
     await json(`/api/assistant/sessions/${session.id}/runs`, {
-      method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ message: `${message}\n${JSON.stringify({ resource: target, evidence })}` }),
+      method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": randomId() }, body: JSON.stringify({ message: `${message}\n${JSON.stringify({ resource: target, evidence })}` }),
     });
     resourceOpen.value = false;
     await router.push({ path: platformRoutes.chat.path, query: { agentId: agent.id, sessionId: session.id } });

@@ -130,6 +130,7 @@ public class MetricViewController {
 		return ret;
 	}
 	
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/metricView/queryById")
     @ResponseBody
     public JSONObject queryById(@RequestBody JSONObject param) {
@@ -148,6 +149,7 @@ public class MetricViewController {
 		return ret;
 	}
 	
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/metricView/queryList")
     @ResponseBody
     public JSONObject queryList(@RequestBody JSONObject param) {
@@ -167,6 +169,7 @@ public class MetricViewController {
 		return ret;
 	}
 
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@GetMapping("/metricView/export")
 	public ResponseEntity<byte[]> exportMetricViews(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		try {
@@ -196,6 +199,7 @@ public class MetricViewController {
 		return ret;
 	}
 	
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/metricView/find")
     @ResponseBody
     public JSONObject find(@RequestBody JSONObject param) {
@@ -231,6 +235,7 @@ public class MetricViewController {
 		return ret;
 	}
 	
+	@BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
 	@PostMapping("/metricView/test")
     @ResponseBody
     public JSONObject test(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param, jakarta.servlet.http.HttpServletRequest executionRequest) {
@@ -259,6 +264,7 @@ public class MetricViewController {
 		return ret;
 	}
 	
+	@BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
 	@PostMapping("/metricView/execute")
     @ResponseBody
     public JSONObject execute(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param, jakarta.servlet.http.HttpServletRequest executionRequest) {
@@ -286,6 +292,7 @@ public class MetricViewController {
 		return ret;
 	}
 	
+	@BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
 	@PostMapping("/metricView/testExecute")
     @ResponseBody
     public JSONObject testExecute(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param, jakarta.servlet.http.HttpServletRequest executionRequest) {

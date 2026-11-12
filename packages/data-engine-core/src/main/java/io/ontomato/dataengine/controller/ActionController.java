@@ -196,6 +196,7 @@ public class ActionController {
 		return ret;
 	}
 	
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/action/queryById")
     @ResponseBody
     public JSONObject queryById(@RequestBody JSONObject param) {
@@ -213,6 +214,7 @@ public class ActionController {
 		return ret;
 	}
 	
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/action/queryList")
     @ResponseBody
     public JSONObject queryList(@RequestBody JSONObject param) {
@@ -256,6 +258,7 @@ public class ActionController {
 		return ret;
 	}
 
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@GetMapping("/action/export")
 	public ResponseEntity<byte[]> exportActions(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		try {
@@ -286,6 +289,7 @@ public class ActionController {
 		return ret;
 	}
 	
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/action/find")
     @ResponseBody
     public JSONObject find(@RequestBody JSONObject param) {
@@ -325,6 +329,7 @@ public class ActionController {
 	 * An Action's form: without {@code values} its fields and their initial text from the bound {@code parameters};
 	 * with them the field errors, or the typed parameters that {@code /action/execute} then takes.
 	 */
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/action/form")
     @ResponseBody
     public JSONObject form(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
@@ -344,6 +349,7 @@ public class ActionController {
 		return ret;
 	}
 
+	@BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
 	@PostMapping("/action/execute")
     @ResponseBody
     public JSONObject execute(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang,

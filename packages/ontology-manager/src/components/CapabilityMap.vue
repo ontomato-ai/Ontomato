@@ -160,7 +160,6 @@ const edges = computed<Edge[]>(() => {
   const result: Edge[] = [];
   const roleByCode = new Map(roles.value.map((role) => [role.code, role]));
   const actionKeys = new Set(actions.value.filter((item) => item.id).map((item) => `action:${item.id}`));
-  const metricKeys = new Set(metrics.value.filter((item) => item.id).map((item) => `metric:${item.id}`));
 
   // subject -> role: stored membership, with organization and position grants already folded in.
   for (const subject of subjects.value) {

@@ -8,8 +8,7 @@ import { skillRegistryManager, type SkillRegistryManager } from "../../core/skil
 import type { SkillMeta } from "../../core/skills/types";
 import { resolveSkillPackageFile } from "../../core/skills/discovery/loader";
 import { readSkillPackage } from "../../core/skills/package";
-import { InvalidSkillPackageError, normalizeSkillPackagePath, parseSkillMarkdown, parseSkillMarkdownFrontmatter,
-  readSkillLabels } from "../../core/skills/manifest";
+import { InvalidSkillPackageError, normalizeSkillPackagePath, parseSkillMarkdown, readSkillLabels } from "../../core/skills/manifest";
 import { publicSkillLabelsPath, publicSkillTranslationsRoot, publicSkillsRoot } from "../../content/layout";
 import { resolveLocale } from "../../i18n";
 import { createLogger } from "../../logging/logger";
@@ -36,11 +35,8 @@ class SkillManager {
     const labelPath = publicSkillLabelsPath();
     const labels = skill.isPublic && labelPath && resolveLocale(locale).toLowerCase().startsWith("zh")
       ? readSkillLabels(labelPath)[skill.id] : undefined;
-    const m = skill.manifest;
-    return { id: skill.id, skill: skillReference(skill, domainId), type: m.type, category: m.category,
-      title: labels?.title ?? m.title, description: labels?.description ?? m.description,
-      tags: labels?.tags ?? m.tags, isPublic: skill.isPublic,
-      path: skill.path, version: m.version, outputType: m.outputType };
+    return { id: skill.id, skill: skillReference(skill, domainId), isPublic: skill.isPublic, path: skill.path,
+      title: labels?.title ?? skill.id, description: labels?.description ?? skill.manifest.description };
   }
   async getAllSkills(domainId: string, locale?: string): Promise<SkillInfo[]> {
     const registry = await skillRegistryManager.forDomain(domainId);
@@ -50,7 +46,7 @@ class SkillManager {
     const needle = query.trim().toLowerCase();
     if (!needle) return [];
     return (await this.getAllSkills(domainId, locale)).filter((s) =>
-      [s.id, s.title, s.description, ...s.tags].some((v) => v?.toLowerCase().includes(needle)));
+      [s.id, s.title, s.description].some((v) => v.toLowerCase().includes(needle)));
   }
   async getSkillReferences(domainId: string, id: string) {
     const skill = requireSkill(await skillRegistryManager.forDomain(domainId), id);
@@ -125,7 +121,8 @@ class SkillManager {
   }
   /**
    * One file of the package as text (packages are UTF-8 throughout). A public skill's instructions are shown in the
-   * reader's language when the edition ships a translation: the package's own frontmatter over the translated body.
+   * reader's language when the edition ships a translation, which is the body alone: the package's own frontmatter
+   * stays over it.
    */
   async readSkillFile(domainId: string, id: string, requestedPath: string, locale?: string): Promise<string> {
     const relative = normalizeSkillPackagePath(requestedPath);
@@ -137,7 +134,7 @@ class SkillManager {
       ? path.join(translations, resolveLocale(locale), path.relative(publicSkillsRoot(), skill.path), relative) : null;
     if (!translated || !fs.existsSync(translated)) return source;
     const frontmatter = source.match(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/)?.[0] ?? "";
-    return frontmatter + parseSkillMarkdownFrontmatter(fs.readFileSync(translated, "utf8"))!.content;
+    return frontmatter + fs.readFileSync(translated, "utf8");
   }
   async exportSkill(domainId: string, id: string): Promise<Buffer> {
     const skill = requireSkill(await skillRegistryManager.forDomain(domainId), id);
@@ -165,7 +162,7 @@ class SkillManager {
       try { parsed = parseSkillMarkdown(decoder.decode(roots[0]!.getData())); }
       catch (error) { throw new InvalidSkillPackageError(`Invalid SKILL.md: ${String(error)}`); }
       if (!parsed) throw new InvalidSkillPackageError("Standard SKILL.md frontmatter is required");
-      const id = parsed.frontmatter.name;
+      const id = parsed.manifest.name;
       const registry = await skillRegistryManager.forDomain(domainId);
       const existing = registry.getSkillById(id);
       if (existing) {

@@ -45,27 +45,32 @@ public class OntologyQueryController {
     return access.grant() == null && caller != null ? agentAccess.scopedQuery(access, caller) : access;
   }
 
+  @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
   @GetMapping("/ontology/query/overview")
   public Object overview(HttpServletRequest request) {
     return ontology.overview(access(request));
   }
 
+  @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
   @PostMapping("/ontology/query/schema")
   public Object schema(@RequestBody JSONObject body, HttpServletRequest request) {
     return ontology.schema(body.getList("classNames", String.class), access(request));
   }
 
+  @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
   @PostMapping("/ontology/query/dsl-reference")
   public Object reference(@RequestBody JSONObject body, HttpServletRequest request) {
     return ontology.reference(
         body.getList("classNames", String.class), access(request));
   }
 
+  @BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
   @PostMapping("/ontology/query/distinct-values")
   public Object distinct(@RequestBody JSONObject body, HttpServletRequest request) {
     return ontology.distinct(body, access(request));
   }
 
+  @BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
   @PostMapping("/ontology/query/execute-dsl")
   public Object execute(@RequestBody JSONObject body, HttpServletRequest request) {
     if (body.keySet().equals(java.util.Set.of("queryRef")))
@@ -75,16 +80,19 @@ public class OntologyQueryController {
     return ontology.execute(body.getJSONObject("dsl"), access(request));
   }
 
+  @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
   @PostMapping("/ontology/query/metrics/search")
   public Object metrics(@RequestBody JSONObject body, HttpServletRequest request) {
     return ontology.metrics(body, access(request));
   }
 
+  @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
   @PostMapping("/ontology/query/metrics/describe")
   public Object describeMetric(@RequestBody JSONObject body, HttpServletRequest request) {
     return ontology.describeMetric(body.getString("id"), access(request));
   }
 
+  @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
   @PostMapping("/ontology/query/metrics/parameter-form")
   public Object metricForm(@RequestBody JSONObject body, HttpServletRequest request) {
     io.ontomato.dataengine.service.agent.AgentJson.fields(body, "id", "parameters");
@@ -92,6 +100,7 @@ public class OntologyQueryController {
         body.getJSONObject("parameters"), access(request), language(request));
   }
 
+  @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
   @PostMapping("/ontology/query/metrics/parse-parameters")
   public Object metricParameters(@RequestBody JSONObject body, HttpServletRequest request) {
     io.ontomato.dataengine.service.agent.AgentJson.fields(body, "id", "revision", "parameters", "values");
@@ -102,6 +111,7 @@ public class OntologyQueryController {
         body.getJSONObject("values"), access(request), language(request));
   }
 
+  @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
   @PostMapping("/ontology/query/knowledge/search")
   public Object knowledge(@RequestBody JSONObject body, HttpServletRequest request) {
     return ontology.knowledge(body, access(request));

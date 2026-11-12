@@ -1,13 +1,6 @@
 ---
 name: admin-choropleth-map
 description: Render interactive choropleth maps for Chinese provincial regions by matching regional statistics to bundled or automatically loaded GeoJSON boundaries. Supports province-name aliases, administrative-code matching, color classification, legends, popups, and missing-data diagnostics.
-metadata:
-  ontomato.type: executable
-  ontomato.category: visualization
-  ontomato.title: Administrative Choropleth Map
-  ontomato.tags: '["visualization","choropleth","administrative map","geospatial","GeoJSON","Leaflet","China provinces"]'
-  ontomato.version: 1.1.1
-  ontomato.outputType: html
 ---
 
 ## Standard CLI
@@ -32,7 +25,7 @@ Boundary resolution order:
 
 The archive includes the province boundary payload for offline boundary loading. Run `node scripts/fetch-boundaries.mjs` to refresh it from the documented source.
 
-The default China boundary set displays a GCJ-02 AMap basemap, requiring browser network access to `https://webrd0{s}.is.autonavi.com`. Tile failures show a status message while the choropleth remains usable. Set `basemap: "none"` for a plain offline background. Explicit GeoJSON defaults to no basemap because its coordinate system is unknown; enable `basemap: "amap"` only for compatible GCJ-02 coordinates. Leaflet JS/CSS still use the host resource endpoints.
+The default China boundary set displays a GCJ-02 AMap basemap, requiring browser network access to `https://webrd0{s}.is.autonavi.com`. Tile failures show a status message while the choropleth remains usable. Set `basemap: "none"` for a plain offline background. Explicit GeoJSON defaults to no basemap because its coordinate system is unknown; enable `basemap: "amap"` only for compatible GCJ-02 coordinates. Leaflet JS/CSS are inlined into the output, so they need no network access.
 
 ## Input Parameters
 

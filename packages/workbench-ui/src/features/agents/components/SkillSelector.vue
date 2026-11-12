@@ -33,11 +33,6 @@
         <div v-if="skill.description" class="skill-description">
           {{ skill.description }}
         </div>
-        <div v-if="skill.tags && skill.tags.length > 0" class="skill-tags">
-          <el-tag v-for="tag in skill.tags" :key="tag" size="small" type="info">
-            {{ tag }}
-          </el-tag>
-        </div>
       </div>
 
       <el-empty
@@ -85,7 +80,7 @@ const displayedSkills = computed(() => {
     ...skills.value.map((item) => ({ ...item, unavailable: false })),
     ...selectedSkills.value
       .filter((skill) => !available.has(runtimeSkillKey(skill)))
-      .map((skill) => ({ skill, title: skill.name, description: "", tags: [], unavailable: true })),
+      .map((skill) => ({ skill, title: skill.name, description: "", unavailable: true })),
   ];
 });
 
@@ -189,13 +184,6 @@ loadSkills();
   overflow-wrap: anywhere;
   font-size: 13px;
   color: var(--el-text-color-secondary);
-  margin-bottom: var(--spacing-sm);
   line-height: 1.5;
-}
-
-.skill-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
 }
 </style>

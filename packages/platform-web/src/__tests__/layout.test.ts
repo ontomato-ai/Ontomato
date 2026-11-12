@@ -84,7 +84,7 @@ describe("the platform layout", () => {
    */
   it("keeps the page mounted when the catalog later gives its application a menu", async () => {
     let mounts = 0;
-    const counted = defineComponent({ name: "counted", mounted: () => { mounts += 1; }, render: () => h("p", { class: "page-double" }, "counted") });
+    const counted = defineComponent({ name: "CountedPage", mounted: () => { mounts += 1; }, render: () => h("p", { class: "page-double" }, "counted") });
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [{ path: "/", component: { render: () => h(RouterView) }, children: [{ path: "/ontology/objects", component: counted }] }],

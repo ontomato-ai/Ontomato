@@ -84,7 +84,7 @@ const pages = computed(() => {
 const modelsPage = ontologyAgentModelPages.find((page) => page.app === "governance")!;
 const modelSource = ontologyAgentModelSource(manager.dataEngine, modelsPage);
 const modelLabels = useAgentModelLabels();
-const bottom = computed(() => (canOpen(modelsPage.path) ? { label: modelLabels.value.title, icon: "settings" } : null));
+const bottom = computed(() => (canOpen(modelsPage.path) ? { label: modelLabels.value.title, icon: "models" } : null));
 const workbench = computed(() => ({
   id: "knowledge-governance", label: pt("platform.governance"),
   features: pages.value.map((page) => ({ ...page, availability: "page" as const, withConversation: true })),

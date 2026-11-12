@@ -125,16 +125,20 @@ async function remove() {
     <header class="detail-titlebar platform-page-gutter">
       <el-button text :icon="ArrowLeft" @click="back">{{ t("capabilities.backToSkills") }}</el-button>
       <span class="title-divider" aria-hidden="true"></span>
-      <h1 class="title-name">{{ skill ? skill.title || skill.id : skillId }}</h1>
+      <h1 class="title-name">{{ skill ? skill.title : skillId }}</h1>
       <el-tag v-if="skill" size="small" :type="skill.isPublic ? 'info' : 'primary'" effect="plain" disable-transitions>
         {{ skill.isPublic ? t("capabilities.sourcePublic") : t("capabilities.sourceDomain") }}
       </el-tag>
       <span v-if="skill?.description" class="title-description">{{ skill.description }}</span>
       <span class="title-spacer"></span>
       <el-button :icon="Download" @click="exportSkill(skillId)">{{ t("common.export") }}</el-button>
-      <el-button v-if="skill && !skill.isPublic" type="danger" plain :icon="Trash2" @click="remove">
-        {{ t("common.delete") }}
-      </el-button>
+      <el-tooltip v-if="skill" :disabled="!skill.isPublic" :content="t('capabilities.builtInNoDelete')" placement="bottom">
+        <span>
+          <el-button type="danger" plain :icon="Trash2" :disabled="skill.isPublic" @click="remove">
+            {{ t("common.delete") }}
+          </el-button>
+        </span>
+      </el-tooltip>
     </header>
     <div class="detail-body platform-page-gutter">
       <el-alert v-if="loadFailed" type="error" :closable="false" show-icon :title="t('capabilities.loadFailed')">

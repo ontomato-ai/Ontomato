@@ -86,7 +86,8 @@ function format(value: unknown) {
   return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 function displayField(field: string, value: unknown) {
-  if (value == null || value === "") return "—";
+  // An empty list is as empty as a missing value (the visualization reads it the same way).
+  if (value == null || value === "" || (Array.isArray(value) && value.length === 0)) return "—";
   const options = props.widget.fieldOptions[field];
   if (!options || value == null || value === "") return format(value);
   return options.find(option => option.value === String(value))?.label || ot("ovUnrecognizedOption");

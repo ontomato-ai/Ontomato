@@ -1,6 +1,5 @@
 import fs from "node:fs";
-import path from "node:path";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 import {
   runtimeSkillRefSchema,
@@ -10,8 +9,6 @@ import {
 import { runtimeRelativePathSchema } from "@ontomato/contracts/agent-runtime-values";
 
 export const SkillIdSchema = runtimeSkillRefSchema.shape.name;
-export const SkillTypeSchema = z.enum(["executable", "knowledge"]);
-export const SkillCategorySchema = z.enum(["analysis", "visualization"]);
 
 export class InvalidSkillPackageError extends Error {
   readonly code = "INVALID_SKILL_PACKAGE";
@@ -40,68 +37,31 @@ export function parseSkillMarkdownFrontmatter(markdown: string) {
   }
 }
 
-const displaySchema = z.object({
-  type: SkillTypeSchema,
-  category: SkillCategorySchema.default("analysis"),
-  title: z.string().optional(),
-  tags: z.array(z.string()).default([]),
-  version: z.string().default(""),
-  outputType: z.enum(["text", "html", "json"]).optional(),
-});
-export type SkillManifest = StandardSkillFrontmatter & z.infer<typeof displaySchema> & {
-  scriptPath?: string;
-};
+/** A package is its standard frontmatter; anything else in `metadata` is the package's own and the platform reads none of it. */
+export type SkillManifest = StandardSkillFrontmatter;
 export interface ParsedSkillMarkdown {
-  frontmatter: StandardSkillFrontmatter;
   manifest: SkillManifest;
   content: string;
 }
 
-export function parseSkillMarkdown(markdown: string, scriptPath?: string): ParsedSkillMarkdown | null {
+export function parseSkillMarkdown(markdown: string): ParsedSkillMarkdown | null {
   const parsed = parseSkillMarkdownFrontmatter(markdown);
   if (!parsed) return null;
   try {
-    const frontmatter = standardSkillFrontmatterSchema.parse(parsed.frontmatter);
-    const m = frontmatter.metadata ?? {};
-    const display = displaySchema.parse({
-      type: m["ontomato.type"] ?? (scriptPath ? "executable" : "knowledge"),
-      category: m["ontomato.category"],
-      title: m["ontomato.title"],
-      tags: m["ontomato.tags"] ? JSON.parse(m["ontomato.tags"]) : [],
-      version: m["ontomato.version"],
-      outputType: m["ontomato.outputType"],
-    });
-    return { frontmatter, manifest: { ...frontmatter, ...display, scriptPath }, content: parsed.content };
+    return { manifest: standardSkillFrontmatterSchema.parse(parsed.frontmatter), content: parsed.content };
   } catch (error) {
     throw new InvalidSkillPackageError(`Invalid standard skill package: ${String(error)}`);
   }
 }
 
 export function readSkillMarkdown(skillMdPath: string): ParsedSkillMarkdown | null {
-  const scripts = path.join(path.dirname(skillMdPath), "scripts");
-  const names: string[] = [];
-  const walk = (directory: string, prefix = "") => {
-    if (!fs.existsSync(directory)) return;
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      if (entry.isDirectory()) walk(path.join(directory, entry.name), prefix + entry.name + "/");
-      else if (entry.isFile()) names.push(prefix + entry.name);
-    }
-  };
-  walk(scripts);
-  names.sort();
-  const name = names.includes("index.mjs") ? "index.mjs" : names[0];
-  return parseSkillMarkdown(fs.readFileSync(skillMdPath, "utf8"), name ? `scripts/${name}` : undefined);
+  return parseSkillMarkdown(fs.readFileSync(skillMdPath, "utf8"));
 }
 
-export function writeSkillMarkdown(file: string, frontmatter: StandardSkillFrontmatter, content: string) {
-  const validated = standardSkillFrontmatterSchema.parse(frontmatter);
-  fs.writeFileSync(file, `---\n${stringifyYaml(validated, { lineWidth: 0 }).trimEnd()}\n---\n${content}`);
-}
-
+/** An edition's names and descriptions of the built-in skills, in its own language, keyed by skill name. */
 export function readSkillLabels(file: string) {
   return z.record(SkillIdSchema, z.object({
     title: z.string().trim().min(1),
     description: z.string().trim().min(1),
-    tags: z.array(z.string()).optional(),
   }).strict()).parse(JSON.parse(fs.readFileSync(file, "utf8")));
 }

@@ -58,6 +58,7 @@ import {
 import { startArtifactCleanupScheduler } from "../platform/diagnosis/artifact-retention-cleanup";
 import { initializeConnection } from "../infrastructure/connection";
 import { requestLogger as accessLogger, errorHandler } from "../api/middleware";
+import { buildTestAccess } from "../api/build-test-access";
 import { getDefaultLocale, tApp } from "../i18n/index";
 import { echartDir, webDistDir } from "../content/layout";
 import { workbenchIdentity } from "../identity/installed";
@@ -137,16 +138,11 @@ export function createWorkbenchApp(): Express {
           { domainId, token: verification.token, apiKey: verification.apiKey },
           async () => {
             const registry = await skillRegistryManager.forDomain(domainId);
-            const [, type, category, id, ...segments] = decodeURIComponent(
-              req.path,
-            ).split("/");
+            // The two segments before the ID are the historical shape of these addresses, kept for HTML already saved
+            // with them; they no longer say anything about the package.
+            const [, , , id, ...segments] = decodeURIComponent(req.path).split("/");
             const skill = registry.getSkillById(id);
-            if (
-              !skill ||
-              skill.manifest.type !== type ||
-              skill.manifest.category !== category ||
-              !segments.length
-            ) {
+            if (!skill || !segments.length) {
               res.sendStatus(404);
               return;
             }
@@ -199,6 +195,7 @@ export function createWorkbenchApp(): Express {
       next,
     );
   });
+  app.use("/api", buildTestAccess);
 
   app.use("/api", appBuilderRouter);
   app.use("/api/workspaces", workspaceRouter);

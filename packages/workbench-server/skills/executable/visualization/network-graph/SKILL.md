@@ -1,13 +1,6 @@
 ---
 name: network-graph
 description: Render general-purpose entity relationship networks from supplied nodes and links, supporting directed or undirected edges, grouping, status highlighting, anchor nodes, multiple layouts, filtering, and interactive exploration.
-metadata:
-  ontomato.type: executable
-  ontomato.category: visualization
-  ontomato.title: Network Relationship Graph
-  ontomato.tags: '["visualization","relationship graph","network graph","entities","dependencies","ECharts"]'
-  ontomato.version: 1.0.0
-  ontomato.outputType: html
 ---
 
 ## Standard CLI
