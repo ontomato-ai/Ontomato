@@ -30,6 +30,7 @@ import { runtimeAssistantStreamEventSchema } from "@ontomato/contracts/agent-run
 import type {
   RuntimeAgentEvent,
   RuntimeEventEnvelope,
+  RuntimeSessionRunFrame,
   RuntimeStreamFrame,
 } from "@ontomato/contracts/agent-runtime-events";
 import type { RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
@@ -57,6 +58,7 @@ import { RuntimeModelSettings } from "./model-settings";
 import { modelKeySealKey } from "@ontomato/contracts/model-key-seal";
 
 type Subscriber = (frame: RuntimeStreamFrame) => void;
+type SessionRunSubscriber = (frame: RuntimeSessionRunFrame) => void;
 interface Active {
   scope: Scope;
   run: RuntimeRun;
@@ -128,6 +130,7 @@ export class AgentRuntime {
   private active = new Map<string, Active>();
   private locks = new Map<string, Promise<unknown>>();
   private waiters = new Map<string, Set<() => void>>();
+  private sessionRunSubscribers = new Map<string, Set<SessionRunSubscriber>>();
   constructor(readonly options: RuntimeOptions) {
     modelKeySealKey(options.modelRuntimeToken);
     this.store = options.store;
@@ -275,6 +278,8 @@ export class AgentRuntime {
         updateServiceLogContext({ correlationId: accepted.run.correlationId, runId: accepted.run.id, sessionId: accepted.run.sessionId });
         return accepted;
       }
+      // The admission is committed and this is not a retry: the session has a new run.
+      this.publishSessionRun(scope, { type: "run_started", sessionId, runId });
       const logContext = { correlationId: run.correlationId, domainId: scope.domainId,
         userId: getServiceLogContext().userId ?? null, runId: run.id, sessionId: run.sessionId };
       updateServiceLogContext(logContext);
@@ -330,6 +335,16 @@ export class AgentRuntime {
       }
     }
     if (envelope.event.type === "agent_end") active.subscribers.clear();
+  }
+  private publishSessionRun(scope: Scope, frame: RuntimeSessionRunFrame) {
+    const id = canonical([scope.hostId, scope.domainId]);
+    for (const subscriber of this.sessionRunSubscribers.get(id) ?? []) {
+      try {
+        subscriber(frame);
+      } catch {
+        this.sessionRunSubscribers.get(id)?.delete(subscriber);
+      }
+    }
   }
   private async emit(active: Active, event: RuntimeAgentEvent) {
     return this.locked(active.scope, active.run.sessionId, async () => {
@@ -721,6 +736,8 @@ export class AgentRuntime {
       active.pending.clear();
       const before = (await this.store.run(scope, run.id)).seq;
       await this.store.finish(scope, run.id, reason, failure, workspaceCommit);
+      // The stop is committed, whatever the reason; subscribers only learn that this run ended.
+      this.publishSessionRun(scope, { type: "run_stopped", sessionId: run.sessionId, runId: run.id });
       for (const envelope of await this.store.events(scope, run.id))
         if (envelope.cursor.seq > before) this.publish(active, envelope);
     });
@@ -904,6 +921,22 @@ export class AgentRuntime {
       }
       return { session: { ...session, latestRun: currentRun }, ...window, runs: runs.filter(run => ids.has(run.id)), latestRun };
     });
+  }
+  /**
+   * A process-local lifecycle subscription for one host/domain scope. Registering first
+   * and then answering `ready` means every later change is delivered on this subscription.
+   */
+  subscribeSessionRuns(scope: Scope, subscriber: SessionRunSubscriber) {
+    const id = canonical([scope.hostId, scope.domainId]);
+    const subscribers =
+      this.sessionRunSubscribers.get(id) ?? new Set<SessionRunSubscriber>();
+    subscribers.add(subscriber);
+    this.sessionRunSubscribers.set(id, subscribers);
+    subscriber({ type: "ready" });
+    return () => {
+      subscribers.delete(subscriber);
+      if (!subscribers.size) this.sessionRunSubscribers.delete(id);
+    };
   }
   async subscribe(
     scope: Scope,

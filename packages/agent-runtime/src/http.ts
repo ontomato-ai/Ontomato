@@ -21,7 +21,10 @@ import {
   runtimeRunStatusQuerySchema,
 } from "@ontomato/contracts/agent-runtime";
 import { runtimeIdSchema } from "@ontomato/contracts/agent-runtime-values";
-import type { RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
+import type {
+  RuntimeSessionRunFrame,
+  RuntimeStreamFrame,
+} from "@ontomato/contracts/agent-runtime-events";
 import { AgentRuntime } from "./runtime";
 import { RuntimeError } from "./errors";
 import { runtimeEmbeddingsRequestSchema } from "@ontomato/contracts/runtime-embeddings";
@@ -291,6 +294,36 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
       );
       res.json({
         sessions: await runtime.store.sessionStatuses(ctx.scope, sessionIds),
+      });
+    }),
+  );
+  app.get(
+    "/v1/sessions/run-events",
+    route(async (req, res) => {
+      const ctx = scope(req);
+      res.set({
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        "X-Accel-Buffering": "no",
+      });
+      res.flushHeaders();
+      let closed = false;
+      const write = (frame: RuntimeSessionRunFrame) => {
+        if (closed || res.writableEnded || res.destroyed) return;
+        res.write(`event: session-run\ndata: ${JSON.stringify(frame)}\n\n`);
+      };
+      const timer = setInterval(() => {
+        if (!closed && !res.destroyed && !res.writableEnded)
+          res.write(": heartbeat\n\n");
+      }, 15000);
+      timer.unref();
+      // Register before the first frame: `ready` promises that every later change for this
+      // host/domain reaches this connection.
+      const unsubscribe = runtime.subscribeSessionRuns(ctx.scope, write);
+      res.on("close", () => {
+        closed = true;
+        clearInterval(timer);
+        unsubscribe();
       });
     }),
   );

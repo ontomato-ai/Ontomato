@@ -13,6 +13,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { runtimeRunSnapshotSchema } from "@ontomato/contracts/agent-runtime";
+import { runtimeSessionRunFrameSchema, type RuntimeSessionRunFrame } from "@ontomato/contracts/agent-runtime-events";
 import { codeLimitsSchema, codeExecutionVirtualAddressSpaceBytes } from "@ontomato/contracts/agent-runtime-code";
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
 const repo = path.resolve(
@@ -168,6 +169,58 @@ describe("standard runtime real HTTP/PG/processes", () => {
         .status,
     ).toBe(202);
     return { id, request };
+  }
+  /** A host-scoped lifecycle stream with ordered frame reads and a queue for quiet checks. */
+  async function runEvents(extra: Record<string, string> = {}) {
+    const controller = new AbortController();
+    const response = await fetch(url + "/v1/sessions/run-events", {
+      headers: { ...headers, ...extra },
+      signal: controller.signal,
+    });
+    if (response.status !== 200)
+      throw new Error(
+        `run-events ${response.status}: ${await response.text()}`,
+      );
+    const frames: RuntimeSessionRunFrame[] = [],
+      waiters: Array<(frame: RuntimeSessionRunFrame) => void> = [];
+    const reader = response.body!.getReader(), decoder = new TextDecoder();
+    let buffer = "";
+    const ended = (async () => {
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let newline: number;
+          while ((newline = buffer.indexOf("\n")) >= 0) {
+            const line = buffer.slice(0, newline).trimEnd();
+            buffer = buffer.slice(newline + 1);
+            if (!line.startsWith("data: ")) continue;
+            const frame = runtimeSessionRunFrameSchema.parse(
+              JSON.parse(line.slice(6)),
+            );
+            const waiter = waiters.shift();
+            if (waiter) waiter(frame);
+            else frames.push(frame);
+          }
+        }
+      } catch {
+        // Aborting this fixture is how a test closes the connection.
+      }
+    })();
+    return {
+      next: () => {
+        const frame = frames.shift();
+        return frame
+          ? Promise.resolve(frame)
+          : new Promise<RuntimeSessionRunFrame>((resolve) =>
+              waiters.push(resolve),
+            );
+      },
+      pending: () => [...frames],
+      ended,
+      close: () => controller.abort(),
+    };
   }
   beforeAll(async () => {
     const notes = path.resolve(repo, "../notes");
@@ -405,6 +458,137 @@ describe("standard runtime real HTTP/PG/processes", () => {
     expect(Date.now() - cancelledAt).toBeLessThan(5000);
     expect((await api(`/v1/runs/${r.id}/status`)).body.run.status).toBe("stopped");
   });
+  it("announces committed session run starts and stops and stays silent for a rejected admission", async () => {
+    const stream = await runEvents();
+    try {
+      expect(await stream.next()).toEqual({ type: "ready" });
+      const s = await session(),
+        first = await run(s, "create");
+      expect(await stream.next()).toEqual({
+        type: "run_started",
+        sessionId: s,
+        runId: first.id,
+      });
+      expect((await settle(first.id)).run.stopReason, logs).toBe("stop");
+      expect(await stream.next()).toEqual({
+        type: "run_stopped",
+        sessionId: s,
+        runId: first.id,
+      });
+      // A replayed admission is not a new run and must not announce itself again.
+      const replayed = await api(`/v1/sessions/${s}/runs`, first.request, {
+        "idempotency-key": first.id,
+      });
+      expect(replayed.body.replayed).toBe(true);
+      await pause(150);
+      expect(stream.pending()).toEqual([]);
+      const blocked = await run(s, "hang");
+      expect(await stream.next()).toEqual({
+        type: "run_started",
+        sessionId: s,
+        runId: blocked.id,
+      });
+      // The second run is refused before admission, so no start frame may announce it.
+      const rejected = await api(`/v1/sessions/${s}/runs`, input("rejected"), {
+        "idempotency-key": randomUUID(),
+      });
+      expect(rejected.status).toBe(409);
+      expect(
+        (await api(`/v1/runs/${blocked.id}/cancel`, {})).body.run.stopReason,
+      ).toBe("aborted");
+      expect(await stream.next()).toEqual({
+        type: "run_stopped",
+        sessionId: s,
+        runId: blocked.id,
+      });
+      await pause(150);
+      expect(stream.pending()).toEqual([]);
+    } finally {
+      stream.close();
+    }
+  });
+  it("notifies only the host and domain that admitted the run", async () => {
+    const own = await runEvents(),
+      otherDomain = await runEvents({ "x-domain-id": "domain-b" }),
+      otherHost = await runEvents({ authorization: "Bearer other-host" });
+    try {
+      for (const stream of [own, otherDomain, otherHost])
+        expect(await stream.next()).toEqual({ type: "ready" });
+      const s = await session(),
+        r = await run(s, "create");
+      expect(await own.next()).toEqual({
+        type: "run_started",
+        sessionId: s,
+        runId: r.id,
+      });
+      expect((await settle(r.id)).run.stopReason, logs).toBe("stop");
+      expect(await own.next()).toEqual({
+        type: "run_stopped",
+        sessionId: s,
+        runId: r.id,
+      });
+      await pause(150);
+      expect(otherDomain.pending()).toEqual([]);
+      expect(otherHost.pending()).toEqual([]);
+    } finally {
+      own.close();
+      otherDomain.close();
+      otherHost.close();
+    }
+  });
+  it("answers a new connection with ready and never replays earlier notices", async () => {
+    const s = await session(),
+      r = await run(s, "create");
+    expect((await settle(r.id)).run.stopReason, logs).toBe("stop");
+    const stream = await runEvents();
+    try {
+      expect(await stream.next()).toEqual({ type: "ready" });
+      await pause(150);
+      expect(stream.pending()).toEqual([]);
+    } finally {
+      stream.close();
+    }
+  });
+  it("drops lifecycle streams on restart and notifies only changes after the next ready", async () => {
+    const before = await session();
+    const stream = await runEvents();
+    expect(await stream.next()).toEqual({ type: "ready" });
+    const first = await run(before, "create");
+    expect(await stream.next()).toEqual({
+      type: "run_started",
+      sessionId: before,
+      runId: first.id,
+    });
+    expect((await settle(first.id)).run.stopReason, logs).toBe("stop");
+    expect(await stream.next()).toEqual({
+      type: "run_stopped",
+      sessionId: before,
+      runId: first.id,
+    });
+    await stop("SIGKILL");
+    await stream.ended;
+    await startProcess();
+    const reconnected = await runEvents();
+    try {
+      expect(await reconnected.next()).toEqual({ type: "ready" });
+      await pause(150);
+      expect(reconnected.pending()).toEqual([]);
+      const next = await run(before, "overwrite");
+      expect(await reconnected.next()).toEqual({
+        type: "run_started",
+        sessionId: before,
+        runId: next.id,
+      });
+      expect((await settle(next.id)).run.stopReason, logs).toBe("stop");
+      expect(await reconnected.next()).toEqual({
+        type: "run_stopped",
+        sessionId: before,
+        runId: next.id,
+      });
+    } finally {
+      reconnected.close();
+    }
+  }, 20000);
   it("stops a run that repeats the same tool call shape, naming the limit", async () => {
     const s = await session(),
       r = await run(s, "loop", [], { maxCalls: 100, maxSameShape: 3 });
