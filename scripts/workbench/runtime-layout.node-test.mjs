@@ -123,15 +123,6 @@ test("the stage index resolves only direct dependencies, so an absent transitive
 
 test("plan rejects colliding directories and store paths that normalize outside", () => {
   const dirs = { a: "pkg/a", b: "pkg/b" };
-  const plan = linkPlan(bindings(), dirs, index());
-  assert.deepEqual(
-    plan.links.map((link) => link.store || link.own),
-    [
-      "pkg/b",
-      index()["express@4.0.0"],
-      index()["express@5.0.0"],
-    ],
-  );
   assert.throws(() => linkPlan(bindings(), { a: "pkg/x", b: "pkg/./x" }, index()), /collide/);
   assert.throws(() => linkPlan(bindings(), { a: "pkg/x", b: "pkg/x" }, index()), /collide/);
   assert.throws(

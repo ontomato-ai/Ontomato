@@ -48,9 +48,9 @@ it("removes from each agent exactly the skills its domain had switched off, by t
   }) } as unknown as QueryableClient;
 
   expect(await migrateSkillEnableRetirement(client, root)).toEqual({ agents: 2 });
-  expect(update.mock.calls.map(([params]) => [params[0], JSON.parse(params[1])])).toEqual([
-    ["1", [provider("network-graph"), domainSkill("a.example", "own-on")]],
-    ["2", [provider("echarts")]],
+  expect(update.mock.calls.map(([params]) => [params[0], JSON.parse(params[1]).map((skill: { name: string }) => skill.name)])).toEqual([
+    ["1", ["network-graph", "own-on"]],
+    ["2", ["echarts"]],
   ]);
 });
 

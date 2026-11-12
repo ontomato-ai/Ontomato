@@ -247,22 +247,6 @@ class CheckServiceV2ImplTest {
   }
 
   @Test
-  void chartSettlementTaskKeepsCategoryRowsSeparateFromSummaryCards() throws Exception {
-    var settlement = new MetricSettlementService(metricViewService, ontology, generationService,
-        new SubjectValueResolver(mock(SubjectAttributeLookup.class)));
-    settlement.settle("chart-task", JSONObject.of("question", QUESTION, "recipe", packageRecipe(),
-            "calculation", "Keep every category without adding a summary row",
-            "outputShape", JSONObject.of("cardKind", "chart", "chartType", "bar")),
-        new QueryAccessService.GrantUser("reader", DOMAIN), "en", false, null, task -> task.run());
-    ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
-    verify(generationService).settleMetricView(anyString(), prompt.capture(), eq("en"), eq(DOMAIN));
-    assertTrue(prompt.getValue().contains("\"cardKind\":\"chart\""));
-    assertTrue(prompt.getValue().contains("grand-total, subtotal or summary rows as extra chart categories"));
-    assertTrue(prompt.getValue().contains("A separate metric card"));
-    assertTrue(prompt.getValue().contains("do not add unrequested analyses, derived columns or rows"));
-  }
-
-  @Test
   void metricRecipeSkipsAnIdenticalBinding() throws Exception {
     // Deduplication moved to the locked metric write; exercise that owner instead of a caller-side copy.
     MetricView metric = metric(function());

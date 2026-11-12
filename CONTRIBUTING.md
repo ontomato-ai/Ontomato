@@ -44,6 +44,32 @@ tags the resulting `main` commit as `v<version>`.
 
 Do not commit real configuration, credentials or business data.
 
+## Tests
+
+A test is worth keeping when it fails because something broke, not because someone made an
+intended change. Before adding an assertion, name the mistake it catches and check that
+someone could make that mistake without noticing.
+
+Do not assert:
+
+- the full list, order or count of navigation entries, sidebar sections, settings tabs, menus
+  or other registries;
+- user-facing copy, titles and button labels, or an error message when a status or error code
+  already tells the cases apart;
+- that a prompt, skill document, CSS file, script or other source contains a given line;
+- a constant, default value or example copied from the implementation;
+- how many times or in what order an internal function is called, unless that is the behavior
+  (for example, no retry, or read once);
+- the whole shape of a private intermediate object, a DOM snapshot, or a third-party
+  library's own text and class names.
+
+When such an assertion guards something real, narrow it to that: the required items are
+present, nothing private is included, the path and row number reach the message.
+
+When your intended change makes an existing test fail only because the test pinned the thing
+you meant to change, delete or narrow that assertion instead of copying the new value into it.
+Check layout and wording by looking at the running page.
+
 ## License
 
 By contributing, you agree that your contributions are licensed under the
