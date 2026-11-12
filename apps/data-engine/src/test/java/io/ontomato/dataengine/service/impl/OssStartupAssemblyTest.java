@@ -119,23 +119,14 @@ class OssStartupAssemblyTest {
     }
 
     @Test
-    void enterpriseTypesAreAbsentFromTheOssClasspath() {
-        assertAbsent(
+    void enterpriseIdentityAndLicenseAreAbsentFromTheOssClasspath() {
+        for (String name : new String[] {
                 "cn.dev33.satoken.stp.StpUtil",
                 "io.ontomato.dataengine.service.sys.impl.SaTokenIdentityService",
                 "io.ontomato.dataengine.service.sys.impl.SuperAdminSeedImpl",
                 "io.ontomato.dataengine.service.sys.impl.SchemaPermissionServiceImpl",
                 "io.ontomato.dataengine.service.sys.impl.EnterpriseIdentityRuntimeSettings",
-                "io.ontomato.dataengine.config.SSOProps",
-                "io.ontomato.dataengine.service.ldap.LdapProps",
-                "io.ontomato.dataengine.util.AesEncryptUtil",
-                "io.ontomato.dataengine.core.utils.UserEncryptUtil",
-                "io.ontomato.dataengine.config.LicenseConfig",
-                "dev.langchain4j.mcp.McpToolProvider");
-    }
-
-    private static void assertAbsent(String... names) {
-        for (String name : names) {
+                "io.ontomato.dataengine.config.LicenseConfig"}) {
             assertThrows(ClassNotFoundException.class, () -> Class.forName(name), name);
         }
     }

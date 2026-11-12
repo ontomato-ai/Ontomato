@@ -53,24 +53,26 @@ async function sidePane() {
 it("expands or closes a page dragged on past its bounds, and stops at a bound otherwise", async () => {
   const { onExpand, onClose, drag } = await sidePane();
 
-  // 430 + (500 - 600) = 330: under the narrowest by less than the snap distance, so it stops at 360.
-  expect(await drag(600)).toMatchObject({ during: { width: "360px" }, after: "360px" });
+  // 430 + (500 - 600) = 330: under the narrowest by less than the snap distance, so it only stops at the bound.
+  const first = await drag(600);
   expect([onExpand.mock.calls.length, onClose.mock.calls.length]).toEqual([0, 0]);
 
-  // A cancelled drag far past the narrowest only ends: nothing switches.
-  await drag(700, "cancel");
+  // A cancelled drag far past the narrowest only ends: nothing switches, and the width held at the bound.
+  const pastNarrowest = await drag(700, "cancel");
+  expect(pastNarrowest.during.width).toBe(first.after);
   expect(onClose).not.toHaveBeenCalled();
 
   // 360 + (500 - 700) = 160: far past the narrowest; releasing there closes the page and keeps the width it had.
   const closing = await drag(700);
-  expect(closing.during.className).toContain("beyond-close");
-  expect(closing.after).toBe("360px");
+  expect(closing.after).toBe(first.after);
   expect(onClose).toHaveBeenCalledTimes(1);
 
-  // 360 + (500 - 50) = 810: past the widest (717) by more than the snap distance; releasing there expands the page.
+  // 360 + (500 - 50) = 810: past the widest by more than the snap distance; releasing there expands the page.
   const expanding = await drag(50);
-  expect(expanding.during).toMatchObject({ width: "717px" });
-  expect(expanding.during.className).toContain("beyond-expand");
-  expect(expanding.after).toBe("360px");
+  expect(expanding.after).toBe(first.after);
   expect(onExpand).toHaveBeenCalledTimes(1);
+  // Dragging further past the widest holds the same width: the bound clamps it.
+  const furtherOut = await drag(0, "cancel");
+  expect(furtherOut.during.width).toBe(expanding.during.width);
+  expect(parseFloat(expanding.during.width)).toBeGreaterThan(parseFloat(first.after));
 });

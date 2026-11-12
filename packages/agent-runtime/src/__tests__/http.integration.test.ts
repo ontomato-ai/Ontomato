@@ -48,6 +48,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
     namespace: { kind: "provider", provider: "workbench" },
     name: "fixture-skill",
   };
+  const skillBody = "Read scripts/run.mjs and execute it with bash.";
   async function api(
     route: string,
     body?: unknown,
@@ -331,7 +332,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
             {
               path: "SKILL.md",
               content:
-                "---\nname: fixture-skill\ndescription: Write a fixture file\n---\nRead scripts/run.mjs and execute it with bash.\n",
+                "---\nname: fixture-skill\ndescription: Write a fixture file\n---\n" + skillBody + "\n",
             },
             {
               path: "scripts/run.mjs",
@@ -439,7 +440,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
     ).toBe(a.id);
     const prompt = JSON.stringify(inputs[0]);
     expect(prompt).toContain("fixture-skill");
-    expect(prompt).not.toContain("Read scripts/run.mjs and execute");
+    expect(prompt).not.toContain(skillBody);
   });
   it("tells a waiting host when the run stops, and only then", async () => {
     const s = await session(),

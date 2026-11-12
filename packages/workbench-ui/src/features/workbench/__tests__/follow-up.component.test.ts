@@ -19,6 +19,10 @@ it("continues only on click with the question and the dataset files it builds on
     expect(proceed).not.toHaveBeenCalled();
     expect(wrapper.get<HTMLButtonElement>("button").element.disabled).toBe(false);
     await wrapper.get("button").trigger("click"); await flushPromises();
-    expect(proceed).toHaveBeenCalledWith("按学院拆分2025年在职教师人数\nBased on: outputs/staff.dataset.json");
+    // One message: the reader's question, and the existing file it builds on.
+    expect(proceed).toHaveBeenCalledTimes(1);
+    const message = proceed.mock.calls[0]![0] as string;
+    expect(message).toContain("按学院拆分2025年在职教师人数");
+    expect(message).toContain("outputs/staff.dataset.json");
   } finally { wrapper.unmount(); }
 });

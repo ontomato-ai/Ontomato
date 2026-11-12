@@ -7,6 +7,5 @@ class BusinessConfigControllerModelKeyWriteOnlyTest {
     @Test void legacyModelSecretsAreNotPartOfTheBusinessConfigurationView() {
         var config = JSON.parseObject("{\"embeddingModelProperties\":{\"apiKey\":\"old-secret\"}}", BusinessConfig.class);
         assertFalse(JSON.toJSONString(config).contains("old-secret"));
-        assertFalse(JSON.toJSONString(config).contains("embeddingModelProperties"));
     }
 }

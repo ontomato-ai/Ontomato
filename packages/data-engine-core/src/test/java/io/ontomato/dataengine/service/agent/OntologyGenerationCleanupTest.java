@@ -146,14 +146,7 @@ class OntologyGenerationCleanupTest {
   }
 
   private long cleanupWarnings() {
-    return warnings.list.stream()
-        .filter(event -> event.getLevel() == Level.WARN)
-        .filter(
-            event ->
-                event
-                    .getFormattedMessage()
-                    .startsWith("Generation cleanup awaits reconciliation"))
-        .count();
+    return warnings.list.stream().filter(event -> event.getLevel() == Level.WARN).count();
   }
 
   /**

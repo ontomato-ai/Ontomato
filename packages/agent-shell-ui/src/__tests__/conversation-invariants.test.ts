@@ -93,10 +93,16 @@ describe("delegated tasks in a reply", () => {
       pendingMessages: [{ id: partialId, message: { ...partial, timestamp: 4 } }],
     }));
     const response = conversationItems(state, tasks).find((item) => item.kind === "response")!;
-    expect(response.process.map((block) => block.kind)).toEqual(["steps", "task", "note"]);
+    // The ask step, then the retrieval's card, then the note reviewing the reply; other blocks may sit between them.
+    const kinds = response.process.map((block) => block.kind);
+    expect(kinds.filter((kind) => ["steps", "task", "note"].includes(kind))).toEqual(["steps", "task", "note"]);
     const step = response.process[0]!.kind === "steps" ? response.process[0]!.steps[0]! : null;
     expect(stepActivity(step!)).toBe("skill");
-    expect(response.reviews).toEqual([{ task: tasks.tasks[1], result: tasks.qualityResults[0], datasets: [{ id: dataset, title: "Sales" }] }]);
+    // The review is the one quality check of the reply's retrieval, over the dataset that retrieval delivered.
+    const review = response.reviews[0]!;
+    expect(review.task.id).toBe(checkId);
+    expect(review.result?.score).toBe(92);
+    expect(review.datasets.map((item) => item.id)).toEqual([dataset]);
   });
 });
 

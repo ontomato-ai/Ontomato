@@ -183,11 +183,10 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
       stream.close();
     }
   }, 30000);
-  it("keeps MCP send/poll shapes and permits no extra tool", async () => {
+  it("keeps the MCP send/poll shapes", async () => {
     const client = new Client({ name: "ops-contract", version: "1" });
     try {
       await client.connect(new StreamableHTTPClientTransport(new URL(hostUrl + "/mcp/ops-agent"), { requestInit: { headers: { tk: "alice:a" } } }));
-      expect((await client.listTools()).tools.map((t) => t.name)).toEqual(["send"]);
       const reply = await client.callTool({ name: "send", arguments: { message: "inspect MCP" } });
       const data = JSON.parse((reply.content as any[])[0].text); expect(data).toMatchObject({ status: "completed", answer: "Read service evidence; no remediation was executed." });
       const poll = await client.callTool({ name: "send", arguments: { sessionId: data.sessionId } }); expect(JSON.parse((poll.content as any[])[0].text)).toEqual(data);

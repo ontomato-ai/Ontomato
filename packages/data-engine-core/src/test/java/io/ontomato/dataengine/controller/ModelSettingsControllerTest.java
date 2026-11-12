@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.service.agent.*;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -93,7 +94,9 @@ class ModelSettingsControllerTest {
             .header("X-Domain-Id", "untrusted-domain")
             .contentType(MediaType.APPLICATION_JSON).content("{\"modelSelection\":{\"modelId\":\"gateway/alt1\"}}"))
         .andExpect(status().isOk()).andExpect(jsonPath("$.data.modelSelection.modelId").value("gateway/alt1"));
-    verify(jdbc).update(anyString(), eq("verified-domain"), eq(OntologyAgentStore.RETRIEVER), eq("{\"modelId\":\"gateway/alt1\"}"));
+    var saved = ArgumentCaptor.forClass(String.class);
+    verify(jdbc).update(anyString(), eq("verified-domain"), eq(OntologyAgentStore.RETRIEVER), saved.capture());
+    assertEquals("gateway/alt1", JSONObject.parseObject(saved.getValue()).getString("modelId"));
   }
 
   @Test void mvcSavesNullAsTheDomainDefault() throws Exception {
@@ -101,7 +104,10 @@ class ModelSettingsControllerTest {
         .perform(put("/ontology/ai/agent-models/" + OntologyAgentStore.RETRIEVER)
             .contentType(MediaType.APPLICATION_JSON).content("{\"modelSelection\":{\"modelId\":null}}"))
         .andExpect(status().isOk()).andExpect(jsonPath("$.data.modelSelection.modelId").value(org.hamcrest.Matchers.nullValue()));
-    verify(jdbc).update(anyString(), eq("verified-domain"), eq(OntologyAgentStore.RETRIEVER), eq("{\"modelId\":null}"));
+    var saved = ArgumentCaptor.forClass(String.class);
+    verify(jdbc).update(anyString(), eq("verified-domain"), eq(OntologyAgentStore.RETRIEVER), saved.capture());
+    assertTrue(JSONObject.parseObject(saved.getValue()).containsKey("modelId"), saved.getValue());
+    assertNull(JSONObject.parseObject(saved.getValue()).getString("modelId"), saved.getValue());
     verifyNoInteractions(runtime);
   }
 
