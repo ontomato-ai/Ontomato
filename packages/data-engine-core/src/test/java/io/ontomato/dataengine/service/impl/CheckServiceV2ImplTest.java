@@ -158,6 +158,21 @@ class CheckServiceV2ImplTest {
   }
 
   @Test
+  void aMissingSummaryStillSettlesTheCheckWithoutOne() throws Exception {
+    ABCHarnessCheck check = check();
+    JSONObject result = qualityResult(90.0);
+    result.remove("summary");
+    when(qualityGeneration.result()).thenReturn(result);
+
+    checks.check(check, List.of(program()), List.of(), List.of(), List.of(), DOMAIN);
+
+    assertEquals(90.0, check.getScore());
+    assertNull(check.getSummary());
+    assertEquals("The program answers the question", check.getConclusion());
+    assertTrue(check.getFinished());
+  }
+
+  @Test
   void invalidScoreStillFailsTheQualityCheck() throws Exception {
     ABCHarnessCheck check = check();
     when(qualityGeneration.result()).thenReturn(qualityResult(Double.NaN));

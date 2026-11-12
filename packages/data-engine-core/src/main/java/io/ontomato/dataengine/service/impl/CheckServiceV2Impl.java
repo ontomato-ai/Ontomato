@@ -210,11 +210,8 @@ public class CheckServiceV2Impl implements CheckServiceV2 {
           conclusion = result.getString("conclusion"),
           fitted = result.getString("fittedQuestion");
       Double score = result.getDouble("score");
-      if (summary == null
-          || conclusion == null
-          || fitted == null
-          || score == null
-          || !Double.isFinite(score))
+      // The summary only shows the verdict beside the reply; a missing one never fails the check.
+      if (conclusion == null || fitted == null || score == null || !Double.isFinite(score))
         throw new IllegalArgumentException("Invalid quality result");
       generation.settle(
           () -> {
