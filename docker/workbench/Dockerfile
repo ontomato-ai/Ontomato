@@ -76,61 +76,43 @@ COPY runtime-requirements.txt /tmp/runtime-requirements.txt
 
 # Install from the optional Debian mirror, restore the base sources afterwards,
 # and retry once from those original sources if the mirror install fails.
-RUN set -eu; \
-    echo 'Acquire::Retries "5"; Acquire::http::Timeout "120";' > /etc/apt/apt.conf.d/99retries; \
-    sources=/etc/apt/sources.list.d/debian.sources; \
-    cp "$sources" /tmp/debian.sources.original; \
-    install_packages() { \
-      apt-get update \
-      && apt-get install -y --no-install-recommends \
-        ca-certificates \
-        chromium \
-        fontconfig \
-        fonts-wqy-microhei \
-        libasound2 \
-        libatk-bridge2.0-0 \
-        libatk1.0-0 \
-        libcups2 \
-        libdrm2 \
-        libdbus-1-3 \
-        libgbm1 \
-        libglib2.0-0 \
-        libnspr4 \
-        libnss3 \
-        libx11-6 \
-        libx11-xcb1 \
-        libxcomposite1 \
-        libxdamage1 \
-        libxext6 \
-        libxfixes3 \
-        libxkbcommon0 \
-        libxrandr2 \
-        libxcb1; \
-    }; \
-    echo "Installing Debian packages from ${DEBIAN_MIRROR}"; \
-    sed -i -E \
-      -e "s#https?://deb.debian.org/debian-security#${DEBIAN_SECURITY_MIRROR}#g" \
-      -e "s#https?://deb.debian.org/debian#${DEBIAN_MIRROR}#g" \
-      "$sources"; \
-    if ! install_packages; then \
-      echo "Installing from ${DEBIAN_MIRROR} failed; retrying with the original Debian sources" >&2; \
-      cp /tmp/debian.sources.original "$sources"; \
-      install_packages; \
-    fi; \
-    cp /tmp/debian.sources.original "$sources"; \
-    rm -f /tmp/debian.sources.original; \
-    test -x /usr/bin/chromium; \
-    node --version; \
-    python3 --version | grep -E '^Python 3\.10\.'; \
-    python3 -m pip install --no-cache-dir --only-binary=:all: --no-deps --index-url "$PIP_INDEX_URL" \
-      -r /tmp/runtime-requirements.txt; \
-    python3 -m pip check; \
-    python3 -c "import pandas, sys; assert sys.version_info[:2] == (3, 10); print('pandas', pandas.__version__)"; \
-    rm -rf /usr/local/lib/python3.10/site-packages/pip* /usr/local/lib/python3.10/site-packages/setuptools* /usr/local/lib/python3.10/site-packages/pkg_resources /usr/local/bin/pip*; \
-    python3 -c "import pandas, numpy"; \
-    rm -rf /usr/local/include; \
-    rm -f /etc/apt/apt.conf.d/99retries; \
-    rm -rf /var/lib/apt/lists/*
+RUN --mount=type=bind,source=tools/apt-install.sh,target=/tmp/apt-install.sh \
+    echo 'Acquire::Retries "5"; Acquire::http::Timeout "120";' > /etc/apt/apt.conf.d/99retries && \
+    /bin/sh /tmp/apt-install.sh "${DEBIAN_MIRROR}" "${DEBIAN_SECURITY_MIRROR}" \
+      ca-certificates \
+      chromium \
+      fontconfig \
+      fonts-wqy-microhei \
+      libasound2 \
+      libatk-bridge2.0-0 \
+      libatk1.0-0 \
+      libcups2 \
+      libdrm2 \
+      libdbus-1-3 \
+      libgbm1 \
+      libglib2.0-0 \
+      libnspr4 \
+      libnss3 \
+      libx11-6 \
+      libx11-xcb1 \
+      libxcomposite1 \
+      libxdamage1 \
+      libxext6 \
+      libxfixes3 \
+      libxkbcommon0 \
+      libxrandr2 \
+      libxcb1 \
+ && test -x /usr/bin/chromium \
+ && node --version \
+ && python3 --version | grep -E '^Python 3\.10\.' \
+ && python3 -m pip install --no-cache-dir --only-binary=:all: --no-deps --index-url "$PIP_INDEX_URL" \
+    -r /tmp/runtime-requirements.txt \
+ && python3 -m pip check \
+ && python3 -c "import pandas, sys; assert sys.version_info[:2] == (3, 10); print('pandas', pandas.__version__)" \
+ && rm -rf /usr/local/lib/python3.10/site-packages/pip* /usr/local/lib/python3.10/site-packages/setuptools* /usr/local/lib/python3.10/site-packages/pkg_resources /usr/local/bin/pip* \
+ && python3 -c "import pandas, numpy" \
+ && rm -rf /usr/local/include \
+ && rm -f /etc/apt/apt.conf.d/99retries && rm -rf /var/lib/apt/lists/*
 
 RUN if python3 -m pip --version >/dev/null 2>&1; then echo "pip still present, must be removed from runtime" >&2; exit 1; fi
 

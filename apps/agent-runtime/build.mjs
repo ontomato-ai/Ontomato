@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   buildStamp,
   docker,
+  imageBuildArgs,
   imageCacheArgs,
   imageLabels,
   inspectImage,
@@ -19,15 +20,6 @@ import {
 } from "../../scripts/pnpm-workspace-context.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-// Optional host-level package sources; unset keeps the Dockerfile defaults.
-function hostBuildArgs() {
-  return ["PIP_INDEX_URL", "DEBIAN_MIRROR", "DEBIAN_SECURITY_MIRROR"].flatMap(
-    (name) => {
-      const value = process.env[name];
-      return value ? ["--build-arg", `${name}=${value}`] : [];
-    },
-  );
-}
 export const app = {
   repoRoot: root,
   publicRoot: root,
@@ -47,6 +39,7 @@ export function prepareContext(destination) {
   record.web = false;
   writeFileSync(join(destination, "inputs.json"), JSON.stringify(record));
   for (const file of [
+    "apt-install.sh",
     "build-support.mjs",
     "third_party_notices.py",
     ...[
@@ -81,7 +74,7 @@ export function build(args) {
     "--platform",
     `linux/${arch}`,
     ...imageCacheArgs(),
-    ...hostBuildArgs(),
+    ...imageBuildArgs(),
     "--load",
     ...imageLabels(app.component, version, stamp),
     "--label",
