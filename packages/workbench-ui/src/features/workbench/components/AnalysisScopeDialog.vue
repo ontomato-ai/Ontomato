@@ -10,7 +10,6 @@ const props = defineProps<{ artifact: RuntimeArtifact; title: string }>();
 const visible = defineModel<boolean>({ default: false });
 const continueConversation = useConversationContinuation();
 const { t, locale } = useI18n();
-const zh = computed(() => locale.value.startsWith("zh"));
 const scopeSchema = z.object({ question: z.string(), assumptions: z.array(z.string()), filters: z.array(z.object({ id: z.string(), label: z.string(), expression: z.string() })) });
 const scope = ref<z.infer<typeof scopeSchema> | null>(null);
 const adjustment = ref(""); const error = ref(""); const loading = ref(false); const busy = ref(false);
@@ -21,7 +20,7 @@ watch(visible, async (open) => {
   try {
     scope.value = scopeSchema.parse(await nodeApiGet(`${endpoint.value}?locale=${encodeURIComponent(locale.value)}`));
   }
-  catch (e) { error.value = e instanceof Error ? e.message : (zh.value ? "无法读取原查询范围" : "Unable to read scope"); }
+  catch (e) { error.value = e instanceof Error ? e.message : t("assistant.scopeLoadFailed"); }
   finally { loading.value = false; }
 });
 async function submit() {
@@ -36,24 +35,24 @@ async function submit() {
 }
 </script>
 <template>
-  <el-dialog v-model="visible" class="analysis-scope-dialog" :title="zh ? '调整范围并重新查询' : 'Adjust scope and run new query'" width="min(640px, 94vw)" append-to-body :close-on-click-modal="!busy">
+  <el-dialog v-model="visible" class="analysis-scope-dialog" :title="t('assistant.adjustScopeTitle')" width="min(640px, 94vw)" append-to-body :close-on-click-modal="!busy">
     <div v-loading="loading" class="scope-editor">
       <div v-if="scope" class="scope-question">
-        <span class="section-caption">{{ zh ? '原问题' : 'Original question' }}</span>
+        <span class="section-caption">{{ t('assistant.scopeQuestion') }}</span>
         <p>{{ scope.question }}</p>
       </div>
       <el-form v-if="scope" label-position="top" :disabled="busy" @submit.prevent="submit">
         <div class="scope-conditions">
-          <p class="section-caption">{{ zh ? '当前查询条件' : 'Current query conditions' }}</p>
+          <p class="section-caption">{{ t('assistant.scopeConditions') }}</p>
           <ul v-if="scope.filters.length"><li v-for="filter in scope.filters" :key="filter.id"><span class="condition-dot" aria-hidden="true" /><span class="condition-text">{{ filter.label }}</span></li></ul>
-          <p v-else class="scope-hint">{{ zh ? '未记录可展示的筛选条件，可参考原问题描述调整要求。' : 'No displayable filters were recorded. Refer to the original question when describing changes.' }}</p>
+          <p v-else class="scope-hint">{{ t('assistant.scopeNoConditions') }}</p>
         </div>
-        <el-form-item :label="zh ? '希望如何调整？' : 'How would you like to adjust the scope?'"><el-input v-model="adjustment" type="textarea" :maxlength="2000" :autosize="{ minRows: 3, maxRows: 6 }" :placeholder="zh ? '例如：年龄改为55岁及以上，人员范围改为退休教职工。' : 'For example: include retired staff aged 55 and above.'" /></el-form-item>
-        <p class="scope-hint">{{ zh ? '可同时修改、增加或取消多项条件，未提及的条件和输出要求保持不变。' : 'Change, add, or remove multiple conditions. Unmentioned conditions and output requirements remain unchanged.' }}</p>
+        <el-form-item :label="t('assistant.scopeAdjustLabel')"><el-input v-model="adjustment" type="textarea" :maxlength="2000" :autosize="{ minRows: 3, maxRows: 6 }" :placeholder="t('assistant.scopeAdjustPlaceholder')" /></el-form-item>
+        <p class="scope-hint">{{ t('assistant.scopeAdjustHint') }}</p>
       </el-form>
       <el-alert v-if="error" type="error" :closable="false" :title="error" />
     </div>
-    <template #footer><div class="scope-footer"><div class="footer-actions"><el-button :disabled="busy" @click="visible = false">{{ zh ? '取消' : 'Cancel' }}</el-button><el-button type="primary" :loading="busy" :disabled="!scope || loading || !adjustment.trim()" @click="submit">{{ zh ? '重新查询' : 'Run new query' }}</el-button></div></div></template>
+    <template #footer><div class="scope-footer"><div class="footer-actions"><el-button :disabled="busy" @click="visible = false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="busy" :disabled="!scope || loading || !adjustment.trim()" @click="submit">{{ t('assistant.runNewQuery') }}</el-button></div></div></template>
   </el-dialog>
 </template>
 <style scoped>
