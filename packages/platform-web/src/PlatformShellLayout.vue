@@ -10,6 +10,9 @@ import { appDeclarations } from "./partition";
 import { catalogPartition, type NativeLayout } from "./native-layouts";
 import { useApplicationCatalog } from "./catalog";
 import { openApplicationKey, type PlatformAppDeclaration } from "./apps";
+import { nodeApiRequest } from "@ontomato/workbench-ui";
+import { appAt } from "./apps";
+import { recentDestination } from "./recent-work";
 
 /**
  * The platform's one shell around the router: the rail, the current application's column and the page area, with the
@@ -95,6 +98,17 @@ function selectApp(id: string) {
 }
 // A page inside opens an application through the same entry as its rail row (the app builder, for what it published).
 provide(openApplicationKey, selectApp);
+
+const recentVisit = computed(() => {
+  if (catalog.loading.value || catalog.error.value || host.blocked?.value) return null;
+  const destination = recentDestination(route, appAt(declarations.value, route.path) ?? undefined);
+  return destination ? JSON.stringify(destination) : null;
+});
+watch(recentVisit, destination => {
+  if (destination) void nodeApiRequest("/api/personal-workspace/recent", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: destination,
+  }).catch(() => { /* Recording a visit must not interrupt the page being opened. */ });
+}, { immediate: true });
 
 /** Each language retains its own name when the UI locale changes. */
 const localeNames = computed(() =>

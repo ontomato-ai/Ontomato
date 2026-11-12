@@ -7,6 +7,7 @@
  */
 export const platformRoutes = {
   layout: { name: "PlatformLayout", path: "/" },
+  personalWorkspace: { name: "PersonalWorkspace", path: "/workspace" },
   chat: { name: "Chat", path: "/agents/chat" },
   /** The dashboards are an application of their own: the charts and datasets conversations add to. */
   dashboards: { name: "Dashboards", path: "/dashboards" },

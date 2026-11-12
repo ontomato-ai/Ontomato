@@ -10,7 +10,7 @@ export function platformLayoutRoute(children: RouteRecordRaw[], component: Route
   return {
     ...platformRoutes.layout,
     component,
-    redirect: { name: platformRoutes.chat.name },
-    children: [{ path: "", name: "PlatformHome", redirect: { name: platformRoutes.chat.name } }, { path: "/applications/:applicationId", component: () => import("./pages/ApplicationRoute.vue") }, ...children],
+    redirect: { name: platformRoutes.personalWorkspace.name },
+    children: [{ path: "", name: "PlatformHome", redirect: { name: platformRoutes.personalWorkspace.name } }, { path: "/applications/:applicationId", component: () => import("./pages/ApplicationRoute.vue") }, ...children],
   };
 }

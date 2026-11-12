@@ -16,7 +16,7 @@ function visualModelingQuery(params: URLSearchParams) {
 
 /**
  * Where the root address (`#/` or no hash) lands: the view passed by the main system's old launch links
- * (`?view=...`), then the deployment's initial route, then the agent platform. Any other hash is a route of its own.
+ * (`?view=...`), then the deployment's initial route, then the personal workspace. Any other hash is a route of its own.
  */
 export function serviceHome(initialRoute: string) {
   const params = new URLSearchParams(window.location.search);
@@ -25,5 +25,5 @@ export function serviceHome(initialRoute: string) {
   if (view === "assets") return "/assets/metrics";
   if (view === "knowledge") return "/knowledge";
   if (view === "visual-modeling") return `/visual-modeling${visualModelingQuery(params)}`;
-  return initialRoute ? normalizeInitialRoute(initialRoute) : "/agents/chat";
+  return initialRoute ? normalizeInitialRoute(initialRoute) : "/workspace";
 }

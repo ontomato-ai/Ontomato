@@ -7,6 +7,7 @@ import { openOntologyServiceAccess } from "@ontomato/workbench-ui";
 import {
   appBuilderPages,
   dashboardPages,
+  personalWorkspacePages,
   legacyAdminRoutes,
   observeRoutes,
   PlatformShellLayout,
@@ -45,13 +46,14 @@ export function startPlatform() {
           props: { account: null },
         }),
         ...dashboardPages(),
+        ...personalWorkspacePages(),
         ...schedulePages(),
         // The open-source edition has no permissions: every reader may build.
         ...appBuilderPages(),
         ...ossServicePages(app, router),
       ], PlatformShellLayout),
       ...legacyAdminRoutes,
-      { path: "/:unknown(.*)*", redirect: platformRoutes.chat.path },
+      { path: "/:unknown(.*)*", redirect: platformRoutes.personalWorkspace.path },
     ],
   });
 }
