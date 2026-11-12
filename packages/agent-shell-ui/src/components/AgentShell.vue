@@ -83,8 +83,7 @@ const taskFocus = ref<{ taskId: string; at: number } | null>(null);
 
 const conversation = useAgentConversation(() => props.client, () => agentId.value);
 const nav = props.nav;
-const { sessions, currentAgent } = nav;
-const currentSession = computed(() => sessions.value.find((session) => session.id === sessionId.value));
+const { currentAgent } = nav;
 const currentFeature = computed(() => props.workbench.features.find((feature) => feature.id === featureId.value) ?? null);
 /** A page that sits in the agent-app states rather than replacing the conversation. */
 const pairedPage = computed(() => currentFeature.value?.withConversation === true);
@@ -198,33 +197,34 @@ async function send(input: string) {
     sessionId.value = result.createdSession.id;
     return;
   }
-  const latestRun = result.snapshot.run;
   const created = result.createdSession;
   if (created) {
-    // The state already carries this session and its admitted run; linking the id afterwards keeps
-    // the watch from opening it again and discarding the pending message. A reader who opened another
-    // conversation meanwhile stays in it; the new one is listed.
-    nav.promoteSession(created, text, latestRun);
+    // The state already carries this session; linking the id afterwards keeps the watch from opening it again and
+    // discarding the pending message. A reader who opened another conversation meanwhile stays in it; the new one is
+    // listed, and the notice feed reads its run state.
+    nav.promoteSession(created, text);
     if (sessionId.value === null) sessionId.value = created.id;
     return;
   }
-  nav.markRun(latestRun, text);
+  // Sending in a conversation already listed moves it up, and titles it when the host has not yet. Its run state is the
+  // feed's to read, from the admission onwards.
+  const { sessionId: runSession } = result.snapshot.run;
+  const entry = nav.sessions.value.find((row) => row.id === runSession);
+  if (entry) nav.promoteSession(entry, text);
 }
 
 /*
- * Keep the session list's run state in step with the conversation that is open, and tell the host. A run left behind
- * by opening another conversation is no longer in the state, so only a run of this conversation reports stopping.
+ * Tell the host what the open conversation's run is doing. A run left behind by opening another conversation is no
+ * longer in the state, so only a run of this conversation reports stopping. The session list's run state is not written
+ * here: the page's notice feed reads it for every listed conversation.
  */
 watch(
   () => conversation.activeRunId.value,
   (current, previous) => {
-    const entry = currentSession.value;
     const run = previous ? conversation.state.runs[previous] : undefined;
     const session = conversation.state.sessionId;
-    if (run?.status === "stopped") {
-      if (entry?.latestRun?.id === run.id) entry.latestRun = nav.runStatus(run);
-      if (session) emit("run", { sessionId: session, runId: run.id, status: "stopped", workspaceCommit: run.workspaceCommit });
-    }
+    if (run?.status === "stopped" && session)
+      emit("run", { sessionId: session, runId: run.id, status: "stopped", workspaceCommit: run.workspaceCommit });
     if (current && session) emit("run", { sessionId: session, runId: current, status: "running", workspaceCommit: null });
   },
 );

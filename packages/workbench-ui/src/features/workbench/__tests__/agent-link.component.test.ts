@@ -46,6 +46,7 @@ vi.mock("@ontomato/agent-shell-ui", async () => {
         options.onLeaveConversation();
       },
     }),
+    useSessionRunFeed: () => {},
   };
 });
 vi.mock("../api", () => ({ getWorkbenchAppearance: async () => ({ brand: { name: "", logo: "", subtitle: "" } }) }));

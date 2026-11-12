@@ -17,11 +17,15 @@ export { default as ShellColumn } from "./components/ShellColumn.vue";
 export { default as ToolStep } from "./components/ToolStep.vue";
 export { pageDockSpaceKey, useConversationContinuation, usePageDockSpace } from "./context";
 export { useAgentNav, type AgentNav, type AgentNavOptions } from "./useAgentNav";
+export { useSessionRunFeed, type SessionRunFeedOptions } from "./useSessionRunFeed";
 export {
   createAgentHostClient,
+  SessionRunStreamError,
   type AgentHostClient,
   type AgentHostClientOptions,
   type AgentHostWorkspaceScope,
+  type SessionRunHandlers,
+  type SessionRunPort,
 } from "./host";
 export type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 export type {

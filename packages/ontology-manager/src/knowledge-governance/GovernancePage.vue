@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch, type Component } from "vue";
 import { X } from "lucide-vue-next";
-import { AgentShell, createAgentHostClient, useAgentNav } from "@ontomato/agent-shell-ui";
+import { AgentShell, createAgentHostClient, useAgentNav, useSessionRunFeed } from "@ontomato/agent-shell-ui";
 import "@ontomato/agent-shell-ui/style.css";
 import {
   governanceSourceReadSchema, governanceWorkResponseSchema,
@@ -95,6 +95,12 @@ const nav = useAgentNav({
   sessionId: () => sessionId.value,
   setSessionId: (id) => (sessionId.value = id),
   onLeaveConversation: () => (featureId.value = null),
+});
+// The one list notice stream of this page: every governance conversation it lists follows its run, open or not.
+useSessionRunFeed({
+  port: client.sessionRuns,
+  sessions: () => nav.sessions.value,
+  onError: fail,
 });
 
 onMounted(async () => {

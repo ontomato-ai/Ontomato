@@ -11,8 +11,14 @@ import type {
   AgentHostSession,
   AgentHostSessionPage,
   AgentHostSessionHistory,
+  AgentHostSessionRunFrame,
+  AgentHostSessionRunSnapshot,
 } from "@ontomato/contracts/agent-host";
-import { agentHostStreamFrameSchema } from "@ontomato/contracts/agent-host";
+import {
+  agentHostSessionRunFrameSchema,
+  agentHostSessionRunSnapshotSchema,
+  agentHostStreamFrameSchema,
+} from "@ontomato/contracts/agent-host";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { RuntimeCursor, RuntimeEventEnvelope, RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
 import { agentTasksFrameSchema, type AgentTasksFrame } from "@ontomato/contracts/agent-tasks";
@@ -32,6 +38,33 @@ export interface TaskStreamHandlers {
   frame(frame: AgentTasksFrame): void;
   /** The stream ended before a settled snapshot; the shell opens it again and reads the whole snapshot. */
   error(error: unknown): void;
+}
+
+export interface SessionRunHandlers {
+  /** Awaited, so frames are handled in the stream's order and a read finishes before the next frame. */
+  frame(frame: AgentHostSessionRunFrame): Promise<void>;
+  /** The stream ended; the page opens it again, or stops on a refusal. */
+  error(error: unknown): void;
+}
+
+/**
+ * The user-level lifecycle notices of this host's readable conversations, and their light state. Passive: creating a
+ * client opens nothing, and only the page's one feed subscribes.
+ */
+export interface SessionRunPort {
+  read(sessionIds: string[]): Promise<AgentHostSessionRunSnapshot>;
+  subscribe(handlers: SessionRunHandlers): () => void;
+}
+
+/**
+ * The host refused the notices, or a frame broke the contract: opening the same stream again cannot help, so the page
+ * reports it and stops rather than reconnecting.
+ */
+export class SessionRunStreamError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "SessionRunStreamError";
+  }
 }
 
 /**
@@ -70,6 +103,8 @@ export interface AgentHostClient {
   resolveArtifact(sessionId: string, runId: string, path: string): Promise<RuntimeArtifact | null>;
   readArtifact(artifact: RuntimeArtifact): Promise<Blob>;
   tasks?: ShellTaskPort;
+  /** The list's own state source: notices plus a light read, never the conversation being open. */
+  readonly sessionRuns: SessionRunPort;
 }
 
 /**
@@ -147,6 +182,48 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
     return () => controller.abort();
   }
 
+  const sessionRuns: SessionRunPort = {
+    async read(sessionIds) {
+      return agentHostSessionRunSnapshotSchema.parse(
+        await json("/sessions/status", send("POST", { sessionIds })),
+      );
+    },
+    subscribe(handlers) {
+      const controller = new AbortController();
+      // A refusal and a dropped line reach the catch the same way; only whether the stream opened tells them apart.
+      let opened = false;
+      void (async () => {
+        try {
+          const response = await call("/sessions/run-events", {
+            headers: { Accept: "text/event-stream" },
+            signal: controller.signal,
+          });
+          opened = true;
+          // The stream carries no terminal frame: it ends only when the host or the transport closes it.
+          await readData(response, async (data) => {
+            let frame: AgentHostSessionRunFrame;
+            try {
+              frame = agentHostSessionRunFrameSchema.parse(data);
+            } catch (error) {
+              throw new SessionRunStreamError("run notice frame broke the contract", { cause: error });
+            }
+            await handlers.frame(frame);
+            return false;
+          }, () => !controller.signal.aborted);
+          if (!controller.signal.aborted) handlers.error(new Error("run notice stream closed"));
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          handlers.error(
+            error instanceof SessionRunStreamError || !opened
+              ? new SessionRunStreamError((error as Error).message, { cause: error })
+              : error,
+          );
+        }
+      })();
+      return () => controller.abort();
+    },
+  };
+
   const tasks: ShellTaskPort = {
     subscribe(sessionId, handlers) {
       const controller = new AbortController();
@@ -178,6 +255,7 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
 
   return {
     ...(options.tasks ? { tasks } : {}),
+    sessionRuns,
     async listAgents() {
       const agents = (await json<AgentHostAgentList>("/agents")).agents;
       return options.agents ? options.agents(agents) : agents;
@@ -231,7 +309,7 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
  */
 async function readData(
   response: Response,
-  handle: (data: unknown) => boolean,
+  handle: (data: unknown) => boolean | Promise<boolean>,
   current: () => boolean,
 ): Promise<boolean> {
   const reader = response.body?.getReader();
@@ -255,7 +333,7 @@ async function readData(
         if (line !== "" || data.length === 0) continue;
         const payload = JSON.parse(data.join("\n"));
         data = [];
-        if (handle(payload)) return true;
+        if (await handle(payload)) return true;
       }
     }
     return false;
