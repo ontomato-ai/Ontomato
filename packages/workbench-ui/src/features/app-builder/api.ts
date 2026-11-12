@@ -54,6 +54,12 @@ export const builderApi = {
   async remove(id: string) {
     await nodeApiFetch(workspacePath(id), "DELETE");
   },
+  /** A page of the workspace's conversations, newest first. */
+  async sessions(id: string, cursor: string | null) {
+    return agentHostSessionPageSchema.parse(
+      await nodeApiGet(`${workspacePath(id)}/sessions${cursor ? `?${new URLSearchParams({ cursor })}` : ""}`),
+    );
+  },
   /** The current files, uncommitted ones included. */
   async files(id: string) {
     return ((await nodeApiGet(`${workspacePath(id)}/tree`)) as WorkspaceTree).files;
@@ -99,11 +105,5 @@ export const builderApi = {
 
 /** The assistant client of one workspace: its conversations are made in it and listed from its own list. */
 export function createBuilderClient(workspaceId: string) {
-  return createWorkspaceAssistantClient({
-    id: workspaceId,
-    listSessions: async (cursor) =>
-      agentHostSessionPageSchema.parse(
-        await nodeApiGet(`${workspacePath(workspaceId)}/sessions${cursor ? `?${new URLSearchParams({ cursor })}` : ""}`),
-      ),
-  });
+  return createWorkspaceAssistantClient({ id: workspaceId, listSessions: (cursor) => builderApi.sessions(workspaceId, cursor) });
 }
