@@ -39,13 +39,14 @@ beforeEach(() => {
     return Response.json({ data: { ...defaultPersonalWorkspace(), dashboardIds: ["board-a"], applicationIds: ["app-orders"] } });
   });
 });
-async function page() {
+async function page(stubs: Record<string, boolean> = {}) {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: "/workspace", component: Workspace }, { path: "/dashboards", component: { template: "<div />" } }, { path: "/agents/chat", component: { template: "<div />" } },
   ] });
   await router.push("/workspace");
   const open = vi.fn();
   const wrapper = mount(Workspace, { global: {
+    stubs,
     plugins: [router, ElementPlus, createI18n({ legacy: false, locale: "en", messages: { en: {} } })],
     provide: { [openApplicationKey as symbol]: open },
   } });
@@ -141,8 +142,14 @@ describe("personal workspace", () => {
     wrapper.unmount();
   });
   it("keeps the settings open on failed saves and persists the draft on retry", async () => {
-    const { wrapper } = await page();
+    // Select popup rendering is outside the save/retry contract.
+    const { wrapper } = await page({ ElSelect: true });
     await wrapper.findAll("button").find(button => button.text() === "Configure workspace")!.trigger("click");
+    await flushPromises();
+    const dialog = wrapper.findComponent({ name: "ElDialog" });
+    const layout = dialog.findComponent({ name: "ElSelect" });
+    layout.vm.$emit("update:modelValue", "tasks");
+    layout.vm.$emit("change", "tasks");
     await flushPromises();
     api.failSave = true;
     const save = () => wrapper.findAll("button").find(button => button.text() === "Save")!;
@@ -150,10 +157,13 @@ describe("personal workspace", () => {
     await flushPromises();
     expect(wrapper.text()).toContain("Save failed");
     expect(api.saved).toBeNull();
+    expect(dialog.props("modelValue")).toBe(true);
+    expect(layout.props("modelValue")).toBe("tasks");
     api.failSave = false;
     await save().trigger("click");
     await flushPromises();
-    expect(api.saved).toEqual({ ...defaultPersonalWorkspace(), dashboardIds: ["board-a"], applicationIds: ["app-orders"], sections: { main: ["apps", "data"], sidebar: ["conversations", "objects", "tasks", "recent"], hidden: [] } });
+    expect(api.saved).toEqual({ ...defaultPersonalWorkspace(), layout: "tasks", dashboardIds: ["board-a"], applicationIds: ["app-orders"], sections: { main: ["tasks", "data"], sidebar: ["conversations", "objects", "apps", "recent"], hidden: [] } });
+    expect(dialog.props("modelValue")).toBe(false);
     wrapper.unmount();
   });
 });
