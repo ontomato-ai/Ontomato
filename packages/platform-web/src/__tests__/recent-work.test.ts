@@ -4,6 +4,11 @@ import { recentWorkInputSchema } from "@ontomato/contracts/personal-workspace";
 import { recentDestination } from "../recent-work";
 
 describe("recent business destinations", () => {
+  it("retains the object view primary key so the saved link reopens the same object", async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/browser/views/:className", component: { template: "<div />" } }] });
+    await router.push({ path: "/browser/views/Person", query: { key: "person:1", token: "secret" } });
+    expect(recentDestination(router.currentRoute.value, { id: "browser", label: "Objects", prefix: "/browser", icon: "objects" })?.path).toBe("/browser/views/Person?key=person%3A1");
+  });
   it("keeps resumable parameters and discards credentials and unrelated query strings", async () => {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/agents/chat", component: { template: "<div />" } }] });
     await router.push("/agents/chat?sessionId=conversation&apiKey=secret&token=secret#details");
