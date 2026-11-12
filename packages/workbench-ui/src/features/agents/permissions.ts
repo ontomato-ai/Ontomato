@@ -1,12 +1,10 @@
 /**
- * The capability codes of the agent platform's own pages ("智能体" and "运维诊断"). They are the codes the old admin
- * console used, unchanged, so existing grants keep working: the console's pages now live in the function area, and its
- * declared permissions (the enterprise permission centre) still list exactly these codes.
+ * The capability code of the agent platform's own settings page ("智能体"). It is the code the old admin console used,
+ * unchanged, so existing grants keep working. Skills and external MCP services are the ontology manager's and the system
+ * settings' since 2026-11-12, under their own codes.
  */
 export const AGENT_PAGE_PERMISSIONS = [
   "analysis-agent",
-  "mcp-service",
-  "skill-management",
 ] as const;
 
 /** The operations diagnosis page (the old console's observability page). */
