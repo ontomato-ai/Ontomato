@@ -70,8 +70,13 @@ const selectedIssue = ref<string | null>(null);
 /** The source being read and where it shows: under a finding, or under the source list ("all"). */
 const source = ref<{ read: GovernanceSourceRead; anchor: string } | null>(null);
 const canOpen = usePageAccess();
+/**
+ * The governance conversation and its report are pages of business knowledge (the conversation's route is): an account
+ * without it holds no conversation here, and the column lists only the pages it may open.
+ */
+const conversing = computed(() => canOpen(managerPaths.knowledge));
 const pages = computed(() => {
-  const entries = canOpen(managerPaths.knowledge) ? [{ id: "report", label: t("report"), icon: "report" }] : [];
+  const entries = conversing.value ? [{ id: "report", label: t("report"), icon: "report" }] : [];
   if (props.screens?.feedback && canOpen(platformRoutes.feedback.path)) entries.push({ id: "feedback", label: t("feedback"), icon: "feedback" });
   return entries;
 });
@@ -135,6 +140,7 @@ const nav = useAgentNav({
 });
 
 onMounted(async () => {
+  if (!conversing.value) return;
   await nav.loadAgents().catch(() => {});
   await nav.loadSessions();
 });
@@ -174,7 +180,8 @@ function toggleIssue(id: string) {
     </p>
     <AgentShell v-model:session-id="sessionId" v-model:agent-id="agentId" v-model:feature-id="featureId"
       :workbench="workbench" :title="pt('platform.governance')" :client="client" :labels="labels" :nav="nav"
-      :page-context="pageContext" :bottom="bottom" @error="fail" @open-bottom="featureId = 'models'">
+      :page-context="pageContext" :bottom="bottom" :conversations="conversing" @error="fail"
+      @open-bottom="featureId = 'models'">
       <template #feature>
         <AgentModelsPage v-if="featureId === 'models'" :source="modelSource" :path="modelsPage.path" />
         <!--

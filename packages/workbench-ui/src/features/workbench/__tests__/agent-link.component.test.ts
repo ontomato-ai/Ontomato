@@ -5,6 +5,7 @@ import { mount } from "@vue/test-utils";
 import ElementPlus, { ElMessage } from "element-plus";
 import { workbenchI18n } from "../../../i18n";
 import { ontologyServiceAccessKey, openOntologyServiceAccess } from "../../../app/ontology-service";
+import { platformPageAccessKey } from "@ontomato/platform-shell";
 import BusinessWorkbench from "../components/BusinessWorkbench.vue";
 
 /*
@@ -71,7 +72,11 @@ async function openChat(query: Record<string, string>) {
   await router.push({ path: platformRoutes.chat.path, query });
   const wrapper = mount(BusinessWorkbench, {
     props: { defaultLogo: "", defaultBrandName: "Ontomato" },
-    global: { plugins: [i18n, ElementPlus, router], provide: { [ontologyServiceAccessKey as symbol]: openOntologyServiceAccess } },
+    global: { plugins: [i18n, ElementPlus, router], provide: {
+        [ontologyServiceAccessKey as symbol]: openOntologyServiceAccess,
+        // The platform answers which of its pages the account may open; here, every one.
+        [platformPageAccessKey as symbol]: () => true,
+      } },
   });
   wrappers.push(wrapper);
   for (let index = 0; index < 3; index += 1) await new Promise((resolve) => setTimeout(resolve, 0));

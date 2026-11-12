@@ -51,7 +51,8 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
   },
   {
     renderer: "agents",
-    // The conversation is where the platform is entered; the agent settings follow it in the column.
+    // The conversation is where the platform is entered, by every member of the domain; the agent settings and the models
+    // follow it at the foot of the column.
     home: platformRoutes.chat.path,
     // The column is the application's own: the conversation, its pages and the settings. Nothing of another application
     // is listed here, so this application has no page group of its own in the platform's table.

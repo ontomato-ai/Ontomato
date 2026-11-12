@@ -50,7 +50,10 @@ function platform(granted: readonly string[]) {
   };
 }
 
-async function mountNav(props: SettingsProps, granted: readonly string[] = []) {
+/** The agents' settings, which an account with the agents' permission may open. */
+const AGENT_SETTINGS = "/agents/settings";
+
+async function mountNav(props: SettingsProps, granted: readonly string[] = [AGENT_SETTINGS]) {
   const wrapper = mount(AgentSettingsNav, {
     props: { ...props, models: false },
     global: { plugins: [i18n, ElementPlus], provide: platform(granted) },
@@ -93,10 +96,18 @@ describe("the agent settings column", () => {
 
   it("lists the models at its foot only for an account that may open them", async () => {
     expect((await mountNav({ agentId: "a1", creating: false })).find(".nav-foot").exists()).toBe(false);
-    const wrapper = await mountNav({ agentId: "a1", creating: false }, ["/agents/settings/models"]);
+    const wrapper = await mountNav({ agentId: "a1", creating: false }, [AGENT_SETTINGS, "/agents/settings/models"]);
     await wrapper.find(".nav-foot .foot-row").trigger("click");
     expect(wrapper.find(".nav-foot").text()).toBe("Models");
     expect(wrapper.emitted("openModels")).toHaveLength(1);
+  });
+
+  it("lists neither the agents nor a new one to an account without the agents' permission", async () => {
+    const wrapper = await mountNav({ agentId: null, creating: false }, ["/agents/settings/models"]);
+    expect(wrapper.find(".agent-rows").exists()).toBe(false);
+    expect(wrapper.find(".new-agent").exists()).toBe(false);
+    expect(wrapper.find(".note").exists()).toBe(false);
+    expect(wrapper.find(".nav-foot").text()).toBe("Models");
   });
 });
 

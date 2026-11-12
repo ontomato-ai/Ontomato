@@ -32,10 +32,12 @@ const { t } = useI18n();
 const canOpen = usePageAccess();
 const modelLabels = useAgentModelLabels();
 const { agents, loading, loadFailed, ensureLoaded } = useAgentDefinitions();
+/** The agents and a new one are the agents' settings, listed only to an account that may open them. */
+const editsAgents = computed(() => canOpen(platformRoutes.agents.path));
 
 // The column and the editor share one read: whichever is mounted first starts it and the other reads the same list.
 onMounted(() => {
-  void ensureLoaded();
+  if (editsAgents.value) void ensureLoaded();
 });
 
 const heading = computed(() => t("agents.title"));
@@ -49,31 +51,33 @@ const heading = computed(() => t("agents.title"));
     </button>
     <h2 class="nav-head">{{ heading }}</h2>
 
-    <p class="group-title">{{ t("agents.agentsGroup") }}</p>
-    <div v-if="loading" class="skeleton" aria-busy="true"><span /><span /></div>
-    <div v-else-if="loadFailed" class="note">
-      {{ t("agents.loadFailed") }}
-      <button type="button" class="link" @click="ensureLoaded()">{{ t("common.retry") }}</button>
-    </div>
-    <div v-else-if="agents.length === 0" class="note">{{ t("agents.empty") }}</div>
-    <ul v-else class="agent-rows">
-      <li v-for="agent in agents" :key="agent.id">
-        <button
-          type="button"
-          class="agent-row"
-          :class="{ active: !props.creating && agent.id === props.agentId }"
-          :aria-current="!props.creating && agent.id === props.agentId ? 'page' : undefined"
-          @click="emit('selectAgent', agent.id)"
-        >
-          <span class="row-name">{{ agent.name }}</span>
-          <span v-if="agent.description" class="row-note">{{ agent.description }}</span>
-        </button>
-      </li>
-    </ul>
-    <button type="button" class="new-agent" :class="{ active: props.creating }" @click="emit('createAgent')">
-      <Plus :size="16" aria-hidden="true" />
-      <span>{{ t("agents.newAgent") }}</span>
-    </button>
+    <template v-if="editsAgents">
+      <p class="group-title">{{ t("agents.agentsGroup") }}</p>
+      <div v-if="loading" class="skeleton" aria-busy="true"><span /><span /></div>
+      <div v-else-if="loadFailed" class="note">
+        {{ t("agents.loadFailed") }}
+        <button type="button" class="link" @click="ensureLoaded()">{{ t("common.retry") }}</button>
+      </div>
+      <div v-else-if="agents.length === 0" class="note">{{ t("agents.empty") }}</div>
+      <ul v-else class="agent-rows">
+        <li v-for="agent in agents" :key="agent.id">
+          <button
+            type="button"
+            class="agent-row"
+            :class="{ active: !props.creating && agent.id === props.agentId }"
+            :aria-current="!props.creating && agent.id === props.agentId ? 'page' : undefined"
+            @click="emit('selectAgent', agent.id)"
+          >
+            <span class="row-name">{{ agent.name }}</span>
+            <span v-if="agent.description" class="row-note">{{ agent.description }}</span>
+          </button>
+        </li>
+      </ul>
+      <button type="button" class="new-agent" :class="{ active: props.creating }" @click="emit('createAgent')">
+        <Plus :size="16" aria-hidden="true" />
+        <span>{{ t("agents.newAgent") }}</span>
+      </button>
+    </template>
 
     <div v-if="canOpen(platformRoutes.agentModels.path)" class="nav-foot">
       <button

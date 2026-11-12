@@ -200,6 +200,13 @@ goes back to it in one click, and the page is one draft saved from its header, a
 beside it. System Settings keep only what no application owns: the default chat and embedding models, the providers and
 the call policy.
 
+A column the application draws itself lists only what the account may open, by the same page declarations: knowledge
+governance shows its conversation, report and feedback by their permissions (an account without the conversation has no
+new conversation and no recent conversations), the agent platform's settings column lists the agents and a new one only
+with the agents' permission (the agents' settings are a page of the navigation), and an account that may open only the
+models sees only them. The agent platform's conversation is open to every member of the domain, so it stays the
+application's entry.
+
 Pages and the frames around them paint no background of their own: the main area (§5) shows through, so no page sits on
 it as a lighter card; tables, inputs, cards, toolbars and dialogs keep their surfaces, and a canvas takes the page tone
 (`--el-bg-color-page`).

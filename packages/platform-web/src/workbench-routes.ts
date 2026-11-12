@@ -56,9 +56,10 @@ export function workbenchPages(
     { path: "/agents", redirect: (to) => capabilityTabLink(to) ?? { name: routes.chat.name, query: to.query } },
     // The first agent's screen is a page, so its old tab link moves on as the screen is entered: from a bookmark, a
     // reload or another page.
-    { ...routes.agents, component, meta: { workbench: true }, beforeEnter: (to) => capabilityTabLink(to) ?? true },
+    // The settings' screens are pages of the agents' settings: they open with its permission.
+    { ...routes.agents, component, meta: { workbench: true, page: routes.agents.path }, beforeEnter: (to) => capabilityTabLink(to) ?? true },
     ...[routes.agentSettingsNew, routes.agentSettings].map(
-      (location) => ({ ...location, component, meta: { workbench: true } }),
+      (location) => ({ ...location, component, meta: { workbench: true, page: routes.agents.path } }),
     ),
     // The models of the platform's ontology service agents: a page of its navigation, so it opens with its permission.
     { ...routes.agentModels, component, meta: { workbench: true, page: routes.agentModels.path } },

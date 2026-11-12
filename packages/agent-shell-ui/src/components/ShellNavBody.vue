@@ -28,6 +28,11 @@ const props = withDefaults(defineProps<{
   featureId: string | null;
   /** The application's own entry at the foot (its settings, the model the diagnosis runs on). */
   bottom?: { label: string; icon: string } | null;
+  /**
+   * Whether the reader may hold conversations here. Without it the column lists only the application's pages and its
+   * foot: no agent switch, no new conversation, no recent conversations.
+   */
+  conversations?: boolean;
   /** The shell's own words; the column is drawn outside the conversation's provider, so they are passed in. */
   labels: ShellLabels;
 }>(), {
@@ -40,6 +45,7 @@ const props = withDefaults(defineProps<{
   sessionId: null,
   featureId: null,
   bottom: null,
+  conversations: true,
 });
 const emit = defineEmits<{
   newConversation: [];
@@ -131,7 +137,7 @@ function saveRename(id: string) {
 }
 
 /** More than one agent means the head is a switcher; one agent leaves the application's name there. */
-const hasPicker = computed(() => props.agentPicker || props.agents.length > 1);
+const hasPicker = computed(() => props.conversations && (props.agentPicker || props.agents.length > 1));
 
 function requestDelete(session: AgentHostSession) {
   closeSessionMenu();
@@ -164,6 +170,7 @@ onBeforeUnmount(() => {
     <div v-else class="column-head">{{ title }}</div>
 
     <button
+      v-if="conversations"
       type="button"
       class="nav-item primary"
       :class="{ active: featureId === null && sessionId === null }"
@@ -208,7 +215,7 @@ onBeforeUnmount(() => {
       </button>
     </template>
 
-    <div class="sessions">
+    <div v-if="conversations" class="sessions">
       <div class="section-title">{{ labels.sessions }}</div>
       <div v-if="sessionsState === 'loading' && sessions.length === 0" class="session-skeleton" aria-busy="true">
         <span /><span /><span />
@@ -558,8 +565,10 @@ onBeforeUnmount(() => {
   background: var(--shell-panel-hover);
 }
 /* The application's own entry, behind the one divider inside the column. */
+/* The foot stays at the bottom whether or not the recent conversations fill the column above it. */
 .nav-foot {
   flex-shrink: 0;
+  margin-top: auto;
   padding-top: 8px;
   border-top: 1px solid var(--el-border-color);
 }

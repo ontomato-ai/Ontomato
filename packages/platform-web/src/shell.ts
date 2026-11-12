@@ -4,8 +4,9 @@ import "element-plus/theme-chalk/dark/css-vars.css";
 // Design foundation shared with the workbench (type, spacing, shape, density, elevation, motion, component variables).
 import "@ontomato/design-tokens/foundation.css";
 import { computed } from "vue";
-import { Cable, Cpu, Puzzle, Plug } from "lucide-vue-next";
+import { Bot, Cable, Cpu, Puzzle, Plug } from "lucide-vue-next";
 import { skillLibraryCount } from "@ontomato/workbench-ui/features/workbench";
+import { AGENT_PAGE_PERMISSIONS } from "@ontomato/workbench-ui";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { ontologyAgentModelPages } from "@ontomato/platform-shell";
 import { useTheme } from "@ontomato/workbench-ui/composables/useTheme";
@@ -153,11 +154,8 @@ export function createServiceManager(options: {
   });
 }
 
-/**
- * The Ontology Service navigation: the Manager's groups (ontology, assets, knowledge) followed by this edition's
- * platform administration group, in display order.
- */
-export const ontologyWorkspacePages: readonly PlatformPage[] = [
+/** The ontology manager's pages the agent platform's pages draw: the skills, beside its capabilities. */
+const ontologyWorkspacePages: readonly PlatformPage[] = [
   { path: platformRoutes.ontologySkills.path, titleKey: "capabilities.skillTitle", icon: Puzzle, permissions: ["skill-management"], group: "assets", ownHeader: true, count: skillLibraryCount },
 ];
 
@@ -165,7 +163,7 @@ export const ontologyWorkspacePages: readonly PlatformPage[] = [
  * The system settings' connections the agent platform's pages draw: the external MCP services agents may call (its page
  * draws its own header) and the MCP services the platform publishes (under the settings' header).
  */
-export const systemIntegrationPages: readonly PlatformPage[] = [
+const systemIntegrationPages: readonly PlatformPage[] = [
   { path: platformRoutes.externalMcp.path, titleKey: "capabilities.mcpTitle", icon: Cable, permissions: ["mcp-service"], group: "platform", ownHeader: true },
   { path: platformRoutes.publishedMcp.path, titleKey: "mcp.publishedSettingsTitle", descriptionKey: "mcp.publishedHint", icon: Plug, permissions: ["mcp-service"], group: "platform" },
 ];
@@ -175,7 +173,7 @@ export const systemIntegrationPages: readonly PlatformPage[] = [
  * always had (`system-config`), so only an account that holds it sees the entry or may open the page, without being given
  * any other page of the application. The page draws its own header.
  */
-export const agentModelPages: readonly PlatformPage[] = ontologyAgentModelPages.map((page) => ({
+const agentModelPages: readonly PlatformPage[] = ontologyAgentModelPages.map((page) => ({
   path: page.path,
   titleKey: "platform.agentModels.title",
   descriptionKey: "platform.agentModels.description",
@@ -185,16 +183,44 @@ export const agentModelPages: readonly PlatformPage[] = ontologyAgentModelPages.
   ownHeader: true,
 }));
 
+/**
+ * The agent platform's agents' settings (the agents, a new one, one agent's editor), open with the agents' permission;
+ * the page draws its own frame. The conversation is no page of the navigation: every member of the domain enters the
+ * application and holds conversations in it.
+ */
+const agentSettingsPage: PlatformPage = {
+  path: platformRoutes.agents.path,
+  titleKey: "assistant.featureAgents",
+  icon: Bot,
+  permissions: [...AGENT_PAGE_PERMISSIONS],
+  group: "agents",
+  ownHeader: true,
+};
+
+/**
+ * The pages this package's assembly draws for the applications beside the Manager's and the platform administration's,
+ * for every edition's navigation: the skills, the system settings' connections, the agent platform's agents' settings
+ * and the applications' model pages. A page denied falls back to the first page of its group the account may open, so
+ * an account without the agents' permission that may open the agent platform's models goes there.
+ */
+export const applicationPages: readonly PlatformPage[] = [
+  ...ontologyWorkspacePages,
+  ...systemIntegrationPages,
+  agentSettingsPage,
+  ...agentModelPages,
+];
+
+/**
+ * The Ontology Service navigation: the Manager's groups (ontology, assets, knowledge) followed by this edition's
+ * platform administration group, in display order, and the applications' pages beside them.
+ */
 export function serviceNavigation(
   manager: ReturnType<typeof createManager>,
   platformGroup: PlatformGroup,
   platformPages: readonly PlatformPage[]
 ): PlatformNavigation {
   const ontology = managerNavigation(manager.counts);
-  return {
-    groups: [...ontology.groups, platformGroup],
-    pages: [...ontology.pages, ...platformPages, ...ontologyWorkspacePages, ...systemIntegrationPages, ...agentModelPages],
-  };
+  return { groups: [...ontology.groups, platformGroup], pages: [...ontology.pages, ...platformPages, ...applicationPages] };
 }
 
 /** The root address's landing page for this deployment (see `serviceHome`). */

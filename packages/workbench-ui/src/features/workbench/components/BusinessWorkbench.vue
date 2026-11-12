@@ -5,7 +5,7 @@ import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { AgentShell, useAgentNav, type ShellFeatureDeclaration, type ShellWorkbenchDeclaration } from "@ontomato/agent-shell-ui";
-import { AgentModelsPage, ontologyAgentModelPages, ontologyAgentModelSource } from "@ontomato/platform-shell";
+import { AgentModelsPage, ontologyAgentModelPages, ontologyAgentModelSource, usePageAccess } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { AgentSettingsNav, AgentSettingsPage, dataEngineTransport } from "../../agents";
@@ -154,9 +154,18 @@ watch(inSettings, (open) => {
   if (!open) returnTo.value = null;
 });
 
-/** The agent settings: the agent the conversation runs on, or the first one the account has. */
+/**
+ * The settings the account may open: the agents' (with the agents' permission), and the models of the ontology service
+ * agents the conversations run on (with the model permission). Each is a page of the platform's navigation.
+ */
+const canOpen = usePageAccess();
+const editsAgents = computed(() => canOpen(SETTINGS_PATH));
+const opensModels = computed(() => canOpen(routes.agentModels.path));
+
+/** The agent settings: the agent the conversation runs on (or the first one), or the models when only they are open. */
 function openSettings() {
   returnTo.value = conversationId.value;
+  if (!editsAgents.value) return void router.push(routes.agentModels.path);
   void router.push(agentId.value ? settingsPath(`/${agentId.value}`) : SETTINGS_PATH);
 }
 
@@ -180,7 +189,9 @@ function openModels() {
 }
 
 /** The column's own entry at the foot: the agent settings, which replace the column while they are open. */
-const bottomEntry = computed(() => ({ label: t("assistant.featureAgents"), icon: "agents" }));
+const bottomEntry = computed(() =>
+  editsAgents.value || opensModels.value ? { label: t("assistant.featureAgents"), icon: "agents" } : null,
+);
 
 /**
  * Applies `?agentId=` once the agents are known. The link's parameters leave the address first, so a reload neither
