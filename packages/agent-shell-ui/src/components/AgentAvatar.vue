@@ -30,7 +30,8 @@ const style = computed(() => {
   background: var(--avatar-light);
   color: var(--el-color-primary);
 }
-:global(html.dark) .agent-avatar {
+/* The document's theme; `html.dark` is named plainly so only `.agent-avatar` is scoped (see PlatformBrandMark). */
+html.dark .agent-avatar {
   background: var(--avatar-dark);
 }
 </style>
