@@ -26,7 +26,7 @@ The skills cover different tasks on this same platform: `ontomato-ontomap-builde
 
 ## This skill’s role
 
-Answer business questions using the current ontology and its permitted data. This package reads definitions and queries data; it does not change the data source, ontomap, permissions or business records. It needs no product checkout. Choose `agent start --agent ontology/retrieval` for a natural-language question, `execute-dsl` when you need to control the query, or the separately configured analysis MCP service for a report.
+Answer business questions using the current ontology and its permitted data. This package reads definitions and queries data; it does not change the data source, ontomap, permissions or business records. It needs no product checkout. Use the accessible retriever from `agent list` for a natural-language question, `execute-dsl` when you need to control the query, or the separately configured analysis MCP service for a report.
 
 ## Configuration
 
@@ -65,35 +65,42 @@ Run `node ontomato.mjs <command>` from this directory. JSON accepts `@file`.
 | `run <actionId> [@parameters.json]` | `POST /action/execute`: perform one step your roles are granted; a refusal is reported with its real cause |
 | `knowledge <question> [--limit n]` | `POST /ontology/query/knowledge/search`: relevant business knowledge |
 | `agent list [query]` | List accessible agents and their provider/id references |
-| `agent start --agent ontology/retrieval --message @question.txt [--context @context.json]` | Admit binding and retrieval together; return taskId and sessionRef immediately |
+| `agent start --agent <providerId>/<agentId> --message @question.txt [--context @context.json]` | Admit binding and retrieval together; return taskId and sessionRef immediately |
 | `agent read <taskId> [--follow] [--files]` | Read a snapshot or follow its SSE updates; download delivered files without changing their bytes |
-| `agent send --session ontology/<sessionId> --message @answer.txt --reply-to <questionId>` | Answer in the same conversation; steer while running, otherwise start its next round |
-| `agent send --session ontology/<sessionId> --message @question.txt [--steer]` | Continue that conversation; ordinary messages fail while busy unless explicitly steered |
+| `agent send --session <providerId>/<sessionId> --message @answer.txt --reply-to <questionId>` | Answer in the same conversation; steer while running, otherwise start its next round |
+| `agent send --session <providerId>/<sessionId> --message @question.txt [--steer]` | Continue that conversation; ordinary messages fail while busy unless explicitly steered |
 | `agent cancel <taskId>` | Cancel this execution and its delegated descendants; keep accepted results |
 | `retriever-cancel <sessionId> --run <runId>` | Ontology business command: stop only the retriever, preserving binding results and QC |
 
 
-Use the native `agent` tool when the product supplies it. Standalone agents use the same
-five commands through `node ontomato.mjs agent ...` and the ontology gateway.
-`start` and `send` return admission, not a successful business result. Use `read --follow`
-for changes and `read --files` for immutable delivered files under `outputs/`.
-The binding and retriever branches run independently. A successful binding, including
-zero rows, is available in snapshots before the retriever finishes. Inspect its meaning,
-conditions and parameter values before deciding it answers the question. Otherwise keep
-following the same task; never treat binding lookup failure as empty data. Formal binding
-files have null selfCheck. Preserve partial-result limits. Both branches settle before
-the final result notification; each branch's quality check continues separately.
+## Delegation and results
 
-Questions include a stable `id` and the sender's default assumption. A question does not
-stop the sender. Present it to the user and send their answer with `--reply-to`; the host
-records confirmed decisions and advances its revision. No manual run/steer switch is
-needed for an answer. Without a product parent, questions appear in task reads and events.
-`read --follow` returns on an unanswered question or a terminal snapshot; the task may
-still be running after a question. Continue reading it after replying.
+If you are already the retriever, use this skill's direct query commands and data-retrieval
+for delivery; do not delegate the same question to another retriever.
 
-Use metadata commands to resolve technical facts. Keep the user's original conditions
-and carry prior dataset references in the retriever's declared context when continuing.
-The retriever uses direct queries and the data-retrieval script for its own work.
+Use the native `agent` tool when available: `list` identifies the accessible data retriever;
+`start` takes the returned agent reference and one complete data question. Preserve the user's
+wording, adding only references, time and scope established in this conversation. Keep one
+calculation together, including its numerator and denominator. Query design belongs to the retriever.
+
+`start` and `send` acknowledge admission, not a result. In the product, results arrive as
+notifications: continue independent work, or let this turn end while the child keeps running.
+Use `read` to inspect progress or delivered files when needed; do not poll or start the question again.
+Outside the product, use the CLI commands above: `read --follow` consumes events and
+`read --files` downloads immutable delivered bytes to `outputs/`.
+
+For a received question, consult this conversation and ask the user only for a missing business
+decision. Send the answer to the question's session with `replyTo` (CLI: `--reply-to`), using
+its stable question ID. The recipient may still be running; the channel chooses steering or a
+new round. Silence confirms nothing. Without a product parent, questions appear in reads/events;
+`read --follow` returns on an unanswered question or a terminal snapshot, so a question is not completion.
+
+Binding and retriever branches run independently. A successful binding, including zero rows,
+is available before the retriever finishes. Check its meaning, conditions and parameters before
+using it as the answer; otherwise keep the retriever's task. Lookup failure is not empty data.
+Preserve partial-result limits. Both branches settle before the final result notification;
+quality checks continue separately. Formal binding files have null selfCheck.
+
 
 ## Acting on your own work
 

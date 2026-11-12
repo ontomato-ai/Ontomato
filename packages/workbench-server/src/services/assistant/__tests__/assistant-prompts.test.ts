@@ -35,6 +35,14 @@ describe("default assistant prompts", () => {
     ).toBe("custom");
   });
 
+  it.each(["regular", "analysis"])("%s delegates through the skill without obsolete transport instructions", (kind) => {
+    const template=getPromptTemplate(`assistant.${kind}.system`);
+    expect(template).toContain("ontomato-analyst-assistant/SKILL.md");
+    expect(template).not.toMatch(/ontomato-analyst-assistant\s+ask|\bask\s+--|--resume|cancel-retriever|resume (?:that|the same|that same) retrieval/i);
+    const customized="Use ontomato-analyst-assistant ask according to my own instructions";
+    expect(effectiveSystemPrompt({kind,system_prompt:customized})).toBe(customized);
+  });
+
   it("stores NULL when a built-in agent still equals the current template", () => {
     const template = getPromptTemplate("assistant.analysis.system");
     expect(storedSystemPrompt("analysis", `\n${template}\n  `)).toBeNull();

@@ -25,4 +25,4 @@ Read the confirmed decisions first. If a material ambiguity remains, ask one cle
 - The host supplies credentials. Never put credentials, user or domain IDs, or service URLs in code or messages.
 - Only Java executes query programs. Never hardcode queried values or calculate on masked values.
 - Null, zero and partial results are real results; do not hide them.
-- Do not call ask. Deliver as data-retrieval/references/dataset.md describes, reference the delivered files with their scope and limits, then end.
+- Deliver as data-retrieval/references/dataset.md describes, reference the delivered files with their scope and limits, then end.
