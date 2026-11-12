@@ -42,3 +42,13 @@ it("reserves space for existing bottom legends and pie plots even without a titl
   // The pie stops above the legend's band instead of drawing over it.
   expect(result.series[0].bottom).toBe(result.grid[0].bottom);
 });
+
+it("cuts a long title to the drawn width and hides overlapping category labels, keeping the option's shape", () => {
+  const source = { title: { text: "在职教职工人数（教学科研类单位/学院口径，前20）", left: "center" }, xAxis: { type: "category", data: ["a"] }, yAxis: { type: "value" } };
+  const result = chartReadingLayout(source, 320, "inline", 330);
+  expect(result.title).toMatchObject({ left: "center", textStyle: { width: 306, overflow: "truncate" } });
+  expect(result.xAxis.axisLabel.hideOverlap).toBe(true);
+  expect(result.yAxis).toEqual({ type: "value" });
+  expect(chartReadingLayout({ ...source, xAxis: [{ data: ["a"], axisLabel: { hideOverlap: false } }] }, 320, "inline").xAxis[0].axisLabel.hideOverlap).toBe(false);
+  expect(chartReadingLayout(source, 320, "inline").title).toEqual(source.title);
+});

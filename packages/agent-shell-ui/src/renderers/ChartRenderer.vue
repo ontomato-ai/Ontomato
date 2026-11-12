@@ -12,8 +12,8 @@ const props = defineProps<ArtifactRendererProps>();
 const shell = inject(shellContextKey)!;
 const { text, error } = useArtifactText(props);
 const theme = useChartTheme();
-/** The height the chart is drawn at; the reading layout sizes the legend band from it. */
-const drawnHeight = ref<number>();
+/** The size the chart is drawn at; the reading layout sizes the legend band and the title from it. */
+const drawn = ref<{ width: number; height: number }>();
 const drawError = ref(false);
 
 /**
@@ -26,7 +26,7 @@ const option = computed<{ value: Record<string, unknown> | null; invalid: boolea
     const value: unknown = JSON.parse(text.value);
     return value && typeof value === "object" && !Array.isArray(value)
       ? {
-          value: chartReadingLayout(chartBrandColors(value as Record<string, unknown>, theme.value), drawnHeight.value, props.presentation),
+          value: chartReadingLayout(chartBrandColors(value as Record<string, unknown>, theme.value), drawn.value?.height, props.presentation, drawn.value?.width),
           invalid: false,
         }
       : { value: null, invalid: true };
@@ -57,7 +57,7 @@ watch(text, () => {
       :height="presentation === 'panel' ? 'min(68vh, 560px)' : 320"
       role="img"
       :aria-label="title"
-      @resize="drawnHeight = $event.height"
+      @resize="drawn = $event"
     />
   </div>
 </template>
