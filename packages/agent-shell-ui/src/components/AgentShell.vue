@@ -83,7 +83,7 @@ const pageView = defineModel<"full" | "side">("pageView", { default: "full" });
 const openArtifact = ref<OpenArtifact | null>(null);
 const taskFocus = ref<{ taskId: string; at: number } | null>(null);
 
-const conversation = useAgentConversation(() => props.client);
+const conversation = useAgentConversation(() => props.client, () => agentId.value);
 const nav = props.nav;
 const { sessions, currentAgent } = nav;
 const currentSession = computed(() => sessions.value.find((session) => session.id === sessionId.value));
@@ -193,16 +193,24 @@ async function send(input: string) {
   const text = context ? `${input}\n\n${context}` : input;
   const result = await conversation.send(agent, text);
   if (!result) return;
+  if (!result.snapshot) {
+    // The conversation was created but its run refused: the host takes it as listed (still empty), so sending again
+    // goes on in the conversation the host knows.
+    void nav.loadSessions();
+    sessionId.value = result.createdSession.id;
+    return;
+  }
   const latestRun = result.snapshot.run;
   const created = result.createdSession;
   if (created) {
     // The state already carries this session and its admitted run; linking the id afterwards keeps
-    // the watch from opening it again and discarding the pending message.
+    // the watch from opening it again and discarding the pending message. A reader who opened another
+    // conversation meanwhile stays in it; the new one is listed.
     nav.promoteSession(created, text, latestRun);
-    sessionId.value = created.id;
+    if (sessionId.value === null) sessionId.value = created.id;
     return;
   }
-  nav.markRun(latestRun);
+  nav.markRun(latestRun, text);
 }
 
 /*

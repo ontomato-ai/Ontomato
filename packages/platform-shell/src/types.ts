@@ -67,6 +67,17 @@ export interface PlatformPanelGroup {
 }
 
 /** Fixed text the shell draws; the host supplies it from its own i18n. */
+/**
+ * The edition's brand: its name, and its mark as an image when it has one, with a version for the dark theme when the
+ * light one does not read there. Image addresses are relative to the page, so they follow the deployment's prefix.
+ */
+export interface PlatformBrand {
+  name: string;
+  logo?: string;
+  /** The mark on the dark theme; without one the dark theme shows `logo` too. */
+  logoDark?: string;
+}
+
 export interface PlatformShellLabels {
   /** Name of the control that expands the rail. */
   expandRail: string;

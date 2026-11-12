@@ -43,6 +43,7 @@ export {
 export type {
   PlatformAccount,
   PlatformApp,
+  PlatformBrand,
   PlatformIcon,
   PlatformPanelGroup,
   PlatformPanelPage,

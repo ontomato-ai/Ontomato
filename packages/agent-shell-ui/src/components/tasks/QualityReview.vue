@@ -5,9 +5,9 @@ import { shellContextKey } from "../../context";
 import type { ResponseReview } from "../../view";
 
 /**
- * Another party's review of the reply's data, beside the reply and never part of it: folded to one line (the score, or
- * that it is checking or could not complete, and what it checked), opened for the whole conclusion, the score, a
- * better-fitting question and the checked datasets. It updates the moment the check settles, whether or not the reply
+ * Another party's review of the reply's data, beside the reply and never part of it: folded to one line (the score and
+ * why, in one sentence, or that it is checking or could not complete), opened for the whole conclusion, the score, a
+ * better-fitting question and what it checked. It updates the moment the check settles, whether or not the reply
  * is still running.
  */
 const props = defineProps<{ review: ResponseReview }>();
@@ -34,12 +34,14 @@ watch(() => shell.taskFocus?.value, (focus) => {
     <button type="button" class="review-line" :aria-expanded="open" @click="open = !open">
       <ShieldCheck :size="14" class="review-icon" />
       <span class="review-name">{{ labels.review }}</span>
-      <span v-if="result" class="review-part score">{{ score }}</span>
+      <template v-if="result">
+        <span class="review-part score">{{ score }}</span>
+        <span v-if="result.summary" class="review-part summary">{{ result.summary }}</span>
+      </template>
       <span v-else-if="task.status === 'running'" class="review-part">
         <LoaderCircle :size="12" class="spin" /> {{ labels.reviewRunning }}
       </span>
       <span v-else class="review-part failed">{{ reason }}</span>
-      <span class="review-part source">{{ labels.checkedSource(source) }}</span>
       <ChevronRight :size="14" class="chevron" />
     </button>
     <dl v-if="open" class="review-body">
@@ -116,7 +118,8 @@ watch(() => shell.taskFocus?.value, (focus) => {
   color: var(--el-text-color-regular);
   font-variant-numeric: tabular-nums;
 }
-.source {
+.summary {
+  display: block;
   flex-shrink: 1;
   min-width: 0;
   overflow: hidden;

@@ -43,11 +43,14 @@ async function load() {
     const [response, list] = await Promise.all([skillsApi.fetchSkills(), skillsApi.listFiles(props.skillId)]);
     skill.value = (response.skills as SkillInfo[]).find((item) => item.id === props.skillId) ?? null;
     files.value = list;
-    file.value = list.some((item) => item.path === "SKILL.md") ? "SKILL.md" : (list[0]?.path ?? null);
+    // A read again (another language, for one) keeps the file being read; a new skill opens at its SKILL.md.
+    const kept = list.some((item) => item.path === file.value) ? file.value : null;
+    file.value = kept ?? (list.some((item) => item.path === "SKILL.md") ? "SKILL.md" : (list[0]?.path ?? null));
   } catch {
     loadFailed.value = true;
   }
 }
+watch(() => props.skillId, () => { file.value = null; });
 watch([() => props.skillId, locale], load, { immediate: true });
 
 /** The package's paths as folders and files: folders first, then files, each in name order. */

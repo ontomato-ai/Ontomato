@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { appDeclarations } from "../partition";
 import { catalogPartitionFixture as appPartition } from "./fixtures";
 import { closedAccess, generatedNavigation } from "./fixtures";
+import { catalogFixture } from "./fixtures";
+import { catalogPartition } from "../native-layouts";
 
 /*
  * The rail's sections and the business applications' order, straight from the task: the ontology applications, then the
@@ -12,6 +14,24 @@ const declarations = appDeclarations(generatedNavigation(), closedAccess(["busin
 const named = (section: string) => declarations.filter((app) => app.rail === section).map((app) => app.id);
 
 describe("the platform's applications", () => {
+  it("shows only the implemented workspace when an old workplace registration remains", () => {
+    const catalog = catalogFixture();
+    const workspace = catalog.find(app => app.id === "personal-workspace")!;
+    const stale = { ...workspace, id: "workplace", entry: { path: "/workplace", renderer: "workplace" } };
+    const partition = catalogPartition([...catalog, stale], "zh-CN");
+    expect(partition.filter(app => app.label === "个人工作台").map(app => app.id)).toEqual(["personal-workspace"]);
+  });
+  it("omits stale native entries until their renderer layout is registered", () => {
+    const application = {
+      ...catalogFixture()[0]!, id: "edition-app", entry: { path: "/edition-app", renderer: "later-renderer" },
+    };
+    const pending = catalogPartition([application], "en");
+    expect(pending).toEqual([]);
+    const registered = catalogPartition([application], "en", {
+      "later-renderer": { sections: [], home: "/edition-app/home" },
+    });
+    expect(appDeclarations(generatedNavigation(), closedAccess([]), registered, t)[0]?.home).toBe("/edition-app/home");
+  });
   it("opens knowledge governance in the conversation rather than feedback records", () => {
     expect(declarations.find(app => app.id === "governance")?.home).toBe("/governance/chat");
   });
@@ -38,7 +58,7 @@ describe("the platform's applications", () => {
     ]);
   });
   it("sits in three sections: the home and the everyday applications, the business ones, and the settings above the account", () => {
-    expect(named("top")).toEqual(["home", "agents", "dashboards", "schedules", "browser"]);
+    expect(named("top")).toEqual(["home", "personal-workspace", "agents", "dashboards", "schedules", "browser"]);
     // 应用构建 comes after the operations diagnosis.
     expect(named("apps")).toEqual(["ontology", "governance", "operations", "app-builder"]);
     expect(named("bottom")).toEqual(["settings"]);

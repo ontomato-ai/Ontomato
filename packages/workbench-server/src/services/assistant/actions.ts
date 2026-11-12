@@ -76,7 +76,7 @@ export async function confirmAction(sessionId: string, artifactId: string, owner
   const claim = await getPostgresPool().query(`INSERT INTO ${t("assistant_action_executions")} (artifact_id,session_id,domain_id,owner_id,action_id,action_version,parameters,status) VALUES($1,$2,$3,$4,$5,$6,$7,'executing') ON CONFLICT DO NOTHING`,
     [artifactId, sessionId, owner.domainId, owner.userId, card.action.id, card.action.version, JSON.stringify(parameters)]);
   if (!claim.rowCount) return execution(artifactId, sessionId, owner);
-  let status = "unknown", result: unknown = null, error: string | null = null;
+  let status = "unknown", result: unknown = null, error: string | null;
   try {
     const form = new FormData();
     form.set("id", card.action.id); form.set("param", JSON.stringify(parameters));

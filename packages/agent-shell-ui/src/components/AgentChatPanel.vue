@@ -36,7 +36,7 @@ const emit = defineEmits<{
   error: [message: string];
 }>();
 
-const conversation = useAgentConversation(() => props.client);
+const conversation = useAgentConversation(() => props.client, () => props.agentId);
 
 /** Host paths are execution details, never user-facing content. */
 function redact(value: string): string {
@@ -146,6 +146,11 @@ watch(
 async function send(text: string) {
   const result = await conversation.send(props.agentId, text);
   if (!result) return;
+  if (!result.snapshot) {
+    // The session was created but its run refused: it is still the host's, so sending again goes on in it.
+    emit("update:sessionId", result.createdSession.id);
+    return;
+  }
   // Track the run before the host opens the newly created session; opening resets the projection
   // and must not be mistaken for a finished run.
   lastRunId = result.snapshot.run.id;

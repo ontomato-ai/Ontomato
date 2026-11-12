@@ -24,7 +24,7 @@ export { installAppHost } from "./app-host";
 export { serviceHome } from "./view";
 export { legacyAdminRoutes, managerLocation, managerViewQuery } from "./admin-routes";
 export { observeRoutes } from "./observe-routes";
-export { appBuilderPages, dashboardPages, schedulePages, workbenchPages } from "./workbench-routes";
+export { appBuilderPages, dashboardPages, personalWorkspacePages, schedulePages, workbenchPages } from "./workbench-routes";
 
 export type { NativeLayout } from "./native-layouts";
 export { useApplicationCatalog } from "./catalog";

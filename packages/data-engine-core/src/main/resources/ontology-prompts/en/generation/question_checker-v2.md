@@ -77,4 +77,4 @@ The block below is the user's own words and any clarifications they confirmed. U
 {{USER_QUESTION}}
 
 # Delivery
-Write outputs/result.json as {"conclusion":"reasoned conclusion","score":80,"fittedQuestion":"appropriate question"}. Write natural language in {{LANG}}.
+Write outputs/result.json as {"summary":"one-line verdict","conclusion":"reasoned conclusion","score":80,"fittedQuestion":"appropriate question"}. `summary` tells a business user why the score is what it is: verdict first, at most 30 Chinese characters or 15 English words, no field names or code. Write natural language in {{LANG}}.

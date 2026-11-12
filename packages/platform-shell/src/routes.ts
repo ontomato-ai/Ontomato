@@ -7,6 +7,7 @@
  */
 export const platformRoutes = {
   layout: { name: "PlatformLayout", path: "/" },
+  personalWorkspace: { name: "PersonalWorkspace", path: "/workspace" },
   /** The platform's home: everyone's starting point, with their favourites, dashboards and every application. */
   home: { name: "Home", path: "/home" },
   chat: { name: "Chat", path: "/agents/chat" },
