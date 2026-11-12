@@ -8,7 +8,8 @@ import {
   type AssistantAgentDefinition,
   type AssistantAgentInput,
 } from "@ontomato/contracts/assistant-chat";
-import { apiGet, nodeApiFetch, nodeApiGet, nodeApiPost, nodeApiPut } from "../../utils/api";
+import type { DataEngineTransport } from "@ontomato/platform-shell";
+import { apiGet, apiPut, nodeApiFetch, nodeApiGet, nodeApiPost, nodeApiPut } from "../../utils/api";
 import { listMcpServiceOptions } from "../mcp/api";
 import { queryViewApi } from "../query-view";
 
@@ -40,6 +41,12 @@ export const agentDefinitionsApi = {
     await nodeApiFetch(`${base}/${encodeURIComponent(id)}`, "DELETE");
   },
   listMcpServiceOptions,
+};
+
+/** The data engine as the platform's model page reads it for the agent platform's ontology service agents. */
+export const dataEngineTransport: DataEngineTransport = {
+  get: async (path) => (await apiGet(path)).data,
+  put: async (path, body) => (await apiPut(path, body)).data,
 };
 
 /** The domain's models to choose from (names only, no connection settings); any account of the domain may read them. */

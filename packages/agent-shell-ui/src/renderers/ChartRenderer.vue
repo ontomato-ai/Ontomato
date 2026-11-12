@@ -5,7 +5,7 @@ import { shellContextKey } from "../context";
 import type { ArtifactRendererProps } from "../types";
 import { useArtifactText } from "./useArtifactBlob";
 import { chartReadingLayout } from "./chart-layout";
-import { chartBrandColors } from "./chart-colors";
+import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
 
 /** .chart.json: an ECharts option object as plain JSON, drawn in the platform's chart theme. */
 const props = defineProps<ArtifactRendererProps>();

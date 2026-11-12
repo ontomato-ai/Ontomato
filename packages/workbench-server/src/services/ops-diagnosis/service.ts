@@ -29,6 +29,12 @@ export async function diagnosisSession(id: string, owner: AgentHostOwner): Promi
   if (!row) throw missing();
   return row;
 }
+/** The same ownership rule as diagnosisSession(), batched for a list's readability check. */
+export async function readableDiagnosisSessions(owner: AgentHostOwner, ids: string[]): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+  const rows = (await db().query(`SELECT id FROM ${table("ops_sessions")} WHERE id=ANY($1::uuid[]) AND domain_id=$2 AND owner_id=$3`, [ids, owner.domainId, owner.userId])).rows;
+  return new Set(rows.map((row) => row.id));
+}
 type LatestRun = Parameters<typeof runStatusView>[0];
 const view = (s: Session, latest: LatestRun | null) => ({
   id: s.id, agentId: DIAGNOSIS_AGENT_ID, title: s.title,
@@ -78,6 +84,9 @@ export const diagnosisService: AgentHostService = {
     const sessions = selected.map((row) => view(row, statuses.find((s) => s.session.id === row.id)?.latestRun ?? null));
     const last = selected.at(-1);
     return { sessions, nextCursor: rows.length > input.limit && last ? Buffer.from(JSON.stringify({ id: last.id, updatedAt: new Date(last.updated_at).toISOString() })).toString("base64url") : null };
+  },
+  async readableSessions(owner, ids) {
+    return readableDiagnosisSessions(owner, ids);
   },
   async history(id, owner, query) {
     const row = await diagnosisSession(id, owner), page = await new RuntimeClient(owner.domainId).history(id, query);

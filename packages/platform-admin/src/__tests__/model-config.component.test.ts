@@ -1,27 +1,31 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { computed, defineComponent, h, shallowRef, type Ref } from "vue";
+import { computed, defineComponent, h, type Ref } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
+import {
+  platformApplicationNameKey,
+  providePageActions,
+  provideUnsavedChanges,
+  type PlatformPageActions,
+} from "@ontomato/platform-shell";
 import type { ModelSettingsData, ModelSettingsWrite, OntologyAgentModel } from "@ontomato/contracts/model-settings";
 import { vectorRebuildStatusSchema } from "../models/types";
-import { specifiedAgents } from "../models/agents";
 import ModelEditDialog from "../models/components/ModelEditDialog.vue";
 import ModelSelectionSelect from "../models/components/ModelSelectionSelect.vue";
 import ModelUsagePanel from "../models/components/ModelUsagePanel.vue";
 import ProviderDetail from "../models/components/ProviderDetail.vue";
 import ModelConfigPage from "../pages/ModelConfigPage.vue";
-import { modelConfigTabs, ossPlatformPages } from "../pages";
+import { ossPlatformPages, platformPages } from "../pages";
 import type { PlatformApi } from "../api";
-import { pageActionsKey, type PlatformPageActions } from "../context";
 import { pageGlobal, testHost, testI18n } from "./host";
 
 /*
- * The conventions of the model configuration page: the settings are saved as a whole, a masked key that is not
- * changed is submitted as read, the agent selectors offer chat models only, and a reference that is no longer
- * configured stays as it is instead of falling back to the domain default. Renaming a saved model and unsetting a
- * domain default are confirmed first, naming what they affect. The usage screen lists only the agents given a model of
- * their own; each model row checks itself with the smallest call.
+ * The conventions of the model library's two pages: the settings are saved as a whole from either page, a masked key
+ * that is not changed is submitted as read, and moving between the two pages keeps the draft. Renaming a saved model and
+ * unsetting a domain default are confirmed first, naming what they affect: a rename names the ontology service agents
+ * that chose the old ID and the model page each chooses again on, since the library is saved alone. Each model row
+ * checks itself with the smallest call. No agent's model is chosen here.
  */
 
 const t = testI18n().global.t as (key: string, params?: Record<string, unknown>) => string;
@@ -56,10 +60,6 @@ const agents: OntologyAgentModel[] = [
 ];
 
 const saveModelSettings = vi.fn(async (settings: ModelSettingsWrite) => settings as ModelSettingsData);
-const saveOntologyAgentModel = vi.fn(async (id: string, modelSelection: { modelId: string | null }) => ({
-  ...agents.find((agent) => agent.id === id)!,
-  modelSelection,
-}));
 type TestRequest = { providerId: string; model: { id: string } };
 type TestResponse = { type: "chat"; content: string } | { type: "embedding"; dimensions: number };
 const testModel = vi.fn(async (_request: TestRequest): Promise<TestResponse> => ({ type: "chat", content: "pong" }));
@@ -68,7 +68,6 @@ const api: Partial<PlatformApi> = {
   getModelSettings: async () => structuredClone(saved),
   saveModelSettings,
   listOntologyAgentModels: async () => structuredClone(agents),
-  saveOntologyAgentModel,
   getVectorRebuildStatus: async () => ({ configured: true, state: "READY", total: 0, done: 0, error: null }),
   testModel,
 };
@@ -76,7 +75,6 @@ const api: Partial<PlatformApi> = {
 const wrappers: VueWrapper[] = [];
 beforeEach(() => {
   saveModelSettings.mockClear();
-  saveOntologyAgentModel.mockClear();
   testModel.mockClear();
 });
 afterEach(() => {
@@ -85,38 +83,49 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-async function mountPage(path: string = modelConfigTabs.usage.path) {
+async function mountPage(path: string = platformPages.modelUsage.path) {
+  // The draft's one Save is the frame header's: the page hands it to the frame, and the test reads it there.
+  let actions!: Readonly<Ref<PlatformPageActions | null>>;
+  // The frame's question, answered "stay": a navigation it would ask about does not go.
+  const asked = vi.fn(async () => false);
+  let allows!: (path: string) => Promise<boolean>;
+  const frame = defineComponent({
+    setup() {
+      actions = providePageActions();
+      allows = provideUnsavedChanges(asked).allows;
+      return () => h(RouterView);
+    },
+  });
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: modelConfigTabs.usage.path, component: ModelConfigPage },
-      { path: modelConfigTabs.providers.path, component: ModelConfigPage },
+      {
+        path: "/",
+        component: frame,
+        children: [
+          { path: platformPages.modelUsage.path, component: ModelConfigPage },
+          { path: platformPages.modelProviders.path, component: ModelConfigPage },
+        ],
+      },
     ],
   });
   await router.push(path);
   const host = pageGlobal(
     testHost(api, { navigation: computed(() => ({ groups: [], pages: [...ossPlatformPages] })) })
   );
-  // The draft's one Save is the layout header's: the page writes it to the app's slot, and the test reads it there.
-  const actions = shallowRef<PlatformPageActions | null>(null);
+  // The platform names an application the way its rail does; here, by its id.
   const wrapper = mount(defineComponent({ render: () => h(RouterView) }), {
     global: {
       ...host,
       plugins: [...host.plugins, router],
-      provide: { ...host.provide, [pageActionsKey as symbol]: actions },
+      provide: { ...host.provide, [platformApplicationNameKey as symbol]: (id: string) => `app:${id}` },
     },
     attachTo: document.body,
   });
   wrappers.push(wrapper);
   await flushPromises();
-  return { wrapper, actions };
+  return { wrapper, router, draft: () => actions.value!.draft!, allows, asked };
 }
-
-/**
- * The page's draft as the header shows it: the Save is enabled only while the draft differs, and disabled while the
- * request runs. The page hands it over instead of drawing a header of its own.
- */
-const saveButton = (actions: Ref<PlatformPageActions | null>) => actions.value!;
 
 const usagePanel = (wrapper: VueWrapper) => wrapper.findComponent(ModelUsagePanel);
 
@@ -144,11 +153,11 @@ describe("model configuration page", () => {
   });
 
   it("saves the whole settings at once and submits an unchanged masked key as read", async () => {
-    const { wrapper, actions } = await mountPage(modelConfigTabs.providers.path);
-    expect(saveButton(actions).dirty).toBe(false);
+    const { wrapper, draft } = await mountPage(platformPages.modelProviders.path);
+    expect(draft().dirty).toBe(false);
 
     await wrapper.findComponent(ProviderDetail).find("input").setValue("Gateway EU");
-    saveButton(actions).save();
+    draft().save();
     await flushPromises();
     await flushPromises();
 
@@ -160,52 +169,30 @@ describe("model configuration page", () => {
     });
   });
 
-  it("lists only the agents given a model of their own, grouped by purpose, and follow-the-default removes a row", async () => {
-    const { wrapper, actions } = await mountPage();
-    const panel = usagePanel(wrapper);
-    // The retriever follows the default, so it is not listed; the governance agent and the dashboard generator are, one
-    // row each with their purpose as a label.
-    expect(panel.findAll(".agent-purpose").map((label) => label.text())).toEqual([
-      t("admin.agentPurposes.knowledge"),
-      t("admin.agentPurposes.generation"),
-    ]);
-    expect(panel.findAllComponents(ModelSelectionSelect).map((select) => select.props("ariaLabel"))).toEqual([
+  it("keeps one draft across its two pages: moving between them asks nothing, leaving elsewhere would", async () => {
+    const { wrapper, router, draft, allows, asked } = await mountPage(platformPages.modelProviders.path);
+    await wrapper.findComponent(ProviderDetail).find("input").setValue("Gateway EU");
+    expect(draft().dirty).toBe(true);
+    expect(await allows(platformPages.modelUsage.path)).toBe(true);
+    expect(asked).not.toHaveBeenCalled();
+    expect(await allows(platformPages.general.path)).toBe(false);
+    expect(asked).toHaveBeenCalledOnce();
+
+    await router.push(platformPages.modelUsage.path);
+    await flushPromises();
+    // The usage page holds the defaults and the call policy only: no agent's model is chosen here.
+    expect(usagePanel(wrapper).findAllComponents(ModelSelectionSelect).map((select) => select.props("ariaLabel"))).toEqual([
       t("admin.domainDefaultModel"),
-      "Knowledge governance",
-      t("admin.ontologyAgentKinds.dashboard"),
     ]);
-    // The stored reference that is no longer configured stays selected and is reported, never replaced by the default.
-    const governance = panel.findAllComponents(ModelSelectionSelect)[1]!;
-    expect(governance.props("modelValue")).toBe("legacy/old-name");
-    expect(governance.find("[role='alert']").exists()).toBe(true);
-
-    const values = (select: VueWrapper) =>
-      select.findAllComponents({ name: "ElOption" }).map((option) => option.props("value"));
-    expect(values(governance)).toEqual(["", "gateway/vendor/chat", "legacy/old-name"]);
-
-    // One row per agent: purpose, name, model and the link back to the default, the link on the select's line.
-    const rows = panel.findAll(".agent-line");
-    expect(rows).toHaveLength(2);
-    expect(rows[0]!.find(".agent-purpose").text()).toBe(t("admin.agentPurposes.knowledge"));
-    expect(rows[0]!.find(".agent-reset").text()).toBe(t("admin.followDefaultAction"));
-    expect(rows[0]!.findComponent(ModelSelectionSelect).exists()).toBe(true);
-
-    await rows[0]!.find(".agent-reset").trigger("click");
+    expect(draft().dirty).toBe(true);
+    await router.push(platformPages.modelProviders.path);
     await flushPromises();
-    saveButton(actions).save();
-    await flushPromises();
-    await flushPromises();
-
-    expect(saveModelSettings).not.toHaveBeenCalled();
-    expect(saveOntologyAgentModel.mock.calls).toEqual([[GOVERNANCE, { modelId: null }]]);
-    expect(specifiedAgents(agents, { [RETRIEVAL]: null, [GOVERNANCE]: null, [DASHBOARD]: saved.defaultModelId })).toEqual([
-      { purpose: "generation", agents: [agents[2]] },
-    ]);
+    expect((wrapper.findComponent(ProviderDetail).find("input").element as HTMLInputElement).value).toBe("Gateway EU");
   });
 
-  it("confirms renaming a saved model, warning about other references, and moves the default along", async () => {
+  it("confirms renaming a saved model, naming the agents that chose it and where, and moves the default along", async () => {
     const confirm = vi.spyOn(ElMessageBox, "confirm").mockResolvedValue("confirm" as never);
-    const { wrapper, actions } = await mountPage(modelConfigTabs.providers.path);
+    const { wrapper, draft } = await mountPage(platformPages.modelProviders.path);
     const detail = wrapper.findComponent(ProviderDetail);
     await detail.findAll(".model-row")[0]!.findAll("button").find((b) => b.text() === "Edit")!.trigger("click");
     const dialog = wrapper.findComponent(ModelEditDialog);
@@ -214,10 +201,19 @@ describe("model configuration page", () => {
     await dialog.findAllComponents({ name: "ElButton" }).find((b) => b.text() === "Confirm")!.trigger("click");
     await flushPromises();
 
-    expect(String(confirm.mock.calls[0]![0])).toContain(
-      t("admin.modelRenameConfirm", { from: "gateway/vendor/chat", to: "gateway/vendor/chat-2" })
+    const message = String(confirm.mock.calls[0]![0]);
+    expect(message).toContain(t("admin.modelRenameConfirm", { from: "gateway/vendor/chat", to: "gateway/vendor/chat-2" }));
+    // The dashboard generator chose it; it chooses again on the agent platform's model page.
+    expect(message).toContain(
+      t("admin.modelRenameAffects", {
+        agents: t("admin.agentModelLocation", {
+          agent: t("admin.ontologyAgentKinds.dashboard"),
+          application: "app:agents",
+          page: t("platform.agentModels.title"),
+        }),
+      })
     );
-    saveButton(actions).save();
+    draft().save();
     await flushPromises();
     await flushPromises();
     expect(saveModelSettings.mock.calls[0]![0].defaultModelId).toBe("gateway/vendor/chat-2");
@@ -225,7 +221,7 @@ describe("model configuration page", () => {
 
   it("names the embedding default and vector search before a deletion unsets it, and keeps it when cancelled", async () => {
     const confirm = vi.spyOn(ElMessageBox, "confirm").mockRejectedValue("cancel");
-    const { wrapper, actions } = await mountPage(modelConfigTabs.providers.path);
+    const { wrapper, draft } = await mountPage(platformPages.modelProviders.path);
     const detail = wrapper.findComponent(ProviderDetail);
     const embeddingRow = detail.findAll(".model-row")[1]!;
     await embeddingRow.findAll("button").find((b) => b.text() === "Delete")!.trigger("click");
@@ -233,11 +229,11 @@ describe("model configuration page", () => {
 
     expect(String(confirm.mock.calls[0]![0])).toContain(t("admin.embeddingDefaultCleared", { name: "embed (gateway/embed)" }));
     expect(detail.findAll(".model-row")).toHaveLength(2);
-    expect(saveButton(actions).dirty).toBe(false);
+    expect(draft().dirty).toBe(false);
   });
 
   it("checks one model with the smallest call of that very model and shows the result on its row", async () => {
-    const { wrapper, actions } = await mountPage(modelConfigTabs.providers.path);
+    const { wrapper } = await mountPage(platformPages.modelProviders.path);
     const rows = wrapper.findComponent(ProviderDetail).findAll(".model-row");
     expect(rows).toHaveLength(2);
 

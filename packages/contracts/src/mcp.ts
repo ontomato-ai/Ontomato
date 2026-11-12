@@ -20,10 +20,5 @@ export interface SystemMcpService {
 }
 export interface SystemMcpToolsResponse {
   success: true;
-  mcpUrl: string;
-  tools: SystemMcpTool[];
   services: SystemMcpService[];
-}
-export interface McpToolsResponse {
-  tools: Omit<SystemMcpTool, "inputSchema">[];
 }

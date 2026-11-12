@@ -1,6 +1,6 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import DataAdapterSettingsTab from "../config/components/DataAdapterSettingsTab.vue";
+import DataAdaptersPage from "../pages/DataAdaptersPage.vue";
 import DataAdapterConfigCard from "../config/components/DataAdapterConfigCard.vue";
 import type {
   DataAdapterConnection,
@@ -10,7 +10,7 @@ import type {
 } from "@ontomato/contracts/data-adapters";
 import { PlatformBusinessError } from "../api";
 import { ontologyOutlineSchema } from "../config/types";
-import { pageGlobal, testHost, testI18n } from "./host";
+import { framedPage, pageGlobal, testHost, testI18n } from "./host";
 
 /** Two backend GET /businessConfig/dataAdapters responses: the open-source edition installs only postgresql; a larger edition installs 11 (sorted by label). */
 const openSourceAdapters: DataAdapterInfo[] = [
@@ -175,10 +175,20 @@ async function mountCard(
   backend.adapters = adapters;
   backend.dataAdapter = dataAdapter;
   backend.connections = connections;
-  const page = mount(DataAdapterSettingsTab, { global });
-  wrappers.push(page);
+  const framed = framedPage(DataAdaptersPage);
+  page = framed;
+  const mounted = mount(framed.Frame, { global });
+  wrappers.push(mounted);
   await flushPromises();
-  return page.findComponent(DataAdapterConfigCard);
+  return mounted.findComponent(DataAdapterConfigCard);
+}
+
+/** The page under test, under a frame that collects what it hands to its header. */
+let page: ReturnType<typeof framedPage>;
+/** The header's Save of the page's draft: the form is saved from the page header, not from the card. */
+async function save() {
+  page.actions()!.draft!.save();
+  await flushPromises();
 }
 
 type Card = Awaited<ReturnType<typeof mountCard>>;
@@ -225,8 +235,7 @@ describe("the data adapter card renders from the backend list", () => {
     ]);
     expect(placeholders(card)).toEqual(["192.0.2.72:8080", undefined, undefined, "******"]);
     expect(card.findAll("input.el-input__inner")[3].attributes("type")).toBe("password");
-    await card.find("button.el-button--primary").trigger("click");
-    await flushPromises();
+    await save();
 
     expect(backend.used).toEqual([
       { type: "m3", url: "m3.test:8080", company: "acme", user: "admin", password: "pw" },
@@ -320,8 +329,7 @@ describe("the data adapter card renders from the backend list", () => {
     expect(formLabels(card)).toEqual([t("admin.adapterMode"), t("admin.connectionUrl")]);
     expect(placeholders(card)).toEqual(["jdbc:duckdb:/data/example.duckdb"]);
     await card.find("input.el-input__inner").setValue("jdbc:duckdb:/data/a.duckdb");
-    await card.find("button.el-button--primary").trigger("click");
-    await flushPromises();
+    await save();
 
     expect(backend.used).toEqual([{ type: "duckdb", url: "jdbc:duckdb:/data/a.duckdb" }]);
   });
@@ -348,8 +356,7 @@ describe("the data adapter card renders from the backend list", () => {
       "root",
       "******",
     ]);
-    await card.find("button.el-button--primary").trigger("click");
-    await flushPromises();
+    await save();
 
     expect(backend.used).toEqual([
       { type: "mysql", url: "jdbc:mysql://db/app", user: "root", password: "pw" },
@@ -542,8 +549,7 @@ describe("testing the data adapter connection", () => {
 
     await selectAdapter(card, "Elasticsearch");
     expect(values()).toEqual(["http://es:9200", "elastic", "es-pw"]);
-    await card.find("button.el-button--primary").trigger("click");
-    await flushPromises();
+    await save();
 
     expect(backend.tested).toEqual([
       { type: "opensearch", url: "https://os-2:9200", user: "admin", password: "os-pw" },
@@ -686,7 +692,8 @@ const entries = (card: Card) => card.findAll(".multi-source-entry");
 const inputValues = (scope: ReturnType<Card["find"]>) =>
   scope.findAll("input.el-input__inner").map((input) => (input.element as HTMLInputElement).value);
 const relationshipRow = (card: Card, name: string) => card.find(`tr[data-relationship="${name}"]`);
-const saveButton = (card: Card) => card.find("button.el-button--primary");
+/** The multi-source definition is saved with the routes of the current ontology: the header's Save waits for it. */
+const saveWaits = () => page.actions()!.draft!.saving;
 const buttonIn = (scope: ReturnType<Card["find"]>, label: string) =>
   scope.findAll("button").find((button) => button.text() === label)!;
 
@@ -758,13 +765,13 @@ describe("the multi-source mode of the data adapter card", () => {
     backend.adapters = multiAdapters;
     backend.dataAdapter = "multi";
     // The dropdown is teleported to the body; the select's input names it through aria-controls.
-    const page = mount(DataAdapterSettingsTab, {
+    const mounted = mount(DataAdaptersPage, {
       global: pageGlobal(host, i18n),
       attachTo: document.body,
     });
-    wrappers.push(page);
+    wrappers.push(mounted);
     await flushPromises();
-    const graph = page.find(".multi-source-entry");
+    const graph = mounted.find(".multi-source-entry");
     await graph.find(".el-select__wrapper").trigger("click");
     await flushPromises();
 
@@ -829,8 +836,7 @@ describe("the multi-source mode of the data adapter card", () => {
   it("saves through useMultiDataSource only: every source, routes and non-blank edge names of the current ontology", async () => {
     const card = await mountMulti("multi");
     await relationshipRow(card, "works_at").find("input").setValue(" WORKS_AT ");
-    await saveButton(card).trigger("click");
-    await flushPromises();
+    await save();
 
     expect(backend.multiUsed).toEqual([
       {
@@ -865,8 +871,7 @@ describe("the multi-source mode of the data adapter card", () => {
         },
       })
     );
-    await saveButton(card).trigger("click");
-    await flushPromises();
+    await save();
 
     const failure = card.find(".multi-source-failure");
     expect(failure.text()).toContain(t("admin.multiSourceSaveRejected"));
@@ -878,14 +883,12 @@ describe("the multi-source mode of the data adapter card", () => {
     ]);
 
     vi.mocked(adminApi.useMultiDataSource).mockRejectedValueOnce(new Error("java down"));
-    await saveButton(card).trigger("click");
-    await flushPromises();
+    await save();
 
     expect(card.find(".multi-source-problems").exists()).toBe(false);
     expect(card.find(".multi-source-failure pre").text()).toBe("java down");
 
-    await saveButton(card).trigger("click");
-    await flushPromises();
+    await save();
     expect(card.find(".multi-source-failure").exists()).toBe(false);
   });
 
@@ -895,14 +898,14 @@ describe("the multi-source mode of the data adapter card", () => {
 
     expect(card.find(".load-error").text()).toContain("schema down");
     expect(entries(card)).toHaveLength(2);
-    expect(saveButton(card).attributes("disabled")).toBeDefined();
+    expect(saveWaits()).toBe(true);
 
     await buttonIn(card.find(".load-error"), t("common.retry")).trigger("click");
     await flushPromises();
 
     expect(card.find(".load-error").exists()).toBe(false);
     expect(relationshipRow(card, "knows").exists()).toBe(true);
-    expect(saveButton(card).attributes("disabled")).toBeUndefined();
+    expect(saveWaits()).toBe(false);
   });
 
   it("the single-source save and test are unchanged, and switching modes keeps both drafts", async () => {
@@ -916,8 +919,7 @@ describe("the multi-source mode of the data adapter card", () => {
     expect(inputValues(card.find(".config-form"))).toEqual(["jdbc:postgresql://db/app", "pg", "secret"]);
     await card.find("input.el-input__inner").setValue("jdbc:postgresql://db/other");
     await runTest(card);
-    await saveButton(card).trigger("click");
-    await flushPromises();
+    await save();
 
     expect(backend.tested).toEqual([
       { type: "postgresql", url: "jdbc:postgresql://db/other", user: "pg", password: "secret" },
@@ -929,8 +931,7 @@ describe("the multi-source mode of the data adapter card", () => {
 
     await selectAdapter(card, "Multi-Source");
     expect(inputValues(entries(card)[0]).slice(0, 2)).toEqual(["graph", "Graph DB"]);
-    await saveButton(card).trigger("click");
-    await flushPromises();
+    await save();
 
     expect(backend.used).toHaveLength(1);
     expect((backend.multiUsed[0] as MultiDataSourceDefinition).dataSources[0].label).toBe("Graph DB");

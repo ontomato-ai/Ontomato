@@ -7,6 +7,7 @@ import {
   AgentShell,
   ShellColumn,
   useAgentNav,
+  useSessionRunFeed,
   type AgentHostAgent,
   type ShellLabels,
   type ShellRunChange,
@@ -18,6 +19,7 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useShellLabels } from "../../../composables/useShellLabels";
 import { authHost } from "../../../utils/auth";
 import { builderApi, createBuilderClient, WORKSPACE_PAGE } from "../api";
+import { createAssistantClient } from "../../workbench/assistant-host";
 import { useColumnSessions } from "../column-sessions";
 import { PANEL_ID, PANEL_TABS, errorText, firstLine, shortCommit, type ChangeTarget, type PanelTab } from "../panel";
 import type { AppBuilderPlatform } from "../platform";
@@ -102,10 +104,10 @@ watch(
   () => route.query.sessionId,
   (id) => (sessionId.value = typeof id === "string" ? id : null),
 );
-// Opening a conversation reads an occupied workspace again: the run may have ended in a conversation not open here.
+// Opening a conversation no longer reads the workspace for occupancy: the page's notice feed refreshes its facts for
+// every frame, whichever conversation or workspace the change came from.
 watch(sessionId, (id) => {
   if ((route.query.sessionId ?? null) !== id) void router.replace({ path: route.path, query: id ? { sessionId: id } : {} });
-  if (view.workspace?.activeRunId) void view.refresh();
 });
 const agentId = ref<string | null>(props.agent.id);
 const client = computed(() => (workspaceId.value ? createBuilderClient(workspaceId.value) : null));
@@ -125,6 +127,17 @@ watchEffect(() => {
   }];
 });
 const columnSessions = useColumnSessions({ nav, workspaceId: () => workspaceId.value, workspaces: () => workspaces.value });
+/**
+ * The page's one list notice stream, over its own assistant prefix rather than a workspace's client: switching workspace
+ * changes the rows it reads, never the connection. Every frame may belong to another agent or workspace or to no
+ * loaded row at all, and either way it means the workspace's occupancy may have changed, so its facts are read again.
+ */
+useSessionRunFeed({
+  port: createAssistantClient().sessionRuns,
+  sessions: () => columnSessions.runSessions.value,
+  onNotice: () => void view.refresh(),
+  onError: (error) => ElMessage.error(error instanceof Error ? error.message : String(error)),
+});
 /**
  * Every way into a workspace: one of its conversations, or without one its blank new conversation. Another workspace
  * is a new address; within the open one only the conversation changes. The workspace opened is expanded once it is the
@@ -231,18 +244,22 @@ const labels = computed<ShellLabels>(() => ({
   placeholder: emptyWorkspace.value ? t("appBuilder.placeholderEmpty") : t("appBuilder.placeholder"),
 }));
 
-/** Another conversation's run occupies the workspace: which one, when its row is loaded. */
+/**
+ * Another conversation's run occupies the workspace: which one, when its row is loaded and still running. The run is the
+ * workspace's own fact; the row only names it, and a row whose run has already stopped is not the holder.
+ */
 const busy = computed(() => {
   const run = view.workspace?.activeRunId;
   if (!run) return null;
-  const holder = nav.sessions.value.find((session) => session.latestRun?.id === run);
+  const holder = nav.sessions.value.find(
+    (session) => session.latestRun?.id === run && session.latestRun.status === "running",
+  );
   if (holder?.id === sessionId.value) return null;
   return { title: holder ? firstLine(holder.title) || t("appBuilder.newConversation") : null, sessionId: holder?.id ?? null };
 });
 
 /** A run starting or stopping changes who occupies the workspace; a stopped run's commit moves HEAD and the views follow. */
 function onRun(change: ShellRunChange) {
-  void view.refresh();
   if (change.status !== "stopped") return;
   // The agent may have published or rolled the application back: its exports and the catalog are read again.
   void publication.loadReleases();

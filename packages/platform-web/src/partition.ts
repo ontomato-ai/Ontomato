@@ -1,5 +1,5 @@
 import type { PlatformPanelGroup, PlatformPanelPage } from "@ontomato/platform-shell";
-import { availablePages, type PlatformAccess, type PlatformNavigation } from "@ontomato/platform-admin";
+import { availablePages, type PlatformAccess, type PlatformNavigation, type PlatformPage } from "@ontomato/platform-admin";
 import type { PlatformAppDeclaration } from "./apps";
 
 /**
@@ -10,7 +10,7 @@ import type { PlatformAppDeclaration } from "./apps";
  * graph and the data browser out of the ontology group while the ontology manager keeps the rest, so a group is not the
  * unit of ownership.
  */
-export interface AppPartition extends Omit<PlatformAppDeclaration, "groups" | "label"> {
+export interface AppPartition extends Omit<PlatformAppDeclaration, "groups" | "label" | "foot"> {
   /** An external application: the host resolves or fixes its address and the rail opens it in a new tab. */
   href?: string;
   open?: () => void;
@@ -26,8 +26,10 @@ export interface AppPartition extends Omit<PlatformAppDeclaration, "groups" | "l
   home?: string;
   /** The existing navigation page whose permission also governs this home route. */
   homePage?: string;
-  /** The pages this application lists, in display order: one group per entry, or one entry per header tab. */
-  sections: readonly { key: string; titleKey: string; paths: readonly string[]; showWhenEmpty?: boolean }[];
+  /** The pages this application lists, in display order: one group per entry; a group without a title has no heading. */
+  sections: readonly { key: string; titleKey?: string; paths: readonly string[] }[];
+  /** The page at the foot of the application's column (its models), listed apart from the groups. */
+  foot?: string;
 }
 
 /**
@@ -48,27 +50,26 @@ export function appDeclarations(
   // also the address the router serves the page at.
   const base = (path: string) => path.split("/:")[0]!;
   const byPath = new Map(pages.map((page) => [base(page.path), page]));
+  const panelPage = (page: PlatformPage): PlatformPanelPage => ({
+    id: base(page.path),
+    label: t(page.titleKey),
+    icon: page.icon ?? "pages",
+    count: page.count?.() ?? null,
+  });
 
   return partition.map((app): PlatformAppDeclaration => {
     const groups: PlatformPanelGroup[] = app.sections
       .map((section) => ({
         key: section.key,
-        showWhenEmpty: section.showWhenEmpty,
-        label: t(section.titleKey),
+        label: section.titleKey ? t(section.titleKey) : undefined,
         pages: section.paths
           .map((path) => byPath.get(base(path)))
           .filter((page): page is NonNullable<typeof page> => page !== undefined)
-          .map(
-            (page): PlatformPanelPage => ({
-              id: base(page.path),
-              // A host may resolve a page's title itself (a registered permission name); otherwise its key is translated.
-              label: page.title ?? t(page.titleKey),
-              icon: page.icon ?? "pages",
-              count: page.count?.() ?? null,
-            }),
-          ),
+          .map(panelPage),
       }))
-      .filter((group) => group.pages.length > 0 || group.showWhenEmpty);
+      // A group the account may open nothing of is not shown: no empty heading.
+      .filter((group) => group.pages.length > 0);
+    const footPage = app.foot ? byPath.get(base(app.foot)) : undefined;
 
     const home = app.home && (!app.homePage || byPath.has(app.homePage)) ? app.home : undefined;
     return {
@@ -85,8 +86,9 @@ export function appDeclarations(
       // The rail row opens the application's own first page. A declaration that names its entry keeps it (the agent
       // platform is entered at the conversation); otherwise the first page the account may open decides, so a row never
       // opens an address no route serves.
-      home: base(home ?? groups[0]?.pages[0]?.id ?? app.sections[0]?.paths[0] ?? app.prefix),
+      home: base(home ?? groups[0]?.pages[0]?.id ?? footPage?.path ?? app.sections[0]?.paths[0] ?? app.prefix),
       groups,
+      foot: footPage ? panelPage(footPage) : null,
     };
   });
 }

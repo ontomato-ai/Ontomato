@@ -98,11 +98,3 @@ export async function readDatasetSource(sessionId: string, artifactId: string): 
   }
 }
 
-/** The conversation as a PPTX built by the host from runtime history and accepted datasets. */
-export async function exportConversationPpt(sessionId: string): Promise<{ blob: Blob; fileName: string }> {
-  const response = await nodeApiFetch(`${sessionPath(sessionId)}/export/ppt`, "POST", {});
-  const disposition = response.headers.get("Content-Disposition") ?? "";
-  const match = /filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i.exec(disposition);
-  const fileName = match ? decodeURIComponent(match[1] ?? match[2]!) : "conversation.pptx";
-  return { blob: await response.blob(), fileName };
-}

@@ -6,7 +6,16 @@ import { createMemoryHistory, createRouter } from "vue-router";
 import { managerDestination } from "../legacy-manager";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { availableGroups, availablePages, openAccess, type PlatformAccess, type PlatformNavigation } from "../navigation";
-import { ossPlatformPages, pageRoutes, platformPages, sharedPageRoutes, systemSettingsTabs } from "../pages";
+import { formerParentRoutes, ossPlatformPages, pageRoutes, platformPages, sharedPageRoutes } from "../pages";
+
+/** The enterprise edition's licence page, as it declares it: the landing of a failed licence check. */
+const licence = {
+  path: platformRoutes.license.path,
+  titleKey: "l",
+  permissions: ["authorization-management"],
+  group: "platform",
+  enterableWithoutPermission: true,
+};
 
 const navigation: PlatformNavigation = {
   groups: [
@@ -20,9 +29,8 @@ const navigation: PlatformNavigation = {
     { path: "/data", titleKey: "d", permissions: ["data-browser"], group: "ontology", ownHeader: true },
     { path: "/permissions", titleKey: "p", permissions: ["user-management", "role-management"], group: "platform" },
     platformPages.userFeedback,
-    platformPages.systemSettings,
-    platformPages.modelConfig,
-    platformPages.runRecords,
+    ...ossPlatformPages,
+    licence,
   ],
 };
 
@@ -42,6 +50,7 @@ const routes: RouteRecordRaw[] = [
     ],
   },
   ...pageRoutes(adminPages, components),
+  ...formerParentRoutes,
   { ...platformRoutes.ontology, component: page },
 ];
 const layout = defineComponent({ render: () => h(RouterView) });
@@ -74,7 +83,7 @@ describe("one navigation filtered by permission codes", () => {
     const account = access(["role-management", "system-monitoring"]);
     expect(availablePages(navigation, account).map(({ path }) => path)).toEqual([
       "/permissions",
-      "/settings/records",
+      "/settings/records/system-monitor",
     ]);
     expect(availableGroups(navigation, access(["audit-logs"])).map(({ key }) => key)).toEqual(["platform"]);
     expect(availableGroups(navigation, access(["data-browser", "audit-logs"])).map(({ key }) => key)).toEqual([
@@ -86,10 +95,7 @@ describe("one navigation filtered by permission codes", () => {
   it("lists a page only when the account holds one of its codes", () => {
     expect(availablePages(navigation, access([])).map(({ path }) => path)).toEqual([]);
     // The license landing still opens with no permission at all: it is entered before the codes are read.
-    expect(navigation.pages.find(({ path }) => path === platformPages.systemSettings.path)?.enterableWithoutPermission).toBe(
-      true
-    );
-    expect(systemSettingsTabs.authorization.path).toBe("/settings/system-config/authorization");
+    expect(navigation.pages.find(({ path }) => path === licence.path)?.enterableWithoutPermission).toBe(true);
   });
 });
 
@@ -99,7 +105,7 @@ describe("the service router", () => {
     const audit = access(["audit-logs"]);
     expect(availablePages(navigation, feedback).map(({ path }) => path)).toEqual(["/governance/feedback"]);
     expect(availableGroups(navigation, feedback).map(({ key }) => key)).toEqual(["knowledge"]);
-    expect(availablePages(navigation, audit).map(({ path }) => path)).toEqual(["/settings/records"]);
+    expect(availablePages(navigation, audit).map(({ path }) => path)).toEqual(["/settings/records/audit-log"]);
     expect(await land("/governance/feedback", feedback)).toBe("/governance/feedback");
     expect(await land("/settings/records/audit-log", feedback)).toBe("/governance/feedback");
     expect(await land("/governance/feedback", audit)).toBe("/settings/records/audit-log");
@@ -122,7 +128,7 @@ describe("the service router", () => {
     expect(await land("/objects/Order", access(["audit-logs"]))).toBe("/settings/records/audit-log");
   });
 
-  it("lands a page's own address on the first tab the account may see", async () => {
+  it("forwards a former parent's address to its first page, or to a page the account may open", async () => {
     expect(await land("/settings/records", access(["audit-logs", "system-monitoring"]))).toBe("/settings/records/audit-log");
     expect(await land("/settings/records", access(["system-monitoring"]))).toBe("/settings/records/system-monitor");
     expect(await land("/settings/model-config", access(["system-config"]))).toBe("/settings/model-config/usage");
@@ -132,7 +138,7 @@ describe("the service router", () => {
     expect(await land("/settings/system-config", access(["system-config"]))).toBe("/settings/system-config/general");
   });
 
-  it("sends an old page address to the tab that replaced it", async () => {
+  it("sends an old page address to the page that replaced it", async () => {
     expect(await land("/admin/audit-log", access(["audit-logs"]))).toBe("/settings/records/audit-log");
     expect(await land("/admin/system-monitor", access(["system-monitoring"]))).toBe("/settings/records/system-monitor");
     expect(await land("/admin/license", access(["authorization-management"]))).toBe("/settings/system-config/authorization");
@@ -160,18 +166,21 @@ describe("the service router", () => {
   });
 
   it("enters the license page even when the permissions cannot be read (they fail while the license is invalid)", async () => {
-    // The tab is still named, so the page opens on it although the account holds no code at all.
+    // The page is named, so it opens although the account holds no code at all.
     expect(await land("/admin/license", access([], "HTTP 402"))).toBe("/settings/system-config/authorization");
     expect(await land("/admin/license", access(["system-config"]))).toBe("/settings/system-config/authorization");
   });
 });
 
 describe("the shared page routes", () => {
-  it("route every tab of the edition's pages: the licence tab exists only where the edition's system settings hold it", () => {
+  it("route every settings page this package ships and the former parents' addresses; the licence is an edition's own", () => {
     const paths = (routes: RouteRecordRaw[]) => routes.map((route) => route.path);
-    const enterprise = sharedPageRoutes([platformPages.modelConfig, platformPages.systemSettings, platformPages.runRecords]);
-    expect(paths(enterprise)).toContain(systemSettingsTabs.authorization.path);
-    expect(paths(sharedPageRoutes(ossPlatformPages))).not.toContain(systemSettingsTabs.authorization.path);
-    expect(paths(sharedPageRoutes())).toEqual(paths(sharedPageRoutes(ossPlatformPages)));
+    expect(paths(sharedPageRoutes())).toEqual([
+      ...ossPlatformPages.map(({ path }) => path),
+      platformRoutes.models.path,
+      platformRoutes.settings.path,
+      platformRoutes.records.path,
+    ]);
+    expect(paths(sharedPageRoutes())).not.toContain(platformRoutes.license.path);
   });
 });

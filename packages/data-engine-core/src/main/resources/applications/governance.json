@@ -11,7 +11,8 @@
   },
   "entryAccess": [
     "business-knowledge",
-    "user-feedback"
+    "user-feedback",
+    "system-config"
   ],
   "scheduleAdapter": "java:governance",
   "declaration": {

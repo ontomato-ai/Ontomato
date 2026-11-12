@@ -48,6 +48,38 @@ Messages, events and artifacts keep the runtime's PI shapes. Run state is
 completed/failed/needs-input states. A session's title is the first user message
 verbatim; there is no model-generated title and no follow-up suggestion.
 
+## List run state
+
+A row's `latestRun` follows the runtime, not the conversation that happens to be
+open. The host's own notice routes ([agent-host.md](agent-host.md)) are the source:
+`sessionRuns` on the client is a passive port whose `subscribe` opens the one
+user-level notice stream and whose `read(sessionIds)` returns the light snapshot of
+those readable sessions. Creating a client opens nothing.
+
+One page opens one stream, whatever number of lists it shows: a host page calls
+`useSessionRunFeed({port, sessions, onNotice, onError})` once, with a getter for every
+row it has loaded (the open list and any other expanded one). The feed reads every
+row once after `ready`, reads one conversation after a notice that names a listed
+one, and reads the rows again when the set of rows or the row objects change (a page,
+a promoted conversation, a re-read, a workspace hand-over). It writes `latestRun` in
+place, which triggers no further read, and it applies a snapshot only to rows still
+listed. Reads are serialized, so a late answer never overwrites a newer one. A
+snapshot holds only the conversations the host can still read: one deleted meanwhile,
+say from another tab, is simply absent, and the rows that are still listed take its
+answer. A stream that could not be opened, dropped or ended is opened again on the
+existing reconnect cadence, and its `ready` reads every row again; only a frame that
+breaks the contract is reported to `onError` and stops. The notice route names no
+resource, so a failed open is never read as a refusal of one, and an expired sign-in
+is the host request layer's own error to handle.
+
+`onNotice` sees every frame, including one for a conversation no list shows, so the
+page can refresh its own facts; an unknown conversation is never added to a list.
+
+Nothing else writes list run state: a send response and the open conversation's run
+watch no longer do. `useAgentNav` therefore has no `markRun` or exported `runStatus`,
+and `promoteSession(session, title)` only places or moves a row and fills an empty
+title, keeping the `latestRun` an existing row already has.
+
 Snapshots and frames merge by message ID, `toolCallId` and artifact ID, never by
 array position. Events at or below a run's applied `seq` are ignored;
 `snapshot_required` or a transport error makes the shell re-read the run

@@ -154,15 +154,3 @@ export async function readAssistantTurnEvidence(
 export type AssistantTurnEvidence = Awaited<
   ReturnType<typeof readAssistantTurnEvidence>
 >;
-export async function readAssistantHistory(
-  sessionId: string,
-  access: AssistantReadAccess,
-) {
-  await readOwner(sessionId, access);
-  const turns = [];
-  for (const t of await assistantStore.turns(sessionId))
-    turns.push(
-      await readAssistantTurnEvidence(sessionId, t.request_seq, access),
-    );
-  return { sessionId, turns, messages: turns.flatMap((t) => t.messages) };
-}

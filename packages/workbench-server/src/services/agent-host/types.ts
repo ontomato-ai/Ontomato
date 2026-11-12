@@ -11,6 +11,8 @@ export interface AgentHostService {
   agents(owner: AgentHostOwner, locale?: string): Promise<AgentHostAgentList>;
   create(id: string, owner: AgentHostOwner, input: { agentId: string; workspaceId?: string }): Promise<AgentHostCreateSessionResponse>;
   list(owner: AgentHostOwner, input: { agentId: string; limit: number; cursor?: string }): Promise<AgentHostSessionPage>;
+  /** The entry's own session read rule, batched; returned IDs are the subset this caller may read. */
+  readableSessions(owner: AgentHostOwner, ids: string[]): Promise<Set<string>>;
   history(id: string, owner: AgentHostOwner, query: SessionHistoryQuery): Promise<AgentHostSessionHistory>;
   snapshot(id: string, owner: AgentHostOwner): Promise<AgentHostSessionSnapshot>;
   delete(id: string, owner: AgentHostOwner): Promise<void>;

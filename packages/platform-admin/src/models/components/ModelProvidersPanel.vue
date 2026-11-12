@@ -13,8 +13,6 @@ import { useModelDraft } from "../draft";
 const props = defineProps<{ selectedId: string | null }>();
 const emit = defineEmits<{
   select: [id: string];
-  /** A model of the provider was renamed: references to `from` follow it to `to`. */
-  renamed: [from: string, to: string];
   removed: [];
 }>();
 const { t } = useI18n();
@@ -52,7 +50,6 @@ function addProvider(input: { id: string; name: string; api: (typeof draft.provi
         v-if="selectedProvider"
         :key="selectedProvider.id"
         :provider-id="selectedProvider.id"
-        @renamed="(from, to) => emit('renamed', from, to)"
         @removed="emit('removed')"
       />
       <div v-else class="empty-detail">

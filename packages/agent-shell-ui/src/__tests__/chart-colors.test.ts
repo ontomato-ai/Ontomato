@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { chartBrandColors } from "../renderers/chart-colors";
+import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
 
 it("replaces generated categorical palettes and their explicit references without mutating the artifact", () => {
   const source = { color: ["red", "blue"], series: [{ type: "pie", data: [{ value: 2, itemStyle: { color: "red" } }, { value: 3, itemStyle: { color: "blue" } }] },

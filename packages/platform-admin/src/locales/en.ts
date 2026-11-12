@@ -118,8 +118,6 @@ export default {
     "followDomainDefault": "Domain default ({model})",
     "modelUnavailable": "{id} (unavailable)",
     "modelSelectionMissing": "Model \"{id}\" is no longer configured. Choose another model; until then this agent cannot run.",
-    "ontologyAgentModels": "Ontology service agents",
-    "ontologyAgentModelsHint": "Every agent follows the chat default. This lists the ones given a model of their own; Agent Platform agents choose their models in the Agent Platform.",
     "ontologyAgentModelsLoadFailed": "Failed to load the ontology agents",
     "ontologyAgentKinds": {
       "retrieval": "Data retrieval",
@@ -136,18 +134,7 @@ export default {
       "quality": "Question quality check",
       "knowledgeGovernance": "Knowledge governance"
     },
-    "agentPurposes": {
-      "retrieval": "Data retrieval",
-      "knowledge": "Knowledge",
-      "modeling": "Modeling",
-      "generation": "Generation"
-    },
-    "allAgents": "All agents",
-    "allAgentsFollowDefault": "Every agent follows the chat default; none is given a model of its own.",
-    "specifyAgent": "Give an agent its own model",
     "followDefaultAction": "Follow the chat default",
-    "showAllAgents": "Show all agents",
-    "hideAllAgents": "Show specified agents only",
     "callPolicy": "Call policy",
     "vectorRebuildStates": {
       "READY": "Vectors ready",
@@ -246,7 +233,6 @@ export default {
     "embeddingChangeConfirm": "The embedding model or its dimensions changed. After saving, every vector of this domain is rebuilt, and vector search stays paused until the rebuild finishes. Save?",
     "embeddingSetConfirm": "After saving, the vectors of this domain are built with this embedding model; vector search stays paused until they are ready. Save?",
     "embeddingClearConfirm": "Without an embedding model, vector search in this domain is unavailable. Save?",
-    "agentModelsSaveFailed": "The model settings were saved, but some agents' models were not: {detail}",
     "modelSettingsSaved": "Model configuration saved",
     "unsavedChanges": "Unsaved changes",
     "discardChanges": "Discard changes",
@@ -317,7 +303,9 @@ export default {
     "continueConfirm": "Continue?",
     "clearDefaultsTitle": "Unset a default model",
     "modelRenameTitle": "Change model ID",
-    "modelRenameConfirm": "Change the model ID from \"{from}\" to \"{to}\"? Other places (such as Agent Platform agents) that chose the old ID show it as unavailable and must choose again; the defaults and ontology service agents on this page follow the new ID."
+    "modelRenameConfirm": "Change the model ID from \"{from}\" to \"{to}\"? The domain defaults follow the new ID. Every agent that chose the old ID shows it as unavailable and must choose again on its application's model page.",
+    "modelRenameAffects": "These ontology service agents chose it: {agents}.",
+    "agentModelLocation": "{agent} ({application} / {page})"
   },
   "user": {
     "logout": "Log Out",
@@ -340,7 +328,6 @@ export default {
     "modify": "Modify",
     "query": "Query",
     "user": "User",
-    "saveAdapterConfig": "Save Adapter Config",
     "testConnection": "Test Connection",
     "password": "Password",
     "duration": "Duration",
@@ -354,18 +341,14 @@ export default {
   "nav": {
     "systemManagement": "System Management",
     "systemConfig": "System Settings",
-    "systemGeneralSettings": "General settings",
     "auditLogs": "Audit Logs",
     "systemMonitoring": "System Monitoring",
-    "modelConfig": "Models",
-    "modelUsageTab": "Usage",
-    "modelProvidersTab": "Providers",
-    "systemGeneralTab": "General",
-    "systemDataAdaptersTab": "Data Adapters",
-    "systemAuthorizationTab": "License",
-    "runRecords": "Run Records",
-    "auditLogTab": "Audit Logs",
-    "systemMonitorTab": "System Monitoring",
+    "modelUsage": "Model usage",
+    "modelProviders": "Providers",
+    "systemGeneral": "General",
+    "dataAdapters": "Data adapters",
+    "auditLog": "Audit log",
+    "systemMonitor": "System monitoring",
     "userFeedback": "User Feedback"
   },
   "hotData": {
@@ -396,7 +379,15 @@ export default {
     "loadFailed": "Load Failed"
   },
   "platform": {
-    "layers": { "facts": "Facts", "capabilities": "Capabilities", "governance": "Governance", "products": "Products" },
+    "layers": { "facts": "Facts", "capabilities": "Capabilities", "governance": "Governance" },
+    "settingsGroups": { "models": "Models", "system": "System", "connections": "Connections", "records": "Logs and monitoring" },
+    "agentModels": {
+      "title": "Models",
+      "description": "The model each agent of this application runs on; until one is chosen it follows the domain's default chat model",
+      "empty": "This application has no agents whose model can be chosen",
+      "saved": "Models saved",
+      "saveFailed": "Some models were not saved; the reason is shown beside each"
+    },
     "title": "Platform Management",
     "serviceName": "Ontomato",
     "navigation": "Ontology Service navigation",
@@ -405,12 +396,12 @@ export default {
     "descriptions": {
       "auditLog": "Sign-ins and changes recorded across the platform",
       "systemMonitor": "Service status and resource usage of the data engine",
-      "modelConfig": "Models used by the agents, the ontology and knowledge search",
-      "systemConfig": "Data adapters, languages, general parameters and the license",
-      "runRecords": "Change history and the service status of the data engine",
+      "modelUsage": "The default chat and embedding models and the call policy, saved with the providers as one model library",
+      "modelProviders": "Model providers and their models, saved with the model usage as one model library",
+      "general": "Knowledge recall, the DSL time limit and the data engine's language",
+      "dataAdapters": "The data source the ontology reads its records from",
       "userFeedback": "Ratings and comments users give on query and analysis results",
-      "objectBrowser": "Browse object records and explore relationships between instances",
-      "settings": "Models, general parameters and run records"
+      "objectBrowser": "Browse object records and explore relationships between instances"
     }
   }
 };

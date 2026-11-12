@@ -150,6 +150,28 @@ export const runtimeStreamFrameSchema = z.discriminatedUnion("type", [
   runtimeSnapshotRequiredSchema,
 ]);
 
+/**
+ * Host/domain-level lifecycle notice for one session run. It carries identity only: the
+ * status snapshot is the state source and the runtime never replays a notice.
+ */
+export const runtimeSessionRunFrameSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("ready") }).strict(),
+  z
+    .object({
+      type: z.literal("run_started"),
+      sessionId: runtimeIdSchema,
+      runId: runtimeIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("run_stopped"),
+      sessionId: runtimeIdSchema,
+      runId: runtimeIdSchema,
+    })
+    .strict(),
+]);
+
 /** Stable tool state included in snapshots, even when progress deltas are unavailable. */
 export const runtimeToolExecutionSchema = z
   .object({
@@ -165,3 +187,6 @@ export type RuntimeAgentEvent = z.infer<typeof runtimeAgentEventSchema>;
 export type RuntimeEventEnvelope = z.infer<typeof runtimeEventEnvelopeSchema>;
 export type RuntimeCursor = z.infer<typeof runtimeCursorSchema>;
 export type RuntimeStreamFrame = z.infer<typeof runtimeStreamFrameSchema>;
+export type RuntimeSessionRunFrame = z.infer<
+  typeof runtimeSessionRunFrameSchema
+>;

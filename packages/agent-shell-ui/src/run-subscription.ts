@@ -3,7 +3,7 @@ import type { RuntimeEventEnvelope, RuntimeStreamFrame } from "@ontomato/contrac
 import type { RunView } from "./conversation";
 import type { HostStreamHandlers } from "./host";
 
-const RECONNECT_DELAYS = [500, 1000, 2000, 5000, 10000];
+export const RECONNECT_DELAYS = [500, 1000, 2000, 5000, 10000];
 const MAX_QUEUED_FRAMES = 2000;
 
 export interface RunSubscription<T = AgentHostRunSnapshot> {

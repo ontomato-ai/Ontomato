@@ -117,6 +117,19 @@ export function useColumnSessions(options: {
     return lists;
   });
 
+  /**
+   * Every loaded row of the column, not only those shown: the open workspace's from the nav, and each other expanded
+   * workspace's from its snapshot. The page's one notice feed reads run state for these; folding a workspace away drops
+   * its rows, and expanding it again takes them back.
+   */
+  const runSessions = computed<readonly AgentHostSession[]>(() => {
+    const rows = [...nav.sessions.value];
+    for (const id of expandedIds.value) {
+      if (id !== workspaceId()) rows.push(...(snapshots.get(id)?.sessions ?? []));
+    }
+    return rows;
+  });
+
   // The nav lists the open workspace. The one left, still expanded, keeps what the nav listed of it while it is read
   // again; the nav starts from the entered one's snapshot, or from nothing, until its own read replaces it.
   watch(
@@ -154,6 +167,7 @@ export function useColumnSessions(options: {
 
   return {
     expanded,
+    runSessions,
     toggle(id: string) {
       const ids = expandedIds.value;
       setExpanded(ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id]);

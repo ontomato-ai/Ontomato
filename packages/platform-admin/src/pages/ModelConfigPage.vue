@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, provide, reactive, ref, shallowRef } from "vue";
-import { onBeforeRouteLeave, useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
+import { usePageActions, useUnsavedChanges } from "@ontomato/platform-shell";
 import type { ModelSettingsData, OntologyAgentModel } from "@ontomato/contracts/model-settings";
-import { usePageActions, usePlatformHost } from "../context";
-import { modelConfigTabs, platformPages } from "../pages";
+import { usePlatformHost } from "../context";
+import { platformPages } from "../pages";
 import ModelUsagePanel from "../models/components/ModelUsagePanel.vue";
 import ModelProvidersPanel from "../models/components/ModelProvidersPanel.vue";
-import PageTabs from "../layout/PageTabs.vue";
 import {
   draftFromSettings,
   draftProblem,
@@ -18,28 +18,28 @@ import {
   type ModelSettingsDraft,
 } from "../models/draft";
 import { useModelErrors } from "../models/errors";
-import { agentModelsDraftKey, type AgentModelsDraft } from "../models/agents";
+import { ontologyAgentsKey } from "../models/agents";
 import { rebuildStatusKey } from "../models/types";
 import type { VectorRebuildStatus } from "../models/types";
 
 /*
- * Model configuration of the domain, edited as one draft and saved together: the providers with their chat and
- * embedding models, the domain defaults with each ontology service agent's model, and the provider timeout and
- * retries. The model settings are replaced as a whole on save; the agents' selections are then saved one by one
- * (the data engine accepts only models that are already saved). Agent Platform agents choose their models there.
+ * The domain's model library, edited as one draft and saved as a whole: the providers with their chat and embedding
+ * models, the domain defaults and the provider timeout and retries. It is two pages of the system settings, Model usage
+ * (the defaults, the vector model, the call policy) and Providers (each provider's connection and models), drawn by
+ * this one screen: moving between them keeps the draft, and either page's Save and Discard act on the whole library.
  *
- * The page is two screens: Usage (the domain defaults, the vector model and the ontology agents that depart from the
- * chat default, with the call policy at the bottom) and Providers (the provider list with its connection and models).
+ * Which model each agent runs on is chosen in the agent's own application. The ontology service agents are read here
+ * only to say who uses a model and whom a renamed model leaves without one.
  */
 const { t } = useI18n();
 const host = usePlatformHost();
-const { api, separators } = host;
+const { api } = host;
 const describeError = useModelErrors();
+const route = useRoute();
 const router = useRouter();
+const onProviders = computed(() => route.path === platformPages.modelProviders.path);
 
-const page = computed(() => host.navigation.value.pages.find((p) => p.path === platformPages.modelConfig.path));
-
-// ---- Model settings: the saved copy and the draft edited by every panel ----
+// ---- Model settings: the saved copy and the draft edited by both pages ----
 const draft = reactive<ModelSettingsDraft>({
   savedRefs: [],
   providers: [],
@@ -75,43 +75,18 @@ async function loadSettings() {
   }
 }
 
-const settingsDirty = computed(() => saved.value !== null && JSON.stringify(settingsWrite(draft)) !== baseline.value);
+const dirty = computed(() => saved.value !== null && JSON.stringify(settingsWrite(draft)) !== baseline.value);
 
-// ---- Ontology service agents: saved selections and their drafts ----
-const agentsDraft = reactive<AgentModelsDraft>({ saved: null, selections: {} });
-provide(agentModelsDraftKey, agentsDraft);
-const agentsLoading = ref(false);
-const agentsLoadError = ref("");
+// ---- The ontology service agents, read only: who uses a model, and whom a rename leaves without one ----
+const ontologyAgents = shallowRef<OntologyAgentModel[] | null>(null);
+provide(ontologyAgentsKey, ontologyAgents);
 
-function applyAgents(list: OntologyAgentModel[]) {
-  agentsDraft.saved = list;
-  for (const key of Object.keys(agentsDraft.selections)) delete agentsDraft.selections[key];
-  for (const agent of list) agentsDraft.selections[agent.id] = agent.modelSelection.modelId;
-}
-
-async function loadAgents() {
-  agentsLoading.value = true;
-  agentsLoadError.value = "";
+async function loadOntologyAgents() {
   try {
-    applyAgents(await api.listOntologyAgentModels());
+    ontologyAgents.value = await api.listOntologyAgentModels();
   } catch (e) {
-    agentsLoadError.value = describeError(e, "admin.loadConfigFailed");
-  } finally {
-    agentsLoading.value = false;
+    ElMessage.error(describeError(e, "admin.ontologyAgentModelsLoadFailed"));
   }
-}
-
-const changedAgents = computed(
-  () =>
-    agentsDraft.saved?.filter((agent) => agentsDraft.selections[agent.id] !== agent.modelSelection.modelId) ?? []
-);
-const dirty = computed(() => settingsDirty.value || changedAgents.value.length > 0);
-// The one header's Save and its unsaved marker: the page hands its draft over instead of drawing a second header.
-usePageActions(() => ({ get dirty() { return dirty.value; }, get saving() { return saving.value; }, save: () => void save(), discard }));
-
-// A renamed model takes its references on this page along; Agent Platform agents keep theirs and report them.
-function followRename(from: string, to: string) {
-  for (const [id, modelId] of Object.entries(agentsDraft.selections)) if (modelId === from) agentsDraft.selections[id] = to;
 }
 
 // ---- Providers ----
@@ -148,10 +123,10 @@ async function confirmEmbeddingChange(): Promise<boolean> {
   );
 }
 
-/** Where a draft problem is shown: the tab the problem belongs to, and the provider whose panel must be open. */
+/** Where a draft problem is shown: the page the problem belongs to, and the provider whose panel must be open. */
 function showProblem(problem: NonNullable<ReturnType<typeof draftProblem>>) {
   if (problem.providerId) selectedProviderId.value = problem.providerId;
-  void router.push(problem.tab === "providers" ? modelConfigTabs.providers.path : modelConfigTabs.usage.path);
+  void router.push(problem.page === "providers" ? platformPages.modelProviders.path : platformPages.modelUsage.path);
   ElMessage.error(t(problem.key, problem.params));
 }
 
@@ -161,30 +136,14 @@ async function save() {
     showProblem(problem);
     return;
   }
-  if (settingsDirty.value && !(await confirmEmbeddingChange())) return;
+  if (!(await confirmEmbeddingChange())) return;
   saving.value = true;
   try {
-    if (settingsDirty.value) {
-      try {
-        applySaved(await api.saveModelSettings(settingsWrite(draft)));
-      } catch (e) {
-        ElMessage.error(describeError(e, "admin.saveFailed"));
-        return;
-      }
-      void loadRebuildStatus();
-    }
-    // Each agent's choice is saved on its own; a rejected one keeps its draft for another try.
-    const failed: string[] = [];
-    for (const agent of changedAgents.value) {
-      try {
-        const result = await api.saveOntologyAgentModel(agent.id, { modelId: agentsDraft.selections[agent.id] ?? null });
-        agentsDraft.saved = agentsDraft.saved?.map((a) => (a.id === agent.id ? result : a)) ?? null;
-      } catch (e) {
-        failed.push(`${agent.name}${separators.detail}${describeError(e, "admin.saveFailed")}`);
-      }
-    }
-    if (failed.length > 0) ElMessage.error(t("admin.agentModelsSaveFailed", { detail: failed.join("; ") }));
-    else ElMessage.success(t("admin.modelSettingsSaved"));
+    applySaved(await api.saveModelSettings(settingsWrite(draft)));
+    ElMessage.success(t("admin.modelSettingsSaved"));
+    void loadRebuildStatus();
+  } catch (e) {
+    ElMessage.error(describeError(e, "admin.saveFailed"));
   } finally {
     saving.value = false;
   }
@@ -199,28 +158,20 @@ async function discard() {
     () => true,
     () => false
   );
-  if (!confirmed) return;
-  if (saved.value) applySaved(saved.value);
-  if (agentsDraft.saved) applyAgents(agentsDraft.saved);
+  if (confirmed && saved.value) applySaved(saved.value);
 }
 
-onBeforeRouteLeave(async () => {
-  if (!dirty.value) return true;
-  return ElMessageBox.confirm(t("admin.leaveUnsavedConfirm"), t("admin.unsavedChanges"), {
-    type: "warning",
-    confirmButtonText: t("admin.leaveWithoutSaving"),
-    cancelButtonText: t("common.cancel"),
-  }).then(
-    () => true,
-    () => false
-  );
+// The header's Save and its unsaved marker, on either page: both are the one library. Moving between the two pages keeps
+// the draft; leaving them with changes asks first.
+usePageActions(() => ({
+  draft: saved.value
+    ? { dirty: dirty.value, saving: saving.value, save: () => void save(), discard: () => void discard() }
+    : null,
+}));
+useUnsavedChanges({
+  dirty: () => dirty.value,
+  paths: () => [platformPages.modelUsage.path, platformPages.modelProviders.path],
 });
-
-function warnBeforeUnload(event: BeforeUnloadEvent) {
-  if (!dirty.value) return;
-  event.preventDefault();
-  event.returnValue = "";
-}
 
 // ---- Vector rebuild status (data engine): polled while a round is alive, stopped when it ends or the page is left ----
 const REBUILD_POLL_MS = 3000;
@@ -274,16 +225,14 @@ async function rebuildAction(request: () => Promise<unknown>) {
 }
 
 onMounted(() => {
-  window.addEventListener("beforeunload", warnBeforeUnload);
   void loadSettings();
-  void loadAgents();
+  void loadOntologyAgents();
   void loadRebuildStatus();
 });
 
 onBeforeUnmount(() => {
   unmounted = true;
   clearTimeout(rebuildPollTimer);
-  window.removeEventListener("beforeunload", warnBeforeUnload);
 });
 </script>
 
@@ -296,29 +245,18 @@ onBeforeUnmount(() => {
       <span>{{ loadError }}</span>
       <el-button size="small" @click="loadSettings">{{ t("common.retry") }}</el-button>
     </div>
-    <PageTabs v-else :page="page!">
-      <template #default="{ tab }">
-        <ModelUsagePanel
-          v-if="tab?.path !== modelConfigTabs.providers.path"
-          :agents="agentsDraft.saved"
-          :agent-selections="agentsDraft.selections"
-          :agents-loading="agentsLoading"
-          :agents-load-error="agentsLoadError"
-          :rebuild-status="rebuildStatus"
-          @agent-change="(id, modelId) => (agentsDraft.selections[id] = modelId)"
-          @retry-agents="loadAgents"
-          @rebuild="rebuildVectors"
-          @pause="rebuildAction(api.pauseVectorRebuild)"
-        />
-        <ModelProvidersPanel
-          v-else
-          :selected-id="selectedProviderId"
-          @select="selectedProviderId = $event"
-          @renamed="followRename"
-          @removed="selectedProviderId !== null && removeProvider(selectedProviderId)"
-        />
-      </template>
-    </PageTabs>
+    <ModelProvidersPanel
+      v-else-if="onProviders"
+      :selected-id="selectedProviderId"
+      @select="selectedProviderId = $event"
+      @removed="selectedProviderId !== null && removeProvider(selectedProviderId)"
+    />
+    <ModelUsagePanel
+      v-else
+      :rebuild-status="rebuildStatus"
+      @rebuild="rebuildVectors"
+      @pause="rebuildAction(api.pauseVectorRebuild)"
+    />
   </div>
 </template>
 

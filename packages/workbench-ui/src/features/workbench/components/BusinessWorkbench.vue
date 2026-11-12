@@ -4,25 +4,23 @@ import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import { AgentShell, useAgentNav, type ShellFeatureDeclaration, type ShellWorkbenchDeclaration } from "@ontomato/agent-shell-ui";
+import { AgentShell, useAgentNav, useSessionRunFeed, type ShellFeatureDeclaration, type ShellWorkbenchDeclaration } from "@ontomato/agent-shell-ui";
+import { AgentModelsPage, ontologyAgentModelPages, ontologyAgentModelSource, usePageAccess } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
-import { AgentSettingsNav, AgentSettingsPage } from "../../agents";
+import { AgentSettingsNav, AgentSettingsPage, dataEngineTransport } from "../../agents";
 import { getWorkbenchAppearance } from "../api";
 import { createAssistantClient, createAssistantFeedback } from "../assistant-host";
 import { readRememberedAgent, rememberAgent } from "../remembered-agent";
 import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
-import ConversationActions from "./ConversationActions.vue";
 import DatasetActions from "./DatasetActions.vue";
 import DatasetDrilldown from "./DatasetDrilldown.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
 import { workbenchFeatures } from "../features";
-import ActionProposalRenderer from "./ActionProposalRenderer.vue";
 import FollowUpRenderer from "./FollowUpRenderer.vue";
 import ClarificationRenderer from "./ClarificationRenderer.vue";
 const artifactRenderers = [
-  { path: /(?:\.action\.json$|(?:^|\/)action-[^/]+\.json$)/i, component: ActionProposalRenderer },
   { path: /\.follow-ups\.json$/i, component: FollowUpRenderer },
   { path: /\.clarification\.json$/i, component: ClarificationRenderer },
 ];
@@ -81,6 +79,10 @@ const inSettings = computed(() => route.path === SETTINGS_PATH || route.path.sta
 const creatingAgent = computed(
   () => route.name === routes.agentSettingsNew.name || route.path === `${SETTINGS_PATH}/new`,
 );
+/** The models of the ontology service agents the conversations run on: the settings' own entry at their column's foot. */
+const modelsOpen = computed(() => route.path === routes.agentModels.path);
+const modelsPage = ontologyAgentModelPages.find((page) => page.app === "agents")!;
+const modelSource = ontologyAgentModelSource(dataEngineTransport, modelsPage);
 const settingsAgentId = computed(() => {
   const id = route.params.agentId;
   return typeof id === "string" && !creatingAgent.value ? id : null;
@@ -139,6 +141,12 @@ const nav = useAgentNav({
   setSessionId: (id) => (conversationId.value = id),
   onLeaveConversation: () => (featureId.value = null),
 });
+// The one list notice stream of this page: every conversation it lists follows its run, whichever one is open.
+useSessionRunFeed({
+  port: client.sessionRuns,
+  sessions: () => nav.sessions.value,
+  onError: (error) => ElMessage.error(error instanceof Error ? error.message : String(error)),
+});
 watch(locale, () => {
   void nav.loadAgents().catch((error) => ElMessage.error(error instanceof Error ? error.message : String(error)));
 });
@@ -149,9 +157,18 @@ watch(inSettings, (open) => {
   if (!open) returnTo.value = null;
 });
 
-/** The agent settings: the agent the conversation runs on, or the first one the account has. */
+/**
+ * The settings the account may open: the agents' (with the agents' permission), and the models of the ontology service
+ * agents the conversations run on (with the model permission). Each is a page of the platform's navigation.
+ */
+const canOpen = usePageAccess();
+const editsAgents = computed(() => canOpen(SETTINGS_PATH));
+const opensModels = computed(() => canOpen(routes.agentModels.path));
+
+/** The agent settings: the agent the conversation runs on (or the first one), or the models when only they are open. */
 function openSettings() {
   returnTo.value = conversationId.value;
+  if (!editsAgents.value) return void router.push(routes.agentModels.path);
   void router.push(agentId.value ? settingsPath(`/${agentId.value}`) : SETTINGS_PATH);
 }
 
@@ -170,8 +187,14 @@ function createSettingsAgent() {
   void router.push(settingsPath("/new"));
 }
 
+function openModels() {
+  void router.push(routes.agentModels.path);
+}
+
 /** The column's own entry at the foot: the agent settings, which replace the column while they are open. */
-const bottomEntry = computed(() => ({ label: t("assistant.featureAgents"), icon: "agents" }));
+const bottomEntry = computed(() =>
+  editsAgents.value || opensModels.value ? { label: t("assistant.featureAgents"), icon: "agents" } : null,
+);
 
 /**
  * Applies `?agentId=` once the agents are known. The link's parameters leave the address first, so a reload neither
@@ -256,14 +279,17 @@ function appearanceSaved(value: WorkbenchAppearance) {
       <AgentSettingsNav
         :agent-id="settingsAgentId"
         :creating="creatingAgent"
+        :models="modelsOpen"
         @back="backToChat"
         @select-agent="selectSettingsAgent"
         @create-agent="createSettingsAgent"
+        @open-models="openModels"
       />
     </template>
     <template #feature="{ featureId: page }">
+      <AgentModelsPage v-if="page === 'agents' && modelsOpen" :source="modelSource" :path="modelsPage.path" />
       <AgentSettingsPage
-        v-if="page === 'agents'"
+        v-else-if="page === 'agents'"
         :agent-id="settingsAgentId"
         :creating="creatingAgent"
         @changed="shell?.reloadAgents()"
@@ -279,7 +305,6 @@ function appearanceSaved(value: WorkbenchAppearance) {
     </template>
     <template #message-actions="{ sessionId, runId }">
       <TurnDiagnoseButton v-if="sessionId && runId" :session-id="sessionId" :run-id="runId" />
-      <ConversationActions v-if="sessionId" :session-id="sessionId" />
     </template>
   </AgentShell>
   <WorkbenchAppearanceDialog

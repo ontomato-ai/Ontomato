@@ -2,12 +2,10 @@ import platformSchedules from "@ontomato/platform-schedules/locales/en";
 
 // Generated from the original frontend messages using the keys the migrated pages actually use; extended as more pages are migrated.
 export default {
-  ops: {"title": "Operations", "turns": "Turn evidence", "logs": "Live logs", "tests": "Automatic tests", "results": "Test results", "cases": "Test cases", "dsl": "DSL execution", "knowledge": "Operations knowledge", "modelSettings": "Model selection", "back": "Back to chat", "references": "Evidence references", "referenceHint": "This package contains references, not archived logs. Source authorization and retention still apply.", "legacy": "This older workspace has no runtime references. Refresh it to resolve current evidence.", "diagnose": "Diagnose", "refresh": "Refresh references", "greeting": "What should we diagnose?", "placeholder": "Describe what went wrong, or paste a Turn key…", "context": "(Current page: {page})", "contextTurn": "Turn {key}", "contextRun": "test run {run}", "contextCase": "case {case} of test run {run}"},
+  ops: {"title": "Operations", "turns": "Turn evidence", "logs": "Live logs", "tests": "Automatic tests", "results": "Test results", "cases": "Test cases", "dsl": "DSL execution", "knowledge": "Operations knowledge", "back": "Back to chat", "references": "Evidence references", "referenceHint": "This package contains references, not archived logs. Source authorization and retention still apply.", "legacy": "This older workspace has no runtime references. Refresh it to resolve current evidence.", "diagnose": "Diagnose", "refresh": "Refresh references", "greeting": "What should we diagnose?", "placeholder": "Describe what went wrong, or paste a Turn key…", "context": "(Current page: {page})", "contextTurn": "Turn {key}", "contextRun": "test run {run}", "contextCase": "case {case} of test run {run}"},
   "admin": {
     "agentEditorEnabledHint": "Allow this agent to be selected and used in the workspace.",
     "agentEditorPreview": "Preview",
-    "agentEditorUnsaved": "Unsaved changes",
-    "agentEditorSaved": "No unsaved changes",
     "agentEditorDiscard": "Discard your unsaved changes and leave the editor?",
     "agentEditorDiscardAction": "Discard changes",
     "agentEditorCharacters": "{count} characters",
@@ -631,8 +629,6 @@ export default {
     "taskErrorAdmissionFailed": "Could not start",
     "taskErrorRunUnavailable": "The run is no longer available",
     "taskErrorInterrupted": "Interrupted",
-    "exportPpt": "Export conversation as PPT",
-    "exportFailed": "Export failed",
     "selectRow": "Select row {row}",
     "selectedRows": "{count} selected",
     "analyzeSelection": "Analyze selection",
@@ -643,6 +639,18 @@ export default {
     "clarificationConfirm": "Confirm and continue",
     "clarificationLoadFailed": "Unable to load clarification",
     "clarificationReload": "Reload",
+    "adjustScope": "Adjust scope",
+    "adjustScopeTitle": "Adjust scope and run a new query",
+    "scopeLoadFailed": "Unable to read the original query scope",
+    "scopeQuestion": "Original question",
+    "scopeConditions": "Current query conditions",
+    "scopeNoConditions": "No displayable conditions were recorded. Describe the change based on the original question.",
+    "scopeAdjustLabel": "How should the scope change?",
+    "scopeAdjustPlaceholder": "For example: only the last 12 months, and exclude inactive records.",
+    "scopeAdjustHint": "You can change, add or remove several conditions at once. Conditions and output requirements you don't mention stay the same.",
+    "runNewQuery": "Run new query",
+    "viewDetails": "View details",
+    "queryingDetails": "Querying details…",
     "continuation": {
       "file": "the data file \"{title}\" ({path})",
       "analyzeRows": "Analyze rows {rows} of {file}.",
@@ -828,7 +836,6 @@ export default {
     "modelUnavailable": "{id} (unavailable)",
     "modelSelectionMissing": "Model \"{id}\" is no longer configured. Choose another model; until then this agent cannot run.",
     "modelOptionsLoadFailed": "Couldn't load the models to choose from.",
-    "modelSaved": "Model saved",
     "agentsTab": "Agents",
     "agentsGroup": "Agents",
     "capabilities": "Capabilities",
@@ -844,8 +851,7 @@ export default {
     "dataScopeList": "Object types",
     "dataScopeNoClasses": "This domain has no object types yet",
     "dataScopeReset": "Reset view",
-    "opsAgentModelHint": "The model the operations agent uses when diagnosing issues.",
-    "opsAgentModelLoadFailed": "Couldn't load the operations agent's model."
+    "discardConfirm": "Discard the unsaved changes to this agent?"
   },
   "scheduledTasks": {
     "title": "Scheduled tasks",

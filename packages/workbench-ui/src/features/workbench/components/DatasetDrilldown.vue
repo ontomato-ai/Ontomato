@@ -10,7 +10,6 @@ import { nodeApiGet } from "../../../utils/api";
 const props = defineProps<{ artifact: RuntimeArtifact; title: string; selectedRowIndices: number[] }>();
 const continueConversation = useConversationContinuation();
 const { t, locale } = useI18n();
-const zh = computed(() => locale.value.startsWith("zh"));
 const preview = ref<ReturnType<typeof drilldownPreviewSchema.parse> | null>(null);
 const busy = ref(false);
 const error = ref("");
@@ -43,7 +42,7 @@ async function submit() {
 </script>
 <template>
   <template v-if="preview">
-    <DatasetSelectionButton :disabled="busy" :aria-busy="busy" @click="submit">{{ busy ? (zh ? '正在查询明细…' : 'Querying details…') : (zh ? '查看明细' : 'View details') }}</DatasetSelectionButton>
+    <DatasetSelectionButton :disabled="busy" :aria-busy="busy" @click="submit">{{ busy ? t('assistant.queryingDetails') : t('assistant.viewDetails') }}</DatasetSelectionButton>
     <span v-if="error" class="detail-error" role="alert">{{ error }}</span>
   </template>
 </template>

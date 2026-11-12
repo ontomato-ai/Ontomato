@@ -1,20 +1,21 @@
 import type { InjectionKey, Ref } from "vue";
 import type { CatalogApplication } from "@ontomato/contracts/platform-identity";
-import type { PlatformApp, PlatformBrand, PlatformPanelGroup, PlatformRailSection } from "@ontomato/platform-shell";
+import type { PlatformApp, PlatformBrand, PlatformPanelGroup, PlatformPanelPage, PlatformRailSection } from "@ontomato/platform-shell";
 
 /**
- * How an application that holds several pages shows them: as tabs in its header (the object browser, the system
- * settings), or as a menu in its own band beside its pages (the ontology manager, whose groups stay).
+ * How an application that holds several pages shows them: as a menu in its own column beside its pages, headed by the
+ * application's name (the ontology manager, the system settings, the permissions). An application without one shows a
+ * single page under a header that names the application (the object browser).
  */
-export type PlatformAppFrame = "tabs" | "menu";
+export type PlatformAppFrame = "menu";
 
 /** One application the platform shows in its rail. */
 export interface PlatformAppDeclaration {
   id: string;
   label: string;
   /**
-   * One line under the application's name in the header its pages share. An application that declares it is named in
-   * that header even where it shows a single page (the open-source object browser); see `PlatformLayout`.
+   * One line after the application's name: in the header of an application that shows one page under its own name (the
+   * object browser), and on the home's square.
    */
   description?: string | null;
   icon: string;
@@ -27,7 +28,7 @@ export interface PlatformAppDeclaration {
   category: CatalogApplication["category"];
   /** The application owns the addresses under this prefix. */
   prefix: string;
-  /** How its pages are shown when it holds several; absent means header tabs. */
+  /** How its pages are shown when it holds several; absent means one page under the application's header. */
   frame?: PlatformAppFrame;
   /** The address its rail row opens: the first page the account may open, or the entry the declaration names. */
   home?: string;
@@ -36,6 +37,8 @@ export interface PlatformAppDeclaration {
   open?: () => void;
   /** Pages of a page-only application, in display order. */
   groups?: readonly PlatformPanelGroup[];
+  /** The application's own entry at the foot of its column (its models), when the account may open it. */
+  foot?: PlatformPanelPage | null;
 }
 
 /**

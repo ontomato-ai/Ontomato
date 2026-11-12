@@ -31,6 +31,8 @@ function port(startRun: () => Promise<unknown>) {
     createSession: vi.fn().mockResolvedValue(created),
     startRun: vi.fn(startRun),
     subscribe: () => () => {},
+    // No list notice feed here: the shell itself writes no run state into the list.
+    sessionRuns: { read: vi.fn().mockResolvedValue({ sessions: [] }), subscribe: () => () => {} },
     // A conversation opened meanwhile is still loading when the message returns.
     readHistory: vi.fn(() => new Promise(() => {})),
   } as unknown as AgentHostClient;
@@ -89,7 +91,7 @@ function render(first: AgentHostClient) {
   return { root, client, sessionId, shell, nav: () => nav };
 }
 
-it("hands the host a conversation it created even when the run was refused, and marks that conversation when sent again", async () => {
+it("hands the host a conversation it created even when the run was refused, and moves it up when sent again", async () => {
   let admit!: (snapshot: unknown) => void;
   const host = port(() => Promise.reject(new Error("Workspace busy")));
   (host.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue({ sessions: [created, other], nextCursor: null });
@@ -103,8 +105,9 @@ it("hands the host a conversation it created even when the run was refused, and 
   expect(host.listSessions).toHaveBeenCalledTimes(1);
   expect(root.textContent).toContain("Workspace busy");
 
-  // Sent again, and the reader opens another conversation before the run is admitted: the run marks its own
-  // conversation, which takes the message as its title, and leaves the open one alone.
+  // Sent again, and the reader opens another conversation before the run is admitted: the conversation is moved up
+  // and takes the message as its title, the open one is left alone, and neither row's run state is written here (the
+  // page's notice feed reads it).
   (host.startRun as ReturnType<typeof vi.fn>).mockImplementation(() => new Promise((resolve) => (admit = resolve)));
   const sent = shell.value!.send("hello");
   await settle();
@@ -115,7 +118,7 @@ it("hands the host a conversation it created even when the run was refused, and 
   await settle();
 
   expect(nav().sessions.value.map((session) => [session.id, session.title, session.latestRun?.id ?? null])).toEqual([
-    [createdSessionId, "hello", runId],
+    [createdSessionId, "hello", null],
     [otherSessionId, "Earlier", null],
   ]);
 });
@@ -138,7 +141,7 @@ it("lists a first message's conversation but leaves the reader in the conversati
 
   expect(sessionId.value).toBe(otherSessionId);
   expect(nav().sessions.value.map((session) => [session.id, session.latestRun?.id ?? null])).toEqual([
-    [createdSessionId, runId],
+    [createdSessionId, null],
     [otherSessionId, null],
   ]);
 });

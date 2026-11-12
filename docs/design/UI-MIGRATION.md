@@ -22,7 +22,7 @@ verify teleported overlays as well as the document theme. Do not rewrite generat
 | Family | Authoritative owner | Audit findings / migration |
 |---|---|---|
 | Rail, account, application surface | platform-shell | Shared; preserve app identity, links and permissions; review narrow rail |
-| Standard headers | PlatformPageHeader | Wrap actions and tabs, token typography; compact graph headers stay local |
+| Standard headers | PlatformPageHeader + page actions (`usePageActions`) | One header per page; actions and the draft's Save on the right; compact graph headers stay local |
 | Buttons, forms, overlays, tags | design-tokens/components.css | Remove competing host treatment; retain editor-specific geometry |
 | Admin tables/toolbars | platform-admin styles + workbench legacy styles | Duplicate rules; converge common treatment, do not change table operations |
 | Setting rows | platform-admin config and models | Duplicate typography/geometry; consolidate reusable CSS |
@@ -66,21 +66,22 @@ long data, keyboard, dropdown/overlay and permission variants.
 | Live logs | /ops/live-logs | LiveLogsPage; resizable log panes | Implemented | Pending streaming/error |
 | DSL test | /ops/dsl | DslTestPage; editor/result, enterprise MQL | Implemented | Pending execution/result |
 | Operations knowledge | /ops/knowledge | KnowledgePage; tree/editor | In progress | Pending |
-| Operations model | /ops/model | OpsModelPage/DiagnosisModelPanel; settings | In progress | Pending |
+| Operations model | /ops/model | OpsModelPage/AgentModelsPage; settings | In progress | Pending |
+| Application models | /agents/settings/models, /governance/models, /ontology/models | AgentModelsPage; settings rows | In progress | Pending |
 | Governance conversation/report | /governance/chat/:sessionId? | GovernancePage / AgentShell; report/sources | In progress | Pending findings/sources |
 | Feedback records | /governance/feedback | FeedbackRecordsPage; table/detail | In progress | Pending |
 | Model usage | /settings/model-config/usage | ModelConfigPage/ModelUsagePanel; settings | In progress | Pending |
 | Model providers | /settings/model-config/providers | ProviderList/Detail/Add/Edit/Discover | In progress | Pending dialogs/secrets |
-| General settings | /settings/system-config/general | GeneralSettingsTab; shared setting rows | In progress | Pending |
-| Data adapters | /settings/system-config/data-adapters | DataAdapterSettingsTab/MultiDataSourceEditor/TestReport | In progress | Pending long schema/test failure |
+| General settings | /settings/system-config/general | GeneralSettingsPage; shared setting rows | In progress | Pending |
+| Data adapters | /settings/system-config/data-adapters | DataAdaptersPage/MultiDataSourceEditor/TestReport | In progress | Pending long schema/test failure |
 | Authorization (enterprise) | /settings/system-config/authorization | LicensePage; status/activation/QR | Implemented | Component tests; visual matrix pending |
 | Audit log | /settings/records/audit-log | AuditLogPage; table/filter | In progress | Pending |
 | System monitor | /settings/records/system-monitor | SystemMonitorPage; resources/services | In progress | Pending |
-| Permission members/roles/policies/org (enterprise) | /permissions?tab=… | UserManager/RoleManager/PostManager/OrganizationManager | In progress | Pending all four tabs and dialogs |
+| Permission members/roles/policies/org (enterprise) | /permissions/{members,roles,policies,organization} | UserManager/RoleManager/PostManager/OrganizationManager | In progress | Pending all four pages and dialogs |
 | Sign-in/callback (enterprise) | /login, /auth/callback | LoginPage/AuthCallbackPage | Implemented | Browser geometry 1440/1280 checked; theme/zoom pending |
 | Super admin accounts/domains/services (enterprise) | /super-admin | SuperAdminConsole/Accounts/Domains/SystemMonitor | In progress | Pending platform-admin account |
 
-Redirects and wrapper routes `/`, `/ontology`, `/ops`, `/settings/model-config`, `/settings/system-config`,
+Redirects and wrapper routes `/`, `/ontology`, `/ops`, `/permissions`, `/settings/model-config`, `/settings/system-config`,
 `/settings/records` and historical aliases use their destination's acceptance. External Data Governance Platform
 is outside this repository; verify its launch affordance, not its external UI.
 

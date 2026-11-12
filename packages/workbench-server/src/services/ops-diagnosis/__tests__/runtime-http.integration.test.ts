@@ -10,7 +10,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { DIAGNOSIS_AGENT_ID } from "@ontomato/contracts/ops-diagnosis";
-import { agentHostRunSnapshotSchema } from "@ontomato/contracts/agent-host";
+import { agentHostSessionRunFrameSchema, agentHostRunSnapshotSchema } from "@ontomato/contracts/agent-host";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
@@ -31,7 +31,7 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
     const port = Number(new URL(kind === "host" ? hostUrl : runtimeUrl).port);
     const child = spawn(process.execPath, ["--import", tsx, kind === "runtime" ? path.join(repo, "apps/agent-runtime/src/index.ts") : path.join(repo, "packages/workbench-server/src/services/ops-diagnosis/__tests__/host-process.ts")], {
       cwd: repo, env: { ...process.env, NODE_ENV: "test", HTTP_PROXY: "", HTTPS_PROXY: "", ALL_PROXY: "", NO_PROXY: "127.0.0.1,localhost",
-        DATABASE_URL: database, PG_SCHEMA: schema, OPS_TEST_ROOT: path.join(root, "host"), PORT: String(port), DATA_QUERY_BASE_URL: modelUrl, DATA_QUERY_API_KEY: "", MCP_SERVER_URL: "",
+        DATABASE_URL: database, PG_SCHEMA: schema, OPS_TEST_ROOT: path.join(root, "host"), PORT: String(port), DATA_QUERY_BASE_URL: modelUrl, DATA_QUERY_API_KEY: "",
         OBSERVE_TRACE_WORKSPACE_ROOT: path.join(root, "traces"), AGENT_RUNTIME_DATABASE_URL: database, AGENT_RUNTIME_SCHEMA: schema + "_runtime", AGENT_RUNTIME_ROOT: path.join(root, "runtime"),
         ONTOMATO_MODEL_RUNTIME_TOKEN: "fixture-runtime-token", AGENT_RUNTIME_PORT: String(port),
         // The runtime owns conversation model settings: a complete LLM_* seed is the first
@@ -59,6 +59,48 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
   async function stopped(session: string, run: string) {
     for (let i = 0; i < 150; i++) { const value = await api(`/api/observe/agent/sessions/${session}/runs/${run}`); if (value.body.run?.status === "stopped") return agentHostRunSnapshotSchema.parse(value.body); await pause(100); }
     throw new Error(logs.slice(-6000));
+  }
+  /** The real host stream: the first two frames arrive before any test work, later ones on demand. */
+  async function lifecycleStream(token: string) {
+    const controller = new AbortController();
+    const response = await fetch(hostUrl + "/api/observe/agent/sessions/run-events", {
+      headers: { tk: token }, signal: controller.signal,
+    });
+    if (response.status !== 200) throw new Error(`run-events ${response.status}: ${await response.text()}`);
+    const frames: any[] = [], waiters: Array<(frame: any) => void> = [];
+    const reader = response.body!.getReader(), decoder = new TextDecoder();
+    let buffer = "";
+    const ended = (async () => {
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let newline: number;
+          while ((newline = buffer.indexOf("\n")) >= 0) {
+            const line = buffer.slice(0, newline).trimEnd();
+            buffer = buffer.slice(newline + 1);
+            if (!line.startsWith("data: ")) continue;
+            const frame = agentHostSessionRunFrameSchema.parse(JSON.parse(line.slice(6)));
+            const waiter = waiters.shift();
+            if (waiter) waiter(frame); else frames.push(frame);
+          }
+        }
+      } catch {
+        // Aborting this fixture is how a test closes the connection.
+      }
+    })();
+    return {
+      next: () => {
+        const frame = frames.shift();
+        if (frame) return Promise.resolve(frame);
+        return new Promise<any>((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error("run-events frame timeout")), 5000);
+          waiters.push((value) => { clearTimeout(timer); resolve(value); });
+        });
+      },
+      close: () => { controller.abort(); void ended; },
+    };
   }
   beforeAll(async () => {
     root = await mkdtemp(path.join(os.tmpdir(), "ops-diagnosis-test-"));
@@ -118,6 +160,28 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
     const active = randomUUID(); expect((await api(`/api/observe/agent/sessions/${session}/runs`, { message: "hold" }, "alice:a", active)).status).toBe(202);
     expect((await api(`/api/observe/agent/sessions/${session}`, undefined, "alice:a", undefined, "DELETE")).status).toBe(409);
     const cancelled = await api(`/api/observe/agent/sessions/${session}/runs/${active}/cancel`, {}); expect(cancelled.body.run.status).toBe("stopped"); expect(cancelled.body.run.stopReason).toBe("aborted");
+  }, 30000);
+  it("forwards lifecycle notices and light status for the caller's diagnosis sessions", async () => {
+    const session = randomUUID(), run = randomUUID();
+    expect((await api("/api/observe/agent/sessions", { agentId: DIAGNOSIS_AGENT_ID }, "alice:a", session)).status).toBe(201);
+    const stream = await lifecycleStream("alice:a");
+    try {
+      expect(await stream.next()).toEqual({ type: "ready" });
+      expect((await api(`/api/observe/agent/sessions/${session}/runs`, { message: "hold" }, "alice:a", run)).status).toBe(202);
+      expect(await stream.next()).toEqual({ type: "run_started", sessionId: session, runId: run });
+      const running = await api("/api/observe/agent/sessions/status", { sessionIds: [session] }, "alice:a");
+      expect(running.status).toBe(200);
+      expect(running.body).toEqual({ sessions: [{ sessionId: session, latestRun: { id: run, status: "running", stopReason: null } }] });
+      expect((await api(`/api/observe/agent/sessions/${session}/runs/${run}/cancel`, {}, "alice:a")).body.run.stopReason).toBe("aborted");
+      expect(await stream.next()).toEqual({ type: "run_stopped", sessionId: session, runId: run });
+      const stoppedStatus = await api("/api/observe/agent/sessions/status", { sessionIds: [session] }, "alice:a");
+      expect(stoppedStatus.body.sessions[0].latestRun).toEqual({ id: run, status: "stopped", stopReason: "aborted" });
+      const foreignStatus = await api("/api/observe/agent/sessions/status", { sessionIds: [session] }, "bob:a");
+      expect(foreignStatus.status).toBe(200);
+      expect(foreignStatus.body).toEqual({ sessions: [] });
+    } finally {
+      stream.close();
+    }
   }, 30000);
   it("keeps the MCP send/poll shapes", async () => {
     const client = new Client({ name: "ops-contract", version: "1" });

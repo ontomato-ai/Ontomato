@@ -47,6 +47,8 @@ RUN rm -rf /usr/local/lib/python3.10/site-packages/pip* /usr/local/lib/python3.1
  && ! python -m pip --version
 
 FROM python-runtime AS final
+RUN apt-get update && apt-get install -y --no-install-recommends fonts-wqy-microhei fonts-dejavu-core \
+ && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production AGENT_RUNTIME_HOST=0.0.0.0 AGENT_RUNTIME_ROOT=/data
 COPY --from=dependencies /opt/runtime/node_modules /opt/runtime/node_modules
 COPY --from=payload /stage/ /app/

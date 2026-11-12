@@ -1,11 +1,6 @@
 import { computed, nextTick, ref, watch } from "vue";
-import type { AgentHostAgent, AgentHostRun, AgentHostRunStatus, AgentHostSession } from "@ontomato/contracts/agent-host";
+import type { AgentHostAgent, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "./host";
-
-/** The list only carries a run's name and state; its body is read when the conversation opens. */
-function runStatus(run: Pick<AgentHostRun, "id" | "status" | "stopReason">): AgentHostRunStatus {
-  return { id: run.id, status: run.status, stopReason: run.stopReason };
-}
 
 export interface AgentNavOptions {
   /** The host port; read lazily so the nav follows a replaced client. */
@@ -24,8 +19,8 @@ export interface AgentNavOptions {
  * and the actions that move the selection. `AgentShell` owns it for its own sidebar; under the platform shell the
  * application panel owns it, so both show the same list from the same code.
  *
- * Session titles and run states are kept here too: hosts hand them back after sending, so the list stays in step with
- * the open conversation without a second read.
+ * Session titles are kept here too: hosts hand them back after sending, so the list stays in step with the open
+ * conversation without a second read. Run state is not: it comes from the page's notice feed.
  */
 /** The navigation state and actions one host owns; `AgentShell` and a platform panel share one instance. */
 export type AgentNav = ReturnType<typeof useAgentNav>;
@@ -93,18 +88,14 @@ export function useAgentNav(options: AgentNavOptions) {
     sessions.value = sessions.value.map(session => session.id === id ? { ...session, title } : session);
   }
 
-  /** A conversation that sending just created, placed at the top of the list. */
-  function promoteSession(session: AgentHostSession, title: string, run: Pick<AgentHostRun, "id" | "status" | "stopReason">) {
-    sessions.value = [{ ...session, title: session.title || title, latestRun: runStatus(run) }, ...sessions.value];
-  }
-
   /**
-   * Marks the entry of the conversation a run belongs to with the run's new state, whichever conversation is open. A
-   * conversation still untitled takes the message that started the run, as the host titles it.
+   * Places a conversation at the top of the list, or moves the row it already has there, filling an empty title with the
+   * message that started it. An existing row keeps the run state the notice feed gave it.
    */
-  function markRun(run: Pick<AgentHostRun, "id" | "sessionId" | "status" | "stopReason">, title: string) {
-    const entry = sessions.value.find((session) => session.id === run.sessionId);
-    if (entry) sessions.value = [{ ...entry, title: entry.title || title, latestRun: runStatus(run) }, ...sessions.value.filter((s) => s !== entry)];
+  function promoteSession(session: AgentHostSession, title: string) {
+    const entry = sessions.value.find((row) => row.id === session.id);
+    const row = entry ? { ...entry, title: entry.title || title } : { ...session, title: session.title || title };
+    sessions.value = [row, ...sessions.value.filter((item) => item.id !== row.id)];
   }
 
   // Switching agents drops the previous agent's conversations and starts from a clean conversation.
@@ -133,8 +124,6 @@ export function useAgentNav(options: AgentNavOptions) {
     removeSession,
     renameSession,
     promoteSession,
-    markRun,
-    runStatus,
     stopAgentWatch,
   };
 }
