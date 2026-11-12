@@ -8,6 +8,7 @@ export { default as PlatformAccountMenu } from "./PlatformAccountMenu.vue";
 export { default as AppPanelPages } from "./AppPanelPages.vue";
 export { default as PlatformPageHeader } from "./PlatformPageHeader.vue";
 export { default as PlatformTabs } from "./PlatformTabs.vue";
+export { default as PlatformBrandMark } from "./PlatformBrandMark.vue";
 export { appIcon, resolveIcon } from "./icons";
 export { platformPath, platformRoutes } from "./routes";
 export type {

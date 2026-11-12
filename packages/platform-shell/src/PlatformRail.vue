@@ -4,6 +4,7 @@ import { PanelLeftClose, PanelLeftOpen, Moon } from "lucide-vue-next";
 import type { PlatformAccount, PlatformApp, PlatformPreferences, PlatformShellLabels } from "./types";
 import { appIcon, ExternalLink } from "./icons";
 import PlatformAccountMenu from "./PlatformAccountMenu.vue";
+import PlatformBrandMark from "./PlatformBrandMark.vue";
 
 /**
  * The platform's own rail: the ground layer of the shell, with the expand control, every application in three sections
@@ -33,6 +34,7 @@ const emit = defineEmits<{
 }>();
 
 const brandName = computed(() => props.brand?.name || props.labels.brand);
+const markBrand = computed(() => ({ name: brandName.value, logo: props.brand?.logo }));
 
 /** The rail's applications, in order: the ontology applications, then the business ones (the external one last). */
 const scrolling = computed(() => {
@@ -101,8 +103,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
       </button>
     </div>
     <div v-else class="rail-brand">
-      <img v-if="brand?.logo" class="brand-logo" :src="brand.logo" alt="" />
-      <span v-else class="brand-mark" aria-hidden="true">{{ brandName.charAt(0) }}</span>
+      <PlatformBrandMark :brand="markBrand" />
       <span class="brand-name">{{ brandName }}</span>
       <button
         type="button"
@@ -339,24 +340,6 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   margin-bottom: 6px;
   padding: 0 6px;
   flex-shrink: 0;
-}
-.brand-logo {
-  width: 26px;
-  height: 26px;
-  flex-shrink: 0;
-  object-fit: contain;
-}
-.brand-mark {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  flex-shrink: 0;
-  border-radius: 7px;
-  background: var(--el-color-primary);
-  color: var(--on-primary);
-  font-size: var(--text-sm);
-  font-weight: var(--font-bold);
 }
 .brand-name {
   flex: 1;

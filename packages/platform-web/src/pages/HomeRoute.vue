@@ -65,7 +65,7 @@ const loadError = ref<string | null>(null);
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 const items = computed(() => homeItems(applications.value, agents.value));
-const agentItems = computed(() => items.value.filter((item) => item.kind === "agent"));
+const enabledAgents = computed(() => agents.value.filter((agent) => agent.enabled));
 const favorites = computed(() => (state.value ? itemsOf(state.value.favorites, items.value) : []));
 const favoriteKeys = computed(() => new Set(favorites.value.map(itemKey)));
 const conversations = computed(() => (state.value ? recentConversations(state.value, items.value) : []));
@@ -175,7 +175,7 @@ async function saveDashboardIds(ids: string[]) {
     </div>
     <el-skeleton v-else-if="!ready" class="home-loading" :rows="5" animated />
     <template v-else>
-      <HomeAsk :agents="agentItems" :remembered="remembered" :user-name="host.account?.userName ?? null" @ask="ask" />
+      <HomeAsk :agents="enabledAgents" :remembered="remembered" :user-name="host.account?.userName ?? null" @ask="ask" />
 
       <section v-if="favorites.length > 0" class="home-section" aria-labelledby="home-favorites">
         <h2 id="home-favorites" class="home-heading">{{ t("home.favorites") }}</h2>

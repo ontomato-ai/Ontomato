@@ -10,7 +10,7 @@ import { appDeclarations } from "./partition";
 import { catalogPartition, type NativeLayout } from "./native-layouts";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useApplicationCatalog } from "./catalog";
-import { openApplicationKey, platformApplicationsKey, type PlatformAppDeclaration } from "./apps";
+import { openApplicationKey, platformApplicationsKey, platformBrandKey, type PlatformAppDeclaration } from "./apps";
 import { useApplicationOpening } from "./application-opening";
 
 /**
@@ -90,6 +90,8 @@ const labels = computed(() => ({
 const openApplication = useApplicationOpening(declarations);
 provide(openApplicationKey, openApplication);
 provide(platformApplicationsKey, declarations);
+const shellBrand = props.brand ?? { name: "Ontomato" };
+provide(platformBrandKey, shellBrand);
 
 /** Each language retains its own name when the UI locale changes. */
 const localeNames = computed(() =>
@@ -119,7 +121,7 @@ const blocked = computed(() => {
     :preferences="preferences"
     :locale-names="localeNames"
     :labels="labels"
-    :brand="brand ?? { name: 'Ontomato' }"
+    :brand="shellBrand"
     :page-actions="pageActions"
     :blocked="catalog.error.value ? { reason: 'no-pages', message: catalog.error.value } : blocked"
     @select-app="openApplication"

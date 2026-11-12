@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
-import { MessageSquare } from "lucide-vue-next";
+import { AgentAvatar } from "@ontomato/agent-shell-ui";
 import { relativeTime } from "@ontomato/workbench-ui";
 import HomeTile from "./HomeTile.vue";
 import { itemKey, type HomeItem, type RecentConversation } from "./items";
@@ -33,7 +33,7 @@ const { t } = useI18n();
           :title="conversation.title || t('home.untitledConversation')"
           @click="emit('openConversation', conversation)"
         >
-          <MessageSquare class="home-conversation-icon" :size="16" aria-hidden="true" />
+          <AgentAvatar :icon="conversation.agent.icon" :size="28" />
           <span class="home-conversation-text">
             <span class="home-conversation-title" :class="{ untitled: !conversation.title }">
               {{ conversation.title || t("home.untitledConversation") }}
@@ -79,7 +79,7 @@ const { t } = useI18n();
 }
 .home-conversation {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--spacing-sm);
   width: 100%;
   padding: var(--spacing-md);
@@ -99,11 +99,6 @@ const { t } = useI18n();
 .home-conversation:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: -2px;
-}
-.home-conversation-icon {
-  flex: 0 0 auto;
-  margin-top: 2px;
-  color: var(--el-text-color-secondary);
 }
 .home-conversation-text {
   display: flex;

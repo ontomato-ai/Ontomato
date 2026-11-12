@@ -933,7 +933,7 @@ export default {
   "home": {
     "greeting": { "morning": "Good morning", "afternoon": "Good afternoon", "evening": "Good evening" },
     "greetingNamed": { "morning": "Good morning, {name}", "afternoon": "Good afternoon, {name}", "evening": "Good evening, {name}" },
-    "ask": { "placeholder": "Ask an agent anything", "agent": "Agent", "send": "Send" },
+    "askPlaceholder": "Ask an agent anything",
     "favorites": "Favorites",
     "continue": "Pick up where you left off",
     "untitledConversation": "Untitled conversation",
