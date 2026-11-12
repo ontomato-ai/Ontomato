@@ -129,7 +129,7 @@ describe("open-source Ontology Service page", () => {
     // The foot is a section of its own, above the account and outside the scrolling area.
     sections.push([...document.querySelectorAll(".rail-foot .rail-label")].map((row) => row.textContent ?? ""));
     expect(sections).toEqual([
-      ["Home", "Personal workspace", "Agent platform", "Dashboards", "Scheduled tasks", "Object browser"],
+      ["Home", "Agent platform", "Dashboards", "Scheduled tasks", "Object browser"],
       ["Ontology manager", "Knowledge governance", "Operations diagnosis", "App builder"],
       ["System settings"],
     ]);

@@ -283,7 +283,7 @@ describe("the open-source platform's rail", () => {
     // The foot is a section of its own, above the account and outside the scrolling area.
     sections.push([...document.querySelectorAll(".rail-foot .rail-label")].map((row) => row.textContent ?? ""));
     expect(sections).toEqual([
-      ["Home", "Personal workspace", "Agent platform", "Dashboards", "Scheduled tasks", "Object browser"],
+      ["Home", "Agent platform", "Dashboards", "Scheduled tasks", "Object browser"],
       ["Ontology manager", "Knowledge governance", "Operations diagnosis", "App builder"],
       ["System settings"],
     ]);
@@ -295,7 +295,8 @@ describe("the open-source platform's rail", () => {
     await open("/ontology/objects");
     // The rail lists the applications in the partition's order; an application without an external link or an
     // unavailability hint is a row that switches the shell. Every one of them opens somewhere.
-    const switching = appPartition();
+    // The personal workspace keeps its address while its rail entry is hidden for now.
+    const switching = appPartition().filter((app) => app.id !== "personal-workspace");
     const rows = [...document.querySelectorAll<HTMLElement>(".rail-row:not(.external):not(.unavailable)")];
     expect(rows.length).toBe(switching.length);
 
