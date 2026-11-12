@@ -11,6 +11,7 @@ public class ABCHarnessCheck {
 	private String originQuestion;
 	private List<ABCHarnessProgramDescription> programDescriptions;
 	private Double score;
+	private String summary;
 	private String conclusion;
 	private String fittedQuestion;
 	private String lang;

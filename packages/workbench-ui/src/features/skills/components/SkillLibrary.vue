@@ -3,7 +3,7 @@ import { onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox, type UploadFile } from "element-plus";
 import { useI18n } from "vue-i18n";
-import { Upload } from "lucide-vue-next";
+import { BookOpen, FileCode, Upload } from "lucide-vue-next";
 import type { SkillInfo } from "@ontomato/contracts/skills";
 import { PlatformPageHeader } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
@@ -12,8 +12,9 @@ import { skillsApi } from "../api";
 import { updateSkillLibraryCount } from "../count";
 
 /**
- * The platform's skills, in the ontology manager's capability layer: what there is and where it came from. A skill is
- * read in its own page; agents choose skills in their own settings, and a package changes only by importing it again.
+ * The platform's skills, in the ontology manager's capability layer: one card a skill, with its name, where it came
+ * from and what it is for. A skill is read in its own page; agents choose skills in their own settings, and a package
+ * changes only by importing it again.
  */
 const { t, locale } = useI18n();
 const router = useRouter();
@@ -88,25 +89,25 @@ async function upload(uploaded: UploadFile) {
         </el-upload>
       </template>
     </PlatformPageHeader>
-    <div class="library-body platform-page-gutter">
+    <div v-loading="loading" class="library-body platform-page-gutter">
       <el-alert v-if="loadFailed" type="error" :closable="false" show-icon :title="t('capabilities.loadFailed')">
         <el-button text @click="load">{{ t("common.retry") }}</el-button>
       </el-alert>
-      <el-table v-else v-loading="loading" :data="skills" class="skill-table" row-class-name="skill-row" @row-click="open">
-        <el-table-column :label="t('capabilities.skillTitle')" min-width="240">
-          <template #default="{ row }">
-            <span class="row-name">{{ row.title || row.id }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('capabilities.source')" width="160">
-          <template #default="{ row }">
-            {{ row.isPublic ? t("capabilities.sourcePublic") : t("capabilities.sourceDomain") }}
-          </template>
-        </el-table-column>
-        <template #empty>
-          <span class="empty">{{ t("capabilities.emptySkills") }}</span>
-        </template>
-      </el-table>
+      <ul v-else-if="skills.length" class="skill-grid">
+        <li v-for="skill in skills" :key="skill.id">
+          <button type="button" class="skill-card" @click="open(skill)">
+            <span class="card-head">
+              <component :is="skill.type === 'executable' ? FileCode : BookOpen" class="card-icon" :size="16" aria-hidden="true" />
+              <span class="card-name">{{ skill.title || skill.id }}</span>
+              <el-tag size="small" :type="skill.isPublic ? 'info' : 'primary'" effect="plain" disable-transitions>
+                {{ skill.isPublic ? t("capabilities.sourcePublic") : t("capabilities.sourceDomain") }}
+              </el-tag>
+            </span>
+            <span v-if="skill.description" class="card-description">{{ skill.description }}</span>
+          </button>
+        </li>
+      </ul>
+      <p v-else-if="!loading" class="empty">{{ t("capabilities.emptySkills") }}</p>
     </div>
   </div>
 </template>
@@ -122,34 +123,71 @@ async function upload(uploaded: UploadFile) {
   padding-block: var(--page-content-gap) var(--spacing-xl);
   min-width: 0;
 }
-.skill-table {
-  --el-table-header-bg-color: var(--el-fill-color);
-  --el-table-row-hover-bg-color: var(--el-fill-color-light);
-  --el-table-border-color: var(--el-border-color-light);
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-md);
+/* One card a skill: its name, where it came from and what it is for, in rows that fill the page's width. */
+.skill-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--spacing-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
-.skill-table :deep(.el-table__inner-wrapper::before) { display: none; }
-.skill-table :deep(th.el-table__cell) {
-  height: var(--table-head-height);
-  padding-block: 0;
+.skill-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  width: 100%;
+  height: 100%;
+  min-height: 88px;
+  padding: var(--spacing-md);
+  box-sizing: border-box;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--radius-md);
+  background: var(--el-fill-color-blank);
+  color: var(--el-text-color-primary);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background-color var(--transition-fast);
+}
+.skill-card:hover {
+  border-color: var(--el-border-color);
+  background: var(--el-fill-color-light);
+}
+.skill-card:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+.card-icon {
+  flex: 0 0 auto;
+  color: var(--el-color-primary);
+}
+.card-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+}
+.card-description {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
-  font-weight: var(--font-semibold);
-}
-.skill-table :deep(td.el-table__cell) {
-  height: var(--list-row-height);
-  font-size: var(--text-sm);
-}
-.skill-table :deep(.cell) { padding-inline: var(--spacing-md); }
-.skill-table :deep(tr:last-child td.el-table__cell) { border-bottom: 0; }
-.skill-table :deep(.skill-row) { cursor: pointer; }
-.row-name {
-  font-weight: var(--font-semibold);
-  color: var(--el-text-color-primary);
-  overflow-wrap: anywhere;
+  line-height: var(--leading-xs);
 }
 .empty {
+  margin: 0;
   color: var(--el-text-color-secondary);
   font-size: var(--text-sm);
 }

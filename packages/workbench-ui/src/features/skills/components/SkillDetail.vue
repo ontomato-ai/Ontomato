@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage, ElMessageBox, type TreeInstance } from "element-plus";
 import { useI18n } from "vue-i18n";
-import { ArrowLeft, Download, FileCode, Trash2 } from "lucide-vue-next";
+import { ArrowLeft, Download, FileCode, Folder, FolderOpen, Trash2 } from "lucide-vue-next";
 import type { SkillFile, SkillInfo } from "@ontomato/contracts/skills";
 import { PlatformPageHeader } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
@@ -13,7 +13,7 @@ import { authHost } from "../../../utils/auth";
 import { skillsApi } from "../api";
 
 /**
- * One skill, read as its package: the files on the left, the chosen one on the right. Markdown is drawn with its
+ * One skill, read as its package: the package's folders and files as a tree on the left, the chosen file on the right. Markdown is drawn with its
  * frontmatter shown as written above it; every other file is text in the read-only code view (packages are UTF-8
  * throughout). The page only reads: a package changes by importing it again, and a built-in one cannot be deleted.
  */
@@ -28,6 +28,8 @@ const LANGUAGES: Record<string, "html" | "javascript" | "json" | "markdown" | "p
 };
 const languageOf = (path: string) => LANGUAGES[path.slice(path.lastIndexOf(".") + 1).toLowerCase()] ?? "text";
 
+interface TreeNode { key: string; label: string; file: boolean; children?: TreeNode[] }
+
 const skill = ref<SkillInfo | null>(null);
 const files = ref<SkillFile[]>([]);
 const file = ref<string | null>(null);
@@ -41,12 +43,50 @@ async function load() {
     const [response, list] = await Promise.all([skillsApi.fetchSkills(), skillsApi.listFiles(props.skillId)]);
     skill.value = (response.skills as SkillInfo[]).find((item) => item.id === props.skillId) ?? null;
     files.value = list;
-    file.value = list.some((item) => item.path === "SKILL.md") ? "SKILL.md" : (list[0]?.path ?? null);
+    // A read again (another language, for one) keeps the file being read; a new skill opens at its SKILL.md.
+    const kept = list.some((item) => item.path === file.value) ? file.value : null;
+    file.value = kept ?? (list.some((item) => item.path === "SKILL.md") ? "SKILL.md" : (list[0]?.path ?? null));
   } catch {
     loadFailed.value = true;
   }
 }
+watch(() => props.skillId, () => { file.value = null; });
 watch([() => props.skillId, locale], load, { immediate: true });
+
+/** The package's paths as folders and files: folders first, then files, each in name order. */
+const tree = computed<TreeNode[]>(() => {
+  const root: TreeNode[] = [];
+  for (const { path } of files.value) {
+    const parts = path.split("/");
+    let level = root;
+    parts.forEach((label, index) => {
+      const key = parts.slice(0, index + 1).join("/");
+      const file = index === parts.length - 1;
+      let node = level.find((item) => item.key === key);
+      if (!node) {
+        node = file ? { key, label, file } : { key, label, file, children: [] };
+        level.push(node);
+      }
+      if (!file) level = node.children!;
+    });
+  }
+  const order = (nodes: TreeNode[]) => {
+    nodes.sort((a, b) => Number(a.file) - Number(b.file) || (a.label < b.label ? -1 : 1));
+    for (const node of nodes) if (node.children) order(node.children);
+  };
+  order(root);
+  return root;
+});
+const treeRef = ref<TreeInstance | null>(null);
+/** A file opens; a folder only folds. */
+function pick(node: TreeNode) {
+  if (node.file) file.value = node.key;
+}
+// The open file is the tree's current row, also when the page chose it.
+watch(file, async (key) => {
+  await nextTick();
+  treeRef.value?.setCurrentKey(key ?? undefined);
+});
 
 let reads = 0;
 async function read() {
@@ -125,7 +165,7 @@ async function remove() {
   <div class="skill-detail platform-page">
     <PlatformPageHeader
       :title="skill ? skill.title || skill.id : skillId"
-      :description="skill ? (skill.isPublic ? t('capabilities.sourcePublic') : t('capabilities.sourceDomain')) : null"
+      :description="skill ? [skill.isPublic ? t('capabilities.sourcePublic') : t('capabilities.sourceDomain'), skill.description].filter(Boolean).join(' · ') : null"
     >
       <template #actions>
         <el-button :icon="ArrowLeft" @click="back">{{ t("capabilities.skillTitle") }}</el-button>
@@ -140,20 +180,24 @@ async function remove() {
         <el-button text @click="load">{{ t("common.retry") }}</el-button>
       </el-alert>
       <div v-else class="package">
-        <ul class="tree" :aria-label="t('capabilities.files')">
-          <li v-for="entry in files" :key="entry.path">
-            <button
-              type="button"
-              class="tree-row"
-              :class="{ active: entry.path === file }"
-              :aria-current="entry.path === file ? 'true' : undefined"
-              @click="file = entry.path"
-            >
-              <FileCode :size="14" aria-hidden="true" />
-              <span class="tree-name">{{ entry.path }}</span>
-            </button>
-          </li>
-        </ul>
+        <el-tree
+          ref="treeRef"
+          class="tree"
+          :aria-label="t('capabilities.files')"
+          :data="tree"
+          node-key="key"
+          default-expand-all
+          highlight-current
+          :expand-on-click-node="true"
+          @node-click="pick"
+        >
+          <template #default="{ node, data }">
+            <span class="tree-node">
+              <component :is="data.file ? FileCode : node.expanded ? FolderOpen : Folder" :size="14" aria-hidden="true" />
+              <span class="tree-name">{{ data.label }}</span>
+            </span>
+          </template>
+        </el-tree>
         <!-- The tree's highlighted row names the open file; the content needs no second title. -->
         <div class="viewer">
           <div v-if="readFailed" class="viewer-state" role="alert">
@@ -201,41 +245,31 @@ async function remove() {
 }
 .tree {
   flex: 0 0 240px;
-  margin: 0;
   padding: var(--spacing-sm);
-  overflow-y: auto;
-  list-style: none;
+  overflow: auto;
   border-right: 1px solid var(--el-border-color-lighter);
+  background: transparent;
+  --el-tree-node-content-height: 30px;
+  --el-tree-node-hover-bg-color: var(--el-fill-color-light);
 }
-.tree-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  height: 30px;
-  padding: 0 8px;
-  border: 0;
+.tree :deep(.el-tree-node__content) {
   border-radius: var(--radius-sm);
-  background: none;
-  color: var(--el-text-color-regular);
-  font-size: var(--text-xs);
-  text-align: left;
-  cursor: pointer;
 }
-.tree-row:hover {
-  background: var(--el-fill-color-light);
-}
-.tree-row.active {
+.tree :deep(.el-tree-node.is-current > .el-tree-node__content) {
   background: var(--el-fill-color);
   color: var(--el-text-color-primary);
 }
-.tree-row svg {
+.tree-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--el-text-color-regular);
+  font-size: var(--text-xs);
+}
+.tree-node svg {
   flex-shrink: 0;
   color: var(--el-text-color-secondary);
-}
-.tree-row:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: -2px;
 }
 .tree-name {
   min-width: 0;
