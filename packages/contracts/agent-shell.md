@@ -25,6 +25,13 @@ A host owns its routes under its own prefix, credentials, menu authorization,
 feature pages, agent definitions, rendering overrides and business actions.
 Hiding an entry never authorizes its server operation.
 
+A message belongs to the client and agent it was sent with. When the host moves
+to another client or agent while one is on its way, the shell drops it and shows
+the new context's blank conversation; a conversation whose first run was refused
+is still handed to the host. A host that changes the client or agent and then
+calls the shell's exposed `send` lets the change take effect first (after
+`nextTick`), or the shell takes it for a change made while sending.
+
 ## Host proxy interface
 
 The shell talks to every host through one interface shape, the agent-host
@@ -87,7 +94,10 @@ inside. `usePageDockSpace()` reads the same value for a page that passes it on (
 app builder hands it to the app in its preview frame, where the SDK stylesheet keeps
 it after the document's content). The host's `composer-context` shows above
 the conversation's composer and, `inline`, inside the full page's one-row
-composer before the input. While such a page is open, a sent message ends with the host's
+composer before the input. Its `unstarted` is true while the conversation in view
+has not started: the shell holds no session for it and no message is on its way;
+the app builder shows its workspace selection beside the composer only then.
+While such a page is open, a sent message ends with the host's
 `pageContext` line (plain text, visible in the message), so the agent knows what
 "this" means. `pageLinks(href)` lets a host recognise its own addresses in
 answers; a recognised link opens its page beside the conversation. The agent

@@ -1,5 +1,5 @@
 import { historyCursor } from "@ontomato/contracts/session-history";
-import { computed, onBeforeUnmount, reactive, ref, shallowRef } from "vue";
+import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from "vue";
 import type { AgentTasksSnapshot } from "@ontomato/contracts/agent-tasks";
 import type { AgentHostRunSnapshot, AgentHostSessionHistory, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "./host";
@@ -177,11 +177,10 @@ export function useAgentConversation(port: () => AgentHostClient, agent: () => s
   }
 
   /**
-   * Starts a run, creating the session first for a new conversation. A send belongs to the client and agent it started
-   * with: once the host has moved to another, what returns is dropped and the conversation is the new one's blank
-   * conversation again. Otherwise resolves to the created session (if any) and the admitted run, so the session list
-   * can update; a created session whose run was refused comes back without a run, so the host still takes it. Null
-   * when sending failed without creating a session.
+   * Starts a run, creating the session first for a new conversation. Resolves to the created session (if any) and the
+   * admitted run so the session list can update, unless the host has moved to another client or agent meanwhile; a
+   * created session whose run was refused comes back without a run, so the host still takes it. Null when sending
+   * failed without creating a session.
    */
   async function send(
     agentId: string,
@@ -193,25 +192,21 @@ export function useAgentConversation(port: () => AgentHostClient, agent: () => s
   > {
     if (busy.value) return null;
     const current = token, client = port();
-    /** The host has moved to another client or agent since this send started. */
+    /**
+     * The host has moved to another client or agent since this send started, which dropped it (the watch below), as
+     * opposed to the reader opening another conversation in the same context.
+     */
     const moved = () => port() !== client || agent() !== agentId;
-    /** Once the host has moved, this send's results are dropped and the conversation is the new one's blank conversation. */
-    const left = () => {
-      if (!moved()) return false;
-      reset(null);
-      return true;
-    };
     sending.value = true;
     sendError.value = null;
     pendingInput.value = text;
     let createdSession: AgentHostSession | null = null;
     try {
       createdSession = state.sessionId ? null : await client.createSession(agentId);
-      if (current !== token || left()) return null;
+      if (current !== token) return null;
       if (createdSession) state.sessionId = createdSession.id;
       const snapshot = await client.startRun(state.sessionId!, text);
       if (current !== token) return moved() ? null : { createdSession, snapshot };
-      if (left()) return null;
       applyRunSnapshot(state, snapshot);
       for (const message of snapshot.messages) knownMessageSeq = Math.max(knownMessageSeq, message.messageSeq);
       pendingInput.value = null;
@@ -220,7 +215,7 @@ export function useAgentConversation(port: () => AgentHostClient, agent: () => s
       stream.start(subscription(snapshot.run.id));
       return { createdSession, snapshot };
     } catch (error) {
-      if (current === token && !left()) {
+      if (current === token) {
         sendError.value = errorText(error);
         pendingInput.value = null;
         if (createdSession) return { createdSession, snapshot: null };
@@ -230,6 +225,15 @@ export function useAgentConversation(port: () => AgentHostClient, agent: () => s
       if (current === token) sending.value = false;
     }
   }
+
+  /*
+   * A send belongs to the client and agent it started with. When the host moves to another (another workspace, another
+   * agent) while one is on its way, the conversation drops it at once and is the new one's blank conversation; what
+   * returns later is stale. Without a send on its way, nothing changes: a blank conversation stays as it is.
+   */
+  watch([port, agent], () => {
+    if (sending.value) reset(null);
+  });
 
   async function cancel() {
     const runId = activeRunId.value;
