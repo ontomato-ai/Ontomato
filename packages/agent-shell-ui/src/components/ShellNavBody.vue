@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from "vue";
-import { CalendarClock, Check, ChevronDown, ExternalLink, SquarePen, Trash2, MoreHorizontal, Pencil, X } from "lucide-vue-next";
+import { CalendarClock, ExternalLink, SquarePen, Trash2, MoreHorizontal, Pencil, X } from "lucide-vue-next";
 import type { AgentHostAgent, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { ShellLabels, ShellWorkbenchDeclaration } from "../types";
 import { featureIcon } from "../icons";
+import AgentPicker from "./AgentPicker.vue";
 
 /**
  * The navigation column of a conversation application: its head, a new conversation, the application's own pages, the
@@ -52,10 +53,6 @@ const emit = defineEmits<{
   loadMore: [];
   retry: [];
 }>();
-const agentMenuOpen = ref(false);
-const agentMenu = ref<HTMLElement | null>(null);
-const agentPopup = ref<HTMLElement | null>(null);
-const popupStyle = ref<Record<string, string>>({});
 const deletingSession = ref<AgentHostSession | null>(null);
 const deleteDialog = ref<HTMLDialogElement | null>(null);
 const sessionMenu = ref<string | null>(null);
@@ -133,47 +130,8 @@ function saveRename(id: string) {
   cancelRename();
 }
 
-const currentAgent = computed(() => props.agents.find((agent) => agent.id === props.agentId) ?? null);
-/** The switch's accessible name: what it switches, and the agent it currently shows. */
-const switchLabel = computed(() => `${props.labels.agent}: ${currentAgent.value?.name ?? "—"}`);
 /** More than one agent means the head is a switcher; one agent leaves the application's name there. */
 const hasPicker = computed(() => props.agentPicker || props.agents.length > 1);
-
-function onDocumentPointer(event: PointerEvent) {
-  if (agentMenu.value && !agentMenu.value.contains(event.target as Node)) closeAgentMenu();
-}
-function positionAgentMenu() {
-  const trigger = agentMenu.value?.getBoundingClientRect();
-  if (!trigger) return;
-  const width = Math.min(320, window.innerWidth - 32);
-  const top = trigger.bottom + 4;
-  popupStyle.value = {
-    left: `${Math.max(16, Math.min(trigger.left, window.innerWidth - width - 16))}px`,
-    top: `${top}px`, width: `${width}px`,
-    maxHeight: `${Math.max(80, window.innerHeight - top - 16)}px`,
-  };
-}
-async function openAgentMenu() {
-  agentMenuOpen.value = true;
-  positionAgentMenu();
-  await nextTick();
-  if (!agentMenuOpen.value) return;
-  agentPopup.value?.showPopover?.();
-  document.addEventListener("pointerdown", onDocumentPointer);
-  window.addEventListener("resize", positionAgentMenu);
-  document.addEventListener("scroll", positionAgentMenu, true);
-}
-function closeAgentMenu() {
-  agentPopup.value?.hidePopover?.();
-  agentMenuOpen.value = false;
-  document.removeEventListener("pointerdown", onDocumentPointer);
-  window.removeEventListener("resize", positionAgentMenu);
-  document.removeEventListener("scroll", positionAgentMenu, true);
-}
-function chooseAgent(id: string) {
-  closeAgentMenu();
-  if (id !== props.agentId) emit("selectAgent", id);
-}
 
 function requestDelete(session: AgentHostSession) {
   closeSessionMenu();
@@ -195,7 +153,6 @@ function confirmDelete() {
 }
 
 onBeforeUnmount(() => {
-  closeAgentMenu();
   closeSessionMenu();
 });
 </script>
@@ -203,32 +160,7 @@ onBeforeUnmount(() => {
 <template>
   <div ref="navRoot" class="shell-nav-body">
     <!-- The head: the agent this conversation runs on, or the application's name. -->
-    <div v-if="hasPicker" ref="agentMenu" class="agent-switch">
-      <button
-        type="button"
-        class="switch-trigger"
-        aria-haspopup="listbox"
-        :aria-expanded="agentMenuOpen"
-        :aria-label="switchLabel"
-        :disabled="agents.length === 0"
-        @click="agentMenuOpen ? closeAgentMenu() : openAgentMenu()"
-        @keydown.escape="closeAgentMenu"
-      >
-        <span class="switch-name">{{ currentAgent?.name ?? labels.agent }}</span>
-        <ChevronDown :size="16" class="switch-chevron" :class="{ open: agentMenuOpen }" aria-hidden="true" />
-      </button>
-      <ul v-if="agentMenuOpen" ref="agentPopup" popover="manual" :style="popupStyle" class="agent-menu" role="listbox" :aria-label="labels.agent" @keydown.escape="closeAgentMenu">
-        <li v-for="agent in agents" :key="agent.id" role="option" :aria-selected="agent.id === agentId">
-          <button type="button" class="agent-option" :class="{ current: agent.id === agentId }" @click="chooseAgent(agent.id)">
-            <span class="option-text">
-              <span class="option-name">{{ agent.name }}</span>
-              <span v-if="agent.description" class="option-description">{{ agent.description }}</span>
-            </span>
-            <Check v-if="agent.id === agentId" :size="16" class="option-check" aria-hidden="true" />
-          </button>
-        </li>
-      </ul>
-    </div>
+    <AgentPicker v-if="hasPicker" :agents="agents" :agent-id="agentId" :label="labels.agent" @select="emit('selectAgent', $event)" />
     <div v-else class="column-head">{{ title }}</div>
 
     <button
@@ -374,114 +306,6 @@ onBeforeUnmount(() => {
   font-weight: var(--font-semibold);
   color: var(--el-text-color-primary);
 }
-.agent-switch {
-  position: relative;
-  min-height: 36px;
-}
-.switch-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  width: 100%;
-  height: 36px;
-  padding: 0 10px;
-  box-sizing: border-box;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--el-text-color-primary);
-  font: inherit;
-  font-size: var(--text-lg);
-  font-weight: var(--font-semibold);
-  cursor: pointer;
-}
-.switch-trigger:hover {
-  background: var(--shell-panel-hover);
-}
-.switch-trigger:disabled {
-  cursor: default;
-}
-.switch-trigger:disabled:hover {
-  background: transparent;
-}
-.switch-name {
-  flex: 1;
-  min-width: 0;
-  text-align: start;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.switch-chevron {
-  flex-shrink: 0;
-  color: var(--el-text-color-secondary);
-  transition: transform var(--transition-fast);
-}
-.switch-chevron.open {
-  transform: rotate(180deg);
-}
-.agent-menu {
-  position: fixed;
-  margin: 0;
-  padding: var(--spacing-xs);
-  overflow-y: auto;
-  box-sizing: border-box;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: var(--el-bg-color-overlay);
-  box-shadow: var(--elevation-overlay);
-}
-.agent-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%;
-  padding: 8px 10px;
-  box-sizing: border-box;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.agent-option:hover {
-  background: var(--shell-panel-hover);
-}
-.agent-option.current {
-  background: var(--shell-panel-selected);
-  font-weight: var(--font-semibold);
-}
-.agent-option.current:hover {
-  background: var(--shell-panel-selected-hover);
-}
-.option-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.option-name {
-  font-size: var(--text-sm);
-  font-weight: var(--font-semibold);
-  color: var(--el-text-color-primary);
-}
-.option-description {
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-  color: var(--el-text-color-secondary);
-}
-.option-check {
-  flex-shrink: 0;
-  color: var(--el-color-primary);
-}
 .nav-item {
   display: flex;
   align-items: center;
@@ -549,8 +373,6 @@ onBeforeUnmount(() => {
   font-weight: var(--font-medium);
 }
 .nav-item:focus-visible,
-.switch-trigger:focus-visible,
-.agent-option:focus-visible,
 .session-open:focus-visible,
 .session-delete:focus-visible,
 .more:focus-visible {

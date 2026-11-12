@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import ElementPlus, { ElMessage } from "element-plus";
 import { defineComponent } from "vue";
+import { lightAvatarColorOptions } from "@ontomato/agent-shell-ui";
 import type { AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
 import type { ModelOptions } from "@ontomato/contracts/model-settings";
 import { workbenchI18n } from "../../../i18n";
@@ -79,17 +80,22 @@ const saveButton = (wrapper: VueWrapper) =>
   wrapper.findAll(".editor-bar button").find((button) => button.text() === t("common.save"))!;
 
 describe("workbench agent model selection", () => {
-  it("saves edits across configuration sections without avatar or color controls", async () => {
+  it("saves edits across configuration sections, with the avatar chosen in the agent's icon", async () => {
     const { wrapper, update } = await mountEditor(null);
-    expect(wrapper.find('.admin-avatar-picker').exists()).toBe(false);
-    expect(wrapper.find('.editor-avatar').exists()).toBe(false);
+    expect(wrapper.find('.editor-avatar').exists()).toBe(true);
+    await wrapper.findAll('.avatar-icon-option').find((option) => option.attributes('aria-label') === 'Database')!.trigger('click');
+    await wrapper.findAll('.avatar-color-option')[2]!.trigger('click');
     await wrapper.find('input').setValue('Updated analyst');
     expect(wrapper.find('[data-section="model"]').isVisible()).toBe(true);
     expect(wrapper.find('[data-section="basics"]').isVisible()).toBe(true);
     await choose(wrapper.findComponent(ModelSelectionSelect), 'deepseek/deepseek-chat');
     await saveButton(wrapper).trigger('click');
     await flushPromises();
-    expect(update.mock.calls[0]![1]).toMatchObject({ name: 'Updated analyst', icon: null, modelSelection: { modelId: 'deepseek/deepseek-chat' } });
+    expect(update.mock.calls[0]![1]).toMatchObject({
+      name: 'Updated analyst',
+      icon: JSON.stringify({ key: 'Database', color: lightAvatarColorOptions[2] }),
+      modelSelection: { modelId: 'deepseek/deepseek-chat' },
+    });
   });
 
   it("keeps a missing model ID as it is, reports it, and saves it unchanged when other fields change", async () => {

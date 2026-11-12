@@ -1,11 +1,22 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, useSlots, watch } from "vue";
 import { ArrowUp, Square } from "lucide-vue-next";
-import { shellContextKey } from "../context";
+import type { ShellLabels } from "../types";
 
-const props = defineProps<{ busy: boolean; disabled?: boolean; autofocus?: boolean }>();
+/**
+ * The one message box of the platform: the conversation shell's, and the platform home's question box. Its words come
+ * from the host that places it. A host may put controls at its lower left (`tools`, the home's agent picker); the box
+ * then holds the message above a row with those controls and the send button, otherwise it is one row.
+ */
+const props = defineProps<{
+  busy: boolean;
+  disabled?: boolean;
+  autofocus?: boolean;
+  labels: Pick<ShellLabels, "placeholder" | "send" | "stop">;
+}>();
 const emit = defineEmits<{ send: [text: string]; stop: [] }>();
-const shell = inject(shellContextKey)!;
+const slots = useSlots();
+const stacked = computed(() => slots.tools !== undefined);
 const text = ref("");
 const input = ref<HTMLTextAreaElement | null>(null);
 const composing = ref(false);
@@ -29,7 +40,7 @@ function textHeight(el: HTMLTextAreaElement) {
   return height;
 }
 // After the textarea shows the change; a composer closed meanwhile (sent from the full page) is not measured.
-watch([text, () => shell.labels.value.placeholder], resize, { flush: "post" });
+watch([text, () => props.labels.placeholder], resize, { flush: "post" });
 const sizer = new ResizeObserver(() => resize());
 onMounted(() => {
   resize();
@@ -54,25 +65,26 @@ defineExpose({ focus: () => input.value?.focus() });
 </script>
 
 <template>
-  <form class="composer" :class="{ disabled }" @submit.prevent="submit">
+  <form class="composer" :class="{ disabled, stacked }" @submit.prevent="submit">
     <textarea
       ref="input"
       v-model="text"
       rows="1"
-      :placeholder="shell.labels.value.placeholder"
-      :aria-label="shell.labels.value.placeholder"
+      :placeholder="labels.placeholder"
+      :aria-label="labels.placeholder"
       :disabled="disabled"
       :autofocus="autofocus"
       @keydown="onKeydown"
       @compositionstart="composing = true"
       @compositionend="composing = false"
     />
+    <div v-if="stacked" class="composer-tools"><slot name="tools" /></div>
     <button
       v-if="busy"
       type="button"
       class="composer-button stop"
-      :title="shell.labels.value.stop"
-      :aria-label="shell.labels.value.stop"
+      :title="labels.stop"
+      :aria-label="labels.stop"
       @click="emit('stop')"
     >
       <Square :size="12" fill="currentColor" />
@@ -82,8 +94,8 @@ defineExpose({ focus: () => input.value?.focus() });
       type="submit"
       class="composer-button"
       :disabled="!canSend"
-      :title="shell.labels.value.send"
-      :aria-label="shell.labels.value.send"
+      :title="labels.send"
+      :aria-label="labels.send"
     >
       <ArrowUp :size="17" />
     </button>
@@ -115,6 +127,31 @@ defineExpose({ focus: () => input.value?.focus() });
 }
 .composer.disabled {
   opacity: 0.6;
+}
+/* With controls of the host's: the message on its own row, the controls and the send button under it. */
+.composer.stacked {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "input input"
+    "tools send";
+  align-items: center;
+  row-gap: 4px;
+  padding: 10px 10px 10px 20px;
+}
+.composer.stacked textarea {
+  grid-area: input;
+}
+.composer.stacked .composer-button {
+  grid-area: send;
+}
+.composer-tools {
+  grid-area: tools;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  min-width: 0;
+  margin-left: -10px;
 }
 textarea {
   flex: 1;

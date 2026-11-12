@@ -1,7 +1,6 @@
 import { createApp, h, nextTick, ref } from "vue";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import ShellComposer from "../components/ShellComposer.vue";
-import { shellContextKey, type ShellContext } from "../context";
 
 /*
  * The composer is as tall as what it shows. While it is empty that is its placeholder: a hint long enough to wrap is read
@@ -29,8 +28,7 @@ it("is as tall as its placeholder while empty, and as its message once the reade
   const labels = ref({ placeholder: HINT, send: "Send", stop: "Stop" });
   const root = document.createElement("div");
   document.body.append(root);
-  const app = createApp({ render: () => h(ShellComposer, { busy: false }) });
-  app.provide(shellContextKey, { labels } as unknown as ShellContext);
+  const app = createApp({ render: () => h(ShellComposer, { busy: false, labels: labels.value }) });
   app.mount(root);
   try {
     const input = root.querySelector("textarea")!;

@@ -4,6 +4,7 @@ import { PlatformTabs } from "@ontomato/platform-shell";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
 import { ExternalLink, RefreshCw, Trash2 } from "lucide-vue-next";
+import { AgentAvatar, agentAvatar, avatarSwatch, storedAgentAvatar } from "@ontomato/agent-shell-ui";
 import { CodeEditor } from "@ontomato/foundation-ui/code";
 import { MarkdownView } from "@ontomato/foundation-ui/markdown";
 import type {
@@ -43,6 +44,9 @@ const { t } = useI18n();
 interface Form {
   name: string;
   description: string;
+  /** The avatar's icon key and its swatch's light-palette value (see AgentBasicInfoFields). */
+  avatarKey: string;
+  avatarColor: string;
   enabled: boolean;
   systemPrompt: string;
   /** The agent's own model; null follows the domain default. */
@@ -53,9 +57,12 @@ interface Form {
 }
 
 function toForm(agent: AssistantAgentDefinition | null): Form {
+  const avatar = agentAvatar(agent?.icon ?? null);
   return {
     name: agent?.name ?? "",
     description: agent?.description ?? "",
+    avatarKey: avatar.key,
+    avatarColor: avatarSwatch(avatar.color).light,
     enabled: agent?.enabled ?? true,
     systemPrompt: agent?.systemPrompt ?? "",
     modelId: agent?.modelSelection.modelId ?? null,
@@ -66,6 +73,8 @@ function toForm(agent: AssistantAgentDefinition | null): Form {
 }
 
 const form = ref<Form>(toForm(props.agent));
+/** The avatar as the draft would store it, for the head's preview. */
+const formIcon = computed(() => storedAgentAvatar({ key: form.value.avatarKey, color: form.value.avatarColor }));
 const baseline = ref(JSON.stringify(form.value));
 const dirty = computed(() => JSON.stringify(form.value) !== baseline.value);
 watch(() => props.agent, (agent) => {
@@ -110,7 +119,7 @@ function validInput(): AssistantAgentInput | null {
   return {
     name: value.name.trim(),
     description: value.description,
-    icon: props.agent?.icon ?? null,
+    icon: storedAgentAvatar({ key: value.avatarKey, color: value.avatarColor }),
     enabled: value.enabled,
     systemPrompt: value.systemPrompt,
     modelSelection: { modelId: value.modelId },
@@ -172,6 +181,7 @@ defineExpose({ dirty });
   <div class="agent-editor">
     <header class="editor-bar">
       <div class="editor-title">
+        <AgentAvatar class="editor-avatar" :icon="formIcon" :size="28" />
         <strong>{{ form.name.trim() || (agent ? agent.name : t("agents.newAgent")) }}</strong>
         <small :class="{ dirty }">{{ dirty ? t("admin.agentEditorUnsaved") : t("admin.agentEditorSaved") }}</small>
       </div>
@@ -191,6 +201,8 @@ defineExpose({ dirty });
           <AgentBasicInfoFields
             v-model:name="form.name"
             v-model:description="form.description"
+            v-model:avatar-key="form.avatarKey"
+            v-model:avatar-color="form.avatarColor"
           />
           </div>
           <div class="runtime-fields" data-section="model">
@@ -317,6 +329,9 @@ defineExpose({ dirty });
   gap: var(--spacing-sm) var(--spacing-md);
   flex: 1;
   min-width: 0;
+}
+.editor-avatar {
+  align-self: center;
 }
 .editor-title strong {
   font-size: var(--text-lg);

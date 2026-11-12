@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { ArrowLeft, ArrowRight, Star } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
+import { AgentAvatar } from "@ontomato/agent-shell-ui";
 import { appIcon } from "@ontomato/platform-shell";
 import type { HomeItem } from "./items";
 
@@ -30,7 +31,8 @@ const tooltip = computed(() => (props.item.description ? `${props.item.label}\n$
 <template>
   <div class="home-tile">
     <button type="button" class="home-tile-open" :title="tooltip" @click="emit('open')">
-      <component :is="appIcon(item.icon)" class="home-tile-icon" :size="16" aria-hidden="true" />
+      <AgentAvatar v-if="item.kind === 'agent'" :icon="item.icon" :size="22" />
+      <component :is="appIcon(item.icon)" v-else class="home-tile-icon" :size="16" aria-hidden="true" />
       <span class="home-tile-name">{{ item.label }}</span>
     </button>
     <button

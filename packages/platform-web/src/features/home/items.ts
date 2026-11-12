@@ -12,15 +12,17 @@ export const HOME_APPLICATION_ID = "home";
 export const homeCategories = ["all", "business", "agents", "build", "admin"] as const;
 export type HomeCategory = (typeof homeCategories)[number];
 
-/** One card of the home: an application from the catalog or an agent of the current domain, named as they name it. */
-export interface HomeItem {
-  kind: HomeItemRef["kind"];
+interface HomeItemBase {
   id: string;
   label: string;
   description: string | null;
-  icon: string;
   category: Exclude<HomeCategory, "all">;
 }
+/**
+ * One card of the home: an application from the catalog, with the icon it names, or an agent of the current domain,
+ * with the avatar its definition stores (null for none); each named as they name it.
+ */
+export type HomeItem = (HomeItemBase & { kind: "application"; icon: string }) | (HomeItemBase & { kind: "agent"; icon: string | null });
 
 export const itemKey = (item: Pick<HomeItemRef, "kind" | "id">) => `${item.kind}:${item.id}`;
 
@@ -50,7 +52,7 @@ export function homeItems(applications: readonly PlatformAppDeclaration[], agent
         id: agent.id,
         label: agent.name,
         description: agent.description || null,
-        icon: "agents",
+        icon: agent.icon,
         category: "agents",
       })),
   ];

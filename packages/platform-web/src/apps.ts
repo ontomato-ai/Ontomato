@@ -44,6 +44,9 @@ export interface PlatformAppDeclaration {
  */
 export const openApplicationKey: InjectionKey<(id: string) => void> = Symbol("open-application");
 
+/** The edition's brand the shell shows (its name, and its logo when it has one); the home shows the same mark. */
+export const platformBrandKey: InjectionKey<{ name: string; logo?: string }> = Symbol("platform-brand");
+
 /** The applications the shell's rail shows, in rail order; the shell's layout provides them to the pages inside it. */
 export const platformApplicationsKey: InjectionKey<Readonly<Ref<readonly PlatformAppDeclaration[]>>> =
   Symbol("platform-applications");
