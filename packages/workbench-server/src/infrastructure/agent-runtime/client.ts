@@ -226,6 +226,7 @@ export class RuntimeClient {
   }
   /** Host/domain lifecycle notices; the `ready` frame comes from the runtime itself. */
   async sessionRunEvents(
+    onOpen: () => void,
     onFrame: (frame: RuntimeSessionRunFrame) => Promise<void>,
     signal: AbortSignal,
   ) {
@@ -235,6 +236,8 @@ export class RuntimeClient {
     );
     if (!response.ok)
       throw new HttpError(response.status, "Agent runtime stream failed");
+    // The caller commits its own success response only once the runtime stream is open.
+    onOpen();
     await readSseFrames(
       response,
       (value) => runtimeSessionRunFrameSchema.parse(value),

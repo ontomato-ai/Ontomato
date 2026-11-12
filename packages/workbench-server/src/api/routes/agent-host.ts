@@ -49,16 +49,19 @@ router.get(
   wrap(async (req, res) => {
     const c = context(req),
       abort = new AbortController();
-    res.set({
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      "X-Accel-Buffering": "no",
-    });
-    res.flushHeaders();
     res.on("close", () => abort.abort());
-    const heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 15000);
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
     try {
       await new RuntimeClient(c.owner.domainId).sessionRunEvents(
+        () => {
+          res.set({
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+          });
+          res.flushHeaders();
+          heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 15000);
+        },
         async (frame) => {
           // `ready` is the upstream barrier and is always forwarded; notices are forwarded
           // only under this entry's own session read rule.
@@ -72,8 +75,8 @@ router.get(
         abort.signal,
       );
     } finally {
-      clearInterval(heartbeat);
-      res.end();
+      if (heartbeat) clearInterval(heartbeat);
+      if (res.headersSent) res.end();
     }
   }),
 );
