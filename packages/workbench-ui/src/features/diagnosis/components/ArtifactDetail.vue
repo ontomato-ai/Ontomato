@@ -65,7 +65,7 @@ function download() { window.open(diagnosisApi.artifactDownloadUrl(props.apiPref
 watch(() => props.apiPrefix, load, { immediate: true });
 </script>
 <template>
-  <section v-loading="loading" class="artifact-detail">
+  <section v-loading="loading" class="artifact-detail shell-dock-room">
     <header>
       <strong>{{ question || title || t('ops.references') }}</strong>
       <el-button v-if="diagnose && manifest?.evidence" @click="diagnose(manifest.evidence.target)">{{ t('ops.diagnose') }}</el-button>

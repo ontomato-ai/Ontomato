@@ -313,6 +313,13 @@ Tools use 13px/20px and restrained inset details. All message actions, including
 the composer floating over a full agent-app page is one compact row (32px control) with what the message carries inside.
 Never apply composer geometry to ordinary inputs. Preserve streaming, cancellation, feedback and artifact behaviour.
 
+The floating composer covers the foot of a full page, so the shell says how much room it takes and each page says where
+its content ends: the `shell-dock-room` class on the vertical scroll area, or `ShellDockRoom` under a bar fixed to the
+foot or in a container whose children are spaced by `gap`. A bar at the foot stays at the foot and is lifted clear; the
+last item of a list, a form or a table's body scrolls clear of the composer. Beside the conversation the room is 0 and
+nothing is left behind. Pages that scroll in the pane need neither: the pane keeps the room for them. No page measures
+the composer, adds a second value or scans the DOM for it.
+
 Read-only continuation suggestions show at most three short business-labelled buttons after an answer. They retain
 source run and dataset references, scope and decisions. Dataset selections persist across pagination and continue with
 raw selected rows, never reformatted cell strings for JSON datasets. Only selected rows are in scope unless the user

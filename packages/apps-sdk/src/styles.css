@@ -6,10 +6,11 @@
 @import "@ontomato/design-tokens/foundation.css";
 @import "@ontomato/agent-shell-ui/style.css";
 
-/* The room the platform's own controls cover at the foot of the frame (createAppContext() sets it), after the page's
-   content, so its end scrolls clear of them. */
+/* The room the platform's own controls cover at the foot of the frame (createAppContext() sets it on the document root,
+   the same value the shell's pages read): the page scrolls as one document, so its last element is the room. */
 body::after {
   content: "";
   display: block;
-  height: var(--app-inset-bottom, 0px);
+  flex: none;
+  height: var(--pane-dock-space, 0px);
 }

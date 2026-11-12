@@ -48,7 +48,8 @@ export const pageDockSpaceKey: InjectionKey<Readonly<Ref<number>>> = Symbol("pag
 
 /**
  * The room a page in the shell's page pane keeps after its own scrolling content, for a page that scrolls itself
- * (`ShellFeatureDeclaration.scrollsItself`) and hands it on, e.g. to the app in a frame.
+ * (`ShellFeatureDeclaration.scrollsItself`) and hands it on, e.g. to the app in a frame. The pages themselves mark
+ * where the content ends with the `shell-dock-room` class or the `ShellDockRoom` component, which read the same value.
  */
 export function usePageDockSpace() {
   return inject(pageDockSpaceKey)!;

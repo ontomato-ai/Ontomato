@@ -63,7 +63,7 @@ function resultRowClassName({ row }: { row: CaseResult }): string {
       </el-radio-group>
     </div>
 
-    <div class="table-area">
+    <div class="table-area shell-dock-room">
       <el-table
         :data="filteredResults"
         stripe
