@@ -126,6 +126,7 @@ class CheckServiceV2ImplTest {
     checks.check(check, List.of(program()), List.of(), List.of(), List.of(), DOMAIN);
 
     assertEquals(90.0, check.getScore());
+    assertEquals("Answers the staff count", check.getSummary());
     assertEquals("The program answers the question", check.getConclusion());
     assertEquals("How many staff are employed?", check.getFittedQuestion());
     assertTrue(check.getFinished());
@@ -308,6 +309,7 @@ class CheckServiceV2ImplTest {
 
   private static JSONObject qualityResult(double score) {
     return JSONObject.of(
+        "summary", "Answers the staff count",
         "conclusion", "The program answers the question",
         "fittedQuestion", "How many staff are employed?",
         "score", score);

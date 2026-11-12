@@ -80,7 +80,7 @@ describe("delegated tasks in a reply", () => {
       { kind: "quality", id: checkId, root: { sessionId, runId }, parentTaskId: roundId, status: "completed", error: null,
         createdAt: null, process: { mode: "none" }, checks: { source: "retriever", datasetIds: [dataset] } },
     ],
-    qualityResults: [{ taskId: checkId, score: 92, conclusion: "Matches the question.", fittedQuestion: "Sales?" }],
+    qualityResults: [{ taskId: checkId, score: 92, summary: "Matches the question.", conclusion: "Matches the question.", fittedQuestion: "Sales?" }],
   };
 
   it("keeps the ask step, follows it with the retrieval's card and reviews the reply", () => {

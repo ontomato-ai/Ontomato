@@ -206,13 +206,19 @@ public class CheckServiceV2Impl implements CheckServiceV2 {
             check.getLang(),
             domainId)) {
       JSONObject result = generation.result();
-      String conclusion = result.getString("conclusion"),
+      String summary = result.getString("summary"),
+          conclusion = result.getString("conclusion"),
           fitted = result.getString("fittedQuestion");
       Double score = result.getDouble("score");
-      if (conclusion == null || fitted == null || score == null || !Double.isFinite(score))
+      if (summary == null
+          || conclusion == null
+          || fitted == null
+          || score == null
+          || !Double.isFinite(score))
         throw new IllegalArgumentException("Invalid quality result");
       generation.settle(
           () -> {
+            check.setSummary(summary);
             check.setConclusion(conclusion);
             check.setScore(score);
             check.setFittedQuestion(fitted);
