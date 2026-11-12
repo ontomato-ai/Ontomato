@@ -46,7 +46,16 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: "operations",
   // The application's name is the platform's (the rail and this column read one entry): the platform decides it.
   label: t("platform.operations"),
-  features: listedPages.map(({ id, label, icon }) => ({ id, label: t(label), icon, availability: "page" as const, withConversation: true })),
+  // Every page here draws its own pane (a list beside a detail, an editor, a log terminal) and scrolls inside it, so the
+  // shell leaves it the whole height and each page marks where its content ends.
+  features: listedPages.map(({ id, label, icon }) => ({
+    id,
+    label: t(label),
+    icon,
+    availability: "page" as const,
+    withConversation: true,
+    scrollsItself: true,
+  })),
 }));
 const pageOf = (path: string) =>
   pages.find((page) => page.match.some((prefix) => path === prefix || path.startsWith(prefix + "/")))?.id ?? null;

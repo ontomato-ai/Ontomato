@@ -56,8 +56,14 @@ background, in both the light and the dark theme. Don't set them on `body` again
 
 The platform may float its own controls over the foot of the page: in the builder's full preview, the composer covers
 its bottom. Once `createAppContext()` runs, the stylesheet keeps that much room after the page's content, so its end
-scrolls clear. A page that scrolls inside its own container instead of the document adds the room to that container:
-`padding-bottom: var(--app-inset-bottom)`.
+scrolls clear. A page whose content scrolls inside its own container instead puts the platform's class on that
+container: it adds the room after the container's content, and adds nothing when nothing floats over the page.
+
+```html
+<div class="results shell-dock-room">…</div>
+```
+
+A page built against an older SDK does not get this class; the room it reads comes with the version the page loads.
 
 ```html
 <div id="app" v-cloak>

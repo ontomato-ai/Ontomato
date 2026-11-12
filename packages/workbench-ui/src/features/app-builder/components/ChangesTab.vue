@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { ShellDockRoom } from "@ontomato/agent-shell-ui";
 import { formatRelativeTime } from "../../../utils/relative-time";
 import { builderApi } from "../api";
 import { patchFiles, type PatchFile } from "../patch";
@@ -139,6 +140,7 @@ watch(
         </section>
       </template>
     </template>
+    <ShellDockRoom />
   </div>
 </template>
 
@@ -149,8 +151,8 @@ watch(
   gap: var(--spacing-md);
   height: 100%;
   box-sizing: border-box;
-  /* Full, the shell's composer floats over the foot; the list keeps that room after its content. */
-  padding: var(--spacing-md) var(--spacing-lg) calc(var(--spacing-xl) + var(--pane-dock-space, 0px));
+  /* Full, the shell's composer floats over the foot; the list ends with the room it keeps. */
+  padding: var(--spacing-md) var(--spacing-lg) var(--spacing-xl);
   overflow-y: auto;
 }
 .changes-bar {

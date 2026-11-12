@@ -1,3 +1,29 @@
+/*
+ * The room the shell's floating composer covers at the foot of a full page, kept by a page that scrolls itself: the
+ * shell measures it once (`--pane-dock-space`, on the pane and in an app's frame) and a page only says where its content
+ * ends. One rule, two forms:
+ *
+ * - `.shell-dock-room` on a vertical scroll area whose content runs to the page's foot: the room follows the content and
+ *   scrolls away with it;
+ * - `ShellDockRoom` (`shell-dock-room-end`) where a class cannot reach: the last item of a container that spaces its
+ *   children with `gap`, an `el-table`'s `append` slot, or under a bar fixed to the page's foot, which the room lifts
+ *   clear of the composer.
+ *
+ * Both read the same measured height, 0 beside the conversation, and 0 leaves no gap: the pseudo-element of the class
+ * collapses, and the component is not rendered at all.
+ */
+.shell-dock-room::after {
+  content: "";
+  display: block;
+  flex: none;
+  height: var(--pane-dock-space, 0px);
+}
+.shell-dock-room-end {
+  flex: none;
+  width: 100%;
+  height: var(--pane-dock-space, 0px);
+}
+
 /* Message actions are shared with host-provided slot buttons, which scoped component CSS cannot reach. */
 .agent-shell .shell-message-action {
   appearance: none;

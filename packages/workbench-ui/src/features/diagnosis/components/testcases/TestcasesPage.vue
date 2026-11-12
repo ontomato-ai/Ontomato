@@ -6,6 +6,7 @@ import type {
 } from "@ontomato/contracts/autotest";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { ShellDockRoom } from "@ontomato/agent-shell-ui";
 import { diagnosisApi } from "../../api";
 import { useI18n } from "vue-i18n";
 import CaseEditor from "./CaseEditor.vue";
@@ -639,6 +640,8 @@ onUnmounted(() => {
         </el-button>
       </div>
     </footer>
+    <!-- The save bar owns the page's foot: the room under it lifts the bar, and the panels above it with it. -->
+    <ShellDockRoom />
 
     <ImportCaseSetDialog
       :visible="importVisible"
@@ -767,7 +770,7 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
 }
-/* In the narrow side panel (DESIGN "Agent apps") the split panes stack. */
+/* In the narrow side panel (DESIGN "Agent apps") the split panes stack and the page scrolls as a whole. */
 @container page (max-width: 720px) {
   .three-panel { flex-direction: column; overflow: auto; }
   .three-panel > * { width: 100% !important; flex: none !important; }

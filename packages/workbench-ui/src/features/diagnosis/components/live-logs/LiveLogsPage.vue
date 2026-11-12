@@ -312,7 +312,7 @@ onBeforeUnmount(() => {
       <div v-if="left.logs.length === 0" class="log-empty">
         {{ left.connected ? t("observe.waitingForLogs") : t("observe.clickConnectToStart") }}
       </div>
-      <pre v-else ref="leftLogContainer" class="log-terminal"><span
+      <pre v-else ref="leftLogContainer" class="log-terminal shell-dock-room"><span
   v-for="entry in left.logs"
   :key="entry.key"
   :class="logLevelClass(entry.level)"
@@ -380,7 +380,7 @@ onBeforeUnmount(() => {
       <div v-if="right.logs.length === 0" class="log-empty">
         {{ right.connected ? t("observe.waitingForLogs") : t("observe.clickConnectToStart") }}
       </div>
-      <pre v-else ref="rightLogContainer" class="log-terminal"><span
+      <pre v-else ref="rightLogContainer" class="log-terminal shell-dock-room"><span
   v-for="entry in right.logs"
   :key="entry.key"
   :class="logLevelClass(entry.level)"
@@ -538,10 +538,12 @@ onBeforeUnmount(() => {
 .log-debug {
   color: var(--el-text-color-placeholder);
 }
-/* In the narrow side panel (DESIGN "Agent apps") the split panes stack. */
+/* In the narrow side panel (DESIGN "Agent apps") the split panes stack and the page scrolls as a whole: only the lower
+   terminal ends at the page's foot, so the upper one gives up the room. */
 @container page (max-width: 720px) {
   .live-logs-page { flex-direction: column; gap: 8px; overflow: auto; }
   .log-panel { width: 100% !important; flex: 1 0 320px; }
+  .log-panel:first-child .log-terminal { --pane-dock-space: 0px; }
   .drag-handle { display: none; }
 }
 </style>
