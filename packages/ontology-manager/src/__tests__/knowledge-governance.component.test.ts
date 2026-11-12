@@ -19,7 +19,9 @@ let responses: Map<string, unknown>;
 const json = (body: unknown) =>
   new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
 
-function installManager(app: App) {
+type Translate = (key: string, params?: Record<string, unknown>) => string;
+
+function installManager(app: App): Translate {
   const i18n = createI18n({ legacy: false, locale: "en", messages: { en: managerMessageTree(englishMessages) } as never });
   app.use(i18n);
   // What the platform answers around the application: every page may be opened, and the model page's name.
@@ -43,6 +45,7 @@ function installManager(app: App) {
     knowledgeTagValues: { general: "General", business: "Business", tech: "Tech" },
     onAuthFailure: () => {},
   }).install(app);
+  return (i18n as unknown as { global: { t: Translate } }).global.t;
 }
 
 function work(summary: string, issues: unknown[] = [], sources: unknown[] = []) {
@@ -77,10 +80,10 @@ function mountPage(sessionId: string | null) {
   const host = document.createElement("div");
   document.body.appendChild(host);
   const app = createApp({ render: () => h(GovernancePage, { sessionId: props.sessionId }) });
-  installManager(app);
+  const translate = installManager(app);
   app.mount(host);
   mounted.push(app);
-  return { host, props };
+  return { host, props, translate };
 }
 
 async function settle() {
@@ -161,12 +164,13 @@ afterEach(() => {
 describe("governance report", () => {
   it("shows the session's findings, its progress and its sources", async () => {
     responses.set("/s1/work", work("Checked the order rule", [issue("Order status rule")], [source("src1", "Order doc")]));
-    const { host } = mountPage("s1");
+    const { host, translate } = mountPage("s1");
     await openReport(host);
 
     expect(host.textContent).toContain("Checked the order rule");
     expect(host.textContent).toContain("Order status rule");
-    expect(host.textContent).toContain("Reviewed 1 of 4");
+    // The progress is this conversation's reviewed count and total, in the page's own wording.
+    expect(host.textContent).toContain(translate("governance.text.progress", { done: 1, total: 4 }));
     expect(host.textContent).toContain("Order doc");
   });
 

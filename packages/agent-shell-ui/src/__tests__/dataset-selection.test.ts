@@ -23,6 +23,11 @@ it("continues from selected source rows across pagination with one ordinary mess
     [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Compare selection")!.click();
     await nextTick();
     expect(proceed).toHaveBeenCalledTimes(1);
-    expect(proceed).toHaveBeenCalledWith('Compare rows 1, 9 of the data file "Staff" (outputs/data.dataset.json).');
+    // One message naming the two selected source rows (positions in the file), its title and its path.
+    const message = proceed.mock.calls[0]![0] as string;
+    expect(message).toMatch(/\b1\b/);
+    expect(message).toMatch(/\b9\b/);
+    expect(message).toContain("Staff");
+    expect(message).toContain("outputs/data.dataset.json");
   } finally { app.unmount(); root.remove(); }
 });

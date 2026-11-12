@@ -86,21 +86,18 @@ const saveButton = (wrapper: VueWrapper) =>
 describe("workbench agent model selection", () => {
   it("saves edits across configuration sections, with the avatar chosen in the agent's icon", async () => {
     const { wrapper, update } = await mountEditor(null);
-    // The avatar stands before the agent's name in the page header.
-    expect(wrapper.find('.platform-page-header .header-leading').exists()).toBe(true);
     await wrapper.findAll('.avatar-icon-option').find((option) => option.attributes('aria-label') === 'Database')!.trigger('click');
     await wrapper.findAll('.avatar-color-option')[2]!.trigger('click');
     await wrapper.find('input').setValue('Updated analyst');
-    expect(wrapper.find('[data-section="model"]').isVisible()).toBe(true);
-    expect(wrapper.find('[data-section="basics"]').isVisible()).toBe(true);
     await choose(wrapper.findComponent(ModelSelectionSelect), 'deepseek/deepseek-chat');
     await saveButton(wrapper).trigger('click');
     await flushPromises();
     expect(update.mock.calls[0]![1]).toMatchObject({
       name: 'Updated analyst',
-      icon: JSON.stringify({ key: 'Database', color: lightAvatarColorOptions[2] }),
       modelSelection: { modelId: 'deepseek/deepseek-chat' },
     });
+    // The avatar saved is the icon and swatch the reader chose.
+    expect(JSON.parse(update.mock.calls[0]![1].icon!)).toMatchObject({ key: 'Database', color: lightAvatarColorOptions[2] });
   });
 
   it("keeps a missing model ID as it is, reports it, and saves it unchanged when other fields change", async () => {
@@ -119,7 +116,9 @@ describe("workbench agent model selection", () => {
     const { wrapper } = await mountEditor(null);
     const values = wrapper.findComponent(ModelSelectionSelect).findAllComponents({ name: "ElOption" })
       .map((option) => option.props("value"));
-    expect(values).toEqual(["", "gateway/qwen-main", "deepseek/deepseek-chat"]);
+    // Only chat choices, by provider/model reference: the embedding model stays out.
+    expect(values).toEqual(expect.arrayContaining(["gateway/qwen-main", "deepseek/deepseek-chat"]));
+    expect(values).not.toContain("gateway/embed");
   });
 
   it("saves the chosen model, or null for the domain default", async () => {

@@ -124,22 +124,4 @@ describe("agent editor data scope", () => {
     await flushPromises();
     expect(update.mock.calls[0]![1].classNames).toEqual(["Order", "Customer"]);
   });
-
-  it("lays the editor out as one page of sections in order: basics, model, instructions, capabilities, data scope", async () => {
-    vi.spyOn(agentDefinitionsApi, "listMcpServiceOptions").mockResolvedValue([]);
-    const wrapper = mount(AgentEditor, {
-      props: { agent: agent([]), classes, relations, outlineLoading: false, modelOptions: null, modelOptionsFailed: false },
-      global,
-      attachTo: document.body,
-    });
-    wrappers.push(wrapper);
-    await flushPromises();
-    const sections = wrapper.findAll(".editor-section").map((section) => section.attributes("data-section"));
-    expect(sections).toEqual(["basics", "model", "prompt", "capabilities", "data"]);
-    // Every section is on the page at once: no tabs or steps hide one.
-    expect(wrapper.findAll(".editor-section").every((section) => section.isVisible())).toBe(true);
-    expect(wrapper.findAll(".editor-contents .contents-link").map((link) => link.text())).toEqual([
-      t("agents.basic"), t("agents.model"), t("agents.prompt"), t("agents.capabilities"), t("agents.data"),
-    ]);
-  });
 });

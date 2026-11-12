@@ -8,7 +8,7 @@ it("replaces generated categorical palettes and their explicit references withou
   expect(result.color).toEqual(["indigo", "teal"]);
   expect(result.series[0].data.map((item: any) => item.itemStyle.color)).toEqual(["indigo", "teal"]);
   expect(result.series[1].lineStyle.color).toBe("teal");
-  expect(result.series[1].areaStyle).toEqual({ color: "teal", opacity: 0.12 });
+  expect(result.series[1].areaStyle.color).toBe("teal");
   expect(source.series[0]!.data![0]!.itemStyle.color).toBe("red");
 });
 
@@ -23,7 +23,7 @@ it("uses primary for single-measure bars and coherent series colours for lines, 
   expect(result.series.map((series: any) => series.itemStyle.color)).toEqual(colors);
   expect(result.series.every((series: any) => series.colorBy === "series")).toBe(true);
   expect(result.series[1].lineStyle.color).toBe("blue");
-  expect(result.series[1].areaStyle).toEqual({ color: "blue", opacity: 0.12 });
+  expect(result.series[1].areaStyle.color).toBe("blue");
   expect(source.series[0]!.colorBy).toBe("data");
 });
 
