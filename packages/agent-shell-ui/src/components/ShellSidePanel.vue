@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, inject, provide, ref } from "vue";
+import { computed, inject } from "vue";
 import { Download, X } from "lucide-vue-next";
 import { fileName, saveBlob } from "../artifacts";
-import { artifactHeaderKey, shellContextKey } from "../context";
+import { shellContextKey } from "../context";
 import { artifactIcon } from "../icons";
 import type { OpenArtifact } from "../types";
 import { usePanelWidth } from "../usePanelWidth";
@@ -13,8 +13,6 @@ import SlotOutlet from "./SlotOutlet.vue";
 const props = defineProps<{ open: OpenArtifact }>();
 const emit = defineEmits<{ close: [] }>();
 const shell = inject(shellContextKey)!;
-const headerControls = ref<HTMLElement | null>(null);
-provide(artifactHeaderKey, headerControls);
 const { width, resizing, startResize } = usePanelWidth();
 const icon = computed(() => artifactIcon(props.open.artifact.path));
 const title = computed(() => props.open.title || fileName(props.open.artifact.path));
@@ -32,7 +30,6 @@ async function download() {
       <span class="panel-heading">
         <span class="panel-title">{{ title }}</span>
       </span>
-      <div ref="headerControls" class="artifact-header-controls" />
       <SlotOutlet :content="shell.slots.artifactActions" :scope="{ artifact: open.artifact, title }" />
       <button type="button" class="panel-button" :title="shell.labels.value.download" :aria-label="shell.labels.value.download" @click="download">
         <Download :size="16" />
@@ -99,8 +96,6 @@ async function download() {
   background: var(--el-fill-color);
   color: var(--el-text-color-secondary);
 }
-.artifact-header-controls { display: flex; align-items: center; flex-shrink: 0; }
-.artifact-header-controls:empty { display: none; }
 .panel-heading {
   display: flex;
   flex-direction: column;

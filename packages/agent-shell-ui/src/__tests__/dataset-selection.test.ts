@@ -13,7 +13,7 @@ it("continues from selected source rows across pagination with one ordinary mess
     read: async () => new Blob([JSON.stringify({ question: "Active staff in 2025", assumptions: ["Active only"], truncation: null,
       columns: [{ key: "id", label: "ID" }, { key: "value", label: "Value" }, { key: "note", label: "Note" }], rows })]),
   }) });
-  app.provide(shellContextKey, { labels: ref({ compareSelection: "Compare selection" }) } as unknown as ShellContext);
+  app.provide(shellContextKey, { labels: ref({ compareSelection: "Compare selection", filterColumn: (column: string) => `Filter ${column}`, filterSearch: "Search", filterAll: "All", filterEmpty: "(Empty)" }) } as unknown as ShellContext);
   app.mount(root);
   try {
     await new Promise((resolve) => setTimeout(resolve, 0)); await nextTick();

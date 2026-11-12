@@ -193,9 +193,22 @@ export interface ShellLabels {
   activityKnowledge: string;
   activityDataset: string;
   activityCompute: string;
-  /** Dataset view switch: the rows, or the graph of how they were obtained. */
-  datasetData: string;
+  /** Heading of how a dataset was obtained, under its table: each query with its conditions, and the graph. */
   datasetLineage: string;
+  showLineage: string;
+  hideLineage: string;
+  /** The graph's columns: the objects the data comes from, the fields used, the calculations and the result columns. */
+  lineageSources: string;
+  lineageFields: string;
+  lineageOperations: string;
+  lineageOutputs: string;
+  /** A dataset holds only the first `limit` rows of its result. */
+  truncatedRows: (limit: number) => string;
+  /** A dataset's column filter: its button's accessible name from the column's name, the value search, keep all, empty. */
+  filterColumn: (column: string) => string;
+  filterSearch: string;
+  filterAll: string;
+  filterEmpty: string;
   /** Elapsed time phrase while a response runs; `time` is already formatted as m:ss. */
   elapsed: (time: string) => string;
   /** A finished response's folded process line; `time` is the run's duration, formatted as m:ss. */
@@ -212,8 +225,6 @@ export interface ShellTaskLabels {
   /** A retrieval round's branches: the metric binding results and the retriever's own. */
   branch: Record<"binding" | "retriever", string>;
   rows: (count: number) => string;
-  /** A dataset holds only the first `limit` rows of its result. */
-  truncatedRows: (limit: number) => string;
   /** The quality review's own name, beside the reply. */
   review: string;
   reviewRunning: string;
