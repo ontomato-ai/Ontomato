@@ -144,29 +144,30 @@ describe("assistant ontology provenance", () => {
     await expect(assistantService.datasetSource("session", "copy", owner)).rejects.toThrow();
   });
 
-  it("roots each caller's tasks at the reply whose turn opened that caller", async () => {
-    const reply = "88888888-8888-4888-8888-888888888888", caller = "99999999-9999-4999-8999-999999999999";
-    vi.spyOn(assistantStore, "session").mockResolvedValue({} as never);
-    vi.spyOn(assistantStore, "isBuilderRun").mockResolvedValue(false);
-    vi.mocked(assistantStore.turns).mockResolvedValue([{ id: reply, retrieval_scope_id: caller, settled: false } as TurnRow]);
-    route.set(`/ontology/retrieval-callers/tasks?callerIds=${caller}`, {
-      tasks: [{ kind: "retrieval", id: run, callerId: caller, question: "Sales?", parentTaskId: null, status: "completed", error: null,
-        createdAt: "2026-11-12T02:00:00Z", process: { mode: "none" }, branches: [] }],
-      qualityResults: [],
-      settled: true,
-    });
-    const read = await assistantService.tasks(session, owner);
-    expect(read.snapshot.tasks[0]).toMatchObject({ id: run, root: { sessionId: session, runId: reply } });
+  it("uses the runtime's requestedBy roots without manufacturing caller tasks",async()=>{
+    const reply="88888888-8888-4888-8888-888888888888";
+    vi.spyOn(assistantStore,"session").mockResolvedValue({} as never);
+    vi.spyOn(assistantService,"channelTasks").mockResolvedValue({sessionId:session,tasks:[{kind:"agent",id:run,title:"Sales?",root:{sessionId:session,runId:reply},requestedBy:{session:{providerId:"workbench",sessionId:session},runId:reply},agentRef:{providerId:"ontology",agentId:retrieval},sessionRef:{providerId:"ontology",sessionId:retrieval},runId:run,parentTaskId:null,status:"completed",error:null,createdAt:"2026-11-12T02:00:00Z",process:{mode:"none"},results:[],retrieval:{question:"Sales?",decisionRevision:0,branches:[]}}],qualityResults:[]});
+    const read=await assistantService.tasks(session,owner);
+    expect(read.snapshot.tasks[0]).toMatchObject({id:run,root:{sessionId:session,runId:reply}});
     expect(read.snapshot.tasks[0]).not.toHaveProperty("callerId");
-    // The reply's turn is not settled yet, so it can still delegate more work.
     expect(read.settled).toBe(false);
   });
 
-  it("closes the parent's ontology scope with the caller's own credential", async () => {
+  it("explicit cancellation closes only the parent query scope with its own credential", async () => {
     route.set(`/ontology/retrieval-callers/parent-run/close`, { closed: true });
-    await assistantService.stopChildren("parent-run", owner, { token: "user-token" });
-    const close = calls.requests.find((r) => r.path === "/ontology/retrieval-callers/parent-run/close");
-    expect(close?.path).toBe("/ontology/retrieval-callers/parent-run/close");
+    vi.spyOn(assistantStore,"isBuilderRun").mockResolvedValue(false);
+    vi.spyOn(assistantStore,"settled").mockResolvedValue();
+    await assistantService.cancelScope("parent-run",owner,{token:"user-token"});
+    const close = calls.requests.find((r) => r.path === "/ontology/retrieval-callers/parent-run/close-scope");
+    expect(close?.path).toBe("/ontology/retrieval-callers/parent-run/close-scope");
     expect(close?.options.headers).toMatchObject({ tk: "user-token" });
   });
+  it("natural completion never closes or cancels delegated work",async()=>{
+    const settled=vi.spyOn(assistantStore,"settled").mockResolvedValue();
+    await assistantService.settleTurn("parent-run");
+    expect(settled).toHaveBeenCalledWith("parent-run");
+    expect(calls.requests).toEqual([]);
+  });
+
 });

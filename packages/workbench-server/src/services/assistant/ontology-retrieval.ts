@@ -1,6 +1,6 @@
+import { agentQualityProjectionSchema } from "@ontomato/contracts/agent-task-results";
 import { z } from "zod";
 import { agentHostRunSnapshotSchema } from "@ontomato/contracts/agent-host";
-import { callerTasksSchema } from "@ontomato/contracts/agent-tasks";
 import { datasetPayloadSchema, retrievalEvidenceSchema, retrievalCallerSchema, retrievalCallerAdmissionSchema, type RetrievalCallerInput } from "@ontomato/contracts/data-retrieval";
 import { runtimeArtifactSchema } from "@ontomato/contracts/agent-runtime-artifacts";
 import { backendGet, backendPost, backendDelete, buildBackendHeaders, BackendResponseError } from "../../utils/backend-client";
@@ -30,12 +30,6 @@ async function ontologyRequest(path: string, headers: Record<string, string>, me
   }
 }
 
-/** The rounds the turns' caller scopes admitted and their quality checks, as the ontology service projects them. */
-export async function readCallerTasks(owner: AssistantOwner, callerIds: string[]) {
-  const query = new URLSearchParams(callerIds.map((callerId) => ["callerIds", callerId]));
-  return callerTasksSchema.parse(await ontologyRequest(`/ontology/retrieval-callers/tasks?${query}`, serviceHeaders(owner)));
-}
-
 /** Application-owned parent association and evidence access, never retrieval orchestration. */
 export class OntologyRetrievalClient {
   constructor(readonly owner: AssistantOwner, readonly scopeId: string) {}
@@ -55,8 +49,11 @@ export class OntologyRetrievalClient {
   async links() {
     return retrievalCallerSchema.parse(await this.request(`/ontology/retrieval-callers/${this.scopeId}`)).retrievals;
   }
-  async close(credentials?: AssistantCredentials) {
-    await this.request(`/ontology/retrieval-callers/${this.scopeId}/close`, "POST", {}, credentials);
+  async closeScope(credentials?: AssistantCredentials) {
+    await this.request(`/ontology/retrieval-callers/${this.scopeId}/close-scope`, "POST", {}, credentials);
+  }
+  async quality(retrievalId:string,runId:string) {
+    return z.object({quality:z.array(agentQualityProjectionSchema)}).strict().parse(await this.request(`/ontology/retrievals/${retrievalId}/runs/${runId}/quality`)).quality;
   }
   async evidence(retrievalId: string, runId: string) {
     return retrievalEvidenceSchema.parse(await this.request(`/ontology/retrievals/${retrievalId}/runs/${runId}/evidence`));

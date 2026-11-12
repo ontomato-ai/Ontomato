@@ -4,7 +4,7 @@ import {
 } from "../../infrastructure/postgres";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import type { AgentHostRunSnapshot } from "@ontomato/contracts/agent-host";
-import { OntologyRetrievalClient, readCallerTasks } from "./ontology-retrieval";
+import { OntologyRetrievalClient } from "./ontology-retrieval";
 import { projectDataset } from "./dataset-projection";
 import type { AssistantQueryEvidence } from "./query-evidence";
 import { assistantStore, type AssistantOwner } from "./store";
@@ -52,7 +52,6 @@ export async function readAssistantTurnEvidence(
     artifacts = [...run.artifacts];
   const ontology = new OntologyRetrievalClient(owner, turn.retrieval_scope_id);
   const links = await ontology.links();
-  const tasks = await readCallerTasks(owner, [turn.retrieval_scope_id]);
   for (const link of links) {
     const evidence = await ontology.evidence(link.retrievalId, link.runId);
     const child = evidence.snapshot.runtimeSessionId && evidence.snapshot.runtimeRunId
@@ -84,8 +83,7 @@ export async function readAssistantTurnEvidence(
       fullContent: child ? answerText(child) : "",
       backendSessions: [],
       // Each branch's quality task of this round, with its conclusion once it completed.
-      qcResult: tasks.tasks.filter((task) => task.kind === "quality" && task.parentTaskId === link.runId)
-        .map((task) => ({ ...task, result: tasks.qualityResults.find((result) => result.taskId === task.id) ?? null })),
+      qcResult: await ontology.quality(link.retrievalId,link.runId),
       datasetsPayload: datasets.map((d) => ({
         id: d.id,
         datasetKey: d.id,

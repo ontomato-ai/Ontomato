@@ -1,3 +1,4 @@
+import path from "node:path";
 import { agentPrepareRequestSchema, agentProviderExecutionSchema, agentProviderListRequestSchema, type AgentRunContext } from "@ontomato/contracts/agent-channel";
 import { DIAGNOSIS_AGENT_ID } from "@ontomato/contracts/ops-diagnosis";
 import { assistantService } from "../assistant/service";
@@ -40,6 +41,7 @@ export const agentChannelService = {
     const body = agentPrepareRequestSchema.parse(raw), restored = await caller(body, domain, body.agent.providerId);
     const owner = restored.owner, credentials = { ...restored.credentials,locale: body.language };
     if (!["workbench", "observe"].includes(body.agent.providerId)) throw new HttpError(404, "Agent provider not found", "NOT_FOUND");
+    if (body.authority.executionKind === "build-test" && body.requestedBy) throw new HttpError(422,"Agent delegation is not available in a build-test execution","BUILD_TEST_UNSUPPORTED");
     if (body.mode === "steer") {
       const service = body.agent.providerId === "observe" ? diagnosisService : assistantService;
       await service.ownRun(body.sessionId, body.runId, owner);
@@ -60,20 +62,26 @@ export const agentChannelService = {
     return { body, service, owner, credentials };
   },
   async settle(raw: unknown, domain: string) {
-    const { body, owner } = await this.execution(raw, domain);
-    if (body.execution.session.providerId === "workbench") await assistantService.settleTurn(body.execution.runId, owner);
+    const { body } = await this.execution(raw, domain);
+    if (body.execution.session.providerId === "workbench") await assistantService.settleTurn(body.execution.runId);
     return { accepted: true };
   },
   async cancel(raw: unknown, domain: string) {
-    const { body, owner } = await this.execution(raw, domain);
-    if (body.execution.session.providerId === "workbench") await assistantService.settleTurn(body.execution.runId, owner);
+    const { body, owner,credentials } = await this.execution(raw, domain);
+    if (body.execution.session.providerId === "workbench") await assistantService.cancelScope(body.execution.runId,owner,credentials);
     return { accepted: true };
   },
   async read(raw: unknown, domain: string) {
     const { body, service, owner } = await this.execution(raw, domain);
+    if(body.fileId) {
+      const artifact=await service.artifact(body.execution.session.sessionId,body.fileId,owner);
+      if(artifact.runId!==body.execution.runId || !artifact.path.startsWith("outputs/")) throw new HttpError(404,"File was not delivered by this execution","NOT_FOUND");
+      return service.content(body.execution.session.sessionId,body.fileId,owner);
+    }
     const snapshot = await service.readRun(body.execution.session.sessionId, body.execution.runId, owner);
     const status = snapshot.run.status === "running" ? "running" : snapshot.run.stopReason === "stop" ? "completed" : snapshot.run.stopReason === "aborted" ? "cancelled" : "failed";
     return { status, summary: answerText(snapshot) || snapshot.run.errorMessage || status,
-      process: { mode: "inline", runtimeSessionId: snapshot.run.sessionId, runtimeRunId: snapshot.run.id }, results: [] };
+      process: { mode: "inline", runtimeSessionId: snapshot.run.sessionId, runtimeRunId: snapshot.run.id }, results: [],quality: [],
+      files:snapshot.artifacts.filter(file=>file.runId===snapshot.run.id && file.path.startsWith("outputs/")).map(file=>({id:file.id,name:path.posix.basename(file.path),mediaType:file.mediaType,href:`/platform/agent-channel/tasks/${snapshot.run.id}/files/${file.id}`})) };
   },
 };
