@@ -18,17 +18,33 @@ export class ChannelStore {
     if (!rows[0].channel) throw new RuntimeError(409, "CHANNEL_UNAVAILABLE", "Session has no registered agent provider");
     return rows[0].channel;
   }
-  async receive(scope: Scope, sessionId: string, message: AgentInput): Promise<MessageRow> {
+  async receive(scope: Scope, sessionId: string, message: AgentInput, options: { mode?: "followup" | "steer"; outputRunId?: string } = {}): Promise<MessageRow> {
     return this.store.transaction(async c => {
       const row = (await c.query(`UPDATE ${this.store.table("sessions")} SET message_seq=message_seq+1,updated_at=now() WHERE host_id=$1 AND domain_id=$2 AND id=$3 RETURNING message_seq`, [...this.key(scope), sessionId])).rows[0];
-      const record = { id: randomUUID(), runId: null, messageSeq: Number(row.message_seq), message };
-      await c.query(`INSERT INTO ${this.store.table("messages")} (host_id,domain_id,id,session_id,run_id,seq,message,intent_id) VALUES($1,$2,$3,$4,NULL,$5,$6,(SELECT preparing_run_id FROM ${this.store.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND id=$4))`, [...this.key(scope), record.id, sessionId, record.messageSeq, message]);
+      const record = { id: randomUUID(), runId: options.outputRunId ?? null, messageSeq: Number(row.message_seq), message };
+      await c.query(`INSERT INTO ${this.store.table("messages")} (host_id,domain_id,id,session_id,run_id,seq,message,intent_id,input_mode) VALUES($1,$2,$3,$4,$7,$5,$6,(SELECT preparing_run_id FROM ${this.store.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND id=$4),$8)`, [...this.key(scope), record.id, sessionId, record.messageSeq, message,record.runId,options.mode ?? "followup"]);
       return record;
     });
   }
-  async pending(scope: Scope, sessionId: string): Promise<MessageRow[]> {
-    const { rows } = await this.store.pool.query(`SELECT m.id,m.run_id,m.seq,m.message FROM ${this.store.table("messages")} m LEFT JOIN ${this.store.table("admissions")} a ON a.host_id=m.host_id AND a.domain_id=m.domain_id AND a.key=m.intent_id WHERE m.host_id=$1 AND m.domain_id=$2 AND m.session_id=$3 AND m.run_id IS NULL AND (a.intent IS NULL OR a.intent->>'status' NOT IN ('failed','cancelled')) ORDER BY m.seq`, [...this.key(scope),sessionId]);
+  async pending(scope: Scope, sessionId: string, mode?: "steer"): Promise<MessageRow[]> {
+    const { rows } = await this.store.pool.query(`SELECT m.id,m.run_id,m.seq,m.message FROM ${this.store.table("messages")} m LEFT JOIN ${this.store.table("admissions")} a ON a.host_id=m.host_id AND a.domain_id=m.domain_id AND a.key=m.intent_id WHERE m.host_id=$1 AND m.domain_id=$2 AND m.session_id=$3 AND m.run_id IS NULL AND ($4::text IS NULL OR m.input_mode=$4) AND (a.intent IS NULL OR a.intent->>'status' NOT IN ('failed','cancelled')) ORDER BY m.seq`, [...this.key(scope),sessionId,mode ?? null]);
     return rows.map(row => ({ id: row.id,runId: null,messageSeq: Number(row.seq),message: row.message }));
+  }
+  async question(domainId:string,id:string) {
+    const row = (await this.store.pool.query(`SELECT message FROM ${this.store.table("messages")} WHERE domain_id=$1 AND id=$2 AND message->>'role'='notification' AND message->>'kind'='agent-question'`,[domainId,id])).rows[0];
+    if (!row) throw new RuntimeError(400,"INVALID_REPLY","replyTo must identify a question received by this caller");
+    return row.message as AgentNotification;
+  }
+  async delivered(scope: Scope,sessionId: string,source: AgentExecutionRef) {
+    const row=(await this.store.pool.query(`SELECT id FROM ${this.store.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND message->>'role'='notification' AND message->>'kind'='agent-result' AND message->'source'=$4::jsonb LIMIT 1`,[...this.key(scope),sessionId,JSON.stringify(source)])).rows[0];
+    return row?.id as string | undefined;
+  }
+  async hasRun(scope: Scope,runId: string) {
+    return (await this.store.pool.query(`SELECT id FROM ${this.store.table("runs")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`,[...this.key(scope),runId])).rowCount!==0;
+  }
+  async questions(scope: Scope,execution: AgentExecutionRef) {
+    const {rows}=await this.store.pool.query(`SELECT q.id,q.message,EXISTS(SELECT 1 FROM ${this.store.table("messages")} answer WHERE answer.host_id=$3 AND answer.domain_id=$1 AND answer.session_id=$4 AND answer.message->>'replyTo'=q.id::text AND answer.message->>'kind'='agent-answer') AS answered FROM ${this.store.table("messages")} q WHERE q.domain_id=$1 AND q.message->>'role'='notification' AND q.message->>'kind'='agent-question' AND q.message->'source'=$2::jsonb ORDER BY q.seq`,[scope.domainId,JSON.stringify(execution),scope.hostId,execution.session.sessionId]);
+    return rows.map(row=>({id:row.id,message:row.message.content as string,defaultAssumption:row.message.defaultAssumption as string,answered:row.answered as boolean}));
   }
   async reserve(scope: Scope, sessionId: string, runId: string, inputId: string, channel: AgentRunContext, options: { language: string; context?: AgentRunIntent["context"]; title?: string; create?: { binding: ChannelBinding; input: AgentNotification } }) {
     const intent: AgentRunIntent = { id: runId, session: { providerId: channel.agent.providerId, sessionId }, channel, language: options.language, inputId, context: options.context, title: options.title, status: "starting", createdAt: new Date().toISOString(), error: null, cancelled: false };
@@ -92,6 +108,9 @@ export class ChannelStore {
   async children(domainId: string, source: AgentExecutionRef): Promise<Array<{ scope: Scope; intent: AgentRunIntent }>> {
     const { rows } = await this.store.pool.query(`SELECT host_id,intent FROM ${this.store.table("admissions")} WHERE domain_id=$1 AND intent IS NOT NULL AND intent->'channel'->'requestedBy'=$2::jsonb ORDER BY key`,[domainId,JSON.stringify(source)]);
     return rows.map(row => ({ scope: { hostId: row.host_id,domainId },intent: agentRunIntentSchema.parse(row.intent) }));
+  }
+  async closePending(scope:Scope,sessionId:string,runId:string) {
+    await this.store.pool.query(`UPDATE ${this.store.table("messages")} SET intent_id=$4 WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND run_id IS NULL AND intent_id IS NULL`,[...this.key(scope),sessionId,runId]);
   }
   async consume(scope: Scope, sessionId: string, runId: string, ids: string[]) {
     await this.store.transaction(async c => {

@@ -6,7 +6,7 @@ import { ServiceLogStore, withServiceLogContext, getServiceLogContext, updateSer
 import { runtimeLogging, runtimeLogger, runtimeDiagnostic } from "./logging";
 import { ArtifactFiles } from "./files";
 import { SessionSandbox } from "./sandbox";
-import { mkdir, chmod, readFile } from "node:fs/promises";
+import { mkdir, chmod, readFile, writeFile, rename } from "node:fs/promises";
 import { CodeExecutor } from "./code";
 import { signalUid, assertWorkerPolicy, type WorkerPolicy } from "./worker";
 import { randomUUID } from "node:crypto";
@@ -339,6 +339,18 @@ export class AgentRuntime {
       return accepted;
     });
   }
+  async importAgentFile(scope:Scope,runId:string,taskId:string,file:{id:string;name:string},data:Buffer) {
+    const sandbox=this.active.get(key(scope,runId))!.sandbox!;
+    const relative=path.posix.join("inputs","agents",taskId,`${file.id}-${file.name}`),destination=path.join(sandbox.workspace,relative),temporary=destination+`.${randomUUID()}.download`;
+    await mkdir(path.dirname(destination),{recursive:true});
+    await writeFile(temporary,data);await rename(temporary,destination);
+    return relative;
+  }
+  async updateHostContext(scope: Scope,runId: string,context: string) {
+    const active=this.active.get(key(scope,runId))!;
+    active.run.definition.context=context;
+    await this.store.pool.query(`UPDATE ${this.store.table("runs")} SET run=jsonb_set(run,'{definition,context}',$4::jsonb) WHERE host_id=$1 AND domain_id=$2 AND id=$3`,[scope.hostId,scope.domainId,runId,JSON.stringify(context)]);
+  }
   seal(scope: Scope, runId: string) { this.active.get(key(scope, runId))!.sealed = true; }
   async notificationReceived(scope: Scope, runId: string, row: import("./store").MessageRow) {
     const active = this.active.get(key(scope, runId));
@@ -590,10 +602,12 @@ export class AgentRuntime {
           toolExecution: "sequential",
           convertToLlm: (m) => m.map(message => contextMessage(message as RuntimeMessage)),
           getFollowUpMessages: run.channel ? () => this.channel.followUp(scope, run) : undefined,
+          getSteeringMessages: run.channel ? () => this.channel.steering(scope,run) : undefined,
           prepareRequest: async ({ context }) => {
             signal.throwIfAborted();
             const system = [
               request.definition.systemPrompt,
+              request.definition.context,
               skillCatalog(sandbox.workspace, skills),
             ]
               .filter(Boolean)

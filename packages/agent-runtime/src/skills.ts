@@ -29,6 +29,7 @@ export interface RuntimeHost {
   domainSkills?: boolean;
   /** May read the restricted history projection of other hosts in the same domain. */
   domainHistory?: boolean;
+  channelGateway?: boolean;
 }
 export type InstalledSkill = RuntimeRegisteredSkill & { directory: string };
 export class SkillRegistry {

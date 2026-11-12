@@ -182,7 +182,12 @@ export class RuntimeStore {
           UPDATE ${this.table("messages")} SET context_seq=seq WHERE run_id IS NOT NULL;
           INSERT INTO ${this.table("schema_migrations")} VALUES(5)`);
       }
+      await c.query(`ALTER TABLE ${this.table("messages")} ADD COLUMN IF NOT EXISTS input_mode text NOT NULL DEFAULT 'followup'`);
       await c.query(`
+        CREATE INDEX IF NOT EXISTS messages_channel_result_idx ON ${this.table("messages")}(host_id,domain_id,session_id,(message->'source')) WHERE message->>'role'='notification' AND message->>'kind'='agent-result';
+        CREATE INDEX IF NOT EXISTS messages_channel_question_id_idx ON ${this.table("messages")}(domain_id,id) WHERE message->>'role'='notification' AND message->>'kind'='agent-question';
+        CREATE INDEX IF NOT EXISTS messages_channel_question_idx ON ${this.table("messages")}(domain_id,(message->'source')) WHERE message->>'role'='notification' AND message->>'kind'='agent-question';
+        CREATE INDEX IF NOT EXISTS messages_channel_answer_idx ON ${this.table("messages")}(host_id,domain_id,session_id,(message->>'replyTo')) WHERE message->>'kind'='agent-answer';
         CREATE INDEX IF NOT EXISTS admissions_channel_task_idx ON ${this.table("admissions")}(domain_id,key) WHERE intent IS NOT NULL;
         CREATE INDEX IF NOT EXISTS admissions_channel_session_idx ON ${this.table("admissions")}(host_id,domain_id,session_id) WHERE intent IS NOT NULL;
         CREATE INDEX IF NOT EXISTS admissions_requested_by_idx ON ${this.table("admissions")}(domain_id,(intent->'channel'->'requestedBy')) WHERE intent IS NOT NULL;
