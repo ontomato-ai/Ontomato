@@ -9,10 +9,8 @@ import type { LogSourceType, ParsedLogSource } from "@ontomato/contracts/observe
 export interface WorkbenchProduct {
   migrationLockKey: "data-agent:postgres-business-migrations" | "ontomato:postgres-business-migrations";
   subgraphFence: "data-agent-subgraph" | "ontomato-subgraph";
-  mcpClientName: "data-agent" | "ontomato";
   analysisMcpServerName: "data-agent-analysis-agents" | "ontomato-analysis-agents";
   opsMcpServerName: "data-agent-ops-agent" | "ontomato-ops-agent";
-  systemMcpCatalogName: "dataagent-mcp" | "ontomato-mcp";
   logDirEnvName: "DATA_AGENT_LOG_DIR" | "ONTOMATO_LOG_DIR";
   logSource: Extract<ParsedLogSource, "data-agent" | "ontomato">;
   appLogSourceType: Extract<LogSourceType, "data-agent-app" | "ontomato-app">;

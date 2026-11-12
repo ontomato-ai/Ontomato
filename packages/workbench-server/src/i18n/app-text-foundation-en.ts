@@ -80,6 +80,4 @@ export const appTextFoundationEn = {
   "foundation.log.pg.schemaReady": "PostgreSQL schema initialization completed",
   "foundation.log.pg.poolClosed": "PostgreSQL connection pool closed",
   "foundation.log.resources.synced": "System default resources synced to runtime directory",
-  "foundation.log.mcp.catalogFallback":
-    "Failed to get the system Ontomato MCP tool list, continuing to return the local analysis MCP service",
 };
