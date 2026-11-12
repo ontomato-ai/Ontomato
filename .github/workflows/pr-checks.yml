@@ -27,6 +27,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Match docker/workbench/Dockerfile and the public branch image build facts.
+      - name: Build the apps SDK
+        working-directory: apps/workbench
+        env:
+          APPS_SDK_BUILD: '{"release":false,"product":"ontomato"}'
+        run: pnpm build:sdk
+
       - name: Lint
         run: pnpm lint:workbench
 

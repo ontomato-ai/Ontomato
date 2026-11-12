@@ -68,7 +68,7 @@ jobs:
       - name: Build the final images
         env:
           BUILD_CACHE_READ_ONLY: ${{ github.ref_type == 'branch' }}
-        run: &build-images |
+        run: |
           if [ "$GITHUB_REF_TYPE" = tag ]; then version="${GITHUB_REF_NAME#v}"; elif [ "$GITHUB_REF_NAME" = develop ]; then version=edge; else version="${GITHUB_REF_NAME//\//-}"; fi
           BUILD_CACHE_REF="$REGISTRY/ontomato-workbench:cache-$version-$ARCH" make workbench ARCH="$ARCH"
           BUILD_CACHE_REF="$REGISTRY/ontomato-data-engine:cache-$version-$ARCH" make data-engine ARCH="$ARCH"
@@ -85,7 +85,12 @@ jobs:
       # the same runner reuses the layers built above.
       - name: Export the build caches
         if: github.ref_type == 'branch'
-        run: *build-images
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then version="${GITHUB_REF_NAME#v}"; elif [ "$GITHUB_REF_NAME" = develop ]; then version=edge; else version="${GITHUB_REF_NAME//\//-}"; fi
+          BUILD_CACHE_REF="$REGISTRY/ontomato-workbench:cache-$version-$ARCH" bash scripts/ci-retry-ghcr.sh make workbench ARCH="$ARCH"
+          BUILD_CACHE_REF="$REGISTRY/ontomato-data-engine:cache-$version-$ARCH" bash scripts/ci-retry-ghcr.sh make data-engine ARCH="$ARCH"
+          BUILD_CACHE_REF="$REGISTRY/ontomato-agent-runtime:cache-$version-$ARCH" bash scripts/ci-retry-ghcr.sh make agent-runtime ARCH="$ARCH"
+          BUILD_CACHE_REF="$REGISTRY/ontomato-gateway:cache-$version-$ARCH" bash scripts/ci-retry-ghcr.sh make gateway ARCH="$ARCH"
 
       # Branch guard: an outdated branch run must not publish after the branch
       # has advanced. Release-tag builds do not track a branch.
@@ -107,9 +112,9 @@ jobs:
             local build
             build=$(docker image inspect --format '{{index .Config.Labels "io.ontomato.build"}}' "$1")
             docker tag "$1" "$2"
-            docker push "$2"
+            bash scripts/ci-retry-ghcr.sh docker push "$2"
             docker tag "$1" "${2%:*}:$build-$ARCH"
-            docker push "${2%:*}:$build-$ARCH"
+            bash scripts/ci-retry-ghcr.sh docker push "${2%:*}:$build-$ARCH"
             echo "build-tag=$build" >> "$GITHUB_OUTPUT"
           }
           publish "ontomato:deploy-$ARCH" "$REGISTRY/ontomato-workbench:$version-$ARCH"
@@ -123,6 +128,8 @@ jobs:
     if: ${{ !cancelled() && needs.build.result == 'success' && (github.ref_type == 'tag' || needs.checks.result == 'success') }}
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v5
+
       - name: Refuse a stale branch publish
         run: |
           if [ "$GITHUB_REF_TYPE" = tag ]; then exit 0; fi
@@ -140,7 +147,7 @@ jobs:
           index() {
             local tags=(-t "$REGISTRY/$1:$version" -t "$REGISTRY/$1:${{ needs.build.outputs.build-tag }}")
             if [ "$GITHUB_REF_TYPE" = tag ]; then tags+=(-t "$REGISTRY/$1:latest"); fi
-            docker buildx imagetools create \
+            bash scripts/ci-retry-ghcr.sh docker buildx imagetools create \
               --annotation "index:org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
               "${tags[@]}" "$REGISTRY/$1:$2" "$REGISTRY/$1:$3"
           }
