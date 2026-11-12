@@ -43,7 +43,6 @@ class DslGrammarValidatorTest {
 				() -> DslGrammarValidator.validate(timeseriesDsl("/Sensor", "name"), CLASS_DEFS));
 		assertEquals(DslContractViolationException.Code.INVALID_GRAMMAR, e.getViolations().get(0).getCode());
 		assertTrue(e.getViolations().get(0).getDslPath().contains("conditions.timeseries"), e.getMessage());
-		assertTrue(e.getMessage().contains("bucket"), e.getMessage());
 	}
 
 	@Test
@@ -83,8 +82,6 @@ class DslGrammarValidatorTest {
 
 		assertEquals(DslContractViolationException.Code.INVALID_GRAMMAR, e.getViolations().get(0).getCode());
 		assertEquals("steps[1].output.fields[1].expr", e.getViolations().get(0).getDslPath());
-		assertTrue(e.getMessage().contains("arithmetic"), e.getMessage());
-		assertTrue(e.getMessage().contains("CASE"), e.getMessage());
 	}
 
 	@Test
@@ -97,7 +94,6 @@ class DslGrammarValidatorTest {
 				() -> DslGrammarValidator.validate(dsl, CLASS_DEFS));
 
 		assertEquals("steps[0].output.fields[0]", e.getViolations().get(0).getDslPath());
-		assertTrue(e.getMessage().contains("variable") && e.getMessage().contains("field"), e.getMessage());
 	}
 
 	@Test

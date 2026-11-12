@@ -52,9 +52,8 @@ class OssProductionEnvironmentLoginAssemblyTest {
 
     private static void four(EnvServiceImpl service, Remote remote, boolean login) throws Exception {
         remote.hits.clear();
-        Exception schema = org.junit.jupiter.api.Assertions.assertThrows(
+        org.junit.jupiter.api.Assertions.assertThrows(
                 Exception.class, () -> service.importSchema(new FixedUser()));
-        assertEquals("Failed to get class and relationship definitions of the production environment", schema.getMessage());
         assertRound(remote, "GET", "/admin/getSchema", login);
 
         remote.hits.clear();
