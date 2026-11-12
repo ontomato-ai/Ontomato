@@ -1,17 +1,18 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { artifactPath } from "@ontomato/contracts/agent-artifact-markdown";
-import { fileName } from "../../artifacts";
+import { fileName, plainText, type InlineMarkdownNode } from "../../artifacts";
 
 /**
  * A task's own text names its files as plain names: they belong to the task's run, not to this conversation, so they
  * are neither resolved nor opened here. Web links stay links.
  */
 const props = defineProps<{
-  node: { href?: string; src?: string; text?: string; alt?: string; title: string | null; loading?: boolean };
+  node: { href?: string; src?: string; text?: string; alt?: string; title: string | null; children?: readonly InlineMarkdownNode[]; loading?: boolean };
 }>();
 const path = computed(() => artifactPath(props.node.href ?? props.node.src ?? ""));
-const label = computed(() => props.node.text || props.node.alt || "");
+/** The label's words, not its Markdown marks: a title like `*Last Question*` reads as Last Question. */
+const label = computed(() => plainText(props.node.children ?? []) || props.node.text || props.node.alt || "");
 const web = computed(() => (props.node.href && /^https?:/i.test(props.node.href) ? props.node.href : null));
 </script>
 
