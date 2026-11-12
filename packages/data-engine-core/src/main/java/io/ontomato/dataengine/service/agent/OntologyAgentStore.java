@@ -74,6 +74,10 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
     // A database created before this column existed is never altered by CREATE TABLE IF NOT EXISTS, and
     // sites upgrade by replacing the image. Without this, every retrieval start fails on insert.
     jdbc.execute("ALTER TABLE ontology_agent_runs ADD COLUMN IF NOT EXISTS language text");
+    jdbc.execute("CREATE INDEX IF NOT EXISTS ontology_agent_runs_quality ON ontology_agent_runs(qc_id)");
+    jdbc.execute("CREATE INDEX IF NOT EXISTS ontology_binding_runs_quality ON ontology_binding_runs(qc_id)");
+    jdbc.execute("CREATE INDEX IF NOT EXISTS ontology_agent_runs_caller ON ontology_agent_runs(caller_id) WHERE input_hash<>''");
+    jdbc.execute("CREATE INDEX IF NOT EXISTS ontology_agent_runs_channel_root ON ontology_agent_runs((request->>'rootRunId')) WHERE input_hash<>''");
   }
 
   public <T> T transaction(Supplier<T> operation) {
@@ -183,37 +187,36 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
         });
   }
 
-  public List<JSONObject> closeCaller(String id, Owner owner) {
-    return transaction(
-        () -> {
-          update(
-              "INSERT INTO ontology_retrieval_callers VALUES(?,?,?,'','{}',true,now()) ON CONFLICT"
-                  + " DO NOTHING",
-              uuid(id),
-              owner.userId(),
-              owner.domainId());
-          caller(id, owner, true);
-          update("UPDATE ontology_retrieval_callers SET closed=true WHERE id=?", uuid(id));
-          var active =
-              rows(
-                  "SELECT * FROM ontology_agent_runs WHERE caller_id=? AND open=true FOR UPDATE",
-                  uuid(id));
-          update(
-              "UPDATE ontology_agent_runs SET open=false,cancel_requested=true WHERE caller_id=?"
-                  + " AND open=true",
-              uuid(id));
-          return active;
-        });
+  public void closeScope(String id,Owner owner) {
+    transaction(() -> {
+      update("INSERT INTO ontology_retrieval_callers VALUES(?,?,?,'','{}',true,now()) ON CONFLICT DO NOTHING",uuid(id),owner.userId(),owner.domainId());
+      caller(id,owner,true);
+      update("UPDATE ontology_retrieval_callers SET closed=true WHERE id=?",uuid(id));
+      return null;
+    });
   }
 
   public List<JSONObject> callerRuns(String id, Owner owner) {
     caller(id, owner, false);
     return rows(
         "SELECT session_id AS \"retrievalId\",id AS \"runId\" FROM ontology_agent_runs WHERE"
-            + " caller_id=? AND input_hash<>'' ORDER BY created_at,id",
-        uuid(id));
+            + " (caller_id=? OR request->>'rootRunId'=?) AND input_hash<>'' ORDER BY created_at,id",
+        uuid(id),id);
   }
 
+  /** A reply confirms the same task-scoped user decision as a stopped-round continuation. */
+  public void confirmAnswer(String session,String run,Owner owner,String message) {
+    transaction(() -> {
+      gate(session,run,owner);
+      var current=one("SELECT * FROM ontology_retrievals WHERE id=? FOR UPDATE",uuid(session));
+      if(!run.equals(current.getString("current_run_id"))) throw conflict("Retrieval round changed");
+      var decisions=current.getJSONArray("decisions");
+      decisions.add(JSONObject.of("id",UUID.randomUUID().toString(),"runId",run,"text",message,"scope","task","source","user","supersedesId",null));
+      update("UPDATE ontology_retrievals SET decisions=?::jsonb,revision=revision+1 WHERE id=?",AgentJson.json(decisions),uuid(session));
+      update("UPDATE ontology_agent_runs SET decision_revision=decision_revision+1 WHERE id=?",uuid(run));
+      return null;
+    });
+  }
   public void requireCallerResource(String caller, String session, String run) {
     var found =
         rows(
@@ -304,7 +307,7 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
               throw conflict("Retrieval round or decisions changed");
             decisions = r.getJSONArray("decisions");
             decisionRevision = old.getIntValue("decision_revision");
-            if (!external) {
+            if (!external && request.getBooleanValue("confirmAnswer")) {
               decisions.add(
                   JSONObject.of(
                       "id",

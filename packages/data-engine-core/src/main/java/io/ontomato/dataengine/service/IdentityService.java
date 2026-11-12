@@ -13,6 +13,14 @@ public interface IdentityService {
     /** Authorize the ontology read-query capability at its owning identity boundary. */
     void requireQueryAccess();
 
+    /** The same query capability for a verified persisted actor, outside the request thread. */
+    default void requireQueryAccess(String userId,String domainId) {
+        User user=getCurrentUser();
+        if (user==null || !java.util.Objects.equals(userId,user.getId()) || !java.util.Objects.equals(domainId,user.getDomainId()))
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN,"Ontology query permission is required");
+        requireQueryAccess();
+    }
+
     /** Reuse the existing Action execution permission for an explicitly captured owner. */
     void requireActionExecutionAccess(String userId, String domainId);
 

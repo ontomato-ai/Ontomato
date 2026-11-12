@@ -8,29 +8,19 @@ import org.springframework.stereotype.Service;
 /** Ordered references to accepted results. This is not another execution or usage ledger. */
 @Service
 public class RetrievalResults {
+  private final AgentChannelChanges changes;
   private final OntologyAgentStore store;
-  public RetrievalResults(OntologyAgentStore store) { this.store = store; }
+  public RetrievalResults(OntologyAgentStore store,AgentChannelChanges changes) { this.store=store;this.changes=changes; }
 
   public void publish(String retrieval, String run, Owner owner, String source, String sourceId, JSONObject data) {
-    store.transaction(() -> {
+    boolean inserted=store.transaction(() -> {
       store.run(retrieval, run, owner);
       // Serialize publication per retrieval: a cursor must never skip an uncommitted earlier result.
       store.one("SELECT id FROM ontology_agent_sessions WHERE id=? FOR UPDATE", uuid(retrieval));
-      store.update("INSERT INTO ontology_retrieval_deliveries(run_id,source,source_id,data) VALUES(?,?,?,?::jsonb) ON CONFLICT(run_id,source,source_id) DO NOTHING",
-          uuid(run), source, uuid(sourceId), AgentJson.json(data));
-      return null;
+      return store.update("INSERT INTO ontology_retrieval_deliveries(run_id,source,source_id,data) VALUES(?,?,?,?::jsonb) ON CONFLICT(run_id,source,source_id) DO NOTHING",
+          uuid(run), source, uuid(sourceId), AgentJson.json(data))!=0;
     });
-  }
-
-  public long cursor(String retrieval, Owner owner) {
-    store.retrieval(retrieval, owner);
-    return store.one("SELECT coalesce(max(d.seq),0) AS cursor FROM ontology_retrieval_deliveries d JOIN ontology_agent_runs r ON r.id=d.run_id WHERE r.session_id=?", uuid(retrieval)).getLongValue("cursor");
-  }
-
-  public List<JSONObject> after(String retrieval, long cursor, Owner owner) {
-    if (cursor < 0) throw AgentHttpException.invalid("Invalid result cursor");
-    store.retrieval(retrieval, owner);
-    return answered(store.rows("SELECT d.seq AS cursor,d.run_id AS \"runId\",d.source,d.data FROM ontology_retrieval_deliveries d JOIN ontology_agent_runs r ON r.id=d.run_id WHERE r.session_id=? AND d.seq>? ORDER BY d.seq", uuid(retrieval), cursor));
+    if(inserted) changes.run(retrieval,run,owner,"delivery");
   }
 
   public List<JSONObject> forRun(String retrieval, String run, Owner owner) {

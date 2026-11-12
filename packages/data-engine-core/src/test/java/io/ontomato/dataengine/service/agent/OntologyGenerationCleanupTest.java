@@ -53,7 +53,7 @@ class OntologyGenerationCleanupTest {
             sessions,
             operations,
             code,
-            mock(DataPermissionLookup.class));
+            mock(DataPermissionLookup.class),mock(AgentCaller.class),mock(AgentChannelRuns.class));
     cleanupLogger = (Logger) LoggerFactory.getLogger(OntologyGenerationService.class);
     warnings = new ListAppender<>();
     warnings.start();
@@ -191,6 +191,7 @@ class OntologyGenerationCleanupTest {
         row.put("deadline", Instant.now().plusSeconds(60).toString());
         row.put("cancel_requested", false);
         row.put("external", false);
+        row.put("request",new JSONObject());
         row.put("user_id", OWNER.userId());
         row.put("domain_id", OWNER.domainId());
         return List.of(row);
@@ -207,6 +208,7 @@ class OntologyGenerationCleanupTest {
         row.put("business_id", "fixture-business");
       } else if (sql.contains("ontology_agent_runs")) {
         row.put("external", false);
+        row.put("request",new JSONObject());
       }
       return row;
     }

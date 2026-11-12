@@ -4,7 +4,6 @@ import static io.ontomato.dataengine.service.agent.OntologyAgentStore.*;
 
 import com.alibaba.fastjson2.*;
 import io.ontomato.dataengine.service.*;
-import java.time.Instant;
 import java.util.*;
 import org.springframework.stereotype.Service;
 
@@ -25,41 +24,25 @@ public class RetrievalTasks {
   }
 
   /**
-   * The rounds the callers admitted and their quality checks, in admission order. Settled means nothing here will change
-   * by itself: no task is running and no branch still owes its quality check.
+   * The business state and branch results owned by this retrieval execution.
    */
-  public JSONObject forCallers(List<String> callers, String domain) {
-    var tasks = new JSONArray();
-    var qualityResults = new JSONArray();
-    boolean settled = true;
-    var ids = "{" + String.join(",", callers.stream().map(AgentJson::id).toList()) + "}";
-    for (var row : store.rows("SELECT r.*,c.id AS caller,s.user_id,s.domain_id FROM ontology_agent_runs r"
-        + " JOIN ontology_retrieval_callers c ON c.id=r.caller_id JOIN ontology_agent_sessions s ON s.id=r.session_id"
-        + " WHERE c.id=ANY(?::uuid[]) AND c.domain_id=? AND r.input_hash<>'' ORDER BY r.created_at,r.id", ids, domain)) {
-      var owner = owner(row);
-      String retrieval = row.getString("session_id"), run = row.getString("id");
-      var deliveries = results.forRun(retrieval, run, owner);
-      var binding = bindingRun(run);
-      var branches = new JSONArray();
-      if (binding != null) branches.add(bindingBranch(binding, deliveries));
-      branches.add(retrieverBranch(row, deliveries));
-      var task = retrievalTask(row, branches);
-      task.put("callerId", row.getString("caller"));
-      tasks.add(task);
-      if ("running".equals(task.getString("status"))) settled = false;
-      for (var quality : qualityJobs(row, binding, owner)) {
-        var check = qualityTask(quality.job(), run, quality.source(), quality.datasetIds());
-        check.put("callerId", row.getString("caller"));
-        tasks.add(check);
-        if ("running".equals(check.getString("status"))) settled = false;
-        var result = qualityResult(quality.job());
-        if (result != null) qualityResults.add(result);
-      }
-      if (owesQuality(row, binding)) settled = false;
-    }
-    return JSONObject.of("tasks", tasks, "qualityResults", qualityResults, "settled", settled);
+  public JSONObject read(String retrieval,String run,Owner owner) {
+    var row=store.run(retrieval,run,owner);
+    var deliveries=results.forRun(retrieval,run,owner);
+    var binding=bindingRun(run);
+    var branches=new JSONArray();
+    if(binding!=null) branches.add(bindingBranch(binding,deliveries));
+    branches.add(retrieverBranch(row,deliveries));
+    var round=roundStatus(branches);
+    var quality=qualityEvidence(retrieval,run,owner);
+    return JSONObject.of("status",round.getString("status"),"error",round.get("error"),"retrieval",JSONObject.of("question",row.getJSONObject("request").getString("message"),"decisionRevision",row.getIntValue("decision_revision"),"branches",branches),"quality",quality);
   }
 
+  public JSONArray qualityEvidence(String retrieval,String run,Owner owner) {
+    var row=store.run(retrieval,run,owner);var found=new JSONArray();
+    for(var quality:qualityJobs(row,bindingRun(run),owner)) { var task=qualityTask(quality.job(),run,quality.source(),quality.datasetIds());task.put("result",qualityResult(quality.job()));found.add(task); }
+    return found;
+  }
   /** The quality tasks of one round as references, for the retrieval's own reads; the task read reports them. */
   public JSONArray qualityReferences(String retrieval, String run, Owner owner) {
     var references = new JSONArray();
@@ -162,7 +145,7 @@ public class RetrievalTasks {
    * A round runs until every branch has ended. It completed when something was delivered (a dataset, or the retriever's
    * normal answer or question); otherwise it failed when a branch failed, and was cancelled when none did.
    */
-  static JSONObject retrievalTask(JSONObject row, JSONArray branches) {
+  static JSONObject roundStatus(JSONArray branches) {
     var all = branches.stream().map(JSONObject::from).toList();
     String status;
     JSONObject error = null;
@@ -174,19 +157,7 @@ public class RetrievalTasks {
       status = failed.isPresent() ? "failed" : "cancelled";
       error = failed.map(b -> b.getJSONObject("error")).orElse(null);
     }
-    boolean inline = !row.getBooleanValue("external") && row.getBooleanValue("runtime_admitted");
-    // A round's admitted request is its input: ask's question, or the message a reply resumes the retrieval with.
-    var request = row.getJSONObject("request");
-    var task = JSONObject.of("kind", "retrieval", "id", row.getString("id"), "status", status,
-        "question", request.containsKey("question") ? request.getString("question") : request.getString("message"),
-        "createdAt", Instant.parse(row.getString("created_at")).toString(),
-        "process", inline
-            ? JSONObject.of("mode", "inline", "runtimeSessionId", row.getString("session_id"), "runtimeRunId", row.getString("id"))
-            : JSONObject.of("mode", "none"),
-        "branches", branches);
-    task.put("parentTaskId", null);
-    task.put("error", error);
-    return task;
+    var state=JSONObject.of("status",status);state.put("error",error);return state;
   }
 
   static String qualityStatus(String job) {

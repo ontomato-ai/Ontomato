@@ -21,6 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 @DependsOn("jdbcInitDb")
 public class QueryJobService {
+  private final io.ontomato.dataengine.service.agent.AgentChannelChanges changes;
   private final JdbcTemplate jdbc;
   private final SessionRegistryService sessions;
   private final RuntimeCodeClient runtime;
@@ -36,7 +37,8 @@ public class QueryJobService {
       JdbcTemplate jdbc,
       SessionRegistryService sessions,
       RuntimeCodeClient runtime,
-      org.springframework.transaction.PlatformTransactionManager manager) {
+      org.springframework.transaction.PlatformTransactionManager manager,io.ontomato.dataengine.service.agent.AgentChannelChanges changes) {
+    this.changes=changes;
     this.jdbc = jdbc;
     this.sessions = sessions;
     this.runtime = runtime;
@@ -49,12 +51,14 @@ public class QueryJobService {
         "CREATE TABLE IF NOT EXISTS ontology_query_jobs (id uuid NOT NULL, domain_id text NOT NULL,"
             + " user_id text NOT NULL, kind text NOT NULL, fingerprint text NOT NULL, state jsonb"
             + " NOT NULL, owner_node text NOT NULL, PRIMARY KEY(domain_id,user_id,id))");
+    var interrupted=jdbc.queryForList("SELECT id::text FROM ontology_query_jobs WHERE owner_node=? AND kind='quality' AND state->>'status'='running'",String.class,sessions.getNodeId());
     jdbc.update(
         "UPDATE ontology_query_jobs SET state=state ||"
             + " '{\"status\":\"interrupted\",\"error\":{\"code\":\"JOB_INTERRUPTED\",\"message\":\"Ontology"
             + " service restarted; unknown work was not replayed\"}}'::jsonb WHERE"
             + " state->>'status'='running' AND owner_node=?",
         sessions.getNodeId());
+    for(String id:interrupted) changes.job(id);
   }
 
   public JSONObject get(String id, User user, String kind) {
@@ -82,6 +86,10 @@ public class QueryJobService {
             (user.getDomainId() + "\0" + user.getId() + "\0" + id)
                 .getBytes(java.nio.charset.StandardCharsets.UTF_8))
         .toString();
+  }
+
+  public JSONObject start(String id,QueryAccessService.Access access,String kind,Object input,Operation operation) {
+    return start(id,access.user(),kind,input,session -> io.ontomato.dataengine.service.agent.OntologyGenerationService.asOwner(access,() -> operation.execute(session)));
   }
 
   public JSONObject start(String id, User user, String kind, Object input, Operation operation) {
@@ -153,6 +161,7 @@ public class QueryJobService {
                 sessions.registerEnd(sessionId);
                 running.remove(sessionId);
                 currentJob.remove();
+                if(kind.equals("quality")) changes.job(id);
               }
               return null;
             });
@@ -225,7 +234,8 @@ public class QueryJobService {
       if (task != null) task.cancel(true);
       if (kind.equals("output")) runtime.closeIntent(user.getDomainId(), sessionId(id, user));
     }
-    return get(id, user, kind);
+    if(kind.equals("quality")) changes.job(id);
+    return get(id,user,kind);
   }
 
   @PreDestroy

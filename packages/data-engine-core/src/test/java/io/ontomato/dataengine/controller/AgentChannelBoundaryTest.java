@@ -21,13 +21,13 @@ class AgentChannelBoundaryTest {
   private final KnowledgeGovernanceService governance=mock(KnowledgeGovernanceService.class);
   private final OntologyAgentStore store=mock(OntologyAgentStore.class);
   private org.springframework.test.web.servlet.MockMvc mvc() {
-    return MockMvcBuilders.standaloneSetup(new AgentChannelController(callers,directory,governance,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class)))
+    return MockMvcBuilders.standaloneSetup(new AgentChannelController(callers,directory,governance,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class),mock(OntologyRetrievalService.class),mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class)))
       .setControllerAdvice(new OntologyAgentErrors()).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
   }
   private String input(String mode,String role) {
     return JSONObject.of("mode",mode,"language","en","agent",JSONObject.of("providerId","ontology","agentId",KnowledgeGovernanceService.AGENT),
       "actor",JSONObject.of("id",RUN,"domainId","a"),"sessionId",SESSION,"runId",RUN,
-      "authority",JSONObject.of("classNames",java.util.List.of(),"executionKind","live"),
+      "requestedBy",null,"root",JSONObject.of("session",JSONObject.of("providerId","ontology","sessionId",SESSION),"runId",RUN),"authority",JSONObject.of("classNames",java.util.List.of(),"executionKind","live"),
       "input",JSONObject.of("role",role,"kind","agent-answer","source",JSONObject.of("session",JSONObject.of("providerId","workbench","sessionId",SESSION),"runId",RUN),"replyTo",RUN,"content","Use the confirmed period","timestamp",1)).toJSONString();
   }
   @Test void jacksonMapsCarryTypedAnswersToTheSamePrepareEntrance() throws Exception {
@@ -73,7 +73,9 @@ class AgentChannelBoundaryTest {
     var identity=mock(io.ontomato.dataengine.service.IdentityService.class);
     when(callers.restore(actor,"a")).thenReturn(new AgentCaller.Actor(RUN,new io.ontomato.dataengine.service.QueryAccessService.GrantUser("user","a"),1000L));
     when(identity.hasKnowledgeGovernanceAccess("user","a")).thenReturn(true);
-    var own=new AgentDirectory(callers,identity);
+    var actions=mock(ActionCreationService.class);
+    doThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN)).when(callers).requireQuery(any());
+    var own=new AgentDirectory(callers,identity,actions);
     var agents=own.list(actor,"a").getJSONArray("agents");
     assertEquals(1,agents.size());
     assertEquals("ontology",agents.getJSONObject(0).getJSONObject("ref").getString("providerId"));

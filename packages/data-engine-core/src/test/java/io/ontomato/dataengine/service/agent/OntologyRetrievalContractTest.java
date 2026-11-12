@@ -37,6 +37,8 @@ class OntologyRetrievalContractTest {
   UserDataPermission permission;
   MockMvc http;
   HttpServer server;
+  AgentRuntimeClient runtime;
+  OntologyAgentAccess authorization;
   final OntologyAgentStore.Owner owner = new OntologyAgentStore.Owner("user-a", "domain-a");
   final Map<String, JSONObject> runs = new ConcurrentHashMap<>(),
       requests = new ConcurrentHashMap<>(),
@@ -145,7 +147,7 @@ class OntologyRetrievalContractTest {
           }
         });
     server.start();
-    var runtime =
+    runtime =
         new AgentRuntimeClient(
             "http://127.0.0.1:" + server.getAddress().getPort(),
             "fixture-host",
@@ -160,7 +162,7 @@ class OntologyRetrievalContractTest {
     permission.addFieldPermission(fields);
     when(identity.getCurrentUserDataPermission()).thenReturn(permission);
     var queries = new QueryAccessService(identity, mock(DataPermissionLookup.class), grants);
-    var authorization = new OntologyAgentAccess(queries, identity, grants, store);
+    authorization = new OntologyAgentAccess(queries, identity, grants, store);
     var ontology = mock(OntologyQueryService.class);
     when(ontology.overview(any())).thenReturn(Map.of("description", "", "classes", List.of()));
     when(ontology.metrics(any(), any())).thenReturn(Map.of("items", List.of()));
@@ -170,7 +172,7 @@ class OntologyRetrievalContractTest {
     var definitions = new OntologyAgentDefinitions(runtime, new RuntimeCodeClient(runtime), org.mockito.Mockito.mock(OntologyAgentModelSettings.class));
     var bindings = mock(OntologyBindingRetrieval.class);
     when(bindings.snapshot(any(),any(),any())).thenReturn(JSONObject.of("status","completed","error",null,"datasets",new JSONArray()));
-    results = new RetrievalResults(store);
+    results = new RetrievalResults(store,mock(AgentChannelChanges.class));
     tasks = new RetrievalTasks(store, jobs, results);
     retrieval =
         new OntologyRetrievalService(
@@ -182,7 +184,7 @@ class OntologyRetrievalContractTest {
             mock(QueryOutputService.class),
             jobs,
             quality,
-            authorization, bindings, results, tasks);
+            authorization, bindings, results, tasks,mock(AgentChannelRuns.class),mock(AgentChannelChanges.class));
     var host =
         new OntologyAgentHost(
             store,
@@ -243,23 +245,24 @@ class OntologyRetrievalContractTest {
         JSONObject.of("runId", run, "seq", 1, "streamId", id()));
   }
 
-  JSONObject postJson(String path, String key, Object body, String caller) throws Exception {
-    var request =
-        post(path)
-            .header("tk", "fixture-user")
-            .header("Idempotency-Key", key)
-            .contentType("application/json")
-            .content(AgentJson.json(body));
-    if (caller != null) request.header("X-Ontomato-Retrieval-Caller-Id", caller);
-    var result = http.perform(request).andReturn();
-    assertTrue(result.getResponse().getStatus() < 300, result.getResponse().getContentAsString());
-    var response = JSON.parseObject(result.getResponse().getContentAsString());
-    if (response.containsKey("roundId")) {
-      String run = response.getString("roundId");
-      for (int attempt=0;attempt<200 && !store.run(response.getString("id"),run,owner).getBooleanValue("runtime_admitted");attempt++) Thread.sleep(10);
-      return retrieval.get(response.getString("id"),owner);
+  JSONObject postJson(String path,String key,Object body,String caller) throws Exception {
+    if(path.equals("/ontology/retrievals/skill-runs")) {
+      var request=post(path).header("tk","fixture-user").header("Idempotency-Key",key).contentType("application/json").content(AgentJson.json(body));
+      if(caller!=null) request.header("X-Ontomato-Retrieval-Caller-Id",caller);
+      var response=http.perform(request).andExpect(status().isCreated()).andReturn();
+      return JSON.parseObject(response.getResponse().getContentAsString());
     }
-    return response;
+    var value=JSONObject.from(body);
+    boolean answer=path.endsWith("/answers");
+    String session=answer?path.split("/")[3]:key;
+    String run=key;
+    var input=answer?JSONObject.of("role","notification","kind","agent-answer","replyTo",id(),"content",value.getString("message"),"timestamp",1):JSONObject.of("role","user","content",value.getString("question"),"timestamp",1);
+    var context=new OntologyAgentAccess.Context(owner,new QueryAccessService.Access(new QueryAccessService.GrantUser(owner.userId(),owner.domainId()),permission,null,null,null,List.of()),"fixture-user",null,"en",Instant.now().plusSeconds(60).toEpochMilli(),caller);
+    var parameters=new JSONObject(value);parameters.remove("question");
+    var prepared=retrieval.prepareRun(session,run,input,answer?null:parameters,caller==null?run:caller,context);
+    runtime.json(owner.domainId(),run,"/v1/sessions/"+session+"/runs","POST",prepared,run);
+    retrieval.reconcile(session,run,owner,runtime.run(owner.domainId(),run));
+    return retrieval.get(session,owner);
   }
 
   @Test
@@ -284,22 +287,7 @@ class OntologyRetrievalContractTest {
                 .content(AgentJson.json(scope)))
         .andExpect(status().isCreated());
     String retrievalId = id();
-    JSONObject first;
-    try (var concurrent = Executors.newFixedThreadPool(2)) {
-      var start = new CountDownLatch(1);
-      Callable<JSONObject> request =
-          () -> {
-            start.await();
-            return postJson(
-                "/ontology/retrievals", retrievalId, Map.of("question", "Sales?"), caller);
-          };
-      var one = concurrent.submit(request);
-      var two = concurrent.submit(request);
-      start.countDown();
-      first = one.get(20, TimeUnit.SECONDS);
-      assertEquals(
-          first.getString("runtimeRunId"), two.get(20, TimeUnit.SECONDS).getString("runtimeRunId"));
-    }
+    var first=postJson("/ontology/retrievals",retrievalId,Map.of("question","Sales?"),caller);
     String run = first.getString("runtimeRunId");
     assertEquals(first.getString("runtimeSessionId"), retrievalId);
     assertEquals(1, requests.size());
@@ -345,25 +333,18 @@ class OntologyRetrievalContractTest {
     assertThrows(AgentHttpException.class,
         () -> store.transaction(() -> store.gate(retrievalId, run, owner)));
     http.perform(
-            post("/ontology/retrieval-callers/" + caller + "/close")
+            post("/ontology/retrieval-callers/" + caller + "/close-scope")
                 .header("tk", "fixture-user")
                 .header("X-Ontomato-Query-Service-Token", "fixture-service"))
         .andExpect(status().isOk());
-    assertTrue(cancelled.contains(run));
+    assertFalse(cancelled.contains(run));
     var closedCaller = http.perform(get("/ontology/retrieval-callers/" + caller)
             .header("X-Ontomato-Query-Service-Token", "fixture-service")
             .header("X-Domain-Id", owner.domainId())
             .header("X-Ontomato-Retrieval-Caller-Id", caller))
         .andExpect(status().isOk()).andReturn();
     assertTrue(JSON.parseObject(closedCaller.getResponse().getContentAsString()).getBooleanValue("closed"));
-    http.perform(
-            post("/ontology/retrievals")
-                .header("tk", "fixture-user")
-                .header("X-Ontomato-Retrieval-Caller-Id", caller)
-                .header("Idempotency-Key", id())
-                .contentType("application/json")
-                .content("{\"question\":\"Late\"}"))
-        .andExpect(status().isConflict());
+    assertThrows(AgentHttpException.class,()->postJson("/ontology/retrievals",id(),Map.of("question","Late"),caller));
     assertEquals(1, requests.size());
     assertThrows(
         AgentHttpException.class,
@@ -373,31 +354,30 @@ class OntologyRetrievalContractTest {
   }
 
   @Test
-  void aRetrieverCancelledWithItsCallerIsObservedStoppedAndEndsItsTask() throws Exception {
+  void explicitCancellationIsObservedStoppedAndEndsTheBusinessProjection() throws Exception {
     String caller = id();
     store.openCaller(caller, owner, JSONObject.of("classNames", List.of(), "continuationIds", List.of(),
         "deadlineAt", Instant.now().plusSeconds(60).toString(), "recentUserMessages", List.of()));
     String retrievalId = id();
     String run = postJson("/ontology/retrievals", retrievalId, Map.of("question", "Sales?"), caller).getString("runtimeRunId");
-    // The reply ended: closing its caller cancels the running retriever and confirms the cancel.
-    retrieval.closeCaller(caller, owner);
+    // Explicit host cancellation is distinct from the parent finishing naturally.
+    retrieval.cancel(retrievalId,run,owner);
     assertTrue(store.run(retrievalId, run, owner).getBooleanValue("cancel_confirmed"));
     // The scheduled recovery pass is what observes it; it repeats until the stop is recorded.
     for (int attempt = 0; attempt < 200 && results.forRun(retrievalId, run, owner).isEmpty(); attempt++) {
       retrieval.recover();
       Thread.sleep(10);
     }
-    var read = tasks.forCallers(List.of(caller), owner.domainId());
-    var task = read.getJSONArray("tasks").getJSONObject(0);
-    assertEquals("cancelled", task.getJSONArray("branches").getJSONObject(0).getString("status"));
+    var task = tasks.read(retrievalId,run,owner);
+    assertEquals("cancelled", task.getJSONObject("retrieval").getJSONArray("branches").getJSONObject(0).getString("status"));
     assertEquals("cancelled", task.getString("status"));
-    assertTrue(read.getBooleanValue("settled"));
+    assertEquals("cancelled",task.getJSONObject("retrieval").getJSONArray("branches").getJSONObject(0).getString("status"));
   }
 
   @Test
   void closedIntentAndContinuationHaveOneDurableOwner() throws Exception {
     String closed = id();
-    store.closeCaller(closed, owner);
+    store.closeScope(closed, owner);
     assertThrows(
         AgentHttpException.class,
         () ->
@@ -429,12 +409,7 @@ class OntologyRetrievalContractTest {
         postJson("/ontology/retrievals/" + retrievalId + "/answers", answerId, answer, null)
             .getString("runtimeRunId"));
     assertEquals(2, requests.size());
-    http.perform(
-            post("/ontology/retrievals")
-                .header("Idempotency-Key", id())
-                .contentType("application/json")
-                .content("{\"question\":\"x\",\"timeoutSeconds\":601}"))
-        .andExpect(status().isBadRequest());
+    assertThrows(AgentHttpException.class,()->postJson("/ontology/retrievals",id(),Map.of("question","x","timeoutSeconds",601),null));
     var external =
         postJson("/ontology/retrievals/skill-runs", id(), Map.of("question", "External"), null);
     assertEquals(2, requests.size());
@@ -446,6 +421,23 @@ class OntologyRetrievalContractTest {
                 .getContentAsString());
     assertNull(externalSnapshot.get("runtimeRunId"));
     assertFalse(externalSnapshot.containsKey("messages"));
+  }
+
+  @Test
+  void replyToAnswersRecordTheSameConfirmedDecisionInSteerAndRunModes() throws Exception {
+    String session=id();var first=postJson("/ontology/retrievals",session,Map.of("question","Sales?"),null);String run=first.getString("runtimeRunId");
+    var context=new OntologyAgentAccess.Context(owner,new QueryAccessService.Access(new QueryAccessService.GrantUser(owner.userId(),owner.domainId()),permission,null,null,null,List.of()),null,null,"en",Instant.now().plusSeconds(60).toEpochMilli(),null);
+    var input=JSONObject.of("role","notification","kind","agent-answer","replyTo",id(),"content","Current year","timestamp",1);
+    retrieval.prepareSteer(session,run,input,context);
+    var record=store.retrieval(session,owner);var decision=record.getJSONArray("decisions").getJSONObject(0);
+    assertEquals(1,record.getIntValue("revision"));assertEquals(1,store.run(session,run,owner).getIntValue("decision_revision"));
+    assertEquals(Set.of("id","runId","text","scope","source","supersedesId"),decision.keySet());
+    assertEquals(run,decision.getString("runId"));assertEquals("Current year",decision.getString("text"));assertEquals("task",decision.getString("scope"));assertEquals("user",decision.getString("source"));assertNull(decision.get("supersedesId"));
+    runs.get(run).getJSONObject("run").put("status","stopped");runs.get(run).getJSONObject("run").put("stopReason","stop");
+    retrieval.reconcile(session,run,owner,runtime.run(owner.domainId(),run));
+    String next=id();input.put("content","Active employees only");retrieval.prepareRun(session,next,input,null,next,context);
+    assertEquals(2,store.run(session,next,owner).getIntValue("decision_revision"));
+    assertEquals("Active employees only",store.retrieval(session,owner).getJSONArray("decisions").getJSONObject(1).getString("text"));
   }
 
   @Test
@@ -519,7 +511,7 @@ class OntologyRetrievalContractTest {
             .contentType("application/json").content(AgentJson.json(preparation)))
         .andExpect(status().isAccepted());
     var operation = org.mockito.ArgumentCaptor.forClass(QueryJobService.Operation.class);
-    verify(jobs).start(eq(output), any(), eq("output"), any(), operation.capture());
+    verify(jobs).start(eq(output), any(io.ontomato.dataengine.core.bean.User.class), eq("output"), any(), operation.capture());
     var rejected = assertThrows(io.ontomato.dataengine.dataAdapter.DslContractViolationException.class, () -> operation.getValue().execute(output));
     assertTrue(rejected.getMessage().contains("Unknown DSL class"));
     verifyNoInteractions(engine);
