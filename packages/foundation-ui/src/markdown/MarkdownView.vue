@@ -2,13 +2,20 @@
 import { setCustomComponents } from "markstream-vue";
 import type { Component } from "vue";
 
-type Nodes = Partial<Record<"link" | "image", Component>>;
+/** Node types a caller can draw itself; the paragraph is here because it can see all of a paragraph's children. */
+const NODE_TYPES = ["link", "image", "paragraph"] as const;
+type Nodes = Partial<Record<(typeof NODE_TYPES)[number], Component>>;
 
 const registered: { nodes: Nodes; id: string }[] = [];
 
+/** Two sets of components are the same when every node type draws with the same component in both. */
+function sameNodes(a: Nodes, b: Nodes): boolean {
+  return NODE_TYPES.every((type) => a[type] === b[type]);
+}
+
 /** markstream looks node components up by an id: each set of components is registered once, the first time it is drawn. */
 function nodesId(nodes: Nodes): string {
-  const known = registered.find((entry) => entry.nodes.link === nodes.link && entry.nodes.image === nodes.image);
+  const known = registered.find((entry) => sameNodes(entry.nodes, nodes));
   if (known) return known.id;
   const id = `markdown-view-${registered.length + 1}`;
   setCustomComponents(id, nodes);
