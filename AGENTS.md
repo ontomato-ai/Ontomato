@@ -31,7 +31,8 @@ Write new or changed source-code comments in English.
 Check the actual modules and the existing build entry points first, then run the
 applicable checks; do not invent commands or acceptance results
 that have not landed. Keep the existing business, permission and data semantics, and
-confirm the design before any new business change.
+confirm the design before any new business change. Write and fix tests by the "Tests"
+section of [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Java tests that touch databases, models or external systems must not be run unfiltered as
 a whole. Real configuration and runtime data must not be committed. Save only this task's

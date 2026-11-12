@@ -57,7 +57,7 @@ class WorkflowMetricGeneratorTest {
     assertTrue(generated.warnings().isEmpty(), generated.warnings().toString());
 
     MetricView pending = saved.getAllValues().stream()
-        .filter(metric -> metric.getName().startsWith("我的待办"))
+        .filter(metric -> metric.getWorkflowSource().purpose() == MetricView.WorkflowSource.Purpose.pending)
         .findFirst()
         .orElseThrow();
     String bundle = pending.getFunction().getQueryPackage().toJSONString();
@@ -69,7 +69,7 @@ class WorkflowMetricGeneratorTest {
     assertEquals(MetricView.STATUS_PUBLISHED, pending.getStatus());
 
     MetricView detail = saved.getAllValues().stream()
-        .filter(metric -> metric.getName().startsWith("单据详情"))
+        .filter(metric -> metric.getWorkflowSource().purpose() == MetricView.WorkflowSource.Purpose.detail)
         .findFirst()
         .orElseThrow();
     // The by-id query takes the id from the caller and involves no subject value.

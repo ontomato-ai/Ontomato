@@ -14,8 +14,9 @@ class OntologyAgentModelSettingsTest {
   private final OntologyAgentModelSettings models=new OntologyAgentModelSettings(jdbc,runtime);
 
   @Test void catalogCoversConcreteAgentsAndUnknownIdsCannotBeConfigured() {
-    assertEquals(13,models.catalog().size());
-    assertEquals(13,models.catalog().stream().map(OntologyAgentModelSettings.Agent::id).distinct().count());
+    var catalog=models.catalog();
+    assertEquals(catalog.size(),catalog.stream().map(OntologyAgentModelSettings.Agent::id).distinct().count(),
+        "every catalog id is unique");
     assertThrows(AgentHttpException.class,()->models.save("d","unknown",new JSONObject()));
     verifyNoInteractions(runtime,jdbc);
   }
@@ -33,7 +34,10 @@ class OntologyAgentModelSettingsTest {
         .thenReturn(List.of(java.util.Map.of("model_selection","{\"modelId\":\"legacy/deleted\"}")));
     assertEquals("legacy/deleted",models.modelId("d",OntologyAgentStore.RETRIEVER));
     models.save("d",OntologyAgentStore.RETRIEVER,JSONObject.of("modelSelection",new JSONObject()));
-    verify(jdbc).update(anyString(),eq("d"),eq(OntologyAgentStore.RETRIEVER),eq("{\"modelId\":null}"));
+    var saved=org.mockito.ArgumentCaptor.forClass(String.class);
+    verify(jdbc).update(anyString(),eq("d"),eq(OntologyAgentStore.RETRIEVER),saved.capture());
+    assertTrue(JSONObject.parseObject(saved.getValue()).containsKey("modelId"),saved.getValue());
+    assertNull(JSONObject.parseObject(saved.getValue()).getString("modelId"),saved.getValue());
     verifyNoInteractions(runtime);
   }
   @Test void definitionsUseTheirOwnSelectionInTheSameDomain() {

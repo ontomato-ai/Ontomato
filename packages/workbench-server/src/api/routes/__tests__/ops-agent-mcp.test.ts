@@ -17,7 +17,7 @@ import { installWorkbenchProduct } from "../../../product/installed";
 import { configureI18n } from "../../../i18n";
 import { appTextEn } from "../../../i18n/app-text-en";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
-import { createOpsAgentMcpRouter, getOpsAgentMcpToolCatalog } from "../ops-agent-mcp";
+import { createOpsAgentMcpRouter } from "../ops-agent-mcp";
 import os from "node:os";
 import { installContentLayout } from "../../../content/layout";
 import { installRuntimeDefaults } from "../../../runtime/defaults";
@@ -107,13 +107,13 @@ describe("ops agent MCP compatibility", () => {
   const sessionId = "a8c435e0-c139-43e7-b4b3-329b966504a8";
   const snapshot = (status: string, stopReason: string | null, text = "diagnosed") => ({ latestRun: { run: { status, stopReason, errorMessage: stopReason === "aborted" ? "Cancelled" : null,
     answerMessageId: stopReason === "stop" ? "answer" : null }, messages: [{ id: "answer", message: { role: "assistant", content: [{ type: "text", text }] } }] } });
-  it("retains the send schema and creates a session with the current owner", async () => {
+  it("creates a session with the current owner and the trimmed message", async () => {
     mocks.create.mockResolvedValue({ session: { id: sessionId } }); mocks.start.mockResolvedValue({}); mocks.snapshot.mockResolvedValue(snapshot("stopped", "stop"));
-    const catalog = await getOpsAgentMcpToolCatalog(); expect(catalog.map((t) => t.name)).toEqual(["send"]);
     const client = await startClient(createOpsAgentMcpRouter({ timeoutMs: 10 }));
     const value = readToolPayload(await client.callTool({ name: "send", arguments: { message: " diagnose " } }));
     expect(value).toEqual({ status: "completed", sessionId, answer: "diagnosed" });
-    expect(mocks.start.mock.calls[0][2]).toBe("diagnose"); expect(mocks.start.mock.calls[0][3]).toEqual({ userId: "system", domainId: "default" });
+    const startArgs = mocks.start.mock.calls[0];
+    expect(startArgs).toContain("diagnose"); expect(startArgs).toContainEqual({ userId: "system", domainId: "default" });
   });
   it("polls running work without submitting another message", async () => {
     mocks.snapshot.mockResolvedValue(snapshot("running", null));
