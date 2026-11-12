@@ -77,6 +77,22 @@ export function chartBrandColors(source: Option, theme: Record<string, unknown>)
   return option;
 }
 
+/** A grid that contains its labels also contains its axis names, and a titled chart starts its grid below the title. */
+export function chartAxisBounds(source: Option, height: number): Option {
+  if (!source.xAxis && !source.yAxis) return source;
+  const titles = [source.title].flat().filter((title) => title && title.show !== false && (title.text || title.subtext));
+  const titleBand = titles.some((title) => title.subtext) ? 64 : titles.length ? 48 : 0;
+  const pixels = (value: unknown) => typeof value === "number" ? value : typeof value === "string" && value.endsWith("%") ? parseFloat(value) * height / 100 : Number(value) || 0;
+  const grids = [source.grid ?? {}].flat().map(({ containLabel, ...grid }) => ({
+    ...grid,
+    // ECharts 6 treats containLabel as "labels only", so a long axis name still leaves the canvas.
+    ...(containLabel ? { outerBoundsMode: "same", outerBoundsContain: "all" } : {}),
+    // An unset top keeps the ECharts default, which already clears a title.
+    ...(titleBand && grid.top != null && pixels(grid.top) < titleBand ? { top: titleBand } : {}),
+  }));
+  return { ...source, grid: Array.isArray(source.grid) ? grids : grids[0] };
+}
+
 /** Runs inside an HTML artifact's sandbox; no access to the parent document or credentials. */
 function installChartTheme(theme: Record<string, any>, apply: typeof chartBrandColors) {
   const browser = globalThis as any;

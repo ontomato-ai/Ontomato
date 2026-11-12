@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import PptxGenJS from "pptxgenjs";
 import { initWasm, Resvg } from "@resvg/resvg-wasm";
 import { z } from "zod";
-import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
+import { chartAxisBounds, chartBrandColors } from "@ontomato/contracts/chart-presentation";
 import { datasetPayloadSchema } from "@ontomato/contracts/data-retrieval";
 import { parseProductMarkdown } from "@ontomato/markdown";
 
@@ -84,7 +84,7 @@ async function main() {
       sourceNote(slide, source);
     } else if (entry.layout === "chart") {
       addHeading(slide, entry, ink);
-      const option = chartBrandColors(JSON.parse(fs.readFileSync(source, "utf8")), theme);
+      const option = chartAxisBounds(chartBrandColors(JSON.parse(fs.readFileSync(source, "utf8")), theme), 560);
       option.animation = false;
       option.textStyle = { fontFamily: FONT_FAMILY, ...option.textStyle };
       const chart = echarts.init(null, theme, { renderer: "svg", ssr: true, width: 1440, height: 560 });
