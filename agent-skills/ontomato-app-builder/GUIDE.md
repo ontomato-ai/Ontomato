@@ -76,7 +76,7 @@ Publish only a commit that already exists. When files were changed in this run, 
 
 
 
-`vector-upload <class> <attribute> <objectId> [--file <path>] --text <text or @file>` and `vector-delete <class> <attribute> <objectId> <path>` operate on an existing object's resources. Keep these writes within the requested business scope. `ask` is unsupported for build tests.
+`vector-upload <class> <attribute> <objectId> [--file <path>] --text <text or @file>` and `vector-delete <class> <attribute> <objectId> <path>` operate on an existing object's resources. Keep these writes within the requested business scope. Agent delegation and retrieval are unavailable in build tests.
 
 ## Command input and failure contract (5.0)
 
@@ -121,7 +121,7 @@ Write `test-data/sample.json` in the workspace using the complete envelope below
 
 Attachments are relative to that sample. Sample files must stay inside test-data/ so publication can exclude the entire test-material directory. Start with `test start --workspace <id>` (the built-in agent already has ONTOMATO_WORKSPACE_ID); `test status` and `test stop` use the same workspace entry. No sample is collected from live data. A new start ends and cleans the previous context before preparing a fresh ID. Once a round has expired or ended, the user may also restart it from the notice in the preview: that is the same start, preparing the sample at the same path again as the workspace holds it now, so read `test status` rather than assume the context you started is still the current one.
 
-Action/MetricView execute, execute-dsl, distinct-values and vector commands bind the workspace's current Java context once for that command. Missing, preparing, failed, ended or expired contexts fail; requests never switch to live data. ask is not supported for build tests. Metadata discovery and asset editing keep their existing APIs. To look at live data, publish the application for yourself first. A conversation ending does not stop its test context.
+Action/MetricView execute, execute-dsl, distinct-values and vector commands bind the workspace's current Java context once for that command. Missing, preparing, failed, ended or expired contexts fail; requests never switch to live data. `agent` commands carry the current build-test context and are rejected with HTTP 422; they cannot dispatch live work. Metadata discovery and asset editing keep their existing APIs. To look at live data, publish the application for yourself first. A conversation ending does not stop its test context.
 
 Preview requires the SDK manifest's executionContext capability 1. Upgrade old workspace SDK references when the preview entry rejects them. Test samples are excluded from published application files.
 

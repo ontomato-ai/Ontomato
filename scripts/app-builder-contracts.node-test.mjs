@@ -76,3 +76,20 @@ for(const command of ["status","stop"]) {
     } finally {await new Promise(resolve=>server.close(resolve));}
   });
 }
+
+test("agent dispatch carries build-test context and preserves the entry-point refusal",async()=>{
+  const paths=[];
+  const server=createServer((request,response)=>{
+    paths.push(request.url);response.setHeader("content-type","application/json");
+    if(request.url.endsWith("/build-tests")) {response.end(JSON.stringify({contextId:"22222222-2222-4222-8222-222222222222"}));return;}
+    assert.deepEqual(JSON.parse(request.headers["x-ontomato-execution-context"]),{kind:"build-test",contextId:"22222222-2222-4222-8222-222222222222"});
+    response.writeHead(422);response.end(JSON.stringify({success:false,code:"BUILD_TEST_UNSUPPORTED",message:"Agent commands are unavailable in build tests"}));
+  });
+  await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
+  try {
+    await assert.rejects(promisify(execFile)(process.execPath,["agent-skills/ontomato-app-builder/ontomato.mjs","agent","list"],{
+      env:{...process.env,ONTOMATO_URL:`http://127.0.0.1:${server.address().port}`,ONTOMATO_API_KEY:"test-only",ONTOMATO_WORKSPACE_ID:"11111111-1111-4111-8111-111111111111"},
+    }),error=>error.stderr.includes("Agent commands are unavailable in build tests"));
+    assert.equal(paths.length,2);assert.ok(paths[1].endsWith("/platform/agent-channel/commands"));
+  } finally {await new Promise(resolve=>server.close(resolve));}
+});

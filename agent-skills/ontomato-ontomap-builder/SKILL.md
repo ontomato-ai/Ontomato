@@ -69,7 +69,7 @@ Start with the authorized deployment/context and the business purpose. Read `lis
 | Maintain an existing ontomap | Save the current `get-ontomap` result, edit that object and carry back unrelated definitions, descriptions and returned fields unchanged. Resolve new or renamed mappings from the source. | The intended difference is present and unrelated meaning remains. A request to rename or adapt a mapping is not an instruction to remove its relationships. |
 | Change the data source | Test and inspect the target first. Prepare a compatible ontomap and resolve each existing relationship and resource binding before switching. Then call `use-datasource` and `set-ontomap`, and read back/test the result. | Definitions match the actual target; cross-object questions and relevant resources work. These are separate writes, not an atomic migration. If one fails, read actual state before retrying or restoring the affected configuration. |
 | Maintain business knowledge | Read current entries, then save the requested additions/edits or delete the identified entry. | Read back IDs, content and review status; metadata changes alone do not prove a business answer is correct. |
-| Load business data | Run DDL with `db-sql`, then `db-import` a CSV per table; `set-ontomap` when the definition must cover new tables. | Row counts and keys in the business database match the files; `ask` finds the imported objects and relationships. |
+| Load business data | Run DDL with `db-sql`, then `db-import` a CSV per table; `set-ontomap` when the definition must cover new tables. | Row counts and keys in the business database match the files; `agent start --agent ontology/retrieval` finds the imported objects and relationships. |
 | Batch-import text resources | Once objects exist and the `vector` attribute is declared, `upload-vectors` a JSONL file; use `upload-vector` for one resource or an original file and `delete-vector` to remove one. | The failure list is empty or handled; spot checks retrieve and download. |
 | Load test data | In a test environment or test domain, `import-test-data` a zip. | Read objects and resources back; it clears the classes it covers and is not for real data. |
 | Deploy a book hand-off package | Apply its `ddl.sql`, `import/<class>.csv`, `ontomap.draft.json` and `upload-manifest.jsonl` with `db-sql`, `db-import`, `set-ontomap` and `upload-vectors`. | Re-check model, records and evidence resources as the package's `import-map.md` lists. |
@@ -104,8 +104,8 @@ node ontomato.mjs import-test-data test-data.zip
 node ontomato.mjs upload-vector @vector.json
 node ontomato.mjs upload-vectors resources.jsonl
 node ontomato.mjs delete-vector <class> <attribute> <objectId> <path>
-node ontomato.mjs ask "How many people are there?"
-node ontomato.mjs ask --lang en "How many people are there?"
+node ontomato.mjs agent start --agent ontology/retrieval --message "How many people are there?"
+ONTOMATO_LANGUAGE=en node ontomato.mjs agent start --agent ontology/retrieval --message "How many people are there?"
 ```
 
 ## Command results and write scope
@@ -125,13 +125,13 @@ node ontomato.mjs ask --lang en "How many people are there?"
 | `upload-vector` | The new resource, including `path` | Adds one resource and appends a reference to the object's vector field. Check an uncertain result before appending again. |
 | `upload-vectors` | Progress and failures per batch | Adds text resources from JSONL in batches (100 lines by default), each line on its own; failed lines go to `<file>.failed.jsonl`; a failed request stops with a `--from` hint. |
 | `delete-vector` | `vector deleted` | Deletes one resource and the object's reference to it. |
-| `ask` | Session/events and result data | Runs a question against the current context; it is not an ontomap editor or a dataset export. |
+| `agent start --agent ontology/retrieval` | Session/events and result data | Runs a question against the current context; it is not an ontomap editor or a dataset export. |
 
 The commands below document their current API paths. Legacy API names containing `Schema` do not change the product concept: the complete semantic definition is the ontomap.
 
 `type` is one of the types `list-datasources` prints.
 
-`ask` sends `Accept-Language`. The default is `en`.
+Agent requests send `Accept-Language` from `ONTOMATO_LANGUAGE` (default `en`).
 
 ## Write the business database
 
@@ -140,7 +140,7 @@ The ontology maps real tables in the business database. Loading data means writi
 1. **Create tables or columns** with `db-sql @ddl.sql`, written in the dialect of `databaseType`; the whole script runs in one transaction. Confirm authorization before changing an existing table.
 2. **Import rows** with `db-import <table> @<file>.csv`. The first row holds column names, which must match the table. An unquoted empty field becomes NULL and `""` an empty string; values are written as string literals that the database converts to the column type. Import only inserts: it never clears or overwrites, and a primary-key conflict fails that batch.
 3. **Align the definition**: for new tables or columns, add the classes or attributes to the `get-ontomap` result and `set-ontomap` it. Each class needs exactly one enabled varchar primary-key attribute, and that column must be non-null and unique in the table.
-4. **Verify** row counts and keys with the database client, then `ask` a question that touches the new data.
+4. **Verify** row counts and keys with the database client, then `agent start --agent ontology/retrieval` a question that touches the new data.
 
 Only PostgreSQL and MySQL are supported. For other databases, prepare the same DDL and CSV, let the implementer load them with that database's own tools, then continue with steps 3 and 4.
 
@@ -265,7 +265,7 @@ Do not put regional JDBC parameters such as `serverTimezone=Asia/Shanghai` in th
 | attr `showName` | Saved on the ontomap and returned by `get-ontomap`. The schema text and SQL use `name` and `desc`. |
 | attr `desc` | Field description the model reads. `getSchemaByClassName` and the question-splitter schema put it in the "field description" column. Write the business meaning, units, and enumeration values. |
 | `type` | One of `varchar`, `text`, `int`, `long`, `double`, `date`, `timestamp`, `vector`, chosen for the actual mapping. `vector` denotes object-resource references held as a text array representation in the business field; maintain it through resource operations, not equality/range comparisons. See “Text resources and object identity” for upload scope, supported writes and identity constraints. |
-| `bizzKey` | On the DSL question path, `true` adds this column to the result when the query left it out. The SQL built for `ask` does not read this flag. Use `true` for columns that path should keep, and `false` otherwise. |
+| `bizzKey` | On the DSL question path, `true` adds this column to the result when the query left it out. The SQL built for `agent start --agent ontology/retrieval` does not read this flag. Use `true` for columns that path should keep, and `false` otherwise. |
 | `enable` | `true` includes the column in the schema text and in SQL. `false` omits it. A missing value counts as enabled. Use `true`. |
 | `primaryKey` | Exactly one `true` per class, with `enable: true` and `type: varchar`; otherwise saving fails. The label does not convert stored data. Resolve a non-text source key with the authorized data tools before assuming a compatible mapping; changing only the label is not proof. |
 | relationship key | Relationship type name: the machine name a join and the DSL look the relationship up by, and the content of the "relationship type" column of the prompt table. Keep it short, stable and identifier-like (letters, digits, `_`). It is what the model copies into the DSL; the meaning it reads is the `desc`, not the key. |
@@ -375,10 +375,33 @@ Why it matters: the question splitter and the programmer match the user's wordin
 
 ## Natural-language questions
 
-`ask` calls the ontology `/ontology/retrievals`, prints request/retrieval/session IDs,
-then polls and returns authorized datasets. Outcomes are `completed`, `needs_input`
-or `failed`. Present clarification questions to the user; reply explicitly with
-`ask --resume <retrievalId> --answers @answers.json` (questionId plus choiceId or
-text). Use `ask --status <retrievalId>` or `ask --cancel <retrievalId>` as needed.
-Keep requestId for a response-loss retry with `--request-id`. Failures exit nonzero;
-preserve partial-result limits. A run may take several minutes.
+| `agent list [query]` | List accessible agents and their provider/id references |
+| `agent start --agent ontology/retrieval --message @question.txt [--context @context.json]` | Admit binding and retrieval together; return taskId and sessionRef immediately |
+| `agent read <taskId> [--follow] [--files]` | Read a snapshot or follow its SSE updates; download delivered files without changing their bytes |
+| `agent send --session ontology/<sessionId> --message @answer.txt --reply-to <questionId>` | Answer in the same conversation; steer while running, otherwise start its next round |
+| `agent send --session ontology/<sessionId> --message @question.txt [--steer]` | Continue that conversation; ordinary messages fail while busy unless explicitly steered |
+| `agent cancel <taskId>` | Cancel this execution and its delegated descendants; keep accepted results |
+| `retriever-cancel <sessionId> --run <runId>` | Ontology business command: stop only the retriever, preserving binding results and QC |
+
+
+Use the native `agent` tool when the product supplies it. Standalone agents use the same
+five commands through `node ontomato.mjs agent ...` and the ontology gateway.
+`start` and `send` return admission, not a successful business result. Use `read --follow`
+for changes and `read --files` for immutable delivered files under `outputs/`.
+The binding and retriever branches run independently. A successful binding, including
+zero rows, is available in snapshots before the retriever finishes. Inspect its meaning,
+conditions and parameter values before deciding it answers the question. Otherwise keep
+following the same task; never treat binding lookup failure as empty data. Formal binding
+files have null selfCheck. Preserve partial-result limits. Both branches settle before
+the final result notification; each branch's quality check continues separately.
+
+Questions include a stable `id` and the sender's default assumption. A question does not
+stop the sender. Present it to the user and send their answer with `--reply-to`; the host
+records confirmed decisions and advances its revision. No manual run/steer switch is
+needed for an answer. Without a product parent, questions appear in task reads and events.
+`read --follow` returns on an unanswered question or a terminal snapshot; the task may
+still be running after a question. Continue reading it after replying.
+
+Use metadata commands to resolve technical facts. Keep the user's original conditions
+and carry prior dataset references in the retriever's declared context when continuing.
+The retriever uses direct queries and the data-retrieval script for its own work.
