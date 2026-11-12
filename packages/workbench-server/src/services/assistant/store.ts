@@ -22,7 +22,7 @@ export interface SessionRow {
   agent_id: string;
   workspace_id: string | null;
   title: string;
-  origin: "user" | "scheduled";
+  origin: "user" | "scheduled" | "delegated";
   latest_run_id: string | null;
   created_at: Date;
   updated_at: Date;

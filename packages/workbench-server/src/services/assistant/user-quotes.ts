@@ -1,7 +1,7 @@
 import { messageText } from "../../platform/agent-runtime/runtime";
 
 type ConversationMessage = {
-  runId: string;
+  runId: string | null;
   message: { role: string; content: unknown; timestamp: number };
 };
 
@@ -12,7 +12,7 @@ type ConversationMessage = {
 export function recentUserMessages(
   messages: readonly ConversationMessage[],
   currentRunId: string,
-  currentMessage: string,
+  currentMessage: string | null,
   currentTimestamp: number,
 ): string[] {
   const quotes = messages
@@ -24,7 +24,7 @@ export function recentUserMessages(
       at: record.message.timestamp,
     }))
     .filter((record) => record.text.trim().length > 0);
-  quotes.push({ text: currentMessage, at: currentTimestamp });
+  if (currentMessage !== null) quotes.push({ text: currentMessage, at: currentTimestamp });
   return quotes
     .sort((left, right) => left.at - right.at)
     .slice(-10)

@@ -67,3 +67,12 @@ describe("host user quotes", () => {
     ).toEqual(["first line\nsecond line", "current"]);
   });
 });
+
+
+it("keeps pending notifications and the current agent input out of user quotes", () => {
+  const messages = [
+    { runId: "earlier", message: { role: "user", content: "The user's actual request", timestamp: 1 } },
+    { runId: null, message: { role: "notification", content: "An agent's assumption", timestamp: 2 } },
+  ];
+  expect(recentUserMessages(messages,"current",null,3)).toEqual(["The user's actual request"]);
+});

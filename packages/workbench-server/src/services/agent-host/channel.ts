@@ -1,0 +1,76 @@
+import { z } from "zod";
+import { agentPrepareRequestSchema, agentProviderExecutionSchema, agentActorRefSchema, type AgentRunContext } from "@ontomato/contracts/agent-channel";
+import { DIAGNOSIS_AGENT_ID } from "@ontomato/contracts/ops-diagnosis";
+import { assistantService } from "../assistant/service";
+import { assistantStore } from "../assistant/store";
+import { diagnosisService, createDiagnosis, prepareDiagnosis } from "../ops-diagnosis/service";
+import { restoreAgentCaller } from "./caller";
+import { workbenchIdentity } from "../../identity/installed";
+import { answerText } from "../../platform/agent-runtime/runtime";
+import { HttpError } from "../../utils/errors";
+
+async function caller(body: { actor: AgentRunContext["actor"] }, domain: string, provider?: string, readOnly = false) {
+  const current = await restoreAgentCaller(body.actor, domain, readOnly);
+  if (provider === "observe") await workbenchIdentity().assertObserveAccess({ domainId: domain, ...current.credentials });
+  return current;
+}
+export const agentChannelService = {
+  async list(raw: unknown, domain: string) {
+    const body = z.object({ actor: agentActorRefSchema }).strict().parse(raw);
+    const { owner, credentials } = await caller(body, domain);
+    const agents = [];
+    for (const agent of await assistantStore.agents(domain)) {
+      if (!agent.enabled) continue;
+      try { await assistantService.admitAgent(agent.id, owner, credentials); }
+      catch (error) { if (error instanceof HttpError && error.status === 403) continue; throw error; }
+      agents.push({ ref: { providerId: "workbench", agentId: agent.id }, name: agent.name, description: agent.description,
+        ...(agent.kind === "app-builder" ? { contextSchema: { type: "object", properties: { workspaceId: { type: "string", format: "uuid" } }, required: ["workspaceId"], additionalProperties: false } } : {}) });
+    }
+    try {
+      await workbenchIdentity().assertObserveAccess({ domainId: domain, ...credentials });
+      const agent = (await diagnosisService.agents(owner)).agents[0];
+      agents.push({ ref: { providerId: "observe", agentId: agent.id }, name: agent.name, description: agent.description });
+    } catch (error) { if (!(error instanceof HttpError && error.status === 403)) throw error; }
+    return { agents };
+  },
+  async prepare(raw: unknown, domain: string) {
+    const body = agentPrepareRequestSchema.parse(raw), restored = await caller(body, domain, body.agent.providerId);
+    const owner = restored.owner, credentials = { ...restored.credentials,locale: body.language };
+    if (!["workbench", "observe"].includes(body.agent.providerId)) throw new HttpError(404, "Agent provider not found", "NOT_FOUND");
+    if (body.mode === "steer") {
+      const service = body.agent.providerId === "observe" ? diagnosisService : assistantService;
+      await service.ownRun(body.sessionId, body.runId, owner);
+      return { accepted: true };
+    }
+    if (body.agent.providerId === "observe") {
+      if (body.agent.agentId !== DIAGNOSIS_AGENT_ID || body.authority.executionKind !== "live") throw new HttpError(403, "Diagnosis requires live execution authority", "BUILD_TEST_FORBIDDEN");
+      await createDiagnosis(body.sessionId, owner);
+      return prepareDiagnosis(body.sessionId, body.runId, body.input, owner, credentials);
+    }
+    return assistantService.prepare(body,owner,credentials);
+  },
+  async execution(raw: unknown, domain: string) {
+    const body = agentProviderExecutionSchema.parse(raw), { owner, credentials } = await caller(body, domain, body.execution.session.providerId, true);
+    const service = body.execution.session.providerId === "observe" ? diagnosisService : body.execution.session.providerId === "workbench" ? assistantService : null;
+    if (!service) throw new HttpError(404, "Agent provider not found", "NOT_FOUND");
+    await service.ownRun(body.execution.session.sessionId, body.execution.runId, owner);
+    return { body, service, owner, credentials };
+  },
+  async settle(raw: unknown, domain: string) {
+    const { body, owner } = await this.execution(raw, domain);
+    if (body.execution.session.providerId === "workbench") await assistantService.settleTurn(body.execution.runId, owner);
+    return { accepted: true };
+  },
+  async cancel(raw: unknown, domain: string) {
+    const { body, owner } = await this.execution(raw, domain);
+    if (body.execution.session.providerId === "workbench") await assistantService.settleTurn(body.execution.runId, owner);
+    return { accepted: true };
+  },
+  async read(raw: unknown, domain: string) {
+    const { body, service, owner } = await this.execution(raw, domain);
+    const snapshot = await service.readRun(body.execution.session.sessionId, body.execution.runId, owner);
+    const status = snapshot.run.status === "running" ? "running" : snapshot.run.stopReason === "stop" ? "completed" : snapshot.run.stopReason === "aborted" ? "cancelled" : "failed";
+    return { status, summary: answerText(snapshot) || snapshot.run.errorMessage || status,
+      process: { mode: "inline", runtimeSessionId: snapshot.run.sessionId, runtimeRunId: snapshot.run.id }, results: [] };
+  },
+};

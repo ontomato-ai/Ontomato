@@ -1,6 +1,6 @@
+import type { AgentInput } from "@ontomato/contracts/agent-channel";
 import type { RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
 import { ARTIFACT_MARKDOWN_PROMPT } from "@ontomato/contracts/agent-artifact-markdown";
-import { assistantOntologyContext } from "./context";
 import { ASSISTANT_INTERACTION_CONTEXT } from "./interaction-context";
 import { prepareAssistantSkills } from "./skills";
 import { assistantStore, type AgentRow, type AssistantOwner, type SessionRow, type TurnRow } from "./store";
@@ -13,13 +13,12 @@ import { OntologyRetrievalClient } from "./ontology-retrieval";
 import { getQueryTimeoutMs } from "../../config/query-settings";
 
 export interface AssistantPreparation {
-  a: AgentRow; session: SessionRow; turn: TurnRow; message: string;
+  a: AgentRow; session: SessionRow; turn: TurnRow; message: string; input: AgentInput; ontologyContext: string | null;
   owner: AssistantOwner; credentials: AssistantCredentials;
 }
-export async function prepareAnalystRun({ a, session, turn, message, owner, credentials }: AssistantPreparation): Promise<RuntimeStartRunRequest> {
+export async function prepareAnalystRun({ a, session, turn, message, input, ontologyContext, owner, credentials }: AssistantPreparation): Promise<RuntimeStartRunRequest> {
   const sessionId = session.id, id = turn.id;
   const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
-  const ontologyContext = await assistantOntologyContext(a, credentials);
   const skills = await prepareAssistantSkills(owner.domainId, a.skills);
   const skillEnvironment = userSkillEnvironment(credentials);
   const continuationIds = new Set<string>();
@@ -28,7 +27,7 @@ export async function prepareAnalystRun({ a, session, turn, message, owner, cred
     for (const link of await new OntologyRetrievalClient(owner, previous.retrieval_scope_id).links()) continuationIds.add(link.retrievalId);
   }
   const userMessages = recentUserMessages(
-    (await client.session(sessionId)).messages, id, message, new Date(turn.created_at).getTime(),
+    (await client.session(sessionId)).messages, id, input.role === "notification" ? null : message, new Date(turn.created_at).getTime(),
   );
   await new OntologyRetrievalClient(owner, turn.retrieval_scope_id).open({
     classNames: turn.class_names,
@@ -38,7 +37,7 @@ export async function prepareAnalystRun({ a, session, turn, message, owner, cred
   }, credentials);
   return {
     language: resolveLocale(credentials.locale),
-    input: { role: "user", content: message, timestamp: new Date(turn.created_at).getTime() },
+    input,
     definition: { agentId: session.agent_id, ...runDefinition(
       effectiveSystemPrompt(a, resolveLocale(credentials.locale)) + "\n\nInitial ontology context:\n" + ontologyContext +
         "\n\n" + ARTIFACT_MARKDOWN_PROMPT + ASSISTANT_INTERACTION_CONTEXT,

@@ -1,3 +1,7 @@
+import { resolveLocale } from "../../i18n";
+import { openAgentCaller } from "../agent-host/caller";
+import type { AgentInput, AgentRunContext } from "@ontomato/contracts/agent-channel";
+import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { readDiagnosisModel } from "./model-settings";
 import { lockSessionClaim, assertUnclaimedSession } from "../agent-host/session-claim";
 import { createHash } from "node:crypto";
@@ -115,37 +119,12 @@ export const diagnosisService: AgentHostService = {
     return snapshot;
   },
   async start(session, run, message, owner, credentials) {
-    const row = await diagnosisSession(session, owner), client = new RuntimeClient(owner.domainId, undefined, owner.userId);
-    const language = credentials.locale ?? "en";
-    const fingerprint = createHash("sha256").update(canonical({ session, message, language })).digest("hex");
-    const intent = await transaction(async (tx) => {
-      await tx.query(`SELECT id FROM ${table("ops_sessions")} WHERE id=$1 FOR UPDATE`, [session]);
-      const previous = (await tx.query(`SELECT * FROM ${table("ops_run_intents")} WHERE id=$1`, [run])).rows[0];
-      if (previous) {
-        if (previous.session_id !== session || previous.fingerprint !== fingerprint) throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
-        return { ...previous, replayed: true };
-      }
-      const definition = runDefinition(renderPrompt("diagnosis-agent.main.system", {}, language) + "\n\n" + ARTIFACT_MARKDOWN_PROMPT + (row.target ? `\n\nDiagnosis target (resolve before drawing conclusions): ${JSON.stringify(row.target)}` : ""), (await readDiagnosisModel(owner.domainId)).modelSelection.modelId, [skill], language);
-      definition.agentId = DIAGNOSIS_AGENT_ID;
-      return { ...(await tx.query(`INSERT INTO ${table("ops_run_intents")} (id,session_id,fingerprint,definition,language) VALUES($1,$2,$3,$4,$5) RETURNING *`, [run, session, fingerprint, JSON.stringify(definition), language])).rows[0], replayed: false };
-    });
-    if (intent.replayed) {
-      try { return { snapshot: publicSnapshot(await this.readRun(session, run, owner)), replayed: true }; }
-      catch (e) { if (!(e instanceof HttpError && e.status === 404)) throw e; }
-    }
-    await publishSkill(path.join(workbenchServerResourceRoot, "resources/runtime-skills/ops-diagnosis"), skill);
-    const definition = intent.definition as RuntimeStartRunRequest["definition"];
-    const admitted = await client.start(session, run, {
-      language: intent.language,
-      input: { role: "user", content: message, timestamp: new Date(intent.created_at).getTime() },
-      definition,
-      environment: {
-        values: { ONTOMATO_WORKBENCH_URL: environment.agentRuntime().callbackUrl.replace(/\/$/, "") },
-        secrets: { ONTOMATO_TK: callbackCredential({ pathPrefix: "/api/observe/evidence/", runId: run, expiresAt: Date.now() + definition.sandbox.limits.wallTimeMs, token: credentials.token ?? "", apiKey: credentials.apiKey ?? "" }).value },
-      },
-    });
-    await db().query(`UPDATE ${table("ops_sessions")} SET title=CASE WHEN title='' THEN $2 ELSE title END,updated_at=now() WHERE id=$1`, [session, message]);
-    return { snapshot: publicSnapshot(await client.run(admitted.run.id)), replayed: admitted.replayed };
+    const actor = await openAgentCaller(owner, credentials, run), agent = { providerId: "observe", agentId: DIAGNOSIS_AGENT_ID };
+    const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
+    await client.request(`/v1/channel/sessions/${session}/bind`, "POST", { agent, actor });
+    const channel: AgentRunContext = { agent, actor, authority: { classNames: [], executionKind: "live" }, requestedBy: null, root: { session: { providerId: "observe", sessionId: session }, runId: run } };
+    await client.request(`/v1/channel/sessions/${session}/runs`, "POST", { channel, language: resolveLocale(credentials.locale), input: { role: "user", content: message, timestamp: Date.now() } }, run);
+    return { snapshot: publicSnapshot(await client.run(run)), replayed: false };
   },
   async cancel(session, run, owner) {
     await diagnosisSession(session, owner);
@@ -187,3 +166,34 @@ export const diagnosisService: AgentHostService = {
     return { artifact: result.artifacts.at(-1) ?? null };
   },
 };
+
+export async function prepareDiagnosis(session: string, run: string, input: AgentInput, owner: AgentHostOwner, credentials: AssistantCredentials): Promise<RuntimeStartRunRequest> {
+  const message = input.content;
+    const row = await diagnosisSession(session, owner);
+    const language = credentials.locale ?? "en";
+    const fingerprint = createHash("sha256").update(canonical({ session, message, language })).digest("hex");
+    const intent = await transaction(async (tx) => {
+      await tx.query(`SELECT id FROM ${table("ops_sessions")} WHERE id=$1 FOR UPDATE`, [session]);
+      const previous = (await tx.query(`SELECT * FROM ${table("ops_run_intents")} WHERE id=$1`, [run])).rows[0];
+      if (previous) {
+        if (previous.session_id !== session || previous.fingerprint !== fingerprint) throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
+        return { ...previous, replayed: true };
+      }
+      const definition = runDefinition(renderPrompt("diagnosis-agent.main.system", {}, language) + "\n\n" + ARTIFACT_MARKDOWN_PROMPT + (row.target ? `\n\nDiagnosis target (resolve before drawing conclusions): ${JSON.stringify(row.target)}` : ""), (await readDiagnosisModel(owner.domainId)).modelSelection.modelId, [skill], language);
+      definition.agentId = DIAGNOSIS_AGENT_ID;
+      return { ...(await tx.query(`INSERT INTO ${table("ops_run_intents")} (id,session_id,fingerprint,definition,language) VALUES($1,$2,$3,$4,$5) RETURNING *`, [run, session, fingerprint, JSON.stringify(definition), language])).rows[0], replayed: false };
+    });
+    await publishSkill(path.join(workbenchServerResourceRoot, "resources/runtime-skills/ops-diagnosis"), skill);
+    const definition = intent.definition as RuntimeStartRunRequest["definition"];
+    await db().query(`UPDATE ${table("ops_sessions")} SET title=CASE WHEN title='' THEN $2 ELSE title END,updated_at=now() WHERE id=$1`, [session, message]);
+    return {
+      language: intent.language,
+      input,
+      definition,
+      environment: {
+        values: { ONTOMATO_WORKBENCH_URL: environment.agentRuntime().callbackUrl.replace(/\/$/, "") },
+        secrets: { ONTOMATO_TK: callbackCredential({ pathPrefix: "/api/observe/evidence/", runId: run, expiresAt: Date.now() + definition.sandbox.limits.wallTimeMs, token: credentials.token ?? "", apiKey: credentials.apiKey ?? "" }).value },
+      },
+    };
+}
+
