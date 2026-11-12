@@ -45,7 +45,7 @@ function reason(error: AgentTaskError) {
               <Database :size="12" />
               <span class="dataset-title">{{ dataset.title }}</span>
               <span class="dataset-meta">{{ labels.rows(dataset.rowCount) }}</span>
-              <span v-if="dataset.truncation" class="dataset-meta warning">{{ labels.truncatedRows(dataset.truncation.rowLimit) }}</span>
+              <span v-if="dataset.truncation" class="dataset-meta warning">{{ shell.labels.value.truncatedRows(dataset.truncation.rowLimit) }}</span>
             </li>
           </ul>
         </li>

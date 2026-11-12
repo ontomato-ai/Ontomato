@@ -1,13 +1,15 @@
 import type { ShellLabels } from "@ontomato/agent-shell-ui";
+/** The shell labels the page formats from a pattern (steps, elapsed time, a column's filter, a partial dataset). */
+type Formatted = "steps" | "elapsed" | "worked" | "truncatedRows" | "filterColumn";
+
 /**
- * Governance text. `shell` is the shell's labels as stored: the two the page formats from text
- * (steps, elapsed, worked) keep their keys but hold the pattern instead of the formatter, so a
- * missing key is a type error here rather than a silent `{...}` cast. It has no task labels: the governance
- * conversation delegates no tasks.
+ * Governance text. `shell` is the shell's labels as stored: those the page formats from text keep their keys but hold
+ * the pattern instead of the formatter, so a missing key is a type error here rather than a silent `{...}` cast. It has
+ * no task labels: the governance conversation delegates no tasks.
  */
 export interface GovernanceMessages {
   text: Readonly<Record<string, string>>;
-  shell: Readonly<Omit<ShellLabels, "steps" | "elapsed" | "worked" | "tasks"> & Record<"steps" | "elapsed" | "worked", string>>;
+  shell: Readonly<Omit<ShellLabels, Formatted | "tasks"> & Record<Formatted, string>>;
 }
 export const governanceAgentId = "56a15178-ae22-4e6f-9974-ababeb42a676";
 export const englishGovernance: GovernanceMessages = {
@@ -97,8 +99,18 @@ export const englishGovernance: GovernanceMessages = {
     "activityKnowledge": "Search metrics and knowledge",
     "activityDataset": "Prepare dataset",
     "activityCompute": "Run calculation",
-    "datasetData": "Data",
     "datasetLineage": "Lineage",
+    "showLineage": "Show lineage graph",
+    "hideLineage": "Hide lineage graph",
+    "lineageSources": "Objects",
+    "lineageFields": "Fields",
+    "lineageOperations": "Calculations",
+    "lineageOutputs": "Result columns",
+    "truncatedRows": "First {limit} rows only",
+    "filterColumn": "Filter {column}",
+    "filterSearch": "Search values",
+    "filterAll": "All",
+    "filterEmpty": "(Empty)",
     "elapsed": "{time} elapsed",
     "worked": "Worked for {time}",
   }
@@ -123,6 +135,8 @@ export function shellLabels(t: GovernanceTranslate): ShellLabels {
     steps: (n: number) => t("governance.shell.steps", n),
     elapsed: (time: string) => t("governance.shell.elapsed", { time }),
     worked: (time: string) => t("governance.shell.worked", { time }),
+    truncatedRows: (limit: number) => t("governance.shell.truncatedRows", { limit }),
+    filterColumn: (column: string) => t("governance.shell.filterColumn", { column }),
     selectRow: undefined,
     selectedRows: undefined,
     analyzeSelectionMessage: undefined,

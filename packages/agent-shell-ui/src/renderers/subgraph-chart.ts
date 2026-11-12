@@ -1,19 +1,23 @@
 import type { QuerySubgraph } from "@ontomato/contracts/query-subgraph";
 
 /**
- * Positions and styles a dataset's source analysis as an ECharts graph, exactly as delivered:
- * class occurrences, their fields, operations and output columns, left to right. Nothing is
- * inferred; layout only places the given nodes and edges. Filters mark their targets with a
- * dashed border; the component lists them under the graph.
+ * Positions and styles a dataset's source analysis as an ECharts graph, exactly as delivered, in four titled column
+ * groups left to right: the classes the data comes from, their fields, the operations (one column per dependency depth,
+ * so an operation never stands left of one it reads) and the output columns. Nothing is inferred; layout only places the
+ * given nodes and edges. A filter marks every node it targets, whatever its kind, with a dashed border and its condition
+ * in that node's tooltip; the dataset states the conditions in words beside the graph.
  */
 
 type GraphNode = QuerySubgraph["nodes"][number];
+type Kind = GraphNode["kind"];
 
 export interface SubgraphColors {
   text: string;
   muted: string;
   line: string;
   surface: string;
+  /** Text on a class node's fill. */
+  onClass: string;
   class: string;
   field: string;
   operation: string;
@@ -25,6 +29,8 @@ const GAP = 56;
 const NODE_HEIGHT = 28;
 const MARGIN = 16;
 const CLASS_STEP = 1.8;
+/** Room above the nodes for the column titles. */
+const HEADER = 30;
 
 const boxWidth = (label: string, textWidth: (label: string) => number) =>
   Math.min(170, Math.max(56, textWidth(label) + 24));
@@ -98,12 +104,21 @@ function layout(graph: QuerySubgraph, textWidth: (label: string) => number) {
     left += width + GAP;
   });
   const ys = nodes.map((n) => y.get(n.id) ?? 0);
-  const top = Math.min(...ys) - NODE_HEIGHT / 2 - MARGIN;
+  const top = Math.min(...ys) - NODE_HEIGHT / 2 - MARGIN - HEADER;
   const bottom = Math.max(...ys) + NODE_HEIGHT / 2 + MARGIN;
   const width = Math.max(0, left - GAP) + MARGIN * 2;
+  // A group's title sits over the middle of its columns; the operations' columns share one title.
+  const span = (kind: Kind) => {
+    const indices = nodes.filter((n) => n.kind === kind).map(column);
+    return indices.length ? ((centers[Math.min(...indices)] ?? 0) + (centers[Math.max(...indices)] ?? 0)) / 2 + MARGIN : null;
+  };
   return {
     x: (node: GraphNode) => (centers[column(node)] ?? 0) + MARGIN,
     y: (node: GraphNode) => (y.get(node.id) ?? 0) - top,
+    titles: (["class", "field", "operation", "output"] as const).flatMap((kind) => {
+      const x = span(kind);
+      return x === null ? [] : [{ kind, x, y: MARGIN + HEADER / 2 - 4 }];
+    }),
     width,
     height: bottom - top,
   };
@@ -122,16 +137,19 @@ function detail(node: GraphNode) {
   return node.key;
 }
 
-/** The ECharts option for the graph; `escape` makes labels safe inside HTML tooltips. */
+/** The ECharts option for the graph, its column groups titled by `titles`; `escape` makes labels safe inside HTML tooltips. */
 export function subgraphOption(
   graph: QuerySubgraph,
   colors: SubgraphColors,
+  titles: Record<Kind, string>,
   textWidth: (label: string) => number,
   escape: (value: string) => string,
 ) {
-  const { x, y, width: canvasWidth, height: canvasHeight } = layout(graph, textWidth);
+  const { x, y, titles: titlePlaces, width: canvasWidth, height: canvasHeight } = layout(graph, textWidth);
   const byId = new Map(graph.nodes.map((node) => [node.id, node]));
-  const filtered = new Set(graph.filters.flatMap((filter) => filter.targetIds));
+  const conditions = new Map<string, string[]>();
+  for (const filter of graph.filters)
+    for (const id of filter.targetIds) conditions.set(id, [...(conditions.get(id) ?? []), filter.label]);
   const width = (label: string) => boxWidth(label, textWidth);
   const nodes = graph.nodes.map((node) => ({
     id: node.id,
@@ -144,16 +162,30 @@ export function subgraphOption(
       color: node.kind === "class" ? colors.class : colors.surface,
       borderColor: colors[node.kind],
       borderWidth: 1.5,
-      borderType: filtered.has(node.id) ? "dashed" : "solid",
+      borderType: conditions.has(node.id) ? "dashed" : "solid",
     },
     label: {
       show: true,
-      color: node.kind === "class" ? colors.surface : colors.text,
+      color: node.kind === "class" ? colors.onClass : colors.text,
       fontSize: 12,
       width: width(node.label) - 12,
       overflow: "truncate",
     },
-    tooltip: { formatter: `${escape(node.label)}<br/>${escape(detail(node))}` },
+    tooltip: {
+      formatter: [node.label, detail(node), ...(conditions.get(node.id) ?? [])].map(escape).join("<br/>"),
+    },
+  }));
+  const headings = titlePlaces.map((place) => ({
+    id: `title:${place.kind}`,
+    name: titles[place.kind],
+    x: place.x,
+    y: place.y,
+    symbol: "rect",
+    symbolSize: 1,
+    itemStyle: { color: "transparent" },
+    silent: true,
+    label: { show: true, color: colors.muted, fontSize: 12, fontWeight: 600 },
+    tooltip: { show: false },
   }));
   // ECharts turns mid-edge labels along the line; relation names sit on their own anchor at the
   // edge's midpoint instead, so they stay horizontal.
@@ -200,7 +232,7 @@ export function subgraphOption(
       // Two invisible corner anchors make the graph's extent equal the canvas, so it draws at scale 1.
       left: 0, right: 0, top: 0, bottom: 0,
       edgeSymbolSize: 7,
-      data: [...nodes, ...relationLabels, ...[[0, 0], [canvasWidth, canvasHeight]].map(([ax, ay], index) => ({
+      data: [...nodes, ...headings, ...relationLabels, ...[[0, 0], [canvasWidth, canvasHeight]].map(([ax, ay], index) => ({
         id: `frame:${index}`, name: "", x: ax, y: ay, symbol: "rect", symbolSize: 0, silent: true, label: { show: false }, tooltip: { show: false },
       }))],
       links,
