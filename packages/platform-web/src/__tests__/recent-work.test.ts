@@ -7,7 +7,7 @@ describe("recent business destinations", () => {
   it("keeps resumable parameters and discards credentials and unrelated query strings", async () => {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/agents/chat", component: { template: "<div />" } }] });
     await router.push("/agents/chat?sessionId=conversation&apiKey=secret&token=secret#details");
-    expect(recentDestination(router.currentRoute.value, { id: "agents", label: "Assistant", prefix: "/agents", icon: "agents" }))
+    expect(recentDestination(router.currentRoute.value, { id: "agents", label: "Assistant", prefix: "/agents", icon: "agents", category: "business" }))
       .toEqual({ appId: "agents", title: "Assistant", path: "/agents/chat?sessionId=conversation" });
   });
   it.each(["//example.com", "/%2fexample.com", "/agents/chat?token=secret", "/agents/chat#secret", "/%5cexample.com"])("rejects unsafe stored destinations: %s", path => {
@@ -16,8 +16,8 @@ describe("recent business destinations", () => {
   it("records hosted applications at their catalog route and excludes settings", async () => {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/:pathMatch(.*)*", component: { template: "<div />" } }] });
     await router.push("/applications/orders");
-    expect(recentDestination(router.currentRoute.value, { id: "orders", label: "Orders", prefix: "/applications/orders", icon: "pages" })?.path).toBe("/applications/orders");
+    expect(recentDestination(router.currentRoute.value, { id: "orders", label: "Orders", prefix: "/applications/orders", icon: "pages", category: "business" })?.path).toBe("/applications/orders");
     await router.push("/settings/model-config");
-    expect(recentDestination(router.currentRoute.value, { id: "settings", label: "Settings", prefix: "/settings", icon: "pages" })).toBeNull();
+    expect(recentDestination(router.currentRoute.value, { id: "settings", label: "Settings", prefix: "/settings", icon: "pages", category: "admin" })).toBeNull();
   });
 });
