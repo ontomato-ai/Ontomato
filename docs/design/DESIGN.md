@@ -182,9 +182,23 @@ Each application shows one frame in its area:
 | Application | Frame |
 |---|---|
 | Agent Platform, Operations Diagnosis, Knowledge Governance, App builder | Its own conversation column, then the conversation (§9) |
-| Ontology Service (Ontology Manager) | Its own menu (ontology, assets, knowledge) in its band, pages beside it |
-| System Settings | PlatformPageHeader with the application's pages as tabs; a page's own tabs stay in it |
-| Object Browser, Dashboards, Scheduled Tasks, Permissions (enterprise) | One page: header and page |
+| Ontology Service (Ontology Manager), System Settings, Permissions (enterprise) | Its own menu in its column: its name at the top, its pages by group, its own entry at the foot; the page beside it under the page's header |
+| Object Browser, Dashboards, Scheduled Tasks | One page: header and page |
+
+A menu application declares each page once, as a leaf of the navigation: its address, title, one line of description
+and the permission that opens it. The column, the page header, the current row and the router guard all read that leaf;
+a group the account may open nothing of shows no heading, and an application is entered at the first page the account
+may open. Applications do not switch their pages with tabs: what used to be a page's second-level tabs are rows of the
+column, and the former parent addresses forward to their first page.
+
+Each application whose agents run on the domain's models has a "Models" page at the foot of its column: the agent
+platform in its settings column, knowledge governance and operations diagnosis in their conversation columns, the
+Ontology Manager at the foot of its menu. Which ontology service agent each one lists is declared once, by the agent's
+stable kind (`ontologyAgentModelPages` in the platform shell); the agents and their choices stay the data engine's. All
+of them use one page (`AgentModelsPage`): each agent follows the domain's default chat model until it is given one,
+goes back to it in one click, and the page is one draft saved from its header, a rejected choice kept with its reason
+beside it. System Settings keep only what no application owns: the default chat and embedding models, the providers and
+the call policy.
 
 Pages and the frames around them paint no background of their own: the main area (§5) shows through, so no page sits on
 it as a lighter card; tables, inputs, cards, toolbars and dialogs keep their surfaces, and a canvas takes the page tone
@@ -202,9 +216,10 @@ embedded pages. At 200% zoom no essential action or content may become inaccessi
 
 ## 7. Page architecture
 
-Ontology Manager navigation follows four layers: Facts (graph, object types, properties, relationships and visual
-modeling), Capabilities (metric views, functions, actions, workflows and skills), Governance (business knowledge review),
-Products (a heading reserved for future screens, with no entries). Skills are managed only here (`/ontology/skills`): the
+Ontology Manager navigation follows its layers: Facts (graph, object types, properties, relationships and visual
+modeling), Capabilities (metric views, functions, actions, workflows and skills), Governance (business knowledge review
+and the capability map), and its models at the foot of the menu. A layer without a page shows no heading. Skills are
+managed only here (`/ontology/skills`): the
 list gives each skill's name and source, and a skill opens as its package, the files on the left and the chosen one read
 on the right; a package changes only by importing it again. External MCP services are connections, not business logic,
 and are registered in System settings (`/settings/external-mcp`). Agents only select skills and services in their own
@@ -215,30 +230,46 @@ Short page subtitles and single-line function summaries omit a trailing full sto
 instructions, warnings and confirmation body text retain normal punctuation; question marks retain their meaning.
 Edit the authoritative message rather than stripping punctuation in rendering components.
 
-Standard management pages use PlatformPageHeader: one title, optional useful description, actions and application
-tabs. Compact technical headers reference 48px and grow/wrap as necessary. No redundant type subtitle or explanatory
-eyebrow in a dense titlebar; contextual help can be available separately. Preserve useful business descriptions. An
-application whose header carries its own name and line (Object Browser, System settings) keeps that header where it has
-a single page — the Object Browser, whose graph and table are modes of one page (§10), or an account that may open only
-one System settings page — without tabs.
+Every page has one header, PlatformPageHeader, one row at the top of its content: the page's name with one line of
+description after it on the same baseline on the left, the page's own actions on the right. The application's name is
+not repeated there: it heads the application's column. Compact technical headers reference 48px and grow/wrap as
+necessary. No redundant type subtitle or explanatory eyebrow in a dense titlebar; contextual help can be available
+separately. Preserve useful business descriptions. An application of one page under its own name (the Object Browser,
+whose graph and table are modes of one page, §10) names the application in that header instead.
+
+Each page has one header presenter. A frame that draws the header for the pages under it (the platform's layout, the
+super admin console) shows what the shown page hands over through the shell's page actions (`usePageActions`): its own
+buttons (refresh, new, delete) and its draft. A page that draws its header itself (the Ontology Manager's pages, the
+external MCP services, the agent editor, the model pages) is shown without one around it; it never draws a second header
+inside a frame's.
+
+A page that holds a draft saves it from its header, never from a button at the foot of a form: without changes the
+header shows only a disabled Save; with changes it shows the unsaved marker, Discard and Save. Drafts, their reads,
+whether they can be saved and partial failures stay the page's; a dialog's own save, a connection test and licence
+activation keep their own buttons. Leaving the pages that edit a dirty draft, switching or creating an agent, and closing
+or reloading the document ask first; Cancel stays with the draft, confirming drops it. Pages that edit one draft (model
+usage and providers, one model library) move between each other without asking. The question is the frame's one check
+(`useUnsavedChanges`): a page registers only whether its draft is dirty and which addresses edit it. A conversation
+application that changes the page beside its column ahead of the address asks the same question first
+(`useLeaveConfirmation`), so the page with the draft stays until the reader confirms.
 
 Management pages use the shared `compact` header variant by default, including System Settings, permissions, dashboards,
 schedules, skills, external MCP services and Ontology Manager catalogs, graph, modeling and business knowledge: a single
 title/actions row in the page gutter. A concise menu-function description follows the title on the same
-baseline in secondary text, wrapping naturally on narrow widths. The title/actions row uses 12px vertical padding;
-application tabs follow with an 8px gap. Detail headers show the selected
-entity name. Headers retain useful descriptions; do not suppress them through global CSS. Technical and conversation
-workspaces retain their owned geometry; their embedded page headers follow the same 12px vertical rhythm.
+baseline in secondary text, wrapping naturally on narrow widths. The title/actions row uses 12px vertical padding.
+Detail headers show the selected entity name. Headers retain useful descriptions; do not suppress them through global
+CSS. Technical and conversation workspaces retain their owned geometry; their embedded page headers follow the same 12px
+vertical rhythm.
 
 Headers and content share one gutter, written once in the shell (`platform-page-gutter`): the header carries it, and
 the frame or page that shows content under a header puts the class on the element holding that content, so no page
 writes a side padding of its own and wrappers do not accumulate padding. A page drawing its own header takes the class
 under it; a page another application hosts gets it from that host. Several panes under one header — a list and its
 detail, an explorer, a canvas and an inspector — sit together in one block inside the gutter, with the table's 1px
-border and 8px radius and hairlines between them: the page's content, like a table, not a card. Application tabs use a
-40px row; a page's own tabs remain inside its content. Tabs may scroll horizontally on narrow widths, retaining keyboard
-focus. Content fills remaining space; toolbars are plain rows, filters have labels, empty states stay in their content
-area.
+border and 8px radius and hairlines between them: the page's content, like a table, not a card. A page's own segmented
+views (an organization's members and duties) remain inside its content and are not named like a row of the column
+beside it. Content fills remaining space; toolbars are plain rows, filters have labels, empty states stay in their
+content area.
 
 ## 8. Shared components
 
@@ -299,7 +330,9 @@ head is the agent switcher when the application runs on several agents — the c
 the agents, each with its name and one line of description, the current one checked — and the application's name when
 it runs on one. The Agent Platform's column holds only a new conversation, the recent conversations and Agent settings
 at the foot. Agent settings replace the column with their own navigation (back to the conversation, the agents, a new
-agent) while the main area edits the chosen agent.
+agent, and the models at the foot) while the main area edits the chosen agent as one long page: its header (avatar,
+name, unsaved marker, Delete, Save), then the basics, model, instructions, capabilities and data scope one after another,
+reached through the page's contents list rather than steps or tabs.
 
 User messages are right-aligned on sunken bubbles; assistant answers are plain reading text without a bubble, with
 maximum reading width around 960px. Answers dominate; process, tools and provenance are quiet expandable disclosures.
