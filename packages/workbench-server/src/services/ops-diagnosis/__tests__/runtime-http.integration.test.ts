@@ -176,7 +176,9 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
       expect(await stream.next()).toEqual({ type: "run_stopped", sessionId: session, runId: run });
       const stoppedStatus = await api("/api/observe/agent/sessions/status", { sessionIds: [session] }, "alice:a");
       expect(stoppedStatus.body.sessions[0].latestRun).toEqual({ id: run, status: "stopped", stopReason: "aborted" });
-      expect((await api("/api/observe/agent/sessions/status", { sessionIds: [session] }, "bob:a")).status).toBe(404);
+      const foreignStatus = await api("/api/observe/agent/sessions/status", { sessionIds: [session] }, "bob:a");
+      expect(foreignStatus.status).toBe(200);
+      expect(foreignStatus.body).toEqual({ sessions: [] });
     } finally {
       stream.close();
     }

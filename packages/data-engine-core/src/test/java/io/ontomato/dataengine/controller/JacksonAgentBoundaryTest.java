@@ -16,6 +16,7 @@ import io.ontomato.dataengine.bean.metricView.MetricViewBinding;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.dao.JSONRuleDao;
 import io.ontomato.dataengine.service.*;
+import io.ontomato.dataengine.service.agent.AgentHttpException;
 import io.ontomato.dataengine.service.agent.AgentRuntimeClient;
 import io.ontomato.dataengine.service.agent.OntologyAgentAccess;
 import io.ontomato.dataengine.service.agent.OntologyAgentHost;
@@ -103,14 +104,15 @@ class JacksonAgentBoundaryTest {
 
   @Test
   void httpSessionStatusRequestBindsItsArrayAsAList() throws Exception {
-    var access = mock(OntologyAgentAccess.class);
-    var owner = new OntologyAgentStore.Owner("user-a", "domain-a");
-    when(access.authenticated(any()))
-        .thenReturn(new OntologyAgentAccess.Context(owner, null, null, null, "en", null, null));
-    when(access.reader(any(), anyString(), isNull())).thenReturn(owner);
-    var host = mock(OntologyAgentHost.class);
     String first = "11111111-1111-4111-8111-111111111111";
     String second = "33333333-3333-4333-8333-333333333333";
+    var owner = new OntologyAgentStore.Owner("user-a", "domain-a");
+    var store = mock(OntologyAgentStore.class);
+    when(store.session(first, owner))
+        .thenReturn(JSONObject.of("agent_id", OntologyAgentStore.RETRIEVER));
+    when(store.session(second, owner))
+        .thenReturn(JSONObject.of("agent_id", OntologyAgentStore.RETRIEVER));
+    var host = mock(OntologyAgentHost.class);
     var sessions =
         JSONArray.of(
             JSONObject.of(
@@ -123,17 +125,7 @@ class JacksonAgentBoundaryTest {
                     "stopReason", null)),
             JSONObject.of("sessionId", second, "latestRun", null));
     when(host.sessionStatuses(any(), eq(owner))).thenReturn(sessions);
-    var controller =
-        new OntologyAgentController(
-            host,
-            access,
-            mock(AgentRuntimeClient.class),
-            mock(OntologyRetrievalService.class));
-    var mvc =
-        MockMvcBuilders.standaloneSetup(controller)
-            .setControllerAdvice(new OntologyAgentErrors())
-            .setMessageConverters(new MappingJackson2HttpMessageConverter())
-            .build();
+    var mvc = statusBoundary(host, boundaryAccess(owner, store));
     var response =
         mvc.perform(
                 post("/ontology/ai/sessions/status")
@@ -152,9 +144,6 @@ class JacksonAgentBoundaryTest {
     var ids = org.mockito.ArgumentCaptor.forClass(List.class);
     verify(host).sessionStatuses(ids.capture(), eq(owner));
     assertEquals(List.of(first, second), ids.getValue());
-    verify(access).authenticated(any());
-    verify(access).reader(any(), eq(first), isNull());
-    verify(access).reader(any(), eq(second), isNull());
 
     // A JSON string is not the array this endpoint accepts.
     var invalid =
@@ -166,6 +155,66 @@ class JacksonAgentBoundaryTest {
             .getResponse();
     assertEquals(400, invalid.getStatus());
     verifyNoMoreInteractions(host);
+  }
+
+  @Test
+  void httpSessionStatusReturnsOnlyTheReadableSubset() throws Exception {
+    String missing = "11111111-1111-4111-8111-111111111111";
+    String first = "33333333-3333-4333-8333-333333333333";
+    String second = "55555555-5555-4555-8555-555555555555";
+    var owner = new OntologyAgentStore.Owner("user-a", "domain-a");
+    var store = mock(OntologyAgentStore.class);
+    when(store.session(missing, owner)).thenThrow(AgentHttpException.missing());
+    when(store.session(first, owner))
+        .thenReturn(JSONObject.of("agent_id", OntologyAgentStore.RETRIEVER));
+    when(store.session(second, owner))
+        .thenReturn(JSONObject.of("agent_id", OntologyAgentStore.RETRIEVER));
+    var host = mock(OntologyAgentHost.class);
+    var sessions =
+        JSONArray.of(
+            JSONObject.of("sessionId", first, "latestRun", null),
+            JSONObject.of("sessionId", second, "latestRun", null));
+    when(host.sessionStatuses(any(), eq(owner))).thenReturn(sessions);
+    var response =
+        statusBoundary(host, boundaryAccess(owner, store))
+            .perform(
+                post("/ontology/ai/sessions/status")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        "{\"sessionIds\":[\""
+                            + missing
+                            + "\",\""
+                            + first
+                            + "\",\""
+                            + second
+                            + "\"]}"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+    assertEquals(
+        sessions, JSON.parseObject(response.getContentAsString()).getJSONArray("sessions"));
+    var ids = org.mockito.ArgumentCaptor.forClass(List.class);
+    verify(host).sessionStatuses(ids.capture(), eq(owner));
+    assertEquals(List.of(first, second), ids.getValue());
+  }
+
+  private static OntologyAgentAccess boundaryAccess(
+      OntologyAgentStore.Owner owner, OntologyAgentStore store) {
+    var identity = mock(IdentityService.class);
+    when(identity.getCurrentUser())
+        .thenReturn(new QueryAccessService.GrantUser(owner.userId(), owner.domainId()));
+    return new OntologyAgentAccess(
+        mock(QueryAccessService.class), identity, mock(QueryGrantService.class), store);
+  }
+
+  private static org.springframework.test.web.servlet.MockMvc statusBoundary(
+      OntologyAgentHost host, OntologyAgentAccess access) {
+    return MockMvcBuilders.standaloneSetup(
+            new OntologyAgentController(
+                host, access, mock(AgentRuntimeClient.class), mock(OntologyRetrievalService.class)))
+        .setControllerAdvice(new OntologyAgentErrors())
+        .setMessageConverters(new MappingJackson2HttpMessageConverter())
+        .build();
   }
 
   private static MetricView boundaryMetric() {

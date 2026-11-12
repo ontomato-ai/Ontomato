@@ -5,7 +5,6 @@ import { agentHostSessionPageQuerySchema, agentHostCreateSessionSchema, agentHos
 import { runtimeRelativePathSchema } from "@ontomato/contracts/agent-runtime-values";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { publicSnapshot, publicFrame, runStatusView } from "../../platform/agent-runtime/projection";
-import { HttpError } from "../../utils/errors";
 import { buildAttachmentContentDisposition } from "../utils/http";
 import { context, id, wrap } from "../utils/agent-host";
 import type { AgentHostService } from "../../services/agent-host/types";
@@ -86,15 +85,14 @@ router.post(
   wrap(async (req, res) => {
     const c = context(req),
       { sessionIds } = agentHostSessionStatusRequestSchema.parse(req.body);
-    // One query for the page's whole loaded set; one unreadable ID rejects the read
-    // before any runtime call.
+    // One query for the page's whole loaded set; only its readable subset is read from
+    // the runtime, in request order.
     const readable = sessionIds.length
       ? await service.readableSessions(c.owner, sessionIds)
       : new Set<string>();
-    if (sessionIds.some((sessionId) => !readable.has(sessionId)))
-      throw new HttpError(404, "Conversation not found", "NOT_FOUND");
-    const statuses = sessionIds.length
-      ? await new RuntimeClient(c.owner.domainId).sessionStatuses(sessionIds)
+    const permitted = sessionIds.filter((sessionId) => readable.has(sessionId));
+    const statuses = permitted.length
+      ? await new RuntimeClient(c.owner.domainId).sessionStatuses(permitted)
       : [];
     res.json(
       agentHostSessionRunSnapshotSchema.parse({

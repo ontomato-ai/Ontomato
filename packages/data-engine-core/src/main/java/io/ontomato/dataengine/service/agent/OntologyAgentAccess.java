@@ -175,8 +175,8 @@ public class OntologyAgentAccess {
       }
     }
 
-    public String domainId() {
-      return owner.domainId();
+    public OntologyAgentStore.Owner owner() {
+      return owner;
     }
   }
 
