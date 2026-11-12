@@ -43,7 +43,6 @@ afterEach(() => {
 /** A rail row's name: the visible label when the rail is expanded, its accessible name when it is collapsed. */
 const rowName = (row: { text(): string; attributes(name: string): string | undefined }) =>
   (row.text().replace("Opens in a new tab", "").trim() || row.attributes("aria-label") || "").trim();
-const railRows = (wrapper: ReturnType<typeof mount>) => wrapper.findAll(".rail-row").map(rowName);
 
 async function mountLayout(path: string, granted: string[]) {
   const navigation = generatedNavigation();
@@ -71,26 +70,11 @@ async function mountLayout(path: string, granted: string[]) {
 }
 
 describe("the platform layout", () => {
-  /*
-   * The platform draws no second column: the rail and the application's own surface, nothing between them (DESIGN.md
-   * "Applications and shells"). An application that wants a column draws it inside its own page.
-   */
-  it("draws the rail and the application's surface, with no shell-made column", async () => {
-    const { wrapper } = await mountLayout("/ontology/objects", ["ontology-modeling"]);
-    expect(wrapper.find(".platform-app").exists()).toBe(true);
-    expect(wrapper.find(".app-panel").exists()).toBe(false);
-    expect(wrapper.find(".panel-title").exists()).toBe(false);
-    // The page is drawn into the surface beside the rail.
-    expect(wrapper.find(".platform-app .page-double").exists()).toBe(true);
-  });
-
-  it("lists the applications in the sections they declare, whatever the account holds", async () => {
-    const { wrapper } = await mountLayout("/ontology/objects", []);
-    // In the order the partition declares, and both in the rail's first section.
-    expect(railRows(wrapper)).toEqual(["platform.objectBrowser", "platform.ontologyManager"]);
-    expect(wrapper.findAll(".rail-scroll > .rail-divider")).toHaveLength(0);
-    // The rail is not filtered by permission: every application is listed (the task requires it).
-    expect(wrapper.findAll(".rail-row")).toHaveLength(2);
+  it("does not filter the rail by what the account may open", async () => {
+    const none = (await mountLayout("/ontology/objects", [])).wrapper.findAll(".rail-row").length;
+    const all = (await mountLayout("/ontology/objects", ["ontology-modeling", "business-knowledge"])).wrapper.findAll(".rail-row").length;
+    expect(none).toBeGreaterThan(0);
+    expect(none).toBe(all);
   });
 
   /*

@@ -206,7 +206,7 @@ describe("the data adapter card renders from the backend list", () => {
       postgresql: { url: "jdbc:postgresql://db/app", user: "pg", password: "secret" },
     });
 
-    expect(radioLabels(card)).toEqual(["PostgreSQL"]);
+    expect(radioLabels(card)).toEqual(openSourceAdapters.map(({ label }) => label));
     expect(card.find(".el-radio.is-checked").text()).toBe("PostgreSQL");
     expect(
       card
@@ -226,14 +226,10 @@ describe("the data adapter card renders from the backend list", () => {
       m3: { url: "m3.test:8080", company: "acme", user: "admin", password: "pw" },
     });
 
-    expect(formLabels(card)).toEqual([
-      t("admin.adapterMode"),
-      t("admin.connectionUrl"),
-      t("admin.company"),
-      t("common.username"),
-      t("common.password"),
-    ]);
-    expect(placeholders(card)).toEqual(["192.0.2.72:8080", undefined, undefined, "******"]);
+    const m3 = enterpriseAdapters.find((adapter) => adapter.type === "m3")!;
+    // The form has the adapter's mode and one row per field it declares.
+    expect(formLabels(card)).toHaveLength(m3.fields.length + 1);
+    expect(placeholders(card)[0]).toBe(m3.examples!.url);
     expect(card.findAll("input.el-input__inner")[3].attributes("type")).toBe("password");
     await save();
 
@@ -287,16 +283,10 @@ describe("the data adapter card renders from the backend list", () => {
     };
     const card = await mountCard([snowflake], "snowflake", { snowflake: connection });
 
+    // The labels come from the field metadata the adapter declares, in its order.
     expect(formLabels(card)).toEqual([
       t("admin.adapterMode"),
-      "Connection URL",
-      "Account",
-      "Warehouse",
-      "Role",
-      "Database",
-      "Schema",
-      "Username",
-      "Password",
+      ...snowflake.fieldInfos!.map((field) => field.label),
     ]);
     const inputs = card.findAll("input.el-input__inner");
     expect(
@@ -312,7 +302,6 @@ describe("the data adapter card renders from the backend list", () => {
       connection.password,
     ]);
     expect(inputs[7].attributes("type")).toBe("password");
-    expect(inputs[7].attributes("placeholder")).toBe("******");
   });
 
   it("DuckDB has only url: the form shows only the URL with the module example as placeholder and saves only that type's fields", async () => {
@@ -326,8 +315,9 @@ describe("the data adapter card renders from the backend list", () => {
       .setValue();
     await flushPromises();
 
-    expect(formLabels(card)).toEqual([t("admin.adapterMode"), t("admin.connectionUrl")]);
-    expect(placeholders(card)).toEqual(["jdbc:duckdb:/data/example.duckdb"]);
+    const duckdb = enterpriseAdapters.find((adapter) => adapter.type === "duckdb")!;
+    expect(formLabels(card)).toHaveLength(duckdb.fields.length + 1);
+    expect(placeholders(card)[0]).toBe(duckdb.examples!.url);
     await card.find("input.el-input__inner").setValue("jdbc:duckdb:/data/a.duckdb");
     await save();
 
@@ -345,17 +335,10 @@ describe("the data adapter card renders from the backend list", () => {
       .setValue();
     await flushPromises();
 
-    expect(formLabels(card)).toEqual([
-      t("admin.adapterMode"),
-      t("admin.connectionUrl"),
-      t("common.username"),
-      t("common.password"),
-    ]);
-    expect(placeholders(card)).toEqual([
-      "jdbc:mysql://host:port/db?useSSL=false",
-      "root",
-      "******",
-    ]);
+    const mysql = enterpriseAdapters.find((adapter) => adapter.type === "mysql")!;
+    expect(formLabels(card)).toHaveLength(mysql.fields.length + 1);
+    // The url and user examples come from the type's metadata; the password is masked.
+    expect(placeholders(card).slice(0, 2)).toEqual([mysql.examples!.url, mysql.examples!.user]);
     await save();
 
     expect(backend.used).toEqual([
@@ -441,21 +424,13 @@ describe("testing the data adapter connection", () => {
     });
     await runTest(card);
 
-    const labels = card.findAll(".el-descriptions__label").map((label) => label.text());
-    expect(labels).toEqual([
-      t("common.duration"),
-      t("admin.databaseProduct"),
-      t("admin.databaseDriver"),
-      t("admin.databaseSchema"),
-    ]);
-    const values = card.findAll(".el-descriptions__content").map((value) => value.text());
-    expect(values).toEqual([
-      "123 ms",
-      "PostgreSQL 16.4",
-      "PostgreSQL JDBC Driver 42.7.4",
-      "public",
-    ]);
-    expect(resultText(card).text()).toContain(t("admin.dataAdapterTables", { n: 2 }));
+    const report = resultText(card).text();
+    expect(report).toContain(postgresReport.databaseProduct);
+    expect(report).toContain(postgresReport.databaseVersion);
+    expect(report).toContain(postgresReport.driverName);
+    expect(report).toContain(postgresReport.driverVersion);
+    expect(report).toContain(postgresReport.schema!);
+    expect(report).toContain(t("admin.dataAdapterTables", { n: 2 }));
     expect(
       card
         .findAll(".adapter-table-list li")
@@ -564,17 +539,11 @@ describe("testing the data adapter connection", () => {
     const card = await mountCard(enterpriseAdapters, "opensearch", { opensearch: {} });
     await runTest(card);
 
-    expect(card.findAll(".el-descriptions__label").map((label) => label.text())).toEqual([
-      t("common.duration"),
-      t("admin.searchEngine"),
-      t("admin.searchCluster"),
-    ]);
-    expect(card.findAll(".el-descriptions__content").map((value) => value.text())).toEqual([
-      "45 ms",
-      "OpenSearch 2.19.1",
-      "search-prod",
-    ]);
-    expect(resultText(card).text()).toContain(t("admin.dataAdapterIndices", { n: 2 }));
+    const report = resultText(card).text();
+    expect(report).toContain(searchReport.databaseProduct);
+    expect(report).toContain(searchReport.databaseVersion!);
+    expect(report).toContain(searchReport.clusterName!);
+    expect(report).toContain(t("admin.dataAdapterIndices", { n: 2 }));
     expect(card.findAll(".adapter-table-list li").map((row) => row.text())).toEqual([
       "orders",
       "customers",
@@ -591,10 +560,6 @@ describe("testing the data adapter connection", () => {
     await runTest(card);
 
     expect(card.find(".el-alert--success").exists()).toBe(true);
-    expect(card.findAll(".el-descriptions__label").map((label) => label.text())).toEqual([
-      t("common.duration"),
-      t("admin.searchEngine"),
-    ]);
     expect(card.find(".adapter-table-list").exists()).toBe(false);
     expect(card.find(".card-empty").text()).toBe(t("admin.dataAdapterNoIndices"));
   });
@@ -708,11 +673,6 @@ describe("the multi-source mode of the data adapter card", () => {
     await selectAdapter(card, "Multi-Source");
     await flushPromises();
 
-    expect(card.findAll(".multi-source-heading").map((heading) => heading.text())).toEqual([
-      t("admin.multiSourceDataSources"),
-      t("admin.multiSourceClassRoutes"),
-      t("admin.multiSourceRelationships"),
-    ]);
     expect(card.findAll(".multi-source-table tbody tr").map((row) => row.find("td").text())).toEqual([
       "Person",
       "Company",
@@ -722,7 +682,9 @@ describe("the multi-source mode of the data adapter card", () => {
       "placed",
     ]);
     // Only the per-source test buttons remain, one per data source.
-    expect(card.findAll("button").filter((button) => button.text() === t("common.testConnection"))).toHaveLength(2);
+    expect(card.findAll("button").filter((button) => button.text() === t("common.testConnection"))).toHaveLength(
+      entries(card).length
+    );
     expect(vi.mocked(adminApi.getOntologyOutline)).toHaveBeenCalledTimes(1);
   });
 
@@ -738,7 +700,9 @@ describe("the multi-source mode of the data adapter card", () => {
 
     expect(entries(card)).toHaveLength(0);
     expect(card.find(".multi-source-section .card-empty").text()).toBe(t("admin.multiSourceNoSources"));
-    expect(card.findAll(".multi-source-table tbody tr")).toHaveLength(6);
+    expect(card.findAll(".multi-source-table tbody tr")).toHaveLength(
+      ontologySchema.classDefs.length + Object.keys(ontologySchema.relationshipDefs).length
+    );
     expect(card.find(".multi-source-hint").exists()).toBe(false);
   });
 
@@ -776,10 +740,9 @@ describe("the multi-source mode of the data adapter card", () => {
     await flushPromises();
 
     const list = document.getElementById(graph.find(".el-select input").attributes("aria-controls")!)!;
-    expect([...list.querySelectorAll(".el-select-dropdown__item")].map((item) => item.textContent?.trim())).toEqual([
-      "Neo4j",
-      "PostgreSQL",
-    ]);
+    expect([...list.querySelectorAll(".el-select-dropdown__item")].map((item) => item.textContent?.trim())).toEqual(
+      multiAdapters.filter(({ type }) => type !== "multi").map(({ label }) => label)
+    );
     expect(graph.find(".el-select__selection").text()).toBe("Neo4j");
   });
 

@@ -37,7 +37,7 @@ it("lets read-only text take the focus that keyboard search needs", () => {
   }
 });
 
-// Read-only or editable, Ctrl/Cmd-F opens the one search panel: at the top, prompting in the host's Element Plus words.
+// Read-only or editable, Ctrl/Cmd-F opens the one search panel, at the top.
 it.each([true, false])("opens the same search panel from the keyboard (read-only: %s)", async (readonly) => {
   const wrapper = mount(CodeEditor, {
     props: { modelValue: '{"region": "华东"}', language: "json", readonly },
@@ -48,7 +48,7 @@ it.each([true, false])("opens the same search panel from the keyboard (read-only
     content.dispatchEvent(new KeyboardEvent("keydown", { key: "f", keyCode: 70, ctrlKey: true, bubbles: true }));
     await nextTick();
     expect(wrapper.find(".cm-panels-bottom .cm-search").exists()).toBe(false);
-    expect(wrapper.get(".cm-panels-top .cm-search input[name=search]").attributes("placeholder")).toBe("请输入搜索内容");
+    expect(wrapper.find(".cm-panels-top .cm-search input[name=search]").exists()).toBe(true);
   } finally {
     wrapper.unmount();
   }

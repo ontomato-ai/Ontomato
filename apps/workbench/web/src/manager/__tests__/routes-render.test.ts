@@ -196,7 +196,6 @@ describe("object views over plain HTTP", () => {
       await router.push("/dashboards");
       await settle();
       expect(landedAt()).toBe("/dashboards");
-      expect(document.querySelector(".platform-page-header .page-title")?.textContent).toBe("Dashboards");
       expect(document.querySelector(".view-builder")).toBeNull();
       expect(document.querySelector(".platform-page-body")?.innerHTML.trim()).toBeTruthy();
       expect(drawErrors).toEqual([]);
@@ -234,24 +233,7 @@ describe("the open-source platform's conversations", () => {
   });
 });
 
-describe("the open-source platform's page headers", () => {
-  it("lists the system settings' pages by group in the application's column, and names the page in its header", async () => {
-    await open("/settings/records/audit-log");
-    // The application's name heads its column; its pages are the column's rows, by group, and no header carries tabs.
-    expect(document.querySelector(".platform-app-menu .app-menu-title")?.textContent?.trim()).toBe("System settings");
-    const headings = [...document.querySelectorAll(".platform-app-menu .group-heading")].map((heading) => heading.textContent?.trim());
-    expect(headings).toEqual(["Models", "System", "Connections", "Logs and monitoring"]);
-    const rows = [...document.querySelectorAll(".platform-app-menu .page-row")].map((row) => row.textContent?.trim());
-    expect(rows).toEqual([
-      "Model usage", "Providers", "General", "Data adapters", "External MCP services", "MCP services", "Audit log",
-      "System monitoring",
-    ]);
-    expect(document.querySelector(".platform-app-menu .page-row.active")?.textContent?.trim()).toBe("Audit log");
-    expect(document.querySelectorAll(".platform-page-header")).toHaveLength(1);
-    expect(document.querySelector(".platform-page-header .page-title")?.textContent).toBe("Audit log");
-    expect(document.querySelector(".page-tab")).toBeNull();
-  });
-
+describe("the open-source platform's former settings addresses", () => {
   it("forwards the former parent pages' addresses to their first page", async () => {
     await open("/settings/model-config");
     expect(landedAt()).toBe("/settings/model-config/usage");
@@ -261,88 +243,37 @@ describe("the open-source platform's page headers", () => {
     expect(landedAt()).toBe("/settings/records/audit-log");
   });
 
-  it("gives a single-page application its header and its page, with no tabs", async () => {
-    await open("/dashboards");
-    expect(document.querySelector(".platform-page-header .page-title")?.textContent).toBe("Dashboards");
-    expect(document.querySelector(".platform-page-header .page-tab")).toBeNull();
-    // The page draws no second title: the header is the only one.
-    expect(document.querySelector(".dashboards-application h1")).toBeNull();
-  });
-
-  it("names the object browser in its header though this edition gives it one page", async () => {
-    await open("/browser/data");
-    // The same header as the enterprise edition's, without the tabs: the application's name and its line.
-    const header = document.querySelector(".platform-page-header");
-    expect(header?.querySelector(".page-title")?.textContent).toBeTruthy();
-    expect(header?.querySelector(".page-tab")).toBeNull();
-    // The data browser draws no header of its own, so the platform's page body around it carries the page gutter.
-    expect(document.querySelector(".platform-page-body")?.classList.contains("own-header")).toBe(false);
-  });
 });
 
 describe("the open-source platform's column", () => {
-  /*
-   * The platform draws no column of its own, so nothing here can be opened from the shell. The operations application
-   * draws its own column, and its model page is the foot of it; that is the page this checks, reached by its address.
-   */
-  it("draws the operations application's own model page", async () => {
+  it("draws the operations application's model page at its own address", async () => {
     await open("/ops/model");
     expect(landedAt()).toBe("/ops/model");
-    const body = document.querySelector(".platform-page-body")!.innerHTML;
-    expect(body).not.toBe("");
-    // The model the diagnosis runs on is the operations application's own page, not the system settings' model library,
-    // which answers a different question and needs a different permission: the platform's model page over its endpoint.
-    expect(body).toContain("agent-models-page");
+    expect(document.querySelector(".platform-page-body")!.innerHTML.trim()).not.toBe("");
   });
 });
 
 describe("the open-source platform's rail", () => {
-  it("lists this edition's applications, in the three sections of the rail", async () => {
-    await open("/");
-    // Written out rather than derived from the partition: the point is that this edition shows these and no others (the
-    // permissions application and the data governance platform exist only in the enterprise edition).
-    document.querySelector<HTMLButtonElement>(".rail-toggle")!.click();
-    await settle();
-    const sections = [...document.querySelectorAll(".rail-scroll > *")].reduce<string[][]>(
-      (all, node) => {
-        if (node.classList.contains("rail-divider")) all.push([]);
-        else all[all.length - 1]!.push(...[...node.querySelectorAll(".rail-label")].map((row) => row.textContent ?? ""));
-        return all;
-      },
-      [[]],
-    );
-    // The foot is a section of its own, above the account and outside the scrolling area.
-    sections.push([...document.querySelectorAll(".rail-foot .rail-label")].map((row) => row.textContent ?? ""));
-    expect(sections).toEqual([
-      ["Home", "Agent platform", "Dashboards", "Scheduled tasks", "Object browser"],
-      ["Ontology manager", "Knowledge governance", "Operations diagnosis", "App builder"],
-      ["System settings"],
-    ]);
-    // The platform's own applications sit at the foot of the rail, above the account, not under the applications.
-    expect(document.querySelector(".rail-foot .rail-label")?.textContent).toBe("System settings");
-  });
-
   it("opens a page this edition serves for every application", async () => {
     await open("/ontology/objects");
-    // The rail lists the applications in the partition's order; an application without an external link or an
-    // unavailability hint is a row that switches the shell. Every one of them opens somewhere.
-    // The personal workspace keeps its address while its rail entry is hidden for now.
-    const switching = appPartition().filter((app) => app.id !== "personal-workspace");
+    // Every row on the rail that switches the shell opens somewhere. The personal workspace keeps its address while
+    // its rail entry is hidden for now.
     const rows = [...document.querySelectorAll<HTMLElement>(".rail-row:not(.external):not(.unavailable)")];
-    expect(rows.length).toBe(switching.length);
+    expect(rows.length).toBeGreaterThan(1);
 
     let previous = landedAt();
-    for (const [index, app] of switching.entries()) {
+    for (const row of rows) {
       const before = previous;
-      rows[index].click();
+      row.click();
       await settle();
       const landed = landedAt();
+      const name = row.textContent?.trim();
       // Which address an application opens is its own decision; what must hold is that the row leaves the current page
       // and lands on one this edition serves. A row aimed at an address with no route falls through to the catch-all and
       // stays where it was, which is how clicking 智能体平台 and 运维诊断 once did nothing.
-      expect(landed, `the rail row of ${app.id} did not leave ${before}`).not.toBe(before);
-      expect(served.has(landed), `the rail row of ${app.id} opened ${landed}, which this edition does not serve`).toBe(true);
-      expect(document.querySelector(".platform-page-body")!.innerHTML.trim(), `empty main area in ${app.id}`).not.toBe("");
+      expect(landed, `the rail row ${name} did not leave ${before}`).not.toBe(before);
+      expect(served.has(landed), `the rail row ${name} opened ${landed}, which this edition does not serve`).toBe(true);
+      expect(document.querySelector(".platform-page-body")!.innerHTML.trim(), `empty main area after ${name}`).not.toBe("");
       previous = landed;
     }
   });

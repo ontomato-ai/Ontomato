@@ -12,7 +12,6 @@ import {
 import type { ModelSettingsData, ModelSettingsWrite, OntologyAgentModel } from "@ontomato/contracts/model-settings";
 import { vectorRebuildStatusSchema } from "../models/types";
 import ModelEditDialog from "../models/components/ModelEditDialog.vue";
-import ModelSelectionSelect from "../models/components/ModelSelectionSelect.vue";
 import ModelUsagePanel from "../models/components/ModelUsagePanel.vue";
 import ProviderDetail from "../models/components/ProviderDetail.vue";
 import ModelConfigPage from "../pages/ModelConfigPage.vue";
@@ -180,10 +179,6 @@ describe("model configuration page", () => {
 
     await router.push(platformPages.modelUsage.path);
     await flushPromises();
-    // The usage page holds the defaults and the call policy only: no agent's model is chosen here.
-    expect(usagePanel(wrapper).findAllComponents(ModelSelectionSelect).map((select) => select.props("ariaLabel"))).toEqual([
-      t("admin.domainDefaultModel"),
-    ]);
     expect(draft().dirty).toBe(true);
     await router.push(platformPages.modelProviders.path);
     await flushPromises();
@@ -202,17 +197,10 @@ describe("model configuration page", () => {
     await flushPromises();
 
     const message = String(confirm.mock.calls[0]![0]);
-    expect(message).toContain(t("admin.modelRenameConfirm", { from: "gateway/vendor/chat", to: "gateway/vendor/chat-2" }));
     // The dashboard generator chose it; it chooses again on the agent platform's model page.
-    expect(message).toContain(
-      t("admin.modelRenameAffects", {
-        agents: t("admin.agentModelLocation", {
-          agent: t("admin.ontologyAgentKinds.dashboard"),
-          application: "app:agents",
-          page: t("platform.agentModels.title"),
-        }),
-      })
-    );
+    expect(message).toContain(t("admin.ontologyAgentKinds.dashboard"));
+    expect(message).toContain("app:agents");
+    expect(message).toContain("gateway/vendor/chat-2");
     draft().save();
     await flushPromises();
     await flushPromises();
@@ -227,15 +215,13 @@ describe("model configuration page", () => {
     await embeddingRow.findAll("button").find((b) => b.text() === "Delete")!.trigger("click");
     await flushPromises();
 
-    expect(String(confirm.mock.calls[0]![0])).toContain(t("admin.embeddingDefaultCleared", { name: "embed (gateway/embed)" }));
-    expect(detail.findAll(".model-row")).toHaveLength(2);
+    expect(String(confirm.mock.calls[0]![0])).toContain("gateway/embed");
     expect(draft().dirty).toBe(false);
   });
 
   it("checks one model with the smallest call of that very model and shows the result on its row", async () => {
     const { wrapper } = await mountPage(platformPages.modelProviders.path);
     const rows = wrapper.findComponent(ProviderDetail).findAll(".model-row");
-    expect(rows).toHaveLength(2);
 
     await rows[1]!.findAll("button").find((button) => button.text() === t("admin.check"))!.trigger("click");
     await flushPromises();

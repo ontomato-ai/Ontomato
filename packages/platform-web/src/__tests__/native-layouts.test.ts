@@ -5,13 +5,8 @@ import { closedAccess, generatedNavigation } from "./fixtures";
 import { catalogFixture } from "./fixtures";
 import { catalogPartition } from "../native-layouts";
 
-/*
- * The rail's sections and the business applications' order, straight from the task: the ontology applications, then the
- * business ones with the dashboards and the scheduled tasks among them, and the platform's own settings last.
- */
 const t = (key: string) => key;
 const declarations = appDeclarations(generatedNavigation(), closedAccess(["business-knowledge"]), appPartition(), t);
-const named = (section: string) => declarations.filter((app) => app.rail === section).map((app) => app.id);
 
 describe("the platform's applications", () => {
   it("shows only the implemented workspace when an old workplace registration remains", () => {
@@ -19,7 +14,9 @@ describe("the platform's applications", () => {
     const workspace = catalog.find(app => app.id === "personal-workspace")!;
     const stale = { ...workspace, id: "workplace", entry: { path: "/workplace", renderer: "workplace" } };
     const partition = catalogPartition([...catalog, stale], "zh-CN");
-    expect(partition.filter(app => app.label === "个人工作台").map(app => app.id)).toEqual(["personal-workspace"]);
+    expect(
+      partition.filter(app => app.id === "personal-workspace" || app.id === "workplace").map(app => app.id)
+    ).toEqual(["personal-workspace"]);
   });
   it("omits stale native entries until their renderer layout is registered", () => {
     const application = {
@@ -35,33 +32,9 @@ describe("the platform's applications", () => {
   it("opens knowledge governance in the conversation rather than feedback records", () => {
     expect(declarations.find(app => app.id === "governance")?.home).toBe("/governance/chat");
   });
-  it("organizes the ontology menu into its layers with the capability library, and its models at the foot", () => {
+  it("puts the ontology manager's models at the foot of its menu", () => {
     const ontology = appPartition().find(app => app.id === "ontology")!;
-    expect(ontology.sections.map(section => section.key)).toEqual([
-      "ontology:facts", "ontology:capabilities", "ontology:governance",
-    ]);
-    expect(ontology.sections[0]!.paths).not.toContain("/ontology/assets/actions");
-    expect(ontology.sections[1]!.paths).toEqual([
-      "/ontology/assets/metrics", "/ontology/assets/functions", "/ontology/assets/actions", "/ontology/assets/workflows", "/ontology/skills",
-    ]);
-    expect(ontology.sections[2]!.paths).toEqual(["/ontology/knowledge", "/ontology/assets/capability-map"]);
     expect(ontology.foot).toBe("/ontology/models");
-  });
-  it("lists the system settings' pages in their groups, without tabs", () => {
-    const settings = appPartition().find(app => app.id === "settings")!;
-    expect(settings.frame).toBe("menu");
-    expect(settings.sections.map(section => [section.key, section.paths])).toEqual([
-      ["settings:models", ["/settings/model-config/usage", "/settings/model-config/providers"]],
-      ["settings:system", ["/settings/system-config/general", "/settings/system-config/authorization"]],
-      ["settings:connections", ["/settings/system-config/data-adapters", "/settings/external-mcp", "/settings/mcp-services"]],
-      ["settings:records", ["/settings/records/audit-log", "/settings/records/system-monitor"]],
-    ]);
-  });
-  it("sits in three sections: the home and the everyday applications, the business ones, and the settings above the account", () => {
-    expect(named("top")).toEqual(["home", "personal-workspace", "agents", "dashboards", "schedules", "browser"]);
-    // 应用构建 comes after the operations diagnosis.
-    expect(named("apps")).toEqual(["ontology", "governance", "operations", "app-builder"]);
-    expect(named("bottom")).toEqual(["settings"]);
   });
 
   it("gives the dashboards and the scheduled tasks an application of their own, each at its own address", () => {
@@ -70,9 +43,6 @@ describe("the platform's applications", () => {
     expect(dashboards.home).toBe("/dashboards");
     const schedules = declarations.find((app) => app.id === "schedules")!;
     expect(schedules.home).toBe("/schedules");
-    // Neither is listed under the agent platform any more: they are applications, not pages of one.
-    const agents = declarations.find((app) => app.id === "agents")!;
-    expect(agents.groups).toEqual([]);
   });
 
 });

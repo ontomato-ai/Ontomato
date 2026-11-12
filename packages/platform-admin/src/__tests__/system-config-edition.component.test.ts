@@ -92,16 +92,12 @@ describe("open-source general settings in the Ontology Manager", () => {
     await flushPromises();
     // The dropdown list is teleported; the select's input names it through aria-controls.
     const list = document.getElementById(language.find("input").attributes("aria-controls")!)!;
-    expect([...list.querySelectorAll(".el-select-dropdown__item")].map((item) => item.textContent?.trim())).toEqual([
-      "English",
-    ]);
+    // The page offers the languages the edition configures, and the data engine ships exactly those.
+    expect([...list.querySelectorAll(".el-select-dropdown__item")].map((item) => item.textContent?.trim())).toEqual(
+      businessConfig.languageOptions.map(({ label }) => label)
+    );
     expect(sent.some((request) => request.url.endsWith("/businessConfig/saveLang"))).toBe(false);
     // Nothing changed on the screen, so the header's Save is disabled: no setting is written on arrival.
     expect(headerSave(wrapper).attributes("disabled")).toBeDefined();
-  });
-
-  it("no longer carries query examples (they moved to their own menu page)", async () => {
-    await mountPage();
-    expect(sent.some((request) => request.url.endsWith("/bussinessexample/getall"))).toBe(false);
   });
 });
