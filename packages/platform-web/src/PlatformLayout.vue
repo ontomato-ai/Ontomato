@@ -192,8 +192,13 @@ const headerLabels = computed(() => ({
   overflow-y: auto;
 }
 /* The groups fill the column, so the application's own entry sits at its foot. */
-.app-menu-pages {
+/*
+ * The pages' list fills the room the title leaves, so the foot sits at the bottom of the column. The list draws itself at
+ * least as tall as its parent; under the title that is one title too tall and pushes the foot out of view.
+ */
+.platform-app-menu > .app-menu-pages {
   flex: 1 0 auto;
+  min-height: 0;
 }
 .app-menu-title {
   display: flex;
