@@ -103,3 +103,10 @@ jobs:
 
       - name: Test the Java contract and boundary group
         run: ./mvnw -B -ntp -Pcontract test
+
+      # Match docker/workbench/Dockerfile and the public branch image build facts.
+      - name: Build the apps SDK
+        working-directory: apps/workbench
+        env:
+          APPS_SDK_BUILD: '{"release":false,"product":"ontomato"}'
+        run: pnpm build:sdk
