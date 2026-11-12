@@ -122,7 +122,7 @@ function send(text: string) {
         <h1 class="greeting">{{ labels.greeting }}</h1>
         <p v-if="agent?.description" class="agent-description">{{ agent.description }}</p>
         <div v-if="$slots['composer-context']" class="composer-context"><slot name="composer-context" /></div>
-        <ShellComposer :busy="busy" :disabled="!agent?.enabled" autofocus @send="send" @stop="emit('stop')" />
+        <ShellComposer :busy="busy" :disabled="!agent?.enabled" autofocus :labels="labels" @send="send" @stop="emit('stop')" />
         <p v-if="sendError" class="send-error" role="alert"><CircleAlert :size="14" />{{ sendError }}</p>
       </div>
     </div>
@@ -169,7 +169,7 @@ function send(text: string) {
         </button>
         <p v-if="sendError" class="send-error" role="alert"><CircleAlert :size="14" />{{ sendError }}</p>
         <div v-if="$slots['composer-context']" class="composer-context"><slot name="composer-context" /></div>
-        <ShellComposer :busy="busy" :disabled="!agent?.enabled" @send="send" @stop="emit('stop')" />
+        <ShellComposer :busy="busy" :disabled="!agent?.enabled" :labels="labels" @send="send" @stop="emit('stop')" />
       </div>
     </template>
   </div>

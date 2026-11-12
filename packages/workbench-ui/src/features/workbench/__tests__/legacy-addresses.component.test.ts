@@ -16,7 +16,9 @@ import { legacyAdminRoutes } from "@ontomato/platform-web";
  */
 const i18n = workbenchI18n();
 
-vi.mock("@ontomato/agent-shell-ui", () => ({
+vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => ({
+  // The settings editor reads the real agent avatars; the shell's own parts are doubled.
+  ...(await importOriginal<typeof import("@ontomato/agent-shell-ui")>()),
   AgentShell: {
     name: "AgentShell",
     props: ["featureId"],
