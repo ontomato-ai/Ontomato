@@ -295,14 +295,14 @@ async function refresh() {
   } finally { refreshing.value = false; }
 }
 onMounted(() => { void refresh(); });
-function configure() {
+function configure(tab: "layout" | "resources" | "opening" = "layout") {
   if (saving.value || refreshing.value) return;
   delete errors.value.save;
   draft.value = { ...config.value, dashboardCards: Object.fromEntries(Object.entries(config.value.dashboardCards).map(([id, cards]) => [id, [...cards]])), interactions: { ...config.value.interactions }, dashboardIds: [...config.value.dashboardIds], applicationIds: [...config.value.applicationIds] };
   editing.value = true;
   const sections = config.value.sections ?? presetSections(config.value.layout);
   draft.value.sections = { main: [...sections.main], sidebar: [...sections.sidebar], hidden: [...sections.hidden] };
-  settingsTab.value = "layout";
+  settingsTab.value = tab;
 }
 async function save() {
   if (saving.value) return;
@@ -330,7 +330,7 @@ function taskSummary(value: string) {
 }
 const actions = computed(() => [
   { id: "refresh", label: text.value.refresh, icon: RefreshCw, onClick: () => void refresh() },
-  ...(ready.value ? [{ id: "configure", label: text.value.configure, icon: Settings2, onClick: configure }] : []),
+  ...(ready.value ? [{ id: "configure", label: text.value.configure, icon: Settings2, onClick: () => configure() }] : []),
 ]);
 </script>
 <template>
@@ -356,10 +356,11 @@ const actions = computed(() => [
     </section>
       <section v-for="section in sections" :key="section" class="workspace-section" :data-section="section">
         <header><h2>{{ section === 'objects' ? (locale.startsWith('zh') ? '收藏的对象' : 'Pinned objects') : section === 'conversations' ? workspaceText.continue : section === 'apps' ? workspaceText.resources : section === 'recent' ? workspaceText.recent : section === 'tasks' ? text.attention : text.data }}</h2>
-          <el-button v-if="section === 'tasks' || section === 'data'" text @click="router.push(section === 'tasks' ? platformRoutes.schedules.path : platformRoutes.dashboards.path)">{{ text.all }}</el-button>
-          <div v-if="section === 'apps'" class="section-actions">
-            <el-button v-if="canBuild" text @click="router.push({ name: platformRoutes.appBuilder.name })">{{ text.build }} <ArrowUpRight :size="14" aria-hidden="true" /></el-button>
-            <el-button text @click="configure">{{ locale.startsWith('zh') ? '管理应用' : 'Manage applications' }}</el-button>
+          <div v-if="section === 'apps' || section === 'data' || section === 'tasks'" class="section-actions">
+            <el-button v-if="section === 'apps' && canBuild" text @click="router.push({ name: platformRoutes.appBuilder.name })">{{ text.build }} <ArrowUpRight :size="14" aria-hidden="true" /></el-button>
+            <el-button v-if="section === 'apps' || section === 'data'" text :disabled="saving || refreshing" @click="configure('resources')">{{ section === 'apps' ? (locale.startsWith('zh') ? '管理应用' : 'Manage applications') : (locale.startsWith('zh') ? '管理关注' : 'Manage followed data') }}</el-button>
+            <el-button v-if="section === 'tasks' && catalog.applications.value.some(app => app.id === 'schedules')" text @click="router.push(platformRoutes.schedules.path)">{{ text.all }} <ArrowUpRight :size="14" aria-hidden="true" /></el-button>
+            <el-button v-if="section === 'data' && catalog.applications.value.some(app => app.id === 'dashboards')" text @click="router.push(platformRoutes.dashboards.path)">{{ text.all }} <ArrowUpRight :size="14" aria-hidden="true" /></el-button>
           </div>
         </header>
         <template v-if="section === 'objects'">
@@ -450,7 +451,7 @@ const actions = computed(() => [
           <div v-else-if="errors.data" role="alert">{{ errors.data }} <el-button @click="readDashboards">{{ text.retry }}</el-button></div>
           <template v-else>
             <p v-if="!selectedDashboards.length" class="workspace-empty">{{ text.emptyData }}</p>
-            <el-button v-if="!selectedDashboards.length" @click="configure">{{ interactionLabels.configure }}</el-button>
+            <el-button v-if="!selectedDashboards.length" :disabled="saving || refreshing" @click="configure('resources')">{{ interactionLabels.configure }}</el-button>
             <article v-for="(board, index) in selectedDashboards" :key="board.id" class="workspace-board">
               <button v-if="board.resource" class="resource-link board-link" @click="router.push({ path: platformRoutes.dashboards.path, query: { dashboardId: board.id } })"><LayoutDashboard :size="16" aria-hidden="true" /><span>{{ board.resource.name }}</span><ArrowUpRight :size="14" aria-hidden="true" /></button>
               <p v-else>{{ text.unavailable }}</p>
@@ -464,7 +465,7 @@ const actions = computed(() => [
           <div v-else-if="catalog.error.value" role="alert">{{ catalog.error.value }} <el-button @click="catalog.refresh">{{ text.retry }}</el-button></div>
           <template v-else>
             <p v-if="!selectedApps.length" class="workspace-empty">{{ text.emptyApps }}</p>
-            <el-button v-if="!selectedApps.length" @click="configure">{{ interactionLabels.configure }}</el-button>
+            <el-button v-if="!selectedApps.length" :disabled="saving || refreshing" @click="configure('resources')">{{ interactionLabels.configure }}</el-button>
             <div class="application-grid">
             <article v-for="app in selectedApps" :key="app.id" class="application-resource">
               <a v-if="app.resource" class="application-card" :href="applicationHref(app.id)" target="_blank" rel="noopener" :aria-label="`${app.resource.names[locale] ?? app.resource.names.en}（${locale.startsWith('zh') ? '在新标签页打开' : 'opens in a new tab'}）`" :title="locale.startsWith('zh') ? '在新标签页打开' : 'Opens in a new tab'">
