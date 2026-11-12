@@ -24,7 +24,11 @@ GET `/assistant/sessions/:sessionId/tasks` reads the projection. Its `/events` s
 before the initial read and pushes whole tasks_snapshot frames after runtime or provider
 changes. There is no two-second polling read. Quality admission/completion and branch delivery
 signal the runtime after their facts commit. The drawer renders every delegation depth and each
-branch's quality child. `/tasks/:taskId/process` and its `/events` read the task's own execution
+branch's quality child. Selecting deeper inline work expands its read-only process in the drawer,
+using the existing task snapshot and event proxy; page-backed work links to its declared page.
+Opening and continuing another host's conversation belongs to
+[platform assistants and page activation](https://infohub.eloyzh.de/o/work_item-89187650).
+`/tasks/:taskId/process` and its `/events` read the task's own execution
 through the runtime's delegation authorization, under the normal public run projection.
 
 The product-external task snapshot/events expose the same provider delivery: status, summary,
