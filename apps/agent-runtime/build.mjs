@@ -19,12 +19,14 @@ import {
 } from "../../scripts/pnpm-workspace-context.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-// Optional host-level Debian mirror; unset keeps the official sources.
-function debianMirrorArgs() {
-  return ["DEBIAN_MIRROR", "DEBIAN_SECURITY_MIRROR"].flatMap((name) => {
-    const value = process.env[name];
-    return value ? ["--build-arg", `${name}=${value}`] : [];
-  });
+// Optional host-level package sources; unset keeps the Dockerfile defaults.
+function hostBuildArgs() {
+  return ["PIP_INDEX_URL", "DEBIAN_MIRROR", "DEBIAN_SECURITY_MIRROR"].flatMap(
+    (name) => {
+      const value = process.env[name];
+      return value ? ["--build-arg", `${name}=${value}`] : [];
+    },
+  );
 }
 export const app = {
   repoRoot: root,
@@ -79,7 +81,7 @@ export function build(args) {
     "--platform",
     `linux/${arch}`,
     ...imageCacheArgs(),
-    ...debianMirrorArgs(),
+    ...hostBuildArgs(),
     "--load",
     ...imageLabels(app.component, version, stamp),
     "--label",
