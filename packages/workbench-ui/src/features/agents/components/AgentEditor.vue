@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { PlatformTabs } from "@ontomato/platform-shell";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
-import { ExternalLink, RefreshCw, Trash2 } from "lucide-vue-next";
+import { RefreshCw, Trash2 } from "lucide-vue-next";
 import { AgentAvatar, agentAvatar, avatarSwatch, storedAgentAvatar } from "@ontomato/agent-shell-ui";
 import { CodeEditor } from "@ontomato/foundation-ui/code";
 import { MarkdownView } from "@ontomato/foundation-ui/markdown";
@@ -36,8 +36,6 @@ const emit = defineEmits<{
   saved: [agent: AssistantAgentDefinition];
   deleted: [id: string];
   reloadModelOptions: [];
-  /** The capability library button: the settings' host opens the library at its own address. */
-  openCapabilities: [];
 }>();
 const { t } = useI18n();
 
@@ -232,11 +230,6 @@ defineExpose({ dirty });
           <div class="section-head">
             <div>
               <p>{{ t("agents.capabilitiesHint") }}</p>
-            </div>
-            <div class="section-actions">
-              <el-button size="small" :icon="ExternalLink" @click="emit('openCapabilities')">
-                {{ t("agents.capabilityLibrary") }}
-              </el-button>
             </div>
           </div>
 
@@ -448,15 +441,6 @@ details[open] > .configuration-heading { margin-bottom: var(--spacing-lg); }
   margin: 0;
   font-size: var(--text-sm);
   color: var(--el-text-color-secondary);
-}
-.section-actions {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
-.section-actions :deep(.el-button) {
-  margin: 0;
-  text-decoration: none;
 }
 .group-title {
   margin: 0 0 4px;

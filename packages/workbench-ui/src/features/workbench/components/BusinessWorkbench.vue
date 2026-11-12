@@ -70,7 +70,7 @@ const agentId = ref<string | null>(readRememberedAgent());
  * applications of their own now, so nothing here leaves this application.
  */
 const featureRoutes = { agents: routes.agents };
-/** The settings' addresses: the editor of one agent, a new one, or the capability library. */
+/** The settings' addresses: the editor of one agent or a new one. */
 const SETTINGS_PATH = routes.agents.path;
 const settingsPath = (suffix = "") => `${SETTINGS_PATH}${suffix}`;
 const inSettings = computed(() => route.path === SETTINGS_PATH || route.path.startsWith(`${SETTINGS_PATH}/`));
@@ -85,8 +85,6 @@ const settingsAgentId = computed(() => {
   const id = route.params.agentId;
   return typeof id === "string" && !creatingAgent.value ? id : null;
 });
-const capabilityKind = computed(() => route.path === routes.agentSettingsMcp.path ? "tool" : "skill");
-const capabilitiesOpen = computed(() => [routes.agentSettingsSkills.path, routes.agentSettingsMcp.path, routes.agentSettingsCapabilities.path].some(path => path === route.path));
 /**
  * The page the shell shows: the settings are the `agents` page, whose addresses are the settings' own screens; every
  * other page names its route. Closing the page (a new conversation) returns to the conversation.
@@ -170,11 +168,6 @@ function selectSettingsAgent(id: string) {
 
 function createSettingsAgent() {
   void router.push(settingsPath("/new"));
-}
-
-/** The capability library, from the column's row and from the editor's button alike. */
-function openCapabilities(kind: "skill" | "tool" = "skill") {
-  void router.push({ name: kind === "tool" ? routes.agentSettingsMcp.name : routes.agentSettingsSkills.name });
 }
 
 /** The column's own entry at the foot: the agent settings, which replace the column while they are open. */
@@ -263,12 +256,9 @@ function appearanceSaved(value: WorkbenchAppearance) {
       <AgentSettingsNav
         :agent-id="settingsAgentId"
         :creating="creatingAgent"
-        :capabilities="capabilitiesOpen"
-        :capability-kind="capabilityKind"
         @back="backToChat"
         @select-agent="selectSettingsAgent"
         @create-agent="createSettingsAgent"
-        @open-capabilities="openCapabilities"
       />
     </template>
     <template #feature="{ featureId: page }">
@@ -276,10 +266,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
         v-if="page === 'agents'"
         :agent-id="settingsAgentId"
         :creating="creatingAgent"
-        :capabilities="capabilitiesOpen"
-        :capability-kind="capabilityKind"
         @changed="shell?.reloadAgents()"
-        @open-capabilities="openCapabilities"
       />
       <slot v-else name="feature" :feature-id="page" />
     </template>

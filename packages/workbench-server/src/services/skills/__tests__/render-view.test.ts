@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ request: vi.fn(), text: vi.fn(), skill: vi.fn(), enabled: vi.fn(), prepare: vi.fn() }));
-vi.mock("../../../core/skills/registry/manager", () => ({ skillRegistryManager: { forDomain: async () => ({ getSkillById: mocks.skill, isSkillEnabled: mocks.enabled }) } }));
+const mocks = vi.hoisted(() => ({ request: vi.fn(), text: vi.fn(), skill: vi.fn(), prepare: vi.fn() }));
+vi.mock("../../../core/skills/registry/manager", () => ({ skillRegistryManager: { forDomain: async () => ({ getSkillById: mocks.skill }) } }));
 vi.mock("../../assistant/skills", () => ({ prepareAssistantSkills: mocks.prepare }));
 vi.mock("../skill-manager", () => ({ skillReference: () => ({ name: "echarts", namespace: { kind: "provider", provider: "workbench" } }) }));
 vi.mock("../../../platform/agent-runtime/runtime", () => ({ userSkillEnvironment: () => ({ values: {}, secrets: {} }) }));
@@ -9,7 +9,6 @@ import { renderObjectView } from "../render-view";
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.skill.mockReturnValue({ manifest: { type: "executable", category: "visualization" } });
-  mocks.enabled.mockReturnValue(true);
   mocks.prepare.mockResolvedValue([{ name: "echarts", namespace: { kind: "provider", provider: "workbench" } }]);
 });
 it("executes the selected skill in the runtime sandbox and returns its HTML without a model run", async () => {
@@ -22,9 +21,4 @@ it("executes the selected skill in the runtime sandbox and returns its HTML with
   expect(mocks.request.mock.calls[0][0]).toBe("/v1/code-executions");
   expect(JSON.parse(mocks.request.mock.calls[0][2].files.find((file: { path: string }) => file.path === "input.json").content).locale).toBe("zh-CN");
   expect(mocks.request.mock.calls[0][2]).toMatchObject({ language: "python", libraries: [{ path: "scripts", skill: { name: "echarts" } }], outputPaths: ["result.html"] });
-});
-it("rejects a disabled skill before runtime admission", async () => {
-  mocks.enabled.mockReturnValue(false);
-  await expect(renderObjectView({ domainId: "d", userId: "u" }, {}, "echarts", {})).rejects.toThrow("disabled");
-  expect(mocks.request).not.toHaveBeenCalled();
 });

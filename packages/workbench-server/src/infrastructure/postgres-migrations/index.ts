@@ -10,6 +10,13 @@ import {
   ASSISTANT_DEFAULT_PROMPTS_VERSION,
   migrateAssistantDefaultPrompts,
 } from "./20261105-assistant-default-prompts/migration";
+import {
+  SKILL_ENABLE_RETIREMENT_NAME,
+  SKILL_ENABLE_RETIREMENT_VERSION,
+  migrateSkillEnableRetirement,
+  removeRetiredSkillStates,
+} from "./20261112-skill-enable-retirement/migration";
+import { domainSkillsRoot } from "../../content/layout";
 import { workbenchProduct } from "../../product/installed";
 import { ensureAnalysisHarnessLinks } from "./20260923-analysis-harness-links/schema";
 import {
@@ -101,6 +108,15 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
       version: ASSISTANT_DEFAULT_PROMPTS_VERSION,
       name: ASSISTANT_DEFAULT_PROMPTS_NAME,
       run: runAssistantDefaultPrompts,
+    },
+  },
+  {
+    directory: "20261112-skill-enable-retirement",
+    ensureSchema: () => Promise.resolve(),
+    migration: {
+      version: SKILL_ENABLE_RETIREMENT_VERSION,
+      name: SKILL_ENABLE_RETIREMENT_NAME,
+      run: runSkillEnableRetirement,
     },
   },
   {
@@ -385,6 +401,20 @@ async function runAssistantDefaultPrompts(
     version: migration.version,
     cleared: result.cleared,
   });
+}
+
+async function runSkillEnableRetirement(
+  client: QueryableClient,
+  migration: MigrationIdentity,
+): Promise<void> {
+  if (await isMigrationApplied(client, migration.version)) return;
+  const result = await inMigrationTransaction(client, async () => {
+    const migrated = await migrateSkillEnableRetirement(client, domainSkillsRoot());
+    await recordMigration(client, migration.version, migration.name);
+    return migrated;
+  });
+  removeRetiredSkillStates(domainSkillsRoot());
+  logger.info("Skill enablement retired", { version: migration.version, agents: result.agents });
 }
 
 async function runAnalysisConversationTurns(

@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { skillsApi } from "../../features/skills/api";
 import { nodeApiPost, nodeApiPostFormData } from "../api";
 import { installErrorPunctuation } from "../error-punctuation";
 
@@ -59,46 +58,6 @@ describe("web API errors", () => {
     await expect(nodeApiPost("/skills", {})).rejects.toThrow(
       "Request validation failed — type: Visualization skills must use the executable type"
     );
-  });
-
-  it("rejects the legacy skill-list response shape instead of treating it as empty", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(jsonResponse(200, { success: true, data: [] }))
-    );
-
-    await expect(skillsApi.listVisualizationSkills()).rejects.toThrow();
-  });
-
-  it("only offers executable skills in the visualization selector", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        jsonResponse(200, {
-          success: true,
-          skills: [
-            {
-              id: "legacy-visualization-knowledge",
-              type: "knowledge",
-              category: "visualization",
-              tags: [],
-              enabled: true,
-            },
-            {
-              id: "echarts-render",
-              type: "executable",
-              category: "visualization",
-              tags: ["chart"],
-              enabled: true,
-            },
-          ],
-        })
-      )
-    );
-
-    await expect(skillsApi.listVisualizationSkills()).resolves.toEqual([
-      expect.objectContaining({ id: "echarts-render", type: "executable" }),
-    ]);
   });
 });
 

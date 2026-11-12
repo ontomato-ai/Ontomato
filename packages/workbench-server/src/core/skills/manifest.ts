@@ -47,7 +47,6 @@ const displaySchema = z.object({
   tags: z.array(z.string()).default([]),
   version: z.string().default(""),
   outputType: z.enum(["text", "html", "json"]).optional(),
-  defaultEnabled: z.boolean().optional(),
 });
 export type SkillManifest = StandardSkillFrontmatter & z.infer<typeof displaySchema> & {
   scriptPath?: string;
@@ -71,8 +70,6 @@ export function parseSkillMarkdown(markdown: string, scriptPath?: string): Parse
       tags: m["ontomato.tags"] ? JSON.parse(m["ontomato.tags"]) : [],
       version: m["ontomato.version"],
       outputType: m["ontomato.outputType"],
-      defaultEnabled: m["ontomato.defaultEnabled"] === undefined
-        ? undefined : z.enum(["true", "false"]).parse(m["ontomato.defaultEnabled"]) === "true",
     });
     return { frontmatter, manifest: { ...frontmatter, ...display, scriptPath }, content: parsed.content };
   } catch (error) {

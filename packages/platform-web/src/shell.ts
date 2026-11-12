@@ -4,7 +4,7 @@ import "element-plus/theme-chalk/dark/css-vars.css";
 // Design foundation shared with the workbench (type, spacing, shape, density, elevation, motion, component variables).
 import "@ontomato/design-tokens/foundation.css";
 import { computed } from "vue";
-import { Puzzle, Plug } from "lucide-vue-next";
+import { Cable, Puzzle, Plug } from "lucide-vue-next";
 import { skillLibraryCount } from "@ontomato/workbench-ui/features/workbench";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useTheme } from "@ontomato/workbench-ui/composables/useTheme";
@@ -161,6 +161,7 @@ export const ontologyWorkspacePages: readonly PlatformPage[] = [
 ];
 
 export const systemIntegrationPages: readonly PlatformPage[] = [
+  { path: platformRoutes.externalMcp.path, titleKey: "capabilities.mcpTitle", icon: Cable, permissions: ["mcp-service"], group: "platform", ownHeader: true },
   { path: platformRoutes.publishedMcp.path, titleKey: "mcp.publishedSettingsTitle", icon: Plug, permissions: ["mcp-service"], group: "platform", ownHeader: true },
 ];
 

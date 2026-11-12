@@ -194,13 +194,18 @@ describe("object views over plain HTTP", () => {
 
 describe("the open-source platform's old capability library links", () => {
   /*
-   * Before the library had an address of its own it was the agents page's `?tab=capabilities`. Opening such a bookmark
-   * (which is also what reloading it does) once landed on the conversation or on the first agent's editor instead (128
-   * acceptance, 2026-11-06); it lands on the library's address, so a later reload stays there.
+   * The capability library's addresses, from the agents page's `?tab=capabilities` to the settings' own skill and MCP
+   * screens, outlive it in bookmarks: skills are the ontology manager's now, external MCP services the system settings'.
    */
-  it.each(["/agents?tab=capabilities", "/agents/settings?tab=capabilities"])("%s lands on the capability library", async (path) => {
+  it.each([
+    ["/agents?tab=capabilities", platformRoutes.ontologySkills.path],
+    ["/agents/settings?tab=capabilities", platformRoutes.ontologySkills.path],
+    ["/agents/settings/capabilities", platformRoutes.ontologySkills.path],
+    ["/agents/settings/skills", platformRoutes.ontologySkills.path],
+    ["/agents/settings/mcp", platformRoutes.externalMcp.path],
+  ])("%s lands on %s", async (path, target) => {
     await open(path);
-    expect(window.location.hash).toBe(`#${platformRoutes.agentSettingsSkills.path}`);
+    expect(window.location.hash).toBe(`#${target}`);
   });
 });
 
@@ -216,12 +221,12 @@ describe("the open-source platform's conversations", () => {
 });
 
 describe("the open-source platform's page headers", () => {
-  it("switches the system settings' four screens in the application's header", async () => {
+  it("switches the system settings' screens in the application's header", async () => {
     await open("/settings/records/audit-log");
     // An application of several pages is one header with its pages as tabs; the page keeps its own second-level tabs.
     const tabs = [...document.querySelectorAll(".platform-page-header .page-tab")].map((tab) => tab.textContent?.trim());
     // The page under the application is named for what it holds; repeating the application's own name says nothing.
-    expect(tabs).toEqual(["Models", "General settings", "MCP services", "Run Records"]);
+    expect(tabs).toEqual(["Models", "General settings", "External MCP services", "MCP services", "Run Records"]);
     expect(document.querySelector(".platform-page-header .page-tab.active")?.textContent?.trim()).toBe("Run Records");
   });
 

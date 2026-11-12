@@ -46,7 +46,8 @@ long data, keyboard, dropdown/overlay and permission variants.
 |---|---|---|---|---|
 | Agent conversation | /agents/chat | BusinessWorkbench / AgentShell; tools, artifacts, composer | Implemented (shared) | Pending real conversation matrix |
 | Agent editor/new | /agents/settings, /new, /:agentId | AgentEditor; form/editor | In progress | Pending |
-| Capability library | /agents/settings/capabilities | CapabilityLibrary; list, Skill/MCP dialogs | In progress | Pending |
+| Skills | /ontology/skills, /ontology/skills/:skillId | SkillLibrary; table · SkillDetail; file list and reader | Implemented | Pending |
+| External MCP services | /settings/external-mcp | ExternalMcpServices; table, service dialog | Implemented | Pending |
 | Ontology graph | /ontology/playground | OntologyPlayground; canvas/inspectors | Implemented | Pending graph matrix |
 | Object/attribute/relation catalog | /ontology/objects, /attributes, /relations | OntologyModelCatalog; table | In progress | Pending |
 | Object detail | /ontology/objects/:className | OntologyObjectDetail; forms/attributes/relations | Implemented | Pending |

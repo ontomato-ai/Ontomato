@@ -620,7 +620,7 @@ export function createManagerClient(
 
   async function loadViewSkills() {
     const response = await send("/skills", { method: "GET" }, "");
-    return (response.skills as Array<{ id: string; title?: string; enabled?: boolean; type: string; category: string }>).filter(skill => skill.enabled !== false && skill.type === "executable" && skill.category === "visualization");
+    return (response.skills as Array<{ id: string; title?: string; type: string; category: string }>).filter(skill => skill.type === "executable" && skill.category === "visualization");
   }
 
   async function renderViewSkill(id: string, input: Record<string, unknown>) {

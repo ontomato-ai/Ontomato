@@ -107,7 +107,7 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
       {
         key: "settings:platform",
         titleKey: "platform.settings",
-        paths: [platformRoutes.models.path, platformRoutes.settings.path, platformRoutes.publishedMcp.path, platformRoutes.records.path],
+        paths: [platformRoutes.models.path, platformRoutes.settings.path, platformRoutes.externalMcp.path, platformRoutes.publishedMcp.path, platformRoutes.records.path],
       },
     ],
   },

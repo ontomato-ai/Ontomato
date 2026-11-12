@@ -26,29 +26,34 @@ const files = {
   "scripts/main.mjs": "console.log('原始版本');\n",
   "references/guide.md": "# Shared method\n\nKeep this reference intact.\n",
 };
-const zip = () => {
+const zip = (changes: Record<string, string> = {}) => {
   const archive = new AdmZip();
-  for (const [name, content] of Object.entries(files)) archive.addFile(name, Buffer.from(content));
+  for (const [name, content] of Object.entries({ ...files, ...changes })) archive.addFile(name, Buffer.from(content));
   return archive.toBuffer();
 };
 afterAll(async () => { await fs.rm(root, { recursive: true, force: true }); });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
-it("round-trips a standard package byte-for-byte and preserves its other files and metadata when editing", async () => {
+it("round-trips a standard package byte-for-byte and lists and reads its files", async () => {
   const imported = await skillManager.importSkill(domain, zip());
   expect(imported.skill).toEqual(reference);
   expect(imported.type).toBe("executable");
   const exported = new AdmZip(await skillManager.exportSkill(domain, reference.name));
   for (const [name, content] of Object.entries(files)) expect(exported.readFile(name)).toEqual(Buffer.from(content));
-  await skillManager.updateSkill(domain, reference.name, { scriptCode: "console.log('新版');\n", title: "New title" });
-  const updated = new AdmZip(await skillManager.exportSkill(domain, reference.name));
-  expect(updated.readAsText("scripts/main.mjs")).toBe("console.log('新版');\n");
-  expect(updated.readAsText("references/guide.md")).toBe(files["references/guide.md"]);
-  const front = parse(updated.readAsText("SKILL.md").split("---")[1]);
-  expect(standardSkillFrontmatterSchema.parse(front)).toMatchObject({ license: "MIT", metadata: { author: "example", "ontomato.title": "New title" } });
+  const front = parse(exported.readAsText("SKILL.md").split("---")[1]);
+  expect(standardSkillFrontmatterSchema.parse(front)).toMatchObject({ license: "MIT", metadata: { author: "example" } });
+  expect(await skillManager.listSkillFiles(domain, reference.name)).toEqual(Object.keys(files).sort()
+    .map((name) => ({ path: name, size: Buffer.byteLength(files[name as keyof typeof files]) })));
+  expect(await skillManager.readSkillFile(domain, reference.name, "references/guide.md")).toBe(files["references/guide.md"]);
 });
 
-it("publishes only the selected current-domain package and keeps captured versions unchanged across edits", async () => {
+it("reads only files inside the package", async () => {
+  await skillManager.importSkill(domain, zip(), true);
+  for (const outside of ["../sample-skill/SKILL.md", "/etc/hosts", "scripts/../../x"])
+    await expect(skillManager.readSkillFile(domain, reference.name, outside)).rejects.toMatchObject({ status: 400 });
+});
+
+it("publishes only the selected current-domain package and keeps captured versions unchanged across imports", async () => {
   vi.stubEnv("AGENT_RUNTIME_SERVICE_TOKEN", "synthetic-host");
   const published: Array<{ skill: unknown; files: { path: string; content: string }[] }> = [];
   vi.stubGlobal("fetch", vi.fn(async (_url: string, init: { headers: Record<string, string>; body: string }) => {
@@ -63,15 +68,12 @@ it("publishes only the selected current-domain package and keeps captured versio
   expect(await prepareAssistantSkills(domain, [analyst, provider, reference])).toEqual([analyst, provider, reference]);
   const script = (body: { files: { path: string; content: string }[] }) =>
     body.files.find((file) => file.path === "scripts/main.mjs")?.content;
-  await skillManager.updateSkill(domain, reference.name, { scriptCode: "console.log('next run');\n" });
+  await skillManager.importSkill(domain, zip({ "scripts/main.mjs": "console.log('next run');\n" }), true);
   await prepareAssistantSkills(domain, [reference]);
   expect(published.map((p) => p.skill)).toEqual([reference, reference]);
-  // A captured version is the package as it was: the later edit reaches only the new publication.
+  // A captured version is the package as it was: the later import reaches only the new publication.
   expect(script(published[0])).toBe(files["scripts/main.mjs"]);
   expect(script(published[1])).toBe("console.log('next run');\n");
-  await skillManager.toggleSkill(domain, reference.name);
-  expect(await prepareAssistantSkills(domain, [provider, reference])).toEqual([provider]);
-  expect(await prepareAssistantSkills(domain, [provider])).toEqual([provider]);
   expect(published).toHaveLength(2);
   await expect(prepareAssistantSkills("another-domain", [reference])).rejects.toThrow();
 });

@@ -8,7 +8,6 @@ metadata:
   ontomato.tags: '["quality traceability","relationship graph","directed graph","derived paths","batch impact","ECharts"]'
   ontomato.version: 1.0.0
   ontomato.outputType: html
-  ontomato.defaultEnabled: "false"
 ---
 
 ## Standard CLI
