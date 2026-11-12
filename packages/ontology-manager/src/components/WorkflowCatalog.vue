@@ -14,7 +14,8 @@ import {
   ElTag,
   vLoading,
 } from "element-plus";
-import { ArrowDownUp, Pause, Play, Plus, Trash2 } from "lucide-vue-next";
+import { ArrowDownUp, Pause, Play, Plus, RefreshCw, Trash2 } from "lucide-vue-next";
+import { PlatformPageHeader } from "@ontomato/platform-shell";
 import type {
   CapabilityGrantRecord,
   SmartAsset,
@@ -302,43 +303,43 @@ function grantSummary(workflow: WorkflowRecord) {
 
 <template>
   <section class="workflow-surface">
-    <header class="workflow-header">
-      <div>
-        <h2>{{ ot("workflowTitle") }}</h2>
-        <p>{{ ot("workflowDesc") }}</p>
-      </div>
-      <div class="workflow-header__actions">
-        <el-button :loading="loading" @click="refresh">{{ ot("workflowRefresh") }}</el-button>
+    <!-- The platform's one page header: the title, its line of description, and this page's own buttons. -->
+    <PlatformPageHeader compact :title="ot('workflowTitle')" :description="ot('workflowDesc')">
+      <template #actions>
+        <el-button :loading="loading" @click="refresh">
+          <RefreshCw :size="16" />
+          <span>{{ ot("workflowRefresh") }}</span>
+        </el-button>
         <el-button type="primary" @click="openCreate">
           <Plus :size="16" />
           <span>{{ ot("workflowCreate") }}</span>
         </el-button>
-      </div>
-    </header>
+      </template>
+    </PlatformPageHeader>
 
-    <div v-loading="loading" class="workflow-body">
+    <div v-loading="loading" class="workflow-body platform-page-gutter">
       <el-empty v-if="!loading && workflows.length === 0" :description="ot('workflowEmpty')" />
       <el-table v-else :data="workflows" row-key="id" class="workflow-table">
-        <el-table-column :label="ot('workflowColumnName')" min-width="150">
+        <el-table-column :label="ot('workflowColumnName')" min-width="200">
           <template #default="{ row }">
             <div class="workflow-name">{{ row.name }}</div>
             <div v-if="row.description" class="workflow-desc">{{ row.description }}</div>
           </template>
         </el-table-column>
-        <el-table-column :label="ot('workflowColumnStatus')" width="78">
+        <el-table-column :label="ot('workflowColumnStatus')" min-width="96">
           <template #default="{ row }">
             <el-tag :type="statusTag(row.status).type" effect="light">{{ statusTag(row.status).text }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="ot('workflowColumnVersion')" width="60">
+        <el-table-column :label="ot('workflowColumnVersion')" min-width="72">
           <template #default="{ row }">v{{ row.version ?? 0 }}</template>
         </el-table-column>
-        <el-table-column :label="ot('workflowColumnSteps')" min-width="96" show-overflow-tooltip>
+        <el-table-column :label="ot('workflowColumnSteps')" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="workflow-steps">{{ stepSummary(row) }}</span>
           </template>
         </el-table-column>
-        <el-table-column :label="ot('workflowColumnGrants')" min-width="124">
+        <el-table-column :label="ot('workflowColumnGrants')" min-width="150">
           <template #default="{ row }">
             <!--
               The count is the only summary safe to read at a glance: an empty authority is a state an
@@ -352,13 +353,14 @@ function grantSummary(workflow: WorkflowRecord) {
             </el-button>
           </template>
         </el-table-column>
-        <el-table-column :label="ot('workflowColumnCreatedBy')" min-width="84" show-overflow-tooltip>
+        <el-table-column :label="ot('workflowColumnCreatedBy')" min-width="96" show-overflow-tooltip>
           <template #default="{ row }">{{ subjectName(row.createdBy) }}</template>
         </el-table-column>
-        <el-table-column :label="ot('workflowColumnReviewedBy')" min-width="104" show-overflow-tooltip>
+        <el-table-column :label="ot('workflowColumnReviewedBy')" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ subjectName(row.reviewedBy) }}</template>
         </el-table-column>
-        <el-table-column :label="ot('workflowColumnOps')" min-width="164">
+        <!-- Wide enough for its three actions on one line; it stays at the right while the table scrolls sideways. -->
+        <el-table-column :label="ot('workflowColumnOps')" min-width="248" fixed="right">
           <template #default="{ row }">
             <div class="workflow-operations">
               <el-button link type="primary" @click="openEdit(row)">
@@ -529,41 +531,22 @@ function grantSummary(workflow: WorkflowRecord) {
 .workflow-surface {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 20px;
   height: 100%;
   overflow: auto;
-}
-.workflow-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-.workflow-header h2 {
-  margin: 0 0 4px;
-  font-size: 18px;
-}
-.workflow-header p {
-  margin: 0;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
-}
-.workflow-header__actions {
-  display: flex;
-  gap: 8px;
 }
 .workflow-body {
   flex: 1;
   min-height: 200px;
+  padding-block: var(--page-content-gap) var(--spacing-xl);
 }
 .workflow-table :deep(.cell) {
   padding-inline: 8px;
 }
 .workflow-operations {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
+  flex-wrap: nowrap;
+  gap: 4px 12px;
+  white-space: nowrap;
 }
 .workflow-operations > .el-button {
   margin: 0;

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, shallowRef } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { ElButton, ElEmpty, ElInput, ElTag, vLoading } from "element-plus";
 import { RefreshCw, Search } from "lucide-vue-next";
+import { PlatformPageHeader } from "@ontomato/platform-shell";
 import type {
   CapabilityGrantRecord,
   PlatformAccessRecord,
@@ -282,8 +283,22 @@ const filtered = computed(() => {
   return nodes.value.filter((node) => keep.has(node.key));
 });
 
-/** Fixed geometry rather than measured layout: the columns are known, so positions cannot drift. */
-const COLUMN_WIDTH = 232;
+/**
+ * Fixed geometry rather than measured layout: the columns are known, so positions cannot drift. The five columns share
+ * the width the map is given, so all of them show at once on an ordinary screen; below a readable node width the map
+ * scrolls sideways in its own frame instead.
+ */
+const MIN_COLUMN_WIDTH = 176;
+const body = ref<HTMLElement | null>(null);
+const bodyWidth = ref(0);
+let bodyObserver: ResizeObserver | null = null;
+onMounted(() => {
+  bodyObserver = new ResizeObserver(([entry]) => (bodyWidth.value = entry!.contentRect.width));
+  bodyObserver.observe(body.value!);
+});
+onBeforeUnmount(() => bodyObserver?.disconnect());
+// The frame's 1px border on either side is not the map's.
+const columnWidth = computed(() => Math.max(MIN_COLUMN_WIDTH, Math.floor((bodyWidth.value - 2) / COLUMNS.length)));
 const NODE_HEIGHT = 52;
 const ROW_GAP = 12;
 const HEADER_HEIGHT = 44;
@@ -302,7 +317,7 @@ const placed = computed<Placed[]>(() => {
     counters.set(node.column, row + 1);
     return {
       node,
-      x: columnIndex * COLUMN_WIDTH + 8,
+      x: columnIndex * columnWidth.value + 8,
       y: HEADER_HEIGHT + row * (NODE_HEIGHT + ROW_GAP),
     };
   });
@@ -311,7 +326,7 @@ const placed = computed<Placed[]>(() => {
 const placedByKey = computed(() => new Map(placed.value.map((item) => [item.node.key, item])));
 
 const canvas = computed(() => {
-  const columns = COLUMNS.length * COLUMN_WIDTH;
+  const columns = COLUMNS.length * columnWidth.value;
   const rows = Math.max(
     1,
     ...COLUMNS.map((column) => filtered.value.filter((node) => node.column === column.key).length)
@@ -336,7 +351,7 @@ const drawnEdges = computed<DrawnEdge[]>(() => {
     const from = placedByKey.value.get(edge.from);
     const to = placedByKey.value.get(edge.to);
     if (!from || !to) continue;
-    const x1 = from.x + COLUMN_WIDTH - 16;
+    const x1 = from.x + columnWidth.value - 16;
     const y1 = from.y + NODE_HEIGHT / 2;
     const x2 = to.x;
     const y2 = to.y + NODE_HEIGHT / 2;
@@ -398,78 +413,71 @@ onMounted(() => void refresh());
 
 <template>
   <section v-loading="loading" class="capability-map">
-    <header class="map-titlebar">
-      <div>
-        <h1>{{ ot("mapTitle") }}</h1>
-        <p>{{ ot("mapDesc") }}</p>
-      </div>
-      <div class="map-tools">
-        <el-input
-          v-model="query"
-          :prefix-icon="Search"
-          :placeholder="ot('mapFilter')"
-          clearable
-          style="width: 240px"
-        />
+    <!-- The platform's one page header: the title, its line of description, and this page's own tools. -->
+    <PlatformPageHeader compact :title="ot('mapTitle')" :description="ot('mapDesc')">
+      <template #actions>
+        <el-input v-model="query" class="map-filter" :prefix-icon="Search" :placeholder="ot('mapFilter')" clearable />
         <el-button @click="refresh">
-          <RefreshCw :size="14" />
+          <RefreshCw :size="16" />
           <span>{{ ot("mapRefresh") }}</span>
         </el-button>
+      </template>
+    </PlatformPageHeader>
+
+    <div ref="body" class="map-body platform-page-gutter">
+      <div class="map-legend">
+        <span class="legend-item"><i class="legend-line" />{{ ot("mapLegendDirect") }}</span>
+        <span class="legend-item"><i class="legend-line dashed" />{{ ot("mapLegendDerived") }}</span>
+        <span class="legend-sep" />
+        <el-tag size="small" effect="plain">{{ ot("mapCountSubject") }} {{ summary.subjects }}</el-tag>
+        <el-tag size="small" effect="plain">{{ ot("mapCountRole") }} {{ summary.roles }}</el-tag>
+        <el-tag size="small" effect="plain">{{ ot("mapCountWorkflow") }} {{ summary.workflows }}</el-tag>
+        <el-tag size="small" effect="plain">{{ ot("mapCountAction") }} {{ summary.actions }}</el-tag>
+        <el-tag size="small" effect="plain">{{ ot("mapCountMetric") }} {{ summary.metrics }}</el-tag>
+        <el-tag size="small" effect="plain">{{ ot("mapCountEdge") }} {{ summary.edges }}</el-tag>
       </div>
-    </header>
 
-    <div class="map-legend">
-      <span class="legend-item"><i class="legend-line" />{{ ot("mapLegendDirect") }}</span>
-      <span class="legend-item"><i class="legend-line dashed" />{{ ot("mapLegendDerived") }}</span>
-      <span class="legend-sep" />
-      <el-tag size="small" effect="plain">{{ ot("mapCountSubject") }} {{ summary.subjects }}</el-tag>
-      <el-tag size="small" effect="plain">{{ ot("mapCountRole") }} {{ summary.roles }}</el-tag>
-      <el-tag size="small" effect="plain">{{ ot("mapCountWorkflow") }} {{ summary.workflows }}</el-tag>
-      <el-tag size="small" effect="plain">{{ ot("mapCountAction") }} {{ summary.actions }}</el-tag>
-      <el-tag size="small" effect="plain">{{ ot("mapCountMetric") }} {{ summary.metrics }}</el-tag>
-      <el-tag size="small" effect="plain">{{ ot("mapCountEdge") }} {{ summary.edges }}</el-tag>
-    </div>
+      <ul v-if="selectedRelations.length" class="map-relations" :aria-label="ot('mapCountEdge')">
+        <li v-for="line in selectedRelations" :key="line.key">{{ line.label }}</li>
+      </ul>
 
-    <ul v-if="selectedRelations.length" class="map-relations" :aria-label="ot('mapCountEdge')">
-      <li v-for="line in selectedRelations" :key="line.key">{{ line.label }}</li>
-    </ul>
+      <div v-if="!loading && nodes.length === 0" class="map-empty">
+        <el-empty :description="ot('mapEmpty')" />
+      </div>
 
-    <div v-if="!loading && nodes.length === 0" class="map-empty">
-      <el-empty :description="ot('mapEmpty')" />
-    </div>
+      <div v-else class="map-scroll">
+        <div class="map-canvas" :style="{ width: `${canvas.width}px`, height: `${canvas.height}px` }">
+          <div
+            v-for="(column, index) in COLUMNS"
+            :key="column.key"
+            class="map-column-head"
+            :style="{ left: `${index * columnWidth}px`, width: `${columnWidth - 16}px` }"
+          >
+            {{ ot(column.titleKey) }}
+          </div>
 
-    <div v-else class="map-scroll">
-      <div class="map-canvas" :style="{ width: `${canvas.width}px`, height: `${canvas.height}px` }">
-        <div
-          v-for="(column, index) in COLUMNS"
-          :key="column.key"
-          class="map-column-head"
-          :style="{ left: `${index * COLUMN_WIDTH}px`, width: `${COLUMN_WIDTH - 16}px` }"
-        >
-          {{ ot(column.titleKey) }}
+          <svg class="map-edges" :width="canvas.width" :height="canvas.height">
+            <g v-for="line in drawnEdges" :key="line.key" :class="{ dimmed: line.dimmed }">
+              <path
+                :d="line.path"
+                :class="['map-edge', { derived: line.derived }]"
+                fill="none"
+              />
+            </g>
+          </svg>
+
+          <button
+            v-for="item in placed"
+            :key="item.node.key"
+            :aria-pressed="selected === item.node.key"
+            :class="['map-node', `column-${item.node.column}`, { selected: selected === item.node.key }]"
+            :style="{ left: `${item.x}px`, top: `${item.y}px`, width: `${columnWidth - 16}px` }"
+            @click="selected = selected === item.node.key ? null : item.node.key"
+          >
+            <span class="map-node-label">{{ item.node.label }}</span>
+            <span v-if="item.node.detail" class="map-node-detail">{{ item.node.detail }}</span>
+          </button>
         </div>
-
-        <svg class="map-edges" :width="canvas.width" :height="canvas.height">
-          <g v-for="line in drawnEdges" :key="line.key" :class="{ dimmed: line.dimmed }">
-            <path
-              :d="line.path"
-              :class="['map-edge', { derived: line.derived }]"
-              fill="none"
-            />
-          </g>
-        </svg>
-
-        <button
-          v-for="item in placed"
-          :key="item.node.key"
-          :aria-pressed="selected === item.node.key"
-          :class="['map-node', `column-${item.node.column}`, { selected: selected === item.node.key }]"
-          :style="{ left: `${item.x}px`, top: `${item.y}px`, width: `${COLUMN_WIDTH - 16}px` }"
-          @click="selected = selected === item.node.key ? null : item.node.key"
-        >
-          <span class="map-node-label">{{ item.node.label }}</span>
-          <span v-if="item.node.detail" class="map-node-detail">{{ item.node.detail }}</span>
-        </button>
       </div>
     </div>
   </section>
@@ -479,36 +487,20 @@ onMounted(() => void refresh());
 .capability-map {
   display: flex;
   flex-direction: column;
-  gap: 12px;
   min-height: 100%;
-  padding: 20px 24px 24px;
 }
 
-.map-titlebar {
+.map-body {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding-block: var(--page-content-gap) var(--spacing-xl);
 }
 
-.map-titlebar h1 {
-  margin: 0 0 4px;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.map-titlebar p {
-  margin: 0;
-  max-width: 720px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--el-text-color-secondary);
-}
-
-.map-tools {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.map-filter {
+  width: 240px;
 }
 
 .map-legend {
