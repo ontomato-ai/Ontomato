@@ -29,7 +29,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class ActionFunctionAdmissionTest {
-  private static final String MESSAGE = "Action requires an OPERATION_WRITE Python Function and does not support queryPackage; use MetricView for read-only queries.";
+  // Every entry point refuses with the same language entry; the wording itself belongs to the language file.
+  private String message;
   private final FunctionDao functions = mock(FunctionDao.class);
   private final ActionDao actions = mock(ActionDao.class);
   private final ABCProgramService programs = mock(ABCProgramService.class);
@@ -39,8 +40,11 @@ class ActionFunctionAdmissionTest {
   @BeforeEach
   void setup() throws Exception {
     var messages = new LangServiceImpl();
-    ReflectionTestUtils.setField(messages, "langMap", Map.of("en",
-        JSON.parseArray(Files.readString(Path.of("conf-defaults/lang/en.json")))));
+    var english = JSON.parseArray(Files.readString(Path.of("conf-defaults/lang/en.json")));
+    for (int i = 0; i < english.size(); i++)
+      if ("Action.unsupportedFunction".equals(english.getJSONObject(i).getString("key")))
+        message = english.getJSONObject(i).getString("value");
+    ReflectionTestUtils.setField(messages, "langMap", Map.of("en", english));
     ReflectionTestUtils.setField(service, "langService", messages);
     ReflectionTestUtils.setField(service, "functionDao", functions);
     ReflectionTestUtils.setField(service, "actionDao", actions);
@@ -80,7 +84,7 @@ class ActionFunctionAdmissionTest {
   @ValueSource(strings = {Function.OPERATION_READ, Function.OPERATION_WRITE})
   void saveRejectsQueryPackagesBeforePersistingOrCheckingPython(String operation) {
     var error = assertThrows(IllegalArgumentException.class, () -> service.save(action(operation), "en"));
-    assertTrue(error.getMessage().endsWith(MESSAGE));
+    assertTrue(error.getMessage().endsWith(message));
     verifyNoInteractions(functions, actions);
   }
 
@@ -95,7 +99,7 @@ class ActionFunctionAdmissionTest {
     stored.setCode("# ontomato-python:2\nprint('ok')");
     when(functions.queryById("function-a")).thenReturn(stored);
     var error = assertThrows(IllegalArgumentException.class, () -> service.save(submitted, "en"));
-    assertTrue(error.getMessage().endsWith(MESSAGE));
+    assertTrue(error.getMessage().endsWith(message));
     verify(functions, never()).save(any(), anyString());
     verifyNoInteractions(actions);
   }
@@ -108,8 +112,8 @@ class ActionFunctionAdmissionTest {
         () -> service.form("action-a", new JSONObject(), null, List.of(), "en", user));
     var executionError = assertThrows(IllegalArgumentException.class,
         () -> service.execute("action-a", new JSONObject(), "en", user, new UserDataPermission(), 1));
-    assertTrue(formError.getMessage().endsWith(MESSAGE));
-    assertTrue(executionError.getMessage().endsWith(MESSAGE));
+    assertTrue(formError.getMessage().endsWith(message));
+    assertTrue(executionError.getMessage().endsWith(message));
     verifyNoInteractions(programs);
   }
 
@@ -125,7 +129,7 @@ class ActionFunctionAdmissionTest {
       var result = service.importActions(bundle, "en", true);
       assertFalse(result.getBooleanValue("success"));
       assertEquals(0, result.getIntValue("successCount"));
-      assertTrue(result.getJSONArray("failures").getJSONObject(0).getString("message").endsWith(MESSAGE));
+      assertTrue(result.getJSONArray("failures").getJSONObject(0).getString("message").endsWith(message));
     }
     verifyNoInteractions(functions, actions);
   }

@@ -43,9 +43,14 @@ describe("personal workspace HTTP persistence", () => {
   it("loads old preferences with side-panel defaults and preserves independent interaction choices", async () => {
     const old = { schemaVersion: 1, layout: "assistant", dashboardIds: [], applicationIds: [] };
     expect(personalWorkspaceSchema.parse(old).interactions).toEqual({ metrics: "drawer", tasks: "drawer" });
-    const config = { ...defaultPersonalWorkspace(), interactions: { metrics: "dialog", tasks: "conversation" } };
+    expect(personalWorkspaceSchema.parse(old).objectOpening).toBe("page");
+    expect(personalWorkspaceSchema.parse(old).sections).toBeUndefined();
+    const config = { ...defaultPersonalWorkspace(), objectOpening: "drawer", sections: { main: ["data", "apps"], sidebar: ["objects", "conversations", "tasks"], hidden: ["recent"] }, interactions: { metrics: "dialog", tasks: "conversation" } };
     expect((await fetch(base, { method: "PUT", headers: { "Content-Type": "application/json", "test-user": "interaction-user" }, body: JSON.stringify(config) })).status).toBe(200);
-    expect(await (await fetch(base, { headers: { "test-user": "interaction-user" } })).json()).toEqual({ data: config });
+    expect(await (await fetch(base, { headers: { "test-user": "interaction-user" } })).json()).toEqual({ data: { ...config, interactions: { metrics: "drawer", tasks: "drawer" } } });
+    const pageConfig = { ...config, interactions: { metrics: "page", tasks: "drawer" } };
+    await fetch(base, { method: "PUT", headers: { "Content-Type": "application/json", "test-user": "interaction-user" }, body: JSON.stringify(pageConfig) });
+    expect(await (await fetch(base, { headers: { "test-user": "interaction-user" } })).json()).toEqual({ data: pageConfig });
   });
   it("retains bounded recent work per user and domain and moves repeat visits to the front", async () => {
     for (let index = 0; index < 10; index++) {
@@ -64,7 +69,7 @@ describe("personal workspace HTTP persistence", () => {
     expect(database.query.mock.calls.length).toBe(calls);
   });
   it("saves ordered resource references and isolates both users and domains", async () => {
-    const config = { ...defaultPersonalWorkspace(), layout: "data", dashboardIds: ["second", "first"], dashboardCards: { second: ["chart-b", "metric-a"], first: [] }, applicationIds: ["app-a"] };
+    const config = { ...defaultPersonalWorkspace(), layout: "data", dashboardIds: ["second", "first"], dashboardCards: { second: ["chart-b", "metric-a"], first: [] }, applicationIds: ["app-a"], pinnedObjects: [{ className: "Person", primaryKey: "1", title: "Person one" }], pinnedAnalyses: [{ sessionId: "11111111-1111-4111-8111-111111111111", title: "Faculty analysis" }] };
     const saved = await fetch(base, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config) });
     expect(saved.status).toBe(200);
     expect(await (await fetch(base)).json()).toEqual({ data: config });
@@ -74,6 +79,12 @@ describe("personal workspace HTTP persistence", () => {
     }
   });
   it.each([
+    { ...defaultPersonalWorkspace(), sections: { main: ["apps", "data"], sidebar: ["apps", "tasks"], hidden: [] } },
+    { ...defaultPersonalWorkspace(), objectOpening: "unsupported" },
+    { ...defaultPersonalWorkspace(), pinnedObjects: [{ className: "Person", primaryKey: "1", title: "" }] },
+    { ...defaultPersonalWorkspace(), pinnedObjects: Array.from({ length: 2 }, () => ({ className: "Person", primaryKey: "1", title: "Same" })) },
+    { ...defaultPersonalWorkspace(), pinnedAnalyses: [{ sessionId: "not-a-session", title: "Analysis" }] },
+    { ...defaultPersonalWorkspace(), pinnedAnalyses: Array.from({ length: 2 }, () => ({ sessionId: "11111111-1111-4111-8111-111111111111", title: "Duplicate" })) },
     { ...defaultPersonalWorkspace(), dashboardIds: ["same", "same"] },
     { ...defaultPersonalWorkspace(), layout: "unknown" },
     { ...defaultPersonalWorkspace(), userId: "someone-else" },

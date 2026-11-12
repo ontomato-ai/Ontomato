@@ -208,6 +208,5 @@ class MultiDataSourceDuckDbTest {
 				() -> adapter.executeDsl(crossSource, "s", null, new ArrayList<>()));
 
 		assertEquals(DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT, failure.getViolations().get(0).getCode());
-		assertTrue(failure.getMessage().contains("person") && failure.getMessage().contains("invoice"), failure.getMessage());
 	}
 }

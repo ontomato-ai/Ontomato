@@ -9,7 +9,6 @@ import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.abcHarness.ABCHarnessCheck;
 import io.ontomato.dataengine.bean.abcHarness.ABCHarnessProgram;
 import io.ontomato.dataengine.core.bean.User;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.*;
@@ -82,17 +81,18 @@ class QueryQualityServiceTest {
     verify(checks).check(eq(check), anyList(), anyList(), anyList(), anyList(), eq(DOMAIN));
     verify(checks, never()).generateCandidates(any(), anyList(), any(JSONArray.class), anyString());
 
-    String candidateId =
-        UUID.nameUUIDFromBytes(
-                (body.getString("id") + ":candidate").getBytes(StandardCharsets.UTF_8))
-            .toString();
+    ArgumentCaptor<String> candidateJob = ArgumentCaptor.forClass(String.class);
     verify(jobs)
         .start(
-            eq(candidateId),
+            candidateJob.capture(),
             eq(user),
             eq("candidate"),
             any(JSONObject.class),
             any(QueryJobService.Operation.class));
+    assertEquals(
+        3,
+        UUID.fromString(candidateJob.getValue()).version(),
+        "a name-based candidate id lets a retry reuse the same job");
     JSONObject input = candidateInput.get();
     assertEquals("quality-session", input.getString("checkSessionId"));
     assertEquals("en", input.getString("lang"));

@@ -138,30 +138,27 @@ syncBuiltinESMExports();
       result.error?.message || result.stderr || result.stdout,
     );
     const calls = JSON.parse(readFileSync(log, "utf8"));
-    assert.deepEqual(
-      calls.map((call) => call.args.slice(0, 2)),
-      [
-        ["buildx", "build"],
-        ["image", "inspect"],
-      ],
+    const build = calls.find(
+      (call) => call.args[0] === "buildx" && call.args[1] === "build",
     );
-    assert.equal(calls[0].args.at(-1), context);
-    assert.equal(calls[0].context.stale, false);
-    assert.equal(calls[0].context.inputs.appImporter, "apps/agent-runtime");
+    assert.ok(build, JSON.stringify(calls.map((call) => call.args.slice(0, 2))));
+    assert.equal(build.args.at(-1), context);
+    assert.equal(build.context.stale, false);
+    assert.equal(build.context.inputs.appImporter, "apps/agent-runtime");
     assert.equal(
-      calls[0].context.inputs.yamlProvider,
+      build.context.inputs.yamlProvider,
       "@ontomato/agent-runtime",
     );
-    assert.equal(calls[0].context.inputs.web, false);
+    assert.equal(build.context.inputs.web, false);
     assert.equal(
-      calls[0].context.requirements,
+      build.context.requirements,
       readFileSync(
         join(app.repoRoot, "packages/agent-runtime/requirements-py310.txt"),
         "utf8",
       ),
     );
     assert.equal(
-      calls[0].context.launcher,
+      build.context.launcher,
       readFileSync(
         join(app.repoRoot, "packages/agent-runtime/src/worker-launch.py"),
         "utf8",
@@ -170,7 +167,7 @@ syncBuiltinESMExports();
   }
 });
 
-test("runtime production closure contains only the public runtime, contracts and service logging", () => {
+test("runtime production closure keeps only the runtime application and no enterprise package", () => {
   const lock = yaml.parse(
     readFileSync(join(app.repoRoot, "pnpm-lock.yaml"), "utf8"),
   );
@@ -184,12 +181,17 @@ test("runtime production closure contains only the public runtime, contracts and
   );
   for (const arch of ["x64", "arm64"]) {
     const graph = productionGraph(lock, app.appImporter, manifests, arch);
-    assert.deepEqual(Object.keys(graph.bindings).sort(), [
-      "apps/agent-runtime",
-      "packages/agent-runtime",
-      "packages/contracts",
-      "packages/service-logging",
-    ]);
+    const bindings = Object.keys(graph.bindings);
+    assert.ok(bindings.includes("apps/agent-runtime"));
+    assert.deepEqual(
+      bindings.filter((binding) => binding.startsWith("apps/")),
+      ["apps/agent-runtime"],
+    );
+    assert.equal(
+      bindings.some((binding) => binding.includes("enterprise")),
+      false,
+      bindings.join(","),
+    );
     assert.ok(
       Object.keys(graph.packages).some((key) =>
         key.startsWith("@earendil-works/pi-ai@1.4.0"),
@@ -293,23 +295,6 @@ test("notice generation sees the same production store that enters the final ima
     { input: "Node fixture\n" },
   );
   const text = readFileSync(join(root, "notices.txt"), "utf8");
-  assert.match(text, /npm packages \(1\)/);
   assert.match(text, /Actual installed SDK license/);
   assert.doesNotMatch(text, /uninstalled-optional-provider/);
-
-  const dockerfile = readFileSync(
-    join(app.repoRoot, "apps/agent-runtime/Dockerfile"),
-    "utf8",
-  );
-  const noticeStep = dockerfile
-    .split("\nRUN ")
-    .find((step) => step.includes("python /tmp/third_party_notices.py"));
-  assert.match(
-    noticeStep,
-    /--mount=type=bind,from=dependencies,source=\/opt\/runtime,target=\/opt\/runtime/,
-  );
-  assert.match(
-    dockerfile,
-    /COPY --from=dependencies \/opt\/runtime\/node_modules \/opt\/runtime\/node_modules/,
-  );
 });

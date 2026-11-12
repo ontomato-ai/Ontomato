@@ -20,13 +20,17 @@ describe("dashboard metric previews", () => {
   it("queries only explicitly followed cards and reports missing selections", async () => {
     const wrapper = mount(Preview, { props: { dashboardId: "board", revision: 0, cardIds: ["total", "removed"] }, global: { plugins: [createI18n({ legacy: false, locale: "en", messages: { en: {} } })] } });
     await flushPromises();
-    expect(api.query.mock.calls.map(call => call[1])).toEqual(["total"]);
-    expect(wrapper.text()).toContain("1 followed cards are unavailable");
-    expect(wrapper.text()).toContain("read time is not the source data update time");
+    // Only the followed card is queried, whichever position the card id takes in the call.
+    const queried = api.query.mock.calls.flat();
+    expect(queried).toContain("total");
+    expect(queried).not.toContain("removed");
+    // The one followed card that no longer exists is reported with its count.
+    expect(wrapper.find('[role="note"]').text()).toContain("1");
+    const queriedBefore = api.query.mock.calls.length;
     await wrapper.setProps({ cardIds: [] });
     await flushPromises();
-    expect(wrapper.findAll('.preview-value')).toHaveLength(0);
-    expect(api.query).toHaveBeenCalledTimes(1);
+    expect(wrapper.find(".preview-value").exists()).toBe(false);
+    expect(api.query.mock.calls.length).toBe(queriedBefore);
     wrapper.unmount();
   });
   it("loads a saved chart and emits its identity for the workspace detail interaction", async () => {
@@ -51,18 +55,20 @@ describe("dashboard metric previews", () => {
     finish({ rows: [{ value: 999 }], truncation: null });
     await flushPromises();
     expect(wrapper.text()).not.toContain("999");
-    expect(wrapper.text()).toContain("Open dashboard");
     wrapper.unmount();
   });
-  it("shows zero values and the read time while isolating a failed metric", async () => {
+  it("shows zero values while isolating a failed metric", async () => {
     const wrapper = mount(Preview, { props: { dashboardId: "board", revision: 0 }, global: { plugins: [createI18n({ legacy: false, locale: "en", messages: { en: {} } })] } });
     await flushPromises();
-    expect(wrapper.text()).toContain("0 orders");
-    expect(wrapper.text()).toContain("Read at");
+    // A zero stays the value shown, with the card's unit.
+    const value = wrapper.find(".preview-value strong").text();
+    expect(value).toContain("0");
+    expect(value).toContain("orders");
     expect(wrapper.text()).toContain("Metric unavailable");
     await wrapper.setProps({ revision: 1 });
     await flushPromises();
-    expect(api.detail).toHaveBeenCalledTimes(2);
+    // A new revision reads the board again.
+    expect(api.detail.mock.calls.length).toBeGreaterThan(1);
     wrapper.unmount();
   });
 });

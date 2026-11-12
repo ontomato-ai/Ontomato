@@ -16,7 +16,7 @@ const charts = ref<{ id: string; name: string; option: Record<string, any> | nul
 const loading = ref(false);
 const error = ref("");
 const missing = ref(0);
-const metrics = ref<{ id: string; name: string; value: string; unit: string; error: string; partial: boolean; readAt: string }[]>([]);
+const metrics = ref<{ id: string; name: string; value: string; unit: string; error: string; partial: boolean }[]>([]);
 let generation = 0;
 onBeforeUnmount(() => { generation++; });
 watch(() => [props.dashboardId, props.revision, props.cardIds], async () => {
@@ -34,14 +34,14 @@ watch(() => [props.dashboardId, props.revision, props.cardIds], async () => {
     const chartCards = selected(allCharts, 2);
     missing.value = props.cardIds?.filter(id => ![...allMetrics, ...allCharts].some(card => card.id === id)).length ?? 0;
     charts.value = chartCards.map(card => ({ id: card.id, name: card.name, option: null, error: "", partial: false }));
-    metrics.value = cards.map(card => ({ id: card.id, name: card.name, value: "", unit: card.unit ?? "", error: "", partial: false, readAt: "" }));
+    metrics.value = cards.map(card => ({ id: card.id, name: card.name, value: "", unit: card.unit ?? "", error: "", partial: false }));
     await Promise.all([...cards.map(async (card, index) => {
       try {
         const output = await queryDashboardCard(props.dashboardId, card.id);
         if (current !== generation) return;
         const value = metricCardValue(card, output.rows);
         Object.assign(metrics.value[index]!, { value: value.empty ? (locale.value.startsWith("zh") ? "暂无数据" : "No data") : value.text,
-          partial: !!output.truncation, readAt: new Date().toLocaleTimeString(locale.value, { hour: "2-digit", minute: "2-digit" }) });
+          partial: !!output.truncation });
       } catch (failure) {
         if (current === generation) metrics.value[index]!.error = failure instanceof Error ? failure.message : String(failure);
       }
@@ -65,21 +65,22 @@ watch(() => [props.dashboardId, props.revision, props.cardIds], async () => {
         <button class="metric-open" @click="emit('select', { id: metric.id, name: metric.name })">{{ metric.name }}</button>
         <p v-if="metric.error" role="alert" class="preview-error">{{ metric.error }}</p>
         <template v-else>
-          <strong>{{ metric.value || (locale.startsWith('zh') ? '读取中…' : 'Loading…') }} <small v-if="metric.value">{{ metric.unit }}</small></strong>
-          <small v-if="metric.readAt">{{ locale.startsWith('zh') ? '读取于' : 'Read at' }} {{ metric.readAt }}</small>
+          <strong v-if="metric.value">{{ metric.value }} <small>{{ metric.unit }}</small></strong>
+          <span v-else class="preview-skeleton skeleton-value" role="status" :aria-label="locale.startsWith('zh') ? '读取指标中' : 'Loading metric'" />
           <small v-if="metric.partial">{{ locale.startsWith('zh') ? '结果已截断，请查看仪表盘' : 'Partial result; open dashboard' }}</small>
         </template>
       </div>
     </div>
     <p v-if="missing" role="note">{{ locale.startsWith('zh') ? `${missing} 项关注内容已删除或不可访问，请重新选择` : `${missing} followed cards are unavailable. Update your selection.` }}</p>
-    <p v-if="metrics.length || charts.length" class="preview-note">{{ locale.startsWith('zh') ? '按已保存的参数实时查询；读取时间不代表业务数据更新时间' : 'Live query with saved parameters; read time is not the source data update time' }}</p>
-    <p v-else-if="!charts.length">{{ loading ? (locale.startsWith('zh') ? '读取指标…' : 'Loading metrics…') : props.cardIds?.length === 0 ? (locale.startsWith('zh') ? '未选择展示内容，可在配置工作台中选择或恢复默认展示' : 'No cards selected. Choose cards or restore the default selection in workspace settings.') : (locale.startsWith('zh') ? '打开仪表盘查看图表与明细' : 'Open dashboard for charts and details') }}</p>
+    <div v-if="loading && !error && !metrics.length && !charts.length" class="preview-values" role="status" :aria-label="locale.startsWith('zh') ? '读取指标中' : 'Loading metrics'"><div v-for="item in 3" :key="item" class="preview-value" aria-hidden="true"><span class="preview-skeleton skeleton-label" /><span class="preview-skeleton skeleton-value" /></div></div>
+    <p v-else-if="!loading && !metrics.length && !charts.length && !error">{{ props.cardIds?.length === 0 ? (locale.startsWith('zh') ? '未选择展示内容，可在配置工作台中选择或恢复默认展示' : 'No cards selected. Choose cards or restore the default selection in workspace settings.') : (locale.startsWith('zh') ? '打开仪表盘查看图表与明细' : 'Open dashboard for charts and details') }}</p>
     <div v-if="charts.length" class="preview-charts">
     <section v-for="chart in charts" :key="chart.id" class="preview-chart">
       <el-button text class="chart-open" @click="emit('select', { id: chart.id, name: chart.name })">{{ chart.name }}</el-button>
       <p v-if="chart.error" role="alert" class="preview-error">{{ chart.error }}</p>
       <EChart v-else-if="chart.option" :option="chartBrandColors(chart.option, theme)" :theme="theme" height="220px" />
-      <p v-else>{{ loading ? (locale.startsWith('zh') ? '读取图表…' : 'Loading chart…') : (locale.startsWith('zh') ? '暂无数据' : 'No data') }}</p>
+      <div v-else-if="loading" class="preview-skeleton skeleton-chart" role="status" :aria-label="locale.startsWith('zh') ? '读取图表中' : 'Loading chart'" />
+      <p v-else>{{ locale.startsWith('zh') ? '暂无数据' : 'No data' }}</p>
       <small v-if="chart.partial">{{ locale.startsWith('zh') ? '结果已截断，请查看完整仪表盘' : 'Partial result; open full dashboard' }}</small>
     </section>
     </div>
@@ -99,7 +100,12 @@ small { font-size: var(--text-xs); line-height: 1.5; font-weight: normal; }
 strong small { font-size: var(--text-sm); }
 p { margin: var(--spacing-sm) 0 0; }
 .preview-error { color: var(--el-color-danger); }
-.preview-note { font-size: var(--text-xs); line-height: 1.5; margin-top: var(--spacing-sm); }
+.preview-skeleton { display: block; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--el-text-color-secondary) 15%, transparent); animation: preview-pulse 1.4s ease-in-out infinite; }
+.skeleton-label { width: 72%; height: 12px; margin-bottom: var(--spacing-sm); }
+.skeleton-value { width: 60%; height: 30px; }
+.skeleton-chart { width: 100%; height: 220px; }
+@keyframes preview-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .preview-skeleton { animation: none; } }
 .preview-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--spacing-lg); margin-top: var(--spacing-md); }
 .preview-chart { padding-top: var(--spacing-md); border-top: 1px solid var(--el-border-color-lighter); min-width: 0; }
 .chart-open { max-width: 100%; justify-content: flex-start; white-space: normal; height: auto; min-height: var(--control-height); padding: var(--spacing-xs) 0; line-height: 20px; }

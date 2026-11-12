@@ -1,4 +1,4 @@
-import { h } from "vue";
+import { defineComponent, h } from "vue";
 import "element-plus/dist/index.css";
 import "element-plus/theme-chalk/dark/css-vars.css";
 import "@ontomato/workbench-ui/styles/style.css";
@@ -30,7 +30,12 @@ import { ossServicePages } from "./manager/platform";
  * (public/), so a path relative to the page follows the deployment's prefix, as the favicon does; the name is the
  * platform's service name.
  */
-const OssPlatformShell = () => h(PlatformShellLayout, { brand: { logo: "./ontomato-mark-green.svg" } });
+// A component object, not a bare render function: the router takes a bare function for a lazy loader and expects a
+// promise from it, which left the whole open-source site blank (2026-11-12).
+const OssPlatformShell = defineComponent({
+  name: "OssPlatformShell",
+  render: () => h(PlatformShellLayout, { brand: { logo: "./ontomato-mark-green.svg" } }),
+});
 
 export function startPlatform() {
   normalizeManagerEntry();

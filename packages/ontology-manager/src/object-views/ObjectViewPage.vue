@@ -1,16 +1,39 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from "vue";
+import { inject, onBeforeUnmount, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
+import { workspaceObjectHostKey, type WorkspaceObjectHost } from "@ontomato/contracts/workspace-objects";
 import { ElAlert, ElButton, ElSkeleton, vLoading } from "element-plus";
-import { ArrowLeft, Settings2, RefreshCw } from "lucide-vue-next";
+import { ArrowLeft, Settings2, RefreshCw, Star } from "lucide-vue-next";
 import { createObjectView, objectViewDocumentSchema, type ObjectReference, type ObjectViewDocument } from "@ontomato/contracts/object-views";
 import { useManagerClient, useOntologyText } from "../context";
 const { ot } = useOntologyText();
+const { locale } = useI18n();
 import ObjectViewRuntime from "./ObjectViewRuntime.vue";
 import { computed } from "vue";
 import { instanceName, type InstanceNameAttribute } from "./instance-name";
-const props = defineProps<{ reference: ObjectReference }>();
+const props = defineProps<{ reference: ObjectReference; preview?: boolean }>();
 const emit = defineEmits<{ open: [reference: ObjectReference]; edit: []; back: [] }>();
 const client = useManagerClient();
+const workspaceHost = inject<WorkspaceObjectHost | null>(workspaceObjectHostKey, null);
+const pinned = ref(false), pinBusy = ref(false), pinError = ref("");
+const pinLabel = computed(() => pinned.value
+  ? (locale.value.startsWith("zh") ? "取消收藏" : "Remove from favorites")
+  : (locale.value.startsWith("zh") ? "收藏到工作台" : "Add to workspace favorites"));
+async function togglePin() {
+  if (!workspaceHost) return;
+  const reference = { ...props.reference, title: (displayName.value || props.reference.primaryKey).slice(0, 200) };
+  pinBusy.value = true; pinError.value = "";
+  try { const value = await workspaceHost.toggle(reference); if (reference.className === props.reference.className && reference.primaryKey === props.reference.primaryKey) pinned.value = value; }
+  catch (failure) { if (reference.className === props.reference.className && reference.primaryKey === props.reference.primaryKey) pinError.value = failure instanceof Error ? failure.message : String(failure); }
+  finally { pinBusy.value = false; }
+}
+watch(() => JSON.stringify(props.reference), async () => {
+  pinned.value = false;
+  if (!workspaceHost) return;
+  const reference = { ...props.reference, title: "" };
+  try { const value = await workspaceHost.isPinned(reference); if (reference.className === props.reference.className && reference.primaryKey === props.reference.primaryKey) pinned.value = value; }
+  catch { /* A failed preference read must not block the object view. */ }
+}, { immediate: true });
 const document = ref<ObjectViewDocument>();
 const object = ref<Record<string, unknown>>({});
 const error = ref("");
@@ -56,10 +79,13 @@ watch(() => JSON.stringify([props.reference.className, props.reference.primaryKe
 <template>
   <section class="object-view-page">
     <div v-loading="loading && !!document" class="object-page-content" :aria-busy="loading">
-    <header class="object-header platform-page-gutter">
-      <div class="object-heading"><el-button text :icon="ArrowLeft" @click="emit('back')">{{ ot('ovBack') }}</el-button><span class="title-divider" /><div class="object-title"><h2>{{ displayName }}</h2></div></div>
+    <header v-if="!preview" class="object-header platform-page-gutter">
+      <div class="object-heading"><el-button text :icon="ArrowLeft" @click="emit('back')">{{ ot('ovBack') }}</el-button><span class="title-divider" /><div class="object-title"><h2>{{ displayName }}</h2></div>
+        <el-button v-if="workspaceHost" class="object-favorite" :class="{ 'is-favorited': pinned }" text :loading="pinBusy" :disabled="loading || !!error" :aria-label="pinLabel" :aria-pressed="pinned" :title="pinLabel" @click="togglePin"><Star v-if="!pinBusy" :size="16" :fill="pinned ? 'currentColor' : 'none'" aria-hidden="true" /></el-button>
+      </div>
       <div class="object-actions"><el-button text :icon="RefreshCw" :disabled="loading" @click="load">{{ ot('ovRefresh') }}</el-button><el-button type="primary" plain :icon="Settings2" :title="ot('ovConfigureObject')" :aria-label="ot('ovConfigureObject')" @click="emit('edit')">{{ ot('ovConfigure') }}</el-button></div>
     </header>
+    <div v-if="pinError" class="object-page-error" role="alert"><el-alert type="error" :title="pinError" :closable="false" /></div>
     <div v-if="error" class="object-page-error" role="alert">
       <el-alert type="error" :title="error" :closable="false" />
     </div>
@@ -70,6 +96,8 @@ watch(() => JSON.stringify([props.reference.className, props.reference.primaryKe
 </template>
 <style scoped>
 .object-view-page { height: 100%; min-width: 0; overflow: auto; box-sizing: border-box; container: object-page / inline-size; }
+.object-favorite { flex-shrink: 0; width: var(--control-height); min-height: var(--control-height); padding: 0; margin-inline-start: var(--spacing-sm); color: var(--el-text-color-secondary); }
+.object-favorite.is-favorited { color: var(--el-color-primary); }
 .object-page-content { min-width: 0; max-width: 100%; }
 .page-skeleton { min-height: 240px; padding: var(--manager-module-padding); }
 .object-header { display: flex; min-height: var(--page-header-height); box-sizing: border-box; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--manager-content-gap); padding-block: var(--spacing-sm); border-bottom: 1px solid var(--el-border-color); }

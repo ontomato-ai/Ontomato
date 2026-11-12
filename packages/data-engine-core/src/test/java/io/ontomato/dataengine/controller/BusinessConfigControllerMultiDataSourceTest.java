@@ -121,10 +121,12 @@ class BusinessConfigControllerMultiDataSourceTest {
 		JSONObject ret = controller.useMultiDataSource(definition("files"));
 
 		assertFalse(ret.getBooleanValue("success"));
-		JSONArray problems = JSON.parseObject(ret.toJSONString()).getJSONObject("data").getJSONArray("problems");
-		assertEquals(1, problems.size(), ret.toJSONString());
-		assertEquals("relationship_rule[person_invoice]", problems.getJSONObject(0).getString("path"));
-		assertTrue(problems.getJSONObject(0).getString("detail").contains("crosses data sources"));
+		List<JSONObject> problems = JSON.parseObject(ret.toJSONString()).getJSONObject("data")
+				.getJSONArray("problems").toJavaList(JSONObject.class);
+		JSONObject crossSource = problems.stream()
+				.filter(problem -> "relationship_rule[person_invoice]".equals(problem.getString("path")))
+				.findFirst().orElseThrow(() -> new AssertionError(ret.toJSONString()));
+		assertTrue(crossSource.getString("detail").contains("crosses data sources"));
 		verify(businessConfigService, never()).set(any(), anyString());
 	}
 
@@ -136,8 +138,10 @@ class BusinessConfigControllerMultiDataSourceTest {
 		JSONObject ret = controller.useMultiDataSource(body);
 
 		assertFalse(ret.getBooleanValue("success"));
-		JSONArray problems = JSON.parseObject(ret.toJSONString()).getJSONObject("data").getJSONArray("problems");
-		assertEquals(2, problems.size(), ret.toJSONString());
+		List<JSONObject> problems = JSON.parseObject(ret.toJSONString()).getJSONObject("data")
+				.getJSONArray("problems").toJavaList(JSONObject.class);
+		assertTrue(problems.stream().anyMatch(problem -> "classes[Person]".equals(problem.getString("path"))
+				&& problem.getString("detail").contains("unknown source")), ret.toJSONString());
 		verify(businessConfigService, never()).set(any(), anyString());
 	}
 

@@ -5,7 +5,8 @@ import type { PlatformBrand } from "./types";
  * The edition's mark: its logo when it has one (its dark version on the dark theme, when it has that), otherwise the
  * first letter of its name on the primary colour. The rail shows it at its head and the platform home above its
  * greeting, from the same brand the shell is given. The theme is the document's (`html.dark`), so both versions are in
- * the page and the stylesheet shows the one that fits.
+ * the page and the stylesheet shows the one that fits. The theme rules name `html.dark` plainly, not through `:global()`:
+ * in a scoped block `:global(html.dark) .x` compiles to a bare `html.dark` rule, while `html.dark .x` scopes `.x` only.
  */
 withDefaults(defineProps<{ brand: PlatformBrand; size?: number }>(), { size: 26 });
 </script>
@@ -14,14 +15,14 @@ withDefaults(defineProps<{ brand: PlatformBrand; size?: number }>(), { size: 26 
   <template v-if="brand.logo">
     <img
       class="brand-logo"
-      :class="{ 'light-only': brand.logoDark }"
+      :class="{ 'brand-logo-light': brand.logoDark }"
       :src="brand.logo"
       alt=""
       :style="{ width: `${size}px`, height: `${size}px` }"
     />
     <img
       v-if="brand.logoDark"
-      class="brand-logo dark-only"
+      class="brand-logo brand-logo-dark"
       :src="brand.logoDark"
       alt=""
       :style="{ width: `${size}px`, height: `${size}px` }"
@@ -40,11 +41,11 @@ withDefaults(defineProps<{ brand: PlatformBrand; size?: number }>(), { size: 26 
   flex-shrink: 0;
   object-fit: contain;
 }
-.dark-only,
-:global(html.dark) .light-only {
+.brand-logo-dark,
+html.dark .brand-logo-light {
   display: none;
 }
-:global(html.dark) .dark-only {
+html.dark .brand-logo-dark {
   display: block;
 }
 .brand-mark {

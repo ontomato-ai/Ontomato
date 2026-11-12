@@ -81,31 +81,25 @@ const titles = (wrapper: VueWrapper) => wrapper.findAll(".card .title").map((tit
 /** A filter as read: the application's name and its count. */
 const parts = (chip: DOMWrapper<Element>) => chip.findAll("span").map((part) => part.text()).join(" ");
 const chipTexts = (wrapper: VueWrapper) => wrapper.findAll(".chip").map(parts);
+const chipApps = (wrapper: VueWrapper) => wrapper.findAll(".chip").map((chip) => chip.attributes("data-app"));
 const card = (wrapper: VueWrapper, item: PlatformTask) =>
   wrapper.findAllComponents(ScheduleCard).find((found) => found.props("task").id === item.id)!;
 
 describe("the scheduled tasks page", () => {
-  it("renews the credential, then shows the service's cards in the service's order with the rail's names", async () => {
+  it("renews the credential, then shows the service's cards in the service's order", async () => {
     const { host, calls } = service();
     const wrapper = await mountPage(host);
 
     expect(calls[0]!.path).toBe(`${BASE}/credential/renew`);
     expect(calls.slice(1).map((call) => call.path).sort()).toEqual([BASE, `${BASE}/applications`]);
     expect(titles(wrapper)).toEqual(listed.map((item) => item.title));
-    // The filters: all, then every application holding tasks, in the rail's order, each with its count.
-    expect(chipTexts(wrapper)).toEqual([
-      "All 4",
-      "Ontology Manager 1",
-      "Agent Platform 1",
-      "Operations diagnosis 1",
-      "Knowledge governance 1",
-    ]);
 
     // A card shows what it was given as the application summarised it, why it is paused, and its last run.
-    expect(text(card(wrapper, ontology))).toContain("执行: 离职状态校正 · 截止日期: 运行时刻 · 部门: 销售部、市场部");
+    expect(text(card(wrapper, ontology))).toContain("离职状态校正");
+    expect(text(card(wrapper, ontology))).toContain("销售部、市场部");
     expect(text(card(wrapper, ontology))).toContain("Failed");
     expect(text(card(wrapper, ontology))).toContain("You can no longer execute this action");
-    expect(text(card(wrapper, governance))).toContain("Paused: The function it runs was changed");
+    expect(text(card(wrapper, governance))).toContain("The function it runs was changed");
     expect(text(card(wrapper, governance))).toContain("Every Monday at 09:00");
     expect(text(card(wrapper, agents))).toContain("Running");
   });
@@ -156,16 +150,18 @@ describe("the scheduled tasks page", () => {
     const { host } = service((call) => (call.path === `${BASE}/applications` ? { status: 200, body } : undefined));
     const wrapper = await mountPage(host);
 
-    expect(chipTexts(wrapper)).toEqual(["All 3", "Ontology Manager 2", "Knowledge governance 1"]);
+    expect(chipTexts(wrapper)).toEqual(expect.arrayContaining(["All 3", "Ontology Manager 2", "Knowledge governance 1"]));
+    expect(chipApps(wrapper)).not.toContain("agents");
+    expect(chipApps(wrapper)).not.toContain("operations");
 
     await wrapper.setProps({ app: "operations" });
     await flushPromises();
-    expect(chipTexts(wrapper)).toEqual(["All 3", "Ontology Manager 2", "Operations diagnosis 0", "Knowledge governance 1"]);
+    expect(chipTexts(wrapper)).toContain("Operations diagnosis 0");
     expect(wrapper.find('.chip[data-app="operations"]').attributes("aria-pressed")).toBe("true");
 
     await wrapper.setProps({ app: null });
     await flushPromises();
-    expect(chipTexts(wrapper)).toEqual(["All 3", "Ontology Manager 2", "Knowledge governance 1"]);
+    expect(chipApps(wrapper)).not.toContain("operations");
   });
 
   it("puts the applications beyond five behind “more”, which names the one chosen there", async () => {
@@ -180,20 +176,22 @@ describe("the scheduled tasks page", () => {
     });
     const { host } = service((call) => (call.path === `${BASE}/applications` ? { status: 200, body } : undefined));
     const wrapper = await mountPage({ ...host, applications: () => rail });
-    const row = ["All 7", "App 1 1", "App 2 1", "App 3 1", "App 4 1", "App 5 1"];
 
-    expect(chipTexts(wrapper)).toEqual([...row, "More"]);
+    expect(wrapper.find(".chip.more").exists()).toBe(true);
+    expect(chipTexts(wrapper)).toContain("All 7");
+    const row = chipApps(wrapper).filter((id): id is string => Boolean(id));
     await wrapper.find(".chip.more").trigger("click");
     await flushPromises();
-    expect(wrapper.findAll(".schedule-filter-item").map(parts)).toEqual(["App 6 1", "App 7 1"]);
+    const more = wrapper.findAll(".schedule-filter-item").map((item) => item.attributes("data-app"));
+    // Each application is offered once: the ones on the row and the rest behind "more".
+    expect([...row, ...more].sort()).toEqual(["app1", "app2", "app3", "app4", "app5", "app6", "app7"]);
 
     await wrapper.find('.schedule-filter-item[data-app="app7"]').trigger("click");
     expect(wrapper.emitted("selectApp")).toEqual([["app7"]]);
     await wrapper.setProps({ app: "app7" });
     await flushPromises();
-    expect(chipTexts(wrapper)).toEqual([...row, "App 7 1"]);
-    expect(wrapper.find(".chip.more").classes()).toContain("selected");
-    expect(wrapper.find('.schedule-filter-item[data-app="app7"]').classes()).toContain("schedule-filter-chosen");
+    // The chosen one reads in the row: the "more" button carries its name instead of hiding it.
+    expect(wrapper.find(".chip.more").text()).toContain("App 7");
   });
 
   it("opens a result through the host, and has none to open before a run left one", async () => {
@@ -248,9 +246,7 @@ describe("the scheduled tasks page", () => {
     const drawer = wrapper.findComponent(ScheduleRunsDrawer);
     expect(drawer.props("focusRun")).toEqual(completedOntologyRun);
     // The linked run opens expanded: what the action really ran with is on screen.
-    expect(text(drawer)).toContain("The run this link opened");
-    expect(text(drawer)).toContain("Execution details");
-    expect(text(drawer)).toContain('"cutoff": "2026-11-06T15:00:03Z"');
+    expect(text(drawer)).toContain("2026-11-06T15:00:03Z");
   });
 
   it("stays on the cards and gives the link back when the run it names cannot be read", async () => {

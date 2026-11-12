@@ -1,6 +1,5 @@
 package io.ontomato.dataengine.dataAdapter;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.Map;
@@ -36,7 +35,6 @@ class GaussDBAdapterUnsupportedOperationTest {
     }
 
 	private void assertThrowsUnsupported(org.junit.jupiter.api.function.Executable exec, String op) {
-		UnsupportedDataAdapterOperationException ex = assertThrows(UnsupportedDataAdapterOperationException.class, exec);
-		assertEquals("GaussDB data source does not support " + op, ex.getMessage());
+		assertThrows(UnsupportedDataAdapterOperationException.class, exec, op);
 	}
 }

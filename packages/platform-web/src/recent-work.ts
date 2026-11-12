@@ -8,7 +8,7 @@ export function recentDestination(route: RouteLocationNormalizedLoaded, app: Pla
     prefix => route.path === prefix || route.path.startsWith(`${prefix}/`),
   ) && !app.prefix.startsWith("/applications/")) return null;
   const query = new URLSearchParams();
-  for (const key of ["dashboardId", "sessionId", "primaryKey"]) {
+  for (const key of ["dashboardId", "sessionId", "primaryKey", "key"]) {
     const value = route.query[key];
     if (typeof value === "string") query.set(key, value);
   }

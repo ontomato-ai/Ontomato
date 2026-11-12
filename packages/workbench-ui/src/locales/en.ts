@@ -796,7 +796,14 @@ export default {
     "loadFailed": "Couldn't load",
     "noMatch": "Nothing matches the filter",
     "files": "Files",
-    "fileLoadFailed": "Couldn't read this file"
+    "fileLoadFailed": "Couldn't read this file",
+    "backToSkills": "All skills",
+    "importIntro": "Upload one skill package as a .zip file.",
+    "importRuleRoot": "SKILL.md sits at the package root: directly in the zip, or inside its single top-level folder.",
+    "importRuleFrontmatter": "SKILL.md starts with frontmatter giving name (the skill ID: lowercase letters, digits and single hyphens) and description.",
+    "importRuleText": "Scripts and references go in the same package; every file must be UTF-8 text, so images and other binary files cannot be included.",
+    "importRuleOverwrite": "If a skill with the same name exists, you are asked first; confirming replaces the whole package.",
+    "importChoose": "Choose ZIP file"
   },
   "agents": {
     "title": "Agent settings",

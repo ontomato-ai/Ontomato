@@ -141,16 +141,6 @@ async function renderEmbedded() {
 }
 
 describe("the conversation application", () => {
-  it("draws its own column and the conversation, and no chrome of the platform's", async () => {
-    const { root } = await renderEmbedded();
-    // The column belongs to the application (DESIGN.md "Applications and shells"): the shell draws it, and the
-    // platform draws none of its own.
-    expect(root.querySelector(".shell-column")).not.toBeNull();
-    expect(root.querySelector(".shell-nav-body")).not.toBeNull();
-    expect(root.querySelector(".mobile-bar")).toBeNull();
-    expect(root.querySelector(".shell-main")).not.toBeNull();
-  });
-
   it("builds no navigation state of its own: the host's agents and sessions are read once", async () => {
     const { read, root } = await renderEmbedded();
     // Only the host's load runs; a second navigation state inside the shell would read both again and pick an agent

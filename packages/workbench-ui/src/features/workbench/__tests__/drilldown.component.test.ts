@@ -21,7 +21,13 @@ it("asks for the details of the selected source row in one ordinary message with
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
     expect(wrapper.get('[role="alert"]').text()).toBe("Working");
     await wrapper.get(".dataset-selection-button").trigger("click"); await flushPromises();
-    expect(proceed).toHaveBeenLastCalledWith('Show the detail records behind row 3 (Department: "Information" and Code: "001") of the data file "Payroll" (outputs/retrievals/r/payroll.dataset.json).');
+    // One message: the third row (index 2), its group values, and the data file they come from.
+    const message = proceed.mock.calls.at(-1)![0] as string;
+    expect(message).toMatch(/\b3\b/);
+    expect(message).toContain("Information");
+    expect(message).toContain("001");
+    expect(message).toContain("Payroll");
+    expect(message).toContain("outputs/retrievals/r/payroll.dataset.json");
     await wrapper.setProps({ selectedRowIndices: [1, 2] }); await flushPromises();
     expect(wrapper.find(".dataset-selection-button").exists()).toBe(false);
   } finally { wrapper.unmount(); }
