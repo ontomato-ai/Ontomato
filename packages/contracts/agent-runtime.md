@@ -354,14 +354,13 @@ configuration grants this to ontology alone. Other runtime routes remain host-sc
 inputs and provider callbacks. Fixed server configuration maps providers to host credentials and
 callback URLs. Models cannot supply identity, domain, credentials or callback addresses.
 
-The native `agent` tool is installed by the runtime for provider-prepared runs with an actor reference. Legacy start entry points receive no channel tool during A1. `start` creates a child session; `send` is
+The native `agent` tool is installed by the runtime for provider-prepared runs with an actor reference. Retrieval, Action creation and ontology model generation all enter through provider prepare. `start` creates a child session; `send` is
 restricted to the creator and created children. Inputs have one stable message ID and sequence
 assigned on receipt, with a null runId until consumed. Notifications retain their role through
 history and UI; only the model boundary presents them as explicitly attributed context.
 
 Provider `prepare` receives mode `run` or `steer`, the execution language and a typed input, including question kind and
-replyTo. Questions do not stop the sender. A1 consumes messages at the end-of-loop boundary;
-explicit steering and the full question/answer flow land in A2. The runtime reserves a preparing
+replyTo. Questions do not stop the sender. The runtime consumes ordinary queued notifications at the end-of-loop boundary and steering inputs through PI getSteeringMessages. The runtime reserves a preparing
 intent under the session lock, calls prepare outside it, then confirms admission under the lock.
 At a terminal loop boundary it atomically consumes inputs or seals the loop. Later input belongs
 to the next intent. Each execution fixes requestedBy and root independently of the creation tree.
@@ -370,31 +369,42 @@ Callbacks are POST list/prepare/settle/read/cancel beneath the configured provid
 receives `{providerId,actor}` and returns only that provider's accessible entries. The runtime
 calls every registered provider directly and merges their lists; Java answers only the ontology
 provider's list and identity recovery. There is no separate directory port or Java-to-Node lookup.
-Prepare returns a runtime start request; steer acknowledges the host's input recording. Settle closes
+Prepare receives requestedBy (nullable) and the fixed root. Run mode returns a runtime start request; steer mode acknowledges the host's input recording and can return updated host context. The runtime retains typed input and its original receipt ID in both cases. Settle closes
 business eligibility; read returns the host's delivery projection. Cancel closes eligibility
 before runtime cancellation. Runtime cancellation includes execution descendants and suppresses
 automatic wakeup from that cancellation. No platform task table or delegation budget is added.
 
-### A2 entry-point migration checklist
+### Admission and external commands
 
-A1 and A2 ship together. The following legacy Java entry points deliberately keep the original
-start protocol and have no native agent tool in A1; migrate them as whole paths in A2:
+Retrieval admission, binding startup, caller quotes, continuation scope and decision revisions
+remain in Java provider prepare. An agent-answer with replyTo records the existing confirmed
+decision in both run and steer modes. Delivery does not store an immutable decisionRevision;
+the retrieval extension reports the execution's current revision. Both branches finish before
+result notification; quality jobs continue as branch-owned attachments and publish changes.
+The ontology-only retriever cancellation command preserves binding; generic cancel covers the
+execution and its delegated descendants. Natural parent completion does not cancel children.
+Action creation and generation prepare retain their existing write and sandbox admission.
 
-- `OntologyRetrievalService` / `OntologyAgentHost`: move retrieval admission, binding startup,
-  query scope, caller user quotes, continuation IDs and confirmed-decision revision into prepare.
-  Both ask-created and directly messaged retrieval runs need the same actor and prepare path.
-  Move result publication and the two-branch completion rule into settle/changed; preserve
-  cancellation eligibility. Answers carrying replyTo update confirmed decisions at prepare.
-- `ActionCreationService`: extract the existing write-authority gate, runtime definition, skill
-  publication and environment from start into prepare; provide actor recovery, settle/read/cancel
-  and the real action/session result references.
-- `OntologyGenerationService`: extract generation/test admission, sandbox authority, runtime
-  definition and environment into prepare; provide actor recovery, generation result projection,
-  settle/read/cancel and retain build-test restrictions.
+A replyTo send automatically steers an active recipient or prepares its next run when idle.
+An ordinary busy send fails with SESSION_BUSY before recording an input unless steer is explicit.
+A question requires a defaultAssumption and never ends the sender's loop. A root with no creator
+records its outgoing question in its own read/events; it does not fabricate a parent run.
 
-Then migrate every ask skill/client, external HTTP/SSE/CLI and needs-input/steering consumer,
-remove the old ask routes and polling reads, and verify the complete integration before release.
-Node auxiliary one-shot model calls are also still raw start consumers; they expose no agent tool.
+POST `/platform/agent-channel/commands` accepts the five verbs from agent-channel.ts. The Java
+boundary authenticates tk/API Key and derives the domain; the runtime uses the same execute
+path as the native tool, with an explicit external caller rather than a synthetic RuntimeRun.
+Reads and cancellation resolve an existing task's actor only after checking its canonical user
+and domain. GET `/platform/agent-channel/tasks/:taskId/events` registers the subscription before
+reading a task_snapshot and pushes changes. The files endpoint rechecks exact-run delivery
+ownership. Native read(files:true) copies delivered bytes into the caller's inputs/agents;
+standalone CLI read --files downloads the same bytes to outputs. CLI --follow consumes SSE.
+No external provider registration endpoint is introduced.
+
+Channel commands, task events/files and provider callbacks have no BuildTestAccess declaration
+or Node build-test route registration. Requests carrying an execution-context header are refused
+with 422 before side effects. Native agent commands also refuse build-test authority. Existing
+host prepare restrictions remain in force; no test context becomes live delegation.
+Node auxiliary one-shot model calls are not registered conversational agents and expose no agent tool.
 
 Failed preparations are projected from the existing admission intent in `preparationFailures`.
 The conversation shows the failure beside its received input, including when an expired actor

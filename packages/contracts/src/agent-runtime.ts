@@ -49,6 +49,7 @@ export const runtimeAgentDefinitionSchema = z
   .object({
     agentId: runtimeKeySchema.optional(),
     systemPrompt: z.string(),
+    context: z.string().optional(),
     modelId: modelSelectionSchema.shape.modelId,
     skills: z.array(runtimeSkillRefSchema),
     sandbox: z.object({ limits: codeLimitsSchema }).strict(),
