@@ -45,8 +45,27 @@ watch(() => shell.taskFocus?.value, async (focus) => {
   if (!card && !props.item.reviews.some((review) => review.task.id === focus.taskId)) return;
   if (card) reveal();
   await nextTick();
-  document.getElementById(`agent-task-${focus.taskId}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+  scrollWhenSettled(`agent-task-${focus.taskId}`);
 });
+
+/**
+ * Scrolls to an element once its position stops moving between frames: what opens with it lays out after it, and a
+ * scroll made before that is pushed away.
+ */
+function scrollWhenSettled(id: string) {
+  let last: number | null = null;
+  const step = () => {
+    const element = document.getElementById(id);
+    if (!element) return;
+    const top = element.getBoundingClientRect().top;
+    if (top === last) element.scrollIntoView({ block: "center", behavior: "smooth" });
+    else {
+      last = top;
+      requestAnimationFrame(step);
+    }
+  };
+  requestAnimationFrame(step);
+}
 
 /** The main run's elapsed time: ticking while it is active, its duration once it stopped. */
 const now = ref(Date.now());
@@ -248,7 +267,6 @@ async function submit(value: ShellFeedbackValue) {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 2px;
   margin-left: -8px;
 }
 .process-toggle {
@@ -270,10 +288,13 @@ button.process-toggle {
   cursor: pointer;
   transition: background-color var(--transition-fast, 150ms);
 }
-/* The reply's delegated work, beside its process line: "Worked for 0:25 · 2 tasks". */
+/* The reply's delegated work, right after its process line's chevron: "Worked for 0:25 › · 2 tasks". */
+.tasks-entry {
+  padding-left: 0;
+}
 .tasks-entry::before {
   content: "·";
-  margin-right: 2px;
+  margin-right: 4px;
 }
 button.process-toggle:hover {
   background: var(--el-fill-color);

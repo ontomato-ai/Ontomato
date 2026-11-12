@@ -156,11 +156,15 @@ button {
 }
 .name {
   flex-shrink: 0;
+  white-space: nowrap;
 }
 .source {
+  flex-shrink: 0;
+  white-space: nowrap;
   color: var(--el-text-color-secondary);
 }
 .question {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -168,6 +172,8 @@ button {
   color: var(--el-text-color-tertiary);
 }
 .status {
+  flex-shrink: 0;
+  white-space: nowrap;
   margin-left: auto;
   color: var(--el-text-color-secondary);
   font-variant-numeric: tabular-nums;
