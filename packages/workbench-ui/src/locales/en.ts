@@ -621,7 +621,6 @@ export default {
     "reviewChecked": "Checked",
     "reviewCheckedBinding": "Metric binding results",
     "reviewCheckedRetriever": "Retriever results",
-    "reviewCheckedSource": "Checked: {source}",
     "taskCount": "{n} task | {n} tasks",
     "taskListTitle": "This round's tasks",
     "taskRound": "Round {index} of {count}",

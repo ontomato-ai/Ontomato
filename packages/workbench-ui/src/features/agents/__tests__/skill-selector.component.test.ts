@@ -31,6 +31,19 @@ describe("complete skill references in agent configuration", () => {
     } finally { wrapper.unmount(); }
   });
 
+  it("does not call saved skills unavailable while the catalogue is still loading", async () => {
+    vi.spyOn(agentDefinitionsApi, "skills").mockReturnValue(new Promise(() => {}));
+    const wrapper = mount(SkillSelector, {
+      props: { modelValue: [provider] },
+      global: { plugins: [workbenchI18n(), ElementPlus] },
+    });
+    try {
+      await flushPromises();
+      expect(wrapper.findAll(".skill-card")).toHaveLength(0);
+      expect(wrapper.text()).not.toContain("Unavailable");
+    } finally { wrapper.unmount(); }
+  });
+
   it("makes provider skills removable and retains namespace identity when names coincide", async () => {
     const sameName = { ...domain, name: provider.name };
     vi.spyOn(agentDefinitionsApi, "skills").mockResolvedValue([option(provider), option(sameName)]);

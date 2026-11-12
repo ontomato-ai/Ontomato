@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { PanelLeftClose, PanelLeftOpen, Moon } from "lucide-vue-next";
-import type { PlatformAccount, PlatformApp, PlatformPreferences, PlatformShellLabels } from "./types";
+import type { PlatformAccount, PlatformApp, PlatformBrand, PlatformPreferences, PlatformShellLabels } from "./types";
 import { appIcon, ExternalLink } from "./icons";
 import PlatformAccountMenu from "./PlatformAccountMenu.vue";
 import PlatformBrandMark from "./PlatformBrandMark.vue";
@@ -22,7 +22,7 @@ const props = defineProps<{
   account: PlatformAccount | null;
   preferences: PlatformPreferences;
   labels: PlatformShellLabels;
-  brand?: { name: string; logo?: string };
+  brand?: PlatformBrand;
   collapsed: boolean;
   /** The name of each supported language, for the account menu. */
   localeNames?: Readonly<Record<string, string>>;
@@ -34,7 +34,7 @@ const emit = defineEmits<{
 }>();
 
 const brandName = computed(() => props.brand?.name || props.labels.brand);
-const markBrand = computed(() => ({ name: brandName.value, logo: props.brand?.logo }));
+const markBrand = computed(() => ({ ...props.brand, name: brandName.value }));
 
 /** The rail's applications, in order: the ontology applications, then the business ones (the external one last). */
 const scrolling = computed(() => {

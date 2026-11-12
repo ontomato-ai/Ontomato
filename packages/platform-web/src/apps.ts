@@ -1,6 +1,6 @@
 import type { InjectionKey, Ref } from "vue";
 import type { CatalogApplication } from "@ontomato/contracts/platform-identity";
-import type { PlatformApp, PlatformPanelGroup, PlatformRailSection } from "@ontomato/platform-shell";
+import type { PlatformApp, PlatformBrand, PlatformPanelGroup, PlatformRailSection } from "@ontomato/platform-shell";
 
 /**
  * How an application that holds several pages shows them: as tabs in its header (the object browser, the system
@@ -44,8 +44,8 @@ export interface PlatformAppDeclaration {
  */
 export const openApplicationKey: InjectionKey<(id: string) => void> = Symbol("open-application");
 
-/** The edition's brand the shell shows (its name, and its logo when it has one); the home shows the same mark. */
-export const platformBrandKey: InjectionKey<{ name: string; logo?: string }> = Symbol("platform-brand");
+/** The edition's brand the shell shows; the home shows the same mark. */
+export const platformBrandKey: InjectionKey<Readonly<Ref<PlatformBrand>>> = Symbol("platform-brand");
 
 /** The applications the shell's rail shows, in rail order; the shell's layout provides them to the pages inside it. */
 export const platformApplicationsKey: InjectionKey<Readonly<Ref<readonly PlatformAppDeclaration[]>>> =
