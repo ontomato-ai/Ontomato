@@ -16,6 +16,8 @@ import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 class OntologyAgentAccessTest {
   /** The header names a caller that may not exist yet (its own creation) or is already closed (evidence reads). */
@@ -64,9 +66,13 @@ class OntologyAgentAccessTest {
     assertFalse(allowed.readable("foreign"));
     assertThrows(IllegalStateException.class, () -> allowed.readable("broken"));
 
-    doThrow(new IllegalStateException("query capability denied")).when(identity).requireQueryAccess();
+    doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN)).when(identity).requireQueryAccess();
     var denied = access.sessionReads(request);
     assertFalse(denied.readable("governed"));
     assertFalse(denied.readable("retrieval"));
+
+    doThrow(new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR))
+        .when(identity).requireQueryAccess();
+    assertThrows(ResponseStatusException.class, () -> access.sessionReads(request));
   }
 }
