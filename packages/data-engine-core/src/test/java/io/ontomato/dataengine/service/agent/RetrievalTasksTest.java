@@ -71,8 +71,14 @@ class RetrievalTasksTest {
     assertNull(RetrievalTasks.qualityResult(interrupted));
 
     var completed = JSONObject.of("id", "q", "status", "completed", "startedAt", "2026-11-12T02:00:01Z",
-        "result", JSONObject.of("score", 92.0, "conclusion", "Matches", "fittedQuestion", "Sales by region?"));
+        "result", JSONObject.of("score", 92.0, "summary", "Matches the question", "conclusion", "Matches",
+            "fittedQuestion", "Sales by region?"));
     assertEquals(92.0, RetrievalTasks.qualityResult(completed).getDoubleValue("score"));
+    assertEquals("Matches the question", RetrievalTasks.qualityResult(completed).getString("summary"));
+    // A check settled before the summary was asked for still reads, with no summary.
+    completed.getJSONObject("result").remove("summary");
+    assertTrue(RetrievalTasks.qualityResult(completed).containsKey("summary"));
+    assertNull(RetrievalTasks.qualityResult(completed).get("summary"));
     assertEquals("2026-11-12T02:00:01Z", RetrievalTasks.qualityTask(completed, "round", "retriever", List.of()).getString("createdAt"));
   }
 }

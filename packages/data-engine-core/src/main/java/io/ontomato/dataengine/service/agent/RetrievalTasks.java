@@ -206,7 +206,9 @@ public class RetrievalTasks {
   static JSONObject qualityResult(JSONObject job) {
     if (!"completed".equals(job.getString("status"))) return null;
     var check = job.getJSONObject("result");
-    return JSONObject.of("taskId", job.getString("id"), "score", check.getDouble("score"),
+    var result = JSONObject.of("taskId", job.getString("id"), "score", check.getDouble("score"),
         "conclusion", check.getString("conclusion"), "fittedQuestion", check.getString("fittedQuestion"));
+    result.put("summary", check.getString("summary"));
+    return result;
   }
 }
