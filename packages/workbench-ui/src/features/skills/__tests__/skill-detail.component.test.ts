@@ -30,7 +30,9 @@ it("opens SKILL.md first, with its frontmatter as written above the drawn body, 
   expect(read).toHaveBeenCalledWith("growth", "SKILL.md");
   expect(wrapper.find(".frontmatter").text()).toBe("name: growth");
   expect(wrapper.find(".markdown-double").text()).toBe("# Growth");
-  await wrapper.findAll(".tree-row")[1]!.trigger("click");
+  // The tree holds the script inside its folder, the folder before the root's files.
+  expect(wrapper.findAll(".tree-name").map((name) => name.text())).toEqual(["scripts", "index.mjs", "SKILL.md"]);
+  await wrapper.findAll(".tree-node").find((node) => node.text() === "index.mjs")!.trigger("click");
   await flushPromises();
   expect(wrapper.find(".code-double").text()).toBe("export {};");
   expect(wrapper.text()).toContain("Delete");
