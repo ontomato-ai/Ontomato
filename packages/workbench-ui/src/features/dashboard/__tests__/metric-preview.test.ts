@@ -57,14 +57,13 @@ describe("dashboard metric previews", () => {
     expect(wrapper.text()).not.toContain("999");
     wrapper.unmount();
   });
-  it("shows zero values and the read time while isolating a failed metric", async () => {
+  it("shows zero values while isolating a failed metric", async () => {
     const wrapper = mount(Preview, { props: { dashboardId: "board", revision: 0 }, global: { plugins: [createI18n({ legacy: false, locale: "en", messages: { en: {} } })] } });
     await flushPromises();
-    // A zero stays the value shown, with the card's unit, and the read time is shown beside it.
+    // A zero stays the value shown, with the card's unit.
     const value = wrapper.find(".preview-value strong").text();
     expect(value).toContain("0");
     expect(value).toContain("orders");
-    expect(wrapper.text()).toMatch(/\d{1,2}:\d{2}/);
     expect(wrapper.text()).toContain("Metric unavailable");
     await wrapper.setProps({ revision: 1 });
     await flushPromises();

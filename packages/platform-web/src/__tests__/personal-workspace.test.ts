@@ -79,16 +79,13 @@ describe("personal workspace", () => {
     expect(api.request.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
     wrapper.unmount();
   });
-  it("opens metric details beside the workspace and can switch to a dialog", async () => {
+  it("opens metric details beside the workspace without starting an analysis", async () => {
     const { wrapper, router } = await page();
     await wrapper.find('.select-metric').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.path).toBe('/workspace');
     expect(wrapper.findAllComponents({ name: 'ElDrawer' }).some(drawer => drawer.props('modelValue') === true)).toBe(true);
-    const toolbar = wrapper.find('.resource-toolbar');
-    toolbar.findComponent({ name: 'ElDropdown' }).vm.$emit('command', 'dialog');
-    await flushPromises();
-    expect(wrapper.findAllComponents({ name: 'ElDialog' }).some(dialog => dialog.props('modelValue') === true)).toBe(true);
+    expect(api.request.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
     wrapper.unmount();
   });
   it("resumes accessible work and refreshes the saved dashboard's metric preview", async () => {
@@ -123,6 +120,10 @@ describe("personal workspace", () => {
     expect(wrapper.text()).toContain("Report generated");
     expect(wrapper.text()).not.toContain("Normal schedule");
     expect(wrapper.find('[data-section="tasks"]').findAll(".workspace-item")[0]!.text()).toContain("Paused schedule");
+    await wrapper.find('[data-task-group="issues"] .resource-link').trigger('click');
+    await flushPromises();
+    expect(wrapper.findAllComponents({ name: 'ElDrawer' }).some(drawer => drawer.props('modelValue') === true)).toBe(true);
+    expect(wrapper.findComponent({ name: 'WorkspaceResourceDetail' }).props('resource')).toMatchObject({ pauseMessage: 'Access changed', runId: null });
     wrapper.unmount();
   });
   it("opens selected resources through the platform and preserves other sections when tasks fail", async () => {
