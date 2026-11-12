@@ -1,16 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { ElMessage, ElMessageBox, type TreeInstance } from "element-plus";
+import type { TreeInstance } from "element-plus";
 import { useI18n } from "vue-i18n";
 import { ArrowLeft, Download, FileCode, Folder, FolderOpen, Trash2 } from "lucide-vue-next";
 import type { SkillFile, SkillInfo } from "@ontomato/contracts/skills";
-import { PlatformPageHeader } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { CodeEditor } from "@ontomato/foundation-ui/code";
 import { MarkdownView } from "@ontomato/foundation-ui/markdown";
-import { authHost } from "../../../utils/auth";
 import { skillsApi } from "../api";
+import { deleteSkill, exportSkill } from "../actions";
 
 /**
  * One skill, read as its package: the package's folders and files as a tree on the left, the chosen file on the right. Markdown is drawn with its
@@ -115,66 +114,28 @@ function back() {
   void router.push({ name: platformRoutes.ontologySkills.name });
 }
 
-function exportSkill() {
-  const link = document.createElement("a");
-  const params = new URLSearchParams();
-  const token = authHost().getToken();
-  const apiKey = authHost().getApiKey();
-  if (token) params.set("tk", token);
-  else if (apiKey) params.set("apiKey", apiKey);
-  link.href = skillsApi.exportUrl(props.skillId, params.toString());
-  link.download = `${props.skillId}.zip`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-}
-
-/** Deleting names the agents that lose the skill before it asks; a failed step is reported, not retried. */
 async function remove() {
-  let affectedAgents: { name: string }[];
-  try {
-    ({ affectedAgents } = await skillsApi.getReferences(props.skillId));
-  } catch {
-    ElMessage.error(t("admin.deleteFailed"));
-    return;
-  }
-  const confirmation = affectedAgents.length
-    ? t("admin.deleteSkillAffectedConfirm", { id: props.skillId, agents: affectedAgents.map((agent) => agent.name).join(", ") })
-    : t("admin.deleteSkillConfirm", { id: props.skillId });
-  try {
-    await ElMessageBox.confirm(confirmation, t("common.deleteConfirm"), {
-      type: "warning",
-      confirmButtonText: t("common.delete"),
-      cancelButtonText: t("common.cancel"),
-    });
-  } catch {
-    return;
-  }
-  try {
-    await skillsApi.deleteSkill(props.skillId);
-  } catch {
-    ElMessage.error(t("admin.deleteFailed"));
-    return;
-  }
-  ElMessage.success(t("admin.skillDeleted"));
-  back();
+  if (await deleteSkill(props.skillId, t)) back();
 }
 </script>
 
 <template>
   <div class="skill-detail platform-page">
-    <PlatformPageHeader
-      :title="skill ? skill.title || skill.id : skillId"
-      :description="skill ? [skill.isPublic ? t('capabilities.sourcePublic') : t('capabilities.sourceDomain'), skill.description].filter(Boolean).join(' · ') : null"
-    >
-      <template #actions>
-        <el-button :icon="ArrowLeft" @click="back">{{ t("capabilities.skillTitle") }}</el-button>
-        <el-button :icon="Download" @click="exportSkill">{{ t("common.export") }}</el-button>
-        <el-button v-if="skill && !skill.isPublic" type="danger" plain :icon="Trash2" @click="remove">
-          {{ t("common.delete") }}
-        </el-button>
-      </template>
-    </PlatformPageHeader>
+    <!-- The way back leads the bar, as in the object detail; the skill's own actions close it. -->
+    <header class="detail-titlebar platform-page-gutter">
+      <el-button text :icon="ArrowLeft" @click="back">{{ t("capabilities.backToSkills") }}</el-button>
+      <span class="title-divider" aria-hidden="true"></span>
+      <h1 class="title-name">{{ skill ? skill.title || skill.id : skillId }}</h1>
+      <el-tag v-if="skill" size="small" :type="skill.isPublic ? 'info' : 'primary'" effect="plain" disable-transitions>
+        {{ skill.isPublic ? t("capabilities.sourcePublic") : t("capabilities.sourceDomain") }}
+      </el-tag>
+      <span v-if="skill?.description" class="title-description">{{ skill.description }}</span>
+      <span class="title-spacer"></span>
+      <el-button :icon="Download" @click="exportSkill(skillId)">{{ t("common.export") }}</el-button>
+      <el-button v-if="skill && !skill.isPublic" type="danger" plain :icon="Trash2" @click="remove">
+        {{ t("common.delete") }}
+      </el-button>
+    </header>
     <div class="detail-body platform-page-gutter">
       <el-alert v-if="loadFailed" type="error" :closable="false" show-icon :title="t('capabilities.loadFailed')">
         <el-button text @click="load">{{ t("common.retry") }}</el-button>
@@ -226,6 +187,48 @@ async function remove() {
   flex-direction: column;
   height: 100%;
   min-width: 0;
+}
+.detail-titlebar {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-height: var(--page-header-height);
+  padding-block: var(--spacing-sm);
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--el-border-color);
+}
+.detail-titlebar :deep(.el-button) {
+  margin: 0;
+}
+.title-divider {
+  width: 1px;
+  height: 22px;
+  margin: 0 var(--spacing-xs);
+  background: var(--el-border-color);
+}
+.title-name {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--el-text-color-primary);
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+}
+.title-description {
+  flex: 1 1 200px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-sm);
+}
+.title-spacer {
+  flex: 1 0 0;
 }
 .detail-body {
   display: flex;
