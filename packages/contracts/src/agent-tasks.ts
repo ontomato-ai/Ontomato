@@ -38,6 +38,8 @@ const taskFields = {
 export const retrievalTaskSchema = z.object({
   ...taskFields,
   kind: z.literal("retrieval"),
+  /** What this round was given: the question ask started it with, or the reply a resumed round continues with. */
+  question: z.string(),
   parentTaskId: z.null(),
   process: agentTaskProcessSchema,
   branches: z.array(retrievalBranchSchema),

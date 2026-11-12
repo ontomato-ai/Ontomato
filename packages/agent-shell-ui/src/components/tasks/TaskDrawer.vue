@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject } from "vue";
 import { ChevronLeft, ChevronRight, Database, ShieldCheck, X } from "lucide-vue-next";
-import type { AgentTask, AgentTasksSnapshot } from "@ontomato/contracts/agent-tasks";
+import type { AgentTask, AgentTasksSnapshot, RetrievalTask } from "@ontomato/contracts/agent-tasks";
 import { shellContextKey } from "../../context";
 
 /**
@@ -14,7 +14,8 @@ const emit = defineEmits<{ locate: [taskId: string]; close: [] }>();
 const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value.tasks!);
 const index = computed(() => props.rounds.indexOf(runId.value));
-const retrievals = computed(() => props.snapshot.tasks.filter((task) => task.kind === "retrieval" && task.root.runId === runId.value));
+const retrievals = computed(() => props.snapshot.tasks.filter((task): task is RetrievalTask =>
+  task.kind === "retrieval" && task.root.runId === runId.value));
 const checks = (parent: AgentTask) => props.snapshot.tasks.filter((task) => task.kind === "quality" && task.parentTaskId === parent.id);
 const result = (task: AgentTask) => props.snapshot.qualityResults.find((value) => value.taskId === task.id);
 </script>
@@ -41,6 +42,7 @@ const result = (task: AgentTask) => props.snapshot.qualityResults.find((value) =
         <button type="button" class="task-row" @click="emit('locate', task.id)">
           <Database :size="14" />
           <span class="name">{{ labels.retriever }}</span>
+          <span class="question">{{ task.question }}</span>
           <span class="status" :class="task.status">{{ labels.status[task.status] }}</span>
         </button>
         <ol v-if="checks(task).length" class="checks">
@@ -154,11 +156,24 @@ button {
 }
 .name {
   flex-shrink: 0;
+  white-space: nowrap;
 }
 .source {
+  flex-shrink: 0;
+  white-space: nowrap;
   color: var(--el-text-color-secondary);
 }
+.question {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--el-text-color-tertiary);
+}
 .status {
+  flex-shrink: 0;
+  white-space: nowrap;
   margin-left: auto;
   color: var(--el-text-color-secondary);
   font-variant-numeric: tabular-nums;

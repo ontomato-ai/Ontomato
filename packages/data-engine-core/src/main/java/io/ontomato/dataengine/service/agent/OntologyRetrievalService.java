@@ -1000,8 +1000,10 @@ public class OntologyRetrievalService {
                 + " ontology_agent_sessions s ON s.id=r.session_id WHERE s.agent_id='"
                 + RETRIEVER
                 + "'::uuid AND r.input_hash<>'' AND"
-                + " r.admission_error IS NULL AND (r.open=true OR (r.external=false AND r.cancel_requested=false AND"
-                + " (r.observed_state IS NULL OR r.observed_state->>'status'<>'stopped')) OR"
+                + " r.admission_error IS NULL AND (r.open=true OR"
+                // Not seen stopped and not delivered, cancelled or not: a confirmed cancel still owes its observed stop.
+                + " (r.external=false AND (r.observed_state IS NULL OR r.observed_state->>'status'<>'stopped') AND NOT EXISTS"
+                + " (SELECT 1 FROM ontology_retrieval_deliveries d WHERE d.run_id=r.id AND d.source='retriever')) OR"
                 + " (r.cancel_requested=true AND r.cancel_confirmed=false AND"
                 + " (r.observed_state IS NULL OR r.observed_state->>'status'<>'stopped')) OR"
                 + " (r.observed_state->>'status'='stopped' AND"
@@ -1030,7 +1032,7 @@ public class OntologyRetrievalService {
                 }
                 return;
               }
-              if (row.getBooleanValue("cancel_requested")) cancelWork(session, id, owner);
+              if (row.getBooleanValue("cancel_requested") && !row.getBooleanValue("cancel_confirmed")) cancelWork(session, id, owner);
               // Only the lifecycle view is read each pass; the full snapshot once the run has stopped.
               var view = runtime.status(owner.domainId(), id);
               if(!row.getBooleanValue("runtime_admitted")) store.update("UPDATE ontology_agent_runs SET runtime_admitted=true WHERE id=?",uuid(id));

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
-import { ListChecks, PanelRightOpen } from "lucide-vue-next";
+import { PanelRightOpen } from "lucide-vue-next";
 import { shellContextKey, type ShellContext } from "../context";
 import type { AgentHostClient } from "../host";
 import type { AgentNav } from "../useAgentNav";
@@ -112,6 +112,10 @@ provide(shellContextKey, {
   readArtifact: (artifact) => props.client.readArtifact(artifact),
   tasks: props.client.tasks,
   taskFocus,
+  openTasks: (runId) => {
+    taskRound.value = runId;
+    tasksOpen.value = true;
+  },
   openArtifact: (open) => {
     // The side holds one thing at a time: an expanded card replaces a page beside the conversation.
     if (pairedPage.value) featureId.value = null;
@@ -133,7 +137,7 @@ provide(shellContextKey, {
   },
 });
 
-/** The replies that delegated work, in order, and the one the task list shows: the latest unless the reader moved. */
+/** The replies that delegated work, in order; a reply's own entry opens the task list at it. */
 const taskRounds = computed(() => [...new Set(conversation.tasks.value?.tasks.map((task) => task.root.runId) ?? [])]);
 const taskRound = ref<string | null>(null);
 const tasksOpen = ref(false);
@@ -141,16 +145,10 @@ const shownRound = computed({
   get: () => (taskRound.value && taskRounds.value.includes(taskRound.value) ? taskRound.value : taskRounds.value.at(-1)!),
   set: (runId: string) => (taskRound.value = runId),
 });
-const latestRoundTasks = computed(() =>
-  conversation.tasks.value?.tasks.filter((task) => task.root.runId === taskRounds.value.at(-1)).length ?? 0);
 watch(sessionId, () => {
   tasksOpen.value = false;
   taskRound.value = null;
 });
-function toggleTasks() {
-  taskRound.value = null;
-  tasksOpen.value = !tasksOpen.value;
-}
 
 function report(error: unknown) {
   emit("error", error instanceof Error ? error.message : String(error));
@@ -268,28 +266,16 @@ onMounted(() => {
     </ShellColumn>
 
     <main v-show="!pageFull" class="shell-main">
-      <div v-if="!featureId || pairedPage" class="corner">
-        <button
-          v-if="taskRounds.length && labels.tasks"
-          type="button"
-          class="tasks-button"
-          :aria-expanded="tasksOpen"
-          @click="toggleTasks"
-        >
-          <ListChecks :size="15" />
-          <span>{{ labels.tasks.list(latestRoundTasks) }}</span>
-        </button>
-        <button
-          v-if="closedPage && !featureId && !openArtifact"
-          type="button"
-          class="reopen-page"
-          :title="labels.open"
-          :aria-label="labels.open"
-          @click="reopenPage"
-        >
-          <PanelRightOpen :size="16" />
-        </button>
-      </div>
+      <button
+        v-if="closedPage && !featureId && !openArtifact"
+        type="button"
+        class="reopen-page"
+        :title="labels.open"
+        :aria-label="labels.open"
+        @click="reopenPage"
+      >
+        <PanelRightOpen :size="16" />
+      </button>
       <TaskDrawer
         v-if="tasksOpen && (!featureId || pairedPage) && conversation.tasks.value && taskRounds.length"
         v-model:run-id="shownRound"
@@ -379,39 +365,12 @@ onMounted(() => {
   min-width: 0;
   overflow: hidden;
 }
-/* The conversation's top right corner, over it: the reply's task list and, where the page's close button was, the page. */
-.corner {
+/* In the corner the page's close button left, over the conversation. */
+.reopen-page {
   position: absolute;
   z-index: 2;
   top: var(--spacing-md);
   right: var(--spacing-md);
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-}
-.tasks-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: var(--control-height);
-  padding: 0 10px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--el-text-color-secondary);
-  font: inherit;
-  font-size: var(--text-sm, 13px);
-  cursor: pointer;
-}
-.tasks-button:hover,
-.tasks-button[aria-expanded="true"] {
-  background: var(--el-fill-color);
-  color: var(--el-text-color-primary);
-}
-.tasks-button:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-}
-.reopen-page {
   display: grid;
   place-items: center;
   width: var(--control-height);

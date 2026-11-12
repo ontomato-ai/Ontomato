@@ -74,7 +74,7 @@ describe("delegated tasks in a reply", () => {
   const tasks: AgentTasksSnapshot = {
     sessionId,
     tasks: [
-      { kind: "retrieval", id: roundId, root: { sessionId, runId }, parentTaskId: null, status: "completed", error: null,
+      { kind: "retrieval", id: roundId, root: { sessionId, runId }, question: "Sales?", parentTaskId: null, status: "completed", error: null,
         createdAt: at(3), process: { mode: "none" }, branches: [{ source: "retriever", status: "completed", error: null,
           datasets: [{ id: dataset, title: "Sales", rowCount: 3, truncation: null }] }] },
       { kind: "quality", id: checkId, root: { sessionId, runId }, parentTaskId: roundId, status: "completed", error: null,
