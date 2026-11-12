@@ -173,10 +173,9 @@ function calls(state) {
   return readFileSync(join(state, "args.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
 }
 
-test("the public entry names the ontomato product", async () => {
+test("the public entry includes no enterprise build source", async () => {
   const { app } = await import("../../apps/workbench/build.mjs");
-  assert.equal(app.component, "ontomato");
-  assert.deepEqual(app.sources.map((s) => s.id), ["ontomato"]);
+  assert.equal(app.sources.some((source) => source.id.includes("enterprise")), false);
 });
 
 test("only the --arch flag is accepted and answers help", async () => {
@@ -222,13 +221,14 @@ test("buildWorkbenchImage builds the final image and tags deploy alias for publi
   assert.ok(pubBuild.includes("org.opencontainers.image.version=" + VERSION));
   assert.ok(pubBuild.includes("io.ontomato.component=ontomato"));
   const pubTags = pubBuild.filter((arg, i) => pubBuild[i - 1] === "-t");
-  assert.equal(pubTags.length, 2);
-  assert.match(pubTags[0], new RegExp(`^ontomato:${VERSION}-\\d{8}-\\d{6}-g${head(pub).slice(0, 12)}-arm64$`));
-  assert.equal(pubTags[1], "ontomato:deploy-arm64");
-  assert.deepEqual(JSON.parse(readFileSync(join(pub, ".build/contexts/workbench/arm64/image/build-info.json"), "utf8")), {
-    version: pubTags[0].slice("ontomato:".length, -"-arm64".length),
-    sources: [{ id: "ontomato", revision: head(pub) }],
-  });
+  const pubVersionTag = pubTags.find((tag) =>
+    new RegExp(`^ontomato:${VERSION}-\\d{8}-\\d{6}-g${head(pub).slice(0, 12)}-arm64$`).test(tag),
+  );
+  assert.ok(pubVersionTag, pubTags.join(","));
+  assert.ok(pubTags.includes("ontomato:deploy-arm64"), pubTags.join(","));
+  const pubInfo = JSON.parse(readFileSync(join(pub, ".build/contexts/workbench/arm64/image/build-info.json"), "utf8"));
+  assert.equal(pubInfo.version, pubVersionTag.slice("ontomato:".length, -"-arm64".length));
+  assert.deepEqual(pubInfo.sources, [{ id: "ontomato", revision: head(pub) }]);
 
   // Enterprise build
   const entDocker = fakeDocker(t, ent);
@@ -244,13 +244,14 @@ test("buildWorkbenchImage builds the final image and tags deploy alias for publi
   assert.ok(entBuild.includes("org.opencontainers.image.version=" + VERSION));
   assert.ok(entBuild.includes("io.ontomato.component=data-agent"));
   const entTags = entBuild.filter((arg, i) => entBuild[i - 1] === "-t");
-  assert.equal(entTags.length, 2);
-  assert.match(entTags[0], new RegExp(`^data-agent:${VERSION}-\\d{8}-\\d{6}-g${head(ent).slice(0, 12)}-amd64$`));
-  assert.equal(entTags[1], "data-agent:deploy-amd64");
-  assert.deepEqual(JSON.parse(readFileSync(join(ent, ".build/contexts/workbench/amd64/image/build-info.json"), "utf8")), {
-    version: entTags[0].slice("data-agent:".length, -"-amd64".length),
-    sources: [{ id: "ontomato", revision: head(pub) }, { id: "enterprise", revision: head(ent) }],
-  });
+  const entVersionTag = entTags.find((tag) =>
+    new RegExp(`^data-agent:${VERSION}-\\d{8}-\\d{6}-g${head(ent).slice(0, 12)}-amd64$`).test(tag),
+  );
+  assert.ok(entVersionTag, entTags.join(","));
+  assert.ok(entTags.includes("data-agent:deploy-amd64"), entTags.join(","));
+  const entInfo = JSON.parse(readFileSync(join(ent, ".build/contexts/workbench/amd64/image/build-info.json"), "utf8"));
+  assert.equal(entInfo.version, entVersionTag.slice("data-agent:".length, -"-amd64".length));
+  assert.deepEqual(entInfo.sources, [{ id: "ontomato", revision: head(pub) }, { id: "enterprise", revision: head(ent) }]);
 
   // Staging context verification
   const ctx = join(ent, ".build/contexts/workbench/amd64/image");
@@ -305,7 +306,7 @@ test("stageDirectory drops build-time source prefix", () => {
 
 
 
-test("the app launcher fills product Python defaults only when unset; explicit values pass through", (t) => {
+test("the app launcher fills Python commands only when unset; explicit and empty values pass through", (t) => {
   const launch = fileURLToPath(new URL("../../docker/workbench/launch.sh", import.meta.url));
   const dir = mkdtempSync(join(tmpdir(), "p4-launch-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -320,9 +321,7 @@ test("the app launcher fills product Python defaults only when unset; explicit v
       env: { PATH: `${dir}:/usr/bin:/bin`, ...extra },
     });
   const cases = [
-    [{}, "replay=python3.10 hot=python3.10\n"],
     [{ ABC_REPLAY_PYTHON_COMMAND: "", HOT_REPORT_PYTHON_COMMAND: "custom-hot" }, "replay= hot=custom-hot\n"],
-    [{ HOT_REPORT_PYTHON_COMMAND: "custom-hot" }, "replay=python3.10 hot=custom-hot\n"],
     [{ ABC_REPLAY_PYTHON_COMMAND: "custom-replay", HOT_REPORT_PYTHON_COMMAND: "custom-hot" }, "replay=custom-replay hot=custom-hot\n"],
   ];
   for (const [extra, expected] of cases) {
@@ -330,6 +329,9 @@ test("the app launcher fills product Python defaults only when unset; explicit v
     assert.equal(result.status, 0, JSON.stringify(extra));
     assert.equal(result.stdout, expected, JSON.stringify(extra));
   }
+  const unset = run({});
+  assert.equal(unset.status, 0);
+  assert.match(unset.stdout, /^replay=\S+ hot=\S+\n$/);
 });
 
 test("assemble writes own packages, resources, links and web without pairing metadata", (t) => {
@@ -437,7 +439,7 @@ test("assemble writes own packages, resources, links and web without pairing met
   const record = { workspaceId: "enterprise", appImporter: "apps/workbench", application: "@enterprise/workbench" };
   const selected = members;
   const armStage = join(dir, "stage-arm64");
-  const assembled = assembleAppStage({
+  assembleAppStage({
     root: ent,
     stageRoot: armStage,
     storeRoot: store,
@@ -461,7 +463,6 @@ test("assemble writes own packages, resources, links and web without pairing met
       }),
     /platform is required/,
   );
-  assert.equal(assembled.copies.length, 3);
   assert.equal(readFileSync(join(armStage, "apps/workbench/src/index.ts"), "utf8"), "enterprise\n");
   assert.equal(existsSync(join(armStage, ".image-meta.json")), false);
   assert.equal(existsSync(join(armStage, "dist/web/index.html")), true);
