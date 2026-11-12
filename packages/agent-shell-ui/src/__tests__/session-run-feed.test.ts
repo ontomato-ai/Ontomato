@@ -210,12 +210,31 @@ describe("the page's one list feed", () => {
     expect(host.read.mock.calls.at(-1)![0]).toEqual([a, b]);
   });
 
-  it("reports a refused stream and stops instead of reconnecting", async () => {
+  it("opens the stream again when it could not be opened at all, and reads every row once it is ready", async () => {
     const host = port();
     const { onError } = page(host);
     await settle();
 
-    host.handlers.value!.error(new SessionRunStreamError("forbidden"));
+    // A gateway that answers 502 while a container restarts, or any failure before the stream opened, is a line to
+    // retry: the notices resume without the reader reloading the page.
+    host.handlers.value!.error(Object.assign(new Error("Bad Gateway"), { status: 502 }));
+    expect(onError).not.toHaveBeenCalled();
+    expect(host.subscribe).toHaveBeenCalledTimes(1);
+
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(host.subscribe).toHaveBeenCalledTimes(2);
+
+    await dispatch(host, { type: "ready" });
+    expect(host.read.mock.calls.at(-1)![0]).toEqual([a, b]);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("stops on a frame that breaks the contract instead of reconnecting", async () => {
+    const host = port();
+    const { onError } = page(host);
+    await settle();
+
+    host.handlers.value!.error(new SessionRunStreamError("run notice frame broke the contract"));
     await new Promise((resolve) => setTimeout(resolve, 600));
 
     expect(onError).toHaveBeenCalledTimes(1);

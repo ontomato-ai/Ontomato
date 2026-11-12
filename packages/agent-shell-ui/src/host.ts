@@ -43,7 +43,7 @@ export interface TaskStreamHandlers {
 export interface SessionRunHandlers {
   /** Awaited, so frames are handled in the stream's order and a read finishes before the next frame. */
   frame(frame: AgentHostSessionRunFrame): Promise<void>;
-  /** The stream ended; the page opens it again, or stops on a refusal. */
+  /** The stream ended or could not be opened; the page opens it again, unless a frame broke the contract. */
   error(error: unknown): void;
 }
 
@@ -57,8 +57,8 @@ export interface SessionRunPort {
 }
 
 /**
- * The host refused the notices, or a frame broke the contract: opening the same stream again cannot help, so the page
- * reports it and stops rather than reconnecting.
+ * A frame that broke the contract: no retry can fix it, so the page reports it and stops. Every other failure of the
+ * notices is a line to open again.
  */
 export class SessionRunStreamError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -190,15 +190,12 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
     },
     subscribe(handlers) {
       const controller = new AbortController();
-      // A refusal and a dropped line reach the catch the same way; only whether the stream opened tells them apart.
-      let opened = false;
       void (async () => {
         try {
           const response = await call("/sessions/run-events", {
             headers: { Accept: "text/event-stream" },
             signal: controller.signal,
           });
-          opened = true;
           // The stream carries no terminal frame: it ends only when the host or the transport closes it.
           await readData(response, async (data) => {
             let frame: AgentHostSessionRunFrame;
@@ -212,12 +209,9 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
           }, () => !controller.signal.aborted);
           if (!controller.signal.aborted) handlers.error(new Error("run notice stream closed"));
         } catch (error) {
-          if (controller.signal.aborted) return;
-          handlers.error(
-            error instanceof SessionRunStreamError || !opened
-              ? new SessionRunStreamError((error as Error).message, { cause: error })
-              : error,
-          );
+          // A failed open, a dropped line and a host error are all a line to open again; only a frame off the contract
+          // above ends the notices. This route names no resource, so a failed open is never a refusal of one.
+          if (!controller.signal.aborted) handlers.error(error);
         }
       })();
       return () => controller.abort();

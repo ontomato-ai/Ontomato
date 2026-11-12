@@ -71,13 +71,14 @@ export function useSessionRunFeed(options: SessionRunFeedOptions) {
       error(error) {
         if (stopped) return;
         detach = null;
-        // A refused open or a frame off the contract is not a dropped line: present it and stop.
+        // A frame off the contract is not a dropped line: present it and stop.
         if (error instanceof SessionRunStreamError) {
           stopped = true;
           options.onError(error);
           return;
         }
-        // Anything else ended the transport: the same stream is opened again, and its `ready` reads every row.
+        // Anything else — a stream that could not be opened, a line that dropped, a host error — is opened again, and
+        // its `ready` reads every row.
         timer = setTimeout(() => {
           timer = null;
           if (!stopped) connect();

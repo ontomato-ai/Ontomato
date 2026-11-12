@@ -64,8 +64,14 @@ one, and reads the rows again when the set of rows or the row objects change (a 
 a promoted conversation, a re-read, a workspace hand-over). It writes `latestRun` in
 place, which triggers no further read, and it applies a snapshot only to rows still
 listed. Reads are serialized, so a late answer never overwrites a newer one. A
-dropped stream is reopened on the existing reconnect cadence, and its `ready` reads
-every row again; a refused or off-contract stream is reported to `onError` and stops.
+snapshot holds only the conversations the host can still read: one deleted meanwhile,
+say from another tab, is simply absent, and the rows that are still listed take its
+answer. A stream that could not be opened, dropped or ended is opened again on the
+existing reconnect cadence, and its `ready` reads every row again; only a frame that
+breaks the contract is reported to `onError` and stops. The notice route names no
+resource, so a failed open is never read as a refusal of one, and an expired sign-in
+is the host request layer's own error to handle.
+
 `onNotice` sees every frame, including one for a conversation no list shows, so the
 page can refresh its own facts; an unknown conversation is never added to a list.
 
