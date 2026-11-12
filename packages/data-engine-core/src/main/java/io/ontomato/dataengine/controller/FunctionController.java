@@ -59,6 +59,7 @@ public class FunctionController {
 		return ret;
 	}
 	
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/function/queryById")
     @ResponseBody
     public JSONObject queryById(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
@@ -76,6 +77,7 @@ public class FunctionController {
 		return ret;
 	}
 	
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/function/queryList")
     @ResponseBody
     public JSONObject queryList(@RequestBody JSONObject param) {

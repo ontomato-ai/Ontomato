@@ -450,6 +450,7 @@ public class AdminController {
 		return ret;
 	}
 	
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/admin/getMetas")
     @ResponseBody
     public JSONObject getMetas(@RequestBody JSONObject param) {
@@ -465,6 +466,7 @@ public class AdminController {
 		return ret;
 	}
 
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/admin/getschemamarkdown")
 	@ResponseBody
 	public JSONObject getSchemaMarkdown(@RequestBody JSONObject param) {
@@ -480,6 +482,7 @@ public class AdminController {
 		return ret;
 	}
 	
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/admin/getschemamarkdown-v2")
 	@ResponseBody
 	public JSONObject getSchemaMarkdownV2(@RequestBody JSONObject param) {
@@ -495,6 +498,7 @@ public class AdminController {
 		return ret;
 	}
 	
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@GetMapping("/admin/getDatasetDesc")
 	@ResponseBody
 	public JSONObject getDatasetDesc() {
@@ -511,6 +515,7 @@ public class AdminController {
 		return ret;
 	}
 	
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@GetMapping("/admin/getAllClassNames")
 	@ResponseBody
 	public JSONObject getAllClassNames() {
@@ -533,6 +538,7 @@ public class AdminController {
 		return ret;
 	}
 	
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/admin/getSchemaByClassName")
 	@ResponseBody
 	public JSONObject getSchemaByClassName(@RequestBody JSONObject param) {
@@ -549,6 +555,7 @@ public class AdminController {
 		return ret;
 	}
 	
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/admin/getRelationshipByClassNames")
 	@ResponseBody
 	public JSONObject getRelationshipByClassNames(@RequestBody JSONObject param) {
@@ -655,6 +662,7 @@ public class AdminController {
 		return ret;
 	}
 	
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/admin/getBussinessKnowledge")
     @ResponseBody
     public JSONObject getBussinessKnowledge(@RequestBody JSONObject param) {
@@ -671,6 +679,7 @@ public class AdminController {
 		return ret;
 	}
 
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/admin/getbussinessknowledgemarkdown")
 	@ResponseBody
 	public JSONObject getBussinessKnowledgeMarkdown(@RequestBody JSONObject param) {
@@ -687,6 +696,7 @@ public class AdminController {
 		return ret;
 	}
 
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@GetMapping("/admin/getSchema")
 	@ResponseBody
 	public JSONObject getSchema() {
