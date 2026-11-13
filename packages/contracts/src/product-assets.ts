@@ -117,6 +117,7 @@ export const productQuerySchema=z.object({
   pageSize:z.coerce.number().int().min(1).max(100).default(20),
 }).strict();
 export type ProductQuery=z.infer<typeof productQuerySchema>;
+export const productCountsResponseSchema=z.object({counts:z.record(z.number().int().nonnegative())});
 export const productSummarySchema=productAssetSchema.omit({document:true}).extend({kind:productQuerySchema.shape.kind.unwrap(),details:z.object({widgetKind:z.string().optional(),chartType:z.string().optional(),section:z.string().optional(),className:z.string().optional(),resourceId:z.string().optional(),childCount:z.number().int().nonnegative().optional(),widgetCount:z.number().int().nonnegative().optional(),widgetKinds:z.array(z.string()).optional()}).default({})});
 export type ProductSummary=z.infer<typeof productSummarySchema>;
 export const productPageSchema=z.object({items:z.array(productSummarySchema),total:z.number().int().nonnegative(),page:z.number(),pageSize:z.number()});

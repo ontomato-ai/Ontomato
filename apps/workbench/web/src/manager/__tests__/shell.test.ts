@@ -83,7 +83,8 @@ describe("open-source Ontology Service page", () => {
     window.__APP_CONFIG__ = { API_BASE: "/custom-base/api/", INITIAL_ROUTE: "" };
     vi.stubGlobal("fetch", async (url: string, init: { headers?: unknown } = {}) => {
       requests.push({ url, headers: (init.headers ?? {}) as Record<string, string> });
-      return new Response(JSON.stringify({ success: true, data: url.includes("/platform/applications") ? catalogFixture() : [] }), { status: statusFor(url) });
+      const body=url.endsWith('/product-assets/counts')?{counts:{}}:{ success: true, data: url.includes("/platform/applications") ? catalogFixture() : [] };
+      return new Response(JSON.stringify(body), { status: statusFor(url) });
     });
   });
 
@@ -132,7 +133,7 @@ describe("open-source Ontology Service page", () => {
     for (const request of requests) {
       const path = new URL(request.url, window.location.origin).pathname;
       // The catalog and the pages read the data engine; entering an application records its opening with the workbench.
-      expect(path.startsWith("/custom-base/api/data-query/") || path === "/custom-base/api/skills" || path.startsWith("/custom-base/api/platform/home/") || request.url.startsWith("/api/data-query/platform/applications")).toBe(true);
+      expect(path.startsWith("/custom-base/api/data-query/") || path === "/custom-base/api/skills" || path === '/custom-base/api/product-assets/counts' || path === '/custom-base/api/platform/home' || path.startsWith("/custom-base/api/platform/home/") || request.url.startsWith("/api/data-query/platform/applications"),request.url).toBe(true);
       expect(request.headers).not.toHaveProperty("tk");
       expect(request.headers).not.toHaveProperty("x-api-key");
     }

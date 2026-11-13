@@ -596,7 +596,7 @@ describe("Manager pages in the service router", () => {
       ])
     );
     for (const request of requests) {
-      expect(request.url.startsWith("/tenant-a/api/data-query/")).toBe(true);
+      expect(request.url.startsWith("/tenant-a/api/data-query/") || request.url === '/tenant-a/api/product-assets/counts').toBe(true);
       expect(request.headers["x-api-key"]).toBe("key-a");
       expect(request.headers.tk).toBeUndefined();
       expect(request.headers["Accept-Language"]).toBe("en");
