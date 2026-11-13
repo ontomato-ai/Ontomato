@@ -28,7 +28,15 @@ export async function queryProducts(owner:ProductOwner,query:ProductQuery){
   const where=clauses.join(' AND ');
   const count=await db().query(`SELECT count(*)::int AS total FROM ${t('product_assets')} WHERE ${where}`,args);
   const result=await db().query(`SELECT id,owner_id AS "ownerId",name,description,visibility,revision,created_at AS "createdAt",updated_at AS "updatedAt",document->>'kind' AS kind FROM ${t('product_assets')} WHERE ${where} ORDER BY updated_at DESC,id LIMIT $${args.length+1} OFFSET $${args.length+2}`,[...args,query.pageSize,(query.page-1)*query.pageSize]);
-  return {items:result.rows.map(row=>({...row,createdAt:row.createdAt.toISOString(),updatedAt:row.updatedAt.toISOString(),editable:row.ownerId===owner.userId})),total:count.rows[0].total,page:query.page,pageSize:query.pageSize};
+  const details=await db().query(`SELECT id,jsonb_strip_nulls(jsonb_build_object(
+    'widgetKind',document->'widget'->>'kind','chartType',CASE WHEN document->'widget'->>'kind'='chart' THEN document->'widget'->>'chartType' END,
+    'section',document->'widget'->>'source','className',document->>'className','resourceId',document->'widget'->>'resourceId',
+    'childCount',CASE WHEN document ? 'children' THEN jsonb_array_length(document->'children') END,
+    'widgetCount',CASE WHEN document ? 'widgets' THEN jsonb_array_length(document->'widgets') END,
+    'widgetKinds',CASE WHEN document ? 'widgets' THEN (SELECT jsonb_agg(DISTINCT w->>'kind') FROM jsonb_array_elements(document->'widgets') w) END)) AS details
+    FROM ${t('product_assets')} WHERE domain_id=$1 AND id=ANY($2::text[]) AND (owner_id=$3 OR visibility='domain')`,[owner.domainId,result.rows.map(row=>row.id),owner.userId]);
+  const byId=new Map(details.rows.map(row=>[row.id,row.details]));
+  return {items:result.rows.map(row=>({...row,details:byId.get(row.id)??{},createdAt:row.createdAt.toISOString(),updatedAt:row.updatedAt.toISOString(),editable:row.ownerId===owner.userId})),total:count.rows[0].total,page:query.page,pageSize:query.pageSize};
 }
 export async function countProductTypes(owner:ProductOwner){
   const result=await db().query(`SELECT document->>'kind' AS kind,count(*)::int AS count FROM ${t('product_assets')} WHERE domain_id=$1 AND (owner_id=$2 OR visibility='domain') GROUP BY document->>'kind'`,[owner.domainId,owner.userId]);
@@ -120,7 +128,12 @@ export async function personalHome(owner: ProductOwner,credentials:AssistantCred
   return transaction(async client => {
     await lockProducts(client, owner);
     const home = await client.query(`SELECT asset_id FROM ${t("product_home")} WHERE domain_id=$1 AND user_id=$2`, [owner.domainId, owner.userId]);
-    if (home.rows[0]) return getProduct(owner, home.rows[0].asset_id, client);
+    if (home.rows[0]) {
+      const existing=await getProduct(owner,home.rows[0].asset_id,client);
+      if(existing.document.kind!=='page')throw new Error('Home must be a page');
+      if(existing.document.compositionVersion===2)return existing;
+      return materializeWorkspaceBlocks(client,owner,existing);
+    }
     const legacy = await client.query(`SELECT value FROM ${t("user_preferences")} WHERE user_id=$1 AND key=$2`, [owner.userId, `personal-workspace:${owner.domainId}`]);
     const previousHome = await client.query(`SELECT dashboard_ids,favorites FROM ${t("platform_home_preferences")} WHERE domain_id=$1 AND user_id=$2`, [owner.domainId, owner.userId]);
     const workspace = legacy.rows[0] ? personalWorkspaceSchema.parse(legacy.rows[0].value) : defaultPersonalWorkspace();
@@ -132,8 +145,26 @@ export async function personalHome(owner: ProductOwner,credentials:AssistantCred
     await validateProduct(owner,input,credentials);
     const result = await writeProduct(client, owner, randomUUID(), input, 0);
     await client.query(`INSERT INTO ${t("product_home")} (domain_id,user_id,asset_id) VALUES($1,$2,$3)`, [owner.domainId, owner.userId, result.id]);
-    return result;
+    return materializeWorkspaceBlocks(client,owner,result);
   });
+}
+
+/** Persist legacy built-ins once; rendering thereafter follows only the page composition. */
+async function materializeWorkspaceBlocks(client:PoolClient,owner:ProductOwner,home:ProductAsset){
+  if(home.document.kind!=='page')return home;
+  const workspace=home.document.workspace;
+  const sections=workspace.sections??{main:['apps','data'],sidebar:['tasks','conversations','objects','recent'],hidden:[]};
+  const children=[...home.document.children];
+  const blocks=[{section:'assistant',column:'main'},...sections.main.map(section=>({section,column:'main'})),...sections.sidebar.map(section=>({section,column:'sidebar'}))] as const;
+  for(const block of blocks){
+    const blockId=`workspace-block-${home.id}-${block.section}`;
+    const section=block.section as 'assistant'|'apps'|'data'|'tasks'|'conversations'|'objects'|'recent';
+    const name={assistant:'你想了解哪些数据？',apps:'常用应用',data:'关注的数据',tasks:'任务动态',conversations:'继续分析',objects:'收藏的对象',recent:'最近访问'}[section];
+    await writeProduct(client,owner,blockId,productAssetInputSchema.parse({name,description:section==='assistant'?'用日常语言提问，让智能体帮你查询和分析':'',document:{kind:'widget',widget:{kind:'platform',source:section,placeholder:section==='assistant'?'例如：按学院统计在职教职工人数，并比较人员构成':'',limit:4,workspace}}}),0);
+    if(section==='assistant')children.unshift({assetId:blockId,column:'main'});
+    else children.push({assetId:blockId,column:block.column as 'main'|'sidebar'});
+  }
+  return writeProduct(client,owner,home.id,{name:home.name,description:home.description,visibility:home.visibility,document:{...home.document,children,compositionVersion:2}},home.revision);
 }
 export async function saveHomeWorkspace(owner: ProductOwner, workspace: PersonalWorkspace, revision: number,credentials:AssistantCredentials) {
   const home = await personalHome(owner,credentials);

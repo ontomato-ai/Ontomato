@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ref } from "vue";
+import { ref,createApp } from "vue";
 import { mount, flushPromises } from "@vue/test-utils";
 import { createRouter, createMemoryHistory } from "vue-router";
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { APP_HOST_GLOBAL, type AppHost } from "@ontomato/contracts/app-host";
 import { buildExecutionContext } from "@ontomato/contracts/build-tests";
-import { installAppHost, registerBuildPreview, registerLiveFrame } from "../app-host";
+import { installAppHost,installProductEmbedding, registerBuildPreview, registerLiveFrame } from "../app-host";
 import ApplicationRoute from "../pages/ApplicationRoute.vue";
 
 const elements:HTMLIFrameElement[]=[];
@@ -18,6 +18,18 @@ beforeEach(()=>{
 });
 afterEach(()=>{route?.unmount();route=undefined;elements.splice(0).forEach(element=>element.remove());vi.restoreAllMocks();});
 describe("explicit frame execution bindings",()=>{
+  it('rejects product embedding for unregistered and build-test frames before mounting content',()=>{
+    const source=frame();const app=createApp({template:'<div />'});installProductEmbedding(app);
+    const element=(source as Window).document.createElement('div');
+    expect(()=>host().mountProductAsset!(source,element,'shared')).toThrow('not registered');
+    const binding=registerBuildPreview(source,buildExecutionContext('workspace',null));
+    expect(()=>host().mountProductAsset!(source,element,'shared')).toThrow('build-test');
+    expect(element.shadowRoot).toBeNull();binding.dispose();
+  });
+  it('rejects mounting into a container outside the registered source frame',()=>{
+    const source=frame();registerLiveFrame(source);installProductEmbedding(createApp({template:'<div />'}));
+    expect(()=>host().mountProductAsset!(source,document.createElement('div'),'shared')).toThrow('registered app frame');
+  });
   it("throws for unregistered frames instead of selecting live",()=>{
     const source=frame();
     expect(()=>host().executionContext(source)).toThrow("not registered");

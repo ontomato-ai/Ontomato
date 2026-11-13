@@ -29,13 +29,15 @@ export const productWidgetSchema = viewWidgetSchema.strict().superRefine((widget
   if(widget.binding?.source === "literal" && widget.kind !== "text" && widget.kind !== "button")
     ctx.addIssue({code:"custom",message:"Business results must come from the referenced capability"});
 });
-const placement = z.object({ assetId: id, column: z.enum(["main", "sidebar"]).default("main") }).strict();
+const placement = z.object({ assetId: id, column: z.enum(["main", "sidebar"]).default("main"), span:z.enum(['full','half']).optional() }).strict();
 const placements = z.array(placement).max(50).refine(items => new Set(items.map(item => item.assetId)).size === items.length, "Duplicate asset placement");
 const widgetsSchema=z.array(productWidgetSchema).min(1).max(20).refine(widgets=>new Set(widgets.map(widget=>widget.id)).size===widgets.length,"Duplicate widget ID");
+export const platformWidgetSchema=z.object({kind:z.literal('platform'),source:z.enum(['assistant','apps','data','tasks','conversations','objects','recent']),placeholder:z.string().max(500).default(''),limit:z.number().int().min(1).max(20).default(4),workspace:personalWorkspaceSchema.optional()}).strict();
+export const productPlatformRuntimeKey=Symbol.for('ontomato.product-platform-runtime');
 export const productDocumentSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("page"), workspace: personalWorkspaceSchema, children: placements }).strict(),
-  z.object({ kind: z.literal("layout-template"), workspace: personalWorkspaceSchema, children: placements }).strict(),
-  z.object({ kind: z.literal("widget"), widget: productWidgetSchema }).strict(),
+  z.object({ kind: z.literal("page"), workspace: personalWorkspaceSchema, children: placements,compositionVersion:z.literal(2).optional() }).strict(),
+  z.object({ kind: z.literal("layout-template"), workspace: personalWorkspaceSchema, children: placements,compositionVersion:z.literal(2).optional() }).strict(),
+  z.object({ kind: z.literal("widget"), widget: z.union([productWidgetSchema,platformWidgetSchema]) }).strict(),
   z.object({ kind: z.literal("operation-panel"), widgets: widgetsSchema.refine(widgets=>widgets.some(widget=>widget.kind==='action'),'An operation panel requires an Action entry') }).strict(),
   z.object({ kind: z.literal("widget-group"), widgets: widgetsSchema.refine(widgets=>widgets.every(widget=>['text','metric','table','chart'].includes(widget.kind)),'Display groups only contain presentation widgets') }).strict(),
   z.object({ kind: z.literal("dashboard"), dashboardId: id }).strict(),
@@ -81,6 +83,11 @@ export function productReferences(document: ProductDocument): ProductReference[]
   if (document.kind === "dashboard") references.push({ kind: "dashboard", id: document.dashboardId });
   if (document.kind === "object-view") references.push({kind:"object-view",id:document.className});
   if (document.kind === "application") references.push({ kind: "application", id: document.applicationId });
+  const platform=platformWidget(document);
+  if(platform?.workspace){
+    if(platform.source==='apps')references.push(...platform.workspace.applicationIds.map(id=>({kind:'application' as const,id})));
+    if(platform.source==='data')references.push(...platform.workspace.dashboardIds.map(id=>({kind:'dashboard' as const,id})));
+  }
   const widgets = productWidgets(document);
   for (const widget of widgets) {
     if (["metric", "chart", "table"].includes(widget.kind)) references.push({ kind: "metric", id: widget.resourceId });
@@ -88,7 +95,8 @@ export function productReferences(document: ProductDocument): ProductReference[]
   }
   return [...new Map(references.map(reference => [`${reference.kind}:${reference.id}`, reference])).values()];
 }
-export function productWidgets(document:ProductDocument){return document.kind==='widget'?[document.widget]:document.kind==='operation-panel'||document.kind==='widget-group'?document.widgets:[];}
+export function productWidgets(document:ProductDocument){return document.kind==='widget'&&document.widget.kind!=='platform'?[document.widget]:document.kind==='operation-panel'||document.kind==='widget-group'?document.widgets:[];}
+export function platformWidget(document:ProductDocument){return document.kind==='widget'&&document.widget.kind==='platform'?document.widget:undefined;}
 
 export const productTypes = [
   { kind: "application", name: "应用", description: "关联平台应用入口与产品资产" },
@@ -109,6 +117,6 @@ export const productQuerySchema=z.object({
   pageSize:z.coerce.number().int().min(1).max(100).default(20),
 }).strict();
 export type ProductQuery=z.infer<typeof productQuerySchema>;
-export const productSummarySchema=productAssetSchema.omit({document:true}).extend({kind:productQuerySchema.shape.kind.unwrap()});
+export const productSummarySchema=productAssetSchema.omit({document:true}).extend({kind:productQuerySchema.shape.kind.unwrap(),details:z.object({widgetKind:z.string().optional(),chartType:z.string().optional(),section:z.string().optional(),className:z.string().optional(),resourceId:z.string().optional(),childCount:z.number().int().nonnegative().optional(),widgetCount:z.number().int().nonnegative().optional(),widgetKinds:z.array(z.string()).optional()}).default({})});
 export type ProductSummary=z.infer<typeof productSummarySchema>;
 export const productPageSchema=z.object({items:z.array(productSummarySchema),total:z.number().int().nonnegative(),page:z.number(),pageSize:z.number()});

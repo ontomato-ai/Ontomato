@@ -8,6 +8,7 @@ export interface OntologyResourceCounts {
   metrics: number | null;
   actions: number | null;
   functions: number | null;
+  products: number | null;
 }
 
 export const emptyOntologyResourceCounts = (): OntologyResourceCounts => ({
@@ -17,4 +18,5 @@ export const emptyOntologyResourceCounts = (): OntologyResourceCounts => ({
   metrics: null,
   actions: null,
   functions: null,
+  products: null,
 });

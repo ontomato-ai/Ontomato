@@ -1150,7 +1150,7 @@ function renderEcharts(data, config, theme) {
   if (config.showTitle === false) {
     option.title = { show: false };
     if (option.grid && chartType !== "timeline") option.grid.top = config.compact === true ? 12 : 32;
-    if (option.legend) option.legend.top = 4;
+    if (option.legend && !(config.compact === true && ["pie", "donut"].includes(chartType))) option.legend.top = 4;
   }
   return option;
 }

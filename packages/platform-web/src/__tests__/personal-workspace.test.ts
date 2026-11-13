@@ -4,6 +4,7 @@ import { createI18n } from "vue-i18n";
 import { createMemoryHistory, createRouter } from "vue-router";
 import ElementPlus from "element-plus";
 import { defaultPersonalWorkspace } from "@ontomato/contracts/personal-workspace";
+import {productAssetSchema} from '@ontomato/contracts/product-assets';
 import { openApplicationKey } from "../apps";
 import Workspace from "../pages/PersonalWorkspaceRoute.vue";
 
@@ -13,6 +14,9 @@ vi.mock("@ontomato/agent-shell-ui", () => ({ AgentPicker: { template: '<div />' 
 vi.mock("@ontomato/workbench-ui/features/dashboard", () => ({ DashboardCardPicker: { template: '<div />' }, DashboardMetricDetail: { template: '<div>Live metric details</div>' }, DashboardMetricPreview: { name: "DashboardMetricPreview", props: ["dashboardId", "revision"], template: '<div class="metric-preview-stub">{{ dashboardId }}<button class="select-metric" @click="$emit(\'select\', {id: \'card-a\', name: \'Revenue\'})">Revenue</button></div>' } }));
 
 const application = { id: "app-orders", kind: "hosted", category: "business", names: { en: "Orders" }, descriptions: {}, icon: "pages", rail: "apps", sort: 0, entry: { path: "/orders" }, entryAccess: ["orders"], scheduleAdapter: null, releaseId: "release" };
+const workspace=()=>({...defaultPersonalWorkspace(),dashboardIds:['board-a'],applicationIds:['app-orders']});
+const blocks=()=>['assistant','apps','data','tasks','recent','conversations'].map(source=>productAssetSchema.parse({id:source,name:source,ownerId:'alice',visibility:'private',revision:1,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),editable:true,document:{kind:'widget',widget:{kind:'platform',source}}}));
+const home=()=>productAssetSchema.parse({id:'home',name:'Home',ownerId:'alice',visibility:'private',revision:1,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),editable:true,document:{kind:'page',compositionVersion:2,workspace:workspace(),children:blocks().map(block=>({assetId:block.id,column:'main'}))}});
 beforeEach(() => {
   api.failTasks = false;
   api.failSave = false;
@@ -21,6 +25,13 @@ beforeEach(() => {
   api.recent = [];
   api.conversations = [];
   api.request.mockReset().mockImplementation(async (path: string, init?: RequestInit) => {
+    if(path==='/api/product-assets/home'&&init?.method==='PUT'){
+      if(api.failSave)throw new Error('Save failed');
+      const input=JSON.parse(String(init.body));api.saved=input.document.workspace;
+      return Response.json({asset:{...home(),...input,revision:2}});
+    }
+    if(path==='/api/product-assets/home')return Response.json({asset:home()});
+    if(path==='/api/product-assets')return Response.json({assets:blocks()});
     if (path.includes("scheduled-tasks")) {
       if (api.failTasks) throw new Error("Task service unavailable");
       return Response.json({ tasks: api.tasks, timeZone: "UTC" });
@@ -53,6 +64,25 @@ async function page() {
   return { wrapper, router, open };
 }
 describe("personal workspace", () => {
+  it('renders the same platform component outside a home using its own resource selection',async()=>{
+    const router=createRouter({history:createMemoryHistory(),routes:[{path:'/',component:{template:'<div />'}}]});
+    await router.push('/');
+    const asset=productAssetSchema.parse({...blocks()[1],document:{kind:'widget',widget:{kind:'platform',source:'apps',workspace:workspace()}}});
+    const wrapper=mount(Workspace,{props:{platformWidgetAsset:asset,preview:true},global:{plugins:[router,ElementPlus,createI18n({legacy:false,locale:'en',messages:{en:{}}})],provide:{[openApplicationKey as symbol]:vi.fn()}}});
+    await flushPromises();
+    expect(wrapper.find('a.application-card').text()).toContain('Orders');
+    expect(api.request.mock.calls.some(([path])=>path==='/api/product-assets/home')).toBe(false);
+    expect(wrapper.find('.platform-page-header').exists()).toBe(false);
+    wrapper.unmount();
+  });
+  it('does not synthesize workspace sections when the page composition is empty',async()=>{
+    const previous=api.request.getMockImplementation()!;
+    api.request.mockImplementation((path:string,init?:RequestInit)=>path==='/api/product-assets/home'&&!init?.method?Promise.resolve(Response.json({asset:{...home(),document:{...home().document,children:[]}}})):previous(path,init));
+    const {wrapper}=await page();
+    expect(wrapper.findComponent({name:'ShellComposer'}).exists()).toBe(false);
+    expect(wrapper.find('[data-section]').exists()).toBe(false);
+    wrapper.unmount();
+  });
   it('allows configuration while unrelated task loading is still pending',async()=>{
     const previous=api.request.getMockImplementation()!;
     let finish!:(value:Response)=>void;

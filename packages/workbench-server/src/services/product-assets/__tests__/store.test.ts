@@ -9,8 +9,24 @@ const owner={domainId:'one',userId:'alice'},credentials={token:'test-caller'};
 const input=()=>productAssetInputSchema.parse({name:'Text',document:{kind:'widget',widget:{id:'text',kind:'text',title:'Note',span:12,text:'Hello'}}});
 beforeEach(()=>{mocks.query.mockReset();mocks.validate.mockReset();});
 describe('product mutation boundary',()=>{
+  it('returns content metadata for only the visible paginated assets without including documents',async()=>{
+    mocks.query.mockResolvedValueOnce({rows:[{total:1}]}).mockResolvedValueOnce({rows:[{id:'chart',ownerId:'alice',name:'Chart',kind:'widget',createdAt:new Date(),updatedAt:new Date()}]}).mockResolvedValueOnce({rows:[{id:'chart',details:{widgetKind:'chart',chartType:'bar'}}]});
+    const {queryProducts}=await import('../store');
+    const result=await queryProducts(owner,productQuerySchema.parse({kind:'widget'}));
+    expect(result.items[0].details).toEqual({widgetKind:'chart',chartType:'bar'});
+    expect(result.items[0]).not.toHaveProperty('document');
+    expect(mocks.query.mock.calls[2][1]).toEqual(['one',['chart'],'alice']);
+  });
+  it('keeps an explicitly empty asset composition empty on subsequent home reads',async()=>{
+    const document={kind:'page',compositionVersion:2,workspace:{schemaVersion:1,layout:'data',dashboardIds:[],applicationIds:[]},children:[]};
+    mocks.query.mockImplementation(async(sql:string)=>({rows:sql.includes('SELECT asset_id')?[{asset_id:'home'}]:sql.includes('SELECT id, owner_id')?[{id:'home',ownerId:'alice',name:'Home',description:'',visibility:'private',document,revision:1,createdAt:new Date(),updatedAt:new Date()}]:[]}));
+    const {personalHome}=await import('../store');
+    const result=await personalHome(owner,credentials);
+    expect(result.document).toMatchObject({compositionVersion:2,children:[]});
+    expect(mocks.query.mock.calls.some(([sql])=>sql.includes('INSERT'))).toBe(false);
+  });
   it('paginates name search inside the caller-visible domain and shared scope',async()=>{
-    mocks.query.mockResolvedValueOnce({rows:[{total:65}]}).mockResolvedValueOnce({rows:[]});
+    mocks.query.mockResolvedValueOnce({rows:[{total:65}]}).mockResolvedValueOnce({rows:[]}).mockResolvedValueOnce({rows:[]});
     const {queryProducts}=await import('../store');
     const result=await queryProducts(owner,productQuerySchema.parse({search:'Revenue',scope:'shared',kind:'widget',page:3,pageSize:20}));
     expect(result.total).toBe(65);

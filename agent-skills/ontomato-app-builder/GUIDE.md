@@ -54,6 +54,19 @@ The returned paths already include the deployment prefix. HTML module and styles
 
 ## Product assets and personal home
 
+Start with reusable product assets. If the requested page fits the product document contract, create or edit those same assets through the authoring CLI; manual editing and Agent editing must converge on the same asset IDs. Use custom source only for interactions the asset contract cannot express. Do not reproduce an existing configured page in HTML.
+
+Custom source embeds existing assets with the SDK's `ProductAsset` component:
+
+```js
+import { createAppContext, ProductAsset } from '@ontomato/sdk';
+const context = createAppContext();
+// Register ProductAsset in components and render:
+// <product-asset :context="context" asset-id="actual-asset-id"></product-asset>
+```
+
+Declare embedded IDs in `ontomato.products.json`. `revision` may be incremented to reload the shared asset after an edit. Embedded content uses the shell's product runtime, current identity and theme, not a copied definition. Embedding is unavailable in build-test previews and fails explicitly; author assets with the CLI, then verify embedding in a published app. Missing assets remain errors; do not silently replace them with a generated HTML copy.
+
 Product parameters are default inputs and interaction preferences. Business windows, thresholds, legal values and operation eligibility must be defined and validated by capabilities, never solely by a page's literals, options or read-only fields. Deleting the page must not delete a business rule. Object views bind properties and relationship results to published MetricViews; pass the selected object using `{source:"context",path:"primaryKey"}` (or `className`). Legacy direct reads and `visibleWhen` business conditions must be migrated before saving or publishing the view.
 
 Before source publication or rollback, commit both `ontomato.products.json` (an empty `assetIds` array explicitly declares no product assets) and `ontomato.product-review.json`:

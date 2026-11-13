@@ -60,6 +60,8 @@ export interface AppFrameInsets {
 }
 
 export interface AppHost {
+  /** Render a shared product asset using the shell's runtime. Older shells may not implement this port. */
+  mountProductAsset?(source:object,element:object,assetId:string):()=>void;
   snapshot(): AppHostSnapshot;
   /** The calling frame's explicit execution binding; unregistered sources throw. */
   executionContext(source: object): AppExecutionContext;

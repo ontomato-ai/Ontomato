@@ -1,4 +1,4 @@
-import { productReferences, productWidgets, type ProductAssetInput } from "@ontomato/contracts/product-assets";
+import { productReferences, productWidgets,platformWidget, type ProductAssetInput } from "@ontomato/contracts/product-assets";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { DashboardMetricClient } from "../dashboard/metric-client";
 import { getOwnedDashboard } from "../dashboard/access";
@@ -9,6 +9,8 @@ import type { ProductOwner } from "./store";
 import { objectViewDocumentSchema, objectViewProductIssues } from "@ontomato/contracts/object-views";
 
 export async function validateProduct(owner: ProductOwner, input: ProductAssetInput, credentials: AssistantCredentials) {
+  const platform=platformWidget(input.document);
+  if(input.visibility==='domain'&&platform?.workspace&&(platform.workspace.pinnedObjects.length||platform.workspace.pinnedAnalyses.length||platform.workspace.agentIds.length))throw new HttpError(400,'Shared components cannot contain personal selections','PRIVATE_DEPENDENCY');
   if(input.document.kind === "object-view") {
     if(input.visibility === "domain" && input.document.primaryKey) throw new HttpError(400,"Shared object views must not contain a personal object selection","PRIVATE_DEPENDENCY");
     const response=await backendPost("product-object-view",config.dataQuery.baseUrl+"/objectView/read",{className:input.document.className,form:input.document.form},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});

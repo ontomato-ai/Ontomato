@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, ref } from "vue";
 import { randomId } from "@ontomato/contracts/random-id";
-import { productAssetSchema, type ProductAsset } from "@ontomato/contracts/product-assets";
+import { productAssetSchema,platformWidget, type ProductAsset } from "@ontomato/contracts/product-assets";
 import { AgentPicker, ShellComposer } from "@ontomato/agent-shell-ui";
 import { ElMessageBox } from "element-plus";
 import { readRememberedAgent } from "@ontomato/workbench-ui";
@@ -26,12 +26,13 @@ import { AppWindow, ArrowUpRight, CircleAlert, Clock3, LayoutDashboard, MoreHori
 import WorkspaceResourceDetail, { type WorkspaceResource } from "./WorkspaceResourceDetail.vue";
 import { agentHostAgentListSchema, agentHostCreateSessionResponseSchema, agentHostSessionSnapshotSchema, type AgentHostAgent, type AgentHostSession } from "@ontomato/contracts/agent-host";
 const { locale } = useI18n();
-const props=defineProps<{productAssetId?:string}>();
+const props=defineProps<{productAssetId?:string;platformWidgetAsset?:ProductAsset;preview?:boolean}>();
 const router = useRouter();
 const openApplication=inject(openApplicationKey)!;
 const catalog = useApplicationCatalog();
 const config = ref(defaultPersonalWorkspace());
 const homeAsset = ref<ProductAsset | null>(null);
+const blockLimit=(asset?:ProductAsset)=>asset?platformWidget(asset.document)?.limit??4:4;
 const productAssets = ref<ProductAsset[]>([]);
 const configRevision = ref<number>();
 function acceptConfig(body: {data:unknown;revision?:number}) {
@@ -53,13 +54,16 @@ async function readProducts() {
     productAssets.value=(await json("/api/product-assets")).assets.map((asset:unknown)=>productAssetSchema.parse(asset));
   });
 }
-const productChildren = (column:number) => homeAsset.value?.document.kind === "page"
-  ? homeAsset.value.document.children.filter(child=>child.column===(column===0?"main":"sidebar")).map(child=>({id:child.assetId,asset:productAssets.value.find(asset=>asset.id===child.assetId)})) : [];
+const productChildren = (column:number) => props.platformWidgetAsset ? column===0?[{id:props.platformWidgetAsset.id,asset:props.platformWidgetAsset,span:'full' as const,section:platformWidget(props.platformWidgetAsset.document)?.source}]:[] : homeAsset.value?.document.kind === 'page'
+  ? homeAsset.value.document.children.filter(child=>child.column===(column===0?'main':'sidebar')).map(child=>{
+    const asset=productAssets.value.find(asset=>asset.id===child.assetId);
+    return {id:child.assetId,asset,span:child.span,section:asset?platformWidget(asset.document)?.source:undefined};
+  }) : [];
 const draft = ref(defaultPersonalWorkspace());
-const draftChildren=ref<Array<{assetId:string;column:'main'|'sidebar'}>>([]);
+const draftChildren=ref<Array<{assetId:string;column:'main'|'sidebar';span?:'full'|'half'}>>([]);
 const addProductId=ref('');
-const reusableProducts=computed(()=>productAssets.value.filter(asset=>['widget','widget-group','operation-panel','dashboard','object-view'].includes(asset.document.kind)));
-function addProduct(){if(addProductId.value&&!draftChildren.value.some(child=>child.assetId===addProductId.value))draftChildren.value.push({assetId:addProductId.value,column:'main'});}
+const reusableProducts=computed(()=>productAssets.value.filter(asset=>['workspace-block','widget','widget-group','operation-panel','dashboard','object-view'].includes(asset.document.kind)));
+function addProduct(){if(addProductId.value&&!draftChildren.value.some(child=>child.assetId===addProductId.value))draftChildren.value.push({assetId:addProductId.value,column:'main',span:'full'});}
 async function saveComposition(){
   if(!homeAsset.value || homeAsset.value.document.kind!=='page')throw new Error('Page unavailable');
   const current=homeAsset.value;
@@ -84,21 +88,9 @@ const objectPreview = ref<WorkspaceObjectReference | null>(null);
 const objectPreviewOpen = ref(false);
 const settingsTab = ref("layout");
 const refreshing = ref(false);
-function sectionName(section: WorkspaceSection) {
-  return ({ apps: workspaceText.value.resources, data: text.value.data, conversations: workspaceText.value.continue,
-    objects: locale.value.startsWith("zh") ? "收藏的对象" : "Pinned objects", tasks: text.value.attention, recent: workspaceText.value.recent })[section];
-}
 function presetSections(layout: string): { main: WorkspaceSection[]; sidebar: WorkspaceSection[]; hidden: WorkspaceSection[] } {
   return layout === "tasks" ? { main: ["tasks", "data"], sidebar: ["conversations", "objects", "apps", "recent"], hidden: [] }
     : { main: layout === "data" ? ["data", "apps"] : ["apps", "data"], sidebar: ["conversations", "objects", "tasks", "recent"], hidden: [] };
-}
-function moveSection(section: WorkspaceSection, destination: "main" | "sidebar" | "hidden") {
-  const sections = draft.value.sections!;
-  for (const key of ["main", "sidebar", "hidden"] as const) sections[key] = sections[key].filter(item => item !== section);
-  sections[destination].push(section);
-}
-function orderSection(column: "main" | "sidebar" | "hidden", index: number, offset: number) {
-  const items = draft.value.sections![column]; const [item] = items.splice(index, 1); items.splice(index + offset, 0, item!);
 }
 const agents = ref<AgentHostAgent[]>([]);
 const agentId = ref<string | null>(readRememberedAgent());
@@ -108,7 +100,7 @@ const pinErrors = ref<Record<string, string>>({});
 const pinned = computed(() => config.value.pinnedAnalyses.map(item => ({ ...item, session: pinnedSessions.value[item.sessionId] })));
 let pinReadRevision = 0;
 const enabledAgents = computed(() => agents.value.filter(agent => agent.enabled));
-const conversations = computed(() => (homeState.value?.recentConversations ?? []).filter(item => enabledAgents.value.some(agent => agent.id === item.agentId) && !config.value.pinnedAnalyses.some(pin => pin.sessionId === item.sessionId)).slice(0, 4));
+const conversations = computed(() => (homeState.value?.recentConversations ?? []).filter(item => enabledAgents.value.some(agent => agent.id === item.agentId) && !config.value.pinnedAnalyses.some(pin => pin.sessionId === item.sessionId)));
 async function readPinned() {
   const revision = ++pinReadRevision;
   await load("pins", async () => {
@@ -121,6 +113,7 @@ async function readPinned() {
   });
 }
 async function updatePins(next: typeof config.value.pinnedAnalyses) {
+  if(props.preview)return;
   if (saving.value || editing.value || refreshing.value || homeAsset.value?.editable===false) return;
   saving.value = true;
   await load("pinsSave", async () => {
@@ -148,6 +141,7 @@ function movePin(index: number, offset: number) {
   const [item] = next.splice(index, 1); next.splice(index + offset, 0, item!); void updatePins(next);
 }
 async function removeObject(item: WorkspaceObjectReference) {
+  if(props.preview)return;
   if (saving.value || editing.value || refreshing.value || homeAsset.value?.editable===false) return;
   saving.value = true;
   await load("objectsSave", async () => {
@@ -190,6 +184,7 @@ const workspaceText = computed(() => locale.value.startsWith("zh") ? {
   heading: "你想了解哪些数据？", description: "用日常语言提问，让智能体帮你查询和分析", placeholder: "例如：按学院统计在职教职工人数，并比较人员构成", send: "发送问题", stop: "停止", agent: "智能体", continue: "继续分析", empty: "完成一次分析后，可从这里继续", untitled: "未命名分析", resources: "常用应用", noAgent: "暂无可用智能体，请检查智能体配置", recent: "最近访问",
 } : { heading: "What would you like to know?", description: "Ask in your own words to explore and analyze your data", placeholder: "For example: Compare active staff counts and composition by school", send: "Send question", stop: "Stop", agent: "Agent", continue: "Continue analysis", empty: "Return here after completing an analysis", untitled: "Untitled analysis", resources: "Applications", noAgent: "No enabled agents. Check agent configuration.", recent: "Recent resources" });
 async function ask(question: string) {
+  if(props.preview)return;
   if (!agentId.value || !enabledAgents.value.some(agent => agent.id === agentId.value)) return;
   await router.push({ path: platformRoutes.chat.path, query: { agentId: agentId.value, prompt: question } });
 }
@@ -269,22 +264,18 @@ function applicationHref(id: string) {
   return router.resolve({ path: app?.kind==='native' ? app.entry.home ?? app.entry.path : `/applications/${encodeURIComponent(id)}` }).href;
 }
 /** Keep data on a wide working surface and activity in a compact supporting column. */
-const columns = computed(() => {
-  const sections = config.value.sections ?? presetSections(config.value.layout);
-  return [sections.main, sections.sidebar];
-});
+const columns = computed(() => [[],[]] as WorkspaceSection[][]);
 const needsIntervention = (task: PlatformTask) => !task.activeRunId && (!!task.pause || task.lastRun?.status === "failed");
 const issueTasks = computed(() => tasks.value.filter(needsIntervention));
 const runningTasks = computed(() => tasks.value.filter(task => task.activeRunId));
 const resultTasks = computed(() => tasks.value.filter(task => task.latestResult?.runId === task.lastRun?.id
   && !task.activeRunId && !needsIntervention(task) && task.lastRun?.status === "completed" && Date.parse(task.lastRun.finishedAt ?? "") >= Date.now() - 7 * 86400000));
 const taskGroups = computed(() => [
-  { id: "issues", label: interactionLabels.value.intervention, items: issueTasks.value.slice(0, 3) },
-  { id: "running", label: text.value.running, items: runningTasks.value.slice(0, 2) },
-  { id: "results", label: locale.value.startsWith("zh") ? "近期结果" : "Recent results", items: [...resultTasks.value].sort((a, b) => (b.lastRun?.finishedAt ?? "").localeCompare(a.lastRun?.finishedAt ?? "")).slice(0, 3) },
+  { id: "issues", label: interactionLabels.value.intervention, items: issueTasks.value },
+  { id: "running", label: text.value.running, items: runningTasks.value },
+  { id: "results", label: locale.value.startsWith("zh") ? "近期结果" : "Recent results", items: [...resultTasks.value].sort((a, b) => (b.lastRun?.finishedAt ?? "").localeCompare(a.lastRun?.finishedAt ?? "")) },
 ].filter(group => group.items.length));
 const availableRecent = computed(() => recent.value.filter(item => !new URL(item.path, "https://workspace.invalid").searchParams.has("sessionId") && catalog.applications.value.some(app => app.id === item.appId)));
-const recentApps = computed(() => [...new Set(availableRecent.value.map(item => item.appId))].map(id => apps.value.find(app => app.id === id)).filter((app): app is typeof apps.value[number] => !!app && !config.value.applicationIds.includes(app.id)).slice(0, 4));
 function recentTitle(item: RecentWork) {
   const url = new URL(item.path, "https://workspace.invalid");
   const board = dashboards.value.find(board => board.id === url.searchParams.get("dashboardId"));
@@ -339,7 +330,8 @@ async function refresh() {
   refreshing.value = true;
   try {
     previewRevision.value++;
-    await Promise.all([readConfig(), readProducts(), readTasks(), readDashboards(), readRecent(), readAgents(), readConversations(), catalog.refresh()]);
+    if(props.platformWidgetAsset){config.value=platformWidget(props.platformWidgetAsset.document)?.workspace??defaultPersonalWorkspace();ready.value=true;await Promise.all([readTasks(),readDashboards(),readRecent(),readAgents(),readConversations(),catalog.refresh()]);}
+    else await Promise.all([readConfig(), readProducts(), readTasks(), readDashboards(), readRecent(), readAgents(), readConversations(), catalog.refresh()]);
   } finally { refreshing.value = false; }
 }
 onMounted(() => { void refresh(); });
@@ -384,18 +376,21 @@ const actions = computed(() => [
 ]);
 </script>
 <template>
-  <AppPage :title="props.productAssetId?homeAsset?.name ?? text.title:text.title" :description="text.intro" :actions="actions" :labels="{ save: text.save, discard: text.cancel, unsavedChanges: text.unsaved }">
+  <component :is="props.platformWidgetAsset?'div':AppPage" :class="{'platform-widget-host':props.platformWidgetAsset}" :title="homeAsset?.name ?? text.title" :description="homeAsset?.description ?? ''" :actions="actions" :labels="{ save: text.save, discard: text.cancel, unsavedChanges: text.unsaved }">
     <div v-if="errors.config" role="alert" class="workspace-error">{{ errors.config }} <el-button @click="readConfig">{{ text.retry }}</el-button></div>
     <WorkspaceSkeleton v-if="!ready && busy.config" :label="text.loading" :rows="6" />
     <el-alert v-if="analysisError" :title="analysisError" type="error" :closable="false" />
     <el-alert v-if="errors.products" :title="errors.products" type="error" :closable="false" />
-    <section v-if="ready && canChat" class="workspace-welcome">
-      <div class="workspace-heading"><Sparkles :size="20" aria-hidden="true" /><h1>{{ workspaceText.heading }}</h1></div>
-      <p>{{ workspaceText.description }}</p>
+    <div v-if="ready" class="workspace-grid" :class="{ 'tasks-first': config.layout === 'tasks' }">
+      <div v-for="(sections, column) in columns" :key="column" class="workspace-column" :class="{ 'activity-column': sections.includes('tasks') }">
+      <template v-for="child in productChildren(column)" :key="child.id">
+    <section v-if="child.section==='assistant'" class="workspace-welcome" :class="{'half-width':child.span==='half'}">
+      <div class="workspace-heading"><Sparkles :size="20" aria-hidden="true" /><h1>{{ child.asset?.name }}</h1></div>
+      <p v-if="child.asset?.description">{{ child.asset.description }}</p>
       <WorkspaceSkeleton v-if="busy.agents" :label="text.loading" :rows="1" composer />
       <div v-else-if="errors.agents" role="alert">{{ errors.agents }} <el-button @click="readAgents">{{ text.retry }}</el-button></div>
-      <div v-else-if="enabledAgents.length" class="workspace-ask">
-        <ShellComposer :busy="false" :labels="{ placeholder: workspaceText.placeholder, send: workspaceText.send, stop: workspaceText.stop }" @send="ask">
+      <div v-else-if="canChat&&enabledAgents.length" class="workspace-ask">
+         <ShellComposer :busy="false" :labels="{ placeholder: child.asset?platformWidget(child.asset.document)?.placeholder??'':'', send: workspaceText.send, stop: workspaceText.stop }" @send="ask">
           <template #tools>
             <AgentPicker variant="pill" :agents="enabledAgents" :agent-id="agentId" :label="workspaceText.agent" @select="agentId = $event" />
           </template>
@@ -403,22 +398,22 @@ const actions = computed(() => [
       </div>
       <p v-else>{{ workspaceText.noAgent }}</p>
     </section>
-    <div v-if="ready" class="workspace-grid" :class="{ 'tasks-first': config.layout === 'tasks' }">
-      <div v-for="(sections, column) in columns" :key="column" class="workspace-column" :class="{ 'activity-column': sections.includes('tasks') }">
-      <section v-for="child in productChildren(column)" :key="child.id" class="workspace-section workspace-product"><ManagerFrame v-if="child.asset"><ProductAssetRuntime :asset="child.asset" :revision="previewRevision" @refresh="previewRevision++"/></ManagerFrame><p v-else>{{text.unavailable}}</p></section>
-      <section v-for="section in sections" :key="section" class="workspace-section" :data-section="section">
-        <header><h2>{{ section === 'objects' ? (locale.startsWith('zh') ? '收藏的对象' : 'Pinned objects') : section === 'conversations' ? workspaceText.continue : section === 'apps' ? workspaceText.resources : section === 'recent' ? workspaceText.recent : section === 'tasks' ? text.attention : text.data }}</h2>
+      <section v-else-if="!child.section" class="workspace-section workspace-product" :class="{'home-chart':child.span==='half','home-overview':child.asset?.document.kind==='widget-group'}"><header v-if="child.asset?.document.kind==='widget-group'"><h2>{{child.asset.name}}</h2></header><ManagerFrame v-if="child.asset"><ProductAssetRuntime :asset="child.asset" :revision="previewRevision" @refresh="previewRevision++"/></ManagerFrame><p v-else>{{text.unavailable}}</p><p v-if="child.asset?.description" class="overview-note">{{child.asset.description}}</p></section>
+      <template v-for="section in [child.section]" v-else :key="section">
+      <section class="workspace-section" :class="{'half-width':child.span==='half'}" :data-section="section">
+        <header><h2>{{ child.asset?.name }}</h2>
           <div v-if="section === 'apps' || section === 'data' || section === 'tasks'" class="section-actions">
-            <el-button v-if="section === 'apps' && canBuild" text @click="router.push({ name: platformRoutes.appBuilder.name })">{{ text.build }} <ArrowUpRight :size="14" aria-hidden="true" /></el-button>
-            <el-button v-if="section === 'apps' || section === 'data'" text :disabled="saving || refreshing" @click="configure('resources')">{{ section === 'apps' ? (locale.startsWith('zh') ? '管理应用' : 'Manage applications') : (locale.startsWith('zh') ? '管理关注' : 'Manage followed data') }}</el-button>
+            <el-button v-if="!props.platformWidgetAsset&&section === 'apps' && canBuild" text @click="router.push({ name: platformRoutes.appBuilder.name })">{{ text.build }} <ArrowUpRight :size="14" aria-hidden="true" /></el-button>
+            <el-button v-if="!props.platformWidgetAsset&&(section === 'apps' || section === 'data')" text :disabled="saving || refreshing" @click="configure('resources')">{{ section === 'apps' ? (locale.startsWith('zh') ? '管理应用' : 'Manage applications') : (locale.startsWith('zh') ? '管理关注' : 'Manage followed data') }}</el-button>
             <el-button v-if="section === 'tasks' && catalog.applications.value.some(app => app.id === 'schedules')" text @click="router.push(platformRoutes.schedules.path)">{{ text.all }} <ArrowUpRight :size="14" aria-hidden="true" /></el-button>
             <el-button v-if="section === 'data' && catalog.applications.value.some(app => app.id === 'dashboards')" text @click="router.push(platformRoutes.dashboards.path)">{{ text.all }} <ArrowUpRight :size="14" aria-hidden="true" /></el-button>
           </div>
         </header>
+        <p v-if="child.asset?.description" class="overview-note">{{child.asset.description}}</p>
         <template v-if="section === 'objects'">
           <p v-if="errors.objectsSave" role="alert" class="workspace-error">{{ errors.objectsSave }}</p>
           <p v-if="!config.pinnedObjects.length" class="workspace-empty">{{ locale.startsWith('zh') ? '在对象详情中收藏教职工、机构或成果，可从这里快速返回' : 'Pin a person, organization or result from its object view to return here' }}</p>
-          <article v-for="item in config.pinnedObjects" :key="JSON.stringify([item.className, item.primaryKey])" class="workspace-item">
+          <article v-for="item in config.pinnedObjects.slice(0,blockLimit(child.asset))" :key="JSON.stringify([item.className, item.primaryKey])" class="workspace-item">
             <div class="resource-body"><button class="resource-link" @click="openObject(item)">{{ item.title }}</button>
             </div>
             <div class="object-row-actions">
@@ -435,7 +430,7 @@ const actions = computed(() => [
           <template v-if="pinned.length">
             <h3>{{ locale.startsWith('zh') ? '已固定' : 'Pinned' }}</h3>
             <WorkspaceSkeleton v-if="busy.pins" :label="text.loading" :rows="Math.min(pinned.length, 3)" />
-            <article v-for="(item, index) in (busy.pins ? [] : pinned)" :key="item.sessionId" class="workspace-item pinned-analysis">
+            <article v-for="(item, index) in (busy.pins ? [] : pinned.slice(0,blockLimit(child.asset)))" :key="item.sessionId" class="workspace-item pinned-analysis">
               <div class="resource-body"><button class="resource-link" :disabled="!item.session || !enabledAgents.some(agent => agent.id === item.session?.agentId)" @click="router.push({ path: platformRoutes.chat.path, query: { agentId: item.session!.agentId, sessionId: item.sessionId } })">{{ item.title }}</button><p v-if="pinErrors[item.sessionId]">{{ pinErrors[item.sessionId] }}</p><p v-else-if="item.session && !busy.agents && !enabledAgents.some(agent => agent.id === item.session?.agentId)">{{ workspaceText.noAgent }}</p><p v-else-if="item.session">{{ date(item.session.updatedAt) }}</p>
               </div>
               <el-dropdown trigger="click" placement="bottom-end" :popper-options="dropdownBoundaryOptions" :disabled="saving" @command="(command: string) => command === 'rename' ? renamePin(item.sessionId) : command === 'up' ? movePin(index, -1) : command === 'down' ? movePin(index, 1) : updatePins(config.pinnedAnalyses.filter(pin => pin.sessionId !== item.sessionId))">
@@ -453,7 +448,7 @@ const actions = computed(() => [
           <WorkspaceSkeleton v-if="busy.conversations" :label="text.loading" />
           <div v-else-if="errors.conversations" role="alert">{{ errors.conversations }} <el-button @click="readConversations">{{ text.retry }}</el-button></div>
           <p v-else-if="!conversations.length && !pinned.length" class="workspace-empty">{{ workspaceText.empty }}</p>
-          <article v-for="item in conversations" :key="item.sessionId" class="workspace-item conversation-item">
+          <article v-for="item in conversations.slice(0,blockLimit(child.asset))" :key="item.sessionId" class="workspace-item conversation-item">
             <Sparkles :size="16" class="resource-icon" aria-hidden="true" />
             <div class="resource-body"><button class="resource-link" @click="router.push({ path: platformRoutes.chat.path, query: { agentId: item.agentId, sessionId: item.sessionId } })">{{ conversationTitle(item.title) }}</button><p>{{ enabledAgents.find(agent => agent.id === item.agentId)?.name }} · {{ date(item.updatedAt) }}</p></div>
             <el-button class="row-icon-action pin-analysis" text :icon="Pin" :title="locale.startsWith('zh') ? '固定分析' : 'Pin analysis'" :aria-label="locale.startsWith('zh') ? '固定分析' : 'Pin analysis'" :disabled="saving || config.pinnedAnalyses.length >= 20" @click="pinConversation(item)" />
@@ -471,7 +466,7 @@ const actions = computed(() => [
             <p v-if="!taskGroups.length" class="workspace-empty">{{ text.clear }}<br>{{ text.noAttention }}</p>
             <div v-for="group in taskGroups" :key="group.id" class="task-group" :data-task-group="group.id">
             <h3>{{ group.label }}</h3>
-            <article v-for="task in group.items" :key="task.id" class="workspace-item" :class="{ 'needs-intervention': needsIntervention(task) }">
+            <article v-for="task in group.items.slice(0,blockLimit(child.asset))" :key="task.id" class="workspace-item" :class="{ 'needs-intervention': needsIntervention(task) }">
               <div class="resource-body"><button class="resource-link" @click="openTask(task)">{{ task.title }}</button>
                 <p v-if="group.id === 'results' && task.lastRun?.finishedAt">{{ locale.startsWith('zh') ? '生成于' : 'Generated' }} {{ date(task.lastRun.finishedAt) }}</p>
                 <p v-else><span class="task-status" :class="{ 'is-paused': !!task.pause, 'is-failed': !task.activeRunId && !task.pause && task.lastRun?.status === 'failed' }">{{ taskStatus(task) }}</span><span v-if="task.nextRunAt"> · {{ text.next }} {{ date(task.nextRunAt) }}</span></p>
@@ -489,7 +484,7 @@ const actions = computed(() => [
           <div v-else-if="errors.recent" role="alert">{{ errors.recent }} <el-button @click="readRecent">{{ text.retry }}</el-button></div>
           <template v-else>
             <p v-if="!availableRecent.length" class="workspace-empty">{{ text.emptyRecent }}</p>
-            <article v-for="item in availableRecent.slice(0, 4)" :key="item.path" class="workspace-item recent-item">
+            <article v-for="item in availableRecent.slice(0,blockLimit(child.asset))" :key="item.path" class="workspace-item recent-item">
               <Clock3 :size="16" class="resource-icon" aria-hidden="true" />
               <div class="resource-body"><button class="resource-link" @click="router.push(item.path)">{{ recentTitle(item) }}</button>
                 <p v-if="recentContext(item)">{{ recentContext(item) }}</p>
@@ -504,11 +499,10 @@ const actions = computed(() => [
           <template v-else>
             <p v-if="!selectedDashboards.length" class="workspace-empty">{{ text.emptyData }}</p>
             <el-button v-if="!selectedDashboards.length" :disabled="saving || refreshing" @click="configure('resources')">{{ interactionLabels.configure }}</el-button>
-            <article v-for="(board, index) in selectedDashboards" :key="board.id" class="workspace-board">
+            <article v-for="board in selectedDashboards.slice(0,blockLimit(child.asset))" :key="board.id" class="workspace-board">
               <button v-if="board.resource" class="resource-link board-link" @click="router.push({ path: platformRoutes.dashboards.path, query: { dashboardId: board.id } })"><LayoutDashboard :size="16" aria-hidden="true" /><span>{{ board.resource.name }}</span><ArrowUpRight :size="14" aria-hidden="true" /></button>
               <p v-else>{{ text.unavailable }}</p>
-              <DashboardMetricPreview v-if="board.resource && index < 4" :dashboard-id="board.id" :card-ids="config.dashboardCards[board.id]" :revision="previewRevision" @select="openMetric(board.id, $event)" />
-              <p v-else-if="board.resource" class="execution-note">{{ locale.startsWith('zh') ? '工作台预览前 4 个仪表盘，点击标题查看此仪表盘' : 'The workspace previews the first 4 dashboards. Open this title to view more.' }}</p>
+              <DashboardMetricPreview v-if="board.resource" :dashboard-id="board.id" :card-ids="config.dashboardCards[board.id]" :revision="previewRevision" @select="openMetric(board.id, $event)" />
             </article>
           </template>
         </template>
@@ -519,22 +513,20 @@ const actions = computed(() => [
             <p v-if="!selectedApps.length&&!selectedAgents.length" class="workspace-empty">{{ text.emptyApps }}</p>
             <el-button v-if="!selectedApps.length&&!selectedAgents.length" :disabled="saving || refreshing" @click="configure('resources')">{{ interactionLabels.configure }}</el-button>
             <div class="application-grid">
-            <article v-for="app in selectedApps" :key="app.id" class="application-resource">
+            <article v-for="app in selectedApps.slice(0,blockLimit(child.asset))" :key="app.id" class="application-resource">
               <a v-if="app.resource" class="application-card" :href="applicationHref(app.id)" @click.prevent="openApplication(app.id)">
                  <AppWindow :size="18" class="resource-icon" aria-hidden="true" />
                 <span class="resource-body"><strong>{{ app.resource.names[locale] ?? app.resource.names.en }}</strong><span>{{ app.resource.descriptions[locale] ?? app.resource.descriptions.en ?? text.application }}</span></span>
               </a>
               <p v-else>{{ text.unavailable }}</p>
             </article>
-            <article v-for="agent in selectedAgents" :key="agent.id" class="application-resource"><button class="application-card" @click="router.push({path:platformRoutes.chat.path,query:{agentId:agent.id}})"><Sparkles :size="18" class="resource-icon"/><span class="resource-body"><strong>{{agent.name}}</strong><span>{{agent.description}}</span></span></button></article>
+            <article v-for="agent in selectedAgents.slice(0,blockLimit(child.asset))" :key="agent.id" class="application-resource"><button class="application-card" @click="router.push({path:platformRoutes.chat.path,query:{agentId:agent.id}})"><Sparkles :size="18" class="resource-icon"/><span class="resource-body"><strong>{{agent.name}}</strong><span>{{agent.description}}</span></span></button></article>
             </div>
-            <h3 v-if="recentApps.length">{{ text.recentApps }}</h3>
-            <article v-for="app in recentApps" :key="app.id" class="workspace-item">
-              <a class="resource-link" :href="applicationHref(app.id)" @click.prevent="openApplication(app.id)">{{ app.names[locale] ?? app.names.en }}</a>
-            </article>
           </template>
         </template>
       </section>
+      </template>
+      </template>
       </div>
     </div>
     <el-dialog v-model="editing" :title="text.configure" width="min(740px, 94vw)" :close-on-click-modal="false" :close-on-press-escape="!saving" :show-close="!saving">
@@ -544,22 +536,13 @@ const actions = computed(() => [
         <el-form-item :label="text.layout">
           <el-select v-model="draft.layout" @change="draft.sections = presetSections(draft.layout)"><el-option value="tasks" :label="text.tasksLayout" /><el-option value="data" :label="text.dataLayout" /><el-option value="assistant" :label="text.assistantLayout" /></el-select>
         </el-form-item>
-        <p class="settings-note">{{ locale.startsWith('zh') ? '选择预设会重置区块位置。问数入口始终位于主栏顶部；可调整下方区块的位置、顺序或隐藏。' : 'A preset resets section placement. The question box stays at the top of the main column; arrange or hide the sections below.' }}</p>
-        <section v-for="position in (['main', 'sidebar', 'hidden'] as const)" :key="position" class="section-editor">
-          <h3>{{ position === 'main' ? (locale.startsWith('zh') ? '主栏' : 'Main column') : position === 'sidebar' ? (locale.startsWith('zh') ? '侧栏' : 'Sidebar') : (locale.startsWith('zh') ? '已隐藏' : 'Hidden') }}</h3>
-          <div v-for="(section, index) in draft.sections?.[position]" :key="section" class="section-editor-row">
-            <span>{{ sectionName(section) }}</span>
-            <el-select :model-value="position" :aria-label="sectionName(section)" @change="(value: 'main' | 'sidebar' | 'hidden') => moveSection(section, value)"><el-option value="main" :label="locale.startsWith('zh') ? '主栏' : 'Main column'" /><el-option value="sidebar" :label="locale.startsWith('zh') ? '侧栏' : 'Sidebar'" /><el-option value="hidden" :label="locale.startsWith('zh') ? '隐藏' : 'Hidden'" /></el-select>
-            <el-button size="small" :disabled="saving || index === 0" @click="orderSection(position, index, -1)">{{ locale.startsWith('zh') ? '上移' : 'Up' }}</el-button>
-            <el-button size="small" :disabled="saving || index === draft.sections![position].length - 1" @click="orderSection(position, index, 1)">{{ locale.startsWith('zh') ? '下移' : 'Down' }}</el-button>
-          </div>
-        </section>
+         <p class="settings-note">{{locale.startsWith('zh')?'主页仅展示产品资产中配置的组成项。请在「资源内容」中调整位置、宽度与顺序，或进入产品资产管理区块内容。':'The page renders only configured product assets. Arrange placement, width and order under Resources.'}}</p>
         </el-tab-pane>
         <el-tab-pane name="resources" :label="locale.startsWith('zh') ? '资源内容' : 'Resources'">
         <el-button v-if="catalog.applications.value.some(app=>app.id==='ontology')" text @click="editing=false;router.push({path:platformRoutes.products.path,query:homeAsset?{id:homeAsset.id}:{}})">{{locale.startsWith('zh')?'管理组件与模板':'Manage components and templates'}}</el-button>
         <h3>{{locale.startsWith('zh')?'产品层组件':'Product components'}}</h3>
         <p class="settings-note">{{locale.startsWith('zh')?'选择已保存的指标展示、操作板、对象视图或仪表盘，按引用组合到主页。':'Compose saved metric views, operation panels, object views and dashboards by reference.'}}</p>
-        <div v-for="(child,index) in draftChildren" :key="child.assetId" class="section-editor-row"><span>{{productAssets.find(asset=>asset.id===child.assetId)?.name??text.unavailable}}</span><el-select v-model="child.column" aria-label="组件位置"><el-option value="main" label="主栏"/><el-option value="sidebar" label="侧栏"/></el-select><el-button :disabled="index===0" @click="draftChildren.splice(index-1,0,...draftChildren.splice(index,1))">上移</el-button><el-button @click="draftChildren.splice(index,1)">移除</el-button></div>
+        <div v-for="(child,index) in draftChildren" :key="child.assetId" class="section-editor-row"><span>{{productAssets.find(asset=>asset.id===child.assetId)?.name??text.unavailable}}</span><el-select v-model="child.column" aria-label="组件位置"><el-option value="main" label="主栏"/><el-option value="sidebar" label="侧栏"/></el-select><el-select v-model="child.span" aria-label="组件宽度"><el-option value="full" label="整行"/><el-option value="half" label="半行"/></el-select><el-button :disabled="index===0" @click="draftChildren.splice(index-1,0,...draftChildren.splice(index,1))">上移</el-button><el-button @click="draftChildren.splice(index,1)">移除</el-button></div>
         <div class="resource-toolbar"><el-select v-model="addProductId" filterable placeholder="选择产品资产" aria-label="选择产品资产"><el-option v-for="asset in reusableProducts" :key="asset.id" :value="asset.id" :label="asset.name"/></el-select><el-button :disabled="!addProductId" @click="addProduct">添加组件</el-button></div>
         <el-form-item :label="text.data">
           <el-select v-model="draft.dashboardIds" multiple filterable :disabled="busy.data || !!errors.data">
@@ -615,9 +598,10 @@ const actions = computed(() => [
         <WorkspaceResourceDetail :resource="resource" />
       </template>
     </el-drawer>
-  </AppPage>
+  </component>
 </template>
 <style scoped>
+.platform-widget-host{min-width:0}.platform-widget-host>.workspace-grid{display:block}.platform-widget-host>.workspace-grid>.workspace-column{display:block;border:0;padding:0}.platform-widget-host>.workspace-grid>.workspace-column:empty{display:none}.platform-widget-host .workspace-welcome{margin:0;padding:0}.platform-widget-host .workspace-section{padding:0;border:0}
 .workspace-welcome { width: 100%; padding-top: var(--spacing-sm); }
 .settings-note { font-size: var(--text-sm); color: var(--el-text-color-secondary); }
 :global(.workspace-object-drawer > .el-drawer__body) { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
@@ -726,4 +710,30 @@ p { color: var(--el-text-color-secondary); line-height: 1.6; overflow-wrap: anyw
 .workspace-product :deep(.view-grid){gap:var(--manager-content-gap)}
 .workspace-column:nth-child(2) .object-row-actions{gap:var(--spacing-xs)}
 @container platform-page (max-width:1000px){.workspace-grid{grid-template-columns:minmax(0,1fr)}.workspace-column+.workspace-column{border-inline-start:0;padding-inline-start:0;padding-top:var(--page-content-gap);border-top:1px solid var(--el-border-color)}}
+/* Overview figures share a baseline; charts remain secondary to daily entry points. */
+.home-overview{margin-bottom:var(--page-content-gap);min-width:0;flex-shrink:0}
+.home-overview>header{display:flex;align-items:center;justify-content:space-between;gap:var(--spacing-md);margin-bottom:var(--spacing-md);flex-wrap:wrap}
+.home-overview>header>span{font-size:var(--text-xs);color:var(--el-text-color-secondary)}
+.home-overview>:deep(.ontology-manager),.home-overview>:deep(.ontology-manager>.ontology-manager-shell){height:auto;min-height:0;overflow:visible;contain:none;container-type:inline-size;flex:none}
+.home-overview :deep(.object-view-runtime){height:auto;min-height:0}
+.home-overview :deep(.widget-card){padding:var(--spacing-lg);border-color:var(--el-border-color-light)}
+.home-overview :deep(.widget-card h4){font-size:var(--text-xs);font-weight:var(--font-medium);color:var(--el-text-color-secondary);margin-bottom:var(--spacing-sm)}
+.home-overview :deep(.metric){font-size:var(--text-2xl);line-height:1.3;font-weight:var(--font-semibold);font-variant-numeric:tabular-nums}
+.home-overview :deep(.view-grid){display:flex;flex-wrap:wrap}.home-overview :deep(.widget-card){flex:1 1 150px;width:auto;min-width:0}.overview-note{font-size:var(--text-xs);margin:var(--spacing-sm) 0 0}
+.workspace-grid{grid-template-columns:minmax(0,2.2fr) minmax(300px,1fr);gap:var(--page-section-padding)}
+.workspace-grid,.workspace-welcome{flex-shrink:0}
+.workspace-column{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--spacing-lg)}
+.workspace-column>.workspace-section,.workspace-column>.workspace-welcome{grid-column:1/-1}
+.workspace-column>.home-chart,.workspace-column>.half-width{grid-column:auto}
+.workspace-column>.home-overview{margin-bottom:0}
+.workspace-column+.workspace-column{padding-inline-start:var(--spacing-xl)}
+.workspace-column>[data-section='apps']{border-top:0;padding-top:0}
+.workspace-product :deep(.widget-card){border-color:var(--el-border-color-light);padding:var(--spacing-lg)}
+.workspace-product :deep(.widget-card h4){font-size:var(--text-sm);margin-bottom:var(--spacing-sm)}
+.workspace-column:nth-child(2) .workspace-item{padding-block:var(--spacing-md)}
+.workspace-welcome{padding:var(--spacing-sm) 0 0;box-sizing:border-box;margin-bottom:var(--spacing-sm)}
+.workspace-heading h1{font-size:var(--text-2xl)}
+.workspace-column:nth-child(2)>.workspace-section:first-child{padding-top:var(--spacing-sm)}
+@container platform-page (max-width:1050px){.workspace-grid{grid-template-columns:minmax(0,1fr)}.workspace-column+.workspace-column{padding-inline-start:0}.home-overview :deep(.widget-card){grid-column:span 4!important}}
+@container platform-page (max-width:600px){.workspace-column:first-child{grid-template-columns:minmax(0,1fr)}.workspace-column:first-child>.home-chart{grid-column:1/-1}.home-overview :deep(.widget-card){grid-column:span 6!important}.home-overview :deep(.view-grid){gap:var(--spacing-sm)}.home-overview :deep(.widget-card){padding:var(--spacing-md);flex-basis:120px}}
 </style>

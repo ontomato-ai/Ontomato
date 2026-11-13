@@ -4,6 +4,7 @@ import {productWidgets, type ProductAsset } from "@ontomato/contracts/product-as
 import { objectViewDocumentSchema } from "@ontomato/contracts/object-views";
 import ObjectViewRuntime from "../object-views/ObjectViewRuntime.vue";
 import ObjectViewPage from "../object-views/ObjectViewPage.vue";
+import PlatformWidgetRuntime from './PlatformWidgetRuntime.vue';
 const props = defineProps<{asset:ProductAsset;revision?:number;preview?:boolean}>();
 const emit=defineEmits<{refresh:[]}>();
 const objectKey=ref("");
@@ -16,7 +17,8 @@ const document = computed(() => {
 });
 </script>
 <template>
-  <ObjectViewRuntime v-if="['widget','widget-group','operation-panel'].includes(asset.document.kind)" :key="asset.revision" class="product-widget-runtime" :document="document" :object="{}" :reference="{className:'product',primaryKey:asset.id}" :revision="revision" :preview="preview" @refresh="emit('refresh')" />
+  <PlatformWidgetRuntime v-if="asset.document.kind==='widget'&&asset.document.widget.kind==='platform'" :asset="asset" :preview="preview"/>
+  <ObjectViewRuntime v-else-if="['widget','widget-group','operation-panel'].includes(asset.document.kind)" :key="asset.revision" class="product-widget-runtime" :document="document" :object="{}" :reference="{className:'product',primaryKey:asset.id}" :revision="revision" :preview="preview" @refresh="emit('refresh')" />
   <a v-else-if="asset.document.kind === 'dashboard'" class="product-entry" :href="`#/dashboards?dashboardId=${encodeURIComponent(asset.document.dashboardId)}`"><strong>{{ asset.name }}</strong><span>打开仪表盘 ↗</span></a>
   <a v-else-if="asset.document.kind === 'application'" class="product-entry" :href="`#/applications/${encodeURIComponent(asset.document.applicationId)}`"><strong>{{ asset.name }}</strong><span>打开应用 ↗</span></a>
   <section v-else-if="asset.document.kind === 'object-view'" class="product-object-view">

@@ -1,5 +1,6 @@
 import type { AppExecutionContext } from "@ontomato/contracts/build-tests";
-import { watch } from "vue";
+import { watch,createVNode,render,type App } from "vue";
+import ProductRoute from './pages/ProductRoute.vue';
 import type { Router } from "vue-router";
 import {
   APP_HOST_GLOBAL,
@@ -17,6 +18,34 @@ const executionListeners = new WeakMap<object, Set<(context: AppExecutionContext
 const frameInsets = new WeakMap<object, AppFrameInsets>();
 const insetListeners = new WeakMap<object, Set<(insets: AppFrameInsets) => void>>();
 const NO_INSETS: AppFrameInsets = { bottom: 0 };
+/** Mounted after the shell installs its context, router and identity providers. */
+export function installProductEmbedding(app:App){
+  const host=(window as Window & {[APP_HOST_GLOBAL]?:AppHost})[APP_HOST_GLOBAL];
+  if(!host)return;
+  host.mountProductAsset=(source,target,assetId)=>{
+    const element=target as HTMLElement;
+    if(executionContext(source).kind!=='live')throw new Error('Product embedding is unavailable in build-test previews; use product authoring commands');
+    if(!element?.ownerDocument?.defaultView||!(element instanceof element.ownerDocument.defaultView.HTMLElement)||element.ownerDocument.defaultView!==source)throw new Error('Product mount must belong to the registered app frame');
+    if(!assetId.trim()||assetId.length>200)throw new Error('Invalid product asset ID');
+    const shadow=element.shadowRoot??element.attachShadow({mode:'open'});
+    shadow.replaceChildren();
+    const syncStyles=()=>{
+      shadow.querySelectorAll('[data-product-style]').forEach(node=>node.remove());
+      for(const style of document.head.querySelectorAll('style,link[rel="stylesheet"]')){
+        const clone=style.cloneNode(true) as HTMLElement;
+        clone.setAttribute('data-product-style','');
+        if(clone.tagName==='LINK')clone.setAttribute('href',(style as HTMLLinkElement).href);
+        shadow.prepend(clone);
+      }
+    };
+    syncStyles();
+    const observer=new MutationObserver(syncStyles);observer.observe(document.head,{childList:true,subtree:true,characterData:true});
+    const container=element.ownerDocument.createElement('div');container.style.minWidth='0';shadow.append(container);
+    const vnode=createVNode(ProductRoute,{productAssetId:assetId,embedded:true});vnode.appContext=app._context;
+    render(vnode,container);
+    return ()=>{observer.disconnect();render(null,container);shadow.replaceChildren();};
+  };
+}
 function assertFrameBinding(previous: AppExecutionContext | undefined, next: AppExecutionContext) {
   if(previous && (previous.kind!==next.kind || previous.kind==="build-test" && next.kind==="build-test" && (previous.contextId!==next.contextId || previous.workspaceId!==next.workspaceId)))
     throw new Error("Reload the preview frame to change its execution context");

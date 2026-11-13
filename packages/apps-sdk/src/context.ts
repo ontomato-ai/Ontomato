@@ -27,6 +27,8 @@ import edition from "apps-sdk:edition";
 
 /** What an app gets from the platform shell it runs in. */
 export interface AppContext {
+  /** Mount an existing asset through the shell runtime; dispose when the container is removed. Live apps only. */
+  mountProductAsset(element:HTMLElement,assetId:string):()=>void;
   readonly executionContext: AppExecutionContext;
   /** The signed-in user, for display only; null in the open-source edition. */
   readonly user: AppHostUser | null;
@@ -148,6 +150,10 @@ export function createAppContext(): AppContext {
   );
   const metricViews = createMetricViewsClient(transport);
   const context: AppContext = {
+    mountProductAsset(element,assetId){
+      if(!host.mountProductAsset)throw new Error('This platform version does not support product asset embedding');
+      return host.mountProductAsset(window,element,assetId);
+    },
     get executionContext() { return host.executionContext(window); },
     user: snapshot.user,
     locale: readonly(locale),

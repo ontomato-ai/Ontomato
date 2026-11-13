@@ -16,4 +16,9 @@ export async function ensureProductAssetsSchema(client: QueryableClient) {
   await client.query(`UPDATE ${t("product_assets")} SET document=jsonb_set(document,'{kind}','"widget-group"'::jsonb),revision=revision+1,updated_at=now()
     WHERE document->>'kind'='operation-panel' AND jsonb_array_length(document->'widgets')>0
     AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(document->'widgets') widget WHERE widget->>'kind' NOT IN ('text','metric','table','chart'))`);
+  // Platform interactions are component instances, not a separate asset category.
+  await client.query(`UPDATE ${t('product_assets')} asset SET document=jsonb_build_object('kind','widget','widget',jsonb_strip_nulls(jsonb_build_object(
+    'kind','platform','source',asset.document->>'section','placeholder',COALESCE(asset.document->>'placeholder',''),'limit',COALESCE((asset.document->>'limit')::int,4),
+    'workspace',(SELECT page.document->'workspace' FROM ${t('product_assets')} page WHERE page.domain_id=asset.domain_id AND page.owner_id=asset.owner_id AND page.document->>'kind'='page' AND EXISTS(SELECT 1 FROM jsonb_array_elements(page.document->'children') child WHERE child->>'assetId'=asset.id) ORDER BY page.updated_at DESC LIMIT 1)))),revision=revision+1,updated_at=now()
+    WHERE asset.document->>'kind'='workspace-block'`);
 }
