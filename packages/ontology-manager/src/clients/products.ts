@@ -1,4 +1,4 @@
-import { productAssetSchema,productPageSchema, type ProductQuery, type ProductAssetInput } from "@ontomato/contracts/product-assets";
+import { productAssetSchema,productPageSchema,productCountsResponseSchema, type ProductQuery, type ProductAssetInput } from "@ontomato/contracts/product-assets";
 import type { ManagerRequest } from "../api";
 
 /** Manual authoring, embedded apps and AI commands share this authenticated asset API. */
@@ -10,7 +10,7 @@ export function createProductsClient(request: Pick<ManagerRequest,"request">) {
   return {
     list: async () => ((await send("")).assets as unknown[]).map(asset=>productAssetSchema.parse(asset)),
     query:async(query:Partial<ProductQuery>={})=>productPageSchema.parse(await send('/query?'+new URLSearchParams(Object.entries(query).filter(([,value])=>value!==undefined).map(([key,value])=>[key,String(value)])))),
-    counts:async()=> (await send('/counts')).counts as Record<string,number>,
+    counts:async()=> productCountsResponseSchema.parse(await send('/counts')).counts,
     get: async (id:string) => productAssetSchema.parse((await send(`/${encodeURIComponent(id)}`)).asset),
     dependencies: async(id:string)=>{const result=await send(`/${encodeURIComponent(id)}/dependencies`);return {references:result.references as import('@ontomato/contracts/product-assets').ProductReference[],usedBy:result.usedBy as {id:string;name:string}[]};},
     home: async () => productAssetSchema.parse((await send("/home")).asset),

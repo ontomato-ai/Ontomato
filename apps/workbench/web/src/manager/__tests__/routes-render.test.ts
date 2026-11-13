@@ -75,7 +75,7 @@ function answer(input: FetchInput, init?: FetchInit): Response {
   const request = input instanceof Request ? input : null;
   const url = new URL(request ? request.url : String(input), window.location.origin);
   const key = `${init?.method ?? request?.method ?? "GET"} ${url.pathname.replace(/^\/custom-base\/api/, "")}`;
-  const body = url.pathname.endsWith("/platform/applications") ? { success: true, data: catalogFixture() }
+  const body = url.pathname.endsWith('/product-assets/counts')?{counts:{}}:url.pathname.endsWith("/platform/applications") ? { success: true, data: catalogFixture() }
     : key in NODE_ANSWERS ? NODE_ANSWERS[key]
       : { success: true, data: key in DATA_ENGINE_ANSWERS ? DATA_ENGINE_ANSWERS[key] : [] };
   return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
