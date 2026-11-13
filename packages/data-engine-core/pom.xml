@@ -49,16 +49,10 @@
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-open-ai-spring-boot-starter</artifactId>
-            <exclusions>
-                <exclusion>
-                    <groupId>dev.langchain4j</groupId>
-                    <artifactId>langchain4j-http-client-jdk</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
         <dependency>
             <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-http-client-spring-restclient</artifactId>
+            <artifactId>langchain4j-http-client-jdk</artifactId>
         </dependency>
         <dependency>
             <groupId>dev.langchain4j</groupId>

@@ -27,16 +27,22 @@ import dev.langchain4j.http.client.HttpClient;
 import dev.langchain4j.http.client.HttpClientBuilder;
 import dev.langchain4j.http.client.HttpRequest;
 import dev.langchain4j.http.client.SuccessfulHttpResponse;
-import dev.langchain4j.http.client.spring.restclient.SpringRestClient;
+import dev.langchain4j.http.client.jdk.JdkHttpClient;
 import dev.langchain4j.http.client.sse.ServerSentEventListener;
 import dev.langchain4j.http.client.sse.ServerSentEventParser;
 
 public class OntomatoHttpClientBuilder implements HttpClientBuilder {
 	
-	private final HttpClientBuilder delegateBuilder = SpringRestClient.builder();
+	private final HttpClientBuilder delegateBuilder = http11ClientBuilder();
 	private final Map<String, Object> customOverrides;
 	private Duration connectTimeout;
 	private Duration readTimeout;
+
+	static HttpClientBuilder http11ClientBuilder() {
+		// vLLM's HTTP server can discard request bodies when a cleartext h2c upgrade is attempted.
+		return JdkHttpClient.builder().httpClientBuilder(java.net.http.HttpClient.newBuilder()
+				.version(java.net.http.HttpClient.Version.HTTP_1_1));
+	}
 
 	public OntomatoHttpClientBuilder(Map<String, Object> customOverrides) {
 		if (customOverrides.isEmpty()) {

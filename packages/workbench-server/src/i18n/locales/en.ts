@@ -82,8 +82,8 @@ export const en = {
   // Conclusion messages
   "query.conclusion.noDataFound":
     '📌 <strong class="ai-conclusion">Conclusion</strong>: No relevant data records found based on the current query conditions.',
-  "query.conclusion.errorFallback":
-    '📌 <strong class="ai-conclusion">Conclusion</strong>: Data query completed, but encountered an issue generating the conclusion.',
+  "query.conclusion.resultsAvailable":
+    '📌 <strong class="ai-conclusion">Conclusion</strong>: Query results are shown in the tables above. Refer to their values and scope notes.',
 
   // ABC analysis transitions
   "query.abc.transition.analysis": (params?: Record<string, any>) =>
