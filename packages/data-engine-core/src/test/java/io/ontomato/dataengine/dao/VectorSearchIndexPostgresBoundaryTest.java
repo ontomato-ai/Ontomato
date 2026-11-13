@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -26,6 +27,7 @@ import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.model.output.Response;
 import io.ontomato.dataengine.bean.VectorResource;
 import io.ontomato.dataengine.migration.VectorResourceIndexMigration;
+import io.ontomato.dataengine.migration.VectorResourceBinaryIndexMigration;
 import io.ontomato.dataengine.service.ai.EmbeddingService;
 import io.ontomato.dataengine.service.vector.VectorRetrievalGate;
 import io.ontomato.dataengine.test.PostgresTestDatabase;
@@ -113,6 +115,35 @@ class VectorSearchIndexPostgresBoundaryTest extends PostgresTestDatabase {
 		assertEquals(List.of("four"), ids(dao.find("q", 5, "/doc", "text", "d1")));
 		queryVector(1f, 0f, 0f);
 		assertEquals(List.of("three"), ids(dao.find("q", 5, "/doc", "text", "d1")));
+	}
+
+	private static float[] repeated(int dimensions, float value) {
+		float[] vector = new float[dimensions];
+		Arrays.fill(vector, value);
+		return vector;
+	}
+
+	@Test
+	void backfillsBinaryIndexFor4096DimensionsAndReranksWithOriginalVectors() {
+		row("near", repeated(4096, 1f));
+		row("mid", repeated(4096, 0.8f));
+		row("far", repeated(4096, -1f));
+		assertEquals(List.of(), indexes());
+
+		VectorResourceBinaryIndexMigration migration = new VectorResourceBinaryIndexMigration();
+		ReflectionTestUtils.setField(migration, "vectorResourceDao", dao);
+		migration.run();
+		assertEquals(1, indexes().size());
+		String definition = jdbc.queryForObject(
+				"SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() AND indexname = ?",
+				String.class, indexes().get(0));
+		assertTrue(definition.contains("binary_quantize"), "high-dimensional indexes must be binary: " + definition);
+		assertTrue(definition.contains("bit_hamming_ops"));
+		assertTrue(VectorResourceDao.searchSql(TABLE, 4096).contains("WITH candidates AS MATERIALIZED"));
+		assertTrue(VectorResourceDao.searchSql(TABLE, 4000).contains("halfvec(4000)"));
+
+		queryVector(repeated(4096, 1f));
+		assertEquals(List.of("near", "mid"), ids(dao.find("q", 2, "/doc", "text", "d1")));
 	}
 
 	@Test

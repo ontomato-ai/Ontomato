@@ -47,7 +47,13 @@ public class VectorResourceDao extends BaseDao {
 	private String dirName = "vectorResource";
 
 	/** pgvector builds HNSW indexes on {@code halfvec} of at most this many dimensions. */
-	static final int HNSW_MAX_DIMENSIONS = 4000;
+	public static final int HNSW_MAX_DIMENSIONS = 4000;
+
+	/** pgvector's maximum stored vector width. */
+	private static final int VECTOR_MAX_DIMENSIONS = 16000;
+
+	/** Minimum number of binary-index neighbors before exact full-vector reranking. */
+	private static final int MIN_BINARY_CANDIDATES = 200;
 
 	/** The fewest HNSW candidates a search keeps; pgvector's own default. */
 	private static final int MIN_EF_SEARCH = 40;
@@ -104,19 +110,20 @@ public class VectorResourceDao extends BaseDao {
 		if (ensuredIndexes.contains(key)) {
 			return;
 		}
-		if (dimensions > HNSW_MAX_DIMENSIONS) {
-			log.warn("Vector table {} holds {}-dimension vectors; pgvector indexes at most {} dimensions, so its searches scan the table",
-					indexName, dimensions, HNSW_MAX_DIMENSIONS);
-			ensuredIndexes.add(key);
-			return;
+		if (dimensions <= 0 || dimensions > VECTOR_MAX_DIMENSIONS) {
+			throw new IllegalArgumentException("Unsupported vector dimensions: " + dimensions);
 		}
 		String name = vectorIndexName(indexName, dimensions);
 		Integer existing = jdbcTemplate.queryForObject(
 				"SELECT count(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname = ?", Integer.class, name);
 		if (existing == null || existing == 0) {
 			log.info("Creating vector index {} on {} for {} dimensions", name, indexName, dimensions);
+			boolean binary = dimensions > HNSW_MAX_DIMENSIONS;
+			String expression = binary
+					? "binary_quantize(brief_vector)::bit(" + dimensions + ")"
+					: "brief_vector::halfvec(" + dimensions + ")";
 			jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS \"" + name + "\" ON " + quotedTable(indexName)
-					+ " USING hnsw ((brief_vector::halfvec(" + dimensions + ")) halfvec_l2_ops)"
+					+ " USING hnsw ((" + expression + ") " + (binary ? "bit_hamming_ops" : "halfvec_l2_ops") + ")"
 					+ " WHERE vector_dims(brief_vector) = " + dimensions);
 		}
 		ensuredIndexes.add(key);
@@ -262,10 +269,25 @@ public class VectorResourceDao extends BaseDao {
 
 	/** The nearest-first search of one table; its filter and ordering match the index of {@link #ensureVectorIndex}. */
 	static String searchSql(String indexName, int dimensions) {
+		if (dimensions > HNSW_MAX_DIMENSIONS) {
+			return "WITH candidates AS MATERIALIZED ("
+					+ " SELECT id, brief, path, class_name, attr_name, object_id, brief_vector FROM \"" + indexName + "\""
+					+ " WHERE vector_dims(brief_vector) = " + dimensions
+					+ " ORDER BY binary_quantize(brief_vector)::bit(" + dimensions + ")"
+					+ " <~> binary_quantize(?::vector)::bit(" + dimensions + ") LIMIT ?)"
+					+ " SELECT id, brief, path, class_name, attr_name, object_id FROM candidates"
+					+ " ORDER BY brief_vector <-> ?::vector LIMIT ?";
+		}
 		return "SELECT id, brief, path, class_name, attr_name, object_id FROM " + "\"" + indexName + "\""
 				+ " WHERE vector_dims(brief_vector) = " + dimensions
 				+ " ORDER BY brief_vector::halfvec(" + dimensions + ") <-> (?::vector)::halfvec(" + dimensions + ")"
 				+ " LIMIT ?";
+	}
+
+	private static int candidateLimit(int topK, int dimensions) {
+		return dimensions > HNSW_MAX_DIMENSIONS
+				? Math.max(topK, Math.max(MIN_BINARY_CANDIDATES, (int) Math.min(1000L, 10L * topK)))
+				: topK;
 	}
 
 	/**
@@ -289,8 +311,12 @@ public class VectorResourceDao extends BaseDao {
 			queryString = searchSql(indexName, dimensions);
 			String sql = queryString;
 			PGvector pgVector = new PGvector(findVector);
+			int candidates = candidateLimit(topK, dimensions);
+			Object[] args = dimensions > HNSW_MAX_DIMENSIONS
+					? new Object[] { pgVector, candidates, pgVector, topK }
+					: new Object[] { pgVector, topK };
 			List<VectorResource> rows = transactions.execute(status -> {
-				jdbcTemplate.execute("SET LOCAL hnsw.ef_search = " + Math.max(MIN_EF_SEARCH, topK));
+				jdbcTemplate.execute("SET LOCAL hnsw.ef_search = " + Math.max(MIN_EF_SEARCH, candidates));
 				return jdbcTemplate.query(sql, (rs, rowNum) -> {
 					VectorResource vectorResource = new VectorResource();
 					vectorResource.setId(rs.getString("id"));
@@ -300,7 +326,7 @@ public class VectorResourceDao extends BaseDao {
 					vectorResource.setAttrName(rs.getString("attr_name"));
 					vectorResource.setObjectId(rs.getString("object_id"));
 					return vectorResource;
-				}, pgVector, topK);
+				}, args);
 			});
 			log.info("Vector search of {} returned {} of top {}", indexName, rows.size(), topK);
 			return rows;

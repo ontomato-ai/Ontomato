@@ -72,18 +72,19 @@ public class EmbeddingService {
 	}
 	
 	private EmbeddingModel buildModel(BusinessConfig.EmbeddingModelProperties embeddingModelProperties) {
-		EmbeddingModel embedingModel = OpenAiEmbeddingModel.builder()
+		var builder = OpenAiEmbeddingModel.builder()
 		        .httpClientBuilder(OntomatoHttpClientBuilder.http11ClientBuilder())
 		        .baseUrl(embeddingModelProperties.getBaseUrl())
 		        .apiKey(embeddingModelProperties.getApiKey())
 		        .modelName(embeddingModelProperties.getModelName())
-		        .dimensions(embeddingModelProperties.getDimensions())
 		        .timeout(embeddingModelProperties.getTimeout())
 		        .logRequests(embeddingModelProperties.getLogRequests())
 		        .logResponses(embeddingModelProperties.getLogResponses())
-		        .customHeaders(embeddingModelProperties.getCustomHeaders())
-		        .build();
-		return embedingModel;
+		        .customHeaders(embeddingModelProperties.getCustomHeaders());
+		if (!Boolean.FALSE.equals(embeddingModelProperties.getSendDimensions())) {
+			builder.dimensions(embeddingModelProperties.getDimensions());
+		}
+		return builder.build();
 	}
 	
 }

@@ -62,6 +62,8 @@ public class BusinessConfig {
 		private String apiKey;
 		private String modelName;
 		private Integer dimensions;
+		/** Include dimensions in embedding HTTP requests when the service supports it. */
+		private Boolean sendDimensions = true;
 		private Duration timeout;
 		private Boolean logRequests;
 	    private Boolean logResponses;
@@ -142,6 +144,7 @@ public class BusinessConfig {
 			embeddingModelProperties.setApiKey(fileEmbeddingModelProperties.getApiKey());
 			embeddingModelProperties.setModelName(fileEmbeddingModelProperties.getModelName());
 			embeddingModelProperties.setDimensions(fileEmbeddingModelProperties.getDimensions());
+			embeddingModelProperties.setSendDimensions(fileEmbeddingModelProperties.getSendDimensions());
 			embeddingModelProperties.setTimeout(fileEmbeddingModelProperties.getTimeout());
 			embeddingModelProperties.setLogRequests(fileEmbeddingModelProperties.getLogRequests());
 			embeddingModelProperties.setLogResponses(fileEmbeddingModelProperties.getLogResponses());

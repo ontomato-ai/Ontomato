@@ -144,7 +144,18 @@ class OpenAiCustomParametersRequestTest {
 
         assertHttp11WithoutUpgrade();
         assertEquals("embedding", testHeader.get());
-        assertEquals(List.of("hello"), JSON.parseObject(requestBody.get()).getObject("input", List.class));
+        JSONObject body = JSON.parseObject(requestBody.get());
+        assertEquals(List.of("hello"), body.getObject("input", List.class));
+        assertEquals(3, body.getIntValue("dimensions"), "legacy configurations must keep sending dimensions");
+
+        properties.setSendDimensions(false);
+        assertEquals(3, new EmbeddingService().embedWith(properties, "hello").content().dimension());
+        assertFalse(JSON.parseObject(requestBody.get()).containsKey("dimensions"),
+                "a fixed-dimension service must not receive dimensions when disabled");
+
+        properties.setSendDimensions(true);
+        new EmbeddingService().embedWith(properties, "hello");
+        assertEquals(3, JSON.parseObject(requestBody.get()).getIntValue("dimensions"));
     }
 
     private void assertHttp11WithoutUpgrade() {

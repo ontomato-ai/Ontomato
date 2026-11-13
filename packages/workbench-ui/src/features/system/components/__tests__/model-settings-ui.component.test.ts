@@ -82,6 +82,7 @@ const fixtures = vi.hoisted(() => ({
     modelName: "text-embedding-v3",
     timeout: "PT300S",
     dimensions: 2048,
+    sendDimensions: true,
     customHeaders: { "X-Embed-Key": "keep" },
   },
   rebuildIdle: { state: "READY", total: 0, done: 0, error: null } as VectorRebuildStatus,
@@ -996,6 +997,16 @@ describe("model config page", () => {
       "click"
     );
     expect(title()).toBe(t("admin.testModelNamed", { name: t("admin.embeddingModelConfig") }));
+  });
+
+  it("can disable the dimensions HTTP parameter in the embedding model editor", async () => {
+    const page = await mountModelPage();
+    const embedding = page.findComponent(EmbeddingModelConfigCard);
+    await button(embedding, t("common.edit"))!.trigger("click");
+    expect(embedding.text()).toContain(t("admin.sendEmbeddingDimensions"));
+    await embedding.find(".el-switch").trigger("click");
+    await saveDialog(embedding);
+    expect(sent.embedding).toEqual({ ...fixtures.embedding, sendDimensions: false });
   });
 
   it("saves the embedding model from its dialog as a full snapshot and tests the saved model", async () => {
