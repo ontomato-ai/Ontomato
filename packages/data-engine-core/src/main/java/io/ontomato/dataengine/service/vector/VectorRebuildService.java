@@ -170,6 +170,7 @@ public class VectorRebuildService {
             properties.setApiKey(input.getApiKey());
             properties.setModelName(input.getModelName());
             properties.setDimensions(input.getDimensions());
+            properties.setSendDimensions(input.getSendDimensions());
             properties.setTimeout(input.getTimeout());
             properties.setCustomHeaders(input.getCustomHeaders());
             VectorRebuildState next = isEmpty(domainId)

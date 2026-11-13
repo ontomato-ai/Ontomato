@@ -296,6 +296,7 @@ export default {
     "timeoutSec": "Timeout (s)",
     "embeddingModelConfig": "Embedding Model",
     "embeddingDimensions": "Vector dimensions",
+    "sendEmbeddingDimensions": "Send dimensions in HTTP request",
     "rebuildVectors": "Rebuild vectors",
     "resumeVectorRebuild": "Resume rebuild",
     "pauseVectorRebuild": "Pause rebuild",

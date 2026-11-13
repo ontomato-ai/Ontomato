@@ -43,8 +43,10 @@ export interface EmbeddingModelConfig {
   apiKey: string;
   modelName: string;
   timeout: string;
-  /** Vector dimensions of this domain: sent with every embedding request, a positive integer. */
+  /** Expected vector dimensions of this domain, whether sent to the provider or not. */
   dimensions: number;
+  /** Missing on older configurations; the default is to send dimensions. */
+  sendDimensions?: boolean | null;
   customHeaders?: Record<string, string> | null;
 }
 

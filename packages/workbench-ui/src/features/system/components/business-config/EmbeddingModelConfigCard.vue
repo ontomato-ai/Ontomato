@@ -72,7 +72,7 @@ const dialogVisible = ref(false);
 
 function emptyDraft() {
   // A new entry has no dimensions until the user fills them in: their default for new domains is owned by the backend.
-  return { baseUrl: "", apiKey: "", modelName: "", timeoutSeconds: 300, dimensions: null as number | null };
+  return { baseUrl: "", apiKey: "", modelName: "", timeoutSeconds: 300, dimensions: null as number | null, sendDimensions: true };
 }
 
 const draft = reactive(emptyDraft());
@@ -89,6 +89,7 @@ function openEditDialog() {
           modelName: current.modelName,
           timeoutSeconds: parseIsoDurationSeconds(current.timeout),
           dimensions: current.dimensions,
+          sendDimensions: current.sendDimensions !== false,
         }
       : emptyDraft()
   );
@@ -105,6 +106,7 @@ function draftModel(): EmbeddingModelConfig {
     modelName: draft.modelName,
     timeout: formatTimeout(draft.timeoutSeconds),
     dimensions: draft.dimensions!,
+    sendDimensions: draft.sendDimensions,
   };
 }
 
@@ -215,6 +217,9 @@ async function saveDialog() {
               :precision="0"
               controls-position="right"
             />
+          </el-form-item>
+          <el-form-item :label="t('admin.sendEmbeddingDimensions')">
+            <el-switch v-model="draft.sendDimensions" />
           </el-form-item>
         </el-form>
         <template #footer>

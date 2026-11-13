@@ -16,6 +16,7 @@ public class EmbeddingModelProperties {
 	private String apiKey;
 	private String modelName;
 	private Integer dimensions;
+	private Boolean sendDimensions = true;
 	private Duration timeout;
 	private Boolean logRequests;
     private Boolean logResponses;
