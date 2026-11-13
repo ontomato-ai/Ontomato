@@ -7,10 +7,15 @@ import type {
 } from "@ontomato/contracts/platform-home";
 import { assistantStore } from "../assistant/store";
 import { platformHomeStore, type PlatformHomeOwner } from "./store";
+import { personalHome, saveHomeWorkspace } from "../product-assets/store";
+import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 
-export async function readHome(owner: PlatformHomeOwner): Promise<HomeState> {
+export async function readHome(owner: PlatformHomeOwner,credentials:AssistantCredentials={}): Promise<HomeState> {
   const [preferences, recentApplications, recentConversations] = await Promise.all([
-    platformHomeStore.preferences(owner),
+    personalHome(owner,credentials).then(home => {
+      if(home.document.kind !== "page") throw new Error("Home must be a page");
+      return {favorites:[...home.document.workspace.applicationIds.map(id=>({kind:"application" as const,id})),...home.document.workspace.agentIds.map(id=>({kind:"agent" as const,id}))],dashboardIds:home.document.workspace.dashboardIds};
+    }),
     platformHomeStore.recentApplications(owner),
     assistantStore.recentConversations(owner),
   ]);
@@ -20,16 +25,22 @@ export async function readHome(owner: PlatformHomeOwner): Promise<HomeState> {
 export async function saveFavorites(
   owner: PlatformHomeOwner,
   items: HomeItemRef[],
+  credentials:AssistantCredentials={},
 ): Promise<HomeFavorites> {
-  await platformHomeStore.saveFavorites(owner, items);
+  const home=await personalHome(owner,credentials);
+  if(home.document.kind !== "page") throw new Error("Home must be a page");
+  await saveHomeWorkspace(owner,{...home.document.workspace,applicationIds:items.filter(item=>item.kind==="application").map(item=>item.id),agentIds:items.filter(item=>item.kind==="agent").map(item=>item.id)},home.revision,credentials);
   return { items };
 }
 
 export async function saveDashboards(
   owner: PlatformHomeOwner,
   ids: string[],
+  credentials:AssistantCredentials={},
 ): Promise<HomeDashboards> {
-  await platformHomeStore.saveDashboards(owner, ids);
+  const home=await personalHome(owner,credentials);
+  if(home.document.kind !== "page") throw new Error("Home must be a page");
+  await saveHomeWorkspace(owner,{...home.document.workspace,dashboardIds:ids},home.revision,credentials);
   return { ids };
 }
 

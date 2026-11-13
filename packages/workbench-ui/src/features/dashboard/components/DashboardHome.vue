@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
+import {dropdownBoundaryOptions} from '@ontomato/foundation-ui/overlay';
 import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
 import { MoreHorizontal, Plus } from "lucide-vue-next";
@@ -52,6 +53,8 @@ onMounted(async () => {
             </button>
             <el-dropdown
               trigger="click"
+              placement="bottom-end"
+              :popper-options="dropdownBoundaryOptions"
               @visible-change="(visible: boolean) => { if (visible) openMenuId = item.id; else if (openMenuId === item.id) openMenuId = null; }"
               @command="(command: string) => store.handleDashboardCommand(command, item)"
             >

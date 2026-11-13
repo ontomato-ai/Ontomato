@@ -1,6 +1,8 @@
 <template>
   <el-dropdown
     v-bind="attrs"
+    placement="bottom-end"
+    :popper-options="dropdownBoundaryOptions"
     :trigger="trigger"
     :hide-on-click="hideOnClick"
     @command="onCommand"
@@ -48,6 +50,7 @@
 
 <script setup>
 import { useAttrs } from "vue";
+import {dropdownBoundaryOptions} from '@ontomato/foundation-ui/overlay';
 import { MoreHorizontal } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
 

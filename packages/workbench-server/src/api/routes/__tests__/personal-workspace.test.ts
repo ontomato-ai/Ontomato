@@ -4,6 +4,18 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { defaultPersonalWorkspace, personalWorkspaceSchema } from "@ontomato/contracts/personal-workspace";
 
 const database = vi.hoisted(() => ({ values: new Map<string, unknown>(), query: vi.fn() }));
+const homes=vi.hoisted(()=>new Map<string,{workspace:unknown;revision:number}>());
+vi.mock("../../../services/product-assets/validation",()=>({validateProduct:async()=>{}}));
+vi.mock("../../../services/product-assets/store",()=>({
+  personalHome:async(owner:{domainId:string;userId:string})=>{
+    const value=homes.get(JSON.stringify(owner));
+    return {id:"home",name:"Home",description:"",visibility:"private",revision:value?.revision??1,document:{kind:"page",workspace:value?.workspace??defaultPersonalWorkspace(),children:[]}};
+  },
+  saveHomeWorkspace:async(owner:{domainId:string;userId:string},workspace:unknown)=>{
+    const key=JSON.stringify(owner),revision=(homes.get(key)?.revision??1)+1;
+    homes.set(key,{workspace,revision});return{id:"home",revision};
+  },
+}));
 vi.mock("../../../infrastructure/postgres", () => ({
   qualifiedTable: () => "user_preferences",
   getPostgresPool: () => ({ query: database.query }),
@@ -40,17 +52,22 @@ afterAll(async () => {
 });
 
 describe("personal workspace HTTP persistence", () => {
+  it('requires an explicit edit revision instead of replacing concurrent preferences',async()=>{
+    const response=await fetch(base,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(defaultPersonalWorkspace())});
+    expect(response.status).toBe(428);
+    expect((await response.json()).error.code).toBe('REVISION_REQUIRED');
+  });
   it("loads old preferences with side-panel defaults and preserves independent interaction choices", async () => {
     const old = { schemaVersion: 1, layout: "assistant", dashboardIds: [], applicationIds: [] };
     expect(personalWorkspaceSchema.parse(old).interactions).toEqual({ metrics: "drawer", tasks: "drawer" });
     expect(personalWorkspaceSchema.parse(old).objectOpening).toBe("page");
     expect(personalWorkspaceSchema.parse(old).sections).toBeUndefined();
     const config = { ...defaultPersonalWorkspace(), objectOpening: "drawer", sections: { main: ["data", "apps"], sidebar: ["objects", "conversations", "tasks"], hidden: ["recent"] }, interactions: { metrics: "dialog", tasks: "conversation" } };
-    expect((await fetch(base, { method: "PUT", headers: { "Content-Type": "application/json", "test-user": "interaction-user" }, body: JSON.stringify(config) })).status).toBe(200);
-    expect(await (await fetch(base, { headers: { "test-user": "interaction-user" } })).json()).toEqual({ data: { ...config, interactions: { metrics: "drawer", tasks: "drawer" } } });
+    expect((await fetch(base, { method: "PUT", headers: { "Content-Type": "application/json", "If-Match":"1", "test-user": "interaction-user" }, body: JSON.stringify(config) })).status).toBe(200);
+    expect(await (await fetch(base, { headers: { "test-user": "interaction-user" } })).json()).toMatchObject({ data: { ...config, interactions: { metrics: "drawer", tasks: "drawer" } } });
     const pageConfig = { ...config, interactions: { metrics: "page", tasks: "drawer" } };
-    await fetch(base, { method: "PUT", headers: { "Content-Type": "application/json", "test-user": "interaction-user" }, body: JSON.stringify(pageConfig) });
-    expect(await (await fetch(base, { headers: { "test-user": "interaction-user" } })).json()).toEqual({ data: pageConfig });
+    await fetch(base, { method: "PUT", headers: { "Content-Type": "application/json", "If-Match":"2", "test-user": "interaction-user" }, body: JSON.stringify(pageConfig) });
+    expect(await (await fetch(base, { headers: { "test-user": "interaction-user" } })).json()).toMatchObject({ data: pageConfig });
   });
   it("retains bounded recent work per user and domain and moves repeat visits to the front", async () => {
     for (let index = 0; index < 10; index++) {
@@ -70,12 +87,12 @@ describe("personal workspace HTTP persistence", () => {
   });
   it("saves ordered resource references and isolates both users and domains", async () => {
     const config = { ...defaultPersonalWorkspace(), layout: "data", dashboardIds: ["second", "first"], dashboardCards: { second: ["chart-b", "metric-a"], first: [] }, applicationIds: ["app-a"], pinnedObjects: [{ className: "Person", primaryKey: "1", title: "Person one" }], pinnedAnalyses: [{ sessionId: "11111111-1111-4111-8111-111111111111", title: "Faculty analysis" }] };
-    const saved = await fetch(base, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config) });
+    const saved = await fetch(base, { method: "PUT", headers: { "Content-Type": "application/json", "If-Match":"1" }, body: JSON.stringify(config) });
     expect(saved.status).toBe(200);
-    expect(await (await fetch(base)).json()).toEqual({ data: config });
+    expect(await (await fetch(base)).json()).toMatchObject({ data: config });
     const otherOwners: Record<string, string>[] = [{ "test-user": "bob" }, { "test-domain": "domain-b" }];
     for (const headers of otherOwners) {
-      expect(await (await fetch(base, { headers })).json()).toEqual({ data: defaultPersonalWorkspace() });
+      expect(await (await fetch(base, { headers })).json()).toMatchObject({ data: defaultPersonalWorkspace() });
     }
   });
   it.each([

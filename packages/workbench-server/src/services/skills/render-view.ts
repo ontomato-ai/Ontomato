@@ -7,6 +7,7 @@ import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { codeExecutionRequestSchema, codeExecutionSchema, codeExecutionVirtualAddressSpaceBytes } from "@ontomato/contracts/agent-runtime-code";
 import { randomUUID } from "node:crypto";
 import { HttpError } from "../../utils/errors";
+import { publishSkill } from "../agent-runtime/skills";
 
 /** Visualization execution belongs to the runtime; the workbench only selects the domain skill and reads its artifact. */
 export async function renderObjectView(owner: { domainId: string; userId: string }, credentials: AssistantCredentials, id: string, input: Record<string, unknown>) {
@@ -16,10 +17,13 @@ export async function renderObjectView(owner: { domainId: string; userId: string
     const registry = await skillRegistryManager.forDomain(owner.domainId);
     const skill = registry.getSkillById(id);
     if (!skill) throw new HttpError(404, "Skill not found");
-    const skills = await prepareAssistantSkills(owner.domainId, [skillReference(skill, owner.domainId)]);
+    const reference = skillReference(skill, owner.domainId);
+    // Public renderers can change during development after startup publication.
+    if (skill.isPublic) await publishSkill(skill.path, reference);
+    const skills = await prepareAssistantSkills(owner.domainId, [reference]);
     const request = codeExecutionRequestSchema.parse({
       language: "python", locale: credentials.locale || "en",
-      files: [{ path: "input.json", content: JSON.stringify({ ...input, locale: credentials.locale }) }, {
+      files: [{ path: "input.json", content: JSON.stringify({ compact: true, ...input, locale: credentials.locale }) }, {
         path: "render.py", content: `import os, subprocess\nfrom pathlib import Path\nroot = os.environ["PYTHONPATH"].split(os.pathsep)[0]\nscript = "import {execute} from " + repr(Path(root, "index.mjs").as_uri()) + "; import fs from 'node:fs'; const r=await execute(JSON.parse(fs.readFileSync('input.json','utf8'))); if(!r.html || r.meta?.error) throw new Error('Visualization failed'); fs.writeFileSync('result.html',r.html);"\nsubprocess.run(["node", "--input-type=module", "-e", script], check=True)\n`,
       }],
       entry: "render.py", arguments: [], outputPaths: ["result.html"],

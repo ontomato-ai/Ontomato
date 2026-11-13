@@ -379,7 +379,8 @@ export default {
     "loadFailed": "Load Failed"
   },
   "platform": {
-    "layers": { "facts": "Facts", "capabilities": "Capabilities", "governance": "Governance" },
+    "layers": { "facts": "Facts", "capabilities": "Capabilities", "governance": "Governance", "products":"Products" },
+    "productAssets":"Product assets",
     "settingsGroups": { "models": "Models", "system": "System", "connections": "Connections", "records": "Logs and monitoring" },
     "agentModels": {
       "title": "Models",

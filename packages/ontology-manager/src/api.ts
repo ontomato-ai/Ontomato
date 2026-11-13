@@ -3,6 +3,7 @@ import type { AppHostCredential } from "@ontomato/contracts/app-host";
 import type { DataAdaptersData } from "@ontomato/contracts/data-adapters";
 import type { ObjectViewDocument, ObjectViewState } from "@ontomato/contracts/object-views";
 import { createActionsClient } from "./clients/actions";
+import { createProductsClient } from "./clients/products";
 import { createMetricViewsClient } from "./clients/metric-views";
 import type { MessageKey, TextParams } from "./i18n";
 
@@ -779,6 +780,7 @@ export function createManagerClient(
 
   return {
     /** The data engine's endpoints as the platform's shared pages read them (the agents' model pages): the `data`. */
+    products: createProductsClient(transport),
     dataEngine: {
       get: async (path: string): Promise<unknown> => (await send(path, { method: "GET" })).data,
       put: async (path: string, body: unknown): Promise<unknown> =>

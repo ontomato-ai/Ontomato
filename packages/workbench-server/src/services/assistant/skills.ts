@@ -9,12 +9,16 @@ import { HttpError } from "../../utils/errors";
 import { skillManager, skillReference } from "../skills/skill-manager";
 import { publishSkill } from "../agent-runtime/skills";
 import { tForLocale } from "../../i18n";
+import { readSkillMarkdown } from '../../core/skills/manifest';
 
 function platformSkills() {
-  return ["assistant-report"].map((name) => ({
-    root: path.join(workbenchServerResourceRoot, "resources/runtime-skills", name),
-    skill: { namespace: { kind: "provider" as const, provider: "workbench" }, name },
-  }));
+  return ["assistant-report","application-design"].map((name) => {
+    const root = path.join(workbenchServerResourceRoot, "resources/runtime-skills", name);
+    const parsed = readSkillMarkdown(path.join(root, "SKILL.md"));
+    if (!parsed) throw new Error(`Missing platform skill: ${name}`);
+    return { root, skill: { namespace: { kind: "provider" as const, provider: "workbench" }, name },
+      title: name, description: parsed.manifest.description };
+  });
 }
 export async function registerAssistantSkills() {
   await publishSkill(path.resolve(workbenchServerResourceRoot, "../../agent-skills/ontomato-app-builder"), APP_BUILDER_SKILL);
@@ -25,8 +29,8 @@ export async function registerAssistantSkills() {
 export async function assistantSkillCatalog(domainId: string, locale?: string) {
   return assistantSkillCatalogSchema.parse({ skills: [
     ...platformSkills().map(({ root: _root, ...entry }) => ({ ...entry,
-      title: tForLocale(locale, "assistant.skills.report.title"),
-      description: tForLocale(locale, "assistant.skills.report.description") })),
+      title: entry.skill.name==='assistant-report'?tForLocale(locale, "assistant.skills.report.title"):entry.title,
+      description: entry.skill.name==='assistant-report'?tForLocale(locale, "assistant.skills.report.description"):entry.description })),
     { skill: { namespace: { kind: "provider", provider: "ontology" }, name: "ontomato-analyst-assistant" },
       title: tForLocale(locale, "assistant.skills.analyst.title"),
       description: tForLocale(locale, "assistant.skills.analyst.description") },

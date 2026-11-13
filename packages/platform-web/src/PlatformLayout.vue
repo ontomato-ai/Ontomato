@@ -13,6 +13,7 @@ import {
 } from "@ontomato/platform-shell";
 import type { PlatformAppDeclaration } from "./apps";
 import { railApp } from "./apps";
+import {applicationShortcuts} from './application-shortcuts';
 
 /**
  * The page the current address shows: its words, and whether it draws its own header. Which application it belongs to is
@@ -28,6 +29,8 @@ export interface PlatformShownPage {
 const props = defineProps<{
   /** The applications the account may see, in rail order. */
   apps: readonly PlatformAppDeclaration[];
+  dynamicAppIds?:readonly string[];
+  pinnedAppIds?:readonly string[];
   loading?: boolean;
   /** Where the address belongs and what it shows; null on an address that is no page (a conversation). */
   shownPage: PlatformShownPage | null;
@@ -58,7 +61,7 @@ function appFor(path: string): PlatformAppDeclaration | null {
 const route = useRoute();
 const router = useRouter();
 // Keep the workspace directly accessible while its navigation entry is temporarily hidden.
-const railApps = computed(() => (props.apps ?? []).filter(app => app.id !== "personal-workspace").map((app) => railApp(app, () => emit("selectApp", app.id))));
+const railApps = computed(() => applicationShortcuts(props.apps??[],props.dynamicAppIds??[],props.pinnedAppIds??[],activeAppId.value).map((app) => railApp(app, () => emit("selectApp", app.id))));
 const activeAppId = computed(() => appFor(route.path)?.id ?? null);
 const activeApp = computed(() => props.apps.find((app) => app.id === activeAppId.value) ?? null);
 const browserWorkspace = computed(() => route.path === "/browser/data" || route.path.startsWith("/browser/data/"));
@@ -189,7 +192,8 @@ const headerLabels = computed(() => ({
   padding: 14px 10px 12px;
   background: var(--shell-panel-bg);
   border-right: 1px solid var(--el-border-color);
-  overflow-y: auto;
+  overflow: hidden;
+  min-height: 0;
 }
 /* The groups fill the column, so the application's own entry sits at its foot. */
 /*
@@ -199,8 +203,10 @@ const headerLabels = computed(() => ({
 .platform-app-menu > .app-menu-pages {
   flex: 1 0 auto;
   min-height: 0;
+  height: auto;
 }
 .app-menu-title {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   min-height: 36px;

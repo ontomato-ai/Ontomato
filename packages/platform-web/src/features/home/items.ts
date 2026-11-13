@@ -34,7 +34,7 @@ export const itemRef = (item: HomeItem): HomeItemRef => ({ kind: item.kind, id: 
  * rail lists them), then the enabled agents in the order the agent list gives them.
  */
 export function homeItems(applications: readonly PlatformAppDeclaration[], agents: readonly AgentHostAgent[]): HomeItem[] {
-  const shown = applications.filter((app) => app.id !== HOME_APPLICATION_ID);
+  const shown = applications.filter((app) => ![HOME_APPLICATION_ID,"personal-workspace","workplace","application-gallery"].includes(app.id));
   const sections = (["top", "apps", "bottom"] as const).flatMap((rail) => shown.filter((app) => (app.rail ?? "apps") === rail));
   return [
     ...sections.map((app): HomeItem => ({

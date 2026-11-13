@@ -52,7 +52,49 @@ Every page reports what its reader looks at with `context.setPageContext({ page,
 
 The returned paths already include the deployment prefix. HTML module and stylesheet URLs use `sdkBasePath` exactly once; never embed the internal workbench address or fetch modules from a CDN. `sdk read` automatically uses the agent's reachable URL. The version's examples may show root deployment paths: apply `publicBasePath` when writing them into the application. Documentation belongs in the agent's scratch location, not the released directory.
 
+## Product assets and personal home
+
+Start with reusable product assets. If the requested page fits the product document contract, create or edit those same assets through the authoring CLI; manual editing and Agent editing must converge on the same asset IDs. Use custom source only for interactions the asset contract cannot express. Do not reproduce an existing configured page in HTML.
+
+Custom source embeds existing assets with the SDK's `ProductAsset` component:
+
+```js
+import { createAppContext, ProductAsset } from '@ontomato/sdk';
+const context = createAppContext();
+// Register ProductAsset in components and render:
+// <product-asset :context="context" asset-id="actual-asset-id"></product-asset>
+```
+
+Declare embedded IDs in `ontomato.products.json`. `revision` may be incremented to reload the shared asset after an edit. Embedded content uses the shell's product runtime, current identity and theme, not a copied definition. Embedding is unavailable in build-test previews and fails explicitly; author assets with the CLI, then verify embedding in a published app. Missing assets remain errors; do not silently replace them with a generated HTML copy.
+
+Product parameters are default inputs and interaction preferences. Business windows, thresholds, legal values and operation eligibility must be defined and validated by capabilities, never solely by a page's literals, options or read-only fields. Deleting the page must not delete a business rule. Object views bind properties and relationship results to published MetricViews; pass the selected object using `{source:"context",path:"primaryKey"}` (or `className`). Legacy direct reads and `visibleWhen` business conditions must be migrated before saving or publishing the view.
+
+Before source publication or rollback, commit both `ontomato.products.json` (an empty `assetIds` array explicitly declares no product assets) and `ontomato.product-review.json`:
+
+```json
+{"schemaVersion":1,"checks":{"capabilityReads":true,"actionWrites":true,"noBusinessRules":true,"disposablePresentation":true}}
+```
+
+Review the actual source before setting these checks: all business reads use published MetricViews, all writes use Actions, no business calculation/threshold/eligibility rule lives only in source, and removing the application preserves business semantics. Formatting, selection, loading and error feedback remain presentation logic. This committed declaration is a delivery check, not static proof about arbitrary JavaScript.
+
+Reuse templates without replacing the user's home: `product create-page <template-id> <name>` creates a new private page with the template's layout and component references. The SDK exposes the same operation as `context.products.createPage(id, name)`. Use the returned ID to assemble an application and declare it in the product manifest. `product use-home` instead replaces the current personal home configuration.
+
+`product create-dashboard <name>` creates a dashboard through its existing owner service and registers a product reference, returning `data.id` and `data.productAssetId`. The SDK's `context.products.createDashboard(name)` returns the product asset. Reuse an existing dashboard when appropriate. The Manager's dashboard creation uses this same path. Add content through the existing dashboard authoring workflow rather than embedding SQL or duplicating the definition in product storage.
+
+Product responsibilities: `widget` is one presentation/interaction unit; `widget-group` contains `widgets` limited to text, metric, table and chart; `operation-panel` contains `widgets` and must include at least one published Action entry. Use a display group for pure KPI cards, not an operation panel. Both group types keep their layout and can be edited one child at a time in the manual editor. Product MetricViews return a row array: leave `resultPath` empty; do not bind a substitute dataset. Bind every MetricView parameter without a declared default. Local variable bindings need an input, table selection or button in the same composition. Product chart renderers currently support ECharts bar, line and donut; use object views for the existing specialized visualizations. Product get returns recursive caller-visible dependencies and indirect product parents; it does not expand internal Object View or legacy dashboard definitions.
+
+`object-view` is a reusable class-view reference: `{kind:"object-view",className:"<actual class>",form:"full",primaryKey:"<optional object key>"}`. The class view must already be published. Omit `primaryKey` to select objects at runtime; changing the object does not change the class view. Shared references omit the object selection. This is an adapter to the existing object-view service; it does not copy the class document into product storage. A chart widget's `chartType` (`bar`, `donut`, `line`) and field mapping can change while its MetricView `resourceId` stays the same. For a page, save its `children` and `workspace` together; the manual home editor uses this same asset API.
+
+Before generating a configurable page, use `product types`, `product list` and `product home`. `product get <id>` returns the asset, derived references and visible parents. `product save <id> <json|@file>` takes `{name, description, visibility, document, revision}`; use a new UUID with revision 0 to create, or the returned ID and revision to edit. Read before editing and preserve unrelated fields. A stale revision fails with `PRODUCT_CONFLICT`: read again and merge the user's change. `product copy <id> <name>` makes a private independent copy. `product use-home <id> <current-home-revision>` copies a page or layout template into the reader's home. `product delete <id> <revision>` rejects referenced assets.
+
+Documents have a fixed `kind`: `page` and `layout-template` contain `workspace` (the personal workspace configuration) and `children: [{assetId, column: "main"|"sidebar"}]`; `widget` contains `widget`; `operation-panel` contains `widgets`; `dashboard` contains `dashboardId`; `application` contains `applicationId`, optional `workspaceId`, and `children`. For real field defaults read an existing asset. Widget parameter bindings are `{source:"literal",value:...}` or `{source:"variable",path:"..."}`. Metric/table/chart widgets reference a published MetricView through `resourceId`; action widgets reference a published Action. No object reads, business predicates, SQL or DSL belong in a product document. Column names and declared parameters are validated against the interface. Shared pages/templates contain only shared product children; personal dashboards cannot be shared this way. Use shared MetricView widgets instead. Runtime results, conversations and business objects remain with their original services.
+
+The SDK exposes `context.products.list/get/home/save/copy/useHome/delete` with the same contract. These calls are unavailable inside build-test preview; use the authoring CLI for product edits. For configurable interfaces, edit these assets instead of producing an unrelated HTML copy. A custom source application can call product APIs, but only its explicit product references participate in this dependency model; do not claim complete static analysis of arbitrary JavaScript.
+
 ## Workspace history and publication
+
+When custom source uses product assets, include `ontomato.products.json` in the committed tree:
+`{"schemaVersion":1,"assetIds":["<actual product ID>"]}`. The publisher validates these references and registers the application in the product catalog using its stable application ID. Rollback restores the references from that release's commit. Both publication and rollback require the manifest and review record described above. Use the SDK product API and `context.navigate("/products/<pageAssetId>")` to reuse a declarative page. Never copy the capability logic into source.
 
 | Command | Purpose |
 | --- | --- |

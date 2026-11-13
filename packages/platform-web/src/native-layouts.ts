@@ -6,6 +6,7 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
   { renderer: "personal-workspace", sections: [] },
   // The platform's home draws its own page: no column, no header of the shell's.
   { renderer: "home", sections: [] },
+  { renderer:"application-gallery",sections:[] },
   {
     renderer: "ontology",
     // Four layers organize existing screens; cross-application entries keep their original routes and permissions.
@@ -34,6 +35,7 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
         // Business knowledge stays with the ontology it describes.
         paths: [managerPaths.knowledge, managerPaths.capabilityMap],
       },
+      { key: "ontology:products", titleKey: "platform.layers.products", paths: [managerPaths.products] },
     ],
     // The models of the modeling agents, at the foot of the menu like every application's own settings.
     foot: platformRoutes.ontologyModels.path,

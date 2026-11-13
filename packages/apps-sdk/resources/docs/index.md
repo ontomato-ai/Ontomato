@@ -18,6 +18,7 @@ keeps the behaviour of the version it names.
 | `examples/basic.html` | Platform context, Element Plus, a chart in the platform's theme, a Markdown text, a CSV text in the code editor previewed as a table, and an HTML document in a sandboxed frame |
 | `examples/metric-action.html` | A published MetricView in a table and a chart, or its result as read-only JSON, the selected row as page context, then an Action through its form and a fresh read through the template ref of `<metric-view-data>` |
 | `examples/chat.html` | A conversation with one of the platform's agents |
+| `examples/product-asset.html` | Embed and reload an existing shared product asset in a custom app |
 
 ## Modules
 
@@ -89,6 +90,18 @@ Templates written in HTML follow the browser's rules before Vue reads them:
 
 ## The platform context
 
+### Reuse product assets before custom source
+
+Pages expressible as product assets are edited as the same assets by people and Agents. Custom source is for additional interaction and can embed the platform's current renderer:
+
+```html
+<product-asset :context="context" asset-id="actual-product-id" :revision="refreshRevision"></product-asset>
+```
+
+Import `ProductAsset` from `@ontomato/sdk` and register it in the Vue app's `components`. Pass the context created by `createAppContext()`. `asset-id` references an existing asset; changing `revision` reloads it. Declare all such IDs in the committed `ontomato.products.json`. This uses the shell's runtime in an isolated style boundary, with current user access and theme. Manual asset edits apply when reloaded. The component reports unavailable assets and unsupported hosts rather than substituting another page.
+
+Product embedding is live-only. A build-test preview rejects the mount before rendering, so it cannot fall back to real data; use authoring commands for asset changes and a published app for embedding verification. `context.mountProductAsset(element, id)` is the equivalent imperative API and returns a disposer that must run before removing its container.
+
 `createAppContext()` connects the page to the shell around it. Call it once, before creating the Vue app; it throws when
 the page is not inside the shell. `app.use(context)` installs the platform's words, Element Plus's language and the
 `<metric-view-data>` component.
@@ -104,6 +117,13 @@ the page is not inside the shell. `app.use(context)` installs the platform's wor
   permission: an app sees and changes only what its user may. When the sign-in expires, the shell takes over.
 - `context.navigate(path)` opens a platform page in the shell, such as `context.navigate("/ontology/assets/metrics")`.
 - `context.setPageContext({ page, selection })` tells the platform what the reader looks at; see the next section.
+- `context.products` reads and edits the same product assets as the Manager and App Builder. `list()`, `get(id)` and
+  `home()` return assets; `save(id, {name, description, visibility, document}, revision)` creates at revision 0 or updates
+  an existing revision. `copy(id, name)` creates a private copy, `useHome(id, homeRevision)` applies a page/template and
+  `delete(id, revision)` refuses assets in use. Discover the current asset document before editing; business logic stays
+  in published MetricViews and Actions. A shared component uses the reader's identity and grants no data access.
+  These authoring calls are unavailable in a build-test preview. Navigate to `/products/<pageAssetId>` to render a
+  declarative page in the platform's shared runtime.
 - An app reaches the platform only through the SDK: `context.metricViews` to read, `context.actions` to change data and
   `createAssistantClient(context)` for conversations. Other platform paths are internal and change between versions.
 

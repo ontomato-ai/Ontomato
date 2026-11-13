@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, provide, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
+import {readHomeState,HOME_PREFERENCES_CHANGED} from './features/home/api';
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessageBox } from "element-plus";
@@ -43,12 +44,20 @@ const props = defineProps<{
 }>();
 
 const host = usePlatformHost();
+// Conversation and home routes do not pass through a permission-bearing page guard.
+onMounted(() => { void host.access.load(); });
 const { t, te } = useI18n();
 const route = useRoute();
 const router = useRouter();
 provide(workspaceObjectHostKey, createWorkspaceObjectHost());
 
 const catalog = useApplicationCatalog();
+const pinnedAppIds=ref<string[]>([]);
+const dynamicAppIds=computed(()=>catalog.applications.value.filter(app=>['hosted','connected','link'].includes(app.kind)).map(app=>app.id));
+async function readShortcuts(){try{pinnedAppIds.value=(await readHomeState()).favorites.filter(item=>item.kind==='application').map(item=>item.id);}catch{/* Shortcut discovery must not prevent opening the platform. */}}
+onMounted(()=>{void readShortcuts();window.addEventListener(HOME_PREFERENCES_CHANGED,readShortcuts);});
+onBeforeUnmount(()=>window.removeEventListener(HOME_PREFERENCES_CHANGED,readShortcuts));
+watch(()=>route.path,()=>{void readShortcuts();});
 watch(() => host.navigation.value, () => { void catalog.refresh(); }, { immediate: true, deep: true });
 // The home lists every application, so returning to it reads the catalog again; the first read above covers a shell
 // mounted on the home.
@@ -205,6 +214,8 @@ const blocked = computed(() => {
 <template>
   <PlatformLayout
     :apps="declarations"
+    :dynamic-app-ids="dynamicAppIds"
+    :pinned-app-ids="pinnedAppIds"
     :loading="railLoading"
     :shown-page="shownPage"
     :account="account"

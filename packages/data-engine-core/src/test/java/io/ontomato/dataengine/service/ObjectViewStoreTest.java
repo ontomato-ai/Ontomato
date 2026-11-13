@@ -12,7 +12,7 @@ class ObjectViewStoreTest {
         return JSONObject.parseObject("""
             {"schemaVersion":1,"className":"Order","title":"Order","variables":{},"tabs":[
               {"id":"tab","title":"Overview","sections":[{"id":"section","title":"","widgets":[
-                {"id":"properties","kind":"properties","title":"Details","span":12,"height":240,"parameters":{}}
+                {"id":"properties","kind":"properties","resourceId":"order-details","title":"Details","span":12,"height":240,"parameters":{}}
               ]}]}]}
             """);
     }
@@ -32,6 +32,20 @@ class ObjectViewStoreTest {
         assertThrows(IllegalArgumentException.class, () -> ObjectViewStore.validateDocument("Order", document));
         widget.remove("binding");
         widget.put("onClick", "executeJavaScript");
+        assertThrows(IllegalArgumentException.class, () -> ObjectViewStore.validateDocument("Order", document));
+    }
+
+    @Test void requiresCapabilityReadsAndRejectsBusinessConditions() {
+        JSONObject document = document();
+        var widget = document.getJSONArray("tabs").getJSONObject(0).getJSONArray("sections").getJSONObject(0).getJSONArray("widgets").getJSONObject(0);
+        widget.put("parameters", JSONObject.of("id", JSONObject.of("source", "context", "path", "primaryKey")));
+        assertDoesNotThrow(() -> ObjectViewStore.validateDocument("Order", document));
+        widget.put("visibleWhen", JSONObject.of("binding", JSONObject.of("source", "variable", "path", "selection"), "operator", "present"));
+        assertDoesNotThrow(() -> ObjectViewStore.validateDocument("Order", document));
+        widget.put("visibleWhen", JSONObject.of("binding", JSONObject.of("source", "object", "path", "amount"), "operator", "eq", "value", "5000"));
+        assertThrows(IllegalArgumentException.class, () -> ObjectViewStore.validateDocument("Order", document));
+        widget.remove("visibleWhen");
+        widget.remove("resourceId");
         assertThrows(IllegalArgumentException.class, () -> ObjectViewStore.validateDocument("Order", document));
     }
 

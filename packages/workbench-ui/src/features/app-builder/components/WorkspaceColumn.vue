@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import {dropdownBoundaryOptions} from '@ontomato/foundation-ui/overlay';
 import { useI18n } from "vue-i18n";
 import { FolderGit2, FolderPlus, Lock, MessageSquare, MoreHorizontal, SquarePen } from "lucide-vue-next";
 import type { Workspace } from "@ontomato/contracts/workspaces";
@@ -99,7 +100,7 @@ function workspaceCommand(workspace: Workspace, command: "rename" | "delete") {
           >
             <SquarePen :size="15" aria-hidden="true" />
           </button>
-          <el-dropdown trigger="click" placement="bottom-end" @command="(command: 'rename' | 'delete') => workspaceCommand(workspace, command)">
+          <el-dropdown trigger="click" placement="bottom-end" :popper-options="dropdownBoundaryOptions" @command="(command: 'rename' | 'delete') => workspaceCommand(workspace, command)">
             <button type="button" class="row-tool row-more" :aria-label="t('appBuilder.workspaceActions')"><MoreHorizontal :size="16" /></button>
             <template #dropdown>
               <el-dropdown-menu>

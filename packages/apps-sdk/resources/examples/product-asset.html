@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  {{head}}
+  <style>[v-cloak]{display:none}main{padding:20px}</style>
+</head>
+<body>
+<main id="app" v-cloak>
+  <el-input v-model="assetId" placeholder="Existing product asset ID"></el-input>
+  <el-button @click="revision++">Reload shared asset</el-button>
+  <product-asset v-if="assetId" :context="context" :asset-id="assetId" :revision="revision"></product-asset>
+</main>
+<script type="module">
+  import {createApp,ref} from 'vue';
+  import ElementPlus from 'element-plus';
+  import {createAppContext,ProductAsset} from '@ontomato/sdk';
+  const context=createAppContext();
+  createApp({components:{ProductAsset},setup:()=>({context,assetId:ref(''),revision:ref(0)})})
+    .use(ElementPlus).use(context).mount('#app');
+</script>
+</body>
+</html>

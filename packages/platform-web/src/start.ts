@@ -1,5 +1,7 @@
 import { followThemeChanges, initializePlatformTheme } from "@ontomato/workbench-ui/composables/useTheme";
-import { createApp, type App as VueApp } from "vue";
+import { createApp, defineAsyncComponent, type App as VueApp } from "vue";
+import {productPlatformRuntimeKey} from '@ontomato/contracts/product-assets';
+import {installProductEmbedding} from './app-host';
 import { createPinia, type Pinia } from "pinia";
 import ElementPlus from "element-plus";
 import { createRouter, createWebHashHistory, type Router, type RouteRecordRaw } from "vue-router";
@@ -55,6 +57,7 @@ export function startWorkbenchWeb(options: WorkbenchWebOptions): void {
   options.installGuards?.(router, pinia);
 
   const app = createApp(App);
+  app.provide(productPlatformRuntimeKey,defineAsyncComponent(()=>import('./pages/PersonalWorkspaceRoute.vue')));
   const followPreferences = (event: StorageEvent) => {
     followThemeChanges(event);
     const locale = options.language.storedChange?.(event);
@@ -70,5 +73,6 @@ export function startWorkbenchWeb(options: WorkbenchWebOptions): void {
   for (const route of options.routes(app, router, i18n)) router.addRoute(route);
   app.use(router);
   options.beforeMount?.();
+  installProductEmbedding(app);
   app.mount("#app");
 }

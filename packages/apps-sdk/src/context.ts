@@ -15,6 +15,7 @@ import {
 import MetricViewData from "@ontomato/ontology-manager/app-components/MetricViewData.vue";
 import {
   createActionsClient,
+  createProductsClient,
   createManagerRequest,
   createMetricViewsClient,
   metricViewsKey,
@@ -26,6 +27,8 @@ import edition from "apps-sdk:edition";
 
 /** What an app gets from the platform shell it runs in. */
 export interface AppContext {
+  /** Mount an existing asset through the shell runtime; dispose when the container is removed. Live apps only. */
+  mountProductAsset(element:HTMLElement,assetId:string):()=>void;
   readonly executionContext: AppExecutionContext;
   /** The signed-in user, for display only; null in the open-source edition. */
   readonly user: AppHostUser | null;
@@ -47,6 +50,8 @@ export interface AppContext {
    * parameters that `execute({ id, parameters })` takes. `execute` resolves to the execution result.
    */
   readonly actions: ActionsClient;
+  /** Product assets use the same IDs and revision checks as manual authoring. */
+  readonly products: ReturnType<typeof createProductsClient>;
   /** Opens a platform page in the shell, e.g. `navigate("/ontology/objects")`. */
   navigate(path: string): void;
   /**
@@ -145,6 +150,10 @@ export function createAppContext(): AppContext {
   );
   const metricViews = createMetricViewsClient(transport);
   const context: AppContext = {
+    mountProductAsset(element,assetId){
+      if(!host.mountProductAsset)throw new Error('This platform version does not support product asset embedding');
+      return host.mountProductAsset(window,element,assetId);
+    },
     get executionContext() { return host.executionContext(window); },
     user: snapshot.user,
     locale: readonly(locale),
@@ -152,6 +161,7 @@ export function createAppContext(): AppContext {
     chartTheme: charts,
     metricViews,
     actions: createActionsClient(transport),
+    products: createProductsClient(transport),
     navigate: (path) => host.navigate(path),
     // The page's own window tells the shell which of its app frames speaks.
     setPageContext(value) {

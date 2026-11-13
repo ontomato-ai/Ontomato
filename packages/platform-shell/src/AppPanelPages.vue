@@ -17,6 +17,7 @@ const emit = defineEmits<{ selectPage: [id: string] }>();
 
 <template>
   <div class="app-panel-pages">
+    <div class="page-groups">
     <section v-for="group in groups" :key="group.key" class="page-group">
       <p v-if="group.label" class="group-heading">{{ group.label }}</p>
       <template v-for="page in group.pages" :key="page.id">
@@ -43,6 +44,7 @@ const emit = defineEmits<{ selectPage: [id: string] }>();
         </button>
       </template>
     </section>
+    </div>
     <div v-if="foot" class="page-foot">
       <button
         type="button"
@@ -63,13 +65,16 @@ const emit = defineEmits<{ selectPage: [id: string] }>();
   display: flex;
   flex-direction: column;
   gap: 12px;
-  min-height: 100%;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
   box-sizing: border-box;
   padding: 4px 0 8px;
 }
+.page-groups { display:flex; flex:1; min-height:0; flex-direction:column; gap:12px; overflow-y:auto; overscroll-behavior:contain; }
 /* The application's own entry stays at the foot of the column, under a hairline. */
 .page-foot {
-  margin-top: auto;
+  flex-shrink: 0;
   padding-top: 8px;
   border-top: 1px solid var(--el-border-color-light);
 }

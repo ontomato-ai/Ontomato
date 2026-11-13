@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ArrowDown, ArrowLeft, ArrowUp, Plus, Save, Trash2, Upload } from "lucide-vue-next";
 import { ElAlert, ElButton, ElInput, ElInputNumber, ElOption, ElSelect, ElSwitch } from "element-plus";
-import { createObjectView, createViewWidget, objectViewDocumentSchema, type ObjectReference, type ObjectViewDocument, type ObjectViewState, type ViewWidget } from "@ontomato/contracts/object-views";
+import { createObjectView, createViewWidget, objectViewDocumentSchema, objectViewProductIssues, type ObjectReference, type ObjectViewDocument, type ObjectViewState, type ViewWidget } from "@ontomato/contracts/object-views";
 import { randomId } from "@ontomato/contracts/random-id";
 import { useManagerClient, useManagerLeaveCheck, useOntologyText } from "../context";
 import { widgetMessageKeys } from "./messages";
@@ -57,7 +57,7 @@ const bindingVariables = computed(() => [...new Set([
   ...Object.keys(document.value.variables),
   ...document.value.tabs.flatMap(tab => tab.sections.flatMap(section => section.widgets.map(widget => widget.variable))).filter(Boolean),
 ])]);
-const bindingContext = computed(() => ({ variables: bindingVariables.value, defaultVariables: Object.keys(document.value.variables), properties: objectType.value?.attrs.filter(attr => attr.enable !== false) || [] }));
+const bindingContext = computed(() => ({ variables: bindingVariables.value, defaultVariables: Object.keys(document.value.variables), identityOnly:true, properties: objectType.value?.attrs.filter(attr => attr.enable !== false) || [] }));
 const queryBinding = computed(() => widget.value && ["metric", "table", "chart"].includes(widget.value.kind) && !!widget.value.resourceId);
 const relationOptions = computed(() => relations.value.filter(item => (widget.value?.direction === "incoming" ? item.toclass : item.fromclass) === props.className));
 let generation = 0;
@@ -126,7 +126,7 @@ async function sample() {
       if (!key || result.rows[0]?.[key] == null) throw new Error(ot("ovNoPreview"));
       primaryKey = String(result.rows[0][key]);
     }
-    const result = await client.queryInstanceInfo(`${className}:${primaryKey}`, className);
+    const result = objectViewProductIssues(document.value).length ? await client.queryInstanceInfo(`${className}:${primaryKey}`, className) : {};
     if (current !== sampleRequest || className !== props.className) return;
     previewKey.value = primaryKey;
     previewObject.value = (result.data || {}) as Record<string, unknown>;
@@ -140,6 +140,8 @@ async function save(publish = false) {
   error.value = "";
   try {
     const validated = objectViewDocumentSchema.parse(document.value);
+    const issues = objectViewProductIssues(validated);
+    if (issues.length) throw new Error(issues.join("\n"));
     state.value = await client.saveObjectView(validated, form, state.value.revision, description.value);
     saved.value = JSON.stringify(validated);
     description.value = "";
@@ -213,7 +215,7 @@ function drop(target: string, index: number) { moveWidget(dragging, target, inde
 function addParameter() {
   const name = parameterName.value.trim();
   if (!name || !widget.value || ["__proto__", "constructor", "prototype"].includes(name)) return;
-  widget.value.parameters[name] = { source: "object", path: objectType.value?.attrs.find(attr => attr.primaryKey)?.name || "" };
+  widget.value.parameters[name] = { source: "context", path: "primaryKey" };
   parameterName.value = "";
 }
 function addVariable() {
@@ -291,7 +293,7 @@ onBeforeUnmount(() => { generation++; sampleRequest++; objectSearchRequest++; wi
           <div class="widget-dimensions"><label>{{ ot('ovWidth') }}<el-input-number v-model="widget.span" controls-position="right" :min="1" :max="12" :aria-label="ot('ovWidth')" /></label><label v-if="['chart', 'table', 'links'].includes(widget.kind)">{{ ot('ovHeight') }}<el-input-number v-model="widget.height" controls-position="right" :min="80" :max="1200" :step="40" :aria-label="ot('ovHeight')" /></label></div>
           <label v-if="['properties', 'table', 'links'].includes(widget.kind)">{{ ot('ovFields') }}<el-select v-if="widget.kind === 'properties'" v-model="widget.fields" multiple clearable><el-option v-for="attr in objectType?.attrs" :key="attr.name" :value="attr.name" :label="attr.showName" /></el-select><el-input v-else :model-value="widget.fields.join(', ')" :placeholder="ot('ovFieldNames')" @update:model-value="widget.fields = $event.split(',').map(value => value.trim()).filter(Boolean)" /></label>
           <label v-if="['text', 'button', 'action', 'input'].includes(widget.kind)">{{ ot('ovText') }}<el-input v-model="widget.text" type="textarea" :autosize="{ minRows: 3, maxRows: 8 }" /></label>
-          <label v-if="['metric', 'table', 'chart'].includes(widget.kind)">{{ ot('ovMetricView') }}<el-select v-model="widget.resourceId" clearable filterable><el-option v-for="asset in metrics" :key="asset.id" :value="asset.id!" :label="asset.name" /></el-select></label>
+          <label v-if="['properties', 'links', 'metric', 'table', 'chart'].includes(widget.kind)">{{ ot('ovMetricView') }}<el-select v-model="widget.resourceId" clearable filterable><el-option v-for="asset in metrics" :key="asset.id" :value="asset.id!" :label="asset.name" /></el-select></label>
           <label v-if="widget.kind === 'action'">{{ ot('ovAction') }}<el-select v-model="widget.resourceId" filterable><el-option v-for="asset in actions" :key="asset.id" :value="asset.id!" :label="asset.name" /></el-select></label>
           <label v-if="widget.kind === 'chart'">{{ ot('ovVisualizationSkill') }}<el-select v-model="widget.skillId" filterable><el-option v-for="skill in skills" :key="skill.id" :value="skill.id" :label="skill.title" /></el-select></label>
           <section v-if="widget.resourceId" class="parameter-settings">
@@ -302,9 +304,9 @@ onBeforeUnmount(() => { generation++; sampleRequest++; objectSearchRequest++; wi
             </div>
             <div class="parameter-add"><el-input v-model="parameterName" :placeholder="ot('ovParameterName')" :aria-label="ot('ovParameterName')" @keyup.enter="addParameter" /><el-button :icon="Plus" @click="addParameter">{{ ot('ovAddParameter') }}</el-button></div>
           </section>
-          <label v-if="['metric','table','chart'].includes(widget.kind)">{{ ot('ovResultPath') }}<el-input v-model="widget.resultPath" :placeholder="ot('ovResultPathHint')" /></label>
-          <section v-if="['metric','table','chart','button','text'].includes(widget.kind)" class="binding-settings" :aria-label="ot('ovBindValue')">
-            <div class="settings-heading"><h4>{{ ot('ovBindValue') }}</h4><el-switch :model-value="!!widget.binding" :aria-label="ot('ovBindValue')" @update:model-value="widget.binding = $event ? { source: 'object', path: objectType?.attrs.find(attr => attr.primaryKey)?.name || '' } : undefined" /></div>
+          <p v-if="widget.resultPath">旧结果路径需要清空后保存。<el-button @click="widget.resultPath=''">清空结果路径</el-button></p>
+          <section v-if="['button','text'].includes(widget.kind) || widget.binding" class="binding-settings" :aria-label="ot('ovBindValue')">
+            <div class="settings-heading"><h4>{{ ot('ovBindValue') }}</h4><el-switch :model-value="!!widget.binding" :aria-label="ot('ovBindValue')" @update:model-value="widget.binding = $event ? { source: 'context', path:'primaryKey' } : undefined" /></div>
             <p v-if="queryBinding" class="settings-hint">{{ ot(widget.kind === 'metric' ? 'ovMetricBindingHint' : 'ovQueryBindingHint') }}</p>
             <ViewBindingEditor v-if="widget.binding" v-model="widget.binding" v-bind="bindingContext" />
           </section>
@@ -313,15 +315,16 @@ onBeforeUnmount(() => { generation++; sampleRequest++; objectSearchRequest++; wi
           <template v-if="widget.kind === 'chart' && widget.chartType === 'timeline'"><label>{{ ot('ovDateField') }}<el-input v-model="widget.dateField" /></label><label>{{ ot('ovDescriptionField') }}<el-input v-model="widget.descriptionField" /></label></template>
           <label v-if="['metric','chart','table'].includes(widget.kind)">{{ ot('ovValueField') }}<el-input v-model="widget.valueField" /></label>
           <template v-if="widget.kind === 'links'"><label>{{ ot('ovDirection') }}<el-select v-model="widget.direction" @change="widget!.relation = ''"><el-option :label="ot('ovOutgoing')" value="outgoing" /><el-option :label="ot('ovIncoming')" value="incoming" /></el-select></label><label>{{ ot('ovRelationship') }}<el-select v-model="widget.relation"><el-option v-for="relation in relationOptions" :key="relation.relationship" :value="relation.relationship" :label="relation.showName" /></el-select></label></template>
-          <label v-if="['input','table','links','button'].includes(widget.kind)">{{ ot('ovSelectionVariable') }}<el-input v-model="widget.variable" /></label>
+          <label v-if="['properties','input','table','links','button'].includes(widget.kind)">{{ ot('ovSelectionVariable') }}<el-input v-model="widget.variable" /></label>
+          <label v-if="['properties','metric'].includes(widget.kind)">结果行序号（从 0 开始）<el-input-number v-model="widget.resultIndex" :min="0" :max="10000"/></label>
           <label v-if="widget.kind === 'button'">{{ ot('ovClickEvent') }}<el-select v-model="widget.onClick"><el-option :label="ot('ovRefreshData')" value="refresh" /><el-option :label="ot('ovSetVariable')" value="setVariable" /><el-option :label="ot('ovOpenObject')" value="openObject" /></el-select></label>
-          <label v-if="['table','button'].includes(widget.kind) || widget.kind === 'chart' && widget.chartType === 'timeline'">{{ ot('ovTargetType') }}<el-input v-model="widget.targetClass" /></label>
+          <label v-if="['links','table','button'].includes(widget.kind) || widget.kind === 'chart' && widget.chartType === 'timeline'">{{ ot('ovTargetType') }}<el-input v-model="widget.targetClass" /></label>
           <section class="binding-settings" :aria-label="ot('ovVisibility')">
-            <div class="settings-heading"><h4>{{ ot('ovVisibility') }}</h4><el-switch :model-value="!!widget.visibleWhen" :aria-label="ot('ovVisibility')" @update:model-value="widget.visibleWhen = $event ? { binding: { source: 'object', path: objectType?.attrs.find(attr => attr.primaryKey)?.name || '' }, operator: 'present', value: '' } : undefined" /></div>
+            <div class="settings-heading"><h4>{{ ot('ovVisibility') }}</h4><el-switch :model-value="!!widget.visibleWhen" :aria-label="ot('ovVisibility')" @update:model-value="widget.visibleWhen = $event ? { binding: { source: 'variable', path: '' }, operator: 'present', value: '' } : undefined" /></div>
             <p class="settings-hint">{{ ot(widget.visibleWhen ? 'ovConditionHint' : 'ovAlwaysVisible') }}</p>
             <div v-if="widget.visibleWhen" class="condition-fields">
-              <ViewBindingEditor v-model="widget.visibleWhen.binding" v-bind="bindingContext" />
-              <label>{{ ot('ovConditionOperator') }}<el-select v-model="widget.visibleWhen.operator" :aria-label="ot('ovConditionOperator')"><el-option v-for="operator in (['eq','ne','present','empty'] as const)" :key="operator" :value="operator" :label="ot(({ eq: 'ovEqual', ne: 'ovNotEqual', present: 'ovPresent', empty: 'ovEmpty' } as const)[operator])" /></el-select></label>
+              <el-select :model-value="widget.visibleWhen.binding.source==='variable'?widget.visibleWhen.binding.path:''" @update:model-value="widget.visibleWhen.binding={source:'variable',path:$event}"><el-option v-for="name in bindingVariables" :key="name" :value="name" :label="name"/></el-select>
+              <label>{{ ot('ovConditionOperator') }}<el-select v-model="widget.visibleWhen.operator" :aria-label="ot('ovConditionOperator')"><el-option v-for="operator in (['present','empty'] as const)" :key="operator" :value="operator" :label="ot(({ present: 'ovPresent', empty: 'ovEmpty' } as const)[operator])" /></el-select></label>
               <label v-if="['eq','ne'].includes(widget.visibleWhen.operator)">{{ ot('ovComparisonValue') }}<el-input v-model="widget.visibleWhen.value" :aria-label="ot('ovComparisonValue')" /></label>
               <p class="settings-hint">{{ ot(['eq','ne'].includes(widget.visibleWhen.operator) ? 'ovComparisonHint' : 'ovPresenceHint') }}</p>
             </div>

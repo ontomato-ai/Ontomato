@@ -6,6 +6,7 @@ import {
   type HomeItemRef,
 } from "@ontomato/contracts/platform-home";
 import { nodeApiGet, nodeApiPost, nodeApiPut } from "@ontomato/workbench-ui";
+export const HOME_PREFERENCES_CHANGED='ontomato:home-preferences-changed';
 
 /** The reader's own home state in the current domain: their choices and when they last used each item. */
 export async function readHomeState() {
@@ -14,7 +15,9 @@ export async function readHomeState() {
 
 /** Replaces the reader's favourites, in their order; the answer is the order the server kept. */
 export async function saveFavorites(items: HomeItemRef[]) {
-  return homeFavoritesSchema.parse(await nodeApiPut("/platform/home/favorites", { items })).items;
+  const saved=homeFavoritesSchema.parse(await nodeApiPut("/platform/home/favorites", { items })).items;
+  window.dispatchEvent(new Event(HOME_PREFERENCES_CHANGED));
+  return saved;
 }
 
 /** Replaces the dashboards the home shows, in tab order. */

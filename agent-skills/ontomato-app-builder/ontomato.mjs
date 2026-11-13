@@ -308,6 +308,20 @@ async function workspaceCommand(api, [command, ...args]) {
   usage();
 }
 
+async function productCommand(api, [command, ...args]) {
+  const base="/product-assets";
+  if(command==='create-dashboard'&&args.length===1)return print(await workbench(api,'POST','/dashboards/create',{name:args[0]}));
+  if(["list","types","home"].includes(command) && args.length===0)
+    return print(await workbench(api,"GET",base+(command==="list"?"":`/${command}`)));
+  if(command==="get" && args.length===1) return print(await workbench(api,"GET",`${base}/${encodeURIComponent(args[0])}`));
+  if(command==="save" && args.length===2) return print(await workbench(api,"PUT",`${base}/${encodeURIComponent(args[0])}`,JSON.parse(readInput(args[1]))));
+  if(command==="copy" && args.length===2) return print(await workbench(api,"POST",`${base}/${encodeURIComponent(args[0])}/copy`,{name:args[1]}));
+  if(command==="create-page" && args.length===2) return print(await workbench(api,"POST",`${base}/${encodeURIComponent(args[0])}/create-page`,{name:args[1]}));
+  if(command==="use-home" && args.length===2) return print(await workbench(api,"POST",`${base}/${encodeURIComponent(args[0])}/use-home`,{revision:Number(args[1])}));
+  if(command==="delete" && args.length===2) return print(await workbench(api,"DELETE",`${base}/${encodeURIComponent(args[0])}`,{revision:Number(args[1])}));
+  die("product list|types|home|get <id>|save <id> <json|@file>|copy <id> <name>|use-home <id> <home revision>|delete <id> <revision>");
+}
+
 function usage() {
   die(`usage: ontomato.mjs [--lang <tag>] <command>
   test start|status|stop [--workspace <id>] [--sample test-data/sample.json]
@@ -376,6 +390,7 @@ async function main() {
   }
   if (cmd === "sdk") return sdkCommand(api, argv.slice(1));
   if (cmd === "workspace") return workspaceCommand(api, argv.slice(1));
+  if (cmd === "product") return productCommand(api, argv.slice(1));
   if (cmd === "function") return functionCommand(api, argv.slice(1));
   if (cmd === "dataset-desc") {
     printData(await requestJson(api, "GET", "/admin/getDatasetDesc"));
