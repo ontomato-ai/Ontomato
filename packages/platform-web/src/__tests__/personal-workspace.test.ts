@@ -89,7 +89,8 @@ describe("personal workspace", () => {
     const previous=api.request.getMockImplementation()!;
     let finish!:(value:Response)=>void;
     api.request.mockImplementation((path:string,init?:RequestInit)=>path.includes('scheduled-tasks')?new Promise<Response>(resolve=>{finish=resolve;}):previous(path,init));
-    const {wrapper}=await page();
+    // Select popup rendering is outside this contract (the dialog opening while tasks load) and exceeds CI's timeout.
+    const {wrapper}=await page({ElSelect:true});
     const configure=wrapper.findAll('button').find(button=>button.text()==='Configure workspace')!;
     expect(configure.attributes('disabled')).toBeUndefined();
     await configure.trigger('click');await flushPromises();
