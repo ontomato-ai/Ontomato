@@ -72,6 +72,23 @@ export function imageCacheArgs() {
     : [];
 }
 
+// Host-level package sources forwarded to image builds. Unset values keep the
+// Dockerfile defaults.
+export const BUILD_ARG_NAMES = [
+  "PIP_INDEX_URL",
+  "DEBIAN_MIRROR",
+  "DEBIAN_SECURITY_MIRROR",
+];
+
+export function imageBuildArgs(names = BUILD_ARG_NAMES) {
+  const args = [];
+  for (const name of names) {
+    const value = process.env[name];
+    if (value) args.push("--build-arg", `${name}=${value}`);
+  }
+  return args;
+}
+
 // `docker image inspect` accepts --platform from API 1.49; omit it on older servers.
 function supportsPlatformFlag() {
   const api =

@@ -74,35 +74,34 @@ COPY --from=dependencies-installer /usr/local/bin/node /usr/local/bin/node
 
 COPY runtime-requirements.txt /tmp/runtime-requirements.txt
 
-RUN echo 'Acquire::Retries "5"; Acquire::http::Timeout "120";' > /etc/apt/apt.conf.d/99retries && \
-    sed -i -E \
-      -e "s#https?://deb.debian.org/debian-security#${DEBIAN_SECURITY_MIRROR}#g" \
-      -e "s#https?://deb.debian.org/debian#${DEBIAN_MIRROR}#g" \
-      /etc/apt/sources.list.d/debian.sources && \
-    apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    chromium \
-    fontconfig \
-    fonts-wqy-microhei \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libcups2 \
-    libdrm2 \
-    libdbus-1-3 \
-    libgbm1 \
-    libglib2.0-0 \
-    libnspr4 \
-    libnss3 \
-    libx11-6 \
-    libx11-xcb1 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxkbcommon0 \
-    libxrandr2 \
-    libxcb1 \
+# Install from the optional Debian mirror, restore the base sources afterwards,
+# and retry once from those original sources if the mirror install fails.
+RUN --mount=type=bind,source=tools/apt-install.sh,target=/tmp/apt-install.sh \
+    echo 'Acquire::Retries "5"; Acquire::http::Timeout "120";' > /etc/apt/apt.conf.d/99retries && \
+    /bin/sh /tmp/apt-install.sh "${DEBIAN_MIRROR}" "${DEBIAN_SECURITY_MIRROR}" \
+      ca-certificates \
+      chromium \
+      fontconfig \
+      fonts-wqy-microhei \
+      libasound2 \
+      libatk-bridge2.0-0 \
+      libatk1.0-0 \
+      libcups2 \
+      libdrm2 \
+      libdbus-1-3 \
+      libgbm1 \
+      libglib2.0-0 \
+      libnspr4 \
+      libnss3 \
+      libx11-6 \
+      libx11-xcb1 \
+      libxcomposite1 \
+      libxdamage1 \
+      libxext6 \
+      libxfixes3 \
+      libxkbcommon0 \
+      libxrandr2 \
+      libxcb1 \
  && test -x /usr/bin/chromium \
  && node --version \
  && python3 --version | grep -E '^Python 3\.10\.' \

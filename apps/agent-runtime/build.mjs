@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   buildStamp,
   docker,
+  imageBuildArgs,
   imageCacheArgs,
   imageLabels,
   inspectImage,
@@ -38,6 +39,7 @@ export function prepareContext(destination) {
   record.web = false;
   writeFileSync(join(destination, "inputs.json"), JSON.stringify(record));
   for (const file of [
+    "apt-install.sh",
     "build-support.mjs",
     "third_party_notices.py",
     ...[
@@ -72,6 +74,7 @@ export function build(args) {
     "--platform",
     `linux/${arch}`,
     ...imageCacheArgs(),
+    ...imageBuildArgs(),
     "--load",
     ...imageLabels(app.component, version, stamp),
     "--label",

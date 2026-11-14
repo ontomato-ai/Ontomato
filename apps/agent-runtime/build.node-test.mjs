@@ -38,6 +38,7 @@ test("build prepares an empty context before adding Python requirements and invo
     "packages/agent-runtime/src/worker-launch.py",
     "packages/agent-runtime/requirements-py310.txt",
     "packages/contracts/package.json",
+    "scripts/apt-install.sh",
     "scripts/build-support.mjs",
     "scripts/pnpm-workspace-context.mjs",
     "scripts/third_party_notices.py",

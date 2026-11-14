@@ -25,8 +25,13 @@ RUN TARGETPLATFORM=${TARGETPLATFORM} node /tmp/tools/workbench/stage-app.mjs
 COPY LICENSE NOTICE /stage/licenses/
 FROM ${PYTHON_RUNTIME_IMAGE} AS python-runtime
 ARG PIP_INDEX_URL=https://pypi.org/simple
+ARG DEBIAN_MIRROR=http://deb.debian.org/debian
+ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security
 COPY requirements-py310.txt /tmp/requirements-py310.txt
-RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 git \
+# Install from the optional Debian mirror, restore the base sources afterwards,
+# and retry once from those original sources if the mirror install fails.
+RUN --mount=type=bind,source=tools/apt-install.sh,target=/tmp/apt-install.sh \
+    /bin/sh /tmp/apt-install.sh "${DEBIAN_MIRROR}" "${DEBIAN_SECURITY_MIRROR}" libstdc++6 git \
  && rm -rf /var/lib/apt/lists/* \
  && pip install --no-cache-dir --no-deps -i "${PIP_INDEX_URL}" -r /tmp/requirements-py310.txt \
  && pip check && python -c "import requests, numpy, pandas, sympy"
@@ -47,7 +52,12 @@ RUN rm -rf /usr/local/lib/python3.10/site-packages/pip* /usr/local/lib/python3.1
  && ! python -m pip --version
 
 FROM python-runtime AS final
-RUN apt-get update && apt-get install -y --no-install-recommends fonts-wqy-microhei fonts-dejavu-core \
+ARG DEBIAN_MIRROR=http://deb.debian.org/debian
+ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security
+# Install from the optional Debian mirror, restore the base sources afterwards,
+# and retry once from those original sources if the mirror install fails.
+RUN --mount=type=bind,source=tools/apt-install.sh,target=/tmp/apt-install.sh \
+    /bin/sh /tmp/apt-install.sh "${DEBIAN_MIRROR}" "${DEBIAN_SECURITY_MIRROR}" fonts-wqy-microhei fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production AGENT_RUNTIME_HOST=0.0.0.0 AGENT_RUNTIME_ROOT=/data
 COPY --from=dependencies /opt/runtime/node_modules /opt/runtime/node_modules
