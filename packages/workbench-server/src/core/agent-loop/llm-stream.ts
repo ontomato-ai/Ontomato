@@ -283,36 +283,42 @@ export async function* streamChatCompletion(
         for (const tc of toolCallChunks) {
           const idx = tc.index ?? 0;
 
-          if (tc.id) {
-            // New tool call starting
-            pendingToolCalls.set(idx, {
-              id: tc.id,
-              name: tc.name ?? "",
-              argsBuf: tc.args ?? "",
-            });
+          let pending = pendingToolCalls.get(idx);
+          if (!pending) {
+            pending = { id: "", name: "", argsBuf: "" };
+            pendingToolCalls.set(idx, pending);
+          }
 
-            const contentIndex =
-              contentParts.length + (textBuf ? 1 : 0) + (thinkingBuf ? 1 : 0) + idx;
+          // The index identifies the call throughout the stream. An ID may
+          // arrive late or repeat without repeating the name or arguments.
+          const isStart = !pending.id && Boolean(tc.id);
+          const repeatsIdentity = tc.id === pending.id && tc.name === pending.name && !!tc.id;
+          if (tc.id) pending.id = tc.id;
+          if (tc.name && !repeatsIdentity) pending.name += tc.name;
+
+          // Preserve providers that repeat complete or growing snapshots,
+          // while continuing to append ordinary argument deltas.
+          const argsDelta =
+            repeatsIdentity && tc.args?.startsWith(pending.argsBuf)
+              ? tc.args.slice(pending.argsBuf.length)
+              : (tc.args ?? "");
+          pending.argsBuf += argsDelta;
+
+          const contentIndex =
+            contentParts.length + (textBuf ? 1 : 0) + (thinkingBuf ? 1 : 0) + idx;
+          if (isStart) {
             yield {
               type: "toolcall_start",
               contentIndex,
               partial: currentPartial(),
             };
-          } else {
-            const existing = pendingToolCalls.get(idx);
-            if (existing) {
-              if (tc.name) existing.name += tc.name;
-              if (tc.args) {
-                existing.argsBuf += tc.args;
-                yield {
-                  type: "toolcall_delta",
-                  delta: tc.args,
-                  contentIndex:
-                    contentParts.length + (textBuf ? 1 : 0) + (thinkingBuf ? 1 : 0) + idx,
-                  partial: currentPartial(),
-                };
-              }
-            }
+          } else if (pending.id && argsDelta) {
+            yield {
+              type: "toolcall_delta",
+              delta: argsDelta,
+              contentIndex,
+              partial: currentPartial(),
+            };
           }
         }
       }
@@ -346,6 +352,11 @@ export async function* streamChatCompletion(
     // A normally-ended stream with zero raw chunks is an error, reported
     // through the existing catch below; only cancellation skips it.
     if (rawChunkCount === 0 && !signal?.aborted) throw createEmptyChatStreamError();
+    for (const [idx, tc] of pendingToolCalls) {
+      if (!tc.id || !tc.name) {
+        throw new Error(`Incomplete tool call at index ${idx}: missing id or name`);
+      }
+    }
     tracker?.successFromChunks(loggedChunks);
   } catch (err) {
     const aborted = signal?.aborted;
