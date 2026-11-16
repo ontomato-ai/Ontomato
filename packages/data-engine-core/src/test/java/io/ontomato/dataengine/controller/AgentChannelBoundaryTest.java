@@ -56,6 +56,7 @@ class AgentChannelBoundaryTest {
     var context=new OntologyAgentAccess.Context(new OntologyAgentStore.Owner("user","a"),null,"login",null,"en",1000L,null);
     var host=new KnowledgeGovernanceService(store,runtime,mock(OntologyAgentDefinitions.class),mock(io.ontomato.dataengine.service.QueryGrantService.class),mock(io.ontomato.dataengine.service.KnowledgeService.class),mock(io.ontomato.dataengine.service.AdminService.class),callers);
     when(callers.open(anyString(),eq(context))).thenAnswer(call -> JSONObject.of("id",call.getArgument(0),"domainId","a"));
+    when(store.session(SESSION,context.owner())).thenReturn(JSONObject.of("agent_id",KnowledgeGovernanceService.AGENT));
     host.start(SESSION,RUN,"Review knowledge",context);
     verify(callers).open(argThat(id -> !id.equals(RUN)),eq(context));
   }

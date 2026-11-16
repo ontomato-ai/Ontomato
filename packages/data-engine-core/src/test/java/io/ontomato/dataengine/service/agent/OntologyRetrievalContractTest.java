@@ -404,10 +404,12 @@ class OntologyRetrievalContractTest {
         Map.of("expectedRunId", run, "expectedDecisionRevision", 0, "message", "Current year");
     var next = postJson("/ontology/retrievals/" + retrievalId + "/answers", answerId, answer, null);
     assertEquals(1, next.getIntValue("decisionRevision"));
-    assertEquals(
-        answerId,
-        postJson("/ontology/retrievals/" + retrievalId + "/answers", answerId, answer, null)
-            .getString("runtimeRunId"));
+    // Runtime replay never invokes prepare twice; the Java admission still preserves its exact stored request.
+    var stored=store.run(retrievalId,answerId,owner);
+    var admittedInput=store.retrieval(retrievalId,owner).getJSONObject("input");
+    var replay=store.admit(retrievalId,answerId,owner,admittedInput,stored.getJSONObject("request"),null,false,
+        OntologyRetrievalService.timeout(admittedInput),null,true,"en");
+    assertTrue(replay.replayed());assertEquals(answerId,replay.run().getString("id"));
     assertEquals(2, requests.size());
     assertThrows(AgentHttpException.class,()->postJson("/ontology/retrievals",id(),Map.of("question","x","timeoutSeconds",601),null));
     var external =
