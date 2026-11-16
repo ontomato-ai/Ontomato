@@ -432,10 +432,11 @@ class OntologyRetrievalContractTest {
   void replyToAnswersRecordTheSameConfirmedDecisionInSteerAndRunModes() throws Exception {
     String session=id();var first=postJson("/ontology/retrievals",session,Map.of("question","Sales?"),null);String run=first.getString("runtimeRunId");
     var context=new OntologyAgentAccess.Context(owner,new QueryAccessService.Access(new QueryAccessService.GrantUser(owner.userId(),owner.domainId()),permission,null,null,null,List.of()),null,null,"en",Instant.now().plusSeconds(60).toEpochMilli(),null);
+    int beforeRevision=store.retrieval(session,owner).getIntValue("revision");
     var input=JSONObject.of("role","notification","kind","agent-answer","replyTo",id(),"content","Current year","timestamp",1);
     retrieval.prepareSteer(session,run,input,context);
     var record=store.retrieval(session,owner);var decision=record.getJSONArray("decisions").getJSONObject(0);
-    assertEquals(1,record.getIntValue("revision"));assertEquals(1,store.run(session,run,owner).getIntValue("decision_revision"));
+    assertEquals(beforeRevision+1,record.getIntValue("revision"));assertEquals(1,store.run(session,run,owner).getIntValue("decision_revision"));
     assertEquals(Set.of("id","runId","text","scope","source","supersedesId"),decision.keySet());
     assertEquals(run,decision.getString("runId"));assertEquals("Current year",decision.getString("text"));assertEquals("task",decision.getString("scope"));assertEquals("user",decision.getString("source"));assertNull(decision.get("supersedesId"));
     runs.get(run).getJSONObject("run").put("status","stopped");runs.get(run).getJSONObject("run").put("stopReason","stop");
