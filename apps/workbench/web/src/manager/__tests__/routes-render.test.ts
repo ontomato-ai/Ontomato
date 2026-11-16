@@ -128,6 +128,8 @@ const pagePaths = [
       .filter((path) => !path.includes(":"))
       // The licence is the enterprise edition's page: this edition's navigation holds no such page, so no column lists it.
       .filter((path) => path !== platformRoutes.license.path)
+      // Shared layouts may reference enterprise administration pages; OSS does not register those routes.
+      .filter((path) => !path.startsWith("/permissions/"))
   ),
 ];
 
@@ -172,7 +174,7 @@ describe("object views over plain HTTP", () => {
     const attrs = [{ name: "id", primaryKey: true }, { name: "name", bizzkeyBool: true }];
     vi.stubGlobal("fetch", async (input: FetchInput, init?: FetchInit) => {
       const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin);
-      const data = /\/objectView\/(read|edit)$/.test(url.pathname) ? { revision: 0, publishedRevision: null, versions: [] }
+      const data = /\/(?:objectView|product-assets\/object-views)\/(read|edit)$/.test(url.pathname) ? { revision: 0, publishedRevision: null, versions: [] }
         : url.pathname.endsWith("/getMetas") ? { classDef: [{ className: "Order", attrs }, { className: "Person", attrs }] }
         : url.pathname.endsWith("/queryInfoByNode") ? { classDef: { attrs }, data: { id: "order-1", name: "HTTP order" } }
         : undefined;
