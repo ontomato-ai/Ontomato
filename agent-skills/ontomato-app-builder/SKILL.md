@@ -9,6 +9,8 @@ Use the shared [technical guide](GUIDE.md) and bundled `ontomato.mjs` to discove
 
 When the platform supplies the `application-design` skill, read it before designing a new page or polishing a demo. Use the current SDK's components and host theme, reusable product assets and task-focused navigation. Keep business logic in published capabilities.
 
+In a product conversation, delegation follows the native `agent` tool and the product's `ontomato-analyst-assistant` skill; the authoring CLI described here builds capabilities and applications.
+
 ## Execution parameter contract (5.0)
 
 Action and MetricView execution require every declared parameter name in the JSON object. Explicit `null` is allowed; empty strings and zero are real values. Missing parameters fail as `Missing parameter: <name>` before executing Python. An omitted parameter object means `{}` and works only for a definition with no parameters. The command passes server errors through unchanged.

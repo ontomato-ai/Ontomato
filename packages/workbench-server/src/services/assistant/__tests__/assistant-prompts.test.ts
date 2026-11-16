@@ -1,4 +1,5 @@
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { configureI18n } from "../../../i18n";
 import { appTextEn } from "../../../i18n/app-text-en";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
@@ -41,6 +42,13 @@ describe("default assistant prompts", () => {
     expect(template).not.toMatch(/ontomato-analyst-assistant\s+ask|\bask\s+--|--resume|cancel-retriever|resume (?:that|the same|that same) retrieval/i);
     const customized="Use ontomato-analyst-assistant ask according to my own instructions";
     expect(effectiveSystemPrompt({kind,system_prompt:customized})).toBe(customized);
+  });
+
+  it("the product analyst skill teaches native delegation without standalone command examples", () => {
+    const skill=readFileSync(path.resolve("../../agent-skills/ontomato-analyst-assistant/SKILL.md"),"utf8");
+    expect(skill).toContain('op: "list"');expect(skill).toContain('op: "start"');expect(skill).toContain('op: "read"');
+    expect(skill).toContain("notification");
+    expect(skill).not.toMatch(/node\s+ontomato\.mjs|--follow|--files|--reply-to|retriever-cancel|ONTOMATO_TK/);
   });
 
   it("stores NULL when a built-in agent still equals the current template", () => {

@@ -69,7 +69,7 @@ Start with the authorized deployment/context and the business purpose. Read `lis
 | Maintain an existing ontomap | Save the current `get-ontomap` result, edit that object and carry back unrelated definitions, descriptions and returned fields unchanged. Resolve new or renamed mappings from the source. | The intended difference is present and unrelated meaning remains. A request to rename or adapt a mapping is not an instruction to remove its relationships. |
 | Change the data source | Test and inspect the target first. Prepare a compatible ontomap and resolve each existing relationship and resource binding before switching. Then call `use-datasource` and `set-ontomap`, and read back/test the result. | Definitions match the actual target; cross-object questions and relevant resources work. These are separate writes, not an atomic migration. If one fails, read actual state before retrying or restoring the affected configuration. |
 | Maintain business knowledge | Read current entries, then save the requested additions/edits or delete the identified entry. | Read back IDs, content and review status; metadata changes alone do not prove a business answer is correct. |
-| Load business data | Run DDL with `db-sql`, then `db-import` a CSV per table; `set-ontomap` when the definition must cover new tables. | Row counts and keys in the business database match the files; `agent start --agent <providerId>/<agentId>` finds the imported objects and relationships. |
+| Load business data | Run DDL with `db-sql`, then `db-import` a CSV per table; `set-ontomap` when the definition must cover new tables. | Row counts and keys in the business database match the files; The retriever finds the imported objects and relationships. |
 | Batch-import text resources | Once objects exist and the `vector` attribute is declared, `upload-vectors` a JSONL file; use `upload-vector` for one resource or an original file and `delete-vector` to remove one. | The failure list is empty or handled; spot checks retrieve and download. |
 | Load test data | In a test environment or test domain, `import-test-data` a zip. | Read objects and resources back; it clears the classes it covers and is not for real data. |
 | Deploy a book hand-off package | Apply its `ddl.sql`, `import/<class>.csv`, `ontomap.draft.json` and `upload-manifest.jsonl` with `db-sql`, `db-import`, `set-ontomap` and `upload-vectors`. | Re-check model, records and evidence resources as the package's `import-map.md` lists. |
@@ -104,8 +104,7 @@ node ontomato.mjs import-test-data test-data.zip
 node ontomato.mjs upload-vector @vector.json
 node ontomato.mjs upload-vectors resources.jsonl
 node ontomato.mjs delete-vector <class> <attribute> <objectId> <path>
-node ontomato.mjs agent list
-node ontomato.mjs agent start --agent "<providerId>/<agentId>" --message "How many people are there?"
+# Standalone data delegation is described in Natural-language questions outside the product.
 ```
 
 ## Command results and write scope
@@ -125,7 +124,7 @@ node ontomato.mjs agent start --agent "<providerId>/<agentId>" --message "How ma
 | `upload-vector` | The new resource, including `path` | Adds one resource and appends a reference to the object's vector field. Check an uncertain result before appending again. |
 | `upload-vectors` | Progress and failures per batch | Adds text resources from JSONL in batches (100 lines by default), each line on its own; failed lines go to `<file>.failed.jsonl`; a failed request stops with a `--from` hint. |
 | `delete-vector` | `vector deleted` | Deletes one resource and the object's reference to it. |
-| `agent start --agent <providerId>/<agentId>` | Session/events and result data | Runs a question against the current context; it is not an ontomap editor or a dataset export. |
+| Data questions (see the delegation section) | Session/events and result data | Runs a question against the current context; it is not an ontomap editor or a dataset export. |
 
 The commands below document their current API paths. Legacy API names containing `Schema` do not change the product concept: the complete semantic definition is the ontomap.
 
@@ -373,7 +372,10 @@ Why it matters: the question splitter and the programmer match the user's wordin
 }
 ```
 
-## Natural-language questions
+## Natural-language questions outside the product
+
+In an Ontomato conversation, use the native `agent` tool according to the product's
+`ontomato-analyst-assistant` skill. The commands and lifecycle below are for this standalone package.
 
 Use the provider and agent IDs returned by `agent list`; the retriever's display name is not its ID.
 
@@ -388,18 +390,12 @@ Use the provider and agent IDs returned by `agent list`; the retriever's display
 | `retriever-cancel <sessionId> --run <runId>` | Ontology business command: stop only the retriever, preserving binding results and QC |
 
 
-## Delegation and results
+## Standalone delegation and results
 
-Use the native `agent` tool when available: `list` identifies the accessible data retriever;
-`start` takes the returned agent reference and one complete data question. Preserve the user's
-wording, adding only references, time and scope established in this conversation. Keep one
-calculation together, including its numerator and denominator. Query design belongs to the retriever.
-
-`start` and `send` acknowledge admission, not a result. In the product, results arrive as
-notifications: continue independent work, or let this turn end while the child keeps running.
-Use `read` to inspect progress or delivered files when needed; do not poll or start the question again.
-Outside the product, use the CLI commands above: `read --follow` consumes events and
-`read --files` downloads immutable delivered bytes to `outputs/`.
+Use `agent list` to identify the accessible data retriever and `agent start` with its returned
+reference and one complete question. Preserve the user's wording and established scope.
+`start` and `send` acknowledge admission, not a result. Use `read --follow` for events and
+`read --files` to download delivered bytes; do not replace event following with polling or sleeps.
 
 For a received question, consult this conversation and ask the user only for a missing business
 decision. Send the answer to the question's session with `replyTo` (CLI: `--reply-to`), using

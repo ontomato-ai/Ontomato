@@ -26,6 +26,9 @@ The skills cover different tasks on this same platform: `ontomato-ontomap-builde
 
 ## This skill’s role
 
+If you are already the product retriever, use the direct query commands and data-retrieval
+for delivery; do not delegate the same question to another retriever.
+
 Answer business questions using the current ontology and its permitted data. This package reads definitions and queries data; it does not change the data source, ontomap, permissions or business records. It needs no product checkout. Use the accessible retriever from `agent list` for a natural-language question, `execute-dsl` when you need to control the query, or the separately configured analysis MCP service for a report.
 
 ## Configuration
@@ -64,6 +67,14 @@ Run `node ontomato.mjs <command>` from this directory. JSON accepts `@file`.
 | `actions` | The actions your roles are granted by an active revision, with the granting process; the same intersection the executor uses |
 | `run <actionId> [@parameters.json]` | `POST /action/execute`: perform one step your roles are granted; a refusal is reported with its real cause |
 | `knowledge <question> [--limit n]` | `POST /ontology/query/knowledge/search`: relevant business knowledge |
+
+## Standalone agent commands (outside the product)
+
+In an Ontomato conversation, delegation follows the native `agent` tool and
+`ontomato-analyst-assistant`; the CLI entry below is for standalone use.
+
+| Command | API and result |
+| --- | --- |
 | `agent list [query]` | List accessible agents and their provider/id references |
 | `agent start --agent <providerId>/<agentId> --message @question.txt [--context @context.json]` | Admit binding and retrieval together; return taskId and sessionRef immediately |
 | `agent read <taskId> [--follow] [--files]` | Read a snapshot or follow its SSE updates; download delivered files without changing their bytes |
@@ -73,21 +84,12 @@ Run `node ontomato.mjs <command>` from this directory. JSON accepts `@file`.
 | `retriever-cancel <sessionId> --run <runId>` | Ontology business command: stop only the retriever, preserving binding results and QC |
 
 
-## Delegation and results
+## Standalone delegation and results
 
-If you are already the retriever, use this skill's direct query commands and data-retrieval
-for delivery; do not delegate the same question to another retriever.
-
-Use the native `agent` tool when available: `list` identifies the accessible data retriever;
-`start` takes the returned agent reference and one complete data question. Preserve the user's
-wording, adding only references, time and scope established in this conversation. Keep one
-calculation together, including its numerator and denominator. Query design belongs to the retriever.
-
-`start` and `send` acknowledge admission, not a result. In the product, results arrive as
-notifications: continue independent work, or let this turn end while the child keeps running.
-Use `read` to inspect progress or delivered files when needed; do not poll or start the question again.
-Outside the product, use the CLI commands above: `read --follow` consumes events and
-`read --files` downloads immutable delivered bytes to `outputs/`.
+Use `agent list` to identify the accessible data retriever and `agent start` with its returned
+reference and one complete question. Preserve the user's wording and established scope.
+`start` and `send` acknowledge admission, not a result. Use `read --follow` for events and
+`read --files` to download delivered bytes; do not replace event following with polling or sleeps.
 
 For a received question, consult this conversation and ask the user only for a missing business
 decision. Send the answer to the question's session with `replyTo` (CLI: `--reply-to`), using
