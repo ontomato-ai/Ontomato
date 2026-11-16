@@ -14,12 +14,14 @@ const logger = createLogger("system-model-config");
 
 export const DEFAULT_ABC_QUESTION_MODE: AbcQuestionMode = "harness";
 export const DEFAULT_QUERY_TIMEOUT_SECONDS = 10 * 60;
+export const DEFAULT_NODE_MODEL_STREAMING_ENABLED = true;
 const ABC_QUESTION_MODES: readonly unknown[] = ["no_tool_fixed", "tool_fixed", "harness"];
 
 function createDefaultConfig(): SystemModelConfig {
   return {
     abcQuestionMode: DEFAULT_ABC_QUESTION_MODE,
     queryTimeoutSeconds: DEFAULT_QUERY_TIMEOUT_SECONDS,
+    nodeModelStreamingEnabled: DEFAULT_NODE_MODEL_STREAMING_ENABLED,
   };
 }
 
@@ -79,9 +81,17 @@ function normalizeConfig(raw: unknown): SystemModelConfig {
     throw new SystemModelConfigError("queryTimeoutSeconds must be a positive integer");
   }
 
+  const nodeModelStreamingEnabled = source.nodeModelStreamingEnabled === undefined
+    ? DEFAULT_NODE_MODEL_STREAMING_ENABLED
+    : source.nodeModelStreamingEnabled;
+  if (typeof nodeModelStreamingEnabled !== "boolean") {
+    throw new SystemModelConfigError("nodeModelStreamingEnabled must be a boolean");
+  }
+
   return {
     abcQuestionMode: abcQuestionMode as AbcQuestionMode,
     queryTimeoutSeconds: queryTimeoutSeconds as number,
+    nodeModelStreamingEnabled,
   };
 }
 
@@ -103,7 +113,11 @@ function migrateLegacyConfig(raw: unknown): SystemModelConfig | null {
     ? (source.queryTimeoutSeconds as number)
     : DEFAULT_QUERY_TIMEOUT_SECONDS;
 
-  return { abcQuestionMode, queryTimeoutSeconds };
+  return normalizeConfig({
+    abcQuestionMode,
+    queryTimeoutSeconds,
+    nodeModelStreamingEnabled: source.nodeModelStreamingEnabled,
+  });
 }
 
 export function getSystemModelConfig(domainId?: string): SystemModelConfig {
@@ -127,8 +141,7 @@ export function getSystemModelConfig(domainId?: string): SystemModelConfig {
     if (error instanceof SystemModelConfigError) {
       throw error;
     }
-    logger.warn(`Failed to read system model config for domain ${resolved}`, error);
-    return createDefaultConfig();
+    throw new SystemModelConfigError("Failed to read system model configuration", { cause: error });
   }
 }
 
@@ -153,6 +166,10 @@ export function saveSystemModelConfig(
       partial.queryTimeoutSeconds !== undefined
         ? partial.queryTimeoutSeconds
         : current.queryTimeoutSeconds,
+    nodeModelStreamingEnabled:
+      partial.nodeModelStreamingEnabled !== undefined
+        ? partial.nodeModelStreamingEnabled
+        : current.nodeModelStreamingEnabled,
   };
 
   const normalized = normalizeConfig(rawToValidate);

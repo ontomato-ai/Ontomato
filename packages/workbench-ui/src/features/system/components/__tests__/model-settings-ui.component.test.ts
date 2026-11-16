@@ -8,6 +8,7 @@ import RoleModelsCard from "../business-config/RoleModelsCard.vue";
 import EmbeddingModelConfigCard from "../business-config/EmbeddingModelConfigCard.vue";
 import SkillDirConfigCard from "../business-config/SkillDirConfigCard.vue";
 import QuerySettingsCard from "../business-config/QuerySettingsCard.vue";
+import NodeModelCallSettingsCard from "../business-config/NodeModelCallSettingsCard.vue";
 import BusinessConfig from "../BusinessConfig.vue";
 import ModelConfig from "../ModelConfig.vue";
 import { vectorRebuildStatusSchema } from "../../types";
@@ -33,6 +34,11 @@ const server = vi.hoisted(() => ({
   models: [] as Array<Record<string, unknown>>,
   agents: {} as Record<string, string | null>,
   reads: 0,
+  // The Node system model file: one record per domain, merged field by field on each save.
+  systemModel: { abcQuestionMode: "harness", queryTimeoutSeconds: 600, nodeModelStreamingEnabled: true } as Record<
+    string,
+    unknown
+  >,
 }));
 
 const fixtures = vi.hoisted(() => ({
@@ -159,11 +165,12 @@ vi.mock("../../../admin", () => ({
     })),
     getSystemModelConfig: vi.fn(async () => ({
       success: true,
-      data: { abcQuestionMode: "harness", queryTimeoutSeconds: 600 },
+      data: { ...server.systemModel },
     })),
     saveSystemModelConfig: vi.fn(async (payload: Record<string, unknown>) => {
       sent.system = JSON.parse(JSON.stringify(payload));
-      return { success: true, data: { ...payload } };
+      server.systemModel = { ...server.systemModel, ...payload };
+      return { success: true, data: { ...server.systemModel } };
     }),
     saveToolSkillDir: vi.fn(async (skilldir: string) => {
       sent.skilldir = skilldir;
@@ -214,6 +221,11 @@ beforeEach(() => {
   server.models = JSON.parse(JSON.stringify(fixtures.models));
   server.agents = { ...fixtures.agents };
   server.reads = 0;
+  server.systemModel = {
+    abcQuestionMode: "harness",
+    queryTimeoutSeconds: 600,
+    nodeModelStreamingEnabled: true,
+  };
 });
 afterEach(() => {
   wrappers.splice(0).forEach((wrapper) => wrapper.unmount());
@@ -1250,5 +1262,51 @@ describe("system config page", () => {
     const banner = page.find(".config-load-error");
     expect(banner.text()).toContain("java down");
     expect(button(banner, t("common.retry"))).toBeTruthy();
+  });
+
+  it("saves each card's own fields without overwriting the other card's unsaved draft", async () => {
+    const page = await mountSystemPage();
+    const query = page.findComponent(QuerySettingsCard);
+    const nodeModelCall = page.findComponent(NodeModelCallSettingsCard);
+
+    // Both drafts are edited, then the workbench model call card saves first.
+    await query.find(".el-input-number input").setValue("900");
+    await nodeModelCall.find(".el-switch").trigger("click");
+    await button(nodeModelCall, t("common.saveConfig"))!.trigger("click");
+    await flushPromises();
+    expect(sent.system).toEqual({ nodeModelStreamingEnabled: false });
+    // The query card keeps its unsaved draft and marker; only the model call card is marked saved.
+    expect((query.find(".el-input-number input").element as HTMLInputElement).value).toBe("900");
+    expect(query.find(".dirty-tag").exists()).toBe(true);
+    expect(nodeModelCall.find(".dirty-tag").exists()).toBe(false);
+    expect((nodeModelCall.find(".el-switch input").element as HTMLInputElement).checked).toBe(false);
+
+    // Saving the query card afterwards submits only its own fields and leaves the saved switch in place.
+    await button(query, t("common.saveConfig"))!.trigger("click");
+    await flushPromises();
+    expect(sent.system).toEqual({ abcQuestionMode: "harness", queryTimeoutSeconds: 900 });
+    expect(server.systemModel).toEqual({
+      abcQuestionMode: "harness",
+      queryTimeoutSeconds: 900,
+      nodeModelStreamingEnabled: false,
+    });
+    expect(query.find(".dirty-tag").exists()).toBe(false);
+    expect((nodeModelCall.find(".el-switch input").element as HTMLInputElement).checked).toBe(false);
+  });
+
+  it("disables both cards' saves and offers one retry when the Node config cannot be read", async () => {
+    vi.mocked(adminApi.getSystemModelConfig).mockRejectedValueOnce(new Error("bad json"));
+    const page = await mountSystemPage();
+    const query = page.findComponent(QuerySettingsCard);
+    const nodeModelCall = page.findComponent(NodeModelCallSettingsCard);
+    for (const card of [query, nodeModelCall]) {
+      expect(card.find(".load-error").text()).toContain("bad json");
+      expect(button(card, t("common.saveConfig"))!.attributes("disabled")).toBeDefined();
+    }
+    await button(query, t("common.retry"))!.trigger("click");
+    await flushPromises();
+    // The retry read succeeds, so both cards render their fields again.
+    expect(query.find(".el-input-number input").exists()).toBe(true);
+    expect(nodeModelCall.find(".el-switch").exists()).toBe(true);
   });
 });

@@ -11,6 +11,7 @@ import {
   createEmptyChatStreamError,
 } from "../utils/chat-completions-body-override.js";
 import { resolveModelForRole } from "./model-resolver";
+import { getSystemModelConfig } from "./system-model";
 
 const logger = createLogger("model-factory");
 
@@ -21,7 +22,6 @@ export type ModelOptions = {
   temperature?: number;
   agentName?: string;
   agentRunId?: string;
-  stream?: boolean;
 };
 
 export async function createModel(opts?: number | ModelOptions): Promise<ChatOpenAI> {
@@ -64,10 +64,10 @@ export async function createModel(opts?: number | ModelOptions): Promise<ChatOpe
   const originalInvoke = model.invoke.bind(model);
   const guardStream = model.stream.bind(model);
   model.stream = async function wrappedEmptyGuard(...args: Parameters<typeof guardStream>) {
-    // Callers keep their event interface when the model requests a full response.
-    const stream = entry.customRequestParameters.stream === false
-      ? [await originalInvoke(...args)]
-      : await guardStream(...args);
+    // Read the domain's execution policy for this request, not the model's parameters.
+    const stream = getSystemModelConfig().nodeModelStreamingEnabled
+      ? await guardStream(...args)
+      : [await originalInvoke(...args)];
     return IterableReadableStream.fromAsyncGenerator(
       (async function* () {
         let chunkCount = 0;

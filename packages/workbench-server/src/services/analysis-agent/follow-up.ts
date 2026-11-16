@@ -57,7 +57,7 @@ export async function runAnalysisFollowUp(
     const systemPrompt = analysisContext
       ? renderPrompt("analysis-agent.follow-up.with-context.system", { analysisContext })
       : renderPrompt("analysis-agent.follow-up.without-context.system");
-    const model = await createModel({ agentName: modelAgentName("followUp"), temperature: 0.7, stream: true });
+    const model = await createModel({ agentName: modelAgentName("followUp"), temperature: 0.7 });
     let fullResponse = "";
     const stream = await model.stream(
       [

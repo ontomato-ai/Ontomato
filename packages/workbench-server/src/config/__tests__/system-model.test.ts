@@ -7,6 +7,7 @@ import { runWithLogContext } from "../../logging/log-context";
 import {
   DEFAULT_ABC_QUESTION_MODE,
   DEFAULT_QUERY_TIMEOUT_SECONDS,
+  DEFAULT_NODE_MODEL_STREAMING_ENABLED,
   SystemModelConfigError,
   getSystemModelConfig,
   saveSystemModelConfig,
@@ -34,23 +35,27 @@ describe("system-model configuration", () => {
     expect(config).toEqual({
       abcQuestionMode: DEFAULT_ABC_QUESTION_MODE,
       queryTimeoutSeconds: DEFAULT_QUERY_TIMEOUT_SECONDS,
+      nodeModelStreamingEnabled: DEFAULT_NODE_MODEL_STREAMING_ENABLED,
     });
   });
 
-  it("saves and reads configuration containing only abcQuestionMode and queryTimeoutSeconds", () => {
+  it("saves and reads the domain runtime settings", () => {
     const saved = saveSystemModelConfig("domain-1", {
       abcQuestionMode: "tool_fixed",
       queryTimeoutSeconds: 60,
+      nodeModelStreamingEnabled: true,
     });
     expect(saved).toEqual({
       abcQuestionMode: "tool_fixed",
       queryTimeoutSeconds: 60,
+      nodeModelStreamingEnabled: true,
     });
 
     const loaded = getSystemModelConfig("domain-1");
     expect(loaded).toEqual({
       abcQuestionMode: "tool_fixed",
       queryTimeoutSeconds: 60,
+      nodeModelStreamingEnabled: true,
     });
   });
 
@@ -102,6 +107,7 @@ describe("system-model configuration", () => {
     expect(config).toEqual({
       abcQuestionMode: DEFAULT_ABC_QUESTION_MODE,
       queryTimeoutSeconds: 300,
+      nodeModelStreamingEnabled: true,
     });
 
     // The file is rewritten in the current shape, with models/agents dropped.
@@ -109,7 +115,39 @@ describe("system-model configuration", () => {
     expect(rewritten).toEqual({
       abcQuestionMode: DEFAULT_ABC_QUESTION_MODE,
       queryTimeoutSeconds: 300,
+      nodeModelStreamingEnabled: true,
     });
+  });
+
+  it("saves the independent switch without changing other fields or another domain", () => {
+    saveSystemModelConfig("switch-a", { abcQuestionMode: "tool_fixed", queryTimeoutSeconds: 180 });
+    saveSystemModelConfig("switch-a", { nodeModelStreamingEnabled: false });
+    expect(getSystemModelConfig("switch-a")).toEqual({
+      abcQuestionMode: "tool_fixed", queryTimeoutSeconds: 180, nodeModelStreamingEnabled: false,
+    });
+    saveSystemModelConfig("switch-a", { queryTimeoutSeconds: 240 });
+    expect(getSystemModelConfig("switch-a").nodeModelStreamingEnabled).toBe(false);
+    expect(getSystemModelConfig("switch-b").nodeModelStreamingEnabled).toBe(true);
+    expect(() => saveSystemModelConfig("switch-a", {
+      nodeModelStreamingEnabled: "false" as unknown as boolean,
+    })).toThrow(SystemModelConfigError);
+  });
+
+  it("defaults an absent switch without rewriting an existing current-format file", () => {
+    const file = path.join(tmpDir, "data", "system-model-config", "old-current.json");
+    const source = JSON.stringify({ abcQuestionMode: "harness", queryTimeoutSeconds: 100 });
+    fs.writeFileSync(file, source);
+    expect(getSystemModelConfig("old-current").nodeModelStreamingEnabled).toBe(true);
+    expect(fs.readFileSync(file, "utf8")).toBe(source);
+  });
+
+  it("reports a malformed stored document and refuses to overwrite it with defaults", () => {
+    const file = path.join(tmpDir, "data", "system-model-config", "broken.json");
+    fs.writeFileSync(file, "{broken");
+    expect(() => getSystemModelConfig("broken")).toThrow(SystemModelConfigError);
+    expect(() => saveSystemModelConfig("broken", { nodeModelStreamingEnabled: false }))
+      .toThrow(SystemModelConfigError);
+    expect(fs.readFileSync(file, "utf8")).toBe("{broken");
   });
 
   it("validates invalid queryTimeoutSeconds and abcQuestionMode", () => {

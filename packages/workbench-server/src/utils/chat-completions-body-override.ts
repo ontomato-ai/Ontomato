@@ -2,7 +2,8 @@
  * Chat Completions final-body top-level override at the SDK fetch boundary.
  *
  * The configured custom parameters replace whole top-level fields of the
- * request body LangChain already assembled: objects/arrays are replaced as
+ * request body LangChain already assembled, except for the SDK-owned stream
+ * transport mode: objects/arrays are replaced as
  * single values (no deep merge), `null` is sent as-is, absent fields keep the
  * system-generated value. Spreading own fields is enough: both sides are
  * plain JSON, so no prototype handling is needed.
@@ -19,6 +20,7 @@ export function createChatCompletionsOverrideFetch(
   customRequestParameters: Record<string, unknown> | undefined
 ): typeof fetch | undefined {
   const overrides: Record<string, unknown> = { ...customRequestParameters };
+  delete overrides.stream;
   if (Object.keys(overrides).length === 0) return undefined;
   return async (input, init) => {
     const requestBody = JSON.parse(init?.body as string) as Record<string, unknown>;

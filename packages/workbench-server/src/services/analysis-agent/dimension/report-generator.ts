@@ -376,7 +376,6 @@ export class ReportGenerator {
     for await (const chunk of streamWithRetry(async () => {
       const model = await createModel({
         ...this.modelOptions,
-        stream: true,
         agentName: modelAgentName("analysisReport"),
       });
       return await model.stream(prompt, { signal });
@@ -415,7 +414,6 @@ export class ReportGenerator {
     for await (const chunk of streamWithRetry(async () => {
       const model = await createModel({
         ...this.modelOptions,
-        stream: true,
         agentName: modelAgentName("analysisReport"),
       });
       return await model.stream(prompt, { signal });

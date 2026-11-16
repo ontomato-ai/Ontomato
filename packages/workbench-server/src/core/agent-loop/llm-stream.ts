@@ -15,6 +15,7 @@ import {
 } from "../../utils/chat-completions-body-override.js";
 import { startLlmLog } from "../../logging/llm-logger";
 import { createLogger } from "../../logging/logger";
+import { getSystemModelConfig } from "../../config/system-model";
 import type {
   ModelConfig,
   AgentMessage,
@@ -243,9 +244,9 @@ export async function* streamChatCompletion(
   const loggedChunks: unknown[] = [];
 
   try {
-    // An explicit request override selects the matching SDK response mode.
+    // The domain's execution policy selects the SDK method for this request.
     const completion =
-      modelConfig.modelKwargs?.stream === false
+      !getSystemModelConfig().nodeModelStreamingEnabled
         ? await model.invoke(langChainMessages, { signal: combinedSignal })
         : undefined;
     if (completion?.invalid_tool_calls?.length) {

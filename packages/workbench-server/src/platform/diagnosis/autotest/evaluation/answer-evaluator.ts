@@ -107,7 +107,7 @@ export async function evaluateAnswer(input: AnswerEvaluateInput): Promise<Evalua
   }
 
   try {
-    const model = await createModel({ agentName: modelAgentName("answerEvaluator"), temperature: 0, stream: false });
+    const model = await createModel({ agentName: modelAgentName("answerEvaluator"), temperature: 0 });
 
     const protocol = loadEvaluationProtocol();
     const userPrompt = buildUserPrompt(
