@@ -63,10 +63,10 @@ class AgentChannelBoundaryTest {
 
   @Test void listUsesTheOntologyProviderProtocol() throws Exception {
     var actor=JSONObject.of("id",RUN,"domainId","a");
-    when(directory.list(actor,"a")).thenReturn(JSONObject.of("agents",java.util.List.of()));
+    when(directory.list(actor,"a","en")).thenReturn(JSONObject.of("agents",java.util.List.of()));
     mvc().perform(post("/platform/agent-channel/list").header("X-Domain-Id","a").contentType(MediaType.APPLICATION_JSON)
-      .content(JSONObject.of("providerId","ontology","actor",actor).toJSONString())).andExpect(status().isOk());
-    verify(directory).list(actor,"a");
+      .content(JSONObject.of("providerId","ontology","actor",actor,"language","en").toJSONString())).andExpect(status().isOk());
+    verify(directory).list(actor,"a","en");
   }
   @Test void ontologyDirectoryReturnsOnlyItsOwnAuthorizedDefinition() {
     var actor=JSONObject.of("id",RUN,"domainId","a");
@@ -76,12 +76,14 @@ class AgentChannelBoundaryTest {
     var actions=mock(ActionCreationService.class);
     doThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN)).when(callers).requireQuery(any());
     when(governance.agents("a")).thenReturn(java.util.List.of(JSONObject.of("id",KnowledgeGovernanceService.AGENT,"name","Governance","description","")));
-    var own=new AgentDirectory(callers,identity,actions,governance);
-    var agents=own.list(actor,"a").getJSONArray("agents");
+    var labels=mock(OntologyAgentLabels.class);
+    when(labels.localize(anyString(),any(),anyString())).thenAnswer(call->call.getArgument(1));
+    var own=new AgentDirectory(callers,identity,actions,governance,labels);
+    var agents=own.list(actor,"a","en").getJSONArray("agents");
     assertEquals(1,agents.size());
     assertEquals("ontology",agents.getJSONObject(0).getJSONObject("ref").getString("providerId"));
     when(identity.hasKnowledgeGovernanceAccess("user","a")).thenReturn(false);
-    assertTrue(own.list(actor,"a").getJSONArray("agents").isEmpty());
+    assertTrue(own.list(actor,"a","en").getJSONArray("agents").isEmpty());
   }
 
   @Test void buildTestRequestsCannotReachChannelCommandsStreamsOrProviderCallbacks() throws Exception {

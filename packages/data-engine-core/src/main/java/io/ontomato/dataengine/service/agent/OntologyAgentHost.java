@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class OntologyAgentHost {
   private final OntologyAgentStore store;
+  private final OntologyAgentLabels labels;
   private final AgentRuntimeClient runtime;
   private final OntologyRetrievalService retrieval;
   private final OntologyGenerationService generation;
@@ -24,7 +25,8 @@ public class OntologyAgentHost {
       OntologyRetrievalService retrieval,
       OntologyGenerationService generation,
       KnowledgeGovernanceService governance,
-      ActionCreationService actionCreation) {
+      ActionCreationService actionCreation,OntologyAgentLabels labels) {
+    this.labels=labels;
     this.store = store;
     this.runtime = runtime;
     this.retrieval = retrieval;
@@ -75,9 +77,9 @@ public class OntologyAgentHost {
   }
 
   public JSONObject agents(boolean governanceAllowed) {
-    return agents(governanceAllowed,null);
+    return agents(governanceAllowed,null,"en");
   }
-  public JSONObject agents(boolean governanceAllowed,String domain) {
+  public JSONObject agents(boolean governanceAllowed,String domain,String language) {
     var response = JSONObject.of(
         "agents",
         List.of(
@@ -101,6 +103,9 @@ public class OntologyAgentHost {
         "description","Describe a write action in conversation; the agent drafts and tests it","icon",null,"enabled",true));
       response.put("agents",agents);
     }
+    var localized=new JSONArray();
+    for(Object agent:response.getJSONArray("agents")) localized.add(labels.localize(JSONObject.from(agent).getString("id"),JSONObject.from(agent),language));
+    response.put("agents",localized);
     return response;
   }
 

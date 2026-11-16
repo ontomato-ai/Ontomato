@@ -366,7 +366,7 @@ At a terminal loop boundary it atomically consumes inputs or seals the loop. Lat
 to the next intent. Each execution fixes requestedBy and root independently of the creation tree.
 
 Callbacks are POST list/prepare/settle/read/cancel beneath the configured provider URL. List
-receives `{providerId,actor}` and returns only that provider's accessible entries. The runtime
+receives `{providerId,actor,language}` and returns only that provider's accessible entries. The runtime
 calls every registered provider directly and merges their lists; Java answers only the ontology
 provider's list and identity recovery. There is no separate directory port or Java-to-Node lookup.
 Prepare receives requestedBy (nullable) and the fixed root. Run mode returns a runtime start request; steer mode acknowledges the host's input recording and can return updated host context. The runtime retains typed input and its original receipt ID in both cases. Settle closes
@@ -440,3 +440,7 @@ its original question, the question's default assumption, and the answer. The ch
 the question by replyTo from the domain-scoped input record. Steering, next-round context and
 compaction share this projection; senders supply only answer and replyTo. Durable input and
 host confirmed-decision recording retain the original answer, and deliveries gain no revision field.
+
+Provider list receives the caller's language on both native and external commands. Each owner
+uses its definition or installed locale labels for names and descriptions, preserving custom
+names. The channel only combines and filters entries and owns no translation table.

@@ -28,7 +28,7 @@ export const agentInputSchema = z.discriminatedUnion("role", [
   z.object({ role: z.literal("user"), content: z.string().min(1), timestamp: z.number().int().nonnegative() }).strict(),
   agentNotificationSchema,
 ]);
-export const agentProviderListRequestSchema = z.object({ providerId: key, actor: agentActorRefSchema }).strict();
+export const agentProviderListRequestSchema = z.object({ providerId: key, actor: agentActorRefSchema, language: key }).strict();
 export const agentDirectoryEntrySchema = z.object({
   ref: agentRefSchema, name: key, description: z.string(),
   contextSchema: runtimeJsonObjectSchema.optional(),

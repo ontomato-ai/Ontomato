@@ -192,7 +192,7 @@ class OntologyRetrievalContractTest {
             retrieval,
             mock(OntologyGenerationService.class),
             mock(KnowledgeGovernanceService.class),
-            mock(ActionCreationService.class));
+            mock(ActionCreationService.class),mock(OntologyAgentLabels.class));
     http =
         MockMvcBuilders.standaloneSetup(
                 new OntologyAgentController(host, authorization, runtime, retrieval),

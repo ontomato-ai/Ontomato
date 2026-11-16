@@ -219,3 +219,13 @@ it("projects the original question, default and reply as one context message for
   expect(notification.content).toBe("Use the confirmed period");expect(port.inputIds.get(steering)).toBe(inputId);
   expect(port.facts.question).toHaveBeenCalledWith(scope.domainId,inputId);
 });
+
+it.each(["native","external"])("forwards %s caller language to each provider without translating its directory",async kind=>{
+  const {channel:port}=channel();
+  const fetch=vi.fn(async (_url:unknown,init:{body?:string})=>{
+    expect(JSON.parse(init.body!).language).toBe("zh-CN");
+    return Response.json({agents:[{ref:context.agent,name:"取数员",description:"提供方说明"}]});
+  });vi.stubGlobal("fetch",fetch);
+  const caller=kind==="native"?{...run,language:"zh-CN"}:{kind:"external" as const,actor:context.actor,authority:context.authority,language:"zh-CN",credential:{token:"initiating-token",apiKey:null}};
+  await expect(port.execute(scope,caller,{op:"list"})).resolves.toMatchObject({agents:[{name:"取数员",description:"提供方说明"}]});
+});

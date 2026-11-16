@@ -1,3 +1,5 @@
+import { configureI18n } from "../../../i18n";
+import { en,enLocaleMeta } from "../../../i18n/locales/en";
 import { beforeEach,expect,it,vi } from "vitest";
 import { agentChannelService } from "../channel";
 import { restoreAgentCaller } from "../caller";
@@ -10,6 +12,10 @@ vi.mock("../../assistant/service",() => ({ assistantService: { admitAgent: vi.fn
 vi.mock("../../assistant/store",() => ({ assistantStore: { channelAgents: vi.fn() } }));
 vi.mock("../../ops-diagnosis/service",() => ({ diagnosisService: { agents: vi.fn() },createDiagnosis: vi.fn(),prepareDiagnosis: vi.fn() }));
 vi.mock("../../../identity/installed",() => ({ workbenchIdentity: vi.fn() }));
+configureI18n({defaultLocale:"en",appTextLocale:"en",languageSwitchEnabled:true,packs:{
+  en:{messages:en,...enLocaleMeta},
+  "zh-CN":{messages:{...en,"assistant.default.regular.name":"智能助手","assistant.default.regular.description":"业务数据助手"},...enLocaleMeta},
+}});
 const actor = { id: "11111111-1111-4111-8111-111111111111",domainId: "a" };
 const observeAccess = vi.fn();
 beforeEach(() => {
@@ -21,19 +27,29 @@ beforeEach(() => {
   vi.mocked(diagnosisService.agents).mockResolvedValue({ agents: [{ id: actor.id,name: "Diagnosis",description: "Inspect",icon: null,enabled: true }] });
 });
 it("the workbench provider lists only its own agents",async () => {
-  const result = await agentChannelService.list({ providerId: "workbench",actor },"a");
+  const result = await agentChannelService.list({ providerId: "workbench",actor,language:"en" },"a");
   expect(result.agents.map(agent => agent.ref.providerId)).toEqual(["workbench"]);
   expect(observeAccess).not.toHaveBeenCalled();
   expect(diagnosisService.agents).not.toHaveBeenCalled();
 });
 it("the diagnosis provider lists only its own agents",async () => {
-  const result = await agentChannelService.list({ providerId: "observe",actor },"a");
+  const result = await agentChannelService.list({ providerId: "observe",actor,language:"en" },"a");
   expect(result.agents.map(agent => agent.ref.providerId)).toEqual(["observe"]);
   expect(assistantStore.channelAgents).not.toHaveBeenCalled();
   expect(observeAccess).toHaveBeenCalledTimes(1);
 });
 it("a denied diagnosis capability contributes no entries",async () => {
   observeAccess.mockRejectedValue(new HttpError(403,"Forbidden","FORBIDDEN"));
-  await expect(agentChannelService.list({ providerId: "observe",actor },"a")).resolves.toEqual({ agents: [] });
+  await expect(agentChannelService.list({ providerId: "observe",actor,language:"en" },"a")).resolves.toEqual({ agents: [] });
   expect(diagnosisService.agents).not.toHaveBeenCalled();
+});
+
+it("uses the caller locale with the workbench's existing default label owner",async()=>{
+  vi.mocked(assistantStore.channelAgents).mockResolvedValue([{id:actor.id,kind:"regular",name:"Assistant",description:"Ask questions about your data",enabled:true} as Awaited<ReturnType<typeof assistantStore.channelAgents>>[number]]);
+  const result=await agentChannelService.list({providerId:"workbench",actor,language:"zh-CN"},"a");
+  expect(result.agents[0]).toMatchObject({name:"智能助手",description:"业务数据助手"});
+});
+it("passes the caller locale to the diagnosis provider's own labels",async()=>{
+  await agentChannelService.list({providerId:"observe",actor,language:"zh-CN"},"a");
+  expect(diagnosisService.agents).toHaveBeenCalledWith({userId:"user",domainId:"a"},"zh-CN");
 });

@@ -35,7 +35,7 @@ public class OntologyAgentController {
   @GetMapping("/agents")
   public Object agents(HttpServletRequest req) {
     var context=access.authenticated(req);
-    return host.agents(access.governanceAllowed(),context.owner().domainId());
+    return host.agents(access.governanceAllowed(),context.owner().domainId(),context.language());
   }
 
   @PostMapping("/sessions")

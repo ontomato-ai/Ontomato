@@ -4,6 +4,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { agentPrepareRequestSchema, agentProviderExecutionSchema, agentProviderListRequestSchema, type AgentRunContext } from "@ontomato/contracts/agent-channel";
 import { DIAGNOSIS_AGENT_ID } from "@ontomato/contracts/ops-diagnosis";
 import { assistantService } from "../assistant/service";
+import { assistantName,assistantDescription } from "../assistant/labels";
 import { assistantStore } from "../assistant/store";
 import { diagnosisService, createDiagnosis, prepareDiagnosis } from "../ops-diagnosis/service";
 import { restoreAgentCaller } from "./caller";
@@ -27,14 +28,14 @@ export const agentChannelService = {
         if (!agent.enabled) continue;
         try { await assistantService.admitAgent(agent.id, owner, credentials); }
         catch (error) { if (error instanceof HttpError && error.status === 403) continue; throw error; }
-        agents.push({ ref: { providerId: "workbench", agentId: agent.id }, name: agent.name, description: agent.description,
+        agents.push({ ref: { providerId: "workbench", agentId: agent.id }, name: assistantName(agent,body.language), description: assistantDescription(agent,body.language),
           ...(isAppBuilderKind(agent.kind) ? { contextSchema: { type: "object", properties: { workspaceId: { type: "string", format: "uuid" } }, required: ["workspaceId"], additionalProperties: false } } : {}) });
       }
       return { agents };
     }
     try {
       await workbenchIdentity().assertObserveAccess({ domainId: domain, ...credentials });
-      const agent = (await diagnosisService.agents(owner)).agents[0];
+      const agent = (await diagnosisService.agents(owner,body.language)).agents[0];
       agents.push({ ref: { providerId: "observe", agentId: agent.id }, name: agent.name, description: agent.description });
     } catch (error) { if (!(error instanceof HttpError && error.status === 403)) throw error; }
     return { agents };

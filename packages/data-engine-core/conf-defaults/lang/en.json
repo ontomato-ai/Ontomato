@@ -462,5 +462,29 @@
   {
     "key": "AgentRole.knowledgeGovernance",
     "value": "Knowledge Governance Agent"
+  },
+  {
+    "key": "OntologyAgent.retrieval.name",
+    "value": "Data retrieval"
+  },
+  {
+    "key": "OntologyAgent.retrieval.description",
+    "value": "Answer a data question using the ontology"
+  },
+  {
+    "key": "OntologyAgent.governance.name",
+    "value": "Knowledge governance"
+  },
+  {
+    "key": "OntologyAgent.governance.description",
+    "value": "Review business knowledge and save recommendations"
+  },
+  {
+    "key": "OntologyAgent.action.name",
+    "value": "Action creation"
+  },
+  {
+    "key": "OntologyAgent.action.description",
+    "value": "Describe a write action in conversation; the agent drafts and tests it"
   }
 ]
