@@ -50,7 +50,9 @@ COPY tools/ /tmp/tools/
 COPY launch.sh /tmp/launch.sh
 
 WORKDIR /build/workspace/${WORKSPACE}/apps/workbench
-RUN pnpm build:web
+# The web bundle needs close to 2 GB of heap. Node's default limit follows host
+# memory and is about 2.2 GB on a 16 GB build host, so set it explicitly.
+RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm build:web
 # The product's apps SDK version, installed into the data volume at startup (APPS_SDK_BUILD names it).
 RUN pnpm build:sdk
 RUN TARGETPLATFORM=${TARGETPLATFORM} node /tmp/tools/workbench/stage-app.mjs
