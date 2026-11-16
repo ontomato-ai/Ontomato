@@ -44,8 +44,11 @@ class OntologyGenerationCleanupTest {
     operations = mock(GenerationOperations.class);
     code = mock(RuntimeCodeClient.class);
     when(sessions.getNodeId()).thenReturn("fixture-node");
-    var admission=new org.springframework.beans.factory.support.StaticListableBeanFactory(
-        java.util.Map.of("callers",mock(AgentCaller.class),"channel",mock(AgentChannelRuns.class)));
+    var admission=new org.springframework.beans.factory.support.DefaultListableBeanFactory();
+    admission.registerSingleton("callers",mock(AgentCaller.class));
+    admission.registerSingleton("channel",mock(AgentChannelRuns.class));
+    assertNotNull(admission.getBeanProvider(AgentCaller.class).getObject());
+    assertNotNull(admission.getBeanProvider(AgentChannelRuns.class).getObject());
     generation =
         new OntologyGenerationService(
             store,

@@ -112,8 +112,9 @@ class OntologyGenerationContractTest {
     var callers=mock(AgentCaller.class);
     var channel=mock(AgentChannelRuns.class);
     when(callers.ownerContext(any(),any(),anyString(),anyLong())).thenAnswer(call->new OntologyAgentAccess.Context(call.getArgument(0),call.getArgument(1),null,null,call.getArgument(2),call.getArgument(3),null));
-    var admission=new org.springframework.beans.factory.support.StaticListableBeanFactory(
-        java.util.Map.of("callers",callers,"channel",channel));
+    var admission=new org.springframework.beans.factory.support.DefaultListableBeanFactory();
+    admission.registerSingleton("callers",callers);
+    admission.registerSingleton("channel",channel);
     generation =
         new OntologyGenerationService(
             store,
