@@ -44,6 +44,8 @@ class OntologyGenerationCleanupTest {
     operations = mock(GenerationOperations.class);
     code = mock(RuntimeCodeClient.class);
     when(sessions.getNodeId()).thenReturn("fixture-node");
+    var admission=new org.springframework.beans.factory.support.StaticListableBeanFactory(
+        java.util.Map.of("callers",mock(AgentCaller.class),"channel",mock(AgentChannelRuns.class)));
     generation =
         new OntologyGenerationService(
             store,
@@ -53,7 +55,7 @@ class OntologyGenerationCleanupTest {
             sessions,
             operations,
             code,
-            mock(DataPermissionLookup.class),mock(AgentCaller.class),mock(AgentChannelRuns.class));
+            mock(DataPermissionLookup.class),admission.getBeanProvider(AgentCaller.class),admission.getBeanProvider(AgentChannelRuns.class));
     cleanupLogger = (Logger) LoggerFactory.getLogger(OntologyGenerationService.class);
     warnings = new ListAppender<>();
     warnings.start();

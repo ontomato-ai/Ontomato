@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 /** Runs ontology definitions and consumes only this run's immutable delivery. */
@@ -29,8 +30,9 @@ public class OntologyGenerationService {
           "quality");
   private static final ThreadLocal<QueryAccessService.Access> CURRENT_ACCESS = new ThreadLocal<>();
   private static final ThreadLocal<Owner> CURRENT = new ThreadLocal<>();
-  private final AgentCaller callers;
-  private final AgentChannelRuns channel;
+  // Admission composes identity and permissions only when execution starts, never during metadata construction.
+  private final ObjectProvider<AgentCaller> callers;
+  private final ObjectProvider<AgentChannelRuns> channel;
   private final OntologyAgentStore store;
   private final AgentRuntimeClient runtime;
   private final OntologyAgentDefinitions definitions;
@@ -53,7 +55,7 @@ public class OntologyGenerationService {
       QueryGrantService grants,
       SessionRegistryService sessions,
       GenerationOperations operations,
-      RuntimeCodeClient code, @Lazy DataPermissionLookup permissions,AgentCaller callers,AgentChannelRuns channel) {
+      RuntimeCodeClient code, @Lazy DataPermissionLookup permissions,ObjectProvider<AgentCaller> callers,ObjectProvider<AgentChannelRuns> channel) {
     this.callers=callers; this.channel=channel;
     this.store = store;
     this.runtime = runtime;
@@ -215,8 +217,8 @@ public class OntologyGenerationService {
     try {
       checkBusiness(businessId);
       runtime.json(domain,run,"/v1/sessions","POST",Map.of(),session);
-      var context=callers.ownerContext(owner,executionAccess(domain),lang==null?"en":lang,Instant.parse(store.run(session,run,owner).getString("deadline")).toEpochMilli());
-      channel.start(agentId(kind),session,run,JSONObject.of("role","notification","kind","agent-message","source",JSONObject.of("kind","external"),"content","Complete the ontology "+kind+" task. Read the "+(metricView?"metricview-generation":"ontology-generation")+" skill and write outputs/result.json.","timestamp",System.currentTimeMillis()),
+      var context=callers.getObject().ownerContext(owner,executionAccess(domain),lang==null?"en":lang,Instant.parse(store.run(session,run,owner).getString("deadline")).toEpochMilli());
+      channel.getObject().start(agentId(kind),session,run,JSONObject.of("role","notification","kind","agent-message","source",JSONObject.of("kind","external"),"content","Complete the ontology "+kind+" task. Read the "+(metricView?"metricview-generation":"ontology-generation")+" skill and write outputs/result.json.","timestamp",System.currentTimeMillis()),
         JSONObject.of("kind",kind,"businessId",businessId,"prompt",prompt,"source",source),context);
       while (true) {
         checkBusiness(businessId);
