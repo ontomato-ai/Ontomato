@@ -261,6 +261,9 @@ class OntologyRetrievalContractTest {
     var parameters=new JSONObject(value);parameters.remove("question");
     var prepared=retrieval.prepareRun(session,run,input,answer?null:parameters,caller==null?run:caller,context);
     runtime.json(owner.domainId(),run,"/v1/sessions/"+session+"/runs","POST",prepared,run);
+    retrieval.recover();
+    for(int attempt=0;attempt<200 && !store.run(session,run,owner).getBooleanValue("runtime_admitted");attempt++) Thread.sleep(10);
+    assertTrue(store.run(session,run,owner).getBooleanValue("runtime_admitted"));
     retrieval.reconcile(session,run,owner,runtime.run(owner.domainId(),run));
     return retrieval.get(session,owner);
   }
@@ -513,7 +516,7 @@ class OntologyRetrievalContractTest {
             .contentType("application/json").content(AgentJson.json(preparation)))
         .andExpect(status().isAccepted());
     var operation = org.mockito.ArgumentCaptor.forClass(QueryJobService.Operation.class);
-    verify(jobs).start(eq(output), any(io.ontomato.dataengine.core.bean.User.class), eq("output"), any(), operation.capture());
+    verify(jobs).start(eq(output), any(QueryAccessService.Access.class), eq("output"), any(), operation.capture());
     var rejected = assertThrows(io.ontomato.dataengine.dataAdapter.DslContractViolationException.class, () -> operation.getValue().execute(output));
     assertTrue(rejected.getMessage().contains("Unknown DSL class"));
     verifyNoInteractions(engine);
