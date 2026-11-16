@@ -61,9 +61,13 @@ export async function createModel(opts?: number | ModelOptions): Promise<ChatOpe
   // A normally-ended stream without any chunk is an error on every path.
   // Args (including abort signals) pass through; an early consumer break or
   // an SDK error skips the check, preserving break/cancel semantics.
+  const originalInvoke = model.invoke.bind(model);
   const guardStream = model.stream.bind(model);
   model.stream = async function wrappedEmptyGuard(...args: Parameters<typeof guardStream>) {
-    const stream = await guardStream(...args);
+    // Callers keep their event interface when the model requests a full response.
+    const stream = entry.customRequestParameters.stream === false
+      ? [await originalInvoke(...args)]
+      : await guardStream(...args);
     return IterableReadableStream.fromAsyncGenerator(
       (async function* () {
         let chunkCount = 0;
@@ -80,7 +84,6 @@ export async function createModel(opts?: number | ModelOptions): Promise<ChatOpe
     return model;
   }
 
-  const originalInvoke = model.invoke.bind(model);
   model.invoke = async function wrappedInvoke(...args: Parameters<typeof model.invoke>) {
     const tracker = startLlmLog(agentName, args[0], {
       model: options.modelName || entry.modelName,
