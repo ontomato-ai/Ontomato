@@ -33,7 +33,7 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
       {
         key: "ontology:governance",
         titleKey: "platform.layers.governance",
-        paths: [platformRoutes.members.path,platformRoutes.roles.path,platformRoutes.principals.path,platformRoutes.policies.path,platformRoutes.organization.path,managerPaths.capabilityMap],
+        paths: [platformRoutes.members.path,platformRoutes.principals.path,platformRoutes.roles.path,platformRoutes.policies.path,platformRoutes.organization.path,managerPaths.capabilityMap],
       },
       { key: "ontology:products", titleKey: "platform.layers.products", paths: [managerPaths.products] },
     ],

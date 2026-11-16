@@ -62,7 +62,13 @@ const route = useRoute();
 const router = useRouter();
 // Keep the workspace directly accessible while its navigation entry is temporarily hidden.
 const railApps = computed(() => applicationShortcuts(props.apps??[],props.dynamicAppIds??[],props.pinnedAppIds??[],activeAppId.value).map((app) => railApp(app, () => emit("selectApp", app.id))));
-const activeAppId = computed(() => appFor(route.path)?.id ?? null);
+const navigationContext=computed(()=>{
+  if(route.query.navigationContext!=='ontology')return null;
+  const app=props.apps.find(app=>app.id==='ontology');
+  const page=(route.meta.page as string|undefined)??route.path;
+  return app?.groups?.some(group=>group.pages.some(item=>item.id===page))?app:null;
+});
+const activeAppId = computed(() => navigationContext.value?.id??appFor(route.path)?.id ?? null);
 const activeApp = computed(() => props.apps.find((app) => app.id === activeAppId.value) ?? null);
 const browserWorkspace = computed(() => route.path === "/browser/data" || route.path.startsWith("/browser/data/"));
 
@@ -73,6 +79,10 @@ const browserWorkspace = computed(() => route.path === "/browser/data" || route.
  */
 const menu = computed(() => (activeApp.value?.frame === "menu" ? activeApp.value : null));
 const activePageId = computed(() => (route.meta.page as string | undefined) ?? route.path);
+function selectMenuPage(path:string){
+  const external=activeApp.value?.id==='ontology'&&!path.startsWith('/ontology/');
+  void router.push({path,query:external?{navigationContext:'ontology'}:{}});
+}
 
 /**
  * The one header above the page: in a menu application it names the page (the application's name heads the column);
@@ -112,13 +122,13 @@ const headerLabels = computed(() => ({
     <div class="platform-app-body" :class="{ 'has-menu': menu !== null && !blocked }">
       <aside v-if="menu && !blocked" class="platform-app-menu" :aria-label="labels.pages">
         <h2 class="app-menu-title">{{ menu.label }}</h2>
-        <select class="mobile-page-select" :aria-label="labels.pages" :value="activePageId" @change="router.push(($event.target as HTMLSelectElement).value)"><optgroup v-for="group in menu.groups??[]" :key="group.key" :label="group.label||menu.label"><option v-for="page in group.pages" :key="page.id" :value="page.id" :disabled="!!page.unavailableHint">{{page.label}}</option></optgroup><option v-if="menu.foot" :value="menu.foot.id">{{menu.foot.label}}</option></select>
+        <select class="mobile-page-select" :aria-label="labels.pages" :value="activePageId" @change="selectMenuPage(($event.target as HTMLSelectElement).value)"><optgroup v-for="group in menu.groups??[]" :key="group.key" :label="group.label||menu.label"><option v-for="page in group.pages" :key="page.id" :value="page.id" :disabled="!!page.unavailableHint">{{page.label}}</option></optgroup><option v-if="menu.foot" :value="menu.foot.id">{{menu.foot.label}}</option></select>
         <AppPanelPages
           class="app-menu-pages"
           :groups="menu.groups ?? []"
           :foot="menu.foot"
           :active-page-id="activePageId"
-          @select-page="router.push($event)"
+          @select-page="selectMenuPage"
         />
       </aside>
       <div class="platform-app-page">

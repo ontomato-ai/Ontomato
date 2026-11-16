@@ -70,6 +70,19 @@ async function mountLayout(path: string, granted: string[]) {
 }
 
 describe("the platform layout", () => {
+  it('preserves the ontology menu for linked administration pages and restores native navigation on direct entry',async()=>{
+    const {wrapper,router,apps}=await mountLayout('/ontology/objects',['ontology-modeling']);
+    router.addRoute({path:'/permissions/members',component:page('members'),meta:{page:'/permissions/members'}});
+    const ontology=apps.find(app=>app.id==='ontology')!;
+    await wrapper.setProps({apps:apps.map(app=>app.id==='ontology'?{...ontology,frame:'menu' as const,groups:[...(ontology.groups??[]),{key:'governance',pages:[{id:'/permissions/members',label:'Members',icon:'pages'}]}]}:app)});
+    await wrapper.findAll('.page-row').find(row=>row.text()==='Members')!.trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.query.navigationContext).toBe('ontology');
+    expect(wrapper.find('.platform-app-menu').text()).toContain('Members');
+    expect(wrapper.find('.platform-app-menu .page-row.active').text()).toBe('Members');
+    await router.push('/permissions/members');await flushPromises();
+    expect(wrapper.find('.platform-app-menu').exists()).toBe(false);
+  });
   it("does not filter the rail by what the account may open", async () => {
     const none = (await mountLayout("/ontology/objects", [])).wrapper.findAll(".rail-row").length;
     const all = (await mountLayout("/ontology/objects", ["ontology-modeling", "business-knowledge"])).wrapper.findAll(".rail-row").length;
