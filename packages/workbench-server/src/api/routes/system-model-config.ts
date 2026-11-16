@@ -11,6 +11,7 @@ import { t, tApp } from "../../i18n";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { asyncHandler, sendError } from "../utils/http";
 import { HttpError } from "../../utils/errors";
+import { requirePermission } from "../../identity/installed";
 
 const router: ReturnType<typeof Router> = Router();
 const logger = createLogger("api:system-model-config");
@@ -38,6 +39,7 @@ router.get(
 
 router.post(
   "/save",
+  requirePermission(["system-config"]),
   asyncHandler(
     async (req: Request, res: Response<HttpResponse<SystemModelConfig>>) => {
       try {

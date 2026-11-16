@@ -43,7 +43,8 @@ export const adminApi = {
   rebuildVectors: () => apiPost("/businessConfig/rebuildVectors"),
   pauseVectorRebuild: () => apiPost("/businessConfig/pauseVectorRebuild"),
   getSystemModelConfig: () => nodeApiGet("/system-model-config"),
-  saveSystemModelConfig: (payload: SystemModelConfig) =>
+  // Each card submits only the fields it owns; the server merges them into this domain's config.
+  saveSystemModelConfig: (payload: Partial<SystemModelConfig>) =>
     nodeApiPost("/system-model-config/save", payload),
   queryAuditLogs: (params: unknown) => apiPost("/auditLog/queryPage", params),
   getServiceInfo: () => apiGet("/maintenance/getserviceinfo"),

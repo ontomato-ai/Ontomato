@@ -657,3 +657,15 @@
   flex-direction: column;
   gap: var(--spacing-sm);
 }
+
+/* Explanatory lines of the workbench model call card, under its switch. */
+.node-model-call-hint {
+  margin: 0 0 var(--spacing-sm);
+  font-size: var(--text-sm);
+  color: var(--el-text-color-secondary);
+  line-height: 1.6;
+}
+
+.node-model-call-hint:last-of-type {
+  margin-bottom: var(--spacing-md);
+}

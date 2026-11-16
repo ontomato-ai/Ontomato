@@ -1,7 +1,13 @@
-import { afterEach, expect, it, vi } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { runAgentLoop } from "../agent-loop";
 import { streamChatCompletion } from "../llm-stream";
 import type { AgentState, ModelConfig } from "../types";
+import { installContentLayout } from "../../../content/layout";
+import { saveSystemModelConfig } from "../../../config/system-model";
+
 
 const tracker = vi.hoisted(() => ({
   success: vi.fn(), successFromChunks: vi.fn(), fail: vi.fn(), cancel: vi.fn(),
@@ -14,6 +20,19 @@ vi.mock("../../../i18n", () => ({ tApp: (key: string) => key }));
 vi.mock("../compaction/compact-messages", () => ({
   compactContext: () => { throw new Error("This offline test does not use sessions"); },
 }));
+
+const context = vi.hoisted(() => ({ domainId: "harness-off" }));
+vi.mock("../../../logging/log-context", () => ({ getLogContext: () => context }));
+let runtimeRoot: string;
+beforeAll(() => {
+  runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "independent-stream-test-"));
+  installContentLayout({ runtimeRoot, prompts: [], publicSkillsRoot: path.join(runtimeRoot, "skills"), runtimeResources: [] });
+});
+beforeEach(() => {
+  context.domainId = "harness-off";
+  saveSystemModelConfig(context.domainId, { nodeModelStreamingEnabled: false });
+});
+afterAll(() => { fs.rmSync(runtimeRoot, { recursive: true, force: true }); });
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -69,7 +88,7 @@ it("uses full responses for all rounds and dispatches every complete tool call",
   } : { content: "Done" }));
   const { agent, execute } = state();
   const messages = await runAgentLoop("Look up 1, 2 and 3", agent, {
-    ...config, modelKwargs: { stream: false, temperature: 0.2 },
+    ...config, modelKwargs: { stream: true, temperature: 0.2 },
     llmLog: { agentName: "fixture", agentRunId: "run-1" },
   }, () => {});
 
@@ -98,7 +117,8 @@ it("uses full responses for all rounds and dispatches every complete tool call",
   expect(tracker.successFromChunks).not.toHaveBeenCalled();
 });
 
-it.each([undefined, true])("keeps streaming when stream is %s", async stream => {
+it.each([undefined, false, true])("keeps streaming when enabled, regardless of custom stream=%s", async stream => {
+  saveSystemModelConfig(context.domainId, { nodeModelStreamingEnabled: true });
   const frame = (delta: Record<string, unknown>, finishReason: string | null = null) =>
     `data: ${JSON.stringify({ id: "response-1", object: "chat.completion.chunk", created: 0,
       model: "fixture-model", choices: [{ index: 0, delta, finish_reason: finishReason }] })}\n\n`;
@@ -160,4 +180,23 @@ it("cancels an in-flight full-response request through the existing signal", asy
   await started;
   controller.abort();
   expect(await result).toMatchObject({ done: true, value: { stopReason: "aborted" } });
+});
+
+it("uses a saved policy change on the next tool round, without changing the in-flight request", async () => {
+  const requests = mockResponses(round => {
+    if (round === 1) return jsonResponse({ content: null, tool_calls: [toolCall("c1", '{"x":1}')] });
+    return new Response(`data: ${JSON.stringify({ id: "r2", model: "fixture-model",
+      choices: [{ index: 0, delta: { role: "assistant", content: "Done" }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`,
+    { headers: { "content-type": "text/event-stream" } });
+  });
+  const { agent, execute } = state();
+  execute.mockImplementationOnce(async () => {
+    saveSystemModelConfig(context.domainId, { nodeModelStreamingEnabled: true });
+    return { content: [{ type: "text", text: "ok" }], terminate: false };
+  });
+  const messages = await runAgentLoop("Look up 1", agent, {
+    ...config, modelKwargs: { stream: false },
+  }, () => {});
+  expect(requests.map(request => request.stream)).toEqual([false, true]);
+  expect(messages.at(-1)).toMatchObject({ stopReason: "stop", content: [{ type: "text", text: "Done" }] });
 });

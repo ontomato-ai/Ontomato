@@ -1,5 +1,11 @@
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { createModel } from "../model-factory";
+import { installContentLayout } from "../../content/layout";
+import { saveSystemModelConfig } from "../../config/system-model";
+
 
 const { entry, tracker } = vi.hoisted(() => ({
   entry: {
@@ -17,6 +23,19 @@ vi.mock("../../logging/logger", () => ({
 vi.mock("../../i18n", () => ({ tApp: (key: string) => key }));
 
 beforeEach(() => { entry.customRequestParameters = {}; });
+const context = vi.hoisted(() => ({ domainId: "factory-off" }));
+vi.mock("../../logging/log-context", () => ({ getLogContext: () => context }));
+let runtimeRoot: string;
+beforeAll(() => {
+  runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "independent-stream-test-"));
+  installContentLayout({ runtimeRoot, prompts: [], publicSkillsRoot: path.join(runtimeRoot, "skills"), runtimeResources: [] });
+});
+beforeEach(() => {
+  context.domainId = "factory-off";
+  saveSystemModelConfig(context.domainId, { nodeModelStreamingEnabled: false });
+});
+afterAll(() => { fs.rmSync(runtimeRoot, { recursive: true, force: true }); });
+
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 function mockResponse(response: Response) {
@@ -30,7 +49,7 @@ function mockResponse(response: Response) {
 }
 
 it.each([undefined, "report"])("reads a full response through stream(), with agent %s", async agentName => {
-  entry.customRequestParameters = { stream: false, temperature: 0.3 };
+  entry.customRequestParameters = { stream: true, temperature: 0.3 };
   const requests = mockResponse(new Response(JSON.stringify({
     id: "r1", object: "chat.completion", created: 0, model: "fixture-model",
     choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "Complete answer" } }],
@@ -45,7 +64,8 @@ it.each([undefined, "report"])("reads a full response through stream(), with age
   expect(tracker.success).not.toHaveBeenCalled();
 });
 
-it.each([undefined, true])("keeps the shared model streaming with stream=%s", async stream => {
+it.each([undefined, false, true])("keeps streaming when enabled, regardless of custom stream=%s", async stream => {
+  saveSystemModelConfig(context.domainId, { nodeModelStreamingEnabled: true });
   if (stream !== undefined) entry.customRequestParameters = { stream };
   const frame = (delta: Record<string, unknown>, finishReason: string | null = null) =>
     `data: ${JSON.stringify({ id: "r1", object: "chat.completion.chunk", created: 0,
@@ -89,4 +109,46 @@ it("passes cancellation to the full-response request", async () => {
   await started;
   controller.abort();
   await assertion;
+});
+
+it("reads the current domain policy for every request on an existing model", async () => {
+  saveSystemModelConfig("factory-on", { nodeModelStreamingEnabled: true });
+  entry.customRequestParameters = { stream: false };
+  const requests: boolean[] = [];
+  const transport: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(init!.body as string);
+    requests.push(body.stream);
+    if (body.stream) {
+      return new Response(`data: ${JSON.stringify({ id: "r1", model: "fixture-model",
+        choices: [{ index: 0, delta: { role: "assistant", content: "streamed" }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`,
+      { headers: { "content-type": "text/event-stream" } });
+    }
+    return new Response(JSON.stringify({ id: "r1", model: "fixture-model",
+      choices: [{ index: 0, message: { role: "assistant", content: "complete" }, finish_reason: "stop" }] }),
+    { headers: { "content-type": "application/json" } });
+  };
+  vi.stubGlobal("fetch", transport);
+  const model = await createModel();
+  const consume = async () => {
+    let result = "";
+    for await (const chunk of await model.stream("answer")) result += chunk.content;
+    return result;
+  };
+  expect(await consume()).toBe("complete");
+  context.domainId = "factory-on";
+  expect(await consume()).toBe("streamed");
+  saveSystemModelConfig("factory-on", { nodeModelStreamingEnabled: false });
+  expect(await consume()).toBe("complete");
+  expect(requests).toEqual([false, true, false]);
+});
+
+it("keeps invoke non-streaming even when the switch and custom stream are true", async () => {
+  saveSystemModelConfig(context.domainId, { nodeModelStreamingEnabled: true });
+  entry.customRequestParameters = { stream: true };
+  const requests = mockResponse(new Response(JSON.stringify({ id: "r1", model: "fixture-model",
+    choices: [{ index: 0, message: { role: "assistant", content: "complete" }, finish_reason: "stop" }] }),
+  { headers: { "content-type": "application/json" } }));
+  const model = await createModel();
+  expect((await model.invoke("answer")).content).toBe("complete");
+  expect(requests[0].stream).toBe(false);
 });

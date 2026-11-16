@@ -31,7 +31,6 @@ describe("model-factory", () => {
 
     const model = await createModel({
       temperature: 0.7,
-      stream: true,
       agentName: "test-agent",
     });
 

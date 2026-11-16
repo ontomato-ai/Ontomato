@@ -18,6 +18,7 @@ import { workbenchContent } from "../../../content";
 import DataAdapterConfigCard from "./business-config/DataAdapterConfigCard.vue";
 import GeneralConfigCard from "./business-config/GeneralConfigCard.vue";
 import QuerySettingsCard from "./business-config/QuerySettingsCard.vue";
+import NodeModelCallSettingsCard from "./business-config/NodeModelCallSettingsCard.vue";
 import SkillDirConfigCard from "./business-config/SkillDirConfigCard.vue";
 import {
   dataAdapterRequest,
@@ -41,6 +42,7 @@ const { businessConfigSeparator } = workbenchContent().text;
 const loading = ref(false);
 const backendLoadError = ref("");
 const querySettingsRef = ref<{ markSaved: () => void } | null>(null);
+const nodeModelCallSettingsRef = ref<{ markSaved: () => void } | null>(null);
 
 // Draft of the general config, language and data adapter, bound two-way by the cards.
 let config = reactive<SystemSettings>({
@@ -257,41 +259,61 @@ async function saveMultiDataSource() {
   }
 }
 
-// Query settings live in the Node system model file and hold only the query mode and total time limit.
-let querySettings = reactive<SystemModelConfig>({
+// Node model call settings live in the Node system model file; the two cards own separate fields of it.
+// The query settings card owns the query mode and total time limit, the workbench model call card owns
+// whether workbench model requests ask for a streaming response.
+type QuerySettingsDraft = Pick<SystemModelConfig, "abcQuestionMode" | "queryTimeoutSeconds">;
+type NodeModelCallDraft = Pick<SystemModelConfig, "nodeModelStreamingEnabled">;
+
+let querySettings = reactive<QuerySettingsDraft>({
   abcQuestionMode: "harness",
   queryTimeoutSeconds: 600,
 });
-const loadingQuerySettings = ref(false);
-const querySettingsLoadError = ref("");
+let nodeModelCallSettings = reactive<NodeModelCallDraft>({
+  nodeModelStreamingEnabled: true,
+});
+const loadingNodeModelConfig = ref(false);
+const nodeModelConfigLoadError = ref("");
 const savingQuerySettings = ref(false);
+const savingNodeModelCallSettings = ref(false);
 
 function applyQuerySettings(data: SystemModelConfig) {
   querySettings.abcQuestionMode = data.abcQuestionMode;
   querySettings.queryTimeoutSeconds = data.queryTimeoutSeconds;
 }
 
-async function loadQuerySettings() {
-  loadingQuerySettings.value = true;
-  querySettingsLoadError.value = "";
+function applyNodeModelCallSettings(data: SystemModelConfig) {
+  nodeModelCallSettings.nodeModelStreamingEnabled = data.nodeModelStreamingEnabled;
+}
+
+// One read fills both drafts; a failed read disables both cards' saves instead of showing defaults as loaded values.
+async function loadNodeModelConfig() {
+  loadingNodeModelConfig.value = true;
+  nodeModelConfigLoadError.value = "";
   try {
     const res = await adminApi.getSystemModelConfig();
     if (res.success) {
       applyQuerySettings(res.data as SystemModelConfig);
+      applyNodeModelCallSettings(res.data as SystemModelConfig);
     } else {
-      querySettingsLoadError.value = res.message || t("admin.loadConfigFailed");
+      nodeModelConfigLoadError.value = res.message || t("admin.loadConfigFailed");
     }
   } catch (e: any) {
-    querySettingsLoadError.value = e.message || t("admin.loadConfigFailed");
+    nodeModelConfigLoadError.value = e.message || t("admin.loadConfigFailed");
   } finally {
-    loadingQuerySettings.value = false;
+    loadingNodeModelConfig.value = false;
   }
 }
 
+// Each card submits only its own fields and applies only its own fields from the answer, so saving one
+// card never overwrites the other card's unsaved draft.
 async function saveQuerySettings() {
   savingQuerySettings.value = true;
   try {
-    const res = await adminApi.saveSystemModelConfig({ ...querySettings });
+    const res = await adminApi.saveSystemModelConfig({
+      abcQuestionMode: querySettings.abcQuestionMode,
+      queryTimeoutSeconds: querySettings.queryTimeoutSeconds,
+    });
     if (res.success) {
       applyQuerySettings(res.data as SystemModelConfig);
       querySettingsRef.value?.markSaved();
@@ -306,9 +328,29 @@ async function saveQuerySettings() {
   }
 }
 
+async function saveNodeModelCallSettings() {
+  savingNodeModelCallSettings.value = true;
+  try {
+    const res = await adminApi.saveSystemModelConfig({
+      nodeModelStreamingEnabled: nodeModelCallSettings.nodeModelStreamingEnabled,
+    });
+    if (res.success) {
+      applyNodeModelCallSettings(res.data as SystemModelConfig);
+      nodeModelCallSettingsRef.value?.markSaved();
+      ElMessage.success(t("admin.configSaveSuccess"));
+    } else {
+      ElMessage.error(res.message || t("admin.saveFailed"));
+    }
+  } catch (e: any) {
+    ElMessage.error(e.message || t("admin.saveFailed"));
+  } finally {
+    savingNodeModelCallSettings.value = false;
+  }
+}
+
 onMounted(() => {
   loadConfig();
-  loadQuerySettings();
+  loadNodeModelConfig();
 });
 </script>
 
@@ -317,11 +359,21 @@ onMounted(() => {
     <QuerySettingsCard
       ref="querySettingsRef"
       v-model:model="querySettings"
-      :loading="loadingQuerySettings"
+      :loading="loadingNodeModelConfig"
       :saving="savingQuerySettings"
-      :load-error="querySettingsLoadError"
+      :load-error="nodeModelConfigLoadError"
       @save="saveQuerySettings"
-      @retry="loadQuerySettings"
+      @retry="loadNodeModelConfig"
+    />
+
+    <NodeModelCallSettingsCard
+      ref="nodeModelCallSettingsRef"
+      v-model:model="nodeModelCallSettings"
+      :loading="loadingNodeModelConfig"
+      :saving="savingNodeModelCallSettings"
+      :load-error="nodeModelConfigLoadError"
+      @save="saveNodeModelCallSettings"
+      @retry="loadNodeModelConfig"
     />
 
     <div v-if="backendLoadError" class="config-load-error" role="alert">

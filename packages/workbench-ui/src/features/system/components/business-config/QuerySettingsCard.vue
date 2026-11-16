@@ -21,7 +21,10 @@ const props = defineProps<{
   loadError: string;
 }>();
 
-const model = defineModel<SystemModelConfig>("model", { required: true });
+/** The query settings card owns these two fields only; the workbench model call card owns its own field. */
+type QuerySettingsDraft = Pick<SystemModelConfig, "abcQuestionMode" | "queryTimeoutSeconds">;
+
+const model = defineModel<QuerySettingsDraft>("model", { required: true });
 
 const emit = defineEmits<{
   save: [];
