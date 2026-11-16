@@ -15,8 +15,8 @@
 <script type="module">
   import {createApp,ref} from 'vue';
   import ElementPlus from 'element-plus';
-  import {createAppContext,ProductAsset} from '@ontomato/sdk';
-  const context=createAppContext();
+  import {connectAppContext,ProductAsset} from '@ontomato/sdk';
+  const context=await connectAppContext();
   createApp({components:{ProductAsset},setup:()=>({context,assetId:ref(''),revision:ref(0)})})
     .use(ElementPlus).use(context).mount('#app');
 </script>

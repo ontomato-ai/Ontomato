@@ -1,5 +1,6 @@
 import { actionFormSchema, type ActionFormRequest } from "@ontomato/contracts/action-forms";
 import type { ManagerRequest } from "../api";
+import {invalidateProductData} from '@ontomato/contracts/product-invalidation';
 
 /** One Action execution with parameters already in their declared types; Java validates them again. */
 export interface ActionExecution {
@@ -13,7 +14,9 @@ export function createActionsClient(request: Pick<ManagerRequest, "send" | "post
     const body = new FormData();
     body.set("id", input.id);
     body.set("param", JSON.stringify(input.parameters));
-    return (await request.send("/action/execute", { method: "POST", body })).data;
+    const result=(await request.send("/action/execute", { method: "POST", body })).data;
+    if(Array.isArray(result?.affects))invalidateProductData({actionId:input.id,objectTypes:result.affects.filter((value:unknown):value is string=>typeof value==='string')});
+    return result;
   }
 
   /**

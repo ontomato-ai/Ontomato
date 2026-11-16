@@ -4,9 +4,9 @@ import type {AppContext} from './context';
 const props=defineProps<{
   /** The context returned by createAppContext. */
   context:AppContext;
-  /** The existing product asset to render; manual edits remain visible on remount. */
+   /** The existing product asset to render from the application's pinned release. */
   assetId:string;
-  /** Change this value to reload the asset after editing it. */
+   /** Change this value to remount the published asset. */
   revision?:number;
 }>();
 const element=ref<HTMLElement>();

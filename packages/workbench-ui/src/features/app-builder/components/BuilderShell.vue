@@ -5,6 +5,7 @@ import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   AgentShell,
+  AgentPicker,
   ShellColumn,
   useAgentNav,
   useSessionRunFeed,
@@ -46,7 +47,7 @@ import WorkspacePicker from "./WorkspacePicker.vue";
  * conversation, beside it, or full — stays while they change conversation or workspace, and so does a blank
  * conversation's composer with what was typed in it.
  */
-const props = defineProps<{ agent: AgentHostAgent; platform: AppBuilderPlatform }>();
+const props = defineProps<{ agent: AgentHostAgent; agents?:AgentHostAgent[]; platform: AppBuilderPlatform }>();
 const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
@@ -120,11 +121,11 @@ const nav = useAgentNav({
 });
 // The one agent, named for the reader; its line under the greeting says what the workspace holds.
 watchEffect(() => {
-  nav.agents.value = [{
-    ...props.agent,
-    name: t("appBuilder.title"),
+  nav.agents.value = (props.agents??[props.agent]).map(agent=>({
+    ...agent,
+    name: agent.id===props.agent.id?t("appBuilder.title"):agent.name,
     description: t(emptyWorkspace.value ? "appBuilder.descriptionEmpty" : "appBuilder.descriptionWorkspace"),
-  }];
+  }));
 });
 const columnSessions = useColumnSessions({ nav, workspaceId: () => workspaceId.value, workspaces: () => workspaces.value });
 /**
@@ -382,7 +383,7 @@ const columnEvents = {
     @error="ElMessage.error($event)"
   >
     <template #column>
-      <WorkspaceColumn v-bind="column" v-on="columnEvents" />
+      <WorkspaceColumn v-bind="column" v-on="columnEvents"><template #agent><AgentPicker v-if="nav.agents.value.length>1" :agents="nav.agents.value" :agent-id="agentId" :label="labels.agent" @select="agentId=$event;sessionId=null"/></template></WorkspaceColumn>
     </template>
     <template #page-header>
       <PanelHeader

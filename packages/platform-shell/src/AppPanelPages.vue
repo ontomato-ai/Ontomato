@@ -79,6 +79,7 @@ const emit = defineEmits<{ selectPage: [id: string] }>();
   border-top: 1px solid var(--el-border-color-light);
 }
 .page-group {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -158,3 +159,4 @@ const emit = defineEmits<{ selectPage: [id: string] }>();
   outline-offset: -2px;
 }
 </style>
+<style scoped>.page-groups{scrollbar-width:thin;scrollbar-gutter:stable}.page-groups::-webkit-scrollbar{width:6px}.page-groups::-webkit-scrollbar-thumb{background:var(--el-border-color-dark);border-radius:4px}</style>

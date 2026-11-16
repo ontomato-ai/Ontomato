@@ -55,4 +55,6 @@ public class ApplicationController {
     public R<JSONObject> publish(@PathVariable String id, @RequestBody Publication body) {
         return R.of(catalog.publish(id, body.declaration(), body.releaseId(), current()));
     }
+    @PutMapping("/platform/applications/{id}/product-publication")
+    public R<JSONObject> publishProduct(@PathVariable String id,@RequestBody Publication body){return R.of(catalog.publishProduct(id,body.declaration(),body.releaseId(),current()));}
 }

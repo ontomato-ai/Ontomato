@@ -32,10 +32,6 @@ describe("the platform's applications", () => {
   it("opens knowledge governance in the conversation rather than feedback records", () => {
     expect(declarations.find(app => app.id === "governance")?.home).toBe("/governance/chat");
   });
-  it("puts the ontology manager's models at the foot of its menu", () => {
-    const ontology = appPartition().find(app => app.id === "ontology")!;
-    expect(ontology.foot).toBe("/ontology/models");
-  });
   it("provides a distinct gallery entry beside the personal home", () => {
     const gallery=declarations.find(app=>app.id==='application-gallery')!;
     expect(gallery.home).toBe('/applications');

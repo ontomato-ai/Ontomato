@@ -23,3 +23,4 @@ export { default as ObjectViewPage } from "./object-views/ObjectViewPage.vue";
 export { default as ManagerFrame } from "./ManagerFrame.vue";
 export {dropdownBoundaryOptions} from '@ontomato/foundation-ui/overlay';
 export { default as ProductAssetRuntime } from "./products/ProductAssetRuntime.vue";
+export {productRenderersKey} from './products/renderers';

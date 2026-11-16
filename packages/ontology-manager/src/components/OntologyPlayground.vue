@@ -34,13 +34,18 @@ import { useManagerClient, useManagerContext, useOntologyText, useSharedText } f
 import { readGraphColors } from "../graph-colors";
 import { PlatformPageHeader } from "@ontomato/platform-shell";
 import { graphLayout, initialNodePosition } from "../ontology-graph-layout";
+import ProductGraphDialog from '../products/ProductGraphDialog.vue';
+import type {ProductGraph} from '@ontomato/contracts/product-graph';
 
-const emit = defineEmits<{ "open-modeling": [focus: "object" | "relation", id: string] }>();
+const emit = defineEmits<{ "open-modeling": [focus: "object" | "relation", id: string];"open-product":[id:string] }>();
 const context = useManagerContext();
 const { t } = useSharedText();
 const { message } = useManagerFeedback();
 const { ot } = useOntologyText();
-const { loadOntology } = useManagerClient();
+const { loadOntology,products } = useManagerClient();
+const productGraph=ref<ProductGraph|null>(null),productGraphError=ref(''),productGraphLoading=ref(false);
+const productGraphOpen=ref(false);
+async function showProductGraph(){productGraphLoading.value=true;productGraphError.value='';try{productGraph.value=await products.graph();productGraphOpen.value=true;}catch(reason){productGraphError.value=reason instanceof Error?reason.message:String(reason);}finally{productGraphLoading.value=false;}}
 
 type Selection =
   | { type: "object"; value: OntologyObject }
@@ -539,10 +544,13 @@ onBeforeUnmount(() => {
             <strong>{{ relations.length }}</strong>
             {{ t("nav.relationTypes") }}
           </span>
+          <el-button :loading="productGraphLoading" @click="showProductGraph">产品关系图</el-button>
           <el-button :icon="RefreshCw" class="manager-icon-button" :title="t('common.refresh')" :aria-label="t('common.refresh')" @click="refresh" />
         </div>
       </template>
     </PlatformPageHeader>
+    <ProductGraphDialog v-if="productGraph" v-model="productGraphOpen" title="产品投影与组合关系" :graph="productGraph" @open="emit('open-product',$event)"/>
+    <el-alert v-if="productGraphError" :title="productGraphError" type="error" :closable="false"/>
 
     <!-- The page under the header takes the page gutter: the explorer, the graph and the inspector start where the
          title does, in one bordered block like a table. -->
@@ -754,6 +762,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.ontology-product-graph{flex-shrink:0;padding:var(--manager-control-gap) var(--page-gutter);max-height:45%;overflow:auto}.ontology-product-graph>.asset-graph{margin-top:var(--manager-control-gap)}
 /*
  * The page paints no background of its own: it sits on the application's area, the darkest band in dark mode
  * (DESIGN.md "Colour roles"). The graph keeps its own canvas, in the area's tone.

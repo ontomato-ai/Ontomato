@@ -38,6 +38,7 @@ public class OntologyAgentModelSettings {
   }
 
   private Agent agent(String id) {
+    if(KnowledgeGovernanceService.isAgent(id)&&!KnowledgeGovernanceService.AGENT.equals(id))return new Agent(id,"knowledgeGovernance","Knowledge governance");
     return catalog().stream().filter(item -> item.id().equals(id)).findFirst().orElseThrow(AgentHttpException::missing);
   }
 
@@ -52,11 +53,14 @@ public class OntologyAgentModelSettings {
   }
 
   public JSONObject list(String domain) {
-    return JSONObject.of("agents", catalog().stream().map(agent -> view(domain, agent)).toList());
+    var agents=new ArrayList<Agent>(catalog());
+    if(Boolean.TRUE.equals(jdbc.queryForObject("SELECT to_regclass('ontology_governance_agents') IS NOT NULL",Boolean.class)))for(var row:jdbc.queryForList("SELECT id,name FROM ontology_governance_agents WHERE domain_id=? ORDER BY name,id",domain))agents.add(new Agent(row.get("id").toString(),"knowledgeGovernance",row.get("name").toString()));
+    return JSONObject.of("agents", agents.stream().map(agent -> view(domain, agent)).toList());
   }
 
   public JSONObject save(String domain, String id, JSONObject input) throws Exception {
     var agent = agent(id);
+    if(!KnowledgeGovernanceService.AGENT.equals(id)&&KnowledgeGovernanceService.isAgent(id)&&jdbc.queryForList("SELECT id FROM ontology_governance_agents WHERE domain_id=? AND id=?::uuid",domain,id).isEmpty())throw AgentHttpException.missing();
     AgentJson.fields(input, "modelSelection");
     Object raw = input.get("modelSelection");
     if (!(raw instanceof java.util.Map<?, ?>)) throw AgentHttpException.invalid("modelSelection must be an object");

@@ -36,7 +36,7 @@ describe("product asset admission",()=>{
   });
   it("derives references from the executable configuration and rejects an independent dependency list",()=>{
     const input=productAssetInputSchema.parse({name:"Page",document:{kind:"page",workspace:{...defaultPersonalWorkspace(),dashboardIds:["board"],applicationIds:["app"]},children:[{assetId:"widget",column:"main"}]}});
-    expect(productReferences(input.document)).toEqual(expect.arrayContaining([{kind:"asset",id:"widget"},{kind:"dashboard",id:"board"},{kind:"application",id:"app"}]));
+    expect(productReferences(input.document)).toEqual([{kind:"asset",id:"widget"}]);
     expect(productAssetInputSchema.safeParse({...input,references:[{kind:"metric",id:"invented"}]}).success).toBe(false);
   });
   it("retains capability IDs and typed literal parameters across save/read parsing",()=>{

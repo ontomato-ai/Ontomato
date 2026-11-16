@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref,watch } from 'vue';
 import { CodeEditor } from '@ontomato/foundation-ui/code';
 import { ChevronRight, Braces } from 'lucide-vue-next';
-import { productTypes, productWidgets, type ProductAsset } from '@ontomato/contracts/product-assets';
-import { useManagerContext } from '../context';
+import { productWidgets, type ProductAsset } from '@ontomato/contracts/product-assets';
+import { useManagerContext,useOntologyText,useManagerClient } from '../context';
+import {rendererLabel} from './renderer-labels';
+import {localizedProductTypes} from './catalog-labels';
+import {useIdentityNames} from './identity-names';
+const {ot}=useOntologyText();
+const identityName=useIdentityNames();
 
 const props=defineProps<{asset:ProductAsset}>();
 const context=useManagerContext();
@@ -13,23 +18,46 @@ const json=computed(()=>JSON.stringify(props.asset,null,2));
 const date=(value:string)=>new Date(value).toLocaleString(context.locale);
 const widgetKind=(kind:string)=>({metric:'指标卡',table:'表格',chart:'图表',text:'文字',action:'操作入口',input:'输入',button:'按钮'}[kind]??kind);
 const bindings=(value:unknown)=>JSON.stringify(value,null,2);
+const client=useManagerClient(),names=ref<Record<string,string>>({}),targetName=ref('');
+const targetKinds:Record<string,string>={ObjectType:'对象类型',Definition:'业务定义',MetricView:'指标视图',Action:'动作'};
+let generation=0;
+watch(()=>props.asset,async asset=>{
+ const current=++generation;names.value={};targetName.value='正在读取名称…';
+ const document=asset.document;
+ const ids=[...new Set([...('children' in document?document.children.map(child=>child.assetId):[]),...(document.kind==='agent-profile'?[...document.tools,...document.contextViews]:[])])];
+ const resolved=await Promise.all(ids.map(async id=>{try{return [id,(await client.products.get(id)).name] as const;}catch{return [id,'资产暂不可访问'] as const;}}));
+ if(current!==generation)return;names.value=Object.fromEntries(resolved);
+ if(!('renders' in document))return;
+ try{
+  let name='';
+  if(document.renders.kind==='ObjectType'){const ontology=await client.loadOntology();name=ontology.objects.find(object=>object.className===document.renders.id)?.showName??'';}
+  else if(document.renders.kind==='Definition'){const response=await client.request(`/product-assets/definitions/${encodeURIComponent(document.renders.id)}`,{},'');name=(await response.json()).definition?.name??'';}
+  else {const result=await client.requestSmartAsset(document.renders.kind==='Action'?'actions':'metrics','queryById',{id:document.renders.id});name=result.data?.name??'';}
+  if(current===generation)targetName.value=name||'名称暂不可用';
+ }catch{if(current===generation)targetName.value='名称暂不可用';}
+},{immediate:true});
+function referenceName(id:string){return names.value[id]??'正在读取资产名称…';}
+function fieldLabel(field:string){return 'presentation' in props.asset.document?props.asset.document.presentation?.fieldLabels[field]??field:field;}
 </script>
 <template>
   <div class="product-configuration">
     <dl class="configuration-fields">
       <dt>资产标识</dt><dd><code>{{asset.id}}</code></dd>
-      <dt>类型</dt><dd>{{productTypes.find(type=>type.kind===asset.document.kind)?.name}}</dd>
-      <dt>所有者</dt><dd><code>{{asset.ownerId}}</code></dd>
-      <dt>可见范围</dt><dd>{{asset.visibility==='domain'?'域内共享':'仅自己'}}</dd>
+       <dt>类型</dt><dd>{{localizedProductTypes(ot).find(type=>type.kind===asset.document.kind)?.name}}</dd>
+        <template v-if="'renders' in asset.document"><dt>呈现本体元素</dt><dd><span>{{targetKinds[asset.document.renders.kind]}} · {{targetName||'正在读取名称…'}}</span><code class="reference-id">{{asset.document.renders.id}}</code></dd><dt>渲染方式</dt><dd>{{rendererLabel(asset.document.renderer)}}</dd><dt>默认投影</dt><dd>{{asset.document.isDefault?'是':'否'}}</dd><dt>消费者</dt><dd>{{({human:'人',agent:'智能体',both:'人与智能体'})[asset.document.audience]}}</dd><template v-if="'fields' in asset.document&&asset.document.fields.length"><dt>展示字段</dt><dd class="field-list"><span v-for="field in asset.document.fields" :key="field" :title="field">{{fieldLabel(field)}}</span></dd></template><template v-if="asset.document.kind==='collection-view'"><dt>每页条数</dt><dd>{{asset.document.pageSize??50}}</dd></template></template>
+       <template v-if="asset.document.kind==='page'"><dt>页面形态</dt><dd>{{asset.document.isTemplate?'页面模板':asset.document.embeddable?'可嵌入页面':'普通页面'}}</dd><dt v-if="asset.document.layout">页面布局</dt><dd v-if="asset.document.layout">{{asset.document.layout.mode==='grid'?'单区栅格':`主栏 ${asset.document.layout.mainWidth}/12 · 侧栏 ${12-asset.document.layout.mainWidth}/12`}}</dd><dt v-if="asset.document.params">页面参数</dt><dd v-if="asset.document.params"><pre>{{bindings(asset.document.params)}}</pre></dd></template>
+       <template v-if="asset.document.kind==='agent-profile'"><dt>{{ot('productAgentPrincipal')}}</dt><dd :title="asset.document.principalId">{{identityName(asset.document.principalId,'智能体主体')}}</dd><dt>{{ot('productInstructions')}}</dt><dd class="profile-instructions">{{asset.document.instructions}}</dd><dt>工具投影</dt><dd><ul class="reference-list"><li v-for="id in asset.document.tools" :key="id"><span>{{referenceName(id)}}</span><code class="reference-id">{{id}}</code></li></ul><span v-if="!asset.document.tools.length">未配置工具</span></dd><dt>对象上下文</dt><dd><ul class="reference-list"><li v-for="id in asset.document.contextViews" :key="id"><span>{{referenceName(id)}}</span><code class="reference-id">{{id}}</code></li></ul><span v-if="!asset.document.contextViews.length">未配置对象上下文</span></dd></template>
+       <dt>所有者</dt><dd :title="asset.ownerId">{{identityName(asset.ownerId,'所有者')}}</dd>
+      <dt>编辑授权</dt><dd>{{asset.editable?'可编辑':'只读'}} · 使用授权单独判定</dd>
       <dt>创建时间</dt><dd>{{date(asset.createdAt)}}</dd>
       <dt>更新时间</dt><dd>{{date(asset.updatedAt)}}</dd>
       <template v-if="asset.document.kind==='object-view'"><dt>对象类</dt><dd><code>{{asset.document.className}}</code></dd><dt>视图形式</dt><dd>{{asset.document.form}}</dd><dt>默认对象</dt><dd><code v-if="asset.document.primaryKey">{{asset.document.primaryKey}}</code><span v-else>运行时选择</span></dd></template>
       <template v-if="asset.document.kind==='application'"><dt>平台应用</dt><dd><code>{{asset.document.applicationId}}</code></dd><dt v-if="asset.document.workspaceId">源码工作区</dt><dd v-if="asset.document.workspaceId"><code>{{asset.document.workspaceId}}</code></dd></template>
       <template v-if="asset.document.kind==='dashboard'"><dt>仪表盘标识</dt><dd><code>{{asset.document.dashboardId}}</code></dd></template>
       <template v-if="asset.document.kind==='widget'&&asset.document.widget.kind==='platform'"><dt>平台内容</dt><dd>{{({assistant:'智能问数',apps:'应用入口',data:'仪表盘集合',tasks:'任务动态',conversations:'分析会话',objects:'收藏对象',recent:'最近访问'})[asset.document.widget.source]}}</dd><dt>展示条数</dt><dd>{{asset.document.widget.limit}}</dd><dt v-if="asset.document.widget.placeholder">输入提示</dt><dd v-if="asset.document.widget.placeholder">{{asset.document.widget.placeholder}}</dd></template>
-      <template v-if="'workspace' in asset.document"><dt>布局重点</dt><dd>{{({data:'数据优先',tasks:'任务优先',assistant:'应用优先'})[asset.document.workspace.layout]}}</dd><dt>对象打开方式</dt><dd>{{asset.document.workspace.objectOpening==='drawer'?'侧栏':'页面'}}</dd></template>
+      <template v-if="'workspace' in asset.document&&asset.document.workspace"><dt>布局重点</dt><dd>{{({data:'数据优先',tasks:'任务优先',assistant:'应用优先'})[asset.document.workspace.layout]}}</dd><dt>对象打开方式</dt><dd>{{asset.document.workspace.objectOpening==='drawer'?'侧栏':'页面'}}</dd></template>
     </dl>
-    <section v-if="'children' in asset.document&&asset.document.children.length" class="widget-configuration"><header><strong>组合引用</strong><span>{{asset.document.children.length}} 项 · 按展示顺序</span></header><ol class="composition-config"><li v-for="child in asset.document.children" :key="child.assetId"><span>{{child.column==='main'?'主栏':'侧栏'}}</span><code>{{child.assetId}}</code></li></ol></section>
+     <section v-if="'children' in asset.document&&asset.document.children.length" class="widget-configuration"><header><strong>组合引用</strong><span>{{asset.document.children.length}} 项 · 按展示顺序</span></header><ol class="composition-config"><li v-for="child in asset.document.children" :key="child.assetId"><span>{{asset.document.kind==='page'&&asset.document.layout?.mode==='grid'?'栅格':child.column==='main'?'主栏':'侧栏'}} · {{child.width??(child.span==='half'?6:12)}} / 12 列</span><strong>{{referenceName(child.assetId)}}</strong><code class="reference-id">{{child.assetId}}</code></li></ol></section>
     <section v-for="widget in widgets" :key="widget.id" class="widget-configuration">
       <header><strong>{{widget.title||widget.id}}</strong><span>{{widgetKind(widget.kind)}}</span></header>
       <dl class="configuration-fields">
@@ -60,3 +88,4 @@ const bindings=(value:unknown)=>JSON.stringify(value,null,2);
 .configuration-json{margin:0;min-width:0}.json-toggle{display:flex;align-items:center;gap:var(--spacing-sm);width:100%;min-height:var(--list-row-height);padding:var(--spacing-sm) var(--spacing-md);border:0;background:transparent;color:var(--el-text-color-regular);font:inherit;cursor:pointer;text-align:start}.json-toggle:hover,.json-toggle[aria-expanded='true']{background:var(--el-fill-color-light)}.json-toggle:focus-visible{outline:2px solid var(--el-color-primary);outline-offset:-2px}.json-toggle small{margin-inline-start:auto;font-size:var(--text-xs);color:var(--el-text-color-secondary)}.json-toggle svg{flex-shrink:0;color:var(--el-text-color-secondary)}.json-chevron{transition:transform var(--transition-fast)}.json-chevron.expanded{transform:rotate(90deg)}.configuration-json :deep(.cm-editor){max-height:480px}.configuration-json :deep(.cm-scroller){overflow:auto}
 @container ontology-manager (max-width:520px){.configuration-fields{grid-template-columns:90px minmax(0,1fr)}.parameter-row{grid-template-columns:minmax(0,1fr) auto}.parameter-row>:last-child{grid-column:1/-1}}
 </style>
+<style scoped>.reference-id{display:block;margin-top:4px;color:var(--el-text-color-secondary)}.reference-list{list-style:none;margin:0;padding:0;display:grid;gap:12px}.reference-list li{min-width:0}.field-list>span{background:var(--el-fill-color-light);padding:2px 8px;border-radius:var(--radius-sm)}.profile-instructions{white-space:pre-wrap;line-height:1.8}.composition-config strong{font-weight:var(--font-medium)}</style>

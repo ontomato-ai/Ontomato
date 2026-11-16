@@ -16,9 +16,11 @@ import {
   governanceSourceReadSchema, governanceWorkResponseSchema,
   type GovernanceSourceRead, type GovernanceWork,
 } from "@ontomato/contracts/knowledge-governance";
-import { useGovernanceText, useManagerClient, usePlatformText } from "../context";
+import { useGovernanceText, useManagerClient, usePlatformText,useSharedText } from "../context";
 import { managerPaths } from "../navigation";
 import { governanceAgentId } from "./messages";
+import BusinessKnowledge from '../components/BusinessKnowledge.vue';
+import {ElButton,ElMessageBox} from 'element-plus';
 
 /**
  * Knowledge governance as an agent app (DESIGN.md "Agent apps"): the governance agent plus its pages, the report of
@@ -41,6 +43,7 @@ const manager = useManagerClient();
 const { t, labels } = useGovernanceText();
 // The application's name is the platform's entry, the same one the rail reads.
 const { pt } = usePlatformText();
+const shared=useSharedText();
 const agentId = ref<string | null>(governanceAgentId);
 const sessionId = computed({ get: () => props.sessionId, set: (id) => emit("session", id) });
 /** The page shown beside the column; the address's page arrives through `page`. */
@@ -49,6 +52,7 @@ const shownPage = ref<string | null>(props.page ?? null);
 const leave = useLeaveConfirmation();
 const pagePaths: Readonly<Record<string, string>> = {
   feedback: platformRoutes.feedback.path,
+  knowledge:platformRoutes.governanceKnowledge.path,
   models: platformRoutes.governanceModels.path,
 };
 const featureId = computed({
@@ -77,6 +81,7 @@ const canOpen = usePageAccess();
 const conversing = computed(() => canOpen(managerPaths.knowledge));
 const pages = computed(() => {
   const entries = conversing.value ? [{ id: "report", label: t("report"), icon: "report" }] : [];
+  if(conversing.value)entries.push({id:'knowledge',label:shared.t('nav.businessKnowledge'),icon:'knowledge'});
   if (props.screens?.feedback && canOpen(platformRoutes.feedback.path)) entries.push({ id: "feedback", label: t("feedback"), icon: "feedback" });
   return entries;
 });
@@ -120,8 +125,8 @@ const client = createAgentHostClient({
   request: (path, init) => manager.request(`/ontology/ai${path}`, init),
   // The governance agent is the only one this page discusses; its work is read again once a run ends.
   agents: (agents) =>
-    agents.filter((agent) => agent.id === governanceAgentId)
-      .map((agent) => ({ ...agent, name: t("title"), description: t("subtitle") })),
+    agents.filter((agent) => agent.id.startsWith('56a15178-'))
+      .map((agent) => agent.id===governanceAgentId?({ ...agent, name: t("title"), description: t("subtitle") }):agent),
   onEvent: (session, envelope) => {
     if (session === sessionId.value && envelope.event.type === "agent_end") void readWork();
   },
@@ -138,6 +143,8 @@ const nav = useAgentNav({
   setSessionId: (id) => (sessionId.value = id),
   onLeaveConversation: () => (featureId.value = null),
 });
+const modelRevision=ref(0);
+async function createGovernanceAgent(){const result=await ElMessageBox.prompt('配置名称','新增知识治理智能体',{inputValidator:value=>!!value?.trim()});await manager.request('/ontology/ai/knowledge-governance/agents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:result.value.trim()})});modelRevision.value++;await nav.loadAgents();}
 // The one list notice stream of this page: every governance conversation it lists follows its run, open or not.
 useSessionRunFeed({
   port: client.sessionRuns,
@@ -163,7 +170,8 @@ watch(featureId, (value) => {
 watch(
   () => props.page,
   (value) => {
-    if (value && value !== shownPage.value) shownPage.value = value;
+     if(value&&value!==shownPage.value)shownPage.value=value;
+     else if(!value&&shownPage.value&&shownPage.value!=='report')shownPage.value=null;
   },
 );
 
@@ -189,7 +197,8 @@ function toggleIssue(id: string) {
       :page-context="pageContext" :bottom="bottom" :conversations="conversing" @error="fail"
       @open-bottom="featureId = 'models'">
       <template #feature>
-        <AgentModelsPage v-if="featureId === 'models'" :source="modelSource" :path="modelsPage.path" />
+        <section v-if="featureId==='models'" class="governance-model-settings"><div class="governance-model-actions"><ElButton @click="createGovernanceAgent">新增治理智能体</ElButton></div><AgentModelsPage :key="modelRevision" :source="modelSource" :path="modelsPage.path"/></section>
+        <BusinessKnowledge v-else-if="featureId==='knowledge'" @governance="featureId='report'"/>
         <!--
           The page the address names: another package's screen when the edition handed one over, else the report. A
           handed-over screen is a platform page, so it takes the page gutter here, like every page does from its frame.
@@ -283,6 +292,7 @@ function toggleIssue(id: string) {
     </AgentShell>
   </div>
 </template>
+<style scoped>.governance-model-settings{display:flex;flex-direction:column;height:100%;min-height:0}.governance-model-actions{padding:12px 24px;display:flex;justify-content:flex-end}.governance-model-settings :deep(.agent-models-page){flex:1;min-height:0}</style>
 
 <style scoped>
 /* The page fills the Manager frame (a size container), not the viewport. */

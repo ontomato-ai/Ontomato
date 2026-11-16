@@ -34,10 +34,10 @@
   <script type="module">
     import { computed, createApp, ref, watch } from "vue";
     import ElementPlus from "element-plus";
-    import { createAppContext } from "@ontomato/sdk";
+    import { connectAppContext } from "@ontomato/sdk";
     import { AgentChatPanel, createAssistantClient, useShellLabels } from "@ontomato/sdk/chat";
 
-    const context = createAppContext();
+    const context = await connectAppContext();
     const client = createAssistantClient(context);
 
     createApp({

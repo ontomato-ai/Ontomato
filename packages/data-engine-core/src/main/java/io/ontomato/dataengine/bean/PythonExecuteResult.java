@@ -11,6 +11,8 @@ public class PythonExecuteResult {
 	private String result;
 	private String error;
 	private Long spendTime;
+    /** Authoritative write effects, populated only after successful Action execution. */
+    private java.util.List<String> affects = java.util.List.of();
 	/**
 	 * Present only when a query this run sent to {@code /ontology/query/execute-dsl} returned a partial answer:
 	 * the engine's answer-level {@code truncated}/{@code rowLimit}/{@code truncationHint}, recorded

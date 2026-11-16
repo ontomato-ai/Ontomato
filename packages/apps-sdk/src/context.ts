@@ -24,9 +24,13 @@ import {
   type MetricViewsClient,
 } from "@ontomato/ontology-manager/clients";
 import edition from "apps-sdk:edition";
+import type {ProductSubscriptionTarget,ProductSubscriptionEvent} from '@ontomato/contracts/product-subscriptions';
+import type {ProductNavigationTarget} from '@ontomato/contracts/product-page-state';
+import {connectAppBridge} from './bridge';
 
 /** What an app gets from the platform shell it runs in. */
 export interface AppContext {
+  subscribe(target:ProductSubscriptionTarget,effect:(event:ProductSubscriptionEvent)=>void,onError?:(error:Error)=>void):Promise<()=>void>;
   /** Mount an existing asset through the shell runtime; dispose when the container is removed. Live apps only. */
   mountProductAsset(element:HTMLElement,assetId:string):()=>void;
   readonly executionContext: AppExecutionContext;
@@ -54,6 +58,7 @@ export interface AppContext {
   readonly products: ReturnType<typeof createProductsClient>;
   /** Opens a platform page in the shell, e.g. `navigate("/ontology/objects")`. */
   navigate(path: string): void;
+  navigate(target:ProductNavigationTarget):Promise<void>;
   /**
    * Tells the platform what the reader looks at: the app's own page and the object selected on it, or `null`. Call it
    * when the page starts, when the reader moves to another page of the app, and when they select an object or clear
@@ -71,6 +76,11 @@ export interface AppContext {
  * clients, never through a request to any platform path, so its calls stay within the documented contract.
  */
 const transports = new WeakMap<AppContext, ManagerRequest>();
+let bridgedHost:AppHost|undefined;
+export async function connectAppContext():Promise<AppContext>{
+  try{const host=(window.parent as Window & {[APP_HOST_GLOBAL]?:AppHost})[APP_HOST_GLOBAL];if(host)return createAppContext();}catch{/* Opaque frames connect over a transferred port. */}
+  bridgedHost=await connectAppBridge();return createAppContext();
+}
 
 /** The request layer of a context, for the SDK's own modules. */
 export function contextTransport(context: AppContext) {
@@ -93,7 +103,8 @@ function checkPageContext({ page, selection }: AppPageContext) {
  * every request carries the shell's current credential. Call it once per page, inside the shell's app frame.
  */
 export function createAppContext(): AppContext {
-  const host = (window.parent as Window & { [APP_HOST_GLOBAL]?: AppHost })[APP_HOST_GLOBAL];
+  let host=bridgedHost;
+  if(!host)try{host=(window.parent as Window & { [APP_HOST_GLOBAL]?: AppHost })[APP_HOST_GLOBAL];}catch{/* Sandboxed apps initialize through connectAppContext. */}
   if (!host) throw new Error("No platform shell around this page: Ontomato apps run in the shell's app frame");
   const snapshot = host.snapshot();
   const { language, managerMessages } = edition;
@@ -127,9 +138,14 @@ export function createAppContext(): AppContext {
   const stopInsets = host.subscribeFrameInsets(window, ({ bottom }) =>
     document.documentElement.style.setProperty("--pane-dock-space", `${bottom}px`),
   );
+  const productSubscriptions=new Set<()=>void>();
+  let closed=false;
   // The shell outlives this frame: stop its listeners when the frame goes away, not when the page is only cached.
   window.addEventListener("pagehide", (event) => {
     if (event.persisted) return;
+    closed=true;
+    for(const dispose of productSubscriptions)dispose();
+    productSubscriptions.clear();
     stop();
     stopInsets();
   });
@@ -137,6 +153,7 @@ export function createAppContext(): AppContext {
   const transport = createManagerRequest(
     {
       apiBase: snapshot.apiBase,
+      transport:host.request?(path,init,service)=>host.request!(window,path,init,service):undefined,
       get executionContext() { return host.executionContext(window); },
       get credential() {
         return host.credential();
@@ -149,6 +166,8 @@ export function createAppContext(): AppContext {
     (status) => host.onAuthFailure(status),
   );
   const metricViews = createMetricViewsClient(transport);
+  const products=createProductsClient(transport);
+  const actions=createActionsClient(transport);
   const context: AppContext = {
     mountProductAsset(element,assetId){
       if(!host.mountProductAsset)throw new Error('This platform version does not support product asset embedding');
@@ -160,9 +179,26 @@ export function createAppContext(): AppContext {
     theme: readonly(theme),
     chartTheme: charts,
     metricViews,
-    actions: createActionsClient(transport),
-    products: createProductsClient(transport),
-    navigate: (path) => host.navigate(path),
+    actions:{...actions,async execute(input){
+      const result=await actions.execute(input);
+      if(Array.isArray(result?.affects)&&host.executionContext(window).kind==='live'){
+        try{host.invalidateProductData?.(window,{actionId:input.id,objectTypes:result.affects});}catch{/* A completed write is not retried because a presentation observer failed. */}
+      }
+      return result;
+    }},
+    products,
+    async subscribe(target,effect,onError){
+      if(closed)throw new Error('App context has been disposed');
+      const stopSubscription=await products.subscribe(target,effect,onError);
+      if(closed){stopSubscription();throw new Error('App context has been disposed');}
+      const dispose=()=>{productSubscriptions.delete(dispose);stopSubscription();};
+      productSubscriptions.add(dispose);return dispose;
+    },
+    navigate: ((target:string|ProductNavigationTarget)=>{
+      if(typeof target==='string')return host.navigate(target);
+      if(!host.navigateProduct)throw new Error('This platform does not support typed product navigation');
+      return host.navigateProduct(window,target);
+    }) as AppContext['navigate'],
     // The page's own window tells the shell which of its app frames speaks.
     setPageContext(value) {
       checkPageContext(value);

@@ -1322,7 +1322,7 @@ onBeforeUnmount(() => {
 .summary-info:hover { color: var(--el-color-primary); background: var(--el-fill-color-light); }
 .summary-details { display: grid; gap: var(--spacing-sm); font-size: var(--text-xs); line-height: var(--leading-relaxed); }
 .summary-details strong { font-size: var(--text-sm); }
-.sample-legend button { display: flex; flex-direction: column; box-sizing: border-box; max-width: 100%; min-width: 0; align-items: center; gap: 2px; padding: 8px 12px; border: 0; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--group-color) 18%, var(--el-bg-color)); box-shadow: 0 2px 6px var(--el-color-info-light-8); color: var(--el-text-color-primary); font: inherit; font-size: 14px; font-weight: 600; line-height: 20px; text-align: center; cursor: pointer; }
+.sample-legend button { display: flex; flex-direction: column; box-sizing: border-box; max-width: 100%; min-width: 0; align-items: center; gap: 0; padding: 3px 6px; border: 1px solid var(--el-border-color-light); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--group-color) 8%, var(--el-bg-color)); color: var(--el-text-color-primary); font: inherit; font-size: var(--text-xs); font-weight: 400; line-height: 16px; text-align: center; cursor: pointer; }
 .sample-legend button:hover { background: color-mix(in srgb, var(--group-color) 26%, var(--el-bg-color)); }
 .sample-legend button.is-selected { background: color-mix(in srgb, var(--group-color) 32%, var(--el-bg-color)); color: var(--el-text-color-primary); font-weight: var(--font-semibold); }
 .sample-legend button:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: -2px; }

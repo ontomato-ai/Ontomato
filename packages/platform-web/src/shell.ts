@@ -156,6 +156,8 @@ export function createServiceManager(options: {
 
 /** The ontology manager's pages the agent platform's pages draw: the skills, beside its capabilities. */
 const ontologyWorkspacePages: readonly PlatformPage[] = [
+  {path:platformRoutes.builderModels.path,titleKey:'platform.builderAgentModels',icon:Cpu,permissions:['app-builder'],group:'platform',ownHeader:true},
+  {path:platformRoutes.governanceKnowledge.path,titleKey:'nav.businessKnowledge',icon:Cpu,permissions:['business-knowledge'],group:'knowledge',ownHeader:true},
   { path: platformRoutes.ontologySkills.path, titleKey: "capabilities.skillTitle", icon: Puzzle, permissions: ["skill-management"], group: "assets", ownHeader: true, count: skillLibraryCount },
 ];
 
@@ -175,7 +177,7 @@ const systemIntegrationPages: readonly PlatformPage[] = [
  */
 const agentModelPages: readonly PlatformPage[] = ontologyAgentModelPages.map((page) => ({
   path: page.path,
-  titleKey: "platform.agentModels.title",
+  titleKey: page.app==='ontology'?'platform.ontologyAgentModels':page.app==='governance'?'platform.governanceAgentModels':'platform.conversationAgentModels',
   descriptionKey: "platform.agentModels.description",
   icon: Cpu,
   permissions: ["system-config"],

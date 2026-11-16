@@ -73,7 +73,7 @@ function respond(url: string, body?: Record<string, unknown>): Response {
   if (path === "/admin/delBussinessKnowledge" && knowledgeDeleteFails.has(String(body?.knowledgeID)))
     return json({ success: false, message: "locked" });
   if (path === "/admin/getMetas") return json(metasFor(url));
-  if (path === "/objectView/read" || path === "/objectView/edit") return json({ success: true, data: { revision: 0, publishedRevision: null, versions: [] } });
+  if (path === "/objectView/read" || path === "/objectView/edit" || url.includes('/product-assets/object-views/read')||url.includes('/product-assets/object-views/edit')) return json({ success: true, data: { revision: 0, publishedRevision: null, versions: [] } });
   if (path === "/admin/editRelationshipDesc") {
     const state = metasFor(url) as { data: { relationship_rule: Record<string, Record<string, unknown>> } };
     const { relationship, ...changes } = body!;
@@ -343,7 +343,7 @@ describe("Manager pages in the service router", () => {
     const { root, views } = mountHost({ ...base, view: "/browser/views/Order?key=001" });
     await settle();
     expect(root().querySelector(".object-view-runtime")).not.toBeNull();
-    expect(requests.find(request => request.url.endsWith("/objectView/read"))?.body).toMatchObject({ className: "Order", form: "full" });
+    expect(requests.find(request => request.url.endsWith("/product-assets/object-views/read"))?.body).toMatchObject({ className: "Order", form: "full" });
     clickButton("Configure view");
     await settle();
     expect(views.at(-1)).toContain("/ontology/objects/Order/view");

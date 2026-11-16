@@ -81,6 +81,8 @@ export type ObjectViewVersion = {
   document: ObjectViewDocument;
 };
 export type ObjectViewState = {
+  assetId?: string;
+  publishedAsset?: unknown;
   revision: number;
   publishedRevision: number | null;
   versions: ObjectViewVersion[];
@@ -138,6 +140,14 @@ export function objectViewProductIssues(document: ObjectViewDocument): string[] 
     if (widget.contextFields.length) issues.push("Use a MetricView to display Action context");
     return issues.map(issue => `${widget.id}: ${issue}`);
   })));
+}
+/** Product-owned ObjectViews may read attributes and relationships without introducing business predicates. */
+export function objectProjectionIssues(document:ObjectViewDocument):string[]{
+  const capabilityDocument: ObjectViewDocument={...document,tabs:document.tabs.map(tab=>({...tab,sections:tab.sections.map(section=>({...section,widgets:section.widgets.map(widget=>['properties','links'].includes(widget.kind)&&!widget.resourceId?{...widget,resourceId:'direct-object-read'}:widget)}))}))};
+  const issues=objectViewProductIssues(capabilityDocument);
+  for(const widget of document.tabs.flatMap(tab=>tab.sections.flatMap(section=>section.widgets)))if(widget.resourceId||!['properties','links','text'].includes(widget.kind))issues.push(`${widget.id}: ObjectViews project object attributes and relationships; compose MetricWidgets and ActionViews in a Page`);
+  for(const widget of document.tabs.flatMap(tab=>tab.sections.flatMap(section=>section.widgets)))if(widget.kind==='links'&&!widget.resourceId&&!widget.relation)issues.push(`${widget.id}: Select an ObjectType relationship`);
+  return issues;
 }
 export function viewConditionMatches(condition: ViewWidget["visibleWhen"], object: Record<string, unknown>, variables: Record<string, unknown>): boolean {
   if (!condition) return true;

@@ -15,6 +15,7 @@ import { validateAssistantSkills } from "./skills";
 import { withDomainSkills } from "../skills/operations";
 import { effectiveSystemPrompt, storedSystemPrompt } from "./prompts";
 import { assistantName, assistantDescription } from "./labels";
+import {isAppBuilderKind} from '../app-builder/definition';
 const view = (a: AgentRow, locale?: string) =>
   assistantAgentDefinitionSchema.parse({
     id: a.id,
@@ -31,7 +32,7 @@ const view = (a: AgentRow, locale?: string) =>
   });
 async function editableAgent(id: string, owner: AssistantOwner) {
   const agent = await assistantStore.agent(id, owner);
-  if (agent.kind === "app-builder") throw new HttpError(404, "Agent definition not found", "NOT_FOUND");
+  if (isAppBuilderKind(agent.kind)) throw new HttpError(404, "Agent definition not found", "NOT_FOUND");
   return agent;
 }
 export async function readAgentDefinition(id: string, owner: AssistantOwner, locale?: string) {

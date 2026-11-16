@@ -471,7 +471,9 @@ public class OntologyQueryService {
         .toList();
     return JSONObject.of("id", metric.getId(), "revision", revision(metric),
         "status", metric.getStatus(), "name", metric.getName(),
-        "parameterDefs", metric.getFunction().getParameters(), "outputColumns", columns);
+        "parameterDefs", metric.getFunction().getParameters(), "outputColumns", columns,
+        "sourceObjectTypes", analysis.getJSONArray("nodes").stream().map(JSONObject::from)
+            .map(node -> node.getString("className")).filter(Objects::nonNull).distinct().sorted().toList());
   }
 
   private JSONObject metricAnalysis(MetricView metric) {

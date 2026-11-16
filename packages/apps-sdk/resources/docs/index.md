@@ -27,7 +27,7 @@ keeps the behaviour of the version it names.
 | `vue` | Vue, the build with the template compiler; the only Vue of the page |
 | `element-plus` | Element Plus, complete: the default export installs every component, the named exports include `ElMessage`, `ElMessageBox` and `ElLoading` |
 | `echarts` | ECharts, complete, for the helpers an option uses: `import * as echarts from "echarts"`. Draw with `<e-chart>` |
-| `@ontomato/sdk` | `createAppContext()`, the MetricView and Action clients, and `<metric-view-data>` |
+| `@ontomato/sdk` | `connectAppContext()`, the MetricView and Action clients, and `<metric-view-data>` |
 | `@ontomato/sdk/chart` | `EChart`, `<e-chart>`: the chart the platform draws its own charts with |
 | `@ontomato/sdk/markdown` | `MarkdownView`, `<markdown-view>`: Markdown as the platform reads it |
 | `@ontomato/sdk/form` | `FormFields`, `<form-fields>`: a form as its owner declares it, such as an Action's, and `formFieldKey` |
@@ -56,7 +56,7 @@ The stylesheet gives the page the platform's text and background: its font, size
 background, in both the light and the dark theme. Don't set them on `body` again; style only what is your page's own.
 
 The platform may float its own controls over the foot of the page: in the builder's full preview, the composer covers
-its bottom. Once `createAppContext()` runs, the stylesheet keeps that much room after the page's content, so its end
+its bottom. Once the app context connects, the stylesheet keeps that much room after the page's content, so its end
 scrolls clear. A page whose content scrolls inside its own container instead puts the platform's class on that
 container: it adds the room after the container's content, and adds nothing when nothing floats over the page.
 
@@ -73,9 +73,9 @@ A page built against an older SDK does not get this class; the room it reads com
 <script type="module">
   import { createApp, ref } from "vue";
   import ElementPlus from "element-plus";
-  import { createAppContext } from "@ontomato/sdk";
+  import { connectAppContext } from "@ontomato/sdk";
 
-  const context = createAppContext();
+  const context = await connectAppContext();
   createApp({ setup: () => ({ count: ref(0) }) }).use(ElementPlus).use(context).mount("#app");
 </script>
 ```
@@ -98,12 +98,11 @@ Pages expressible as product assets are edited as the same assets by people and 
 <product-asset :context="context" asset-id="actual-product-id" :revision="refreshRevision"></product-asset>
 ```
 
-Import `ProductAsset` from `@ontomato/sdk` and register it in the Vue app's `components`. Pass the context created by `createAppContext()`. `asset-id` references an existing asset; changing `revision` reloads it. Declare all such IDs in the committed `ontomato.products.json`. This uses the shell's runtime in an isolated style boundary, with current user access and theme. Manual asset edits apply when reloaded. The component reports unavailable assets and unsupported hosts rather than substituting another page.
+Import `ProductAsset` from `@ontomato/sdk` and register it in the Vue app's `components`. Pass the context returned by `await connectAppContext()`. `asset-id` references an existing asset; changing `revision` remounts the pinned definition. Declare all such IDs in the committed `ontomato.products.json`. In sandbox applications the shell renders the product in a platform-owned container aligned with the SDK placeholder. Published child revisions remain frozen until an explicit release upgrade. The component reports unavailable assets and unsupported hosts rather than substituting another page.
 
 Product embedding is live-only. A build-test preview rejects the mount before rendering, so it cannot fall back to real data; use authoring commands for asset changes and a published app for embedding verification. `context.mountProductAsset(element, id)` is the equivalent imperative API and returns a disposer that must run before removing its container.
 
-`createAppContext()` connects the page to the shell around it. Call it once, before creating the Vue app; it throws when
-the page is not inside the shell. `app.use(context)` installs the platform's words, Element Plus's language and the
+`await connectAppContext()` connects the page to the shell through a transferred message port. New published source apps run in an opaque sandbox and cannot read the shell's DOM or credentials. Call it once before creating the Vue app. The synchronous `createAppContext()` remains for compatible same-origin previews. `app.use(context)` installs the platform's words, Element Plus's language and the
 `<metric-view-data>` component.
 
 - `context.locale` and `context.theme` follow the platform while the app is open. The SDK keeps `<html lang>` and the
@@ -371,6 +370,33 @@ height with a style.
 ```html
 <html-preview :html="report" sandbox="" title="Report" style="height: 360px"></html-preview>
 ```
+
+## Product releases, navigation and subscriptions
+
+`context.mountProductAsset(element, assetId)` renders a dependency from the application's active release snapshot. Updating the asset in the editor does not upgrade an already published application.
+
+Typed page navigation uses the target Page's declared ontology parameters:
+
+```js
+await context.navigate({pageId: "person-details", params: {selected: {className: "Person", primaryKey: "person-1"}}});
+await context.navigate({objectViewId: "person-card", object: {className: "Person", primaryKey: "person-1"}});
+```
+
+The host validates values against the published Page or ObjectView and preserves the application identity. Page transitions follow the application's published Navigation when present. Object parameter paths expose only `className` and `primaryKey`.
+
+Definition subscriptions are evaluated by the server. The callback receives a fired change event and performs a presentation effect:
+
+```js
+const stop = await context.subscribe(
+  {kind: "definition", id: "my-alerts", parameters: {}, fields: ["id", "status"]},
+  () => { metric.value?.reload(); },
+  error => { subscriptionError.value = error.message; },
+);
+// Stop when the component is removed. Page exit also disposes context subscriptions.
+onBeforeUnmount(stop);
+```
+
+Subscriptions currently use a ten-second server interval and short-lived in-process leases. A failed authorized query ends the subscription. A published membership Trigger is subscribed with `{kind: "trigger", id: "new-alerts", parameters: {}}`; the server returns `entered`, `left`, or `changed` events according to its definition. The SDK uses a host transport when provided; application code must use SDK clients for platform access.
 
 ## Conversations
 
