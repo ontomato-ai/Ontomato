@@ -204,3 +204,18 @@ it("turns an expired initiating credential into an explicit restart instruction"
   vi.stubGlobal("fetch",vi.fn(async()=>Response.json({success:false},{status:401})));
   await expect(port.steering(scope,run)).rejects.toMatchObject({code:"CALLER_CREDENTIAL_INVALID",message:expect.stringContaining("please start again")});
 });
+
+it("projects the original question, default and reply as one context message for steering and a new round",async()=>{
+  const {channel:port}=channel();
+  vi.spyOn(port.facts,"pending").mockResolvedValue([{id:inputId,runId:null,messageSeq:8,message:notification}]);
+  vi.spyOn(port.facts,"consume").mockResolvedValue();
+  vi.spyOn(port.facts,"question").mockResolvedValue({role:"notification",kind:"agent-question",source,content:"Which period?",defaultAssumption:"Current year",timestamp:0});
+  vi.stubGlobal("fetch",vi.fn(async()=>Response.json({accepted:true})));
+  const [steering]=await port.steering(scope,run);
+  const inserted=await port.modelMessage(scope.domainId,steering as unknown as import("@ontomato/contracts/agent-runtime").RuntimeMessage);
+  const nextRound=await port.modelMessage(scope.domainId,notification);
+  expect(inserted).toEqual(nextRound);expect(inserted.role).toBe("user");
+  expect(inserted.content).toContain("Question:\nWhich period?\nDefault assumption:\nCurrent year\nAnswer:\nUse the confirmed period");
+  expect(notification.content).toBe("Use the confirmed period");expect(port.inputIds.get(steering)).toBe(inputId);
+  expect(port.facts.question).toHaveBeenCalledWith(scope.domainId,inputId);
+});

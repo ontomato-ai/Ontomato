@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Type } from "typebox";
 import { z } from "zod";
 import { agentChannelCommandSchema, agentDeliverySchema, agentProviderAcknowledgementSchema, agentSteerPreparationSchema, agentDirectorySchema, type AgentRunIntent, type AgentRunContext, type AgentExecutionRef, type AgentSessionRef, type AgentInput, type AgentNotification, type AgentPrepareRequest, type AgentActorRef, type AgentCredential } from "@ontomato/contracts/agent-channel";
-import { runtimeStartRunRequestSchema, type RuntimeRun } from "@ontomato/contracts/agent-runtime";
+import { runtimeStartRunRequestSchema, type RuntimeRun, type RuntimeMessage } from "@ontomato/contracts/agent-runtime";
 import type { AgentTask,QualityResult } from "@ontomato/contracts/agent-tasks";
 import type { Message } from "@earendil-works/pi-ai";
 import type { AgentTool } from "./core/pi/types";
@@ -265,6 +265,17 @@ export class AgentChannel {
       });
     }
     return pending.map(row => { const message = row.message as unknown as Message; this.inputIds.set(message, row.id); return message; });
+  }
+  /** Shape model context only; receipt records and host decision inputs remain unchanged. */
+  async modelMessage(domainId: string, message: RuntimeMessage): Promise<Message> {
+    if (message.role !== "notification") return message as Message;
+    let content = message.content;
+    if (message.kind === "agent-answer" && message.replyTo) {
+      const question = await this.facts.question(domainId,message.replyTo);
+      content = `Question:\n${question.content}\n${question.defaultAssumption ? `Default assumption:\n${question.defaultAssumption}\n` : ""}Answer:\n${message.content}`;
+    }
+    return { role:"user", timestamp:message.timestamp,
+      content:`[Agent notification: ${JSON.stringify({kind:message.kind,source:message.source,replyTo:message.replyTo,outcome:message.outcome})}]\n${content}${message.defaultAssumption ? `\nDefault assumption: ${message.defaultAssumption}` : ""}` };
   }
   tool(scope: Scope, run: RuntimeRun): AgentTool {
     return {

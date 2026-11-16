@@ -434,3 +434,9 @@ The initiating credential owns chain identity, domain, expiry and permission to 
 an AgentProfile's tools retain its configured agent principal, ordinary retrieval and governance
 retain the initiator's authority, and delegation preserves each agent's existing execution subject. Java-owned nested model executions reference their source run
 when admission originates from a scoped grant, retaining the same root without copying secrets.
+
+An agent-answer is projected for every model request as one attributed context message with
+its original question, the question's default assumption, and the answer. The channel resolves
+the question by replyTo from the domain-scoped input record. Steering, next-round context and
+compaction share this projection; senders supply only answer and replyTo. Durable input and
+host confirmed-decision recording retain the original answer, and deliveries gain no revision field.

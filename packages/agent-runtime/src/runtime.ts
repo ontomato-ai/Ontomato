@@ -118,11 +118,6 @@ function projectMessage(message: Message | RuntimeMessage): RuntimeMessage {
     ),
   );
 }
-function contextMessage(message: RuntimeMessage): Message {
-  if (message.role !== "notification") return message as Message;
-  return { role: "user", timestamp: message.timestamp,
-    content: `[Agent notification: ${JSON.stringify({ kind: message.kind, source: message.source, replyTo: message.replyTo, outcome: message.outcome })}]\n${message.content}\n${message.defaultAssumption ? `Default assumption: ${message.defaultAssumption}` : ""}` };
-}
 function key(scope: Scope, id: string) {
   return canonical([scope.hostId, scope.domainId, id]);
 }
@@ -556,9 +551,9 @@ export class AgentRuntime {
       let usageResetAt = summaryRow
         ? new Date(summaryRow.created_at).getTime()
         : 0;
-      const previous = rows
+      const previous = await Promise.all(rows
         .filter((r) => r.messageSeq > covered && r.runId !== null)
-        .map((r) => contextMessage(r.message));
+        .map((r) => this.channel.modelMessage(scope.domainId,r.message)));
       const messages = recoverContext(previous);
       if (summary)
         messages.unshift({
@@ -600,7 +595,7 @@ export class AgentRuntime {
         {
           model,
           toolExecution: "sequential",
-          convertToLlm: (m) => m.map(message => contextMessage(message as RuntimeMessage)),
+          convertToLlm: (m) => Promise.all(m.map(message => this.channel.modelMessage(scope.domainId,message as RuntimeMessage))),
           getFollowUpMessages: run.channel ? () => this.channel.followUp(scope, run) : undefined,
           getSteeringMessages: run.channel ? () => this.channel.steering(scope,run) : undefined,
           prepareRequest: async ({ context }) => {
@@ -617,9 +612,8 @@ export class AgentRuntime {
             ).filter(
               (r) => r.messageSeq > covered && r.runId !== null && r.message.role !== "system",
             );
-            let effective = recoverContext(
-              raw.map((r) => contextMessage(r.message)),
-            );
+            const projected = await Promise.all(raw.map(r => this.channel.modelMessage(scope.domainId,r.message)));
+            let effective = recoverContext(projected);
             if (summary)
               effective.unshift({
                 role: "user",
@@ -638,13 +632,13 @@ export class AgentRuntime {
             );
             if (estimate >= config.contextWindow * 0.8) {
               const cut = cutPoint(
-                raw.map((r) => contextMessage(r.message)),
+                projected,
                 config.contextWindow,
               );
               if (cut > 0) {
                 try {
                   const source = raw.slice(0, cut);
-                  const prompt = `<conversation>\n${serializeConversation(source.map((r) => r.message as Message))}\n</conversation>\n${summary ? `<previous-summary>\n${summary}\n</previous-summary>\n` : ""}${summary ? request.definition.compaction.updatePrompt : request.definition.compaction.summarizePrompt}`;
+                  const prompt = `<conversation>\n${serializeConversation(projected.slice(0,cut))}\n</conversation>\n${summary ? `<previous-summary>\n${summary}\n</previous-summary>\n` : ""}${summary ? request.definition.compaction.updatePrompt : request.definition.compaction.summarizePrompt}`;
                   const next = await completeSummary(
                     modelStream(
                       config,
@@ -696,7 +690,7 @@ export class AgentRuntime {
                       timestamp: Date.now(),
                     },
                     ...recoverContext(
-                      raw.slice(cut).map((r) => contextMessage(r.message)),
+                      projected.slice(cut),
                     ),
                   ];
                 } catch {
