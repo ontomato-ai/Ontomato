@@ -27,6 +27,11 @@ public class QueryQualityService {
 
   public Object start(
       JSONObject body, User user, String lang, boolean generateCandidates) {
+    return io.ontomato.dataengine.service.agent.OntologyGenerationService.asSourceRun(
+        body.getString("sourceRunId"), () -> startQuality(body,user,lang,generateCandidates));
+  }
+
+  private Object startQuality(JSONObject body,User user,String lang,boolean generateCandidates) {
     String id = body.getString("id");
     return jobs.start(
         id,
@@ -69,9 +74,7 @@ public class QueryQualityService {
       List<ABCHarnessProgram> programs,
       JSONArray recipes,
       List<String> classNames) {
-    String candidateId =
-        UUID.nameUUIDFromBytes((qualityId + ":candidate").getBytes(StandardCharsets.UTF_8))
-            .toString();
+    String candidateId = candidateId(qualityId);
     JSONObject input =
         JSONObject.of(
             "checkSessionId", check.getSessionId(),
@@ -110,5 +113,9 @@ public class QueryQualityService {
           failure.getMessage(),
           failure);
     }
+  }
+
+  public static String candidateId(String qualityId) {
+    return UUID.nameUUIDFromBytes((qualityId + ":candidate").getBytes(StandardCharsets.UTF_8)).toString();
   }
 }

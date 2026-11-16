@@ -23,4 +23,8 @@ public class AgentChannelChanges {
   public void job(String job) {
     for(var row:store.rows("SELECT r.*,s.domain_id FROM ontology_agent_runs r JOIN ontology_agent_sessions s ON s.id=r.session_id WHERE r.qc_id=? UNION SELECT r.*,s.domain_id FROM ontology_binding_runs b JOIN ontology_agent_runs r ON r.id=b.run_id JOIN ontology_agent_sessions s ON s.id=r.session_id WHERE b.qc_id=?",uuid(job),uuid(job))) publish(row,row.getString("domain_id"),"quality");
   }
+  public void execution(String run) {
+    var row=store.one("SELECT r.*,s.domain_id FROM ontology_agent_runs r JOIN ontology_agent_sessions s ON s.id=r.session_id WHERE r.id=?",uuid(run));
+    publish(row,row.getString("domain_id"),"quality");
+  }
 }

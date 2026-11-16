@@ -219,7 +219,7 @@ public class OntologyBindingRetrieval {
     }
     var request=accepted.get(0).getJSONObject("request");
     // A binding branch only reports its conclusion; it never creates a new candidate.
-    quality.start(JSONObject.of("id",branch.getString("qc_id"),"question",request.getString("question"),
+    quality.start(JSONObject.of("id",branch.getString("qc_id"),"sourceRunId",run,"question",request.getString("question"),
         "userQuotes",request.get("userQuotes"),"confirmedDecisions",request.get("confirmedDecisions"),
         "programs",programs,"recipes",recipes,"classNames",request.get("classNames")),subject(owner),request.getString("language"),false);
     store.update("UPDATE ontology_binding_runs SET qc_admitted=true WHERE run_id=?",uuid(run));

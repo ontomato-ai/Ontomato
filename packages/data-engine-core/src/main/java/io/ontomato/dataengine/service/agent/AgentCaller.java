@@ -93,13 +93,15 @@ public class AgentCaller {
   public OntologyAgentAccess.Context ownerContext(OntologyAgentStore.Owner owner,io.ontomato.dataengine.service.QueryAccessService.Access access,String language,long deadline) {
     if(access.expiresAt()!=null) deadline=Math.min(deadline,access.expiresAt());
     String token=null,key=null;
-    var current=identity.getCurrentUser();
     var request=org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
-    if (current!=null && current.getId().equals(owner.userId()) && owner.domainId().equals(current.getDomainId()) && request instanceof org.springframework.web.context.request.ServletRequestAttributes servlet) {
-      token=servlet.getRequest().getHeader("tk"); key=servlet.getRequest().getHeader("X-API-Key");
-      Long expiry=identity.getCurrentCredentialExpiresAt();
-      if(expiry!=null) deadline=Math.min(deadline,expiry);
-      if(servlet.getRequest().getHeader(io.ontomato.dataengine.service.BuildTestContextService.HEADER)!=null) access=access.withTarget(contexts.resolve(servlet.getRequest()));
+    if (request instanceof org.springframework.web.context.request.ServletRequestAttributes servlet) {
+      var current=identity.getCurrentUser();
+      if (current!=null && current.getId().equals(owner.userId()) && owner.domainId().equals(current.getDomainId())) {
+        token=servlet.getRequest().getHeader("tk"); key=servlet.getRequest().getHeader("X-API-Key");
+        Long expiry=identity.getCurrentCredentialExpiresAt();
+        if(expiry!=null) deadline=Math.min(deadline,expiry);
+        if(servlet.getRequest().getHeader(io.ontomato.dataengine.service.BuildTestContextService.HEADER)!=null) access=access.withTarget(contexts.resolve(servlet.getRequest()));
+      }
     }
     return new OntologyAgentAccess.Context(owner,access,token,key,language,deadline,null);
   }

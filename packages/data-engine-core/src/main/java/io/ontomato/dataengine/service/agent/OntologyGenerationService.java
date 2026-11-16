@@ -30,6 +30,7 @@ public class OntologyGenerationService {
           "quality");
   private static final ThreadLocal<QueryAccessService.Access> CURRENT_ACCESS = new ThreadLocal<>();
   private static final ThreadLocal<Owner> CURRENT = new ThreadLocal<>();
+  private static final ThreadLocal<String> SOURCE_RUN = new ThreadLocal<>();
   // Admission composes identity and permissions only when execution starts, never during metadata construction.
   private final ObjectProvider<AgentCaller> callers;
   private final ObjectProvider<AgentChannelRuns> channel;
@@ -91,6 +92,17 @@ public class OntologyGenerationService {
     var previous=CURRENT_ACCESS.get();CURRENT_ACCESS.set(access);
     try { return asOwner(access.user(),work); }
     finally { if(previous==null) CURRENT_ACCESS.remove(); else CURRENT_ACCESS.set(previous); }
+  }
+  public static String sourceRun() { return SOURCE_RUN.get(); }
+
+  /** Background host work inherits the initiating chain by reference, never by copying credentials. */
+  public static <T> T asSourceRun(String run, Work<T> work) {
+    String previous=SOURCE_RUN.get();
+    if(run==null) SOURCE_RUN.remove(); else SOURCE_RUN.set(run);
+    try { return work.run(); }
+    catch(RuntimeException error) { throw error; }
+    catch(Exception error) { throw new IllegalStateException(error.getMessage(),error); }
+    finally { if(previous==null) SOURCE_RUN.remove(); else SOURCE_RUN.set(previous); }
   }
   public Map<String, Object> authorizedRule(Map<String, Object> rule, String domain) {
     var access=executionAccess(domain);
@@ -219,7 +231,7 @@ public class OntologyGenerationService {
       runtime.json(domain,run,"/v1/sessions","POST",Map.of(),session);
       var context=callers.getObject().ownerContext(owner,executionAccess(domain),lang==null?"en":lang,Instant.parse(store.run(session,run,owner).getString("deadline")).toEpochMilli());
       channel.getObject().start(agentId(kind),session,run,JSONObject.of("role","notification","kind","agent-message","source",JSONObject.of("kind","external"),"content","Complete the ontology "+kind+" task. Read the "+(metricView?"metricview-generation":"ontology-generation")+" skill and write outputs/result.json.","timestamp",System.currentTimeMillis()),
-        JSONObject.of("kind",kind,"businessId",businessId,"prompt",prompt,"source",source),context);
+        JSONObject.of("kind",kind,"businessId",businessId,"prompt",prompt,"source",source),context,sourceRun());
       while (true) {
         checkBusiness(businessId);
         var current = store.run(session, run, owner);

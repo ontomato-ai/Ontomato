@@ -93,6 +93,7 @@ public class QueryJobService {
   }
 
   public JSONObject start(String id, User user, String kind, Object input, Operation operation) {
+    String sourceRun=io.ontomato.dataengine.service.agent.OntologyGenerationService.sourceRun();
     String sessionId = sessionId(id, user);
     UUID uuid = UUID.fromString(id);
     String hash = OntologyQueryService.digest(input);
@@ -132,7 +133,7 @@ public class QueryJobService {
                 currentJob.set(new Job(id, user));
                 Object result =
                     io.ontomato.dataengine.service.agent.OntologyGenerationService.asOwner(
-                        user, () -> operation.execute(sessionId));
+                        user, () -> io.ontomato.dataengine.service.agent.OntologyGenerationService.asSourceRun(sourceRun,() -> operation.execute(sessionId)));
                 state.put("status", "completed");
                 state.put("result", result);
               } catch (Exception e) {
@@ -162,12 +163,19 @@ public class QueryJobService {
                 running.remove(sessionId);
                 currentJob.remove();
                 if(kind.equals("quality")) changes.job(id);
+                else if(kind.equals("candidate") && sourceRun!=null) changes.execution(sourceRun);
               }
               return null;
             });
     running.put(sessionId, task);
     executor.execute(io.ontomato.dataengine.logging.ServiceLogContext.wrap(task));
     return accepted;
+  }
+
+  public boolean candidateRunning(String qualityId,User user) {
+    return jdbc.queryForObject(
+        "SELECT EXISTS(SELECT 1 FROM ontology_query_jobs WHERE id=? AND domain_id=? AND user_id=? AND kind='candidate' AND state->>'status'='running')",
+        Boolean.class,UUID.fromString(QueryQualityService.candidateId(qualityId)),user.getDomainId(),user.getId());
   }
 
   /** Shares the job row lock with cancellation; model calls never hold this transaction. */

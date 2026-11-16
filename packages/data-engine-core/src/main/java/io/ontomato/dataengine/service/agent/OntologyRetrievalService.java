@@ -742,6 +742,7 @@ public class OntologyRetrievalService {
         JSONObject.of(
             "id",
             qc,
+            "sourceRunId",runId,
             "question",
             input.getString("question"),
             "userQuotes",

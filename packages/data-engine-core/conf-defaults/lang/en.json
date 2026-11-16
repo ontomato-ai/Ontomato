@@ -486,5 +486,25 @@
   {
     "key": "OntologyAgent.action.description",
     "value": "Describe a write action in conversation; the agent drafts and tests it"
+  },
+  {
+    "key": "AgentChannel.retrieval.starting",
+    "value": "Data retrieval is starting: {0} datasets, {1} rows; files: {2}."
+  },
+  {
+    "key": "AgentChannel.retrieval.running",
+    "value": "Data retrieval is running: {0} datasets, {1} rows; files: {2}."
+  },
+  {
+    "key": "AgentChannel.retrieval.completed",
+    "value": "Data retrieval completed: {0} datasets, {1} rows; files: {2}."
+  },
+  {
+    "key": "AgentChannel.retrieval.failed",
+    "value": "Data retrieval failed: {0} datasets, {1} rows; files: {2}."
+  },
+  {
+    "key": "AgentChannel.retrieval.cancelled",
+    "value": "Data retrieval was cancelled: {0} datasets, {1} rows; files: {2}."
   }
 ]

@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/platform/agent-channel")
 public class AgentChannelController {
   private final OntologyAgentAccess access;
+  private final io.ontomato.dataengine.service.LangService language;
   private final AgentCaller callers;
   private final AgentDirectory directory;
   private final KnowledgeGovernanceService governance;
@@ -21,7 +22,8 @@ public class AgentChannelController {
   private final OntologyAgentStore store;
   private final AgentRuntimeClient runtime;
   private final WorkbenchServiceAuthentication services;
-  public AgentChannelController(AgentCaller callers,AgentDirectory directory,KnowledgeGovernanceService governance,OntologyAgentStore store,AgentRuntimeClient runtime,WorkbenchServiceAuthentication services,OntologyRetrievalService retrieval,RetrievalTasks retrievalTasks,ActionCreationService actions,OntologyGenerationService generation,OntologyAgentAccess access) {
+  public AgentChannelController(AgentCaller callers,AgentDirectory directory,KnowledgeGovernanceService governance,OntologyAgentStore store,AgentRuntimeClient runtime,WorkbenchServiceAuthentication services,OntologyRetrievalService retrieval,RetrievalTasks retrievalTasks,ActionCreationService actions,OntologyGenerationService generation,OntologyAgentAccess access,io.ontomato.dataengine.service.LangService language) {
+    this.language=language;
     this.access=access;
     this.retrieval=retrieval;this.retrievalTasks=retrievalTasks;this.actions=actions;this.generation=generation;
     this.callers=callers; this.directory=directory; this.governance=governance; this.store=store; this.runtime=runtime; this.services=services;
@@ -204,16 +206,15 @@ public class AgentChannelController {
     }
     if(OntologyAgentStore.RETRIEVER.equals(execution.agent())) {
       var projection=retrievalTasks.read(execution.session(),execution.run(),owner);
-      String summary=projection.getString("status");
-      for(var delivery:retrieval.deliveries(execution.session(),execution.run(),owner)) {
-        var answer=delivery.getJSONObject("data").getString("answer");if(answer!=null && !answer.isBlank()) summary=answer;
-      }
       var files=new ArrayList<JSONObject>();
+      long rows=0;
       for(var delivery:retrieval.deliveries(execution.session(),execution.run(),owner)) for(Object item:delivery.getJSONObject("data").getJSONArray("datasets")) {
-        String id=JSONObject.from(item).getString("id");
-        files.add(JSONObject.of("id",id,"name","dataset.json","mediaType","application/json","href","/platform/agent-channel/tasks/"+execution.run()+"/files/"+id));
+        var dataset=JSONObject.from(item);String id=dataset.getString("id");rows+=dataset.getLongValue("rowCount");
+        files.add(JSONObject.of("id",id,"name",id+".dataset.json","mediaType","application/json","href","/platform/agent-channel/tasks/"+execution.run()+"/files/"+id));
       }
-      boolean admitted=store.run(execution.session(),execution.run(),owner).getBooleanValue("runtime_admitted");
+      var run=store.run(execution.session(),execution.run(),owner);
+      String summary=java.text.MessageFormat.format(language.get(run.getString("language"),"AgentChannel.retrieval."+projection.getString("status")),files.size(),rows,String.join(", ",files.stream().map(file -> file.getString("name")).toList()));
+      boolean admitted=run.getBooleanValue("runtime_admitted");
       Object process=admitted?JSONObject.of("mode","inline","runtimeSessionId",execution.session(),"runtimeRunId",execution.run()):JSONObject.of("mode","none");
       return JSONObject.of("settled",projection.getBooleanValue("settled"),"status",projection.getString("status"),"summary",summary,"process",process,"results",List.of(),"retrieval",projection.get("retrieval"),"quality",projection.get("quality"),"files",files);
     }

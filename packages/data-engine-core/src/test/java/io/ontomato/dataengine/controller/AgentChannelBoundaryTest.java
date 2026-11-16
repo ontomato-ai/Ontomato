@@ -21,7 +21,7 @@ class AgentChannelBoundaryTest {
   private final KnowledgeGovernanceService governance=mock(KnowledgeGovernanceService.class);
   private final OntologyAgentStore store=mock(OntologyAgentStore.class);
   private org.springframework.test.web.servlet.MockMvc mvc() {
-    return MockMvcBuilders.standaloneSetup(new AgentChannelController(callers,directory,governance,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class),mock(OntologyRetrievalService.class),mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class)))
+    return MockMvcBuilders.standaloneSetup(new AgentChannelController(callers,directory,governance,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class),mock(OntologyRetrievalService.class),mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),mock(io.ontomato.dataengine.service.LangService.class)))
       .addInterceptors(new BuildTestAccessInterceptor()).setControllerAdvice(new OntologyAgentErrors()).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
   }
   private String input(String mode,String role) {
@@ -107,6 +107,41 @@ class AgentChannelBoundaryTest {
     when(identity.getCurrentUser()).thenReturn(null);
     assertEquals("CALLER_CREDENTIAL_INVALID",assertThrows(AgentHttpException.class,()->caller.restore(ref,"a")).code());
     verifyNoInteractions(identities);
+  }
+
+  @Test void retrievalReadSummarizesBothBranchesAndExportsOriginalDatasetBytes() throws Exception {
+    var retrieval=mock(OntologyRetrievalService.class);var tasks=mock(RetrievalTasks.class);
+    var labels=mock(io.ontomato.dataengine.service.LangService.class);
+    var controller=new AgentChannelController(callers,directory,governance,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class),retrieval,tasks,mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),labels);
+    var actor=JSONObject.of("id",RUN,"domainId","a");
+    var owner=new OntologyAgentStore.Owner("user","a");
+    when(callers.restore(actor,"a",false)).thenReturn(new AgentCaller.Actor(RUN,new io.ontomato.dataengine.service.QueryAccessService.GrantUser("user","a"),1000L));
+    when(store.session(SESSION,owner)).thenReturn(JSONObject.of("agent_id",OntologyAgentStore.RETRIEVER));
+    when(store.run(SESSION,RUN,owner)).thenReturn(JSONObject.of("language","zh-CN","runtime_admitted",false));
+    when(tasks.read(SESSION,RUN,owner)).thenReturn(JSONObject.of("status","completed","settled",true,"quality",java.util.List.of()));
+    when(retrieval.deliveries(SESSION,RUN,owner)).thenReturn(java.util.List.of(
+      JSONObject.of("source","binding","data",JSONObject.of("answer","","datasets",java.util.List.of(JSONObject.of("id",SESSION,"rowCount",5)))),
+      JSONObject.of("source","retriever","data",JSONObject.of("answer","## Full answer\n|学院|人数|","datasets",java.util.List.of(JSONObject.of("id",RUN,"rowCount",5))))));
+    when(labels.get("zh-CN","AgentChannel.retrieval.completed")).thenReturn("取数已完成，交付 {0} 个数据集、{1} 行，文件：{2}。");
+    var input=JSONObject.of("actor",actor,"execution",JSONObject.of("session",JSONObject.of("providerId","ontology","sessionId",SESSION),"runId",RUN));
+    var request=new org.springframework.mock.web.MockHttpServletRequest();request.addHeader("X-Domain-Id","a");
+    var result=(JSONObject)controller.read(input,request);
+    assertEquals("取数已完成，交付 2 个数据集、10 行，文件："+SESSION+".dataset.json, "+RUN+".dataset.json。",result.getString("summary"));
+    var files=result.getJSONArray("files");assertEquals(SESSION+".dataset.json",files.getJSONObject(0).getString("name"));
+    byte[] original="{\"execution\":{\"receiptId\":\"binding-receipt\"},\"rows\":[[0,false,null]]}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    when(retrieval.datasetContent(SESSION,SESSION,owner)).thenReturn(original);
+    input.put("fileId",SESSION);
+    assertArrayEquals(original,(byte[])((org.springframework.http.ResponseEntity<?>)controller.read(input,request)).getBody());
+  }
+
+  @Test void backgroundGenerationDoesNotConsultWebIdentity() {
+    var identity=mock(io.ontomato.dataengine.service.IdentityService.class);
+    when(identity.getCurrentUser()).thenThrow(new IllegalStateException("No web context on a quality worker"));
+    var caller=new AgentCaller(mock(org.springframework.jdbc.core.JdbcTemplate.class),mock(io.ontomato.dataengine.schedules.ScheduleIdentity.class),identity);
+    var access=new io.ontomato.dataengine.service.QueryAccessService.Access(new io.ontomato.dataengine.service.QueryAccessService.GrantUser("user","a"),null,null,null,1000L);
+    var context=caller.ownerContext(new OntologyAgentStore.Owner("user","a"),access,"en",2000L);
+    assertNull(context.token());assertNull(context.apiKey());assertEquals(1000L,context.expiresAt());
+    verify(identity,never()).getCurrentUser();
   }
 
 }
