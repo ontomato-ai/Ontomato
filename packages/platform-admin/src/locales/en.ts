@@ -379,6 +379,8 @@ export default {
     "loadFailed": "Load Failed"
   },
   "platform": {
+    "systemAgentModels":"Agent models",
+    "systemAgentModelsDescription":"Choose models for interactive agents and background model uses",
     "layers": { "facts": "Facts", "capabilities": "Capabilities", "governance": "Governance", "products":"Products" },
     "productAssets":"Product assets",
     "settingsGroups": { "models": "Models", "system": "System", "connections": "Connections", "records": "Logs and monitoring" },

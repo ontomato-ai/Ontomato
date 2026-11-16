@@ -93,6 +93,7 @@ export const platformRoutes = {
   usage: { name: "ModelUsage", path: "/settings/model-config/usage" },
   providers: { name: "ModelProviders", path: "/settings/model-config/providers" },
   builderModels:{name:'BuilderModels',path:'/settings/model-config/app-builder'},
+  systemAgentModels:{name:'SystemAgentModels',path:'/settings/model-config/agents'},
   settings: { name: "SystemConfig", path: "/settings/system-config" },
   /** The external MCP services agents may call, registered once for the platform. */
   externalMcp: { name: "ExternalMcpServices", path: "/settings/external-mcp" },

@@ -18,6 +18,8 @@ const props = defineProps<{
   source: AgentModelSource;
   /** The page's address: leaving it with unsaved choices asks first. */
   path: string;
+  title?:string;
+  description?:string;
 }>();
 
 const labels = useAgentModelLabels();
@@ -122,13 +124,14 @@ onMounted(load);
 <template>
   <div class="agent-models-page">
     <PlatformPageHeader
-      :title="labels.title"
-      :description="labels.description"
+      :title="title??labels.title"
+      :description="description??labels.description"
       :draft="agents ? draft : null"
       :labels="{ save: labels.save, discard: labels.discard, unsavedChanges: labels.unsavedChanges }"
       @save="draft.save()"
       @discard="draft.discard()"
-    />
+    ><template v-if="$slots.actions" #actions><slot name="actions" :dirty="dirty" :saving="saving"/></template></PlatformPageHeader>
+    <slot name="navigation"/>
     <div class="agent-models-body platform-page-gutter">
       <div v-if="loadError" class="agent-models-error" role="alert">
         <span>{{ labels.loadFailed }}</span>

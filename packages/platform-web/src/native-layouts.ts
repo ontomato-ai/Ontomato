@@ -109,7 +109,7 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
     // Its pages are its own menu, by group; an account enters at the first page it may open.
     frame: "menu",
     sections: [
-      { key: "settings:models", titleKey: "platform.settingsGroups.models", paths: [platformRoutes.usage.path, platformRoutes.providers.path,platformRoutes.ontologyModels.path,platformRoutes.governanceModels.path,platformRoutes.agentModels.path,platformRoutes.builderModels.path] },
+      { key: "settings:models", titleKey: "platform.settingsGroups.models", paths: [platformRoutes.usage.path, platformRoutes.providers.path,platformRoutes.systemAgentModels.path] },
       // The licence is the enterprise edition's; the open-source navigation has no such page, so it is not listed.
       { key: "settings:system", titleKey: "platform.settingsGroups.system", paths: [platformRoutes.general.path, platformRoutes.license.path] },
       {
