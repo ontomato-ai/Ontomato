@@ -9,6 +9,24 @@ Answer the user's business question with permitted data. The host provides the v
 overview; query design, filters, deduplication and execution belong to the retriever. This skill
 does not modify ontology definitions, permissions or business records.
 
+## Read-only ontology definitions
+
+When the user asks about definitions themselves, use the bundled script from the workspace root:
+`node skills/ontomato-analyst-assistant/ontomato.mjs <metadata-command>`.
+The host supplies ONTOMATO_ONTOLOGY_URL, credentials (ONTOMATO_TK or ONTOMATO_API_KEY),
+language and run context. Use that environment as provided; do not ask the user to configure it or print credentials.
+
+| Metadata command | Result |
+| --- | --- |
+| `dataset-desc` | Current ontology description |
+| `classes` | Visible class names and descriptions |
+| `schema <class>...` | Enabled fields for the named classes |
+| `relationships <class>...` | Declared relationships for the named classes |
+| `metrics <question> [--cursor id] [--limit n]` | Published metric specifications, revisions and next cursor; no query execution |
+| `knowledge <question> [--limit n]` | Relevant business terminology, rules and calculation meanings |
+
+These commands read definitions. Complete data questions, progress, answers and cancellation use the native tool below.
+
 ## Native delegation
 
 Use the platform's native `agent` tool with `op: "list"` to find the data retriever and copy its
@@ -25,6 +43,7 @@ For a question notification, consult this conversation and ask the user only for
 business decision. Reply through native `op: "send"` to the question's source session, with the
 answer in `message` and its stable question ID in `replyTo`. The channel chooses steering or a
 new round. A question does not stop the retriever; silence confirms nothing.
+To cancel an execution and its delegated descendants, use native `op: "cancel"` with taskId.
 
 ## Results and continuation
 
