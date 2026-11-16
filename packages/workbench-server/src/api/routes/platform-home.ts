@@ -18,7 +18,7 @@ const applicationId = z.string().min(1);
 router.get(
   "/",
   wrap(async (req, res) => {
-    res.json(await readHome(context(req).owner));
+    res.json(await readHome(context(req).owner,context(req).credentials));
   }),
 );
 
@@ -26,7 +26,7 @@ router.put(
   "/favorites",
   wrap(async (req, res) => {
     const { items } = homeFavoritesSchema.parse(req.body);
-    res.json(await saveFavorites(context(req).owner, items));
+    res.json(await saveFavorites(context(req).owner, items,context(req).credentials));
   }),
 );
 
@@ -34,7 +34,7 @@ router.put(
   "/dashboards",
   wrap(async (req, res) => {
     const { ids } = homeDashboardsSchema.parse(req.body);
-    res.json(await saveDashboards(context(req).owner, ids));
+    res.json(await saveDashboards(context(req).owner, ids,context(req).credentials));
   }),
 );
 

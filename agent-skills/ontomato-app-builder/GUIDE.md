@@ -52,7 +52,45 @@ Every page reports what its reader looks at with `context.setPageContext({ page,
 
 The returned paths already include the deployment prefix. HTML module and stylesheet URLs use `sdkBasePath` exactly once; never embed the internal workbench address or fetch modules from a CDN. `sdk read` automatically uses the agent's reachable URL. The version's examples may show root deployment paths: apply `publicBasePath` when writing them into the application. Documentation belongs in the agent's scratch location, not the released directory.
 
+## Product assets and personal home
+
+Start with reusable product assets. If the requested page fits the product document contract, create or edit those same assets through the authoring CLI; manual editing and Agent editing must converge on the same asset IDs. Use custom source only for interactions the asset contract cannot express. Do not reproduce an existing configured page in HTML.
+
+Custom source embeds existing assets with the SDK's `ProductAsset` component:
+
+```js
+import { connectAppContext, ProductAsset } from '@ontomato/sdk';
+const context = await connectAppContext();
+// Register ProductAsset in components and render:
+// <product-asset :context="context" asset-id="actual-asset-id"></product-asset>
+```
+
+Declare embedded IDs in `ontomato.products.json`. Published applications resolve the frozen child revisions of their release; remounting does not upgrade them. Embedded content uses the shell's product runtime, current identity and theme. New source publications require a message-bridge SDK and run in an opaque sandbox; use `await connectAppContext()`. Embedding is unavailable in build-test previews; author assets with the CLI, then verify a published app.
+
+Product parameters are default inputs and interaction preferences. Business windows, thresholds, legal values and operation eligibility must be defined and validated by capabilities, never solely by a page's literals, options or read-only fields. Deleting the page must not delete a business rule. Product-owned ObjectViews may read governed attributes and relationships without business predicates; computed values reference published MetricViews. Legacy object-view pointers require explicit ownership migration before a pinned release.
+
+Commit `ontomato.products.json`; an empty `assetIds` array explicitly declares no product dependencies. The publisher derives `ontomato.product-review.json` from the actual source and ignores author attestations. Business reads use SDK capabilities, writes use Actions, and business calculations and eligibility rules remain in capabilities. Direct transports and parent-window access are rejected; the runtime network policy closes direct data access.
+
+Reuse templates without replacing the user's home: `product create-page <template-id> <name>` creates a new private page with the template's layout and component references. The SDK exposes the same operation as `context.products.createPage(id, name)`. Use the returned ID to assemble an application and declare it in the product manifest. `product use-home` instead replaces the current personal home configuration.
+
+`product create-dashboard <name>` creates a dashboard through its existing owner service and registers a product reference, returning `data.id` and `data.productAssetId`. The SDK's `context.products.createDashboard(name)` returns the product asset. Reuse an existing dashboard when appropriate. The Manager's dashboard creation uses this same path. Add content through the existing dashboard authoring workflow rather than embedding SQL or duplicating the definition in product storage.
+
+Use the three-category V2 model: elements are `object-projection`, `collection-view`, `metric-widget`, `action-view`; compositions are `page` and `navigation`; intelligent applications are `application` and `agent-profile`. A projection has one typed `renders` target. Pages contain asset IDs, never inline projection documents. Templates use `page.isTemplate`; pure display reusable pages use `page.embeddable` and cannot recursively contain Actions. Do not author legacy widget/group/panel/template types. Metric results remain row arrays; presentation selects fields and formats without calculating new measures.
+
+Product-owned ObjectViews render ObjectType attributes and relationships through governed reads or reference published capabilities for calculations. Page parameters carry ontology types, such as `{selected:{kind:"object",objectType:"Person"}}`; projections bind identity paths such as `selected.primaryKey`. Personal resource selections and interaction preferences belong to principal overlays, not Page documents. AgentProfile contains tool/context IDs and instructions, never execution roles; independent Agent Principal authority is managed by governance.
+
+Before generating a configurable page, use `product types`, `product list` and `product home`. `product get <id>` returns the asset, derived references and visible parents. `product save <id> <json|@file>` takes `{name, description, document, revision}`; use a new UUID with revision 0 to create, or the returned ID and revision to edit. New assets grant use/edit only to their creator; manage sharing with governance Grants rather than a product visibility field. Read before editing and preserve unrelated fields. A stale revision fails with `PRODUCT_CONFLICT`: read again and merge the user's change. `product copy <id> <name>` makes an independent copy. `product use-home <id> <current-home-revision>` copies a page or layout template into the reader's home. `product delete <id> <revision>` rejects referenced assets.
+
+Read `product types` for the exact current JSON Schema and existing documents for field mappings. Parameter bindings are typed literals or declared Page-state variables. CollectionView arguments must belong to the Definition signature. Business predicates, SQL, DSL and calculated measures never belong in product documents. Shared assets do not grant business permissions. Runtime results, conversations and business objects remain with their owning services.
+
+Use `product grants <id>` to inspect authorization. `product grant <id> <json|@file>` accepts `{principalKind:"principal"|"role",principalId,verb:"use"|"edit",remove:boolean}`; `product domain-grant <id> true|false` manages domain-member use. Grant mutation requires edit authority and does not modify the product document or authorize underlying data and Actions.
+
+The SDK exposes `context.products.list/get/home/save/copy/useHome/delete` with the same contract. These calls are unavailable inside build-test preview; use the authoring CLI for product edits. For configurable interfaces, edit these assets instead of producing an unrelated HTML copy. A custom source application can call product APIs, but only its explicit product references participate in this dependency model; do not claim complete static analysis of arbitrary JavaScript.
+
 ## Workspace history and publication
+
+When custom source uses product assets, include `ontomato.products.json` in the committed tree:
+`{"schemaVersion":1,"assetIds":["<actual product ID>"]}`. Publication pins recursive child revisions and capability contracts. Rollback selects the release snapshot. Review evidence is build-derived. Use typed `context.navigate({pageId,params})` or `context.navigate({objectViewId,object})` to preserve application identity and frozen dependencies. Never copy capability logic into source.
 
 | Command | Purpose |
 | --- | --- |

@@ -39,6 +39,7 @@ export const builderApi = {
   async agent() {
     return appBuilderBootstrapSchema.parse(await nodeApiGet("/app-builder/bootstrap")).agent;
   },
+  async bootstrap(){return appBuilderBootstrapSchema.parse(await nodeApiGet('/app-builder/bootstrap'));},
   async workspaces(offset: number) {
     return workspacePageSchema.parse(await nodeApiGet(`/workspaces?${page(offset, WORKSPACE_PAGE)}`)).items;
   },

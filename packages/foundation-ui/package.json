@@ -5,6 +5,7 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
+    "./overlay": "./src/overlay/index.ts",
     "./chart": "./src/chart/index.ts",
     "./code": "./src/code/index.ts",
     "./form": "./src/form/index.ts",

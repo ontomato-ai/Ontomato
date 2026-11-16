@@ -1,11 +1,27 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { createObjectView, createViewWidget, objectViewDocumentSchema, viewWidgetSchema, readViewPath, resolveViewBinding, viewConditionMatches } from "@ontomato/contracts/object-views";
+import { createObjectView, createViewWidget, objectViewDocumentSchema, objectViewProductIssues, viewWidgetSchema, readViewPath, resolveViewBinding, resolveViewParameters, viewConditionMatches } from "@ontomato/contracts/object-views";
 import { createManagerClient } from "../api";
 import { englishMessages } from "../i18n";
 import { instanceName } from "../object-views/instance-name";
 
 afterEach(() => { vi.unstubAllGlobals(); });
 describe("object view bindings and documents", () => {
+  it('binds object identity without exposing attributes and rejects business conditions at admission',()=>{
+    const view=createObjectView('Order');
+    const widget=view.tabs[0].sections[0].widgets[0];
+    expect(objectViewProductIssues(view).length).toBeGreaterThan(0);
+    widget.resourceId='order-details';
+    widget.parameters={id:{source:'context',path:'primaryKey'}};
+    expect(resolveViewParameters(widget.parameters,{primaryKey:'wrong',salary:100},{},{className:'Order',primaryKey:'selected'})).toEqual({id:'selected'});
+    expect(objectViewProductIssues(view)).toEqual([]);
+    widget.visibleWhen={binding:{source:'variable',path:'selection'},operator:'present',value:''};
+    expect(objectViewProductIssues(view)).toEqual([]);
+    widget.visibleWhen={binding:{source:'variable',path:'selection.amount'},operator:'eq',value:'5000'};
+    expect(objectViewProductIssues(view).length).toBeGreaterThan(0);
+    delete widget.visibleWhen;
+    widget.parameters.id={source:'object',path:'id'};
+    expect(objectViewProductIssues(view).length).toBeGreaterThan(0);
+  });
   it("preserves saved widget dimensions through the schema", () => {
     expect(viewWidgetSchema.parse({ ...createViewWidget("chart"), span: 9, height: 480 })).toMatchObject({ span: 9, height: 480 });
   });

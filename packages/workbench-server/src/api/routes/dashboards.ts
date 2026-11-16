@@ -27,6 +27,7 @@ import { dashboardCardRequestSchema, dashboardSaveParametersSchema } from "@onto
 import { dashboardSourceSchema, dashboardAddArtifactSchema } from "@ontomato/contracts/dashboard-artifacts";
 import { DashboardMetricClient } from "../../services/dashboard/metric-client";
 import { queryMetricCard, metricCardParameterForm, saveMetricCardParameters } from "../../services/dashboard/metric-data";
+import {registerDashboardProduct} from '../../services/product-assets/register-dashboard';
 const router: ExpressRouter = Router();
 function metricContext(req: AuthenticatedRequest) {
   const domainId = requireDomainId(req);
@@ -73,7 +74,9 @@ router.post(
     const ownerId = (req as AuthenticatedRequest).userId;
     const domainId = requireDomainId(req as AuthenticatedRequest);
     const data = await createEmptyDashboard(ownerId, domainId, req.body || {});
-    res.json({ success: true, data });
+    const request=req as AuthenticatedRequest;
+    const product=await registerDashboardProduct({userId:ownerId,domainId},data,{token:request.token,apiKey:request.apiKey,locale:request.locale});
+    res.json({ success: true, data:{...data,productAssetId:product.id} });
   })
 );
 router.post(
@@ -126,7 +129,8 @@ router.post(
       parseDashboardInput(dashboardSourceSchema, req.body),
       { token, apiKey, locale }
     );
-    res.json({ success: true, data });
+    const product=await registerDashboardProduct({userId,domainId:requireDomainId(req as AuthenticatedRequest)},data,{token,apiKey,locale});
+    res.json({ success: true, data:{...data,productAssetId:product.id} });
   })
 );
 router.post(

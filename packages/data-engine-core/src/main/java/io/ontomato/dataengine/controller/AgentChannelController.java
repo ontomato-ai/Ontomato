@@ -108,11 +108,11 @@ public class AgentChannelController {
     if(!"ontology".equals(ref.getString("providerId"))) throw AgentHttpException.missing();
     String agent=ref.getString("agentId"),session=AgentJson.id(body.getString("sessionId")),run=AgentJson.id(body.getString("runId"));
     String kind=OntologyGenerationService.kindForAgent(agent);
-    if(!KnowledgeGovernanceService.AGENT.equals(agent) && !OntologyAgentStore.RETRIEVER.equals(agent) && !ActionCreationService.AGENT.equals(agent) && kind==null) throw AgentHttpException.missing();
+    if(!KnowledgeGovernanceService.isAgent(agent) && !OntologyAgentStore.RETRIEVER.equals(agent) && !ActionCreationService.AGENT.equals(agent) && kind==null) throw AgentHttpException.missing();
     var authority=body.getJSONObject("authority");
     if("build-test".equals(authority.getString("executionKind")) && (body.getJSONObject("requestedBy")!=null || kind==null)) throw new AgentHttpException(422,"BUILD_TEST_UNSUPPORTED","The agent channel is not available in a build-test execution");
     var actor=body.getJSONObject("actor");String language=body.getString("language");
-    OntologyAgentAccess.Context context=KnowledgeGovernanceService.AGENT.equals(agent)?callers.governance(actor,domain,language):
+    OntologyAgentAccess.Context context=KnowledgeGovernanceService.isAgent(agent)?callers.governance(actor,domain,language):
       kind!=null?callers.generation(actor,domain,language,authority,body.getJSONObject("requestedBy"),body.getJSONObject("root")):
       callers.query(actor,domain,language,authority,body.getJSONObject("requestedBy"),body.getJSONObject("root"));
     boolean steer="steer".equals(body.getString("mode"));
@@ -128,7 +128,7 @@ public class AgentChannelController {
       prepared=generation.prepare(session,run,kind,body.getJSONObject("input"),body.getJSONObject("context"),context);
     } else {
       if(steer) {store.run(session,run,context.owner());return JSONObject.of("accepted",true);}
-      governance.create(session,context.owner(),false);prepared=governance.prepare(session,run,body.getJSONObject("input"),context);
+      governance.create(session,context.owner(),false,agent);prepared=governance.prepare(session,run,body.getJSONObject("input"),context);
     }
     var narrowed=AgentJson.copy(authority);
     if(context.access()!=null) {
@@ -148,7 +148,7 @@ public class AgentChannelController {
     if (!List.of("user","notification").contains(role)) throw AgentHttpException.invalid("Unknown input role");
     String content=AgentJson.text(input,"content");
     String agent=body.getJSONObject("agent").getString("agentId");
-    if(KnowledgeGovernanceService.AGENT.equals(agent) || ActionCreationService.AGENT.equals(agent)) KnowledgeGovernanceService.validateMessage(content);
+    if(KnowledgeGovernanceService.isAgent(agent) || ActionCreationService.AGENT.equals(agent)) KnowledgeGovernanceService.validateMessage(content);
     if (role.equals("notification")) {
       if (!List.of("agent-message","agent-result","agent-question","agent-answer").contains(input.getString("kind"))) throw AgentHttpException.invalid("Unknown notification kind");
       if (input.containsKey("replyTo")) AgentJson.id(input.getString("replyTo"));
@@ -172,7 +172,7 @@ public class AgentChannelController {
       store.update("UPDATE ontology_agent_runs SET runtime_admitted=true WHERE id=?",UUID.fromString(execution.run()));
       retrieval.reconcile(execution.session(),execution.run(),execution.actor().owner(),runtime.run(execution.actor().owner().domainId(),execution.run()));
     } else if(ActionCreationService.AGENT.equals(execution.agent())) actions.settle(execution.run());
-    else if(KnowledgeGovernanceService.AGENT.equals(execution.agent())) governance.settle(execution.run());
+    else if(KnowledgeGovernanceService.isAgent(execution.agent())) governance.settle(execution.run());
     else generation.settleProvider(execution.session(),execution.run(),execution.actor().owner());
     return JSONObject.of("accepted",true);
   }
@@ -181,14 +181,14 @@ public class AgentChannelController {
     var execution=execution(body(input),request);
     if(OntologyAgentStore.RETRIEVER.equals(execution.agent())) retrieval.cancelProvider(execution.session(),execution.run(),execution.actor().owner());
     else if(ActionCreationService.AGENT.equals(execution.agent())) actions.cancelProvider(execution.session(),execution.run(),execution.actor().owner());
-    else if(KnowledgeGovernanceService.AGENT.equals(execution.agent())) store.closeRun(execution.session(),execution.run(),execution.actor().owner());
+    else if(KnowledgeGovernanceService.isAgent(execution.agent())) store.closeRun(execution.session(),execution.run(),execution.actor().owner());
     else generation.cancelProvider(execution.session(),execution.run(),execution.actor().owner());
     return JSONObject.of("accepted",true);
   }
   @PostMapping("/read")
   public Object read(@RequestBody Map<String,Object> input,HttpServletRequest request) throws Exception {
     var execution=execution(body(input),request); var owner=execution.actor().owner();
-    if(KnowledgeGovernanceService.AGENT.equals(execution.agent())) callers.governance(body(input).getJSONObject("actor"),owner.domainId(),"en",false);
+    if(KnowledgeGovernanceService.isAgent(execution.agent())) callers.governance(body(input).getJSONObject("actor"),owner.domainId(),"en",false);
     else if(OntologyAgentStore.RETRIEVER.equals(execution.agent()) || ActionCreationService.AGENT.equals(execution.agent())) callers.requireQuery(execution.actor());
     String fileId=body(input).getString("fileId");
     if(fileId!=null) {
@@ -226,7 +226,7 @@ public class AgentChannelController {
     }
     Object process=JSONObject.of("mode","inline","runtimeSessionId",execution.session(),"runtimeRunId",execution.run());
     var results=new ArrayList<JSONObject>();
-    if(KnowledgeGovernanceService.AGENT.equals(execution.agent())) {
+    if(KnowledgeGovernanceService.isAgent(execution.agent())) {
       var work=store.one("SELECT work FROM ontology_governance_work WHERE run_id=?",UUID.fromString(execution.run())).getJSONObject("work");
       summary=work.getString("summary");String href="/governance/chat/"+execution.session();
       process=JSONObject.of("mode","page","href",href);results.add(JSONObject.of("kind","page","href",href,"title","Governance record"));

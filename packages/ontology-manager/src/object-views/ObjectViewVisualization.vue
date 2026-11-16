@@ -41,6 +41,7 @@ watch(() => JSON.stringify([props.widget, props.value, props.rows, context.local
       chartType: widget.chartType === "graph" ? "network-graph" : widget.chartType,
       title: widget.title, xField: widget.labelField, yField: widget.valueField,
       showTitle: false,
+      compact: true,
       dateField: widget.dateField, descriptionField: widget.descriptionField,
       latitudeField: widget.latitudeField, longitudeField: widget.longitudeField,
       labelField: widget.labelField, valueField: widget.valueField,

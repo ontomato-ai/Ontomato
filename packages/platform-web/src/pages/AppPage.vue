@@ -16,7 +16,7 @@ withDefaults(
     title: string;
     description?: string | null;
     /** The page's own buttons at the right of the title row. */
-    actions?: readonly { id: string; label: string; primary?: boolean; icon?: Component; onClick: () => void }[];
+    actions?: readonly { id: string; label: string; primary?: boolean; icon?: Component; disabled?:boolean; loading?:boolean; onClick: () => void }[];
     /** The header's own words, from the host's i18n. */
     labels: { save: string; discard: string; unsavedChanges: string };
   }>(),

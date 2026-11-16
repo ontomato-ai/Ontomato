@@ -12,8 +12,8 @@ export async function prepareAppBuilderRun({ a, session, input, credentials }: A
     language: credentials.locale ?? "en",
     input,
     definition: { agentId: a.id, ...runDefinition(
-      effectiveSystemPrompt(a) + "\n\nCurrent SDK (browser paths):\n" + JSON.stringify(sdk),
-      null, APP_BUILDER.skills, credentials.locale,
+      effectiveSystemPrompt({...a,kind:APP_BUILDER.kind}) + "\n\nCurrent SDK (browser paths):\n" + JSON.stringify(sdk),
+      a.model_selection.modelId, APP_BUILDER.skills, credentials.locale,
     ) },
     environment: { values: { ...environment.values, ONTOMATO_WORKSPACE_ID: session.workspace_id!, ONTOMATO_EXECUTION_KIND: "build-test" }, secrets: environment.secrets },
   };

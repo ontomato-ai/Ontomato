@@ -107,6 +107,13 @@ export function referenceMarkdown({ root, tsconfig, entries }) {
         code(lines, `type ${name} = ${expanded.length <= 4 * PRINTED_LIMIT ? expanded : declaration.type.getText()};`);
       } else if (ts.isInterfaceDeclaration(declaration)) {
         code(lines, declaration.getText().replace(/^export\s+/, ""));
+      } else if (ts.isClassDeclaration(declaration)) {
+        const members=declaration.members.filter(member=>!member.modifiers?.some(modifier=>modifier.kind===ts.SyntaxKind.PrivateKeyword||modifier.kind===ts.SyntaxKind.ProtectedKeyword)).map(member=>{
+          const text=member.getText();
+          return member.body ? text.slice(0,member.body.getStart()-member.getStart()).trim()+";" : text;
+        });
+        const heritage=declaration.heritageClauses?.map(clause=>clause.getText()).join(" ")??"";
+        code(lines,`class ${name}${heritage?" "+heritage:""} {\n${members.map(member=>"  "+member).join("\n")}\n}`);
       } else if (ts.isVariableDeclaration(declaration)) {
         code(lines, `const ${name}: ${checker.typeToString(checker.getTypeOfSymbolAtLocation(symbol, declaration), undefined, FULL)};`);
       } else {

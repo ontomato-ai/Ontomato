@@ -79,6 +79,10 @@ public class ApplicationCatalog {
         if (releaseId == null || !releaseId.matches("[a-zA-Z0-9_-]{1,128}")) throw bad("Invalid releaseId");
         return userApplication(id, "hosted", declaration, releaseId, user);
     }
+    public JSONObject publishProduct(String id,Declaration declaration,String releaseId,User user){
+        if(releaseId==null||!releaseId.matches("[a-zA-Z0-9_-]{1,128}"))throw bad("Invalid releaseId");
+        return userApplication(id,"product",declaration,releaseId,user);
+    }
     public JSONObject connected(String id, Declaration declaration, String upstream, String upstreamPrefix, User user) {
         access.requireConnectedRegistration(user);
         var allowed = upstreams.getJSONArray(user.getDomainId());
@@ -94,6 +98,7 @@ public class ApplicationCatalog {
     }
     public JSONObject userApplication(String id, String kind, Declaration declaration, String releaseId, User user) {
         validateId(id); validate(declaration);
+        if(!List.of("hosted","connected","product").contains(kind))throw bad("Invalid user application kind");
         if (!id.startsWith("app-") || user.getDomainId() == null) throw bad("A user application requires an app- ID and domain");
         for (var permission : declaration.permissions())
             if (!permission.code().startsWith("app:" + id + ":")) throw bad("Application permission prefix required");
@@ -105,11 +110,12 @@ public class ApplicationCatalog {
                     !access.canMaintain(a,user)) throw denied();
             }
             String owner = old.isEmpty() ? user.getId() : old.get().getString("ownerUserId");
-            save(id, user.getDomainId(), kind.equals("hosted") ? "workbench" : "data-engine", owner, kind, "apps", "business", 100,
-                JSONObject.of("path", "/apps/" + id + "/"), List.of("app:" + id + ":entry"), null, releaseId, declaration);
+            String path=kind.equals("product")?"/products/"+id+"?applicationId="+id:"/apps/"+id+"/";
+            save(id, user.getDomainId(), List.of("hosted","product").contains(kind) ? "workbench" : "data-engine", owner, kind, "apps", "business", 100,
+                JSONObject.of("path",path), List.of("app:" + id + ":entry"), null, releaseId, declaration);
             var application = require(id);
             access.declare(application, declaration, old.isEmpty());
-            return JSONObject.of("applicationId", id, "releaseId", releaseId, "entryPath", "/apps/" + id + "/");
+            return JSONObject.of("applicationId", id, "releaseId", releaseId, "entryPath",path);
         });
     }
     private void save(String id, String domain, String service, String owner, String kind, String rail, String category, int sort,

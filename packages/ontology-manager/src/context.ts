@@ -98,11 +98,12 @@ function createCounts(client: ManagerClient): ManagerCounts {
   async function refresh() {
     started = true;
     // The scheduled tasks of functions are the platform's now: this area counts only what it owns.
-    const [ontology, metrics, actions, functions] = await Promise.allSettled([
+    const [ontology, metrics, actions, functions, products] = await Promise.allSettled([
       client.loadOntology(),
       client.loadSmartAssets("metrics"),
       client.loadSmartAssets("actions"),
       client.loadSmartAssets("functions"),
+      client.products.counts(),
     ]);
     if (ontology.status === "fulfilled") {
       values.objects = ontology.value.objects.length;
@@ -112,6 +113,7 @@ function createCounts(client: ManagerClient): ManagerCounts {
     if (metrics.status === "fulfilled") values.metrics = metrics.value.length;
     if (actions.status === "fulfilled") values.actions = actions.value.length;
     if (functions.status === "fulfilled") values.functions = functions.value.length;
+    if (products.status === "fulfilled") values.products = Object.values(products.value).reduce((sum,count)=>sum+count,0);
   }
   return {
     values,

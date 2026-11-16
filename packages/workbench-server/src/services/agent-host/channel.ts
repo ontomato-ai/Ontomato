@@ -1,4 +1,5 @@
 import path from "node:path";
+import { isAppBuilderKind } from "../app-builder/definition";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { agentPrepareRequestSchema, agentProviderExecutionSchema, agentProviderListRequestSchema, type AgentRunContext } from "@ontomato/contracts/agent-channel";
 import { DIAGNOSIS_AGENT_ID } from "@ontomato/contracts/ops-diagnosis";
@@ -22,12 +23,12 @@ export const agentChannelService = {
     const { owner, credentials } = await caller(body, domain, undefined, false, supplied);
     const agents = [];
     if (body.providerId === "workbench") {
-      for (const agent of await assistantStore.agents(domain)) {
+      for (const agent of await assistantStore.channelAgents(domain)) {
         if (!agent.enabled) continue;
         try { await assistantService.admitAgent(agent.id, owner, credentials); }
         catch (error) { if (error instanceof HttpError && error.status === 403) continue; throw error; }
         agents.push({ ref: { providerId: "workbench", agentId: agent.id }, name: agent.name, description: agent.description,
-          ...(agent.kind === "app-builder" ? { contextSchema: { type: "object", properties: { workspaceId: { type: "string", format: "uuid" } }, required: ["workspaceId"], additionalProperties: false } } : {}) });
+          ...(isAppBuilderKind(agent.kind) ? { contextSchema: { type: "object", properties: { workspaceId: { type: "string", format: "uuid" } }, required: ["workspaceId"], additionalProperties: false } } : {}) });
       }
       return { agents };
     }

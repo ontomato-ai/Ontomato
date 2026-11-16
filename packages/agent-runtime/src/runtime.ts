@@ -10,6 +10,7 @@ import { mkdir, chmod, readFile, writeFile, rename } from "node:fs/promises";
 import { CodeExecutor } from "./code";
 import { signalUid, assertWorkerPolicy, type WorkerPolicy } from "./worker";
 import { randomUUID } from "node:crypto";
+import {productTools} from './product-tools';
 import path from "node:path";
 import { normalizeContext, type Message } from "@earendil-works/pi-ai";
 import {
@@ -572,7 +573,7 @@ export class AgentRuntime {
       active.sandbox = sandbox;
       for (const file of await this.files.scan(sandbox.workspace))
         active.outputBaseline.set(file.path, file.sha256);
-      const tools = await sandbox.start(
+      const tools = request.definition.toolSurface==='product'?[]:await sandbox.start(
         uid,
         run.id,
         run.correlationId,
@@ -580,12 +581,13 @@ export class AgentRuntime {
         skills,
       );
       const mcp = await connectMcp(
-        mcpConfigs,
+        request.definition.toolSurface==='product'?[]:mcpConfigs,
         run.correlationId,
         signal,
       );
       closeMcp = mcp.close;
       tools.push(...mcp.tools);
+      tools.push(...productTools(request,run.id));
       if (run.channel) tools.push(this.channel.tool(scope, run));
       if (new Set(tools.map((t) => t.name)).size !== tools.length)
         throw new Error("Exposed tool names must be unique");

@@ -4,6 +4,8 @@ Every command accepts one JSON object (inline JSON or @file) and prints JSON.
 
 | Command | Arguments |
 | --- | --- |
+| read-input | {}; reads and registers the current user's original message as extraction source |
+| import-knowledge | items: array of {id, title, text, sourceIds, tags?}; imports source-backed business knowledge with pending status; stable IDs make retries idempotent |
 | read-knowledge | query?, id?, index?, offset?, maxChars? (1000–20000); start with {} |
 | read-ontology | Same pagination as read-knowledge |
 | search-history | query?, agentId?, from?, to?, offset?, limit? (1–100); start with {} |

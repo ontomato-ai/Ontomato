@@ -193,11 +193,11 @@ body {
   background: transparent;
 }
 
-.node rect,
-.node circle,
-.node ellipse,
-.node polygon,
-.node path {
+.mermaid-svg .node rect,
+.mermaid-svg .node circle,
+.mermaid-svg .node ellipse,
+.mermaid-svg .node polygon,
+.mermaid-svg .node path {
   fill: var(--el-fill-color-lighter) !important;
   stroke: var(--el-color-primary) !important;
   stroke-width: 1.5px !important;

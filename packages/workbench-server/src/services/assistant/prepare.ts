@@ -11,6 +11,11 @@ import { resolveLocale } from "../../i18n";
 import { recentUserMessages } from "./user-quotes";
 import { OntologyRetrievalClient } from "./ontology-retrieval";
 import { getQueryTimeoutMs } from "../../config/query-settings";
+import {profileForSession} from '../product-assets/agent-profile';
+import {profileRuntimeTools} from '../product-assets/runtime-tools';
+import {callbackCredential} from '../agent-runtime/callback-credential';
+import {agentPrincipalCredentials} from '../product-assets/agent-principal';
+import {environment} from '../../config/environment';
 
 export interface AssistantPreparation {
   a: AgentRow; session: SessionRow; turn: TurnRow; message: string; input: AgentInput; ontologyContext: string | null;
@@ -19,17 +24,20 @@ export interface AssistantPreparation {
 export async function prepareAnalystRun({ a, session, turn, message, input, ontologyContext, owner, credentials }: AssistantPreparation): Promise<RuntimeStartRunRequest> {
   const sessionId = session.id, id = turn.id;
   const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
-  const skills = await prepareAssistantSkills(owner.domainId, a.skills);
-  const skillEnvironment = userSkillEnvironment(credentials);
+  const profile=await profileForSession(owner,credentials,session.id,session.agent_id);
+  if(profile)await agentPrincipalCredentials(owner.domainId,profile.principalId,credentials.locale,owner.userId);
+  const skills = profile?[]:await prepareAssistantSkills(owner.domainId, a.skills);
+  const skillEnvironment = profile?{values:{ONTOMATO_WORKBENCH_URL:environment.agentRuntime().callbackUrl.replace(/\/$/,'')},secrets:{}}:userSkillEnvironment(credentials);
+
   const continuationIds = new Set<string>();
-  for (const previous of await assistantStore.turns(sessionId)) {
+  for (const previous of profile?[]:await assistantStore.turns(sessionId)) {
     if (previous.id === id) continue;
     for (const link of await new OntologyRetrievalClient(owner, previous.retrieval_scope_id).links()) continuationIds.add(link.retrievalId);
   }
   const userMessages = recentUserMessages(
     (await client.session(sessionId)).messages, id, input.role === "notification" ? null : message, new Date(turn.created_at).getTime(),
   );
-  await new OntologyRetrievalClient(owner, turn.retrieval_scope_id).open({
+  if(!profile)await new OntologyRetrievalClient(owner, turn.retrieval_scope_id).open({
     classNames: turn.class_names,
     continuationIds: [...continuationIds].sort(),
     deadlineAt: new Date(new Date(turn.created_at).getTime() + getQueryTimeoutMs()).toISOString(),
@@ -39,18 +47,18 @@ export async function prepareAnalystRun({ a, session, turn, message, input, onto
     language: resolveLocale(credentials.locale),
     input,
     definition: { agentId: session.agent_id, ...runDefinition(
-      effectiveSystemPrompt(a, resolveLocale(credentials.locale)) + "\n\nInitial ontology context:\n" + ontologyContext +
+      (profile?profile.instructions+'\n\nProduct projection interfaces (not authorization):\n'+JSON.stringify({tools:profile.tools,contextViews:profile.contextViews,issues:profile.issues,...('objectContext' in profile?{objectContext:profile.objectContext}:{})}):effectiveSystemPrompt(a, resolveLocale(credentials.locale))+"\n\nInitial ontology context:\n"+ontologyContext) +
         "\n\n" + ARTIFACT_MARKDOWN_PROMPT + ASSISTANT_INTERACTION_CONTEXT,
       a.model_selection.modelId, skills, credentials.locale,
-      a.enabled_mcp_service_ids.map((serviceId) => ({ id: serviceId })),
-    ) },
+      profile?[]:a.enabled_mcp_service_ids.map((serviceId) => ({ id: serviceId })),
+    ),...(profile?{productTools:profileRuntimeTools(profile,sessionId),toolSurface:'product' as const}:{}) },
     environment: {
       values: {
         ...skillEnvironment.values,
         ONTOMATO_ASSISTANT_SESSION_ID: sessionId,
         ONTOMATO_RETRIEVAL_CALLER_ID: turn.retrieval_scope_id,
       },
-      secrets: skillEnvironment.secrets,
+      secrets:{...skillEnvironment.secrets,...(profile?{ONTOMATO_PRODUCT_CALLBACK:callbackCredential({pathPrefix:`/api/product-assets/${encodeURIComponent(profile.id)}/releases/${profile.releaseId}/tools/`,runId:id,expiresAt:Date.now()+getQueryTimeoutMs(),token:credentials.token??'',apiKey:credentials.apiKey??''}).value}:{})},
     },
   };
 }

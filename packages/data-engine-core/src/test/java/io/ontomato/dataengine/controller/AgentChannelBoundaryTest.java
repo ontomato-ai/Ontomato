@@ -74,7 +74,8 @@ class AgentChannelBoundaryTest {
     when(identity.hasKnowledgeGovernanceAccess("user","a")).thenReturn(true);
     var actions=mock(ActionCreationService.class);
     doThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN)).when(callers).requireQuery(any());
-    var own=new AgentDirectory(callers,identity,actions);
+    when(governance.agents("a")).thenReturn(java.util.List.of(JSONObject.of("id",KnowledgeGovernanceService.AGENT,"name","Governance","description","")));
+    var own=new AgentDirectory(callers,identity,actions,governance);
     var agents=own.list(actor,"a").getJSONArray("agents");
     assertEquals(1,agents.size());
     assertEquals("ontology",agents.getJSONObject(0).getJSONObject("ref").getString("providerId"));
@@ -96,7 +97,7 @@ class AgentChannelBoundaryTest {
     var jdbc=mock(org.springframework.jdbc.core.JdbcTemplate.class);
     var identities=mock(io.ontomato.dataengine.schedules.ScheduleIdentity.class);
     var identity=mock(io.ontomato.dataengine.service.IdentityService.class);
-    when(jdbc.queryForList(anyString(),any(),any())).thenReturn(java.util.List.of(java.util.Map.of("user_id","user","domain_id","a","deadline",new java.sql.Timestamp(System.currentTimeMillis()+60000))));
+    when(jdbc.queryForList(anyString(),any(Object[].class))).thenReturn(java.util.List.of(java.util.Map.of("user_id","user","domain_id","a","deadline",new java.sql.Timestamp(System.currentTimeMillis()+60000))));
     var caller=new AgentCaller(jdbc,identities,identity);var ref=JSONObject.of("id",RUN,"domainId","a");
     when(identity.getCurrentUser()).thenReturn(new io.ontomato.dataengine.service.QueryAccessService.GrantUser("user","a"));
     assertEquals("user",caller.restore(ref,"a").owner().userId());

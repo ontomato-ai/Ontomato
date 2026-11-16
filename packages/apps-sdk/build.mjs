@@ -133,6 +133,8 @@ async function main() {
     version,
     product: facts.product,
     executionContext: BUILD_TEST_SDK_CAPABILITY,
+    hostTransport: 1,
+    messageBridge: 2,
     entries: Object.fromEntries(ENTRIES.map((entry) => [entry.specifier, entry.file])),
     stylesheet: STYLESHEET,
     libraries: Object.fromEntries(LIBRARIES.map((name) => [name, libraryVersion(name)])),

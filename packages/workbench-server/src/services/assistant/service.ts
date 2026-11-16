@@ -1,12 +1,14 @@
 import { resolveLocale } from "../../i18n";
 import { assertAppBuilderAccess } from "../app-builder/access";
 import { ChannelProcessClient } from "../agent-host/process";
+import { agentProfileForPrincipal } from "../product-assets/agent-profile";
 import { assistantOntologyContext } from "./context";
 import { openAgentCaller } from "../agent-host/caller";
 import type { AgentPrepareRequest, AgentRunContext } from "@ontomato/contracts/agent-channel";
 import type { RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
 import { prepareAnalystRun } from "./prepare";
 import { prepareAppBuilderRun } from "../app-builder/prepare";
+import {isAppBuilderKind} from '../app-builder/definition';
 import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { assistantDescription, assistantName } from "./labels";
 import { randomUUID } from "node:crypto";
@@ -65,7 +67,7 @@ export { sessionView };
 export const assistantService = {
   async isAppBuilder(owner: AssistantOwner, input: { agentId: string } | { sessionId: string }) {
     const agentId = "agentId" in input ? input.agentId : (await assistantStore.session(input.sessionId, owner)).agent_id;
-    return (await assistantStore.agent(agentId, owner)).kind === "app-builder";
+    return isAppBuilderKind((await assistantStore.agent(agentId, owner)).kind);
   },
   async agents(owner: AssistantOwner, locale?: string) {
     return {
@@ -229,7 +231,7 @@ export const assistantService = {
   async prepare(body: AgentPrepareRequest, owner: AssistantOwner, credentials: AssistantCredentials): Promise<RuntimeStartRunRequest> {
     const { sessionId, runId: id, input, authority } = body;
     const { agent: a, ontologyContext } = await this.admitAgent(body.agent.agentId,owner,credentials,authority);
-    const context = a.kind === "app-builder" ? z.object({ workspaceId: z.string().uuid() }).strict().safeParse(body.context) : null;
+    const context = isAppBuilderKind(a.kind) ? z.object({ workspaceId: z.string().uuid() }).strict().safeParse(body.context) : null;
     if (context && !context.success) throw new HttpError(400,"App builder requires context.workspaceId containing an owned workspace UUID","CONTEXT_REQUIRED");
     const workspace = context?.success ? context.data.workspaceId : undefined;
     if (workspace) await new RuntimeClient(owner.domainId,undefined,owner.userId).request(`/v1/channel/sessions/${sessionId}/workspace`,"POST",{ workspaceId: workspace,ownerId: owner.userId });
@@ -237,22 +239,23 @@ export const assistantService = {
     const message = input.content;
     const { row: turn } = await assistantStore.reserve(sessionId,id,message,owner,a.class_names);
     const request = await withDomainSkills(owner.domainId,async () => {
-      const prepare = a.kind === "app-builder" ? prepareAppBuilderRun : prepareAnalystRun;
+      const prepare = isAppBuilderKind(a.kind) ? prepareAppBuilderRun : prepareAnalystRun;
       return prepare({ a,session,turn,message,input,ontologyContext,owner,credentials });
     });
     await assistantStore.admitted(id,message);
-    return { ...request,input,authority: { classNames: a.class_names,executionKind: a.kind === "app-builder" ? "build-test" : "live" } };
+    return { ...request,input,authority: { classNames: a.class_names,executionKind: isAppBuilderKind(a.kind) ? "build-test" : "live" } };
   },
   async admitAgent(id: string, owner: AssistantOwner, credentials: AssistantCredentials, authority?: AgentRunContext["authority"]) {
     const a = await assistantStore.agent(id,owner);
     if (!a.enabled) throw new HttpError(409,"Agent disabled","AGENT_DISABLED");
-    if (authority?.executionKind === "build-test" && a.kind !== "app-builder") throw new HttpError(403,"Build-test runs cannot delegate to a live agent","BUILD_TEST_FORBIDDEN");
+    if (authority?.executionKind === "build-test" && !isAppBuilderKind(a.kind)) throw new HttpError(403,"Build-test runs cannot delegate to a live agent","BUILD_TEST_FORBIDDEN");
     if (authority?.classNames.length) {
       a.class_names = a.class_names.length ? a.class_names.filter(name => authority.classNames.includes(name)) : authority.classNames;
       if (!a.class_names.length) throw new HttpError(403,"No authorized classes in the delegated scope","FORBIDDEN");
     }
-    if (a.kind === "app-builder") await assertAppBuilderAccess(credentials);
-    const ontologyContext = a.kind === "app-builder" ? null : await assistantOntologyContext(a,credentials);
+    if (isAppBuilderKind(a.kind)) await assertAppBuilderAccess(credentials);
+    const profile = isAppBuilderKind(a.kind) ? null : await agentProfileForPrincipal(owner,credentials,a.id);
+    const ontologyContext = isAppBuilderKind(a.kind) || profile ? null : await assistantOntologyContext(a,credentials);
     return { agent: a,ontologyContext };
   },
   async start(sessionId: string, id: string, message: string, owner: AssistantOwner, credentials: AssistantCredentials) {
@@ -260,9 +263,10 @@ export const assistantService = {
     const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
     const actor = await openAgentCaller(owner, credentials), agent = { providerId: "workbench", agentId: session.agent_id };
     await client.request(`/v1/channel/sessions/${sessionId}/bind`, "POST", { agent, actor });
-    const channel: AgentRunContext = { agent, actor, authority: { classNames: a.class_names, executionKind: a.kind === "app-builder" ? "build-test" : "live" }, requestedBy: null, root: { session: { providerId: "workbench", sessionId }, runId: id } };
+    const channel: AgentRunContext = { agent, actor, authority: { classNames: a.class_names, executionKind: isAppBuilderKind(a.kind) ? "build-test" : "live" }, requestedBy: null, root: { session: { providerId: "workbench", sessionId }, runId: id } };
     await client.request(`/v1/channel/sessions/${sessionId}/runs`, "POST", { channel, credential: {token:credentials.token ?? null,apiKey:credentials.apiKey ?? null}, language: resolveLocale(credentials.locale), input: { role: "user", content: message, timestamp: Date.now() }, ...(session.workspace_id ? { context: { workspaceId: session.workspace_id } } : {}) }, id);
     return { snapshot: publicSnapshot(await client.run(id)), replayed: false };
+
   },
   /**
    * The one place a turn is finished after it ends, and repaired after a lost start response: walks every
@@ -365,7 +369,7 @@ export const assistantService = {
     if (snapshot?.latestRun?.run.status === "running")
       throw new HttpError(409, "Conversation is running", "SESSION_BUSY");
     const agent = await assistantStore.agent((await assistantStore.session(sessionId, owner)).agent_id, owner);
-    const scopes = agent.kind === "app-builder" ? [] : (await db().query(`SELECT retrieval_scope_id FROM ${table("assistant_turns")} WHERE session_id=$1`, [sessionId])).rows;
+    const scopes = isAppBuilderKind(agent.kind) ? [] : (await db().query(`SELECT retrieval_scope_id FROM ${table("assistant_turns")} WHERE session_id=$1`, [sessionId])).rows;
     const removed = new Set<string>();
     for (const scope of scopes) {
       const ontology = new OntologyRetrievalClient(owner, scope.retrieval_scope_id);

@@ -3,21 +3,23 @@ import { inject, onBeforeUnmount, ref, watch } from "vue";
 import { workspaceObjectHostKey, type WorkspaceObjectHost } from "@ontomato/contracts/workspace-objects";
 import { ElAlert, ElButton, ElSkeleton, vLoading } from "element-plus";
 import { ArrowLeft, Settings2, RefreshCw, Star } from "lucide-vue-next";
-import { createObjectView, objectViewDocumentSchema, type ObjectReference, type ObjectViewDocument } from "@ontomato/contracts/object-views";
+import { createObjectView, objectViewDocumentSchema, objectViewProductIssues, type ObjectReference, type ObjectViewDocument } from "@ontomato/contracts/object-views";
 import { useManagerClient, useManagerContext, useOntologyText } from "../context";
 const { ot } = useOntologyText();
-const manager = useManagerContext();
+const managerContext = useManagerContext();
 import ObjectViewRuntime from "./ObjectViewRuntime.vue";
 import { computed } from "vue";
 import { instanceName, type InstanceNameAttribute } from "./instance-name";
-const props = defineProps<{ reference: ObjectReference; preview?: boolean }>();
+import {productAssetSchema,type ProductAsset} from '@ontomato/contracts/product-assets';
+import ObjectProjectionRuntime from '../products/ObjectProjectionRuntime.vue';
+const props = defineProps<{ reference: ObjectReference; preview?: boolean; readOnly?:boolean; capabilityOnly?:boolean }>();
 const emit = defineEmits<{ open: [reference: ObjectReference]; edit: []; back: [] }>();
 const client = useManagerClient();
 const workspaceHost = inject<WorkspaceObjectHost | null>(workspaceObjectHostKey, null);
 const pinned = ref(false), pinBusy = ref(false), pinError = ref("");
 const pinLabel = computed(() => pinned.value
-  ? (manager.locale.startsWith("zh") ? "取消收藏" : "Remove from favorites")
-  : (manager.locale.startsWith("zh") ? "收藏到工作台" : "Add to workspace favorites"));
+  ? (managerContext.locale.startsWith("zh") ? "取消收藏" : "Remove from favorites")
+  : (managerContext.locale.startsWith("zh") ? "收藏到工作台" : "Add to workspace favorites"));
 async function togglePin() {
   if (!workspaceHost) return;
   const reference = { ...props.reference, title: (displayName.value || props.reference.primaryKey).slice(0, 200) };
@@ -34,13 +36,18 @@ watch(() => JSON.stringify(props.reference), async () => {
   catch { /* A failed preference read must not block the object view. */ }
 }, { immediate: true });
 const document = ref<ObjectViewDocument>();
+const projection=ref<ProductAsset>();
 const object = ref<Record<string, unknown>>({});
 const error = ref("");
 const loading = ref(false);
 const nameAttributes = ref<InstanceNameAttribute[]>([]);
 const displayName = computed(() => {
+  const layout=projection.value?.document.kind==='object-projection'?projection.value.document.layout:undefined;
+  const titleField=layout?.titleField;
+  if(titleField&&object.value[titleField]!==undefined&&object.value[titleField]!==null&&String(object.value[titleField]).trim())return String(object.value[titleField]);
   const configured = nameAttributes.value.find(attr => attr.name === document.value?.titleField && attr.enable !== false && (attr.businessKey || attr.bizzkeyBool || attr.bizzkey || attr.bizzKey));
-  return instanceName(configured ? [configured] : nameAttributes.value, object.value);
+  const name=instanceName(configured ? [configured] : nameAttributes.value, object.value);
+  return name&&name!=='—'?name:props.reference.primaryKey;
 });
 let request = 0;
 onBeforeUnmount(() => { request++; });
@@ -49,19 +56,23 @@ async function load() {
   loading.value = true;
   error.value = "";
   try {
-    const [state, result] = await Promise.all([
-      client.objectViewRequest("read", props.reference.className, "full"),
-      client.queryInstanceInfo(`${props.reference.className}:${props.reference.primaryKey}`, props.reference.className),
-    ]);
+    const state = await client.objectViewRequest("read", props.reference.className, "full");
     if (current !== request) return;
+    if(state.assetId){if(!state.publishedAsset)throw new Error('此对象视图尚未发布');const published=productAssetSchema.parse(state.publishedAsset);if(published.id!==state.assetId||published.revision!==state.publishedRevision||published.document.kind!=='object-projection'||published.document.renders.id!==props.reference.className)throw new Error('已发布对象视图与当前入口不一致');projection.value=published;return;}
     document.value = state.versions[0] ? objectViewDocumentSchema.parse(state.versions[0].document) : createObjectView(props.reference.className);
     if (!state.versions[0]) document.value.tabs[0].sections[0].widgets[0].title = ot('ovKindProperties');
+    const issues=objectViewProductIssues(document.value);
+    if(props.capabilityOnly&&issues.length){document.value=undefined;throw new Error(issues.join('; '));}
+    const result = issues.length
+      ? await client.queryInstanceInfo(`${props.reference.className}:${props.reference.primaryKey}`, props.reference.className) : {};
+    if (current !== request) return;
     object.value = (result.data || {}) as Record<string, unknown>;
     nameAttributes.value = (result.classDef as { attrs?: InstanceNameAttribute[] } | undefined)?.attrs || [];
   } catch (reason) { if (current === request) error.value = reason instanceof Error ? reason.message : String(reason); }
   finally { if (current === request) loading.value = false; }
 }
 async function refreshObject() {
+  if (document.value && !objectViewProductIssues(document.value).length) return;
   const current = ++request;
   try {
     const result = await client.queryInstanceInfo(`${props.reference.className}:${props.reference.primaryKey}`, props.reference.className);
@@ -70,6 +81,7 @@ async function refreshObject() {
 }
 watch(() => JSON.stringify([props.reference.className, props.reference.primaryKey]), () => {
   document.value = undefined;
+  projection.value=undefined;
   object.value = {};
   nameAttributes.value = [];
   void load();
@@ -88,8 +100,9 @@ watch(() => JSON.stringify([props.reference.className, props.reference.primaryKe
     <div v-if="error" class="object-page-error" role="alert">
       <el-alert type="error" :title="error" :closable="false" />
     </div>
-    <div v-if="loading && !document" class="page-skeleton" role="status" :aria-label="ot('ovLoading')"><el-skeleton :rows="10" animated /></div>
-    <ObjectViewRuntime v-else-if="document" :document="document" :object="object" :reference="reference" @open="emit('open', $event)" @refresh="refreshObject" />
+     <div v-if="loading && !document&&!projection" class="page-skeleton" role="status" :aria-label="ot('ovLoading')"><el-skeleton :rows="10" animated /></div>
+    <ObjectProjectionRuntime v-else-if="projection" :asset="projection" :page-state="{selected:reference}" :preview="readOnly" embedded-object @loaded="object=$event" @open="emit('open',$event)"/>
+    <ObjectViewRuntime v-else-if="document" :document="document" :object="object" :reference="reference" :preview="readOnly" @open="emit('open', $event)" @refresh="refreshObject" />
     </div>
   </section>
 </template>
@@ -110,5 +123,6 @@ watch(() => JSON.stringify([props.reference.className, props.reference.primaryKe
 .object-page-error :deep(.el-alert) { box-sizing: border-box; min-width: 0; max-width: 100%; }
 .object-page-error :deep(.el-alert__content) { min-width: 0; overflow-wrap: anywhere; }
 .object-page-content > .object-view-runtime { padding: var(--manager-control-gap) var(--manager-module-padding) var(--manager-module-padding); }
+.object-page-content>.object-projection{padding:var(--manager-content-gap) var(--page-gutter) var(--manager-module-padding);box-sizing:border-box}
 @container object-page (max-width: 520px) { .object-actions { flex-basis: 100%; justify-content: flex-end; } }
 </style>

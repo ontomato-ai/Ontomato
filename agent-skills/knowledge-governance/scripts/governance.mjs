@@ -79,6 +79,8 @@ if (command === "close") {
   process.exit(0);
 }
 const actions = {
+  "read-input":"read_input",
+  "import-knowledge":"import_knowledge",
   "read-knowledge": "read_knowledge",
   "read-ontology": "read_ontology",
   "search-history": "search_history",

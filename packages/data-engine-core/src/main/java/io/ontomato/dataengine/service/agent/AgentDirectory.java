@@ -10,15 +10,16 @@ public class AgentDirectory {
   private final AgentCaller callers;
   private final IdentityService identity;
   private final ActionCreationService actions;
-  public AgentDirectory(AgentCaller callers,IdentityService identity,ActionCreationService actions) {
-    this.callers=callers; this.identity=identity;this.actions=actions;
+  private final KnowledgeGovernanceService governance;
+  public AgentDirectory(AgentCaller callers,IdentityService identity,ActionCreationService actions,KnowledgeGovernanceService governance) {
+    this.callers=callers; this.identity=identity;this.actions=actions;this.governance=governance;
   }
   public JSONObject list(JSONObject actor,String domain) {
     var restored=callers.restore(actor,domain);
     var agents=new JSONArray();
-    if (identity.hasKnowledgeGovernanceAccess(restored.user().getId(),domain)) agents.add(JSONObject.of(
-      "ref",JSONObject.of("providerId","ontology","agentId",KnowledgeGovernanceService.AGENT),
-      "name","Business knowledge governance","description","Review business knowledge and save governance recommendations"));
+    if (identity.hasKnowledgeGovernanceAccess(restored.user().getId(),domain)) for(var agent:governance.agents(domain)) agents.add(JSONObject.of(
+      "ref",JSONObject.of("providerId","ontology","agentId",agent.getString("id")),
+      "name",agent.getString("name"),"description",agent.getString("description")));
     try {
       callers.requireQuery(restored);
       agents.add(JSONObject.of("ref",JSONObject.of("providerId","ontology","agentId",OntologyAgentStore.RETRIEVER),"name","Data retrieval","description","Answer data questions with binding and retrieval results"));

@@ -191,6 +191,7 @@ public class FunctionServiceImpl implements FunctionService {
 		if (function.getId() != null) {
 			functionDao.lock(function.getId());
 			Function existFunction = functionDao.queryById(function.getId());
+			if(existFunction!=null&&Function.OPERATION_PRODUCT.equals(existFunction.getOperation()))throw new IllegalArgumentException("Published product Function artifacts are immutable");
 			if (existFunction == null) {
 				throw new Exception(langService.get(lang, "Function.notFound"));
 			} else {
@@ -228,6 +229,7 @@ public class FunctionServiceImpl implements FunctionService {
 		functionDao.lock(id);
 		Function function = functionDao.queryById(id);
 		if (function != null) {
+			if(Function.OPERATION_PRODUCT.equals(function.getOperation()))throw new IllegalArgumentException("Published product Function artifacts are retained by their release records");
 			if (Function.ORIGIN_SYSTEM.equals(function.getOrigin())) {
 				throw new Exception(langService.get(lang, "Function.cannotDeleteSystem"));
 			}

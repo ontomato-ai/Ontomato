@@ -32,6 +32,56 @@ const actionForm = (values: Record<string, string>, parameters: Record<string, u
 });
 
 describe("configured object view interaction", () => {
+  it('selects a declared result row and passes capability detail values to an Action without object reads',async()=>{
+    const view=createObjectView('Order');
+    const details=createViewWidget('properties');details.resourceId='details';details.variable='details';
+    const metric=createViewWidget('metric');metric.resourceId='counts';metric.resultIndex=1;metric.valueField='count';
+    const action=createViewWidget('action');action.resourceId='edit';action.title='Edit selected';action.parameters={id:{source:'context',path:'primaryKey'},name:{source:'variable',path:'details.name'}};
+    view.tabs[0].sections[0].widgets=[details,metric,action];
+    const forms:unknown[]=[];
+    vi.stubGlobal('fetch',async(url:string,init:RequestInit)=>{
+      if(url.endsWith('/metricView/queryById'))return answer({function:{parameters:[]}});
+      if(url.endsWith('/metricView/execute'))return answer(JSON.parse(String(init.body)).id==='details'?[{name:'Capability name'}]:[{count:6},{count:5}]);
+      if(url.endsWith('/action/form')){forms.push(JSON.parse(String(init.body)));return answer(actionForm({id:'order-1',name:'Capability name'}));}
+      return answer({classDef:[]});
+    });
+    const element=mount(()=>h(ObjectViewRuntime,{document:view,object:{name:'Wrong source'},reference:{className:'Order',primaryKey:'order-1'}}));
+    await settle();
+    expect(element.querySelector('.metric')?.textContent).toBe('5');
+    Array.from(element.querySelectorAll('button')).find(button=>button.textContent==='Edit selected')!.click();await settle();
+    expect(forms[0]).toMatchObject({parameters:{id:'order-1',name:'Capability name'}});
+  });
+  it('refuses a historical direct-read view in a product entry before reading business data',async()=>{
+    const requests:string[]=[];
+    vi.stubGlobal('fetch',async(url:string)=>{requests.push(url);return answer({revision:1,publishedRevision:1,versions:[{revision:1,document:createObjectView('Order')}]});});
+    const element=mount(()=>h(ObjectViewPage,{reference:{className:'Order',primaryKey:'1'},capabilityOnly:true}));
+    await settle();
+    expect(element.querySelector('.object-view-runtime')).toBeNull();
+    expect(element.querySelector('.el-alert')).not.toBeNull();
+    expect(requests.some(url=>url.includes('queryInfoByNode'))).toBe(false);
+  });
+  it('renders capability-bound properties and links without reading the object or relationships',async()=>{
+    const view=createObjectView('Order');
+    const details=createViewWidget('properties');details.resourceId='details';details.parameters={id:{source:'context',path:'primaryKey'}};
+    const links=createViewWidget('links');links.resourceId='items';links.fields=['name'];
+    view.tabs[0].sections[0].widgets=[details,links];
+    const requests:string[]=[];
+    vi.stubGlobal('fetch',async(url:string,init:RequestInit)=>{
+      requests.push(url);
+      if(url.endsWith('/metricView/queryById'))return answer({function:{parameters:[]}});
+      if(url.endsWith('/metricView/execute')){
+        const body=JSON.parse(String(init.body));
+        if(body.id==='details'){expect(body.param).toEqual({id:'order-1'});return answer([{name:'Capability result'}]);}
+        return answer([{name:'Related result'}]);
+      }
+      return answer({classDef:[]});
+    });
+    const element=mount(()=>h(ObjectViewRuntime,{document:view,object:{name:'Direct object value'},reference:{className:'Order',primaryKey:'order-1'}}));
+    await settle();
+    expect(element.querySelector('dd')?.textContent).toBe('Capability result');
+    expect(element.textContent).toContain('Related result');
+    expect(requests.some(url=>url.includes('queryInfoByNode')||url.includes('executeDsl'))).toBe(false);
+  });
   it("selects a defined variable and accepts a nested variable path", async () => {
     const binding = ref<ViewBinding>({ source: "variable", path: "" });
     const element = mount(() => h(ViewBindingEditor, { modelValue: binding.value, variables: ["filter", "selected"], "onUpdate:modelValue": value => { binding.value = value; } }));
@@ -253,9 +303,10 @@ describe("configured object view interaction", () => {
   });
   it("saves and publishes the actual configured layout with optimistic revision", async () => {
     const calls: Array<{ url: string; body: Record<string, any> }> = [];
+    const initial=createObjectView('Order');initial.tabs[0].sections[0].widgets[0].resourceId='order-details';
     vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)); calls.push({ url, body });
-      const data = url.endsWith("/edit") ? { revision: 0, publishedRevision: null, versions: [] }
+      const data = url.endsWith("/edit") ? { revision: 0, publishedRevision: null, versions: [{revision:0,document:initial}] }
         : url.endsWith("getMetas") ? { classDef: [{ className: "Order", showName: "Order", attrs: [{ name: "id", primaryKey: true }] }] }
         : url.endsWith("/save") ? { revision: 1, publishedRevision: null, versions: [{ revision: 1, document: body.document }] }
         : url.endsWith("/publish") ? { revision: 1, publishedRevision: 1, versions: [] } : [];

@@ -31,6 +31,8 @@ export function workbenchPages(
   observe: { component: PageComponent; meta?: RouteMeta; props?: Record<string, unknown> },
 ): RouteRecordRaw[] {
   return [
+    {...routes.systemAgentModels,component:()=>import('./pages/SystemAgentModelsRoute.vue'),meta:{service:true,page:routes.systemAgentModels.path}},
+    {...routes.builderModels,component:()=>import('./pages/BuilderModelsRoute.vue'),meta:{service:true,page:routes.builderModels.path}},
     { ...routes.publishedMcp,
       component: () => import("@ontomato/workbench-ui/features/workbench").then(module => module.PublishedMcpServices),
       meta: { service: true, page: routes.publishedMcp.path } },
@@ -99,5 +101,5 @@ export const dashboardPages = (): RouteRecordRaw[] => [
 ];
 
 export const personalWorkspacePages = (): RouteRecordRaw[] => [
-  { ...routes.personalWorkspace, component: () => import("./pages/PersonalWorkspaceRoute.vue"), meta: { workbench: true } },
+  { ...routes.personalWorkspace, redirect: {name:routes.home.name} },
 ];

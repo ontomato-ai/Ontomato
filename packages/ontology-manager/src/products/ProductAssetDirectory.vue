@@ -1,0 +1,137 @@
+<script setup lang="ts">
+import {computed,onBeforeUnmount,ref,watch,nextTick,inject} from 'vue';
+import {ElDialog} from 'element-plus';
+import {managerOverlayKey} from '../overlay';
+import {useIdentityNames} from './identity-names';
+import {PlatformPageHeader,PlatformTabs} from '@ontomato/platform-shell';
+import {dropdownBoundaryOptions} from '@ontomato/foundation-ui/overlay';
+import {type ProductQuery,type ProductSummary} from '@ontomato/contracts/product-assets';
+import {productIcons} from './product-icons';
+import {rendererLabel} from './renderer-labels';
+import {localizedProductTypes,localizedProductCategories} from './catalog-labels';
+import {productCategory} from '@ontomato/contracts/product-graph';
+import type {ProductGraph} from '@ontomato/contracts/product-graph';
+import ProductGraphDialog from './ProductGraphDialog.vue';
+import {useManagerClient,useManagerContext,useManagerCounts,useOntologyText} from '../context';
+const {ot}=useOntologyText();
+const identityName=useIdentityNames();
+const catalogTypes=computed(()=>localizedProductTypes(ot));
+const categories=computed(()=>localizedProductCategories(ot));
+const props=defineProps<{query:Partial<ProductQuery>}>();
+const emit=defineEmits<{query:[query:Partial<ProductQuery>];open:[id:string];create:[kind:string]}>();
+const client=useManagerClient(),items=ref<ProductSummary[]>([]),total=ref(0),loading=ref(false),error=ref(''),search=ref(props.query.search??'');
+const context=useManagerContext();
+const managerCounts=useManagerCounts();
+const graph=ref<ProductGraph|null>(null),graphLoading=ref(false),graphError=ref('');
+const graphOpen=ref(false);
+const warnings=ref<{kind:string;id:string;name:string}[]|null>(null);
+const warningsOpen=ref(false),warningsLoading=ref(false),warningsError=ref('');
+const overlay=inject(managerOverlayKey,'body');
+const warningKindLabels:Record<string,string>={ObjectType:'对象类型',Definition:'业务定义',MetricView:'指标视图',Action:'动作'};
+const warningFilter=ref('');
+const filteredWarnings=computed(()=>(warnings.value??[]).filter(warning=>!warningFilter.value||warning.kind===warningFilter.value));
+async function showGraph(){graphLoading.value=true;graphError.value='';try{graph.value=await client.products.graph();graphOpen.value=true;}catch(reason){graphError.value=reason instanceof Error?reason.message:String(reason);}finally{graphLoading.value=false;}}
+async function checkDefaults(){warningsOpen.value=true;warningsLoading.value=true;warningsError.value='';try{warnings.value=(await client.products.defaultProjectionWarnings()).warnings;}catch(reason){warningsError.value=reason instanceof Error?reason.message:String(reason);}finally{warningsLoading.value=false;}}
+const capabilityNames=ref<Record<string,string>>({});
+function capabilityKind(row:ProductSummary):'actions'|'metrics'|'definition'|'object-type'{return row.kind==='action-view'||row.details.widgetKind==='action'?'actions':row.kind==='collection-view'?'definition':row.kind==='object-projection'?'object-type':'metrics';}
+async function resolveCapabilityNames(rows:ProductSummary[],current:number){
+  const references=[...new Map(rows.filter(row=>row.details.resourceId).map(row=>{
+    const kind=capabilityKind(row);
+    return [`${kind}:${row.details.resourceId}`,{kind,id:row.details.resourceId!}];
+  })).entries()];
+  const names=await Promise.all(references.map(async([key,reference])=>{
+    if(reference.kind==='object-type'){try{const ontology=await client.loadOntology();return [key,ontology.objects.find(object=>object.className===reference.id)?.showName??reference.id] as const;}catch{return [key,reference.id] as const;}}
+    if(reference.kind==='definition'){try{const response=await client.request(`/product-assets/definitions/${encodeURIComponent(reference.id)}`,{},'');const result=await response.json();return [key,result.definition?.name??reference.id] as const;}catch{return [key,reference.id] as const;}}
+    try{const result=await client.requestSmartAsset(reference.kind,'queryById',{id:reference.id});if(result.data?.name)return [key,String(result.data.name)] as const;}catch{/* An unavailable name must not hide the asset row. */}
+    return [key,'能力暂不可访问'] as const;
+  }));
+  if(current===generation)capabilityNames.value=Object.fromEntries(names);
+}
+function capabilityName(row:ProductSummary){return capabilityNames.value[`${capabilityKind(row)}:${row.details.resourceId}`]??'正在读取能力名称…';}
+function capabilityLabel(row:ProductSummary){return {actions:'操作',metrics:'指标',definition:'定义','object-type':'对象类型'}[capabilityKind(row)];}
+const typeCounts=ref<Record<string,number>>({});
+watch(typeCounts,counts=>{managerCounts.values.products=Object.values(counts).reduce((sum,count)=>sum+count,0);});
+const typeTabs=computed(()=>catalogTypes.value.map(type=>({id:type.kind,label:`${type.name} ${typeCounts.value[type.kind]??0}`,icon:productIcons[type.kind]})));
+const activeKind=computed(()=>props.query.kind??'application');
+const activeCategory=computed(()=>productCategory(activeKind.value));
+const categoryDescription=computed(()=>categories.value.find(category=>category.id===activeCategory.value)?.description);
+const creationGroups=computed(()=>categories.value.map(category=>({...category,types:catalogTypes.value.filter(type=>type.category===category.id)})));
+const categoryTabs=computed(()=>categories.value.map(category=>({id:category.id,label:category.name})));
+const categoryTypeTabs=computed(()=>typeTabs.value.filter(type=>productCategory(type.id)===activeCategory.value));
+const activeType=computed(()=>catalogTypes.value.find(type=>type.kind===activeKind.value)??{name:'兼容资产',description:'历史资产，请迁移为投影、页面或应用',term:''});
+function changeCategory(value:string){const type=catalogTypes.value.find(type=>type.category===value);if(type)changeKind(type.kind);}
+function date(value:string){return new Date(value).toLocaleString(context.locale,{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});}
+const contentLabels:Record<string,string>={platform:'平台交互',metric:'指标卡',table:'表格',chart:'图表',text:'文字',action:'操作入口',input:'输入',button:'按钮',bar:'柱状图',line:'折线图',donut:'环形图',assistant:'智能问数',apps:'应用入口',data:'仪表盘集合',tasks:'任务动态',conversations:'分析会话',objects:'收藏对象',recent:'最近访问'};
+function assetDetails(row:ProductSummary){
+  const d=row.details;
+  return [row.kind==='page'?(d.isTemplate?'页面模板':d.embeddable?'可嵌入页面':'普通页面'):'',d.renderer?rendererLabel(d.renderer):'',d.widgetKind?contentLabels[d.widgetKind]??d.widgetKind:'',d.chartType?contentLabels[d.chartType]??d.chartType:'',d.section?contentLabels[d.section]??d.section:'',d.childCount!==undefined?`${d.childCount} 个子资产`:'',d.widgetCount!==undefined?`${d.widgetCount} 个组件`:'',...(d.widgetKinds??[]).map(kind=>contentLabels[kind]??kind)].filter(Boolean).join(' · ');
+}
+const scroll=ref<HTMLElement>();
+const scrollPositions=new Map<string,number>();
+let generation=0,timer:ReturnType<typeof setTimeout>|undefined;
+const queryKey=()=>JSON.stringify(props.query);
+async function load(){const current=++generation;loading.value=true;error.value='';try{const [result,counts]=await Promise.all([client.products.query({...props.query,kind:activeKind.value}),client.products.counts()]);if(current!==generation)return;typeCounts.value=counts;items.value=result.items;total.value=result.total;capabilityNames.value={};void resolveCapabilityNames(result.items,current);await nextTick();if(scroll.value)scroll.value.scrollTop=scrollPositions.get(queryKey())??Number(sessionStorage.getItem('product-directory:'+queryKey())??0);}catch(reason){if(current===generation)error.value=reason instanceof Error?reason.message:String(reason);}finally{if(current===generation)loading.value=false;}}
+watch(()=>props.query,()=>{search.value=props.query.search??'';void load();},{immediate:true,deep:true});
+function update(patch:Partial<ProductQuery>){if(scroll.value)scrollPositions.set(queryKey(),scroll.value.scrollTop);emit('query',{...props.query,...patch});}
+function scheduleSearch(){clearTimeout(timer);timer=setTimeout(()=>update({search:search.value,page:1}),300);}
+function changeKind(value:string){clearTimeout(timer);update({kind:value as ProductQuery['kind'],pageForm:undefined,search:'',page:1});}
+function changeScope(value:string|number|boolean|undefined){update({scope:value as ProductQuery['scope'],page:1});}
+function openRow(row:ProductSummary){open(row.id);}
+function changePage(page:number){update({page});}
+function changeSize(pageSize:number){update({pageSize,page:1});}
+function open(id:string){if(scroll.value)sessionStorage.setItem('product-directory:'+queryKey(),String(scroll.value.scrollTop));emit('open',id);}
+onBeforeUnmount(()=>{clearTimeout(timer);generation++;});
+</script>
+<template>
+  <section class="product-directory">
+    <PlatformPageHeader title="产品资产" description="从本体投影到页面组合，再到人与智能体使用的应用"><template #actions><el-dropdown placement="bottom-end" :popper-options="dropdownBoundaryOptions" @command="(kind:string)=>emit('create',kind)"><el-button type="primary">创建资产</el-button><template #dropdown><el-dropdown-menu><template v-for="(group,index) in creationGroups" :key="group.id"><el-dropdown-item disabled :divided="index>0">{{group.name}}</el-dropdown-item><el-dropdown-item v-for="type in group.types" :key="type.kind" :command="type.kind"><component :is="productIcons[type.kind]" :size="16" class="type-icon"/>{{type.name}}</el-dropdown-item></template></el-dropdown-menu></template></el-dropdown></template></PlatformPageHeader>
+    <div class="directory-types"><PlatformTabs :tabs="categoryTabs" :active-id="activeCategory" label="产品资产层次" @select="changeCategory"/><PlatformTabs :tabs="categoryTypeTabs" :active-id="activeKind" label="产品资产类型" @select="changeKind"/></div>
+    <div class="directory-overview"><div class="type-description" :title="categoryDescription"><strong>{{activeType.name}}</strong><span>{{activeType.description}}</span></div><div class="directory-tools"><el-button :loading="graphLoading" @click="showGraph">资产引用图</el-button><el-button :loading="warningsLoading" title="查找尚未指定默认展示方式的本体元素，仅供参考" @click="checkDefaults">检查默认投影</el-button></div></div>
+    <ProductGraphDialog v-if="graph" v-model="graphOpen" :graph="graph" @open="open"/>
+    <div v-if="graphError" class="directory-graph"><el-alert :title="graphError" type="error" closable @close="graphError=''"/></div>
+    <ElDialog v-model="warningsOpen" title="默认投影检查" :append-to="overlay" width="800px" destroy-on-close>
+      <div class="projection-check">
+        <p>默认投影是在未指定具体视图时，优先发现的展示方式。此检查只列出当前可见且尚未指定默认投影的已发布本体元素，不代表业务配置错误，也不影响发布。</p>
+        <el-alert v-if="warningsError" :title="warningsError" type="error" :closable="false"/>
+        <div class="projection-check-toolbar"><span>{{warningsLoading?'正在检查…':`共 ${warnings?.length??0} 项待完善`}}</span><el-select v-model="warningFilter" aria-label="检查结果类型" clearable placeholder="全部类型"><el-option v-for="(label,kind) in warningKindLabels" :key="kind" :value="kind" :label="label"/></el-select></div>
+        <el-table v-loading="warningsLoading" :data="filteredWarnings" max-height="420" :empty-text="warningsError?'检查失败，请重试':'当前范围内没有缺少默认投影的元素'"><el-table-column label="类型" width="120"><template #default="{row}">{{warningKindLabels[row.kind]??row.kind}}</template></el-table-column><el-table-column prop="name" label="本体元素" min-width="240" show-overflow-tooltip/></el-table>
+        <p class="projection-check-hint">需要默认展示时，请编辑绑定该元素的投影资产并勾选“默认投影”。按具体资产引用运行的应用无需补齐全部默认投影。</p>
+      </div>
+      <template #footer><el-button :loading="warningsLoading" @click="checkDefaults">重新检查</el-button><el-button type="primary" @click="warningsOpen=false">关闭</el-button></template>
+    </ElDialog>
+    <div class="directory-toolbar"><el-input v-model="search" clearable :placeholder="`搜索${activeType.name}名称`" aria-label="搜索资产名称" @input="scheduleSearch"/><el-select v-if="activeKind==='page'" :model-value="query.pageForm??'all'" aria-label="页面形态" @change="update({pageForm:$event,page:1})"><el-option value="all" label="全部页面形态"/><el-option value="page" label="普通页面"/><el-option value="embeddable" label="可嵌入页面"/><el-option value="template" label="页面模板"/></el-select><el-select :model-value="query.scope??'all'" aria-label="资产范围" @change="changeScope"><el-option value="all" label="全部已授权"/><el-option value="mine" label="我创建的"/><el-option value="shared" label="他人授权给我的"/></el-select><el-select :model-value="query.sort??'structure'" aria-label="资产排序" @change="update({sort:$event,page:1})"><el-option value="structure" label="产品结构顺序"/><el-option value="name" label="名称升序"/><el-option value="updated" label="最近更新优先"/></el-select></div>
+    <el-alert v-if="error" class="directory-error" :title="error" type="error" :closable="false"><el-button text @click="load">重试</el-button></el-alert>
+    <div ref="scroll" class="directory-table"><el-table v-loading="loading" :data="items" row-key="id" @row-click="openRow">
+      <el-table-column label="名称" min-width="280"><template #default="{row}"><button class="asset-name" @click.stop="open(row.id)"><span><strong>{{row.name}}</strong><small v-if="row.description">{{row.description}}</small></span></button></template></el-table-column>
+      <el-table-column label="内容与配置" min-width="230"><template #default="{row}"><span>{{assetDetails(row)||'—'}}</span><small v-if="row.details.resourceId" class="capability-reference" :title="`${capabilityName(row)} · ${row.details.resourceId}`">{{capabilityLabel(row)}}：{{capabilityName(row)}}</small></template></el-table-column>
+      <el-table-column label="当前授权" width="120"><template #default="{row}">{{row.editable?'可编辑':'只读'}}</template></el-table-column><el-table-column label="所有者" min-width="150"><template #default="{row}"><span :title="row.ownerId">{{identityName(row.ownerId,'所有者')}}</span></template></el-table-column><el-table-column label="更新时间" width="180"><template #default="{row}"><span class="asset-date">{{date(row.updatedAt)}}</span></template></el-table-column><template #empty><span>{{loading?'正在加载…':error?'加载失败，请重试':'暂无匹配资产'}}</span></template></el-table></div>
+    <footer><el-pagination :current-page="query.page??1" :page-size="query.pageSize??20" :page-sizes="[20,50,100]" :total="total" layout="total, sizes, prev, pager, next" @current-change="changePage" @size-change="changeSize"/></footer>
+  </section>
+</template>
+<style scoped>
+.directory-overview{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:var(--manager-control-gap) var(--manager-content-gap);padding:var(--manager-content-gap) var(--page-gutter) 0}.directory-tools{display:flex;flex-wrap:wrap;gap:var(--manager-control-gap)}.directory-tools :deep(.el-button+.el-button){margin-inline-start:0}
+.directory-graph{margin:var(--manager-content-gap) var(--page-gutter) 0;flex-shrink:0;max-height:45%;overflow:auto}.directory-graph :deep(.graph-canvas){max-height:220px}.projection-warnings{padding:var(--spacing-md);border:1px solid var(--el-border-color-light);border-radius:var(--radius-md)}.projection-warnings summary{cursor:pointer}.projection-warnings p{overflow-wrap:anywhere;font-size:var(--text-xs);color:var(--el-text-color-secondary)}
+.capability-reference{display:block;color:var(--el-text-color-secondary);font-size:var(--text-xs);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:var(--manager-label-gap)}
+.directory-types{padding-inline:var(--page-gutter);flex-shrink:0}.type-description{display:flex;align-items:center;flex-wrap:wrap;gap:var(--manager-control-gap);padding:var(--manager-content-gap) var(--page-gutter) 0;font-size:var(--text-sm);flex-shrink:0}.type-description>svg,.type-description>span{color:var(--el-text-color-secondary)}.type-description strong{font-weight:var(--font-semibold)}
+.asset-date{white-space:nowrap;font-variant-numeric:tabular-nums}
+.product-directory{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}.directory-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:var(--manager-control-gap);padding:var(--manager-content-gap) var(--page-gutter);flex-shrink:0}.directory-toolbar>.el-input{width:260px}.directory-toolbar>.el-select{width:160px}.result-count{margin-inline-start:auto;color:var(--el-text-color-secondary);font-size:var(--text-xs)}.directory-error{margin:0 var(--page-gutter) var(--manager-content-gap);width:auto}.directory-table{flex:1;min-height:0;overflow:auto;margin:0 var(--page-gutter);border:1px solid var(--el-border-color);border-radius:var(--radius-md)}.asset-name{display:flex;align-items:center;gap:var(--manager-control-gap);border:0;background:none;color:var(--el-text-color-primary);font:inherit;text-align:start;width:100%;cursor:pointer;padding:var(--spacing-xs) 0}.asset-name>svg{flex-shrink:0;color:var(--el-text-color-secondary)}.asset-name>span{min-width:0}.asset-name strong,.asset-name small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60ch}.asset-name strong{font-weight:var(--font-semibold)}.asset-name small{font-size:var(--text-xs);color:var(--el-text-color-secondary);margin-top:var(--manager-label-gap)}.asset-name:focus-visible{outline:2px solid var(--el-color-primary)}.type-icon{margin-inline-end:var(--spacing-sm)}footer{display:flex;justify-content:flex-end;flex-shrink:0;padding:var(--manager-content-gap) var(--page-gutter);overflow-x:auto}.directory-table :deep(.el-table__row){cursor:pointer}@container ontology-manager (max-width:760px){.result-count{display:none}.directory-toolbar>.el-input{flex:1 1 200px}footer{justify-content:flex-start}}
+/* Match the Manager catalogs: one gutter, 16px content gaps and 8px control gaps. */
+.directory-types{padding-top:var(--manager-control-gap)}
+.type-description small{flex-basis:100%;color:var(--el-text-color-secondary);font-size:var(--text-xs)}
+.product-directory{font-size:var(--text-sm);line-height:var(--leading-sm)}
+.directory-overview .type-description{padding:0;min-width:0;flex:1 1 320px;gap:var(--manager-control-gap);line-height:var(--leading-sm)}
+.directory-toolbar{padding-top:var(--manager-control-gap);padding-bottom:var(--manager-content-gap);min-height:0;gap:var(--manager-control-gap)}
+.directory-toolbar>.el-input,.directory-toolbar>.el-select{max-width:100%}
+.directory-table :deep(.el-table th.el-table__cell){height:var(--table-head-height);padding:0 var(--spacing-md)!important}
+.directory-table :deep(.el-table td.el-table__cell){height:var(--list-row-height);padding:var(--spacing-sm) var(--spacing-md)!important}
+.directory-table :deep(.el-table .cell){padding-inline:0;line-height:var(--leading-sm)}
+.asset-name{padding:0;gap:0;min-height:var(--leading-sm)}
+.asset-name>span{width:100%;min-width:0}
+.asset-name strong{line-height:var(--leading-sm)}
+.asset-name small{margin-top:var(--manager-label-gap);line-height:var(--leading-xs)}
+.asset-name strong,.asset-name small{max-width:100%}
+footer{padding-top:var(--manager-content-gap);padding-bottom:var(--manager-module-gap)}
+@container ontology-manager (max-width:760px){.directory-toolbar>.el-select{flex:0 1 160px}}
+@container ontology-manager (max-width:600px){.directory-toolbar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.directory-toolbar>.el-input{grid-column:1/-1}.directory-toolbar>.el-input,.directory-toolbar>.el-select{width:100%;min-width:0}.directory-table{min-height:180px;flex:1 0 180px}.product-directory{overflow:auto}.directory-overview{align-items:flex-start}.directory-graph{max-height:320px}footer :deep(.el-pagination){flex-wrap:wrap;gap:var(--spacing-sm)}}
+</style>
+<style scoped>.projection-check{display:flex;flex-direction:column;gap:16px}.projection-check p{margin:0;line-height:1.7;color:var(--el-text-color-secondary)}.projection-check-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px}.projection-check-toolbar .el-select{width:160px}.projection-check-hint{font-size:var(--text-xs)}</style>

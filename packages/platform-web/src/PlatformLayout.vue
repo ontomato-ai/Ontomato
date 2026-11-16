@@ -13,6 +13,7 @@ import {
 } from "@ontomato/platform-shell";
 import type { PlatformAppDeclaration } from "./apps";
 import { railApp } from "./apps";
+import {applicationShortcuts} from './application-shortcuts';
 
 /**
  * The page the current address shows: its words, and whether it draws its own header. Which application it belongs to is
@@ -28,6 +29,8 @@ export interface PlatformShownPage {
 const props = defineProps<{
   /** The applications the account may see, in rail order. */
   apps: readonly PlatformAppDeclaration[];
+  dynamicAppIds?:readonly string[];
+  pinnedAppIds?:readonly string[];
   loading?: boolean;
   /** Where the address belongs and what it shows; null on an address that is no page (a conversation). */
   shownPage: PlatformShownPage | null;
@@ -58,8 +61,14 @@ function appFor(path: string): PlatformAppDeclaration | null {
 const route = useRoute();
 const router = useRouter();
 // Keep the workspace directly accessible while its navigation entry is temporarily hidden.
-const railApps = computed(() => (props.apps ?? []).filter(app => app.id !== "personal-workspace").map((app) => railApp(app, () => emit("selectApp", app.id))));
-const activeAppId = computed(() => appFor(route.path)?.id ?? null);
+const railApps = computed(() => applicationShortcuts(props.apps??[],props.dynamicAppIds??[],props.pinnedAppIds??[],activeAppId.value).map((app) => railApp(app, () => emit("selectApp", app.id))));
+const navigationContext=computed(()=>{
+  if(route.query.navigationContext!=='ontology')return null;
+  const app=props.apps.find(app=>app.id==='ontology');
+  const page=(route.meta.page as string|undefined)??route.path;
+  return app?.groups?.some(group=>group.pages.some(item=>item.id===page))?app:null;
+});
+const activeAppId = computed(() => navigationContext.value?.id??appFor(route.path)?.id ?? null);
 const activeApp = computed(() => props.apps.find((app) => app.id === activeAppId.value) ?? null);
 const browserWorkspace = computed(() => route.path === "/browser/data" || route.path.startsWith("/browser/data/"));
 
@@ -70,6 +79,10 @@ const browserWorkspace = computed(() => route.path === "/browser/data" || route.
  */
 const menu = computed(() => (activeApp.value?.frame === "menu" ? activeApp.value : null));
 const activePageId = computed(() => (route.meta.page as string | undefined) ?? route.path);
+function selectMenuPage(path:string){
+  const external=activeApp.value?.id==='ontology'&&!path.startsWith('/ontology/');
+  void router.push({path,query:external?{navigationContext:'ontology'}:{}});
+}
 
 /**
  * The one header above the page: in a menu application it names the page (the application's name heads the column);
@@ -109,12 +122,13 @@ const headerLabels = computed(() => ({
     <div class="platform-app-body" :class="{ 'has-menu': menu !== null && !blocked }">
       <aside v-if="menu && !blocked" class="platform-app-menu" :aria-label="labels.pages">
         <h2 class="app-menu-title">{{ menu.label }}</h2>
+        <select class="mobile-page-select" :aria-label="labels.pages" :value="activePageId" @change="selectMenuPage(($event.target as HTMLSelectElement).value)"><optgroup v-for="group in menu.groups??[]" :key="group.key" :label="group.label||menu.label"><option v-for="page in group.pages" :key="page.id" :value="page.id" :disabled="!!page.unavailableHint">{{page.label}}</option></optgroup><option v-if="menu.foot" :value="menu.foot.id">{{menu.foot.label}}</option></select>
         <AppPanelPages
           class="app-menu-pages"
           :groups="menu.groups ?? []"
           :foot="menu.foot"
           :active-page-id="activePageId"
-          @select-page="router.push($event)"
+          @select-page="selectMenuPage"
         />
       </aside>
       <div class="platform-app-page">
@@ -189,7 +203,8 @@ const headerLabels = computed(() => ({
   padding: 14px 10px 12px;
   background: var(--shell-panel-bg);
   border-right: 1px solid var(--el-border-color);
-  overflow-y: auto;
+  overflow: hidden;
+  min-height: 0;
 }
 /* The groups fill the column, so the application's own entry sits at its foot. */
 /*
@@ -197,10 +212,12 @@ const headerLabels = computed(() => ({
  * least as tall as its parent; under the title that is one title too tall and pushes the foot out of view.
  */
 .platform-app-menu > .app-menu-pages {
-  flex: 1 0 auto;
+  flex: 1 1 0;
   min-height: 0;
+  height: auto;
 }
 .app-menu-title {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   min-height: 36px;
@@ -225,5 +242,15 @@ const headerLabels = computed(() => ({
   justify-content: center;
   color: var(--el-text-color-secondary);
   font-size: var(--text-base);
+}
+.mobile-page-select{display:none}
+@media(max-width:600px){
+  .platform-app-body.has-menu{flex-direction:column;min-width:0}
+  .platform-app-menu{flex:0 0 auto;width:100%;padding:var(--spacing-sm) var(--page-gutter);border-right:0;border-bottom:1px solid var(--el-border-color);flex-direction:row;align-items:center;gap:var(--spacing-md)}
+  .app-menu-title{min-height:28px;font-size:var(--text-sm);padding-inline:var(--spacing-sm)}
+  .platform-app-menu>.app-menu-pages{display:none}
+  .app-menu-title{padding:0;white-space:nowrap}
+  .mobile-page-select{display:block;flex:1;min-width:0;max-width:100%;height:var(--control-height);padding:var(--spacing-xs) var(--spacing-sm);border:1px solid var(--el-border-color);border-radius:var(--radius-sm);background:var(--el-bg-color);color:var(--el-text-color-primary);font:inherit;font-size:var(--text-sm)}
+  .platform-app-page{flex:1;overflow:hidden}
 }
 </style>

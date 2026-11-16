@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   buildStamp,
   docker,
+  imageBuildArgs,
   imageLabels,
   imageCacheArgs,
   inspectImage,
@@ -21,6 +22,7 @@ const SCRIPTS = dirname(HERE);
 const FLAGS = { "--arch": "value" };
 
 const TOOLS = [
+  "apt-install.sh",
   "workbench/install-runtime.mjs",
   "workbench/runtime-layout.mjs",
   "workbench/production-graph.mjs",
@@ -29,23 +31,8 @@ const TOOLS = [
   "third_party_notices.py",
 ];
 
-const BUILD_ARG_NAMES = [
-  "PIP_INDEX_URL",
-  "DEBIAN_MIRROR",
-  "DEBIAN_SECURITY_MIRROR",
-];
-
 function baseBuild(arch) {
   return ["buildx", "build", "--provenance=false", "--platform", `linux/${arch}`];
-}
-
-function imageBuildArgs(names = BUILD_ARG_NAMES) {
-  const args = [];
-  for (const name of names) {
-    const value = process.env[name];
-    if (value) args.push("--build-arg", `${name}=${value}`);
-  }
-  return args;
 }
 
 function copyLicenses(app, context) {
@@ -124,7 +111,7 @@ export async function buildWorkbenchImage(app, args) {
   docker([
     ...baseBuild(arch),
     ...imageCacheArgs(),
-    ...imageBuildArgs(BUILD_ARG_NAMES),
+    ...imageBuildArgs(),
     "--load",
     "--build-arg",
     `WORKSPACE=${record.workspaceId}`,

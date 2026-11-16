@@ -1,0 +1,37 @@
+package io.ontomato.dataengine.service.agent;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+import com.alibaba.fastjson2.JSONObject;
+import io.ontomato.dataengine.core.bean.User;
+import io.ontomato.dataengine.service.*;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
+
+class KnowledgeGovernanceImportTest {
+  @Test void importsOnlyRegisteredSourcesWithCurrentOwnerPermissionAndPendingStatus() {
+    var store=mock(OntologyAgentStore.class);
+    var knowledge=mock(KnowledgeService.class);
+    var identity=mock(IdentityService.class);
+    var service=new KnowledgeGovernanceService(store,mock(AgentRuntimeClient.class),mock(OntologyAgentDefinitions.class),mock(QueryGrantService.class),knowledge,mock(AdminService.class),mock(AgentCaller.class));
+    ReflectionTestUtils.setField(service,"identityService",identity);
+    var owner=new OntologyAgentStore.Owner("user","domain");
+    var work=JSONObject.of("sources",List.of(JSONObject.of("id","source")));
+    when(identity.hasKnowledgeGovernanceAccess("user","domain")).thenReturn(true);
+    when(store.session(anyString(),eq(owner))).thenReturn(JSONObject.of("agent_id",KnowledgeGovernanceService.AGENT));
+    when(store.one(contains("ontology_governance_sessions"),any())).thenReturn(JSONObject.of("latest_run_id","11111111-1111-4111-8111-111111111111"));
+    when(store.one(contains("SELECT work"),any())).thenReturn(JSONObject.of("work",work));
+    when(knowledge.getBussinessKnowledge("domain")).thenReturn(Map.of());
+    var input=JSONObject.of("items",List.of(JSONObject.of("id","record","title","Source fact","text","A sourced statement","sourceIds",List.of("missing"))));
+    assertThrows(AgentHttpException.class,()->ReflectionTestUtils.invokeMethod(service,"importKnowledge","11111111-1111-4111-8111-111111111111","run",input,owner));
+    verify(knowledge,never()).addBussinessKnowledge(anyString(),anyString(),anyString(),anyInt(),anyList(),any());
+    input.getJSONArray("items").getJSONObject(0).put("sourceIds",List.of("source"));
+    ReflectionTestUtils.invokeMethod(service,"importKnowledge","11111111-1111-4111-8111-111111111111","run",input,owner);
+    verify(knowledge).addBussinessKnowledge(eq("record"),eq("Source fact"),eq("A sourced statement"),eq(0),eq(List.of()),any(User.class));
+    when(identity.hasKnowledgeGovernanceAccess("user","domain")).thenReturn(false);
+    assertThrows(AgentHttpException.class,()->ReflectionTestUtils.invokeMethod(service,"importKnowledge","11111111-1111-4111-8111-111111111111","run",input,owner));
+  }
+}

@@ -379,8 +379,15 @@ export default {
     "loadFailed": "Load Failed"
   },
   "platform": {
-    "layers": { "facts": "Facts", "capabilities": "Capabilities", "governance": "Governance" },
+    "systemAgentModels":"Agent models",
+    "systemAgentModelsDescription":"Choose models for interactive agents and background model uses",
+    "layers": { "facts": "Facts", "capabilities": "Capabilities", "governance": "Governance", "products":"Products" },
+    "productAssets":"Product assets",
     "settingsGroups": { "models": "Models", "system": "System", "connections": "Connections", "records": "Logs and monitoring" },
+    "ontologyAgentModels":"Ontology agent models",
+    "builderAgentModels":"App builder models",
+    "governanceAgentModels":"Knowledge governance models",
+    "conversationAgentModels":"Data analysis models",
     "agentModels": {
       "title": "Models",
       "description": "The model each agent of this application runs on; until one is chosen it follows the domain's default chat model",

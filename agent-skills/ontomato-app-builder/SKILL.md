@@ -7,6 +7,8 @@ description: "Build and publish hosted applications using the current Ontomato S
 
 Use the shared [technical guide](GUIDE.md) and bundled `ontomato.mjs` to discover real ontology definitions, create business capabilities, and build the requested application. The same package works inside the platform and from an external agent without product source code.
 
+When the platform supplies the `application-design` skill, read it before designing a new page or polishing a demo. Use the current SDK's components and host theme, reusable product assets and task-focused navigation. Keep business logic in published capabilities.
+
 ## Execution parameter contract (5.0)
 
 Action and MetricView execution require every declared parameter name in the JSON object. Explicit `null` is allowed; empty strings and zero are real values. Missing parameters fail as `Missing parameter: <name>` before executing Python. An omitted parameter object means `{}` and works only for a definition with no parameters. The command passes server errors through unchanged.

@@ -1,10 +1,15 @@
 import { followThemeChanges, initializePlatformTheme } from "@ontomato/workbench-ui/composables/useTheme";
-import { createApp, type App as VueApp } from "vue";
+import { createApp, defineAsyncComponent,h,defineComponent,type PropType, type App as VueApp } from "vue";
+import type {ProductAsset} from '@ontomato/contracts/product-assets';
+import {productRenderersKey} from '@ontomato/ontology-manager';
+import PlatformCollectionList from './pages/PlatformCollectionList.vue';
+import {productPlatformRuntimeKey,productAgentRuntimeKey} from '@ontomato/contracts/product-assets';
+import {installProductEmbedding} from './app-host';
 import { createPinia, type Pinia } from "pinia";
 import ElementPlus from "element-plus";
 import { createRouter, createWebHashHistory, type Router, type RouteRecordRaw } from "vue-router";
 import App from "./App.vue";
-import { installWorkbenchI18n, workbenchI18n, type WorkbenchI18n, type WorkbenchLanguage } from "@ontomato/workbench-ui/i18n";
+import { installWorkbenchI18n, type WorkbenchI18n, type WorkbenchLanguage } from "@ontomato/workbench-ui/i18n";
 import { installAuthHost, type WorkbenchAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import {
   installErrorPunctuation,
@@ -55,6 +60,16 @@ export function startWorkbenchWeb(options: WorkbenchWebOptions): void {
   options.installGuards?.(router, pinia);
 
   const app = createApp(App);
+  app.provide(productPlatformRuntimeKey,defineAsyncComponent(()=>import('./pages/PersonalWorkspaceRoute.vue')));
+  app.provide(productAgentRuntimeKey,defineAsyncComponent(()=>import('./pages/ProductAgentRuntime.vue')));
+  const platformRenderers=new Map(['Conversation','Favorite','RecentVisit','Task','FavoriteApplication','Dashboard'].map(type=>[
+    `collection-view:platform:${type}:list`,
+    defineComponent({
+      props:{asset:{type:Object as PropType<ProductAsset>,required:true},rows:{type:Array as PropType<Record<string,unknown>[]>,required:true},loading:Boolean},
+      setup:props=>()=>h(PlatformCollectionList,{...props,objectType:'platform:'+type}),
+    }),
+  ] as const));
+  app.provide(productRenderersKey,platformRenderers);
   const followPreferences = (event: StorageEvent) => {
     followThemeChanges(event);
     const locale = options.language.storedChange?.(event);
@@ -70,5 +85,6 @@ export function startWorkbenchWeb(options: WorkbenchWebOptions): void {
   for (const route of options.routes(app, router, i18n)) router.addRoute(route);
   app.use(router);
   options.beforeMount?.();
+  installProductEmbedding(app);
   app.mount("#app");
 }

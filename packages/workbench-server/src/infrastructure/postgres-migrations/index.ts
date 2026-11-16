@@ -1,3 +1,4 @@
+import { ensureProductAssetsSchema } from "./20261112-product-assets/schema";
 import { ensureWorkspacesSchema } from "./20261109-workspaces/schema";
 import { ensurePlatformHomeSchema } from "./20261111-platform-home/schema";
 import { ensurePlatformEventCursorSchema } from "./20261103-platform-events/schema";
@@ -95,6 +96,7 @@ type MigrationRegistration = {
 };
 
 export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
+  { directory: "20261112-product-assets", ensureSchema: ensureProductAssetsSchema },
   { directory: "20261103-platform-events", ensureSchema: ensurePlatformEventCursorSchema },
   { directory: "20261029-ops-diagnosis", ensureSchema: ensureOpsDiagnosisSchema },
   { directory: "20261028-assistant", ensureSchema: ensureAssistantSchema },
