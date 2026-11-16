@@ -1,4 +1,9 @@
 {
+  "read_input":{"type":"object","additionalProperties":false,"properties":{},"required":[]},
+  "import_knowledge": {
+    "type":"object","additionalProperties":false,
+    "properties":{"items":{"type":"array","minItems":1,"maxItems":100,"items":{"type":"object","additionalProperties":false,"properties":{"id":{"type":"string","minLength":1,"maxLength":200},"title":{"type":"string","minLength":1,"maxLength":200},"text":{"type":"string","minLength":1,"maxLength":100000},"sourceIds":{"type":"array","minItems":1,"items":{"type":"string"}},"tags":{"type":"array","maxItems":20,"items":{"type":"string","maxLength":200}}},"required":["id","title","text","sourceIds"]}}},"required":["items"]
+  },
   "begin": {
     "type": "object",
     "additionalProperties": false,

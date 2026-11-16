@@ -12,7 +12,7 @@ const twinRenderer=inject(productRenderersKey,new Map()).get('object-projection:
 const key=ref(''),record=ref<Record<string,unknown>>(),error=ref(''),loading=ref(false);
 const loadedKey=ref('');
 const visibleFields=computed(()=>props.asset.document.kind==='object-projection'?(props.asset.document.fields.length?props.asset.document.fields:Object.keys(record.value??{})):[]);
-const contextText=computed(()=>visibleFields.value.map(field=>`${field}: ${record.value?.[field]??'—'}`).join('\n'));
+const contextText=computed(()=>visibleFields.value.map(field=>`${props.asset.document.kind==='object-projection'?props.asset.document.presentation?.fieldLabels[field]??field:field}: ${record.value?.[field]??'—'}`).join('\n'));
 watch(()=>props.revision,()=>{if(loadedKey.value){key.value=loadedKey.value;void load();}});
 let generation=0;
 onBeforeUnmount(()=>{generation++;});

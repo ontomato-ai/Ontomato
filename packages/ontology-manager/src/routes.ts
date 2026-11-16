@@ -22,6 +22,7 @@ import type { AssetTab, ModelResource } from "./workspace";
  * bring Markdown and code highlighting, and knowledge governance brings the agent shell.
  */
 const GovernancePage = defineAsyncComponent(() => import("./knowledge-governance/GovernancePage.vue"));
+const GovernanceModelsPage=defineAsyncComponent(()=>import('./knowledge-governance/GovernanceModelsPage.vue'));
 const DataBrowser = defineAsyncComponent(() => import("./data-browser/DataBrowser.vue"));
 const VisualModeling = defineAsyncComponent(() => import("./visual-modeling/VisualModeling.vue"));
 const OntologyAssetDetail = defineAsyncComponent(() => import("./components/OntologyAssetDetail.vue"));
@@ -308,6 +309,7 @@ export function registerGovernanceScreen(id: "feedback", screen: Component) {
 const governancePageRoutes: Record<string, { name: string; path: string } | null> = {
   report: null,
   feedback: routes.feedback,
+  knowledge:routes.governanceKnowledge,
   models: routes.governanceModels,
 };
 
@@ -321,6 +323,7 @@ const KnowledgeGovernancePage = defineComponent({
   props: { sessionId: { type: String, default: "" }, page: { type: String, default: "" } },
   setup(props) {
     const router = useRouter();
+    const route=useRoute();
     // The conversation the page last asked for. The address catches up a few turns later, and a page change in between
     // (a recent conversation chosen while the feedback records are open) must keep this one, not the address's.
     let conversation = props.sessionId || null;
@@ -347,6 +350,7 @@ const KnowledgeGovernancePage = defineComponent({
         },
         // Each page has an address of its own, so a column entry can be linked and reloaded.
         onPage: (id: string | null) => {
+          if(!new Set<string>([routes.governance.name,routes.governanceKnowledge.name,routes.feedback.name]).has(String(route.name)))return;
           if ((props.page || null) !== id) void router.push(address(id));
         },
         onBack: () => void router.push(managerPaths.knowledge),
@@ -431,6 +435,9 @@ export function managerRoutes(): RouteRecordRaw[] {
  */
 export function managerStandaloneRoutes(): RouteRecordRaw[] {
   return [
+    {path:'/ontology/models',redirect:{name:routes.ontologyModels.name}},
+    {path:'/governance/models',redirect:{name:routes.governanceModels.name}},
+    {path:routes.governanceKnowledge.path,meta:{service:true},component:ManagerFrame,children:[{...routes.governanceKnowledge,component:KnowledgeGovernancePage,props:(route:{query:Record<string,unknown>})=>({page:'knowledge',sessionId:typeof route.query.sessionId==='string'?route.query.sessionId:''}),meta:{page:managerPaths.knowledge}}]},
     {
       path: "/governance/chat",
       meta: { service: true },
@@ -464,17 +471,13 @@ export function managerStandaloneRoutes(): RouteRecordRaw[] {
     },
     // The models of the governance agents, at the foot of the same column.
     {
-      path: "/governance/models",
+      path: routes.governanceModels.path,
       meta: { service: true },
       component: ManagerFrame,
       children: [
         {
           ...routes.governanceModels,
-          component: KnowledgeGovernancePage,
-          props: (route: { query: Record<string, unknown> }) => ({
-            page: "models",
-            sessionId: typeof route.query.sessionId === "string" ? route.query.sessionId : "",
-          }),
+          component: GovernanceModelsPage,
           meta: { page: routes.governanceModels.path },
         },
       ],

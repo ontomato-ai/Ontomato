@@ -21,6 +21,7 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
           managerPaths.attributes,
           managerPaths.relations,
           managerPaths.visualModeling,
+          managerPaths.knowledge,
         ],
       },
       {
@@ -32,13 +33,11 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
       {
         key: "ontology:governance",
         titleKey: "platform.layers.governance",
-        // Business knowledge stays with the ontology it describes.
-        paths: [managerPaths.knowledge, managerPaths.capabilityMap],
+        paths: [platformRoutes.members.path,platformRoutes.roles.path,platformRoutes.principals.path,platformRoutes.policies.path,platformRoutes.organization.path,managerPaths.capabilityMap],
       },
       { key: "ontology:products", titleKey: "platform.layers.products", paths: [managerPaths.products] },
     ],
     // The models of the modeling agents, at the foot of the menu like every application's own settings.
-    foot: platformRoutes.ontologyModels.path,
   },
   {
     renderer: "browser",
@@ -86,7 +85,7 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
         key: "governance:pages",
         titleKey: "platform.governance",
         // User feedback sits with the conversations it was given on.
-        paths: [platformRoutes.feedback.path],
+        paths: [platformRoutes.governanceKnowledge.path,platformRoutes.feedback.path],
       },
     ],
     // Drawn at the foot of the application's own column; listed here so an account that may open only it lands there.
@@ -110,7 +109,7 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
     // Its pages are its own menu, by group; an account enters at the first page it may open.
     frame: "menu",
     sections: [
-      { key: "settings:models", titleKey: "platform.settingsGroups.models", paths: [platformRoutes.usage.path, platformRoutes.providers.path] },
+      { key: "settings:models", titleKey: "platform.settingsGroups.models", paths: [platformRoutes.usage.path, platformRoutes.providers.path,platformRoutes.ontologyModels.path,platformRoutes.governanceModels.path,platformRoutes.agentModels.path,platformRoutes.builderModels.path] },
       // The licence is the enterprise edition's; the open-source navigation has no such page, so it is not listed.
       { key: "settings:system", titleKey: "platform.settingsGroups.system", paths: [platformRoutes.general.path, platformRoutes.license.path] },
       {

@@ -145,6 +145,7 @@ export function objectViewProductIssues(document: ObjectViewDocument): string[] 
 export function objectProjectionIssues(document:ObjectViewDocument):string[]{
   const capabilityDocument: ObjectViewDocument={...document,tabs:document.tabs.map(tab=>({...tab,sections:tab.sections.map(section=>({...section,widgets:section.widgets.map(widget=>['properties','links'].includes(widget.kind)&&!widget.resourceId?{...widget,resourceId:'direct-object-read'}:widget)}))}))};
   const issues=objectViewProductIssues(capabilityDocument);
+  for(const widget of document.tabs.flatMap(tab=>tab.sections.flatMap(section=>section.widgets)))if(widget.resourceId||!['properties','links','text'].includes(widget.kind))issues.push(`${widget.id}: ObjectViews project object attributes and relationships; compose MetricWidgets and ActionViews in a Page`);
   for(const widget of document.tabs.flatMap(tab=>tab.sections.flatMap(section=>section.widgets)))if(widget.kind==='links'&&!widget.resourceId&&!widget.relation)issues.push(`${widget.id}: Select an ObjectType relationship`);
   return issues;
 }

@@ -24,7 +24,7 @@ export async function validateComposition(rootId:string,input:ProductAssetInput,
     for(const reference of productReferences(document).filter(reference=>reference.kind==='asset')){
       const child=reference.id===rootId?{document:input.document}:await read(reference.id);
       if(document.kind==='page'&&child.document.kind==='navigation')throw new HttpError(400,'Navigation belongs to the Application root, not a Page placement','INVALID_PRODUCT_CHILD');
-      if(document.kind==='application'&&!document.workspaceId&&document.navigationId&&reference.id!==document.navigationId&&child.document.kind!=='page')throw new HttpError(400,'Declarative Applications compose Page roots and Navigation; place projections in a Page','INVALID_PRODUCT_CHILD');
+      if(document.kind==='application'&&!document.workspaceId&&reference.id!==document.navigationId&&child.document.kind!=='page')throw new HttpError(400,'Declarative Applications compose Page roots and Navigation; place projections in a Page','INVALID_PRODUCT_CHILD');
       if(document.kind==='page'&&child.document.kind==='agent-profile'){
         for(const toolId of child.document.tools){const tool=await read(toolId);if('parameters' in tool.document)for(const binding of Object.values(tool.document.parameters))if(binding.source==='variable'&&!pageParameterAcceptsPath(document.params??{},binding.path))throw new HttpError(400,`Declare a typed Page parameter for Profile tool binding: ${binding.path}`,'INVALID_PAGE_PARAMETER');}
       }

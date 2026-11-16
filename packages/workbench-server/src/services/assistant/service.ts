@@ -1,5 +1,6 @@
 import { prepareAnalystRun } from "./prepare";
 import { prepareAppBuilderRun } from "../app-builder/prepare";
+import {isAppBuilderKind} from '../app-builder/definition';
 import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { assistantDescription, assistantName } from "./labels";
 import { randomUUID } from "node:crypto";
@@ -58,7 +59,7 @@ export { sessionView };
 export const assistantService = {
   async isAppBuilder(owner: AssistantOwner, input: { agentId: string } | { sessionId: string }) {
     const agentId = "agentId" in input ? input.agentId : (await assistantStore.session(input.sessionId, owner)).agent_id;
-    return (await assistantStore.agent(agentId, owner)).kind === "app-builder";
+    return isAppBuilderKind((await assistantStore.agent(agentId, owner)).kind);
   },
   async agents(owner: AssistantOwner, locale?: string) {
     return {
@@ -264,7 +265,7 @@ export const assistantService = {
     }
     try {
       await withDomainSkills(owner.domainId, async () => {
-        const prepare = a.kind === "app-builder" ? prepareAppBuilderRun : prepareAnalystRun;
+        const prepare = isAppBuilderKind(a.kind) ? prepareAppBuilderRun : prepareAnalystRun;
         const request = await prepare({ a, session, turn, message, owner, credentials });
         await client.start(sessionId, id, request);
       });
@@ -387,7 +388,7 @@ export const assistantService = {
     if (snapshot?.latestRun?.run.status === "running")
       throw new HttpError(409, "Conversation is running", "SESSION_BUSY");
     const agent = await assistantStore.agent((await assistantStore.session(sessionId, owner)).agent_id, owner);
-    const scopes = agent.kind === "app-builder" ? [] : (await db().query(`SELECT retrieval_scope_id FROM ${table("assistant_turns")} WHERE session_id=$1`, [sessionId])).rows;
+    const scopes = isAppBuilderKind(agent.kind) ? [] : (await db().query(`SELECT retrieval_scope_id FROM ${table("assistant_turns")} WHERE session_id=$1`, [sessionId])).rows;
     const removed = new Set<string>();
     for (const scope of scopes) {
       const ontology = new OntologyRetrievalClient(owner, scope.retrieval_scope_id);

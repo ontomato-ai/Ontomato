@@ -2,13 +2,16 @@ import {z} from 'zod';
 import type {ProductAsset} from '@ontomato/contracts/product-assets';
 import {productGraph,productGraphSchema} from '@ontomato/contracts/product-graph';
 import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres';
-import {backendPost} from '../../utils/backend-client';
+import {backendPost,backendGet,buildBackendHeaders} from '../../utils/backend-client';
 import {environment} from '../../config/environment';
 import {config} from '../../config/application';
 import {HttpError} from '../../utils/errors';
 import type {ProductOwner} from './store';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {readProductGrantRecords} from './grants';
+import {DashboardMetricClient} from '../dashboard/metric-client';
+import {readDefinition} from './definitions';
+import {platformObjectTypes} from './platform-objects';
 
 export function ontologyRegistration(asset:ProductAsset){
   const document=asset.document;
@@ -56,5 +59,56 @@ export async function registeredProductGraph(owner:ProductOwner,assets:ProductAs
       if(!graph.edges.some(edge=>edge.source===id&&edge.target===`asset:${asset.id}`&&edge.relation===grant.verb))graph.edges.push({source:id,target:`asset:${asset.id}`,relation:grant.verb,storage:'governance'});
     }
   }
+  if(credentials)await resolveGraphNames(owner,graph,credentials);
   return productGraphSchema.parse(graph);
+}
+
+/** Display metadata is resolved with the current caller's permissions, never service privileges. */
+async function resolveGraphNames(owner:ProductOwner,graph:ReturnType<typeof productGraph>,credentials:AssistantCredentials){
+  const headers=buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey);
+  const post=async(path:string,body:unknown)=>JSON.parse((await backendPost('product-graph-label',config.dataQuery.baseUrl+path,body,{headers,retries:1})).text);
+  const catalogs=new Map<string,Promise<Record<string,string>>>();
+  function catalog(kind:string){
+    if(!catalogs.has(kind))catalogs.set(kind,(async()=>{
+      try{
+        if(kind==='object-type'){
+          const result=await post('/admin/getMetas',{});
+          return Object.fromEntries((result.data?.classDef??[]).map((item:{className:string;showName?:string;classDesc?:string})=>[item.className,item.showName||item.classDesc]));
+        }
+        if(kind==='AgentPrincipal'){
+          const result=JSON.parse((await backendGet('product-graph-principals',config.dataQuery.baseUrl+'/agent-principals',{headers,retries:1})).text);
+          return Object.fromEntries((result.principals??[]).map((item:{id:string;name:string})=>[item.id,item.name]));
+        }
+        const result=await post(kind==='role'?'/role/getRoleInfoPage':'/user/getUserInfoPage',{pageNum:1,pageSize:1000,cdt:''});
+        return Object.fromEntries((result.data?.data??[]).map((item:{id:string;roleName?:string;userName?:string;loginCode?:string})=>[item.id,item.roleName||item.userName||item.loginCode]));
+      }catch{return {};}
+    })());
+    return catalogs.get(kind)!;
+  }
+  await Promise.all(graph.nodes.filter(node=>!node.assetId).map(async node=>{
+    const raw=node.name;
+    try{
+      let name:string|undefined;
+      if(node.kind==='domain')name='域内成员';
+      else if(node.kind==='role'||node.kind==='principal'||node.kind==='AgentPrincipal'){
+        const kind=node.kind==='principal'&&node.id.startsWith('principal:')?'AgentPrincipal':node.kind;
+        name=(await catalog(kind))[raw];
+        if(!name&&node.kind==='principal')name=(await catalog('AgentPrincipal'))[raw];
+      }
+      else if(node.kind==='metric')name=(await new DashboardMetricClient(owner.domainId,credentials).describe(raw)).name;
+      else if(node.kind==='definition'){
+        const definition=await readDefinition(owner,raw);
+        name=platformObjectTypes().find(type=>type.objectType===definition.objectType)?.name||definition.name;
+      }
+      else if(node.kind==='action')name=(await post('/action/queryById',{id:raw})).data?.name;
+      else if(node.kind==='object-type'){
+        name=platformObjectTypes().find(type=>type.objectType===raw)?.name||(await catalog('object-type'))[raw];
+      }
+      else if(node.kind==='application'){
+        const result=JSON.parse((await backendGet('product-graph-application',config.dataQuery.baseUrl+'/platform/applications/'+encodeURIComponent(raw),{headers,retries:1})).text);
+        const names=result.data?.names;name=names?.[credentials.locale??'']||names?.['zh-CN']||names?.en;
+      }
+      node.name=name||({role:'角色名称暂不可用',principal:'主体名称暂不可用',AgentPrincipal:'智能体主体',metric:'指标视图名称暂不可用',action:'动作名称暂不可用',definition:'业务定义名称暂不可用','object-type':'对象类型名称暂不可用',application:'应用名称暂不可用'} as Record<string,string>)[node.kind]||'名称暂不可用';
+    }catch{node.name='名称暂不可用';}
+  }));
 }

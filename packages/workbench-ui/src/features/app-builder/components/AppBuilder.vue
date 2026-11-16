@@ -15,12 +15,13 @@ const props=defineProps<{ platform: AppBuilderPlatform }>();
 provide(builderPlatformKey,props.platform);
 const { t } = useI18n();
 const agent = ref<AgentHostAgent | null>(null);
+const agents=ref<AgentHostAgent[]>([]);
 const error = ref<string | null>(null);
 
 async function load() {
   error.value = null;
   try {
-    agent.value = await builderApi.agent();
+    const bootstrap=await builderApi.bootstrap();agent.value=bootstrap.agent;agents.value=bootstrap.agents??[bootstrap.agent];
   } catch (reason) {
     error.value = errorText(reason);
   }
@@ -29,7 +30,7 @@ onMounted(load);
 </script>
 
 <template>
-  <BuilderShell v-if="agent" :agent="agent" :platform="platform" />
+  <BuilderShell v-if="agent" :agent="agent" :agents="agents" :platform="platform" />
   <div v-else v-loading="error === null" class="builder-loading" :aria-busy="error === null" :element-loading-text="t('assistant.loading')">
     <p v-if="error" role="alert">
       <span>{{ error }}</span>

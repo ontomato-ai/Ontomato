@@ -132,6 +132,18 @@ describe('product mutation boundary',()=>{
     expect(sql).toContain('ORDER BY lower(name),id LIMIT');
     expect(args.slice(-2)).toEqual([20,20]);
   });
+  it('applies structural ordering before pagination while keeping recent-update ordering explicit',async()=>{
+    mocks.query.mockImplementation(async(sql:string)=>({rows:sql.includes('count(*)::int AS total')?[{total:0}]:[]}));
+    const {queryProducts}=await import('../store');
+    await queryProducts(owner,productQuerySchema.parse({page:2}));
+    const [sql,args]=mocks.query.mock.calls.find(([sql])=>sql.includes('ORDER BY')&&sql.includes('LIMIT'))!;
+    expect(sql).toContain("CASE document->>'kind'");
+    expect(sql).toContain("document->>'isTemplate'='true' THEN 2");
+    expect(args.slice(-2)).toEqual([20,20]);
+    mocks.query.mockClear();
+    await queryProducts(owner,productQuerySchema.parse({sort:'updated'}));
+    expect(mocks.query.mock.calls.some(([sql])=>sql.includes('ORDER BY updated_at DESC,id LIMIT'))).toBe(true);
+  });
   it('paginates name search inside the caller-visible domain and shared scope',async()=>{
     mocks.query.mockResolvedValueOnce({rows:[{total:65}]}).mockResolvedValueOnce({rows:[]}).mockResolvedValueOnce({rows:[]});
     const {queryProducts}=await import('../store');

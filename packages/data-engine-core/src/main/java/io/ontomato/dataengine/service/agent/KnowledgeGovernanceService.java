@@ -21,12 +21,27 @@ import org.springframework.stereotype.Service;
 @DependsOn("ontologyAgentStore")
 public class KnowledgeGovernanceService {
   public static final String AGENT = "56a15178-ae22-4e6f-9974-ababeb42a676";
+  public static boolean isAgent(String id) { return id != null && id.startsWith("56a15178-"); }
+  public List<JSONObject> agents(String domain) {
+    var result=new ArrayList<JSONObject>();
+    result.add(JSONObject.of("id",AGENT,"name","Knowledge governance","description","Review knowledge and extract sourced ontology data","icon",null,"enabled",true));
+    result.addAll(store.rows("SELECT id,name,true AS enabled FROM ontology_governance_agents WHERE domain_id=? ORDER BY name,id",domain));
+    return result;
+  }
+  public JSONObject createAgent(String domain,String name) {
+    if(name==null||name.isBlank()||name.length()>200)throw AgentHttpException.invalid("A name of 1 to 200 characters is required");
+    String id="56a15178-"+UUID.randomUUID().toString().substring(9);
+    store.update("INSERT INTO ontology_governance_agents(id,domain_id,name) VALUES(?::uuid,?,?)",id,domain,name.strip());
+    return JSONObject.of("id",id,"name",name.strip());
+  }
   private final OntologyAgentStore store;
   private final AgentRuntimeClient runtime;
   private final OntologyAgentDefinitions definitions;
   private final QueryGrantService grants;
   private final KnowledgeService knowledge;
   private final AdminService admin;
+  @org.springframework.beans.factory.annotation.Autowired
+  private io.ontomato.dataengine.service.IdentityService identityService;
   private final Map<String,JSONSchema> schemas = new HashMap<>();
 
   public KnowledgeGovernanceService(OntologyAgentStore store, AgentRuntimeClient runtime,
@@ -45,6 +60,7 @@ public class KnowledgeGovernanceService {
       CREATE TABLE IF NOT EXISTS ontology_governance_work (
         run_id uuid PRIMARY KEY REFERENCES ontology_agent_runs(id),
         work jsonb NOT NULL, revision bigint NOT NULL DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS ontology_governance_agents(id uuid PRIMARY KEY,domain_id text NOT NULL,name text NOT NULL);
       """);
     var input = JSON.parseObject(definitions.resource("ontology-skills/knowledge-governance/references/inputs.json"));
     for (String key : input.keySet()) schemas.put(key,JSONSchema.of(input.getJSONObject(key)));
@@ -56,7 +72,7 @@ public class KnowledgeGovernanceService {
   }
   private JSONObject session(String id, Owner owner) {
     var row=store.session(id,owner);
-    if (!AGENT.equals(row.getString("agent_id"))) throw AgentHttpException.missing();
+    if (!isAgent(row.getString("agent_id"))) throw AgentHttpException.missing();
     return row;
   }
   private JSONObject state(String id, Owner owner, boolean lock) {
@@ -64,8 +80,12 @@ public class KnowledgeGovernanceService {
     return store.one("SELECT * FROM ontology_governance_sessions WHERE id=?" + (lock?" FOR UPDATE":""),uuid(id));
   }
   public boolean create(String id, Owner owner, boolean external) throws Exception {
+    return create(id,owner,external,AGENT);
+  }
+  public boolean create(String id, Owner owner, boolean external,String agent) throws Exception {
+    if(agents(owner.domainId()).stream().noneMatch(value->agent.equals(value.getString("id"))))throw AgentHttpException.missing();
     boolean replayed=store.transaction(() -> {
-      boolean existed=store.createSession(id,owner,AGENT,!external);
+      boolean existed=store.createSession(id,owner,agent,!external);
       store.update("INSERT INTO ontology_governance_sessions(id) VALUES(?) ON CONFLICT DO NOTHING",uuid(id));
       return existed;
     });
@@ -145,7 +165,7 @@ public class KnowledgeGovernanceService {
       store.transaction(() -> gate(id,run,context.owner()));
       runtime.json(context.owner().domainId(),run,"/v1/sessions/"+id+"/runs","POST",JSONObject.of(
         "language",context.language(),
-        "definition",definitions.governance(context.owner().domainId(), context.language(),deadline-System.currentTimeMillis()),
+        "definition",definitions.governance(context.owner().domainId(), context.language(),deadline-System.currentTimeMillis(),session(id,context.owner()).getString("agent_id")),
         "input",JSONObject.of("role","user","content",message,"timestamp",Instant.parse(row.getString("created_at")).toEpochMilli()),
         "environment",JSONObject.of("values",JSONObject.of("ONTOMATO_ONTOLOGY_URL",runtime.ontologyUrl(),"ONTOMATO_GOVERNANCE_ID",id),
           "secrets",JSONObject.of("ONTOMATO_GOVERNANCE_TK",token))),run);
@@ -190,7 +210,7 @@ public class KnowledgeGovernanceService {
   }
 
   public void deleteByUser(String userId) throws Exception {
-    for (var row:store.rows("SELECT id,domain_id FROM ontology_agent_sessions WHERE user_id=? AND agent_id=?",userId,uuid(AGENT)))
+    for (var row:store.rows("SELECT id,domain_id FROM ontology_agent_sessions WHERE user_id=? AND agent_id::text LIKE '56a15178-%'",userId))
       delete(row.getString("id"),new Owner(userId,row.getString("domain_id")));
   }
 
@@ -298,6 +318,20 @@ public class KnowledgeGovernanceService {
   public Object action(String id,String run,String action,JSONObject input,Owner owner) throws Exception {
     validate(action,input);
     requireRun(id,run,owner);
+    if(action.equals("read_input")) {
+      var request=store.run(id,run,owner).getJSONObject("request");
+      String text=request.getString("message");
+      if(text==null||text.isBlank())throw AgentHttpException.invalid("The current run has no source message");
+      var src=source("input",run,"Current user message",text);
+      mutate(id,run,owner,w->remember(w,List.of(src)));
+      return JSONObject.of("sourceId",src.getString("id"),"text",text);
+    }
+    if(action.equals("import_knowledge")) {
+      return store.transaction(()->{
+        gate(id,run,owner);
+        return importKnowledge(id,run,input,owner);
+      });
+    }
     if (action.equals("search_history")) {
       var params=new ArrayList<String>();
       for (String key:input.keySet()) params.add(enc(key)+"="+enc(input.getString(key)));
@@ -365,9 +399,34 @@ public class KnowledgeGovernanceService {
     }
     if (source==null) throw AgentHttpException.missing();
     String kind=source.getString("kind");
+    if(kind.equals("input")){var row=store.run(id,source.getString("target"),owner);return JSONObject.of("source",source,"page",page(List.of(material(sourceId,source.getString("title"),row.getJSONObject("request").getString("message"))),JSONObject.of("offset",offset)));}
     if (kind.equals("artifact")) return JSONObject.of("source",source,"page",null);
     String target=source.getString("target");
     var values=kind.equals("history")?List.of(material(target,source.getString("title"),history(JSON.parseObject(target),owner))):originals(kind,owner.domainId());
     return JSONObject.of("source",source,"page",page(values,JSONObject.of("id",target,"offset",offset)));
+  }
+  private Object importKnowledge(String id,String run,JSONObject input,Owner owner) {
+    if(!identityService.hasKnowledgeGovernanceAccess(owner.userId(),owner.domainId()))throw new AgentHttpException(403,"FORBIDDEN","Business knowledge permission is required");
+    var identity=new io.ontomato.dataengine.core.bean.User(){
+      public String getId(){return owner.userId();}
+      public String getLoginCode(){return owner.userId();}
+      public String getUserName(){return owner.userId();}
+      public boolean isEnable(){return true;}
+      public String getDomainId(){return owner.domainId();}
+    };
+    var work=work(id,owner).getJSONObject("work");
+    var existing=knowledge.getBussinessKnowledge(owner.domainId());
+    var records=new ArrayList<JSONObject>();
+    var ids=new HashSet<String>();
+    for(var raw:input.getJSONArray("items")) {
+      var item=JSONObject.from(raw);
+      if(!ids.add(item.getString("id")))throw AgentHttpException.invalid("Duplicate knowledge ID in import batch");
+      for(var sourceId:item.getJSONArray("sourceIds"))if(work.getJSONArray("sources").stream().noneMatch(value->sourceId.equals(JSONObject.from(value).getString("id"))))throw AgentHttpException.invalid("Read and register every source before importing knowledge");
+      var old=existing.get(item.getString("id"));
+      if(old!=null&&(!Objects.equals(old.getKnowledgeTitle(),item.getString("title"))||!Objects.equals(old.getKnowledgeText(),item.getString("text"))))throw conflict("Knowledge ID already contains different content");
+      records.add(item);
+    }
+    for(var item:records)if(!existing.containsKey(item.getString("id")))knowledge.addBussinessKnowledge(item.getString("id"),item.getString("title"),item.getString("text"),0,item.containsKey("tags")?item.getList("tags",String.class):List.of(),identity);
+    return JSONObject.of("imported",records.stream().map(item->item.getString("id")).toList(),"status","pending");
   }
 }

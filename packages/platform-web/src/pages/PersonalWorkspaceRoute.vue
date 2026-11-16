@@ -27,6 +27,8 @@ import WorkspaceResourceDetail, { type WorkspaceResource } from "./WorkspaceReso
 import { agentHostAgentListSchema, agentHostCreateSessionResponseSchema, agentHostSessionSnapshotSchema, type AgentHostAgent, type AgentHostSession } from "@ontomato/contracts/agent-host";
 const { locale } = useI18n();
 const props=defineProps<{productAssetId?:string;platformWidgetAsset?:ProductAsset;preview?:boolean;pinnedAssets?:ProductAsset[];embedded?:boolean;pageState?:Record<string,unknown>;unavailableAssets?:string[]}>();
+const personalHome=computed(()=>!props.productAssetId&&!props.platformWidgetAsset&&!props.embedded);
+const today=computed(()=>new Intl.DateTimeFormat(locale.value,{month:'long',day:'numeric',weekday:'long'}).format(new Date()));
 const router = useRouter();
 const openApplication=inject(openApplicationKey)!;
 const catalog = useApplicationCatalog();
@@ -69,6 +71,7 @@ const productChildren = (column:number) => props.platformWidgetAsset ? column===
   }) : [];
 const draft = ref(defaultPersonalWorkspace());
 const draftChildren=ref<Array<{assetId:string;column:'main'|'sidebar';span?:'full'|'half';width?:number}>>([]);
+const draftPageLayout=ref({mode:'columns' as 'columns'|'grid',mainWidth:8,gap:'comfortable' as 'compact'|'normal'|'comfortable'});
 const addProductId=ref('');
 const reusableProducts=computed(()=>productAssets.value.filter(asset=>asset.id!==homeAsset.value?.id&&['page','widget','widget-group','operation-panel','dashboard','object-view','metric-widget','action-view','collection-view','object-projection','agent-profile'].includes(asset.document.kind)&&!(asset.document.kind==='page'&&asset.document.isTemplate)));
 function addProduct(){if(addProductId.value&&!draftChildren.value.some(child=>child.assetId===addProductId.value))draftChildren.value.push({assetId:addProductId.value,column:'main',span:'full'});}
@@ -77,7 +80,7 @@ async function saveComposition(){
   const current=homeAsset.value;
   await saveConfiguration(personalWorkspaceSchema.parse(draft.value));
   if(!current.editable||props.pinnedAssets)return {data:draft.value,revision:current.revision};
-  const response=await json(`/api/product-assets/${encodeURIComponent(current.id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:current.name,description:current.description,revision:configRevision.value,document:{...current.document,children:draftChildren.value}})});
+  const response=await json(`/api/product-assets/${encodeURIComponent(current.id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:current.name,description:current.description,revision:configRevision.value,document:{...current.document,layout:draftPageLayout.value,children:draftChildren.value}})});
   const saved=productAssetSchema.parse(response.asset);homeAsset.value=saved;
   return {data:draft.value,revision:saved.revision};
 }
@@ -355,6 +358,7 @@ function configure(tab: "layout" | "resources" | "opening" = "layout") {
   draft.value.sections = { main: [...sections.main], sidebar: [...sections.sidebar], hidden: [...sections.hidden] };
   settingsTab.value = tab;
   draftChildren.value=homeAsset.value?.document.kind==='page'?homeAsset.value.document.children.map(child=>({...child})):[];
+  draftPageLayout.value=homeAsset.value?.document.kind==='page'&&homeAsset.value.document.layout?{...homeAsset.value.document.layout}:{mode:'columns',mainWidth:8,gap:'comfortable'};
 }
 async function save() {
   if (saving.value) return;
@@ -392,7 +396,8 @@ const actions = computed(() => [
     <WorkspaceSkeleton v-if="!ready && busy.config" :label="text.loading" :rows="6" />
     <el-alert v-if="analysisError" :title="analysisError" type="error" :closable="false" />
     <el-alert v-if="errors.products" :title="errors.products" type="error" :closable="false" />
-    <div v-if="ready" class="workspace-grid" :class="{ 'tasks-first': config.layout === 'tasks','product-layout':!!pageLayout,'single-column':pageLayout?.mode==='grid'||pageLayout?.mainWidth===12 }" :style="pageGridStyle">
+    <section v-if="personalHome" class="personal-workspace-intro"><div><span class="workspace-date">{{today}}</span><h1>{{locale.startsWith('zh')?'从这里，继续你的工作':'Pick up where you left off'}}</h1><p>{{locale.startsWith('zh')?'常用应用、分析会话和关注的事项，都在你的工作台。':'Your applications, conversations and followed work in one place.'}}</p></div><div class="workspace-quick-links"><button v-if="canChat&&enabledAgents.length" @click="router.push({path:platformRoutes.chat.path,query:{agentId:agentId??undefined}})"><Sparkles :size="18"/><span>{{locale.startsWith('zh')?'开始智能分析':'Start an analysis'}}</span><ArrowUpRight :size="15"/></button><button @click="router.push('/applications')"><AppWindow :size="18"/><span>{{locale.startsWith('zh')?'浏览全部应用':'Explore applications'}}</span><ArrowUpRight :size="15"/></button></div></section>
+    <div v-if="ready" class="workspace-grid" :class="{ 'personal-workspace':personalHome,'tasks-first': config.layout === 'tasks','product-layout':!!pageLayout,'single-column':pageLayout?.mode==='grid'||pageLayout?.mainWidth===12 }" :style="pageGridStyle">
       <div v-for="(sections, column) in columns" :key="column" class="workspace-column" :class="{ 'activity-column': sections.includes('tasks') }">
       <div v-for="child in productChildren(column)" :key="child.id" class="product-placement" :style="{gridColumn:`span ${child.width??(child.span==='half'?6:12)}`}">
     <el-alert v-if="props.unavailableAssets?.includes(child.id)" :title="`${child.asset?.name??child.id}：引用能力契约已变化，请升级发布。`" type="error" :closable="false"/>
@@ -545,7 +550,8 @@ const actions = computed(() => [
       <el-form label-position="top" :disabled="saving">
         <el-tabs v-model="settingsTab">
         <el-tab-pane name="layout" :label="locale.startsWith('zh') ? '页面布局' : 'Layout'">
-        <el-form-item :label="text.layout">
+         <template v-if="homeAsset?.document.kind==='page'"><el-form-item label="布局方式"><el-select v-model="draftPageLayout.mode"><el-option value="columns" label="主工作区与侧栏"/><el-option value="grid" label="单区栅格"/></el-select></el-form-item><el-form-item v-if="draftPageLayout.mode==='columns'" label="主工作区宽度"><el-select v-model="draftPageLayout.mainWidth"><el-option :value="8" label="三分之二"/><el-option :value="9" label="四分之三"/><el-option :value="12" label="整页"/></el-select></el-form-item><el-form-item label="区块间距"><el-select v-model="draftPageLayout.gap"><el-option value="compact" label="紧凑"/><el-option value="normal" label="标准"/><el-option value="comfortable" label="宽松"/></el-select></el-form-item></template>
+         <el-form-item v-else :label="text.layout">
           <el-select v-model="draft.layout" @change="draft.sections = presetSections(draft.layout)"><el-option value="tasks" :label="text.tasksLayout" /><el-option value="data" :label="text.dataLayout" /><el-option value="assistant" :label="text.assistantLayout" /></el-select>
         </el-form-item>
          <p class="settings-note">{{locale.startsWith('zh')?'主页仅展示产品资产中配置的组成项。请在「资源内容」中调整位置、宽度与顺序，或进入产品资产管理区块内容。':'The page renders only configured product assets. Arrange placement, width and order under Resources.'}}</p>
@@ -553,7 +559,7 @@ const actions = computed(() => [
         <el-tab-pane name="resources" :label="locale.startsWith('zh') ? '资源内容' : 'Resources'">
         <el-button v-if="catalog.applications.value.some(app=>app.id==='ontology')" text @click="editing=false;router.push({path:platformRoutes.products.path,query:homeAsset?{id:homeAsset.id}:{}})">{{locale.startsWith('zh')?'管理组件与模板':'Manage components and templates'}}</el-button>
         <template v-if="homeAsset?.editable&&!props.pinnedAssets"><h3>{{locale.startsWith('zh')?'产品层组件':'Product components'}}</h3>
-        <p class="settings-note">{{locale.startsWith('zh')?'选择已保存的指标展示、操作板、对象视图或仪表盘，按引用组合到主页。':'Compose saved metric views, operation panels, object views and dashboards by reference.'}}</p>
+         <p class="settings-note">{{locale.startsWith('zh')?'选择已保存的投影、页面或智能体配置，按引用组织工作台内容。':'Compose saved projections, pages and agent profiles by reference.'}}</p>
         <div v-for="(child,index) in draftChildren" :key="child.assetId" class="section-editor-row"><span>{{productAssets.find(asset=>asset.id===child.assetId)?.name??text.unavailable}}</span><el-select v-model="child.column" aria-label="组件位置"><el-option value="main" label="主栏"/><el-option value="sidebar" label="侧栏"/></el-select><el-select :model-value="child.width??(child.span==='half'?6:12)" aria-label="组件宽度" @update:model-value="child.width=Number($event)"><el-option v-for="width in [2,3,4,6,12]" :key="width" :value="width" :label="width===12?'整行':`${width}/12 列`"/></el-select><el-button :disabled="index===0" @click="draftChildren.splice(index-1,0,...draftChildren.splice(index,1))">上移</el-button><el-button @click="draftChildren.splice(index,1)">移除</el-button></div>
         <div class="resource-toolbar"><el-select v-model="addProductId" filterable placeholder="选择产品资产" aria-label="选择产品资产"><el-option v-for="asset in reusableProducts" :key="asset.id" :value="asset.id" :label="asset.name"/></el-select><el-button :disabled="!addProductId" @click="addProduct">添加组件</el-button></div>
         </template><el-form-item :label="text.data">
@@ -753,4 +759,11 @@ p { color: var(--el-text-color-secondary); line-height: 1.6; overflow-wrap: anyw
 .workspace-column:nth-child(2)>.workspace-section:first-child{padding-top:var(--spacing-sm)}
 @container platform-page (max-width:1050px){.workspace-grid,.workspace-grid.product-layout{grid-template-columns:minmax(0,1fr)}.workspace-column+.workspace-column{padding-inline-start:0}.home-overview :deep(.widget-card){grid-column:span 4!important}}
 @container platform-page (max-width:600px){.workspace-column:first-child{grid-template-columns:minmax(0,1fr)}.workspace-column:first-child>.home-chart{grid-column:1/-1}.home-overview :deep(.widget-card){grid-column:span 6!important}.home-overview :deep(.view-grid){gap:var(--spacing-sm)}.home-overview :deep(.widget-card){padding:var(--spacing-md);flex-basis:120px}}
+</style>
+<style scoped>
+.personal-workspace-intro{display:flex;align-items:center;justify-content:space-between;gap:24px;margin:0 0 28px;padding:24px;background:linear-gradient(120deg,var(--el-fill-color-light),var(--el-bg-color));border:1px solid var(--el-border-color-light);border-radius:12px;flex-shrink:0}
+.workspace-date{font-size:var(--text-xs);color:var(--el-text-color-secondary)}.personal-workspace-intro h1{font-size:24px;line-height:1.4;margin:8px 0;font-weight:600}.personal-workspace-intro p{margin:0;font-size:var(--text-sm)}
+.workspace-quick-links{display:flex;flex-direction:column;gap:10px;min-width:210px}.workspace-quick-links button{display:flex;align-items:center;gap:12px;padding:12px 16px;border:1px solid var(--el-border-color-light);border-radius:8px;background:var(--el-bg-color);color:var(--el-text-color-primary);font:inherit;font-size:var(--text-sm);cursor:pointer}.workspace-quick-links button span{flex:1;text-align:start}.workspace-quick-links button:hover{border-color:var(--el-color-primary);color:var(--el-color-primary)}
+.workspace-grid.personal-workspace{gap:24px}.personal-workspace .workspace-column{display:flex;flex-direction:column;gap:20px}.personal-workspace .workspace-column+.workspace-column{border:0;padding:0}.personal-workspace .workspace-product{padding:20px;border:1px solid var(--el-border-color-light);border-radius:10px;background:var(--el-bg-color)}.personal-workspace .product-placement{min-width:0}.personal-workspace :deep(.collection-projection>h3){font-size:15px;margin-bottom:8px}.personal-workspace :deep(.overview-note){display:none}
+@container platform-page (max-width:760px){.personal-workspace-intro{align-items:stretch;flex-direction:column;padding:20px}.personal-workspace-intro h1{font-size:21px}.workspace-quick-links{min-width:0}.workspace-grid.personal-workspace{grid-template-columns:minmax(0,1fr)}.personal-workspace .workspace-product{padding:16px}}
 </style>

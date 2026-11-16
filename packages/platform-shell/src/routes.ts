@@ -44,7 +44,8 @@ export const platformRoutes = {
   appBuilder: { name: "AppBuilder", path: "/app-builder/:workspaceId?" },
   feedback: { name: "Feedback", path: "/governance/feedback" },
   /** The models of the knowledge governance agents, at the foot of the application's column. */
-  governanceModels: { name: "GovernanceModels", path: "/governance/models" },
+   governanceModels: { name: "GovernanceModels", path: "/settings/model-config/governance" },
+  governanceKnowledge: { name: "GovernanceKnowledge", path: "/governance/knowledge" },
   data: { name: "manager-data", path: "/browser/data/:className?" },
   objectView: { name: "manager-object-view", path: "/browser/views/:className" },
   objectViewEditor: { name: "manager-object-view-editor", path: "/ontology/objects/:className/view" },
@@ -72,7 +73,7 @@ export const platformRoutes = {
   capabilityMap: { name: "CapabilityMap", path: "/ontology/assets/capability-map" },
   knowledge: { name: "BusinessKnowledge", path: "/ontology/knowledge" },
   /** The models of the ontology modeling agents, at the foot of the ontology manager's menu. */
-  ontologyModels: { name: "OntologyModels", path: "/ontology/models" },
+   ontologyModels: { name: "OntologyModels", path: "/settings/model-config/ontology" },
   /** One page for every scheduled task of the platform. */
   schedules: { name: "Schedules", path: "/schedules" },
   /** The agent platform's own scheduled tasks: this agent's, listed by the same page. */
@@ -81,6 +82,7 @@ export const platformRoutes = {
   permissions: { name: "Permissions", path: "/permissions" },
   members: { name: "PermissionMembers", path: "/permissions/members" },
   roles: { name: "PermissionRoles", path: "/permissions/roles" },
+  principals:{name:'PermissionAgentPrincipals',path:'/permissions/agent-principals'},
   policies: { name: "PermissionPolicies", path: "/permissions/policies" },
   organization: { name: "PermissionOrganization", path: "/permissions/organization" },
   /**
@@ -90,6 +92,7 @@ export const platformRoutes = {
   models: { name: "ModelConfig", path: "/settings/model-config" },
   usage: { name: "ModelUsage", path: "/settings/model-config/usage" },
   providers: { name: "ModelProviders", path: "/settings/model-config/providers" },
+  builderModels:{name:'BuilderModels',path:'/settings/model-config/app-builder'},
   settings: { name: "SystemConfig", path: "/settings/system-config" },
   /** The external MCP services agents may call, registered once for the platform. */
   externalMcp: { name: "ExternalMcpServices", path: "/settings/external-mcp" },

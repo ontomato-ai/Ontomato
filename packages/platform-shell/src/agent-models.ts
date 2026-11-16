@@ -73,7 +73,7 @@ export function ontologyAgentModelSource(transport: DataEngineTransport, page: A
           .sort((a, b) => kinds.indexOf(a.kind) - kinds.indexOf(b.kind))
           .map((agent) => ({
             id: agent.id,
-            kind: agent.kind,
+            kind: agent.kind==='knowledgeGovernance'&&agent.id!=='56a15178-ae22-4e6f-9974-ababeb42a676'?null:agent.kind,
             name: agent.name,
             description: null,
             modelId: agent.modelSelection.modelId,

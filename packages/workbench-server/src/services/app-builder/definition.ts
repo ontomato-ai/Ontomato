@@ -1,6 +1,7 @@
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 
 export const APP_BUILDER_KIND = "app-builder";
+export function isAppBuilderKind(kind:string){return kind===APP_BUILDER_KIND||kind.startsWith(APP_BUILDER_KIND+':');}
 export const APP_BUILDER_SKILL: RuntimeSkillRef = {
   namespace: { kind: "provider", provider: "workbench" }, name: "ontomato-app-builder",
 };

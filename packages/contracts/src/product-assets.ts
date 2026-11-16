@@ -79,7 +79,7 @@ export type ProductAssetInput = z.infer<typeof productAssetInputSchema>;
 export type ProductAsset = z.infer<typeof productAssetSchema>;
 export const productSaveSchema = productAssetInputSchema.innerType().extend({ revision: z.number().int().nonnegative() }).strict();
 export const productAuthoringDocumentSchema=z.discriminatedUnion('kind',[
-  metricProjectionSchema,actionProjectionSchema,collectionProjectionSchema,objectProjectionSchema,navigationSchema.innerType(),agentProfileSchema,
+  metricProjectionSchema.extend({renderer:z.enum(['number','trend','gauge','chart']).default('number')}),actionProjectionSchema,collectionProjectionSchema,objectProjectionSchema,navigationSchema.innerType(),agentProfileSchema,
   pageDocumentSchema,applicationDocumentSchema,
 ]);
 export const productAuthoringSchema=productSaveSchema.omit({visibility:true}).extend({document:productAuthoringDocumentSchema});
@@ -131,14 +131,14 @@ export function productWidgets(document:ProductDocument){
 export function platformWidget(document:ProductDocument){return document.kind==='widget'&&document.widget.kind==='platform'?document.widget:undefined;}
 
 export const productTypes = [
+  {kind:'application',category:'bundle',name:'应用',description:'面向人的产品交付，装配导航与页面并固定发布依赖'},
+  {kind:'agent-profile',category:'bundle',name:'智能体配置',description:'面向智能体的能力交付，引用工具投影、对象上下文和指令'},
+  {kind:'page',category:'composition',name:'页面',description:'以资产引用组织布局；模板和可嵌入页面是页面形态'},
+  {kind:'navigation',category:'composition',name:'导航',description:'引用页面，组织入口、菜单、深链接与转场'},
   {kind:'object-projection',category:'element',name:'对象视图',description:'绑定一个对象类型，呈现对象属性、关系与上下文'},
   {kind:'collection-view',category:'element',name:'集合视图',description:'绑定一个已发布业务定义，呈现其成员集合'},
   {kind:'metric-widget',category:'element',name:'指标组件',description:'绑定一个已发布指标，呈现数值、趋势或图表'},
-  {kind:'action-view',category:'element',name:'操作视图',description:'绑定一个已发布操作，呈现参数表单与执行入口'},
-  {kind:'page',category:'composition',name:'页面',description:'以资产引用组织布局；模板和可嵌入页面是页面形态'},
-  {kind:'navigation',category:'composition',name:'页面导航',description:'引用页面，组织入口、菜单、深链接与转场'},
-  {kind:'application',category:'bundle',name:'交互应用',description:'面向人的智能组合应用，装配导航与页面'},
-  {kind:'agent-profile',category:'bundle',name:'Agent Profile',description:'面向模型的智能组合应用，装配工具、上下文和指令'},
+  {kind:'action-view',category:'element',name:'动作视图',description:'绑定一个已发布动作，呈现参数表单与执行入口'},
 ] as const;
 
 export const productQuerySchema=z.object({
@@ -146,7 +146,7 @@ export const productQuerySchema=z.object({
   kind:z.enum(['page','layout-template','widget','widget-group','operation-panel','dashboard','object-view','application','metric-widget','action-view','collection-view','object-projection','navigation','agent-profile']).optional(),
   scope:z.enum(['all','mine','shared']).default('all'),
   pageForm:z.enum(['all','page','embeddable','template']).optional(),
-  sort:z.enum(['updated','name']).optional(),
+   sort:z.enum(['structure','updated','name']).optional(),
   page:z.coerce.number().int().min(1).max(100000).default(1),
   pageSize:z.coerce.number().int().min(1).max(100).default(20),
 }).strict();

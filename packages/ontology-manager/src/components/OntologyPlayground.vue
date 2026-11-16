@@ -34,7 +34,7 @@ import { useManagerClient, useManagerContext, useOntologyText, useSharedText } f
 import { readGraphColors } from "../graph-colors";
 import { PlatformPageHeader } from "@ontomato/platform-shell";
 import { graphLayout, initialNodePosition } from "../ontology-graph-layout";
-import ProductAssetGraph from '../products/ProductAssetGraph.vue';
+import ProductGraphDialog from '../products/ProductGraphDialog.vue';
 import type {ProductGraph} from '@ontomato/contracts/product-graph';
 
 const emit = defineEmits<{ "open-modeling": [focus: "object" | "relation", id: string];"open-product":[id:string] }>();
@@ -44,7 +44,8 @@ const { message } = useManagerFeedback();
 const { ot } = useOntologyText();
 const { loadOntology,products } = useManagerClient();
 const productGraph=ref<ProductGraph|null>(null),productGraphError=ref(''),productGraphLoading=ref(false);
-async function showProductGraph(){if(productGraph.value){productGraph.value=null;return;}productGraphLoading.value=true;productGraphError.value='';try{productGraph.value=await products.graph();}catch(reason){productGraphError.value=reason instanceof Error?reason.message:String(reason);}finally{productGraphLoading.value=false;}}
+const productGraphOpen=ref(false);
+async function showProductGraph(){productGraphLoading.value=true;productGraphError.value='';try{productGraph.value=await products.graph();productGraphOpen.value=true;}catch(reason){productGraphError.value=reason instanceof Error?reason.message:String(reason);}finally{productGraphLoading.value=false;}}
 
 type Selection =
   | { type: "object"; value: OntologyObject }
@@ -543,11 +544,13 @@ onBeforeUnmount(() => {
             <strong>{{ relations.length }}</strong>
             {{ t("nav.relationTypes") }}
           </span>
+          <el-button :loading="productGraphLoading" @click="showProductGraph">产品关系图</el-button>
           <el-button :icon="RefreshCw" class="manager-icon-button" :title="t('common.refresh')" :aria-label="t('common.refresh')" @click="refresh" />
         </div>
       </template>
     </PlatformPageHeader>
-    <section class="ontology-product-graph"><el-button :loading="productGraphLoading" @click="showProductGraph">{{productGraph?'收起产品投影与组合关系':'产品投影与组合关系'}}</el-button><el-alert v-if="productGraphError" :title="productGraphError" type="error" :closable="false"/><ProductAssetGraph v-if="productGraph" :graph="productGraph" @open="emit('open-product',$event)"/></section>
+    <ProductGraphDialog v-if="productGraph" v-model="productGraphOpen" title="产品投影与组合关系" :graph="productGraph" @open="emit('open-product',$event)"/>
+    <el-alert v-if="productGraphError" :title="productGraphError" type="error" :closable="false"/>
 
     <!-- The page under the header takes the page gutter: the explorer, the graph and the inspector start where the
          title does, in one bordered block like a table. -->

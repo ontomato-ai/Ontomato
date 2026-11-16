@@ -49,9 +49,18 @@ class OntologyAgentModelSettingsTest {
     assertEquals(OntologyAgentStore.RETRIEVER,definitions.definition("d","en",1000).getString("modelId"));
     assertEquals(ActionCreationService.AGENT,definitions.actionCreation("d","prompt","en",1000).getString("modelId"));
     assertEquals(KnowledgeGovernanceService.AGENT,definitions.governance("d","en",1000).getString("modelId"));
+    var variant="56a15178-1111-4111-8111-111111111111";
+    assertEquals(variant,definitions.governance("d","en",1000,variant).getString("modelId"));
     assertEquals(OntologyAgentDefinitions.METRICVIEW_AGENT,definitions.metricView("d","prompt","en",1000).getString("modelId"));
     for(String kind:OntologyGenerationService.KINDS)
       assertEquals(OntologyGenerationService.agentId(kind),definitions.generation("d",kind,"prompt","en",1000).getString("modelId"));
+  }
+
+  @Test void governanceVariantsCannotBeConfiguredOutsideTheirDomain() {
+    String id="56a15178-1111-4111-8111-111111111111";
+    when(jdbc.queryForList(anyString(),eq("other"),eq(id))).thenReturn(List.of());
+    assertThrows(AgentHttpException.class,()->models.save("other",id,JSONObject.of("modelSelection",new JSONObject())));
+    verifyNoInteractions(runtime);
   }
 
 }

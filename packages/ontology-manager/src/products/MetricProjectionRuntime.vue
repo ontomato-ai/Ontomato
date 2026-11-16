@@ -11,13 +11,14 @@ const projection=computed(()=>props.asset.document.kind==='metric-widget'?props.
 const theme=useChartTheme();
 const resolvedParameters=computed(()=>projection.value?resolveViewParameters(Object.fromEntries(Object.entries(projection.value.parameters).filter(([,binding])=>!(binding.source==='literal'&&typeof binding.value==='string'))),{},props.pageState??{}):{});
 const parameterTexts=computed(()=>projection.value?Object.fromEntries(Object.entries(projection.value.parameters).filter((entry):entry is [string,{source:'literal';value:string}]=>entry[1].source==='literal'&&typeof entry[1].value==='string').map(([name,binding])=>[name,binding.value])):{});
+function categoryLabel(value:unknown){return value===null||value===undefined||value===''?'未填写':String(value);}
 function option(data:unknown){
   const document=projection.value!;
   const rows=projectionDisplayRows(Array.isArray(data)?data:[],document.display);
   const values=rows.map(row=>row[document.valueField]);
   if(document.renderer==='gauge')return {color:document.display?.colors,series:[{type:'gauge',data:[{value:values[0],name:props.asset.name}],detail:{formatter:(value:unknown)=>formatProjectionValue(value,document.format)}}]};
-  if(document.renderer==='chart'&&document.chartType==='donut')return {color:document.display?.colors,tooltip:{trigger:'item'},legend:{bottom:0},series:[{type:'pie',radius:['45%','70%'],data:rows.map(row=>({name:String(row[document.labelField]??''),value:row[document.valueField]})),label:{show:false}}]};
-  return {color:document.display?.colors,tooltip:{trigger:'axis'},grid:{left:48,right:16,top:16,bottom:36},xAxis:{type:'category',data:rows.map(row=>String(row[document.labelField]??''))},yAxis:{type:'value'},series:[{type:document.renderer==='trend'||document.chartType==='line'?'line':'bar',data:values}]};
+   if(document.renderer==='chart'&&document.chartType==='donut')return {color:document.display?.colors,tooltip:{trigger:'item'},legend:{bottom:0},series:[{type:'pie',radius:['45%','70%'],data:rows.map(row=>({name:categoryLabel(row[document.labelField]),value:row[document.valueField]})),label:{show:false}}]};
+   return {color:document.display?.colors,tooltip:{trigger:'axis'},grid:{left:48,right:16,top:16,bottom:36},xAxis:{type:'category',data:rows.map(row=>categoryLabel(row[document.labelField]))},yAxis:{type:'value'},series:[{type:document.renderer==='trend'||document.chartType==='line'?'line':'bar',data:values}]};
 }
 function display(data:unknown){
   if(!projection.value)return '—';

@@ -202,7 +202,7 @@ const headerLabels = computed(() => ({
  * least as tall as its parent; under the title that is one title too tall and pushes the foot out of view.
  */
 .platform-app-menu > .app-menu-pages {
-  flex: 1 0 auto;
+  flex: 1 1 0;
   min-height: 0;
   height: auto;
 }

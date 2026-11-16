@@ -5,7 +5,7 @@ import {dropdownBoundaryOptions} from '@ontomato/foundation-ui/overlay';
 import { ArrowLeft, Plus, RefreshCw, ChevronRight, MoreHorizontal } from "lucide-vue-next";
 import { randomId } from "@ontomato/contracts/random-id";
 import { ElMessageBox } from "element-plus";
-import { productAssetInputSchema, productTypes, productWidgets, type ProductAsset, type ProductDocument } from "@ontomato/contracts/product-assets";
+import { productAssetInputSchema, productWidgets, type ProductAsset, type ProductDocument } from "@ontomato/contracts/product-assets";
 import { defaultPersonalWorkspace } from "@ontomato/contracts/personal-workspace";
 import { createViewWidget } from "@ontomato/contracts/object-views";
 import { useManagerClient, useManagerContext, useManagerCounts,useOntologyText } from "../context";
@@ -13,12 +13,16 @@ import ProductAssetRuntime from "./ProductAssetRuntime.vue";
 import ProductAssetConfiguration from './ProductAssetConfiguration.vue';
 import ProductAssetGraph from './ProductAssetGraph.vue';
 import type {ProductGraph} from '@ontomato/contracts/product-graph';
-import {productCategory,productCategories} from '@ontomato/contracts/product-graph';
+import {productCategory} from '@ontomato/contracts/product-graph';
 import {productIcons} from './product-icons';
+import {rendererLabel} from './renderer-labels';
+import {localizedProductTypes,localizedProductCategories} from './catalog-labels';
+import {useIdentityNames} from './identity-names';
 const client = useManagerClient();
+const identityName=useIdentityNames();
 const {ot}=useOntologyText();
-const catalogTypes=computed(()=>productTypes.map(type=>type.kind==='agent-profile'?{...type,name:ot('productAgentProfile'),description:ot('productAgentDescription')}:type));
-const creationGroups=computed(()=>productCategories.map(category=>({...category,types:catalogTypes.value.filter(type=>type.category===category.id)})));
+const catalogTypes=computed(()=>localizedProductTypes(ot));
+const creationGroups=computed(()=>localizedProductCategories(ot).map(category=>({...category,types:catalogTypes.value.filter(type=>type.category===category.id)})));
 const managerCounts=useManagerCounts();
 const managerContext=useManagerContext();
 const props=defineProps<{assetId?:string;createKind?:string}>();
@@ -45,7 +49,7 @@ async function searchChildren(search=''){try{const result=await client.products.
 const widgetIndex=ref(0);
 const editorWidgets=computed(()=>productWidgets(document.value));
 const typeIcons=productIcons;
-const rendererOptions=computed(()=>({'metric-widget':['number','trend','gauge','chart','table'],'action-view':['form','button','dialog','inline'],'collection-view':['table','list','chart','map','3d-scene'],'object-projection':['full','summary','card','text','3d']} as Record<string,string[]>)[document.value.kind]??[]);
+const rendererOptions=computed(()=>({'metric-widget':['number','trend','gauge','chart'],'action-view':['form','button','dialog','inline'],'collection-view':['table','list','chart','map','3d-scene'],'object-projection':['full','summary','card','text','3d']} as Record<string,string[]>)[document.value.kind]??[]);
 const references = computed(() => expandedReferences.value);
 const parentAssets=ref<{id:string;name:string}[]>([]);
 const expandedReferences=ref<import('@ontomato/contracts/product-assets').ProductReference[]>([]);
@@ -59,6 +63,8 @@ async function resolveDependencyNames(id:string,references:import('@ontomato/con
   const names=await Promise.all(references.map(async reference=>{
     try{
       if(reference.kind==='asset')return [`asset:${reference.id}`,(await client.products.get(reference.id)).name];
+      if(reference.kind==='definition'){const response=await client.request(`/product-assets/definitions/${encodeURIComponent(reference.id)}`,{},'');const result=await response.json();if(result.definition?.name)return [`definition:${reference.id}`,result.definition.name];}
+      if(reference.kind==='object-type'){const ontology=await client.loadOntology();const object=ontology.objects.find(object=>object.className===reference.id);if(object?.showName)return [`object-type:${reference.id}`,object.showName];}
       if(reference.kind==='metric'||reference.kind==='action'){
         const result=await client.requestSmartAsset(reference.kind==='metric'?'metrics':'actions','queryById',{id:reference.id});
         if(result.data?.name)return [`${reference.kind}:${reference.id}`,String(result.data.name)];
@@ -105,9 +111,9 @@ function updateReadOnlyParameters(value:string){if(document.value.kind==='action
 const headerTitle=computed(()=>editing.value?`${selected.value?'编辑':'创建'}${typeName(document.value.kind)}`:'产品资产');
 const legacyAsset=computed(()=>selected.value?productCategory(selected.value.document.kind)==='legacy':false);
 const previewTitle=computed(()=>selected.value&&['application','dashboard'].includes(selected.value.document.kind)?'打开入口':selected.value&&['page','layout-template'].includes(selected.value.document.kind)?'页面组合':'运行预览');
-const compositionColumns=computed(()=>selected.value&&'children' in selected.value.document?(['main','sidebar'] as const).map(column=>({column,label:column==='main'?'主栏':'侧栏',children:selected.value&&'children' in selected.value.document?selected.value.document.children.filter(child=>child.column===column):[]})):[]);
+const compositionColumns=computed(()=>{const document=selected.value?.document;if(!document||!('children' in document))return [];if(document.kind==='page'&&(document.layout?.mode==='grid'||document.layout?.mainWidth===12))return [{column:'main',label:'页面内容 · 按展示顺序',children:document.children}];return (['main','sidebar'] as const).map(column=>({column,label:column==='main'?'主栏':'侧栏',children:document.children.filter(child=>child.column===column)}));});
 const layoutLabel=(layout?:string)=>({data:'数据优先',tasks:'任务优先',assistant:'应用优先'}[layout??'']??'页面布局');
-const compositionLayout=computed(()=>selected.value&&'workspace' in selected.value.document?layoutLabel(selected.value.document.workspace?.layout):'页面布局');
+const compositionLayout=computed(()=>selected.value?.document.kind==='page'&&selected.value.document.layout?selected.value.document.layout.mode==='grid'?'单区栅格':`主栏 ${selected.value.document.layout.mainWidth}/12 · 侧栏 ${12-selected.value.document.layout.mainWidth}/12`:selected.value&&'workspace' in selected.value.document?layoutLabel(selected.value.document.workspace?.layout):'页面布局');
 const headerActions=computed(()=>[{id:'refresh',label:'刷新',icon:RefreshCw,disabled:busy.value||editing.value,onClick:()=>void run(load)}]);
 const typeName = (value:string) => catalogTypes.value.find(type => type.kind === value)?.name ?? value;
 async function run(action:()=>Promise<void>) { if(busy.value)return; busy.value=true;error.value="";try{await action();}catch(e){if(e!=="cancel"&&e!=="close")error.value=e instanceof Error?e.message:String(e);}finally{busy.value=false;} }
@@ -241,7 +247,7 @@ async function remove() { if(!selected.value)return;await run(async()=>{await El
             <template v-if="document.kind==='widget'&&document.widget.kind==='platform'"><el-form-item label="内容来源"><el-select v-model="document.widget.source"><el-option v-for="(label,key) in {assistant:'智能问数',apps:'应用与智能体入口',data:'仪表盘集合',tasks:'任务动态',conversations:'分析会话',objects:'收藏对象',recent:'最近访问'}" :key="key" :value="key" :label="label"/></el-select></el-form-item><el-form-item v-if="document.widget.source==='assistant'" label="输入提示"><el-input v-model="document.widget.placeholder"/></el-form-item><el-form-item label="展示条数"><el-input-number v-model="document.widget.limit" :min="1" :max="20"/></el-form-item><el-form-item label="资源选择（JSON）"><el-input :model-value="JSON.stringify(document.widget.workspace??{},null,2)" type="textarea" :rows="5" @change="updatePlatformResources"/></el-form-item></template>
            <template v-if="'widgets' in document"><h3>组合内容</h3><div class="toolbar"><el-select :model-value="widgetIndex" aria-label="编辑组合内组件" @change="chooseWidget"><el-option v-for="(item,index) in editorWidgets" :key="item.id" :value="index" :label="item.title||`组件 ${index+1}`"/></el-select><el-button @click="addWidget">添加组件</el-button><el-button :disabled="editorWidgets.length<=1" @click="removeWidget">移除</el-button></div></template>
            <el-form-item v-if="widget&&document.kind!=='metric-widget'&&document.kind!=='action-view'" label="组件标题"><el-input v-model="widget.title"/></el-form-item>
-           <template v-if="'renders' in document"><el-form-item v-if="!['metric-widget','action-view'].includes(document.kind)" label="绑定本体元素"><el-input v-model="document.renders.id"/></el-form-item><el-form-item label="渲染方式"><el-select v-model="document.renderer"><el-option v-for="renderer in rendererOptions" :key="renderer" :value="renderer" :label="renderer"/></el-select></el-form-item><el-checkbox v-model="document.isDefault">默认投影</el-checkbox></template>
+            <template v-if="'renders' in document"><el-form-item v-if="!['metric-widget','action-view'].includes(document.kind)" label="绑定本体元素"><el-input v-model="document.renders.id"/></el-form-item><el-form-item label="渲染方式"><el-select v-model="document.renderer"><el-option v-for="renderer in rendererOptions" :key="renderer" :value="renderer" :label="rendererLabel(renderer)"/></el-select></el-form-item><el-checkbox v-model="document.isDefault">默认投影</el-checkbox></template>
             <template v-if="document.kind==='page'"><el-form-item label="页面用途"><el-checkbox v-model="document.embeddable">可嵌入的纯展示页</el-checkbox><el-checkbox v-model="document.isTemplate">创建页面的模板</el-checkbox></el-form-item><el-form-item label="页面布局"><el-button v-if="!document.layout" @click="document.layout={mode:'columns',mainWidth:8,gap:'normal'}">配置布局</el-button><template v-else><el-select v-model="document.layout.mode"><el-option value="columns" label="主栏与侧栏"/><el-option value="grid" label="单区栅格"/></el-select><el-input-number v-if="document.layout.mode==='columns'" v-model="document.layout.mainWidth" :min="4" :max="12" aria-label="主栏宽度（12 列）"/><el-select v-model="document.layout.gap"><el-option value="compact" label="紧凑间距"/><el-option value="normal" label="标准间距"/><el-option value="comfortable" label="宽松间距"/></el-select></template></el-form-item><p>页面只保存子资产引用。可嵌入的纯展示页及其子页面不能包含操作入口。</p></template>
            <template v-if="document.kind==='agent-profile'"><el-form-item :label="ot('productAgentPrincipal')"><el-input v-model="document.principalId"/></el-form-item><el-form-item :label="ot('productInstructions')"><el-input v-model="document.instructions" type="textarea" :rows="6"/></el-form-item><el-form-item :label="ot('productToolReferences')"><el-input :model-value="document.tools.join('\n')" type="textarea" @update:model-value="updateProfileReferences('tools',$event)"/></el-form-item><el-form-item :label="ot('productContextReferences')"><el-input :model-value="document.contextViews.join('\n')" type="textarea" @update:model-value="updateProfileReferences('contextViews',$event)"/></el-form-item></template>
            <el-form-item v-if="'fields' in document" label="展示字段（每行一个）"><el-input :model-value="document.fields.join('\n')" type="textarea" @update:model-value="updateProjectionFields"/></el-form-item>
@@ -250,7 +256,7 @@ async function remove() { if(!selected.value)return;await run(async()=>{await El
            <el-form-item v-if="document.kind==='metric-widget'" label="显示格式（白名单配置 JSON）"><el-input :model-value="document.format?JSON.stringify(document.format,null,2):''" type="textarea" :rows="3" placeholder='{"kind":"number","decimals":2,"unit":"人"}' @change="updateMetricFormat"/></el-form-item>
            <el-form-item v-if="document.kind==='metric-widget'&&document.renderer==='chart'" label="图表样式"><el-select v-model="document.chartType"><el-option value="bar" label="柱状图"/><el-option value="line" label="折线图"/><el-option value="donut" label="环形图"/></el-select></el-form-item>
            <el-form-item v-if="document.kind==='action-view'" label="只读绑定参数（每行一个）"><el-input :model-value="document.readOnlyParameters.join('\n')" type="textarea" @change="updateReadOnlyParameters"/></el-form-item>
-           <el-form-item v-if="document.kind==='object-projection'&&document.renderer==='full'" label="对象布局（产品层持有 JSON）"><el-input :model-value="document.layout?JSON.stringify(document.layout,null,2):''" type="textarea" :rows="8" @change="updateObjectLayout"/></el-form-item>
+            <el-form-item v-if="document.kind==='object-projection'&&document.renderer==='full'" label="对象布局"><el-input :model-value="document.layout?JSON.stringify(document.layout,null,2):''" type="textarea" :rows="8" @change="updateObjectLayout"/><p>仅呈现对象属性、关系和说明。指标与业务操作请创建独立投影，再由页面组合。</p></el-form-item>
            <el-form-item v-if="document.kind==='page'" label="带本体类型的页面参数"><el-input :model-value="JSON.stringify(document.params??{},null,2)" type="textarea" :rows="4" placeholder='{"selected":{"kind":"object","objectType":"Person"}}' @change="updatePageParameters"/></el-form-item>
             <template v-if="document.kind==='navigation'"><el-form-item label="入口节点"><el-select v-model="document.entry"><el-option v-for="node in document.nodes" :key="node.id" :value="node.id" :label="node.label||node.id"/></el-select></el-form-item><section v-for="(node,index) in document.nodes" :key="index" class="navigation-node"><header><strong>页面节点 {{index+1}}</strong><el-button text @click="document.nodes.splice(index,1)">移除</el-button></header><div class="node-fields"><el-form-item label="节点 ID"><el-input v-model="node.id"/></el-form-item><el-form-item label="菜单名称"><el-input v-model="node.label"/></el-form-item><el-form-item label="页面资产 ID"><el-input v-model="node.pageId"/></el-form-item><el-form-item label="深链接"><el-input v-model="node.path" placeholder="/页面路径"/></el-form-item></div></section><el-button class="add-node" @click="document.nodes.push({id:`page-${document.nodes.length+1}`,label:'',pageId:'',path:`/page-${document.nodes.length+1}`})">添加页面节点</el-button></template>
             <template v-if="widget&&!['metric-widget','action-view'].includes(document.kind)"><el-form-item label="组件类型"><el-select v-model="widget.kind"><el-option v-for="value in (document.kind==='widget-group'?['metric','table','chart','text']:['metric','table','chart','text','action'])" :key="value" :value="value" :label="({metric:'指标卡',table:'表格',chart:'图表',text:'文字',action:'操作入口'} as Record<string,string>)[value]"/></el-select></el-form-item><el-form-item v-if="widget.kind==='text'" label="文字"><el-input v-model="widget.text" type="textarea"/></el-form-item></template>
@@ -284,7 +290,7 @@ async function remove() { if(!selected.value)return;await run(async()=>{await El
        <details v-if="selected.editable" class="asset-grants" @toggle="($event.target as HTMLDetailsElement).open&&loadGrants()">
          <summary><ChevronRight :size="16" class="disclosure-chevron" aria-hidden="true"/><strong>{{ot('productGrants')}}</strong><span>管理使用与编辑权限</span></summary>
          <div class="disclosure-content">
-           <div v-for="grant in grantRecords" :key="`${grant.principalKind}:${grant.principalId}:${grant.verb}`" class="grant-row"><span>{{grant.principalKind==='role'?ot('productRole'):grant.principalKind==='principal'?ot('productPrincipal'):'域内成员'}} · {{grant.principalId}} · {{grant.verb==='use'?ot('productUse'):ot('productEdit')}}</span><el-button v-if="grant.principalKind!=='domain'" text :disabled="busy" @click="changeGrant(grant.principalKind as 'principal'|'role',grant.principalId,grant.verb as 'use'|'edit',true)">{{ot('productRevoke')}}</el-button></div>
+            <div v-for="grant in grantRecords" :key="`${grant.principalKind}:${grant.principalId}:${grant.verb}`" class="grant-row"><span :title="grant.principalId">{{grant.principalKind==='role'?ot('productRole'):grant.principalKind==='principal'?ot('productPrincipal'):'域内成员'}} · {{identityName(grant.principalId,grant.principalKind==='role'?'角色':'主体')}} · {{grant.verb==='use'?ot('productUse'):ot('productEdit')}}</span><el-button v-if="grant.principalKind!=='domain'" text :disabled="busy" @click="changeGrant(grant.principalKind as 'principal'|'role',grant.principalId,grant.verb as 'use'|'edit',true)">{{ot('productRevoke')}}</el-button></div>
            <div class="grant-form"><el-select v-model="grantKind" aria-label="授权对象类型"><el-option value="role" :label="ot('productRole')"/><el-option value="principal" :label="ot('productPrincipal')"/></el-select><el-input v-model="grantPrincipal" :placeholder="ot('productPrincipalPlaceholder')"/><el-select v-model="grantVerb" aria-label="授权操作"><el-option value="use" :label="ot('productUse')"/><el-option value="edit" :label="ot('productEdit')"/></el-select><el-button :disabled="busy||!grantPrincipal.trim()" @click="changeGrant(grantKind,grantPrincipal.trim(),grantVerb)">{{ot('productGrant')}}</el-button></div>
            <div class="domain-grants"><el-button :disabled="busy" @click="setDomainGrant(true)">授权域内成员使用</el-button><el-button :disabled="busy" @click="setDomainGrant(false)">撤销域内成员使用</el-button></div>
          </div>

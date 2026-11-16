@@ -65,7 +65,7 @@ public class OntologyAgentAccess {
   public boolean governanceAllowed() { return identity.hasKnowledgeGovernanceAccess(); }
 
   public Context forAgent(HttpServletRequest request, String agent) {
-    return KnowledgeGovernanceService.AGENT.equals(agent) ? governance(request) : current(request);
+    return KnowledgeGovernanceService.isAgent(agent) ? governance(request) : current(request);
   }
 
   public Context forSession(HttpServletRequest request, String session) {
@@ -166,7 +166,7 @@ public class OntologyAgentAccess {
     public boolean readable(String session) {
       try {
         var row = store.session(session, owner);
-        return KnowledgeGovernanceService.AGENT.equals(row.getString("agent_id"))
+        return KnowledgeGovernanceService.isAgent(row.getString("agent_id"))
             ? governance
             : query;
       } catch (AgentHttpException error) {

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
-import { productAssetSchema, productAssetInputSchema, productReferences, type ProductAsset, type ProductAssetInput, type ProductQuery } from "@ontomato/contracts/product-assets";
+import { productAssetSchema, productAssetInputSchema, productReferences, productTypes, type ProductAsset, type ProductAssetInput, type ProductQuery } from "@ontomato/contracts/product-assets";
 import { defaultPersonalWorkspace, personalWorkspaceSchema, type PersonalWorkspace } from "@ontomato/contracts/personal-workspace";
 import { getPostgresPool as db, qualifiedTable as t } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
@@ -45,7 +45,9 @@ async function queryAuthorizedProducts(owner:ProductOwner,query:ProductQuery){
   if(query.search){args.push(query.search);clauses.push(`strpos(lower(name),lower($${args.length}))>0`);}
   const where=clauses.join(' AND ');
   const count=await db().query(`SELECT count(*)::int AS total FROM ${t('product_assets')} WHERE ${where}`,args);
-  const order=query.sort==='name'?'lower(name),id':'updated_at DESC,id';
+  const typeOrder=`CASE document->>'kind' ${productTypes.map((type,index)=>`WHEN '${type.kind}' THEN ${index}`).join(' ')} ELSE ${productTypes.length} END`;
+  const pageOrder="CASE WHEN document->>'kind'='page' THEN CASE WHEN document->>'isTemplate'='true' THEN 2 WHEN document->>'embeddable'='true' THEN 1 ELSE 0 END ELSE 0 END";
+  const order=query.sort==='updated'?'updated_at DESC,id':query.sort==='name'?'lower(name),id':`${typeOrder},${pageOrder},lower(name),id`;
   const result=await db().query(`SELECT id,owner_id AS "ownerId",name,description,visibility,revision,created_at AS "createdAt",updated_at AS "updatedAt",document->>'kind' AS kind FROM ${t('product_assets')} WHERE ${where} ORDER BY ${order} LIMIT $${args.length+1} OFFSET $${args.length+2}`,[...args,query.pageSize,(query.page-1)*query.pageSize]);
   const details=await db().query(`SELECT id,jsonb_strip_nulls(jsonb_build_object(
     'isTemplate',document->'isTemplate','embeddable',document->'embeddable','renderer',document->>'renderer',
@@ -245,23 +247,16 @@ async function authorizedPersonalHome(owner:ProductOwner,credentials:AssistantCr
 /** New homes compose ontology projections; compatibility blocks are only read from migrated old homes. */
 async function materializeProductHome(client:PoolClient,owner:ProductOwner,home:ProductAsset){
   if(home.document.kind!=='page')throw new Error('Home must be a Page');
-  const preferences=await client.query(`SELECT preferences FROM ${t('product_user_overlays')} WHERE domain_id=$1 AND principal_id=$2 AND page_id=$3`,[owner.domainId,owner.userId,home.id]);
-  const workspace=personalWorkspaceSchema.parse(preferences.rows[0]?.preferences??defaultPersonalWorkspace());
-  const sections=workspace.sections??{main:['apps','data'],sidebar:['tasks','conversations','objects','recent'],hidden:[]};
+  const sections={main:['apps','conversations','objects'],sidebar:['tasks','recent']};
   const targets:Record<string,{type:string;fields:string[];name:string}>={
     apps:{type:'platform:FavoriteApplication',fields:['name','description','path'],name:'常用应用'},
     data:{type:'platform:Dashboard',fields:['name','updatedAt'],name:'关注的数据'},
     tasks:{type:'platform:Task',fields:['title','enabled','pause','pauseMessage','resultSummary','resultPath'],name:'任务动态'},
-    conversations:{type:'platform:Conversation',fields:['title','updatedAt','agentId','pinned'],name:'继续分析'},
-    objects:{type:'platform:Favorite',fields:['title','className','primaryKey'],name:'收藏的对象'},
+    conversations:{type:'platform:Conversation',fields:['title','updatedAt','agentId','pinned'],name:'继续工作'},
+    objects:{type:'platform:Favorite',fields:['title','className','primaryKey'],name:'我的收藏'},
     recent:{type:'platform:RecentVisit',fields:['title','visitedAt','path'],name:'最近访问'},
   };
   const children=[...home.document.children];
-  const profiles=await client.query(`SELECT asset.id FROM ${t('product_assets')} asset JOIN ${t('product_bundle_heads')} head ON head.domain_id=asset.domain_id AND head.bundle_id=asset.id JOIN ${t('product_releases')} release ON release.domain_id=head.domain_id AND release.release_id=head.release_id WHERE asset.domain_id=$1 AND asset.document->>'kind'='agent-profile' AND asset.id=ANY($2::text[]) AND asset.document->>'principalId'=ANY($2::text[]) AND EXISTS(SELECT 1 FROM jsonb_array_elements(release.snapshot->'assets') frozen WHERE frozen->>'id'=asset.id AND (frozen->>'revision')::bigint=asset.revision) ORDER BY asset.id LIMIT 2`,[owner.domainId,[...currentProductGrants(owner).use]]);
-  const profileId=profiles.rows.length===1?profiles.rows[0].id:undefined;
-  const conversationId='home-conversation-'+home.id;
-  await writeProduct(client,owner,conversationId,productAssetInputSchema.parse({name:'智能问数',description:profileId?'':'请选择已发布的智能体配置，将其添加到此页面。',document:{kind:'page',children:profileId?[{assetId:profileId}]:[],compositionVersion:2}}),0);
-  children.push({assetId:conversationId,column:'main'});
   for(const [column,names] of [['main',sections.main],['sidebar',sections.sidebar]] as const)for(const name of names){
     const target=targets[name];if(!target)continue;
     const definitionId='platform-members:'+target.type,id='home-projection-'+home.id+'-'+name;
@@ -272,7 +267,7 @@ async function materializeProductHome(client:PoolClient,owner:ProductOwner,home:
     await writeProduct(client,owner,id,productAssetInputSchema.parse({name:target.name,document:{kind:'collection-view',renders:{kind:'Definition',id:definitionId},renderer:'list',parameters:{},fields:target.fields,pageSize:4,isDefault:true}}),0);
     children.push({assetId:id,column});
   }
-  return writeProduct(client,owner,home.id,{name:home.name,description:home.description,visibility:home.visibility,document:{...home.document,children,compositionVersion:2}},home.revision);
+  return writeProduct(client,owner,home.id,{name:'我的工作台',description:'常用入口与正在进行的工作',visibility:home.visibility,document:{...home.document,layout:{mode:'columns',mainWidth:8,gap:'comfortable'},children,compositionVersion:2}},home.revision);
 }
 
 /** Persist legacy built-ins once; rendering thereafter follows only the page composition. */

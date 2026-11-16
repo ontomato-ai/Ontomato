@@ -32,3 +32,10 @@ it('rejects invalid collection output fields during save instead of waiting for 
   mocks.post.mockResolvedValue({text:JSON.stringify({classes:[{className:'Person',attrs:[{name:'name'}]}]})});
   await expect(validateProduct(owner,collection,{})).rejects.toMatchObject({code:'INVALID_PRODUCT_FIELD'});
 });
+it('rejects capability configuration hidden inside an ObjectView',async()=>{
+  const {productAssetInputSchema}=await import('@ontomato/contracts/product-assets');
+  const layout=createObjectView('Person');
+  layout.tabs[0].sections[0].widgets[0].resourceId='details';
+  const view=productAssetInputSchema.parse({name:'Person',document:{kind:'object-projection',renders:{kind:'ObjectType',id:'Person'},renderer:'full',layout}});
+  await expect(validateProduct(owner,view,{})).rejects.toMatchObject({code:'LEGACY_INLINE_LOGIC'});
+});

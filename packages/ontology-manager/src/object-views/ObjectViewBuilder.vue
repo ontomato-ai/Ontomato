@@ -51,7 +51,7 @@ const variableValue = ref("");
 const tab = computed(() => document.value.tabs.find(item => item.id === selectedTab.value) || document.value.tabs[0]);
 const section = computed(() => tab.value?.sections.find(item => item.id === selectedSection.value) || tab.value?.sections[0]);
 const widget = computed(() => section.value?.widgets.find(item => item.id === selectedWidget.value));
-const kinds: ViewWidget["kind"][] = ["text", "properties", "metric", "table", "chart", "links", "input", "action", "button"];
+const kinds: ViewWidget["kind"][] = ["text", "properties", "links"];
 const reference = computed(() => previewReference.value);
 const bindingVariables = computed(() => [...new Set([
   ...Object.keys(document.value.variables),
@@ -293,7 +293,7 @@ onBeforeUnmount(() => { generation++; sampleRequest++; objectSearchRequest++; wi
           <div class="widget-dimensions"><label>{{ ot('ovWidth') }}<el-input-number v-model="widget.span" controls-position="right" :min="1" :max="12" :aria-label="ot('ovWidth')" /></label><label v-if="['chart', 'table', 'links'].includes(widget.kind)">{{ ot('ovHeight') }}<el-input-number v-model="widget.height" controls-position="right" :min="80" :max="1200" :step="40" :aria-label="ot('ovHeight')" /></label></div>
           <label v-if="['properties', 'table', 'links'].includes(widget.kind)">{{ ot('ovFields') }}<el-select v-if="widget.kind === 'properties'" v-model="widget.fields" multiple clearable><el-option v-for="attr in objectType?.attrs" :key="attr.name" :value="attr.name" :label="attr.showName" /></el-select><el-input v-else :model-value="widget.fields.join(', ')" :placeholder="ot('ovFieldNames')" @update:model-value="widget.fields = $event.split(',').map(value => value.trim()).filter(Boolean)" /></label>
           <label v-if="['text', 'button', 'action', 'input'].includes(widget.kind)">{{ ot('ovText') }}<el-input v-model="widget.text" type="textarea" :autosize="{ minRows: 3, maxRows: 8 }" /></label>
-          <label v-if="['properties', 'links', 'metric', 'table', 'chart'].includes(widget.kind)">{{ ot('ovMetricView') }}<el-select v-model="widget.resourceId" clearable filterable><el-option v-for="asset in metrics" :key="asset.id" :value="asset.id!" :label="asset.name" /></el-select></label>
+          <label v-if="widget.resourceId">{{ ot('ovMetricView') }}<el-input :model-value="widget.resourceId" readonly /><el-button @click="widget.resourceId=''">移除旧能力绑定</el-button></label>
           <label v-if="widget.kind === 'action'">{{ ot('ovAction') }}<el-select v-model="widget.resourceId" filterable><el-option v-for="asset in actions" :key="asset.id" :value="asset.id!" :label="asset.name" /></el-select></label>
           <label v-if="widget.kind === 'chart'">{{ ot('ovVisualizationSkill') }}<el-select v-model="widget.skillId" filterable><el-option v-for="skill in skills" :key="skill.id" :value="skill.id" :label="skill.title" /></el-select></label>
           <section v-if="widget.resourceId" class="parameter-settings">

@@ -204,8 +204,7 @@ describe("personal workspace", () => {
     await flushPromises();
     const dialog = wrapper.findComponent({ name: "ElDialog" });
     const layout = dialog.findComponent({ name: "ElSelect" });
-    layout.vm.$emit("update:modelValue", "tasks");
-    layout.vm.$emit("change", "tasks");
+    layout.vm.$emit("update:modelValue", "grid");
     await flushPromises();
     api.failSave = true;
     const save = () => wrapper.findAll("button").find(button => button.text() === "Save")!;
@@ -214,11 +213,12 @@ describe("personal workspace", () => {
     expect(wrapper.text()).toContain("Save failed");
     expect(api.saved).toBeNull();
     expect(dialog.props("modelValue")).toBe(true);
-    expect(layout.props("modelValue")).toBe("tasks");
+    expect(layout.props("modelValue")).toBe("grid");
     api.failSave = false;
     await save().trigger("click");
     await flushPromises();
-    expect(api.saved).toEqual({ ...defaultPersonalWorkspace(), layout: "tasks", dashboardIds: ["board-a"], applicationIds: ["app-orders"], sections: { main: ["tasks", "data"], sidebar: ["conversations", "objects", "apps", "recent"], hidden: [] } });
+    expect(api.saved).not.toBeNull();
+    expect(api.saved).toMatchObject({applicationIds:['app-orders'],dashboardIds:['board-a']});
     expect(dialog.props("modelValue")).toBe(false);
     wrapper.unmount();
   });

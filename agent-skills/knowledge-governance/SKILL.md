@@ -1,6 +1,6 @@
 ---
 name: knowledge-governance
-description: Read ontology and business knowledge, inspect query history and evidence, and save a governance work record with traceable sources. Use when reviewing knowledge quality or maintaining governance progress.
+description: Review ontology and business knowledge, extract source-backed knowledge from unstructured material, import pending knowledge, and maintain governance work with traceable evidence.
 compatibility: Requires Node.js 18 or newer, an Ontomato ontology-service URL and an authorized credential.
 ---
 
@@ -8,8 +8,10 @@ compatibility: Requires Node.js 18 or newer, an Ontomato ontology-service URL an
 
 Use `node <this-skill>/scripts/governance.mjs <command> @work/arguments.json`.
 Read [commands](references/commands.md) for argument shapes. These are ordinary
-commands in Claude Code, Codex and the product runtime. They never modify live
-ontology or business data; they save governance work and evidence references.
+commands in Claude Code, Codex and the product runtime. They save governance work
+and evidence references; import-knowledge writes pending business knowledge through the host's permission checks.
+
+For extraction and import, read [extraction](references/extraction.md) before preparing records.
 
 Set ONTOMATO_ONTOLOGY_URL (ontology service base), ONTOMATO_TK or ONTOMATO_API_KEY, and
 optionally ONTOMATO_LANGUAGE / ONTOMATO_CORRELATION_ID. Product execution supplies

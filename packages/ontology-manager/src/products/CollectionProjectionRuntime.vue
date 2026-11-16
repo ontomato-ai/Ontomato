@@ -46,7 +46,7 @@ function page(delta:number){offset.value=Math.max(0,offset.value+delta*pageSize.
       <ObjectViewVisualization v-else-if="asset.document.renderer==='map'" :widget="mapWidget" :rows="rows" :value="rows"/>
       <EChart v-else-if="asset.document.renderer==='chart'" :option="chartOption" :theme="theme" :height="300"/>
       <ul v-else-if="asset.document.renderer==='list'" v-loading="loading" class="collection-list"><li v-for="(row,index) in rows" :key="index"><dl><template v-for="field in asset.document.fields" :key="field"><dt>{{asset.document.presentation?.fieldLabels[field]??field}}</dt><dd>{{row[field]??'—'}}</dd></template></dl></li></ul>
-      <el-table v-else v-loading="loading" :data="rows"><el-table-column v-for="field in asset.document.fields" :key="field" :prop="field" :label="asset.document.presentation?.fieldLabels[field]??field"/></el-table>
+      <el-table v-else v-loading="loading" :data="rows" empty-text="当前范围内暂无记录"><el-table-column v-for="field in asset.document.fields" :key="field" :prop="field" :label="asset.document.presentation?.fieldLabels[field]??field" min-width="150" show-overflow-tooltip><template #default="{row}">{{row[field]===null||row[field]===undefined||row[field]===''?'—':row[field]}}</template></el-table-column></el-table>
     </template>
     <footer v-if="offset||hasMore"><el-button :disabled="loading||!offset" @click="page(-1)">上一页</el-button><span>{{rows.length?offset+1:0}}–{{offset+rows.length}}</span><el-button :disabled="loading||!hasMore" @click="page(1)">下一页</el-button></footer>
   </section>

@@ -16,6 +16,11 @@ public class KnowledgeGovernanceController {
   public KnowledgeGovernanceController(KnowledgeGovernanceService governance,OntologyAgentAccess access) {
     this.governance=governance;this.access=access;
   }
+  @PostMapping("/agents")
+  public Object createAgent(@RequestBody JSONObject input,HttpServletRequest request){
+    AgentJson.fields(input,"name");
+    return governance.createAgent(access.governance(request).owner().domainId(),input.getString("name"));
+  }
   @GetMapping("/{id}/work")
   public Object work(@PathVariable String id,HttpServletRequest request) {
     return governance.work(AgentJson.id(id),access.governance(request).owner());

@@ -73,6 +73,9 @@ it('keeps Navigation at the application root and projections inside Pages',async
   const metric=asset('metric',{kind:'metric-widget',renders:{kind:'MetricView',id:'count'},parameters:{},valueField:'count'});
   const app=productAssetInputSchema.parse({name:'Application',document:{kind:'application',applicationId:'app',navigationId:'nav',children:[{assetId:'metric'}]}});
   await expect(validateComposition('app',app,async id=>id==='nav'?navigation:metric)).rejects.toMatchObject({code:'INVALID_PRODUCT_CHILD'});
+  if(app.document.kind!=='application')throw new Error('Expected Application');
+  delete app.document.navigationId;
+  await expect(validateComposition('app',app,async()=>metric)).rejects.toMatchObject({code:'INVALID_PRODUCT_CHILD'});
 });
 it('rejects Actions exposed indirectly by an embedded AgentProfile on a display-only Page',async()=>{
   const action=asset('action',{kind:'action-view',renders:{kind:'Action',id:'approve'},parameters:{}});

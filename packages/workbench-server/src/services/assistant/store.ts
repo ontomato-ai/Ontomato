@@ -1,4 +1,4 @@
-import { APP_BUILDER, APP_BUILDER_KIND } from "../app-builder/definition";
+import { APP_BUILDER, APP_BUILDER_KIND,isAppBuilderKind } from "../app-builder/definition";
 import type { ModelSelection } from "@ontomato/contracts/model-settings";
 import { lockSessionClaim, assertUnclaimedSession } from "../agent-host/session-claim";
 import { randomUUID, createHash } from "node:crypto";
@@ -60,7 +60,7 @@ export const assistantStore = {
     if (
       !(
         await db().query(
-          `SELECT 1 FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind<>'app-builder' LIMIT 1`,
+           `SELECT 1 FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind<>'app-builder' AND kind NOT LIKE 'app-builder:%' LIMIT 1`,
           [domainId],
         )
       ).rowCount
@@ -93,7 +93,7 @@ export const assistantStore = {
     }
     return (
       await db().query(
-        `SELECT * FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind<>'app-builder' ORDER BY sort_order,name,id`,
+        `SELECT * FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind<>'app-builder' AND kind NOT LIKE 'app-builder:%' ORDER BY sort_order,name,id`,
         [domainId],
       )
     ).rows;
@@ -113,7 +113,7 @@ export const assistantStore = {
        JOIN ${table("assistant_agents")} a ON a.id=s.agent_id WHERE t.id=$1 AND s.domain_id=$2 AND s.owner_id=$3`,
       [id, owner.domainId, owner.userId],
     )).rows;
-    return rows.some(row => row.kind === APP_BUILDER_KIND);
+    return rows.some(row => isAppBuilderKind(row.kind));
   },
   async agent(id: string, owner: AssistantOwner): Promise<AgentRow> {
     const r = await db().query(
@@ -192,7 +192,7 @@ export const assistantStore = {
     }
     await assertUnclaimedSession(tx, id, owner);
     const a = await this.agent(agentId, owner);
-    if (a.kind === APP_BUILDER_KIND && !workspaceId)
+    if (isAppBuilderKind(a.kind) && !workspaceId)
       throw new HttpError(400, "App builder conversations require a workspace", "INVALID_REQUEST");
     if (!a.enabled)
       throw new HttpError(409, "Agent disabled", "AGENT_DISABLED");

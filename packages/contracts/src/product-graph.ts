@@ -3,9 +3,9 @@ import {productReferences,productTypes,type ProductAsset,type ProductDocument} f
 
 /** Category is derived from kind; it is never a separately editable asset property. */
 export const productCategories=[
-  {id:'element',name:'被组合元素',description:'绑定本体元素，提供可复用的展示与操作单元'},
-  {id:'composition',name:'组合形态',description:'通过资产引用组织页面、布局模板与导航'},
-  {id:'bundle',name:'智能组合应用',description:'面向人或模型，装配可发布的应用与智能体配置'},
+  {id:'bundle',name:'交付单元',description:'面向人交付应用，面向智能体交付工具与上下文'},
+  {id:'composition',name:'组合资产',description:'通过已有资产引用组织页面与导航'},
+  {id:'element',name:'投影资产',description:'一对一绑定已发布本体元素，供人与智能体共同消费'},
 ] as const;
 export type ProductCategory=typeof productCategories[number]['id'];
 export function productCategory(kind:ProductDocument['kind']):ProductCategory|'legacy'{
