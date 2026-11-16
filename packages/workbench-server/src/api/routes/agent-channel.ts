@@ -17,7 +17,7 @@ for (const action of ["list", "prepare", "settle", "read", "cancel"] as const) {
   agentChannelRouter.post("/" + action, wrap(async (req, res) => {
     const domain = req.header("X-Domain-Id");
     if (!domain) throw new HttpError(400, "Domain is required", "INVALID_REQUEST");
-    const result=await agentChannelService[action](req.body,domain);
+    const result=await agentChannelService[action](req.body,domain,{token:req.header("tk"),apiKey:req.header("X-API-Key")});
     if(Buffer.isBuffer(result)) res.type("application/octet-stream").send(result);
     else res.json(result);
   }));

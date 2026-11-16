@@ -2,7 +2,6 @@ package io.ontomato.dataengine.service.agent;
 
 import com.alibaba.fastjson2.*;
 import io.ontomato.dataengine.schedules.ScheduleIdentity;
-import io.ontomato.dataengine.schedules.TaskCredentials;
 import io.ontomato.dataengine.service.IdentityService;
 import java.time.Instant;
 import java.util.*;
@@ -14,13 +13,12 @@ import org.springframework.stereotype.Service;
 public class AgentCaller {
   private final JdbcTemplate jdbc;
   private final ScheduleIdentity identities;
-  private final TaskCredentials credentials;
   private final IdentityService identity;
   @org.springframework.beans.factory.annotation.Autowired
   private io.ontomato.dataengine.service.BuildTestContextService contexts;
 
-  public AgentCaller(JdbcTemplate jdbc, ScheduleIdentity identities, TaskCredentials credentials, IdentityService identity) {
-    this.jdbc=jdbc; this.identities=identities; this.credentials=credentials; this.identity=identity;
+  public AgentCaller(JdbcTemplate jdbc, ScheduleIdentity identities, IdentityService identity) {
+    this.jdbc=jdbc; this.identities=identities; this.identity=identity;
   }
   public record Actor(String id, io.ontomato.dataengine.core.bean.User user, long expiresAt) {
     public OntologyAgentStore.Owner owner() { return new OntologyAgentStore.Owner(user.getId(),user.getDomainId()); }
@@ -30,17 +28,16 @@ public class AgentCaller {
     if (user==null || !user.isEnable() || user.getDomainId()==null) throw new AgentHttpException(401,"UNAUTHENTICATED","A current domain member is required");
     Long credentialExpiry=identity.getCurrentCredentialExpiresAt();
     long expires=Instant.parse(deadline).toEpochMilli();
-    return capture(id,user,credentialExpiry==null?expires:Math.min(expires,credentialExpiry),true);
+    return capture(id,user,credentialExpiry==null?expires:Math.min(expires,credentialExpiry));
   }
   public JSONObject open(String id,OntologyAgentAccess.Context context) {
     var user=identities.creator(context.owner().domainId(),context.owner().userId());
     long expires=context.expiresAt()==null?System.currentTimeMillis()+600_000:context.expiresAt();
-    return capture(id,user,expires,context.token()!=null || context.apiKey()!=null);
+    return capture(id,user,expires);
   }
-  private JSONObject capture(String id,io.ontomato.dataengine.core.bean.User user,long expires,boolean ensureKey) {
+  private JSONObject capture(String id,io.ontomato.dataengine.core.bean.User user,long expires) {
     if (user==null || !user.isEnable() || user.getDomainId()==null) throw new AgentHttpException(403,"CALLER_INVALID","Agent caller is no longer an enabled domain member");
-    if (expires<=System.currentTimeMillis()) throw new AgentHttpException(403,"CALLER_EXPIRED","Agent caller has expired");
-    if (ensureKey) credentials.prepareForSetup(user);
+    if (expires<=System.currentTimeMillis()) throw new AgentHttpException(403,"CALLER_EXPIRED","The initiating credential has expired; please start again");
     jdbc.update("INSERT INTO ontology_retrieval_callers(id,user_id,domain_id,input_hash,input,closed,deadline) VALUES(?,?,?,'','{}',false,?::timestamptz) ON CONFLICT DO NOTHING", UUID.fromString(id),user.getId(),user.getDomainId(),Instant.ofEpochMilli(expires).toString());
     var existing=jdbc.queryForMap("SELECT user_id,domain_id FROM ontology_retrieval_callers WHERE id=?",UUID.fromString(id));
     if (!user.getId().equals(existing.get("user_id")) || !user.getDomainId().equals(existing.get("domain_id"))) throw new AgentHttpException(403,"FORBIDDEN","Caller belongs to another identity");
@@ -53,17 +50,15 @@ public class AgentCaller {
     if (rows.isEmpty()) throw AgentHttpException.missing();
     var row=rows.getFirst();
     long expires=((java.sql.Timestamp)row.get("deadline")).getTime();
-    if (execution && expires<=System.currentTimeMillis()) throw new AgentHttpException(403,"CALLER_EXPIRED","Agent caller has expired");
-    var user=identities.creator(domain,(String)row.get("user_id"));
+    if (execution && expires<=System.currentTimeMillis()) throw new AgentHttpException(403,"CALLER_EXPIRED","The initiating credential has expired; please start again");
+    var user=execution?identity.getCurrentUser():identities.creator(domain,(String)row.get("user_id"));
+    if (execution && (user==null || !row.get("user_id").equals(user.getId()) || !domain.equals(user.getDomainId()))) throw new AgentHttpException(401,"CALLER_CREDENTIAL_INVALID","The initiating credential is invalid or expired; please start again");
     if (user==null || !user.isEnable() || !domain.equals(user.getDomainId())) throw new AgentHttpException(403,"CALLER_INVALID","Agent caller is no longer an enabled domain member");
     return new Actor(ref.getString("id"),user,expires);
   }
   public JSONObject workbench(JSONObject ref,String domain,boolean readOnly) {
     var actor=restore(ref,domain,!readOnly);
-    String key;
-    try { key=credentials.forOwner(domain,actor.user().getId()); }
-    catch (TaskCredentials.Invalid failure) { throw new AgentHttpException(403,"CALLER_CREDENTIAL_INVALID","The caller's internal credential is invalid"); }
-    return JSONObject.of("userId",identities.hostOwner(actor.user().getId()),"domainId",domain,"apiKey",key,"expiresAt",actor.expiresAt());
+    return JSONObject.of("userId",identities.hostOwner(actor.user().getId()),"domainId",domain,"expiresAt",actor.expiresAt());
   }
   public OntologyAgentAccess.Context governance(JSONObject ref,String domain,String language) { return governance(ref,domain,language,true); }
   public OntologyAgentAccess.Context governance(JSONObject ref,String domain,String language,boolean execution) {

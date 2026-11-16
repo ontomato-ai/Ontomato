@@ -70,7 +70,7 @@ public class AgentChannelController {
       if(op.equals("send")) sessionActor(command.getJSONObject("session"),context);
       actor=callers.open(UUID.randomUUID().toString(),context);
     }
-    return runtime.json(context.owner().domainId(),actor.getString("id"),"/v1/channel/commands","POST",JSONObject.of("actor",actor,"authority",JSONObject.of("classNames",List.of(),"executionKind","live"),"language",context.language(),"command",command),null);
+    return runtime.json(context.owner().domainId(),actor.getString("id"),"/v1/channel/commands","POST",JSONObject.of("actor",actor,"authority",JSONObject.of("classNames",List.of(),"executionKind","live"),"language",context.language(),"command",command,"credential",AgentChannelRuns.credential(context)),null);
   }
   @GetMapping("/tasks/{task}/events")
   public org.springframework.http.ResponseEntity<org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody> events(@PathVariable String task,HttpServletRequest request) throws Exception {
@@ -215,7 +215,7 @@ public class AgentChannelController {
       }
       boolean admitted=store.run(execution.session(),execution.run(),owner).getBooleanValue("runtime_admitted");
       Object process=admitted?JSONObject.of("mode","inline","runtimeSessionId",execution.session(),"runtimeRunId",execution.run()):JSONObject.of("mode","none");
-      return JSONObject.of("status",projection.getString("status"),"summary",summary,"process",process,"results",List.of(),"retrieval",projection.get("retrieval"),"quality",projection.get("quality"),"files",files);
+      return JSONObject.of("settled",projection.getBooleanValue("settled"),"status",projection.getString("status"),"summary",summary,"process",process,"results",List.of(),"retrieval",projection.get("retrieval"),"quality",projection.get("quality"),"files",files);
     }
     var status=runtime.status(owner.domainId(),execution.run());
     String state="running".equals(status.getString("status"))?"running":"aborted".equals(status.getString("stopReason"))?"cancelled":"stop".equals(status.getString("stopReason"))?"completed":"failed";
@@ -236,6 +236,6 @@ public class AgentChannelController {
       var file=JSONObject.from(item);String path=file.getString("path");
       if(execution.run().equals(file.getString("runId")) && path.startsWith("outputs/")) files.add(JSONObject.of("id",file.getString("id"),"name",path.substring(path.lastIndexOf('/')+1),"mediaType",file.getString("mediaType"),"href","/platform/agent-channel/tasks/"+execution.run()+"/files/"+file.getString("id")));
     }
-    return JSONObject.of("status",state,"summary",summary,"process",process,"results",results,"quality",List.of(),"files",files);
+    return JSONObject.of("settled",!"running".equals(state),"status",state,"summary",summary,"process",process,"results",results,"quality",List.of(),"files",files);
   }
 }

@@ -62,7 +62,8 @@ public class GovernanceScheduleApplication implements ScheduleApplication {
   public JsonNode start(Execution execution, Actor actor) {
     validate(execution.definition(), actor);
     String session = TaskStore.session(execution.runId()).toString();
-    var context = access.scheduledGovernance(actor.user(), actor.locale());
+    var captured = access.scheduledGovernance(actor.user(), actor.locale());
+    var context = new OntologyAgentAccess.Context(captured.owner(),captured.access(),actor.token(),actor.apiKey(),captured.language(),captured.expiresAt(),captured.callerId());
     try {
       governance.create(session, context.owner(), false);
       governance.start(

@@ -135,7 +135,7 @@ public class KnowledgeGovernanceService {
     runtime.json(context.owner().domainId(),run,"/v1/channel/sessions/"+id+"/bind","POST",JSONObject.of("agent",agent,"actor",actor),null);
     var source=JSONObject.of("session",JSONObject.of("providerId","ontology","sessionId",id),"runId",run);
     runtime.json(context.owner().domainId(),run,"/v1/channel/sessions/"+id+"/runs","POST",JSONObject.of(
-      "language",context.language(),"channel",JSONObject.of("agent",agent,"actor",actor,"requestedBy",null,"root",source,
+      "credential",AgentChannelRuns.credential(context),"language",context.language(),"channel",JSONObject.of("agent",agent,"actor",actor,"requestedBy",null,"root",source,
         "authority",JSONObject.of("classNames",List.of(),"executionKind","live")),
       "input",JSONObject.of("role","user","content",message,"timestamp",System.currentTimeMillis())),run);
     return false;

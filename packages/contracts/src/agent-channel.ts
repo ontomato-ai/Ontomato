@@ -8,7 +8,10 @@ export const agentSessionRefSchema = z.object({ providerId: key, sessionId: id }
 export const agentActorRefSchema = z.object({ id, domainId: key }).strict();
 export const agentCallerAdmissionSchema = z.object({ id, deadlineAt: runtimeTimestampSchema }).strict();
 export const agentCallerResolveSchema = z.object({ actor: agentActorRefSchema, readOnly: z.boolean().optional() }).strict();
-export const agentCallerIdentitySchema = z.object({ userId: key, domainId: key, apiKey: z.string().nullable(), expiresAt: z.number() }).strict();
+export const agentCallerIdentitySchema = z.object({ userId: key, domainId: key, expiresAt: z.number() }).strict();
+/** Private admission transport only; never part of a message, intent, binding or run snapshot. */
+export const agentCredentialSchema = z.object({ token: z.string().nullable(), apiKey: z.string().nullable() }).strict();
+export type AgentCredential = z.infer<typeof agentCredentialSchema>;
 export const agentSteerPreparationSchema = z.object({ accepted: z.literal(true), context: z.string().optional() }).strict();
 export const agentProviderAcknowledgementSchema = z.object({ accepted: z.literal(true) }).strict();
 export const agentExecutionRefSchema = z.object({ session: agentSessionRefSchema, runId: id }).strict();
@@ -44,6 +47,8 @@ export const agentPrepareRequestSchema = z.object({
 }).strict();
 export const agentProviderExecutionSchema = z.object({ execution: agentExecutionRefSchema, actor: agentActorRefSchema, fileId: id.optional() }).strict();
 export const agentDeliverySchema = z.object({
+  /** All host-owned attachments have settled; independent from this execution's status. */
+  settled: z.boolean(),
   status: z.enum(["starting", "running", "completed", "failed", "cancelled"]), summary: z.string(),
   process: z.discriminatedUnion("mode", [
     z.object({ mode: z.literal("inline"), runtimeSessionId: id, runtimeRunId: id }).strict(),

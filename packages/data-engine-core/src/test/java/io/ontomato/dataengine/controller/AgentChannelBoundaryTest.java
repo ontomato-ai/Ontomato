@@ -46,11 +46,10 @@ class AgentChannelBoundaryTest {
   @Test void crossDomainReferencesFailBeforeLookingUpIdentityOrCredentials() {
     var jdbc=mock(org.springframework.jdbc.core.JdbcTemplate.class);
     var identities=mock(io.ontomato.dataengine.schedules.ScheduleIdentity.class);
-    var credentials=mock(io.ontomato.dataengine.schedules.TaskCredentials.class);
-    var caller=new AgentCaller(jdbc,identities,credentials,mock(io.ontomato.dataengine.service.IdentityService.class));
+    var caller=new AgentCaller(jdbc,identities,mock(io.ontomato.dataengine.service.IdentityService.class));
     var failure=assertThrows(AgentHttpException.class,()->caller.restore(JSONObject.of("id",RUN,"domainId","b"),"a"));
     assertEquals("CROSS_DOMAIN",failure.code());
-    verifyNoInteractions(jdbc,identities,credentials);
+    verifyNoInteractions(jdbc,identities);
   }
   @Test void callerAuthorizationDoesNotReuseTheBusinessRunId() throws Exception {
     var runtime=mock(AgentRuntimeClient.class);
@@ -91,6 +90,19 @@ class AgentChannelBoundaryTest {
     for(String path:java.util.List.of("/tasks/"+RUN+"/events","/tasks/"+RUN+"/files/"+SESSION))
       mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/platform/agent-channel"+path).header("X-Ontomato-Execution-Context",header)).andExpect(status().isUnprocessableEntity());
     verifyNoInteractions(callers,directory,governance,store);
+  }
+
+  @Test void executionRestoreRequiresTheOriginalCredentialInsteadOfRecoveringAnInternalKey() {
+    var jdbc=mock(org.springframework.jdbc.core.JdbcTemplate.class);
+    var identities=mock(io.ontomato.dataengine.schedules.ScheduleIdentity.class);
+    var identity=mock(io.ontomato.dataengine.service.IdentityService.class);
+    when(jdbc.queryForList(anyString(),any(),any())).thenReturn(java.util.List.of(java.util.Map.of("user_id","user","domain_id","a","deadline",new java.sql.Timestamp(System.currentTimeMillis()+60000))));
+    var caller=new AgentCaller(jdbc,identities,identity);var ref=JSONObject.of("id",RUN,"domainId","a");
+    when(identity.getCurrentUser()).thenReturn(new io.ontomato.dataengine.service.QueryAccessService.GrantUser("user","a"));
+    assertEquals("user",caller.restore(ref,"a").owner().userId());
+    when(identity.getCurrentUser()).thenReturn(null);
+    assertEquals("CALLER_CREDENTIAL_INVALID",assertThrows(AgentHttpException.class,()->caller.restore(ref,"a")).code());
+    verifyNoInteractions(identities);
   }
 
 }

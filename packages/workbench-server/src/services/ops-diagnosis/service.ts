@@ -123,7 +123,7 @@ export const diagnosisService: AgentHostService = {
     const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
     await client.request(`/v1/channel/sessions/${session}/bind`, "POST", { agent, actor });
     const channel: AgentRunContext = { agent, actor, authority: { classNames: [], executionKind: "live" }, requestedBy: null, root: { session: { providerId: "observe", sessionId: session }, runId: run } };
-    await client.request(`/v1/channel/sessions/${session}/runs`, "POST", { channel, language: resolveLocale(credentials.locale), input: { role: "user", content: message, timestamp: Date.now() } }, run);
+    await client.request(`/v1/channel/sessions/${session}/runs`, "POST", { channel, credential: {token:credentials.token ?? null,apiKey:credentials.apiKey ?? null}, language: resolveLocale(credentials.locale), input: { role: "user", content: message, timestamp: Date.now() } }, run);
     return { snapshot: publicSnapshot(await client.run(run)), replayed: false };
   },
   async cancel(session, run, owner) {

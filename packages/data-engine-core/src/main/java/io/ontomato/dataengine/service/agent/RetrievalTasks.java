@@ -35,7 +35,7 @@ public class RetrievalTasks {
     branches.add(retrieverBranch(row,deliveries));
     var round=roundStatus(branches);
     var quality=qualityEvidence(retrieval,run,owner);
-    return JSONObject.of("status",round.getString("status"),"error",round.get("error"),"retrieval",JSONObject.of("question",row.getJSONObject("request").getString("message"),"decisionRevision",row.getIntValue("decision_revision"),"branches",branches),"quality",quality);
+    return JSONObject.of("settled",!"running".equals(round.getString("status")) && !owesQuality(row,binding) && quality.stream().map(JSONObject::from).noneMatch(job -> List.of("starting","running").contains(job.getString("status"))),"status",round.getString("status"),"error",round.get("error"),"retrieval",JSONObject.of("question",row.getJSONObject("request").getString("message"),"decisionRevision",row.getIntValue("decision_revision"),"branches",branches),"quality",quality);
   }
 
   public JSONArray qualityEvidence(String retrieval,String run,Owner owner) {

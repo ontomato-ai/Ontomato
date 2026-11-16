@@ -418,3 +418,19 @@ Intent reads are scoped to their use: task IDs use a domain/task lookup, read/ca
 walks requestedBy ancestors, and task snapshots use a recursive CTE seeded by this conversation's
 direct delegations. Direct child reads and recursive joins use requestedBy expression indexes;
 conversation seeds use a requester-session expression index. No domain-wide intent list is read.
+
+### Initiating credentials and delegated authorization
+
+The initiating tk/API Key is kept only in runtime memory under the delegation root and is
+sent to provider prepare/list as private authentication headers. No credential is persisted in
+an intent, binding, message or snapshot. All executions in the chain, including business
+settlement and notification wakeups, retain that root until they finish; the last completion
+drops the credential. Provider read.settled includes outstanding business attachments, so quality
+does not prolong the execution status but does retain credentials until its work ends. A runtime restart loses it, and later preparation fails explicitly with
+CALLER_CREDENTIAL_INVALID and a request to start again. There is no refresh, recovery or
+internal-Key acquisition for delegation. Read-only history resolves its recorded owner.
+
+The initiating credential owns chain identity, domain, expiry and permission to use each agent;
+an AgentProfile's tools retain its configured agent principal, ordinary retrieval and governance
+retain the initiator's authority, and delegation preserves each agent's existing execution subject. Java-owned nested model executions reference their source run
+when admission originates from a scoped grant, retaining the same root without copying secrets.

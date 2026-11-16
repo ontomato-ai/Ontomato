@@ -261,7 +261,7 @@ export const assistantService = {
     const actor = await openAgentCaller(owner, credentials), agent = { providerId: "workbench", agentId: session.agent_id };
     await client.request(`/v1/channel/sessions/${sessionId}/bind`, "POST", { agent, actor });
     const channel: AgentRunContext = { agent, actor, authority: { classNames: a.class_names, executionKind: a.kind === "app-builder" ? "build-test" : "live" }, requestedBy: null, root: { session: { providerId: "workbench", sessionId }, runId: id } };
-    await client.request(`/v1/channel/sessions/${sessionId}/runs`, "POST", { channel, language: resolveLocale(credentials.locale), input: { role: "user", content: message, timestamp: Date.now() }, ...(session.workspace_id ? { context: { workspaceId: session.workspace_id } } : {}) }, id);
+    await client.request(`/v1/channel/sessions/${sessionId}/runs`, "POST", { channel, credential: {token:credentials.token ?? null,apiKey:credentials.apiKey ?? null}, language: resolveLocale(credentials.locale), input: { role: "user", content: message, timestamp: Date.now() }, ...(session.workspace_id ? { context: { workspaceId: session.workspace_id } } : {}) }, id);
     return { snapshot: publicSnapshot(await client.run(id)), replayed: false };
   },
   /**

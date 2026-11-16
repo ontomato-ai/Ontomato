@@ -16,6 +16,15 @@ public class AgentChannelRuns {
     if (access!=null && access.target().testing()) result.put("executionContextId",access.target().contextId());
     return result;
   }
+  /** The credential is transport data, never stored with a caller, intent or binding. */
+  public static JSONObject credential(OntologyAgentAccess.Context context) {
+    return JSONObject.of("token",context.token(),"apiKey",context.apiKey());
+  }
+  public static void admissionCredential(JSONObject request,OntologyAgentAccess.Context context) {
+    var grant=context.access()==null?null:context.access().grant();
+    if(grant!=null) request.put("credentialFrom",grant.getString("runId"));
+    else request.put("credential",credential(context));
+  }
   public JSONObject start(String agentId,String session,String run,JSONObject input,JSONObject parameters,OntologyAgentAccess.Context context) throws Exception {
     var actor=callers.open(UUID.randomUUID().toString(),context);
     var agent=JSONObject.of("providerId","ontology","agentId",agentId);
@@ -23,6 +32,7 @@ public class AgentChannelRuns {
     runtime.json(domain,run,"/v1/channel/sessions/"+session+"/bind","POST",JSONObject.of("agent",agent,"actor",actor),null);
     var source=JSONObject.of("session",JSONObject.of("providerId","ontology","sessionId",session),"runId",run);
     var request=JSONObject.of("language",context.language(),"input",input,"channel",JSONObject.of("agent",agent,"actor",actor,"authority",authority(context),"requestedBy",null,"root",source));
+    admissionCredential(request,context);
     if (parameters!=null) request.put("context",parameters);
     return runtime.json(domain,run,"/v1/channel/sessions/"+session+"/runs","POST",request,run);
   }

@@ -17,6 +17,7 @@ function channel() {
     seal: vi.fn(() => expect(locked).toBe(true)),
   } as unknown as AgentRuntime;
   const port = new AgentChannel(runtime);
+  port.remember(context,{token:"initiating-token",apiKey:null});
   vi.spyOn(port.facts,"intent").mockResolvedValue({ id: runId, session: source.session, channel: context, inputId, status: "running", language: "en", createdAt: new Date(0).toISOString(), error: null, cancelled: false });
   vi.spyOn(port.facts,"questions").mockResolvedValue([]);
   return { runtime, channel: port, locked: () => locked };
@@ -34,6 +35,7 @@ it("a registered provider sees typed inputs outside the lock; PI keeps their rec
   const fetch = vi.fn(async (_url: unknown, init: { body?: string }) => {
     expect(locked()).toBe(false);
     expect(JSON.parse(init.body as string)).toMatchObject({ mode: "steer", input: notification, agent: context.agent, actor: context.actor });
+    expect(init).toMatchObject({headers:expect.objectContaining({tk:"initiating-token"})});
     return Response.json({ accepted: true });
   });
   vi.stubGlobal("fetch", fetch);
@@ -61,7 +63,7 @@ it("a later parent run can read work its conversation delegated in an earlier ru
   const { channel: port } = channel();
   const child = { id: inputId, session: { providerId: source.session.providerId, sessionId: inputId }, channel: { ...context, root: { ...source,runId: "44444444-4444-4444-8444-444444444444" }, requestedBy: { ...source, runId: "44444444-4444-4444-8444-444444444444" } }, inputId, status: "completed" as const, language: "en", createdAt: new Date(0).toISOString(), error: null, cancelled: false };
   vi.spyOn(port.facts, "task").mockResolvedValue({ scope,intent: child });
-  vi.spyOn(port, "callback").mockResolvedValue({ status: "completed", summary: "Saved", process: { mode: "none" }, results: [],quality:[],files:[] });
+  vi.spyOn(port, "callback").mockResolvedValue({ status: "completed", summary: "Saved", process: { mode: "none" }, results: [],quality:[],files:[],settled:true });
   await expect(port.execute(scope,run,{ op: "read",taskId: inputId })).resolves.toMatchObject({ taskId: inputId,status: "completed" });
 });
 
@@ -69,7 +71,7 @@ it("message reads expose conversation progress without transferring the child's 
   const { runtime,channel: port } = channel();
   const child = { id: inputId, session: { providerId: source.session.providerId,sessionId: inputId },channel: { ...context,requestedBy: source },inputId,language: "en",status: "completed" as const,createdAt: new Date(0).toISOString(),error: null,cancelled: false };
   vi.spyOn(port.facts,"task").mockResolvedValue({ scope,intent: child });
-  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",summary: "Saved",process: { mode: "none" },results: [],quality:[],files:[] });
+  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",summary: "Saved",process: { mode: "none" },results: [],quality:[],files:[],settled:true });
   vi.spyOn(runtime.store,"messages").mockResolvedValue([
     { id: runId,runId: inputId,messageSeq: 1,message: { role: "system",content: "Private host instructions",timestamp: 1 } },
     { id: inputId,runId: inputId,messageSeq: 2,message: notification },
@@ -94,7 +96,7 @@ it("authorizes a deep task by reading only the requested intent and its ancestor
   const child = { ...middle,id: inputId,session: { ...middle.session,sessionId: inputId },channel: { ...context,requestedBy: { session: middle.session,runId: middleId } } };
   const task = vi.spyOn(port.facts,"task").mockResolvedValue({ scope,intent: child });
   vi.mocked(port.facts.intent).mockResolvedValue(middle);
-  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",summary: "Saved",process: { mode: "none" },results: [],quality:[],files:[] });
+  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",summary: "Saved",process: { mode: "none" },results: [],quality:[],files:[],settled:true });
   await expect(port.execute(scope,run,{ op: "read",taskId: inputId })).resolves.toMatchObject({ taskId: inputId });
   expect(task).toHaveBeenCalledWith(scope.domainId,inputId);
   expect(port.facts.intent).toHaveBeenCalledTimes(1);
@@ -131,7 +133,7 @@ it("projects only the conversation subtree returned by the store, retaining its 
   runtime.store.session = vi.fn(async () => ({ id: sessionId,domainId: scope.domainId,activeRunId: null,latestRunId: runId,createdAt: new Date(0).toISOString(),updatedAt: new Date(0).toISOString() }));
   const descendants = vi.spyOn(port.facts,"descendants").mockResolvedValue([{ scope,intent: middle,rootRunId: runId },{ scope,intent: child,rootRunId: runId }]);
   vi.spyOn(port.facts,"preparationFailures").mockResolvedValue([]);
-  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",summary: "Saved",process: { mode: "none" },results: [],quality:[],files:[] });
+  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",summary: "Saved",process: { mode: "none" },results: [],quality:[],files:[],settled:true });
   vi.spyOn(runtime.store,"messages").mockImplementation(async (_scope,id) => id === sessionId ? [] : [{ id,runId: id,messageSeq: 1,message: notification }]);
   const result = await port.tasks(scope,sessionId);
   expect(descendants).toHaveBeenCalledWith(scope.domainId,[source.session]);
@@ -170,4 +172,35 @@ it("native commands refuse build-test authority before contacting a provider",as
   const {channel:port}=channel();const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
   await expect(port.execute(scope,{...run,channel:{...context,authority:{...context.authority,executionKind:"build-test"}}},{op:"list"})).rejects.toMatchObject({status:422,code:"BUILD_TEST_UNSUPPORTED"});
   expect(fetch).not.toHaveBeenCalled();
+});
+
+it("fails explicitly after runtime memory is lost and never passes a missing credential to prepare",async()=>{
+  const {runtime}=channel(),port=new AgentChannel(runtime);
+  vi.spyOn(port.facts,"intent").mockResolvedValue({id:runId,session:source.session,channel:context,inputId,status:"running",language:"en",createdAt:new Date(0).toISOString(),error:null,cancelled:false});
+  vi.spyOn(port.facts,"pending").mockResolvedValue([{id:inputId,runId:null,messageSeq:8,message:notification}]);
+  vi.spyOn(port.facts,"consume").mockResolvedValue();const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
+  await expect(port.steering(scope,run)).rejects.toMatchObject({code:"CALLER_CREDENTIAL_INVALID",message:expect.stringContaining("please start again")});
+  expect(fetch).not.toHaveBeenCalled();
+});
+it("retains only the root credential until delegated business attachments finish, then drops it",async()=>{
+  const {channel:port}=channel();
+  const child={id:inputId,session:{...source.session,sessionId:inputId},channel:{...context,requestedBy:source},inputId,language:"en",status:"running" as const,createdAt:new Date(0).toISOString(),error:null,cancelled:false};
+  const reserve=vi.spyOn(port.facts,"reserve").mockResolvedValue(child);vi.spyOn(port,"prepare").mockResolvedValue();
+  await port.execute(scope,run,{op:"start",agent:context.agent,message:"Inspect"});
+  expect(JSON.stringify(reserve.mock.calls)).not.toContain("initiating-token");
+  vi.mocked(port.facts.intent).mockImplementation(async (_scope,id) => id===child.id ? {...child,status:"completed"} : {...child,id:runId,session:source.session,channel:context});
+  const projection={status:"completed",summary:"Done",process:{mode:"none"},results:[],quality:[],files:[]};
+  const read=vi.spyOn(port,"callback").mockResolvedValue({...projection,settled:false});
+  vi.spyOn(port,"deliver").mockResolvedValue({messageId:inputId,taskId:null,sessionRef:source.session});
+  await port.changed(scope,inputId,"delivery");expect(port.credential(context).token).toBe("initiating-token");
+  read.mockResolvedValue({...projection,settled:true});
+  await port.changed(scope,inputId,"quality");expect(()=>port.credential(context)).toThrow("please start again");
+});
+
+it("turns an expired initiating credential into an explicit restart instruction",async()=>{
+  const {channel:port}=channel();
+  vi.spyOn(port.facts,"pending").mockResolvedValue([{id:inputId,runId:null,messageSeq:8,message:notification}]);
+  vi.spyOn(port.facts,"consume").mockResolvedValue();
+  vi.stubGlobal("fetch",vi.fn(async()=>Response.json({success:false},{status:401})));
+  await expect(port.steering(scope,run)).rejects.toMatchObject({code:"CALLER_CREDENTIAL_INVALID",message:expect.stringContaining("please start again")});
 });

@@ -1,4 +1,5 @@
 import path from "node:path";
+import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { agentPrepareRequestSchema, agentProviderExecutionSchema, agentProviderListRequestSchema, type AgentRunContext } from "@ontomato/contracts/agent-channel";
 import { DIAGNOSIS_AGENT_ID } from "@ontomato/contracts/ops-diagnosis";
 import { assistantService } from "../assistant/service";
@@ -9,16 +10,16 @@ import { workbenchIdentity } from "../../identity/installed";
 import { answerText } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 
-async function caller(body: { actor: AgentRunContext["actor"] }, domain: string, provider?: string, readOnly = false) {
-  const current = await restoreAgentCaller(body.actor, domain, readOnly);
-  if (provider === "observe") await workbenchIdentity().assertObserveAccess({ domainId: domain, ...current.credentials });
+async function caller(body: { actor: AgentRunContext["actor"] }, domain: string, provider?: string, readOnly = false, credentials: AssistantCredentials = {}) {
+  const current = await restoreAgentCaller(body.actor, domain, readOnly, credentials);
+  if (provider === "observe" && !readOnly) await workbenchIdentity().assertObserveAccess({ domainId: domain, ...current.credentials });
   return current;
 }
 export const agentChannelService = {
-  async list(raw: unknown, domain: string) {
+  async list(raw: unknown, domain: string, supplied: AssistantCredentials = {}) {
     const body = agentProviderListRequestSchema.parse(raw);
     if (!["workbench","observe"].includes(body.providerId)) throw new HttpError(404,"Agent provider not found","NOT_FOUND");
-    const { owner, credentials } = await caller(body, domain);
+    const { owner, credentials } = await caller(body, domain, undefined, false, supplied);
     const agents = [];
     if (body.providerId === "workbench") {
       for (const agent of await assistantStore.agents(domain)) {
@@ -37,8 +38,8 @@ export const agentChannelService = {
     } catch (error) { if (!(error instanceof HttpError && error.status === 403)) throw error; }
     return { agents };
   },
-  async prepare(raw: unknown, domain: string) {
-    const body = agentPrepareRequestSchema.parse(raw), restored = await caller(body, domain, body.agent.providerId);
+  async prepare(raw: unknown, domain: string, supplied: AssistantCredentials = {}) {
+    const body = agentPrepareRequestSchema.parse(raw), restored = await caller(body, domain, body.agent.providerId, false, supplied);
     const owner = restored.owner, credentials = { ...restored.credentials,locale: body.language };
     if (!["workbench", "observe"].includes(body.agent.providerId)) throw new HttpError(404, "Agent provider not found", "NOT_FOUND");
     if (body.authority.executionKind === "build-test" && body.requestedBy) throw new HttpError(422,"Agent delegation is not available in a build-test execution","BUILD_TEST_UNSUPPORTED");
@@ -61,17 +62,17 @@ export const agentChannelService = {
     await service.ownRun(body.execution.session.sessionId, body.execution.runId, owner);
     return { body, service, owner, credentials };
   },
-  async settle(raw: unknown, domain: string) {
+  async settle(raw: unknown, domain: string, _supplied: AssistantCredentials = {}) {
     const { body } = await this.execution(raw, domain);
     if (body.execution.session.providerId === "workbench") await assistantService.settleTurn(body.execution.runId);
     return { accepted: true };
   },
-  async cancel(raw: unknown, domain: string) {
+  async cancel(raw: unknown, domain: string, _supplied: AssistantCredentials = {}) {
     const { body, owner,credentials } = await this.execution(raw, domain);
     if (body.execution.session.providerId === "workbench") await assistantService.cancelScope(body.execution.runId,owner,credentials);
     return { accepted: true };
   },
-  async read(raw: unknown, domain: string) {
+  async read(raw: unknown, domain: string, _supplied: AssistantCredentials = {}) {
     const { body, service, owner } = await this.execution(raw, domain);
     if(body.fileId) {
       const artifact=await service.artifact(body.execution.session.sessionId,body.fileId,owner);
@@ -80,7 +81,7 @@ export const agentChannelService = {
     }
     const snapshot = await service.readRun(body.execution.session.sessionId, body.execution.runId, owner);
     const status = snapshot.run.status === "running" ? "running" : snapshot.run.stopReason === "stop" ? "completed" : snapshot.run.stopReason === "aborted" ? "cancelled" : "failed";
-    return { status, summary: answerText(snapshot) || snapshot.run.errorMessage || status,
+    return { settled: status !== "running", status, summary: answerText(snapshot) || snapshot.run.errorMessage || status,
       process: { mode: "inline", runtimeSessionId: snapshot.run.sessionId, runtimeRunId: snapshot.run.id }, results: [],quality: [],
       files:snapshot.artifacts.filter(file=>file.runId===snapshot.run.id && file.path.startsWith("outputs/")).map(file=>({id:file.id,name:path.posix.basename(file.path),mediaType:file.mediaType,href:`/platform/agent-channel/tasks/${snapshot.run.id}/files/${file.id}`})) };
   },
