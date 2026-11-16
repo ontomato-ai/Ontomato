@@ -3,7 +3,8 @@ import { computed, ref } from 'vue';
 import { CodeEditor } from '@ontomato/foundation-ui/code';
 import { ChevronRight, Braces } from 'lucide-vue-next';
 import { productTypes, productWidgets, type ProductAsset } from '@ontomato/contracts/product-assets';
-import { useManagerContext } from '../context';
+import { useManagerContext,useOntologyText } from '../context';
+const {ot}=useOntologyText();
 
 const props=defineProps<{asset:ProductAsset}>();
 const context=useManagerContext();
@@ -18,16 +19,19 @@ const bindings=(value:unknown)=>JSON.stringify(value,null,2);
   <div class="product-configuration">
     <dl class="configuration-fields">
       <dt>资产标识</dt><dd><code>{{asset.id}}</code></dd>
-      <dt>类型</dt><dd>{{productTypes.find(type=>type.kind===asset.document.kind)?.name}}</dd>
+      <dt>类型</dt><dd>{{asset.document.kind==='agent-profile'?ot('productAgentProfile'):productTypes.find(type=>type.kind===asset.document.kind)?.name}}</dd>
+      <template v-if="'renders' in asset.document"><dt>呈现本体元素</dt><dd>{{asset.document.renders.kind}} · <code>{{asset.document.renders.id}}</code></dd><dt>渲染方式</dt><dd>{{asset.document.renderer}}</dd><dt>默认投影</dt><dd>{{asset.document.isDefault?'是':'否'}}</dd><dt>消费者</dt><dd>{{({human:'人',agent:'智能体',both:'人与智能体'})[asset.document.audience]}}</dd></template>
+      <template v-if="asset.document.kind==='page'"><dt>页面形态</dt><dd>{{asset.document.isTemplate?'布局模板':asset.document.embeddable?'可嵌入页':'普通页面'}}</dd><dt v-if="asset.document.layout">页面布局</dt><dd v-if="asset.document.layout">{{asset.document.layout.mode==='grid'?'单区栅格':`主栏 ${asset.document.layout.mainWidth}/12 · 侧栏 ${12-asset.document.layout.mainWidth}/12`}}</dd><dt v-if="asset.document.params">页面参数</dt><dd v-if="asset.document.params"><pre>{{bindings(asset.document.params)}}</pre></dd></template>
+      <template v-if="asset.document.kind==='agent-profile'"><dt>{{ot('productAgentPrincipal')}}</dt><dd><code>{{asset.document.principalId}}</code></dd><dt>{{ot('productInstructions')}}</dt><dd class="profile-instructions">{{asset.document.instructions}}</dd><dt>{{ot('productToolReferences')}}</dt><dd>{{asset.document.tools.join(', ')||'—'}}</dd><dt>{{ot('productContextReferences')}}</dt><dd>{{asset.document.contextViews.join(', ')||'—'}}</dd></template>
       <dt>所有者</dt><dd><code>{{asset.ownerId}}</code></dd>
-      <dt>可见范围</dt><dd>{{asset.visibility==='domain'?'域内共享':'仅自己'}}</dd>
+      <dt>编辑授权</dt><dd>{{asset.editable?'可编辑':'只读'}} · 使用授权单独判定</dd>
       <dt>创建时间</dt><dd>{{date(asset.createdAt)}}</dd>
       <dt>更新时间</dt><dd>{{date(asset.updatedAt)}}</dd>
       <template v-if="asset.document.kind==='object-view'"><dt>对象类</dt><dd><code>{{asset.document.className}}</code></dd><dt>视图形式</dt><dd>{{asset.document.form}}</dd><dt>默认对象</dt><dd><code v-if="asset.document.primaryKey">{{asset.document.primaryKey}}</code><span v-else>运行时选择</span></dd></template>
       <template v-if="asset.document.kind==='application'"><dt>平台应用</dt><dd><code>{{asset.document.applicationId}}</code></dd><dt v-if="asset.document.workspaceId">源码工作区</dt><dd v-if="asset.document.workspaceId"><code>{{asset.document.workspaceId}}</code></dd></template>
       <template v-if="asset.document.kind==='dashboard'"><dt>仪表盘标识</dt><dd><code>{{asset.document.dashboardId}}</code></dd></template>
       <template v-if="asset.document.kind==='widget'&&asset.document.widget.kind==='platform'"><dt>平台内容</dt><dd>{{({assistant:'智能问数',apps:'应用入口',data:'仪表盘集合',tasks:'任务动态',conversations:'分析会话',objects:'收藏对象',recent:'最近访问'})[asset.document.widget.source]}}</dd><dt>展示条数</dt><dd>{{asset.document.widget.limit}}</dd><dt v-if="asset.document.widget.placeholder">输入提示</dt><dd v-if="asset.document.widget.placeholder">{{asset.document.widget.placeholder}}</dd></template>
-      <template v-if="'workspace' in asset.document"><dt>布局重点</dt><dd>{{({data:'数据优先',tasks:'任务优先',assistant:'应用优先'})[asset.document.workspace.layout]}}</dd><dt>对象打开方式</dt><dd>{{asset.document.workspace.objectOpening==='drawer'?'侧栏':'页面'}}</dd></template>
+      <template v-if="'workspace' in asset.document&&asset.document.workspace"><dt>布局重点</dt><dd>{{({data:'数据优先',tasks:'任务优先',assistant:'应用优先'})[asset.document.workspace.layout]}}</dd><dt>对象打开方式</dt><dd>{{asset.document.workspace.objectOpening==='drawer'?'侧栏':'页面'}}</dd></template>
     </dl>
     <section v-if="'children' in asset.document&&asset.document.children.length" class="widget-configuration"><header><strong>组合引用</strong><span>{{asset.document.children.length}} 项 · 按展示顺序</span></header><ol class="composition-config"><li v-for="child in asset.document.children" :key="child.assetId"><span>{{child.column==='main'?'主栏':'侧栏'}}</span><code>{{child.assetId}}</code></li></ol></section>
     <section v-for="widget in widgets" :key="widget.id" class="widget-configuration">

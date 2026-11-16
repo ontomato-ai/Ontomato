@@ -315,6 +315,9 @@ async function productCommand(api, [command, ...args]) {
     return print(await workbench(api,"GET",base+(command==="list"?"":`/${command}`)));
   if(command==="get" && args.length===1) return print(await workbench(api,"GET",`${base}/${encodeURIComponent(args[0])}`));
   if(command==="save" && args.length===2) return print(await workbench(api,"PUT",`${base}/${encodeURIComponent(args[0])}`,JSON.parse(readInput(args[1]))));
+  if(command==='grants'&&args.length===1)return print(await workbench(api,'GET',`${base}/${encodeURIComponent(args[0])}/grants`));
+  if(command==='grant'&&args.length===2)return print(await workbench(api,'POST',`${base}/${encodeURIComponent(args[0])}/grants`,JSON.parse(readInput(args[1]))));
+  if(command==='domain-grant'&&args.length===2&&['true','false'].includes(args[1]))return print(await workbench(api,'POST',`${base}/${encodeURIComponent(args[0])}/domain-grant`,{shared:args[1]==='true'}));
   if(command==="copy" && args.length===2) return print(await workbench(api,"POST",`${base}/${encodeURIComponent(args[0])}/copy`,{name:args[1]}));
   if(command==="create-page" && args.length===2) return print(await workbench(api,"POST",`${base}/${encodeURIComponent(args[0])}/create-page`,{name:args[1]}));
   if(command==="use-home" && args.length===2) return print(await workbench(api,"POST",`${base}/${encodeURIComponent(args[0])}/use-home`,{revision:Number(args[1])}));

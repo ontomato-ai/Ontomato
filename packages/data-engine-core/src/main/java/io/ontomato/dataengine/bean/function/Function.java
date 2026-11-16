@@ -12,6 +12,7 @@ public class Function {
 	
 	public static final String OPERATION_READ = "OPERATION_READ";
 	public static final String OPERATION_WRITE = "OPERATION_WRITE";
+	public static final String OPERATION_PRODUCT = "OPERATION_PRODUCT";
 	
 	public static final String ORIGIN_SYSTEM = "SYSTEM";
 	public static final String ORIGIN_USER = "USER";
@@ -25,6 +26,7 @@ public class Function {
 	private ReturnDef returnDef;
 	private String code;
 	private JSONObject queryPackage;
+	private JSONObject sourceArtifact;
 
     public static Function fromAsset(JSONObject asset) {
         if (!(asset.get("function") instanceof Map<?, ?>))
@@ -39,6 +41,7 @@ public class Function {
                 throw new IllegalArgumentException("Function." + field + ": expected a string; supply text");
         if (input.get("queryPackage") != null && !(input.get("queryPackage") instanceof Map<?, ?>))
             throw new IllegalArgumentException("Function.queryPackage: expected an object; supply the package manifest and files");
+        if(input.get("sourceArtifact")!=null)throw new IllegalArgumentException("Product Function artifacts are registered by the publication service");
         Object parameters = input.get("parameters");
         if (parameters != null) {
             if (!(parameters instanceof List<?> list))

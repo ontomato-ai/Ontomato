@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ArrowDown, ArrowLeft, ArrowUp, Plus, Save, Trash2, Upload } from "lucide-vue-next";
 import { ElAlert, ElButton, ElInput, ElInputNumber, ElOption, ElSelect, ElSwitch } from "element-plus";
-import { createObjectView, createViewWidget, objectViewDocumentSchema, objectViewProductIssues, type ObjectReference, type ObjectViewDocument, type ObjectViewState, type ViewWidget } from "@ontomato/contracts/object-views";
+import { createObjectView, createViewWidget, objectViewDocumentSchema, objectViewProductIssues, objectProjectionIssues, type ObjectReference, type ObjectViewDocument, type ObjectViewState, type ViewWidget } from "@ontomato/contracts/object-views";
 import { randomId } from "@ontomato/contracts/random-id";
 import { useManagerClient, useManagerLeaveCheck, useOntologyText } from "../context";
 import { widgetMessageKeys } from "./messages";
@@ -126,7 +126,7 @@ async function sample() {
       if (!key || result.rows[0]?.[key] == null) throw new Error(ot("ovNoPreview"));
       primaryKey = String(result.rows[0][key]);
     }
-    const result = objectViewProductIssues(document.value).length ? await client.queryInstanceInfo(`${className}:${primaryKey}`, className) : {};
+    const result = state.value.assetId?{data:(await client.products.object(state.value.assetId,primaryKey,state.value.revision)).object}:objectViewProductIssues(document.value).length ? await client.queryInstanceInfo(`${className}:${primaryKey}`, className) : {};
     if (current !== sampleRequest || className !== props.className) return;
     previewKey.value = primaryKey;
     previewObject.value = (result.data || {}) as Record<string, unknown>;
@@ -140,7 +140,7 @@ async function save(publish = false) {
   error.value = "";
   try {
     const validated = objectViewDocumentSchema.parse(document.value);
-    const issues = objectViewProductIssues(validated);
+    const issues = state.value.assetId?objectProjectionIssues(validated):objectViewProductIssues(validated);
     if (issues.length) throw new Error(issues.join("\n"));
     state.value = await client.saveObjectView(validated, form, state.value.revision, description.value);
     saved.value = JSON.stringify(validated);

@@ -57,6 +57,21 @@ it("excludes test materials from actual release files while preserving workspace
     await writeHostedFiles(files,root);expect(await readFile(join(root,"index.html"),"utf8")).toBe("<p>application</p>");
     await expect(readFile(join(root,"test-data/sample.json"))).rejects.toMatchObject({code:"ENOENT"});
     await expect(readFile(join(root,"test-data/files/example.txt"))).rejects.toMatchObject({code:"ENOENT"});
+    expect(JSON.parse(await readFile(join(root,'ontomato.product-review.json'),'utf8'))).toMatchObject({schemaVersion:2,generated:true,files:[{path:'index.html',hash:expect.any(String)}]});
     expect(files).toHaveLength(3);expect(files[1]!.content).toBe("sample-source");
   } finally {await rm(root,{recursive:true,force:true});}
+});
+it('requires a host-transport SDK for new source publications while accepting its installed version',async()=>{
+  const {requireHostedSdkTransport}=await import('../hosted-apps');
+  const files=[{path:'index.html',encoding:'utf8' as const,content:'<script type="module" src="/apps-sdk/1.2.0/sdk.js"></script>'}];
+  await expect(requireHostedSdkTransport(files,async()=>({hostTransport:1,messageBridge:2}))).resolves.toBeUndefined();
+  await expect(requireHostedSdkTransport(files,async()=>({}))).rejects.toMatchObject({code:'PRODUCT_SDK_UPGRADE_REQUIRED'});
+  await expect(requireHostedSdkTransport(files,async()=>({hostTransport:1}))).rejects.toMatchObject({code:'PRODUCT_SDK_UPGRADE_REQUIRED'});
+  await expect(requireHostedSdkTransport([],async()=>({hostTransport:1}))).rejects.toMatchObject({code:'PRODUCT_SDK_UPGRADE_REQUIRED'});
+});
+it('prevents retry or rollback from reactivating an unsandboxed historical release',async()=>{
+  const {requireHostedReleasePolicy}=await import('../hosted-apps');
+  await expect(requireHostedReleasePolicy('app-example','release',async()=>({hostTransport:1,messageBridge:2}))).resolves.toBeUndefined();
+  for(const policy of [{},{hostTransport:1},{messageBridge:2}])await expect(requireHostedReleasePolicy('app-example','release',async()=>policy)).rejects.toMatchObject({code:'PRODUCT_SDK_UPGRADE_REQUIRED'});
+  await expect(requireHostedReleasePolicy('app-example','release',async()=>{throw Object.assign(new Error('Missing'),{code:'ENOENT'});})).rejects.toMatchObject({code:'PRODUCT_SDK_UPGRADE_REQUIRED'});
 });

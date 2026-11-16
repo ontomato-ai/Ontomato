@@ -1,0 +1,26 @@
+import {expect,it,vi} from 'vitest';
+const mocks=vi.hoisted(()=>({profile:vi.fn(),skills:vi.fn(),environment:vi.fn(),open:vi.fn(),callback:vi.fn(),principal:vi.fn()}));
+vi.mock('../../product-assets/agent-profile',()=>({profileForSession:mocks.profile}));
+vi.mock('../../../i18n',()=>({resolveLocale:(locale:string)=>locale}));
+vi.mock('../../../config/environment',()=>({environment:{agentRuntime:()=>({callbackUrl:'http://workbench.test'})}}));
+vi.mock('../../product-assets/agent-principal',()=>({agentPrincipalCredentials:mocks.principal}));
+vi.mock('../skills',()=>({prepareAssistantSkills:mocks.skills}));
+vi.mock('../context',()=>({assistantOntologyContext:vi.fn()}));
+vi.mock('../store',()=>({assistantStore:{turns:async()=>[]}}));
+vi.mock('../../../infrastructure/agent-runtime/client',()=>({RuntimeClient:class{session=async()=>({messages:[]});}}));
+vi.mock('../../../platform/agent-runtime/runtime',()=>({runDefinition:(_prompt:string,_model:unknown,skills:unknown,_locale:unknown,externalMcp:unknown)=>({skills,externalMcp}),userSkillEnvironment:mocks.environment}));
+vi.mock('../ontology-retrieval',()=>({OntologyRetrievalClient:class{open=mocks.open;}}));
+vi.mock('../../agent-runtime/callback-credential',()=>({callbackCredential:mocks.callback}));
+import {prepareAnalystRun,type AssistantPreparation} from '../prepare';
+it('limits a Profile run to its projection tools without passing human business credentials or inherited skills',async()=>{
+  mocks.profile.mockResolvedValue({id:'profile',principalId:'agent',releaseId:'release',instructions:'Instructions',tools:[],contextViews:[]});
+  mocks.principal.mockResolvedValue({token:'agent-execution'});mocks.callback.mockReturnValue({value:'sealed-callback'});
+  const request={a:{skills:[{name:'inherited'}],enabled_mcp_service_ids:['inherited'],model_selection:{modelId:null}},session:{id:'session',agent_id:'agent'},turn:{id:'run',created_at:new Date(),retrieval_scope_id:'scope',class_names:[]},message:'Question',owner:{domainId:'domain',userId:'human'},credentials:{token:'human-secret',locale:'en'}} as unknown as AssistantPreparation;
+  const run=await prepareAnalystRun(request);
+  expect(run.definition.skills).toEqual([]);expect(run.definition.externalMcp).toEqual([]);
+  expect(run.definition.toolSurface).toBe('product');
+  expect(run.environment.secrets).toEqual({ONTOMATO_PRODUCT_CALLBACK:'sealed-callback'});
+  expect(run.environment.values.ONTOMATO_WORKBENCH_URL).toBe('http://workbench.test');
+  expect(mocks.environment).not.toHaveBeenCalled();expect(mocks.skills).not.toHaveBeenCalled();expect(mocks.open).not.toHaveBeenCalled();
+  expect(JSON.stringify(run)).not.toContain('human-secret');
+});

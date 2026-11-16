@@ -3,6 +3,7 @@ import { assertAppBuilderAccess } from "../../services/app-builder/access";
 import { agentHostSessionPageQuerySchema } from "@ontomato/contracts/agent-host";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
+import {readFile} from 'node:fs/promises';
 import express, { Router, type Request, type Response, type NextFunction } from "express";
 import { z } from "zod";
 import { workspaceIdSchema, workspacePathSchema, workspaceNameSchema, workspaceImportSchema, workspaceRestoreSchema, workspaceReadSchema, workspaceContentSchema, workspacePageSchema, workspaceDiffSchema, hostedPublishSchema, hostedRollbackSchema, hostedAppIdSchema } from "@ontomato/contracts/workspaces";
@@ -13,6 +14,11 @@ import { runtimeDataDir } from "../../content/layout";
 import { HttpError } from "../../utils/errors";
 import { assistantService } from "../../services/assistant/service";
 import { publishWorkspace, rollbackWorkspace, workspaceReleases } from "../../services/workspaces/hosted-apps";
+import {getProduct} from '../../services/product-assets/store';
+import {requireProductUse} from '../../services/product-assets/grants';
+import {backendGet,buildBackendHeaders} from '../../utils/backend-client';
+import {config} from '../../config/application';
+import {SOURCE_APPLICATION_CSP} from '../../services/workspaces/product-admission';
 import type { AssistantOwner } from "../../services/assistant/store";
 
 const wrap = (fn: (req: Request, res: Response) => Promise<void>) =>
@@ -32,6 +38,17 @@ workspacePreviewRouter.get("/:id/preview/:token/*", wrap(async (req, res) => {
     .send(await runtime(preview.owner).bytes(`/v1/workspaces/${preview.workspaceId}/files/content?${new URLSearchParams({ path: file })}`));
 }));
 export const workspaceRouter = Router();
+workspaceRouter.get('/applications/:appId/policy',wrap(async(req,res)=>{
+  const {owner,credentials}=context(req),appId=hostedAppIdSchema.parse(req.params.appId);
+  await requireProductUse(owner,appId);await getProduct(owner,appId);
+  const response=await backendGet('application-network-policy',config.dataQuery.baseUrl+'/platform/applications/'+encodeURIComponent(appId),{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});
+  const application=JSON.parse(response.text);
+  if(application.success&&application.data?.kind==='connected'){res.json({messageBridge:0});return;}
+  if(!application.success||!application.data?.releaseId)throw new HttpError(404,'Application release unavailable','NOT_FOUND');
+  let policy;try{policy=JSON.parse(await readFile(runtimeDataDir('hosted-apps',appId,workspaceIdSchema.parse(application.data.releaseId),'.ontomato-network-policy.json'),'utf8'));}catch(error){if((error as {code?:string}).code!=='ENOENT')throw error;}
+  if(![undefined,2].includes(policy?.messageBridge))throw new HttpError(409,'Unsupported application message bridge','PRODUCT_SDK_UPGRADE_REQUIRED');
+  res.json({messageBridge:policy?.messageBridge??0});
+}));
 for (const method of ["get", "post", "delete"] as const) {
   workspaceRouter[method]("/:id/build-tests", wrap(async (req,res) => {
     const c=context(req);await assertAppBuilderAccess(c.credentials);
@@ -92,11 +109,16 @@ for (const [method, suffix, schema] of [["post", "", workspaceNameSchema], ["pat
   }));
 }
 export function mountHostedStatic(app: express.Express) {
-  app.get("/internal/hosted-apps/:appId/:releaseId/*", (req: Request, res: Response, next: NextFunction) => {
+  app.get("/internal/hosted-apps/:appId/:releaseId/*", wrap(async(req, res) => {
     const appId = hostedAppIdSchema.parse(req.params.appId), releaseId = workspaceIdSchema.parse(req.params.releaseId);
     const file = workspacePathSchema.parse(req.params[0] || "index.html");
-    res.set({ "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
-    res.sendFile(file, { root: runtimeDataDir("hosted-apps", appId, releaseId), dotfiles: "allow", cacheControl: false, lastModified: false, etag: false }, next);
-  });
-  app.use("/apps-sdk", express.static(runtimeDataDir("apps-sdk"), { fallthrough: false, redirect: false }));
+    if(['.ontomato-network-policy.json','.ontomato-source-function.json'].includes(file))throw new HttpError(404,'File unavailable','NOT_FOUND');
+    res.set({ "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",'Access-Control-Allow-Origin':'*' });
+    let policy;
+    try{policy=JSON.parse(await readFile(runtimeDataDir('hosted-apps',appId,releaseId,'.ontomato-network-policy.json'),'utf8'));}catch(error){if((error as {code?:string}).code!=='ENOENT')throw error;}
+    if(policy?.messageBridge===2)res.set('Content-Security-Policy',SOURCE_APPLICATION_CSP);
+    else if(policy?.hostTransport===1)res.set('Content-Security-Policy',"connect-src 'none'; form-action 'none'; object-src 'none'; base-uri 'none'");
+    await new Promise<void>((resolve,reject)=>{res.sendFile(file, { root: runtimeDataDir("hosted-apps", appId, releaseId), dotfiles: "allow", cacheControl: false, lastModified: false, etag: false },error=>error?reject(error):resolve());});
+  }));
+  app.use("/apps-sdk",(_req,res,next)=>{res.set('Access-Control-Allow-Origin','*');next();}, express.static(runtimeDataDir("apps-sdk"), { fallthrough: false, redirect: false }));
 }

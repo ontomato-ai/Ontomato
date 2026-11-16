@@ -10,6 +10,8 @@ const managerContext = useManagerContext();
 import ObjectViewRuntime from "./ObjectViewRuntime.vue";
 import { computed } from "vue";
 import { instanceName, type InstanceNameAttribute } from "./instance-name";
+import {productAssetSchema,type ProductAsset} from '@ontomato/contracts/product-assets';
+import ObjectProjectionRuntime from '../products/ObjectProjectionRuntime.vue';
 const props = defineProps<{ reference: ObjectReference; preview?: boolean; readOnly?:boolean; capabilityOnly?:boolean }>();
 const emit = defineEmits<{ open: [reference: ObjectReference]; edit: []; back: [] }>();
 const client = useManagerClient();
@@ -34,6 +36,7 @@ watch(() => JSON.stringify(props.reference), async () => {
   catch { /* A failed preference read must not block the object view. */ }
 }, { immediate: true });
 const document = ref<ObjectViewDocument>();
+const projection=ref<ProductAsset>();
 const object = ref<Record<string, unknown>>({});
 const error = ref("");
 const loading = ref(false);
@@ -51,6 +54,7 @@ async function load() {
   try {
     const state = await client.objectViewRequest("read", props.reference.className, "full");
     if (current !== request) return;
+    if(state.assetId){if(!state.publishedAsset)throw new Error('此对象视图尚未发布');const published=productAssetSchema.parse(state.publishedAsset);if(published.id!==state.assetId||published.revision!==state.publishedRevision||published.document.kind!=='object-projection'||published.document.renders.id!==props.reference.className)throw new Error('已发布对象视图与当前入口不一致');projection.value=published;return;}
     document.value = state.versions[0] ? objectViewDocumentSchema.parse(state.versions[0].document) : createObjectView(props.reference.className);
     if (!state.versions[0]) document.value.tabs[0].sections[0].widgets[0].title = ot('ovKindProperties');
     const issues=objectViewProductIssues(document.value);
@@ -73,6 +77,7 @@ async function refreshObject() {
 }
 watch(() => JSON.stringify([props.reference.className, props.reference.primaryKey]), () => {
   document.value = undefined;
+  projection.value=undefined;
   object.value = {};
   nameAttributes.value = [];
   void load();
@@ -91,7 +96,8 @@ watch(() => JSON.stringify([props.reference.className, props.reference.primaryKe
     <div v-if="error" class="object-page-error" role="alert">
       <el-alert type="error" :title="error" :closable="false" />
     </div>
-    <div v-if="loading && !document" class="page-skeleton" role="status" :aria-label="ot('ovLoading')"><el-skeleton :rows="10" animated /></div>
+     <div v-if="loading && !document&&!projection" class="page-skeleton" role="status" :aria-label="ot('ovLoading')"><el-skeleton :rows="10" animated /></div>
+    <ObjectProjectionRuntime v-else-if="projection" :asset="projection" :page-state="{selected:reference}" :preview="readOnly"/>
     <ObjectViewRuntime v-else-if="document" :document="document" :object="object" :reference="reference" :preview="readOnly" @open="emit('open', $event)" @refresh="refreshObject" />
     </div>
   </section>

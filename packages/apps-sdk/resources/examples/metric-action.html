@@ -115,12 +115,12 @@
 <script type="module">
     import { computed, createApp, ref, watch } from "vue";
     import ElementPlus, { ElMessage } from "element-plus";
-    import { createAppContext } from "@ontomato/sdk";
+    import { connectAppContext } from "@ontomato/sdk";
     import { EChart } from "@ontomato/sdk/chart";
     import { FormFields, formFieldKey } from "@ontomato/sdk/form";
     import { CodeEditor } from "@ontomato/sdk/code";
 
-    const context = createAppContext();
+    const context = await connectAppContext();
     // The page's name as its reader sees it: with the selected row, it is what the platform's agent is told they look at.
     const PAGE = "MetricView rows";
     context.setPageContext({ page: PAGE, selection: null });

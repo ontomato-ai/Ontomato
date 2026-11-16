@@ -5,8 +5,10 @@ import { defaultPersonalWorkspace, personalWorkspaceSchema } from "@ontomato/con
 
 const database = vi.hoisted(() => ({ values: new Map<string, unknown>(), query: vi.fn() }));
 const homes=vi.hoisted(()=>new Map<string,{workspace:unknown;revision:number}>());
-vi.mock("../../../services/product-assets/validation",()=>({validateProduct:async()=>{}}));
+vi.mock("../../../services/product-assets/validation",()=>({validateProduct:async()=>{},validatePageBindings:async()=>{}}));
+vi.mock('../../../services/product-assets/ontology',()=>({ontologyRegistration:()=>null,synchronizeProductOntology:async()=>{}}));
 vi.mock("../../../services/product-assets/store",()=>({
+  readProductOverlay:async(owner:{domainId:string;userId:string})=>({revision:homes.get(JSON.stringify(owner))?.revision??0,workspace:homes.get(JSON.stringify(owner))?.workspace??null}),
   personalHome:async(owner:{domainId:string;userId:string})=>{
     const value=homes.get(JSON.stringify(owner));
     return {id:"home",name:"Home",description:"",visibility:"private",revision:value?.revision??1,document:{kind:"page",workspace:value?.workspace??defaultPersonalWorkspace(),children:[]}};

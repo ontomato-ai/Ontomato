@@ -21,7 +21,7 @@ export const builtinApplicationSchema = z.object({
 });
 export type BuiltinApplication = z.infer<typeof builtinApplicationSchema>;
 export const applicationCatalogSchema = z.array(z.object({
-  id: z.string(), kind: z.enum(["native", "hosted", "connected", "link"]), names,
+  id: z.string(), kind: z.enum(["native", "hosted", "connected", "link",'product']), names,
   descriptions: z.record(z.string()), icon: z.string(), rail: z.enum(["top", "apps", "bottom"]), category: categories, sort: z.number(),
   entry: z.object({ path: z.string(), renderer: z.string().optional(), home: z.string().optional() }),
   entryAccess: z.array(z.string()).min(1), scheduleAdapter: z.string().nullable(), releaseId: z.string().nullable(),

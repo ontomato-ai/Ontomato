@@ -143,6 +143,7 @@ class ActionGrantGuardTest {
     PythonExecuteResult result = service.execute(ACTION_ID, params(), LANG, alice, permission, 5);
 
     assertEquals("No role grants this action", result.getError());
+    assertTrue(result.getAffects().isEmpty());
     assertNull(result.getResult(), "a refused run must not carry a result");
   }
 
@@ -234,6 +235,7 @@ class ActionGrantGuardTest {
   @Test
   void aGrantedAndPermittedRunReachesTheProgram() throws Exception {
     Action action = publishedAction();
+    action.setCodeSegments(com.alibaba.fastjson2.JSONArray.of(JSONObject.of("kind", "UPDATE_OBJECT", "class", "Order")));
     grantAnswer(true);
     when(preconditions.evaluate(any(), any(), any(), any(), any()))
         .thenReturn(new ActionPreconditionService.Verdict(true, List.of()));
@@ -246,6 +248,7 @@ class ActionGrantGuardTest {
 
     // The positive path is what makes the refusals above meaningful: the same wiring, one grant away.
     assertNull(result.getError());
+    assertEquals(List.of("Order"), result.getAffects());
     assertTrue(result.getResult().contains("shipped"), result.getResult());
     verify(programs).execute(any(), any(Function.class), eq(USER_ID), eq(permission),
         eq(io.ontomato.dataengine.config.ServiceConst.NOT_SANDBOX), eq(LANG), anyInt(), eq(DOMAIN), any());

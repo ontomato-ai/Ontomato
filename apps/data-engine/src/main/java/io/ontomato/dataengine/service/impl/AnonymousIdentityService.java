@@ -14,9 +14,9 @@ import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
  */
 @Component
 public class AnonymousIdentityService implements IdentityService {
-    @Override public Long getCurrentCredentialExpiresAt() { return null; }
-    @Override public void requireQueryAccess() { }
-    @Override public void requireActionExecutionAccess(String userId, String domainId) { }
+    @Override public Long getCurrentCredentialExpiresAt() { var agent=io.ontomato.dataengine.service.AgentPrincipalService.current();return agent==null?null:agent.expiresAt(); }
+    @Override public void requireQueryAccess() { if(io.ontomato.dataengine.service.AgentPrincipalService.current()!=null)throw io.ontomato.dataengine.service.AgentPrincipalService.denied("Agent roles require a role-aware identity implementation"); }
+    @Override public void requireActionExecutionAccess(String userId, String domainId) { requireQueryAccess(); }
     @Override public boolean hasKnowledgeGovernanceAccess() { return true; }
 
     private static final UserDetail ANONYMOUS_USER = createAnonymousUser();
@@ -37,16 +37,19 @@ public class AnonymousIdentityService implements IdentityService {
 
     @Override
     public User getCurrentUser() {
+        var agent=io.ontomato.dataengine.service.AgentPrincipalService.current();
+        if(agent!=null)return agent.principal();
         return ANONYMOUS_USER;
     }
 
     @Override
     public String getCurrentUserId() {
-        return ANONYMOUS_USER.getId();
+        return getCurrentUser().getId();
     }
 
     @Override
     public UserDataPermission getCurrentUserDataPermission() {
+        requireQueryAccess();
         // fullData=true: row permissions and field permissions are not intercepted at all
         UserDataPermission permission = new UserDataPermission();
         permission.setFullData(true);

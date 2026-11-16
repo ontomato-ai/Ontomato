@@ -639,8 +639,14 @@ public class ActionServiceImpl implements ActionService {
       refused.setError(langService.get(lang, "Action.preconditionFailed") + ": " + String.join("; ", verdict.violations()));
       return new Object[]{null, refused};
     }
-    return abcProgramService.execute((runId == null ? UUID.randomUUID() : runId).toString(), function, user.getId(), permission, target.testing() ? target.sandboxId() : ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId(),
+    List<String> affectedTypes = ActionDefinitionProjector.project(action).getList("affects", String.class);
+    Object[] execution = abcProgramService.execute((runId == null ? UUID.randomUUID() : runId).toString(), function, user.getId(), permission, target.testing() ? target.sandboxId() : ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId(),
         new ABCProgramService.ExecutionContext(runId, identitySnapshot(action, user, key), target));
+    PythonExecuteResult result = (PythonExecuteResult) execution[1];
+    if (result.getError() == null || result.getError().isBlank()) {
+      result.setAffects(affectedTypes == null ? List.of() : affectedTypes);
+    }
+    return execution;
   }
 
   private PythonExecuteResult refused(String lang, String key) {

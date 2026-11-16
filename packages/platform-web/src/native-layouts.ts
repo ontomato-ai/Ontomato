@@ -127,16 +127,16 @@ export const nativeLayouts: Record<string, NativeLayout> = Object.fromEntries(la
 
 export function catalogPartition(applications: import("@ontomato/contracts/platform-identity").CatalogApplication[], locale: string,
   renderers: Record<string, NativeLayout> = {}): AppPartition[] {
-  return applications.filter(app => app.kind === "hosted" || app.kind === "connected"
+  return applications.filter(app => app.kind === "hosted" || app.kind === "connected"||app.kind==='product'
     || Boolean(nativeLayouts[app.entry.renderer!] || renderers[app.entry.renderer!])).map((app) => {
     const embedded = app.kind === "hosted" || app.kind === "connected";
     // Catalog entries may precede their renderer or an edition's asynchronous layout registration.
-    const layout: NativeLayout = embedded ? { sections: [] } : {
+    const layout: NativeLayout = embedded||app.kind==='product' ? { sections: [] } : {
       ...nativeLayouts[app.entry.renderer!], ...renderers[app.entry.renderer!],
       sections: renderers[app.entry.renderer!]?.sections ?? nativeLayouts[app.entry.renderer!]?.sections ?? [],
     };
     return { ...layout, id: app.id, label: app.names[locale] ?? app.names.en!, description: app.descriptions[locale] ?? ("descriptionKey" in layout && layout.descriptionKey ? undefined : app.descriptions.en ?? null), icon: app.icon, rail: app.rail, category: app.category,
-      prefix: embedded ? `/applications/${app.id}` : app.entry.path,
-      home: embedded ? `/applications/${app.id}` : app.entry.home ?? layout.home };
+      prefix: embedded ? `/applications/${app.id}` : app.kind==='product'?`/products/${app.id}`:app.entry.path,
+      home: embedded ? `/applications/${app.id}` : app.kind==='product'?app.entry.path:app.entry.home ?? layout.home };
   });
 }

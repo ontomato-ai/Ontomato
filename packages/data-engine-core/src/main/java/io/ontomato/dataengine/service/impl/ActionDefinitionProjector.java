@@ -74,6 +74,7 @@ final class ActionDefinitionProjector {
     List<JSONObject> reads = new ArrayList<>();
     walk(action.getCodeSegments(), effects, reads);
     definition.put("effects", dedupe(effects));
+    definition.put("affects", affectedTypes(effects));
     definition.put("reads", dedupe(reads));
     definition.put("objects", objects(effects, function));
     definition.put("target", target(effects));
@@ -266,6 +267,16 @@ final class ActionDefinitionProjector {
     JSONArray result = new JSONArray();
     result.addAll(names);
     return result;
+  }
+
+  static List<String> affectedTypes(List<JSONObject> effects) {
+    Set<String> names = new LinkedHashSet<>();
+    for (JSONObject effect : effects) {
+      add(names, effect.getString("className"));
+      add(names, effect.getString("sourceClass"));
+      add(names, effect.getString("targetClass"));
+    }
+    return List.copyOf(names);
   }
 
   private static JSONObject target(List<JSONObject> effects) {

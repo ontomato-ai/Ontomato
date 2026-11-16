@@ -79,6 +79,7 @@ export const dashboardTruncationSchema = z.object({ truncated: z.literal(true), 
 export const dashboardMetricDescriptionSchema = z.object({
   id: text, revision: text, status: text, name: z.string(),
   parameterDefs: z.array(z.record(z.unknown())), outputColumns: z.array(dashboardColumnSchema),
+  sourceObjectTypes:z.array(z.string()).optional(),
 });
 export const dashboardMetricOutputSchema = z.object({
   columns: z.array(dashboardColumnSchema), rows: z.array(runtimeJsonObjectSchema),

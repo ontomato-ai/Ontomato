@@ -1,31 +1,47 @@
-# Product assets — implementation notes
+# Product assets
 
-Responsibility correction: display-only `operation-panel` assets migrate to `widget-group` without changing IDs. An operation panel requires an Action; a widget group permits only text, metrics, tables and charts. The common save service validates structure, referenced capabilities and recursive visible children; publication and rollback check dependencies before switching. Personal-workspace PUT requires If-Match. Product result paths must be empty because the MetricView client returns row arrays. Product dependency queries traverse visible product children, expand published object-view/dashboard capabilities and include indirect product parents; the unified governance graph remains outside this implementation.
+The current design is [产品层设计与整合说明](产品层设计与整合说明.md). Implementation progress and acceptance limits are recorded in [product-layer-v2-migration.md](product-layer-v2-migration.md).
 
-Product assets are presentation documents in the Node product service, not business ObjectTypes. Their fixed discriminated schemas live in `packages/contracts/src/product-assets.ts`. Pages and templates compose widgets, operation panels and personal dashboard references; application assets can also reference pages. Dependency edges are derived from these documents. Source applications declare explicit product dependencies in their committed `ontomato.products.json`; arbitrary JavaScript is not statically analyzed.
+Product assets have three categories:
 
-The Manager's product catalog, App Builder's `product` commands and SDK `context.products` share `/api/product-assets`, authenticated with the current domain and user. Published MetricViews supply business data, and Actions supply writes. Product configuration does not execute SQL, DSL, business predicates or direct object reads. Display variables and parameter bindings are interaction state. Chart renderers and the existing object-view runtime are reused.
+| Category | Types | References |
+| --- | --- | --- |
+| Elements | ObjectView, CollectionView, MetricWidget, ActionView | Each renders exactly one ontology element |
+| Compositions | Page, Navigation | Asset IDs; templates are `Page.isTemplate` |
+| Intelligent applications | Application, AgentProfile | Page/Navigation roots or tool/context projections |
 
-## Personal home and templates
+The directory and creation menus use this category order. Within elements, the order is ObjectView (对象视图), CollectionView (集合视图), MetricWidget (指标组件), then ActionView (操作视图): one object, a collection, a measure, and an operation. Compositions list Page (页面) before Navigation (页面导航); bundles list Application (交互应用) before the localized AgentProfile name (智能体配置 in Chinese).
 
-`/home` renders the personal page; `/workspace` redirects there. `/products/<assetId>` renders a standalone page or application composition. The application square remains at `/applications`. Personal workspace and old home preferences are merged once into a page registered in `product_home`. Existing legacy rows are retained for rollback; current home and compatibility APIs read/write the product page. Visits, conversations, task results and business data remain in their existing services.
+Page forms are discoverable through directory filters: ordinary pages, embeddable pages, and layout templates. Templates take precedence in this filter when both flags are set; the embeddable restriction still applies to such a template. These are forms of the same Page contract, not additional asset classes. Directory rows show the form and projection renderer. Sorting defaults to most recently updated; name order is applied by the server before pagination, with asset ID as a stable tie breaker. Filters and sorting survive opening an asset and returning to the directory.
 
-Product assets are isolated by domain. Private assets belong to their owner, who alone can edit/delete them. Domain assets can be discovered and reused by other domain members, with all underlying reads and writes still using the viewer's identity. A personal home cannot be shared directly. Shared templates reject personal dashboards, object/conversation/agent bookmarks and private children. Applying a template copies its layout/configuration into the personal page and keeps shared component references. Copy a component before making independent changes. Product visibility is the initial collaboration policy, not a new grant of business permissions.
+Prefer asset instance names that describe the business subject and purpose. For example: `人员 · 档案摘要`, `在职人员 · 名册`, `在职人数 · 总览`, `人员 · 信息维护`, `师资工作台`, `师资工作台 · 布局模板`, `师资工作台 · 页面导航`, `师资管理`, and `师资分析助手`. Add an audience or renderer suffix only to distinguish otherwise identical projections. Keep technical IDs, revision numbers, owner and sharing state in metadata rather than names. Existing author-supplied names are not rewritten automatically.
 
-Every product save includes the current revision; stale updates return `PRODUCT_CONFLICT`. The personal workspace compatibility API carries the revision in `If-Match`. Referenced product assets and active homes cannot be deleted. Product revisions are editing concurrency tokens, not immutable capability releases or an approval workflow.
+```mermaid
+flowchart LR
+  app[交互应用] -->|导航根| nav[页面导航]
+  nav -->|入口与转场| page[页面 / 可嵌入页]
+  template[布局模板 Page.isTemplate] -. 从模板复制顶层配置 .-> page
+  page -->|子资产 ID| projection[对象视图 / 集合视图 / 指标组件 / 操作视图]
+  page -->|嵌入对话| profile[智能体配置]
+  profile -->|工具与上下文 ID| projection
+  projection -->|renders 一对一| ontology[ObjectType / Definition / MetricView / Action]
+  profile -->|embodies| principal[Agent Principal]
+```
 
-## AI and source applications
+The template-copy arrow describes an operation, not a persistent dependency. A copied page continues to reference its selected child assets. Page-to-Page references may stay within the composition layer, and embedding a profile crosses back to the bundle layer; the categories describe responsibilities rather than a strictly linear dependency hierarchy. Grant decisions remain in governance and are not inferred from any of these edges.
 
-App Builder discovers `product types` (including JSON Schema), lists/reads assets, and saves the same documents that the manual editor edits. The authoring CLI is available during a build; product authoring through an embedded build-test SDK context is rejected. Custom source stays in the existing Git workspace and publication flow. Publishing/rolling back a source application reads its committed product manifest and registers the application under the existing platform application ID. Only explicit manifest references participate in product impact analysis.
+Page `layout` owns column proportions, grid mode and spacing. The platform runtime and manual editor consume the same layout; principal overlays only own personal resource selections and interaction preferences. Projection `display` accepts field sorting, row limits, colors and field formats. It cannot contain expressions or percentage scaling.
 
-## Verification and remaining scope
+The full object-view editor now saves product-owned ObjectViews through `/product-assets/object-views/*`. Existing class definitions are read-only import sources. Standalone object entries keep their explicit published revision in the product repository; bundle publications continue to freeze the selected asset revisions independently.
 
-Verification covers a migrated home, live published metric cards/table, manual edit after AI edit, stale revisions, invalid output mappings, SQL/DSL/direct-read rejection, private dependencies, referenced deletion, template copy/application, and Action form loading. The follow-up adds an `object-view` adapter to a published class view, runtime selection of different objects, manual chart-style switching against the same MetricView, and direct product composition in home settings. Business writes continue through the existing executor. The catalog uses a fixed shared header with independent bounded list/detail scrolling.
+Source manifests may declare `triggerIds` alongside `assetIds`. Each Trigger must have a declared CollectionView for its Definition. Publications freeze the Trigger contract, and the host admits only those declared subscriptions. Online subscription comparison state is checkpointed without credentials and can resume using the same ID and fresh caller credentials while its lease remains valid.
 
-This implementation does not claim four-layer kernel migration: product metadata is owned by the product service and surfaced in the Manager, not yet stored in the data engine's logical ontology graph. Full graph-wide impact analysis, configurable workspace section instances, per-role product grants, deep component copy and full source-code round trips remain separate work. Existing personal dashboards retain their own editing APIs; their product entries are references. Object-view definitions remain in their owner service. Historical direct reads remain available only through compatibility behavior until explicitly migrated; new authoring and product admission enforce capability bindings. Do not interpret a product revision as a pinned capability version; product views need not all pin capability versions.
+Authoring saves accept `{name, description, document, revision}`. Authorization is managed separately through use/edit Grants; new assets grant both verbs to their creator. Legacy `visibility` metadata remains readable for migration and historical snapshots, but is rejected by the current HTTP authoring contract and does not control directory access. The shared directory scope means assets created by others for which the current principal has a Grant.
 
-Object-view authoring and product admission now require capability-bound properties/links as well as metric/table/chart data. Identity bindings use `context.primaryKey` or `context.className`; business comparisons and direct object-property bindings are rejected. Only presence/emptiness of a top-level local variable may control interaction visibility. Historical documents remain readable through the legacy object entry and need explicit capability migration before saving, republishing or product reuse. Server dependency responses expand published object-view capabilities and personal dashboard card MetricViews under the caller identity.
+Historical source releases using the earlier network policy remain migration inputs. Retrying their original commit or rolling back to them cannot reactivate that policy: migrate the source to `connectAppContext()`, declare its dependencies, and publish a new reviewed commit. Existing release files and history are retained. The standalone object entry resolves a complete archived asset, including fields and renderer, and overlays only the current edit decision; it never combines a published layout with the current draft definition.
 
-Source publication and rollback require an explicit `ontomato.products.json` (including an empty dependency list) and committed `ontomato.product-review.json` checks for capability reads, Action writes, no source-only business rules and disposable presentation. This declaration is a delivery check, not proof about arbitrary JavaScript. Product defaults, choices and read-only fields must never be the sole implementation of business constraints.
+Product configuration owns presentation, not business facts, calculations, rules or execution authorization. Personal preferences belong to principal overlays. Published bundles freeze recursive asset revisions and capability contracts; editing a child does not upgrade a release.
 
-See [产品层设计与整合说明](产品层设计与整合说明.md) for the complete Chinese design, migration boundaries and acceptance notes.
+The authoring API, manual editor and Agent authoring commands share the product save boundary. SDK applications use `context.products`, `ProductAsset`, `context.metricViews`, `context.actions`, typed `context.navigate` and server-evaluated `context.subscribe`.
+
+The product dependency graph is derived from caller-visible documents and preserves intermediate composition nodes. It does not independently own configuration or permission decisions. Product-index graph visualization does not mean ontology registration is complete; consult the migration status for the actual boundary.

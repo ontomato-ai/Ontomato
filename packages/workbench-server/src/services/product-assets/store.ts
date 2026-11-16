@@ -5,99 +5,182 @@ import { defaultPersonalWorkspace, personalWorkspaceSchema, type PersonalWorkspa
 import { getPostgresPool as db, qualifiedTable as t } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
-import {validateProduct} from './validation';
+import {validateProduct,validatePageBindings} from './validation';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
+import {normalizeComposition,validateComposition,validateAffectedCompositions} from './composition';
+import {backendPost,buildBackendHeaders} from '../../utils/backend-client';
+import {config} from '../../config/application';
+import {objectViewDocumentSchema} from '@ontomato/contracts/object-views';
+import {withProductGrants,currentProductGrants,registerProductResource,productGrantIdsForOwner,refreshProductGrants} from './grants';
+import {assistantStore} from '../assistant/store';
+import {agentPrincipalCredentials} from './agent-principal';
+import {ontologyRegistration,synchronizeProductOntology} from './ontology';
 
 export interface ProductOwner { domainId: string; userId: string }
 const columns = `id, owner_id AS "ownerId", name, description, visibility, document, revision, created_at AS "createdAt", updated_at AS "updatedAt"`;
 function asset(row: Record<string, unknown>, owner: ProductOwner): ProductAsset {
-  return productAssetSchema.parse({ ...row, editable: row.ownerId === owner.userId,
+  return productAssetSchema.parse({ ...row, editable: currentProductGrants(owner).edit.has(String(row.id)),
     createdAt: (row.createdAt as Date).toISOString(), updatedAt: (row.updatedAt as Date).toISOString() });
 }
-export async function listProducts(owner: ProductOwner, client = db()) {
-  const result = await client.query(`SELECT ${columns} FROM ${t("product_assets")} WHERE domain_id=$1 AND (owner_id=$2 OR visibility='domain') ORDER BY updated_at DESC,id`, [owner.domainId, owner.userId]);
+export async function listProducts(owner: ProductOwner, client = db()) {return withProductGrants(owner,()=>listAuthorizedProducts(owner,client));}
+async function listAuthorizedProducts(owner:ProductOwner,client=db()){
+  const access=currentProductGrants(owner);
+  const result = await client.query(`SELECT ${columns} FROM ${t("product_assets")} WHERE domain_id=$1 AND id=ANY($2::text[]) ORDER BY updated_at DESC,id`, [owner.domainId,[...new Set([...access.use,...access.edit])]]);
   return result.rows.map(row => asset(row, owner));
 }
-export async function queryProducts(owner:ProductOwner,query:ProductQuery){
-  const args:unknown[]=[owner.domainId,owner.userId];
-  const clauses=["domain_id=$1 AND (owner_id=$2 OR visibility='domain')"];
-  if(query.scope==='mine')clauses.push('owner_id=$2');
-  if(query.scope==='shared')clauses.push("visibility='domain'");
+export async function queryProducts(owner:ProductOwner,query:ProductQuery){return withProductGrants(owner,()=>queryAuthorizedProducts(owner,query));}
+async function queryAuthorizedProducts(owner:ProductOwner,query:ProductQuery){
+  const access=currentProductGrants(owner);
+  const args:unknown[]=[owner.domainId,[...new Set([...access.use,...access.edit])]];
+  const clauses=["domain_id=$1 AND id=ANY($2::text[])"];
+  if(query.scope==='mine'){args.push(owner.userId);clauses.push(`owner_id=$${args.length}`);}
+  if(query.scope==='shared'){args.push(owner.userId);clauses.push(`owner_id<>$${args.length}`);}
   if(query.kind){args.push(query.kind);clauses.push(`document->>'kind'=$${args.length}`);}
+  if(query.pageForm&&query.pageForm!=='all'){
+    clauses.push("document->>'kind'='page'");
+    if(query.pageForm==='template')clauses.push("document->>'isTemplate'='true'");
+    else if(query.pageForm==='embeddable')clauses.push("document->>'embeddable'='true' AND COALESCE(document->>'isTemplate','false')<>'true'");
+    else clauses.push("COALESCE(document->>'isTemplate','false')<>'true' AND COALESCE(document->>'embeddable','false')<>'true'");
+  }
   if(query.search){args.push(query.search);clauses.push(`strpos(lower(name),lower($${args.length}))>0`);}
   const where=clauses.join(' AND ');
   const count=await db().query(`SELECT count(*)::int AS total FROM ${t('product_assets')} WHERE ${where}`,args);
-  const result=await db().query(`SELECT id,owner_id AS "ownerId",name,description,visibility,revision,created_at AS "createdAt",updated_at AS "updatedAt",document->>'kind' AS kind FROM ${t('product_assets')} WHERE ${where} ORDER BY updated_at DESC,id LIMIT $${args.length+1} OFFSET $${args.length+2}`,[...args,query.pageSize,(query.page-1)*query.pageSize]);
+  const order=query.sort==='name'?'lower(name),id':'updated_at DESC,id';
+  const result=await db().query(`SELECT id,owner_id AS "ownerId",name,description,visibility,revision,created_at AS "createdAt",updated_at AS "updatedAt",document->>'kind' AS kind FROM ${t('product_assets')} WHERE ${where} ORDER BY ${order} LIMIT $${args.length+1} OFFSET $${args.length+2}`,[...args,query.pageSize,(query.page-1)*query.pageSize]);
   const details=await db().query(`SELECT id,jsonb_strip_nulls(jsonb_build_object(
+    'isTemplate',document->'isTemplate','embeddable',document->'embeddable','renderer',document->>'renderer',
     'widgetKind',document->'widget'->>'kind','chartType',CASE WHEN document->'widget'->>'kind'='chart' THEN document->'widget'->>'chartType' END,
-    'section',document->'widget'->>'source','className',document->>'className','resourceId',document->'widget'->>'resourceId',
+    'section',document->'widget'->>'source','className',COALESCE(document->>'className',CASE WHEN document->'renders'->>'kind'='ObjectType' THEN document->'renders'->>'id' END),'resourceId',COALESCE(document->'renders'->>'id',document->'widget'->>'resourceId'),
     'childCount',CASE WHEN document ? 'children' THEN jsonb_array_length(document->'children') END,
     'widgetCount',CASE WHEN document ? 'widgets' THEN jsonb_array_length(document->'widgets') END,
     'widgetKinds',CASE WHEN document ? 'widgets' THEN (SELECT jsonb_agg(DISTINCT w->>'kind') FROM jsonb_array_elements(document->'widgets') w) END)) AS details
-    FROM ${t('product_assets')} WHERE domain_id=$1 AND id=ANY($2::text[]) AND (owner_id=$3 OR visibility='domain')`,[owner.domainId,result.rows.map(row=>row.id),owner.userId]);
+    FROM ${t('product_assets')} WHERE domain_id=$1 AND id=ANY($2::text[])`,[owner.domainId,result.rows.map(row=>row.id)]);
   const byId=new Map(details.rows.map(row=>[row.id,row.details]));
-  return {items:result.rows.map(row=>({...row,details:byId.get(row.id)??{},createdAt:row.createdAt.toISOString(),updatedAt:row.updatedAt.toISOString(),editable:row.ownerId===owner.userId})),total:count.rows[0].total,page:query.page,pageSize:query.pageSize};
+  return {items:result.rows.map(row=>({...row,details:byId.get(row.id)??{},createdAt:row.createdAt.toISOString(),updatedAt:row.updatedAt.toISOString(),editable:access.edit.has(row.id)})),total:count.rows[0].total,page:query.page,pageSize:query.pageSize};
 }
-export async function countProductTypes(owner:ProductOwner){
-  const result=await db().query(`SELECT document->>'kind' AS kind,count(*)::int AS count FROM ${t('product_assets')} WHERE domain_id=$1 AND (owner_id=$2 OR visibility='domain') GROUP BY document->>'kind'`,[owner.domainId,owner.userId]);
+export async function countProductTypes(owner:ProductOwner){return withProductGrants(owner,()=>countAuthorizedProducts(owner));}
+async function countAuthorizedProducts(owner:ProductOwner){
+  const access=currentProductGrants(owner);
+  const result=await db().query(`SELECT document->>'kind' AS kind,count(*)::int AS count FROM ${t('product_assets')} WHERE domain_id=$1 AND id=ANY($2::text[]) GROUP BY document->>'kind'`,[owner.domainId,[...new Set([...access.use,...access.edit])]]);
   return Object.fromEntries(result.rows.map(row=>[row.kind,row.count]));
 }
 /** Walk the requested composition in SQL instead of loading every visible document. */
-export async function dependencyProducts(owner:ProductOwner,id:string){
-  const result=await db().query(`WITH RECURSIVE visible AS (SELECT * FROM ${t('product_assets')} WHERE domain_id=$1 AND (owner_id=$2 OR visibility='domain')),
-    edges AS (SELECT p.id AS parent,child->>'assetId' AS child FROM visible p CROSS JOIN LATERAL jsonb_array_elements(COALESCE(p.document->'children','[]'::jsonb)) child),
+export async function dependencyProducts(owner:ProductOwner,id:string){return withProductGrants(owner,()=>authorizedDependencies(owner,id));}
+async function authorizedDependencies(owner:ProductOwner,id:string){
+  const access=currentProductGrants(owner);
+  const result=await db().query(`WITH RECURSIVE visible AS (SELECT * FROM ${t('product_assets')} WHERE domain_id=$1 AND id=ANY($2::text[])),
+    edges AS (SELECT p.id AS parent,child->>'assetId' AS child FROM visible p CROSS JOIN LATERAL jsonb_array_elements(COALESCE(p.document->'children','[]'::jsonb)) child
+      UNION SELECT p.id,node->>'pageId' FROM visible p CROSS JOIN LATERAL jsonb_array_elements(COALESCE(p.document->'nodes','[]'::jsonb)) node
+      UNION SELECT p.id,reference FROM visible p CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(p.document->'tools','[]'::jsonb)||COALESCE(p.document->'contextViews','[]'::jsonb)) reference
+      UNION SELECT p.id,p.document->>'navigationId' FROM visible p WHERE p.document ? 'navigationId'),
     descendants(id) AS (SELECT id FROM visible WHERE id=$3 UNION SELECT e.child FROM edges e JOIN descendants d ON e.parent=d.id),
     ancestors(id) AS (SELECT id FROM visible WHERE id=$3 UNION SELECT e.parent FROM edges e JOIN ancestors a ON e.child=a.id)
-    SELECT ${columns} FROM visible WHERE id IN (SELECT id FROM descendants UNION SELECT id FROM ancestors)`,[owner.domainId,owner.userId,id]);
+    SELECT ${columns} FROM visible WHERE id IN (SELECT id FROM descendants UNION SELECT id FROM ancestors)`,[owner.domainId,[...new Set([...access.use,...access.edit])],id]);
   return result.rows.map(row=>asset(row,owner));
 }
 export async function getProduct(owner: ProductOwner, id: string, client: Pick<PoolClient, "query"> = db()) {
-  const result = await client.query(`SELECT ${columns} FROM ${t("product_assets")} WHERE domain_id=$1 AND id=$2 AND (owner_id=$3 OR visibility='domain')`, [owner.domainId, id, owner.userId]);
+  return withProductGrants(owner,()=>getAuthorizedProduct(owner,id,client));
+}
+async function getAuthorizedProduct(owner:ProductOwner,id:string,client:Pick<PoolClient,'query'>){
+  const access=currentProductGrants(owner);
+  if(!access.use.has(id)&&!access.edit.has(id))throw new HttpError(404,'Product asset unavailable','PRODUCT_UNAVAILABLE');
+  const result = await client.query(`SELECT ${columns} FROM ${t("product_assets")} WHERE domain_id=$1 AND id=$2`, [owner.domainId, id]);
   if (!result.rows[0]) throw new HttpError(404, "Product asset unavailable", "PRODUCT_UNAVAILABLE");
   return asset(result.rows[0], owner);
 }
 export async function lockProducts(client: PoolClient, owner: ProductOwner) {
   await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [`product-assets:${owner.domainId}`]);
 }
-async function writeProduct(client: PoolClient, owner: ProductOwner, id: string, input: ProductAssetInput, revision: number) {
-  const existing = await client.query(`SELECT owner_id,revision,document FROM ${t("product_assets")} WHERE domain_id=$1 AND id=$2`, [owner.domainId, id]);
+async function writeProduct(client: PoolClient, owner: ProductOwner, id: string, input: ProductAssetInput, revision: number, migrating=false,_credentials:AssistantCredentials={}) {
+  const existing = await client.query(`SELECT owner_id,revision,document,visibility FROM ${t("product_assets")} WHERE domain_id=$1 AND id=$2`, [owner.domainId, id]);
   const row = existing.rows[0];
-  if (row && row.owner_id !== owner.userId) throw new HttpError(403, "Only the owner may edit this asset", "PRODUCT_FORBIDDEN");
+  if (row && !currentProductGrants(owner).edit.has(id)) throw new HttpError(403, "Product edit Grant required", "PRODUCT_FORBIDDEN");
   if ((row?.revision ?? 0) !== revision) throw new HttpError(409, "Asset changed; reload before saving", "PRODUCT_CONFLICT");
-  if (row && row.document.kind !== input.document.kind) throw new HttpError(400, "Asset type cannot change", "PRODUCT_TYPE_CHANGED");
+  if (row && row.document.kind !== input.document.kind && !migrating) throw new HttpError(400, "Asset type cannot change", "PRODUCT_TYPE_CHANGED");
   if(input.document.kind === "page" && input.visibility === "domain") {
     const home=await client.query(`SELECT 1 FROM ${t("product_home")} WHERE domain_id=$1 AND asset_id=$2`,[owner.domainId,id]);
     if(home.rowCount)throw new HttpError(400,"Copy a personal home into a shared template instead","PRIVATE_HOME");
   }
   for (const ref of productReferences(input.document).filter(ref => ref.kind === "asset")) {
     const target = await getProduct(owner, ref.id, client);
-    if (input.visibility === "domain" && target.visibility !== "domain") throw new HttpError(400, "Shared assets can only contain shared product assets", "PRIVATE_DEPENDENCY");
-    if (target.document.kind === "layout-template" || target.document.kind === "application" || (target.document.kind === "page" && input.document.kind !== "application"))
+    if (target.document.kind === "layout-template" || target.document.kind === "application" || (target.document.kind==='page'&&target.document.isTemplate))
       throw new HttpError(400, "Choose a runnable product component; only applications can contain pages", "INVALID_PRODUCT_CHILD");
     if (id === ref.id) throw new HttpError(400, "Asset cannot contain itself", "PRODUCT_CYCLE");
   }
-  if (input.visibility === "private" && row) {
-    const parents = await client.query(`SELECT document FROM ${t("product_assets")} WHERE domain_id=$1 AND visibility='domain' AND id<>$2`, [owner.domainId, id]);
-    if (parents.rows.some(parent => productReferences(parent.document).some(ref => ref.kind === "asset" && ref.id === id)))
-      throw new HttpError(409, "A shared asset uses this asset", "PRODUCT_IN_USE");
+  const document={...input.document};
+  if(document.kind==='page'&&document.workspace){
+    const preferences=row?row.document.kind==='page'?row.document.workspace:undefined:document.workspace;
+    if(preferences)await client.query(`INSERT INTO ${t('product_user_overlays')} (domain_id,principal_id,page_id,preferences) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT DO NOTHING`,[owner.domainId,row?.owner_id??owner.userId,id,JSON.stringify(preferences)]);
+    delete document.workspace;
   }
   await client.query(`INSERT INTO ${t("product_assets")} (domain_id,id,owner_id,name,description,visibility,document)
     VALUES($1,$2,$3,$4,$5,$6,$7::jsonb) ON CONFLICT(domain_id,id) DO UPDATE SET
     name=EXCLUDED.name,description=EXCLUDED.description,visibility=EXCLUDED.visibility,document=EXCLUDED.document,
     revision=${t("product_assets")}.revision+1,updated_at=now()`,
-  [owner.domainId, id, owner.userId, input.name, input.description, input.visibility, JSON.stringify(input.document)]);
-  return getProduct(owner, id, client);
+  [owner.domainId, id, owner.userId, input.name, input.description, input.visibility, JSON.stringify(document)]);
+  if(!row){
+    await registerProductResource(owner,id,input.visibility==='domain');
+    const [use,edit]=await Promise.all([productGrantIdsForOwner(owner,'use'),productGrantIdsForOwner(owner,'edit')]);
+    if(!edit.includes(id))throw new HttpError(403,'Product edit Grant required','PRODUCT_FORBIDDEN');
+    const access=currentProductGrants(owner);if(use.includes(id))access.use.add(id);access.edit.add(id);
+  }
+  await client.query(`UPDATE ${t('product_assets')} SET governance_registered=true WHERE domain_id=$1 AND id=$2`,[owner.domainId,id]);
+  const saved=await getProduct(owner,id,client);
+  const registration=ontologyRegistration(saved);
+  if(registration)await client.query(`INSERT INTO ${t('product_ontology_outbox')} (domain_id,asset_id,revision,registration) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT(domain_id,asset_id) DO UPDATE SET revision=EXCLUDED.revision,registration=EXCLUDED.registration`,[owner.domainId,id,saved.revision,JSON.stringify(registration)]);
+  await client.query(`INSERT INTO ${t('product_asset_revisions')} (domain_id,asset_id,revision,asset) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT DO NOTHING`,[owner.domainId,id,saved.revision,JSON.stringify(saved)]);
+  if(migrating&&saved.document.kind==='object-projection'&&saved.document.layout)await client.query(`INSERT INTO ${t('product_object_view_heads')} (domain_id,asset_id,revision) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`,[owner.domainId,id,saved.revision]);
+  return saved;
 }
-export async function saveProduct(owner: ProductOwner, id: string, input: ProductAssetInput, revision: number, credentials:AssistantCredentials) {
+export async function saveProduct(owner: ProductOwner, id: string, input: ProductAssetInput, revision: number, credentials:AssistantCredentials,migrating=false) {
+  return withProductGrants(owner,async()=>{const saved=await saveAuthorizedProduct(owner,id,input,revision,credentials,migrating);if(ontologyRegistration(saved))await synchronizeProductOntology(owner);return saved;});
+}
+async function saveAuthorizedProduct(owner:ProductOwner,id:string,input:ProductAssetInput,revision:number,credentials:AssistantCredentials,migrating=false){
   const parsed=productAssetInputSchema.parse(input);
+  const normalized=normalizeComposition(id,parsed);
+  if(parsed.document.kind==='agent-profile'){
+    if(parsed.document.principalId===id)throw new HttpError(400,'Profile and Agent principal require distinct identities','INVALID_AGENT_PROFILE');
+  }
+  if(parsed.document.kind==='object-view'){
+    const response=await backendPost('product-object-view-migration',config.dataQuery.baseUrl+'/objectView/read',{className:parsed.document.className,form:parsed.document.form},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});
+    const state=JSON.parse(response.text);
+    const published=state.data?.versions?.find((version:{revision:number})=>version.revision===state.data.publishedRevision);
+    if(!state.success||!published)throw new HttpError(409,'Publish the source ObjectView before migrating it','UNPUBLISHED_OBJECT_VIEW');
+    normalized.input=productAssetInputSchema.parse({...parsed,document:{kind:'object-projection',renders:{kind:'ObjectType',id:parsed.document.className},renderer:'full',primaryKey:parsed.document.primaryKey,fields:[],layout:objectViewDocumentSchema.parse(published.document),isDefault:!parsed.document.primaryKey}});
+  }
   return transaction(async client => {
     await lockProducts(client, owner);
+    await refreshProductGrants(owner);
     const existing=await client.query(`SELECT owner_id,revision FROM ${t('product_assets')} WHERE domain_id=$1 AND id=$2`,[owner.domainId,id]);
-    if(existing.rows[0]&&existing.rows[0].owner_id!==owner.userId)throw new HttpError(403,'Only the owner may edit this asset','PRODUCT_FORBIDDEN');
+    if(existing.rows[0]&&!currentProductGrants(owner).edit.has(id))throw new HttpError(403,'Product edit Grant required','PRODUCT_FORBIDDEN');
     if((existing.rows[0]?.revision??0)!==revision)throw new HttpError(409,'Asset changed; reload before saving','PRODUCT_CONFLICT');
-    await validateProduct(owner,parsed,credentials);
-    await validateChildren(owner,parsed,credentials,client);
-    return writeProduct(client, owner, id, parsed, revision);
+    if(!existing.rows[0]){
+      const removed=await client.query(`SELECT 1 FROM ${t('product_asset_revisions')} WHERE domain_id=$1 AND asset_id=$2 LIMIT 1`,[owner.domainId,id]);
+      if(removed.rows.length)throw new HttpError(409,'Deleted asset identities cannot be reused; create a new asset ID','PRODUCT_ID_RETIRED');
+    }
+    if(parsed.document.kind==='agent-profile'){
+      await assistantStore.agent(parsed.document.principalId,owner);
+      await agentPrincipalCredentials(owner.domainId,parsed.document.principalId,credentials.locale,owner.userId);
+    }
+    await validateProduct(owner,normalized.input,credentials);
+    for(const child of normalized.children){
+      await validateProduct(owner,child.input,credentials);
+      const existingChild=await client.query(`SELECT revision FROM ${t('product_assets')} WHERE domain_id=$1 AND id=$2`,[owner.domainId,child.id]);
+      await writeProduct(client,owner,child.id,child.input,existingChild.rows[0]?.revision??0,false,credentials);
+    }
+    await validateComposition(id,normalized.input,childId=>getProduct(owner,childId,client));
+    await validatePageBindings(owner,normalized.input,childId=>getProduct(owner,childId,client),credentials);
+    const parents=await client.query(`SELECT ${columns} FROM ${t('product_assets')} WHERE domain_id=$1 AND id<>$2 AND document->>'kind' IN ('page','navigation','agent-profile','application')`,[owner.domainId,id]);
+    const internalRead=async(childId:string)=>{
+      const result=await client.query(`SELECT ${columns} FROM ${t('product_assets')} WHERE domain_id=$1 AND id=$2`,[owner.domainId,childId]);
+      if(!result.rows[0])throw new HttpError(409,'An existing composition has an unavailable dependency','PRODUCT_IN_USE');
+      return asset(result.rows[0],owner);
+    };
+    await validateAffectedCompositions(id,normalized.input,parents.rows.map(row=>asset(row,owner)),internalRead);
+    const candidateRead=async(childId:string)=>childId===id?({...normalized.input,id} as ProductAsset):internalRead(childId);
+    for(const parent of parents.rows.map(row=>asset(row,owner)))if(productReferences(parent.document).some(reference=>reference.kind==='asset'&&reference.id===id))await validatePageBindings(owner,parent,candidateRead,credentials);
+    await validateChildren(owner,normalized.input,credentials,client);
+    return writeProduct(client, owner, id, normalized.input, revision,migrating||parsed.document.kind!==normalized.input.document.kind,credentials);
   });
 }
 export async function validateChildren(owner:ProductOwner,input:ProductAssetInput,credentials:AssistantCredentials,client:Pick<PoolClient,'query'>=db(),seen=new Set<string>()) {
@@ -110,8 +193,12 @@ export async function validateChildren(owner:ProductOwner,input:ProductAssetInpu
   }
 }
 export async function deleteProduct(owner: ProductOwner, id: string, revision: number) {
+  return withProductGrants(owner,async()=>{await deleteAuthorizedProduct(owner,id,revision);await synchronizeProductOntology(owner);});
+}
+async function deleteAuthorizedProduct(owner:ProductOwner,id:string,revision:number){
   await transaction(async client => {
     await lockProducts(client, owner);
+    await refreshProductGrants(owner);
     const target = await getProduct(owner, id, client);
     if (!target.editable) throw new HttpError(403, "Only the owner may delete this asset", "PRODUCT_FORBIDDEN");
     if (target.revision !== revision) throw new HttpError(409, "Asset changed; reload before deleting", "PRODUCT_CONFLICT");
@@ -119,12 +206,18 @@ export async function deleteProduct(owner: ProductOwner, id: string, revision: n
     const homes = await client.query(`SELECT 1 FROM ${t("product_home")} WHERE domain_id=$1 AND asset_id=$2`, [owner.domainId, id]);
     if (homes.rowCount || parents.rows.some(row => productReferences(row.document).some(ref => ref.kind === "asset" && ref.id === id)))
       throw new HttpError(409, "Asset is in use; remove its references first", "PRODUCT_IN_USE");
+    const releases=await client.query(`SELECT 1 FROM ${t('product_releases')} WHERE domain_id=$1 AND EXISTS(SELECT 1 FROM jsonb_array_elements(snapshot->'assets') item WHERE item->>'id'=$2) LIMIT 1`,[owner.domainId,id]);
+    if(releases.rowCount)throw new HttpError(409,'Published releases retain this asset','PRODUCT_IN_USE');
     await client.query(`DELETE FROM ${t("product_assets")} WHERE domain_id=$1 AND id=$2`, [owner.domainId, id]);
+    if(ontologyRegistration(target))await client.query(`INSERT INTO ${t('product_ontology_outbox')} (domain_id,asset_id,revision,registration) VALUES($1,$2,$3,NULL) ON CONFLICT(domain_id,asset_id) DO UPDATE SET revision=EXCLUDED.revision,registration=NULL`,[owner.domainId,id,target.revision+1]);
   });
 }
 
 /** Migrate once under the same lock used for editing; legacy rows are retained solely for rollback. */
 export async function personalHome(owner: ProductOwner,credentials:AssistantCredentials={}) {
+  return withProductGrants(owner,async()=>{const home=await authorizedPersonalHome(owner,credentials);await synchronizeProductOntology(owner);return home;});
+}
+async function authorizedPersonalHome(owner:ProductOwner,credentials:AssistantCredentials){
   return transaction(async client => {
     await lockProducts(client, owner);
     const home = await client.query(`SELECT asset_id FROM ${t("product_home")} WHERE domain_id=$1 AND user_id=$2`, [owner.domainId, owner.userId]);
@@ -145,14 +238,48 @@ export async function personalHome(owner: ProductOwner,credentials:AssistantCred
     await validateProduct(owner,input,credentials);
     const result = await writeProduct(client, owner, randomUUID(), input, 0);
     await client.query(`INSERT INTO ${t("product_home")} (domain_id,user_id,asset_id) VALUES($1,$2,$3)`, [owner.domainId, owner.userId, result.id]);
-    return materializeWorkspaceBlocks(client,owner,result);
+    return materializeProductHome(client,owner,result);
   });
+}
+
+/** New homes compose ontology projections; compatibility blocks are only read from migrated old homes. */
+async function materializeProductHome(client:PoolClient,owner:ProductOwner,home:ProductAsset){
+  if(home.document.kind!=='page')throw new Error('Home must be a Page');
+  const preferences=await client.query(`SELECT preferences FROM ${t('product_user_overlays')} WHERE domain_id=$1 AND principal_id=$2 AND page_id=$3`,[owner.domainId,owner.userId,home.id]);
+  const workspace=personalWorkspaceSchema.parse(preferences.rows[0]?.preferences??defaultPersonalWorkspace());
+  const sections=workspace.sections??{main:['apps','data'],sidebar:['tasks','conversations','objects','recent'],hidden:[]};
+  const targets:Record<string,{type:string;fields:string[];name:string}>={
+    apps:{type:'platform:FavoriteApplication',fields:['name','description','path'],name:'常用应用'},
+    data:{type:'platform:Dashboard',fields:['name','updatedAt'],name:'关注的数据'},
+    tasks:{type:'platform:Task',fields:['title','enabled','pause','pauseMessage','resultSummary','resultPath'],name:'任务动态'},
+    conversations:{type:'platform:Conversation',fields:['title','updatedAt','agentId','pinned'],name:'继续分析'},
+    objects:{type:'platform:Favorite',fields:['title','className','primaryKey'],name:'收藏的对象'},
+    recent:{type:'platform:RecentVisit',fields:['title','visitedAt','path'],name:'最近访问'},
+  };
+  const children=[...home.document.children];
+  const profiles=await client.query(`SELECT asset.id FROM ${t('product_assets')} asset JOIN ${t('product_bundle_heads')} head ON head.domain_id=asset.domain_id AND head.bundle_id=asset.id JOIN ${t('product_releases')} release ON release.domain_id=head.domain_id AND release.release_id=head.release_id WHERE asset.domain_id=$1 AND asset.document->>'kind'='agent-profile' AND asset.id=ANY($2::text[]) AND asset.document->>'principalId'=ANY($2::text[]) AND EXISTS(SELECT 1 FROM jsonb_array_elements(release.snapshot->'assets') frozen WHERE frozen->>'id'=asset.id AND (frozen->>'revision')::bigint=asset.revision) ORDER BY asset.id LIMIT 2`,[owner.domainId,[...currentProductGrants(owner).use]]);
+  const profileId=profiles.rows.length===1?profiles.rows[0].id:undefined;
+  const conversationId='home-conversation-'+home.id;
+  await writeProduct(client,owner,conversationId,productAssetInputSchema.parse({name:'智能问数',description:profileId?'':'请选择已发布的智能体配置，将其添加到此页面。',document:{kind:'page',children:profileId?[{assetId:profileId}]:[],compositionVersion:2}}),0);
+  children.push({assetId:conversationId,column:'main'});
+  for(const [column,names] of [['main',sections.main],['sidebar',sections.sidebar]] as const)for(const name of names){
+    const target=targets[name];if(!target)continue;
+    const definitionId='platform-members:'+target.type,id='home-projection-'+home.id+'-'+name;
+    const definition={id:definitionId,name:target.type,objectType:target.type,revision:1,status:'PUBLISHED',parameters:[]};
+    const existing=await client.query(`SELECT definition FROM ${t('business_definitions')} WHERE domain_id=$1 AND id=$2`,[owner.domainId,definitionId]);
+    if(existing.rows[0]&&(existing.rows[0].definition.objectType!==target.type||existing.rows[0].definition.status!=='PUBLISHED'||existing.rows[0].definition.predicate||existing.rows[0].definition.parameters?.length))throw new HttpError(409,'Platform Definition identity is already in use','INVALID_DEFINITION');
+    await client.query(`INSERT INTO ${t('business_definitions')} (domain_id,id,status,definition) VALUES($1,$2,'PUBLISHED',$3::jsonb) ON CONFLICT DO NOTHING`,[owner.domainId,definitionId,JSON.stringify(definition)]);
+    await writeProduct(client,owner,id,productAssetInputSchema.parse({name:target.name,document:{kind:'collection-view',renders:{kind:'Definition',id:definitionId},renderer:'list',parameters:{},fields:target.fields,pageSize:4,isDefault:true}}),0);
+    children.push({assetId:id,column});
+  }
+  return writeProduct(client,owner,home.id,{name:home.name,description:home.description,visibility:home.visibility,document:{...home.document,children,compositionVersion:2}},home.revision);
 }
 
 /** Persist legacy built-ins once; rendering thereafter follows only the page composition. */
 async function materializeWorkspaceBlocks(client:PoolClient,owner:ProductOwner,home:ProductAsset){
   if(home.document.kind!=='page')return home;
-  const workspace=home.document.workspace;
+  const preferences=await client.query(`SELECT preferences FROM ${t('product_user_overlays')} WHERE domain_id=$1 AND principal_id=$2 AND page_id=$3`,[owner.domainId,owner.userId,home.id]);
+  const workspace=personalWorkspaceSchema.parse(preferences.rows[0]?.preferences??home.document.workspace??defaultPersonalWorkspace());
   const sections=workspace.sections??{main:['apps','data'],sidebar:['tasks','conversations','objects','recent'],hidden:[]};
   const children=[...home.document.children];
   const blocks=[{section:'assistant',column:'main'},...sections.main.map(section=>({section,column:'main'})),...sections.sidebar.map(section=>({section,column:'sidebar'}))] as const;
@@ -169,6 +296,29 @@ async function materializeWorkspaceBlocks(client:PoolClient,owner:ProductOwner,h
 export async function saveHomeWorkspace(owner: ProductOwner, workspace: PersonalWorkspace, revision: number,credentials:AssistantCredentials) {
   const home = await personalHome(owner,credentials);
   if (home.document.kind !== "page") throw new Error("Home must be a page");
-  return saveProduct(owner, home.id, {name:home.name,description:home.description,visibility:home.visibility,
-    document:{...home.document,workspace}}, revision,credentials);
+  if(home.revision!==revision)throw new HttpError(409,'Home composition changed','PRODUCT_CONFLICT');
+  const overlay=await readProductOverlay(owner,home.id);
+  await saveProductOverlay(owner,home.id,workspace,overlay.revision);
+  return home;
+}
+
+export async function readProductOverlay(owner:ProductOwner,pageId:string){
+  const page=await getProduct(owner,pageId);
+  if(!['page','collection-view','object-projection'].includes(page.document.kind))throw new HttpError(400,'Preferences require a Page or projection','INVALID_PRODUCT_TYPE');
+  const result=await db().query(`SELECT revision,preferences FROM ${t('product_user_overlays')} WHERE domain_id=$1 AND principal_id=$2 AND page_id=$3`,[owner.domainId,owner.userId,pageId]);
+  return result.rows[0]?{revision:result.rows[0].revision,workspace:personalWorkspaceSchema.parse(result.rows[0].preferences)}:{revision:0,workspace:null};
+}
+export async function saveProductOverlay(owner:ProductOwner,pageId:string,workspace:PersonalWorkspace,revision:number){
+  const parsed=personalWorkspaceSchema.parse(workspace);const page=await getProduct(owner,pageId);
+  if(!['page','collection-view','object-projection'].includes(page.document.kind))throw new HttpError(400,'Preferences require a Page or projection','INVALID_PRODUCT_TYPE');
+  return transaction(async client=>{
+    await lockProducts(client,owner);
+    const current=await getProduct(owner,pageId,client);
+    if(!['page','collection-view','object-projection'].includes(current.document.kind))throw new HttpError(400,'Preferences require a Page or projection','INVALID_PRODUCT_TYPE');
+    const existing=await client.query(`SELECT revision FROM ${t('product_user_overlays')} WHERE domain_id=$1 AND principal_id=$2 AND page_id=$3`,[owner.domainId,owner.userId,pageId]);
+    if((existing.rows[0]?.revision??0)!==revision)throw new HttpError(409,'Personal preferences changed; reload first','PRODUCT_CONFLICT');
+    await client.query(`INSERT INTO ${t('product_user_overlays')} (domain_id,principal_id,page_id,preferences) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT(domain_id,principal_id,page_id) DO UPDATE SET preferences=EXCLUDED.preferences,revision=${t('product_user_overlays')}.revision+1`,[owner.domainId,owner.userId,pageId,JSON.stringify(parsed)]);
+    if(current.document.kind==='page')await client.query(`INSERT INTO ${t('product_user_overlays')} (domain_id,principal_id,page_id,preferences) SELECT $1,$2,projection.id,$4::jsonb FROM ${t('product_assets')} projection WHERE projection.domain_id=$1 AND projection.document->>'kind'='collection-view' AND projection.document->'renders'->>'id' LIKE 'platform-members:platform:%' AND projection.id=ANY($3::text[]) ON CONFLICT(domain_id,principal_id,page_id) DO UPDATE SET preferences=EXCLUDED.preferences,revision=${t('product_user_overlays')}.revision+1`,[owner.domainId,owner.userId,current.document.children.map(child=>child.assetId),JSON.stringify(parsed)]);
+    return {revision:revision+1,workspace:parsed};
+  });
 }

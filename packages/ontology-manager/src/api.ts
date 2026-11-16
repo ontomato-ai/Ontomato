@@ -23,6 +23,7 @@ export interface ManagerDataFallbacks {
 }
 
 export interface ManagerRequestContext {
+  readonly transport?: (path:string,init:RequestInit,service:string)=>Promise<Response>;
   /** Data engine proxy entry without a trailing slash; requests go to `${apiBase}/data-query/*`. */
   readonly apiBase: string;
   /** null means the host has cleared or not yet obtained a credential: no business request is sent and it is not treated as anonymous. */
@@ -319,7 +320,7 @@ export function createManagerRequest(
     const execution=context.executionContext;
     if(execution?.kind==="build-test" && service!=="/data-query")
       throw Object.assign(new Error("This operation is not available for test-data preview"),{code:"BUILD_TEST_UNSUPPORTED"});
-    const response = await fetch(`${context.apiBase}${service}${path}`, {
+    const requestInit:RequestInit = {
       ...init,
       headers: {
         ...(init.headers as Record<string,string> | undefined),
@@ -330,7 +331,8 @@ export function createManagerRequest(
         ...(service === "/data-query" && execution?.kind === "build-test"
           ? { [BUILD_TEST_HEADER]: JSON.stringify({kind:"build-test",contextId:execution.contextId}) } : {}),
       },
-    });
+    };
+    const response = context.transport?await context.transport(path,requestInit,service):await fetch(`${context.apiBase}${service}${path}`,requestInit);
     assertCurrent();
     if (response.status === 401 || response.status === 402) onAuthFailure(response.status);
     if (!response.ok) {
@@ -612,6 +614,10 @@ export function createManagerClient(
   }
 
   async function objectViewRequest(operation: "read" | "edit" | "save" | "publish", className: string, form: "full" | "panel", values: Record<string, unknown> = {}): Promise<ObjectViewState> {
+    if(form==='full'){
+      const result=await send(`/product-assets/object-views/${operation}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({className,form,...values})},'');
+      return result.data;
+    }
     return (await post(`/objectView/${operation}`, { className, form, ...values })).data;
   }
 

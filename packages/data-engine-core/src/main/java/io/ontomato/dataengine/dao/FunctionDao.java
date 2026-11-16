@@ -36,7 +36,7 @@ public class FunctionDao {
 
 	private static final String TABLE_NAME = "function";
 
-	private static final String COLUMNS = "id, name, origin, description, operation, parameters, return_def, code, logic, class_names, create_timestamp, modify_timestamp, domain_id, query_package";
+	private static final String COLUMNS = "id, name, origin, description, operation, parameters, return_def, code, logic, class_names, create_timestamp, modify_timestamp, domain_id, query_package, source_artifact";
 
 	@PostConstruct
 	public void initIndex() {
@@ -56,6 +56,7 @@ public class FunctionDao {
 				+ "domain_id VARCHAR(64)"
 				+ ")");
 		jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS query_package TEXT");
+		jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS source_artifact JSONB");
 		jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_" + TABLE_NAME + "_domain_id ON " + TABLE_NAME + "(domain_id)");
 		log.info(">>>function table initialization complete");
 	}
@@ -91,20 +92,20 @@ public class FunctionDao {
 		String classNamesStr = buildClassNamesStr(function);
 
 		jdbcTemplate.update(
-				"INSERT INTO " + TABLE_NAME + " (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+				"INSERT INTO " + TABLE_NAME + " (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb) "
 						+ "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, origin = EXCLUDED.origin, "
 						+ "description = EXCLUDED.description, operation = EXCLUDED.operation, "
 						+ "parameters = EXCLUDED.parameters, return_def = EXCLUDED.return_def, "
 						+ "code = EXCLUDED.code, logic = EXCLUDED.logic, class_names = EXCLUDED.class_names, "
 						+ "create_timestamp = EXCLUDED.create_timestamp, modify_timestamp = EXCLUDED.modify_timestamp, "
-						+ "domain_id = EXCLUDED.domain_id, query_package = EXCLUDED.query_package",
+				+ "domain_id = EXCLUDED.domain_id, query_package = EXCLUDED.query_package, source_artifact = EXCLUDED.source_artifact",
 				function.getId(), function.getName(), function.getOrigin(), function.getDescription(),
 				function.getOperation(),
 				function.getQueryPackage() == null ? JSON.toJSONString(function.getParameters(), Feature.WriteMapNullValue) : null,
 				JSON.toJSONString(function.getReturnDef(), Feature.WriteMapNullValue),
 				function.getCode(), function.getLogic(), classNamesStr,
 				function.getCreateTimestamp(), function.getModifyTimestamp(), function.getDomainId(),
-                JSON.toJSONString(function.getQueryPackage(), Feature.WriteMapNullValue));
+                JSON.toJSONString(function.getQueryPackage(), Feature.WriteMapNullValue),JSON.toJSONString(function.getSourceArtifact()));
 		return function;
 	}
 
@@ -192,6 +193,7 @@ public class FunctionDao {
 		function.setReturnDef(returnDef == null ? null : JSONObject.parseObject(returnDef, ReturnDef.class));
 		function.setCode(rs.getString("code"));
         function.setQueryPackage(JSON.parseObject(rs.getString("query_package")));
+        function.setSourceArtifact(JSON.parseObject(rs.getString("source_artifact")));
 		function.setLogic(rs.getString("logic"));
 		function.setCreateTimestamp(rs.getObject("create_timestamp") == null ? null : rs.getLong("create_timestamp"));
 		function.setModifyTimestamp(rs.getObject("modify_timestamp") == null ? null : rs.getLong("modify_timestamp"));

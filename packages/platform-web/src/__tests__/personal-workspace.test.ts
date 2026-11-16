@@ -26,9 +26,13 @@ beforeEach(() => {
   api.recent = [];
   api.conversations = [];
   api.request.mockReset().mockImplementation(async (path: string, init?: RequestInit) => {
+    if(path.endsWith('/overlay')){
+      if(init?.method==='PUT'){if(api.failSave)throw new Error('Save failed');const input=JSON.parse(String(init.body));api.saved=input.workspace;return Response.json({revision:1,workspace:input.workspace});}
+      return Response.json({revision:0,workspace:null});
+    }
     if(path==='/api/product-assets/home'&&init?.method==='PUT'){
       if(api.failSave)throw new Error('Save failed');
-      const input=JSON.parse(String(init.body));api.saved=input.document.workspace;
+      const input=JSON.parse(String(init.body));
       return Response.json({asset:{...home(),...input,revision:2}});
     }
     if(path==='/api/product-assets/home')return Response.json({asset:home()});
@@ -66,6 +70,17 @@ async function page(stubs: Record<string, boolean> = {}) {
   return { wrapper, router, open };
 }
 describe("personal workspace", () => {
+  it('passes typed object state through nested Pages to their projections',async()=>{
+    const state={selected:{className:'Person',primaryKey:'one'}};
+    const base={id:'root',name:'Root',ownerId:'alice',visibility:'private',revision:1,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),editable:false};
+    const signature={selected:{kind:'object',objectType:'Person'}};
+    const assets=[productAssetSchema.parse({...base,document:{kind:'page',compositionVersion:2,params:signature,children:[{assetId:'nested'}]}}),productAssetSchema.parse({...base,id:'nested',document:{kind:'page',compositionVersion:2,params:signature,children:[{assetId:'projection'}]}}),productAssetSchema.parse({...base,id:'projection',document:{kind:'object-projection',renders:{kind:'ObjectType',id:'Person'},renderer:'summary',fields:['name']}})];
+    const router=createRouter({history:createMemoryHistory(),routes:[{path:'/',component:{template:'<div />'}}]});await router.push('/');
+    const wrapper=mount(Workspace,{props:{productAssetId:'root',pinnedAssets:assets,pageState:state},global:{plugins:[router,ElementPlus,createI18n({legacy:false,locale:'en',messages:{en:{}}})],stubs:{ManagerFrame:{template:'<div><slot /></div>'},ProductAssetRuntime:{props:['pageState'],template:'<div class="typed-projection">{{JSON.stringify(pageState)}}</div>'}},provide:{[openApplicationKey as symbol]:vi.fn()}}});
+    await flushPromises();
+    expect(wrapper.find('.typed-projection').text()).toContain('"primaryKey":"one"');
+    wrapper.unmount();
+  });
   it('renders the same platform component outside a home using its own resource selection',async()=>{
     const router=createRouter({history:createMemoryHistory(),routes:[{path:'/',component:{template:'<div />'}}]});
     await router.push('/');

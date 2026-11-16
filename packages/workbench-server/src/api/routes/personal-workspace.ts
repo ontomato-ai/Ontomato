@@ -1,9 +1,9 @@
 import { Router } from "express";
-import { personalWorkspaceSchema, recentWorkInputSchema } from "@ontomato/contracts/personal-workspace";
+import { personalWorkspaceSchema, recentWorkInputSchema,defaultPersonalWorkspace } from "@ontomato/contracts/personal-workspace";
 import { personalWorkspaceStore, type PersonalWorkspaceOwner } from "../../services/personal-workspace/store";
 import { requireDomainId, type AuthenticatedRequest } from "../../utils/request-identity";
 import { asyncHandler } from "../utils/http";
-import { personalHome, saveHomeWorkspace } from "../../services/product-assets/store";
+import { personalHome, saveHomeWorkspace,readProductOverlay } from "../../services/product-assets/store";
 import { wrap } from "../utils/agent-host";
 import { context } from "../utils/agent-host";
 
@@ -24,7 +24,8 @@ router.post("/recent", asyncHandler(async (req, res) => {
 router.get("/", wrap(async (req, res) => {
   const asset = await personalHome(owner(req as AuthenticatedRequest),context(req).credentials);
   if (asset.document.kind !== "page") throw new Error("Home must be a page");
-  res.json({ data: asset.document.workspace, revision:asset.revision, assetId:asset.id });
+  const overlay=await readProductOverlay(owner(req as AuthenticatedRequest),asset.id);
+  res.json({ data: overlay.workspace??asset.document.workspace??defaultPersonalWorkspace(), revision:asset.revision, assetId:asset.id });
 }));
 router.put("/", wrap(async (req, res) => {
   const parsed = personalWorkspaceSchema.safeParse(req.body);

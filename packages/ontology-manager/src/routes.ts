@@ -32,7 +32,7 @@ const ProductAssetCatalog=defineAsyncComponent(()=>import("./products/ProductAss
 const ProductAssetDirectory=defineAsyncComponent(()=>import('./products/ProductAssetDirectory.vue'));
 const ProductAssetRoute=defineComponent({setup(){
    const route=useRoute(),router=useRouter();
-  const directoryQuery=()=>Object.fromEntries(Object.entries(route.query).filter(([key])=>['search','kind','scope','page','pageSize'].includes(key)));
+  const directoryQuery=()=>Object.fromEntries(Object.entries(route.query).filter(([key])=>['search','kind','scope','pageForm','sort','page','pageSize'].includes(key)));
   const open=(id:string)=>void router.push({path:`${routes.products.path}/${encodeURIComponent(id)}`,query:directoryQuery()});
   return ()=>route.params.productId||route.query.create||route.query.id?h(ProductAssetCatalog,{key:String(route.params.productId??route.query.create??route.query.id),assetId:String(route.params.productId??route.query.id??''),createKind:typeof route.query.create==='string'?route.query.create:undefined,onSelect:open,onHome:()=>void router.push('/home'),onOpen:(id:string)=>void router.push(`/products/${encodeURIComponent(id)}`),onBack:()=>void router.push({path:routes.products.path,query:directoryQuery()})}):h(ProductAssetDirectory,{query:{...directoryQuery(),page:Number(route.query.page??1),pageSize:Number(route.query.pageSize??20)},onQuery:(query:Record<string,unknown>)=>void router.replace({query:Object.fromEntries(Object.entries(query).filter(([,value])=>value!==undefined&&value!=='').map(([key,value])=>[key,String(value)]))}),onOpen:open,onCreate:(kind:string)=>void router.push({path:routes.products.path,query:{...directoryQuery(),create:kind}})});
 }});
@@ -79,6 +79,7 @@ const GraphPage = defineComponent({
         class: "playground-surface",
         onOpenModeling: (focus: "object" | "relation", id: string) =>
           void router.push({ path: managerPaths.visualModeling, query: { focus, id, back: "playground" } }),
+        onOpenProduct:(id:string)=>void router.push(`${routes.products.path}/${encodeURIComponent(id)}`),
       });
   },
 });
