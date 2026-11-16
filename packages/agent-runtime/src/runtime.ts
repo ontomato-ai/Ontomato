@@ -337,7 +337,7 @@ export class AgentRuntime {
   }
   async importAgentFile(scope:Scope,runId:string,taskId:string,file:{id:string;name:string},data:Buffer) {
     const sandbox=this.active.get(key(scope,runId))!.sandbox!;
-    const relative=path.posix.join("inputs","agents",taskId,`${file.id}-${file.name}`),destination=path.join(sandbox.workspace,relative),temporary=destination+`.${randomUUID()}.download`;
+    const relative=path.posix.join("outputs","agents",taskId,`${file.id}-${file.name}`),destination=path.join(sandbox.workspace,relative),temporary=destination+`.${randomUUID()}.download`;
     await mkdir(path.dirname(destination),{recursive:true});
     await writeFile(temporary,data);await rename(temporary,destination);
     return relative;

@@ -1,6 +1,11 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { AgentChannel } from "../channel";
-import type { AgentRuntime } from "../runtime";
+import { AgentRuntime } from "../runtime";
+import { ArtifactFiles } from "../files";
+import { canonical } from "../store";
+import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
 import type { AgentNotification } from "@ontomato/contracts/agent-channel";
 const sessionId = "11111111-1111-4111-8111-111111111111", runId = "22222222-2222-4222-8222-222222222222", inputId = "33333333-3333-4333-8333-333333333333";
@@ -13,6 +18,7 @@ afterEach(() => { vi.unstubAllGlobals(); });
 function channel() {
   let locked = false;
   const runtime = { options: { agentProviders: [{ id: "registered-custom", hostId: scope.hostId, url: "http://provider.test/channel", token: "service" }] }, store: { messages: vi.fn(async () => []) },
+    importAgentFile: vi.fn(async () => "outputs/agents/delivered.dataset.json"),
     locked: async (_scope: unknown, _session: unknown, fn: () => Promise<unknown>) => { locked = true; try { return await fn(); } finally { locked = false; } },
     seal: vi.fn(() => expect(locked).toBe(true)),
   } as unknown as AgentRuntime;
@@ -71,13 +77,15 @@ it("message reads expose conversation progress without transferring the child's 
   const { runtime,channel: port } = channel();
   const child = { id: inputId, session: { providerId: source.session.providerId,sessionId: inputId },channel: { ...context,requestedBy: source },inputId,language: "en",status: "completed" as const,createdAt: new Date(0).toISOString(),error: null,cancelled: false };
   vi.spyOn(port.facts,"task").mockResolvedValue({ scope,intent: child });
-  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",summary: "Saved",process: { mode: "none" },results: [],quality:[],files:[],settled:true });
+  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",summary: "Saved",process: { mode: "none" },results: [],quality:[],files:[{id:inputId,name:"delivered.dataset.json",mediaType:"application/json",href:"/file"}],settled:true });
+  vi.spyOn(port,"file").mockResolvedValue(new Response("original dataset"));
   vi.spyOn(runtime.store,"messages").mockResolvedValue([
     { id: runId,runId: inputId,messageSeq: 1,message: { role: "system",content: "Private host instructions",timestamp: 1 } },
     { id: inputId,runId: inputId,messageSeq: 2,message: notification },
   ]);
-  const result = await port.execute(scope,run,{ op: "read",taskId: inputId,view: "messages" }) as { messages: Array<{ id: string }> };
+  const result = await port.execute(scope,run,{ op: "read",taskId: inputId,view: "messages",files:true }) as { messages: Array<{ id: string }>;downloaded:unknown[] };
   expect(result.messages.map(message => message.id)).toEqual([inputId]);
+  expect(result.downloaded).toEqual([{id:inputId,path:"outputs/agents/delivered.dataset.json",taskId:inputId}]);
 });
 
 it("does not prepare a child intent cancelled concurrently with its admission", async () => {
@@ -228,4 +236,20 @@ it.each(["native","external"])("forwards %s caller language to each provider wit
   });vi.stubGlobal("fetch",fetch);
   const caller=kind==="native"?{...run,language:"zh-CN"}:{kind:"external" as const,actor:context.actor,authority:context.authority,language:"zh-CN",credential:{token:"initiating-token",apiKey:null}};
   await expect(port.execute(scope,caller,{op:"list"})).resolves.toMatchObject({agents:[{name:"取数员",description:"提供方说明"}]});
+});
+
+it("imports provider dataset bytes into the caller's ordinary output snapshots",async()=>{
+  const workspace=await mkdtemp(path.join(os.tmpdir(),"agent-delivery-"));
+  try {
+    await mkdir(path.join(workspace,"outputs"));
+    const receiver={active:new Map([[canonical([scope.hostId,scope.domainId,runId]),{sandbox:{workspace}}]])} as unknown as AgentRuntime;
+    const bytes=Buffer.from(JSON.stringify({schema:"workbench.dataset.v2",execution:{receiptId:inputId},rows:[[0,false,null]]}));
+    const delivered=await AgentRuntime.prototype.importAgentFile.call(receiver,scope,runId,inputId,{id:inputId,name:inputId+".dataset.json"},bytes);
+    const files=new ArtifactFiles(path.join(workspace,"blobs"));
+    const [snapshot]=await files.scan(workspace);
+    expect(snapshot.path).toBe(delivered);
+    expect(delivered).toMatch(/^outputs\/agents\/.*\.dataset\.json$/);
+    expect(await files.read(snapshot)).toEqual(bytes);
+    expect(await readFile(path.join(workspace,delivered))).toEqual(bytes);
+  } finally { await rm(workspace,{recursive:true,force:true}); }
 });
