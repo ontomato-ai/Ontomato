@@ -243,7 +243,30 @@ export async function* streamChatCompletion(
   const loggedChunks: unknown[] = [];
 
   try {
-    const stream = await model.stream(langChainMessages, { signal: combinedSignal });
+    // An explicit request override selects the matching SDK response mode.
+    const completion =
+      modelConfig.modelKwargs?.stream === false
+        ? await model.invoke(langChainMessages, { signal: combinedSignal })
+        : undefined;
+    if (completion?.invalid_tool_calls?.length) {
+      throw new Error("Invalid tool call arguments in non-streaming response");
+    }
+    const stream = completion
+      ? [
+          {
+            content: completion.content,
+            additional_kwargs: completion.additional_kwargs,
+            response_metadata: completion.response_metadata,
+            usage_metadata: completion.usage_metadata,
+            tool_call_chunks: (completion.tool_calls ?? []).map((tc, index) => ({
+              index,
+              id: tc.id,
+              name: tc.name,
+              args: JSON.stringify(tc.args),
+            })),
+          },
+        ]
+      : await model.stream(langChainMessages, { signal: combinedSignal });
 
     let rawChunkCount = 0;
     for await (const chunk of stream) {
@@ -357,7 +380,8 @@ export async function* streamChatCompletion(
         throw new Error(`Incomplete tool call at index ${idx}: missing id or name`);
       }
     }
-    tracker?.successFromChunks(loggedChunks);
+    if (completion) tracker?.success(completion);
+    else tracker?.successFromChunks(loggedChunks);
   } catch (err) {
     const aborted = signal?.aborted;
     const errMsg = err instanceof Error ? err.message : String(err);
