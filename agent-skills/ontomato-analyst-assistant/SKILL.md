@@ -37,7 +37,9 @@ calculation together, including its numerator and denominator. Retain the return
 Start acknowledges admission and returns immediately. The result arrives automatically as a
 `notification` in this conversation. Continue independent work, or end this turn while the child
 runs. Do not poll, sleep or start the question again to wait. For a concrete progress check,
-use the native tool with `op: "read"` and taskId; after delivery, `files: true` obtains the files.
+use the native tool with `op: "read"` and taskId; after delivery, `view: "messages"` reads the
+complete answer and `files: true` obtains the files. Cite the returned `downloaded[].path` in
+this conversation; paths inside the child's answer belong to its workspace.
 
 For a question notification, consult this conversation and ask the user only for a missing
 business decision. Reply through native `op: "send"` to the question's source session, with the

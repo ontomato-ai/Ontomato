@@ -370,7 +370,10 @@ receives `{providerId,actor,language}` and returns only that provider's accessib
 calls every registered provider directly and merges their lists; Java answers only the ontology
 provider's list and identity recovery. There is no separate directory port or Java-to-Node lookup.
 Prepare receives requestedBy (nullable) and the fixed root. Run mode returns a runtime start request; steer mode acknowledges the host's input recording and can return updated host context. The runtime retains typed input and its original receipt ID in both cases. Settle closes
-business eligibility; read returns the host's delivery projection. Cancel closes eligibility
+business eligibility; read returns the host's delivery projection. Retrieval summaries are one sentence
+with the outcome, row count and delivered file names; full answers are read through `view: "messages"`.
+Native `read(files: true)` writes the original provider bytes beneath the caller's `outputs/agents/`
+and returns the exact paths to cite, so the ordinary artifact snapshot and renderer can resolve them. Cancel closes eligibility
 before runtime cancellation. Runtime cancellation includes execution descendants and suppresses
 automatic wakeup from that cancellation. No platform task table or delegation budget is added.
 
@@ -381,6 +384,8 @@ remain in Java provider prepare. An agent-answer with replyTo records the existi
 decision in both run and steer modes. Delivery does not store an immutable decisionRevision;
 the retrieval extension reports the execution's current revision. Both branches finish before
 result notification; quality jobs continue as branch-owned attachments and publish changes.
+Quality and candidate model calls inherit the source execution's credential chain by run reference;
+its in-memory credentials remain until these attachments finish without delaying result notification.
 The ontology-only retriever cancellation command preserves binding; generic cancel covers the
 execution and its delegated descendants. Natural parent completion does not cancel children.
 Action creation and generation prepare retain their existing write and sandbox admission.

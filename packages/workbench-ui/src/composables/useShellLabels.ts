@@ -110,6 +110,7 @@ return computed<ShellLabels>(() => ({
     nextRound: t("assistant.taskNextRound"),
     quality: t("assistant.taskQuality"),
     errors: {
+      QUERY_JOB_FAILED: t("assistant.reviewFailed"),
       LENGTH_LIMIT: t("assistant.taskErrorLengthLimit"),
       ADMISSION_FAILED: t("assistant.taskErrorAdmissionFailed"),
       RUN_UNAVAILABLE: t("assistant.taskErrorRunUnavailable"),
