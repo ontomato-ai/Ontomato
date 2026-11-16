@@ -39,15 +39,25 @@ watch(()=>JSON.stringify([props.asset,props.pageState]),()=>{offset.value=0;void
 function page(delta:number){offset.value=Math.max(0,offset.value+delta*pageSize.value);void load();}
 </script>
 <template>
-  <section><h3>{{asset.name}}</h3><el-alert v-if="error" :title="error" type="error" :closable="false"/>
+  <section class="collection-projection"><h3>{{asset.name}}</h3><el-alert v-if="error" :title="error" type="error" :closable="false"/>
     <template v-if="asset.document.kind==='collection-view'">
       <component :is="platformRenderer" v-if="platformRenderer" :asset="asset" :rows="rows" :loading="loading"/>
       <template v-else-if="asset.document.renderer==='3d-scene'"><component :is="sceneRenderer" v-if="sceneRenderer" :asset="asset" :rows="rows"/><el-alert v-else title="当前宿主未注册 3D 场景渲染器" type="error" :closable="false"/></template>
       <ObjectViewVisualization v-else-if="asset.document.renderer==='map'" :widget="mapWidget" :rows="rows" :value="rows"/>
       <EChart v-else-if="asset.document.renderer==='chart'" :option="chartOption" :theme="theme" :height="300"/>
-      <ul v-else-if="asset.document.renderer==='list'" v-loading="loading"><li v-for="(row,index) in rows" :key="index"><dl><template v-for="field in asset.document.fields" :key="field"><dt>{{asset.document.presentation?.fieldLabels[field]??field}}</dt><dd>{{row[field]??'—'}}</dd></template></dl></li></ul>
+      <ul v-else-if="asset.document.renderer==='list'" v-loading="loading" class="collection-list"><li v-for="(row,index) in rows" :key="index"><dl><template v-for="field in asset.document.fields" :key="field"><dt>{{asset.document.presentation?.fieldLabels[field]??field}}</dt><dd>{{row[field]??'—'}}</dd></template></dl></li></ul>
       <el-table v-else v-loading="loading" :data="rows"><el-table-column v-for="field in asset.document.fields" :key="field" :prop="field" :label="asset.document.presentation?.fieldLabels[field]??field"/></el-table>
     </template>
     <footer v-if="offset||hasMore"><el-button :disabled="loading||!offset" @click="page(-1)">上一页</el-button><span>{{rows.length?offset+1:0}}–{{offset+rows.length}}</span><el-button :disabled="loading||!hasMore" @click="page(1)">下一页</el-button></footer>
   </section>
 </template>
+<style scoped>
+.collection-projection{display:flex;flex-direction:column;gap:var(--manager-content-gap);min-width:0;max-width:100%;font-size:var(--text-sm);line-height:var(--leading-sm)}
+.collection-projection>h3{margin:0;font-size:var(--text-sm);font-weight:var(--font-semibold)}
+.collection-projection>footer{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:var(--manager-control-gap);padding-top:var(--manager-control-gap);margin:0}
+.collection-projection>footer span{color:var(--el-text-color-secondary);font-size:var(--text-xs);font-variant-numeric:tabular-nums;min-width:48px;text-align:center}
+.collection-projection>footer :deep(.el-button+.el-button){margin:0}
+.collection-list{list-style:none;margin:0;padding:0}.collection-list>li{padding:var(--spacing-md);border-bottom:1px solid var(--el-border-color-light)}
+.collection-list dl{display:grid;grid-template-columns:minmax(80px,1fr) minmax(0,3fr);gap:var(--spacing-sm);margin:0}.collection-list dt{color:var(--el-text-color-secondary)}.collection-list dd{margin:0;overflow-wrap:anywhere}
+@container ontology-manager (max-width:520px){.collection-projection>footer{justify-content:flex-start}}
+</style>

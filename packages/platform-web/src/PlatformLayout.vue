@@ -112,6 +112,7 @@ const headerLabels = computed(() => ({
     <div class="platform-app-body" :class="{ 'has-menu': menu !== null && !blocked }">
       <aside v-if="menu && !blocked" class="platform-app-menu" :aria-label="labels.pages">
         <h2 class="app-menu-title">{{ menu.label }}</h2>
+        <select class="mobile-page-select" :aria-label="labels.pages" :value="activePageId" @change="router.push(($event.target as HTMLSelectElement).value)"><optgroup v-for="group in menu.groups??[]" :key="group.key" :label="group.label||menu.label"><option v-for="page in group.pages" :key="page.id" :value="page.id" :disabled="!!page.unavailableHint">{{page.label}}</option></optgroup><option v-if="menu.foot" :value="menu.foot.id">{{menu.foot.label}}</option></select>
         <AppPanelPages
           class="app-menu-pages"
           :groups="menu.groups ?? []"
@@ -231,5 +232,15 @@ const headerLabels = computed(() => ({
   justify-content: center;
   color: var(--el-text-color-secondary);
   font-size: var(--text-base);
+}
+.mobile-page-select{display:none}
+@media(max-width:600px){
+  .platform-app-body.has-menu{flex-direction:column;min-width:0}
+  .platform-app-menu{flex:0 0 auto;width:100%;padding:var(--spacing-sm) var(--page-gutter);border-right:0;border-bottom:1px solid var(--el-border-color);flex-direction:row;align-items:center;gap:var(--spacing-md)}
+  .app-menu-title{min-height:28px;font-size:var(--text-sm);padding-inline:var(--spacing-sm)}
+  .platform-app-menu>.app-menu-pages{display:none}
+  .app-menu-title{padding:0;white-space:nowrap}
+  .mobile-page-select{display:block;flex:1;min-width:0;max-width:100%;height:var(--control-height);padding:var(--spacing-xs) var(--spacing-sm);border:1px solid var(--el-border-color);border-radius:var(--radius-sm);background:var(--el-bg-color);color:var(--el-text-color-primary);font:inherit;font-size:var(--text-sm)}
+  .platform-app-page{flex:1;overflow:hidden}
 }
 </style>

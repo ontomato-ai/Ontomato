@@ -13,6 +13,8 @@ it('opens the clicked asset identity and isolates SVG links between graph instan
   const links=element.querySelectorAll('[role="link"]');
   links[1].dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
   expect(opened).toEqual(['metric']);
+  for(const link of [links[0],links[2]])link.dispatchEvent(new FocusEvent('focus'));
+  await nextTick();
   const edgeLinks=[...element.querySelectorAll('textPath')].map(node=>node.getAttribute('href'));
   expect(new Set(edgeLinks).size).toBe(2);
   for(const link of edgeLinks)expect(element.querySelector(link!)).not.toBeNull();

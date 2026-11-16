@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed,useId} from 'vue';
+import {computed,useId,ref} from 'vue';
 import {productCategories,type ProductGraph} from '@ontomato/contracts/product-graph';
 import {productTypes} from '@ontomato/contracts/product-assets';
 import {useOntologyText} from '../context';
@@ -7,6 +7,8 @@ const props=defineProps<{graph:ProductGraph}>();
 const emit=defineEmits<{open:[id:string]}>();
 const graphId=useId().replace(/:/g,'');
 const {ot}=useOntologyText();
+const focusedNode=ref<string|null>(null);
+function related(edge:ProductGraph['edges'][number]){return edge.source===focusedNode.value||edge.target===focusedNode.value;}
 const columns:{id:string;name:string}[]=[{id:'principal',name:'主体与角色'},...[...productCategories].reverse(),{id:'ontology',name:'本体元素'},{id:'legacy',name:'待迁移资产'}];
 function nodeLabel(node:ProductGraph['nodes'][number]){if(node.kind==='agent-profile')return ot('productAgentProfile');if(node.kind==='page')return node.isTemplate?'布局模板':node.embeddable?'可嵌入页':'页面';return productTypes.find(type=>type.kind===node.kind)?.name??({'object-type':'对象类型',metric:'指标能力',action:'操作能力',definition:'业务定义',application:'应用身份',AgentPrincipal:'智能体主体',principal:'主体',role:'角色',domain:'域内成员'} as Record<string,string>)[node.kind]??node.kind;}
 function columnNodes(id:string){return props.graph.nodes.filter(node=>node.category===id).sort((a,b)=>{
@@ -33,13 +35,14 @@ function edgePath(edge:ProductGraph['edges'][number]){
 }
 </script>
 <template>
-  <div class="asset-graph"><p class="graph-caption">引用箭头指向被引用资产；使用与编辑授权从主体指向应用。页面可嵌入智能体配置，智能体配置引用工具与上下文元素。仅显示当前可见资产，授权明细限可编辑应用。</p><svg :viewBox="`0 0 ${width} ${height}`" :style="{minWidth:`${width}px`,height:`${height}px`}" role="img" aria-label="产品资产分层引用图">
+  <div class="asset-graph"><p class="graph-caption">引用箭头指向被引用资产；使用与编辑授权从主体指向应用。仅显示当前可见资产，授权明细限可编辑应用。</p><div class="graph-canvas"><svg :viewBox="`0 0 ${width} ${height}`" :style="{width:`${width}px`,height:`${height}px`}" role="img" aria-label="产品资产分层引用图">
     <defs><marker :id="`${graphId}-arrow`" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>
     <text v-for="(column,index) in visibleColumns" :key="column.id" :x="index*300+10" y="22" class="column-label">{{column.name}}</text>
-    <g v-for="(edge,index) in graph.edges" :key="`${edge.source}:${edge.target}:${edge.relation}`"><path :id="`${graphId}-edge-${index}`" :d="edgePath(edge)" class="edge" :marker-end="`url(#${graphId}-arrow)`"/><text class="edge-label"><textPath :href="`#${graphId}-edge-${index}`" startOffset="45%">{{labels[edge.relation]}}</textPath></text></g>
-    <g v-for="node in graph.nodes" :key="node.id" :transform="`translate(${positions.get(node.id)!.x},${positions.get(node.id)!.y})`" :class="['node',{'is-asset':node.assetId}]" :role="node.assetId?'link':undefined" :tabindex="node.assetId?0:undefined" @click="node.assetId&&emit('open',node.assetId)" @keydown.enter="node.assetId&&emit('open',node.assetId)"><title>{{node.name}} · {{node.kind}}</title><rect width="220" height="54" rx="6"/><text x="10" y="22">{{node.name.length>20?node.name.slice(0,19)+'…':node.name}}</text><text x="10" y="42" class="node-kind">{{nodeLabel(node)}}{{node.revision?` · r${node.revision}`:''}}</text></g>
-  </svg></div>
+    <g v-for="(edge,index) in graph.edges" :key="`${edge.source}:${edge.target}:${edge.relation}`" :class="{'related-edge':related(edge),'muted-edge':focusedNode&&!related(edge)}"><title>{{labels[edge.relation]}}</title><path :id="`${graphId}-edge-${index}`" :d="edgePath(edge)" class="edge" :marker-end="`url(#${graphId}-arrow)`"/><text v-if="related(edge)" class="edge-label"><textPath :href="`#${graphId}-edge-${index}`" startOffset="45%">{{labels[edge.relation]}}</textPath></text></g>
+    <g v-for="node in graph.nodes" :key="node.id" :transform="`translate(${positions.get(node.id)!.x},${positions.get(node.id)!.y})`" :class="['node',{'is-asset':node.assetId}]" :role="node.assetId?'link':undefined" :tabindex="node.assetId?0:undefined" @mouseenter="focusedNode=node.id" @mouseleave="focusedNode=null" @focus="focusedNode=node.id" @blur="focusedNode=null" @click="node.assetId&&emit('open',node.assetId)" @keydown.enter="node.assetId&&emit('open',node.assetId)"><title>{{node.name}} · {{nodeLabel(node)}}</title><rect width="220" height="54" rx="6"/><svg x="10" y="6" width="200" height="24"><text x="0" y="16">{{node.name}}</text></svg><text x="10" y="42" class="node-kind">{{nodeLabel(node)}}{{node.revision?` · r${node.revision}`:''}}</text></g>
+   </svg></div></div>
 </template>
 <style scoped>
-.asset-graph{overflow:auto;max-height:560px;padding:var(--spacing-sm);border:1px solid var(--el-border-color-light)}svg{display:block;width:100%;font-size:12px;color:var(--el-text-color-secondary)}.column-label{fill:var(--el-text-color-primary);font-weight:600}.edge{fill:none;stroke:var(--el-border-color-dark);stroke-width:1.5}.edge-label{fill:var(--el-text-color-secondary);font-size:10px}.node rect{fill:var(--el-bg-color);stroke:var(--el-border-color)}.node text{fill:var(--el-text-color-primary)}.node .node-kind{fill:var(--el-text-color-secondary);font-size:10px}.is-asset{cursor:pointer}.is-asset:hover rect,.is-asset:focus rect{stroke:var(--el-color-primary)}
+.asset-graph{min-width:0;max-width:100%;border:1px solid var(--el-border-color-light);border-radius:var(--radius-md);overflow:hidden}.graph-caption{margin:0;padding:var(--spacing-md);font-size:var(--text-xs);line-height:var(--leading-sm);color:var(--el-text-color-secondary);border-bottom:1px solid var(--el-border-color-light)}.graph-canvas{overflow:auto;max-height:480px;padding:var(--spacing-sm);overscroll-behavior:contain}svg{display:block;font-size:12px;color:var(--el-text-color-secondary)}.column-label{fill:var(--el-text-color-primary);font-weight:600}.edge{fill:none;stroke:var(--el-border-color-dark);stroke-width:1.5}.edge-label{fill:var(--el-text-color-secondary);font-size:10px}.node rect{fill:var(--el-bg-color);stroke:var(--el-border-color)}.node text{fill:var(--el-text-color-primary)}.node .node-kind{fill:var(--el-text-color-secondary);font-size:10px}.is-asset{cursor:pointer}.is-asset:hover rect,.is-asset:focus rect{stroke:var(--el-color-primary)}
+.asset-graph svg .node rect{fill:var(--el-bg-color);stroke:var(--el-border-color);stroke-width:1}.asset-graph svg .node:hover rect,.asset-graph svg .node:focus rect{stroke:var(--el-color-primary);stroke-width:1.5}.asset-graph .edge{stroke-width:1;opacity:.65}.asset-graph .related-edge .edge{stroke:var(--el-color-primary);stroke-width:1.5;opacity:1}.muted-edge{opacity:.15}.edge-label{paint-order:stroke;stroke:var(--el-bg-color);stroke-width:3px;stroke-linejoin:round}
 </style>

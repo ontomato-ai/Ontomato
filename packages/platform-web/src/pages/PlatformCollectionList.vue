@@ -61,4 +61,12 @@ function open(row:Record<string,unknown>){
     </article>
   </div>
 </template>
-<style scoped>.platform-collection article{padding:var(--spacing-sm);border-bottom:1px solid var(--el-border-color-light);min-width:0}.resource-title{max-width:100%;height:auto;text-align:start}.resource-title :deep(span){display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;overflow:hidden;overflow-wrap:anywhere}.platform-collection p{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;overflow-wrap:anywhere}dl{display:flex;gap:var(--spacing-sm);flex-wrap:wrap;margin:0;font-size:var(--text-xs);color:var(--el-text-color-secondary)}dd{margin:0;overflow-wrap:anywhere}</style>
+<style scoped>
+.platform-collection{min-width:0;font-size:var(--text-sm);line-height:var(--leading-sm)}
+.platform-collection article{padding:var(--spacing-md) var(--spacing-sm);border-bottom:1px solid var(--el-border-color-light);min-width:0}
+.platform-collection article>.el-button+.el-button{margin-inline-start:var(--spacing-sm)}
+.resource-title{max-width:100%;height:auto;text-align:start;padding:0;min-height:var(--control-height)}
+.resource-title :deep(span){display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;overflow:hidden;overflow-wrap:anywhere}
+.platform-collection p{margin:var(--spacing-sm) 0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;overflow-wrap:anywhere}
+dl{display:flex;gap:var(--spacing-xs) var(--spacing-sm);flex-wrap:wrap;margin:var(--spacing-xs) 0 0;font-size:var(--text-xs);color:var(--el-text-color-secondary)}dd{margin:0;overflow-wrap:anywhere}
+</style>

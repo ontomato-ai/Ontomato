@@ -44,3 +44,11 @@ async function submit(){
 function enter(name:string,value:string){values.value[name]=value;delete errors.value[name];completed.value=false;}
 </script>
 <template><section v-if="projection" class="action-projection"><el-alert v-if="error" :title="error" type="error" :closable="false"/><el-alert v-if="completed" title="操作成功" type="success" :closable="false"/><el-button v-if="['button','dialog'].includes(projection.renderer)" :disabled="preview" :loading="loading" @click="load">{{asset.name}}</el-button><component :is="['button','dialog'].includes(projection.renderer)?ManagerDialog:'section'" v-if="open" v-model="open" :title="asset.name"><el-form label-position="top" @submit.prevent="submit"><FormFields :fields="displayFields" :values="values" :errors="errors" :disabled="loading||preview" :read-only="projection.readOnlyParameters" choose-placeholder="请选择" @input="enter" @choose="(field,value)=>enter(field.key,value)"/><el-button native-type="submit" type="primary" :loading="loading" :disabled="preview">{{asset.name}}</el-button></el-form></component></section></template>
+<style scoped>
+.action-projection{display:flex;flex-direction:column;align-items:stretch;gap:var(--manager-content-gap);min-width:0;max-width:100%;font-size:var(--text-sm)}
+.action-projection>.el-button{align-self:flex-start}.action-projection :deep(.el-form){width:100%;max-width:860px;min-width:0}
+.action-projection :deep(.el-form-item){margin-bottom:var(--manager-module-gap)}
+.action-projection :deep(.el-form-item__label){line-height:var(--leading-sm);margin:0;padding-bottom:var(--manager-control-gap)}
+.action-projection :deep(.el-form-item__content){min-width:0;line-height:var(--leading-sm)}
+.action-projection :deep(.el-form>.el-button:last-child){margin-top:var(--manager-content-gap);max-width:100%;white-space:normal;height:auto;min-height:var(--control-height)}
+</style>

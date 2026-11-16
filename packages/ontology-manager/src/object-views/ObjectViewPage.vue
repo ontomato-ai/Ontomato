@@ -42,8 +42,12 @@ const error = ref("");
 const loading = ref(false);
 const nameAttributes = ref<InstanceNameAttribute[]>([]);
 const displayName = computed(() => {
+  const layout=projection.value?.document.kind==='object-projection'?projection.value.document.layout:undefined;
+  const titleField=layout?.titleField;
+  if(titleField&&object.value[titleField]!==undefined&&object.value[titleField]!==null&&String(object.value[titleField]).trim())return String(object.value[titleField]);
   const configured = nameAttributes.value.find(attr => attr.name === document.value?.titleField && attr.enable !== false && (attr.businessKey || attr.bizzkeyBool || attr.bizzkey || attr.bizzKey));
-  return instanceName(configured ? [configured] : nameAttributes.value, object.value);
+  const name=instanceName(configured ? [configured] : nameAttributes.value, object.value);
+  return name&&name!=='—'?name:props.reference.primaryKey;
 });
 let request = 0;
 onBeforeUnmount(() => { request++; });
@@ -97,7 +101,7 @@ watch(() => JSON.stringify([props.reference.className, props.reference.primaryKe
       <el-alert type="error" :title="error" :closable="false" />
     </div>
      <div v-if="loading && !document&&!projection" class="page-skeleton" role="status" :aria-label="ot('ovLoading')"><el-skeleton :rows="10" animated /></div>
-    <ObjectProjectionRuntime v-else-if="projection" :asset="projection" :page-state="{selected:reference}" :preview="readOnly"/>
+    <ObjectProjectionRuntime v-else-if="projection" :asset="projection" :page-state="{selected:reference}" :preview="readOnly" embedded-object @loaded="object=$event" @open="emit('open',$event)"/>
     <ObjectViewRuntime v-else-if="document" :document="document" :object="object" :reference="reference" :preview="readOnly" @open="emit('open', $event)" @refresh="refreshObject" />
     </div>
   </section>
@@ -119,5 +123,6 @@ watch(() => JSON.stringify([props.reference.className, props.reference.primaryKe
 .object-page-error :deep(.el-alert) { box-sizing: border-box; min-width: 0; max-width: 100%; }
 .object-page-error :deep(.el-alert__content) { min-width: 0; overflow-wrap: anywhere; }
 .object-page-content > .object-view-runtime { padding: var(--manager-control-gap) var(--manager-module-padding) var(--manager-module-padding); }
+.object-page-content>.object-projection{padding:var(--manager-content-gap) var(--page-gutter) var(--manager-module-padding);box-sizing:border-box}
 @container object-page (max-width: 520px) { .object-actions { flex-basis: 100%; justify-content: flex-end; } }
 </style>
