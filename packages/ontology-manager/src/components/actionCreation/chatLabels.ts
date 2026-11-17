@@ -71,7 +71,6 @@ export function actionChatLabels(overrides: Partial<ShellLabels> = {}): ShellLab
     elapsed: (time) => `${time} elapsed`,
     worked: (time) => `Worked for ${time}`,
     questionsWaiting: (count) => `Pending questions: ${count}`,
-    questionDefault: "Default assumption",
     questionOptionDefault: "Default",
     questionOptionOther: "Other",
     questionOtherPlaceholder: "Type your own answer",
