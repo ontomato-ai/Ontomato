@@ -1,5 +1,6 @@
 import { onScopeDispose, shallowRef, watch } from "vue";
-import type { AppHost, AppPageContext, AppPageSelection } from "@ontomato/contracts/app-host";
+import type { AppHost } from "@ontomato/contracts/app-host";
+import type { PageContext, PageSelection } from "@ontomato/contracts/page-context";
 
 /**
  * The platform's app host, heard until the returned function is called: every app frame's page context, with the
@@ -14,24 +15,21 @@ export type SubscribePageContext = (listener: AppHost["setPageContext"]) => () =
  * the builder is open: it lives in no store and goes to no server, except in the messages the reader sends.
  */
 export function usePreviewContext(subscribe: SubscribePageContext, frame: () => Window | null, workspaceId: () => string | null) {
-  const context = shallowRef<AppPageContext | null>(null);
-  watch([frame, workspaceId], () => (context.value = null));
+  const value = shallowRef<PageContext | null>(null);
+  watch([frame, workspaceId], () => (value.value = null));
   // Kept as the builder's own values: nothing of the app's frame is held after the frame is gone.
-  onScopeDispose(subscribe((source, { page, selection }) => {
+  onScopeDispose(subscribe((source, context) => {
     if (source !== frame()) return;
-    context.value = {
-      page,
-      selection: selection && { className: selection.className, primaryKey: selection.primaryKey, name: selection.name },
-    };
+    value.value = context;
   }));
-  return context;
+  return value;
 }
 
 /**
  * The selected object as the composer and the message name it: its class and name, and its primary key whenever the
  * name is not the key, so the agent always learns which object it is.
  */
-export function selectedObject({ className, primaryKey, name }: AppPageSelection, t: (key: string, named: Record<string, string>) => string) {
-  const object = `${className} ${name}`;
-  return primaryKey === name ? object : t("appBuilder.objectKey", { object, key: primaryKey });
+export function selectedObject({ kind, id, label }: PageSelection, t: (key: string, named: Record<string, string>) => string) {
+  const object = `${kind} ${label}`;
+  return id === label ? object : t("appBuilder.objectKey", { object, key: id });
 }

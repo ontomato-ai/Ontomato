@@ -1,5 +1,6 @@
 import type { AppExecutionContext } from "./build-tests";
 import type { RequestIdentity } from "./identity";
+import type {PageContext} from './page-context';
 import type {ProductNavigationTarget} from './product-page-state';
 
 /*
@@ -46,7 +47,11 @@ export interface AppPageSelection {
   name: string;
 }
 
-/** What the reader looks at in an app: the app's own page and the object selected on it. */
+/**
+ * What an app's page reports: the app's own name for the page and the object selected on it. This is the app's own call
+ * (`context.setPageContext`), an external contract a published app keeps; the SDK completes it into the one
+ * `PageContext` the platform's port takes, with the frame's address and the selection as entries of that shape.
+ */
 export interface AppPageContext {
   /** The app's own name for the page in view, as the reader sees it, e.g. `Overdue orders`. */
   page: string;
@@ -79,12 +84,15 @@ export interface AppHost {
   /** A platform request answered 401 (sign-in expired) or 402 (license); the shell decides what follows. */
   onAuthFailure(status: 401 | 402): void;
   /**
-   * What the reader of one app frame looks at now. `source` is the calling page's own `window`, the same object as its
-   * frame's `contentWindow` in the shell, so a shell page tells its frames apart by it. A shell page that shows the app
-   * beside its agent (the app builder's preview) puts the context into the messages the reader sends; elsewhere the call
-   * has no effect.
+   * What the reader of one app frame looks at now: the one `PageContext` a message from beside that page carries, the
+   * same shape the platform's own pages and a panel host report. `source` is the calling page's own `window`, the same
+   * object as its frame's `contentWindow` in the shell, so a shell page tells its frames apart by it. The page's
+   * registration key is the frame's, so an app frame leaves it out and the shell knows which one it is.
+   *
+   * A shell page that shows the app beside its agent (the app builder's preview) puts the context into the messages the
+   * reader sends; elsewhere the call has no effect.
    */
-  setPageContext(source: object, context: AppPageContext): void;
+  setPageContext(source: object, context: PageContext): void;
   /**
    * Calls the listener with the calling frame's insets now and on every change; the returned function stops it. The app
    * keeps that much room after its scrolling content, so its end can be scrolled clear of the shell's controls.

@@ -112,12 +112,20 @@ export const panelOperationSchema = z
     kind: panelOperationKindSchema,
     /** The parameters the operation takes, by name; a form save's parameters are the owner's form fields, read live. */
     inputSchema: z.record(key, ontologyParameterTypeSchema).default({}),
-    target: panelOperationTargetSchema,
-    /** The slot whose projection publishes this operation. */
-    slot: key,
+    /** Absent on a state operation: what it changes is the panel's own state, not an object. */
+    target: panelOperationTargetSchema.optional(),
+    /** The slot whose projection publishes this operation; absent on a state operation. */
+    slot: key.optional(),
     handlerRef: z.string().min(1).max(300),
   })
-  .strict();
+  .strict()
+  .superRefine((operation, ctx) => {
+    if (operation.kind === "state") return;
+    if (!operation.target)
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["target"], message: `Operation '${operation.id}' must name the object it acts on` });
+    if (!operation.slot)
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["slot"], message: `Operation '${operation.id}' must name the slot that publishes it` });
+  });
 export type PanelOperation = z.infer<typeof panelOperationSchema>;
 
 /**
