@@ -259,7 +259,7 @@ public class TaskStore {
         """
 SELECT t.* FROM platform_task t LEFT JOIN LATERAL
 (SELECT status FROM platform_task_run WHERE task_id=t.id ORDER BY started_at DESC,id DESC LIMIT 1) r ON true
-WHERE t.domain_id=? AND t.creator_id=? AND (?::text IS NULL OR t.app_id=?)
+WHERE t.domain_id=? AND t.creator_id=? AND t.migrated_to_trigger IS NULL AND (?::text IS NULL OR t.app_id=?)
 ORDER BY (t.pause_code IS NOT NULL OR coalesce(r.status='failed',false)) DESC,
 CASE WHEN t.pause_code IS NOT NULL OR r.status='failed' THEN t.updated_at END DESC NULLS LAST,
 CASE WHEN t.pause_code IS NULL AND r.status IS DISTINCT FROM 'failed' THEN t.next_run_at END ASC NULLS LAST,t.id

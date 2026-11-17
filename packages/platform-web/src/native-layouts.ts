@@ -28,7 +28,7 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
         key: "ontology:capabilities",
         titleKey: "platform.layers.capabilities",
         // Scheduled tasks of functions are the platform's: one list for every kind of task.
-        paths: [managerPaths.metrics, managerPaths.functions, managerPaths.actions, managerPaths.workflows, platformRoutes.ontologySkills.path],
+        paths: [managerPaths.metrics, managerPaths.functions, managerPaths.actions, managerPaths.workflows, managerPaths.triggers, platformRoutes.ontologySkills.path],
       },
       {
         key: "ontology:governance",

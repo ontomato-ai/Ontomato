@@ -155,6 +155,10 @@ public class PlatformTasks {
     var tasks = store.visible(user.getDomainId(), user.getId(), null);
     for (var entry : applications.all(user.getDomainId()).entrySet()) {
       var provider = entry.getValue();
+      // A picker exists to create a task, so an application that refuses new ones does not belong in it. The provider
+      // still resolves through `applications.require` for the tasks it already has: their detail, their runs and the
+      // rollback path keep working, they are just no longer offered as a place to start something new.
+      if (!provider.acceptsNewTasks()) continue;
       ObjectNode descriptor;
       try {
         descriptor = (ObjectNode) provider.describe(actor);
@@ -226,6 +230,9 @@ public class PlatformTasks {
     var previous = store.get(id, false);
     if (previous != null) return replay(previous, user, definition, enabled);
     var provider = applications.require(definition.appId());
+    // A retired application keeps its history but accepts no new task: otherwise the surface it was retired in favour
+    // of would never be the only path, and the same moment could be scheduled twice.
+    if (!provider.acceptsNewTasks()) throw ScheduleJson.bad(provider.newTasksRefused(locale));
     var validated = prepare(definition, provider, user, locale);
     var normalized = definition.validated(validated);
     return transactions.execute(

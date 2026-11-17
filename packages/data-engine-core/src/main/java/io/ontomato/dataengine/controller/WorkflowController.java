@@ -16,6 +16,7 @@ import io.ontomato.dataengine.bean.workflow.Workflow;
 import io.ontomato.dataengine.bean.workflow.WorkflowStep;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.WorkflowDao;
+import io.ontomato.dataengine.service.AssignmentAuthority;
 import io.ontomato.dataengine.service.CapabilityGrantQuery;
 import io.ontomato.dataengine.service.PlatformAccessQuery;
 import io.ontomato.dataengine.service.SubjectDirectory;
@@ -49,6 +50,56 @@ public class WorkflowController {
 
     @Autowired
     private SubjectDirectory subjects;
+
+    @Autowired
+    private AssignmentAuthority assignmentAuthority;
+
+    /**
+     * May one subject assign work to another?
+     *
+     * <p>Asked by the execution plane before it pins a step, so the answer comes from the same organization model the
+     * platform enforces everywhere else, instead of the caller re-deriving it.</p>
+     */
+    @PostMapping("/workflow/can-assign")
+    @ResponseBody
+    public JSONObject canAssign(@RequestBody JSONObject param) {
+        JSONObject ret = new JSONObject();
+        try {
+            User user = SystemUtils.getCurUser();
+            String domainId = user.getDomainId();
+            // The caller may name a subject by id or by login code: the execution plane knows login codes, the platform
+            // stores ids. Resolving here keeps one vocabulary per side instead of making every caller learn the other.
+            String from = subjectId(domainId, param.getString("from"));
+            String to = subjectId(domainId, param.getString("to"));
+            JSONObject data = new JSONObject();
+            if (from == null || to == null) {
+                data.put("allowed", false);
+                data.put("reason", from == null
+                        ? "the assigner is not a subject of this domain"
+                        : "the assignee is not a subject of this domain");
+            } else {
+                var decision = assignmentAuthority.canAssign(domainId, from, to);
+                data.put("allowed", decision.allowed());
+                data.put("reason", decision.reason());
+            }
+            ret.put("data", data);
+            ret.put("success", true);
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+            ret.put("success", false);
+            ret.put("message", e.getMessage());
+        }
+        return ret;
+    }
+
+    /** A subject id from either its id or its login code; null when this domain publishes no such subject. */
+    private String subjectId(String domainId, String name) {
+        if (name == null || name.isBlank()) return null;
+        for (SubjectDirectory.Subject subject : subjects.subjectsInDomain(domainId)) {
+            if (name.equals(subject.id()) || name.equalsIgnoreCase(subject.loginCode())) return subject.id();
+        }
+        return null;
+    }
 
     @PostMapping("/workflow/save")
     @ResponseBody

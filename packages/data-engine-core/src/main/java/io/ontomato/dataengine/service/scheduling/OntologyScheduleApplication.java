@@ -41,6 +41,18 @@ public class OntologyScheduleApplication implements ScheduleApplication {
     return "ontology";
   }
 
+  /**
+   * Triggers replaced this application's task list.
+   *
+   * <p>The reason is not preference but ownership: a Trigger has a condition, a status, a revision and a review, while
+   * a task row has none of those. Two places to schedule the same action is how an operator ends up with the same
+   * execution firing twice.</p>
+   */
+  @Override
+  public boolean acceptsNewTasks() {
+    return false;
+  }
+
   public String description(String locale) {
     return locale.startsWith("zh") ? "执行一个动作或函数" : "Execute an action or function";
   }
