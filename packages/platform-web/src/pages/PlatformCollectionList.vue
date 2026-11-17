@@ -9,18 +9,22 @@ import {appIcon} from '@ontomato/platform-shell';
 import {nodeApiRequest} from '@ontomato/workbench-ui';
 import {defaultPersonalWorkspace,personalWorkspaceSchema} from '@ontomato/contracts/personal-workspace';
 import {useI18n} from 'vue-i18n';
-import {openApplicationKey,platformApplicationsKey} from '../apps';
+import {appAt,openApplicationKey,platformApplicationsKey} from '../apps';
 const props=defineProps<{asset:ProductAsset;rows:Record<string,unknown>[];loading?:boolean;objectType:string}>();
 const router=useRouter();
 const {locale,t}=useI18n();
 const openApplication=inject(openApplicationKey,undefined);
 const applications=inject(platformApplicationsKey,undefined);
-function applicationIcon(id:unknown){return appIcon(applications?.value.find(app=>app.id===id)?.icon??'app-window');}
+function application(id:unknown){return applications?.value.find(app=>app.id===id);}
+function applicationIcon(id:unknown){return appIcon(application(id)?.icon??'app-window');}
+/** Application rows show the platform's current name and description for their application; other rows show what was read. A recent visit finds its application from its path, as the rail did when recording it. */
+function rowApplication(row:Record<string,unknown>){return props.objectType==='platform:FavoriteApplication'?application(row.id):props.objectType==='platform:RecentVisit'&&applications&&typeof row.path==='string'?appAt(applications.value,row.path.split('?')[0]!)??undefined:undefined;}
+function rowValue(row:Record<string,unknown>,field:string){return field==='description'&&props.objectType==='platform:FavoriteApplication'?application(row.id)?.description??row[field]:row[field];}
 const changed=ref<Record<string,{pinned:boolean;title:string}>>({}),error=ref(''),saving=ref(false);
 const order=ref<string[]>();
 const rows=computed(()=>order.value?[...props.rows].sort((a,b)=>{const rank=(id:unknown)=>{const index=order.value!.indexOf(String(id));return index<0?order.value!.length:index;};return rank(a.id)-rank(b.id);}):props.rows);
 function resourceTitle(row:Record<string,unknown>){
- const raw=String(changed.value[String(row.id)]?.title??row.title??row.name??t('ontology.productUntitledItem'));
+ const raw=String(changed.value[String(row.id)]?.title??rowApplication(row)?.label??row.title??row.name??t('ontology.productUntitledItem'));
  if(props.objectType!=='platform:Conversation')return raw;
  const quoted=raw.match(/"title"\s*:\s*"([^"\n]+)"/);if(quoted)return t('ontology.productConversationAnalysis',{title:quoted[1]});
  return raw.split(/\n|\{\s*"/)[0].replace(/(?:对象引用|分析上下文)\s*[:：][\s\S]*$/,'').trim().slice(0,70)||t('ontology.productUntitledAnalysis');
@@ -69,7 +73,7 @@ function open(row:Record<string,unknown>){
         <el-button text :disabled="saving" @click="pin(row,'toggle')">{{(changed[String(row.id)]?.pinned??row.pinned)?t('ontology.productUnpin'):t('ontology.productPin')}}</el-button>
         <template v-if="changed[String(row.id)]?.pinned??row.pinned"><el-button text :disabled="saving" @click="pin(row,'rename')">{{t('ontology.productRename')}}</el-button><el-button text :disabled="saving" @click="pin(row,'up')">{{t('ontology.productMoveUp')}}</el-button></template>
       </template>
-      <dl v-if="objectType!=='platform:Task'"><template v-for="field in asset.document.kind==='collection-view'?asset.document.fields.filter(field=>!['title','name','id','path','primaryKey','agentId','pinned','className'].includes(field)):[]" :key="field"><dt>{{fieldLabel(field)}}</dt><dd>{{fieldValue(field,row[field])}}</dd></template></dl>
+      <dl v-if="objectType!=='platform:Task'"><template v-for="field in asset.document.kind==='collection-view'?asset.document.fields.filter(field=>!['title','name','id','path','primaryKey','agentId','pinned','className'].includes(field)):[]" :key="field"><dt>{{fieldLabel(field)}}</dt><dd>{{fieldValue(field,rowValue(row,field))}}</dd></template></dl>
     </article></div>
   </div>
 </template>

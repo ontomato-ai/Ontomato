@@ -29,6 +29,9 @@ public class ApplicationController {
     public record Batch(List<ApplicationCatalog.Builtin> applications) {}
     public record Publication(ApplicationCatalog.Declaration declaration, String releaseId) {}
     public record Connected(String id, ApplicationCatalog.Declaration declaration, String upstream, String upstreamPrefix) {}
+    @GetMapping("/platform/page-skills")
+    @io.ontomato.dataengine.controller.BuildTestAccess(io.ontomato.dataengine.controller.BuildTestAccess.Access.NO_BUSINESS_DATA)
+    public R<PageSkills.Projection> pageSkills() { return R.of(catalog.pageSkills(current())); }
     @PostMapping("/platform/applications/connected")
     public R<JSONObject> connected(@RequestBody Connected body) {
         return R.of(catalog.connected(body.id(), body.declaration(), body.upstream(), body.upstreamPrefix(), current()));

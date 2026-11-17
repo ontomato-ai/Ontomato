@@ -19,6 +19,10 @@ import { combineResultTruncation, parseQueryAnswerPayloads } from "../../utils/q
 import { HttpError } from "../../utils/errors";
 
 const router: ReturnType<typeof Router> = Router();
+router.get("/agent/agents", wrap(async (req, res) => {
+  const c = context(req);
+  res.json(await diagnosisService.agents(c.owner, c.credentials.locale));
+}));
 router.use("/agent", createAgentHostRouter(diagnosisService));
 router.use("/agent/knowledge", knowledgeRouter);
 router.post("/diagnoses", wrap(async (req, res) => {

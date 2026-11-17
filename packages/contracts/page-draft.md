@@ -10,14 +10,15 @@ conversation no longer uses.
 type PageDraft<Form> = {
   pageKey: string;          // the page's registration key, e.g. agent-settings
   operation: string;        // the page's own form action, e.g. agent.update
-  target: { id?: string };  // a create leaves the id out
+  target: { id?: string };  // the owner's opaque id, 1-200 characters; a create leaves it out
   form: Form;               // the page's save request body
 };
 ```
 
 `pageKey`, `operation` and `target` belong to the page; `form` is the owner's own save input, so only the page checks
-its structure. Each page's form types stay with their API owner; the shared envelope carries the page key the page
-compares before filling anything.
+its structure. The envelope does not fix the id's format either: the page and the object's owner check it, e.g. the
+agent settings page expects a UUID while a business knowledge id is any stable string. Each page's form types stay with
+their API owner; the shared envelope carries the page key the page compares before filling anything.
 
 ## Writing and reading
 
