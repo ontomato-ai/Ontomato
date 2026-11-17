@@ -20,6 +20,7 @@ import type { AssistantOwner } from "../assistant/store";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import {registerSourceFunction} from './source-function';
+import {recommendApplicationIcon} from '@ontomato/contracts/application-icons';
 
 /**
  * Installs the apps SDK versions this image carries (dist/apps-sdk/<version>) into the data volume that /apps-sdk
@@ -108,6 +109,7 @@ export async function requireHostedReleasePolicy(appId:string,releaseId:string,r
   if(policy?.hostTransport!==1||policy?.messageBridge!==2)throw new HttpError(409,'Migrate this historical source release to the message-bridge SDK and publish a new commit','PRODUCT_SDK_UPGRADE_REQUIRED');
 }
 export async function publishWorkspace(owner: AssistantOwner, workspaceId: string, commit: string, declaration: Record<string, unknown>, credentials: AssistantCredentials) {
+  if(!declaration.icon){const names=declaration.names as Record<string,string>|undefined;const descriptions=declaration.descriptions as Record<string,string>|undefined;declaration={...declaration,icon:recommendApplicationIcon([...Object.values(names??{}),...Object.values(descriptions??{})].join(' '))};}
   const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
   await client.request(`/v1/workspaces/${workspaceId}`);
   const exported=workspaceExportSchema.parse(await client.request(`/v1/workspaces/${workspaceId}/export`,"POST",{commit}));

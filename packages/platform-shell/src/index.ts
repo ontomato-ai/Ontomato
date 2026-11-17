@@ -11,6 +11,7 @@ export { default as PlatformTabs } from "./PlatformTabs.vue";
 export { default as PlatformBrandMark } from "./PlatformBrandMark.vue";
 export { default as AgentModelsPage } from "./AgentModelsPage.vue";
 export { appIcon, resolveIcon } from "./icons";
+export {default as ApplicationIconPicker} from './ApplicationIconPicker.vue';
 export { platformPath, platformRoutes } from "./routes";
 export {
   providePageActions,

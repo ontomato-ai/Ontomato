@@ -86,6 +86,11 @@ export function runtimeEnvironment(
   env.AGENT_RUNTIME_PORT ||= "3001";
   env.AGENT_RUNTIME_URL ||= `http://127.0.0.1:${env.AGENT_RUNTIME_PORT}`;
   env.AGENT_RUNTIME_CALLBACK_URL ||= `http://127.0.0.1:${env.PORT || "3000"}`;
+  env.AGENT_CHANNEL_PROVIDERS ||= JSON.stringify([
+    {id:"workbench",hostId:"workbench",url:env.AGENT_RUNTIME_CALLBACK_URL.replace(/\/$/,"")+"/internal/agent-channel",token:env.ONTOMATO_QUERY_SERVICE_TOKEN},
+    {id:"observe",hostId:"workbench",url:env.AGENT_RUNTIME_CALLBACK_URL.replace(/\/$/,"")+"/internal/agent-channel",token:env.ONTOMATO_QUERY_SERVICE_TOKEN},
+    {id:"ontology",hostId:"ontology",url:(env.DATA_QUERY_BASE_URL||"http://127.0.0.1:18087").replace(/\/$/,"")+"/platform/agent-channel",token:env.ONTOMATO_QUERY_SERVICE_TOKEN},
+  ]);
   env.AGENT_RUNTIME_HOSTS ||= JSON.stringify([
     {
       id: "workbench",

@@ -42,6 +42,7 @@ const APPLICATION: CatalogApplication = {
 let requests: { method: string; path: string; body: unknown }[] = [];
 let releases: HostedRelease[] = [];
 function answer(path: string, method: string, body: any): unknown {
+  if(method==='PUT'&&path===`/api/data-query/platform/applications/${APP_ID}/icon`)return {success:true,data:{icon:body.icon}};
   if (method === "GET" && path === "/api/workspaces/w1/releases") return { items: releases };
   if (method === "POST" && path === "/api/workspaces/w1/rollback") return RELEASES.find((release) => release.releaseId === body.releaseId);
   if (method === "POST" && path === "/api/workspaces/w1/publish") return { appId: APP_ID, releaseId: "release-new", commit: body.commit };
@@ -141,6 +142,14 @@ describe("the publication drawer", () => {
     }]);
     expect(catalog.refresh).toHaveBeenCalled();
   });
+  it('saves an icon independently of the application code release',async()=>{
+    const catalog=catalogOf([APPLICATION]);openDrawer(catalog);await flushPromises();
+    drawer().querySelector<HTMLButtonElement>('.icon-options button[title="microscope"]')!.click();await flushPromises();
+    const save=[...drawer().querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent?.includes('Save application icon'))!;
+    save.click();await flushPromises();
+    expect(writes()).toEqual([{method:'PUT',path:`/api/data-query/platform/applications/${APP_ID}/icon`,body:{icon:'microscope'}}]);
+    expect(catalog.refresh).toHaveBeenCalled();
+  });
 
   it("offers no commit to publish before the agent has written files", async () => {
     releases = [];
@@ -167,6 +176,8 @@ describe("the publication drawer", () => {
     name.value = "Overdue board";
     name.dispatchEvent(new Event("input"));
     await flushPromises();
+    drawer().querySelector<HTMLButtonElement>('.icon-options button[title="users"]')!.click();
+    await flushPromises();
     const releaseReads = () => requests.filter((request) => request.path === "/api/workspaces/w1/releases").length;
     const readsBefore = releaseReads();
     drawer().querySelector<HTMLButtonElement>(".go button")!.click();
@@ -178,7 +189,7 @@ describe("the publication drawer", () => {
       body: {
         commit: sha("3"),
         declaration: {
-          names: { "zh-CN": "Overdue board", en: "Overdue board" }, descriptions: {}, icon: "pages", groups: [], permissions: [],
+          names: { "zh-CN": "Overdue board", en: "Overdue board" }, descriptions: {}, icon: "users", groups: [], permissions: [],
         },
       },
     }]);

@@ -6,8 +6,8 @@ export interface PlatformApp {
   /** Icon name from the shell's curated set (see icons.ts). */
   icon: string;
   /**
-   * Which of the rail's three sections the application sits in, top to bottom: the ontology applications, the business
-   * applications, and the platform's own settings above the account. Absent means `apps`.
+    * The application's rail section: user applications, builders, governance, or settings above the account.
+    * Absent means `apps`.
    */
   rail?: PlatformRailSection;
   /**
@@ -24,7 +24,7 @@ export interface PlatformApp {
 }
 
 /** The rail's sections, top to bottom; a divider separates them and none carries a group name. */
-export type PlatformRailSection = "top" | "apps" | "bottom";
+export type PlatformRailSection = "top" | "builders" | "apps" | "bottom";
 
 /** The signed-in account in the rail's footer; null in editions without sign-in. */
 export interface PlatformAccount {

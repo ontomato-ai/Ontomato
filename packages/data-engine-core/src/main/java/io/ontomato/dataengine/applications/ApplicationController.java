@@ -51,6 +51,10 @@ public class ApplicationController {
         if (!catalog.inDomain(app,user)) throw ApplicationCatalog.denied();
         return R.of(catalog.view(app));
     }
+    @GetMapping("/platform/applications/platform-assets-access")
+    public R<?> productAssetsAccess(){return R.of(Map.of("allowed",catalog.canReconcileProducts(current())));}
+    public record IconUpdate(String icon) {}
+    @PutMapping("/platform/applications/{id}/icon") public R<?> updateIcon(@PathVariable String id,@RequestBody IconUpdate body){catalog.updateIcon(id,body.icon(),current());return R.of(Map.of("icon",body.icon()));}
     @PutMapping("/platform/applications/{id}/hosted-publication")
     public R<JSONObject> publish(@PathVariable String id, @RequestBody Publication body) {
         return R.of(catalog.publish(id, body.declaration(), body.releaseId(), current()));

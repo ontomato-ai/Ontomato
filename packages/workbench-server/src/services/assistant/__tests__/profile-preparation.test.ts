@@ -1,5 +1,5 @@
 import {beforeEach,expect,it,vi} from 'vitest';
-const mocks=vi.hoisted(()=>({profile:vi.fn(),skills:vi.fn(),environment:vi.fn(),open:vi.fn(),callback:vi.fn(),principal:vi.fn(),native:vi.fn(),use:vi.fn(),check:vi.fn()}));
+const mocks=vi.hoisted(()=>({profile:vi.fn(),skills:vi.fn(),environment:vi.fn(),open:vi.fn(),callback:vi.fn(),principal:vi.fn(),scoped:vi.fn(),native:vi.fn(),use:vi.fn(),check:vi.fn()}));
 vi.mock('../../product-assets/agent-profile',()=>({profileForSession:mocks.profile}));
 vi.mock('../../product-assets/platform-assets',()=>({nativeProfileId:mocks.native}));
 vi.mock('../../product-assets/grants',()=>({requireProductUse:mocks.use}));
@@ -8,7 +8,7 @@ vi.mock('../../../config/application',()=>({config:{dataQuery:{baseUrl:'http://o
 vi.mock('../prompts',()=>({effectiveSystemPrompt:()=> 'Instructions'}));
 vi.mock('../../../i18n',()=>({resolveLocale:(locale:string)=>locale}));
 vi.mock('../../../config/environment',()=>({environment:{agentRuntime:()=>({callbackUrl:'http://workbench.test'})}}));
-vi.mock('../../product-assets/agent-principal',()=>({agentPrincipalCredentials:mocks.principal}));
+vi.mock('../../product-assets/agent-principal',()=>({agentPrincipalCredentials:mocks.principal,userScopedAgentCredentials:mocks.scoped}));
 vi.mock('../skills',()=>({prepareAssistantSkills:mocks.skills}));
 vi.mock('../context',()=>({assistantOntologyContext:vi.fn()}));
 vi.mock('../store',()=>({assistantStore:{turns:async()=>[]}}));
@@ -31,14 +31,15 @@ it('limits a Profile run to its projection tools without passing human business 
   expect(JSON.stringify(run)).not.toContain('human-secret');
 });
 function nativeRequest(){return {a:{id:'agent',skills:[{name:'analyst'}],enabled_mcp_service_ids:['external'],model_selection:{modelId:null}},session:{id:'session',agent_id:'agent'},turn:{id:'run',created_at:new Date(),retrieval_scope_id:'scope',class_names:[]},message:'Question',inputId:'input',input:{role:'user',content:'Question',timestamp:1},ontologyContext:null,owner:{domainId:'domain',userId:'human'},credentials:{token:'human-secret',locale:'en'}} as unknown as AssistantPreparation;}
-it('preserves native tools and current-user data credentials after identity authorization',async()=>{
+it('preserves native tools while exchanging human credentials for user-scoped Agent authority',async()=>{
  mocks.native.mockResolvedValue('native-profile');mocks.check.mockResolvedValue({text:JSON.stringify({allowed:true})});
- mocks.skills.mockResolvedValue([{name:'analyst'}]);mocks.environment.mockReturnValue({values:{},secrets:{tk:'human-secret'}});
+ mocks.scoped.mockResolvedValue({token:'ap2.scoped',locale:'en'});mocks.skills.mockResolvedValue([{name:'analyst'}]);mocks.environment.mockImplementation(credentials=>({values:{},secrets:{tk:credentials.token}}));
  const run=await prepareAnalystRun(nativeRequest());
  expect(mocks.use).toHaveBeenCalledWith({domainId:'domain',userId:'human'},'native-profile');
  expect(mocks.use).toHaveBeenCalledWith({domainId:'domain',userId:'human'},'agent');
  expect(run.definition.skills).toEqual([{name:'analyst'}]);expect(run.definition.externalMcp).toEqual([{id:'external'}]);
- expect(run.environment.secrets).toEqual({tk:'human-secret'});expect(run.definition.toolSurface).toBeUndefined();
+ expect(run.environment.secrets).toEqual({tk:'ap2.scoped'});expect(run.definition.toolSurface).toBeUndefined();
+ expect(JSON.stringify(run)).not.toContain('human-secret');
  expect(mocks.principal).not.toHaveBeenCalled();
 });
 it('rejects a disabled native identity before preparing its tools or credentials',async()=>{

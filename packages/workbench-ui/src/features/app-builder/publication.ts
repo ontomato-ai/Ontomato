@@ -5,9 +5,7 @@ import { workbenchLanguage } from "../../i18n";
 import { builderApi } from "./api";
 import { errorText } from "./panel";
 import type { BuilderCatalog } from "./platform";
-
-/** The rail's icon for the applications the builder publishes. */
-const APP_ICON = "pages";
+import {recommendApplicationIcon} from '@ontomato/contracts/application-icons';
 
 /**
  * A new application's declaration: the name the reader gave, under every language the platform supports, and no
@@ -18,7 +16,7 @@ export function newDeclaration(name: string): ApplicationDeclaration {
   return {
     names: Object.fromEntries(workbenchLanguage().supported.map((locale) => [locale, name])),
     descriptions: {},
-    icon: APP_ICON,
+    icon: recommendApplicationIcon(name),
     groups: [],
     permissions: [],
   };
