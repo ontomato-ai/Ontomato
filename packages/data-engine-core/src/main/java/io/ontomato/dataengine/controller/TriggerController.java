@@ -79,6 +79,7 @@ public class TriggerController {
 			trigger.setDomainId(user.getDomainId());
 			if (trigger.getCreatedBy() == null) trigger.setCreatedBy(user.getId());
 			if (trigger.getStatus() == null) trigger.setStatus(Trigger.STATUS_PENDING_REVIEW);
+			service.prepareCredential(trigger, user);
 			ret.put("data", triggers.save(trigger, user.getId(), System.currentTimeMillis()));
 			ret.put("success", true);
 		} catch (Exception e) {
@@ -166,6 +167,7 @@ public class TriggerController {
 			// arming follows publication: an unpublished trigger has no slot, so it cannot fire.
 			trigger.setEnabled(Boolean.TRUE.equals(param.getBoolean("enabled"))
 					|| Trigger.STATUS_PUBLISHED.equals(status));
+			if (trigger.getEnabled()) service.prepareCredential(trigger, user);
 			ret.put("data", triggers.save(trigger, user.getId(), System.currentTimeMillis()));
 			ret.put("success", true);
 		} catch (Exception e) {

@@ -15,8 +15,10 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 
 import io.ontomato.dataengine.bean.trigger.Trigger;
+import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.TriggerDao;
 import io.ontomato.dataengine.schedules.ScheduleIdentity;
+import io.ontomato.dataengine.schedules.TaskCredentials;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -43,27 +45,20 @@ public class TriggerService {
 	@Autowired
 	private ScheduleIdentity identity;
 
+	@Autowired
+	private TaskCredentials credentials;
+
 	private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 
 	/**
-	 * One minted credential per (domain, executor).
+	 * Make sure a workflow trigger's executor has a background credential before the trigger is armed.
 	 *
-	 * <p>The platform's internal key is a single rotating slot: issuing again invalidates the previous value. Minting on
-	 * every firing would therefore let two firings at the same instant invalidate each other, and would rotate a key a
-	 * running call is still holding. Caching keeps the slot stable; a refusal clears it and the next firing reissues.</p>
+	 * <p>Only the executor can provide it, from an interactive sign-in, exactly as for the platform's scheduled tasks;
+	 * someone else saving or publishing the trigger leaves the executor's credential as it is.</p>
 	 */
-	private final java.util.concurrent.ConcurrentMap<String, String> credentials = new java.util.concurrent.ConcurrentHashMap<>();
-
-	private String credentialFor(String domainId, String executor) {
-		String cacheKey = domainId + "\u0000" + executor;
-		return credentials.computeIfAbsent(cacheKey, ignored -> {
-			try {
-				return identity.issueKey(identity.creator(domainId, executor));
-			} catch (Exception unminted) {
-				log.warn(">>>Trigger could not mint a credential for {}: {}", executor, unminted.getMessage());
-				return "";
-			}
-		});
+	public void prepareCredential(Trigger trigger, User user) {
+		if (Trigger.EFFECT_WORKFLOW.equals(trigger.getEffectKind()) && user.getId().equals(executorOf(trigger)))
+			credentials.prepareForSetup(user);
 	}
 
 	/** The principal the effect runs as: the declared executor, else the creator. */
@@ -166,20 +161,13 @@ public class TriggerService {
 		result.put("effect", "workflow");
 		result.put("workflowId", workflowId);
 		try {
-			// The execution plane now requires a credential for every mutating call, so the trigger engine presents one
-			// minted for the subject the definition runs as. It is the platform's own key, not a shared secret: revoking
-			// that subject stops its triggers from firing, which is the behaviour an operator expects.
+			// The execution plane requires a credential for every mutating call. It is the executor's background
+			// credential, the one the platform's scheduled tasks already hold: an internal key is a single slot per
+			// member, so issuing a second one here would revoke the key those tasks run with.
 			var request = HttpRequest.newBuilder(URI.create(base.replaceAll("/+$", "") + "/runs"))
 					.header("content-type", "application/json")
+					.header("authorization", "Bearer " + credentials.forOwner(trigger.getDomainId(), executor))
 					.timeout(Duration.ofSeconds(60));
-				try {
-				var serviceKey = credentialFor(trigger.getDomainId(), executor);
-				if (serviceKey != null && !serviceKey.isBlank())
-					request.header("authorization", "Bearer " + serviceKey);
-			} catch (Exception unminted) {
-				log.warn(">>>Trigger {} could not mint a credential for {}: {}", trigger.getId(), executor,
-						unminted.getMessage());
-			}
 			var prepared = request.POST(HttpRequest.BodyPublishers.ofString(body.toJSONString())).build();
 			var response = http.send(prepared, HttpResponse.BodyHandlers.ofString());
 			result.put("status", response.statusCode() >= 200 && response.statusCode() < 300 ? "succeeded" : "failed");
@@ -192,6 +180,9 @@ public class TriggerService {
 			} catch (Exception unreadable) {
 				result.put("body", text.length() > 300 ? text.substring(0, 300) : text);
 			}
+		} catch (TaskCredentials.Invalid invalid) {
+			result.put("status", "failed");
+			result.put("error", "The executor's background credential is missing or invalid; the executor must sign in and save the trigger again");
 		} catch (Exception error) {
 			log.warn(">>>Trigger {} could not start workflow {}: {}", trigger.getId(), workflowId, error.getMessage());
 			result.put("status", "failed");
