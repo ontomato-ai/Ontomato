@@ -18,6 +18,11 @@ public class Action {
 	public static final String STATUS_PUBLISHED = "PUBLISHED";
 	public static final String STATUS_UNUSED = "UNUSED";
 
+	/** Who must decide before this action may run: nobody (auto), a human, or two keys. */
+	public static final String APPROVAL_AUTO = "auto";
+	public static final String APPROVAL_HUMAN = "human";
+	public static final String APPROVAL_TWO_KEYS = "twoKeys";
+
 	public static final int EXPLANATION_VERSION = 1;
 
 	private String id;
@@ -35,6 +40,11 @@ public class Action {
 	private String codeHash;
 	private Integer explanationVersion;
 	private String status;
+	/**
+	 * Approval gate of this action as a capability. Null means the deployment's default
+	 * applies (see ONTOMATO_ACTION_DEFAULT_APPROVAL); it is never guessed from the workflow.
+	 */
+	private String approvalMode;
 	private Long createTimestamp;
 	private Long modifyTimestamp;
 	private String domainId;

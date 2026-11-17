@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, h, nextTick, ref, type App } from "vue";
 import CapabilityMap from "../components/CapabilityMap.vue";
+import { buildCapabilityMap } from "../components/capability-map-model";
 import ActionDefinitionView from "../components/actionCreation/ActionDefinitionView.vue";
 import OntologyAssetCatalog from "../components/OntologyAssetCatalog.vue";
 import { installObjectViewHost } from "./object-view-host";
@@ -97,6 +98,30 @@ it("shows an action's stored field comparisons and keeps message-only conditions
 });
 
 it("exposes both relations when one member created and published the same action", async () => {
+  // The claim is about the model, not about the canvas: one member who both created and published an action is two
+  // facts, so two edges. It is asserted on the pure builder because the graph now draws to a canvas, and jsdom lays
+  // nothing out — a canvas element reports a zero rect, so there is no rendered node to click here.
+  const model = buildCapabilityMap(
+    {
+      subjects: [{ id: "member", loginCode: "member", displayName: "Kim", roleIds: [] }],
+      workflows: [],
+      actions: [{ id: "a", name: "Approve", createdBy: "member", reviewedBy: "member" }],
+      metrics: [],
+      functions: [],
+      skills: [],
+      triggers: [],
+      grants: [],
+      platformAccess: [],
+    },
+    (key) => key,
+  );
+  const relations = model.edges.filter((edge) => edge.from === "subject:member" && edge.to === "action:a");
+  expect(relations).toHaveLength(2);
+  // Two different facts, so two different labels — not the same line drawn twice.
+  expect(new Set(relations.map((edge) => edge.label)).size).toBe(2);
+  expect(model.nodes.map((node) => node.label)).toEqual(expect.arrayContaining(["Kim", "Approve"]));
+
+  // The page still mounts and states its counts, which is what the canvas cannot show in this environment.
   const root = document.body.appendChild(document.createElement("div"));
   vi.stubGlobal("fetch", async (url: string) => {
     const data = url.endsWith("/workflow/subjects") ? [{ id: "member", displayName: "Kim", roles: [] }]
@@ -111,14 +136,11 @@ it("exposes both relations when one member created and published the same action
   installObjectViewHost(app);
   app.mount(root);
   await flush();
-  const member = [...root.querySelectorAll<HTMLButtonElement>("button.map-node")].find(node => node.textContent?.includes("Kim"))!;
-  member.click();
-  await nextTick();
-  const relations = [...root.querySelectorAll(".map-relations li")].map(item => item.textContent);
-  expect(relations).toHaveLength(2);
-  expect(new Set(relations).size).toBe(2);
-  expect(relations.every(text => text?.includes("Kim") && text?.includes("Approve"))).toBe(true);
-  member.click();
-  await nextTick();
-  expect(root.querySelector(".map-relations")).toBeNull();
+  // The legend counts the kinds actually present: one subject and one action, and the six kinds with none are still
+  // listed at zero — a legend that hides empty kinds would make an unreadable graph look complete.
+  const legend = [...root.querySelectorAll(".legend-item")].map((item) => item.textContent?.replace(/\s+/g, " ").trim());
+  expect(legend).toContain("Subject 1");
+  expect(legend).toContain("Action 1");
+  expect(legend).toContain("Process 0");
+  expect(legend.some((item) => item?.includes("NaN"))).toBe(false);
 });

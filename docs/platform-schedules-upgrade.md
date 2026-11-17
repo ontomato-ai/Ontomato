@@ -69,3 +69,62 @@ Retirement checks the committed import's source database/schema and target shape
 A failed conversion transaction leaves the old platform data intact. Keep the old combination stopped, preserve output and backups, correct the specific prerequisite and rerun the check. An unreadable credential is a recoverable task pause, not a reason to replace it with another person's Key.
 
 For rollback, stop the new combination and restore matching database/runtime/configuration backups before starting the old images together. Reconcile any real writes that occurred after cutover before restoring data. A schema rollback alone cannot reverse a business write.
+
+## Migrating the ontology application's tasks to Triggers
+
+A scheduled task of the `ontology` application is a capability that fires on a time table, which is what a Trigger is.
+The other three applications do not migrate: `agents` (run an agent), `governance` (patrol business knowledge) and
+`operations` (run diagnostics) produce no business write and no execution-plane Run, and a Trigger's effect enum —
+action, workflow, skill, notification — has no member that describes "run an agent". Those tasks stay in the platform's
+task list.
+
+### What the migration maps
+
+| Source (`platform_task.content.execution`) | Becomes | Why |
+| --- | --- | --- |
+| `action:<id>` | a Trigger whose effect is that action, verbatim | the same object, now with a status, a revision and a review |
+| `function:<id>` | a Trigger whose effect is **the single published Action that wraps that function** | the function path checks only "may this subject execute anything" and skips the per-action grant and the action's preconditions; scheduling the Action is how the same write keeps its governance |
+| `function:<id>` with zero or two or more wrapping actions | **not migrated**; reported as `skippedNoAction` | two actions over one function are two capabilities with different preconditions and approvers — picking one would choose the governance for the operator |
+| anything else | not migrated; reported as `skippedOther` | the effect cannot be expressed |
+
+A Trigger never carries a `function` effect. Adding one would make "schedule a write that bypasses the Action" a
+supported path, which is the opposite of what this migration is for.
+
+### What happens to the source row
+
+The migration is idempotent: the trigger id is the task id, so a second run finds the trigger and only finishes the
+bookkeeping. For each migrated task the row is disarmed (`enabled=false`, `next_run_at=NULL`) and marked
+(`migrated_to_trigger=<trigger id>`). Marked rows are excluded from the task list and from the scheduler's due query,
+so the same moment cannot fire twice — once from the task table and once from the Trigger.
+
+The row is kept, not deleted: it is the only link between the old task and its firing history
+(`platform_task_run` cascades on delete).
+
+### Retiring the old path
+
+`OntologyScheduleApplication.acceptsNewTasks()` returns false, so creating a new ontology task answers
+`该应用已改为使用「触发」创建，请在触发页面新建`. The application is also **no longer offered in the picker at all**: the
+applications list skips every application that refuses new tasks, because a picker exists to start something new.
+Existing rows stay addressable — their detail, their run history and the rollback path still resolve through
+`applications.require`, they are simply no longer a place to start a task from.
+
+### Procedure
+
+```bash
+# 1. look first: how many ontology tasks are there, and of which shape
+curl -s -X POST $BASE/api/data-query/platform/scheduled-tasks?appId=ontology -H "tk: $TK"
+
+# 2. migrate (idempotent; safe to run twice)
+curl -s -X POST $BASE/api/data-query/trigger/migrate-ontology-tasks -H "tk: $TK"
+# -> {"migrated":1,"fromFunction":0,"skippedNoAction":0,"skippedOther":0,"skippedIds":[]}
+
+# 3. for every id in skippedIds: create or identify the Action that wraps the task's write function,
+#    publish it, grant it, then run step 2 again.
+```
+
+### Rollback
+
+Per task: delete the Trigger (`/trigger/delete`), clear the marker
+(`UPDATE platform_task SET migrated_to_trigger=NULL, enabled=true, next_run_at=<next slot> WHERE id=?::uuid`) and the
+platform scheduler picks it up again. Roll back only while the task was disabled by this migration — re-arming a task
+that was already off would start something nobody asked for.

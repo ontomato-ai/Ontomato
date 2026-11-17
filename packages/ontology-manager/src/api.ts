@@ -289,6 +289,65 @@ export interface SubjectRecord {
   roleIds?: string[];
 }
 
+/**
+ * One Trigger of this domain: a capability object, not a scheduled task of some application.
+ *
+ * <p>The platform's task table is a different thing — a personal schedule of an app's effect. A Trigger has a
+ * condition kind, an effect kind, a status and a revision, and it is governed like every other capability.</p>
+ */
+export interface TriggerRecord {
+  id: string;
+  name: string;
+  description?: string | null;
+  status?: string;
+  version?: number;
+  conditionKind?: string | null;
+  effectKind?: string | null;
+  effect?: { actionId?: string; workflowId?: string } | null;
+  /** The stored condition, verbatim: the edit form has to restore the cadence, not just show its wording. */
+  condition?: { frequency?: Record<string, unknown>; timeZone?: string } | null;
+  enabled?: boolean;
+  /** Human wording of the cadence, derived from the condition. */
+  frequency?: string | null;
+  nextRunAt?: string | null;
+  lastFiredAt?: string | null;
+}
+
+/**
+ * A cadence as words.
+ *
+ * The service holds it as a structured object (`{kind:"interval", every:60, unit:"minute"}`), not as a string, so a
+ * page that only reads `text` shows a dash for every real trigger. Each kind is worded here instead of rendering the
+ * object, because "每 60 分钟" is what an operator reads and `{"kind":"interval"}` is not.
+ */
+function triggerFrequency(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) return value;
+  const frequency = value as { kind?: unknown; every?: unknown; unit?: unknown; time?: unknown; weekday?: unknown; day?: unknown; expression?: unknown; text?: unknown } | null | undefined;
+  if (!frequency) return null;
+  if (typeof frequency.text === "string" && frequency.text.trim()) return frequency.text;
+  const unitWords: Record<string, string> = { minute: "分钟", hour: "小时", day: "天" };
+  switch (frequency.kind) {
+    case "interval": {
+      const every = Number(frequency.every);
+      const unit = unitWords[String(frequency.unit)] ?? String(frequency.unit ?? "");
+      return Number.isFinite(every) && unit ? `每 ${every} ${unit}` : null;
+    }
+    case "daily":
+      return typeof frequency.time === "string" ? `每天 ${frequency.time}` : "每天";
+    case "weekly": {
+      const weekdays = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+      const day = weekdays[Number(frequency.weekday)] ?? "";
+      return typeof frequency.time === "string" ? `每${day} ${frequency.time}` : `每${day}`;
+    }
+    case "monthly":
+      return typeof frequency.time === "string" ? `每月 ${String(frequency.day)} 日 ${frequency.time}` : `每月 ${String(frequency.day)} 日`;
+    case "cron":
+      return typeof frequency.expression === "string" ? frequency.expression : null;
+    default:
+      return null;
+  }
+}
+
 export type ManagerClient = ReturnType<typeof createManagerClient>;
 export type ManagerRequest = ReturnType<typeof createManagerRequest>;
 
@@ -631,7 +690,11 @@ export function createManagerClient(
    */
   async function loadViewSkills() {
     const response = await send("/skills", { method: "GET" }, "");
-    return response.skills as Array<{ id: string; title: string }>;
+    // Declared as a list, so an answer without one is an empty list rather than undefined: a caller that iterates
+    // this must not have to know that the service can answer with a body of another shape.
+    return Array.isArray(response.skills)
+      ? (response.skills as Array<{ id: string; title: string }>)
+      : [];
   }
 
   async function renderViewSkill(id: string, input: Record<string, unknown>) {
@@ -784,6 +847,57 @@ export function createManagerClient(
     return source as SubjectRecord[];
   }
 
+  /**
+   * The domain's triggers, from the capability controller that owns them.
+   *
+   * <p>This used to read `/platform/scheduled-tasks`. That table is the kernel's schedule of an application's effect,
+   * which is one condition kind — not the object an operator authors. Reading it here made the page look like it could
+   * configure triggers when it was only listing somebody else's tasks.</p>
+   */
+  /**
+   * Create or update a trigger.
+   *
+   * <p>The body is the capability object itself: condition and effect as the definition holds them. Publication is a
+   * separate call, so an author can save a draft without arming it.</p>
+   */
+  async function saveTrigger(input: Record<string, unknown>) {
+    const response = await post("/trigger/save", input);
+    return response.data as TriggerRecord;
+  }
+
+  async function deleteTrigger(id: string) {
+    await post("/trigger/delete", { id });
+  }
+
+  /** Publish or retire. Publishing arms: the definition is what an operator approved to run. */
+  async function setTriggerStatus(id: string, status: "PUBLISHED" | "UNUSED" | "PENDING_REVIEW", enabled?: boolean) {
+    const response = await post("/trigger/status", { id, status, ...(enabled === undefined ? {} : { enabled }) });
+    return response.data as TriggerRecord;
+  }
+
+  async function loadTriggers(): Promise<TriggerRecord[]> {
+    const response = await post("/trigger/queryList", {});
+    const rows = Array.isArray(response.data) ? (response.data as Array<Record<string, unknown>>) : [];
+    return rows.map((row) => {
+      const condition = (row.condition ?? {}) as Record<string, unknown>;
+      return {
+        id: String(row.id ?? ""),
+        name: typeof row.name === "string" && row.name.trim() ? row.name : String(row.id ?? ""),
+        description: typeof row.description === "string" ? row.description : null,
+        status: typeof row.status === "string" ? row.status : undefined,
+        version: typeof row.version === "number" ? row.version : undefined,
+        conditionKind: typeof row.conditionKind === "string" ? row.conditionKind : null,
+        effectKind: typeof row.effectKind === "string" ? row.effectKind : null,
+        effect: (row.effect ?? null) as TriggerRecord["effect"],
+        condition: (row.condition ?? null) as TriggerRecord["condition"],
+        enabled: row.enabled === true,
+        frequency: triggerFrequency(condition.frequency),
+        nextRunAt: typeof row.nextRunAt === "string" ? row.nextRunAt : null,
+        lastFiredAt: typeof row.lastFiredAt === "string" ? row.lastFiredAt : null,
+      };
+    });
+  }
+
   return {
     /** The data engine's endpoints as the platform's shared pages read them (the agents' model pages): the `data`. */
     products: createProductsClient(transport),
@@ -834,6 +948,10 @@ export function createManagerClient(
     deactivateWorkflow,
     deleteWorkflow,
     loadCapabilityGrants,
+    loadTriggers,
+    saveTrigger,
+    deleteTrigger,
+    setTriggerStatus,
     loadPlatformAccess,
     loadSubjects,
   };

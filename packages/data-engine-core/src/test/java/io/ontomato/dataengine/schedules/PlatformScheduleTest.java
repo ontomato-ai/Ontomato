@@ -59,6 +59,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   private OntologyQueryService targetQueries;
   private ABCProgramServiceImpl programs;
   private OntologyScheduleReferences references;
+  private OntologyScheduleApplication retiredOntology;
   private MockMvc http;
 
   @BeforeEach
@@ -96,7 +97,18 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     var config = new BusinessConfig();
     config.setReportCardPythonTimeout(1);
     when(configs.get("sales")).thenReturn(config);
+    // Ontology tasks created before Triggers took over keep running on this scheduler until they are migrated. The
+    // fixture seeds them through the API, which the retired application refuses for new tasks (see
+    // retiredOntologyApplicationRefusesNewTasksAndKeepsExistingOnes), so it uses a copy that still accepts them.
     ontology =
+        new OntologyScheduleApplication(
+            functions, actions, programs, configs, identities, references, grantsForActions) {
+          @Override
+          public boolean acceptsNewTasks() {
+            return true;
+          }
+        };
+    retiredOntology =
         new OntologyScheduleApplication(
             functions, actions, programs, configs, identities, references, grantsForActions);
     wireActionExecutor();
@@ -1381,6 +1393,7 @@ CREATE TABLE write_task_result(id text,write_task_id text,execute_timestamp bigi
   void oneUnavailableApplicationDoesNotHideOtherApplicationsOrTheirTaskCounts() throws Exception {
     var unavailable = mock(ScheduleApplication.class);
     when(unavailable.id()).thenReturn("operations");
+    when(unavailable.acceptsNewTasks()).thenReturn(true);
     when(unavailable.describe(any()))
         .thenThrow(
             new ScheduleException(503, "DEPENDENCY_UNAVAILABLE", "Permission lookup unavailable"));
@@ -1417,6 +1430,42 @@ CREATE TABLE write_task_result(id text,write_task_id text,execute_timestamp bigi
         assertEquals(1, application.path("taskCount").asInt());
       } else assertTrue(application.path("available").asBoolean());
     }
+  }
+
+  @Test
+  void retiredOntologyApplicationRefusesNewTasksAndKeepsExistingOnes() throws Exception {
+    var registry = scheduleApplications(List.of(retiredOntology), mockWorkbench());
+    var service =
+        new PlatformTasks(store, identities, identity, credentials, registry, transactions);
+    ReflectionTestUtils.setField(service, "configuredZone", "UTC");
+    UUID existing = UUID.randomUUID();
+    store.insert(
+        existing,
+        "sales",
+        "alice",
+        TaskDefinition.input(definition("function:f"), "UTC", false),
+        array(),
+        "en",
+        Instant.now(),
+        true);
+    var refused =
+        assertThrows(
+            ScheduleException.class,
+            () -> service.create(UUID.randomUUID(), definition("function:f"), "zh-CN", true));
+    assertEquals(400, refused.getStatusCode().value());
+    assertTrue(refused.getReason().contains("触发"));
+    var mvc = MockMvcBuilders.standaloneSetup(new PlatformTaskController(service)).build();
+    var applications =
+        parse(
+            mvc.perform(get("/platform/scheduled-tasks/applications"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString());
+    assertEquals(0, applications.path("applications").size());
+    var listed = service.list(null).path("tasks");
+    assertEquals(1, listed.size());
+    assertEquals(existing.toString(), listed.get(0).path("id").asText());
   }
 
   @Test
