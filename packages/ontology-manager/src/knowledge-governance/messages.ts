@@ -117,7 +117,6 @@ export const englishGovernance: GovernanceMessages = {
     "elapsed": "{time} elapsed",
     "worked": "Worked for {time}",
     "questionsWaiting": "{n} pending question | {n} pending questions",
-    "questionDefault": "Default assumption",
     "questionOptionDefault": "Default",
     "questionOptionOther": "Other",
     "questionOtherPlaceholder": "Type your own answer",

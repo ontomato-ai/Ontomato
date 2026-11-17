@@ -87,7 +87,6 @@ const labels = computed(() =>
     failed: ot("actionProcessFailed"),
     answered: (text) => ot("actionProcessAnswered", { text }),
     questionsWaiting: (count) => ot("actionQuestionsWaiting", { n: count }),
-    questionDefault: ot("actionQuestionDefault"),
     questionOptionDefault: ot("actionQuestionOptionDefault"),
     questionOptionOther: ot("actionQuestionOptionOther"),
     questionOtherPlaceholder: ot("actionQuestionOtherPlaceholder"),

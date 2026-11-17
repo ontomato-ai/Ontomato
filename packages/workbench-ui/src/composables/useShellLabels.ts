@@ -84,7 +84,6 @@ return computed<ShellLabels>(() => ({
   elapsed: (time) => t("assistant.elapsed", { time }),
   worked: (time) => t("assistant.worked", { time }),
   questionsWaiting: (count) => t("assistant.questionsWaiting", { n: count }, count),
-  questionDefault: t("assistant.questionDefault"),
   questionOptionDefault: t("assistant.questionOptionDefault"),
   questionOptionOther: t("assistant.questionOptionOther"),
   questionOtherPlaceholder: t("assistant.questionOtherPlaceholder"),

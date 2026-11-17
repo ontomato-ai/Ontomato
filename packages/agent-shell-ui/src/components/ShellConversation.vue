@@ -32,7 +32,17 @@ const labels = computed(() => shell.labels.value);
 
 const scroller = ref<HTMLElement | null>(null);
 const content = ref<HTMLElement | null>(null);
+/** Blank room under the thread, so the pinned turn can reach the top while its reply is still short. */
+const room = ref<HTMLElement | null>(null);
+/** The reader is at the bottom; otherwise the way back to the latest content shows. */
 const stick = ref(true);
+/**
+ * The reader started a turn here: it stays where sending put it, its question at the top with the reply growing under
+ * it, and the view no longer follows the tail. Opening a conversation clears it.
+ */
+const pinned = ref(false);
+/** The message on its way starts a new turn: it was sent while nothing ran, so it is not an input to a running reply. */
+const pendingTurn = ref(false);
 /**
  * A task the reader picked from the task list, held in view: its reply's process and the content above it keep laying
  * out after it opens (some of it only as it enters the view), so every layout change places it again, instantly, until
@@ -41,6 +51,9 @@ const stick = ref(true);
 const anchor = ref<string | null>(null);
 let observer: ResizeObserver | null = null;
 let lastScrollTop = 0;
+/** The gap left above the pinned question, the thread's own top padding. */
+const PIN_GAP = 24;
+const PENDING = "pending";
 
 const empty = computed(
   () => !props.loading && !props.loadError && props.items.length === 0 && !props.pendingInput,
@@ -50,15 +63,26 @@ const lastItem = computed(() => props.items.at(-1));
 const waiting = computed(
   () => props.busy && (props.pendingInput !== null || lastItem.value?.kind === "user"),
 );
+const lastUserKey = computed(() => [...props.items].reverse().find((item) => item.kind === "user")?.key ?? null);
+/** The question at the top of the latest turn, once the reader started one here. */
+const pinTarget = computed(() => {
+  if (!pinned.value) return null;
+  return pendingTurn.value && props.pendingInput !== null ? PENDING : lastUserKey.value;
+});
 
 function onScroll() {
   const el = scroller.value;
   if (!el || anchor.value) return;
   const upward = el.scrollTop < lastScrollTop;
   lastScrollTop = el.scrollTop;
-  stick.value = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  atBottom();
   if (upward && el.scrollTop < 80 && props.hasOlder && !props.loadingOlder && !props.olderError)
     requestOlder();
+}
+
+function atBottom() {
+  const el = scroller.value;
+  if (el) stick.value = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
 }
 
 function requestOlder() {
@@ -87,36 +111,74 @@ function toBottom(smooth = false) {
   }
 }
 
+/** Sizes the room under the thread so the pinned question can sit at the top; it shrinks as the reply grows. */
+function measureRoom() {
+  const el = scroller.value, thread = content.value, spacer = room.value;
+  if (!el || !thread || !spacer) return;
+  const target = pinTarget.value ? thread.querySelector<HTMLElement>("[data-pin]") : null;
+  const below = target ? thread.getBoundingClientRect().bottom - target.getBoundingClientRect().top : 0;
+  spacer.style.height = target ? `${Math.max(0, el.clientHeight - PIN_GAP - below)}px` : "0px";
+}
+
+/** Puts the pinned question at the top of the view. */
+function pin() {
+  const el = scroller.value, target = content.value?.querySelector<HTMLElement>("[data-pin]");
+  if (!el || !target) return;
+  measureRoom();
+  el.scrollTop += target.getBoundingClientRect().top - el.getBoundingClientRect().top - PIN_GAP;
+  lastScrollTop = el.scrollTop;
+  atBottom();
+}
+
 onMounted(() => {
-  // Follow new content once per layout change, only while the reader is already at the bottom.
+  // A held task is placed again on every layout change. The tail is followed only while an opened conversation lays
+  // out, never while a run adds to it or after the reader started a turn here.
   observer = new ResizeObserver(() => {
+    measureRoom();
     if (anchor.value) holdAnchor();
-    else if (stick.value) toBottom();
+    else if (stick.value && !pinned.value && !props.busy) toBottom();
+    atBottom();
   });
   if (content.value) observer.observe(content.value);
+  if (scroller.value) observer.observe(scroller.value);
 });
 onBeforeUnmount(() => observer?.disconnect());
 
-// The empty/conversation branch can replace this element after the component has mounted.
-watch(content, (el, previous) => {
+// The empty/conversation branch can replace these elements after the component has mounted.
+watch([content, scroller], ([el, outer], [previous, previousOuter]) => {
   if (previous) observer?.unobserve(previous);
+  if (previousOuter) observer?.unobserve(previousOuter);
   if (el) observer?.observe(el);
+  if (outer) observer?.observe(outer);
 }, { flush: "post" });
 
-watch(
-  () => props.sessionId,
-  () => {
-    anchor.value = null;
-    stick.value = true;
-    lastScrollTop = 0;
-  },
-);
+/**
+ * Opening a conversation or starting a new one starts the view over. A first message's conversation getting its id does
+ * not: the reader is still in it.
+ */
+function startOver() {
+  anchor.value = null;
+  pinned.value = false;
+  stick.value = true;
+  lastScrollTop = 0;
+}
+watch(() => props.sessionId, (id) => id === null && startOver());
+watch(() => props.loading, (loading) => loading && startOver());
 
 watch([() => props.sessionId, () => props.loading], ([, loading]) => {
-  if (loading || props.loadError) return;
+  if (loading || props.loadError || pinned.value) return;
   // Opening positions the freshly rendered tail; older-page prepends use historyRevision instead.
   stick.value = true;
   toBottom();
+}, { flush: "post" });
+
+watch(() => props.pendingInput, (text) => {
+  if (text === null) pendingTurn.value = false;
+});
+
+// A new question at the end, the sent message or one that arrived as a new turn, takes the top of the view.
+watch(lastUserKey, (key, previous) => {
+  if (pinned.value && key !== null && key !== previous) pin();
 }, { flush: "post" });
 
 function holdAnchor() {
@@ -142,10 +204,18 @@ watch(() => shell.taskFocus?.value, async (focus) => {
   holdAnchor();
 });
 
-function send(text: string) {
+/** A message sent while nothing runs starts a turn and takes the top; one sent into a running reply joins its process. */
+async function send(text: string) {
   anchor.value = null;
-  stick.value = true;
+  const starts = !props.busy;
+  if (starts) {
+    pinned.value = true;
+    pendingTurn.value = true;
+  }
   emit("send", text);
+  if (!starts) return;
+  await nextTick();
+  pin();
 }
 </script>
 
@@ -187,19 +257,20 @@ function send(text: string) {
             <button type="button" @click="emit('retry')">{{ labels.retry }}</button>
           </div>
           <template v-for="item in items" :key="item.key">
-            <div v-if="item.kind === 'user'" class="user-turn">
+            <div v-if="item.kind === 'user'" class="user-turn" :data-pin="item.key === pinTarget || undefined">
               <div class="user-bubble">{{ item.answer ? labels.answered(item.text) : item.text }}</div>
             </div>
             <div v-else-if="item.kind === 'notification'" class="agent-notification" :class="{ failed: item.error }" :role="item.error ? 'alert' : 'note'"><CircleAlert :size="14" /><span>{{ item.text }}</span></div>
             <ShellResponse v-else :item="item" :session-id="sessionId" :feedback="feedback" />
           </template>
-          <div v-if="pendingInput !== null" class="user-turn">
+          <div v-if="pendingInput !== null" class="user-turn" :data-pin="pinTarget === PENDING || undefined">
             <div class="user-bubble pending">{{ pendingInput }}</div>
           </div>
           <div v-if="waiting" class="waiting" aria-live="polite" :aria-label="labels.working">
             <span class="dot" /><span class="dot" /><span class="dot" />
           </div>
         </div>
+        <div ref="room" aria-hidden="true" />
       </div>
       <div class="dock">
         <button
