@@ -105,16 +105,16 @@ ON CONFLICT(domain_id,creator_id) DO UPDATE SET valid=true,sealed_key=EXCLUDED.s
             sealed);
   }
 
-  /** An explicit administrator save may prepare a missing key; reads never renew one. */
+  /** An explicit administrator save may prepare a missing or rejected key; reads never renew one. */
   @Transactional(noRollbackFor = Invalid.class)
   public void prepareForExecutionSetting(User user) {
     lockOwner(user.getDomainId(), user.getId());
-    var states = db.queryForList(
-        "SELECT valid FROM platform_task_credential WHERE domain_id=? AND creator_id=?",
-        Boolean.class, user.getDomainId(), user.getId());
-    if (states.contains(true)) {
-      forOwner(user.getDomainId(), user.getId());
-      return;
+    var rows = db.queryForList(
+        "SELECT sealed_key FROM platform_task_credential WHERE domain_id=? AND creator_id=? AND valid",
+        String.class, user.getDomainId(), user.getId());
+    if (!rows.isEmpty()) {
+      String key = storedKey(user.getDomainId(), user.getId(), rows.getFirst());
+      if (identity.accepts(key, user.getDomainId(), user.getId())) return;
     }
     issueAndStore(user);
   }
@@ -172,21 +172,25 @@ ON CONFLICT(domain_id,creator_id) DO UPDATE SET valid=true,sealed_key=EXCLUDED.s
                 owner);
     if (rows.isEmpty()) throw new Invalid();
     String sealed = rows.getFirst();
-    String key = null;
-    boolean readable = true;
-    try {
-      key = open(sealed);
-    } catch (GeneralSecurityException | IllegalArgumentException e) {
-      readable = false;
-    }
-    if (readable && identity.accepts(key, domain, owner)) return key;
-    db
-        .update(
-            "UPDATE platform_task_credential SET valid=false WHERE domain_id=? AND creator_id=? AND"
-                + " sealed_key IS NOT DISTINCT FROM ?",
-            domain,
-            owner,
-            sealed);
+    String key = storedKey(domain, owner, sealed);
+    if (identity.accepts(key, domain, owner)) return key;
+    markInvalid(domain, owner, sealed);
     throw new Invalid();
+  }
+
+  private String storedKey(String domain, String owner, String sealed) {
+    try {
+      return open(sealed);
+    } catch (GeneralSecurityException | IllegalArgumentException unreadable) {
+      markInvalid(domain, owner, sealed);
+      throw new Invalid();
+    }
+  }
+
+  private void markInvalid(String domain, String owner, String sealed) {
+    db.update(
+        "UPDATE platform_task_credential SET valid=false WHERE domain_id=? AND creator_id=? AND"
+            + " sealed_key IS NOT DISTINCT FROM ?",
+        domain, owner, sealed);
   }
 }

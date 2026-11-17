@@ -30,9 +30,11 @@ public class AgentExecutionSettings {
     if (!Objects.equals(actor.userId(), setting.operatorId()) || !Objects.equals(actor.domainId(), setting.domainId()))
       throw new AgentHttpException(403, "FORBIDDEN", "Operator identity does not match");
     boolean administrator = identity.administrator(actor);
-    if (!administrator && !Objects.equals(setting.oldExecutionUserId(), setting.executionUserId()))
-      throw new AgentHttpException(403, "FORBIDDEN", "Domain governance administrator required");
-    if (setting.executionUserId() != null) identity.requireTarget(actor.domainId(), setting.executionUserId());
+    if (!Objects.equals(setting.oldExecutionUserId(), setting.executionUserId())) {
+      if (!administrator)
+        throw new AgentHttpException(403, "FORBIDDEN", "Domain governance administrator required");
+      if (setting.executionUserId() != null) identity.requireTarget(actor.domainId(), setting.executionUserId());
+    }
     return administrator;
   }
   public void validate(Setting setting, HttpServletRequest request) { check(setting, request); }

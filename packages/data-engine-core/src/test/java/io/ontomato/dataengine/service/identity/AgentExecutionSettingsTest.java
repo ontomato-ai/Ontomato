@@ -64,6 +64,40 @@ class AgentExecutionSettingsTest extends PostgresTestDatabase {
       .contentType(MediaType.APPLICATION_JSON).content(setting("\"target\"","\"target\""))).andExpect(status().isNoContent());
     assertEquals(0,count()); verifyNoInteractions(keys);
   }
+  @Test void unchangedInvalidTargetAllowsNonAdministratorEditsWithoutChangingCredentials() throws Exception {
+    credentials.prepareForExecutionSetting(target);
+    var before = jdbc.queryForMap("SELECT * FROM platform_task_credential");
+    clearInvocations(keys);
+    when(identity.requireTarget("domain", "target"))
+      .thenThrow(new AgentHttpException(403, "EXECUTION_USER_INVALID", "Invalid member"));
+    for (String path : new String[] {"validate-setting", "prepare-setting"})
+      http.perform(post("/internal/agent-execution/"+path).header(WorkbenchServiceAuthentication.HEADER,"service")
+        .header("tk","original").contentType(MediaType.APPLICATION_JSON).content(setting("\"target\"","\"target\"")))
+        .andExpect(status().isNoContent());
+    assertEquals(before, jdbc.queryForMap("SELECT * FROM platform_task_credential"));
+    verifyNoInteractions(keys);
+    // An administrator's explicit save still validates the unchanged target before preparing it.
+    when(identity.administrator(operator)).thenReturn(true);
+    http.perform(post("/internal/agent-execution/prepare-setting").header(WorkbenchServiceAuthentication.HEADER,"service")
+      .contentType(MediaType.APPLICATION_JSON).content(setting("\"target\"","\"target\"")))
+      .andExpect(status().isForbidden());
+    assertEquals(before, jdbc.queryForMap("SELECT * FROM platform_task_credential"));
+    verifyNoInteractions(keys);
+  }
+  @Test void administratorSaveReplacesARejectedKeyInOnePreparation() throws Exception {
+    credentials.prepareForExecutionSetting(target);
+    clearInvocations(keys);
+    when(identity.administrator(operator)).thenReturn(true);
+    when(keys.accepts("shared-key", "domain", "target")).thenReturn(false);
+    when(keys.issueKey(target)).thenReturn("replacement-key");
+    when(keys.accepts("replacement-key", "domain", "target")).thenReturn(true);
+    http.perform(post("/internal/agent-execution/prepare-setting").header(WorkbenchServiceAuthentication.HEADER,"service")
+      .contentType(MediaType.APPLICATION_JSON).content(setting("\"target\"","\"target\"")))
+      .andExpect(status().isNoContent());
+    assertEquals("replacement-key", credentials.forOwner("domain", "target"));
+    assertEquals(1, count());
+    verify(keys, times(1)).issueKey(target);
+  }
   @Test void validationHasNoKeySideEffectsAndEveryInternalEntryRequiresTheServiceCredential() throws Exception {
     when(identity.administrator(operator)).thenReturn(true);
     http.perform(post("/internal/agent-execution/validate-setting").header(WorkbenchServiceAuthentication.HEADER,"service")
