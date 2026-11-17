@@ -37,27 +37,27 @@ The command writes `outputs/<name>.chart.json` and prints the path; reference th
 | `fields` | yes | `name` and `value` mapped to real column names. |
 | `featureNameProperty` | no | Boundary property the `name` column matches: omit for short names, `fullname` for full names, `code` for administrative codes. |
 | `display` | no | `sort`, `displayLimit` and `formats`, as for other chart files. |
-| `source` | no | Data source reference below. |
+| `source` | no | MetricView reference; only `metric` or `dataset`, and other keys are rejected. |
 
-`dataset` and a `source.dataset.path` are paths in the workspace directory the command runs in.
+`dataset` is a path in the workspace directory the command runs in. Reading it records the file as the chart's source automatically.
 
 ## Region matching
 
-Boundaries are the platform's bundled `china-provinces` resource; the skill neither downloads nor caches them. The `name` column must match the chosen boundary property exactly:
+Boundaries are the platform's bundled `china-provinces` resource; the skill neither downloads nor caches them. It checks every `name` value against the chosen boundary property before writing, and reports all values the resource lacks. The values must match that property exactly:
 
 - default (`name`): short province names, such as `北京`, `广东`, `内蒙古`;
 - `fullname`: official full names, such as `北京市`, `广东省`;
 - `code`: administrative codes as text, such as `110000`.
 
-A value that does not match a bundled region is not drawn. Fix the region column or pass the property it uses rather than introducing another boundary source.
+A value that does not match a bundled region is reported and no file is written. Fix the region column or pass the property it uses rather than introducing another boundary source.
 
 ## Source reference
 
-Write the one source the rows came from; never invent an id or path.
+Reading a `dataset` file records that file as the chart's source automatically. When the rows come from one MetricView, also write:
 
-- A MetricView: `{ "metric": { "metricId": "...", "parameters": { ... } } }`, copied from the accepted dataset's metric recipe or from `ontomato-analyst` `metrics` / `execute-metric`.
-- A temporary retrieval: `{ "dataset": { "path": "outputs/result.dataset.json" } }`, the file the chart read.
-- Neither: omit `source`. The chart can then be viewed in this conversation but cannot be added to a dashboard or imported elsewhere.
+`"source": { "metric": { "metricId": "...", "parameters": { ... } } }`
+
+Copy the id and parameters from the accepted dataset's metric recipe or from `ontomato-analyst` `metrics` / `execute-metric`; never invent them. The MetricView reference wins over the recorded file. Without either a MetricView or a recorded dataset file (for example with inline `data`), the chart can be viewed in this conversation but cannot be added to a dashboard or imported elsewhere. `source` may name only `metric` or `dataset`; other keys are rejected.
 
 ## Revising
 

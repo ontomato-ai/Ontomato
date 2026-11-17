@@ -22,8 +22,7 @@ The command writes `outputs/<name>.chart.json` and prints the path; reference th
   "chartType": "leaflet-map",
   "name": "store-sales",
   "dataset": "outputs/stores.dataset.json",
-  "fields": { "lng": "longitude", "lat": "latitude", "name": "store", "value": "sales" },
-  "source": { "dataset": { "path": "outputs/stores.dataset.json" } }
+  "fields": { "lng": "longitude", "lat": "latitude", "name": "store", "value": "sales" }
 }
 ```
 
@@ -35,24 +34,24 @@ The command writes `outputs/<name>.chart.json` and prints the path; reference th
 | `dataset` | one of | Data file to read: an accepted `.dataset.json` or a JSON array/`{ "rows": [...] }`. |
 | `fields` | yes | `lng`, `lat`, `name`, and optional `value` mapped to real column names. |
 | `display` | no | `sort`, `displayLimit` and `formats`, as for other chart files. |
-| `source` | no | Data source reference below. |
+| `source` | no | MetricView reference; only `metric` or `dataset`, and other keys are rejected. |
 
-`dataset` and a `source.dataset.path` are paths in the workspace directory the command runs in.
+`dataset` is a path in the workspace directory the command runs in. Reading it records the file as the chart's source automatically.
 
 ## Map rules
 
 - `lng` and `lat` are WGS-84 decimal degrees; convert any other coordinate system before charting.
 - The only basemap is the platform's bundled `china-provinces` resource. Street-level tiles are not available.
-- `name` is the readable place label; `value` appears in the tooltip. Markers have a fixed size.
+- `name` is the readable place label; `value` scales marker size from 6 to 40px and appears in the tooltip.
 - Rows without valid coordinates cannot be placed; fix the data instead of dropping them silently here.
 
 ## Source reference
 
-Write the one source the rows came from; never invent an id or path.
+Reading a `dataset` file records that file as the chart's source automatically. When the rows come from one MetricView, also write:
 
-- A MetricView: `{ "metric": { "metricId": "...", "parameters": { ... } } }`, copied from the accepted dataset's metric recipe or from `ontomato-analyst` `metrics` / `execute-metric`.
-- A temporary retrieval: `{ "dataset": { "path": "outputs/result.dataset.json" } }`, the file the chart read.
-- Neither: omit `source`. The chart can then be viewed in this conversation but cannot be added to a dashboard or imported elsewhere.
+`"source": { "metric": { "metricId": "...", "parameters": { ... } } }`
+
+Copy the id and parameters from the accepted dataset's metric recipe or from `ontomato-analyst` `metrics` / `execute-metric`; never invent them. The MetricView reference wins over the recorded file. Without either a MetricView or a recorded dataset file (for example with inline `data`), the chart can be viewed in this conversation but cannot be added to a dashboard or imported elsewhere. `source` may name only `metric` or `dataset`; other keys are rejected.
 
 ## Revising
 

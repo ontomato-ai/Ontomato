@@ -20,4 +20,8 @@ for (const name of ["echarts", "leaflet", "admin-choropleth-map"]) {
   // The bundle carries zod; its licence travels with the standalone package.
   fs.mkdirSync(path.join(skills, name, "licenses"), { recursive: true });
   fs.copyFileSync(path.join(zod, "LICENSE"), path.join(skills, name, "licenses/zod-LICENSE.txt"));
+  // The choropleth package carries the platform boundary resource and its provenance.
+  if (name === "admin-choropleth-map")
+    fs.copyFileSync(path.join(directory, "../../contracts/chart-maps/README.md"),
+      path.join(skills, name, "licenses/china-provinces-README.md"));
 }

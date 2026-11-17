@@ -33,6 +33,7 @@ export const chartInputs: Record<string, ChartInputs> = {
   funnel: { required: ["name", "value"], numeric: ["value", "share"], optional: ["share"] },
   sankey: { required: ["source", "target", "value"], numeric: ["value"] },
   scatter: { required: ["xAxis", "yAxis"], numeric: ["xAxis", "yAxis", "size"], optional: ["name", "size"] },
+  heatmap: { required: ["xAxis", "yAxis", "value"], numeric: ["value"] },
   radar: { required: ["name", "value"], numeric: ["value"] },
   sunburst: { required: ["id", "parent", "name", "value"], numeric: ["value", "share"], optional: ["share"] },
   boxplot: { required: ["category", "min", "q1", "median", "q3", "max"], numeric: ["min", "q1", "median", "q3", "max"] },

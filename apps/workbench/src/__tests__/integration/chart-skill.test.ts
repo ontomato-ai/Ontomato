@@ -16,8 +16,8 @@ const rows = [
 ];
 
 describe("echarts chart file skill", () => {
-  it("writes a chart file from metric rows with the columns it uses", () => {
-    const file = chartFile({
+  it("writes a chart file from rows with the columns it uses", async () => {
+    const file = await chartFile({
       chartType: "bar",
       name: "equipment-temperature",
       data: rows,
@@ -33,12 +33,12 @@ describe("echarts chart file skill", () => {
     expect(file.ontomato.metric).toEqual({ metricId: "equipment-health", parameters: { line: "A" } });
   });
 
-  it("rejects a role whose column is absent from the rows", () => {
-    expect(() => chartFile({
+  it("rejects a role whose column is absent from the rows", async () => {
+    await expect(chartFile({
       chartType: "bar",
       name: "broken",
       data: [{ equipment_type: "A" }],
       fields: { xAxis: "equipment_type", yAxis: "temperature" },
-    })).toThrow(/temperature/);
+    })).rejects.toThrow(/temperature/);
   });
 });

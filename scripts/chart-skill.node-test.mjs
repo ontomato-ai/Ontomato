@@ -31,7 +31,9 @@ test("committed chart skill packages match the shared source", async (t) => {
   const output = await workspace(t);
   await run(process.execPath, [path.join(server, "chart-skill/build.mjs"), output], { cwd: root });
   for (const skill of ["echarts", "leaflet", "admin-choropleth-map"]) {
-    for (const file of ["scripts/index.mjs", "licenses/zod-LICENSE.txt"]) {
+    const files = ["scripts/index.mjs", "licenses/zod-LICENSE.txt"];
+    if (skill === "admin-choropleth-map") files.push("licenses/china-provinces-README.md");
+    for (const file of files) {
       const generated = await readFile(path.join(output, skill, file));
       const committed = await readFile(path.join(visualization, skill, file));
       assert.equal(Buffer.compare(generated, committed), 0,
@@ -72,6 +74,35 @@ test("a chart may reference the accepted dataset it read instead of a MetricView
   assert.equal(file.ontomato.metric, undefined);
 });
 
+test("a read dataset is recorded as the source when no source is given", async (t) => {
+  const directory = await workspace(t);
+  await writeFile(path.join(directory, "staff.dataset.json"), JSON.stringify({
+    rows: [{ department: "Computing", headcount: 50 }],
+  }));
+  await cli(directory, "echarts", {
+    chartType: "bar", name: "from-file", dataset: "staff.dataset.json",
+    fields: { xAxis: "department", yAxis: "headcount" },
+  });
+  const file = await chart(directory, "from-file");
+  assert.deepEqual(file.ontomato.dataset, { path: "staff.dataset.json" });
+  assert.equal(file.ontomato.metric, undefined);
+});
+
+test("heatmap keeps two category axes and a value scale", async (t) => {
+  const directory = await workspace(t);
+  await cli(directory, "echarts", {
+    chartType: "heatmap", name: "heat",
+    data: [{ day: "Mon", hour: "09", amount: 3 }, { day: "Mon", hour: "10", amount: 7 }],
+    fields: { xAxis: "hour", yAxis: "day", value: "amount" },
+  });
+  const file = await chart(directory, "heat");
+  assert.equal(file.xAxis.type, "category");
+  assert.equal(file.yAxis.type, "category");
+  assert.equal(file.series[0].type, "heatmap");
+  assert.deepEqual(file.series[0].encode, { x: "hour", y: "day", value: "amount" });
+  assert.deepEqual(file.visualMap, { type: "continuous", dimension: "amount", seriesIndex: 0 });
+});
+
 test("leaflet writes a WGS-84 point map on the bundled province resource", async (t) => {
   const directory = await workspace(t);
   await cli(directory, "leaflet", {
@@ -83,6 +114,7 @@ test("leaflet writes a WGS-84 point map on the bundled province resource", async
   assert.deepEqual(file.geo, { map: "china-provinces", roam: true });
   assert.equal(file.series[0].coordinateSystem, "geo");
   assert.deepEqual(file.series[0].encode, { lng: "lng", lat: "lat", itemName: "store", value: "sales", tooltip: ["store", "sales"] });
+  assert.deepEqual(file.visualMap, { type: "continuous", dimension: "sales", seriesIndex: 0, show: false, inRange: { symbolSize: [6, 40] } });
 });
 
 test("admin-choropleth-map matches a chosen boundary property", async (t) => {
@@ -96,6 +128,21 @@ test("admin-choropleth-map matches a chosen boundary property", async (t) => {
   assert.equal(file.series[0].type, "map");
   assert.equal(file.series[0].nameProperty, "fullname");
   assert.deepEqual(file.visualMap, { type: "continuous", dimension: "sales", seriesIndex: 0 });
+});
+
+test("admin-choropleth-map reports every region absent from the bundled boundaries", async (t) => {
+  const directory = await workspace(t);
+  await assert.rejects(cli(directory, "admin-choropleth-map", {
+    chartType: "admin-choropleth-map", name: "unknown-regions",
+    data: [{ province: "北京", sales: 1 }, { province: "不存在省", sales: 2 }],
+    fields: { name: "province", value: "sales" },
+  }), (error) => {
+    assert.notEqual(error.code, 0);
+    assert.match(error.stderr, /china-provinces/);
+    assert.match(error.stderr, /不存在省/);
+    return true;
+  });
+  await assert.rejects(readFile(path.join(directory, "outputs", "unknown-regions.chart.json")));
 });
 
 test("a missing role fails with the conversion code and the role name", async (t) => {
@@ -133,7 +180,20 @@ test("a chart file accepts one source reference, not two", async (t) => {
     source: { metric: { metricId: "metric-1", parameters: {} }, dataset: { path: "outputs/a.dataset.json" } },
   }), (error) => {
     assert.notEqual(error.code, 0);
-    assert.match(error.stderr, /not both/);
+    assert.match(error.stderr, /exactly one/);
+    return true;
+  });
+});
+
+test("source cannot carry drawing metadata", async (t) => {
+  const directory = await workspace(t);
+  await assert.rejects(cli(directory, "echarts", {
+    chartType: "bar", name: "bad-source", data: [{ department: "A", headcount: 1 }],
+    fields: { xAxis: "department", yAxis: "headcount" },
+    source: { metric: { metricId: "metric-1", parameters: {} }, display: {} },
+  }), (error) => {
+    assert.notEqual(error.code, 0);
+    assert.match(error.stderr, /exactly one/);
     return true;
   });
 });

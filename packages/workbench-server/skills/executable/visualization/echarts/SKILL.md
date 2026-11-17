@@ -1,6 +1,6 @@
 ---
 name: echarts
-description: Build and revise reusable .chart.json chart files from query rows, covering bars, lines, pies, treemaps, funnels, sankey, scatter, radar, sunburst, boxplot, gauge, timeline and graphs.
+description: Build and revise reusable .chart.json chart files from query rows, covering bars, lines, pies, treemaps, funnels, sankey, scatter, heatmaps, radar, sunburst, boxplot, gauge, timeline and graphs.
 ---
 
 ## When to use
@@ -41,9 +41,9 @@ The rows must already be at the final grain: counts, shares and other business c
 | `seriesNames` | no | Series column to legend name. |
 | `axisNames` | no | `{ "x": "...", "y": "...", "y2": "..." }` axis names. |
 | `graphInput` | for graphs | `object` or `edges`. |
-| `source` | no | Data source reference below. |
+| `source` | no | MetricView reference; only `metric` or `dataset`, and other keys are rejected. |
 
-`dataset` and a `source.dataset.path` are paths in the workspace directory the command runs in.
+`dataset` is a path in the workspace directory the command runs in. Reading it records the file as the chart's source automatically.
 
 ## Chart types and roles
 
@@ -56,6 +56,7 @@ Roles are literal column names. A value ending in `?` is optional.
 | `pie`, `donut`, `nightingale-rose`, `treemap`, `funnel` | `name`, `value`, `share?` |
 | `sankey` | `source`, `target`, `value` |
 | `scatter` | `xAxis`, `yAxis`, `name?`, `size?` |
+| `heatmap` | `xAxis`, `yAxis` (both categories), `value` (numeric) |
 | `radar` | `name`, `value` (one non-negative axis per row) |
 | `sunburst` | `id`, `parent`, `name`, `value`, `share?` (`parent` null on roots) |
 | `boxplot` | `category`, `min`, `q1`, `median`, `q3`, `max` |
@@ -82,11 +83,11 @@ A percent format needs a scale: `100` maps `0.25` to `25%`, `1` maps `25` to `25
 
 ## Source reference
 
-Write the one source the rows came from; never invent an id or path.
+Reading a `dataset` file records that file as the chart's source automatically. When the rows come from one MetricView, also write:
 
-- A MetricView: `{ "metric": { "metricId": "...", "parameters": { ... } } }`, copied from the accepted dataset's metric recipe or from `ontomato-analyst` `metrics` / `execute-metric`.
-- A temporary retrieval: `{ "dataset": { "path": "outputs/result.dataset.json" } }`, the file the chart read.
-- Neither: omit `source`. The chart can then be viewed in this conversation but cannot be added to a dashboard or imported elsewhere.
+`"source": { "metric": { "metricId": "...", "parameters": { ... } } }`
+
+Copy the id and parameters from the accepted dataset's metric recipe or from `ontomato-analyst` `metrics` / `execute-metric`; never invent them. The MetricView reference wins over the recorded file. Without either a MetricView or a recorded dataset file (for example with inline `data`), the chart can be viewed in this conversation but cannot be added to a dashboard or imported elsewhere. `source` may name only `metric` or `dataset`; other keys are rejected.
 
 ## Revising
 
