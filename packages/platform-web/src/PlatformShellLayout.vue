@@ -156,12 +156,13 @@ provide(pilotPageKey, resolvePilotPage);
  * tab last used, and the address that opens the conversation with the page beside it. The pages themselves only show
  * the platform's composer and hand over the message.
  */
-const counterAgents = ref<readonly AgentHostAgent[]>([]);
-void createAssistantClient()
-  .listAgents()
-  .then((list) => (counterAgents.value = list.filter((agent) => agent.enabled)));
+/** Read when a page shows its composer, once per page load: the platform's own pages do not read agents at startup. */
+let counterAgents: Promise<readonly AgentHostAgent[]> | null = null;
 provide(pageCounterKey, {
-  agents: counterAgents,
+  agents: () =>
+    (counterAgents ??= createAssistantClient()
+      .listAgents()
+      .then((list) => list.filter((agent) => agent.enabled))),
   preferredAgentId: ref(readRememberedAgent()),
   ask(agentId, text, page) {
     void router.push({ path: platformRoutes.chat.path, query: { agentId, prompt: text, page } });

@@ -106,7 +106,7 @@ const provide = () => ({
   // The platform answers which of its pages the account may open; the settings need an answer to draw their column.
   [platformPageAccessKey as symbol]: () => true,
   [pageCounterKey as symbol]: {
-    agents: ref([{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Assistant", description: "", icon: null, enabled: true }]),
+    agents: async () => [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Assistant", description: "", icon: null, enabled: true }],
     preferredAgentId: ref("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
     ask: vi.fn(),
   } satisfies PageCounter,

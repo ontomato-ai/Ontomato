@@ -62,7 +62,7 @@ describe("a dashboard beside the conversation", () => {
     const router = await routerAt("/dashboards?dashboardId=board-a");
     const ask = vi.fn();
     const counter: PageCounter = {
-      agents: ref([{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Assistant", description: "", icon: null, enabled: true }]),
+      agents: async () => [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Assistant", description: "", icon: null, enabled: true }],
       preferredAgentId: ref<string | null>("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
       ask,
     };

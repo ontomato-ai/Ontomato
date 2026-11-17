@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 import type { ShellLabels } from "../types";
 import { usePageCounter } from "../page-counter";
 import AgentPicker from "./AgentPicker.vue";
@@ -16,11 +17,15 @@ const props = defineProps<{
   labels: Pick<ShellLabels, "placeholder" | "send" | "stop" | "agent">;
 }>();
 const counter = usePageCounter()!;
+/**
+ * The agents are read when the page draws its composer, not when the platform starts: the counter answers, and the page
+ * only shows what it may talk to.
+ */
+const agents = ref<readonly AgentHostAgent[]>([]);
+void counter.agents().then((list) => (agents.value = list.filter((agent) => agent.enabled)));
 /** The agent the message goes to: the one chosen here, else the one the counter last used, else its first agent. */
 const chosen = ref<string | null>(counter.preferredAgentId.value);
-const agentId = computed(
-  () => chosen.value ?? counter.agents.value.find((agent) => agent.enabled)?.id ?? null,
-);
+const agentId = computed(() => chosen.value ?? agents.value[0]?.id ?? null);
 
 function ask(text: string) {
   if (!agentId.value) return;
@@ -29,10 +34,10 @@ function ask(text: string) {
 </script>
 
 <template>
-  <div v-if="counter.agents.value.length" class="page-ask">
+  <div v-if="agents.length" class="page-ask">
     <ShellComposer :busy="false" :labels="labels" @send="ask">
       <template #agent>
-        <AgentPicker variant="pill" :agents="counter.agents.value" :agent-id="agentId" :label="labels.agent" @select="chosen = $event" />
+        <AgentPicker variant="pill" :agents="agents" :agent-id="agentId" :label="labels.agent" @select="chosen = $event" />
       </template>
     </ShellComposer>
   </div>

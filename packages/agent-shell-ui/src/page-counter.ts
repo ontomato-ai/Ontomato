@@ -8,8 +8,8 @@ import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
  * imports the counter's own code.
  */
 export interface PageCounter {
-  /** The agents the account may talk to in the counter. */
-  agents: Readonly<Ref<readonly AgentHostAgent[]>>;
+  /** The agents the account may talk to in the counter; read when a page shows its composer. */
+  agents(): Promise<readonly AgentHostAgent[]>;
   /** The agent the counter last used, when the reader may still use it. */
   preferredAgentId: Readonly<Ref<string | null>>;
   /**
