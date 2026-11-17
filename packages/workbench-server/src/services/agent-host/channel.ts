@@ -65,7 +65,7 @@ export const agentChannelService = {
     }
     if (body.agent.providerId === "observe") {
       if (body.agent.agentId !== DIAGNOSIS_AGENT_ID || body.authority.executionKind !== "live") throw new HttpError(403, "Diagnosis requires live execution authority", "BUILD_TEST_FORBIDDEN");
-      await createDiagnosis(body.sessionId, owner);
+      await createDiagnosis(body.sessionId, owner, null, true);
       return prepareDiagnosis(body.sessionId, body.runId, body.input, owner, credentials);
     }
     return assistantService.prepare(body,owner,credentials);
