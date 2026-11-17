@@ -84,6 +84,16 @@ async function authorizedDependencies(owner:ProductOwner,id:string){
 export async function getProduct(owner: ProductOwner, id: string, client: Pick<PoolClient, "query"> = db()) {
   return withProductGrants(owner,()=>getAuthorizedProduct(owner,id,client));
 }
+/** Historical catalog imports used a separate asset ID; resolve it without widening grants. */
+export async function getApplicationProduct(owner:ProductOwner,applicationId:string){
+  return withProductGrants(owner,async()=>{
+    const access=currentProductGrants(owner);
+    const result=await db().query(`SELECT id FROM ${t('product_assets')} WHERE domain_id=$1 AND document->>'kind'='application' AND document->>'applicationId'=$2 AND id=ANY($3::text[]) ORDER BY (id=$2) DESC,id LIMIT 2`,[owner.domainId,applicationId,[...access.use]]);
+    if(!result.rows.length)throw new HttpError(404,'Application product unavailable','PRODUCT_UNAVAILABLE');
+    if(result.rows.length>1&&result.rows[0].id!==applicationId)throw new HttpError(409,'Application product identity is ambiguous','PRODUCT_CONFLICT');
+    return getProduct(owner,result.rows[0].id);
+  });
+}
 async function getAuthorizedProduct(owner:ProductOwner,id:string,client:Pick<PoolClient,'query'>){
   const access=currentProductGrants(owner);
   if(!access.use.has(id)&&!access.edit.has(id))throw new HttpError(404,'Product asset unavailable','PRODUCT_UNAVAILABLE');

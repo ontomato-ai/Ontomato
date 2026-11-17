@@ -45,7 +45,7 @@ export interface PlatformAppDeclaration {
  * Opens an application by its id the way its rail row does. The shell's layout provides it to the pages inside it, so a
  * page that leads to an application never works out the application's address itself.
  */
-export const openApplicationKey: InjectionKey<(id: string) => void> = Symbol("open-application");
+export { openApplicationKey } from '@ontomato/platform-shell';
 
 /** The edition's brand the shell shows; the home shows the same mark. */
 export const platformBrandKey: InjectionKey<Readonly<Ref<PlatformBrand>>> = Symbol("platform-brand");

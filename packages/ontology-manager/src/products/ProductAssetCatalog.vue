@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
-import { PlatformPageHeader } from "@ontomato/platform-shell";
+import { computed, inject, onMounted, ref, watch } from "vue";
+import { PlatformPageHeader, openApplicationKey } from "@ontomato/platform-shell";
 import {dropdownBoundaryOptions} from '@ontomato/foundation-ui/overlay';
 import { ArrowLeft, Plus, RefreshCw, ChevronRight, MoreHorizontal } from "lucide-vue-next";
 import { randomId } from "@ontomato/contracts/random-id";
@@ -19,6 +19,11 @@ import {rendererLabel} from './renderer-labels';
 import {localizedProductTypes,localizedProductCategories} from './catalog-labels';
 import {useIdentityNames} from './identity-names';
 const client = useManagerClient();
+const openApplication=inject(openApplicationKey,null);
+function openReference(event:MouseEvent,reference:import('@ontomato/contracts/product-assets').ProductReference){
+ if(reference.kind!=='application'||!openApplication)return;
+ event.preventDefault();openApplication(reference.id);
+}
 const nativeBinding=ref<{agentId?:string;applicationId?:string}>({});
 const identityName=useIdentityNames();
 const {ot}=useOntologyText();
@@ -57,6 +62,7 @@ const expandedReferences=ref<import('@ontomato/contracts/product-assets').Produc
 const dependencyLoading=ref(false),dependencyError=ref(''),dependencyLoaded=ref(false);
 const dependencyGraph=ref<ProductGraph>({nodes:[],edges:[]});
 const dependencyNames=ref<Record<string,string>>({});
+const applicationLinks=ref<Record<string,string>>({});
 const referenceLabels={asset:'产品资产',metric:'指标能力',action:'操作能力',definition:'业务定义','object-type':'对象类型',dashboard:'仪表盘',application:'应用入口','object-view':'对象视图'};
 const referenceGroups=computed(()=>Object.entries(referenceLabels).map(([kind,label])=>({kind,label,items:references.value.filter(reference=>reference.kind===kind)})).filter(group=>group.items.length));
 function referenceName(reference:import('@ontomato/contracts/product-assets').ProductReference){return dependencyNames.value[`${reference.kind}:${reference.id}`]??assets.value.find(asset=>asset.id===reference.id)?.name??capabilities.value.find(capability=>capability.id===reference.id)?.name??reference.id;}
@@ -73,6 +79,9 @@ async function resolveDependencyNames(id:string,references:import('@ontomato/con
       if(reference.kind==='application'){
         const application=await client.dataEngine.get(`/platform/applications/${encodeURIComponent(reference.id)}`) as {names?:Record<string,string>};
         const names=application?.names;
+        const entry=application as {kind?:string;entry?:{home?:string;path?:string}};
+        const path=entry.kind==='hosted'||entry.kind==='connected'?`/applications/${encodeURIComponent(reference.id)}`:entry.entry?.home??entry.entry?.path;
+        if(selected.value?.id===id&&path?.startsWith('/')&&!path.startsWith('//'))applicationLinks.value={...applicationLinks.value,[reference.id]:'#'+path};
         if(names){const name=names[managerContext.locale]??names[managerContext.locale.startsWith('zh')?'zh-CN':'en']??Object.values(names)[0];if(name)return [`application:${reference.id}`,name];}
       }
     }catch{/* Keep the identifier visible when metadata is unavailable. */}
@@ -84,7 +93,7 @@ function referenceHref(reference:import('@ontomato/contracts/product-assets').Pr
   const id=encodeURIComponent(reference.id);
   if(reference.kind==='metric')return `#/ontology/assets/metrics/${id}`;
   if(reference.kind==='action')return `#/ontology/assets/actions/${id}`;
-  if(reference.kind==='application')return `#/applications/${id}`;
+   if(reference.kind==='application')return applicationLinks.value[reference.id]??`#/applications/${id}`;
   if(reference.kind==='dashboard')return `#/dashboards?dashboardId=${id}`;
   return undefined;
 }
@@ -309,7 +318,7 @@ async function remove() { if(!selected.value)return;await run(async()=>{await El
             <section v-for="group in referenceGroups" :key="group.kind" class="reference-group"><h3>{{group.label}}<span>{{group.items.length}}</span></h3>
               <div v-for="dependency in group.items" :key="dependency.id" class="reference-row">
                 <button v-if="dependency.kind==='asset'" class="reference-link" @click="select({id:dependency.id})">{{referenceName(dependency)}}<ChevronRight :size="14"/></button>
-                <a v-else-if="referenceHref(dependency)" class="reference-link" :href="referenceHref(dependency)">{{referenceName(dependency)}}<ChevronRight :size="14"/></a>
+                <a v-else-if="referenceHref(dependency)" class="reference-link" :href="referenceHref(dependency)" @click="openReference($event,dependency)">{{referenceName(dependency)}}<ChevronRight :size="14"/></a>
                 <span v-else class="reference-value">{{referenceName(dependency)}}</span>
                 <code v-if="referenceName(dependency)!==dependency.id">{{dependency.id}}</code>
               </div>
