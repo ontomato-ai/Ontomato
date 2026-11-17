@@ -1,6 +1,6 @@
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import type {ProductOwner} from './store';
-import {getProduct} from './store';
+import {getApplicationProduct} from './store';
 import {requireProductUse} from './grants';
 import {readActiveProductBundle,readProductRelease,synchronizeBundlePublication} from './releases';
 import {backendGet,buildBackendHeaders} from '../../utils/backend-client';
@@ -11,8 +11,8 @@ export async function publishedApplication(owner:ProductOwner,credentials:Assist
   return (await publishedApplicationRelease(owner,credentials,id)).snapshot;
 }
 export async function publishedApplicationRelease(owner:ProductOwner,credentials:AssistantCredentials,id:string){
-  await requireProductUse(owner,id);
-  const bundle=await getProduct(owner,id);
+   const bundle=await getApplicationProduct(owner,id);
+   await requireProductUse(owner,bundle.id);
   if(bundle.document.kind!=='application')throw new HttpError(404,'Application bundle unavailable','PRODUCT_UNAVAILABLE');
   if(!bundle.document.workspaceId&&bundle.document.navigationId){if(bundle.editable)await synchronizeBundlePublication(owner,id,credentials);return readActiveProductBundle(owner,id);}
   const headers=buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey);
