@@ -41,19 +41,19 @@ describe("agent creation on PostgreSQL", () => {
     const input = assistantAgentInputSchema.parse({ name: "Scoped agent", description: "", icon: null,
       enabled: true, systemPrompt: "Analyze the selected classes", skills: [], classNames: ["org"], enabledMcpServiceIds: [], sortOrder: 0 });
     const owner = { userId: "owner", domainId: "domain" };
-    const result = await createAgentDefinition(id, input, owner);
+    const result = await createAgentDefinition(id, input, owner, {});
     expect(result.id).toBe(id);
     expect(result.classNames).toEqual(["org"]);
-    expect(await createAgentDefinition(id, input, owner)).toEqual(result);
+    expect(await createAgentDefinition(id, input, owner, {})).toEqual(result);
     const stored = await state.pool!.query(`SELECT kind FROM "${state.schema}".assistant_agents WHERE id=$1`, [id]);
     expect(stored.rows[0].kind).toBe(id);
   });
   it("persists selection, accepts default and rejects a missing reference before writing", async () => {
     const id = randomUUID(), owner = { userId: "owner", domainId: "selection" };
     const input = assistantAgentInputSchema.parse({ name: "Selected", description: "", icon: null, enabled: true, systemPrompt: "Test", skills: [], modelSelection: { modelId: "configured" } });
-    expect((await createAgentDefinition(id, input, owner)).modelSelection).toEqual({ modelId: "configured" });
-    await expect(saveAgentDefinition(id, { ...input, modelSelection: { modelId: "missing" } }, owner)).rejects.toMatchObject({ status: 400 });
-    expect((await saveAgentDefinition(id, { ...input, modelSelection: { modelId: null } }, owner)).modelSelection).toEqual({ modelId: null });
+    expect((await createAgentDefinition(id, input, owner, {})).modelSelection).toEqual({ modelId: "configured" });
+    await expect(saveAgentDefinition(id, { ...input, modelSelection: { modelId: "missing" } }, owner, {})).rejects.toMatchObject({ status: 400 });
+    expect((await saveAgentDefinition(id, { ...input, modelSelection: { modelId: null } }, owner, {})).modelSelection).toEqual({ modelId: null });
   });
   it("keeps diagnosis selection domain-owned and validates changes", async () => {
     expect(await readDiagnosisModel("diagnosis-a")).toEqual({ modelSelection: { modelId: null } });
@@ -66,12 +66,12 @@ describe("agent creation on PostgreSQL", () => {
     const id = randomUUID();
     const input = assistantAgentInputSchema.parse({ name: "Shared id", description: "", icon: null,
       enabled: true, systemPrompt: "Scoped", skills: [], classNames: [], enabledMcpServiceIds: [], sortOrder: 0 });
-    await createAgentDefinition(id, input, { userId: "owner", domainId: "domain-a" });
-    const replayed = await createAgentDefinition(id, input, { userId: "owner", domainId: "domain-a" });
+    await createAgentDefinition(id, input, { userId: "owner", domainId: "domain-a" }, {});
+    const replayed = await createAgentDefinition(id, input, { userId: "owner", domainId: "domain-a" }, {});
     expect(replayed.id).toBe(id);
-    await expect(createAgentDefinition(id, input, { userId: "other", domainId: "domain-b" }))
+    await expect(createAgentDefinition(id, input, { userId: "other", domainId: "domain-b" }, {}))
       .rejects.toMatchObject({ status: 409, code: "IDEMPOTENCY_CONFLICT" });
-    await expect(createAgentDefinition(id, { ...input, name: "Different" }, { userId: "owner", domainId: "domain-a" }))
+    await expect(createAgentDefinition(id, { ...input, name: "Different" }, { userId: "owner", domainId: "domain-a" }, {}))
       .rejects.toMatchObject({ status: 409, code: "IDEMPOTENCY_CONFLICT" });
   });
 });

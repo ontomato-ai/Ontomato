@@ -49,7 +49,6 @@ function fakeService() {
   return {
     seen: () => seen.filter((caller) => caller.userId === owner.userId),
     service: {
-      agents: async (caller: AgentHostOwner) => (own(caller), { agents: [] }),
       list: async (caller: AgentHostOwner) => (own(caller), { sessions: [view], nextCursor: null }),
       readableSessions: async (caller: AgentHostOwner, ids: string[]) => {
         readableCalls.push(ids);

@@ -1,3 +1,4 @@
+import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { validateModelSelection } from "../../platform/agent-runtime/model-selection";
 import {
   assistantAgentDefinitionSchema,
@@ -45,12 +46,13 @@ export async function saveAgentDefinition(
   id: string,
   input: AssistantAgentInput,
   owner: AssistantOwner,
-  locale?: string,
+  credentials: AssistantCredentials,
 ) {
+  const locale = credentials.locale;
   return withDomainSkills(owner.domainId, async () => {
     await validateModelSelection(owner.domainId, input.modelSelection);
     const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
-    await validateAssistantSkills(owner.domainId, skills);
+    await validateAssistantSkills(owner.domainId, skills, credentials);
     const agent = await editableAgent(id, owner);
     await transaction(async client=>{
     await lockProducts(client,owner);
@@ -81,11 +83,12 @@ export async function createAgentDefinition(
   id: string,
   input: AssistantAgentInput,
   owner: AssistantOwner,
+  credentials: AssistantCredentials,
 ) {
   return withDomainSkills(owner.domainId, async () => {
     await validateModelSelection(owner.domainId, input.modelSelection);
     const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
-    await validateAssistantSkills(owner.domainId, skills);
+    await validateAssistantSkills(owner.domainId, skills, credentials);
     const pool = getPostgresPool();
     const existing = (
       await pool.query(

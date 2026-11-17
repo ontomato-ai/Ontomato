@@ -1,4 +1,5 @@
 import { modelSelectionSchema } from "@ontomato/contracts/model-settings";
+import { assistantAgentsQuerySchema } from "@ontomato/contracts/page-skills";
 import { readDiagnosisModel, saveDiagnosisModel } from "../../services/ops-diagnosis/model-settings";
 import { requirePermission } from "../../identity/installed";
 import { assertAppBuilderAccess } from "../../services/app-builder/access";
@@ -21,6 +22,7 @@ import {
 } from "@ontomato/contracts/assistant-chat";
 import { assistantService } from "../../services/assistant/service";
 import { agentTasksFrameSchema } from "@ontomato/contracts/agent-tasks";
+import { pageDraftPathSchema } from "@ontomato/contracts/page-draft";
 import { publicFrame, publicSnapshot } from "../../platform/agent-runtime/projection";
 import { RuntimeClient, readSseFrames, readRuntimeFrames } from "../../infrastructure/agent-runtime/client";
 import chartImportRouter from "./chart-import";
@@ -42,7 +44,16 @@ const guardBuilder: RequestHandler = (req, res, next) => {
 };
 router.post("/sessions", guardBuilder);
 router.post("/sessions/:sessionId/runs", guardBuilder);
+router.get("/agents", wrap(async (req, res) => {
+  const c = context(req);
+  res.json(await assistantService.agents(c.owner, c.credentials, assistantAgentsQuerySchema.parse(req.query)));
+}));
 router.use(createAgentHostRouter(assistantService, true));
+/** The page draft a run wrote, at the run's own path: only the drafts directory, parsed as the shared envelope. */
+router.get("/sessions/:sessionId/runs/:runId/page-draft", wrap(async (req, res) => {
+  const path = pageDraftPathSchema.parse(req.query.path);
+  res.json(await assistantService.pageDraft(id(req, "sessionId"), id(req, "runId"), path, context(req).owner));
+}));
 router.get("/sessions/:sessionId/artifacts/:artifactId/drilldown", wrap(async (req, res) => {
   const rowIndex = z.coerce.number().int().nonnegative().safe().parse(req.query.rowIndex);
   res.json(await readDrilldown(id(req, "sessionId"), id(req, "artifactId"), context(req).owner, rowIndex));
@@ -60,7 +71,7 @@ router.put("/diagnosis-model", agentAdmin, wrap(async (req, res) => {
 }));
 router.get("/agent-skills", agentAdmin, wrap(async (req, res) => {
   const c = context(req);
-  res.json(await assistantSkillCatalog(c.owner.domainId, c.credentials.locale));
+  res.json(await assistantSkillCatalog(c.owner.domainId, c.credentials));
 }));
 /** The conversation's delegated work, read whole: rounds and their quality checks under the reply that asked for them. */
 router.get("/sessions/:sessionId/tasks", wrap(async (req, res) => {
@@ -149,6 +160,7 @@ router.post(
           uuid.parse(req.header("Idempotency-Key")),
           assistantAgentInputSchema.parse(req.body),
           context(req).owner,
+          context(req).credentials,
         ),
       );
   }),
@@ -162,7 +174,7 @@ router.put(
         id(req, "agentId"),
         assistantAgentInputSchema.parse(req.body),
         context(req).owner,
-        context(req).credentials.locale,
+        context(req).credentials,
       ),
     );
   }),

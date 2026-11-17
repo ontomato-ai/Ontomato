@@ -1,12 +1,20 @@
 import {beforeEach,expect,it,vi} from 'vitest';
 const mocks=vi.hoisted(()=>({use:vi.fn(),get:vi.fn(),active:vi.fn(),release:vi.fn(),backend:vi.fn(),synchronize:vi.fn()}));
 vi.mock('../grants',()=>({requireProductUse:mocks.use}));
-vi.mock('../store',()=>({getProduct:mocks.get}));
+vi.mock('../store',()=>({getApplicationProduct:mocks.get}));
 vi.mock('../releases',()=>({readActiveProductBundle:mocks.active,readProductRelease:mocks.release,synchronizeBundlePublication:mocks.synchronize}));
 vi.mock('../../../utils/backend-client',()=>({backendGet:mocks.backend,buildBackendHeaders:()=>({})}));
 import {publishedApplication} from '../published';
 const owner={domainId:'domain',userId:'reader'};
 beforeEach(()=>{vi.resetAllMocks();});
+it('checks the imported asset grant but reads the release using the catalog application identity',async()=>{
+ mocks.get.mockResolvedValue({id:'imported',document:{kind:'application',applicationId:'app'}});
+ mocks.backend.mockImplementation(async(name:string)=>({text:JSON.stringify(name==='published-application-admission'?{success:true,data:[{id:'app'}]}:{success:true,data:{releaseId:'release'}})}));
+ mocks.release.mockResolvedValue({roots:[],assets:[]});
+ await publishedApplication(owner,{},'app');
+ expect(mocks.use).toHaveBeenCalledWith(owner,'imported');
+ expect(mocks.release).toHaveBeenCalledWith(owner,'release','app');
+});
 it('resolves declarative applications from their active frozen bundle without a source catalog lookup',async()=>{
   mocks.get.mockResolvedValue({document:{kind:'application',navigationId:'nav'}});mocks.active.mockResolvedValue({snapshot:{roots:['app'],assets:[]}});
   await expect(publishedApplication(owner,{},'app')).resolves.toEqual({roots:['app'],assets:[]});

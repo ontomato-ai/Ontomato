@@ -1,6 +1,6 @@
 import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import type { AgentHostSessionHistory } from "@ontomato/contracts/agent-host";
-import type { AgentHostAgentList, AgentHostCreateSessionResponse, AgentHostSessionPage, AgentHostSessionSnapshot, AgentHostSendResult, AgentHostSendRequest, AgentHostCancelResponse, AgentHostArtifactResolution } from "@ontomato/contracts/agent-host";
+import type { AgentHostCreateSessionResponse, AgentHostSessionPage, AgentHostSessionSnapshot, AgentHostSendResult, AgentHostSendRequest, AgentHostCancelResponse, AgentHostArtifactResolution } from "@ontomato/contracts/agent-host";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { RuntimeRunSnapshot } from "@ontomato/contracts/agent-runtime";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -8,7 +8,6 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 export interface AgentHostOwner { domainId: string; userId: string }
 /** The common proxy has two workbench consumers; business actions stay outside it. */
 export interface AgentHostService {
-  agents(owner: AgentHostOwner, locale?: string): Promise<AgentHostAgentList>;
   create(id: string, owner: AgentHostOwner, input: { agentId: string; workspaceId?: string }): Promise<AgentHostCreateSessionResponse>;
   list(owner: AgentHostOwner, input: { agentId: string; limit: number; cursor?: string }): Promise<AgentHostSessionPage>;
   /** The entry's own session read rule, batched; returned IDs are the subset this caller may read. */

@@ -30,6 +30,7 @@ public class ApplicationCatalogUpgrade implements InitializingBean {
             ALTER TABLE sys_application ADD COLUMN IF NOT EXISTS entry_access jsonb;
             ALTER TABLE sys_application ADD COLUMN IF NOT EXISTS schedule_adapter varchar(64);
             ALTER TABLE sys_application ADD COLUMN IF NOT EXISTS release_id varchar(128);
+            ALTER TABLE sys_application ADD COLUMN IF NOT EXISTS page_skills jsonb NOT NULL DEFAULT '[]'::jsonb;
             """);
     }
     @Component("applicationBuiltins")

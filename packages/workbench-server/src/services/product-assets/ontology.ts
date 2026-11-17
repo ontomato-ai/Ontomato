@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import type {ProductAsset} from '@ontomato/contracts/product-assets';
+import {productDefaultTexts,type ProductAsset} from '@ontomato/contracts/product-assets';
 import {productGraph,productGraphSchema} from '@ontomato/contracts/product-graph';
 import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres';
 import {backendPost,backendGet,buildBackendHeaders} from '../../utils/backend-client';
@@ -89,7 +89,7 @@ async function resolveGraphNames(owner:ProductOwner,graph:ReturnType<typeof prod
     const raw=node.name;
     try{
       let name:string|undefined;
-      if(node.kind==='domain')name='域内成员';
+      if(node.kind==='domain')name=productDefaultTexts.graphDomainMembers;
       else if(node.kind==='role'||node.kind==='principal'||node.kind==='AgentPrincipal'){
         const kind=node.kind==='principal'&&node.id.startsWith('principal:')?'AgentPrincipal':node.kind;
         name=(await catalog(kind))[raw];
@@ -108,7 +108,7 @@ async function resolveGraphNames(owner:ProductOwner,graph:ReturnType<typeof prod
         const result=JSON.parse((await backendGet('product-graph-application',config.dataQuery.baseUrl+'/platform/applications/'+encodeURIComponent(raw),{headers,retries:1})).text);
         const names=result.data?.names;name=names?.[credentials.locale??'']||names?.['zh-CN']||names?.en;
       }
-      node.name=name||({role:'角色名称暂不可用',principal:'主体名称暂不可用',AgentPrincipal:'智能体主体',metric:'指标视图名称暂不可用',action:'动作名称暂不可用',definition:'业务定义名称暂不可用','object-type':'对象类型名称暂不可用',application:'应用名称暂不可用'} as Record<string,string>)[node.kind]||'名称暂不可用';
-    }catch{node.name='名称暂不可用';}
+      node.name=name||({role:productDefaultTexts.graphRoleUnavailable,principal:productDefaultTexts.graphPrincipalUnavailable,AgentPrincipal:productDefaultTexts.graphAgentPrincipal,metric:productDefaultTexts.graphMetricUnavailable,action:productDefaultTexts.graphActionUnavailable,definition:productDefaultTexts.graphDefinitionUnavailable,'object-type':productDefaultTexts.graphObjectTypeUnavailable,application:productDefaultTexts.graphApplicationUnavailable} as Record<string,string>)[node.kind]||productDefaultTexts.graphNameUnavailable;
+    }catch{node.name=productDefaultTexts.graphNameUnavailable;}
   }));
 }

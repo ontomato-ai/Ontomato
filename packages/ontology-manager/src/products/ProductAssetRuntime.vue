@@ -6,17 +6,25 @@ import { objectViewDocumentSchema,readViewPath } from "@ontomato/contracts/objec
 import ObjectViewRuntime from "../object-views/ObjectViewRuntime.vue";
 import ObjectViewPage from "../object-views/ObjectViewPage.vue";
 import PlatformWidgetRuntime from './PlatformWidgetRuntime.vue';
+import {useOntologyText} from '../context';
 import ObjectProjectionRuntime from './ObjectProjectionRuntime.vue';
 import CollectionProjectionRuntime from './CollectionProjectionRuntime.vue';
 import MetricProjectionRuntime from './MetricProjectionRuntime.vue';
 import ActionProjectionRuntime from './ActionProjectionRuntime.vue';
 import {ElButton,ElInput} from 'element-plus';
 import {useManagerClient} from '../context';
+import {openApplicationKey} from '@ontomato/platform-shell';
+const {ot}=useOntologyText();
 const props = defineProps<{asset:ProductAsset;revision?:number;preview?:boolean;pageState?:Record<string,unknown>}>();
 const agentRuntime=inject<Component|null>(productAgentRuntimeKey,null);
 const emit=defineEmits<{refresh:[];navigate:[id:string]}>();
 const dataRevision=ref(0);
 const client=useManagerClient();
+const openApplication=inject(openApplicationKey,null);
+function openApplicationEntry(event:MouseEvent){
+ if(!openApplication||props.asset.document.kind!=='application')return;
+ event.preventDefault();openApplication(props.asset.document.applicationId);
+}
 const applicationHref=ref('');
 let applicationGeneration=0;
 watch(()=>props.asset,async asset=>{
@@ -26,7 +34,8 @@ watch(()=>props.asset,async asset=>{
  applicationHref.value=!document.workspaceId&&document.navigationId?`#/products/${encodeURIComponent(asset.id)}?applicationId=${encodeURIComponent(asset.id)}`:`#/applications/${encodeURIComponent(document.applicationId)}`;
  try{
   const binding=await client.products.nativeBinding(asset.id);if(!binding.applicationId)return;
-  const application=await client.dataEngine.get(`/platform/applications/${encodeURIComponent(binding.applicationId)}`) as {entry?:{home?:string;path?:string}};
+   const application=await client.dataEngine.get(`/platform/applications/${encodeURIComponent(binding.applicationId)}`) as {kind?:string;entry?:{home?:string;path?:string}};
+   if(application.kind==='hosted'||application.kind==='connected')return;
   const path=application.entry?.home??application.entry?.path;
   if(current===applicationGeneration&&path?.startsWith('/')&&!path.startsWith('//'))applicationHref.value='#'+path;
  }catch{/* The application entry still enforces its own access policy. */}
@@ -61,13 +70,13 @@ const document = computed(() => {
   <section v-else-if="asset.document.kind==='agent-profile'"><h3>{{asset.name}}</h3><p>{{asset.description}}</p></section>
   <nav v-else-if="asset.document.kind==='navigation'" class="product-navigation"><el-button v-for="node in asset.document.nodes" :key="node.id" text @click="emit('navigate',node.pageId)">{{node.label}}</el-button></nav>
   <ObjectViewRuntime v-else-if="['metric-widget','action-view','widget','widget-group','operation-panel'].includes(asset.document.kind)" :key="asset.revision" class="product-widget-runtime" :document="document" :object="{}" :reference="{className:'product',primaryKey:asset.id}" :revision="(revision??0)+dataRevision" :preview="preview" @refresh="emit('refresh')" />
-  <a v-else-if="asset.document.kind === 'dashboard'" class="product-entry" :href="`#/dashboards?dashboardId=${encodeURIComponent(asset.document.dashboardId)}`"><strong>{{ asset.name }}</strong><span>打开仪表盘 ↗</span></a>
-   <a v-else-if="asset.document.kind === 'application'" class="product-entry" :href="applicationHref"><strong>{{ asset.name }}</strong><span>打开应用 ↗</span></a>
+  <a v-else-if="asset.document.kind === 'dashboard'" class="product-entry" :href="`#/dashboards?dashboardId=${encodeURIComponent(asset.document.dashboardId)}`"><strong>{{ asset.name }}</strong><span>{{ ot('productOpenDashboard') }} ↗</span></a>
+   <a v-else-if="asset.document.kind === 'application'" class="product-entry" :href="applicationHref" @click="openApplicationEntry"><strong>{{ asset.name }}</strong><span>{{ ot('productOpenApplication') }} ↗</span></a>
   <section v-else-if="asset.document.kind === 'object-view'" class="product-object-view">
     <header><strong>{{asset.name}}</strong><span>{{asset.document.className}}</span></header>
-    <form v-if="!asset.document.primaryKey" class="object-selector" @submit.prevent="activeObject=objectKey.trim()"><el-input v-model="objectKey" placeholder="输入对象主键，使用此类的已发布视图" aria-label="对象主键"/><el-button native-type="submit" :disabled="!objectKey.trim()">查看对象</el-button></form>
+    <form v-if="!asset.document.primaryKey" class="object-selector" @submit.prevent="activeObject=objectKey.trim()"><el-input v-model="objectKey" :placeholder="ot('productEnterObjectKey')" :aria-label="ot('productObjectPrimaryKey')"/><el-button native-type="submit" :disabled="!objectKey.trim()">{{ ot('productViewObject') }}</el-button></form>
     <ObjectViewPage v-if="activeObject" :reference="{className:asset.document.className,primaryKey:activeObject}" preview capability-only :read-only="preview"/>
-    <p v-else>选择对象后按同一个类视图呈现；切换对象不改变视图定义。</p>
+    <p v-else>{{ ot('productObjectSelectionHint') }}</p>
   </section>
   <p v-else>{{ asset.name }}</p>
 </template>

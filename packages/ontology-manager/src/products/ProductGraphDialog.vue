@@ -4,13 +4,15 @@ import {ElDialog} from 'element-plus';
 import type {ProductGraph} from '@ontomato/contracts/product-graph';
 import {managerOverlayKey} from '../overlay';
 import ProductAssetGraph from './ProductAssetGraph.vue';
+import {useOntologyText} from '../context';
+const {ot}=useOntologyText();
 defineProps<{graph:ProductGraph;title?:string}>();
 const open=defineModel<boolean>({required:true});
 const emit=defineEmits<{open:[id:string]}>();
 const overlay=inject(managerOverlayKey,'body');
 function select(id:string){open.value=false;emit('open',id);}
 </script>
-<template><ElDialog v-model="open" :title="title??'资产引用图'" fullscreen :append-to="overlay" destroy-on-close class="product-graph-dialog"><ProductAssetGraph class="expanded-product-graph" :graph="graph" expanded @open="select"/></ElDialog></template>
+<template><ElDialog v-model="open" :title="title??ot('productAssetGraph')" fullscreen :append-to="overlay" destroy-on-close class="product-graph-dialog"><ProductAssetGraph class="expanded-product-graph" :graph="graph" expanded @open="select"/></ElDialog></template>
 <style>
 .ontology-manager .el-dialog.product-graph-dialog.is-fullscreen{width:100vw!important;max-width:none!important;height:100dvh!important;max-height:none!important;margin:0!important;border-radius:0}
 .ontology-manager .product-graph-dialog .el-dialog__body{max-height:none;overflow:hidden}

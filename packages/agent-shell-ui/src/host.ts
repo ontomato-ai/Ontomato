@@ -21,6 +21,7 @@ import {
   agentHostStreamFrameSchema,
 } from "@ontomato/contracts/agent-host";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
+import { pageDraftSchema, type PageDraft } from "@ontomato/contracts/page-draft";
 import type { RuntimeCursor, RuntimeEventEnvelope, RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
 import { agentTasksFrameSchema, type AgentTasksFrame } from "@ontomato/contracts/agent-tasks";
 
@@ -102,6 +103,8 @@ export interface AgentHostClient {
   cancel(sessionId: string, runId: string): Promise<void>;
   /** The run's version of a path: at the run's end once stopped, the current one while running. */
   resolveArtifact(sessionId: string, runId: string, path: string): Promise<RuntimeArtifact | null>;
+  /** The page draft a run wrote, at the path its page link named; the host serves its drafts directory alone. */
+  readPageDraft(sessionId: string, runId: string, path: string): Promise<PageDraft<Record<string, unknown>>>;
   readArtifact(artifact: RuntimeArtifact): Promise<Blob>;
   tasks?: ShellTaskPort;
   /** The list's own state source: notices plus a light read, never the conversation being open. */
@@ -289,6 +292,11 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
       return (
         await json<AgentHostArtifactResolution>(`${run(sessionId, runId)}/artifacts/resolve?${params}`)
       ).artifact;
+    },
+    async readPageDraft(sessionId, runId, path) {
+      return pageDraftSchema.parse(
+        await json(`${run(sessionId, runId)}/page-draft?${query({ path })}`),
+      );
     },
     async readArtifact(artifact) {
       return (await call(`${session(artifact.sessionId)}/artifacts/${enc(artifact.id)}/content`)).blob();

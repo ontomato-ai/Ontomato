@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import { createI18n } from "vue-i18n";
+import { englishMessages } from "@ontomato/ontology-manager/i18n";
 import { createMemoryHistory, createRouter } from "vue-router";
 import ElementPlus from "element-plus";
 import { defaultPersonalWorkspace } from "@ontomato/contracts/personal-workspace";
@@ -42,7 +43,7 @@ beforeEach(() => {
       return Response.json({ tasks: api.tasks, timeZone: "UTC" });
     }
     if (path.includes("platform/applications")) return Response.json({ success: true, data: [application, { ...application, id: "agents", kind: "native", entry: { path: "/agents", renderer: "agents" } }] });
-    if (path.endsWith("/assistant/agents")) return Response.json({ agents: [{ id: "11111111-1111-4111-8111-111111111111", name: "Analyst", enabled: true, description: "Analyze data", icon: null }] });
+    if (path.endsWith("/assistant/agents")) return Response.json({ agents: [{ id: "11111111-1111-4111-8111-111111111111", name: "Analyst", effectiveSkills: [], enabled: true, description: "Analyze data", icon: null }] });
     if (path.endsWith("/platform/home")) return Response.json({ favorites: [], dashboardIds: [], recentApplications: [], recentConversations: api.conversations });
     if (path.includes('/assistant/sessions/')) return Response.json({ session: { id: "22222222-2222-4222-8222-222222222222", agentId: "11111111-1111-4111-8111-111111111111", title: "Faculty", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), latestRun: null }, messages: [], latestRun: null });
     if (path.includes("dashboards")) return Response.json({ data: [{ id: "board-a", name: "Sales" }] });
@@ -63,7 +64,7 @@ async function page(stubs: Record<string, boolean> = {}) {
   const open = vi.fn();
   const wrapper = mount(Workspace, { global: {
     stubs,
-    plugins: [router, ElementPlus, createI18n({ legacy: false, locale: "en", messages: { en: {} } })],
+    plugins: [router, ElementPlus, createI18n({ legacy: false, locale: "en", messages: { en: { ontology: englishMessages.ontology } } })],
     provide: { [openApplicationKey as symbol]: open },
   } });
   await flushPromises();
