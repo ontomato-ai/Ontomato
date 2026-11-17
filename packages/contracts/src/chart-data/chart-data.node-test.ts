@@ -251,3 +251,24 @@ test("column names in metadata are literal names even when they match an option 
   const file = make({ type: "bar", fields: { xAxis: "formatter", yAxis: "renderer" }, display: { formats: { renderer: { kind: "number" } } } });
   assert.equal(validateChartFile(file).ok, true);
 });
+
+test("standard object-view graph labels, groups and weights become native fields without losing zero", () => {
+  const file = make({ type: "graph", graphInput: "object", fields: { nodes: "nodes", links: "edges" } });
+  const rows = [{ nodes: [{ id: "a", label: "Alpha", group: "one" }, { id: "b", label: "Beta", group: "two" }], edges: [{ source: "a", target: "b", label: "uses", weight: 0 }] }];
+  const result = fill(file, rows);
+  assert.equal(result.option.series[0].data[0].name, "Alpha");
+  assert.deepEqual(result.option.series[0].categories, [{ name: "one" }, { name: "two" }]);
+  assert.equal(result.option.series[0].links[0].relation, "uses");
+  assert.equal(result.option.series[0].links[0].value, 0);
+  assert.equal("label" in result.option.series[0].data[0], false);
+  assert.equal(result.option.dataset[0].source[0].nodes[0].label, "Alpha");
+});
+test("conflicting graph attributes fail instead of selecting a display meaning", () => {
+  const file = make({ type: "graph", graphInput: "object", fields: { nodes: "nodes", links: "links" } });
+  const result = fillChartFile(file, { columns: [{ key: "nodes" }, { key: "links" }], rows: [{ nodes: [{ id: "a", name: "A", label: "B" }], links: [] }] });
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.code, "INVALID_SHAPE_DATA");
+    assert.equal(result.issues[0].reason, "CONFLICTING_GRAPH_NAME");
+  }
+});

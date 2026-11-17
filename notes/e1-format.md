@@ -18,7 +18,7 @@ binding = `{seriesId,shape,fields}`；graph 另有 8.2 要求的 `input:"object"
 | graph/object | nodes,links | 零/一行，两列为 JSON 数组；节点 id/name/category，边 source/target/value/relation |
 | graph/edges | source,target,value?,relation?,sourceName?,targetName?,sourceCategory?,targetCategory? | 端点连 nodes/links/categories，度数只影响尺寸 |
 
-graph/object 保留额外 JSON 属性；旧节点内的 label/group、边的 edges 等名称须在 MetricView 中明确规范成上述属性/列映射，不猜属性。标准邻接高亮与拖动由后续平台组件负责，外部回调不转换。
+graph/object 保留额外 JSON 属性；明确支持标准对象视图节点 label/group→name/category、边 label/weight→relation/value；和原生字段并存但含义冲突时报错，字符串 label 不作为 ECharts 样式传递。edges 列通过 fields.links 明确映射。标准邻接高亮与拖动由后续平台组件负责，外部回调不转换。
 
 | 旧图型 | series / shape（空表示不写 bindings） |
 | --- | --- |

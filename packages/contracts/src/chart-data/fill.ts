@@ -11,11 +11,13 @@ const identitySchema = z.union([z.string().min(1), z.number().finite()]);
 const numericSchema = z.union([z.number().finite(), z.string().min(1).refine(value => value.trim() !== "" && Number.isFinite(Number(value)))]);
 const nodeSchema = z.object({
   id: identitySchema, name: z.string().optional(), category: z.union([z.string(), z.number()]).optional(),
+  label: z.union([z.string(), runtimeJsonObjectSchema]).optional(), group: z.union([z.string(), z.number()]).optional(),
   value: runtimeJsonValueSchema.optional(), symbolSize: z.number().finite().positive().optional(),
   x: z.number().finite().optional(), y: z.number().finite().optional(),
 }).catchall(runtimeJsonValueSchema);
 const linkSchema = z.object({
   source: identitySchema, target: identitySchema, value: numericSchema.nullable().optional(), relation: z.string().optional(),
+  label: z.union([z.string(), runtimeJsonObjectSchema]).optional(), weight: numericSchema.nullable().optional(),
 }).catchall(runtimeJsonValueSchema);
 type GraphNode = z.infer<typeof nodeSchema>;
 type GraphLink = z.infer<typeof linkSchema>;
@@ -104,8 +106,14 @@ function shapeIssues(binding: ChartBinding, rows: ChartRow[], file: ChartFile): 
             for (const node of nodes.data) {
               if (ids.has(String(node.id))) add(index, f.nodes, "DUPLICATE_GRAPH_ID", `Duplicate graph node: ${node.id}`);
               ids.add(String(node.id));
+              if (node.name !== undefined && typeof node.label === "string" && node.name !== node.label) add(index, f.nodes, "CONFLICTING_GRAPH_NAME", "Graph name and label disagree");
+              if (node.category !== undefined && node.group !== undefined && String(node.category) !== String(node.group)) add(index, f.nodes, "CONFLICTING_GRAPH_CATEGORY", "Graph category and group disagree");
             }
-            for (const link of links.data) for (const id of [link.source, link.target]) if (!ids.has(String(id))) add(index, f.links, "MISSING_GRAPH_NODE", `Missing graph node: ${id}`);
+            for (const link of links.data) {
+              for (const id of [link.source, link.target]) if (!ids.has(String(id))) add(index, f.links, "MISSING_GRAPH_NODE", `Missing graph node: ${id}`);
+              if (link.relation !== undefined && typeof link.label === "string" && link.relation !== link.label) add(index, f.links, "CONFLICTING_GRAPH_RELATION", "Graph relation and label disagree");
+              if (link.value !== undefined && link.weight !== undefined && link.value !== link.weight) add(index, f.links, "CONFLICTING_GRAPH_WEIGHT", "Graph value and weight disagree");
+            }
           }
         });
       }
@@ -135,8 +143,19 @@ function displayRows(rows: ChartRow[], display: ChartDisplay): ChartRow[] {
 function graphData(binding: Extract<ChartBinding, { shape: "graph" }>, rows: ChartRow[]) {
   let nodes: GraphNode[], links: GraphLink[];
   if (binding.input === "object") {
-    nodes = rows.length ? rows[0][binding.fields.nodes] as GraphNode[] : [];
-    links = rows.length ? rows[0][binding.fields.links] as GraphLink[] : [];
+    const rawNodes = rows.length ? rows[0][binding.fields.nodes] as GraphNode[] : [];
+    const rawLinks = rows.length ? rows[0][binding.fields.links] as GraphLink[] : [];
+    nodes = rawNodes.map(raw => {
+      const { label, ...node } = raw;
+      const category = node.category ?? node.group;
+      return { ...node, ...(typeof label === "object" ? { label } : {}), name: node.name ?? (typeof label === "string" ? label : String(node.id)), ...(category === undefined ? {} : { category }) };
+    });
+    links = rawLinks.map(raw => {
+      const { label, ...link } = raw;
+      const relation = link.relation ?? (typeof label === "string" ? label : undefined);
+      const value = link.value === undefined ? link.weight : link.value;
+      return { ...link, ...(typeof label === "object" ? { label } : {}), ...(relation === undefined ? {} : { relation }), ...(value === undefined ? {} : { value }) };
+    });
   } else {
     const f = binding.fields;
     const nodeMap = new Map<string, GraphNode>();
