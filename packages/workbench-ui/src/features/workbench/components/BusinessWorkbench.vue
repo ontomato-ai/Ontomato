@@ -19,6 +19,7 @@ import { createAssistantClient, createAssistantFeedback } from "../assistant-hos
 import { readRememberedAgent, readRememberedSession, rememberAgent, rememberSession } from "../remembered-agent";
 import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
+import { dashboardSelection } from "../../dashboard";
 import DatasetActions from "./DatasetActions.vue";
 import ChartFileActions from "./ChartFileActions.vue";
 import DatasetDrilldown from "./DatasetDrilldown.vue";
@@ -185,7 +186,8 @@ const labels = useShellLabels();
  */
 const settingsAgents = useAgentDefinitions();
 const pageContext = computed<PageContext | null>(() => {
-  if (inDashboards.value) return { pageKey: "dashboard", url: pageAddress.value!, label: t("assistant.featureDashboards"), selection: [] };
+  if (inDashboards.value)
+    return { pageKey: "dashboard", url: pageAddress.value!, label: t("assistant.featureDashboards"), selection: dashboardSelection.value };
   if (!inSettings.value) return null;
   const agent = settingsAgents.find(settingsAgentId.value);
   return {

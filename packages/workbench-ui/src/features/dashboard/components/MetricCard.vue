@@ -4,7 +4,15 @@
     shadow="never"
     :body-style="{ padding: '0', height: '100%', overflow: 'hidden' }"
   >
-    <div ref="rootRef" class="metric-container">
+    <div
+      ref="rootRef"
+      class="metric-container"
+      :class="{ 'metric-container--selected': selected }"
+      tabindex="0"
+      @click="selectUnlessControl"
+      @focusin="select"
+      @keydown.enter.prevent="select"
+    >
       <div class="title-row">
         <h3 class="title" :title="name">{{ name }}</h3>
         <span
@@ -57,6 +65,8 @@ const transparentLoading = workbenchContent().dashboard.loadingMask === "transpa
 const { t } = useI18n();
 
 const props = defineProps({
+  /** Whether this card is the one the reader chose: a message sent from beside the page asks about it. */
+  selected: { type: Boolean, default: false },
   metric: {
     type: Object,
     default: () => ({
@@ -68,7 +78,19 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["command", "layout-change", "resize-active"]);
+const emit = defineEmits(["command", "layout-change", "resize-active", "select"]);
+
+/** The reader asked for this card: one card is chosen at a time, and choosing it again keeps it chosen. */
+function select() {
+  emit("select", { id: props.metric.id, name: name.value, kind: "metric" });
+}
+
+/** Its menu and the resize handle act on the card; choosing it is the reader pointing at the card itself. */
+function selectUnlessControl(event) {
+  const target = event.target;
+  if (target?.closest(".metric-more, .resize-handle, .el-dropdown-menu, .el-dialog")) return;
+  select();
+}
 
 const name = computed(() => String(props.metric?.name || ""));
 const unit = computed(() => String(props.metric?.unit || "").trim());
@@ -155,6 +177,11 @@ onBeforeUnmount(() => {
 
 .metric-card:hover {
   border-color: var(--el-border-color-dark);
+}
+
+.metric-container.metric-container--selected {
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 2px var(--el-color-primary);
 }
 
 .metric-container {

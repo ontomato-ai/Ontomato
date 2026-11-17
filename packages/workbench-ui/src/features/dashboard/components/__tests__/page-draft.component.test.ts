@@ -204,6 +204,48 @@ describe("a dashboard draft", () => {
     wrapper.unmount();
   });
 
+  it("is read from the page the conversation carries it in, as from the page's own address", async () => {
+    // Beside a conversation the page is the `?page=` address, and the draft rides in that address's query.
+    const draft = {
+      pageKey: "dashboard",
+      operation: "dashboard.chart.rename",
+      target: { id: "d1" },
+      form: { id: "d1", chartId: "c1", resultSetName: "Revenue by province" },
+    };
+    api.pageDraft = draft;
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/", component: DashboardHome }] });
+    const page = `/dashboards?${new URLSearchParams({ dashboardId: "d1", draftSessionId: "11111111-1111-4111-8111-111111111111", draftRunId: "22222222-2222-4222-8222-222222222222", draftPath: "outputs/drafts/revenue.page-draft.json" })}`;
+    await router.push({ path: "/", query: { page } });
+    await router.isReady();
+    const wrapper = mount(DashboardHome, {
+      global: { plugins: [workbenchI18n(), createPinia(), router, ElementPlus], stubs: { EChart: true, transition: false } },
+    });
+    await flushPromises();
+    expect(wrapper.find(".chart-original-name").text()).toBe("Revenue by region");
+    expect(api.renamed).toEqual([]);
+
+    await wrapper.find(".draft-bar__actions .el-button--primary").trigger("click");
+    await flushPromises();
+    expect(api.renamed).toEqual([["d1", "c1", "Revenue by province"]]);
+    wrapper.unmount();
+  });
+
+  it("drops a draft at the page's own address by naming the board alone", async () => {
+    const wrapper = await openDraft({
+      pageKey: "dashboard",
+      operation: "dashboard.chart.rename",
+      target: { id: "d1" },
+      form: { id: "d1", chartId: "c1", resultSetName: "Revenue by province" },
+    });
+    await wrapper.find(".draft-bar__actions .el-button:not(.el-button--primary)").trigger("click");
+    await flushPromises();
+    // The address opens the same board without the draft; nothing was written.
+    expect(wrapper.vm.$route.query).toEqual({ dashboardId: "d1" });
+    expect(wrapper.find(".draft-bar").exists()).toBe(false);
+    expect(api.renamed).toEqual([]);
+    wrapper.unmount();
+  });
+
   it("is not filled when it is for another page, another board, or an object this board does not have", async () => {
     for (const draft of [
       { pageKey: "agent-settings", operation: "dashboard.chart.rename", target: { id: "d1" }, form: { id: "d1", chartId: "c1", resultSetName: "x" } },
