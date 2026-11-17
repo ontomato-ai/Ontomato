@@ -17,13 +17,16 @@ public class AgentExecutionSettings {
   }
   public record Setting(String domainId, String operatorId, String oldExecutionUserId, String executionUserId) {}
   public record Resolution(String domainId, String agentId, String executionUserId, String initiatorId) {}
-  public record Options(boolean canSetExecutionUser, List<AgentExecutionIdentity.Option> users) {}
+  public record Options(boolean canSetExecutionUser, List<AgentExecutionIdentity.Option> users,
+      @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+      AgentExecutionIdentity.Selected selected) {}
   public record Execution(String executionUserId, String apiKey) {}
 
-  public Options options(HttpServletRequest request, String keyword, int pageNum, int pageSize) {
+  public Options options(HttpServletRequest request, String keyword, int pageNum, int pageSize, String selected) {
     var actor = identity.operator(request);
     boolean administrator = identity.administrator(actor);
-    return new Options(administrator, administrator ? identity.options(actor.domainId(), keyword, pageNum, pageSize) : List.of());
+    return new Options(administrator, administrator ? identity.options(actor.domainId(), keyword, pageNum, pageSize) : List.of(),
+      selected == null ? null : identity.selected(actor.domainId(), selected));
   }
   private boolean check(Setting setting, HttpServletRequest request) {
     var actor = identity.operator(request);

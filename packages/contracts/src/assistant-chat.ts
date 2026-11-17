@@ -59,6 +59,9 @@ export const assistantAgentValidationSchema = z.object({
 }).strict();
 export type AssistantAgentValidation = z.infer<typeof assistantAgentValidationSchema>;
 export const agentExecutionOptionsSchema = z.object({
+  selected: z.object({
+    id: z.string().min(1), name: z.string(), available: z.boolean(), reason: z.string().optional(),
+  }).strict().optional(),
   canSetExecutionUser: z.boolean(),
   users: z.array(z.object({ id: z.string().min(1), name: z.string() }).strict()),
 }).strict();

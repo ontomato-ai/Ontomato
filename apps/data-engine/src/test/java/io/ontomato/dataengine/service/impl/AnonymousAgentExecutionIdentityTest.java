@@ -8,12 +8,20 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 class AnonymousAgentExecutionIdentityTest {
-  @Test void anonymousEditionHasOnlyTheExistingInitiatorAndNeverPreparesAKey() {
+  @Test void anonymousEditionHasOnlyTheExistingInitiatorAndNeverPreparesAKey() throws Exception {
     var identity = new AnonymousAgentExecutionIdentity();
     var credentials=mock(UserCredentials.class);
     var settings=new AgentExecutionSettings(identity,credentials);
     var request=new MockHttpServletRequest();
-    var options=settings.options(request,"",1,20);
+    var options=settings.options(request,"",1,20,"unknown");
+    assertNull(options.selected());
+    org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(
+      new io.ontomato.dataengine.controller.AgentExecutionController(
+        new io.ontomato.dataengine.service.WorkbenchServiceAuthentication("service"), settings))
+      .setMessageConverters(new org.springframework.http.converter.json.MappingJackson2HttpMessageConverter()).build()
+      .perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/platform/agent-execution/options").param("selected", "unknown"))
+      .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+      .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.selected").doesNotExist());
     assertFalse(options.canSetExecutionUser()); assertTrue(options.users().isEmpty());
     var own=new AgentExecutionSettings.Setting("1","system",null,null);
     settings.validate(own,request); settings.prepare(own,request);

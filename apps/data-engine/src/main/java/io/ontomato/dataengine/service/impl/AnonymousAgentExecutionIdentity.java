@@ -17,6 +17,7 @@ public class AnonymousAgentExecutionIdentity implements AgentExecutionIdentity {
   }
   public boolean administrator(Actor actor) { return false; }
   public List<Option> options(String domain, String keyword, int pageNum, int pageSize) { return List.of(); }
+  public Selected selected(String domain, String userId) { return null; }
   public User requireTarget(String domain, String userId) {
     throw new AgentHttpException(403, "FORBIDDEN", "The public edition executes as the initiator");
   }

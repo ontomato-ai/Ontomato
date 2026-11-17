@@ -18,10 +18,12 @@ public class AgentExecutionController {
   @GetMapping("/platform/agent-execution/options")
   public AgentExecutionSettings.Options options(HttpServletRequest request,
       @RequestParam(defaultValue = "") String keyword, @RequestParam(defaultValue = "1") int pageNum,
-      @RequestParam(defaultValue = "20") int pageSize) {
+      @RequestParam(defaultValue = "20") int pageSize, @RequestParam(required = false) String selected) {
     if (pageNum < 1 || pageSize < 1 || pageSize > 100)
       throw io.ontomato.dataengine.service.agent.AgentHttpException.invalid("Invalid page");
-    return settings.options(request, keyword, pageNum, pageSize);
+    if (selected != null && selected.isBlank())
+      throw io.ontomato.dataengine.service.agent.AgentHttpException.invalid("Selected user id must not be blank");
+    return settings.options(request, keyword, pageNum, pageSize, selected);
   }
   @PostMapping("/internal/agent-execution/validate-setting")
   @ResponseStatus(HttpStatus.NO_CONTENT)
