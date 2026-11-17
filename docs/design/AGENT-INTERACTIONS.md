@@ -77,10 +77,9 @@ equivalence still requires end-to-end acceptance. Object navigation continues to
 
 ## Decisions and clarification
 
-Use system controls appropriate to the answer: radios, checkboxes, date pickers, text or authenticated object lookup.
-No recommendation or default is consent. Preserve the original retrieval identity and decision version when resuming;
-do not start a replacement retrieval to bypass unresolved questions. Optional notes supplement required choices rather
-than silently replacing them. Do not claim a decision was accepted before the underlying task accepts it.
+No recommendation or default is consent: a default stays an assumption until someone answers. An answer goes to the
+question it answers, in the same conversation; do not start a replacement retrieval to bypass an open question. Do not
+claim a decision was accepted before the underlying task accepts it.
 
 An agent that needs the reader's decision asks without stopping: it states the default it goes on with and may offer
 options, one marked as that default. The questions wait right over the composer, folded to their count. Opened, the

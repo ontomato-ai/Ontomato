@@ -28,6 +28,8 @@ export interface UserItem {
   kind: "user";
   key: string;
   text: string;
+  /** The reader answered one of the agents' questions with it. */
+  answer: boolean;
 }
 
 export interface ResponseItem {
@@ -140,7 +142,7 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
       if(current && entry.contextSeq !== null) {
         place(current,message.timestamp);
         current.process.push({kind:"input",key:entry.id,messageId:entry.id,text:userText(message.content),source:"user",...(message.role === "notification" ? {replyTo:message.replyTo}:{}),runId:current.runId,final:true});
-      } else items.push({ kind: "user", key: entry.id, text: userText(message.content) });
+      } else items.push({ kind: "user", key: entry.id, text: userText(message.content), answer: userAnswer });
       for (const failure of tasks?.preparationFailures ?? []) if (failure.inputId === entry.id) items.push({ kind: "notification",key: `preparation:${failure.runId}`,text: failure.error,error: true });
       continue;
     }

@@ -188,7 +188,7 @@ function send(text: string) {
           </div>
           <template v-for="item in items" :key="item.key">
             <div v-if="item.kind === 'user'" class="user-turn">
-              <div class="user-bubble">{{ item.text }}</div>
+              <div class="user-bubble">{{ item.answer ? labels.answered(item.text) : item.text }}</div>
             </div>
             <div v-else-if="item.kind === 'notification'" class="agent-notification" :class="{ failed: item.error }" :role="item.error ? 'alert' : 'note'"><CircleAlert :size="14" /><span>{{ item.text }}</span></div>
             <ShellResponse v-else :item="item" :session-id="sessionId" :feedback="feedback" />
