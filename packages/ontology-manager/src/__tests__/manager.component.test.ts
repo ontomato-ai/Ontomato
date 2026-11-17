@@ -437,7 +437,7 @@ describe("Manager pages in the service router", () => {
     (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[0] as HTMLElement).click();
     await settle();
 
-    const input = root().querySelector<HTMLInputElement>(".node-search input")!;
+    const input = root().querySelector<HTMLInputElement>(".instance-search input")!;
     expect(input).not.toBeNull();
     input.focus();
     input.value = "spare";
@@ -528,7 +528,11 @@ describe("Manager pages in the service router", () => {
     (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[0] as HTMLElement).click();
     await settle();
     graphRecord.zoom = 3;
-    (root().querySelector(".sample-legend button") as HTMLElement).click();
+    (root().querySelector(".node-search .el-select .el-select__wrapper") as HTMLElement).click();
+    await settle();
+    const option = [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")]
+      .find(item => item.textContent?.includes("Order-label"))!;
+    option.click();
     await settle();
     (root().querySelector(".instance-candidates button") as HTMLElement).click();
     await settle();

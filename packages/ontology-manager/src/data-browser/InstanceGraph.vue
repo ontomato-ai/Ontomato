@@ -246,9 +246,7 @@ async function fitGraph(target: Graph) {
   const { width, height } = graphRef.value.getBoundingClientRect();
   if (!width || !height) return;
   if (overview.value) {
-    updateClassGroups();
-    const headingSpace = Math.max(96, ...classGroups.value.map((group) => group.height + 40));
-    target.setOptions({ padding: [headingSpace, 48, 48, 48] });
+    target.setOptions({ padding: [64, 48, 48, 48] });
   }
   target.resize(Math.round(width), Math.round(height));
   await target.fitView({ when: "always", direction: "both" });
@@ -483,20 +481,14 @@ function updateClassGroups() {
   }
   classGroups.value = overviewClassHeadings([...groups].map(([name, points]) => {
     const label = classLabels.value[name] || name;
-    const width = Math.min(Math.max(160, textWidth(label, 14) + 24), 280,
+    const width = Math.min(Math.max(64, textWidth(label, 12) + 20), 180,
       Math.max(80, graphRef.value!.clientWidth - 32));
-    let lines = 1, lineWidth = 0;
-    for (const character of Array.from(label)) {
-      const size = textWidth(character, 14);
-      if (character === "\n" || lineWidth + size > width - 24) { lines++; lineWidth = 0; }
-      if (character !== "\n") lineWidth += size;
-    }
     const left = Math.min(...points.map(p => p.x));
     const right = Math.max(...points.map(p => p.x));
     const top = Math.min(...points.map(p => p.y)) - 18 * zoom;
     const bottom = Math.max(...points.map(p => p.y)) + 40 * zoom;
-    return { name, bounds: { x: left, y: top, width: right - left, height: bottom - top }, width, height: lines * 20 + 34 };
-  }), instances);
+    return { name, bounds: { x: left, y: top, width: right - left, height: bottom - top }, width, height: 26 };
+  }), instances, { x: 8, y: 8, width: graphRef.value.clientWidth - 16, height: graphRef.value.clientHeight - 16 });
 }
 
 async function showDirectNeighborhood() {
@@ -856,11 +848,10 @@ onBeforeUnmount(() => {
         <div v-for="group in classGroups" :key="group.name" class="class-group"
           :style="{ left: `${group.x}px`, top: `${group.y}px`, width: `${group.width}px`, height: `${group.height}px`, '--group-color': colorForClass(group.name) }">
         <button
-          :title="`${classLabels[group.name] || group.name} · ${ot('instanceGraphStatistics')}`"
+          :title="`${classLabels[group.name] || group.name} · ${nodes.filter(node => node.class === group.name).length} / ${summary.classes.find(item => item.class === group.name)?.instanceCount?.toLocaleString(context.locale) ?? '…'}`"
           :class="{ 'is-selected': selectedClass === group.name }" :aria-pressed="selectedClass === group.name"
           @click.stop="chooseClass(group.name)">
           <span class="legend-label">{{ classLabels[group.name] || group.name }}</span>
-          <span class="legend-count">{{ nodes.filter(node => node.class === group.name).length }} / {{ summary.classes.find(item => item.class === group.name)?.instanceCount?.toLocaleString(context.locale) ?? '…' }}</span>
         </button>
         </div>
       </div>
@@ -953,7 +944,17 @@ onBeforeUnmount(() => {
 
     <aside class="inspector-panel">
       <div class="node-search">
+        <el-select v-if="summary && overview" :model-value="selectedClass" filterable clearable
+          :placeholder="ot('allObjectTypes')" :aria-label="t('nav.objectTypes')"
+          :disabled="loading || layouting || rendering || expanding" @change="chooseClass($event || '')">
+          <el-option v-for="item in summary.classes" :key="item.class" :value="item.class"
+            :label="classLabels[item.class] || item.class">
+            <span>{{ classLabels[item.class] || item.class }}</span>
+            <small class="class-option-count">{{ item.instanceCount?.toLocaleString(context.locale) ?? '…' }}</small>
+          </el-option>
+        </el-select>
         <el-select-v2
+          class="instance-search"
           :model-value="selectedNode?.id"
           :options="searchOptions"
           :placeholder="ot('searchInstanceNodes')"
@@ -1322,12 +1323,12 @@ onBeforeUnmount(() => {
 .summary-info:hover { color: var(--el-color-primary); background: var(--el-fill-color-light); }
 .summary-details { display: grid; gap: var(--spacing-sm); font-size: var(--text-xs); line-height: var(--leading-relaxed); }
 .summary-details strong { font-size: var(--text-sm); }
-.sample-legend button { display: flex; flex-direction: column; box-sizing: border-box; max-width: 100%; min-width: 0; align-items: center; gap: 0; padding: 3px 6px; border: 1px solid var(--el-border-color-light); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--group-color) 8%, var(--el-bg-color)); color: var(--el-text-color-primary); font: inherit; font-size: var(--text-xs); font-weight: 400; line-height: 16px; text-align: center; cursor: pointer; }
+.sample-legend button { display: flex; box-sizing: border-box; height: 100%; max-width: 100%; min-width: 0; align-items: center; padding: 4px 9px; border: 1px solid var(--el-border-color-light); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--group-color) 8%, var(--el-bg-color)); color: var(--el-text-color-primary); font: inherit; font-size: 12px; font-weight: 600; line-height: 16px; text-align: center; cursor: pointer; }
 .sample-legend button:hover { background: color-mix(in srgb, var(--group-color) 26%, var(--el-bg-color)); }
 .sample-legend button.is-selected { background: color-mix(in srgb, var(--group-color) 32%, var(--el-bg-color)); color: var(--el-text-color-primary); font-weight: var(--font-semibold); }
 .sample-legend button:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: -2px; }
-.legend-label { width: 100%; min-width: 0; white-space: pre-wrap; word-break: break-all; color: color-mix(in srgb, var(--group-color) 45%, var(--el-text-color-primary)); }
-.legend-count { color: var(--el-text-color-secondary); font-size: 12px; font-weight: 400; line-height: 16px; font-variant-numeric: tabular-nums; }
+.legend-label { width: 100%; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: color-mix(in srgb, var(--group-color) 45%, var(--el-text-color-primary)); }
+.class-option-count { float: right; margin-left: 12px; color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums; }
 .instance-candidates { display: grid; gap: 2px; min-width: 0; max-height: 260px; overflow: auto; }
 .instance-candidates button {
   display: flex;
