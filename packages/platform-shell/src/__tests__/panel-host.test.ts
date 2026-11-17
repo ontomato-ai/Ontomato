@@ -283,6 +283,38 @@ describe("the panel host", () => {
     scope.stop();
   });
 
+  it("says what it could not read, instead of showing an empty page", async () => {
+    const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
+    const port = { ...platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] }) };
+    // The SDK's current version is refused — the request the platform's own host once sent to the wrong address.
+    port.sdkBase = async () => {
+      throw new Error("GET /api/data-query/app-builder/apps-sdk/current failed: 403 Product use Grant required");
+    };
+    const scope = effectScope();
+    const a = scope.run(() =>
+      usePanelInstance(port, { useId: () => "use-a", label: (panel) => panel.name, address: () => "/applications/app-a/a/schedules", initial: () => ({}) }),
+    )!;
+    await a.ready;
+    // The failure is the page's word: no frame is drawn, and the reason is there to read.
+    expect(a.document.value).toBe("");
+    expect(a.error.value).toContain("403");
+    scope.stop();
+  });
+
+  it("says what it could not read when the use relation is refused", async () => {
+    const scope = effectScope();
+    const port = platform({ panels: new Map(), uses: [] });
+    port.uses = async () => {
+      throw new Error("GET /api/data-query/platform/applications/app-a/panel-uses failed: 403");
+    };
+    const a = scope.run(() =>
+      usePanelInstance(port, { useId: () => "use-a", label: (panel) => panel.name, address: () => "/applications/app-a/a/schedules", initial: () => ({}) }),
+    )!;
+    await a.ready;
+    expect(a.error.value).toContain("panel-uses failed: 403");
+    scope.stop();
+  });
+
   it("shows the state its address names", () => {
     const state = { selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" }, search: "overdue" };
     const restored = panelAddressState(panelAddress("/a/schedules", state));
