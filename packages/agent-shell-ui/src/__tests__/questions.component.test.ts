@@ -16,7 +16,7 @@ const source = { session: { providerId: "workbench", sessionId: "aaaaaaaa-aaaa-4
 const scope: AgentPendingQuestion = {
   requestId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
   source,
-  message: "Which teachers count?",
+  message: "Which **teachers** count?",
   defaultAssumption: "Full-time teachers only",
   options: [
     { label: "Full-time only", isDefault: true },
@@ -80,6 +80,9 @@ it("answers from the panel without touching the composer, and skipping sends not
   const toggle = root.querySelector<HTMLButtonElement>(".questions-toggle")!;
   expect(toggle.textContent).toContain("2 waiting");
   expect(root.textContent).toContain("Which teachers count?");
+  // The question is the model's Markdown, rendered like the rest of its writing.
+  expect(root.querySelector(".question-text strong")?.textContent).toBe("teachers");
+  expect(root.textContent).not.toContain("**");
   // Only the question and its options: neither the agent's assumption nor an option's description.
   expect(root.textContent).not.toContain("Full-time teachers only");
   expect(root.textContent).not.toContain("Adds about 40 people");
