@@ -1,8 +1,13 @@
 import {z} from 'zod';
 
-import {pageContextSchema} from './page-context';
-
 export const APP_BRIDGE_CHANNEL='ontomato-app-v2';
+
+/**
+ * What an app frame reports about its page: `{page, selection}`, the shape every published app and every workspace
+ * pinned to an older SDK version sends. It is a wire format, so it stays as it is; the shell completes it into the one
+ * `PageContext` with the frame's own address, at that single boundary.
+ */
+export const appBridgePageContextSchema=z.object({page:z.string().trim().min(1).max(500),selection:z.object({className:z.string().min(1).max(200),primaryKey:z.string().min(1).max(1000),name:z.string().min(1).max(500)}).strict().nullable()}).strict();
 export const appBridgeRequestSchema=z.object({channel:z.literal(APP_BRIDGE_CHANNEL),id:z.string().min(1).max(100),operation:z.enum(['initialize','request','cancel','navigate','navigateProduct','pageContext','authFailure','invalidate','mount','unmount','placement']),payload:z.unknown()}).strict();
 export const appBridgeCancelSchema=z.object({requestId:z.string().min(1).max(100)}).strict();
 export type AppBridgeRequest=z.infer<typeof appBridgeRequestSchema>;
@@ -14,4 +19,3 @@ export const appBridgeUnmountSchema=z.object({id:z.string().uuid()}).strict();
 export const appBridgePathSchema=z.string().max(2000);
 export const appBridgeAuthStatusSchema=z.union([z.literal(401),z.literal(402)]);
 export const appBridgeInvalidationSchema=z.object({actionId:z.string(),objectTypes:z.array(z.string())}).strict();
-export const appBridgePageContextSchema=pageContextSchema;

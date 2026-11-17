@@ -2,13 +2,15 @@ import { inject, onBeforeUnmount, shallowRef, watch, type InjectionKey, type Ref
 import type { PageContext } from "@ontomato/contracts/page-context";
 import {
   PANEL_HOST_CHANNEL,
+  panelAddress,
   panelAddressState,
   panelFrameMessageSchema,
-  panelAddress,
+  panelMessageOf,
   type PanelHostMessage,
 } from "@ontomato/contracts/panel-host";
-import type { ApplicationPanelUse, ProductPanel } from "@ontomato/contracts/product-panels";
 import type { PanelOperation, PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import type { ApplicationPanelUse, ProductPanel } from "@ontomato/contracts/product-panels";
+import { randomId } from "@ontomato/contracts/random-id";
 
 /*
  * A panel instance in the platform (overall design 3.4, "generic PanelHost"): the same component shows the panel full
@@ -17,32 +19,39 @@ import type { PanelOperation, PanelStateValue } from "@ontomato/contracts/panel-
  * a panel is portable across the applications that use it.
  *
  * What the host does, and a panel's author therefore does not: read the use relation and the record, keep the declared
- * deep-linkable state in the address, hand the reader's page context to whoever writes the message, and re-read the
- * record by its ID when the platform says its definition changed — never over a form the reader has unsaved.
+ * deep-linkable state in the address, hand the reader's page context to whoever writes the message, pass a changed
+ * projection or panel definition to the frame, and never replace a form the reader has unsaved.
  */
 
 /**
- * What the platform gives a panel host. Reading a use relation and a panel record are the platform's own calls: Java
- * owns the use relations, Node the current records, and both check the reader's use themselves.
+ * What the platform gives a panel host. A use relation is Java's (`GET /platform/applications/:applicationId/panel-uses`)
+ * and a panel's record is Node's (`GET /api/product-panels/:id`); both check the reader's use themselves.
  */
 export interface PanelHostPort {
-  /** The application's use relation this instance opens: its page key, path and access. */
-  use(useId: string): Promise<ApplicationPanelUse>;
-  /** The panel's current record, read under that use's Grant. */
+  /** The application whose use relation this instance opens. */
+  applicationId(): string;
+  /** That application's use relations, as Java declares them. */
+  uses(applicationId: string): Promise<readonly ApplicationPanelUse[]>;
+  /** One panel's current record, read under the use relation's Grant. */
   panel(panelId: string): Promise<ProductPanel>;
   /** The SDK version's module base this panel runs with, e.g. `/apps-sdk/1.1.0`. */
   sdkBase(): Promise<string>;
-  /**
-   * Registers the frame the panel runs in, so the platform knows the execution and the identity of the page it shows;
-   * the returned function runs when the frame goes. A host that shows panels in the platform's own frame passes the
-   * platform's registration here.
-   */
+  /** Registers the frame the panel runs in: the platform's execution binding and identity for the page it shows. */
   frame(frame: Window, use: ApplicationPanelUse): () => void;
-  /** Hears "definition changed" for this domain; the returned function stops it. */
-  subscribe?(listener: (event: DefinitionChanged) => void): () => void;
+  /**
+   * Hears "definition changed" for the definitions this instance shows: the panel and every projection its declaration
+   * names. Events carry identity only. The returned function stops the notices.
+   */
+  subscribe(targets: readonly DefinitionTarget[], listener: (event: DefinitionChanged) => void): () => void;
 }
 
-/** The platform's internal notice that a projection's or a panel's current definition changed; it carries identity only. */
+/** One definition a panel instance shows, by kind and ID. */
+export interface DefinitionTarget {
+  kind: "panel" | "projection";
+  id: string;
+}
+
+/** The platform's notice that a projection's or a panel's current definition changed; it carries identity only. */
 export interface DefinitionChanged {
   kind: "definition-changed";
   domainId: string;
@@ -66,18 +75,15 @@ export interface PanelInstanceView {
   readonly document: Readonly<Ref<string>>;
   /** The reader's deep-linkable state, as the address carries it. */
   readonly state: Ref<Record<string, PanelStateValue>>;
-  /**
-   * The operations the instance offers, as its frame reported them: one description and one handler per operation, for
-   * the header to draw and an agent to read. A person's click reaches the frame, which runs it with their credential.
-   */
+  /** The instance's address, with its state; never a credential or a form value. */
+  readonly address: Ref<string>;
+  /** The operations the instance offers, as its frame reported them. */
   readonly operations: Readonly<Ref<readonly PanelOperation[]>>;
+  readonly error: Ref<string>;
+  /** Resolves once the use relation and the record are read. */
+  readonly ready: Promise<void>;
   /** A person clicked one of those operations: the frame runs it, and the promise settles with its answer. */
   invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
-  /** The address this instance shows, with its state; never a credential or a form value. */
-  readonly address: Ref<string>;
-  readonly error: Ref<string>;
-  /** Resolves once the use relation and the record are read; a host that awaits it has the instance's address. */
-  readonly ready: Promise<void>;
   /** The frame's content window, once it exists. */
   frame(window: Window | null): void;
 }
@@ -103,18 +109,24 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const address = shallowRef("");
   const operations = shallowRef<readonly PanelOperation[]>([]);
   let frame: Window | null = null;
-  const answering = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
   let disposeFrame: (() => void) | undefined;
   let loadedPanelId: string | null = null;
+  /** The record read while the frame had unsaved changes: shown as soon as the reader saves or drops them. */
+  let waiting: ProductPanel | null = null;
+  const answering = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
   let settle: () => void = () => {};
   const ready = new Promise<void>((resolve) => (settle = resolve));
 
-  async function load(useId: string) {
+  async function load() {
     error.value = "";
-    const relation = await port.use(useId);
+    const applicationId = port.applicationId();
+    const relations = await port.uses(applicationId);
+    const relation = relations.find((candidate) => candidate.id === options.useId());
+    if (!relation) throw new Error(`Application ${applicationId} declares no panel use ${options.useId()}`);
     use.value = relation;
     await adopt(await port.panel(relation.panelId));
     loadedPanelId = relation.panelId;
+    stopNotices = port.subscribe(targets(), notice);
     settle();
   }
 
@@ -128,57 +140,98 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       ),
     ) as Record<string, PanelStateValue>;
     address.value = panelAddress(use.value!.path, state.value);
-    document.value = panelFrameDocument(record, base, {
+    const message: PanelHostMessage = {
       kind: "panel-host-message",
       panel: record,
       pageKey: use.value!.pageKey,
       url: address.value,
       label: options.label(),
       state: state.value,
-    });
+    };
+    document.value = panelFrameDocument(record, base, message);
     if (frame) {
       disposeFrame?.();
       disposeFrame = port.frame(frame, use.value!);
     }
   }
 
-  watch(
-    options.useId,
-    (useId) => {
-      void load(useId);
-    },
-    { immediate: true },
-  );
+  watch(options.useId, () => void load(), { immediate: true });
 
-  // A changed definition is read again by its ID: the panel itself, or a projection it contains (which the panel's
-  // record is shown from, so its text and declaration are read again with it).
-  onBeforeUnmount(() => undefined);
-  const stop = port.subscribe?.((event) => {
-    if (event.target.kind !== "panel" || event.target.id !== loadedPanelId) return;
-    void port.panel(event.target.id).then(adopt);
-  });
-  onBeforeUnmount(() => stop?.());
+  // What this instance watches: its own panel, and every projection its declaration names — the whole of X, not the
+  // slots that happen to be drawn.
+  let stopNotices: (() => void) | undefined;
+  function notice(event: DefinitionChanged) {
+    if (!use.value) return;
+    // A changed projection is only read by the instances that use it: the panel's own declaration says which.
+    if (event.target.kind === "projection") {
+      const used = Object.values(panel.value?.manifest.slots ?? {}).some(
+        (slot) => slot.projectionId === event.target.id,
+      );
+      if (used) post({ kind: "projection-changed", projectionId: event.target.id });
+      return;
+    }
+    // A changed panel: read again by its ID, but never over a form the reader has unsaved.
+    if (event.target.id !== loadedPanelId) return;
+    void port.panel(event.target.id).then((record) => {
+      if (dirty()) waiting = record;
+      else void adopt(record);
+    });
+  }
+  onBeforeUnmount(() => stopNotices?.());
+
+  /** The definitions this instance shows, once its record is read. */
+  function targets(): DefinitionTarget[] {
+    const record = panel.value;
+    if (!record) return [];
+    return [
+      { kind: "panel" as const, id: record.id },
+      ...[...new Set(Object.values(record.manifest.slots).map((slot) => slot.projectionId))].map(
+        (id) => ({ kind: "projection" as const, id }),
+      ),
+    ];
+  }
+
+  let unsaved = false;
+  function dirty() {
+    return unsaved;
+  }
+
+  function post(message: unknown) {
+    frame?.postMessage({ channel: PANEL_HOST_CHANNEL, ...(message as object) }, "*");
+  }
 
   function message(event: MessageEvent) {
-    if (event.source !== frame || event.data?.channel !== PANEL_HOST_CHANNEL) return;
-    const parsed = panelFrameMessageSchema.safeParse(event.data);
-    if (!parsed.success) return;
-    if (parsed.data.kind === "context") pageContext.value = parsed.data.context;
-    if (parsed.data.kind === "state") {
-      state.value = parsed.data.state;
-      address.value = panelAddress(use.value!.path, parsed.data.state);
+    if (event.source !== frame) return;
+    const payload = panelMessageOf(panelFrameMessageSchema, event);
+    if (!payload) return;
+    if (payload.kind === "context") pageContext.value = payload.context;
+    if (payload.kind === "state") {
+      state.value = payload.state;
+      address.value = panelAddress(use.value!.path, payload.state);
     }
-    if (parsed.data.kind === "operations") operations.value = parsed.data.operations;
-    if (parsed.data.kind === "invoked") {
-      const waiting = answering.get(parsed.data.id);
-      answering.delete(parsed.data.id);
-      if (!waiting) return;
-      if (parsed.data.error === undefined) waiting.resolve(parsed.data.result);
-      else waiting.reject(new Error(parsed.data.error));
+    if (payload.kind === "operations") operations.value = payload.operations;
+    if (payload.kind === "dirty") {
+      unsaved = payload.dirty;
+      // The reader saved or dropped their changes: now the record read while they were editing may be shown.
+      if (!unsaved && waiting) {
+        const record = waiting;
+        waiting = null;
+        void adopt(record);
+      }
+    }
+    if (payload.kind === "invoked") {
+      const waitingCall = answering.get(payload.requestId);
+      answering.delete(payload.requestId);
+      if (!waitingCall) return;
+      if (payload.error === undefined) waitingCall.resolve(payload.result);
+      else waitingCall.reject(new Error(payload.error));
     }
   }
   window.addEventListener("message", message);
-  onBeforeUnmount(() => window.removeEventListener("message", message));
+  onBeforeUnmount(() => {
+    window.removeEventListener("message", message);
+    disposeFrame?.();
+  });
 
   return {
     use,
@@ -188,20 +241,20 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     state,
     address,
     operations,
-    invoke(id, input) {
-      if (!frame) return Promise.reject(new Error("The panel has not started yet"));
-      return new Promise((resolve, reject) => {
-        answering.set(id, { resolve, reject });
-        frame!.postMessage({ channel: PANEL_HOST_CHANNEL, kind: "invoke", id, input }, "*");
-      });
-    },
     error,
     ready,
+    invoke(id, input) {
+      if (!frame) return Promise.reject(new Error("The panel has not started yet"));
+      const requestId = randomId();
+      return new Promise((resolve, reject) => {
+        answering.set(requestId, { resolve, reject });
+        frame!.postMessage({ channel: PANEL_HOST_CHANNEL, kind: "invoke", requestId, id, input }, "*");
+      });
+    },
     frame(window) {
       frame = window;
       disposeFrame?.();
       disposeFrame = window && use.value ? port.frame(window, use.value) : undefined;
-      window?.parent.postMessage({ channel: PANEL_HOST_CHANNEL, kind: "ready" }, "*");
     },
   };
 }
@@ -226,7 +279,7 @@ const MODULES: Readonly<Record<string, string>> = {
 
 /**
  * The document one panel instance runs in: this SDK version's import map and stylesheet, the panel's HTML, its record as
- * the run's facts, and its module. The panel's text is content, so its module is inserted as text.
+ * the run's facts, and its module. The panel's text is content, so it is inserted as text.
  */
 export function panelFrameDocument(record: ProductPanel, sdkBase: string, message: PanelHostMessage): string {
   const imports = Object.fromEntries(

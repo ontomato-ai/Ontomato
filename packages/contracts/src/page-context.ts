@@ -40,6 +40,21 @@ export const pageContextSchema = z
   .strict();
 export type PageContext = z.infer<typeof pageContextSchema>;
 
+/**
+ * Completes what an app frame reports into a message's page context. The frame knows its page's name and what is
+ * selected; the shell knows the frame's address, and a page's registration key belongs to the application that declared
+ * the frame, not to the frame. This is the one place the app's own report is translated.
+ */
+export function pageContextOf(report: {page: string; selection: {className: string; primaryKey: string; name: string} | null}, url: string): PageContext {
+  return {
+    url,
+    label: report.page,
+    selection: report.selection
+      ? [{ kind: report.selection.className, id: report.selection.primaryKey, label: report.selection.name }]
+      : [],
+  };
+}
+
 /** The query parameters a draft's handoff adds to an address; they name no page of their own. */
 const DRAFT_QUERY_KEYS = ["draftSessionId", "draftRunId", "draftPath"];
 

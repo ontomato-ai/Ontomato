@@ -10,6 +10,7 @@
  * that changed once. A draft parameter, a scroll or an enlarged page is the same page.
  */
 export {
+  pageContextOf,
   pageContextLine,
   pageMoved,
   pageSelectionSchema,

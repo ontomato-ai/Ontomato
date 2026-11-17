@@ -5,23 +5,25 @@ import {
   PANEL_HOST_CHANNEL,
   panelHostFrameMessageSchema,
   panelHostMessageSchema,
+  panelMessageOf,
   type PanelHostMessage,
 } from "@ontomato/contracts/panel-host";
-import type { PageContext } from "@ontomato/contracts/page-context";
+import type { PageDraft } from "@ontomato/contracts/page-draft";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
-import type { ProductPanel } from "@ontomato/contracts/product-panels";
-import { panelContextKey, type PanelContext } from "./context";
-import { applyPanelRequest, createPanelInstance, type PanelInstance } from "./instance";
-import { PanelFormAdapters, receivePanelDraft, type PageDraftLink, type ReceivedPanelDraft } from "./draft";
-import type { PanelFormAdapter } from "./draft";
-import type { PanelProjectionRegistration, ProjectionPorts } from "./projection";
+import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
+import { panelContextKey, type PanelContext, type ProjectionSlot } from "./context";
+import { applyPanelRequest, createPanelInstance, pageDraftLinkOf, type PanelInstance } from "./instance";
+import { receivePanelDraft, type ReceivedPanelDraft } from "./draft";
+import PanelProjection from "./Projection.vue";
+import { contextTransport } from "../context";
 
 /*
  * How a panel's module runs (overall design 3.3, 3.4): the platform's panel host opens a frame for one instance and
  * writes that run's facts into its document (the channel and the record are the contracts' `panel-host`). This module
  * mounts the panel's component with everything the SDK does for it already done — the platform context connected, the
- * state created and restored from the address, the projection slots registered, the draft dispatched, and what the
- * reader looks at reported. A panel author exports a declaration and a component; none of this is written per panel.
+ * state restored from the address, the draft the address names read and dispatched, the projections registered as they
+ * appear, and what the reader looks at reported. A panel author exports a declaration and a component that places
+ * `<Projection slot="…"/>`; nothing about reads, drafts, links or buttons is written per panel.
  */
 
 /** A panel module's default export: the component drawn inside the panel's HTML. */
@@ -29,56 +31,76 @@ export type PanelComponent = Component;
 
 /** What a panel module's `mount` receives. */
 export interface PanelMount {
-  /** The panel's own context: its record, declaration, instance, slots and drafts. */
+  /** The panel's own context: its record, declaration, instance and draft. */
   context: PanelContext;
   /** The platform context, for a panel that reads MetricViews or Actions itself. */
   appContext: AppContext;
 }
 
 /**
- * Mounts the panel into `element`, which the panel's HTML designates. The instance's state, the page context and
- * whether it holds unsaved changes reach the host as they change: the host keeps the address, and asks before it
- * replaces a definition.
+ * Mounts the panel into `element`, which the panel's HTML designates. The state, the page context and whether the
+ * instance holds unsaved changes reach the host as they change; the host keeps the address and asks before it replaces a
+ * definition.
  */
 export async function mountPanel(component: PanelComponent, element: Element): Promise<PanelMount> {
   const message = hostMessage();
   const appContext = createAppContext();
+  const transport = contextTransport(appContext);
   const instance = createPanelInstance(message.panel.manifest, {
     pageKey: message.pageKey,
     url: () => message.url,
     label: () => message.label,
     initial: message.state,
+    readProjection: async (id) => {
+      const response = await transport.request(`/product-projections/${encodeURIComponent(id)}`, {}, "");
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message ?? `Projection ${id} is unavailable`);
+      return body.projection as ProductProjection;
+    },
   });
-  const adapters = new PanelFormAdapters();
   const draft = ref<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
   const unsaved = new Set<Ref<boolean>>();
+  const projectionListeners = new Set<(id: string) => void>();
   const context: PanelContext = {
     panel: message.panel,
     manifest: message.panel.manifest,
     instance,
-    slot(slot: string, ports: ProjectionPorts, invoke: PanelProjectionRegistration["invoke"]) {
-      const declaration = message.panel.manifest.slots[slot];
-      if (!declaration) throw new Error(`The panel declares no slot '${slot}'`);
-      return instance.register({ slot, projectionId: declaration.projectionId, ports, invoke });
-    },
-    form(slot: string, adapter: PanelFormAdapter<Record<string, unknown>, { id?: string }>) {
-      adapters.register(slot, adapter);
+    projection: (id) => instance.projection(id),
+    invoke: (handlerRef, input) => instance.runHandler(handlerRef, input),
+    projectionsChanged(listener) {
+      projectionListeners.add(listener);
+      return () => projectionListeners.delete(listener);
     },
     draft,
-    async receiveDraft(link: PageDraftLink, confirm: () => Promise<boolean>) {
-      const received = await receivePanelDraft<Record<string, unknown>>(message.pageKey, adapters, createAssistantClient(appContext), link, confirm);
-      if (received) draft.value = received;
-      return received;
-    },
-    holdUnsaved(flag: Ref<boolean>) {
+    holdUnsaved(flag) {
       unsaved.add(flag);
       return () => unsaved.delete(flag);
     },
   };
-  const app = createApp({ setup: () => (provide(panelContextKey, context), () => h(component)) });
+  const app = createApp({
+    setup: () => (provide(panelContextKey, context), () => h(component)),
+  });
+  // The one global a panel's HTML and module need: `<Projection slot="…"/>`. Its name is the SDK's public API, so it is
+  // a single word on purpose.
+  // eslint-disable-next-line vue/multi-word-component-names
+  app.component("Projection", PanelProjection);
   app.use(appContext);
   app.mount(element);
-  report({ instance, draft, unsaved });
+
+  // The draft the address names belongs to this panel, so the SDK reads it and hands it to the form projection that
+  // performs its operation. An unsaved form is the reader's: a draft never replaces it unasked.
+  const link = pageDraftLinkOf(message.url);
+  if (link) {
+    const received = await receivePanelDraft<Record<string, unknown>>(
+      message.pageKey,
+      instance.forms,
+      createAssistantClient(appContext),
+      link,
+    );
+    if (received) draft.value = received;
+  }
+
+  report({ instance, draft, unsaved, changed: (id) => projectionListeners.forEach((listener) => listener(id)) });
   return { context, appContext };
 }
 
@@ -93,49 +115,55 @@ interface ReportOptions {
   instance: PanelInstance;
   draft: Ref<ReceivedPanelDraft<Record<string, unknown>> | null>;
   unsaved: ReadonlySet<Ref<boolean>>;
+  changed: (projectionId: string) => void;
 }
 
 /**
  * What one instance tells its host, and what it takes back. The host owns the address and the record; a changed
- * definition is read by its ID there and offered here, and an unsaved form is never replaced by it.
+ * definition is read again here by its ID — the panel's whole record, or one projection's — but never over an unsaved
+ * form.
  */
-function report({ instance, draft, unsaved }: ReportOptions) {
+function report({ instance, draft, unsaved, changed }: ReportOptions) {
   const send = (value: unknown) => window.parent.postMessage({ channel: PANEL_HOST_CHANNEL, ...(value as object) }, "*");
-  const context = (): PageContext => instance.pageContext.value;
-  const state = (): Record<string, PanelStateValue> => instance.deepLink();
-  const isDirty = () => draft.value !== null || [...unsaved].some((flag) => flag.value);
+  const isDirty = () => draft.value !== null || instance.forms.dirty() || [...unsaved].some((flag) => flag.value);
 
-  send({ kind: "context", context: context() });
-  send({ kind: "state", state: state() });
+  send({ kind: "context", context: instance.pageContext.value });
+  send({ kind: "state", state: instance.deepLink() });
   watch(
-    () => [instance.state.values.value, context().url],
+    () => instance.state.values.value,
     () => {
-      send({ kind: "context", context: context() });
-      send({ kind: "state", state: state() });
+      send({ kind: "context", context: instance.pageContext.value });
+      send({ kind: "state", state: instance.deepLink() });
     },
     { deep: true },
   );
   watch([...unsaved], () => send({ kind: "dirty", dirty: isDirty() }), { immediate: true });
-  // The operations the header and an agent list; they change when a projection registers or unregisters.
-  watch(() => instance.operations.value, () => send({ kind: "operations", operations: instance.operations.value }), { immediate: true, deep: false });
+  watch(() => instance.dirty(), () => send({ kind: "dirty", dirty: isDirty() }));
+  // The operations the header draws and an agent lists; they change as projections register and unregister.
+  watch(() => instance.operations.value, () => send({ kind: "operations", operations: instance.operations.value }), {
+    immediate: true,
+  });
 
   window.addEventListener("message", (event) => {
-    if (event.data?.channel !== PANEL_HOST_CHANNEL) return;
-    const parsed = panelHostFrameMessageSchema.safeParse(event.data);
-    if (!parsed.success) return;
-    // A definition change keeps the reader's unsaved form: the host keeps the old record until they save or drop it.
-    if (parsed.data.kind === "definition-changed") {
+    const parsed = panelMessageOf(panelHostFrameMessageSchema, event);
+    if (!parsed) return;
+    if (parsed.kind === "projection-changed") {
+      changed(parsed.projectionId);
+      return;
+    }
+    if (parsed.kind === "definition-changed") {
+      // A changed panel is handed over only when nothing is unsaved; the host opens the frame again with it.
       send({ kind: "reloaded", reloaded: !isDirty() });
       return;
     }
     // A person's click in the platform's header: the same handler an agent's call reaches, run in this frame.
-    const { id, input } = parsed.data;
+    const { requestId, id, input } = parsed;
     instance.invoke(id, input).then(
-      (result) => send({ kind: "invoked", id, result }),
-      (reason: unknown) => send({ kind: "invoked", id, error: reason instanceof Error ? reason.message : String(reason) }),
+      (result) => send({ kind: "invoked", requestId, result }),
+      (reason: unknown) =>
+        send({ kind: "invoked", requestId, error: reason instanceof Error ? reason.message : String(reason) }),
     );
   });
 }
 
-export { applyPanelRequest };
-export type { PageContext, PanelStateValue, ProductPanel, ReceivedPanelDraft };
+export { applyPanelRequest, type PageDraft, type PanelStateValue, type ProductPanel, type ProjectionSlot };

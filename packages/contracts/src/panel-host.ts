@@ -41,29 +41,43 @@ export const panelFrameMessageSchema = z.discriminatedUnion("kind", [
    * own declaration's; the frame runs one when the host asks it to.
    */
   z.object({ kind: z.literal("operations"), operations: z.array(panelOperationSchema).max(100) }).strict(),
-  /** The answer to one invocation, or the failure that stopped it, by the ID the host sent. */
-  z.object({ kind: z.literal("invoked"), id: z.string().min(1).max(300), result: z.unknown().optional(), error: z.string().optional() }).strict(),
+  /** The answer to one invocation, or the failure that stopped it: paired with the call by the request ID the host sent. */
+  z.object({ kind: z.literal("invoked"), requestId: z.string().min(1).max(100), result: z.unknown().optional(), error: z.string().optional() }).strict(),
   /**
    * Whether the instance holds unsaved changes. The host asks before it replaces the panel's definition, and never
    * reloads over an answer of `true`: the form on screen is the reader's.
    */
   z.object({ kind: z.literal("dirty"), dirty: z.boolean() }).strict(),
-  /** The frame's answer to a definition change: it took the new record, or kept the reader's unsaved form. */
+  /** The frame's answer to a panel definition change: nothing was unsaved, so the host may open it again. */
   z.object({ kind: z.literal("reloaded"), reloaded: z.boolean() }).strict(),
 ]);
 export type PanelFrameMessage = z.infer<typeof panelFrameMessageSchema>;
 
 /** What the host tells a running panel frame. */
 export const panelHostFrameMessageSchema = z.discriminatedUnion("kind", [
-  /** The panel's definition changed: here is the current record, read by its ID. */
+  /** The panel's own definition changed; the host has already decided it may be shown. */
   z.object({ kind: z.literal("definition-changed"), panel: productPanelSchema }).strict(),
   /**
-   * A person clicked one of the instance's operations in the platform's header. The frame runs it, so the request
-   * carries that person's own credential; an agent's call never comes this way.
+   * One projection's definition changed, by ID. The instance reads that projection again and redraws it where it is
+   * used; a projection no slot of this panel names is not read at all.
    */
-  z.object({ kind: z.literal("invoke"), id: z.string().min(1).max(300), input: z.record(z.string(), z.unknown()).optional() }).strict(),
+  z.object({ kind: z.literal("projection-changed"), projectionId: z.string().min(1).max(200) }).strict(),
+  /**
+   * A person clicked one of the instance's operations in the platform's header. The frame runs it with that person's
+   * own credential; an agent's call never comes this way. `requestId` pairs the answer with this call alone.
+   */
+  z.object({ kind: z.literal("invoke"), requestId: z.string().min(1).max(100), id: z.string().min(1).max(300), input: z.record(z.string(), z.unknown()).optional() }).strict(),
 ]);
 export type PanelHostFrameMessage = z.infer<typeof panelHostFrameMessageSchema>;
+
+/** One message on the panel channel as it arrives: the channel's own key, and the message it carries. */
+export function panelMessageOf<T>(schema: { safeParse(value: unknown): { success: true; data: T } | { success: false } }, event: { data?: unknown }): T | null {
+  const data = event.data as { channel?: unknown } | null;
+  if (!data || data.channel !== PANEL_HOST_CHANNEL) return null;
+  const { channel: _channel, ...message } = data as Record<string, unknown>;
+  const parsed = schema.safeParse(message);
+  return parsed.success ? parsed.data : null;
+}
 
 /** The address a panel instance is opened at: the use's path, the state it restores, and nothing else. */
 export function panelAddress(path: string, state: Record<string, unknown>): string {

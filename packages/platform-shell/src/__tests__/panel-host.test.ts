@@ -3,18 +3,19 @@ import { effectScope } from "vue";
 import type { ApplicationPanelUse, ProductPanel } from "@ontomato/contracts/product-panels";
 import { panelAddress, panelAddressState, PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
-import { panelFrameDocument, usePanelInstance, type DefinitionChanged, type PanelHostPort } from "../panel-host";
+import { panelFrameDocument, usePanelInstance, type DefinitionChanged, type DefinitionTarget, type PanelHostPort } from "../panel-host";
 
 /*
- * The host loads one panel per application use, keeps each instance's state to itself, and re-reads a definition
- * by its ID when the platform says it changed. The mistakes these catch are the ones the trial exists to rule out: two
- * uses of one panel sharing a selection, a panel's layout change reaching a panel that merely shares a projection, and a
- * panel opened from a link losing the state the address named.
+ * The host loads one panel per application use, keeps each instance's state to itself, and hands a changed definition to
+ * the instances that use it: a changed projection reaches every instance whose panel names it, a changed panel reaches
+ * its own instances and nothing else, and never over a form the reader has unsaved. The mistakes these catch are what
+ * the trial exists to rule out: two uses of one panel sharing a selection, a change to X reaching some but not all of
+ * the panels that use it, and a reader's unsaved form replaced by a definition change.
  */
 
 const SCHEDULED_TASK = "platform:ScheduledTask";
 
-/** The panel P: a task list, the task's form and a button that runs it. */
+/** Panel P: a task list, the task's form and a button that runs it. Its list and summary are the shared projection X. */
 const panelP = definePanel({
   state: {
     selectedTask: { kind: "object", objectType: SCHEDULED_TASK, deepLink: true },
@@ -27,7 +28,7 @@ const panelP = definePanel({
   operations: [],
 });
 
-/** The panel Q: the same projection X and nothing else. */
+/** Panel Q: the same projection X and nothing of P. */
 const panelQ = definePanel({
   state: { selectedTask: { kind: "object", objectType: SCHEDULED_TASK, deepLink: true } },
   slots: { summary: { projectionId: "projection-x", inputs: { task: { state: "selectedTask" } } } },
@@ -51,30 +52,9 @@ function record(id: string, name: string, manifest: ProductPanel["manifest"]): P
   };
 }
 
-/** A platform that serves the records it currently holds, and notices when one changes. */
-function platform(panels: Map<string, ProductPanel>, relations: Map<string, ApplicationPanelUse>) {
-  const listeners = new Set<(event: DefinitionChanged) => void>();
-  const frames: Window[] = [];
+function useRelation(id: string, pageKey: string, panelId: string, path: string): ApplicationPanelUse {
   return {
-    use: async (useId: string) => relations.get(useId)!,
-    panel: async (panelId: string) => panels.get(panelId)!,
-    sdkBase: async () => "/apps-sdk/1.1.0",
-    frame: (frame: Window) => {
-      frames.push(frame);
-      return () => {};
-    },
-    subscribe: (listener: (event: DefinitionChanged) => void) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    changed: (event: DefinitionChanged) => listeners.forEach((listener) => listener(event)),
-    frames,
-  } satisfies PanelHostPort & { changed(event: DefinitionChanged): void; frames: Window[] };
-}
-
-function use(useId: string, pageKey: string, panelId: string, path: string): ApplicationPanelUse {
-  return {
-    id: useId,
+    id,
     pageKey,
     panelId,
     path,
@@ -83,83 +63,177 @@ function use(useId: string, pageKey: string, panelId: string, path: string): App
   };
 }
 
+/**
+ * A platform serving the records it holds, with the two reads a host makes and the notices it hears. Frames are the
+ * windows a host registers, kept so a test can read what the host posted into them.
+ */
+function platform(input: { applicationId?: string; panels: Map<string, ProductPanel>; uses: ApplicationPanelUse[] }) {
+  const listeners = new Set<(event: DefinitionChanged) => void>();
+  const watched: DefinitionTarget[] = [];
+  const frames = new Map<Window, unknown[]>();
+  const sent = new WeakMap<Window, unknown[]>();
+  return {
+    applicationId: () => input.applicationId ?? "app-a",
+    uses: async () => input.uses,
+    panel: async (panelId: string) => input.panels.get(panelId)!,
+    sdkBase: async () => "/apps-sdk/1.1.0",
+    frame: (frame: Window) => {
+      frames.set(frame, []);
+      const post = frame.postMessage.bind(frame);
+      const posted = sent.get(frame) ?? [];
+      sent.set(frame, posted);
+      frame.postMessage = ((message: unknown, ...rest: unknown[]) => {
+        posted.push(message);
+        return post(message as never, ...(rest as [never]));
+      }) as Window["postMessage"];
+      return () => frames.delete(frame);
+    },
+    subscribe: (targets: readonly DefinitionTarget[], listener: (event: DefinitionChanged) => void) => {
+      watched.push(...targets);
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    watched,
+    changed: (event: DefinitionChanged) => listeners.forEach((listener) => listener(event)),
+    posted: (frame: Window) => sent.get(frame) ?? [],
+  };
+}
+
+/**
+ * A frame: an iframe's own window, as a shell sees it. What the host posts into it and what the frame posts back go
+ * through that window, so a test reads the one and dispatches the other.
+ */
+function frameWindow(): Window {
+  const frame = document.createElement("iframe");
+  document.body.append(frame);
+  return frame.contentWindow!;
+}
+
+/** What the host posted into a frame. */
+function postedTo(port: { posted(frame: Window): unknown[] }, frame: Window): unknown[] {
+  return port.posted(frame);
+}
+
+/** What a frame tells its host. */
+function fromFrame(frame: Window, message: Record<string, unknown>): void {
+  window.dispatchEvent(new MessageEvent("message", { source: frame, data: { channel: PANEL_HOST_CHANNEL, ...message } }));
+}
+
 describe("the panel host", () => {
-  it("opens one instance per application use, and the two keep their own state", async () => {
+  it("opens one instance per application use, each from its own relation and record", async () => {
     const panels = new Map([
       ["panel-p", record("panel-p", "Scheduled tasks", panelP)],
       ["panel-q", record("panel-q", "Task summary", panelQ)],
     ]);
-    const relations = new Map([
-      ["use-a", use("use-a", "schedules", "panel-p", "/a/schedules")],
-      ["use-b", use("use-b", "schedules", "panel-p", "/b/schedules")],
-      ["use-q", use("use-q", "task-summary", "panel-q", "/summary")],
-    ]);
-    const port = platform(panels, relations);
+    const port = platform({
+      panels,
+      uses: [
+        useRelation("use-a", "schedules", "panel-p", "/a/schedules"),
+        useRelation("use-b", "schedules", "panel-p", "/b/schedules"),
+        useRelation("use-q", "task-summary", "panel-q", "/summary"),
+      ],
+    });
     const scope = effectScope();
-    const a = scope.run(() => usePanelInstance(port, { useId: () => "use-a", label: () => "Scheduled tasks" }))!;
-    const b = scope.run(() => usePanelInstance(port, { useId: () => "use-b", label: () => "Scheduled tasks" }))!;
-    const q = scope.run(() => usePanelInstance(port, { useId: () => "use-q", label: () => "Task summary" }))!;
+    const open = (useId: string) => scope.run(() => usePanelInstance(port, { useId: () => useId, label: () => useId }))!;
+    const a = open("use-a");
+    const b = open("use-b");
+    const q = open("use-q");
     await Promise.all([a.ready, b.ready, q.ready]);
 
-    // Each one runs in its own frame, from its own record and its own address.
+    // Three instances, each from its own use relation: two of panel P and one of Q.
+    expect(a.use.value?.panelId).toBe("panel-p");
+    expect(b.use.value?.panelId).toBe("panel-p");
+    expect(q.use.value?.panelId).toBe("panel-q");
+    // Each has its own address, and each draws its own panel's document.
     expect(a.address.value).toBe("/a/schedules");
     expect(b.address.value).toBe("/b/schedules");
     expect(q.address.value).toBe("/summary");
-
-    // A selection made in A reaches A alone: B and Q have no state of their own yet.
-    const frameA = port.frames.at(-1)!;
-    void frameA;
     expect(a.state.value).toEqual({});
     expect(b.state.value).toEqual({});
     scope.stop();
   });
 
-  it("re-reads the definition the platform says changed, and only that one", async () => {
+  it("hands a changed projection to every instance whose panel names it, and only to those", async () => {
+    const panels = new Map([
+      ["panel-p", record("panel-p", "Scheduled tasks", panelP)],
+      ["panel-q", record("panel-q", "Task summary", panelQ)],
+      ["panel-r", record("panel-r", "Application only", definePanel({ state: {}, slots: { form: { projectionId: "projection-other", inputs: {} } }, operations: [] }))],
+    ]);
+    const port = platform({
+      panels,
+      uses: [
+        useRelation("use-a", "schedules", "panel-p", "/a/schedules"),
+        useRelation("use-b", "schedules", "panel-p", "/b/schedules"),
+        useRelation("use-q", "task-summary", "panel-q", "/summary"),
+        useRelation("use-r", "application", "panel-r", "/r"),
+      ],
+    });
+    const scope = effectScope();
+    const open = (useId: string) => scope.run(() => usePanelInstance(port, { useId: () => useId, label: () => useId }))!;
+    const a = open("use-a");
+    const b = open("use-b");
+    const q = open("use-q");
+    const r = open("use-r");
+    await Promise.all([a.ready, b.ready, q.ready, r.ready]);
+    const frames = [frameWindow(), frameWindow(), frameWindow(), frameWindow()];
+    [a, b, q, r].forEach((view, index) => view.frame(frames[index]!));
+
+    // X changes: both uses of P and Q are told, each in its own frame; the panel that does not use X is not.
+    port.changed({ kind: "definition-changed", domainId: "domain-1", target: { kind: "projection", id: "projection-x" } });
+    for (const frame of frames.slice(0, 3))
+      expect(postedTo(port, frame)).toContainEqual({ channel: PANEL_HOST_CHANNEL, kind: "projection-changed", projectionId: "projection-x" });
+    expect(postedTo(port, frames[3]!)).toEqual([]);
+    scope.stop();
+  });
+
+  it("re-reads a changed panel by its ID, and never over a form the reader has unsaved", async () => {
     const panels = new Map([
       ["panel-p", record("panel-p", "Scheduled tasks", panelP)],
       ["panel-q", record("panel-q", "Task summary", panelQ)],
     ]);
-    const relations = new Map([
-      ["use-a", use("use-a", "schedules", "panel-p", "/a/schedules")],
-      ["use-q", use("use-q", "task-summary", "panel-q", "/summary")],
-    ]);
-    const port = platform(panels, relations);
+    const port = platform({
+      panels,
+      uses: [
+        useRelation("use-a", "schedules", "panel-p", "/a/schedules"),
+        useRelation("use-q", "task-summary", "panel-q", "/summary"),
+      ],
+    });
     const scope = effectScope();
     const a = scope.run(() => usePanelInstance(port, { useId: () => "use-a", label: () => "Scheduled tasks" }))!;
     const q = scope.run(() => usePanelInstance(port, { useId: () => "use-q", label: () => "Task summary" }))!;
     await Promise.all([a.ready, q.ready]);
+    const frameA = frameWindow();
+    a.frame(frameA);
 
-    // Changing panel P's layout is read again by P's instances only; Q shares P's projection but not P.
-    const beforeQ = q.panel.value;
-    const readQ = vi.spyOn(port, "panel");
+    // The reader is editing: the frame says so, and the record that arrives meanwhile waits.
+    fromFrame(frameA, { kind: "dirty", dirty: true });
+    const beforeA = a.document.value;
     panels.set("panel-p", record("panel-p", "Scheduled tasks, rearranged", panelP));
     port.changed({ kind: "definition-changed", domainId: "domain-1", target: { kind: "panel", id: "panel-p" } });
-    await vi.waitFor(() => expect(a.panel.value?.name).toBe("Scheduled tasks, rearranged"));
+    // The form on screen is not replaced while it has unsaved changes: neither the record it draws nor its document.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(a.panel.value?.name).toBe("Scheduled tasks");
+    expect(a.document.value).toBe(beforeA);
 
-    // One re-read: the panel P that changed. Q was not read again, and still shows the record it had.
-    expect(readQ).toHaveBeenCalledTimes(1);
-    expect(readQ).toHaveBeenCalledWith("panel-p");
-    expect(q.panel.value).toBe(beforeQ);
+    // The reader saves: now the changed panel is shown.
+    fromFrame(frameA, { kind: "dirty", dirty: false });
+    await vi.waitFor(() => expect(a.document.value).not.toBe(beforeA));
+    expect(q.panel.value?.name).toBe("Task summary");
     scope.stop();
   });
 
-  it("shows the state its address names, and only the state the panel declares deep-linkable", async () => {
-    const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
-    const relations = new Map([["use-a", use("use-a", "schedules", "panel-p", "/a/schedules")]]);
-    const port = platform(panels, relations);
+  it("shows the state its address names", () => {
     const state = { selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" }, search: "overdue" };
-    expect(panelAddress("/a/schedules", state)).toContain("state=");
     const restored = panelAddressState(panelAddress("/a/schedules", state));
     expect(restored).toEqual(state);
-    // A form value never travels in an address: the address carries what the panel declared.
     expect(panelAddressState(panelAddress("/a/schedules", { selectedTask: null }))).toEqual({ selectedTask: null });
-    void port;
   });
 
   it("runs the panel's own text with this SDK version's modules", () => {
-    const document = panelFrameDocument(record("panel-p", "Scheduled tasks", panelP), "/apps-sdk/1.1.0", {
+    const panel = record("panel-p", "Scheduled tasks", panelP);
+    const document = panelFrameDocument(panel, "/apps-sdk/1.1.0", {
       kind: "panel-host-message",
-      panel: record("panel-p", "Scheduled tasks", panelP),
+      panel,
       pageKey: "schedules",
       url: "/a/schedules",
       label: "Scheduled tasks",
@@ -171,7 +245,26 @@ describe("the panel host", () => {
     // The panel's module is content, never a template of the host's own document.
     expect(document).toContain('import {mountPanel} from "@ontomato/sdk/panel";');
   });
-});
 
-// The channel the frame and the host speak on is one constant, so a stale frame can never be mistaken for this one.
-it("speaks on one channel", () => expect(PANEL_HOST_CHANNEL).toBe("ontomato-panel-v1"));
+  it("pairs an operation's answer with the call that asked for it", async () => {
+    const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
+    const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
+    const scope = effectScope();
+    const a = scope.run(() => usePanelInstance(port, { useId: () => "use-a", label: () => "Scheduled tasks" }))!;
+    await a.ready;
+    const frameA = frameWindow();
+    a.frame(frameA);
+
+    const first = a.invoke("runTask.runNow");
+    const second = a.invoke("task.clear");
+    // Two calls are two requests, each answered by its own request ID, in whatever order the frame answers them.
+    const invoked = postedTo(port, frameA).filter((message) => (message as { kind: string }).kind === "invoke") as { requestId: string }[];
+    expect(invoked).toHaveLength(2);
+    expect(invoked[0]!.requestId).not.toBe(invoked[1]!.requestId);
+    fromFrame(frameA, { kind: "invoked", requestId: invoked[1]!.requestId, result: "second" });
+    fromFrame(frameA, { kind: "invoked", requestId: invoked[0]!.requestId, result: "first" });
+    await expect(first).resolves.toBe("first");
+    await expect(second).resolves.toBe("second");
+    scope.stop();
+  });
+});

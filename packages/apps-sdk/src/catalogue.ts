@@ -171,4 +171,13 @@ export const components: readonly ComponentMetadata[] = [
     meaning: "One tool call of a run: what was called, what it answered, and whether it failed.",
     outputs: [],
   }),
+  defineComponentMeta({
+    componentId: "Projection",
+    module: "@ontomato/sdk/panel",
+    exportName: "Projection",
+    role: "presentation",
+    meaning:
+      "Stands where one projection of a panel is drawn: it reads that projection's current record by ID, draws the component the record names in this version's catalogue, and registers the ports the projection offers. A panel places it and names the slot; it never draws a projection itself.",
+    effects: "Reads the projection's current definition through the platform as the reader, and again when that definition changes.",
+  }),
 ];

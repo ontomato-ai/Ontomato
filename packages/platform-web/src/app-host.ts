@@ -144,8 +144,12 @@ export function installAppHost(options: {
       if(decoded.includes('\\')||decoded.split('/').some(segment=>segment==='.'||segment==='..'))throw new Error('Invalid SDK request target');
       const allowed=service==='/data-query'?['/metricView/queryById','/metricView/execute','/action/form','/action/execute']:[];
       if(service==='/data-query'&&!allowed.includes(path))throw new Error('Use a declared SDK capability');
-      if(service===''&&!['/product-assets','/assistant'].some(prefix=>path===prefix||path.startsWith(prefix+'/')||path.startsWith(prefix+'?')))throw new Error('Use a declared SDK product operation');
+      // A panel's frame reads the current definition of the projection it draws, by ID, under the reader's own credential;
+      // the panel's own record is read by the host outside the frame, so a frame never reads one.
       const method=(init.method??'GET').toUpperCase();
+      const projectionRead=method==='GET'&&/^\/product-projections\/[^/?]+$/.test(path);
+      const declared=['/product-assets','/assistant'].some(prefix=>path===prefix||path.startsWith(prefix+'/')||path.startsWith(prefix+'?'));
+      if(service===''&&!declared&&!projectionRead)throw new Error('Use a declared SDK product operation');
       if(!['GET','POST','PUT','DELETE'].includes(method))throw new Error('Unsupported SDK request method');
       if(execution.kind==='build-test'&&service!=='/data-query')throw new Error('Product operations are unavailable in build previews');
       const applicationId=publishedFrames.get(source);

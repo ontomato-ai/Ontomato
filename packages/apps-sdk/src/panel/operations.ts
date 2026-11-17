@@ -1,5 +1,5 @@
 import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
-import { projectionOperations, type PanelProjectionRegistration } from "./projection";
+import { projectionOperations, type PanelProjectionRegistration } from "./ports";
 import type { PanelOperationBinding } from "./types";
 import type { PanelStateStore } from "./state";
 

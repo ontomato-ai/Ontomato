@@ -1,16 +1,12 @@
-import {
-  panelOperationId,
-  type OntologyParameterType,
-  type PanelManifest,
-  type PanelOperation,
-} from "@ontomato/contracts/panel-manifest";
+import { panelOperationId, type OntologyParameterType, type PanelManifest, type PanelOperation } from "@ontomato/contracts/panel-manifest";
 import type { PanelFieldValue } from "./state";
 
 /*
  * What a projection offers the panel it is placed in, and therefore what the panel contains (overall design 3.2, 3.4,
- * "projection registration"). A projection's component and its SDK client say which operations it publishes and what
- * they take; the panel does not say that again. Declaring the projection in a slot is enough for the SDK to describe its
- * operations and to reach them, so nothing is scanned out of the HTML and no renderer is guessed from a name.
+ * "projection registration"): the element it binds, the parameters it takes, the operations it publishes and the handler
+ * reference each one is. All of it comes from the projection's record and this SDK version's catalogue; a panel's
+ * declaration names the projection and never its ports, so nothing is scanned out of the HTML and no renderer is guessed
+ * from a name.
  */
 
 /** An operation a projection publishes: its own name, what it takes, and the SDK client operation it is. */
@@ -42,11 +38,11 @@ export interface PanelProjectionRegistration {
   slot: string;
   projectionId: string;
   ports: ProjectionPorts;
-  /** Runs one operation in this frame; the projection's own client makes the request with the person's credential. */
+  /** Runs one operation in this frame; the projection's client makes the request with the reader's own credential. */
   invoke(handlerRef: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
 }
 
-/** The operations a registered projection publishes, described for the panel and the agent. */
+/** The operations a registered projection publishes, described for the header and an agent. */
 export function projectionOperations(
   manifest: PanelManifest,
   registration: Pick<PanelProjectionRegistration, "slot" | "ports">,
@@ -98,7 +94,5 @@ export function slotInputValues(
 ): Record<string, PanelFieldValue> {
   const declaration = manifest.slots[slot];
   if (!declaration) throw new Error(`The panel declares no slot '${slot}'`);
-  return Object.fromEntries(
-    Object.entries(declaration.inputs).map(([input, ref]) => [input, values[ref.state] ?? null]),
-  );
+  return Object.fromEntries(Object.entries(declaration.inputs).map(([input, ref]) => [input, values[ref.state] ?? null]));
 }

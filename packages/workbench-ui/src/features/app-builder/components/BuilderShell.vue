@@ -218,7 +218,7 @@ const previewContext = usePreviewContext(props.platform.subscribePageContext, ()
 /** The open view as a message names it, so "this" in the reader's words means what they look at. */
 const contextPage = computed(() => {
   const label = t(PANEL_TABS.find((item) => item.id === tab.value)!.label);
-  if (tab.value === "preview") return `${label} · ${previewContext.value?.label ?? workspaceName.value}`;
+  if (tab.value === "preview") return `${label} · ${previewContext.value?.page ?? workspaceName.value}`;
   if (tab.value === "files") return `${label} · ${file.value ?? workspaceName.value}`;
   if (tab.value !== "changes") return `${label} · ${workspaceName.value}`;
   if (target.value === "working") return `${label} · ${t("appBuilder.uncommitted")}`;
@@ -237,7 +237,9 @@ const pageContext = computed<PageContext>(() => {
     pageKey: "app-builder",
     url: route.fullPath,
     label: contextPage.value,
-    selection: selection?.map((item) => ({ ...item, label: selectedObject(item, t) })) ?? [],
+    selection: selection
+      ? [{ kind: "object", id: selection.primaryKey, label: selectedObject(selection, t) }]
+      : [],
   };
 });
 const tabIcon = computed(() => PANEL_TABS.find((item) => item.id === tab.value)!.icon);

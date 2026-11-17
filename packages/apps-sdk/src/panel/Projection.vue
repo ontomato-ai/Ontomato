@@ -1,0 +1,95 @@
+<script setup lang="ts">
+import { inject, onBeforeUnmount, provide, ref, shallowRef, watch, type Component } from "vue";
+import type { ProductProjection } from "@ontomato/contracts/product-panels";
+import { portsOf } from "./ports-of";
+import { slotInputValues } from "./ports";
+import { panelContextKey, projectionKey, type ProjectionSlot } from "./context";
+import { componentFor } from "../catalogue-components";
+
+/**
+ * The SDK's projection component: `<Projection slot="taskForm"/>`. A panel author places it and names the slot;
+ * everything else is the SDK's. It reads the slot's projection by ID through this frame's request path under the
+ * reader's own credential, finds the component of the record's `componentId` in this version's own catalogue, draws it
+ * with the record's `display` as configuration and the slot's inputs as values, derives its ports from the record's
+ * binding and that catalogue entry, registers them with the instance, and hands the record to the drawn component, which
+ * registers the form adapter it holds a draft with.
+ *
+ * The record is read every time the projection appears, and again by the same ID when the platform says its definition
+ * changed: that is what makes a change to a shared projection reach every instance of every panel that uses it.
+ */
+const props = defineProps<{
+  /** The slot of the panel's declaration this projection fills. */
+  slot: string;
+}>();
+
+const panel = inject(panelContextKey, null);
+if (!panel) throw new Error("<Projection> runs inside a panel, which provides its context");
+
+const loading = ref(true);
+const failure = shallowRef<Error | null>(null);
+const loaded = shallowRef<{ projection: ProductProjection; component: Component } | null>(null);
+const inputs = ref<Record<string, unknown>>({});
+let registered: (() => void) | undefined;
+
+function start() {
+  const declaration = panel!.manifest.slots[props.slot];
+  if (!declaration) throw new Error(`The panel declares no slot '${props.slot}'`);
+  loading.value = true;
+  failure.value = null;
+  void panel!.projection(declaration.projectionId).then(
+    (projection) => {
+      registered?.();
+      registered = panel!.instance.register({
+        slot: props.slot,
+        projectionId: projection.id,
+        ports: portsOf(projection),
+        invoke: (handlerRef, input) => panel!.invoke(handlerRef, input),
+      });
+      loaded.value = { projection, component: componentFor(projection.componentId) };
+      loading.value = false;
+    },
+    (reason: unknown) => {
+      failure.value = reason instanceof Error ? reason : new Error(String(reason));
+      loading.value = false;
+    },
+  );
+}
+
+watch(
+  () => props.slot,
+  () => start(),
+  { immediate: true },
+);
+// A changed definition is read again by the same ID here, so every instance that uses it redraws.
+const stop = panel.projectionsChanged((id) => {
+  if (panel.manifest.slots[props.slot]?.projectionId === id) start();
+});
+onBeforeUnmount(() => {
+  stop();
+  registered?.();
+});
+
+// The slot's inputs follow the instance's state: the panel's own values, never a copy.
+watch(
+  () => panel.instance.state.values.value,
+  () => {
+    inputs.value = slotInputValues(panel.manifest, props.slot, panel.instance.state.values.value);
+  },
+  { immediate: true, deep: true },
+);
+
+provide(projectionKey, {
+  get projection() {
+    return loaded.value!.projection;
+  },
+  get inputs() {
+    return inputs.value;
+  },
+} as ProjectionSlot);
+</script>
+
+<template>
+  <p v-if="failure" role="alert">{{ failure.message }}</p>
+  <div v-else-if="loading || !loaded" class="sdk-projection-loading"></div>
+  <component :is="loaded.component" v-else v-bind="{ ...loaded.projection.display, ...inputs }"></component>
+</template>

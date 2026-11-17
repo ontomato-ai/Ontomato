@@ -25,7 +25,6 @@ import {
 } from "@ontomato/ontology-manager/clients";
 import edition from "apps-sdk:edition";
 import type {ProductSubscriptionTarget,ProductSubscriptionEvent} from '@ontomato/contracts/product-subscriptions';
-import type {PageContext} from '@ontomato/contracts/page-context';
 import type {ProductNavigationTarget} from '@ontomato/contracts/product-page-state';
 import {connectAppBridge} from './bridge';
 
@@ -92,22 +91,11 @@ export function contextTransport(context: AppContext) {
 
 const isText = (value: unknown) => typeof value === "string" && value.trim() !== "";
 
-/**
- * What an app frame reports, as the platform's one page context: a sign of the app's own page and the object selected
- * on it. The page's address is the frame's own; its registration key belongs to the application that opened the frame,
- * so the frame does not name it.
- */
-function appPageContext({ page, selection }: AppPageContext): PageContext {
+/** The page context as the app wrote it, checked here: the page is plain script, the platform reads typed values. */
+function checkPageContext({ page, selection }: AppPageContext) {
   if (!isText(page)) throw new TypeError("setPageContext: page must be the page's name, a non-empty string");
   if (selection !== null && !(isText(selection?.className) && isText(selection.primaryKey) && isText(selection.name)))
     throw new TypeError("setPageContext: selection must be null or { className, primaryKey, name }, each a non-empty string");
-  return {
-    url: window.location.href,
-    label: page,
-    selection: selection
-      ? [{ kind: selection.className, id: selection.primaryKey, label: selection.name }]
-      : [],
-  };
 }
 
 /**
@@ -213,7 +201,8 @@ export function createAppContext(): AppContext {
     }) as AppContext['navigate'],
     // The page's own window tells the shell which of its app frames speaks.
     setPageContext(value) {
-      host.setPageContext(window, appPageContext(value));
+      checkPageContext(value);
+      host.setPageContext(window, value);
     },
     install(app) {
       app.use(i18n);

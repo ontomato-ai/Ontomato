@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { effectScope, nextTick, shallowRef } from "vue";
-import type { AppHost } from "@ontomato/contracts/app-host";
-import type { PageContext } from "@ontomato/contracts/page-context";
+import type { AppHost, AppPageContext } from "@ontomato/contracts/app-host";
 import { workbenchI18n } from "../../../i18n";
 import { selectedObject, usePreviewContext } from "../preview-context";
 
@@ -19,7 +18,7 @@ function appHost() {
       listeners.add(listener);
       return () => void listeners.delete(listener);
     },
-    setPageContext(source: object, context: PageContext) {
+    setPageContext(source: object, context: AppPageContext) {
       for (const listener of listeners) listener(source, context);
     },
     listening: () => listeners.size,
@@ -28,11 +27,6 @@ function appHost() {
 
 const ORDER = { className: "Order", primaryKey: "DEMO-0001", name: "DEMO-0001" };
 const frameWindow = () => ({}) as Window;
-const report = (label: string, selection: (typeof ORDER) | null): PageContext => ({
-  url: `https://platform.invalid/apps/builder/index.html`,
-  label,
-  selection: selection ? [{ kind: selection.className, id: selection.primaryKey, label: selection.name }] : [],
-});
 
 function openBuilder() {
   const host = appHost();
@@ -47,32 +41,32 @@ describe("the preview's page context", () => {
   it("is what the app in the frame shown now reported, and nothing another frame says", () => {
     const { host, frame, context } = openBuilder();
 
-    host.setPageContext(frameWindow(), report("Elsewhere", ORDER));
+    host.setPageContext(frameWindow(), { page: "Elsewhere", selection: ORDER });
     expect(context.value).toBeNull();
 
-    host.setPageContext(frame.value!, report("Overdue orders", ORDER));
-    expect(context.value).toEqual(report("Overdue orders", ORDER));
+    host.setPageContext(frame.value!, { page: "Overdue orders", selection: ORDER });
+    expect(context.value).toEqual({ page: "Overdue orders", selection: ORDER });
 
-    host.setPageContext(frame.value!, report("Overdue orders", null));
-    expect(context.value).toEqual(report("Overdue orders", null));
+    host.setPageContext(frame.value!, { page: "Overdue orders", selection: null });
+    expect(context.value).toEqual({ page: "Overdue orders", selection: null });
   });
 
   it("starts empty in a reloaded frame, and the frame that was replaced is no longer heard", async () => {
     const { host, frame, context } = openBuilder();
     const replaced = frame.value!;
-    host.setPageContext(replaced, report("Overdue orders", ORDER));
+    host.setPageContext(replaced, { page: "Overdue orders", selection: ORDER });
 
     frame.value = frameWindow();
     await nextTick();
     expect(context.value).toBeNull();
 
-    host.setPageContext(replaced, report("Overdue orders", ORDER));
+    host.setPageContext(replaced, { page: "Overdue orders", selection: ORDER });
     expect(context.value).toBeNull();
   });
 
   it("drops the selected object when the reader opens another workspace", async () => {
     const { host, frame, workspace, context } = openBuilder();
-    host.setPageContext(frame.value!, report("Overdue orders", ORDER));
+    host.setPageContext(frame.value!, { page: "Overdue orders", selection: ORDER });
 
     workspace.value = "w2";
     await nextTick();
@@ -92,11 +86,11 @@ describe("the preview's page context", () => {
     const name = (key: string, named: Record<string, string>) => t(key, named);
 
     // The name is the key: the object is named once, by its class and that key.
-    const named = selectedObject({ kind: "Order", id: "DEMO-0001", label: "DEMO-0001" }, name);
+    const named = selectedObject(ORDER, name);
     expect(named).toContain("Order");
     expect(named).toContain("DEMO-0001");
     // Name and key differ: the reader learns both, so the agent knows which object it is.
-    const keyed = selectedObject({ kind: "celestial_body", id: "body_earth", label: "Earth" }, name);
+    const keyed = selectedObject({ className: "celestial_body", primaryKey: "body_earth", name: "Earth" }, name);
     expect(keyed).toContain("celestial_body");
     expect(keyed).toContain("Earth");
     expect(keyed).toContain("body_earth");

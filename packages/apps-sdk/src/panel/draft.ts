@@ -1,34 +1,39 @@
 import type { PageDraft } from "@ontomato/contracts/page-draft";
-import { changedFields, readPageDraft, type PageDraftLink } from "@ontomato/agent-shell-ui";
+import { changedFields, pageDraftLink, readPageDraft, withoutPageDraftQuery, type PageDraftLink } from "@ontomato/agent-shell-ui";
 
 /*
  * A draft a panel receives (overall design 3.4, "receive drafts"): the envelope stays `@ontomato/contracts/page-draft`'s
  * — pageKey, operation, target and form — and the three query parameters an address carries are the ones a native page
- * already uses. What the SDK adds is the dispatch: it finds the slot whose form adapter performs the draft's operation,
- * asks that adapter's owner for the object as it is now, and compares. The owner keeps its own read and save; no panel
- * writes a draft bridge, and no second draft protocol exists.
+ * already uses. The SDK reads the draft a panel's address names and hands it to the form component whose projection
+ * performs its operation, which the component registered itself; the owner keeps its own read, save and discard, and no
+ * panel writes a draft bridge.
  */
+export { changedFields, pageDraftLink, withoutPageDraftQuery, type PageDraftLink };
 
-/** Where a link's draft is read from: the agent host's own page-draft route. */
+/** Where a link's draft is read from: the agent host's own page-draft route, as the reader. */
 export interface PanelDraftSource {
   readPageDraft(sessionId: string, runId: string, path: string): Promise<PageDraft<Record<string, unknown>>>;
 }
 
 /**
- * One form slot's adapter. `read` is the owner's own read of the object the draft addresses, or of a new object's
- * defaults; `save` is the owner's own write, which the panel's save operation reaches too, so a person's save and an
- * agent's save are one implementation.
+ * One form projection's adapter. `read` is the owner's own read of the object the draft addresses, or of a new object's
+ * defaults; `save` is the owner's own write, which the projection's save operation reaches too, so a person's save and
+ * an agent's save are one implementation.
  */
 export interface PanelFormAdapter<Form extends object, Target extends { id?: string }> {
-  /** The form action the slot performs, such as `schedules.update`; the draft names it. */
+  /** The form action the projection performs, such as `schedules.update`; the draft names it. */
   operation: string;
   /** Reads the addressed object as its owner holds it now: the baseline the draft is compared with. */
   read(target: Target): Promise<Form>;
   /** Writes the filled form through the owner's own interface. */
   save(form: Form, target: Target): Promise<unknown>;
+  /** Whether this form holds unsaved changes of the reader's, as the host must be told. */
+  dirty?(): boolean;
+  /** Drops the reader's changes and shows the object as its owner holds it. */
+  discard?(): void;
 }
 
-/** A draft handed to the slot whose operation it names, with the fields it changed. */
+/** A draft handed to the form projection whose operation it names, with the fields it changed. */
 export interface ReceivedPanelDraft<Form extends object> {
   slot: string;
   operation: string;
@@ -39,63 +44,59 @@ export interface ReceivedPanelDraft<Form extends object> {
   changed: ReadonlySet<string>;
 }
 
-/** The form adapters one panel instance registered, by operation. */
+/** The form adapters one panel instance's projections registered, by slot. */
 export class PanelFormAdapters {
-  readonly #byOperation = new Map<string, PanelFormAdapter<object, { id?: string }>>();
-  readonly #slots = new Map<string, string>();
+  readonly #bySlot = new Map<string, PanelFormAdapter<object, { id?: string }>>();
 
-  register<Form extends object>(slot: string, adapter: PanelFormAdapter<Form, { id?: string }>): void {
-    if (this.#byOperation.has(adapter.operation)) throw new Error(`A form slot already performs '${adapter.operation}'`);
-    this.#byOperation.set(adapter.operation, {
-      operation: adapter.operation,
-      read: (target) => adapter.read(target),
-      save: (form: object, target) => adapter.save(form as Form, target),
-    });
-    this.#slots.set(adapter.operation, slot);
+  register<Form extends object>(slot: string, adapter: PanelFormAdapter<Form, { id?: string }>): () => void {
+    if (!slot) throw new Error("A form projection registers under the slot whose declaration names it");
+    if (this.#bySlot.has(slot)) throw new Error(`Slot '${slot}' already holds a form`);
+    this.#bySlot.set(slot, adapter as unknown as PanelFormAdapter<object, { id?: string }>);
+    return () => this.#bySlot.delete(slot);
   }
 
-  /** The operations the panel's form slots perform: what a draft of this panel may name. */
+  /** The operations the panel's form projections perform: what a draft of this panel may name. */
   operations(): string[] {
-    return [...this.#byOperation.keys()];
+    return [...this.#bySlot.values()].map((adapter) => adapter.operation);
+  }
+
+  /** The slot whose projection performs an operation. */
+  slotOf(operation: string): string | undefined {
+    return [...this.#bySlot].find(([, adapter]) => adapter.operation === operation)?.[0];
   }
 
   adapter(operation: string): PanelFormAdapter<object, { id?: string }> {
-    const found = this.#byOperation.get(operation);
-    if (!found) throw new Error(`No form slot performs '${operation}'`);
-    return found;
+    const found = this.slotOf(operation);
+    if (!found) throw new Error(`No form projection performs '${operation}'`);
+    return this.#bySlot.get(found)!;
   }
 
-  slot(operation: string): string {
-    const found = this.#slots.get(operation);
-    if (!found) throw new Error(`No form slot performs '${operation}'`);
-    return found;
+  /** Whether any registered form holds unsaved changes of the reader's. */
+  dirty(): boolean {
+    return [...this.#bySlot.values()].some((adapter) => adapter.dirty?.() === true);
   }
 }
 
 /**
- * Reads the draft a link names and dispatches it to the form adapter that performs its operation, if the draft is this
- * panel's. An unsaved form is never replaced without the reader's word: `confirm` answers that, and the panel passes
- * the confirmation it already has for leaving with unsaved changes.
+ * Reads the draft a panel's address names and dispatches it to the form projection that performs its operation, if the
+ * draft is this panel's. An unsaved form is never replaced without the reader's word: `dirty` answers that, and the
+ * panel's own confirmation is asked before the draft replaces it.
  */
 export async function receivePanelDraft<Form extends object>(
   pageKey: string,
   adapters: PanelFormAdapters,
   source: PanelDraftSource,
   link: PageDraftLink,
-  confirm: () => Promise<boolean>,
 ): Promise<ReceivedPanelDraft<Form> | null> {
   const draft = await readPageDraft<Form, string>(source, link, { pageKey, operations: adapters.operations() });
   const owner = adapters.adapter(draft.operation);
-  if (!(await confirm())) return null;
   const base = await owner.read(draft.target);
   const form = draft.form;
   return {
-    slot: adapters.slot(draft.operation),
+    slot: adapters.slotOf(draft.operation)!,
     operation: draft.operation,
     target: draft.target,
     form,
     changed: changedFields(base, form),
   };
 }
-
-export type {PageDraftLink};
