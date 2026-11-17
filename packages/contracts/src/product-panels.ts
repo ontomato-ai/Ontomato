@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
 import { ontologyParameterTypeSchema, panelManifestSchema } from "./panel-manifest";
+import { applicationMetadataSchema } from "./application-metadata";
 
 const id = z.string().min(1).max(200);
 const path = z.string().regex(/^\/(?!\/)/);
@@ -19,6 +20,7 @@ export type OntologyElementRef = z.infer<typeof ontologyElementRefSchema>;
 const editableDefinitionFields = {
   name: z.string().trim().min(1).max(200),
   description: z.string().max(2000),
+  /** Initial sharing on creation; subsequent Grant changes use the existing governance API. */
   visibility: z.enum(["private", "domain"]),
 };
 
@@ -122,11 +124,14 @@ export const applicationPanelUsesParamsSchema = z.object({ applicationId: id }).
 export const registerApplicationPanelUsesRequestSchema = z.object({
   entry: panelApplicationEntrySchema,
   panelUses: z.array(applicationPanelUseSchema),
+  /** Required when creating an application; omitted updates retain existing metadata and entry access. */
+  declaration: applicationMetadataSchema.optional(),
+  entryAccess: z.array(id).min(1).optional(),
 }).strict();
 export type RegisterApplicationPanelUsesRequest = z.infer<typeof registerApplicationPanelUsesRequestSchema>;
 
 /** Current Java-owned entry and use relations; Java owns their access checks. */
-export const applicationPanelUsesResponseSchema = registerApplicationPanelUsesRequestSchema.extend({
+export const applicationPanelUsesResponseSchema = registerApplicationPanelUsesRequestSchema.omit({ declaration: true, entryAccess: true }).extend({
   applicationId: id,
 }).strict();
 export type ApplicationPanelUsesResponse = z.infer<typeof applicationPanelUsesResponseSchema>;

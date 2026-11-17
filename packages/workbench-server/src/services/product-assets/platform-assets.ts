@@ -65,6 +65,7 @@ export async function synchronizePlatformAssets(owner:ProductOwner,credentials:A
    await insert(id,assistantName(agent,credentials.locale),assistantDescription(agent,credentials.locale),{kind:'agent-profile',principalId:agent.id,instructions:effectiveSystemPrompt(agent,credentials.locale),tools:[],contextViews:[]});
   }
   for(const app of catalog.data){
+   if(app.entry.renderer==='panels')continue;
    const already=await client.query(`SELECT 1 FROM ${t('product_assets')} WHERE domain_id=$1 AND (id=$2 OR document->>'applicationId'=$2) LIMIT 1`,[owner.domainId,app.id]);if(already.rows.length)continue;
    const suffix=createHash('sha256').update(app.id).digest('hex').slice(0,24),pageId='platform-page-'+suffix,id='platform-application-'+suffix;
    const name=app.names?.[credentials.locale??'']??app.names?.['zh-CN']??app.names?.en??app.id;

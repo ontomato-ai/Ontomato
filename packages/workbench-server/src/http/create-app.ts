@@ -39,6 +39,7 @@ import opsAgentMcpRouter from "../api/routes/ops-agent-mcp";
 import preferencesRouter from "../api/routes/preferences";
 import personalWorkspaceRouter from "../api/routes/personal-workspace";
 import productAssetsRouter from "../api/routes/product-assets";
+import { productPanelsRouter, productProjectionsRouter, productPanelsInternalRouter } from "../api/routes/product-panels";
 import {installPlatformObjectProviders} from '../services/product-assets/platform-object-builtins';
 import platformHomeRouter from "../api/routes/platform-home";
 import queryHistoryRouter from "../api/routes/query-history";
@@ -185,6 +186,7 @@ export function createWorkbenchApp(): Express {
   app.use(unwrapCallbackCredential);
   app.use(["/api/observe/logs", "/api/observe/runtime-logs"], serviceLogAuthResponse);
   app.use("/internal/assistant", assistantInternalRouter);
+  app.use("/internal/product-panels", productPanelsInternalRouter);
   app.use("/internal/agent-channel", agentChannelRouter);
   app.post("/internal/schedule-applications/:appId/runs/status", scheduleExecutionStatus);
   app.use("/api", identity.authenticate);
@@ -214,6 +216,8 @@ export function createWorkbenchApp(): Express {
   app.use("/api/preferences", preferencesRouter);
   app.use("/api/personal-workspace", personalWorkspaceRouter);
   app.use("/api/product-assets", productAssetsRouter);
+  app.use("/api/product-panels", productPanelsRouter);
+  app.use("/api/product-projections", productProjectionsRouter);
   app.use("/api/memories", memoriesRouter);
 
   app.use("/api/skills", skillsRouter);

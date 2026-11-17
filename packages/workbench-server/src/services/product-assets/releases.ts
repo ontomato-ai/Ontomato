@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
 import {productAssetSchema,productReferences,type ProductAsset} from '@ontomato/contracts/product-assets';
+import {assertLegacyProductWrite} from './panel-boundary';
 import {getProduct,lockProducts,type ProductOwner} from './store';
 import {validateProduct,validatePageBindings} from './validation';
 import {transaction} from '../../infrastructure/postgres-transaction';
@@ -58,6 +59,10 @@ export function productReleaseDiff(previous:Snapshot,next:Snapshot):z.infer<type
 }
 /** Retry the directory side effect from a frozen publication, never a later draft. */
 export async function synchronizeBundlePublication(owner:ProductOwner,id:string,credentials:AssistantCredentials){
+  await assertLegacyProductWrite(owner,credentials,{id});
+  return synchronizeAuthorizedBundlePublication(owner,id,credentials);
+}
+async function synchronizeAuthorizedBundlePublication(owner:ProductOwner,id:string,credentials:AssistantCredentials){
   await transaction(async client=>{
     await lockProducts(client,owner);
     const pending=await client.query(`SELECT release_id FROM ${t('product_publication_outbox')} WHERE domain_id=$1 AND bundle_id=$2`,[owner.domainId,id]);
@@ -118,6 +123,7 @@ export async function captureProductTree(roots:string[],read:(id:string)=>Promis
   return [...captured.values()];
 }
 export async function captureProductRelease(owner:ProductOwner,roots:string[],credentials:AssistantCredentials,triggerIds:string[]=[]):Promise<Snapshot>{
+  for(const id of roots)await assertLegacyProductWrite(owner,credentials,{id});
   return withProductGrants(owner,()=>captureAuthorizedRelease(owner,roots,credentials,triggerIds));
 }
 async function captureAuthorizedRelease(owner:ProductOwner,roots:string[],credentials:AssistantCredentials,triggerIds:string[]):Promise<Snapshot>{
@@ -207,6 +213,7 @@ async function authorizedReleaseIssues(owner:ProductOwner,snapshot:Snapshot,cred
 }
 
 export async function publishProductBundle(owner:ProductOwner,id:string,revision:number,credentials:AssistantCredentials){
+  await assertLegacyProductWrite(owner,credentials,{id});
   const bundle=await getProduct(owner,id);
   if(!bundle.editable)throw new HttpError(403,'Bundle edit permission required','PRODUCT_FORBIDDEN');
   if(bundle.revision!==revision)throw new HttpError(409,'Bundle changed; reload before publishing','PRODUCT_CONFLICT');
@@ -215,7 +222,7 @@ export async function publishProductBundle(owner:ProductOwner,id:string,revision
   if(bundle.document.kind==='application'&&!bundle.document.navigationId)throw new HttpError(400,'Declarative Applications require a Navigation root','INVALID_NAVIGATION');
   if(bundle.document.kind==='application'&&bundle.document.applicationId!==id)throw new HttpError(400,'Application bundle and governance identity must use the same ID','INVALID_PRODUCT_TARGET');
   if(bundle.document.kind==='application'&&!/^app-[a-z0-9-]{1,59}$/.test(id))throw new HttpError(400,'Application identities require an app- prefix and lowercase letters, numbers or hyphens','INVALID_PRODUCT_TARGET');
-  const snapshot=await captureProductRelease(owner,[id],credentials);
+  const snapshot=await withProductGrants(owner,()=>captureAuthorizedRelease(owner,[id],credentials,[]));
   if(snapshotAsset(snapshot,id).revision!==revision)throw new HttpError(409,'Bundle changed during capture','PRODUCT_CONFLICT');
   const releaseId=randomUUID();
   await transaction(async client=>{
@@ -228,7 +235,7 @@ export async function publishProductBundle(owner:ProductOwner,id:string,revision
     await client.query(`INSERT INTO ${t('product_bundle_heads')} (domain_id,bundle_id,release_id) VALUES($1,$2,$3) ON CONFLICT(domain_id,bundle_id) DO UPDATE SET release_id=EXCLUDED.release_id`,[owner.domainId,id,releaseId]);
     if(bundle.document.kind==='application')await client.query(`INSERT INTO ${t('product_publication_outbox')} (domain_id,bundle_id,release_id) VALUES($1,$2,$3) ON CONFLICT(domain_id,bundle_id) DO UPDATE SET release_id=EXCLUDED.release_id`,[owner.domainId,id,releaseId]);
   });
-  if(bundle.document.kind==='application')await synchronizeBundlePublication(owner,id,credentials);
+  if(bundle.document.kind==='application')await synchronizeAuthorizedBundlePublication(owner,id,credentials);
   return {releaseId};
 }
 export async function activeProductBundle(owner:ProductOwner,id:string,credentials:AssistantCredentials){
@@ -247,6 +254,7 @@ export async function readActiveProductBundle(owner:ProductOwner,id:string){
   return {releaseId:head.rows[0].release_id,snapshot};
 }
 export async function rollbackProductBundle(owner:ProductOwner,id:string,releaseId:string,credentials:AssistantCredentials){
+  await assertLegacyProductWrite(owner,credentials,{id});
   const bundle=await getProduct(owner,id);
   if(!bundle.editable)throw new HttpError(403,'Bundle edit permission required','PRODUCT_FORBIDDEN');
   if(!['agent-profile','application'].includes(bundle.document.kind)||bundle.document.kind==='application'&&bundle.document.workspaceId)throw new HttpError(400,'Expected a declarative Application or AgentProfile','INVALID_PRODUCT_TYPE');
@@ -259,7 +267,7 @@ export async function rollbackProductBundle(owner:ProductOwner,id:string,release
     await client.query(`INSERT INTO ${t('product_bundle_heads')} (domain_id,bundle_id,release_id) VALUES($1,$2,$3) ON CONFLICT(domain_id,bundle_id) DO UPDATE SET release_id=EXCLUDED.release_id`,[owner.domainId,id,releaseId]);
     if(bundle.document.kind==='application')await client.query(`INSERT INTO ${t('product_publication_outbox')} (domain_id,bundle_id,release_id) VALUES($1,$2,$3) ON CONFLICT(domain_id,bundle_id) DO UPDATE SET release_id=EXCLUDED.release_id`,[owner.domainId,id,releaseId]);
   });
-  if(bundle.document.kind==='application')await synchronizeBundlePublication(owner,id,credentials);
+  if(bundle.document.kind==='application')await synchronizeAuthorizedBundlePublication(owner,id,credentials);
   return {releaseId};
 }
 export async function listProductBundleReleases(owner:ProductOwner,id:string){

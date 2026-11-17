@@ -1,0 +1,101 @@
+import { beforeEach, expect, it, vi } from "vitest";
+import { registerProductPanelRequestSchema, registerProductProjectionRequestSchema } from "@ontomato/contracts/product-panels";
+import { HttpError } from "../../../utils/errors";
+const mocks = vi.hoisted(() => ({ query: vi.fn(), grant: vi.fn(), register: vi.fn(), share: vi.fn(), notify: vi.fn(), edits: [] as string[] }));
+vi.mock("../../../infrastructure/postgres", () => ({ getPostgresPool: () => ({ query: mocks.query }), qualifiedTable: (name: string) => name }));
+vi.mock("../../../infrastructure/postgres-transaction", () => ({ transaction: (action: (client: { query: typeof mocks.query }) => unknown) => action({ query: mocks.query }) }));
+vi.mock("../../product-assets/grants", () => ({ requireProductGrant: mocks.grant, registerProductResource: mocks.register,
+  shareProductResource: mocks.share, grantedProductIds: async () => mocks.edits }));
+vi.mock("../../product-assets/subscriptions", () => ({ notifyProductDefinitionChanged: mocks.notify }));
+import { readCurrentPanel, readCurrentProjection, requireCurrentPanels, saveCurrentPanel, saveCurrentProjection } from "../current";
+import type { CurrentProductRow } from "../../../infrastructure/product-current";
+
+const owner = { domainId: "domain", userId: "author" }, credentials = { token: "caller" };
+let rows: Map<string, CurrentProductRow>;
+const projection = () => registerProductProjectionRequestSchema.parse({ name: "Task summary", description: "", visibility: "domain", revision: 0,
+  componentId: "TaskSummary", binding: { kind: "PlatformObjectType", id: "platform:ScheduledTask" },
+  inputs: { task: { kind: "object", objectType: "platform:ScheduledTask" } }, display: { fields: ["name"] } });
+const panel = () => registerProductPanelRequestSchema.parse({ name: "Tasks", description: "", visibility: "domain", revision: 0,
+  content: { html: "<main></main>", module: "throw new Error('Node must never execute this module')", recipes: "Choose a test task." },
+  manifest: { state: { selectedTask: { kind: "object", objectType: "platform:ScheduledTask" } },
+    slots: { summary: { projectionId: "x", inputs: { task: { state: "selectedTask" } } } }, operations: [] } });
+async function seedProjection() {
+  const { revision, ...input } = projection();
+  return saveCurrentProjection(owner, credentials, "x", input, revision);
+}
+
+beforeEach(() => {
+  vi.resetAllMocks(); mocks.edits = []; rows = new Map();
+  mocks.register.mockImplementation(async (_owner, id: string) => { mocks.edits.push(id); });
+  mocks.query.mockImplementation(async (sql: string, args: unknown[] = []) => {
+    const kind = sql.includes("product_panels") ? "panel" : "projection";
+    const key = `${kind}:${args[1]}`;
+    if (sql.startsWith("SELECT id,domain_id")) return { rows: rows.has(key) ? [rows.get(key)] : [] };
+    if (sql.startsWith("SELECT id FROM") && sql.includes("ANY")) return { rows: (args[1] as string[]).filter(id => rows.has(`panel:${id}`)).map(id => ({ id })) };
+    if (sql.startsWith("SELECT id FROM")) return { rows: [] };
+    if (sql.startsWith("INSERT INTO product_") && !rows.has(key)) {
+      const row = { id: String(args[1]), domainId: String(args[0]), ownerId: String(args[2]), definition: JSON.parse(String(args[3])),
+        revision: 1, createdAt: new Date(), updatedAt: new Date() };
+      rows.set(key, row); return { rows: [row] };
+    }
+    if (sql.startsWith("UPDATE product_")) {
+      const row = rows.get(key);
+      if (!row || row.revision !== args[3]) return { rows: [] };
+      const updated = { ...row, definition: JSON.parse(String(args[2])), revision: row.revision + 1, updatedAt: new Date() };
+      rows.set(key, updated); return { rows: [updated] };
+    }
+    return { rows: [] };
+  });
+});
+
+it("registers source text without executing it, uses current definitions and never writes legacy asset history", async () => {
+  await seedProjection();
+  const { revision, ...input } = panel();
+  const saved = await saveCurrentPanel(owner, credentials, "p", input, revision);
+  expect(saved.content).toEqual(input.content);
+  const { revision: _initial, ...updated } = projection();
+  await saveCurrentProjection(owner, credentials, "x", { ...updated, display: { fields: ["name", "status"] } }, 1);
+  expect((await readCurrentProjection(owner, credentials, "x")).display).toEqual({ fields: ["name", "status"] });
+  expect((await readCurrentPanel(owner, credentials, "p")).manifest.slots.summary.projectionId).toBe("x");
+  expect(mocks.notify).toHaveBeenCalledWith({ kind: "definition-changed", domainId: "domain", target: { kind: "projection", id: "x" } });
+  expect(mocks.query.mock.calls.some(([sql]) => /(?:INSERT INTO|UPDATE) (?:product_assets|product_asset_revisions|product_releases|product_bundle_heads)/.test(sql))).toBe(false);
+});
+
+it("requires current use/edit grants, preserves the owner for delegated edits and compares the current revision", async () => {
+  await seedProjection();
+  const { revision, ...input } = panel(); await saveCurrentPanel(owner, credentials, "p", input, revision);
+  const editor = { ...owner, userId: "editor" };
+  expect((await saveCurrentPanel(editor, credentials, "p", { ...input, visibility: "private", content: { html: "updated", module: "export {}" } }, 1)).ownerId).toBe("author");
+  expect(mocks.share).not.toHaveBeenCalled();
+  await expect(saveCurrentPanel(editor, credentials, "p", input, 1)).rejects.toMatchObject({ code: "PRODUCT_CONFLICT" });
+  expect((await readCurrentPanel(editor, credentials, "p")).content.html).toBe("updated");
+  mocks.grant.mockImplementation(async (_id: string, verb: string) => { if (verb === "edit") throw new HttpError(403, "Denied", "PRODUCT_FORBIDDEN"); });
+  await expect(saveCurrentPanel(editor, credentials, "p", input, 2)).rejects.toMatchObject({ code: "PRODUCT_FORBIDDEN" });
+  mocks.grant.mockRejectedValue(new HttpError(403, "Denied", "PRODUCT_FORBIDDEN"));
+  await expect(readCurrentPanel(editor, credentials, "p")).rejects.toMatchObject({ code: "PRODUCT_FORBIDDEN" });
+});
+
+it("rejects missing projection IDs, unknown slot inputs and mismatched ontology types before creating a panel", async () => {
+  await seedProjection();
+  const { revision, ...input } = panel();
+  for (const [slots, state, code] of [
+    [{ summary: { projectionId: "missing", inputs: {} } }, input.manifest.state, "PRODUCT_UNAVAILABLE"],
+    [{ summary: { projectionId: "x", inputs: { unknown: { state: "selectedTask" } } } }, input.manifest.state, "PANEL_INPUT_UNKNOWN"],
+    [input.manifest.slots, { selectedTask: { kind: "scalar", type: "string", deepLink: false } }, "PANEL_INPUT_TYPE_MISMATCH"],
+  ] as const) {
+    const request = registerProductPanelRequestSchema.parse({ ...input, revision, manifest: { ...input.manifest, slots, state } });
+    await expect(saveCurrentPanel(owner, credentials, "invalid", request, revision)).rejects.toMatchObject({ code });
+    expect(rows.has("panel:invalid")).toBe(false);
+  }
+});
+
+it("does not accept a legacy asset ID as a current panel reference", async () => {
+  await expect(requireCurrentPanels(owner.domainId, ["legacy-page"])).rejects.toMatchObject({ code: "INVALID_PANEL_REFERENCE" });
+  await seedProjection(); const { revision, ...input } = panel(); await saveCurrentPanel(owner, credentials, "p", input, revision);
+  await expect(requireCurrentPanels(owner.domainId, ["p"])).resolves.toBeUndefined();
+});
+
+it("limits source text by UTF-8 bytes at the registration boundary", () => {
+  const request = panel();
+  expect(registerProductPanelRequestSchema.safeParse({ ...request, content: { ...request.content, module: "é".repeat(150_000) } }).success).toBe(false);
+});

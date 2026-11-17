@@ -8,6 +8,7 @@ import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres
 import {productAssetSchema,type ProductAsset} from '@ontomato/contracts/product-assets';
 import {HttpError} from '../../utils/errors';
 import {transaction} from '../../infrastructure/postgres-transaction';
+import {assertLegacyProductWrite} from './panel-boundary';
 
 /** The old object editor is a client of product authoring; legacy class storage is read only during import. */
 export async function objectViewAuthoring(owner:ProductOwner,credentials:AssistantCredentials,className:string,operation:'read'|'edit'|'save'|'publish',values:Record<string,unknown>={}):Promise<ObjectViewState>{
@@ -16,6 +17,7 @@ export async function objectViewAuthoring(owner:ProductOwner,credentials:Assista
   if(defaults.length>1)throw new HttpError(409,'Choose the ObjectView asset explicitly; multiple defaults are visible','OBJECT_VIEW_AMBIGUOUS');
   let asset=defaults[0];
   const id=asset?.id??`object-view-${createHash('sha256').update(className).digest('hex').slice(0,40)}`;
+  if(operation!=='read')await assertLegacyProductWrite(owner,credentials,{id});
   if(!asset&&operation!=='read'){
     try{const existing=await getProduct(owner,id);if(existing.document.kind!=='object-projection'||existing.document.renders.id!==className)throw new HttpError(409,'Default ObjectView identity is occupied','PRODUCT_CONFLICT');asset=existing;}
     catch(error){if(!(error instanceof HttpError)||error.status!==404)throw error;}

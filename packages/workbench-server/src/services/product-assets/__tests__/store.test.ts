@@ -1,6 +1,9 @@
 import {beforeEach,describe,expect,it,vi} from 'vitest';
 import {productAssetInputSchema,productQuerySchema} from '@ontomato/contracts/product-assets';
-const mocks=vi.hoisted(()=>({query:vi.fn(),validate:vi.fn()}));
+const mocks=vi.hoisted(()=>({query:vi.fn(),validate:vi.fn(),get:vi.fn()}));
+vi.mock('../../../utils/backend-client',async importOriginal=>({...await importOriginal<typeof import('../../../utils/backend-client')>(),backendGet:mocks.get,buildBackendHeaders:(token:string)=>({tk:token})}));
+vi.mock('../../../core/skills/registry/manager',()=>({skillRegistryManager:{forDomain:vi.fn()}}));
+vi.mock('../../../identity/installed',()=>({requirePermission:()=> (_req:unknown,_res:unknown,next:()=>void)=>next(),workbenchIdentity:()=>({requireDomainId:(identity:{domainId:string})=>identity.domainId})}));
 const access=vi.hoisted(()=>({use:new Set<string>(),edit:new Set<string>()}));
 vi.mock('../grants',()=>({withProductGrants:async(_owner:unknown,action:()=>unknown)=>action(),currentProductGrants:()=>access,registerProductResource:async(_owner:unknown,id:string)=>{access.use.add(id);access.edit.add(id);},productGrantIdsForOwner:async(_owner:unknown,verb:string)=>[...access[verb==='edit'?'edit':'use']],shareProductResource:vi.fn(),refreshProductGrants:vi.fn()}));
 vi.mock('../../../infrastructure/postgres',()=>({qualifiedTable:(name:string)=>name,getPostgresPool:()=>({query:mocks.query})}));
@@ -10,8 +13,40 @@ vi.mock('../ontology',()=>({ontologyRegistration:()=>null,synchronizeProductOnto
 import {saveProduct,getApplicationProduct} from '../store';
 const owner={domainId:'one',userId:'alice'},credentials={token:'test-caller'};
 const input=()=>productAssetInputSchema.parse({name:'Text',document:{kind:'widget',widget:{id:'text',kind:'text',title:'Note',span:12,text:'Hello'}}});
-beforeEach(()=>{mocks.query.mockReset();mocks.validate.mockReset();access.use=new Set(['shared','home','hidden','chart']);access.edit=new Set(['home','chart']);});
+beforeEach(()=>{mocks.query.mockReset();mocks.validate.mockReset();mocks.get.mockResolvedValue({text:JSON.stringify({success:true,data:{entry:{renderer:'native'}}})});access.use=new Set(['shared','home','hidden','chart']);access.edit=new Set(['home','chart']);});
 describe('product mutation boundary',()=>{
+  it('rejects direct old HTTP writes and publication for a panels application before legacy side effects',async()=>{
+    mocks.query.mockImplementation(async(sql:string)=>({rows:sql==='SELECT id,document FROM product_assets WHERE domain_id=$1'?[{id:'old-root',document:{kind:'application',applicationId:'app-panel-a',children:[]}}]:[]}));
+    mocks.get.mockResolvedValue({text:JSON.stringify({success:true,data:{entry:{renderer:'panels'}}})});
+    const express=(await import('express')).default;
+    const {createServer}=await import('node:http');
+    const router=(await import('../../../api/routes/product-assets')).default;
+    const app=express().use(express.json()).use((req,_res,next)=>{Object.assign(req,{domainId:owner.domainId,userId:owner.userId,token:credentials.token});next();}).use('/api/product-assets',router);
+    const server=createServer(app);
+    await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
+    const base=`http://127.0.0.1:${(server.address() as import('node:net').AddressInfo).port}/api/product-assets/old-root`;
+    try{
+      for(const [method,url,body] of [
+        ['PUT',base,{name:'Old application',description:'',revision:0,document:{kind:'application',applicationId:'app-panel-a',children:[]}}],
+        ['POST',base+'/publish',{revision:1}],
+      ] as const){
+        const response=await fetch(url,{method,headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+        expect(response.status).toBe(409);
+        expect(await response.json()).toMatchObject({error:{code:'APPLICATION_MANAGED_BY_PANELS'}});
+      }
+      expect(mocks.query.mock.calls.some(([sql])=>/INSERT|UPDATE|DELETE/.test(sql))).toBe(false);
+      expect(mocks.validate).not.toHaveBeenCalled();
+    }finally{server.closeAllConnections();await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));}
+  });
+  it('rejects edits and imports through an old child shared with a taken-over application',async()=>{
+    mocks.query.mockImplementation(async(sql:string)=>({rows:sql==='SELECT id,document FROM product_assets WHERE domain_id=$1'?
+      [{id:'old-root',document:{kind:'application',applicationId:'app-panel-a',children:[{assetId:'child'}]}}]:[]}));
+    mocks.get.mockResolvedValue({text:JSON.stringify({success:true,data:{entry:{renderer:'panels'}}})});
+    await expect(saveProduct(owner,'child',input(),0,credentials)).rejects.toMatchObject({code:'APPLICATION_MANAGED_BY_PANELS'});
+    const {migrateDashboardPage}=await import('../dashboard-migration');
+    await expect(migrateDashboardPage(owner,credentials,'child',1)).rejects.toMatchObject({code:'APPLICATION_MANAGED_BY_PANELS'});
+    expect(mocks.query.mock.calls.some(([sql])=>/INSERT|UPDATE|DELETE/.test(sql))).toBe(false);
+  });
   it('resolves imported application identities using only use grants',async()=>{
     access.use.add('imported');access.edit.add('edit-only');
     mocks.query.mockImplementation(async(sql:string,args:unknown[])=>{

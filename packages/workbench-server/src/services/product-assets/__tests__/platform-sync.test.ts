@@ -25,7 +25,7 @@ it('coalesces concurrent authorized reconciliation and does not repeat completed
 });
 it('registers a native application without an empty placeholder page',async()=>{
  const documents:{id:string;document:{kind:string;children:unknown[]}}[]=[];
- mocks.get.mockResolvedValue({text:JSON.stringify({data:[{id:'home',names:{en:'Home'}}]})});
+ mocks.get.mockResolvedValue({text:JSON.stringify({data:[{id:'home',names:{en:'Home'},entry:{renderer:'native'}}]})});
  mocks.query.mockImplementation(async(sql:string,args:unknown[])=>{
   if(sql.startsWith('INSERT INTO product_assets(')){
    documents.push({id:String(args[1]),document:JSON.parse(String(args[5]))});
@@ -36,4 +36,10 @@ it('registers a native application without an empty placeholder page',async()=>{
  await synchronizePlatformAssets({domainId:'native-home',userId:'admin'},{},false);
  expect(documents.some(asset=>asset.document.kind==='page')).toBe(false);
  expect(documents.find(asset=>asset.document.kind==='application')?.document.children).toEqual([]);
+});
+it('skips panels applications before creating any legacy asset, binding, revision or registration',async()=>{
+ mocks.get.mockResolvedValue({text:JSON.stringify({data:[{id:'app-panel-a',entry:{renderer:'panels'}},{id:'app-panel-b',entry:{renderer:'panels'}}]})});
+ await synchronizePlatformAssets({domainId:'panels-only',userId:'admin'},{},false);
+ expect(mocks.query.mock.calls.some(([sql])=>/INSERT|UPDATE/.test(sql))).toBe(false);
+ expect(mocks.post).not.toHaveBeenCalled();
 });

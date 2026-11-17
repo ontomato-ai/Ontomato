@@ -21,6 +21,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { HttpError } from "../../utils/errors";
 import {registerSourceFunction} from './source-function';
 import {recommendApplicationIcon} from '@ontomato/contracts/application-icons';
+import {assertLegacyApplicationWrite} from '../product-assets/panel-boundary';
 
 /**
  * Installs the apps SDK versions this image carries (dist/apps-sdk/<version>) into the data volume that /apps-sdk
@@ -109,6 +110,8 @@ export async function requireHostedReleasePolicy(appId:string,releaseId:string,r
   if(policy?.hostTransport!==1||policy?.messageBridge!==2)throw new HttpError(409,'Migrate this historical source release to the message-bridge SDK and publish a new commit','PRODUCT_SDK_UPGRADE_REQUIRED');
 }
 export async function publishWorkspace(owner: AssistantOwner, workspaceId: string, commit: string, declaration: Record<string, unknown>, credentials: AssistantCredentials) {
+  const registered=await db().query(`SELECT app_id FROM ${t('hosted_apps')} WHERE domain_id=$1 AND owner_id=$2 AND workspace_id=$3`,[owner.domainId,owner.userId,workspaceId]);
+  if(registered.rows.length)await assertLegacyApplicationWrite(credentials,registered.rows[0].app_id);
   if(!declaration.icon){const names=declaration.names as Record<string,string>|undefined;const descriptions=declaration.descriptions as Record<string,string>|undefined;declaration={...declaration,icon:recommendApplicationIcon([...Object.values(names??{}),...Object.values(descriptions??{})].join(' '))};}
   const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
   await client.request(`/v1/workspaces/${workspaceId}`);
@@ -170,6 +173,7 @@ export async function workspaceReleases(owner: AssistantOwner, workspaceId: stri
 export async function rollbackWorkspace(owner: AssistantOwner, workspaceId: string, releaseId: string, declaration: Record<string, unknown>, credentials: AssistantCredentials) {
   const release = (await workspaceReleases(owner, workspaceId)).find(r => r.releaseId === releaseId);
   if (!release) throw new HttpError(404, "Release not found", "NOT_FOUND");
+  await assertLegacyApplicationWrite(credentials,release.appId);
   await requireHostedReleasePolicy(release.appId,releaseId);
   const snapshot=await readProductRelease(owner,releaseId);
   await productReleaseIssues(owner,snapshot,credentials);
