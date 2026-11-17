@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import type { ChartFailure, ChartMetricColumn, ChartRow } from "@ontomato/contracts/chart-data";
-import { fillChartFile } from "@ontomato/contracts/chart-data";
-import { chartBrandColors, chartFormats, chartGraphBehaviour, chartReadingLayout } from "@ontomato/contracts/chart-presentation";
+import { fillChartPresentation } from "@ontomato/contracts/chart-presentation";
 import EChart from "./EChart.vue";
 import { registerChartMaps } from "./maps";
 import { useChartTheme } from "./theme";
@@ -32,15 +31,17 @@ const theme = useChartTheme();
 const drawn = ref<{ width: number; height: number }>({ width: 0, height: 0 });
 const chartHeight = computed(() => props.height ?? (props.presentation === "panel" ? "min(68vh, 560px)" : 320));
 
-const filled = computed(() => fillChartFile<{ truncationHint: string }>(props.file, props.metric));
-
-const option = computed(() => {
-  if (!filled.value.ok) return null;
+const filled = computed(() => {
   const height = typeof chartHeight.value === "number" ? chartHeight.value : 320;
-  // Layout comes before the formats so that both work on data alone; the formats add the callbacks last.
-  const laid = chartReadingLayout(chartGraphBehaviour(chartBrandColors(filled.value.option, theme.value)), drawn.value.height || height, props.presentation, drawn.value.width);
-  return chartFormats(laid, filled.value.presentation, props.undated);
+  return fillChartPresentation<{ truncationHint: string }>(props.file, props.metric, theme.value, {
+    height: drawn.value.height || height,
+    presentation: props.presentation,
+    width: drawn.value.width,
+    undated: props.undated,
+  });
 });
+
+const option = computed(() => filled.value.ok ? filled.value.option : null);
 
 /** The platform's bundled boundaries, once the maps this chart draws have them; a resource it lacks says so. */
 const mapsReady = ref(true);

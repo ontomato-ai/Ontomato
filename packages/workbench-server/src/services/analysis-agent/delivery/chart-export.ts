@@ -1,6 +1,5 @@
 import type { ChartFailure } from "@ontomato/contracts/chart-data";
-import { fillChartFile } from "@ontomato/contracts/chart-data";
-import { chartBrandColors, chartFormats, chartGraphBehaviour, chartReadingLayout } from "@ontomato/contracts/chart-presentation";
+import { fillChartPresentation } from "@ontomato/contracts/chart-presentation";
 
 type Option = Record<string, any>;
 
@@ -37,13 +36,9 @@ export function exportChartOption(
   file: unknown,
   options: { theme: Record<string, unknown>; height: number; width?: number; presentation?: "inline" | "panel"; locale?: string },
 ): ExportChart {
-  const filled = fillChartFile(file, snapshot(file));
+  const filled = fillChartPresentation(file, snapshot(file), options.theme, {
+    height: options.height, presentation: options.presentation, width: options.width, locale: options.locale,
+  });
   if (!filled.ok) return { ok: false, reason: chartFailureReason(filled) };
-  const option = chartReadingLayout(
-    chartGraphBehaviour(chartBrandColors(filled.option, options.theme)),
-    options.height,
-    options.presentation ?? "panel",
-    options.width,
-  );
-  return { ok: true, option: chartFormats(option, filled.presentation, undefined, options.locale) };
+  return { ok: true, option: filled.option };
 }

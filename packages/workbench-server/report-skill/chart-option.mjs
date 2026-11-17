@@ -1,5 +1,4 @@
-import { fillChartFile } from "@ontomato/contracts/chart-data";
-import { chartBrandColors, chartFormats, chartGraphBehaviour, chartReadingLayout } from "@ontomato/contracts/chart-presentation";
+import { fillChartPresentation } from "@ontomato/contracts/chart-presentation";
 
 /** The reason a boundary check or filling gave, written onto the slide instead of a blank chart. */
 export function chartFailureReason(failure) {
@@ -19,8 +18,9 @@ export function chartMapNames(option) {
 /** The platform's chart rules for a report slide, filled from the chart file's own snapshot rows. */
 export function reportChartOption(file, theme, locale) {
   const dataset = file?.dataset?.[0];
-  const filled = fillChartFile(file, { columns: (dataset?.dimensions ?? []).map((key) => ({ key })), rows: dataset?.source ?? [] });
+  const filled = fillChartPresentation(file, { columns: (dataset?.dimensions ?? []).map((key) => ({ key })), rows: dataset?.source ?? [] }, theme, {
+    height: 560, presentation: "panel", width: 1440, locale,
+  });
   if (!filled.ok) return { ok: false, reason: chartFailureReason(filled) };
-  const option = chartReadingLayout(chartGraphBehaviour(chartBrandColors(filled.option, theme)), 560, "panel", 1440);
-  return { ok: true, option: chartFormats(option, filled.presentation, undefined, locale) };
+  return { ok: true, option: filled.option };
 }

@@ -1,5 +1,8 @@
 import type { ChartFormat } from "./chart-data/display";
 import type { ChartBinding } from "./chart-data/schema";
+import {
+  fillChartFile, type ChartFailure, type ChartMetricColumn, type ChartRow, type FilledChart,
+} from "./chart-data";
 
 type Option = Record<string, any>;
 
@@ -347,6 +350,35 @@ export function chartFormats(source: Option, presentation: { bindings: ChartBind
     option[key] = Array.isArray(option[key]) ? formatted : formatted[0];
   }
   return option;
+}
+
+export type ChartPresentationOptions = {
+  height: number;
+  presentation?: "inline" | "panel";
+  width?: number;
+  locale?: string;
+  undated?: string;
+};
+
+/**
+ * The one order every consumer draws a chart file with: fill from the metric output, then brand colours, graph
+ * behaviour, reading layout and fixed formats. A consumer supplies only its theme, canvas and reader language.
+ */
+export function fillChartPresentation<T = unknown>(
+  file: unknown,
+  metric: { columns: readonly ChartMetricColumn[]; rows: ChartRow[]; truncation?: T },
+  theme: Record<string, unknown>,
+  options: ChartPresentationOptions,
+): FilledChart<T> | ChartFailure {
+  const filled = fillChartFile<T>(file, metric);
+  if (!filled.ok) return filled;
+  const option = chartReadingLayout(
+    chartGraphBehaviour(chartBrandColors(filled.option, theme)),
+    options.height,
+    options.presentation ?? "panel",
+    options.width,
+  );
+  return { ...filled, option: chartFormats(option, filled.presentation, options.undated, options.locale) };
 }
 
 /** Runs inside an HTML artifact's sandbox; no access to the parent document or credentials. */

@@ -1,8 +1,7 @@
 import { echartDir } from "../../../content/layout";
-import { workbenchServerResourceRoot } from "../../../content/resources";
 import { readFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import path from "node:path";
+import * as echarts from "echarts";
 import { getBrowser } from "./browser";
 import { chartMapGeojson } from "@ontomato/contracts/chart-maps";
 import { themedChartHtml } from "@ontomato/contracts/chart-presentation";
@@ -14,14 +13,10 @@ import { chartMapNames } from "./chart-export";
 
 const CHART_VIEWPORT_WIDTH = 1000;
 const CHART_VIEWPORT_HEIGHT = 500;
-// The report presentation package carries the platform ECharts build it renders with; exports use the same build.
-const ECHARTS_RUNTIME = path.join(workbenchServerResourceRoot, "resources/runtime-skills/assistant-report/vendor/echarts.cjs");
-
-/** Draw the platform chart option to SVG with the same ECharts build the report presentation bundles. */
+/** Draw the platform chart option to SVG with the workbench server's own ECharts dependency. */
 export async function renderChartOptionToDataUrl(option: Record<string, any>, theme: Record<string, unknown>): Promise<string> {
-  const echarts = createRequire(import.meta.url)(ECHARTS_RUNTIME);
-  for (const resource of chartMapNames(option)) echarts.registerMap(resource, await chartMapGeojson(resource));
-  const chart = echarts.init(null, theme, { renderer: "svg", ssr: true, width: CHART_VIEWPORT_WIDTH, height: CHART_VIEWPORT_HEIGHT });
+  for (const resource of chartMapNames(option)) echarts.registerMap(resource, await chartMapGeojson(resource) as any);
+  const chart = echarts.init(null, theme, { renderer: "svg", ssr: true, width: CHART_VIEWPORT_WIDTH, height: CHART_VIEWPORT_HEIGHT } as any);
   chart.setOption({ ...option, animation: false });
   const svg = chart.renderToSVGString();
   chart.dispose();
