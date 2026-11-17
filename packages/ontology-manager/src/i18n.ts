@@ -428,7 +428,6 @@ const ontologyEn = {
   actionProcessStopped: "Stopped",
   actionProcessFailed: "Failed",
   actionQuestionsWaiting: "Pending questions: {n}",
-  actionQuestionDefault: "Default assumption",
   actionQuestionOptionDefault: "Default",
   actionQuestionOptionOther: "Other",
   actionQuestionOtherPlaceholder: "Type your own answer",

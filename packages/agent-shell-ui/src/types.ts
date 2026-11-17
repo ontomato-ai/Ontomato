@@ -215,10 +215,8 @@ export interface ShellLabels {
   elapsed: (time: string) => string;
   /** A finished response's folded process line; `time` is the run's duration, formatted as m:ss. */
   worked: (time: string) => string;
-  /** The folded panel over the composer: how many of the agents' questions wait for the reader. */
+  /** The head of the panel over the composer, its toggle: how many of the agents' questions wait for the reader. */
   questionsWaiting: (count: number) => string;
-  /** Names the assumption the agent goes on with until the reader answers. */
-  questionDefault: string;
   /** Marks the option that is the agent's default. */
   questionOptionDefault: string;
   /** The last option of every question, the reader's own answer, and its input's hint. */

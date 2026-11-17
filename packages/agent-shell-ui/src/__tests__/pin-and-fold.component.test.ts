@@ -46,7 +46,7 @@ const response = (key: string, running: boolean): ResponseItem => ({
 function provide(target: App) {
   target.provide(shellContextKey, {
     labels: ref(labels), slots: {}, toolRenderers: ref([]),
-    questions: { pending: ref([]), sending: ref(false), answer: vi.fn(), view: reactive({ open: false, current: null, drafts: {}, skipped: [] }) },
+    questions: { pending: ref([]), sending: ref(false), answer: vi.fn(), view: reactive({ open: true, current: null, drafts: {}, skipped: [] }) },
   } as unknown as ShellContext);
 }
 

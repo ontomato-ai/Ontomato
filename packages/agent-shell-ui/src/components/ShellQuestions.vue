@@ -5,11 +5,12 @@ import { shellContextKey, type QuestionDraft } from "../context";
 
 /**
  * The questions the conversation's agents asked the reader, right over the composer (as Codex shows its asynchronous
- * questions). The agents go on working meanwhile, so the panel stays folded to the number of questions until the reader
- * opens it. Open, it shows one question at a time: the question, the assumption the agent goes on with, its options
- * numbered (the agent's default marked) and the reader's own answer last; a number key picks an option. The reader moves
- * between the questions, each keeping its unsent draft, and may skip one: skipping only hides it here and sends nothing,
- * so the agent keeps its default and a reload lists the question again. The panel and the composer keep their own text.
+ * questions). It opens as soon as there is a question and shows one at a time: the question and its options numbered,
+ * the agent's default marked, with the reader's own answer last; a number key picks an option. The reader may fold it to
+ * the number of questions while the agents go on working. The reader moves between the questions, each keeping its
+ * unsent draft, and may skip one: skipping only hides it here and sends nothing, so the agent keeps its default and a
+ * reload lists the question again. Once every question is answered or skipped the panel is gone; the next question opens
+ * it again. The panel and the composer keep their own text.
  */
 const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value);
@@ -29,9 +30,9 @@ const answer = computed(() => {
   return choice === null ? "" : options.value[choice]!.label;
 });
 
-// Once no question is left the panel folds, so the next one arrives as a count rather than taking the reader's view.
+// Once no question is left the panel is gone, and the next one arrives open even if the reader had folded it.
 watch(() => questions.value.length === 0, (none) => {
-  if (none) view.open = false;
+  if (none) view.open = true;
 });
 
 function edit(change: Partial<QuestionDraft>) {
@@ -119,10 +120,6 @@ function onKeydown(event: KeyboardEvent) {
     <form v-if="view.open" :id="bodyId" class="questions-body" @submit.prevent="submit">
       <div class="question">
         <p class="question-text">{{ question.message }}</p>
-        <p class="question-default">
-          <span class="question-default-label">{{ labels.questionDefault }}</span>
-          <span>{{ question.defaultAssumption }}</span>
-        </p>
         <div class="question-options">
           <button
             v-for="(option, i) in options"
@@ -134,12 +131,9 @@ function onKeydown(event: KeyboardEvent) {
             @click="choose(i)"
           >
             <span class="option-number">{{ i + 1 }}</span>
-            <span class="option-text">
-              <span class="option-label">
-                {{ option.label }}
-                <span v-if="option.isDefault" class="option-default">{{ labels.questionOptionDefault }}</span>
-              </span>
-              <span v-if="option.description" class="option-description">{{ option.description }}</span>
+            <span class="option-label">
+              {{ option.label }}
+              <span v-if="option.isDefault" class="option-default">{{ labels.questionOptionDefault }}</span>
             </span>
           </button>
           <label class="question-option other" :class="{ chosen: draft.choice === 'other', alone: !options.length }">
@@ -284,16 +278,6 @@ function onKeydown(event: KeyboardEvent) {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.question-default {
-  margin: 0;
-  color: var(--el-text-color-secondary);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.question-default-label {
-  margin-inline-end: 8px;
-  color: var(--el-text-color-tertiary);
-}
 .question-options {
   display: flex;
   flex-direction: column;
@@ -344,12 +328,8 @@ function onKeydown(event: KeyboardEvent) {
   background: var(--el-color-primary);
   color: var(--on-primary);
 }
-.option-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
 .option-label {
+  min-width: 0;
   color: var(--el-text-color-primary);
   overflow-wrap: anywhere;
 }
@@ -362,10 +342,6 @@ function onKeydown(event: KeyboardEvent) {
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
   white-space: nowrap;
-}
-.option-description {
-  color: var(--el-text-color-secondary);
-  overflow-wrap: anywhere;
 }
 /* The reader's own answer is typed in place, the last option of the list. */
 .question-option.other {
