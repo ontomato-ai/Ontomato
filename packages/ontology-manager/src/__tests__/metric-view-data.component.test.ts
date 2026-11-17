@@ -39,23 +39,4 @@ describe("MetricViewData through a template ref", () => {
     expect(view.value!.data).toEqual([{ reads: 2 }]);
     expect(drawn).toBe(view.value!.data);
   });
-
-  it("hands the slot the columns the MetricView declares, read once for its identity", async () => {
-    const described: string[] = [];
-    let drawn: unknown;
-    const app = createApp(defineComponent({
-      setup: () => () => h(MetricViewData, { metricViewId: "orders" }, {
-        default: ({ columns }: { columns: unknown }) => { drawn = columns; return h("div"); },
-      }),
-    }));
-    app.provide(metricViewsKey, {
-      read: async () => [{ kind: "A", amount: 1, region: "east" }],
-      describe: async (id: string) => { described.push(id); return [{ key: "kind" }, { key: "amount" }, { key: "region" }]; },
-    });
-    app.mount(document.createElement("div"));
-    apps.push(app);
-    await settle();
-    expect(described).toEqual(["orders"]);
-    expect(drawn).toEqual([{ key: "kind" }, { key: "amount" }, { key: "region" }]);
-  });
 });

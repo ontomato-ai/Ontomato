@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { inject, ref, watch } from "vue";
-import type { ChartMetricColumn } from "@ontomato/contracts/chart-data";
 import { metricViewsKey } from "../clients/metric-views";
 import type { MetricViewDataSlots } from "./types";
 
@@ -27,8 +26,6 @@ const client = inject(metricViewsKey);
 if (!client) throw new Error("MetricViewData must be mounted in a page that provides the MetricView client");
 
 const data = ref<unknown>();
-/** The columns this MetricView declares: read once for the identity, not with each result. */
-const columns = ref<ChartMetricColumn[]>([]);
 const loading = ref(false);
 const error = ref<Error | null>(null);
 let latest = 0;
@@ -48,13 +45,10 @@ const reload = async () => {
 };
 
 watch(() => JSON.stringify([props.metricViewId, props.parameters, props.parameterTexts]), () => reload(), { immediate: true });
-watch(() => props.metricViewId, async id => {
-  columns.value = await client.describe(id);
-}, { immediate: true });
 
-defineExpose({ data, columns, loading, error, reload });
+defineExpose({ data, loading, error, reload });
 </script>
 
 <template>
-  <slot :data="data" :columns="columns" :loading="loading" :error="error" :reload="reload" />
+  <slot :data="data" :loading="loading" :error="error" :reload="reload" />
 </template>
