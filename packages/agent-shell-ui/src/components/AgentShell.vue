@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
 import { PanelRightOpen } from "lucide-vue-next";
-import { shellContextKey, type ShellContext } from "../context";
+import { conversationQuestions, shellContextKey, type ShellContext } from "../context";
 import type { AgentHostClient } from "../host";
 import type { AgentNav } from "../useAgentNav";
 import type {
@@ -139,9 +139,10 @@ provide(shellContextKey, {
     };
   },
   continueConversation: async (message) => {
-    if (conversation.busy.value) throw new Error(props.labels.working);
+    if (conversation.sending.value) throw new Error(props.labels.working);
     await send(message);
   },
+  questions: conversationQuestions(conversation),
 });
 
 /** The replies that delegated work, in order; a reply's own entry opens the task list at it. */
@@ -318,6 +319,7 @@ onMounted(() => {
         :send-error="conversation.sendError.value"
         :pending-input="conversation.pendingInput.value"
         :busy="conversation.busy.value"
+        :sending="conversation.sending.value"
         :feedback="feedback"
         @send="send"
         @stop="conversation.cancel"
@@ -335,6 +337,7 @@ onMounted(() => {
       :feature="currentFeature"
       :view="pageView"
       :busy="conversation.busy.value"
+      :sending="conversation.sending.value"
       :disabled="!currentAgent?.enabled"
       @send="sendFromPage"
       @stop="conversation.cancel"

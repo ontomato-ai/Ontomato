@@ -83,6 +83,15 @@ return computed<ShellLabels>(() => ({
   filterEmpty: t("assistant.datasetFilterEmpty"),
   elapsed: (time) => t("assistant.elapsed", { time }),
   worked: (time) => t("assistant.worked", { time }),
+  questionsWaiting: (count) => t("assistant.questionsWaiting", { n: count }, count),
+  questionDefault: t("assistant.questionDefault"),
+  questionOptionDefault: t("assistant.questionOptionDefault"),
+  questionOptionOther: t("assistant.questionOptionOther"),
+  questionOtherPlaceholder: t("assistant.questionOtherPlaceholder"),
+  questionSkip: t("assistant.questionSkip"),
+  questionPrevious: t("assistant.questionPrevious"),
+  questionNext: t("assistant.questionNext"),
+  answered: (text) => t("assistant.answered", { text }),
   tasks: {
     retriever: t("assistant.taskRetriever"),
     status: {

@@ -2,7 +2,7 @@
 import { computed, provide, ref, toRef, watch } from "vue";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "../host";
-import { shellContextKey } from "../context";
+import { conversationQuestions, shellContextKey } from "../context";
 import type { ConversationItem } from "../view";
 import type {
   ArtifactRendererOverride,
@@ -103,6 +103,7 @@ provide(shellContextKey, {
   },
   openArtifactKey: noOpenArtifact,
   pageLink: () => null,
+  questions: conversationQuestions(conversation),
 });
 
 watch(
@@ -201,6 +202,7 @@ defineExpose({
       :send-error="conversation.sendError.value"
       :pending-input="conversation.pendingInput.value"
       :busy="conversation.busy.value"
+      :sending="conversation.sending.value"
       :feedback="feedback"
       @send="send"
       @stop="conversation.cancel"

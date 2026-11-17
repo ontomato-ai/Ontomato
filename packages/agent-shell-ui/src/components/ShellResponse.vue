@@ -9,6 +9,7 @@ import { shellContextKey } from "../context";
 import type { ResponseItem } from "../view";
 import ShellMarkdown from "./ShellMarkdown.vue";
 import ShellProcess from "./ShellProcess.vue";
+import ProcessInput from "./ProcessInput.vue";
 import { useAutoFold } from "../useAutoFold";
 
 const props = defineProps<{
@@ -151,6 +152,7 @@ async function submit(value: ShellFeedbackValue) {
         <template v-for="block in item.process" :key="block.key">
           <ShellProcess v-if="block.kind === 'steps'" :steps="block.steps" :active="block.active" />
           <TaskCard v-else-if="block.kind === 'task'" :task="block.task" :session-id="sessionId ?? ''" />
+          <ProcessInput v-else-if="block.kind === 'input'" :text="block.text" :answer="block.replyTo !== undefined" />
           <div v-else class="process-note">
             <ShellMarkdown :content="block.text" :final="block.final" :run-id="block.runId" />
           </div>

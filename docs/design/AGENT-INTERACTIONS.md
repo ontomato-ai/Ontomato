@@ -25,7 +25,7 @@ Simple questions do not need a mandatory stage tracker. Show a stage or blocker 
 | Element | Use | Rule |
 | --- | --- | --- |
 | Task starter | No established goal | Business name and short purpose, grounded in installed capabilities |
-| Clarification | A necessary decision is missing | Ask only necessary questions, no preselection, allow additional notes |
+| Clarification | A necessary decision is missing | Ask only necessary questions without stopping; state the default; no preselection; the reader's own answer last |
 | Scope chips | Established filters need adjustment | Show effective conditions; changes trigger a fresh query |
 | Dataset | Structured evidence | Preserve raw values, identifiers, source and truncation |
 | Chart | Comparisons, structure and trends | Include units/scope; title, legend and plot occupy distinct space |
@@ -82,10 +82,15 @@ No recommendation or default is consent. Preserve the original retrieval identit
 do not start a replacement retrieval to bypass unresolved questions. Optional notes supplement required choices rather
 than silently replacing them. Do not claim a decision was accepted before the underlying task accepts it.
 
-A clarification card sends its answers and notes as one ordinary message naming the card's file; the assistant
-resumes the retrieval named in the card, which records the decisions. The card keeps no draft or answered state: the
-sent message is the user's answer. Required text cannot be whitespace. Accepted decisions do not certify that the
-resulting dataset implements the chosen scope; final-result equivalence still requires end-to-end verification.
+An agent that needs the reader's decision asks without stopping: it states the default it goes on with and may offer
+options, one marked as that default. The questions wait right over the composer, folded to their count. Opened, the
+panel shows one question at a time: the question, the default, the numbered options (a number key picks one) and the
+reader's own answer last. The reader moves between questions with each draft kept, and may skip one, which only hides it
+on this page and sends nothing. An answer goes back to the question that asked for it, into the agent's running reply or
+as its next turn; a blank answer is not sent. The panel and the composer keep their own text, and the composer also
+sends into a running reply, beside its stop button. Clarification cards written before (`.clarification.json`) stay
+readable and take no answer. Accepted decisions do not certify that the resulting dataset implements the chosen scope;
+final-result equivalence still requires end-to-end verification.
 
 ## Visual and interaction rules
 
@@ -106,7 +111,7 @@ independent authorized read. Distinguish component tests, runtime tests and visu
 | Capability | Current implementation | Remaining acceptance/boundary |
 | --- | --- | --- |
 | Follow-ups and dataset selection | Ordinary messages with the suggested question and its dataset paths, or the source file's row numbers; component tests | Model recommendations are not server-validated query plans |
-| Structured clarification | Answers sent as one ordinary message naming the card file; the assistant resumes the card's retrieval with `ask --resume` | The 2026-11-09 enterprise test-domain acceptance (retrieval 960bd52b-c449-42d3-8321-4ff0e388bcc3 resumed from revision 0 to 1) covered the earlier server-submitted path; resumption from an ordinary message needs its own end-to-end acceptance |
+| Questions to the reader | Agents ask through the channel's `needsInput` with a default and options; the panel over every shell composer answers with `send(replyTo)`; earlier clarification cards are read-only; component tests | A real retrieval asking, being answered from the panel and recomputing needs its own end-to-end acceptance |
 | Editable query conditions | Dataset header opens source filters from accepted dataset provenance; the business-language change is sent as one ordinary message naming the file | This is a scoped natural-language requery, not direct editing of an executable query plan; typed field/operator controls and final model result acceptance remain future work |
 | Aggregate → detail records | Single selected aggregate row; server-owned group mapping and typed values; one-click ordinary message without confirmation; shell selection reused for returned datasets | Initial support is one query and one direct aggregate with projected group fields; final model detail population and live data changes need end-to-end acceptance |
 | Multi-object change preview | Pending | Requires authorized target set, per-record effects and execution semantics |
