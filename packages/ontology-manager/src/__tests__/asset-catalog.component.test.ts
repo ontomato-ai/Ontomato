@@ -192,7 +192,7 @@ it("opens the capability map with every name readable and none overlapping, smal
   }
 });
 
-it("names what a trigger starts and the kind of its condition, not the stored ids", async () => {
+it("names what a trigger starts, its condition and its cadence in the reader's words, not the stored values", async () => {
   const root = document.body.appendChild(document.createElement("div"));
   vi.stubGlobal("fetch", async (url: string) => {
     const data = url.endsWith("/trigger/queryList")
@@ -230,10 +230,10 @@ it("names what a trigger starts and the kind of its condition, not the stored id
   const rows = [...root.querySelectorAll(".el-table__body tr")].map((row) =>
     [...row.querySelectorAll("td")].map((cell) => cell.textContent?.trim()),
   );
-  // Effect and condition are the second and third columns.
-  expect(rows.map((cells) => cells.slice(1, 3))).toEqual([
-    ["Action · Approve expense", "Time table"],
+  // Effect, condition and cadence are the second to fourth columns; the cadence is worded from the stored structure.
+  expect(rows.map((cells) => cells.slice(1, 4))).toEqual([
+    ["Action · Approve expense", "Time table", "Day 1 of every month at 00:00"],
     // A process no catalogue names any more is still shown, by the id the trigger stored.
-    ["Process · deleted-process", "Time table"],
+    ["Process · deleted-process", "Time table", "Every Monday at 09:00"],
   ]);
 });

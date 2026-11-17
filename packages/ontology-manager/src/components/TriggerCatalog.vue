@@ -18,6 +18,7 @@ import { PlatformPageHeader } from "@ontomato/platform-shell";
 import type { SmartAsset, TriggerRecord, WorkflowRecord } from "../api";
 import { useManagerClient, useOntologyText } from "../context";
 import { useManagerFeedback } from "../feedback";
+import type { MessageKey } from "../i18n";
 
 /**
  * The triggers of this domain: when an execution starts.
@@ -98,7 +99,7 @@ const filtered = computed(() => {
     (item) =>
       item.name.toLowerCase().includes(text) ||
       (item.effectKind ?? "").toLowerCase().includes(text) ||
-      (item.frequency ?? "").toLowerCase().includes(text),
+      cadence(item).toLowerCase().includes(text),
   );
 });
 
@@ -127,8 +128,42 @@ async function loadCatalogues() {
     nextWorkflows.status === "fulfilled" && Array.isArray(nextWorkflows.value) ? nextWorkflows.value : [];
 }
 
-function frequencyOf(item: TriggerRecord) {
-  return item.frequency ?? "—";
+const unitNames: Record<"minute" | "hour" | "day", MessageKey> = {
+  minute: "triggerUnitMinute",
+  hour: "triggerUnitHour",
+  day: "triggerUnitDay",
+};
+
+/** Weekday 1 = Monday … 7 = Sunday, as the stored frequency counts them. */
+const weekdayNames: MessageKey[] = [
+  "triggerWeekdayMonday",
+  "triggerWeekdayTuesday",
+  "triggerWeekdayWednesday",
+  "triggerWeekdayThursday",
+  "triggerWeekdayFriday",
+  "triggerWeekdaySaturday",
+  "triggerWeekdaySunday",
+];
+
+/**
+ * How often the trigger fires, worded here in the reader's language: the service stores the frequency as a structure,
+ * not as a sentence. A Cron expression is shown as written.
+ */
+function cadence(item: TriggerRecord) {
+  const frequency = item.condition?.frequency;
+  if (!frequency) return "—";
+  switch (frequency.kind) {
+    case "interval":
+      return ot("triggerFrequencyEvery", { every: frequency.every, unit: ot(unitNames[frequency.unit]) });
+    case "daily":
+      return ot("triggerFrequencyDailyAt", { time: frequency.time });
+    case "weekly":
+      return ot("triggerFrequencyWeeklyAt", { weekday: ot(weekdayNames[frequency.weekday - 1]!), time: frequency.time });
+    case "monthly":
+      return ot("triggerFrequencyMonthlyAt", { day: frequency.day, time: frequency.time });
+    case "cron":
+      return frequency.expression;
+  }
 }
 
 function stamp(value: string | null | undefined) {
@@ -363,7 +398,7 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column :label="ot('triggerColumnCadence')" min-width="130">
           <template #default="{ row }">
-            <span>{{ frequencyOf(row) }}</span>
+            <span>{{ cadence(row) }}</span>
           </template>
         </el-table-column>
         <el-table-column :label="ot('triggerColumnNextRun')" min-width="160">
