@@ -197,6 +197,7 @@
                                 <include>**/MetadataPostgresBoundaryTest.java</include>
                                 <include>**/PlatformScheduleTest.java</include>
                                 <include>**/PageSkillsContractTest.java</include>
+                                <include>**/ApplicationCatalogReconciliationTest.java</include>
                                 <include>**/TriggerServiceCredentialTest.java</include>
                                 <include>**/AgentExecutionSettingsTest.java</include>
                                 <include>**/AnonymousAgentExecutionIdentityTest.java</include>

@@ -105,6 +105,19 @@ describe("the agents' settings' old addresses", () => {
    * agent whose id happens to be "new". The check runs through the real route table, because a branch that reads
    * `route.params.agentId === "new"` would silently open the first agent instead.
    */
+  it("turns the standalone builder's old addresses to the same settings page and keeps the object id", async () => {
+    for (const [path, target] of [
+      ["/agent-builder", "/ontology/agents"],
+      ["/agent-builder/new", "/ontology/agents/new"],
+      ["/agent-builder/agent-42", "/ontology/agents/agent-42"],
+    ]) {
+      const { router } = await openAddress(`${path}?draftSessionId=session`);
+      expect(router.currentRoute.value.path).toBe(target);
+      expect(router.currentRoute.value.query.draftSessionId).toBe("session");
+      if (path.endsWith("agent-42")) expect(router.currentRoute.value.params.agentId).toBe("agent-42");
+    }
+  });
+
   it("turns the new-agent address to the one settings page's new agent", async () => {
     const { router } = await openAddress("/agents/settings/new");
     expect(router.currentRoute.value.name).toBe(platformRoutes.ontologyAgentNew.name);

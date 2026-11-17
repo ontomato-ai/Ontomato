@@ -22,7 +22,7 @@ function capabilityTabLink(to: { query: LocationQuery }): RouteLocationRaw | und
 }
 
 /**
- * The addresses the agents' settings used to live at: `/agents/settings` and `/agents/settings/<id>`. They are not a
+ * The addresses the agents' settings used to live at: `/agents/settings`, `/agent-builder` and their object addresses. They are not a
  * second screen any more: each turns to the one settings page, keeping the agent it named.
  */
 function agentsSettingsRedirect(to: {
@@ -33,7 +33,7 @@ function agentsSettingsRedirect(to: {
   if (tab) return tab;
   const id = to.params.agentId ?? to.params.id;
   const creating = to.name === routes.agentSettingsNew.name || id === "new";
-  if (creating) return { name: routes.ontologyAgentNew.name, query: to.query };
+  if (creating) return { name: routes.ontologyAgentNew.name, params: {}, query: to.query };
   return typeof id === "string" && id
     ? { name: routes.ontologyAgent.name, params: { agentId: id }, query: to.query }
     : { name: routes.ontologyAgents.name, query: to.query };
@@ -82,7 +82,8 @@ export function workbenchPages(
     { ...routes.ontologyAgent, component: AgentSettingsRoute, meta: { service: true, ownHeader: true, page: routes.ontologyAgents.path } },
     // The old settings addresses, and the builder's top-level entry: each turns to the one settings page.
     ...(
-      [routes.agents, routes.agentSettingsNew, routes.agentSettings] as const
+      [routes.agents, routes.agentSettingsNew, routes.agentSettings,
+        { path: "/agent-builder" }, { path: "/agent-builder/:agentId" }] as const
     ).map((location): RouteRecordRaw => ({ ...location, redirect: (to) => agentsSettingsRedirect(to) })),
     // The application's prefix is no page: the old tab link lands on the skills, and anything else opens the conversation.
     { path: "/agents", redirect: (to) => capabilityTabLink(to) ?? { name: routes.chat.name, query: to.query } },
