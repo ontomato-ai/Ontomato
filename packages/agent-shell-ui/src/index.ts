@@ -36,6 +36,7 @@ export {
   type AgentHostClient,
   type AgentHostClientOptions,
   type AgentHostWorkspaceScope,
+  type AgentPageQuery,
   type SessionRunHandlers,
   type SessionRunPort,
 } from "./host";

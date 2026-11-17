@@ -112,6 +112,8 @@ const provide = (router?: Router) => ({
   [platformPageAccessKey as symbol]: () => true,
   [pageCounterKey as symbol]: {
     agents: async () => [agent],
+    // The dashboard page's own composer reads its candidates by the page's skill; the platform answers with this board's.
+    pageAgents: async () => ({ agents: [agent], defaultAgentId: agent.id }),
     preferredAgentId: ref<string | null>(agent.id),
     // What the platform's assembly does with a page's message: the counter's address, with the page it was written on.
     ask: (agentId: string, text: string, page: string) =>

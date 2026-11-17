@@ -175,6 +175,11 @@ export interface ShellLabels {
   working: string;
   /** The composer's agent choice while a reply runs: the running conversation keeps the agent it started with. */
   switchWhileRunning: string;
+  /**
+   * A page that declares its own skill cannot offer an agent: the reader holds no mapping for the page, or its registered
+   * default agent is gone. The page shows this rather than choosing another agent.
+   */
+  pageAgentUnavailable: string;
   /** A message's last line names the page it was written on. */
   pageContext: (page: string) => string;
   /** The same line names what was selected in the page. */
