@@ -44,7 +44,7 @@ export function callbackCredential(input: z.infer<typeof claimsSchema>) {
   };
 }
 /** Installed before ordinary authentication, which still verifies the delegated user. */
-export const unwrapCallbackCredential: RequestHandler = (req, _res, next) => {
+export const unwrapCallbackCredential: RequestHandler = (req, res, next) => {
   const auth = typeof req.headers.tk === "string" ? req.headers.tk : "";
   if (!auth.startsWith("wbc1.")) return next();
   try {
@@ -66,6 +66,7 @@ export const unwrapCallbackCredential: RequestHandler = (req, _res, next) => {
       req.header("X-Ontomato-Run-Id") !== claims.runId
     )
       throw new Error("Wrong callback scope");
+    res.locals.runtimeCallback = { runId: claims.runId };
     delete req.headers.authorization;
     delete req.headers.tk;
     delete req.headers["x-api-key"];

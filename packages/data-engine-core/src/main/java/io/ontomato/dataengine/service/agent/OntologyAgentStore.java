@@ -17,6 +17,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class OntologyAgentStore {
   public static final String RETRIEVER = "dd3b91b9-9214-4aa6-9937-fb07fd37b232";
 
+  public static boolean isKnownAgent(String agent) {
+    return RETRIEVER.equals(agent) || ActionCreationService.AGENT.equals(agent)
+        || OntologyGenerationService.kindForAgent(agent)!=null;
+  }
+
   public record Owner(String userId, String domainId) {}
 
   private final JdbcTemplate jdbc;

@@ -30,8 +30,8 @@ vi.mock("../../../../../../packages/ontology-manager/src/knowledge-governance/Go
   __esModule: true,
   default: defineComponent({
     name: "GovernanceDouble",
-    props: { sessionId: String },
-    setup: (props) => () => h("p", { class: "page-double" }, `governance ${props.sessionId ?? ""}`),
+    props: { recordId: String },
+    setup: (props) => () => h("p", { class: "page-double" }, `governance ${props.recordId}`),
   }),
 }));
 
@@ -117,9 +117,9 @@ describe("open-source Ontology Service page", () => {
     expect(document.querySelector(".rail-row.active")?.getAttribute("aria-label")).toBe(appName("ontology"));
   });
 
-  it("knowledge governance is a conversation application of the platform", async () => {
-    await start("/#/governance/chat/s1");
-    expect(document.querySelector(".page-double")?.textContent).toBe("governance s1");
+  it("a governance record's report is a page of the platform, at the record's own address", async () => {
+    await start("/#/governance/reports/record-1");
+    expect(document.querySelector(".page-double")?.textContent).toBe("governance record-1");
     expect(document.querySelector(".platform-shell")).not.toBeNull();
     expect(document.querySelector(".rail-row.active")?.getAttribute("aria-label")).toBe(appName("governance"));
   });

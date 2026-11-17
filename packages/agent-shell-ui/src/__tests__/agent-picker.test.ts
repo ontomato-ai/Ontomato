@@ -1,18 +1,14 @@
 import { createApp, h, nextTick, ref } from "vue";
 import { expect, it } from "vitest";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
-import type { ShellLabels } from "../types";
-import ShellNavBody from "../components/ShellNavBody.vue";
+import AgentPicker from "../components/AgentPicker.vue";
 
 it("keeps the agent picker mounted while the initial list arrives", async () => {
   const agents = ref<AgentHostAgent[]>([]);
   const root = document.createElement("div");
   document.body.append(root);
-  const app = createApp({ render: () => h(ShellNavBody, {
-    title: "Agent platform", workbench: { id: "business", label: "Agents", features: [] },
-    agentPicker: true, agents: agents.value, agentId: "agent", sessions: [],
-    sessionsState: "loading", hasMore: false, sessionId: null, featureId: null,
-    labels: { agent: "Select agent" } as ShellLabels,
+  const app = createApp({ render: () => h(AgentPicker, {
+    variant: "pill", agents: agents.value, agentId: "agent", label: "Select agent",
   }) });
   app.mount(root);
   try {

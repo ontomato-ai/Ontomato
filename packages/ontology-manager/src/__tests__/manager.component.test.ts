@@ -43,6 +43,8 @@ let dataAdapters: DataAdapterInfo[];
 let knowledge: Record<string, Record<string, unknown>>;
 /** Knowledge IDs whose delete returns a business failure. */
 let knowledgeDeleteFails: Set<string>;
+/** The page draft each run wrote, as the agent platform serves it through `page-draft`. */
+let drafts: Map<string, unknown>;
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -61,10 +63,11 @@ const metas = (classes: string[]) => ({
 });
 
 function respond(url: string, body?: Record<string, unknown>): Response {
-  const path = url.replace(/^.*\/data-query/, "");
+  const path = url.replace(/^.*\/data-query/, "").replace(/^.*\/assistant\/sessions\/[^/]+\/runs\//, "/runs/");
   const status = statusFor(path);
   if (status !== 200) return json({ success: false }, status);
   if (path === "/admin/getBussinessKnowledge") return json({ success: true, data: knowledge });
+  if (path.includes("/page-draft?")) return json(drafts.get(path.split("/runs/")[1]!.split("/")[0]!) ?? {});
   if (path.endsWith("BussinessKnowledge") && body?.knowledgeText === "")
     return json({ success: false, message: "Business knowledge content is required" });
   if (path === "/admin/editBussinessKnowledge") {
@@ -161,8 +164,9 @@ beforeEach(() => {
     k2: { knowledgeID: "k2", knowledgeTitle: "Legacy note", knowledgeText: "t2", status: 0 },
   };
   knowledgeDeleteFails = new Set();
+  drafts = new Map();
   vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
-    const path = url.replace(/^.*\/data-query/, "");
+    const path = url.replace(/^.*\/data-query/, "").replace(/^.*\/assistant\/sessions\/[^/]+\/runs\//, "/runs/");
     const body = init.body === undefined ? undefined : JSON.parse(String(init.body));
     requests.push({
       url,
@@ -1270,6 +1274,75 @@ describe("Manager business knowledge page", () => {
     });
     expect(root().querySelector('[role="alert"]')).not.toBeNull();
     expect(document.body.querySelector(':scope > [role="alert"]')).toBeNull();
+  });
+
+  describe("a knowledge draft an agent wrote", () => {
+    const run = "run-1";
+    const link = (path = "outputs/drafts/knowledge-1.page-draft.json") =>
+      `/ontology/knowledge?draftSessionId=session-1&draftRunId=${run}&draftPath=${encodeURIComponent(path)}`;
+    const writes = () => requests.filter((request) =>
+      request.url.endsWith("/admin/editBussinessKnowledge") || request.url.endsWith("/admin/addBussinessKnowledge"));
+    const filled = () => ({
+      knowledgeID: "k-1", knowledgeTitle: "Refund window", knowledgeText: "Refunds within 14 days",
+      knowledgeTags: ["policy"], status: 1,
+    });
+
+    it("fills an update against the real entry, marks the changed field and calls no write endpoint", async () => {
+      drafts.set(run, { pageKey: "business-knowledge", operation: "knowledge.update", target: { id: "k-1" }, form: filled() });
+      const { root } = mountHost({ ...base, view: link() });
+      await settle();
+
+      const form = root().querySelector(".knowledge-form");
+      expect(form).not.toBeNull();
+      expect(form!.querySelector<HTMLInputElement>(".el-input__inner")!.value).toBe("Refund window");
+      expect(form!.querySelector<HTMLTextAreaElement>(".el-textarea__inner")!.value).toBe("Refunds within 14 days");
+      const marked = [...form!.querySelectorAll(".el-form-item.draft-changed")].map((item) => item.textContent);
+      expect(marked.some((text) => text?.includes("Title"))).toBe(true);
+      expect(marked.some((text) => text?.includes("Content"))).toBe(true);
+      expect(writes()).toEqual([]);
+    });
+
+    it("saves the filled form through the page's own save request after the reader saves, and the address drops the draft", async () => {
+      drafts.set(run, { pageKey: "business-knowledge", operation: "knowledge.update", target: { id: "k-1" }, form: filled() });
+      const { root, host } = mountHost({ ...base, view: link() });
+      await settle();
+      expect(host.view).toContain("draftPath");
+
+      buttonIn(root(), "Save").click();
+      await settle();
+
+      expect(writes().map((request) => request.body)).toEqual([filled()]);
+      expect(host.view).not.toContain("draftPath");
+    });
+
+    it("reports a draft of another page instead of filling the form", async () => {
+      drafts.set(run, { pageKey: "agent-settings", operation: "knowledge.update", target: { id: "k-1" }, form: filled() });
+      const { root } = mountHost({ ...base, view: link() });
+      await settle();
+
+      expect(root().querySelector(".knowledge-form")).toBeNull();
+      // The refusal is the page's own wording, with the other page's key in it — never a raw sentence from the code.
+      const alerts = [...root().querySelectorAll('[role="alert"]')].map((item) => item.textContent).join(" ");
+      expect(alerts).toContain("another page (agent-settings)");
+    });
+
+    it("asks before replacing a manual edit that has unsaved changes, and a refusal keeps it", async () => {
+      drafts.set(run, { pageKey: "business-knowledge", operation: "knowledge.update", target: { id: "k-1" }, form: filled() });
+      const { root, host } = mountHost({ ...base, view: "/ontology/knowledge" });
+      await settle();
+      buttonIn(root(), "Edit").click();
+      await settle();
+      typeInto(root().querySelector<HTMLInputElement>(".knowledge-form input")!, "Manual change");
+      await settle();
+
+      // The same page at a draft's address fills nothing over a manual edit until the reader agrees to drop it.
+      host.view = link();
+      await settle();
+      expect(confirmDialog()).not.toBeNull();
+      buttonIn(confirmDialog()!, "Cancel").click();
+      await settle();
+      expect(root().querySelector<HTMLInputElement>(".knowledge-form input")!.value).toBe("Manual change");
+    });
   });
 
   it("deletes after a viewport confirmation; messages stay in the Manager frame", async () => {

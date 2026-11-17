@@ -163,7 +163,7 @@
     },
     {
       "name":"governance-completed", "status":200,
-      "response":{"id":"30000000-0000-4000-8000-000000000004","taskId":"10000000-0000-4000-8000-000000000004","trigger":"manual","status":"completed","scheduledAt":null,"startedAt":"2026-11-06T02:01:00Z","finishedAt":"2026-11-06T02:02:00Z","error":null,"resultSummary":"已审阅20条，发现3条建议","resultLink":{"appId":"governance","path":"/governance/chat/40000000-0000-4000-8000-000000000004"},"spendTime":60000,
+      "response":{"id":"30000000-0000-4000-8000-000000000004","taskId":"10000000-0000-4000-8000-000000000004","trigger":"manual","status":"completed","scheduledAt":null,"startedAt":"2026-11-06T02:01:00Z","finishedAt":"2026-11-06T02:02:00Z","error":null,"resultSummary":"已审阅20条，发现3条建议","resultLink":{"appId":"governance","path":"/governance/reports/40000000-0000-4000-8000-000000000004"},"spendTime":60000,
         "snapshot":{"title":"每周知识核对","appId":"governance","content":{"instruction":"核对库存口径的相互冲突，给出建议和来源"},"formRevision":"governance-v1","creatorId":"member-a","summary":[{"key":"instruction","label":"指令","value":"核对库存口径的相互冲突，给出建议和来源"}],"timeZone":"Asia/Shanghai","locale":"zh-CN","taskRevision":1},"result":"治理建议已保存在这段会话的治理报告中。","executionDetails":null}
     },
     {

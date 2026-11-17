@@ -4,7 +4,10 @@ import { computed, onMounted, provide, ref, watch } from "vue";
 import { useRoute, useRouter, type LocationQueryRaw } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
-import { AgentShell, useAgentNav, useSessionRunFeed, type ShellWorkbenchDeclaration } from "@ontomato/agent-shell-ui";
+import {
+  AgentShell, useAgentNav, useSessionRunFeed,
+  type PageContext, type PageSelection, type ShellWorkbenchDeclaration,
+} from "@ontomato/agent-shell-ui";
 import { useAgentModelLabels, useLeaveConfirmation } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import { DIAGNOSIS_AGENT_ID, type DiagnosisTarget } from "@ontomato/contracts/ops-diagnosis";
@@ -107,16 +110,19 @@ const sessionId = computed({
   },
 });
 
-/** One line telling the agent which page and item "this" refers to. */
-const pageContext = computed(() => {
+/** Which page "this" refers to, and the item it names: the message carries the item, and the page once. */
+const pageContext = computed<PageContext | null>(() => {
   const page = pages.find((item) => item.id === featureId.value);
   if (!page) return null;
-  const name = t(page.label), params = route.params, query = route.query;
-  let item = "";
-  if (page.id === "turn" && typeof params.turnKey === "string") item = t("ops.contextTurn", { key: params.turnKey });
-  else if (page.id === "test" && typeof params.caseId === "string") item = t("ops.contextCase", { run: String(params.runId), case: params.caseId });
-  else if (page.id === "test" && typeof query.runId === "string") item = t("ops.contextRun", { run: query.runId });
-  return t("ops.context", { page: item ? `${name} · ${item}` : name });
+  const params = route.params, query = route.query;
+  let selection: PageSelection | null = null;
+  if (page.id === "turn" && typeof params.turnKey === "string")
+    selection = { kind: "turn", id: params.turnKey, label: t("ops.contextTurn", { key: params.turnKey }) };
+  else if (page.id === "test" && typeof params.caseId === "string")
+    selection = { kind: "case", id: params.caseId, label: t("ops.contextCase", { run: String(params.runId), case: params.caseId }) };
+  else if (page.id === "test" && typeof query.runId === "string")
+    selection = { kind: "run", id: query.runId, label: t("ops.contextRun", { run: query.runId }) };
+  return { pageKey: `ops.${page.id}`, url: route.fullPath, label: t(page.label), selection: selection ? [selection] : [] };
 });
 
 /** Answers may link the app's own pages (e.g. `/observe/turn/<key>`); they open beside the conversation. */

@@ -6,6 +6,7 @@ export { fetchDashboardList } from "./api";
 export { acceptDraft, DraftRejected } from "./draft";
 export type { AcceptedDraft } from "./draft";
 export { useDashboardStore } from "./stores/dashboard";
+export type { DashboardSurface } from "./dashboard-surface";
 export { default as DashboardMetricPreview } from "./components/DashboardMetricPreview.vue";
 export { default as DashboardCardPicker } from "./components/DashboardCardPicker.vue";
 export { default as DashboardMetricDetail } from "./components/DashboardMetricDetail.vue";

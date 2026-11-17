@@ -2,6 +2,7 @@
 import { computed, inject, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
 import { PanelRightOpen } from "lucide-vue-next";
 import { conversationQuestions, shellContextKey, type ShellContext } from "../context";
+import { pageContextLine, pageMoved, samePageAddress, type PageContext } from "../page-context";
 import type { AgentHostClient } from "../host";
 import type { AgentNav } from "../useAgentNav";
 import type {
@@ -15,6 +16,7 @@ import type {
 } from "../types";
 import { sessionRunNotices } from "../session-run-notices";
 import { useAgentConversation } from "../useAgentConversation";
+import AgentPicker from "./AgentPicker.vue";
 import ShellColumn from "./ShellColumn.vue";
 import ShellConversation from "./ShellConversation.vue";
 import ShellNavBody from "./ShellNavBody.vue";
@@ -55,8 +57,11 @@ const props = withDefaults(
     feedback?: ShellFeedbackPort;
     artifactRenderers?: readonly ArtifactRendererOverride[];
     toolRenderers?: readonly ToolRendererOverride[];
-    /** One line naming the open page and its selection, appended to messages sent while a paired page is open. */
-    pageContext?: string | null;
+    /**
+     * The open page and what was selected in it, appended to messages sent while a paired page is open: the selection
+     * every time, the page itself on the conversation's first message or once the address moved elsewhere.
+     */
+    pageContext?: PageContext | null;
     /** Recognises an in-app address in an answer and returns how to open its page; null leaves it as text. */
     pageLinks?: ShellContext["pageLink"];
     /**
@@ -64,7 +69,6 @@ const props = withDefaults(
      * appears in the column and the agents and sessions are read once.
      */
     nav: AgentNav;
-    agentPicker?: boolean;
     /** The application's name, at the top of the column when the application runs on one agent. */
     title?: string;
     /** The application's own entry at the foot of its column (its settings, the model the diagnosis runs on). */
@@ -75,7 +79,14 @@ const props = withDefaults(
   { artifactRenderers: () => [], toolRenderers: () => [], title: "", bottom: null, conversations: true },
 );
 const slots = useSlots();
-const emit = defineEmits<{ error: [message: string]; featureAction: [id: string]; openBottom: []; run: [change: ShellRunChange] }>();
+const emit = defineEmits<{
+  error: [message: string];
+  featureAction: [id: string];
+  openBottom: [];
+  run: [change: ShellRunChange];
+  /** The paired page asks to be enlarged at its own address; the host knows where that is. */
+  openPage: [id: string, address: string];
+}>();
 const featureId = defineModel<string | null>("featureId", { default: null });
 const agentId = defineModel<string | null>("agentId", { default: null });
 const sessionId = defineModel<string | null>("sessionId", { default: null });
@@ -171,6 +182,11 @@ watch(sessionId, (id) => {
 }, { immediate: true });
 
 
+/** The page beside the conversation, enlarged: its own address, which the host opens in the page's application. */
+function openPageAtItsAddress() {
+  emit("openPage", featureId.value!, currentFeature.value?.address ?? "");
+}
+
 function closePage() {
   featureId.value = null;
   pageView.value = "full";
@@ -186,19 +202,55 @@ function reopenPage() {
   pageView.value = "side";
 }
 
+/**
+ * The open page's own skill narrows who may take the message: the composer offers the agents that carry it, and the
+ * page's registered default when it has one. A page without the declaration leaves the platform's whole agent list.
+ */
+watch(
+  () => currentFeature.value?.pageSkill ?? null,
+  (page) => void nav.setPage(page).catch(report),
+);
+
+/**
+ * The agent is the composer's choice (DESIGN.md "Applications and shells"): one chooser, on the row the message is
+ * written on. The reader chooses only between conversations; a reply still running keeps the agent it started with, so
+ * the choice waits until it ends rather than moving the running conversation to another agent.
+ */
+function chooseAgent(id: string) {
+  if (id === agentId.value) return;
+  if (conversation.busy.value) {
+    emit("error", props.labels.switchWhileRunning);
+    return;
+  }
+  agentId.value = id;
+}
+
 /** Sending from a full page brings the conversation back beside it, so the reply is visible. */
 function sendFromPage(text: string) {
   pageView.value = "side";
   void send(text);
 }
 
+/**
+ * The page address the conversation's last carried message named; null when it is not known (the conversation was just
+ * opened, so its first message carries the page again). A draft parameter or a fragment is the same page.
+ */
+const carriedPage = ref<string | null>(null);
+watch(sessionId, () => (carriedPage.value = null));
+
 async function send(input: string) {
   const agent = agentId.value;
   if (!agent) return;
-  const context = pairedPage.value ? props.pageContext?.trim() : "";
-  const text = context ? `${input}\n\n${context}` : input;
+  const page = pairedPage.value ? props.pageContext ?? null : null;
+  const carriesPage = page !== null && pageMoved(carriedPage.value, page);
+  const line = page
+    ? pageContextLine(page, { page: props.labels.pageContext, selection: props.labels.selectionContext }, carriesPage)
+    : "";
+  const text = line ? `${input}\n\n${line}` : input;
   const result = await conversation.send(agent, text);
   if (!result) return;
+  // Only a message the host accepted moved the conversation's page; a refused one carries it again next time.
+  if (page) carriedPage.value = samePageAddress(page.url);
   if (!result.delivery) {
     // The conversation was created but its run refused: the host takes it as listed (still empty), so sending again
     // goes on in the conversation the host knows.
@@ -259,7 +311,6 @@ onMounted(() => {
           :workbench="workbench"
           :title="title"
           :agents="nav.agents.value"
-          :agent-picker="agentPicker"
           :agent-id="agentId"
           :sessions="nav.sessions.value"
           :sessions-state="nav.sessionsState.value"
@@ -326,6 +377,9 @@ onMounted(() => {
         @retry="conversation.open(sessionId)"
         @load-older="conversation.loadOlder"
       >
+        <template #agent>
+          <AgentPicker variant="pill" :agents="nav.agents.value" :agent-id="agentId" :label="labels.agent" @select="chooseAgent" />
+        </template>
         <template v-if="slots['composer-context']" #composer-context>
           <slot name="composer-context" :page-open="pairedPage" :inline="false" :unstarted="unstarted" />
         </template>
@@ -342,11 +396,15 @@ onMounted(() => {
       @send="sendFromPage"
       @stop="conversation.cancel"
       @expand="pageView = 'full'"
+      @open-address="openPageAtItsAddress"
       @collapse="pageView = 'side'"
       @close="closePage"
     >
       <template v-if="slots['page-header']" #header>
         <slot name="page-header" :feature-id="featureId" :view="pageView" />
+      </template>
+      <template #composer-agent>
+        <AgentPicker variant="pill" :agents="nav.agents.value" :agent-id="agentId" :label="labels.agent" @select="chooseAgent" />
       </template>
       <template v-if="slots['composer-context']" #composer-context>
         <slot name="composer-context" :page-open="true" :inline="true" :unstarted="unstarted" />

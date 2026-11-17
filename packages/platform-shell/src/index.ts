@@ -34,6 +34,7 @@ export {
   type DataEngineTransport,
 } from "./agent-models";
 export { platformApplicationNameKey, platformPageAccessKey, useApplicationName, usePageAccess } from "./page-access";
+export { pilotPageKey, usePilotPage, type PilotPage, type PilotPageResolver } from "./pilot-pages";
 export {
   provideUnsavedChanges,
   useLeaveConfirmation,
