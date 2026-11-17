@@ -88,7 +88,7 @@ function commonAssistantRun(
       a.model_selection.modelId,skills,credentials.locale,externalMcp)},
     environment: {
       values: {...skillEnvironment.values,ONTOMATO_ASSISTANT_SESSION_ID:session.id,
-        ...(governance?{ONTOMATO_SKILL_SCENARIO:"platform",ONTOMATO_GOVERNANCE_WINDOW_URL:environment.agentRuntime().callbackUrl.replace(/\/$/,"")+callbackPath}:{})},
+        ...(governance?{ONTOMATO_GOVERNANCE_WINDOW_URL:environment.agentRuntime().callbackUrl.replace(/\/$/,"")+callbackPath}:{})},
       secrets: {...skillEnvironment.secrets,
         ...(governance?{ONTOMATO_GOVERNANCE_CALLBACK:callbackCredential({pathPrefix:callbackPath,runId:turn.id,expiresAt:new Date(turn.created_at).getTime()+600_000,token:credentials.token??"",apiKey:credentials.apiKey??""}).value}:{})},
     },

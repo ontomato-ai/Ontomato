@@ -23,7 +23,7 @@ beforeEach(() => {
   mocks.turn.mockResolvedValue({id:runId,session_id:sessionId,admitted:true,settled:false,created_at:new Date()});
   mocks.status.mockResolvedValue({id:runId,sessionId,status:"running",stopReason:null,messages:["private"]});
   mocks.get.mockImplementation(async (_name:string,url:string) => ({text:JSON.stringify(url.endsWith("/access")?{ownerId:"user",domainId:"domain",expiresAt:Date.now()+30_000}:{work:{}})}));
-  mocks.post.mockImplementation(async (_name:string,_url:string,input:{recordId:string;runId:string;expiresAt:string}) => ({text:JSON.stringify({id:input.recordId,sessionId:input.recordId,runId:input.runId,expiresAt:input.expiresAt,token:"governance-grant"})}));
+  mocks.post.mockImplementation(async (_name:string,_url:string,input:{recordId:string;sessionId:string;runId:string;expiresAt:string}) => ({text:JSON.stringify({id:input.recordId,sessionId:input.sessionId,runId:input.runId,expiresAt:input.expiresAt,token:"governance-grant"})}));
 });
 afterEach(async () => {if(server) await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));});
 it("binds a window to the persisted current run and credential expiry", async () => {

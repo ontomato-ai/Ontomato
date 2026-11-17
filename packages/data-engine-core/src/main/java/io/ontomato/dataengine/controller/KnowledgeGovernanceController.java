@@ -65,7 +65,7 @@ public class KnowledgeGovernanceController {
   public Object action(@PathVariable String id,@PathVariable String run,@PathVariable String action,
       @RequestBody JSONObject input,HttpServletRequest request) throws Exception {
     AgentJson.id(id);AgentJson.id(run);
-    if (!id.equals(request.getHeader("X-Ontomato-Session-Id")) || !run.equals(request.getHeader("X-Ontomato-Run-Id")))
+    if (!run.equals(request.getHeader("X-Ontomato-Run-Id")))
       throw AgentHttpException.invalid("Run identity mismatch");
     var grant=(JSONObject)request.getAttribute(QueryGrantService.ATTRIBUTE);
     Owner owner;

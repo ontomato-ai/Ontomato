@@ -110,7 +110,7 @@ public class KnowledgeGovernanceService {
     });
   }
   private JSONObject window(JSONObject row,String id) {
-    return JSONObject.of("id",id,"sessionId",id,"runId",row.getString("run_id"),"expiresAt",Instant.parse(row.getString("expires_at")).toString());
+    return JSONObject.of("id",id,"sessionId",row.getBooleanValue("external")?id:row.getString("session_id"),"runId",row.getString("run_id"),"expiresAt",Instant.parse(row.getString("expires_at")).toString());
   }
   public JSONObject begin(String key,JSONObject input,OntologyAgentAccess.Context context) {
     validate("begin",input);

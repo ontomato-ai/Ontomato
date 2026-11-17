@@ -82,7 +82,9 @@ class GovernanceWindowTest extends PostgresTestDatabase {
     var response=http.perform(post("/ontology/ai/knowledge-governance/platform-windows")
       .header("X-Ontomato-Query-Service-Token","service").contentType(MediaType.APPLICATION_JSON).content(binding(run).toJSONString()))
       .andExpect(status().isOk()).andReturn().getResponse();
-    token=JSONObject.parseObject(response.getContentAsString()).getString("token");
+    var result=JSONObject.parseObject(response.getContentAsString());
+    assertEquals(session,result.getString("sessionId"));
+    token=result.getString("token");
     assertNotNull(token);
   }
   private Object change(String summary) throws Exception {
@@ -97,12 +99,12 @@ class GovernanceWindowTest extends PostgresTestDatabase {
     open();
     String input="{\"summary\":\"Reviewed\",\"issues\":[{\"id\":\"issue\",\"title\":\"Meaning\",\"problem\":\"Ambiguous\",\"before\":\"Old\",\"after\":\"Proposed\",\"basis\":\"Read text\",\"category\":\"knowledge\",\"status\":\"pending\",\"sourceIds\":[]}]}";
     http.perform(post("/ontology/ai/knowledge-governance/"+record+"/runs/"+run+"/actions/update_work_record")
-      .header("X-Ontomato-Session-Id",record).header("X-Ontomato-Run-Id",run).contentType(MediaType.APPLICATION_JSON).content(input)).andExpect(status().isOk());
+      .header("X-Ontomato-Session-Id",session).header("X-Ontomato-Run-Id",run).contentType(MediaType.APPLICATION_JSON).content(input)).andExpect(status().isOk());
     assertEquals("Reviewed",governance.work(record,owner).getJSONObject("work").getString("summary"));
     String before=governance.work(record,owner).toJSONString();
     input=input.replace("\"sourceIds\":[]","\"sourceIds\":[\"unread\"]");
     http.perform(post("/ontology/ai/knowledge-governance/"+record+"/runs/"+run+"/actions/update_work_record")
-      .header("X-Ontomato-Session-Id",record).header("X-Ontomato-Run-Id",run).contentType(MediaType.APPLICATION_JSON).content(input)).andExpect(status().isBadRequest());
+      .header("X-Ontomato-Session-Id",session).header("X-Ontomato-Run-Id",run).contentType(MediaType.APPLICATION_JSON).content(input)).andExpect(status().isBadRequest());
     assertEquals(before,governance.work(record,owner).toJSONString());
     assertEquals(run,new QueryGrantService(jdbc,"test-signing",new WorkbenchServiceAuthentication("service"))
       .verify(token,run,"/ontology/ai/knowledge-governance/"+record+"/runs/"+run+"/actions/read_input").getString("runId"));

@@ -100,6 +100,17 @@ Existing `application_id=governance` scheduled tasks lose their adapter. On disp
 settlement the scheduler reports `application_unavailable` and pauses the task, rather
 than silently ignoring it. No old execution path is retained.
 
-Platform import-knowledge still calls Java in this first backend batch. Its page-draft
-conversion waits for the controller to integrate page-drafts/page-skills and authorize
-stage two. Full-stack/model/browser acceptance belongs to the controller on 128.
+Platform import-knowledge emits one business-knowledge PageDraft per item and links to
+`#/ontology/knowledge` with the originating runtime session/run and draft path. It reads
+existing knowledge using the current user credential, creates no governance window just
+for drafting, and never calls Java import. New forms use an empty knowledgeID and status 0;
+updates target the current knowledgeID and preserve its status and any omitted tags.
+External imports still call Java. Java has no standalone side-effect-free knowledge
+validation endpoint; none was added. The page batch owns reading/filling/saving these forms.
+The current PageDraft target.id contract requires a UUID, while knowledge IDs may be arbitrary
+stable strings. Update generation preserves the real knowledgeID; reading a non-UUID update
+is blocked by that contract until its owner widens target.id to an opaque nonempty string.
+The non-UUID update contract test remains pending with the controller. Create drafts and
+external direct import are verified independently. PLATFORM_DRAFT_RULE remains later host
+work and is not duplicated in skill instructions.
+Full-stack/model/browser acceptance belongs to the controller on 128.

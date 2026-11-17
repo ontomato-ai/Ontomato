@@ -1,8 +1,9 @@
+import { pageDraftSchema, pageDraftPathSchema } from "@ontomato/contracts/page-draft";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
-import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
@@ -17,14 +18,15 @@ beforeEach(async()=>{
     for await(const _chunk of req) { /* Consume the request before responding. */ }
     calls.push({path:req.url!,token:req.headers.tk as string,run:req.headers["x-ontomato-run-id"] as string});
     res.setHeader("content-type","application/json");
-    if(req.url==="/window")res.end(JSON.stringify({id,sessionId:id,runId:run,expiresAt:new Date(Date.now()+60_000).toISOString(),token:"governance-grant"}));
+    if(req.url==="/admin/getBussinessKnowledge")res.end(JSON.stringify({success:true,data:{existing:{knowledgeID:"existing",knowledgeTitle:"Original",knowledgeText:"Old text",knowledgeTags:["retained"],status:1}}}));
+    else if(req.url==="/window")res.end(JSON.stringify({id,sessionId:id,runId:run,expiresAt:new Date(Date.now()+60_000).toISOString(),token:"governance-grant"}));
     else if(req.url?.endsWith("/skill-runs"))res.end(JSON.stringify({id,sessionId:id,runId:run,expiresAt:new Date(Date.now()+60_000).toISOString()}));
     else if(req.url?.endsWith("/close")){res.statusCode=204;res.end();}
     else res.end(JSON.stringify({saved:true}));
   });server.listen(0,"127.0.0.1");await once(server,"listening");url=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 afterEach(async()=>{await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));await rm(directory,{recursive:true,force:true});});
-function command(name:string,platform:boolean){return execute(process.execPath,[script,name],{cwd:directory,env:{...process.env,ONTOMATO_ONTOLOGY_URL:url,ONTOMATO_TK:"user",ONTOMATO_SKILL_SCENARIO:platform?"platform":"external",ONTOMATO_RUN_ID:platform?run:"",ONTOMATO_GOVERNANCE_WINDOW_URL:url+"/window",ONTOMATO_GOVERNANCE_CALLBACK:"host-callback"}});}
+function command(name:string,platform:boolean,input?:unknown){return execute(process.execPath,[script,name,...(input?[JSON.stringify(input)]:[])],{cwd:directory,env:{...process.env,ONTOMATO_ONTOLOGY_URL:url,ONTOMATO_TK:"user",ONTOMATO_SESSION_ID:id,ONTOMATO_SKILL_SCENARIO:platform?"platform":"external",ONTOMATO_RUN_ID:platform?run:"",ONTOMATO_GOVERNANCE_WINDOW_URL:url+"/window",ONTOMATO_GOVERNANCE_CALLBACK:"host-callback"}});}
 it("platform commands request the bound host window and use its scoped grant, never an external begin",async()=>{
   await mkdir(path.join(directory,"work"));await writeFile(path.join(directory,"work/.governance-run.json"),JSON.stringify({id,sessionId:id,runId:"old-external"}));
   expect(JSON.parse((await command("read-work-record",true)).stdout)).toEqual({saved:true});
@@ -33,7 +35,27 @@ it("platform commands request the bound host window and use its scoped grant, ne
 });
 it("external begin and close retain user authentication and create no platform window",async()=>{
   const begun=JSON.parse((await command("begin",false)).stdout);expect(begun.id).toBe(id);
+  await command("import-knowledge",false,{items:[{id:"new",title:"New",text:"New text",sourceIds:["source"]}]});
   await command("close",false);
-  expect(calls.map(call=>call.path)).toEqual(["/ontology/ai/knowledge-governance/skill-runs",`/ontology/ai/knowledge-governance/${id}/skill-runs/${run}/close`]);
+  expect(calls.map(call=>call.path)).toEqual(["/ontology/ai/knowledge-governance/skill-runs",`/ontology/ai/knowledge-governance/${id}/runs/${run}/actions/import_knowledge`,`/ontology/ai/knowledge-governance/${id}/skill-runs/${run}/close`]);
   expect(calls.every(call=>call.token==="user")).toBe(true);
+});
+
+it("platform knowledge import emits separate original-page forms and never calls Java import",async()=>{
+  const result=JSON.parse((await command("import-knowledge",true,{items:[
+    {id:"new",title:"New",text:"New text",tags:["new-tag"],sourceIds:["source"]},
+  ]})).stdout);
+  expect(calls.map(call=>call.path)).toEqual(["/admin/getBussinessKnowledge"]);
+  const drafts=await Promise.all(result.drafts.map(async(entry:{path:string;href:string})=>{
+    pageDraftPathSchema.parse(entry.path);
+    const link=new URL(entry.href.slice(1),"http://platform");
+    expect(link.pathname).toBe("/ontology/knowledge");
+    expect(link.searchParams.get("draftSessionId")).toBe(id);expect(link.searchParams.get("draftRunId")).toBe(run);
+    expect(link.searchParams.get("draftPath")).toBe(entry.path);
+    return pageDraftSchema.parse(JSON.parse(await readFile(path.join(directory,entry.path),"utf8")));
+  }));
+  expect(drafts).toEqual([
+    {pageKey:"business-knowledge",operation:"knowledge.create",target:{},form:{knowledgeID:"",knowledgeTitle:"New",knowledgeText:"New text",knowledgeTags:["new-tag"],status:0}},
+  ]);
+  expect(result.drafts).toHaveLength(1);
 });

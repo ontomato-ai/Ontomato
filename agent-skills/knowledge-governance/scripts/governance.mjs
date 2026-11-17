@@ -43,6 +43,38 @@ if (!["begin", "close", ...Object.keys(actions)].includes(command))
 const args = arg
   ? JSON.parse(arg.startsWith("@") ? await readFile(arg.slice(1), "utf8") : arg)
   : {};
+if (platform && command === "import-knowledge") {
+  const response = await fetch(base + "/admin/getBussinessKnowledge", {
+    method: "POST", redirect: "error", headers, body: "{}",
+  });
+  const result = await response.json();
+  if (!response.ok || result.success !== true)
+    throw new Error(`HTTP ${response.status}: ${JSON.stringify(result)}`);
+  const existing = new Map(Object.entries(result.data));
+  const drafts = [];
+  await mkdir("outputs/drafts", { recursive: true });
+  for (const item of args.items) {
+    const previous = existing.get(item.id);
+    const draft = {
+      pageKey: "business-knowledge",
+      operation: previous ? "knowledge.update" : "knowledge.create",
+      target: previous ? { id: previous.knowledgeID } : {},
+      form: {
+        knowledgeID: previous ? previous.knowledgeID : "",
+        knowledgeTitle: item.title, knowledgeText: item.text,
+        knowledgeTags: item.tags ?? previous?.knowledgeTags ?? [],
+        status: previous ? previous.status : 0,
+      },
+    };
+    const path = `outputs/drafts/knowledge-${randomUUID()}.page-draft.json`;
+    await writeFile(path, JSON.stringify(draft, null, 2));
+    const query = new URLSearchParams({ draftSessionId: process.env.ONTOMATO_SESSION_ID,
+      draftRunId: process.env.ONTOMATO_RUN_ID, draftPath: path });
+    drafts.push({ path, href: `#/ontology/knowledge?${query}` });
+  }
+  console.log(JSON.stringify({ drafts }, null, 2));
+  process.exit(0);
+}
 let state = null;
 if (!state)
   try {

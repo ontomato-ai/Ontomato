@@ -17,7 +17,7 @@ vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://o
 vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({callbackUrl:"http://workbench"})}}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
 vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class {request=mocks.request;run=mocks.run;}}));
-vi.mock("../../../platform/agent-runtime/runtime",()=>({userSkillEnvironment:()=>({values:{ONTOMATO_ONTOLOGY_URL:"http://ontology"},secrets:{ONTOMATO_TK:"user"}}),runDefinition:(systemPrompt:string,modelId:string,skills:unknown[])=>({systemPrompt,modelId,skills})}));
+vi.mock("../../../platform/agent-runtime/runtime",()=>({userSkillEnvironment:()=>({values:{ONTOMATO_ONTOLOGY_URL:"http://ontology",ONTOMATO_SKILL_SCENARIO:"platform"},secrets:{ONTOMATO_TK:"user"}}),runDefinition:(systemPrompt:string,modelId:string,skills:unknown[])=>({systemPrompt,modelId,skills})}));
 import { assistantService } from "../service";
 import type { AgentPrepareRequest } from "@ontomato/contracts/agent-channel";
 configureI18n({defaultLocale:"en",appTextLocale:"en",languageSwitchEnabled:false,packs:{en:{messages:en,...enLocaleMeta}}});
