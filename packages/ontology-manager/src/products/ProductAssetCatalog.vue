@@ -16,6 +16,7 @@ import type {ProductGraph} from '@ontomato/contracts/product-graph';
 import {productCategory} from '@ontomato/contracts/product-graph';
 import {productIcons} from './product-icons';
 import {rendererLabel} from './renderer-labels';
+import {useProductText} from './default-texts';
 import {localizedProductTypes,localizedProductCategories} from './catalog-labels';
 import {useIdentityNames} from './identity-names';
 const client = useManagerClient();
