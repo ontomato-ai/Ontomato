@@ -76,7 +76,9 @@ public class ObjectViewController {
                         if (action == null || !identity.getCurrentUser().getDomainId().equals(action.getDomainId()) || !"PUBLISHED".equals(action.getStatus()))
                             throw new IllegalArgumentException("Action unavailable or unpublished");
                     } else if (java.util.Set.of("properties", "links", "metric", "table", "chart").contains(widget.getString("kind"))) {
-                        metrics.requireExecutable(id, identity.getCurrentUser());
+                        var metric = metrics.requireExecutable(id, identity.getCurrentUser());
+                        if ("chart".equals(widget.getString("kind")) && !"PUBLISHED".equals(metric.getStatus()))
+                            throw new IllegalArgumentException("Chart MetricView unavailable or unpublished");
                     }
                 }
             }

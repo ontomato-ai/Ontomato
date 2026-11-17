@@ -13,3 +13,13 @@ export const dashboardAddArtifactSchema = z
   .strict();
 export type DashboardAddArtifact = z.infer<typeof dashboardAddArtifactSchema>;
 export type DashboardSource = z.infer<typeof dashboardSourceSchema>;
+
+export const dashboardChartFileSourceSchema = z.object({sessionId:z.string().uuid(),runId:z.string().uuid(),artifactId:z.string().uuid()}).strict();
+export const dashboardAddChartFileSchema = z.object({
+  source: dashboardChartFileSourceSchema,
+  target: z.union([
+    z.object({dashboardId:z.string().min(1),groupId:z.string().min(1)}).strict(),
+    z.object({name:z.string().min(1)}).strict(),
+  ]),
+}).strict();
+export type DashboardAddChartFile = z.infer<typeof dashboardAddChartFileSchema>;

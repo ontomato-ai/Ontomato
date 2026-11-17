@@ -24,16 +24,15 @@ const ALLOWED: readonly Access[] = [
   ["GET", /^\/observe(?:\/.*)?$/],
   // skills.ts, mcp.ts: definitions and parameter forms, not skill or MCP execution
   ["GET", /^\/skills(?:\/.*)?$/],
-  ["POST", /^\/skills\/[^/]+\/render$/],
   ["GET", /^\/mcp(?:\/.*)?$/],
   // app-builder.ts: builder and SDK metadata
   ["GET", /^\/app-builder\/bootstrap$/],
   ["GET", /^\/apps-sdk\/current$/],
+  // dashboards.ts /add-chart-file stays unsupported: imports may settle metrics.
   // dashboards.ts: definition reads and metric parameter conversion, not card data execution
   ["GET", /^\/dashboards$/],
   ["GET", /^\/dashboards\/[^/]+$/],
   ["POST", /^\/dashboards\/groups$/],
-  ["POST", /^\/dashboards\/query-by-id$/],
   ["POST", /^\/dashboards\/card-parameter-form$/],
   // schedule-applications.ts: description and parameter validation, not a run
   ["GET", /^\/platform\/schedule-applications\/[^/]+$/],

@@ -45,27 +45,27 @@ interprets what is typed (JSON for numbers, lists, objects and datasets; text an
 times as typed), and the dialog submits the parameters it answers through the
 existing Action endpoint, then refreshes object data and query components.
 
-Charts execute the template's enabled visualization Skill through the workbench
-`/api/skills/:id/render` endpoint and embed its returned HTML. Skill selection and
-execution use the current domain and credentials. The Manager never imports server
-Skill code. Its gateway must route `/skills` and `/echart` under the API base to
-the workbench (container setting `WORKBENCH_ORIGIN`; `deploy/docker-compose.yml` sets it to
-`http://ontomato:3000`, and the image default is `http://data-agent:3000`).
-MetricView reads still go directly to the data engine.
+A chart component stores a chart file and the one MetricView it draws. The file is a
+`.chart.json` document (`packages/contracts/chart-data.md`): it holds the presentation,
+its bindings and its display settings, and its dataset declares the columns it draws
+with no row snapshot. The MetricView identity is the component's `resourceId`; its
+parameter values are the component's `ViewBinding`s, so they bind the current object
+and interaction variables.
 
-Point maps select the `leaflet` visualization Skill and `leaflet-map` chart type.
-Bind a MetricView returning location rows, set latitude/longitude fields explicitly,
-and select a readable label field. An optional numeric value field scales markers.
-Coordinates must use WGS-84 for the Esri World Topographic basemap; geographic labels
-alone are not coordinates. Map resources use authenticated Skill resource URLs and
-the basemap requires browser network access to `server.arcgisonline.com`. Demo locations should include
-their provenance and coordinate precision in the data and view description.
+`@ontomato/foundation-ui/chart`'s `MetricChart` draws the component. The view reads the
+MetricView's declared output columns once for the identity and its current rows for the
+object and parameters, and hands both to the component; opening the view, opening
+another object or changing a parameter only reads that MetricView again. No skill runs
+in the page, and the Manager neither selects nor executes one: the domain skill list
+serves the capability overview only, and its gateway must route `/skills` under the
+API base to the workbench (container setting `WORKBENCH_ORIGIN`;
+`deploy/docker-compose.yml` sets it to `http://ontomato:3000`, and the image default is
+`http://data-agent:3000`). MetricView reads still go directly to the data engine.
 
-The `echarts` Skill renders bar, line, donut and timeline presentations. Timeline
-uses label, date and optional description fields; undated events remain visible.
-The `network-graph` Skill renders relationship data as `{nodes, links}` and must be
-enabled in the domain. Nodes use `id`, `label`, `group`; links use `source`, `target`,
-`label`. Graph exploration is provided by the Skill's own interactions.
+A metric output that lacks a column the file draws, or that the file's shape rejects,
+shows the platform chart component's reason instead of a chart. Partial results follow
+the existing rule: the runtime refuses an incomplete MetricView read rather than
+drawing half a chart.
 
 ## Save and publish
 
@@ -106,9 +106,9 @@ spacing follows Manager 16/12/8/4px roles and cards use the shared 8px radius.
 
 - `packages/contracts/src/object-views.ts`: typed documents, validation and bindings.
 - `packages/ontology-manager/src/object-views`: editor, runtime and widget execution.
-- Workbench visualization rendering selects an enabled domain Skill and invokes its exported renderer through the
-  agent runtime code-execution HTTP API. Node execution stays in the runtime sandbox, without a model round trip or
-  importing Skill implementation into the workbench process.
+- Chart drawing belongs to `@ontomato/foundation-ui/chart`: the component fills the stored file from the MetricView
+  output and draws it in the platform's theme. The Manager passes the file, the declared columns and the current rows
+  and implements nothing of its own; no skill is invoked for a stored chart.
 - Data engine `ObjectViewStore`: PostgreSQL tables `object_view` and
   `object_view_version`, created during normal service initialization.
 - `/objectView/read`: published configuration; `/objectView/edit`: revision history;

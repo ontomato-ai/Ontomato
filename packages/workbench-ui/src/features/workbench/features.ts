@@ -28,10 +28,20 @@ export const DASHBOARDS_PAGE_ID = "dashboards";
 
 /**
  * The dashboards page beside the conversation. Its address is what this application's page parameter names: enlarging
- * it opens the dashboard application at that board.
+ * it opens the dashboard application at that board. Its skill narrows the composer to the agents that can read and draft
+ * a board's cards, by the domain membership the dashboards application itself is open to.
  */
 export function dashboardsPageFeature(label: string, address: string): ShellFeatureDeclaration {
-  return { id: DASHBOARDS_PAGE_ID, label, icon: "dashboard", availability: "page", listed: false, withConversation: true, address };
+  return {
+    id: DASHBOARDS_PAGE_ID,
+    label,
+    icon: "dashboard",
+    availability: "page",
+    listed: false,
+    withConversation: true,
+    address,
+    pageSkill: { pageKey: "dashboard", access: "domain-member" },
+  };
 }
 
 export function workbenchFeatures(

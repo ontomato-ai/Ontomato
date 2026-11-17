@@ -4,7 +4,7 @@ import { createI18n } from "vue-i18n";
 import Preview from "../components/DashboardMetricPreview.vue";
 
 const api = vi.hoisted(() => ({ detail: vi.fn(), query: vi.fn() }));
-vi.mock("@ontomato/foundation-ui/chart", () => ({ EChart: { props: ["option"], template: '<div class="rendered-chart" />' }, useChartTheme: () => ({ value: {} }) }));
+vi.mock("@ontomato/foundation-ui/chart", () => ({ MetricChart: { name: "MetricChart", props: ["file", "metric", "height", "empty"], template: '<div class="rendered-chart" />' } }));
 vi.mock("../api", () => ({ fetchDashboardLocalDetail: api.detail, queryDashboardCard: api.query }));
 beforeEach(() => {
   api.detail.mockReset().mockResolvedValue({ groups: [{ metrics: [
@@ -34,9 +34,17 @@ describe("dashboard metric previews", () => {
     wrapper.unmount();
   });
   it("loads a saved chart and emits its identity for the workspace detail interaction", async () => {
-    const card = { id: "status-chart", name: "Staff status", query: { kind: "metric", metricId: "status", parameters: {} }, chartType: "bar", fields: { xAxis: "category", yAxis: "count" } };
+    const file = {
+      name: "status.chart.json",
+      content: {
+        dataset: [{ id: "metric", dimensions: ["category", "count"], source: [] }],
+        series: [{ id: "count", type: "bar", datasetId: "metric", encode: { x: "category", y: "count" } }],
+        ontomato: {},
+      },
+    };
+    const card = { id: "status-chart", name: "Staff status", query: { kind: "metric", metricId: "status", parameters: {} }, chartFile: file };
     api.detail.mockResolvedValue({ groups: [{ metrics: [], charts: [card] }] });
-    api.query.mockResolvedValue({ card, columns: [{ key: "category", label: "Status" }, { key: "count", label: "Count" }], rows: [{ category: "Active", count: 3109 }], truncation: null });
+    api.query.mockResolvedValue({ card: { id: "status-chart", name: "Staff status", query: card.query }, file, metric: { id: "status", name: "Staff", revision: "r1", status: "PUBLISHED" }, columns: [{ key: "category", label: "Status" }, { key: "count", label: "Count" }], rows: [{ category: "Active", count: 3109 }], truncation: null });
     const wrapper = mount(Preview, { props: { dashboardId: "board", revision: 0 }, global: { plugins: [createI18n({ legacy: false, locale: "en", messages: { en: {} } })] } });
     await flushPromises();
     expect(wrapper.find('.rendered-chart').exists()).toBe(true);

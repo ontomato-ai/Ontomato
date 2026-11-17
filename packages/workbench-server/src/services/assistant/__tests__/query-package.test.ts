@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { queryPackageSchema } from "@ontomato/contracts/query-package";
 import { datasetPayloadSchema, prepareDatasetSchema } from "@ontomato/contracts/data-retrieval";
 import { projectDataset } from "../dataset-projection";
-import { normalizeAbcProgram, buildAbcProgramQueryPayload } from "../../dashboard/abc-program";
 
 const bundle = JSON.parse(readFileSync(new URL("../../../../../contracts/examples/query-packages.json", import.meta.url), "utf8")).pythonAggregate;
 const graph = {
@@ -51,12 +50,12 @@ describe("query package wire boundaries", () => {
       recipe: { kind: "metric", metricId: "old", revision: "revision", parameters: { threshold: 35 }, legacySource } });
     expect(datasetPayloadSchema.safeParse({ ...payload, recipe: { ...payload.recipe, package: bundle } }).success).toBe(false);
     const projected = projectDataset("old", payload, { retrievalId: "r", runtimeSessionId: "s", runtimeRunId: "u" });
-    const normalized = normalizeAbcProgram(projected.abcProgram)!;
+    const normalized = projected.abcProgram!;
     expect(normalized.queryPackage).toBeUndefined();
     expect(normalized.code).toBe(legacySource.files[0]!.content);
-    expect(buildAbcProgramQueryPayload(normalized).parameterValues).toEqual({ threshold: 35 });
+    expect(normalized.parameterValues).toEqual({ threshold: 35 });
   });
-  it("keeps the whole executed package and values through history projection and dashboard refresh", () => {
+  it("keeps the whole executed package and values through history projection", () => {
     const payload = datasetPayloadSchema.parse({ ...common, schema: "workbench.dataset.v2", sourceAnalysis: graph,
       recipe: { kind: "package", package: bundle, parameters: { threshold: 35 }, columnLabels: { total: "Total" },
         packageSha256: "package", executionInputSha256: "execution" } });
@@ -64,13 +63,10 @@ describe("query package wire boundaries", () => {
     expect(projected.data).toEqual(common.rows);
     expect(projected.dsl).toBeUndefined();
     expect(projected.abcProgram?.queryPackage).toEqual(bundle);
-    const program = normalizeAbcProgram(projected.abcProgram)!;
+    const program = projected.abcProgram!;
     expect(program.queryPackage).toEqual(bundle);
     expect(program.parameterValues).toEqual({ threshold: 35 });
-    const request = buildAbcProgramQueryPayload(program, [{ key: "threshold", type: "TYPE_NUMBER", value: 40 }]);
-    expect(request.queryPackage).toEqual(bundle);
-    expect(request.code).toBeUndefined();
-    expect(request.sourceAnalysis).toEqual(graph);
-    expect(request.parameters[0]?.value).toBe(40);
+    expect(program.sourceAnalysis).toEqual(graph);
+    expect(program.parameters?.[0]?.value).toBe(35);
   });
 });

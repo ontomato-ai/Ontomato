@@ -3,9 +3,8 @@ import type {
   DashboardGroup,
   DashboardListItem,
 } from "@ontomato/contracts/dashboard";
-import { metricReferenceChartSchema, metricReferenceMetricSchema } from "@ontomato/contracts/dashboard";
+import { dashboardGroupsSchema } from "@ontomato/contracts/dashboard";
 import { HttpError } from "../../utils/errors";
-import type { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { t, tApp } from "../../i18n";
 import pg from "pg";
@@ -20,46 +19,12 @@ function getPool(): pg.Pool {
   return getPostgresPool();
 }
 
-function readReference<T>(schema: z.ZodType<T>, value: unknown): T {
-  const parsed = schema.safeParse(value);
-  if (!parsed.success) throw new HttpError(500, "Invalid saved metric card", "INVALID_CARD_DATA", { issues: parsed.error.issues });
-  return parsed.data;
-}
-
-function ensureGroups(groups: DashboardGroup[] | undefined): DashboardGroup[] {
-  return (Array.isArray(groups) ? groups : []).map((group) => ({
-    id: String(group?.id || randomUUID()),
-    title: String(group?.title || "").trim(),
-    charts: Array.isArray(group?.charts)
-      ? group.charts.map((chart) => {
-          if (chart && "query" in chart) return readReference(metricReferenceChartSchema, chart);
-          return ({
-          ...chart,
-          id: String(chart?.id || randomUUID()),
-          name: String(chart?.name || "").trim(),
-          chartType: String(chart?.chartType || "bar"),
-          dsl:
-            chart?.dsl && typeof chart.dsl === "object" && !Array.isArray(chart.dsl)
-              ? chart.dsl
-              : {},
-        });
-        })
-      : [],
-    metrics: Array.isArray(group?.metrics)
-      ? group.metrics.map((metric) => {
-          if (metric && "query" in metric) return readReference(metricReferenceMetricSchema, metric);
-          return ({
-          ...metric,
-          id: String(metric?.id || randomUUID()),
-          name: String(metric?.name || "").trim(),
-          dsl:
-            metric?.dsl && typeof metric.dsl === "object" && !Array.isArray(metric.dsl)
-              ? metric.dsl
-              : {},
-        });
-        })
-      : [],
-  }));
+function readGroups(groups: unknown): DashboardGroup[] {
+  const result = dashboardGroupsSchema.safeParse(groups);
+  if (!result.success) throw new HttpError(500, "Invalid saved dashboard cards", "INVALID_CARD_DATA", {
+    issues: result.error.issues.map(issue => ({ ...issue, path: ["groups", ...issue.path] })),
+  });
+  return result.data;
 }
 
 export async function listDashboards(
@@ -100,20 +65,10 @@ export async function getDashboard(
     ownerId: row.owner_id,
     name: row.name,
     source: row.source,
-    groups: ensureGroups(row.groups),
+    groups: readGroups(row.groups),
     createdAt: parseInt(row.created_at, 10),
     updatedAt: parseInt(row.updated_at, 10),
   };
-
-  const normalizedGroups = JSON.stringify(detail.groups);
-  if (normalizedGroups !== JSON.stringify(row.groups)) {
-    await pool.query(
-      `UPDATE ${qualifiedTable("dashboards")}
-       SET groups = $1, updated_at = $2
-       WHERE owner_id = $3 AND id = $4 AND domain_id = $5`,
-      [JSON.stringify(detail.groups), Date.now(), ownerId, id, domainId]
-    );
-  }
 
   return detail;
 }

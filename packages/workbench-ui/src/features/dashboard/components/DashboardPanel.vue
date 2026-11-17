@@ -32,6 +32,7 @@
       :group="{ name: 'dashboard-groups', pull: true, put: false }"
       :ghost-class="'drag-ghost'"
       :drag-class="'drag-dragging'"
+      :disabled="dragDisabled"
       @end="() => persistLayoutDebounced()"
     >
       <template #item="{ element: g }">
@@ -70,12 +71,15 @@
             :disabled="dragDisabled"
             @end="() => persistLayoutDebounced()"
           >
-            <template #item="{ element: m, index: mi }">
+            <template #item="{ element: m }">
               <MetricCard
                 :metric="m"
+                :data-card-id="m.id"
+                :selected="isSelected(m.id, 'metric')"
                 :style="gridSpanStyle(m?.layout)"
-                @command="(cmd) => handleMetricCommand(cmd, g, m, mi)"
-                @layout-change="(layout) => handleLayoutChange(g, m, layout)"
+                @select="(card) => selectCard(card)"
+                @command="(cmd) => handleMetricCommand(cmd, m)"
+                @layout-change="(layout) => handleLayoutChange(m, layout)"
                 @resize-active="(v) => setDragDisabled(v)"
               />
             </template>
@@ -105,18 +109,19 @@
               <template #item="{ element: c }">
                 <ChartCard
                   :chart="c"
-                  :style="gridSpanStyle(c?.layout)"
+                  :data-card-id="c.id"
+                  :style="gridSpanStyle((draftChange(c.id) || {}).layout || c.layout)"
                   :dashboard-id="normalizeId(props.dashboardId)"
-                  :conditions="Array.isArray(c?.conditions) ? c.conditions : []"
-                  :attr-show-name-map="attrShowNameMapByClass"
+                  :preview-file="(draftChange(c.id) || {}).chartFile || null"
+                  :preview-name="(draftChange(c.id) || {}).name || ''"
+                  :draft="Boolean(draft)"
+                  :selected="isSelected(c.id, 'chart')"
+                  @select="(card) => selectCard(card)"
                   @chart-renamed="handleChartRenamed"
                   @chart-deleted="handleChartDeleted"
-                  @chart-conditions-changed="handleChartConditionsChanged"
-                  @view-dsl="handleViewDsl"
                   @view-metric="openMetricSource"
                   @edit-parameters="openParameters"
-                  @ai-request="(chart) => handleAiRequest(chart)"
-                  @layout-change="(layout) => handleLayoutChange(g, c, layout)"
+                  @layout-change="(layout) => handleLayoutChange(c, layout)"
                   @resize-active="(v) => setDragDisabled(v)"
                 />
               </template>
@@ -143,11 +148,29 @@
     <!-- Dashboard not loaded -->
     <div v-else class="empty">{{ t("hotData.noDashboardData") }}</div>
 
-    <AiDrawer v-model="aiDrawerOpen" :chart="aiChart" />
-
-    <el-dialog v-model="dslDialogOpen" :title="dslDialogTitle" width="860px" append-to-body>
-      <DslViewer :value="dslDialogData" />
-    </el-dialog>
+    <!-- A draft the reader has not saved yet: what it changes, and the ways to save or discard it. -->
+    <div v-if="draft" class="draft-bar" role="region" :aria-label="t('dashboard.draft.title')">
+      <div class="draft-bar__text">
+        <strong>{{ t("dashboard.draft.title") }}</strong>
+        <span>{{ draftSummary }}</span>
+        <span v-if="draftBoardName" class="draft-bar__board">{{ t("dashboard.draft.boardWas", { from: boardName, to: draftBoardName }) }}</span>
+      </div>
+      <div v-if="draftFailure" class="draft-bar__failure" role="alert">
+        <strong v-if="draftFailureHeadline">{{ draftFailureHeadline }}</strong>
+        <span>{{ draftFailure.message }}</span>
+      </div>
+      <div class="draft-bar__actions">
+        <el-button :disabled="savingDraft" @click="emit('discard-draft')">{{ t("common.cancel") }}</el-button>
+        <el-button
+          type="primary"
+          :loading="savingDraft"
+          :disabled="draft.operation === 'dashboard.card.parameters' && !parametersOpen"
+          @click="saveDraft"
+        >
+          {{ t("common.save") }}
+        </el-button>
+      </div>
+    </div>
 
     <MetricSourceDialog v-model="metricSourceOpen" :card="metricSourceCard" />
 
@@ -155,25 +178,25 @@
       v-model="parametersOpen"
       :dashboard-id="normalizeId(props.dashboardId)"
       :card="parametersCard"
+      :draft="parameterDraft"
       @saved="handleParametersSaved"
     />
   </div>
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { GripVertical, Plus } from "lucide-vue-next";
 import Draggable from "vuedraggable";
 import ChartCard from "./ChartCard.vue";
 import MetricCard from "./MetricCard.vue";
-import AiDrawer from "./AIDrawer.vue";
 import DropdownMenu from "./DropdownMenu.vue";
-import DslViewer from "./DslViewer.vue";
 import CardParameterDialog from "./CardParameterDialog.vue";
-import { isMetricReferenceEntry } from "@ontomato/contracts/dashboard";
 import MetricSourceDialog from "./MetricSourceDialog.vue";
-import { patchCard } from "./utils/metricCard";
+import { cardError, cardErrorHeadline } from "./utils/metricCard";
+import { applyDraft } from "../draft";
+import { clearDashboardSelection, setDashboardSelection } from "../selection";
 
 import {
   normalizeId,
@@ -181,9 +204,6 @@ import {
   patchDeleteDimension,
   patchChartTitle,
   patchDeleteChart,
-  patchChartOption,
-  refreshTruncation,
-  patchChartConditions,
   patchMetricTitle,
   patchDeleteMetric,
   fetchClassMetas,
@@ -193,38 +213,40 @@ import {
 } from "./utils/dashboardHelper";
 
 import {
-  modifyDimensionName,
   deleteDimension,
-  modifyMetricName,
   deleteMetric,
-  modifyDashboardLayout,
-  modifyResultSetConditions,
-  getAnswerByDslConditionParam,
-  createDimension,
   fetchDashboardLocalDetail,
+  modifyDashboardLayout,
+  modifyDimensionName,
+  modifyMetricName,
+  modifyResultSetName,
+  renameDashboard,
+  saveCardParameters,
+  createDimension,
 } from "../api";
-import { applyDataPlan } from "./utils/dataPlan";
 
-import echartsGenerator from "./utils/echartsGenerator";
 import { useI18n } from "vue-i18n";
 
 const { t } = useI18n();
 
 /* ======================== props & state ======================== */
 
+/**
+ * One dashboard: its groups and cards, each card drawn from the metric it references. A draft an agent wrote may be
+ * open on it: the board then shows the draft's changes over the saved ones, saves nothing by itself, and waits for the
+ * reader to save or discard it.
+ */
 const props = defineProps({
   dashboardId: { type: String, default: "" },
+  draft: { type: Object, default: null },
+  /** The card the page's own address names as chosen, so a board reopened at that address shows the same one chosen. */
+  cardId: { type: String, default: "" },
 });
+const emit = defineEmits(["discard-draft", "select-card"]);
 
 const dragDisabled = ref(false);
 const chartGroups = ref(null);
 const attrShowNameMapByClass = ref({});
-const aiDrawerOpen = ref(false);
-const aiChart = ref(null);
-
-const dslDialogOpen = ref(false);
-const dslDialogTitle = ref("");
-const dslDialogData = ref(null);
 
 const metricSourceOpen = ref(false);
 const metricSourceCard = ref(null);
@@ -233,6 +255,103 @@ const parametersOpen = ref(false);
 const parametersCard = ref(null);
 
 const loader = createDashboardLoader();
+
+/* ======================== draft ======================== */
+
+const draftChanges = ref(new Map());
+const draftGroupsRenamed = ref(new Map());
+const draftBoardName = ref("");
+/** The board's saved name, so a draft's own name stands beside it. */
+const boardName = ref("");
+const savingDraft = ref(false);
+const draftFailure = ref(null);
+const draftFailureHeadline = computed(() => (draftFailure.value ? cardErrorHeadline(draftFailure.value, t) : null));
+
+function draftChange(cardId) {
+  return draftChanges.value.get(cardId);
+}
+
+const draftSummary = computed(() => {
+  if (!props.draft) return "";
+  const names = [...draftChanges.value.values()].filter((change) => change.name).length;
+  const files = [...draftChanges.value.values()].filter((change) => change.chartFile).length;
+  const layouts = [...draftChanges.value.values()].filter((change) => change.layout).length;
+  const groups = draftGroupsRenamed.value.size;
+  const parts = [];
+  if (names) parts.push(t("dashboard.draft.names", { n: names }, names));
+  if (files) parts.push(t("dashboard.draft.charts", { n: files }, files));
+  if (layouts) parts.push(t("dashboard.draft.layouts", { n: layouts }, layouts));
+  if (draftBoardName.value) parts.push(t("dashboard.draft.boardName", { name: draftBoardName.value }));
+  if (groups) parts.push(t("dashboard.draft.groups", { n: groups }, groups));
+  if (props.draft.operation === "dashboard.card.parameters") parts.push(t("dashboard.draft.parameters"));
+  return parts.join(t("dashboard.draft.separator"));
+});
+
+/** The draft's parameter change, handed to the parameter form as the values to show and the revision it was written on. */
+const parameterDraft = computed(() => {
+  const form = props.draft ? props.draft.form : null;
+  return form ? { revision: form.revision, values: form.values } : null;
+});
+
+/**
+ * Lays the draft over a freshly read board: the draft's names, chart files and layouts show, and nothing is posted.
+ * Each card's rows still come from its saved query, so a chart file is previewed with this card's current data.
+ */
+async function applyDraftToBoard() {
+  if (!props.draft) return;
+  const detail = await fetchDashboardLocalDetail(normalizeId(props.dashboardId));
+  boardName.value = detail.name;
+  const applied = applyDraft(detail, props.draft);
+  draftChanges.value = applied.cards;
+  draftGroupsRenamed.value = applied.groupsRenamed;
+  draftBoardName.value = applied.boardName ?? "";
+  chartGroups.value = applied.groups.map((group) => ({
+    ...group,
+    charts: group.charts.map((card) => ({ ...card, title: card.name, state: "loading" })),
+    metrics: group.metrics.map((card) => ({ ...card, state: "loading" })),
+  }));
+  await Promise.all(
+    [...applied.groups.flatMap((group) => group.charts), ...applied.groups.flatMap((group) => group.metrics)].map((card) =>
+      metricCardTask(normalizeId(props.dashboardId), card.id, setGroups)(),
+    ),
+  );
+}
+
+/** Saves the draft through the page's own action for its operation; the saved board then replaces the draft. */
+async function saveDraft() {
+  const draft = props.draft;
+  if (!draft) return;
+  const id = normalizeId(props.dashboardId);
+  savingDraft.value = true;
+  draftFailure.value = null;
+  try {
+    if (draft.operation === "dashboard.layout") {
+      if (!(await modifyDashboardLayout(id, draft.form.groups))) throw new Error(t("dashboard.layoutSaveFailedRetry"));
+    } else if (draft.operation === "dashboard.rename") {
+      const form = draft.form;
+      if (!(await renameDashboard(id, form.name))) throw new Error(t("common.renameFailed"));
+    } else if (draft.operation === "dashboard.group.rename") {
+      const form = draft.form;
+      if (!(await modifyDimensionName(id, form.groupId, form.dimensionName))) throw new Error(t("common.renameFailed"));
+    } else if (draft.operation === "dashboard.chart.rename") {
+      const form = draft.form;
+      if (!(await modifyResultSetName(id, form.chartId, form.resultSetName))) throw new Error(t("common.renameFailed"));
+    } else if (draft.operation === "dashboard.metric.rename") {
+      const form = draft.form;
+      if (!(await modifyMetricName(id, form.metricId, form.metricName))) throw new Error(t("common.renameFailed"));
+    } else {
+      const form = draft.form;
+      await saveCardParameters({ dashboardId: id, cardId: form.cardId, revision: form.revision, values: form.values });
+    }
+    ElMessage.success(t("dashboard.draft.saved"));
+    emit("discard-draft");
+    await loadDashboardAll(id);
+  } catch (error) {
+    draftFailure.value = cardError(error);
+  } finally {
+    savingDraft.value = false;
+  }
+}
 
 /* ======================== Layout Gate (allow through once after the first-screen stabilizes, no rollback) ======================== */
 
@@ -272,7 +391,6 @@ function resetLayoutGate() {
   cancelAnimationFrame(raf1);
   cancelAnimationFrame(raf2);
   armLayoutFallback();
-  // The ResizeObserver doesn't need disconnecting; the ready check returns directly
 }
 
 function checkStableWidthOnce() {
@@ -283,7 +401,6 @@ function checkStableWidthOnce() {
 
   const w = el.getBoundingClientRect().width || 0;
 
-  // A more aggressive threshold: avoid waiting too long
   if (w < 520) {
     stableHits = 0;
     lastW = w;
@@ -293,7 +410,6 @@ function checkStableWidthOnce() {
   const delta = Math.abs(w - lastW);
   lastW = w;
 
-  // Allow through as long as one consecutive change is small
   if (delta <= 2) stableHits += 1;
   else stableHits = 0;
 
@@ -337,6 +453,7 @@ function ensureLayoutObserver() {
 
 async function reloadDashboardGroups(id) {
   const detail = await fetchDashboardLocalDetail(id);
+  boardName.value = detail?.name ?? "";
   chartGroups.value = Array.isArray(detail?.groups) ? detail.groups : [];
 }
 
@@ -380,16 +497,11 @@ function buildLayoutPersistPayload(groups) {
     rowSpan: clamp(layout?.rowSpan ?? 1, 1, 6),
   });
 
-  // A metric-reference card sends only its presentation; its query stays as saved and its chart type changes elsewhere.
+  // A card sends only its presentation: its query and its chart file stay as saved, and a draft changes the file.
   const pickMetricChart = (c) => ({
     id: c.id,
     name: c.title || c.name,
-    fields: c.fields,
-    sort: c.sort,
-    displayLimit: c.displayLimit,
-    formats: c.formats,
     layout: pickLayout(c.layout),
-    style: c.style,
   });
 
   const pickMetricValue = (m) => ({
@@ -404,51 +516,14 @@ function buildLayoutPersistPayload(groups) {
     style: m.style,
   });
 
-  const pickChart = (c) => {
-    const { name, title, chartType, dataPlan, id, fields, dsl, abcProgram, source, conditions } = c;
-    return {
-      name: title || name || "",
-      type: chartType,
-      chartType,
-      dataPlan,
-      id,
-      layout: pickLayout(c?.layout),
-      fields,
-      dsl: dsl || {},
-      abcProgram,
-      source,
-      conditions: Array.isArray(conditions) ? conditions : [],
-    };
-  };
-
-  const pickMetric = (m) => {
-    const { name, title, unit, agg, valueField, dataPlan, id, dsl, abcProgram, source } = m;
-    return {
-      name: name || title || "",
-      unit,
-      agg,
-      valueField,
-      dataPlan,
-      id,
-      layout: pickLayout(m?.layout),
-      dsl: dsl || {},
-      abcProgram,
-      source,
-    };
-  };
-
   return gs.map((g) => {
     const charts = Array.isArray(g?.charts) ? g.charts : [];
     const metrics = Array.isArray(g?.metrics) ? g.metrics : [];
     return {
       id: normalizeId(g?.id || ""),
       title: String(g?.title || "").trim(),
-      charts: charts
-        .map((c) => (isMetricReferenceEntry(c) ? pickMetricChart(c) : pickChart(c)))
-        .filter((x) => x.id),
-      metrics: metrics
-        .map((m) => (isMetricReferenceEntry(m) ? pickMetricValue(m) : pickMetric(m)))
-        .filter((x) => x.id),
+      charts: charts.map(pickMetricChart).filter((x) => x.id),
+      metrics: metrics.map(pickMetricValue).filter((x) => x.id),
     };
   });
 }
@@ -456,6 +531,8 @@ function buildLayoutPersistPayload(groups) {
 async function flushPersistLayout() {
   const id = normalizeId(props.dashboardId);
   if (!id) return;
+  // A draft's preview is not a saved layout: nothing is posted while it is open.
+  if (props.draft) return;
   if (persistSaving) return;
 
   persistSaving = true;
@@ -479,7 +556,7 @@ async function flushPersistLayout() {
 
 function persistLayoutDebounced() {
   const id = normalizeId(props.dashboardId);
-  if (!id) return;
+  if (!id || props.draft) return;
   persistDirty = true;
 
   if (persistTimer) clearTimeout(persistTimer);
@@ -571,7 +648,7 @@ async function loadDashboardAll(id) {
   // 1) Local detail
   await reloadDashboardGroups(id);
 
-  // 2) Remote merge (restore option/dataRows, etc.)
+  // 2) Remote merge (read every card's current result)
   await loader.loadDashboardById(id, setGroups);
 }
 
@@ -598,8 +675,8 @@ async function reloadAndAppendOnly(id) {
 /* ======================== watch dashboard ======================== */
 
 watch(
-  () => normalizeId(props.dashboardId),
-  async (id) => {
+  () => [normalizeId(props.dashboardId), props.draft],
+  async ([id]) => {
     const loadToken = ++dashboardLoadToken;
 
     // Reset the dashboard reset gate
@@ -612,10 +689,16 @@ watch(
     }
 
     try {
-      await loadDashboardAll(id);
-      if (loadToken !== dashboardLoadToken) return;
+      if (props.draft) {
+        // The board under a draft is read again and drawn with the draft's own changes; its rows still come from the
+        // saved query, so the preview is this card's data with the draft's file, not a save.
+        await applyDraftToBoard();
+        if (loadToken !== dashboardLoadToken) return;
+      } else {
+        await loadDashboardAll(id);
+        if (loadToken !== dashboardLoadToken) return;
+      }
 
-      // Schedule another check after data arrives (but still only check false->true once)
       await nextTick();
       scheduleStableCheckOnce();
     } catch (e) {
@@ -626,6 +709,12 @@ watch(
   },
   { immediate: true }
 );
+
+/** The name a card is shown under in the draft's board. */
+function cardName(cardId) {
+  const cards = Array.isArray(chartGroups.value) ? chartGroups.value.flatMap((group) => [...group.charts, ...group.metrics]) : [];
+  return String(cards.find((card) => card.id === cardId)?.name ?? "");
+}
 
 /* ======================== lifecycle ======================== */
 
@@ -726,15 +815,14 @@ async function handleDimensionCommand(cmd, g) {
 
 /* ======================== metric ops ======================== */
 
-async function handleMetricCommand(cmd, _g, m) {
+async function handleMetricCommand(cmd, m) {
   const id = normalizeId(props.dashboardId);
   const metricId = normalizeId(m?.id);
   const metricTitle = String(m?.name || "").trim();
   if (!id || !metricId) return;
 
-  if (cmd === "view_dsl") {
-    if (isMetricReferenceEntry(m)) openMetricSource(m);
-    else openDslDialog(metricTitle || t("common.viewDsl"), m?.dsl ?? null);
+  if (cmd === "view-query") {
+    openMetricSource(m);
     return;
   }
 
@@ -794,10 +882,66 @@ async function handleMetricCommand(cmd, _g, m) {
   }
 }
 
+/* ======================== selection ======================== */
+
+/*
+ * The card the reader points at is what a message sent from beside the page asks about: choosing one card chooses it
+ * alone, the board it sits in rides along, and the page reports both to the platform. The board is reported on its own
+ * as soon as it is drawn, so a question about the board needs no card chosen first.
+ *
+ * The choice also belongs to the page's address, because the page is read again somewhere else: the composer at the
+ * foot of the board's own application carries the address into the conversation, where the board is mounted beside it
+ * and the choice has to be the same one. The page therefore takes the chosen card from its address and reports each
+ * choice back to it; this component only follows.
+ */
+const chosen = ref("");
+
+function isSelected(cardId, kind) {
+  return chosen.value === `${kind}:${cardId}`;
+}
+
+function selectCard(card) {
+  chosen.value = `${card.kind}:${card.id}`;
+  reportSelection();
+  emit("select-card", { id: card.id, kind: card.kind });
+  // A card chosen in a narrow pane is shown, not only marked: the reader asked for this one.
+  nextTick(() => document.querySelector(`[data-card-id="${card.id}"]`)?.scrollIntoView?.({ block: "nearest", behavior: "smooth" }));
+}
+
+/** The board and, when one is chosen, that card, as the platform reads them for a message sent from beside the page. */
+function reportSelection() {
+  const id = normalizeId(props.dashboardId);
+  if (!id) return;
+  const kind = chosen.value.startsWith("chart:") ? "chart" : "metric";
+  const cardId = chosen.value.slice(kind.length + 1);
+  // The card's name is the one shown: a draft's name while the draft is open, the saved one otherwise.
+  const card = [...(chartGroups.value || []).flatMap((group) => [...group.charts, ...group.metrics])].find((item) => item.id === cardId);
+  setDashboardSelection({ id, name: boardName.value || id }, card ? { id: card.id, name: (draftChange(card.id) || {}).name || card.name || card.title || card.id, kind } : undefined);
+}
+
+/** A board is a fresh page: the card chosen on the last one is not this one's. */
+watch(() => normalizeId(props.dashboardId), () => {
+  chosen.value = "";
+  reportSelection();
+}, { immediate: true });
+watch(chartGroups, () => reportSelection());
+
+/** The address says which card is chosen, and a board read again restores that choice once its cards are drawn. */
+watch([() => props.cardId, chartGroups], ([cardId]) => {
+  const cards = [...(chartGroups.value || []).flatMap((group) => [...group.charts, ...group.metrics])];
+  const card = cards.find((item) => item.id === cardId);
+  if (!card) return;
+  const kind = (chartGroups.value || []).some((group) => group.charts.some((item) => item.id === card.id)) ? "chart" : "metric";
+  if (chosen.value === `${kind}:${card.id}`) return;
+  chosen.value = `${kind}:${card.id}`;
+  reportSelection();
+});
+
+onBeforeUnmount(() => clearDashboardSelection());
+
 /* ======================== layout change ======================== */
 
-function handleLayoutChange(group, card, layout) {
-  if (!layout || typeof layout !== "object") return;
+function handleLayoutChange(card, layout) {
   card.layout = { ...(card.layout || {}), ...layout };
   persistLayoutDebounced();
 }
@@ -810,94 +954,6 @@ function handleChartRenamed(payload) {
 
 function handleChartDeleted(payload) {
   chartGroups.value = patchDeleteChart(chartGroups.value, payload?.chartId);
-}
-
-/* ======================== conditions changed ======================== */
-
-async function handleChartConditionsChanged(payload) {
-  const id = normalizeId(props.dashboardId);
-  const chartId = normalizeId(payload?.chartId);
-  const chartTitle = String(payload.chartTitle || "").trim();
-  const chartType = String(payload?.chartType || "").trim();
-  const conditions = Array.isArray(payload?.conditions) ? payload.conditions : null;
-  const dataPlan =
-    payload?.dataPlan && typeof payload.dataPlan === "object" ? payload.dataPlan : null;
-  const dsl = payload?.dsl && typeof payload.dsl === "object" ? payload.dsl : null;
-  const abcProgram =
-    payload?.abcProgram && typeof payload.abcProgram === "object" ? payload.abcProgram : null;
-
-  if (!id || !chartId || (!dsl && !abcProgram)) return;
-
-  // 1) Optimistic update
-  chartGroups.value = patchChartConditions(chartGroups.value, chartId, conditions);
-
-  // 2) Save conditions
-  try {
-    const ok = await modifyResultSetConditions(id, chartId, conditions);
-    if (!ok) ElMessage.warning(t("dashboard.conditionsSaveFailed"));
-  } catch {
-    ElMessage.warning(t("dashboard.conditionsSaveFailed"));
-  }
-
-  // 3) Re-request data and update option
-  try {
-    // Prefer the getAnswerByDslConditionParam API (supports conditional filtering)
-    const response = await getAnswerByDslConditionParam({
-      dsl,
-      abcProgram,
-      conditions,
-      chartType,
-      chartTitle,
-      fields: payload.fields,
-      dataPlan,
-      timeoutMs: abcProgram ? 300000 : 30000,
-    });
-    const { data: rows, rawData, fields: mappedFields, dsl: nextDsl } = response;
-    const truncation = refreshTruncation(response);
-
-    const chartRows = applyDataPlan(rawData, dataPlan);
-    const usedFields =
-      payload.fields && Object.keys(payload.fields).length > 0 ? payload.fields : mappedFields;
-    if (!chartRows.length) {
-      chartGroups.value = patchChartOption(
-        chartGroups.value,
-        chartId,
-        { __ragchatState: "empty" },
-        chartType,
-        [],
-        usedFields,
-        nextDsl || dsl,
-        truncation
-      );
-      return;
-    }
-    const { option: genOption, health } = echartsGenerator.generateWithHealth(
-      chartType || "bar",
-      chartTitle,
-      usedFields,
-      chartRows
-    );
-    const option = health.ok ? genOption : { ...genOption, __ragchatState: "error" };
-    chartGroups.value = patchChartOption(
-      chartGroups.value,
-      chartId,
-      option,
-      chartType,
-      rows,
-      usedFields,
-      nextDsl || dsl,
-      truncation
-    );
-    return;
-  } catch {
-    chartGroups.value = patchChartOption(
-      chartGroups.value,
-      chartId,
-      { __ragchatState: "error" },
-      chartType,
-      []
-    );
-  }
 }
 
 /* ======================== metric-reference parameters ======================== */
@@ -913,316 +969,19 @@ function openParameters(card) {
 }
 
 /** The saved parameters become the card's query; the card then asks the metric again. */
-function handleParametersSaved(cardId, query) {
-  setGroups((prev) => patchCard(prev, cardId, (card) => ({ ...card, query })));
-  metricCardTask(normalizeId(props.dashboardId), cardId, setGroups)();
+function handleParametersSaved(cardId) {
+  if (!props.draft) metricCardTask(normalizeId(props.dashboardId), cardId, setGroups)();
+  else emit("discard-draft");
 }
 
-/* ======================== AI ======================== */
-
-function handleAiRequest(chart) {
-  aiDrawerOpen.value = true;
-  aiChart.value = chart;
-}
-
-function openDslDialog(title, dsl) {
-  if (dsl === null || dsl === undefined) {
-    ElMessage.warning(t("dashboard.noDslData"));
-    return;
-  }
-  dslDialogTitle.value = String(title || t("common.viewDsl"));
-  dslDialogData.value = dsl;
-  dslDialogOpen.value = true;
-}
-
-function handleViewDsl(payload) {
-  openDslDialog(payload?.title || t("common.viewDsl"), payload?.dsl ?? null);
-}
+/** A draft of a card's parameters opens its form with the draft's values; nothing else in it changes. */
+watch(
+  () => props.draft,
+  (draft) => {
+    if (draft?.operation !== "dashboard.card.parameters") return;
+    parametersCard.value = { id: draft.form.cardId, name: cardName(draft.form.cardId) };
+    parametersOpen.value = true;
+  },
+  { immediate: true },
+);
 </script>
-
-<style scoped>
-.dash-root {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  height: 100%;
-  align-self: stretch;
-  overflow: auto;
-  background: var(--shell-workspace-bg, var(--el-bg-color));
-}
-
-.dash-root.is-layout-pending {
-  visibility: hidden;
-}
-
-/* Empty state: no dimensions */
-.empty-state {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  padding: 0 24px;
-  margin: 0;
-  box-sizing: border-box;
-  background: transparent;
-}
-
-.empty-state__content {
-  text-align: center;
-  transform: translateY(-24px);
-}
-
-.empty-state__icon {
-  width: 72px;
-  height: 72px;
-  border-radius: var(--radius-md);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 34px;
-  margin: 0 auto var(--spacing-lg);
-  background: var(--el-fill-color-light);
-  color: var(--el-text-color-secondary);
-}
-
-.empty-state__title {
-  font-size: var(--text-xl);
-  font-weight: var(--font-semibold);
-  color: var(--el-text-color-primary);
-  margin-bottom: 8px;
-}
-
-.empty-state__desc {
-  font-size: var(--text-sm);
-  color: var(--el-text-color-secondary);
-  margin-bottom: 20px;
-}
-
-/* Main body */
-.bi-dashboard {
-  flex: 1 1 auto;
-  min-height: 0;
-  width: 100%;
-  padding: var(--spacing-lg) 0 0;
-  box-sizing: border-box;
-  background-color: transparent;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-lg-xl);
-}
-
-.block {
-  display: flex;
-  flex-direction: column;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-md);
-  padding: var(--surface-padding);
-  box-shadow: var(--shadow-card);
-}
-
-/* ===============================
-   group header (icon + title + more)
-================================ */
-.group-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 36px;
-  padding-right: 2px;
-  margin-bottom: 12px;
-  box-sizing: border-box;
-}
-
-.group-drag-handle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-md);
-  cursor: grab;
-  color: var(--el-text-color-tertiary);
-  flex-shrink: 0;
-  transition: all var(--transition-fast);
-}
-.group-drag-handle:hover {
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-}
-
-.group-title {
-  flex: 1;
-  font-size: var(--text-lg);
-  font-weight: var(--font-semibold);
-  color: var(--el-text-color-primary);
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  letter-spacing: 0.01em;
-}
-
-.group-more {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  color: var(--el-text-color-tertiary);
-  flex-shrink: 0;
-  transition: all var(--transition-fast);
-}
-
-.group-more:hover {
-  background: var(--el-fill-color-dark);
-  color: var(--el-color-primary);
-}
-
-.group-header :deep(.el-icon) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  vertical-align: middle;
-}
-
-/* ===============================
-   metric card
-================================ */
-.metrics-section {
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  grid-auto-rows: 102px;
-  gap: 14px;
-  margin-bottom: 14px;
-}
-
-.metrics-section.metrics-empty {
-  margin-bottom: 0;
-}
-
-/* ===============================
-   chart area
-================================ */
-.charts-wrapper {
-  position: relative;
-}
-
-.charts-section {
-  display: grid;
-  grid-template-columns: repeat(24, 1fr);
-  grid-auto-rows: 360px;
-  gap: 14px;
-}
-
-.charts-section--empty {
-  min-height: 200px;
-  border: 1.5px dashed var(--el-border-color-dark);
-  border-radius: var(--radius-md);
-  background: var(--el-fill-color-extra-light);
-}
-
-.charts-empty-overlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-}
-
-.charts-empty-hint {
-  text-align: center;
-  user-select: none;
-  padding: 24px;
-}
-
-.charts-empty-hint__title {
-  font-size: var(--text-base);
-  font-weight: var(--font-semibold);
-  color: var(--el-text-color-secondary);
-  margin-bottom: 6px;
-}
-
-.charts-empty-hint__desc {
-  font-size: var(--text-sm);
-  color: var(--el-text-color-tertiary);
-  line-height: 1.7;
-}
-
-.charts-empty-hint__hl {
-  font-weight: var(--font-semibold);
-  color: var(--el-color-primary);
-}
-
-/* ===============================
-   drag effect
-================================ */
-.drag-ghost {
-  opacity: 0.45;
-  border-radius: var(--radius-md);
-}
-.drag-dragging {
-  cursor: grabbing !important;
-  border-radius: var(--radius-md);
-}
-
-/* Others */
-.empty {
-  text-align: center;
-  margin-top: 20px;
-  color: var(--el-text-color-tertiary);
-  font-size: var(--text-sm);
-}
-
-.btn-icon {
-  margin-right: 6px;
-}
-@media (max-width: 700px) {
-  :where(html.workbench-mobile-navigation) .bi-dashboard {
-    padding: var(--spacing-lg) 0 env(safe-area-inset-bottom);
-    gap: 12px;
-  }
-  :where(html.workbench-mobile-navigation) .block {
-    padding: 12px 10px;
-    border-radius: 12px;
-  }
-  :where(html.workbench-mobile-navigation) .group-header {
-    margin-bottom: 8px;
-  }
-  :where(html.workbench-mobile-navigation) .group-title {
-    font-size: var(--text-base);
-  }
-  :where(html.workbench-mobile-navigation) .metrics-section,
-  :where(html.workbench-mobile-navigation) .charts-section {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 10px;
-  }
-  :where(html.workbench-mobile-navigation) .metrics-section > *,
-  :where(html.workbench-mobile-navigation) .charts-section > * {
-    grid-column: 1 / -1 !important;
-  }
-  :where(html.workbench-mobile-navigation) .charts-section {
-    grid-auto-rows: 300px;
-  }
-  :where(html.workbench-mobile-navigation) .group-drag-handle {
-    display: none;
-  }
-  :where(html.workbench-mobile-navigation) .empty-state {
-    padding: 16px;
-  }
-  :where(html.workbench-mobile-navigation) .empty-state__content {
-    transform: none;
-  }
-}
-</style>

@@ -78,48 +78,12 @@ export interface WorkbenchFixedText {
 }
 
 /**
- * Display details of dashboard charts (dashboard/components and utils). Chart colours are not content: they come from
- * the edition's brand source (features/dashboard/chart-palette.ts).
+ * Display details of dashboard charts (dashboard/components). Chart colours are not content: they come from the
+ * edition's brand source (features/dashboard/chart-palette.ts).
  */
 export interface DashboardVisuals {
-  /** Chart theme of the zoom dialog: either echarts' default theme or (open source) the platform's chart theme. */
-  zoomChartTheme: "default" | "dashboard";
   /** Loading mask of charts and metric cards: the Element Plus default background or (open source) transparent. */
   loadingMask: "default" | "transparent";
-  /** The generator's two original tooltip sentences: value with share, and the value/share line of tree maps. */
-  chartTooltips: {
-    valueWithPercent(value: string, percent: string): string;
-    valueWithShare(key: string, value: string, percent: string): string;
-  };
-  /** Original reason sentences returned by the chart health check; chart is the chart type name at the start of the sentence and the numbers are the counts in it. */
-  healthReasons: DashboardHealthReasons;
-}
-
-export interface DashboardHealthReasons {
-  xAxisDataEmpty(chart: string): string;
-  barSeriesMissing: string;
-  lineSeriesMissing: string;
-  barLineLengthMismatch: string;
-  seriesDataEmpty(chart: string): string;
-  areaLineAllZero: string;
-  areaLineLengthMismatch(x: number, y: number): string;
-  scatterIllegalPoints(n: number): string;
-  radarIndicatorEmpty: string;
-  radarValueEmpty: string;
-  radarTooFewDimensions: string;
-  radarLengthMismatch(indicators: number, values: number): string;
-  radarIllegalMax: string;
-  sankeyFieldsMissing: string;
-  sankeyNodesEmpty: string;
-  sankeyLinksEmpty: string;
-  sankeyLinksOutsideNodes(n: number): string;
-  sankeyAllZero: string;
-  sankeyIllegalValues(n: number): string;
-  sankeyDuplicateEdges(n: number): string;
-  illegalValues(chart: string, n: number): string;
-  boxplotIllegalItems(n: number): string;
-  gaugeIllegalValue: string;
-  liquidFillIllegalValues(n: number): string;
 }
 
 let content: WorkbenchContent | null = null;
