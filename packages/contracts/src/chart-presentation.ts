@@ -265,6 +265,24 @@ function secondColumn(series: Option, role: string): string | undefined {
 /** A column's format, when the metric's display settings state one. */
 const formatOf = (formats: Formats, column: string | undefined) => column ? formats?.[column] : undefined;
 
+/** The metric's columns in the order the file's dataset declares them, which is how a row's array is laid out. */
+const columnsOf = (option: Option): readonly string[] => (option.dataset?.[0]?.dimensions as readonly string[] | undefined) ?? [];
+
+/**
+ * One column of the value a formatter was given. A series drawn from the metric's dataset receives the whole row — its
+ * values in the dataset's column order, or an object by column name — while a series the platform materialized receives
+ * the value itself. Reading the column the series encodes keeps every form of the row one value, never the row object.
+ */
+function columnValue(value: unknown, column: string | undefined, option: Option): unknown {
+  if (!column) return value;
+  if (Array.isArray(value)) {
+    const index = columnsOf(option).indexOf(column);
+    return index < 0 ? value : value[index];
+  }
+  if (value && typeof value === "object" && Object.hasOwn(value as Record<string, unknown>, column)) return (value as Record<string, unknown>)[column];
+  return value;
+}
+
 /**
  * An item is a name and its value, and a metric may also give its share; both read their own formats. A tooltip breaks
  * its lines as HTML, a series label as text.
@@ -319,11 +337,16 @@ export function chartFormats(source: Option, presentation: { bindings: ChartBind
       target.tooltip = { ...target.tooltip, formatter: (params: Parameters<typeof work>[0]) => { const item = work(params); return [item.name, item.text].join("<br/>"); } };
       continue;
     }
-    // An item series names its own value column; its tooltip and label write that value in its format.
+    // An item series names its own value and share columns; its tooltip and label write those of the row it is given.
     const valueColumn = encodedColumn(target, "value");
+    const shareColumn = secondColumn(target, "tooltip");
     const format = formatOf(formats, valueColumn);
     if (!format) continue;
-    const work = (params: { name: string; value: unknown; data?: { share?: unknown } }) => itemText(params.name, params.value, params.data?.share, formats, valueColumn, secondColumn(target, "tooltip"), locale);
+    const work = (params: { name: string; value: unknown; data?: { share?: unknown } }) => {
+      // A materialized item carries the share it was given; a row is read for the column the series encodes.
+      const share = params.data?.share ?? columnValue(params.value, shareColumn, option);
+      return itemText(params.name, columnValue(params.value, valueColumn, option), share, formats, valueColumn, shareColumn, locale);
+    };
     if (itemSeries.has(target.type) || target.label?.show) target.label = { ...target.label, formatter: (params: Parameters<typeof work>[0]) => { const item = work(params); return [item.name, item.text].join("\n"); } };
     target.tooltip = { ...target.tooltip, formatter: (params: Parameters<typeof work>[0]) => { const item = work(params); return [item.name, item.text].join("<br/>"); } };
   }
