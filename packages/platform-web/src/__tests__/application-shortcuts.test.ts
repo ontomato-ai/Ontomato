@@ -9,3 +9,7 @@ it('bounds personal dynamic shortcuts while preserving the active application an
   expect(shown.map(item=>item.id)).toEqual(expect.arrayContaining(['home','application-gallery','app-11']));
   expect(shown.some(item=>item.id==='app-8')).toBe(false);
 });
+it('places pinned built applications alongside the builder entry',()=>{
+ const business:PlatformAppDeclaration={id:'app-business',label:'Business',icon:'pages',category:'business',rail:'apps',prefix:'/business'};
+ expect(applicationShortcuts([business],['app-business'],['app-business'],null)[0].rail).toBe('builders');
+});

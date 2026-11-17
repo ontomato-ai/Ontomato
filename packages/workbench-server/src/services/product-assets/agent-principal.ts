@@ -5,6 +5,13 @@ import {environment} from '../../config/environment';
 import {HttpError} from '../../utils/errors';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {requireProductUse} from './grants';
+import {getQueryTimeoutMs} from '../../config/query-settings';
+
+export async function userScopedAgentCredentials(domainId:string,principalId:string,initiatorId:string,locale?:string):Promise<AssistantCredentials>{
+ const expiresAt=Date.now()+getQueryTimeoutMs();
+ const response=await backendPost('user-scoped-agent-execution',config.dataQuery.baseUrl+'/agent-principals/user-scoped-execution',{domainId,principalId,initiatorId,expiresAt},{headers:{'Content-Type':'application/json','X-Ontomato-Query-Service-Token':environment.agentRuntime().queryServiceToken},retries:1});
+ const result=z.object({token:z.string().startsWith('ap2.'),expiresAt:z.number()}).parse(JSON.parse(response.text));return {token:result.token,locale};
+}
 
 /** The service exchanges a Profile identity for governance-owned, short-lived execution authority. */
 export async function agentPrincipalCredentials(domainId:string,principalId:string,locale?:string,initiatorId?:string):Promise<AssistantCredentials>{

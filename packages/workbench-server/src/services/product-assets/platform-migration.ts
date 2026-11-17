@@ -24,17 +24,33 @@ export async function migratePlatformProjection(owner:ProductOwner,credentials:A
     data:{objectType:'platform:Dashboard',fields:['name','updatedAt']},
   };
   if(source.document.widget.source==='assistant'){
+    if(!profileId){const {ensurePlatformAssets}=await import('./platform-assets');await ensurePlatformAssets(owner,credentials);const profiles=(await listProducts(owner)).filter(asset=>asset.document.kind==='agent-profile');const {nativeAgentAsset}=await import('./platform-assets');for(const candidate of profiles)if(await nativeAgentAsset(owner.domainId,candidate.id)){profileId=candidate.id;break;}}
     if(!profileId)throw new HttpError(409,'Select a published AgentProfile for this conversation panel','PRODUCT_PROFILE_REQUIRED');
     const profile=await getProduct(owner,profileId);
     if(profile.document.kind!=='agent-profile')throw new HttpError(400,'Choose an AgentProfile','INVALID_AGENT_PROFILE');
-    await activeProductBundle(owner,profileId,credentials);
+    const {nativeAgentAsset}=await import('./platform-assets');if(!await nativeAgentAsset(owner.domainId,profileId))await activeProductBundle(owner,profileId,credentials);
     return saveProduct(owner,id,productAssetInputSchema.parse({name:source.name,description:source.description,visibility:source.visibility,document:{kind:'page',children:[{assetId:profileId}]}}),revision,credentials,true);
   }
   const target=mapping[source.document.widget.source];
   if(!target)throw new HttpError(409,'Migrate dashboard or application content to product Page projections before replacing this entry','PRODUCT_UNPINNABLE_DEPENDENCY');
   const homePreferences=await getPostgresPool().query(`SELECT overlay.preferences FROM ${t('product_home')} home JOIN ${t('product_user_overlays')} overlay ON overlay.domain_id=home.domain_id AND overlay.principal_id=home.user_id AND overlay.page_id=home.asset_id WHERE home.domain_id=$1 AND home.user_id=$2 AND EXISTS(SELECT 1 FROM ${t('product_assets')} page CROSS JOIN LATERAL jsonb_array_elements(COALESCE(page.document->'children','[]'::jsonb)) child WHERE page.domain_id=home.domain_id AND page.id=home.asset_id AND child->>'assetId'=$3)`,[owner.domainId,source.ownerId,id]);
   const effectivePreferences=homePreferences.rows[0]?.preferences?personalWorkspaceSchema.parse(homePreferences.rows[0].preferences):source.document.widget.workspace;
-  if(source.document.widget.source==='data'&&Object.values(effectivePreferences?.dashboardCards??{}).some(cards=>cards.length))throw new HttpError(409,'Migrate selected dashboard cards to Page projections before replacing this collection','PRODUCT_PRESENTATION_MIGRATION_REQUIRED');
+  if(source.document.widget.source==='data'&&Object.values(effectivePreferences?.dashboardCards??{}).some(cards=>cards.length)){
+    const {migrateDashboardPage}=await import('./dashboard-migration');const children=[];
+    for(const [dashboardId,cards] of Object.entries(effectivePreferences?.dashboardCards??{})){
+      if(!cards.length)continue;
+      const dashboardAssetId='dashboard-'+dashboardId;let dashboard;
+      try{dashboard=await getProduct(owner,dashboardAssetId);}catch(error){if(!(error instanceof HttpError)||error.status!==404)throw error;}
+      if(!dashboard){const {getOwnedDashboard}=await import('../dashboard/access');const original=await getOwnedDashboard(owner.userId,owner.domainId,dashboardId);dashboard=await saveProduct(owner,dashboardAssetId,{name:original.name,description:'',visibility:'private',document:{kind:'dashboard',dashboardId}},0,credentials);}
+      if(dashboard.document.kind==='dashboard')dashboard=await migrateDashboardPage(owner,credentials,dashboard.id,dashboard.revision);
+      if(dashboard.document.kind!=='page')throw new HttpError(409,'Dashboard migration requires a Page','PRODUCT_CONFLICT');
+      const {getOwnedDashboard}=await import('../dashboard/access');const original=await getOwnedDashboard(owner.userId,owner.domainId,dashboardId);
+      const selectedIds=new Set(original.groups.flatMap(group=>[...group.metrics,...group.charts].filter(card=>cards.includes(card.id)).map(card=>`dashboard-projection-${createHash('sha256').update(`${dashboardAssetId}:${group.id}:${card.id}`).digest('hex').slice(0,40)}`)));
+      const selected=dashboard.document.children.filter(child=>selectedIds.has(child.assetId));
+      children.push(...selected);
+    }
+    return saveProduct(owner,id,{name:source.name,description:source.description,visibility:source.visibility,document:{kind:'page',children,layout:{mode:'grid',mainWidth:12,gap:'normal'}}},revision,credentials,true);
+  }
   const agentIds=source.document.widget.source==='apps'?effectivePreferences?.agentIds??[]:[];
   const profiles=[];
   if(agentIds.length){
@@ -42,7 +58,7 @@ export async function migratePlatformProjection(owner:ProductOwner,credentials:A
     for(const principalId of agentIds){
       const candidates=assets.filter(asset=>asset.document.kind==='agent-profile'&&asset.document.principalId===principalId);
       const published=[];
-      for(const candidate of candidates)try{await activeProductBundle(owner,candidate.id,credentials);published.push(candidate);}catch(error){if(!(error instanceof HttpError)||error.code!=='PRODUCT_RELEASE_UNPINNED')throw error;}
+      for(const candidate of candidates)try{const {nativeAgentAsset}=await import('./platform-assets');if(!await nativeAgentAsset(owner.domainId,candidate.id))await activeProductBundle(owner,candidate.id,credentials);published.push(candidate);}catch(error){if(!(error instanceof HttpError)||error.code!=='PRODUCT_RELEASE_UNPINNED')throw error;}
       if(published.length!==1)throw new HttpError(409,'Each Agent shortcut requires exactly one accessible published Profile','PRODUCT_PROFILE_REQUIRED');
       profiles.push(published[0]);
     }
