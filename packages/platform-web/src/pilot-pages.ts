@@ -2,6 +2,7 @@ import type { PilotPage, PilotPageResolver } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import DashboardsPage from "./pages/DashboardsRoute.vue";
 import GovernanceReportRoute from "./pages/GovernanceReportRoute.vue";
+import PanelApplicationRoute from "./pages/PanelApplicationRoute.vue";
 
 /**
  * The pages this assembly mounts beside a conversation (DESIGN.md "Applications and shells"). A page's own address is
@@ -9,7 +10,8 @@ import GovernanceReportRoute from "./pages/GovernanceReportRoute.vue";
  * component takes: the page keeps one component and one address, and the page beside the chat is that page.
  *
  * The pages here: the dashboards, one governance record's report, and the agent settings, which the workbench mounts
- * itself.
+ * itself. A panel application's address is here too: it is shown beside the conversation by the same page the platform
+ * shows it with, so one address has one page and one panel instance either way.
  */
 export const resolvePilotPage: PilotPageResolver = (address) => {
   const [path, search = ""] = address.split("?");
@@ -35,6 +37,15 @@ export const resolvePilotPage: PilotPageResolver = (address) => {
       navigate(next) {
         return addressWith(`/governance/reports/${encodeURIComponent(recordId)}`, search, "issue", next.issue);
       },
+    } satisfies PilotPage;
+  }
+  // A panel application's page: `/applications/<application>/<the use relation's path>`, shown beside the conversation
+  // by the same component that shows it full.
+  const panel = /^\/applications\/([^/]+)(\/.*)?$/.exec(path);
+  if (panel) {
+    return {
+      component: PanelApplicationRoute,
+      props: { applicationId: decodeURIComponent(panel[1]!), panelPath: (panel[2] ?? "").replace(/^\//, "") },
     } satisfies PilotPage;
   }
   return null;

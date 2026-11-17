@@ -27,6 +27,7 @@ const ENTRIES = [
   { specifier: "@ontomato/sdk/preview", file: "preview.js", source: "src/entries/preview.ts" },
   { specifier: "@ontomato/sdk/chat", file: "chat.js", source: "src/entries/chat.ts" },
   { specifier: "@ontomato/sdk/panel", file: "panel.js", source: "src/entries/panel.ts" },
+  { specifier: "@ontomato/sdk/base", file: "base.js", source: "src/entries/base.ts" },
 ];
 const STYLESHEET = "styles/sdk.css";
 /** The third-party libraries apps program against directly; their versions are part of an SDK version's contract. */

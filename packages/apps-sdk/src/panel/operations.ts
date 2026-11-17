@@ -1,5 +1,5 @@
 import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
-import { projectionOperations, type PanelProjectionRegistration } from "./ports";
+import { operationCall, projectionOperations, type PanelProjectionRegistration } from "./ports";
 import type { PanelOperationBinding } from "./types";
 import type { PanelStateStore } from "./state";
 
@@ -24,7 +24,10 @@ export function panelOperations(
     ...registrations.flatMap((registration) =>
       projectionOperations(manifest, registration).map((operation) => ({
         ...operation,
-        invoke: (input?: Readonly<Record<string, unknown>>) => registration.invoke(operation.handlerRef, input),
+        // The target is read here, from the instance's state at the moment of the call: the object the reader has
+        // selected, or the draft's own. A caller outside the panel sends what this produces, never a state reference.
+        invoke: (input?: Readonly<Record<string, unknown>>) =>
+          registration.invoke(operation.handlerRef, operationCall(operation, state.values.value, input ?? {})),
       })),
     ),
     ...manifest.operations.map((operation) => ({

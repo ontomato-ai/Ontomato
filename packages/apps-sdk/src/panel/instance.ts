@@ -1,6 +1,6 @@
 import { computed, readonly, shallowRef, type DeepReadonly, type Ref } from "vue";
 import type { PageContext } from "@ontomato/contracts/page-context";
-import { panelOpenRequestSchema, type PanelManifest, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import { panelOpenRequestSchema, type PanelManifest, type PanelOperationCall, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { createPanelState, panelSelection, type PanelInitialState, type PanelStateStore } from "./state";
 import { panelOperations } from "./operations";
@@ -43,8 +43,8 @@ export interface PanelInstance {
   register(registration: PanelProjectionRegistration): () => void;
   /** Runs one described operation here, with the reader's own credential. */
   invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
-  /** Runs one operation a projection publishes, by its handler reference. */
-  runHandler(handlerRef: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
+  /** Runs one operation a projection publishes, by its handler reference, with the call it is given. */
+  runHandler(handlerRef: string, call: PanelOperationCall): Promise<unknown>;
   /** Reads a projection record by ID, as the reader. */
   projection(id: string): Promise<ProductProjection>;
   /** Whether this instance holds unsaved changes: a received draft, or a form the reader edited. */
@@ -88,7 +88,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       if (!found) throw new Error(`The panel offers no operation '${id}'`);
       return found.invoke(input);
     },
-    runHandler: (handlerRef, input) => handlerFor(handlerRef).invoke(input),
+    runHandler: (handlerRef, call) => handlerFor(handlerRef).invoke(call),
     projection: (id) => options.readProjection(id),
     dirty: () => draft.value !== null || forms.dirty(),
     deepLink: () => state.deepLinkable(),

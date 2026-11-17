@@ -5,6 +5,7 @@ import type { ProductPanel, ProductProjection } from "@ontomato/contracts/produc
 import { createPanelInstance, applyPanelRequest } from "../../../../../packages/apps-sdk/src/panel/instance";
 import { PanelFormAdapters, receivePanelDraft } from "../../../../../packages/apps-sdk/src/panel/draft";
 import { portsOf } from "../../../../../packages/apps-sdk/src/panel/ports-of";
+import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import { registerHandler, handlerFor, registeredHandlers } from "../../../../../packages/apps-sdk/src/panel/handlers";
 import { componentFor } from "../../../../../packages/apps-sdk/src/catalogue-components";
 import Projection from "../../../../../packages/apps-sdk/src/panel/Projection.vue";
@@ -117,12 +118,11 @@ describe("a panel's instance", () => {
       inputs: {},
       operations: [],
     });
-    // A form binds the operation its record names; the catalogue says what that operation takes.
-    expect(portsOf(await panelInstance.projection("projection-task-form"))).toEqual({
-      binding: "PlatformOperation:schedules.update",
-      inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
-      operations: [],
-    });
+    // A record bound to a platform operation publishes that operation: its handler is the reference the record names,
+    // and the panel says nothing about it either.
+    const form = portsOf(await panelInstance.projection("projection-task-form"));
+    expect(form.binding).toBe("PlatformOperation:schedules.update");
+    expect(form.operations.map((operation) => operation.handlerRef)).toEqual(["schedules.update"]);
   });
 
   it("draws the component the catalogue names, and refuses one this version has not got", () => {
@@ -142,7 +142,7 @@ describe("a panel's instance", () => {
       slot: "runTask",
       projectionId: "projection-run-task",
       ports,
-      invoke: (handlerRef, input) => panelInstance.runHandler(handlerRef, input),
+      invoke: (handlerRef, call) => panelInstance.runHandler(handlerRef, call),
     });
     const [operation] = panelInstance.operations.value.filter((candidate) => candidate.slot === "runTask");
     await panelInstance.invoke(operation!.id);
@@ -212,7 +212,7 @@ describe("a panel's module", () => {
       manifest: panel,
       instance: panelInstance,
       projection: (id: string) => panelInstance.projection(id),
-      invoke: (handlerRef: string, input?: Record<string, unknown>) => panelInstance.runHandler(handlerRef, input),
+      invoke: (handlerRef: string, call: PanelOperationCall) => panelInstance.runHandler(handlerRef, call),
       projectionsChanged: () => () => {},
       draft: ref(null),
       holdUnsaved: () => () => {},

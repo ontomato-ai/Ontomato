@@ -7,6 +7,10 @@ import { CodeEditor } from "@ontomato/foundation-ui/code";
 import { MarkdownView } from "@ontomato/foundation-ui/markdown";
 import { HtmlPreview, TablePreview } from "@ontomato/foundation-ui/preview";
 import ProductAsset from "./ProductAsset.vue";
+import ObjectList from "./base/ObjectList.vue";
+import ObjectSummary from "./base/ObjectSummary.vue";
+import ObjectForm from "./base/ObjectForm.vue";
+import OperationButton from "./base/OperationButton.vue";
 import MetricViewData from "@ontomato/ontology-manager/app-components/MetricViewData.vue";
 import {
   AgentAvatar,
@@ -48,6 +52,10 @@ const EXPORTS: Record<string, Component> = {
   ToolStep,
   ShellComposer,
   PageComposer,
+  ObjectList,
+  ObjectSummary,
+  ObjectForm,
+  OperationButton,
 };
 
 /** Each declared component's metadata, by the ID a projection record names. */

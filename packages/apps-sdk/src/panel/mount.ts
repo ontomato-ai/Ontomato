@@ -1,4 +1,5 @@
 import { createApp, h, provide, ref, watch, type Component, type Ref } from "vue";
+import ElementPlus from "element-plus";
 import { createAppContext, type AppContext } from "../context";
 import { createAssistantClient } from "../chat";
 import {
@@ -15,6 +16,11 @@ import { panelContextKey, type PanelContext, type ProjectionSlot } from "./conte
 import { applyPanelRequest, createPanelInstance, pageDraftLinkOf, type PanelInstance } from "./instance";
 import { receivePanelDraft, type ReceivedPanelDraft } from "./draft";
 import PanelProjection from "./Projection.vue";
+import ObjectList from "../base/ObjectList.vue";
+import ObjectSummary from "../base/ObjectSummary.vue";
+import ObjectForm from "../base/ObjectForm.vue";
+import OperationButton from "../base/OperationButton.vue";
+import { registerSchedulesPlatformObject } from "./schedules";
 import { contextTransport } from "../context";
 
 /*
@@ -38,11 +44,13 @@ export interface PanelMount {
 }
 
 /**
- * Mounts the panel into `element`, which the panel's HTML designates. The state, the page context and whether the
+ * Mounts the panel's component into the element its HTML designates (`#app`). The state, the page context and whether the
  * instance holds unsaved changes reach the host as they change; the host keeps the address and asks before it replaces a
  * definition.
  */
-export async function mountPanel(component: PanelComponent, element: Element): Promise<PanelMount> {
+export async function mountPanel(component: PanelComponent): Promise<PanelMount> {
+  const element = document.getElementById("app");
+  if (!element) throw new Error("A panel's HTML designates the element its component mounts into as #app");
   const message = hostMessage();
   const appContext = createAppContext();
   const transport = contextTransport(appContext);
@@ -66,7 +74,7 @@ export async function mountPanel(component: PanelComponent, element: Element): P
     manifest: message.panel.manifest,
     instance,
     projection: (id) => instance.projection(id),
-    invoke: (handlerRef, input) => instance.runHandler(handlerRef, input),
+    invoke: (handlerRef, call) => instance.runHandler(handlerRef, call),
     projectionsChanged(listener) {
       projectionListeners.add(listener);
       return () => projectionListeners.delete(listener);
@@ -84,7 +92,14 @@ export async function mountPanel(component: PanelComponent, element: Element): P
   // a single word on purpose.
   // eslint-disable-next-line vue/multi-word-component-names
   app.component("Projection", PanelProjection);
-  app.use(appContext);
+  // The base components a panel's HTML composes. Each carries no business; what a projection's binding names decides it.
+  app.component("ObjectList", ObjectList);
+  app.component("ObjectSummary", ObjectSummary);
+  app.component("ObjectForm", ObjectForm);
+  app.component("OperationButton", OperationButton);
+  // The platform objects this version's panels read, and the operations they run.
+  registerSchedulesPlatformObject(appContext);
+  app.use(ElementPlus).use(appContext);
   app.mount(element);
 
   // The draft the address names belongs to this panel, so the SDK reads it and hands it to the form projection that

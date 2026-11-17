@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scheduled tasks</title>
+  {{head}}
+  <style>
+    [v-cloak] { display: none; }
+    .panel { display: grid; gap: 12px; grid-template-columns: 260px 1fr; padding: 12px; }
+    .side, .main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  </style>
+</head>
+<body>
+  <!--
+    The trial panel: pick one of the reader's scheduled tasks, see it summed up, change it through its application's own
+    form, save it, and run it now. Each part is a projection the panel's declaration names; this file places them and
+    writes nothing about what they read, how they save or what a button runs.
+  -->
+  <div id="app" class="panel" v-cloak>
+    <aside class="side">
+      <el-card shadow="never">
+        <template #header>Scheduled tasks</template>
+        <projection slot="tasks"></projection>
+      </el-card>
+    </aside>
+    <section class="main">
+      <el-card shadow="never">
+        <template #header>Selected task</template>
+        <projection slot="summary"></projection>
+      </el-card>
+      <el-card shadow="never">
+        <template #header>Task</template>
+        <projection slot="form"></projection>
+        <projection slot="run"></projection>
+      </el-card>
+    </section>
+  </div>
+</body>
+</html>

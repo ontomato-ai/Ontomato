@@ -93,6 +93,12 @@ export interface PanelInstanceOptions {
   useId: () => string;
   /** The name a message gives the page, e.g. the panel's name or the application's. */
   label: () => string;
+  /**
+   * The page's address as the reader and a message see it — the application's address plus the relation's path. The
+   * instance's declared deep-linkable state is added to it here, and that is the only thing this address carries beyond
+   * the page itself: no credential and no form value ever goes into it.
+   */
+  address: () => string;
 }
 
 /**
@@ -135,11 +141,11 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     panel.value = record;
     // The state an address restores is checked against the panel's own declaration, so a link never sets another field.
     state.value = Object.fromEntries(
-      Object.entries(panelAddressState(address.value || use.value!.path)).filter(
+      Object.entries(panelAddressState(address.value || options.address())).filter(
         ([name]) => record.manifest.state[name]?.deepLink,
       ),
     ) as Record<string, PanelStateValue>;
-    address.value = panelAddress(use.value!.path, state.value);
+    address.value = panelAddress(options.address(), state.value);
     const message: PanelHostMessage = {
       kind: "panel-host-message",
       panel: record,
@@ -207,7 +213,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     if (payload.kind === "context") pageContext.value = payload.context;
     if (payload.kind === "state") {
       state.value = payload.state;
-      address.value = panelAddress(use.value!.path, payload.state);
+      address.value = panelAddress(options.address(), payload.state);
     }
     if (payload.kind === "operations") operations.value = payload.operations;
     if (payload.kind === "dirty") {
@@ -275,6 +281,7 @@ const MODULES: Readonly<Record<string, string>> = {
   "@ontomato/sdk/preview": "preview.js",
   "@ontomato/sdk/chat": "chat.js",
   "@ontomato/sdk/panel": "panel.js",
+  "@ontomato/sdk/base": "base.js",
 };
 
 /**

@@ -142,14 +142,17 @@ export function installAppHost(options: {
       if(!path.startsWith('/')||path.startsWith('//')||/[#\\]/.test(path)||!['','/data-query'].includes(service))throw new Error('Invalid SDK request target');
       const decoded=decodeURIComponent(path.split('?')[0]);
       if(decoded.includes('\\')||decoded.split('/').some(segment=>segment==='.'||segment==='..'))throw new Error('Invalid SDK request target');
+      // The scheduled tasks a panel reads and writes: the list, one task, its application's form and one manual run —
+      // the four the platform object client of this step uses, and nothing else of that service.
+      const scheduled=/^\/platform\/scheduled-tasks(?:\/[^/?]+(?:\/runs)?|\/applications\/[^/?]+\/form)?$/.test(path);
       const allowed=service==='/data-query'?['/metricView/queryById','/metricView/execute','/action/form','/action/execute']:[];
-      if(service==='/data-query'&&!allowed.includes(path))throw new Error('Use a declared SDK capability');
-      // A panel's frame reads the current definition of the projection it draws, by ID, under the reader's own credential;
-      // the panel's own record is read by the host outside the frame, so a frame never reads one.
+      if(service==='/data-query'&&!allowed.includes(path)&&!(scheduled&&execution.kind==='live'))throw new Error('Use a declared SDK capability');
+      // A panel's frame reads the current definition of each projection it draws, by ID, under the reader's own
+      // credential. Its own panel's record is read by the host outside the frame, so a frame never reads one.
+      const productRead=service===''&&(init.method??'GET').toUpperCase()==='GET'&&/^\/product-projections\/[^/?]+$/.test(path);
       const method=(init.method??'GET').toUpperCase();
-      const projectionRead=method==='GET'&&/^\/product-projections\/[^/?]+$/.test(path);
       const declared=['/product-assets','/assistant'].some(prefix=>path===prefix||path.startsWith(prefix+'/')||path.startsWith(prefix+'?'));
-      if(service===''&&!declared&&!projectionRead)throw new Error('Use a declared SDK product operation');
+      if(service===''&&!declared&&!productRead)throw new Error('Use a declared SDK product operation');
       if(!['GET','POST','PUT','DELETE'].includes(method))throw new Error('Unsupported SDK request method');
       if(execution.kind==='build-test'&&service!=='/data-query')throw new Error('Product operations are unavailable in build previews');
       const applicationId=publishedFrames.get(source);

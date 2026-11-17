@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Task summary</title>
+  {{head}}
+  <style>
+    [v-cloak] { display: none; }
+    .panel { padding: 12px; }
+  </style>
+</head>
+<body>
+  <!-- The small panel Q: one task's summary, and nothing else. Its task is whatever the address it was opened at named. -->
+  <div id="app" class="panel" v-cloak>
+    <el-card shadow="never">
+      <template #header>Task</template>
+      <projection slot="summary"></projection>
+    </el-card>
+  </div>
+</body>
+</html>

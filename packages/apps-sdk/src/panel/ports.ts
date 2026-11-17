@@ -1,4 +1,4 @@
-import { panelOperationId, type OntologyParameterType, type PanelManifest, type PanelOperation } from "@ontomato/contracts/panel-manifest";
+import { panelOperationId, type OntologyParameterType, type PanelManifest, type PanelOperation, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelFieldValue } from "./state";
 
 /*
@@ -39,7 +39,7 @@ export interface PanelProjectionRegistration {
   projectionId: string;
   ports: ProjectionPorts;
   /** Runs one operation in this frame; the projection's client makes the request with the reader's own credential. */
-  invoke(handlerRef: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
+  invoke(handlerRef: string, call: PanelOperationCall): Promise<unknown>;
 }
 
 /** The operations a registered projection publishes, described for the header and an agent. */
@@ -87,6 +87,30 @@ export function panelContains(manifest: PanelManifest) {
 }
 
 /** The values a slot passes its projection now, by the parameter each fills; a field with no value passes null. */
+/**
+ * What one operation of a projection does now: the object its declaration's target names, with the values the caller
+ * supplies. A target that holds no object (nothing selected yet) and a state operation's (which has none) are `null`, and
+ * the handler decides whether that is a refusal.
+ */
+export function operationCall(
+  operation: PanelOperation,
+  state: Readonly<Record<string, PanelFieldValue>>,
+  input: Readonly<Record<string, unknown>> = {},
+): PanelOperationCall {
+  return { target: operationTarget(operation, state), input };
+}
+
+function operationTarget(
+  operation: PanelOperation,
+  state: Readonly<Record<string, PanelFieldValue>>,
+): PanelOperationCall["target"] {
+  if (!operation.target) return null;
+  if (operation.target.source === "draft") return { kind: "draft" };
+  const value = state[operation.target.state];
+  if (!value || typeof value !== "object") return null;
+  return { kind: "object", objectType: value.className, primaryKey: value.primaryKey };
+}
+
 export function slotInputValues(
   manifest: PanelManifest,
   slot: string,

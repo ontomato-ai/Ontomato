@@ -1,5 +1,5 @@
 import { inject, onBeforeUnmount, type InjectionKey, type Ref } from "vue";
-import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
+import type { PanelManifest, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PanelInstance } from "./instance";
 import type { PanelFormAdapter, ReceivedPanelDraft } from "./draft";
@@ -18,6 +18,8 @@ export const panelContextKey: InjectionKey<PanelContext> = Symbol("panel-context
 export const projectionKey: InjectionKey<ProjectionSlot> = Symbol("panel-projection");
 
 export interface ProjectionSlot {
+  /** The slot of the panel's declaration this projection fills. */
+  slot: string;
   projection: ProductProjection;
   inputs: Readonly<Record<string, unknown>>;
 }
@@ -34,8 +36,8 @@ export interface PanelContext {
   readonly instance: PanelInstance;
   /** The projection record a slot's declaration names, read now from its owner. */
   projection(id: string): Promise<ProductProjection>;
-  /** Runs one operation of this instance here, with the reader's own credential. */
-  invoke(handlerRef: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
+  /** Runs one operation of this instance here, with the reader's own credential and the call it is given. */
+  invoke(handlerRef: string, call: PanelOperationCall): Promise<unknown>;
   /** Hears that a projection's definition changed, by ID; the returned function stops it. */
   projectionsChanged(listener: (projectionId: string) => void): () => void;
   /** The draft this instance received from its address, once it arrived. */
@@ -45,6 +47,20 @@ export interface PanelContext {
    * form. The SDK calls it for a received draft; a form component calls it for its own edits.
    */
   holdUnsaved(flag: Ref<boolean>): () => void;
+}
+
+/**
+ * The panel state one slot's input is filled from: the input a component names, or the slot's first. A component that
+ * writes or reads "the object this slot is about" asks this, so it never guesses a state field name.
+ */
+export function slotState(slot: string, input?: string): string {
+  const context = usePanelContext();
+  const declaration = context.manifest.slots[slot];
+  if (!declaration) throw new Error(`The panel declares no slot '${slot}'`);
+  const [name] = input ? [input] : Object.keys(declaration.inputs);
+  const ref = name ? declaration.inputs[name] : undefined;
+  if (!ref) throw new Error(`Slot '${slot}' fills no input, so it names no panel state`);
+  return ref.state;
 }
 
 /** The panel context a panel module runs under. */
@@ -69,13 +85,12 @@ export function useProjectionSlot(): ProjectionSlot {
  * read and save; the SDK compares what the draft says with what it read and reports the unsaved state to the host, so
  * neither a draft nor a definition change replaces the reader's work unasked.
  */
-export function useProjectionForm<Form extends object>(
-  adapter: Omit<PanelFormAdapter<Form, { id?: string }>, "operation">,
-): void {
+export function useProjectionForm<Form extends object>(adapter: Omit<PanelFormAdapter<Form, { id?: string }>, "operation">): void {
   const context = usePanelContext();
-  const id = useProjectionSlot().projection.id;
-  const [slot] = Object.entries(context.manifest.slots).find(([, declaration]) => declaration.projectionId === id) ?? [];
-  if (!slot) throw new Error(`No slot of this panel declares projection '${id}'`);
-  const stop = context.instance.forms.register(slot, { ...adapter, operation: useProjectionSlot().projection.binding.id });
+  const drawn = useProjectionSlot();
+  const operation = context.instance.projections.value
+    .find((registration) => registration.slot === drawn.slot)?.ports.operations.find((item) => item.kind === "form.save");
+  if (!operation) throw new Error(`The projection in slot '${drawn.slot}' publishes no form save`);
+  const stop = context.instance.forms.register(drawn.slot, { ...adapter, operation: operation.handlerRef });
   onBeforeUnmount(stop);
 }

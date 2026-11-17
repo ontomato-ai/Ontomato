@@ -180,4 +180,48 @@ export const components: readonly ComponentMetadata[] = [
       "Stands where one projection of a panel is drawn: it reads that projection's current record by ID, draws the component the record names in this version's catalogue, and registers the ports the projection offers. A panel places it and names the slot; it never draws a projection itself.",
     effects: "Reads the projection's current definition through the platform as the reader, and again when that definition changes.",
   }),
+  defineComponentMeta({
+    componentId: "ObjectList",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectList",
+    role: "control",
+    meaning:
+      "Lists the read-only platform objects of the type the projection binds, in the owner's order and by the owner's label, and writes the object a reader picks into the panel state its slot's input names. It changes nothing itself.",
+    effects: "Reads the owner's list as the reader; it writes only the panel's own state.",
+    bindsElement: ["PlatformObjectType:*"],
+    outputs: ["chosen"],
+  }),
+  defineComponentMeta({
+    componentId: "ObjectSummary",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectSummary",
+    role: "presentation",
+    meaning:
+      "Shows the few facts of one platform object a reader recognises it by. Which facts and in what order is the projection's display; what each holds is the object's own owner's.",
+    effects: "Reads one object of the type the projection binds, as the reader.",
+    bindsElement: ["PlatformObjectType:*"],
+  }),
+  defineComponentMeta({
+    componentId: "ObjectForm",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectForm",
+    role: "control",
+    meaning:
+      "Draws one platform object's form exactly as its owner declares it, asks the owner again when a field the form depends on changes, and keeps the reader's draft until it is saved.",
+    effects: "Reads the owner's form and saves through the owner's own interface; the save is the projection's own operation.",
+    bindsElement: ["PlatformObjectType:*", "Action:*"],
+    // The owner's own save: `@binding` stands for the type the projection binds, so one declared operation serves every
+    // type this version registers.
+    operations: [{ client: "@binding", name: "save", label: "Save", kind: "form.save", inputSchema: {} }],
+  }),
+  defineComponentMeta({
+    componentId: "OperationButton",
+    module: "@ontomato/sdk/base",
+    exportName: "OperationButton",
+    role: "control",
+    meaning:
+      "The button of one operation a projection publishes: it shows the operation's own label and runs it on the object the panel has selected, through the handler the operation names.",
+    effects: "Runs the projection's operation as the reader, with the object the panel has selected.",
+    bindsElement: ["PlatformOperation:*"],
+  }),
 ];

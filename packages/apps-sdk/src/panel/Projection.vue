@@ -43,7 +43,7 @@ function start() {
         slot: props.slot,
         projectionId: projection.id,
         ports: portsOf(projection),
-        invoke: (handlerRef, input) => panel!.invoke(handlerRef, input),
+        invoke: (handlerRef, call) => panel!.invoke(handlerRef, call),
       });
       loaded.value = { projection, component: componentFor(projection.componentId) };
       loading.value = false;
@@ -79,6 +79,7 @@ watch(
 );
 
 provide(projectionKey, {
+  slot: props.slot,
   get projection() {
     return loaded.value!.projection;
   },

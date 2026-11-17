@@ -129,6 +129,27 @@ export const panelOperationSchema = z
 export type PanelOperation = z.infer<typeof panelOperationSchema>;
 
 /**
+ * One call of an operation: what it acts on and what the caller supplies. The target is a value here, not a reference to
+ * the declaration — the object the reader has selected, or the draft's own object — so a caller outside the panel (the
+ * platform's coordinator, on an agent's behalf) sends exactly what a person's click sends, and the handler needs nothing
+ * from the panel's state to know which object it acts on.
+ */
+export const panelOperationCallSchema = z
+  .object({
+    /** The object the call acts on: an ontology reference, or a draft target that may not exist yet. */
+    target: z
+      .union([
+        z.object({ kind: z.literal("object"), objectType: key, primaryKey: z.string().min(1).max(1000) }).strict(),
+        z.object({ kind: z.literal("draft"), id: z.string().min(1).max(200).optional() }).strict(),
+      ])
+      .nullable(),
+    /** What the caller supplies, by the operation's `inputSchema`; a form save's is the owner's form values. */
+    input: z.record(key, z.unknown()).default({}),
+  })
+  .strict();
+export type PanelOperationCall = z.infer<typeof panelOperationCallSchema>;
+
+/**
  * The ID of an operation a projection publishes: the slot it sits in and the operation's own name, so two instances of
  * one panel and two panels using one projection describe the same operation the same way.
  */

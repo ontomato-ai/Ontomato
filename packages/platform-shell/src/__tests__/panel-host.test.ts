@@ -134,7 +134,8 @@ describe("the panel host", () => {
       ],
     });
     const scope = effectScope();
-    const open = (useId: string) => scope.run(() => usePanelInstance(port, { useId: () => useId, label: () => useId }))!;
+    const open = (useId: string) =>
+      scope.run(() => usePanelInstance(port, { useId: () => useId, label: () => useId, address: () => `/applications/app-a/${useId}` }))!;
     const a = open("use-a");
     const b = open("use-b");
     const q = open("use-q");
@@ -144,10 +145,10 @@ describe("the panel host", () => {
     expect(a.use.value?.panelId).toBe("panel-p");
     expect(b.use.value?.panelId).toBe("panel-p");
     expect(q.use.value?.panelId).toBe("panel-q");
-    // Each has its own address, and each draws its own panel's document.
-    expect(a.address.value).toBe("/a/schedules");
-    expect(b.address.value).toBe("/b/schedules");
-    expect(q.address.value).toBe("/summary");
+    // Each has its own address — the page's, kept as it is — and each draws its own panel's document.
+    expect(a.address.value).toBe("/applications/app-a/use-a");
+    expect(b.address.value).toBe("/applications/app-a/use-b");
+    expect(q.address.value).toBe("/applications/app-a/use-q");
     expect(a.state.value).toEqual({});
     expect(b.state.value).toEqual({});
     scope.stop();
@@ -169,7 +170,8 @@ describe("the panel host", () => {
       ],
     });
     const scope = effectScope();
-    const open = (useId: string) => scope.run(() => usePanelInstance(port, { useId: () => useId, label: () => useId }))!;
+    const open = (useId: string) =>
+      scope.run(() => usePanelInstance(port, { useId: () => useId, label: () => useId, address: () => `/applications/app-a/${useId}` }))!;
     const a = open("use-a");
     const b = open("use-b");
     const q = open("use-q");
@@ -199,8 +201,8 @@ describe("the panel host", () => {
       ],
     });
     const scope = effectScope();
-    const a = scope.run(() => usePanelInstance(port, { useId: () => "use-a", label: () => "Scheduled tasks" }))!;
-    const q = scope.run(() => usePanelInstance(port, { useId: () => "use-q", label: () => "Task summary" }))!;
+    const a = scope.run(() => usePanelInstance(port, { useId: () => "use-a", label: () => "Scheduled tasks", address: () => "/applications/app-a/a/schedules" }))!;
+    const q = scope.run(() => usePanelInstance(port, { useId: () => "use-q", label: () => "Task summary", address: () => "/applications/app-a/summary" }))!;
     await Promise.all([a.ready, q.ready]);
     const frameA = frameWindow();
     a.frame(frameA);
@@ -250,7 +252,7 @@ describe("the panel host", () => {
     const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
     const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
     const scope = effectScope();
-    const a = scope.run(() => usePanelInstance(port, { useId: () => "use-a", label: () => "Scheduled tasks" }))!;
+    const a = scope.run(() => usePanelInstance(port, { useId: () => "use-a", label: () => "Scheduled tasks", address: () => "/applications/app-a/a/schedules" }))!;
     await a.ready;
     const frameA = frameWindow();
     a.frame(frameA);

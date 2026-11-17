@@ -1,5 +1,5 @@
 import { nodeApiRequest } from "@ontomato/workbench-ui";
-import { applicationPanelUseSchema, productPanelSchema, type ProductPanel } from "@ontomato/contracts/product-panels";
+import { applicationPanelUsesResponseSchema, productPanelSchema, type ProductPanel } from "@ontomato/contracts/product-panels";
 import { appsSdkCurrentSchema } from "@ontomato/contracts/apps-sdk";
 import type { ProductSubscriptionEvent } from "@ontomato/contracts/product-subscriptions";
 import { registerLiveFrame } from "./app-host";
@@ -28,8 +28,7 @@ export function platformPanelHost(applicationId: string): PanelHostPort {
   return {
     applicationId: () => applicationId,
     async uses(id) {
-      const answer = await json(`/api/data-query/platform/applications/${encodeURIComponent(id)}/panel-uses`);
-      return ((answer.data ?? answer).panelUses as unknown[]).map((use) => applicationPanelUseSchema.parse(use));
+      return panelUsesOf(id);
     },
     async panel(panelId) {
       return productPanelSchema.parse((await json(`/api/product-panels/${encodeURIComponent(panelId)}`)).panel) as ProductPanel;
@@ -40,6 +39,12 @@ export function platformPanelHost(applicationId: string): PanelHostPort {
     frame: (frame: Window) => registerLiveFrame(frame),
     subscribe: (targets, listener) => subscribeProductDefinitions(targets, listener),
   };
+}
+
+/** One application's use relations, as Java declares them; the app's entry and its page skills belong to them. */
+export async function panelUsesOf(applicationId: string) {
+  const answer = await json(`/api/data-query/platform/applications/${encodeURIComponent(applicationId)}/panel-uses`);
+  return applicationPanelUsesResponseSchema.parse(answer.data ?? answer).panelUses;
 }
 
 /**

@@ -17,6 +17,8 @@ const props = defineProps<{
   useId: string;
   /** The name a message gives this page, e.g. the panel's name. */
   label: string;
+  /** The page's address as the reader sees it; the instance's deep-linkable state is added to it. */
+  address: string;
   /** The title drawn above the frame; absent when the frame is the whole surface. */
   title?: string;
 }>();
@@ -27,7 +29,11 @@ const emit = defineEmits<{
   address: [address: string];
 }>();
 
-const view = usePanelInstance(props.port, { useId: () => props.useId, label: () => props.label });
+const view = usePanelInstance(props.port, {
+  useId: () => props.useId,
+  label: () => props.label,
+  address: () => props.address,
+});
 const frame = ref<HTMLIFrameElement | null>(null);
 watch(
   () => frame.value,
