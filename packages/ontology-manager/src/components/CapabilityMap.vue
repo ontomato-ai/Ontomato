@@ -15,7 +15,18 @@ import type {
 import { useManagerClient, useOntologyText } from "../context";
 import { readGraphColors } from "../graph-colors";
 import { useManagerFeedback } from "../feedback";
-import { capabilityMapPositions, capabilityNodeLabel, type CapabilityNode } from "./capability-map-rendering";
+import type { MessageKey } from "../i18n";
+import {
+  CAPABILITY_LABEL_SIZE,
+  CAPABILITY_LABEL_WIDTH,
+  CAPABILITY_NODE_SIZE,
+  capabilityKinds,
+  capabilityMapLayout,
+  capabilityNodeLabel,
+  type CapabilityKind,
+  type CapabilityMapLayout,
+  type CapabilityNode,
+} from "./capability-map-rendering";
 import { buildCapabilityMap } from "./capability-map-model";
 
 /**
@@ -56,17 +67,6 @@ const skills = ref<Array<{ id: string; title: string }>>([]);
 const triggers = ref<TriggerRecord[]>([]);
 const grants = ref<CapabilityGrantRecord[]>([]);
 const platformAccess = ref<PlatformAccessRecord[]>([]);
-
-/** The kinds a node can be; the legend and the palette both read this one list. */
-type Kind =
-  | "subject"
-  | "role"
-  | "action"
-  | "workflow"
-  | "trigger"
-  | "metric"
-  | "function"
-  | "skill";
 
 /**
  * What to draw, computed from the domain's rows.
@@ -115,25 +115,26 @@ const filtered = computed(() => {
 });
 
 const counts = computed(() => {
-  const byKind = new Map<Kind, number>();
+  const byKind = new Map<CapabilityKind, number>();
   for (const node of nodes.value) byKind.set(node.kind, (byKind.get(node.kind) ?? 0) + 1);
   return byKind;
 });
 
-/** The legend, in draw order: a template cannot build a message key by concatenation and still be checked. */
+/** Each kind's name: a template cannot build a message key by concatenation and still be checked. */
+const kindNames: Record<CapabilityKind, MessageKey> = {
+  subject: "mapKindSubject",
+  role: "mapKindRole",
+  action: "mapKindAction",
+  workflow: "mapKindWorkflow",
+  trigger: "mapKindTrigger",
+  metric: "mapKindMetric",
+  function: "mapKindFunction",
+  skill: "mapKindSkill",
+};
+
+/** The legend, in draw order. */
 const legend = computed(() =>
-  (
-    [
-      ["subject", "mapKindSubject"],
-      ["role", "mapKindRole"],
-      ["action", "mapKindAction"],
-      ["workflow", "mapKindWorkflow"],
-      ["trigger", "mapKindTrigger"],
-      ["metric", "mapKindMetric"],
-      ["function", "mapKindFunction"],
-      ["skill", "mapKindSkill"],
-    ] as const
-  ).map(([kind, key]) => ({ kind, key, count: counts.value.get(kind) ?? 0 })),
+  capabilityKinds.map((kind) => ({ kind, key: kindNames[kind], count: counts.value.get(kind) ?? 0 })),
 );
 
 const summary = computed(() => ({
@@ -175,9 +176,8 @@ const palette = computed(() => [
 ]);
 
 /** Colour names the kind, not the layer: two objects of one layer are not the same thing. */
-function colorFor(kind: Kind) {
-  const kinds: Kind[] = ["subject", "role", "action", "workflow", "trigger", "metric", "function", "skill"];
-  const index = Math.max(0, kinds.indexOf(kind));
+function colorFor(kind: CapabilityKind) {
+  const index = capabilityKinds.indexOf(kind);
   const value = palette.value[index % palette.value.length]!;
   // G6 draws on a canvas, so a CSS custom property has to be resolved before it is handed over.
   const probe = document.createElement("span");
@@ -216,17 +216,24 @@ async function renderGraph() {
     node: {
       type: "circle",
       style: {
-        size: 34,
+        size: CAPABILITY_NODE_SIZE,
         fill: (datum: Record<string, any>) => datum.data.color,
         stroke: colors.nodeStroke,
         lineWidth: 4,
         shadowColor: colors.shadow,
         labelText: (datum: Record<string, any>) => capabilityNodeLabel(datum.data.node.label),
         labelFill: colors.text,
-        labelFontSize: 12,
+        labelFontSize: CAPABILITY_LABEL_SIZE,
         labelFontWeight: 600,
         labelPlacement: "bottom",
         labelOffsetY: 6,
+        labelMaxWidth: CAPABILITY_LABEL_WIDTH,
+        // Edges cross the columns between their ends; drawn under the nodes, and masked by each name's backing, they
+        // cannot cover a name.
+        labelBackground: true,
+        labelBackgroundFill: colors.surface,
+        labelBackgroundPadding: [1, 4],
+        zIndex: 1,
         cursor: "pointer",
       },
       state: { selected: { stroke: colors.primary, lineWidth: 5 } },
@@ -259,12 +266,12 @@ async function renderGraph() {
   rendering.value = true;
   try {
     await target.render();
-    const positions = capabilityMapPositions(filtered.value.nodes);
+    const layout = capabilityMapLayout(filtered.value.nodes, { width, height });
     target.addData({
       nodes: filtered.value.nodes.map((node) => ({
         id: node.id,
         data: { node, color: colorFor(node.kind) },
-        style: positions[node.id] ?? { x: 0, y: 0 },
+        style: layout.positions[node.id],
       })),
       edges: filtered.value.edges.map((edge, index) => ({
         id: `edge:${index}:${edge.from}:${edge.to}`,
@@ -277,10 +284,20 @@ async function renderGraph() {
     if (request !== graphRequest) return;
     await target.draw();
     if (request !== graphRequest) return;
-    await target.fitView({ when: "always", direction: "both" });
+    await openAt(target, layout);
   } finally {
     if (request === graphRequest) rendering.value = false;
   }
+}
+
+/**
+ * Open where the layout says the names can be read, instead of fitting every node whatever size that draws them at.
+ * The fit button still shows the whole map on request.
+ */
+async function openAt(target: Graph, layout: CapabilityMapLayout) {
+  await target.zoomTo(layout.zoom, false);
+  const [x, y] = target.getViewportByCanvas([0, 0]);
+  await target.translateBy([layout.offset.x - x, layout.offset.y - y], false);
 }
 
 function fitView() {
