@@ -1,5 +1,13 @@
 <template>
-  <div ref="rootRef" class="chart-container" :class="{ 'chart-container--draft': draft }">
+  <div
+    ref="rootRef"
+    class="chart-container"
+    :class="{ 'chart-container--draft': draft, 'chart-container--selected': selected }"
+    tabindex="0"
+    @click="selectUnlessControl"
+    @focusin="select"
+    @keydown.enter.prevent="select"
+  >
     <div class="chart-header">
       <h3 :title="shownTitle">
         <span v-if="renamed" class="chart-original-name">{{ title }}</span>
@@ -108,6 +116,8 @@ const props = defineProps({
   previewName: { type: String, default: "" },
   /** Whether the card is shown as a draft: it says so, and does not save its layout while it is one. */
   draft: { type: Boolean, default: false },
+  /** Whether this card is the one the reader chose: a message sent from beside the page asks about it. */
+  selected: { type: Boolean, default: false },
 });
 const emit = defineEmits([
   "chart-renamed",
@@ -116,6 +126,7 @@ const emit = defineEmits([
   "edit-parameters",
   "layout-change",
   "resize-active",
+  "select",
 ]);
 
 const rootRef = ref(null);
@@ -154,6 +165,18 @@ const state = computed(() => props.chart?.state ?? "empty");
 
 function handleViewQuery() {
   emit("view-metric", props.chart);
+}
+
+/** The reader asked for this card: one card is chosen at a time, and choosing it again keeps it chosen. */
+function select() {
+  emit("select", { id: props.chart.id, name: shownTitle.value, kind: "chart" });
+}
+
+/** A tool or the resize handle acts on the card; choosing it is the reader pointing at the card itself. */
+function selectUnlessControl(event) {
+  const target = event.target;
+  if (target?.closest(".ai-chart-toolbar, .resize-handle, .el-dropdown-menu, .el-dialog")) return;
+  select();
 }
 
 async function handleCommand(cmd) {
@@ -212,6 +235,7 @@ function toggleData() {
 }
 
 function openZoom() {
+  select();
   if (dataOpen.value) {
     modalMode.value = "table";
     modalOpen.value = true;
@@ -301,6 +325,11 @@ onBeforeUnmount(() => {
 .chart-container--draft {
   border-color: var(--el-color-primary);
   border-style: dashed;
+}
+
+.chart-container--selected {
+  border-color: var(--el-color-primary);
+  box-shadow: 0 0 0 1px var(--el-color-primary);
 }
 
 /* The header is as tall as the tools' buttons, so it keeps its height when they appear. */

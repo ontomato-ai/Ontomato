@@ -74,7 +74,10 @@
             <template #item="{ element: m }">
               <MetricCard
                 :metric="m"
+                :data-card-id="m.id"
+                :selected="isSelected(m.id, 'metric')"
                 :style="gridSpanStyle(m?.layout)"
+                @select="(card) => selectCard(card)"
                 @command="(cmd) => handleMetricCommand(cmd, m)"
                 @layout-change="(layout) => handleLayoutChange(m, layout)"
                 @resize-active="(v) => setDragDisabled(v)"
@@ -106,11 +109,14 @@
               <template #item="{ element: c }">
                 <ChartCard
                   :chart="c"
+                  :data-card-id="c.id"
                   :style="gridSpanStyle((draftChange(c.id) || {}).layout || c.layout)"
                   :dashboard-id="normalizeId(props.dashboardId)"
                   :preview-file="(draftChange(c.id) || {}).chartFile || null"
                   :preview-name="(draftChange(c.id) || {}).name || ''"
                   :draft="Boolean(draft)"
+                  :selected="isSelected(c.id, 'chart')"
+                  @select="(card) => selectCard(card)"
                   @chart-renamed="handleChartRenamed"
                   @chart-deleted="handleChartDeleted"
                   @view-metric="openMetricSource"
@@ -190,6 +196,7 @@ import CardParameterDialog from "./CardParameterDialog.vue";
 import MetricSourceDialog from "./MetricSourceDialog.vue";
 import { cardError, cardErrorHeadline } from "./utils/metricCard";
 import { applyDraft } from "../draft";
+import { clearDashboardSelection, setDashboardSelection } from "../selection";
 
 import {
   normalizeId,
@@ -444,6 +451,7 @@ function ensureLayoutObserver() {
 
 async function reloadDashboardGroups(id) {
   const detail = await fetchDashboardLocalDetail(id);
+  boardName.value = detail?.name ?? "";
   chartGroups.value = Array.isArray(detail?.groups) ? detail.groups : [];
 }
 
@@ -871,6 +879,46 @@ async function handleMetricCommand(cmd, m) {
     }
   }
 }
+
+/* ======================== selection ======================== */
+
+/*
+ * The card the reader points at is what a message sent from beside the page asks about: choosing one card chooses it
+ * alone, the board it sits in rides along, and the page reports both to the platform. The board is reported on its own
+ * as soon as it is drawn, so a question about the board needs no card chosen first.
+ */
+const chosen = ref("");
+
+function isSelected(cardId, kind) {
+  return chosen.value === `${kind}:${cardId}`;
+}
+
+function selectCard(card) {
+  chosen.value = `${card.kind}:${card.id}`;
+  reportSelection();
+  // A card chosen in a narrow pane is shown, not only marked: the reader asked for this one.
+  nextTick(() => document.querySelector(`[data-card-id="${card.id}"]`)?.scrollIntoView?.({ block: "nearest", behavior: "smooth" }));
+}
+
+/** The board and, when one is chosen, that card, as the platform reads them for a message sent from beside the page. */
+function reportSelection() {
+  const id = normalizeId(props.dashboardId);
+  if (!id) return;
+  const kind = chosen.value.startsWith("chart:") ? "chart" : "metric";
+  const cardId = chosen.value.slice(kind.length + 1);
+  // The card's name is the one shown: a draft's name while the draft is open, the saved one otherwise.
+  const card = [...(chartGroups.value || []).flatMap((group) => [...group.charts, ...group.metrics])].find((item) => item.id === cardId);
+  setDashboardSelection({ id, name: boardName.value || id }, card ? { id: card.id, name: (draftChange(card.id) || {}).name || card.name || card.title || card.id, kind } : undefined);
+}
+
+/** A board is a fresh page: the card chosen on the last one is not this one's. */
+watch(() => normalizeId(props.dashboardId), () => {
+  chosen.value = "";
+  reportSelection();
+}, { immediate: true });
+watch(chartGroups, () => reportSelection());
+
+onBeforeUnmount(() => clearDashboardSelection());
 
 /* ======================== layout change ======================== */
 
