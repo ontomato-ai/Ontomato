@@ -21,7 +21,7 @@ import DatasetActions from "./DatasetActions.vue";
 import ChartFileActions from "./ChartFileActions.vue";
 import DatasetDrilldown from "./DatasetDrilldown.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
-import { dashboardsPageFeature, workbenchFeatures } from "../features";
+import { DASHBOARDS_PAGE_ID, GOVERNANCE_REPORT_PAGE_ID, governanceReportPageFeature, workbenchFeatures } from "../features";
 import FollowUpRenderer from "./FollowUpRenderer.vue";
 import ClarificationRenderer from "./ClarificationRenderer.vue";
 const artifactRenderers = [
@@ -85,7 +85,8 @@ const pilot = usePilotPage()(setPageAddress);
 /** The page's address the conversation carries: one query value, so the page's own query (`?draft...`) travels with it. */
 const pageAddress = computed(() => (typeof route.query.page === "string" ? route.query.page : null));
 const pilotPage = computed(() => (pageAddress.value ? pilot(pageAddress.value) : null));
-const inDashboards = computed(() => pageAddress.value !== null && pilotPage.value !== null);
+const inDashboards = computed(() => pilotPage.value?.id === DASHBOARDS_PAGE_ID);
+const inGovernanceReport = computed(() => pilotPage.value?.id === GOVERNANCE_REPORT_PAGE_ID);
 /**
  * The page the shell shows: the settings are the `agents` page, whose addresses are the settings' own screens, the
  * dashboards the `dashboards` page its own address opens, and every other page names its route. Closing the page (a new
@@ -143,18 +144,34 @@ watch(conversationId, (id) => {
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: WORKBENCH_ID,
   label: appearance.value?.brand?.name || props.defaultBrandName,
-  features: workbenchFeatures(props.features, dashboardsPageFeature(pageAddress.value ?? routes.dashboards.path)),
+  features: workbenchFeatures(
+    props.features,
+    { agents: t("assistant.featureAgents"), dashboards: t("assistant.featureDashboards") },
+    inDashboards.value ? pageAddress.value! : routes.dashboards.path,
+    inGovernanceReport.value
+      ? governanceReportPageFeature(t("assistant.featureGovernanceReport"), pageAddress.value!)
+      : null,
+  ),
 }));
 
 const labels = useShellLabels();
 
 /**
- * The page beside the conversation: a dashboard names itself, for a message sent from its composer. What is selected in
- * it is the dashboard's own to report.
+ * The page beside the conversation names itself for a message sent from its composer. A governance report carries its
+ * selected finding; what is selected in a dashboard is the dashboard's own to report.
  */
 const pageContext = computed<PageContext | null>(() => {
   if (!pilotPage.value) return null;
-  return pilotPage.value.id === "dashboards"
+  if (inGovernanceReport.value) {
+    const issue = new URLSearchParams(pageAddress.value!.split("?")[1] ?? "").get("issue");
+    return {
+      pageKey: "governance-report",
+      url: pageAddress.value!,
+      label: t("assistant.featureGovernanceReport"),
+      selection: issue ? [{ kind: "issue", id: issue, label: `${t("assistant.governanceFinding")} ${issue}` }] : [],
+    };
+  }
+  return inDashboards.value
     ? { pageKey: "dashboard", url: pageAddress.value!, label: t("assistant.featureDashboards"), selection: dashboardSelection.value }
     : { pageKey: "agent-settings", url: pageAddress.value!, label: t("agents.title"), selection: [] };
 });

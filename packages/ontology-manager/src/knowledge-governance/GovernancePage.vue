@@ -11,16 +11,26 @@ import { useGovernanceText, useManagerClient, useSharedText } from "../context";
  * One governance record's report: the findings the review proposed and the sources it cites, read from the record
  * itself. The conversation that produced the record is the agent platform's, so this page holds no shell, no
  * conversation and no model selection of its own; it opens at `/governance/reports/:recordId`, whether a person or a
- * scheduled task started that record's review.
+ * scheduled task started that record's review, and the same component sits beside the conversation that wrote it.
+ *
+ * The finding the reader selected is `issueId`, part of the page's address rather than state of its own: the composer
+ * at the page's foot sends the page it was written on, so what is selected there is what a message is about, and the
+ * page keeps it when it moves between the conversation's side and its own address.
  */
-const props = defineProps<{ recordId: string }>();
-const emit = defineEmits<{ back: [] }>();
+const props = defineProps<{
+  recordId: string;
+  /** The finding this page shows as selected, when its address names one. */
+  issueId?: string | null;
+  /** Beside the conversation the shell draws the page's frame and closes it; at its own address this page does both. */
+  paired?: boolean;
+}>();
+const emit = defineEmits<{ back: []; select: [id: string | null] }>();
 const manager = useManagerClient();
 const { t } = useGovernanceText();
 const { t: shared } = useSharedText();
 const work = ref<GovernanceWork | null>(null);
 const error = ref(""), loading = ref(false);
-const selectedIssue = ref<string | null>(null);
+const selectedIssue = computed(() => props.issueId ?? null);
 /** The source being read and where it shows: under a finding, or under the source list ("all"). */
 const source = ref<{ read: GovernanceSourceRead; anchor: string } | null>(null);
 const base = "/ontology/ai/knowledge-governance";
@@ -49,19 +59,23 @@ const sourceTitle = (id: string) => work.value?.sources.find((item) => item.id =
 const back = () => emit("back");
 
 watch(() => props.recordId, () => {
-  sourceRead++; source.value = null; work.value = null; selectedIssue.value = null; void readWork();
+  sourceRead++; source.value = null; work.value = null; void readWork();
 }, { immediate: true });
 
 const progress = computed(() => work.value?.knowledgeTotal === null || !work.value ? "" :
   t("progress", { done: work.value.reviewedKnowledgeIds.length, total: work.value.knowledgeTotal }));
 function toggleIssue(id: string) {
-  selectedIssue.value = selectedIssue.value === id ? null : id;
+  emit("select", selectedIssue.value === id ? null : id);
 }
 </script>
 
 <template>
   <div class="governance-page">
-    <header class="governance-head platform-page-gutter">
+    <!--
+      Its own address draws the page's title and the way back; beside the conversation the shell's pane header does
+      both (its own close and enlarge controls), so the page keeps only its content there.
+    -->
+    <header v-if="!props.paired" class="governance-head platform-page-gutter">
       <button type="button" class="governance-back" :aria-label="shared('common.back')" :title="shared('common.back')" @click="back"><ArrowLeft :size="16" /></button>
       <span class="governance-title">{{ t("title") }}</span>
     </header>
@@ -69,7 +83,8 @@ function toggleIssue(id: string) {
       <span>{{ error }}</span>
       <button type="button" :aria-label="shared('common.close')" @click="error = ''"><X :size="14" /></button>
     </p>
-    <div class="report platform-page-gutter" :aria-busy="loading">
+    <!-- The report scrolls itself, so it marks where its content ends: the shell and the page's composer leave that room. -->
+    <div class="report platform-page-gutter shell-dock-room" :aria-busy="loading">
       <div v-if="loading && !work" class="report-state" role="status">
         <p>{{ t("loading") }}</p>
       </div>

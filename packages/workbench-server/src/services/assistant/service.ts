@@ -227,7 +227,7 @@ export const assistantService = {
     if (context && !context.success) throw new HttpError(400,"App builder requires context.workspaceId containing an owned workspace UUID","CONTEXT_REQUIRED");
     const workspace = context?.success ? context.data.workspaceId : undefined;
     if (workspace) await new RuntimeClient(owner.domainId,undefined,owner.userId).request(`/v1/channel/sessions/${sessionId}/workspace`,"POST",{ workspaceId: workspace,ownerId: owner.userId });
-    const { row: session } = await assistantStore.create(sessionId,owner,a.id,"delegated",workspace);
+    const { row: session } = await assistantStore.create(sessionId,owner,a.id,"delegated",workspace,true);
     const message = input.content;
     const { row: turn } = await assistantStore.reserve(sessionId,id,message,owner,a.class_names);
     const request = await withDomainSkills(owner.domainId,async () => {

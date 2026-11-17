@@ -1,3 +1,4 @@
+import { governanceReportHref } from "./governance-report";
 import { z } from "zod";
 import { assistantService } from "./service";
 import { assistantStore } from "./store";
@@ -42,10 +43,10 @@ export const assistantScheduleApplication: ScheduleApplication = {
         throw error;
       }
     });
-    return { ...emptyExecution(), handle: { sessionId }, resultLink: { appId: "agents", path: `/agents/chat?sessionId=${sessionId}` } };
+    return { ...emptyExecution(), handle: { sessionId }, resultLink: { appId: "agents", path: await governanceReportHref(input.runId,context.owner) ?? `/agents/chat?sessionId=${sessionId}` } };
   },
   async status(input) {
     const sessionId = typeof input.handle?.sessionId === "string" ? input.handle.sessionId : scheduledSessionId(input.runId);
-    return scheduledConversationStatus(assistantService, input.owner, sessionId, input.runId, "agents", `/agents/chat?sessionId=${sessionId}`);
+    return scheduledConversationStatus(assistantService, input.owner, sessionId, input.runId, "agents", await governanceReportHref(input.runId,input.owner) ?? `/agents/chat?sessionId=${sessionId}`);
   },
 };

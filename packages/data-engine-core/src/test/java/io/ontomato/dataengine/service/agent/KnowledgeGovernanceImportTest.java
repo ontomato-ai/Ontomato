@@ -16,7 +16,7 @@ class KnowledgeGovernanceImportTest {
     var store=mock(OntologyAgentStore.class);
     var knowledge=mock(KnowledgeService.class);
     var identity=mock(IdentityService.class);
-    var service=new KnowledgeGovernanceService(store,mock(AgentRuntimeClient.class),mock(GovernanceRuntimeClient.class),mock(OntologyAgentDefinitions.class),mock(QueryGrantService.class),knowledge,mock(AdminService.class),mock(AgentExecutionAccess.class));
+    var service=new KnowledgeGovernanceService(store,mock(AgentRuntimeClient.class),mock(GovernanceRuntimeClient.class),mock(OntologyAgentDefinitions.class),mock(QueryGrantService.class),knowledge,mock(AdminService.class),mock(AgentExecutionAccess.class),mock(io.ontomato.dataengine.schedules.ScheduleIdentity.class,CALLS_REAL_METHODS));
     ReflectionTestUtils.setField(service,"identityService",identity);
     var owner=new OntologyAgentStore.Owner("user","domain");
     var work=JSONObject.of("sources",List.of(JSONObject.of("id","source")));
@@ -36,7 +36,7 @@ class KnowledgeGovernanceImportTest {
 
   @Test void importedKnowledgeUsesTheExecutorWhileEvidenceRemainsWithTheInitiator() {
     var store=mock(OntologyAgentStore.class);var knowledge=mock(KnowledgeService.class);var identity=mock(IdentityService.class);
-    var service=new KnowledgeGovernanceService(store,mock(AgentRuntimeClient.class),mock(GovernanceRuntimeClient.class),mock(OntologyAgentDefinitions.class),mock(QueryGrantService.class),knowledge,mock(AdminService.class),mock(AgentExecutionAccess.class));
+    var service=new KnowledgeGovernanceService(store,mock(AgentRuntimeClient.class),mock(GovernanceRuntimeClient.class),mock(OntologyAgentDefinitions.class),mock(QueryGrantService.class),knowledge,mock(AdminService.class),mock(AgentExecutionAccess.class),mock(io.ontomato.dataengine.schedules.ScheduleIdentity.class,CALLS_REAL_METHODS));
     ReflectionTestUtils.setField(service,"identityService",identity);
     var owner=new OntologyAgentStore.Owner("initiator","domain");
     var executor=new OntologyAgentStore.Owner("executor","domain");

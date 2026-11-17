@@ -176,7 +176,7 @@ export const assistantStore = {
       updatedAt: row.updatedAt.toISOString(),
     }));
   },
-  async create(id: string, owner: AssistantOwner, agentId: string, origin: SessionRow["origin"] = "user", workspaceId?: string) {
+  async create(id: string, owner: AssistantOwner, agentId: string, origin: SessionRow["origin"] = "user", workspaceId?: string, fromChannel = false) {
     return transaction(async (tx) => {
     await lockSessionClaim(tx, id);
     const existing = await tx.query(
@@ -193,7 +193,7 @@ export const assistantStore = {
         );
       return { row, replayed: true };
     }
-    await assertUnclaimedSession(tx, id, owner);
+    await assertUnclaimedSession(tx, id, owner, fromChannel);
     const a = await this.agent(agentId, owner);
     if (isAppBuilderKind(a.kind) && !workspaceId)
       throw new HttpError(400, "App builder conversations require a workspace", "INVALID_REQUEST");

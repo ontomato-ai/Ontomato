@@ -1,4 +1,5 @@
 import {needsRetrievalScope} from "../assistant/skills";
+import { governanceReportHref } from "../assistant/governance-report";
 import { tForLocale } from "../../i18n";
 import { recentUserMessages } from "../assistant/user-quotes";
 import { OntologyRetrievalClient } from "../assistant/ontology-retrieval";
@@ -67,7 +68,7 @@ export const agentChannelService = {
     }
     if (body.agent.providerId === "observe") {
       if (body.agent.agentId !== DIAGNOSIS_AGENT_ID || body.authority.executionKind !== "live") throw new HttpError(403, "Diagnosis requires live execution authority", "BUILD_TEST_FORBIDDEN");
-      await createDiagnosis(body.sessionId, owner);
+      await createDiagnosis(body.sessionId, owner, null, true);
       return prepareDiagnosis(body.sessionId, body.runId, body.input, owner, credentials);
     }
     return assistantService.prepare(body,owner,credentials);
@@ -98,8 +99,7 @@ export const agentChannelService = {
     }
     const snapshot = await service.readRun(body.execution.session.sessionId, body.execution.runId, owner);
     const status = snapshot.run.status === "running" ? "running" : snapshot.run.stopReason === "stop" ? "completed" : snapshot.run.stopReason === "aborted" ? "cancelled" : "failed";
-    const recordId = body.execution.session.providerId === "workbench" ? await assistantStore.governanceWindow(body.execution.runId,owner) : null;
-    const href = recordId ? `/governance/reports/${recordId}` : null;
+    const href = body.execution.session.providerId === "workbench" ? await governanceReportHref(body.execution.runId,owner) : null;
     return { settled: status !== "running", status, summary: answerText(snapshot) || snapshot.run.errorMessage || status,
       process: href ? { mode: "page", href } : { mode: "inline", runtimeSessionId: snapshot.run.sessionId, runtimeRunId: snapshot.run.id },
       results: href ? [{ kind: "page", href, title: tForLocale(credentials.locale,"assistant.governance.report.title") }] : [],quality: [],

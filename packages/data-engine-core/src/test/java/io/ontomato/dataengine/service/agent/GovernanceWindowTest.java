@@ -40,6 +40,7 @@ class GovernanceWindowTest extends PostgresTestDatabase {
   private IdentityService identity;
   private AgentExecutionAccess executions;
   private QueryGrantService grants;
+  private io.ontomato.dataengine.schedules.ScheduleIdentity identities;
 
   @BeforeEach void setup() throws Exception {
     server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
@@ -68,12 +69,13 @@ class GovernanceWindowTest extends PostgresTestDatabase {
     when(definitions.resource(anyString())).thenCallRealMethod();
     identity=mock(IdentityService.class);
     executions=mock(AgentExecutionAccess.class);
+    identities=mock(io.ontomato.dataengine.schedules.ScheduleIdentity.class,CALLS_REAL_METHODS);
     when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser(owner.userId(),owner.domainId()));
     when(identity.hasKnowledgeGovernanceAccess()).thenReturn(true);
     when(identity.hasKnowledgeGovernanceAccess(owner.userId(),owner.domainId())).thenReturn(true);
     when(identity.getCurrentCredentialExpiresAt()).thenReturn(System.currentTimeMillis()+1_200_000);
     governance=new KnowledgeGovernanceService(store,new AgentRuntimeClient(url,"ontology","http://ontology"),
-      new GovernanceRuntimeClient(url,"service"),definitions,grants,mock(KnowledgeService.class),mock(AdminService.class),executions);
+      new GovernanceRuntimeClient(url,"service"),definitions,grants,mock(KnowledgeService.class),mock(AdminService.class),executions,identities);
     ReflectionTestUtils.setField(governance,"identityService",identity);
     governance.initialize();
     var access=new OntologyAgentAccess(mock(QueryAccessService.class),identity,grants,store);
@@ -154,6 +156,19 @@ class GovernanceWindowTest extends PostgresTestDatabase {
     var foreign=binding(run);foreign.put("ownerId","other");
     http.perform(post("/ontology/ai/knowledge-governance/platform-windows").header("X-Ontomato-Query-Service-Token","service").contentType(MediaType.APPLICATION_JSON).content(foreign.toJSONString())).andExpect(status().isNotFound());
     assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM ontology_governance_records",Integer.class));
+  }
+  @Test void platformHostOwnerMappingKeepsJavaIdentityInRecordAndGrant() throws Exception {
+    when(identities.hostOwner(owner.userId())).thenReturn("system");
+    var input=binding(run);input.put("ownerId","system");
+    var response=http.perform(post("/ontology/ai/knowledge-governance/platform-windows")
+      .header("X-Ontomato-Query-Service-Token","service").contentType(MediaType.APPLICATION_JSON).content(input.toJSONString()))
+      .andExpect(status().isOk()).andReturn().getResponse();
+    var result=JSONObject.parseObject(response.getContentAsString());
+    var grant=grants.verify(result.getString("token"),run,"/ontology/ai/knowledge-governance/"+record+"/runs/"+run+"/actions/read_input");
+    assertEquals(owner.userId(),grant.getString("initiatorUserId"));
+    assertEquals(owner.userId(),grant.getString("userId"));
+    assertEquals(owner.userId(),jdbc.queryForObject("SELECT owner_id FROM ontology_governance_records WHERE id=?::uuid",String.class,record));
+    assertEquals(0,governance.work(record,owner).getJSONObject("work").getJSONArray("sources").size());
   }
   private OntologyAgentAccess.Context context() {return new OntologyAgentAccess.Context(owner,null,"login",null,"en",System.currentTimeMillis()+600_000,null);}
 

@@ -20,9 +20,10 @@ vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://o
 vi.mock("../../../config/query-settings",()=>({getQueryTimeoutMs:()=>900_000}));
 vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({callbackUrl:"http://workbench"})}}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
-vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class {request=mocks.request;run=mocks.run;status=mocks.status;session=async()=>({messages:[{id:"22222222-2222-4222-8222-222222222222",messageSeq:1,message:{role:"user",content:"Review knowledge",timestamp:1}}]});}}));
+vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class {request=mocks.request;run=mocks.run;status=mocks.status;finalReply=async()=>null;session=async()=>({messages:[{id:"22222222-2222-4222-8222-222222222222",messageSeq:1,message:{role:"user",content:"Review knowledge",timestamp:1}}]});}}));
 vi.mock("../../../platform/agent-runtime/runtime",()=>({messageText:(message:{content:string})=>message.content,answerText:()=>"",userSkillEnvironment:()=>({values:{ONTOMATO_ONTOLOGY_URL:"http://ontology",ONTOMATO_SKILL_SCENARIO:"platform"},secrets:{ONTOMATO_TK:"user"}}),runDefinition:(systemPrompt:string,modelId:string,skills:unknown[])=>({systemPrompt,modelId,skills})}));
 import { assistantService } from "../service";
+import { assistantScheduleApplication } from "../scheduling";
 import { agentChannelService } from "../../agent-host/channel";
 import type { AgentPrepareRequest } from "@ontomato/contracts/agent-channel";
 configureI18n({defaultLocale:"en",appTextLocale:"en",languageSwitchEnabled:false,packs:{en:{messages:en,...enLocaleMeta}}});
@@ -76,10 +77,16 @@ it("closes the Java gate before asking the runtime to stop",async()=>{
   await expect(assistantService.cancel(sessionId,runId,owner,{token:"user"})).resolves.toEqual({run:null});
   expect(mocks.close).toHaveBeenCalledWith(runId,owner);
 });
-it("a custom agent's provider result follows its saved governance record",async()=>{
+it("provider and scheduled results share the run's saved governance report",async()=>{
   mocks.record.mockImplementation(async id=>id===runId?agentId:null);mocks.run.mockResolvedValue({run:{id:runId,sessionId,status:"running",stopReason:null},messages:[],artifacts:[]});
   const result=await agentChannelService.read({actor:{id:runId,domainId:"domain"},execution:{session:{providerId:"workbench",sessionId},runId}},"domain");
   expect(result).toMatchObject({process:{mode:"page",href:`/governance/reports/${agentId}`},results:[{href:`/governance/reports/${agentId}`} ]});
+  mocks.status.mockResolvedValue({id:runId,sessionId,status:"stopped",stopReason:"stop"});
+  const input={taskId:agentId,runId,owner,handle:{sessionId}};
+  expect((await assistantScheduleApplication.status(input)).resultLink).toEqual({appId:"agents",path:`/governance/reports/${agentId}`});
+  mocks.record.mockResolvedValue(null);
+  expect((await assistantScheduleApplication.status(input)).resultLink).toEqual({appId:"agents",path:`/agents/chat?sessionId=${sessionId}`});
+
 });
 
 it("steering a governance-only run does not turn its registered caller scope into query preparation",async()=>{

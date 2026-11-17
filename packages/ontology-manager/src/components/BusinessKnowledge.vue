@@ -225,7 +225,9 @@ function changedFields(base: BusinessKnowledge, form: BusinessKnowledge): (keyof
  * operation or target is not one this page holds, is reported rather than guessed at.
  */
 async function applyDraft(sessionId: string, runId: string, path: string) {
-  const read = createAgentHostClient({ request: (path, init) => client.request(path, init, "") });
+  // The draft is the agent platform's: its host routes live under `/assistant` on the Node API, which is the Manager's
+  // request layer with no data-engine prefix (`""`), the same way the page asks the platform for the governance agent.
+  const read = createAgentHostClient({ request: (path, init) => client.request(`/assistant${path}`, init, "") });
   const envelope = await read.readPageDraft(sessionId, runId, path);
   if (envelope.pageKey !== "business-knowledge")
     throw new Error(ot("knowledgeDraftOtherPage", { page: envelope.pageKey }));

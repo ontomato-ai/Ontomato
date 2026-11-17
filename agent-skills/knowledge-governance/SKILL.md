@@ -14,8 +14,7 @@ update the same issue ID for the same disagreement. Confirming meaning does not 
 
 In platform runs, the host supplies `ONTOMATO_SKILL_SCENARIO=platform`, a window callback
 and the real run identity. The first command requests a write window from Node; no report
-is created merely because this skill is installed. Use the returned record ID in
-`/governance/reports/<recordId>`. The host closes writes when the run ends or stops.
+is created merely because this skill is installed. The host closes writes when the run ends or stops.
 Do not call close or switch to external begin in a platform run.
 
 Outside the platform, set `ONTOMATO_ONTOLOGY_URL`, `ONTOMATO_TK` or `ONTOMATO_API_KEY`,
@@ -30,3 +29,7 @@ one `outputs/drafts/*.page-draft.json` file per item and prints its business-kno
 It reads existing knowledge to select create/update; creates use an empty knowledgeID and pending
 status, while updates keep the existing ID and status. Outside the platform it calls Java import
 with your credential. Report imported knowledge only after that interface confirms it.
+
+In platform replies, give the reader each draft's `href` and, after saving governance work,
+`reportHref` using ordinary Markdown links: `[Title](href)`. Do not use image syntax for
+these page links, or link to or embed the draft file itself.

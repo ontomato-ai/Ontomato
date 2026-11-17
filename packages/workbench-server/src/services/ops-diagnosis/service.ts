@@ -46,13 +46,13 @@ const view = (s: Session, latest: LatestRun | null) => ({
   createdAt: new Date(s.created_at).toISOString(), updatedAt: new Date(s.updated_at).toISOString(),
   latestRun: latest ? runStatusView(latest) : null,
 });
-export async function createDiagnosis(id: string, owner: AgentHostOwner, target: DiagnosisTarget | null = null) {
+export async function createDiagnosis(id: string, owner: AgentHostOwner, target: DiagnosisTarget | null = null, fromChannel = false) {
   if (target) target = diagnosisTargetSchema.parse(target);
   const inserted = await transaction(async (tx) => {
     await lockSessionClaim(tx, id);
     const previous = await tx.query(`SELECT id FROM ${table("ops_sessions")} WHERE id=$1`, [id]);
     if (previous.rowCount) return { rowCount: 0 };
-    await assertUnclaimedSession(tx, id, owner);
+    await assertUnclaimedSession(tx, id, owner, fromChannel);
     return tx.query(`INSERT INTO ${table("ops_sessions")} (id,domain_id,owner_id,target) VALUES($1,$2,$3,$4)`, [id, owner.domainId, owner.userId, target ? JSON.stringify(target) : null]);
   });
   const row = await diagnosisSession(id, owner);

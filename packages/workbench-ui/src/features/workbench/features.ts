@@ -12,17 +12,19 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
  * A page's skill narrows the composer to the agents that carry it: the settings' own page declares `agent-settings` with
  * the `analysis-agent` code it opens with, and the dashboards' declaration arrives with the dashboard mapping.
  */
+/** The ids are what the conversation's parameter and the host's slots name; the labels are what a reader reads. */
+export const AGENT_SETTINGS_PAGE_ID = "agents";
 const agentSettingsPageSkill = { pageKey: "agent-settings", permissionCode: "analysis-agent" } as const;
-
-const agentSettingsFeature: ShellFeatureDeclaration = {
-  id: "agents",
-  label: "agents",
+const agentSettingsFeature = (label: string): ShellFeatureDeclaration => ({
+  id: AGENT_SETTINGS_PAGE_ID,
+  label,
   icon: "agents",
   availability: "page",
+  listed: false,
   withConversation: true,
   address: platformRoutes.ontologyAgents.path,
   pageSkill: agentSettingsPageSkill,
-};
+});
 
 /** The dashboards are an application of their own: this application opens one beside its conversation, not a copy. */
 export const DASHBOARDS_PAGE_ID = "dashboards";
@@ -32,21 +34,52 @@ export const DASHBOARDS_PAGE_ID = "dashboards";
  * it opens the dashboard application at that board. Its skill narrows the composer to the agents that can read and draft
  * a board's cards, by the domain membership the dashboards application itself is open to.
  */
-export function dashboardsPageFeature(address: string): ShellFeatureDeclaration {
+export function dashboardsPageFeature(label: string, address: string): ShellFeatureDeclaration {
   return {
     id: DASHBOARDS_PAGE_ID,
-    label: "dashboards",
-    icon: "dashboards",
+    label,
+    icon: "dashboard",
     availability: "page",
+    listed: false,
     withConversation: true,
     address,
     pageSkill: { pageKey: "dashboard", access: "domain-member" },
   };
 }
 
+/** One governance record's report, opened beside the conversation that wrote it. */
+export const GOVERNANCE_REPORT_PAGE_ID = "governance-report";
+
+/**
+ * The report page beside the conversation. Its address is what this application's page parameter names, and its own
+ * skill narrows the composer to the agents that carry it: the governance preset the platform's mapping names for
+ * `governance-report`, under the business knowledge menu code.
+ */
+export function governanceReportPageFeature(label: string, address: string): ShellFeatureDeclaration {
+  return {
+    id: GOVERNANCE_REPORT_PAGE_ID,
+    label,
+    icon: "report",
+    availability: "page",
+    listed: false,
+    withConversation: true,
+    address,
+    pageSkill: { pageKey: "governance-report", permissionCode: "business-knowledge" },
+  };
+}
+
 export function workbenchFeatures(
   editionFeatures: readonly ShellFeatureDeclaration[],
-  dashboards = dashboardsPageFeature(""),
+  /** The two pages this application opens beside its conversation, named in the reader's language. */
+  pages: { agents: string; dashboards: string },
+  dashboardsAddress = "",
+  /** A governance record's report, declared only while the conversation's page parameter names one. */
+  governanceReport: ShellFeatureDeclaration | null = null,
 ): ShellFeatureDeclaration[] {
-  return [agentSettingsFeature, dashboards, ...editionFeatures];
+  return [
+    agentSettingsFeature(pages.agents),
+    dashboardsPageFeature(pages.dashboards, dashboardsAddress),
+    ...(governanceReport ? [governanceReport] : []),
+    ...editionFeatures,
+  ];
 }

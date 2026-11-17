@@ -2,13 +2,14 @@ import type { PilotPage, PilotPageResolver } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import AgentSettingsRoute from "./pages/AgentSettingsRoute.vue";
 import DashboardsPage from "./pages/DashboardsRoute.vue";
+import GovernanceReportRoute from "./pages/GovernanceReportRoute.vue";
 
 /**
  * The pages this assembly mounts beside a conversation (DESIGN.md "Applications and shells"). A page's own address is
  * what the conversation beside it carries (`?page=`), and the resolver turns that address into the props the page's own
  * component takes: the page keeps one component and one address, and the page beside the chat is that page.
  *
- * The pages here are the dashboards and the agents' settings; the knowledge report joins them when its migration lands.
+ * The pages here are the dashboards, the agents' settings and one governance record's report.
  *
  * A page's own navigation (another board, another agent, the list, a saved draft's handoff) is the callback it is given
  * here. The callback changes the parameter the conversation carries, never the browser's address, so the conversation
@@ -32,6 +33,25 @@ export function pilotPageResolver(setPage: (address: string) => void): PilotPage
           navigate: setPage,
         },
       };
+    }
+    const report = /^\/governance\/reports\/([^/]+)$/.exec(path);
+    if (report) {
+      const recordId = decodeURIComponent(report[1]!);
+      return {
+        id: "governance-report",
+        component: GovernanceReportRoute,
+        props: {
+          paired: true,
+          recordId,
+          issueId: query.get("issue") ?? undefined,
+          navigate: (next: { issue?: string }) => {
+            const target = new URLSearchParams(search);
+            if (next.issue) target.set("issue", next.issue);
+            else target.delete("issue");
+            setPage(`/governance/reports/${encodeURIComponent(recordId)}${target.size ? `?${target}` : ""}`);
+          },
+        },
+      } satisfies PilotPage;
     }
     if (path !== platformRoutes.dashboards.path) return null;
     return {

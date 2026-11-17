@@ -29,7 +29,7 @@ afterEach(async()=>{await new Promise<void>((resolve,reject)=>server.close(error
 function command(name:string,platform:boolean,input?:unknown,selected=false){return execute(process.execPath,[script,name,...(input?[JSON.stringify(input)]:[])],{cwd:directory,env:{...process.env,ONTOMATO_ONTOLOGY_URL:url,ONTOMATO_TK:selected?"":"user",ONTOMATO_EXECUTION_CALLBACK:selected?"executor-callback":"",ONTOMATO_SESSION_ID:id,ONTOMATO_SKILL_SCENARIO:platform?"platform":"external",ONTOMATO_RUN_ID:platform?run:"",ONTOMATO_GOVERNANCE_WINDOW_URL:url+"/window",ONTOMATO_GOVERNANCE_CALLBACK:"host-callback"}});}
 it("platform commands request the bound host window and use its scoped grant, never an external begin",async()=>{
   await mkdir(path.join(directory,"work"));await writeFile(path.join(directory,"work/.governance-run.json"),JSON.stringify({id,sessionId:id,runId:"old-external"}));
-  expect(JSON.parse((await command("read-work-record",true)).stdout)).toEqual({saved:true});
+  expect(JSON.parse((await command("read-work-record",true)).stdout)).toEqual({saved:true,reportHref:`#/governance/reports/${id}`});
   expect(calls).toEqual([{path:"/window",token:"host-callback",run},{path:`/ontology/ai/knowledge-governance/${id}/runs/${run}/actions/read_work_record`,token:"governance-grant",run}]);
   await expect(command("close",true)).rejects.toThrow();expect(calls).toHaveLength(2);
 });
@@ -48,6 +48,7 @@ it("platform knowledge import emits separate original-page forms and never calls
   ]})).stdout);
   expect(calls.map(call=>call.path)).toEqual(["/admin/getBussinessKnowledge"]);
   const drafts=await Promise.all(result.drafts.map(async(entry:{path:string;href:string})=>{
+    expect(entry.href.startsWith("#/ontology/knowledge?")).toBe(true);
     pageDraftPathSchema.parse(entry.path);
     const link=new URL(entry.href.slice(1),"http://platform");
     expect(link.pathname).toBe("/ontology/knowledge");
@@ -67,4 +68,9 @@ it("platform import uses the execution callback for its business-page read witho
  expect(calls).toEqual([{path:"/admin/getBussinessKnowledge",token:"",run,callback:"executor-callback"}]);
  expect(result.drafts).toHaveLength(1);
  expect(await readFile(path.join(directory,result.drafts[0].path),"utf8")).not.toContain("executor-callback");
+});
+
+it("platform work-record updates return a hash report link",async()=>{
+  const result=JSON.parse((await command("update-work-record",true,{summary:"Reviewed"})).stdout);
+  expect(result.reportHref).toBe(`#/governance/reports/${id}`);
 });
