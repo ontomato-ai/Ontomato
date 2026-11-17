@@ -1,4 +1,5 @@
 import {beforeEach,expect,it,vi} from 'vitest';
+import {defaultAssistantSkills} from '../../../config/assistant-defaults';
 const mocks=vi.hoisted(()=>({profile:vi.fn(),source:vi.fn(),record:vi.fn(),skills:vi.fn(),environment:vi.fn(),open:vi.fn(),callback:vi.fn(),overview:vi.fn()}));
 vi.mock('../../product-assets/agent-profile',()=>({profileForSession:mocks.profile,profileSourceForSession:mocks.source}));
 vi.mock('../../../utils/backend-client',()=>({backendPost:vi.fn(),buildBackendHeaders:(_token:unknown,_user:unknown,_locale:unknown,_key:unknown,headers:unknown)=>headers??({})}));
@@ -10,7 +11,7 @@ vi.mock('../skills',()=>({needsRetrievalScope:(skills:unknown[])=>skills.length>
 vi.mock('../context',()=>({assistantOntologyContext:mocks.overview}));
 vi.mock('../store',()=>({assistantStore:{turns:async()=>[],recordRetrievalScope:mocks.record}}));
 vi.mock('../../../infrastructure/agent-runtime/client',()=>({RuntimeClient:class{session=async()=>({messages:[{id:'input',messageSeq:1,message:{role:'user',content:'Question',timestamp:1}}]});}}));
-vi.mock('../../../platform/agent-runtime/runtime',()=>({messageText:(message:{content:string})=>message.content,runDefinition:(_prompt:string,_model:unknown,skills:unknown,_locale:unknown,externalMcp:unknown)=>({skills,externalMcp}),userSkillEnvironment:mocks.environment}));
+vi.mock('../../../platform/agent-runtime/runtime',()=>({messageText:(message:{content:string})=>message.content,runDefinition:(systemPrompt:string,_model:unknown,skills:unknown,_locale:unknown,externalMcp:unknown)=>({systemPrompt,skills,externalMcp}),userSkillEnvironment:mocks.environment}));
 vi.mock('../ontology-retrieval',()=>({OntologyRetrievalClient:class{open=mocks.open;}}));
 vi.mock('../../agent-runtime/callback-credential',()=>({callbackCredential:mocks.callback}));
 import {prepareAnalystRun,type AssistantPreparation} from '../prepare';
@@ -43,4 +44,16 @@ it('uses executor business credentials while page skills and caller ownership st
  expect(run.environment.secrets).toEqual({ONTOMATO_EXECUTION_CALLBACK:'sealed-callback'});
  expect(run.environment.values.ONTOMATO_ONTOLOGY_URL).toBe('http://workbench.test/api/assistant/executions/run/ontology');
  expect(JSON.stringify(run)).not.toContain('executor-key');expect(JSON.stringify(run)).not.toContain('human-secret');
+});
+
+it.each(['regular','analysis'])('prepares the default %s with reusable chart producers and their shared instruction',async(kind)=>{
+ const input=request();input.a.kind=kind;input.a.skills=defaultAssistantSkills;
+ mocks.skills.mockResolvedValue({skills:input.a.skills,pageDrafts:false});mocks.environment.mockReturnValue({values:{},secrets:{}});
+ const run=await prepareAnalystRun(input);
+ for(const name of ['echarts','leaflet','admin-choropleth-map']){
+   expect(run.definition.skills).toContainEqual({name,namespace:{kind:'provider',provider:'workbench'}});
+   expect(run.definition.systemPrompt).toContain(name);
+ }
+ expect(run.definition.systemPrompt).toContain('Do not hand-write ECharts options');
+ expect(run.definition.systemPrompt).not.toContain('containing an ECharts option object as plain JSON');
 });

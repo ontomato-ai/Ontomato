@@ -33,15 +33,24 @@ const triggerLabel = computed(() => `${props.label}: ${current.value?.name ?? "â
 function onDocumentPointer(event: PointerEvent) {
   if (root.value && !root.value.contains(event.target as Node)) close();
 }
+/**
+ * The list floats above the page rather than in its flow, so it is placed against the viewport: under the trigger
+ * while the viewport has room for it there, and above it otherwise â€” a composer at the foot of the page or of the
+ * window would have its list cut off by the bottom edge, hiding every agent but the first.
+ */
 function position() {
   const trigger = root.value?.getBoundingClientRect();
   if (!trigger) return;
   const width = Math.min(320, window.innerWidth - 32);
-  const top = trigger.bottom + 4;
+  const below = window.innerHeight - trigger.bottom - 4 - 16;
+  const above = trigger.top - 4 - 16;
+  const opensUp = below < 160 && above > below;
+  const room = Math.max(80, opensUp ? above : below);
   popupStyle.value = {
     left: `${Math.max(16, Math.min(trigger.left, window.innerWidth - width - 16))}px`,
-    top: `${top}px`, width: `${width}px`,
-    maxHeight: `${Math.max(80, window.innerHeight - top - 16)}px`,
+    top: `${opensUp ? Math.max(16, trigger.top - 4 - room) : trigger.bottom + 4}px`,
+    width: `${width}px`,
+    maxHeight: `${room}px`,
   };
 }
 async function show() {

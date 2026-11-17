@@ -18,6 +18,7 @@ import { PlatformPageHeader } from "@ontomato/platform-shell";
 import type { SmartAsset, TriggerRecord, WorkflowRecord } from "../api";
 import { useManagerClient, useOntologyText } from "../context";
 import { useManagerFeedback } from "../feedback";
+import type { MessageKey } from "../i18n";
 
 /**
  * The triggers of this domain: when an execution starts.
@@ -98,7 +99,7 @@ const filtered = computed(() => {
     (item) =>
       item.name.toLowerCase().includes(text) ||
       (item.effectKind ?? "").toLowerCase().includes(text) ||
-      (item.frequency ?? "").toLowerCase().includes(text),
+      cadence(item).toLowerCase().includes(text),
   );
 });
 
@@ -127,8 +128,42 @@ async function loadCatalogues() {
     nextWorkflows.status === "fulfilled" && Array.isArray(nextWorkflows.value) ? nextWorkflows.value : [];
 }
 
-function frequencyOf(item: TriggerRecord) {
-  return item.frequency ?? "—";
+const unitNames: Record<"minute" | "hour" | "day", MessageKey> = {
+  minute: "triggerUnitMinute",
+  hour: "triggerUnitHour",
+  day: "triggerUnitDay",
+};
+
+/** Weekday 1 = Monday … 7 = Sunday, as the stored frequency counts them. */
+const weekdayNames: MessageKey[] = [
+  "triggerWeekdayMonday",
+  "triggerWeekdayTuesday",
+  "triggerWeekdayWednesday",
+  "triggerWeekdayThursday",
+  "triggerWeekdayFriday",
+  "triggerWeekdaySaturday",
+  "triggerWeekdaySunday",
+];
+
+/**
+ * How often the trigger fires, worded here in the reader's language: the service stores the frequency as a structure,
+ * not as a sentence. A Cron expression is shown as written.
+ */
+function cadence(item: TriggerRecord) {
+  const frequency = item.condition?.frequency;
+  if (!frequency) return "—";
+  switch (frequency.kind) {
+    case "interval":
+      return ot("triggerFrequencyEvery", { every: frequency.every, unit: ot(unitNames[frequency.unit]) });
+    case "daily":
+      return ot("triggerFrequencyDailyAt", { time: frequency.time });
+    case "weekly":
+      return ot("triggerFrequencyWeeklyAt", { weekday: ot(weekdayNames[frequency.weekday - 1]!), time: frequency.time });
+    case "monthly":
+      return ot("triggerFrequencyMonthlyAt", { day: frequency.day, time: frequency.time });
+    case "cron":
+      return frequency.expression;
+  }
 }
 
 function stamp(value: string | null | undefined) {
@@ -137,10 +172,29 @@ function stamp(value: string | null | undefined) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
+/**
+ * What the trigger starts, in an operator's words: the kind, then the name of the action or process. The effect stores
+ * only an id; one no catalogue names any more (the action was deleted) is shown as stored rather than hidden.
+ */
 function effect(item: TriggerRecord) {
-  if (item.effectKind === "workflow") return `workflow · ${item.effect?.workflowId ?? "—"}`;
-  if (item.effectKind === "action") return `action · ${item.effect?.actionId ?? "—"}`;
+  if (item.effectKind === "workflow") {
+    return `${ot("triggerEffectWorkflow")} · ${nameOf(workflows.value, item.effect?.workflowId)}`;
+  }
+  if (item.effectKind === "action") {
+    return `${ot("triggerEffectAction")} · ${nameOf(actions.value, item.effect?.actionId)}`;
+  }
   return item.effectKind ?? "—";
+}
+
+function nameOf(catalogue: Array<{ id?: string; name: string }>, id: string | undefined) {
+  if (!id) return "—";
+  return catalogue.find((entry) => entry.id === id)?.name ?? id;
+}
+
+/** Time is the only condition kind the backend accepts; any other is shown as stored. */
+function conditionLabel(item: TriggerRecord) {
+  if (item.conditionKind === "time") return ot("triggerConditionTime");
+  return item.conditionKind ?? "—";
 }
 
 function statusLabel(status: string | undefined) {
@@ -334,17 +388,17 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column :label="ot('triggerColumnEffect')" min-width="220">
           <template #default="{ row }">
-            <span class="trigger-mono">{{ effect(row) }}</span>
+            <span>{{ effect(row) }}</span>
           </template>
         </el-table-column>
         <el-table-column :label="ot('triggerColumnCondition')" min-width="130">
           <template #default="{ row }">
-            <span>{{ row.conditionKind ?? "—" }}</span>
+            <span>{{ conditionLabel(row) }}</span>
           </template>
         </el-table-column>
         <el-table-column :label="ot('triggerColumnCadence')" min-width="130">
           <template #default="{ row }">
-            <span>{{ frequencyOf(row) }}</span>
+            <span>{{ cadence(row) }}</span>
           </template>
         </el-table-column>
         <el-table-column :label="ot('triggerColumnNextRun')" min-width="160">
@@ -503,11 +557,6 @@ onMounted(async () => {
   margin-left: 6px;
   font-size: 11px;
   color: var(--el-text-color-secondary);
-}
-
-.trigger-mono {
-  font-family: var(--el-font-family-mono, monospace);
-  font-size: 12px;
 }
 
 .trigger-action {

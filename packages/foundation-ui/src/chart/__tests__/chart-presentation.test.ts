@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { chartFormats, chartTickFormat, chartTimelineLabel, chartValueText } from "@ontomato/contracts/chart-presentation";
+import { chartFormats, chartTickFormat, chartTimelineLabel, chartValueText, fillChartPresentation } from "@ontomato/contracts/chart-presentation";
 import { legacyChartToFile, type ChartFile } from "@ontomato/contracts/chart-data";
 
 // The platform writes a value the way the metric's own format states; the value itself never changes.
@@ -78,4 +78,36 @@ it("reads a single's own value and an item's value and share", () => {
     { bindings: pie.file.ontomato.bindings ?? [], display: pie.file.ontomato.display ?? {} },
   );
   expect(pieOption.series[0].tooltip.formatter({ name: "甲", value: 20, data: { value: 20, share: 0.5 } })).toBe("甲<br/>20 · 50%");
+});
+
+/**
+ * A pie drawn from the metric's dataset, without a shape binding, is given the whole row by ECharts; its label and
+ * tooltip read the columns the series encodes, so a reader sees the category's value and share rather than the row object.
+ */
+it("reads a dataset pie's label and tooltip from the row it is given", () => {
+  const file = {
+    dataset: [{ id: "metric" as const, dimensions: ["kind", "amount", "share"], source: [] }],
+    series: [{ id: "share", type: "pie", datasetId: "metric" as const, encode: { itemName: "kind", value: "amount", tooltip: ["amount", "share"] }, label: { show: true } }],
+    ontomato: { display: { formats: { amount: { kind: "number", decimals: 0 }, share: { kind: "percent", scale: 100 } } } },
+  };
+  const filled = fillChartPresentation(
+    file,
+    { columns: [{ key: "kind" }, { key: "amount" }, { key: "share" }], rows: [{ kind: "教学科研", amount: 1580, share: 0.5085 }, { kind: "党群机关", amount: 446, share: 0.1435 }] },
+    {},
+    { height: 320 },
+  );
+  if (!filled.ok) throw new Error(filled.code);
+  const series = filled.option.series[0];
+  // The row as the dataset hands it to the formatter: one value per declared column, no names.
+  const row = ["教学科研", 1580, 0.5085];
+  const item = { name: "教学科研", value: row, data: { value: row } };
+  expect(series.label.formatter(item)).toBe("教学科研\n1,580 · 50.85%");
+  expect(series.tooltip.formatter(item)).toBe("教学科研<br/>1,580 · 50.85%");
+  // The same row as an object by column name reads the same.
+  const named = { name: "教学科研", value: { kind: "教学科研", amount: 1580, share: 0.5085 }, data: { value: { kind: "教学科研", amount: 1580, share: 0.5085 } } };
+  expect(series.tooltip.formatter(named)).toBe("教学科研<br/>1,580 · 50.85%");
+  // A share with no format is written as it came: the file's formats decide, nothing is recalculated.
+  expect(chartValueText(0.5085)).toBe("0.5085");
+  // A small share keeps its own scale rather than being read as a whole number.
+  expect(series.tooltip.formatter({ name: "党组织", value: ["党组织", 3, 0.001], data: { value: ["党组织", 3, 0.001] } })).toBe("党组织<br/>3 · 0.1%");
 });

@@ -1,4 +1,5 @@
 import { GOVERNANCE_KIND, GOVERNANCE_SKILL } from "./governance-definition";
+import { defaultAssistantSkills } from "../../config/assistant-defaults";
 import { APP_BUILDER, APP_BUILDER_KIND,isAppBuilderKind } from "../app-builder/definition";
 import type { ModelSelection } from "@ontomato/contracts/model-settings";
 import { lockSessionClaim, assertUnclaimedSession } from "../agent-host/session-claim";
@@ -80,16 +81,7 @@ export const assistantStore = {
               ? "Ask questions about your data"
               : "Investigate questions and produce reports",
             null,
-            JSON.stringify([
-              {
-                namespace: { kind: "provider", provider: "ontology" },
-                name: "ontomato-analyst-assistant",
-              },
-              {
-                namespace: { kind: "provider", provider: "workbench" },
-                name: "assistant-report",
-              },
-            ]),
+            JSON.stringify(defaultAssistantSkills),
             kind === "regular" ? 0 : 1,
           ],
         );

@@ -164,6 +164,9 @@ provide(pageCounterKey, {
     (counterAgents ??= createAssistantClient()
       .listAgents()
       .then((list) => list.filter((agent) => agent.enabled))),
+  // The page's own skill, read from the same directory the conversation's composer reads beside it: a page's refusal
+  // (no mapping for this reader, or a registered default that is gone) goes back to the page as what it is.
+  pageAgents: (page) => createAssistantClient().listPageAgents(page),
   preferredAgentId: ref(readRememberedAgent()),
   ask(agentId, text, page) {
     void router.push({ path: platformRoutes.chat.path, query: { agentId, prompt: text, page } });
