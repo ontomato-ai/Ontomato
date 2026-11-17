@@ -60,12 +60,20 @@ async function searchChildren(search=''){try{const result=await client.products.
 const widgetIndex=ref(0);
 /** A chart MetricWidget enters only by bringing in an existing chart. */
 const chartPicker=ref(false);
+/**
+ * The brought chart replaces the number's presentation entirely: its file, its MetricView and its parameters. The
+ * form's own fields follow, because saving writes them over the document.
+ */
 function bringChart(chart:MetricReferenceChartEntry){
   const projection=document.value as Extract<ProductDocument,{kind:'metric-widget'}>;
   projection.renderer='chart';
   projection.renders.id=chart.query.metricId;
   projection.chartFile=chart.chartFile.content;
   projection.parameters=Object.fromEntries(Object.entries(chart.query.parameters).map(([name,value])=>[name,{source:'literal' as const,value}]));
+  projection.fields=[];projection.valueField='';projection.labelField='';projection.chartType='bar';
+  delete projection.format;delete projection.display;
+  metricId.value=projection.renders.id;
+  valueField.value='';labelField.value='';parameters.value=JSON.stringify(projection.parameters,null,2);
   if(!name.value.trim())name.value=chart.name;
   raw.value=JSON.stringify(document.value,null,2);
 }
@@ -162,13 +170,20 @@ watch(()=>widget.value?.kind,async value=>{
 });
 /** A chart renderer without a chart file cannot be saved, so choosing it asks for the chart first. */
 function rendererChanged(){
-  if(document.value.kind==='metric-widget'&&document.value.renderer==='chart'&&!document.value.chartFile)chartPicker.value=true;
+  if(document.value.kind!=='metric-widget'||document.value.renderer!=='chart')return;
+  // The number's value mappings do not belong in a chart file, so they go with the old presentation.
+  document.value.fields=[];document.value.valueField='';document.value.labelField='';document.value.chartType='bar';
+  delete document.value.format;delete document.value.display;
+  valueField.value='';labelField.value='';
+  if(!document.value.chartFile)chartPicker.value=true;
 }
 function select(asset:{id:string}|undefined) { if(!asset)return;editing.value=false;emit('select',asset.id); }
 function more(command:string){if(command==='copy')void copy();else if(command==='template')void saveTemplate();else if(command==='delete')void remove();else showTypes.value=!showTypes.value;}
 async function createPage(){if(!selected.value)return;await run(async()=>{const source=selected.value!;const result=await ElMessageBox.prompt(ot('productPageName'),ot('productCreatePageFromTemplate'),{inputValue:ot('productPageSuffix',{name:source.name})});selected.value=await client.products.createPage(source.id,result.value);await load();emit('select',selected.value!.id);});}
 async function createAsset(value:string){if(value!=='dashboard'){edit(null,value);return;}await run(async()=>{const result=await ElMessageBox.prompt(ot('productDashboardName'),ot('productCreateDashboard'));selected.value=await client.products.createDashboard(result.value);await load();emit('select',selected.value!.id);});}
 function edit(asset:ProductAsset|null,newKind="page") {
+  // A new form starts clean: the previous form's failure is not this form's.
+  error.value="";
   if(asset&&productCategory(asset.document.kind)==='legacy'){error.value=ot('productLegacyContract');return;}
   widgetIndex.value=0;
   selected.value=asset;name.value=asset?.name ?? ""; description.value=asset?.description ?? "";visibility.value=asset?.visibility ?? "private";
