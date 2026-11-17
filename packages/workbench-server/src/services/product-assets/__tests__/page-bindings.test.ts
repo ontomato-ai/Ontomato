@@ -25,7 +25,7 @@ it('checks ontology object parameter classes rather than accepting any object-sh
   await expect(validatePageBindings(owner,page({selected:{kind:'object',objectType:'Order'}}),async()=>objectMetric,{})).rejects.toMatchObject({code:'INVALID_PAGE_PARAMETER'});
 });
 it('checks tool bindings inside a Profile embedded in a typed Page',async()=>{
-  const profile=productAssetSchema.parse({...metric,id:'profile',document:{kind:'agent-profile',principalId:'agent',instructions:'',tools:['metric'],contextViews:[]}});
+  const profile=productAssetSchema.parse({...metric,id:'profile',document:{kind:'agent-profile',agentId:'agent',instructions:'',tools:['metric'],contextViews:[]}});
   const input=productAssetInputSchema.parse({name:'Page',document:{kind:'page',params:{selected:{kind:'object',objectType:'Person'}},children:[{assetId:'profile'}]}});
   mocks.describe.mockResolvedValue({parameterDefs:[{name:'person',type:'TYPE_NUMBER'}]});
   await expect(validatePageBindings(owner,input,async id=>id==='profile'?profile:metric,{})).rejects.toMatchObject({code:'INVALID_PAGE_PARAMETER'});

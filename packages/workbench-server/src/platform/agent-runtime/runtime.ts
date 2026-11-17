@@ -21,6 +21,8 @@ export interface AssistantCredentials {
   token?: string;
   apiKey?: string;
   locale?: string;
+  headers?: Record<string, string>;
+  executionUserId?: string | null;
 }
 /**
  * The scenario a skill script runs in. Inside the platform a page's own save is the only writer of that page's data;

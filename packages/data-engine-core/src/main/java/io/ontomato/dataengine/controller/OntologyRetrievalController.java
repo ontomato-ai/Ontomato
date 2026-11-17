@@ -32,7 +32,8 @@ public class OntologyRetrievalController {
 
   @PostMapping("/ontology/retrievals/{id}/retriever/cancel")
   public Object cancelRetriever(@PathVariable String id,@RequestBody JSONObject body,HttpServletRequest req) throws Exception {
-    return retrieval.cancelRetriever(AgentJson.id(id),AgentJson.id(body.getString("expectedRoundId")),access.current(req).owner());
+    if(req.getHeader("X-Ontomato-Query-Service-Token")!=null) {access.service(req);store.requireCallerResource(AgentJson.id(req.getHeader("X-Ontomato-Retrieval-Caller-Id")),AgentJson.id(id),AgentJson.id(body.getString("expectedRoundId")));}
+    return retrieval.cancelRetriever(AgentJson.id(id),AgentJson.id(body.getString("expectedRoundId")),access.authenticated(req).owner());
   }
 
   @GetMapping("/ontology/retrievals/{id}/datasets/{artifact}/content")
@@ -70,14 +71,15 @@ public class OntologyRetrievalController {
       @RequestHeader("Idempotency-Key") String key,
       @RequestBody JSONObject body,
       HttpServletRequest req) {
-    return retrieval.begin(AgentJson.id(key), body, access.current(req));
+    return retrieval.begin(AgentJson.id(key), body, access.executionContext(req));
   }
 
   @PostMapping("/ontology/retrievals/{id}/skill-runs/{run}/close")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   public void close(@PathVariable String id, @PathVariable String run, HttpServletRequest req)
       throws Exception {
-    var owner = access.current(req).owner();
+    var owner = access.authenticated(req).owner();
+    if(req.getHeader("X-Ontomato-Query-Service-Token")!=null) {access.service(req);store.requireCallerResource(AgentJson.id(req.getHeader("X-Ontomato-Retrieval-Caller-Id")),AgentJson.id(id),AgentJson.id(run));}
     store.closeRun(AgentJson.id(id), AgentJson.id(run), owner);
     retrieval.cancelWork(id, run, owner);
   }
@@ -92,8 +94,13 @@ public class OntologyRetrievalController {
       HttpServletRequest req) {
     if (!run.equals(req.getHeader("X-Ontomato-Run-Id")))
       throw AgentHttpException.invalid("Run identity mismatch");
+    if(req.getHeader("X-Ontomato-Query-Service-Token")!=null) {access.service(req);store.requireCallerResource(AgentJson.id(req.getHeader("X-Ontomato-Retrieval-Caller-Id")),AgentJson.id(id),AgentJson.id(run));}
     return retrieval.prepareOutput(
-        AgentJson.id(id), AgentJson.id(run), AgentJson.id(key), body, access.current(req));
+        AgentJson.id(id), AgentJson.id(run), AgentJson.id(key), body, access.executionContext(req));
+  }
+
+  private OntologyAgentStore.Owner outputOwner(HttpServletRequest request,String id,String run) {
+    return request.getHeader("X-Ontomato-Query-Service-Token")==null ? access.current(request).owner() : access.reader(request,id,run);
   }
 
   @GetMapping("/ontology/retrievals/{id}/runs/{run}/outputs/{key}")
@@ -103,7 +110,7 @@ public class OntologyRetrievalController {
       @PathVariable String key,
       HttpServletRequest req) {
     return retrieval.output(
-        AgentJson.id(id), AgentJson.id(run), AgentJson.id(key), access.current(req).owner());
+        AgentJson.id(id), AgentJson.id(run), AgentJson.id(key), outputOwner(req,id,run));
   }
 
   @GetMapping("/ontology/retrievals/{id}/runs/{run}/outputs/{key}/content")
@@ -114,13 +121,16 @@ public class OntologyRetrievalController {
       HttpServletRequest req) {
     var output =
         retrieval.output(
-            AgentJson.id(id), AgentJson.id(run), AgentJson.id(key), access.current(req).owner());
+            AgentJson.id(id), AgentJson.id(run), AgentJson.id(key), outputOwner(req,id,run));
     if (output.getJSONObject("dataset") == null)
       throw new AgentHttpException(409, "OUTPUT_NOT_READY", "Dataset is not ready");
     return ResponseEntity.ok()
         .contentType(MediaType.APPLICATION_JSON)
         .body(AgentJson.json(output.get("dataset")));
   }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  private AgentExecutionAccess executions;
 
   @PostMapping("/ontology/retrieval-callers")
   @ResponseStatus(HttpStatus.CREATED)
@@ -129,8 +139,10 @@ public class OntologyRetrievalController {
       @RequestBody JSONObject body,
       HttpServletRequest req) {
     access.service(req);
-    var context = access.current(req);
-    AgentJson.fields(body, "classNames", "continuationIds", "deadlineAt", "recentUserMessages");
+    var context = access.authenticated(req);
+    AgentJson.fields(body, "classNames", "continuationIds", "deadlineAt", "recentUserMessages", "executionUserId");
+    String executionUserId=body.getString("executionUserId");
+    if(executionUserId!=null) executions.require(context.owner().domainId(),executionUserId);
     body.putIfAbsent("recentUserMessages", new JSONArray());
     for (String field : List.of("classNames", "continuationIds", "recentUserMessages"))
       if (!(body.get(field) instanceof java.util.List<?> array)
@@ -144,7 +156,7 @@ public class OntologyRetrievalController {
   @PutMapping("/ontology/retrieval-callers/{id}/user-quotes")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   public void userQuotes(@PathVariable String id,@RequestBody Map<String,Object> body,HttpServletRequest req) {
-    access.service(req);var context=access.current(req);
+    access.service(req);var context=access.authenticated(req);
     AgentJson.fields(JSONObject.from(body),"recentUserMessages");
     if(!(body.get("recentUserMessages") instanceof List<?> quotes) || quotes.stream().anyMatch(value -> !(value instanceof String))) throw AgentHttpException.invalid("recentUserMessages must be a string array");
     store.updateUserQuotes(AgentJson.id(id),context.owner(),new JSONArray(quotes));
@@ -168,7 +180,7 @@ public class OntologyRetrievalController {
     // A not-yet-open intent uses the verified original user, not an asserted body owner.
     io.ontomato.dataengine.service.agent.OntologyAgentStore.Owner owner;
     if (req.getHeader("tk") != null && !req.getHeader("tk").isBlank()
-        || req.getHeader("X-API-Key") != null) owner = access.current(req).owner();
+        || req.getHeader("X-API-Key") != null) owner = access.authenticated(req).owner();
     else
       try {
         owner = access.callerOwner(req, AgentJson.id(id));

@@ -11,7 +11,7 @@ class ProductOntologyControllerTest {
     @Test void graphRegistrationAndReadsRequireWorkbenchServiceAuthentication(){
         var ontology=mock(ProductOntologyService.class);var authentication=mock(WorkbenchServiceAuthentication.class);
         var controller=new ProductOntologyController(ontology,authentication);var request=new MockHttpServletRequest();
-        doThrow(AgentPrincipalService.denied("Service required")).when(authentication).authenticate(request);
+        doThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN,"Service required")).when(authentication).authenticate(request);
         assertThrows(Exception.class,()->controller.register(request,new ProductOntologyController.Registration("domain",List.of())));
         assertThrows(Exception.class,()->controller.graph(request,new ProductOntologyController.Subject("domain","human")));
         verifyNoInteractions(ontology);

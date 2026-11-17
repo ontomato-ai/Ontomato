@@ -379,7 +379,7 @@ At a terminal loop boundary it atomically consumes inputs or seals the loop. Lat
 to the next intent. Each execution fixes requestedBy and root independently of the creation tree.
 
 Callbacks are POST list/prepare/settle/read/cancel beneath the configured provider URL. List
-receives `{providerId,actor,language}` and returns only that provider's accessible entries. The runtime
+receives `{providerId,actor,executionActor?,language}` and returns only that provider's accessible entries. The runtime
 calls every registered provider directly and merges their lists; Java answers only the ontology
 provider's list and identity recovery. There is no separate directory port or Java-to-Node lookup.
 Prepare receives requestedBy (nullable) and the fixed root. Run mode returns a runtime start request; steer mode acknowledges the host's input recording and can return updated host context. The runtime retains typed input and its original receipt ID in both cases. Settle closes
@@ -454,9 +454,24 @@ does not prolong the execution status but does retain credentials until its work
 CALLER_CREDENTIAL_INVALID and a request to start again. There is no refresh, recovery or
 internal-Key acquisition for delegation. Read-only history resolves its recorded owner.
 
-The initiating credential owns chain identity, domain, expiry and permission to use each agent;
-an AgentProfile's tools retain its configured agent principal, ordinary retrieval and governance
-retain the initiator's authority, and delegation preserves each agent's existing execution subject. Java-owned nested model executions reference their source run
+The initiating credential owns chain identity, domain, expiry and ordinary agent admission.
+`actor` remains its caller reference. `executionActor` is a nullable `{userId,domainId}` reference;
+prepare returns only this non-secret reference, and the runtime stores `executionUserId: string|null`
+in the run/intent. Null means self mode and uses the original initiating credential without resolving
+a shared Key. An explicit selection equal to the initiator remains non-null and requires that user's
+shared Key. Each Node definition resolves its own selection for a new run; ontology capabilities
+inherit the calling run's selection. Steer, followup and wakeups inside the same run retain it. Waking
+an idle conversation creates a new run and rereads its Node definition. List and provider callbacks
+carry the execution reference without changing actor, root, requestedBy, recipients or input sources.
+
+Execution credentials never enter the runtime or its private provider requests. Java restores selected
+users from its own shared credential store on protected calls. Node calls its existing internal
+execution resolver with the run's fixed selected user whenever a business request needs the current
+Key; it does not reread the definition or cache the Key. A reissued valid Key may continue the same
+selection. Invalid members/credentials fail without changing user or reissuing a Key. Page skills
+always use the initiator's menu permissions. Profile assets reference their Node definition by
+`agentId`; product/release access remains the initiator's, while actual data/tools use the executor.
+Java-owned nested model executions reference their source run
 when admission originates from a scoped grant, retaining the same root without copying secrets.
 
 An agent-answer is projected for every model request as one attributed context message with

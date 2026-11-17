@@ -17,9 +17,9 @@ import { backendGet, buildBackendHeaders } from "../../utils/backend-client";
 import { config } from "../../config/application";
 
 /** Read authorization anew for each directory or admission request. */
-export async function readPageSkills(credentials: AssistantCredentials): Promise<PageSkillsProjection> {
+export async function readPageSkills(initiatorCredentials: AssistantCredentials): Promise<PageSkillsProjection> {
   const response = await backendGet("page-skills", `${config.dataQuery.baseUrl}/platform/page-skills`, {
-    headers: buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey), retries: 1,
+    headers: buildBackendHeaders(initiatorCredentials.token, undefined, initiatorCredentials.locale, initiatorCredentials.apiKey), retries: 1,
   });
   return z.object({ success: z.literal(true), data: pageSkillsProjectionSchema }).parse(JSON.parse(response.text)).data;
 }
@@ -88,9 +88,9 @@ export async function validateAssistantSkills(domainId: string, refs: readonly R
 }
 
 /** The caller holds the domain operation boundary until runtime admission finishes. */
-export async function prepareAssistantSkills(domainId: string, agent: { kind: string; skills: readonly RuntimeSkillRef[] }, credentials: AssistantCredentials) {
-  const projection = await readPageSkills(credentials);
-  const selected = await validateAssistantSkills(domainId, effectiveAssistantSkills(agent, projection), credentials, projection);
+export async function prepareAssistantSkills(domainId: string, agent: { kind: string; skills: readonly RuntimeSkillRef[] }, initiatorCredentials: AssistantCredentials) {
+  const projection = await readPageSkills(initiatorCredentials);
+  const selected = await validateAssistantSkills(domainId, effectiveAssistantSkills(agent, projection), initiatorCredentials, projection);
   const registry = await skillRegistryManager.forDomain(domainId);
   for (const ref of selected) {
     if (ref.namespace.kind !== "domain") continue;

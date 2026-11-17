@@ -34,6 +34,7 @@ class QueryRuntimeBoundaryTest {
   DslService dsl;
   OntologyQueryService ontology;
   MockMvc http;
+  QueryGrantFilter grantFilter;
   final User user = new QueryAccessService.GrantUser("user-a", "domain-a");
   final UserDataPermission permission = new UserDataPermission();
 
@@ -101,10 +102,11 @@ class QueryRuntimeBoundaryTest {
     var controller =
         new OntologyQueryController(
             authorization, ontology, mock(QueryOutputService.class), mock(QueryJobService.class));
+    grantFilter=new QueryGrantFilter(grants);
     http =
         MockMvcBuilders.standaloneSetup(controller, new DslController())
             .setControllerAdvice(new OntologyQueryErrors())
-            .addFilters(new QueryGrantFilter(grants))
+            .addFilters(grantFilter)
             .build();
   }
 
@@ -455,5 +457,19 @@ class QueryRuntimeBoundaryTest {
     assertTrue(fields.getJSONObject(0).containsKey("attrDesc"));
     assertNull(fields.getJSONObject(0).get("attrDesc"));
     assertThrows(IllegalArgumentException.class, () -> ontology.metric("id", null, access));
+  }
+
+  @Test void selectedExecutorGrantRestoresItsCurrentSharedKeyAndNeverFallsBack() throws Exception {
+    var execution=mock(io.ontomato.dataengine.service.agent.AgentExecutionAccess.class);
+    org.springframework.test.util.ReflectionTestUtils.setField(grantFilter,"executions",execution);
+    when(lookup.getDataPermission("V","domain-a")).thenReturn(permission);
+    var token=grants.issue("V","domain-a","user-read","selected-run",System.currentTimeMillis()+60000,java.util.List.of("/sales"),null,
+      JSONObject.of("executionUserId","V","initiatorUserId","U"));
+    var claims=grants.verify(token,"selected-run","/ontology/query/overview");
+    assertEquals("V",claims.getString("userId"));assertEquals("U",claims.getString("initiatorUserId"));
+    http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/ontology/query/overview").header("tk",token).header("X-Ontomato-Run-Id","selected-run")).andExpect(status().isOk());
+    verify(execution).require("domain-a","V");
+    when(execution.require("domain-a","V")).thenThrow(new io.ontomato.dataengine.service.identity.UserCredentials.Invalid());
+    http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/ontology/query/overview").header("tk",token).header("X-Ontomato-Run-Id","selected-run")).andExpect(status().isConflict());
   }
 }

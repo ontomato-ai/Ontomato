@@ -55,8 +55,8 @@ export async function migratePlatformProjection(owner:ProductOwner,credentials:A
   const profiles=[];
   if(agentIds.length){
     const assets=await listProducts(owner);
-    for(const principalId of agentIds){
-      const candidates=assets.filter(asset=>asset.document.kind==='agent-profile'&&asset.document.principalId===principalId);
+    for(const agentId of agentIds){
+      const candidates=assets.filter(asset=>asset.document.kind==='agent-profile'&&asset.document.agentId===agentId);
       const published=[];
       for(const candidate of candidates)try{const {nativeAgentAsset}=await import('./platform-assets');if(!await nativeAgentAsset(owner.domainId,candidate.id))await activeProductBundle(owner,candidate.id,credentials);published.push(candidate);}catch(error){if(!(error instanceof HttpError)||error.code!=='PRODUCT_RELEASE_UNPINNED')throw error;}
       if(published.length!==1)throw new HttpError(409,'Each Agent shortcut requires exactly one accessible published Profile','PRODUCT_PROFILE_REQUIRED');

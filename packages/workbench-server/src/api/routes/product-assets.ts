@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { credentialsForRun } from "../../services/assistant/execution";
+import type { RuntimeCallbackRequest } from "../../services/agent-runtime/callback-credential";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { productAuthoringSchema, productTypes,productQuerySchema } from "@ontomato/contracts/product-assets";
@@ -96,12 +98,18 @@ router.post('/:id/sessions',wrap(async(req,res)=>{
   for(const value of Object.values(pageState))if(value&&typeof value==='object'&&!contextObjects.some(object=>object.className===value.className&&object.primaryKey===value.primaryKey))throw new HttpError(400,'Object Page state must have a declared Profile context view','OBJECT_CONTEXT_UNAVAILABLE');
    for(const selection of contextObjects)if(!profile.document.contextViews.some(id=>{const view=snapshotAsset(snapshot,id);return view.document.kind==='object-projection'&&['text','3d'].includes(view.document.renderer)&&view.document.fields.length>0&&view.document.renders.id===selection.className;}))throw new HttpError(400,'Profile has no context ObjectView for this selection','OBJECT_CONTEXT_UNAVAILABLE');
   const sessionId=z.string().uuid().parse(req.header('Idempotency-Key'));
-  const result=await assistantService.create(sessionId,c.owner,{agentId:profile.document.principalId});
+  const result=await assistantService.create(sessionId,c.owner,{agentId:profile.document.agentId});
    await bindProfileSession(c.owner,sessionId,profileId,releaseId,contextObjects,pageState);
   res.status(201).json(result);
 }));
 router.post('/:id/tools/:toolId',wrap(async(req,res)=>{const c=context(req);const {parameters}=z.object({parameters:z.record(z.unknown())}).strict().parse(req.body);res.json({result:await executeProfileTool(c.owner,c.credentials,String(req.params.id),String(req.params.toolId),parameters)});}));
-router.post('/:id/releases/:releaseId/tools/:toolId',wrap(async(req,res)=>{const c=context(req);const {parameters}=z.object({parameters:z.record(z.unknown())}).strict().parse(req.body);const {sessionId}=z.object({sessionId:z.string().uuid().optional()}).strict().parse(req.query);res.json({result:await executeProfileTool(c.owner,c.credentials,String(req.params.id),String(req.params.toolId),parameters,z.string().uuid().parse(req.params.releaseId),sessionId)});}));
+router.post('/:id/releases/:releaseId/tools/:toolId',wrap(async(req,res)=>{
+  const c=context(req),callback=(req as RuntimeCallbackRequest).runtimeCallback;
+  const {parameters}=z.object({parameters:z.record(z.unknown())}).strict().parse(req.body);
+  const sessionId=callback ? z.string().uuid().parse(req.query.sessionId) : z.string().uuid().optional().parse(req.query.sessionId);
+  const execution=callback ? (await credentialsForRun(c.owner,callback.runId,c.credentials,sessionId)).credentials : undefined;
+  res.json({result:await executeProfileTool(c.owner,c.credentials,String(req.params.id),String(req.params.toolId),parameters,z.string().uuid().parse(req.params.releaseId),sessionId,execution)});
+}));
 router.post('/:id/publish',wrap(async(req,res)=>{const c=context(req);const {revision}=z.object({revision:z.number().int().positive()}).strict().parse(req.body);res.json(await publishProductBundle(c.owner,String(req.params.id),revision,c.credentials));}));
 router.post('/:id/retry-publication',wrap(async(req,res)=>{const c=context(req);const asset=await getProduct(c.owner,String(req.params.id));if(!asset.editable)throw new HttpError(403,'Bundle edit Grant required','PRODUCT_FORBIDDEN');await synchronizeBundlePublication(c.owner,asset.id,c.credentials);res.json({success:true});}));
 router.get('/:id/releases',wrap(async(req,res)=>{res.json(await listProductBundleReleases(context(req).owner,String(req.params.id)));}));

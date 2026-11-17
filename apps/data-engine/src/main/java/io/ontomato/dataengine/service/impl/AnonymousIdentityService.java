@@ -14,8 +14,8 @@ import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
  */
 @Component
 public class AnonymousIdentityService implements IdentityService {
-    @Override public Long getCurrentCredentialExpiresAt() { var scoped=io.ontomato.dataengine.service.AgentPrincipalService.currentUserExecution();if(scoped!=null)return scoped.expiresAt();var agent=io.ontomato.dataengine.service.AgentPrincipalService.current();return agent==null?null:agent.expiresAt(); }
-    @Override public void requireQueryAccess() { if(io.ontomato.dataengine.service.AgentPrincipalService.current()!=null)throw io.ontomato.dataengine.service.AgentPrincipalService.denied("Agent roles require a role-aware identity implementation"); }
+    @Override public Long getCurrentCredentialExpiresAt() { return null; }
+    @Override public void requireQueryAccess() {}
     @Override public void requireActionExecutionAccess(String userId, String domainId) { requireQueryAccess(); }
     @Override public boolean hasKnowledgeGovernanceAccess() { return true; }
 
@@ -37,9 +37,6 @@ public class AnonymousIdentityService implements IdentityService {
 
     @Override
     public User getCurrentUser() {
-        var scoped=io.ontomato.dataengine.service.AgentPrincipalService.currentUserExecution();if(scoped!=null)return scoped.user();
-        var agent=io.ontomato.dataengine.service.AgentPrincipalService.current();
-        if(agent!=null)return agent.principal();
         return ANONYMOUS_USER;
     }
 

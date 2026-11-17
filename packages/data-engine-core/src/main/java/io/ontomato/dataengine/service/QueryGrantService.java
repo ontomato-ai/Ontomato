@@ -60,7 +60,7 @@ public class QueryGrantService {
   }
   public String issueExecution(PythonAuthority authority,String execution,long expiresAt) {
     var target=authority.target();
-    JSONObject binding=new JSONObject();
+    JSONObject binding=JSONObject.of("executionUserId",authority.executionUserId(),"initiatorUserId",authority.initiatorUserId());
     if(target.testing()) {
       var current=contexts.require(target.contextId(),authority.userId(),authority.domainId());
       current.requireClasses(authority.classNames());
@@ -106,7 +106,7 @@ public class QueryGrantService {
     return issue(userId, domainId, purpose, runId, expiresAt, classNames, sandboxId, null);
   }
 
-  String issue(
+  public String issue(
       String userId,
       String domainId,
       String purpose,
@@ -234,7 +234,7 @@ public class QueryGrantService {
     var input = authority.packageInput();
     QueryPackage.validate(input.getJSONObject("package"));
     String digest = OntologyQueryService.digest(input);
-    var binding=JSONObject.of("packageInputSha256",digest);
+    var binding=JSONObject.of("packageInputSha256",digest,"executionUserId",authority.executionUserId(),"initiatorUserId",authority.initiatorUserId());
     if(authority.target().testing()) {
       var target=contexts.require(authority.target().contextId(),authority.userId(),authority.domainId());
       target.requireClasses(authority.classNames());

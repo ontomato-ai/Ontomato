@@ -20,7 +20,7 @@ vi.mock("../../../i18n", () => ({ tForLocale: (_locale: string, key: string) => 
 vi.mock("../store", () => ({ assistantStore: { agents: mocks.agents } }));
 vi.mock("../labels", () => ({ assistantName: (a: AgentRow) => a.name, assistantDescription: (a: AgentRow) => a.description }));
 vi.mock("../../product-assets/platform-assets", () => ({ nativeProfileId: mocks.native }));
-vi.mock("../../product-assets/agent-profile", () => ({ profileIdForPrincipal: mocks.profile }));
+vi.mock("../../product-assets/agent-profile", () => ({ profileIdForAgent: mocks.profile }));
 vi.mock("../../product-assets/grants", () => ({
   withProductGrants: (_owner: unknown, action: () => unknown) => action(), currentProductGrants: () => ({ use: mocks.grants }),
 }));
@@ -91,10 +91,10 @@ it("keeps ordinary native skills and excludes true product Profile skills from p
   expect(directory.defaultAgentId).toBe(native.id);
   expect((await listAssistantAgents(owner, credentials)).agents.find(a => a.id === ids[2])?.effectiveSkills).toEqual([]);
   mocks.post.mockResolvedValue({ text: JSON.stringify({ allowed: false }) });
-  expect((await listAssistantAgents(owner, credentials)).agents.some(a => a.id === native.id)).toBe(false);
+  expect((await listAssistantAgents(owner, credentials)).agents.some(a => a.id === native.id)).toBe(true);
   mocks.post.mockResolvedValue({ text: JSON.stringify({ allowed: true }) });
   mocks.grants.delete(native.id);
-  expect((await listAssistantAgents(owner, credentials)).agents.some(a => a.id === native.id)).toBe(false);
+  expect((await listAssistantAgents(owner, credentials)).agents.some(a => a.id === native.id)).toBe(true);
 });
 
 it("uses the registered default only if it remains an enabled and usable page candidate", async () => {

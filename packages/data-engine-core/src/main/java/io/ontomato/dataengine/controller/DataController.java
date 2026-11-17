@@ -23,6 +23,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RestController
 public class DataController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private io.ontomato.dataengine.service.agent.AgentExecutionScope agentExecutionScope;
+
 	
 	@Autowired
     private IdentityService identityService;
@@ -68,9 +71,10 @@ public class DataController {
 	
 	@PostMapping("/data/queryInfoByNode")
     @ResponseBody
-    public JSONObject queryInfoByNode(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
+    public JSONObject queryInfoByNode(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param, jakarta.servlet.http.HttpServletRequest executionRequest) {
 		UserDataPermission curUserDataPermission = identityService.getCurrentUserDataPermission();
 		User user = SystemUtils.getCurUser();
+		agentExecutionScope.target(executionRequest,user,curUserDataPermission,io.ontomato.dataengine.service.ExecutionTarget.LIVE).requireClasses(java.util.List.of(param.getString("class")));
 		return dataService.queryInfoByNode(param, lang, curUserDataPermission, user.getDomainId());
 	}
 

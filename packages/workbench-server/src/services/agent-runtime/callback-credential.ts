@@ -5,7 +5,7 @@ import {
   randomBytes,
 } from "node:crypto";
 import { z } from "zod";
-import type { RequestHandler } from "express";
+import type { Request, RequestHandler } from "express";
 import { environment } from "../../config/environment";
 import { HttpError } from "../../utils/errors";
 
@@ -16,6 +16,7 @@ const claimsSchema = z
     expiresAt: z.number(),
     token: z.string(),
     apiKey: z.string(),
+    methods: z.array(z.enum(["GET", "POST", "PUT", "DELETE"])).optional(),
   })
   .strict();
 function key() {
@@ -43,9 +44,11 @@ export function callbackCredential(input: z.infer<typeof claimsSchema>) {
       ),
   };
 }
+export interface RuntimeCallbackRequest extends Request { runtimeCallback?: { runId: string; businessGrant?: string } }
+
 /** Installed before ordinary authentication, which still verifies the delegated user. */
 export const unwrapCallbackCredential: RequestHandler = (req, _res, next) => {
-  const auth = typeof req.headers.tk === "string" ? req.headers.tk : "";
+  const auth = req.header("X-Ontomato-Callback-Credential") ?? (typeof req.headers.tk === "string" ? req.headers.tk : "");
   if (!auth.startsWith("wbc1.")) return next();
   try {
     const bytes = Buffer.from(auth.slice("wbc1.".length), "base64url"),
@@ -60,12 +63,14 @@ export const unwrapCallbackCredential: RequestHandler = (req, _res, next) => {
       ),
     );
     if (
-      !["POST", "GET"].includes(req.method) ||
+      !(claims.methods ?? ["POST", "GET"]).includes(req.method as "GET" | "POST" | "PUT" | "DELETE") ||
       !req.path.startsWith(claims.pathPrefix) ||
       claims.expiresAt <= Date.now() ||
       req.header("X-Ontomato-Run-Id") !== claims.runId
     )
       throw new Error("Wrong callback scope");
+    (req as RuntimeCallbackRequest).runtimeCallback = {runId:claims.runId, ...(req.header("tk")?.startsWith("oq.") ? {businessGrant:req.header("tk")} : {})};
+    delete req.headers["x-ontomato-callback-credential"];
     delete req.headers.authorization;
     delete req.headers.tk;
     delete req.headers["x-api-key"];

@@ -47,6 +47,9 @@ import lombok.extern.slf4j.Slf4j;
 @RestController
 public class ActionController {
     @org.springframework.beans.factory.annotation.Autowired
+    private io.ontomato.dataengine.service.agent.AgentExecutionScope agentExecutionScope;
+
+    @org.springframework.beans.factory.annotation.Autowired
     private io.ontomato.dataengine.service.BuildTestContextService buildTests;
 
 
@@ -387,7 +390,7 @@ public class ActionController {
 			if (timeoutMinutes <= 0) {
 				timeoutMinutes = 1;
 			}
-			PythonExecuteResult result = actionService.execute(id, p, lang, user, curUserDataPermission, timeoutMinutes, buildTests.resolve(executionRequest));
+			PythonExecuteResult result = actionService.execute(id, p, lang, user, curUserDataPermission, timeoutMinutes, agentExecutionScope.target(executionRequest,user,curUserDataPermission,buildTests.resolve(executionRequest)));
 			if (result.getError() != null && !"".equals(result.getError().trim())) {
 				throw new Exception(result.getError());
 			}
