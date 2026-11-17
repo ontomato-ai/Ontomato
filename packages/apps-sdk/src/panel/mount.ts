@@ -116,12 +116,24 @@ function report({ instance, draft, unsaved }: ReportOptions) {
     { deep: true },
   );
   watch([...unsaved], () => send({ kind: "dirty", dirty: isDirty() }), { immediate: true });
+  // The operations the header and an agent list; they change when a projection registers or unregisters.
+  watch(() => instance.operations.value, () => send({ kind: "operations", operations: instance.operations.value }), { immediate: true, deep: false });
 
   window.addEventListener("message", (event) => {
     if (event.data?.channel !== PANEL_HOST_CHANNEL) return;
-    if (!panelHostFrameMessageSchema.safeParse(event.data).success) return;
-    // An unsaved form is the reader's: the host keeps the old definition until they save or drop it.
-    send({ kind: "reloaded", reloaded: !isDirty() });
+    const parsed = panelHostFrameMessageSchema.safeParse(event.data);
+    if (!parsed.success) return;
+    // A definition change keeps the reader's unsaved form: the host keeps the old record until they save or drop it.
+    if (parsed.data.kind === "definition-changed") {
+      send({ kind: "reloaded", reloaded: !isDirty() });
+      return;
+    }
+    // A person's click in the platform's header: the same handler an agent's call reaches, run in this frame.
+    const { id, input } = parsed.data;
+    instance.invoke(id, input).then(
+      (result) => send({ kind: "invoked", id, result }),
+      (reason: unknown) => send({ kind: "invoked", id, error: reason instanceof Error ? reason.message : String(reason) }),
+    );
   });
 }
 

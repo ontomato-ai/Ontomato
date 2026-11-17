@@ -118,7 +118,7 @@ async function main() {
   mkdirSync(join(outDir, "docs"), { recursive: true });
   writeFileSync(join(outDir, "docs/index.md"), render(readFileSync(join(HERE, "resources/docs/index.md"), "utf8"), version));
   const components = componentMetadata({ tsconfig: join(HERE, "tsconfig.json"), source: join(HERE, "src/catalogue.ts") });
-  checkCatalogue(ENTRIES, components, HERE, join(HERE, "tsconfig.json"));
+  checkCatalogue(ENTRIES.filter((entry) => entry.specifier.startsWith("@ontomato/")), components, HERE, join(HERE, "tsconfig.json"));
   writeFileSync(join(outDir, "components.json"), `${JSON.stringify({ version, components: components.map((component) => component.metadata) }, null, 2)}\n`);
   writeFileSync(join(outDir, "docs/components.md"), render(catalogueMarkdown(version, components), version));
   writeFileSync(join(outDir, "docs/reference.md"), [

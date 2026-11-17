@@ -8,7 +8,7 @@ import {
   type PanelHostMessage,
 } from "@ontomato/contracts/panel-host";
 import type { ApplicationPanelUse, ProductPanel } from "@ontomato/contracts/product-panels";
-import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import type { PanelOperation, PanelStateValue } from "@ontomato/contracts/panel-manifest";
 
 /*
  * A panel instance in the platform (overall design 3.4, "generic PanelHost"): the same component shows the panel full
@@ -66,6 +66,13 @@ export interface PanelInstanceView {
   readonly document: Readonly<Ref<string>>;
   /** The reader's deep-linkable state, as the address carries it. */
   readonly state: Ref<Record<string, PanelStateValue>>;
+  /**
+   * The operations the instance offers, as its frame reported them: one description and one handler per operation, for
+   * the header to draw and an agent to read. A person's click reaches the frame, which runs it with their credential.
+   */
+  readonly operations: Readonly<Ref<readonly PanelOperation[]>>;
+  /** A person clicked one of those operations: the frame runs it, and the promise settles with its answer. */
+  invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
   /** The address this instance shows, with its state; never a credential or a form value. */
   readonly address: Ref<string>;
   readonly error: Ref<string>;
@@ -94,7 +101,9 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const error = shallowRef("");
   const state = shallowRef<Record<string, PanelStateValue>>({});
   const address = shallowRef("");
+  const operations = shallowRef<readonly PanelOperation[]>([]);
   let frame: Window | null = null;
+  const answering = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
   let disposeFrame: (() => void) | undefined;
   let loadedPanelId: string | null = null;
   let settle: () => void = () => {};
@@ -159,6 +168,14 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       state.value = parsed.data.state;
       address.value = panelAddress(use.value!.path, parsed.data.state);
     }
+    if (parsed.data.kind === "operations") operations.value = parsed.data.operations;
+    if (parsed.data.kind === "invoked") {
+      const waiting = answering.get(parsed.data.id);
+      answering.delete(parsed.data.id);
+      if (!waiting) return;
+      if (parsed.data.error === undefined) waiting.resolve(parsed.data.result);
+      else waiting.reject(new Error(parsed.data.error));
+    }
   }
   window.addEventListener("message", message);
   onBeforeUnmount(() => window.removeEventListener("message", message));
@@ -170,6 +187,14 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     document,
     state,
     address,
+    operations,
+    invoke(id, input) {
+      if (!frame) return Promise.reject(new Error("The panel has not started yet"));
+      return new Promise((resolve, reject) => {
+        answering.set(id, { resolve, reject });
+        frame!.postMessage({ channel: PANEL_HOST_CHANNEL, kind: "invoke", id, input }, "*");
+      });
+    },
     error,
     ready,
     frame(window) {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { usePanelInstance, type PanelHostPort } from "./panel-host";
+import { usePageActions } from "./page-actions";
 
 /**
  * One panel instance, shown full screen, beside a conversation or inside another application: the same component in all
@@ -36,7 +37,19 @@ watch(
 watch(view.pageContext, (context) => context && emit("context", context));
 watch(view.address, (address) => emit("address", address), { immediate: true });
 
-defineExpose(view);
+// The instance's operations reach the header like any page's: one description, one handler, for a person and an agent.
+// A click reaches the frame, which runs it with the person's own credential; the state the operation targets decides
+// whether it can run at all.
+const operations = computed(() =>
+  view.operations.value.map((operation) => ({
+    ...operation,
+    disabled: operation.target?.source === "state" && !view.state.value[operation.target.state],
+    invoke: (input?: Readonly<Record<string, unknown>>) => view.invoke(operation.id, input),
+  })),
+);
+usePageActions(() => (view.panel.value ? { operations: operations.value } : null));
+
+defineExpose({ ...view, operations });
 </script>
 
 <template>
