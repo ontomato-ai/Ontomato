@@ -187,19 +187,19 @@ export const chartMissingValue = "—";
  * One value as its display format writes it. A number keeps its value and takes the format's kind and decimals; a
  * percentage states its scale, so `100` reads 0.25 as 25% and `1` reads 25 as 25%.
  */
-export function chartValueText(value: unknown, format?: ChartFormat): string {
+export function chartValueText(value: unknown, format?: ChartFormat, locale?: string): string {
   if (value === null || value === undefined) return chartMissingValue;
   if (!format || format.kind === "text") return typeof value === "object" ? JSON.stringify(value) : String(value);
   if (format.kind === "date") {
     const date = new Date(value as string | number);
-    return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString();
+    return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString(locale);
   }
   const number = Number(value);
   if (typeof value === "boolean" || typeof value === "object" || !Number.isFinite(number)) return String(value);
   const digits = format.decimals === undefined ? {} : { minimumFractionDigits: format.decimals, maximumFractionDigits: format.decimals };
-  if (format.kind === "percent") return `${(format.scale === 100 ? number * 100 : number).toLocaleString(undefined, digits)}%`;
-  if (format.kind === "currency" && format.currency) return number.toLocaleString(undefined, { style: "currency", currency: format.currency, ...digits });
-  return number.toLocaleString(undefined, digits);
+  if (format.kind === "percent") return `${(format.scale === 100 ? number * 100 : number).toLocaleString(locale, digits)}%`;
+  if (format.kind === "currency" && format.currency) return number.toLocaleString(locale, { style: "currency", currency: format.currency, ...digits });
+  return number.toLocaleString(locale, digits);
 }
 
 /**
@@ -241,8 +241,8 @@ export function chartGraphBehaviour(source: Option): Option {
 }
 
 /** A single (gauge) centre reads the value the metric gave, formatted; the ring itself only shows a ratio. */
-export function chartSingleText(raw: unknown, format?: ChartFormat): string {
-  return chartValueText(raw, format);
+export function chartSingleText(raw: unknown, format?: ChartFormat, locale?: string): string {
+  return chartValueText(raw, format, locale);
 }
 
 type Formats = Record<string, ChartFormat> | undefined;
@@ -266,9 +266,9 @@ const formatOf = (formats: Formats, column: string | undefined) => column ? form
  * An item is a name and its value, and a metric may also give its share; both read their own formats. A tooltip breaks
  * its lines as HTML, a series label as text.
  */
-function itemText(name: string, value: unknown, share: unknown, formats: Formats, valueColumn?: string, shareColumn?: string) {
-  const text = [chartValueText(value, formatOf(formats, valueColumn))];
-  if (share !== undefined && shareColumn) text.push(chartValueText(share, formatOf(formats, shareColumn)));
+function itemText(name: string, value: unknown, share: unknown, formats: Formats, valueColumn?: string, shareColumn?: string, locale?: string) {
+  const text = [chartValueText(value, formatOf(formats, valueColumn), locale)];
+  if (share !== undefined && shareColumn) text.push(chartValueText(share, formatOf(formats, shareColumn), locale));
   return { name, text: text.join(" · ") };
 }
 
@@ -280,7 +280,7 @@ const measureSeries = new Set(["line", "bar", "scatter", "effectScatter", "picto
  * stay as they came; only their written form changes. A gauge's centre reads the metric's own value rather than the
  * ring's ratio, and a timeline's labels carry its date, name and description.
  */
-export function chartFormats(source: Option, presentation: { bindings: ChartBinding[]; display: { formats?: Formats } }, undated?: string): Option {
+export function chartFormats(source: Option, presentation: { bindings: ChartBinding[]; display: { formats?: Formats } }, undated?: string, locale?: string): Option {
   const option = copy(source);
   const formats = presentation.display.formats;
   if (!formats) return option;
@@ -291,7 +291,11 @@ export function chartFormats(source: Option, presentation: { bindings: ChartBind
     const binding = bindings.get(String(target.id));
     if (binding?.shape === "single") {
       const format = formatOf(formats, fields(binding).value);
-      if (format) target.detail = { ...target.detail, formatter: (params: { data: { rawValue?: unknown } }) => chartSingleText(params.data.rawValue, format) };
+      if (format) {
+        // A gauge's detail formatter receives its value, not the data item; the metric's raw value travels on the item.
+        const item = [target.data ?? []].flat()[0] as { rawValue?: unknown } | undefined;
+        target.detail = { ...target.detail, formatter: () => chartSingleText(item?.rawValue, format, locale) };
+      }
       continue;
     }
     if (binding?.shape === "timeline") {
@@ -302,12 +306,12 @@ export function chartFormats(source: Option, presentation: { bindings: ChartBind
       const stats = fields(binding);
       const roles = ["min", "q1", "median", "q3", "max"];
       option.tooltip = { ...option.tooltip, trigger: "item", formatter: (params: { name: string; value: unknown[] }) =>
-        [params.name, ...params.value.map((value, index) => chartValueText(value, formatOf(formats, stats[roles[index]!])))] .join("<br/>") };
+        [params.name, ...params.value.map((value, index) => chartValueText(value, formatOf(formats, stats[roles[index]!]), locale))] .join("<br/>") };
       continue;
     }
     if (binding?.shape === "items" || binding?.shape === "tree" || binding?.shape === "radar") {
       const shown = fields(binding);
-      const work = (params: { name: string; value: unknown; data?: { share?: unknown } }) => itemText(params.name, params.value, params.data?.share, formats, shown.value, shown.share);
+      const work = (params: { name: string; value: unknown; data?: { share?: unknown } }) => itemText(params.name, params.value, params.data?.share, formats, shown.value, shown.share, locale);
       target.label = { ...target.label, formatter: (params: Parameters<typeof work>[0]) => { const item = work(params); return [item.name, item.text].join("\n"); } };
       target.tooltip = { ...target.tooltip, formatter: (params: Parameters<typeof work>[0]) => { const item = work(params); return [item.name, item.text].join("<br/>"); } };
       continue;
@@ -316,7 +320,7 @@ export function chartFormats(source: Option, presentation: { bindings: ChartBind
     const valueColumn = encodedColumn(target, "value");
     const format = formatOf(formats, valueColumn);
     if (!format) continue;
-    const work = (params: { name: string; value: unknown; data?: { share?: unknown } }) => itemText(params.name, params.value, params.data?.share, formats, valueColumn, secondColumn(target, "tooltip"));
+    const work = (params: { name: string; value: unknown; data?: { share?: unknown } }) => itemText(params.name, params.value, params.data?.share, formats, valueColumn, secondColumn(target, "tooltip"), locale);
     if (itemSeries.has(target.type) || target.label?.show) target.label = { ...target.label, formatter: (params: Parameters<typeof work>[0]) => { const item = work(params); return [item.name, item.text].join("\n"); } };
     target.tooltip = { ...target.tooltip, formatter: (params: Parameters<typeof work>[0]) => { const item = work(params); return [item.name, item.text].join("<br/>"); } };
   }
@@ -326,8 +330,8 @@ export function chartFormats(source: Option, presentation: { bindings: ChartBind
     const column = encodedColumn(target, "y");
     const format = formatOf(formats, column);
     if (!format) continue;
-    target.tooltip = { ...target.tooltip, valueFormatter: (value: unknown) => chartValueText(value, format) };
-    if (target.label?.show) target.label = { ...target.label, formatter: (params: { value: unknown }) => chartValueText(params.value, format) };
+    target.tooltip = { ...target.tooltip, valueFormatter: (value: unknown) => chartValueText(value, format, locale) };
+    if (target.label?.show) target.label = { ...target.label, formatter: (params: { value: unknown }) => chartValueText(params.value, format, locale) };
   }
   // Each axis writes the column its series encode to it; tick positions keep the kind but not the fixed decimals.
   for (const [key, role] of [["xAxis", "x"], ["yAxis", "y"]] as const) {
@@ -338,7 +342,7 @@ export function chartFormats(source: Option, presentation: { bindings: ChartBind
       const format = formatOf(formats, shown && encodedColumn(shown, role));
       if (!format) return axis;
       const written = axis.type === "category" ? format : chartTickFormat(format);
-      return { ...axis, axisLabel: { ...axis.axisLabel, formatter: (tick: unknown) => chartValueText(tick, written) } };
+      return { ...axis, axisLabel: { ...axis.axisLabel, formatter: (tick: unknown) => chartValueText(tick, written, locale) } };
     });
     option[key] = Array.isArray(option[key]) ? formatted : formatted[0];
   }

@@ -5,6 +5,8 @@ import PptxGenJS from "pptxgenjs";
 import { initWasm, Resvg } from "@resvg/resvg-wasm";
 import { z } from "zod";
 import { chartAxisBounds, chartBrandColors } from "@ontomato/contracts/chart-presentation";
+import { chartMapGeojson } from "@ontomato/contracts/chart-maps";
+import { chartMapNames, reportChartOption } from "./chart-option.mjs";
 import { datasetPayloadSchema } from "@ontomato/contracts/data-retrieval";
 import { parseProductMarkdown } from "@ontomato/markdown";
 
@@ -84,11 +86,22 @@ async function main() {
       sourceNote(slide, source);
     } else if (entry.layout === "chart") {
       addHeading(slide, entry, ink);
-      const option = chartAxisBounds(chartBrandColors(JSON.parse(fs.readFileSync(source, "utf8")), theme), 560);
-      option.animation = false;
-      option.textStyle = { fontFamily: FONT_FAMILY, ...option.textStyle };
+      const file = JSON.parse(fs.readFileSync(source, "utf8"));
+      const option = file && typeof file === "object" && !Array.isArray(file) && "ontomato" in file
+        ? reportChartOption(file, theme, process.env.ONTOMATO_LANGUAGE)
+        : { ok: true, option: chartAxisBounds(chartBrandColors(file, theme), 560) };
+      if (!option.ok) {
+        slide.addText(`Chart unavailable: ${option.reason}`, { x: 0.55, y: 1.8, w: 12.2, h: 4.74,
+          fontSize: 14, color: ink, valign: "top", fit: "shrink", ...textStyle(option.reason) });
+        sourceNote(slide, source);
+        continue;
+      }
+      const drawn = option.option;
+      for (const resource of chartMapNames(drawn)) echarts.registerMap(resource, await chartMapGeojson(resource));
+      drawn.animation = false;
+      drawn.textStyle = { fontFamily: FONT_FAMILY, ...drawn.textStyle };
       const chart = echarts.init(null, theme, { renderer: "svg", ssr: true, width: 1440, height: 560 });
-      chart.setOption(option);
+      chart.setOption(drawn);
       const svg = chart.renderToSVGString();
       chart.dispose();
       const image = new Resvg(svg, { font: { fontBuffers, loadSystemFonts: false, defaultFontFamily: FONT_FAMILY,
