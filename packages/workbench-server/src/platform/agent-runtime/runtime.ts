@@ -22,11 +22,27 @@ export interface AssistantCredentials {
   apiKey?: string;
   locale?: string;
 }
+/**
+ * The scenario a skill script runs in. Inside the platform a page's own save is the only writer of that page's data;
+ * the same skill package run outside the platform (a reader's own key, the Skill suite) writes directly.
+ */
+const SKILL_SCENARIO = "platform";
+
+/** Where platform runs change things: a page draft the reader saves, never a write of their own. */
+const PLATFORM_DRAFT_RULE = [
+  "Platform operations:",
+  "Inside the platform, a change to platform data — an agent definition, a dashboard, knowledge, authorization — is",
+  "made by writing a page draft that fills the owning page's form, linking to that page with the draft, and letting the",
+  "reader save there. Do not call the owning write endpoint yourself and do not claim a change is saved; saying 'save' in",
+  "the conversation does not save. Reading, retrieval, charts and reports keep their own mechanisms.",
+  "A change with no owning page still goes through its owner's interface.",
+].join("\n");
 export function userSkillEnvironment(credentials: AssistantCredentials): RuntimeEnvironment {
   return {
     values: {
       ONTOMATO_WORKBENCH_URL: environment.agentRuntime().callbackUrl.replace(/\/$/, ""),
       ONTOMATO_ONTOLOGY_URL: getApiConfig().baseUrl!.replace(/\/$/, ""),
+      ONTOMATO_SKILL_SCENARIO: SKILL_SCENARIO,
     },
     secrets: {
       ...(credentials.apiKey ? { ONTOMATO_API_KEY: credentials.apiKey }
@@ -42,7 +58,7 @@ export function runDefinition(
   externalMcp: RuntimeStartRunRequest["definition"]["externalMcp"] = [],
 ): RuntimeStartRunRequest["definition"] {
   return {
-    systemPrompt: systemPrompt + "\n\n" + getOutputLanguageInstruction(resolveLocale(locale)),
+    systemPrompt: systemPrompt + "\n\n" + PLATFORM_DRAFT_RULE + "\n\n" + getOutputLanguageInstruction(resolveLocale(locale)),
     modelId,
     skills,
     externalMcp,
