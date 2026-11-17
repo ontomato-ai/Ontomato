@@ -29,6 +29,7 @@ public class AgentPrincipalService implements InitializingBean {
     @Override public void afterPropertiesSet(){db.execute("""
         CREATE TABLE IF NOT EXISTS agent_principal(domain_id text NOT NULL,id text NOT NULL,name text NOT NULL,enabled boolean NOT NULL DEFAULT true,revision bigint NOT NULL DEFAULT 1,PRIMARY KEY(domain_id,id));
         CREATE TABLE IF NOT EXISTS agent_principal_role(domain_id text NOT NULL,principal_id text NOT NULL,role_id text NOT NULL,PRIMARY KEY(domain_id,principal_id,role_id),FOREIGN KEY(domain_id,principal_id) REFERENCES agent_principal(domain_id,id) ON DELETE CASCADE);
+        CREATE TABLE IF NOT EXISTS agent_principal_user_scope(domain_id text NOT NULL,principal_id text NOT NULL,PRIMARY KEY(domain_id,principal_id),FOREIGN KEY(domain_id,principal_id) REFERENCES agent_principal(domain_id,id) ON DELETE CASCADE);
         """);}
     public record Principal(String id,String domainId,String userName,long revision) implements User {
         public String getId(){return id;}
@@ -44,12 +45,21 @@ public class AgentPrincipalService implements InitializingBean {
     }
     public boolean exists(String domain,String id){return Boolean.TRUE.equals(db.queryForObject("SELECT EXISTS(SELECT 1 FROM agent_principal WHERE domain_id=? AND id=?)",Boolean.class,domain,id));}
     public void lockIdentity(String id){db.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0))",Object.class,"agent-principal:"+id);}
-    public record Registration(String id,String name,boolean enabled,List<String> roleIds) {}
+    public record Registration(String id,String name,boolean enabled,List<String> roleIds,String dataScope) {
+        public Registration(String id,String name,boolean enabled,List<String> roleIds){this(id,name,enabled,roleIds,"roles");}
+    }
     public List<Registration> list(String domain){
         var assignments=new java.util.LinkedHashMap<String,List<String>>();
         db.query("SELECT principal_id,role_id FROM agent_principal_role WHERE domain_id=? ORDER BY role_id",row->{assignments.computeIfAbsent(row.getString(1),ignored->new java.util.ArrayList<>()).add(row.getString(2));},domain);
-        return db.query("SELECT id,name,enabled FROM agent_principal WHERE domain_id=? ORDER BY name,id",(row,index)->new Registration(row.getString(1),row.getString(2),row.getBoolean(3),assignments.getOrDefault(row.getString(1),List.of())),domain);
+        var scoped=db.queryForList("SELECT principal_id FROM agent_principal_user_scope WHERE domain_id=?",String.class,domain);
+        return db.query("SELECT id,name,enabled FROM agent_principal WHERE domain_id=? ORDER BY name,id",(row,index)->new Registration(row.getString(1),row.getString(2),row.getBoolean(3),assignments.getOrDefault(row.getString(1),List.of()),scoped.contains(row.getString(1))?"current-user":"roles"),domain);
     }
+    public void registerUserScoped(String domain,String id,String name){
+        if(domain==null||domain.isBlank()||id==null||id.isBlank()||name==null||name.isBlank())throw new IllegalArgumentException("Agent identity is required");
+        db.update("INSERT INTO agent_principal(domain_id,id,name) VALUES(?,?,?) ON CONFLICT DO NOTHING",domain,id,name);
+        db.update("INSERT INTO agent_principal_user_scope(domain_id,principal_id) VALUES(?,?) ON CONFLICT DO NOTHING",domain,id);
+    }
+    public boolean userScoped(String domain,String id){return Boolean.TRUE.equals(db.queryForObject("SELECT EXISTS(SELECT 1 FROM agent_principal_user_scope WHERE domain_id=? AND principal_id=?)",Boolean.class,domain,id));}
     @org.springframework.transaction.annotation.Transactional
     public void save(String domain,String id,String name,boolean enabled,List<String> roles){
         if(domain==null||domain.isBlank()||id==null||!id.matches("[a-zA-Z0-9][a-zA-Z0-9:_-]{0,199}")||name==null||name.isBlank()||name.length()>200||roles==null)throw new IllegalArgumentException("Invalid agent principal");

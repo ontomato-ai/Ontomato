@@ -28,8 +28,12 @@ import {publishedApplication,publishedApplicationRelease} from '../../services/p
 import {migratePlatformProjection} from '../../services/product-assets/platform-migration';
 import {objectViewAuthoring} from '../../services/product-assets/object-view-authoring';
 import {migrateDashboardPage} from '../../services/product-assets/dashboard-migration';
+import {synchronizePlatformAssets,nativeAgentAsset,nativeApplicationAsset} from '../../services/product-assets/platform-assets';
+import {assertAppBuilderAccess} from '../../services/app-builder/access';
+import {requirePermission} from '../../identity/installed';
 
 const router: ReturnType<typeof Router> = Router();
+router.post('/synchronize-platform',requirePermission(['system-config']),wrap(async(req,res)=>{const c=context(req);await assertAppBuilderAccess(c.credentials);res.json(await synchronizePlatformAssets(c.owner,c.credentials));}));
 router.post('/object-views/:operation',wrap(async(req,res)=>{
   const {owner,credentials}=context(req);
   const operation=z.enum(['read','edit','save','publish']).parse(req.params.operation);
@@ -69,7 +73,8 @@ router.get('/published/:applicationId/:id',wrap(async(req,res)=>{
 router.get("/:id", wrap(async (req,res) => {
   const owner = context(req).owner;
   const asset = await getProduct(owner,String(req.params.id));
-  res.json({asset});
+  const agentId=await nativeAgentAsset(owner.domainId,asset.id),applicationId=await nativeApplicationAsset(owner.domainId,asset.id);
+  res.json({asset,...(agentId?{nativeAgentId:agentId}:{}),...(applicationId?{nativeApplicationId:applicationId}:{})});
 }));
 router.get('/:id/dependencies',wrap(async(req,res)=>{const c=context(req),id=String(req.params.id);const asset=await getProduct(c.owner,id);res.json(await expandedProductDependencies(c.owner,c.credentials,asset,await dependencyProducts(c.owner,id)));}));
 router.post('/:id/migrate-platform',wrap(async(req,res)=>{const c=context(req),input=z.object({revision:z.number().int().positive(),profileId:z.string().min(1).max(200).optional()}).strict().parse(req.body);res.json({asset:await migratePlatformProjection(c.owner,c.credentials,String(req.params.id),input.revision,input.profileId)});}));

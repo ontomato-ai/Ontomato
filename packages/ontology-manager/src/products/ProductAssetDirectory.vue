@@ -24,6 +24,8 @@ const context=useManagerContext();
 const managerCounts=useManagerCounts();
 const graph=ref<ProductGraph|null>(null),graphLoading=ref(false),graphError=ref('');
 const graphOpen=ref(false);
+const synchronizing=ref(false);
+async function synchronize(){synchronizing.value=true;error.value='';try{await client.products.synchronizePlatform();await load();}catch(reason){error.value=reason instanceof Error?reason.message:String(reason);}finally{synchronizing.value=false;}}
 const warnings=ref<{kind:string;id:string;name:string}[]|null>(null);
 const warningsOpen=ref(false),warningsLoading=ref(false),warningsError=ref('');
 const overlay=inject(managerOverlayKey,'body');
@@ -86,7 +88,7 @@ onBeforeUnmount(()=>{clearTimeout(timer);generation++;});
   <section class="product-directory">
     <PlatformPageHeader title="产品资产" description="从本体投影到页面组合，再到人与智能体使用的应用"><template #actions><el-dropdown placement="bottom-end" :popper-options="dropdownBoundaryOptions" @command="(kind:string)=>emit('create',kind)"><el-button type="primary">创建资产</el-button><template #dropdown><el-dropdown-menu><template v-for="(group,index) in creationGroups" :key="group.id"><el-dropdown-item disabled :divided="index>0">{{group.name}}</el-dropdown-item><el-dropdown-item v-for="type in group.types" :key="type.kind" :command="type.kind"><component :is="productIcons[type.kind]" :size="16" class="type-icon"/>{{type.name}}</el-dropdown-item></template></el-dropdown-menu></template></el-dropdown></template></PlatformPageHeader>
     <div class="directory-types"><PlatformTabs :tabs="categoryTabs" :active-id="activeCategory" label="产品资产层次" @select="changeCategory"/><PlatformTabs :tabs="categoryTypeTabs" :active-id="activeKind" label="产品资产类型" @select="changeKind"/></div>
-    <div class="directory-overview"><div class="type-description" :title="categoryDescription"><strong>{{activeType.name}}</strong><span>{{activeType.description}}</span></div><div class="directory-tools"><el-button :loading="graphLoading" @click="showGraph">资产引用图</el-button><el-button :loading="warningsLoading" title="查找尚未指定默认展示方式的本体元素，仅供参考" @click="checkDefaults">检查默认投影</el-button></div></div>
+    <div class="directory-overview"><div class="type-description" :title="categoryDescription"><strong>{{activeType.name}}</strong><span>{{activeType.description}}</span></div><div class="directory-tools"><el-button :loading="synchronizing" @click="synchronize">同步平台资产</el-button><el-button :loading="graphLoading" @click="showGraph">资产引用图</el-button><el-button :loading="warningsLoading" title="查找尚未指定展示方式的本体元素，仅供参考" @click="checkDefaults">检查默认投影</el-button></div></div>
     <ProductGraphDialog v-if="graph" v-model="graphOpen" :graph="graph" @open="open"/>
     <div v-if="graphError" class="directory-graph"><el-alert :title="graphError" type="error" closable @close="graphError=''"/></div>
     <ElDialog v-model="warningsOpen" title="默认投影检查" :append-to="overlay" width="800px" destroy-on-close>

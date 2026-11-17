@@ -15,6 +15,7 @@ import {withProductGrants,currentProductGrants,registerProductResource,productGr
 import {assistantStore} from '../assistant/store';
 import {agentPrincipalCredentials} from './agent-principal';
 import {ontologyRegistration,synchronizeProductOntology} from './ontology';
+import {nativeAgentAsset,updateNativeAgent} from './platform-assets';
 
 export interface ProductOwner { domainId: string; userId: string }
 const columns = `id, owner_id AS "ownerId", name, description, visibility, document, revision, created_at AS "createdAt", updated_at AS "updatedAt"`;
@@ -162,7 +163,9 @@ async function saveAuthorizedProduct(owner:ProductOwner,id:string,input:ProductA
     }
     if(parsed.document.kind==='agent-profile'){
       await assistantStore.agent(parsed.document.principalId,owner);
-      await agentPrincipalCredentials(owner.domainId,parsed.document.principalId,credentials.locale,owner.userId);
+      const native=await nativeAgentAsset(owner.domainId,id);
+      if(native){if(native!==parsed.document.principalId||parsed.document.tools.length||parsed.document.contextViews.length)throw new HttpError(400,'A platform Agent retains its execution identity and Skill tool surface; configure explicit projections in a separate Profile','INVALID_AGENT_PROFILE');}
+      else await agentPrincipalCredentials(owner.domainId,parsed.document.principalId,credentials.locale,owner.userId);
     }
     await validateProduct(owner,normalized.input,credentials);
     for(const child of normalized.children){
@@ -182,7 +185,9 @@ async function saveAuthorizedProduct(owner:ProductOwner,id:string,input:ProductA
     const candidateRead=async(childId:string)=>childId===id?({...normalized.input,id} as ProductAsset):internalRead(childId);
     for(const parent of parents.rows.map(row=>asset(row,owner)))if(productReferences(parent.document).some(reference=>reference.kind==='asset'&&reference.id===id))await validatePageBindings(owner,parent,candidateRead,credentials);
     await validateChildren(owner,normalized.input,credentials,client);
-    return writeProduct(client, owner, id, normalized.input, revision,migrating||parsed.document.kind!==normalized.input.document.kind,credentials);
+    const saved=await writeProduct(client, owner, id, normalized.input, revision,migrating||parsed.document.kind!==normalized.input.document.kind,credentials);
+    await updateNativeAgent(saved,owner,client);
+    return saved;
   });
 }
 export async function validateChildren(owner:ProductOwner,input:ProductAssetInput,credentials:AssistantCredentials,client:Pick<PoolClient,'query'>=db(),seen=new Set<string>()) {

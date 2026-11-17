@@ -75,6 +75,8 @@ export interface BrandColors {
   accentInk: string;
   accentSoft: string;
   success: string;
+  /** Readable success text when the status accent is intentionally brighter. */
+  successInk?: string;
   warning: string;
   danger: string;
   info: string;
@@ -115,6 +117,7 @@ export function brandProperties(brand: BrandSource, mode: BrandMode): Record<str
   const properties: Record<string, string> = {
     ...family("primary", c.primary, c.primarySoft, c.primaryPress, c.surface),
     ...statusFamily("success", c.success, c),
+    "--el-color-success-text": c.successInk ?? c.success,
     ...statusFamily("warning", c.warning, c),
     ...statusFamily("danger", c.danger, c),
     ...statusFamily("error", c.danger, c),
@@ -265,8 +268,9 @@ export function brandContrastFailures(brand: BrandSource): string[] {
       check(`link on ${name}`, c.link ?? c.primary, c[name], BODY_TEXT);
     check("link on primary tint", c.link ?? c.primary, primaryTint(c), BODY_TEXT);
     for (const status of ["success", "warning", "danger", "info"] as const) {
-      check(`${status} on surface`, c[status], c.surface, BODY_TEXT);
-      check(`${status} on its soft fill`, c[status], mix(c[status], c.surface, 0.9), BODY_TEXT);
+      const text = status === 'success' ? c.successInk ?? c.success : c[status];
+      check(`${status} on surface`, text, c.surface, BODY_TEXT);
+      check(`${status} on its soft fill`, text, mix(c[status], c.surface, 0.9), BODY_TEXT);
     }
     check("accentInk on surface", c.accentInk, c.surface, BODY_TEXT);
     check("accentInk on accentSoft", c.accentInk, c.accentSoft, BODY_TEXT);

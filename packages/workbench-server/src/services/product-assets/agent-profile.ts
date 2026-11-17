@@ -15,6 +15,7 @@ import {runtimeJsonObjectSchema} from '@ontomato/contracts/agent-runtime-values'
 import {withProductGrants,currentProductGrants,requireProductUse} from './grants';
 import {readPlatformObjects} from './platform-objects';
 import {agentPrincipalCredentials} from './agent-principal';
+import {nativeProfileId} from './platform-assets';
 
 /** Profile assembly exposes interfaces, never grants execution privileges. */
 export async function assembleAgentProfile(owner:ProductOwner,credentials:AssistantCredentials,id:string,pinnedAssets?:ProductAsset[],issues:{assetId:string;code:string;message:string}[]=[]){
@@ -87,7 +88,11 @@ export async function agentProfileForPrincipal(owner:ProductOwner,credentials:As
 }
 export async function profileForSession(owner:ProductOwner,credentials:AssistantCredentials,sessionId:string,principalId:string){
   const result=await getPostgresPool().query(`SELECT profile_id,release_id,context_objects FROM ${t('product_profile_sessions')} WHERE domain_id=$1 AND session_id=$2`,[owner.domainId,sessionId]);
-  if(!result.rows[0])return agentProfileForPrincipal(owner,credentials,principalId);
+  if(!result.rows[0]){
+    const native=await nativeProfileId(owner.domainId,principalId);
+    if(native)return null;
+    return agentProfileForPrincipal(owner,credentials,principalId);
+  }
   const {profile_id:id,release_id:releaseId}=result.rows[0];
   await requireProductUse(owner,id);
   const snapshot=await readProductRelease(owner,releaseId,id);const issues=await productReleaseIssues(owner,snapshot,credentials);

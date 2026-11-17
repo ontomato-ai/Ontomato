@@ -125,8 +125,8 @@ export default {
     update: "Update",
   },
   nav: {
-    actionManagement: "Action Types",
-    workflowManagement: "Business Processes",
+    actionManagement: "Actions",
+    workflowManagement: "Workflows",
     capabilityMap: "Capability Map",
     dataBrowser: "Data Browser",
     functionDefinitions: "Functions",
