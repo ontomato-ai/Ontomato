@@ -26,13 +26,14 @@ export function neighborNodePosition(index: number, center: { x: number; y: numb
 
 export interface OverviewRect { x: number; y: number; width: number; height: number }
 
-/** Anchor headings to their own cluster; prefer above, then below, without drifting into other rows. */
+/** Keep headings near their cluster and omit them when neither side has room. */
 export function overviewClassHeadings(
   groups: Array<{ name: string; bounds: OverviewRect; width: number; height: number }>,
   instances: OverviewRect[],
+  viewport?: OverviewRect,
 ) {
   const placed: OverviewRect[] = [];
-  return [...groups].sort((a, b) => a.bounds.y - b.bounds.y || a.name.localeCompare(b.name)).map((group) => {
+  return [...groups].sort((a, b) => a.bounds.y - b.bounds.y || a.name.localeCompare(b.name)).flatMap((group) => {
     const heading = {
       name: group.name,
       x: group.bounds.x + (group.bounds.width - group.width) / 2,
@@ -41,14 +42,20 @@ export function overviewClassHeadings(
       height: group.height,
     };
     const obstacles = [...instances, ...placed];
-    const overlapArea = (y: number) => obstacles.reduce((area, rect) => area
-      + Math.max(0, Math.min(heading.x + heading.width, rect.x + rect.width + 8) - Math.max(heading.x, rect.x - 8))
-      * Math.max(0, Math.min(y + heading.height, rect.y + rect.height + 8) - Math.max(y, rect.y - 8)), 0);
+    const fits = (y: number) => (!viewport || (heading.x >= viewport.x
+      && heading.x + heading.width <= viewport.x + viewport.width
+      && y >= viewport.y && y + heading.height <= viewport.y + viewport.height))
+      && !obstacles.some((rect) => heading.x < rect.x + rect.width + 8
+        && heading.x + heading.width > rect.x - 8
+        && y < rect.y + rect.height + 8 && y + heading.height > rect.y - 8);
     const above = heading.y;
     const below = group.bounds.y + group.bounds.height + 16;
-    if (overlapArea(above) > 0 && overlapArea(below) < overlapArea(above)) heading.y = below;
+    if (!fits(above)) {
+      if (!fits(below)) return [];
+      heading.y = below;
+    }
     placed.push(heading);
-    return heading;
+    return [heading];
   });
 }
 
