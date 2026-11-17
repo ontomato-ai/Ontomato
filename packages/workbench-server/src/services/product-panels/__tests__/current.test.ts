@@ -95,6 +95,15 @@ it("does not accept a legacy asset ID as a current panel reference", async () =>
   await expect(requireCurrentPanels(owner.domainId, ["p"])).resolves.toBeUndefined();
 });
 
+it("does not assume resource registration restores a revoked edit Grant", async () => {
+  mocks.register.mockResolvedValue(undefined);
+  mocks.grant.mockRejectedValue(new HttpError(403, "Edit was revoked", "PRODUCT_FORBIDDEN"));
+  const { revision, ...input } = projection();
+  await expect(saveCurrentProjection(owner, credentials, "x", input, revision)).rejects.toMatchObject({ code: "PRODUCT_FORBIDDEN" });
+  expect(rows.has("projection:x")).toBe(false);
+  expect(mocks.notify).not.toHaveBeenCalled();
+});
+
 it("limits source text by UTF-8 bytes at the registration boundary", () => {
   const request = panel();
   expect(registerProductPanelRequestSchema.safeParse({ ...request, content: { ...request.content, module: "é".repeat(150_000) } }).success).toBe(false);

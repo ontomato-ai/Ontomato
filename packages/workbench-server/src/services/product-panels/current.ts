@@ -51,12 +51,13 @@ async function save(owner: ProductOwner, credentials: AssistantCredentials, kind
       const other = t(currentProductTables[kind === "panel" ? "projection" : "panel"]);
       const collision = await client.query(`SELECT id FROM ${other} WHERE domain_id=$1 AND id=$2 UNION ALL SELECT id FROM ${t("product_assets")} WHERE domain_id=$1 AND id=$2`, [owner.domainId, id]);
       if (collision.rows.length) throw new HttpError(409, "Product identity already belongs to another collection", "PRODUCT_ID_CONFLICT");
+      await registerProductResource(owner, id, input.visibility === "domain");
+      await requireProductGrant(id, "edit", credentials);
     }
     const result = revision === 0
       ? await client.query(`INSERT INTO ${table} (domain_id,id,owner_id,definition) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT DO NOTHING RETURNING ${currentProductColumns}`, [owner.domainId, id, owner.userId, JSON.stringify(input)])
       : await client.query(`UPDATE ${table} SET definition=$3::jsonb,revision=revision+1,updated_at=now() WHERE domain_id=$1 AND id=$2 AND revision=$4 RETURNING ${currentProductColumns}`, [owner.domainId, id, JSON.stringify(input), revision]);
     if (!result.rows.length) throw new HttpError(409, "Definition changed; reload before saving", "PRODUCT_CONFLICT");
-    if (!existing) await registerProductResource(owner, id, input.visibility === "domain");
     return result.rows[0];
   });
   await notifyProductDefinitionChanged({ kind: "definition-changed", domainId: owner.domainId, target: { kind, id } });
