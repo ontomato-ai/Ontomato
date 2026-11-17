@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { assistantAgentListSchema } from "@ontomato/contracts/assistant-chat";
 import { computed, inject, onMounted, ref } from "vue";
 import { randomId } from "@ontomato/contracts/random-id";
 import { productAssetSchema,platformWidget, type ProductAsset } from "@ontomato/contracts/product-assets";
@@ -24,7 +25,7 @@ import AppPage from "./AppPage.vue";
 import WorkspaceSkeleton from "./WorkspaceSkeleton.vue";
 import { AppWindow, ArrowUpRight, CircleAlert, Clock3, LayoutDashboard, MoreHorizontal, Pin, RefreshCw, Settings2, Sparkles } from "lucide-vue-next";
 import WorkspaceResourceDetail, { type WorkspaceResource } from "./WorkspaceResourceDetail.vue";
-import { agentHostAgentListSchema, agentHostCreateSessionResponseSchema, agentHostSessionSnapshotSchema, type AgentHostAgent, type AgentHostSession } from "@ontomato/contracts/agent-host";
+import { agentHostCreateSessionResponseSchema, agentHostSessionSnapshotSchema, type AgentHostAgent, type AgentHostSession } from "@ontomato/contracts/agent-host";
 const { locale, t } = useI18n();
 const productText = useProductText();
 const props=defineProps<{productAssetId?:string;platformWidgetAsset?:ProductAsset;preview?:boolean;pinnedAssets?:ProductAsset[];embedded?:boolean;pageState?:Record<string,unknown>;unavailableAssets?:string[]}>();
@@ -324,7 +325,7 @@ const readDashboards = () => load("data", async () => { dashboards.value = (awai
 const readTasks = () => load("tasks", async () => { tasks.value = platformTaskListSchema.parse(await json(platformSchedulesPath)).tasks; });
 const readRecent = () => load("recent", async () => { recent.value = recentWorkListSchema.parse((await json("/api/personal-workspace/recent")).data); });
 const readAgents = () => load("agents", async () => {
-  agents.value = agentHostAgentListSchema.parse(await json("/api/assistant/agents")).agents;
+  agents.value = assistantAgentListSchema.parse(await json("/api/assistant/agents")).agents;
   if (!enabledAgents.value.some(agent => agent.id === agentId.value)) agentId.value = enabledAgents.value[0]?.id ?? null;
 });
 const readConversations = () => load("conversations", async () => { homeState.value = homeStateSchema.parse(await json("/api/platform/home")); });

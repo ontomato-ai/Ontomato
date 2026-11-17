@@ -4,7 +4,7 @@ import { APP_BUILDER_SKILL } from "../app-builder/definition";
 import path from "node:path";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
-import { assistantSkillCatalogSchema } from "@ontomato/contracts/assistant-chat";
+import { assistantSkillCatalogSchema, type AssistantSkillOption } from "@ontomato/contracts/assistant-chat";
 import { workbenchServerResourceRoot } from "../../content/resources";
 import { skillRegistryManager } from "../../core/skills/registry/manager";
 import { HttpError } from "../../utils/errors";
@@ -12,6 +12,32 @@ import { skillManager, skillReference } from "../skills/skill-manager";
 import { publishSkill } from "../agent-runtime/skills";
 import { tForLocale } from "../../i18n";
 import { readSkillMarkdown } from '../../core/skills/manifest';
+import { z } from "zod";
+import { pageSkillsProjectionSchema, type PageSkillsProjection } from "@ontomato/contracts/page-skills";
+import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
+import { backendGet, buildBackendHeaders } from "../../utils/backend-client";
+import { config } from "../../config/application";
+
+/** Read authorization anew for each directory or admission request. */
+export async function readPageSkills(credentials: AssistantCredentials): Promise<PageSkillsProjection> {
+  const response = await backendGet("page-skills", `${config.dataQuery.baseUrl}/platform/page-skills`, {
+    headers: buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey), retries: 1,
+  });
+  return z.object({ success: z.literal(true), data: pageSkillsProjectionSchema }).parse(JSON.parse(response.text)).data;
+}
+
+export function effectiveAssistantSkills(
+  agent: { kind: string; skills: readonly RuntimeSkillRef[] },
+  projection: PageSkillsProjection,
+  productProfile = false,
+): RuntimeSkillRef[] {
+  if (productProfile) return [];
+  const page = new Set(projection.registeredSkills.map(runtimeSkillKey));
+  const permitted = new Set(projection.pageSkills.map(mapping => runtimeSkillKey(mapping.skill)));
+  const selected = agent.skills.filter(skill => !page.has(runtimeSkillKey(skill)) || permitted.has(runtimeSkillKey(skill)));
+  const effective = agent.kind === "regular" ? [...selected, ...projection.pageSkills.map(mapping => mapping.skill)] : selected;
+  return [...new Map(effective.map(skill => [runtimeSkillKey(skill), skill])).values()];
+}
 
 const RETRIEVAL_SKILLS = new Set(["ontomato-analyst-assistant"]);
 
@@ -39,8 +65,10 @@ export async function registerAssistantSkills() {
   for (const skill of await skillRegistryManager.publicSkills())
     await publishSkill(skill.path, skillReference(skill, ""));
 }
-export async function assistantSkillCatalog(domainId: string, locale?: string) {
-  return assistantSkillCatalogSchema.parse({ skills: [
+export async function assistantSkillCatalog(domainId: string, credentials: AssistantCredentials, projection?: PageSkillsProjection) {
+  const pages = projection ?? await readPageSkills(credentials);
+  const locale = credentials.locale;
+  const options: AssistantSkillOption[] = [
     { skill: GOVERNANCE_SKILL, title: tForLocale(locale, "assistant.default.knowledge-governance.name"), description: tForLocale(locale, "assistant.default.knowledge-governance.description") },
     ...platformSkills().map(({ root: _root, ...entry }) => ({ ...entry,
       title: entry.skill.name==='assistant-report'?tForLocale(locale, "assistant.skills.report.title"):entry.title,
@@ -51,10 +79,17 @@ export async function assistantSkillCatalog(domainId: string, locale?: string) {
     ...(await skillManager.getAllSkills(domainId, locale)).map((s) => ({
       skill: s.skill, title: s.title, description: s.description,
     })),
-  ] });
+  ];
+  const page = new Set(pages.registeredSkills.map(runtimeSkillKey));
+  const permitted = new Set(pages.pageSkills.map(mapping => runtimeSkillKey(mapping.skill)));
+  const available = options.filter(option => !page.has(runtimeSkillKey(option.skill)) || permitted.has(runtimeSkillKey(option.skill)));
+  for (const mapping of pages.pageSkills)
+    if (!available.some(option => runtimeSkillKey(option.skill) === runtimeSkillKey(mapping.skill)))
+      available.push({ skill: mapping.skill, title: mapping.skill.name, description: "" });
+  return assistantSkillCatalogSchema.parse({ skills: available });
 }
-export async function validateAssistantSkills(domainId: string, refs: readonly RuntimeSkillRef[]) {
-  const catalogue = await assistantSkillCatalog(domainId);
+export async function validateAssistantSkills(domainId: string, refs: readonly RuntimeSkillRef[], credentials: AssistantCredentials, projection?: PageSkillsProjection) {
+  const catalogue = await assistantSkillCatalog(domainId, credentials, projection);
   const known = new Set(catalogue.skills.map((s) => runtimeSkillKey(s.skill)));
   const names = new Set<string>();
   for (const ref of refs) {
@@ -67,8 +102,9 @@ export async function validateAssistantSkills(domainId: string, refs: readonly R
 }
 
 /** The caller holds the domain operation boundary until runtime admission finishes. */
-export async function prepareAssistantSkills(domainId: string, refs: readonly RuntimeSkillRef[]) {
-  const selected = await validateAssistantSkills(domainId, refs);
+export async function prepareAssistantSkills(domainId: string, agent: { kind: string; skills: readonly RuntimeSkillRef[] }, credentials: AssistantCredentials) {
+  const projection = await readPageSkills(credentials);
+  const selected = await validateAssistantSkills(domainId, effectiveAssistantSkills(agent, projection), credentials, projection);
   const registry = await skillRegistryManager.forDomain(domainId);
   for (const ref of selected) {
     if (ref.name === GOVERNANCE_SKILL.name && ref.namespace.kind === "provider" && ref.namespace.provider === GOVERNANCE_SKILL.namespace.provider)
