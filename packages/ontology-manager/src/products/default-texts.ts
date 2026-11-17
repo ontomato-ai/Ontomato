@@ -21,7 +21,7 @@ const defaultTextKeys=new Map<string,keyof OntologyMessages>([
   [productDefaultTexts.platformPageDescription,'productDefaultPlatformPageDescription'],
   [productDefaultTexts.graphDomainMembers,'productDomainMembers'],
   [productDefaultTexts.graphNameUnavailable,'productNameUnavailable'],
-  [productDefaultTexts.graphAgentPrincipal,'productAgentPrincipal'],
+  [productDefaultTexts.graphAgentDefinition,'productAgentDefinition'],
   [productDefaultTexts.graphRoleUnavailable,'productRoleNameUnavailable'],
   [productDefaultTexts.graphPrincipalUnavailable,'productPrincipalNameUnavailable'],
   [productDefaultTexts.graphMetricUnavailable,'productMetricViewNameUnavailable'],
