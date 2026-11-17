@@ -83,7 +83,11 @@ describe("open-source Ontology Service page", () => {
     window.__APP_CONFIG__ = { API_BASE: "/custom-base/api/", INITIAL_ROUTE: "" };
     vi.stubGlobal("fetch", async (url: string, init: { headers?: unknown } = {}) => {
       requests.push({ url, headers: (init.headers ?? {}) as Record<string, string> });
-      const body=url.endsWith('/product-assets/counts')?{counts:{}}:{ success: true, data: url.includes("/platform/applications") ? catalogFixture() : [] };
+      // The platform's own answers: the catalog, the assets' counts, and the agent platform's agent list, which the
+      // pages' composer reads (a page at its own address shows it).
+      const body=url.endsWith('/product-assets/counts')?{counts:{}}
+        : url.includes('/assistant/agents')?{ agents: [] }
+        : { success: true, data: url.includes("/platform/applications") ? catalogFixture() : [] };
       return new Response(JSON.stringify(body), { status: statusFor(url) });
     });
   });
