@@ -12,8 +12,7 @@
   "scheduleAdapter": null,
   "entryAccess": [
     "business-knowledge",
-    "user-feedback",
-    "system-config"
+    "user-feedback"
   ],
   "declaration": {
     "names": {

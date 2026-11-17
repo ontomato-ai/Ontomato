@@ -672,7 +672,11 @@ const ontologyEn = {
   knowledgeDiscardConfirm: "The current edit has unsaved changes. Discard them?",
   knowledgeGovernanceUnavailable: "No knowledge governance agent is available to this account",
   knowledgeDraftApply: "The assistant filled this form. Nothing is saved until you save it.",
-  knowledgeDraftInvalid: "This knowledge draft cannot be filled in: {reason}",
+  knowledgeDraftOtherPage: "This draft was written for another page ({page}), not for business knowledge.",
+  knowledgeDraftNoForm: "Business knowledge has no {operation} form, so this draft cannot be filled in.",
+  knowledgeDraftFormInvalid: "This draft is not a business knowledge form, so it cannot be filled in.",
+  knowledgeDraftTargetMissing: "The knowledge entry this draft changes ({id}) is not in this domain.",
+  knowledgeDraftTargetMismatch: "This draft names another entry in its form ({form}) than the one it changes.",
 
   workflowTitle: "Workflows",
   workflowDesc:

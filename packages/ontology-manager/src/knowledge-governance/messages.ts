@@ -29,7 +29,6 @@ export const englishGovernance: GovernanceMessages = {
     "data": "Data defects",
     "proposed": "Proposed",
     "pending": "Pending clarification",
-    "confirmed": "Meaning confirmed",
-    "close": "Close"
+    "confirmed": "Meaning confirmed"
   }
 };

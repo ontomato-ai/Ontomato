@@ -5,7 +5,7 @@ import {
   governanceSourceReadSchema, governanceWorkResponseSchema,
   type GovernanceSourceRead, type GovernanceWork,
 } from "@ontomato/contracts/knowledge-governance";
-import { useGovernanceText, useManagerClient } from "../context";
+import { useGovernanceText, useManagerClient, useSharedText } from "../context";
 
 /**
  * One governance record's report: the findings the review proposed and the sources it cites, read from the record
@@ -17,6 +17,7 @@ const props = defineProps<{ recordId: string }>();
 const emit = defineEmits<{ back: [] }>();
 const manager = useManagerClient();
 const { t } = useGovernanceText();
+const { t: shared } = useSharedText();
 const work = ref<GovernanceWork | null>(null);
 const error = ref(""), loading = ref(false);
 const selectedIssue = ref<string | null>(null);
@@ -61,12 +62,12 @@ function toggleIssue(id: string) {
 <template>
   <div class="governance-page">
     <header class="governance-head platform-page-gutter">
-      <button type="button" class="governance-back" :aria-label="t('title')" @click="back"><ArrowLeft :size="16" /></button>
+      <button type="button" class="governance-back" :aria-label="shared('common.back')" :title="shared('common.back')" @click="back"><ArrowLeft :size="16" /></button>
       <span class="governance-title">{{ t("title") }}</span>
     </header>
     <p v-if="error" class="governance-error" role="alert">
       <span>{{ error }}</span>
-      <button type="button" :aria-label="t('close')" @click="error = ''"><X :size="14" /></button>
+      <button type="button" :aria-label="shared('common.close')" @click="error = ''"><X :size="14" /></button>
     </p>
     <div class="report platform-page-gutter" :aria-busy="loading">
       <div v-if="loading && !work" class="report-state" role="status">
@@ -118,7 +119,7 @@ function toggleIssue(id: string) {
         <section v-if="source?.anchor === issue.id" class="source" aria-live="polite">
           <header>
             <strong>{{ source.read.source.title }}</strong>
-            <button type="button" class="source-close" :aria-label="t('close')" @click="source = null"><X :size="14" /></button>
+            <button type="button" class="source-close" :aria-label="shared('common.close')" @click="source = null"><X :size="14" /></button>
           </header>
           <p v-if="!source.read.page" class="muted">{{ t("evidenceHint") }}</p>
           <p v-else-if="!source.read.page.items.length" class="muted">{{ t("sourceMissing") }}</p>
@@ -139,7 +140,7 @@ function toggleIssue(id: string) {
         <section v-if="source?.anchor === 'all'" class="source" aria-live="polite">
           <header>
             <strong>{{ source.read.source.title }}</strong>
-            <button type="button" class="source-close" :aria-label="t('close')" @click="source = null"><X :size="14" /></button>
+            <button type="button" class="source-close" :aria-label="shared('common.close')" @click="source = null"><X :size="14" /></button>
           </header>
           <p v-if="!source.read.page" class="muted">{{ t("evidenceHint") }}</p>
           <p v-else-if="!source.read.page.items.length" class="muted">{{ t("sourceMissing") }}</p>

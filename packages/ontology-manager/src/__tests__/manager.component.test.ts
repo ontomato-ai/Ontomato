@@ -1298,7 +1298,9 @@ describe("Manager business knowledge page", () => {
       await settle();
 
       expect(root().querySelector(".knowledge-form")).toBeNull();
-      expect([...root().querySelectorAll('[role="alert"]')].map((item) => item.textContent).join(" ")).toContain("draft");
+      // The refusal is the page's own wording, with the other page's key in it — never a raw sentence from the code.
+      const alerts = [...root().querySelectorAll('[role="alert"]')].map((item) => item.textContent).join(" ");
+      expect(alerts).toContain("another page (agent-settings)");
     });
 
     it("asks before replacing a manual edit that has unsaved changes, and a refusal keeps it", async () => {

@@ -228,16 +228,16 @@ async function applyDraft(sessionId: string, runId: string, path: string) {
   const read = createAgentHostClient({ request: (path, init) => client.request(path, init, "") });
   const envelope = await read.readPageDraft(sessionId, runId, path);
   if (envelope.pageKey !== "business-knowledge")
-    throw new Error(`a ${envelope.pageKey} draft is not a business knowledge draft`);
+    throw new Error(ot("knowledgeDraftOtherPage", { page: envelope.pageKey }));
   if (envelope.operation !== "knowledge.create" && envelope.operation !== "knowledge.update")
-    throw new Error(`business knowledge has no ${envelope.operation} form`);
+    throw new Error(ot("knowledgeDraftNoForm", { operation: envelope.operation }));
   const form = formOf(envelope.form);
   const base = envelope.operation === "knowledge.create"
     ? emptyKnowledge()
     : list.value.find((item) => item.knowledgeID === envelope.target.id);
-  if (!base) throw new Error(`knowledge ${envelope.target.id} is not in this domain`);
+  if (!base) throw new Error(ot("knowledgeDraftTargetMissing", { id: envelope.target.id ?? "" }));
   if (envelope.operation === "knowledge.update" && form.knowledgeID !== envelope.target.id)
-    throw new Error(`the draft changes ${envelope.target.id} but its form names ${form.knowledgeID}`);
+    throw new Error(ot("knowledgeDraftTargetMismatch", { form: form.knowledgeID }));
   // A manual edit in progress is not overwritten silently: the existing question decides, and a refusal leaves it.
   if (!(await leaveEdit())) return false;
   draftBase.value = base;
@@ -254,7 +254,7 @@ function formOf(value: Record<string, unknown>): BusinessKnowledge {
   if (typeof value.knowledgeID !== "string" || typeof value.knowledgeTitle !== "string" ||
     typeof value.knowledgeText !== "string" || typeof value.status !== "number" ||
     !Array.isArray(tags) || tags.some((tag) => typeof tag !== "string"))
-    throw new Error(ot("knowledgeDraftInvalid", { reason: "it has no knowledge form" }));
+    throw new Error(ot("knowledgeDraftFormInvalid"));
   return {
     knowledgeID: value.knowledgeID, knowledgeTitle: value.knowledgeTitle,
     knowledgeText: value.knowledgeText, knowledgeTags: tags as string[], status: value.status,
@@ -304,7 +304,7 @@ async function save() {
     const applied = draftBase.value !== null;
     draftBase.value = null;
     draftFields.value = new Set();
-      await load();
+    await load();
     if (applied) emit("draftApplied");
   } catch (error) {
     message.error(error instanceof Error ? error.message : ot("knowledgeSaveFailed"));
