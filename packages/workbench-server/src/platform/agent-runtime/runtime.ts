@@ -28,14 +28,17 @@ export interface AssistantCredentials {
  */
 const SKILL_SCENARIO = "platform";
 
-/** Where platform runs change things: a page draft the reader saves, never a write of their own. */
+/**
+ * A change a page skill covers is a draft the reader saves, not a write of the agent's: the page's own form is what the
+ * draft fills, and the page's Save is what stores it. Only a run whose effective skills hold a registered page skill
+ * receives this rule; every other change keeps its own execution mechanism.
+ */
 const PLATFORM_DRAFT_RULE = [
-  "Platform operations:",
-  "Inside the platform, a change to platform data — an agent definition, a dashboard, knowledge, authorization — is",
-  "made by writing a page draft that fills the owning page's form, linking to that page with the draft, and letting the",
-  "reader save there. Do not call the owning write endpoint yourself and do not claim a change is saved; saying 'save' in",
-  "the conversation does not save. Reading, retrieval, charts and reports keep their own mechanisms.",
-  "A change with no owning page still goes through its owner's interface.",
+  "Page operations:",
+  "A change that a loaded page skill covers goes through that page's draft: write the draft file the skill's draft",
+  "command asks for, then link the reader to the page with it. The page fills its form, marks what changed and stays",
+  "unsaved; the reader reviews and saves there, and saying 'save' in the conversation does not save it for them.",
+  "Everything else — reading, retrieval, charts, reports, and data no page skill covers — keeps its own commands.",
 ].join("\n");
 export function userSkillEnvironment(credentials: AssistantCredentials): RuntimeEnvironment {
   return {
@@ -56,9 +59,12 @@ export function runDefinition(
   skills: RuntimeStartRunRequest["definition"]["skills"],
   locale?: string,
   externalMcp: RuntimeStartRunRequest["definition"]["externalMcp"] = [],
+  /** The run loaded a registered page skill, so a change it covers is a draft the reader saves. */
+  pageDrafts = false,
 ): RuntimeStartRunRequest["definition"] {
   return {
-    systemPrompt: systemPrompt + "\n\n" + PLATFORM_DRAFT_RULE + "\n\n" + getOutputLanguageInstruction(resolveLocale(locale)),
+    systemPrompt: [systemPrompt, pageDrafts ? PLATFORM_DRAFT_RULE : "", getOutputLanguageInstruction(resolveLocale(locale))]
+      .filter(Boolean).join("\n\n"),
     modelId,
     skills,
     externalMcp,

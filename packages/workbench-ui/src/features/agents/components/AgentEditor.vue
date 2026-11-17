@@ -1,21 +1,27 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { useRoute } from "vue-router";
-import { PlatformPageHeader, useUnsavedChanges } from "@ontomato/platform-shell";
+import { useRoute, useRouter } from "vue-router";
+import { PlatformPageHeader, useLeaveConfirmation, useUnsavedChanges } from "@ontomato/platform-shell";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
 import { RefreshCw, Trash2 } from "lucide-vue-next";
-import { AgentAvatar, agentAvatar, avatarSwatch, storedAgentAvatar } from "@ontomato/agent-shell-ui";
+import {
+  AgentAvatar,
+  agentAvatar,
+  avatarSwatch,
+  changedFields,
+  pageDraftLink,
+  readPageDraft,
+  storedAgentAvatar,
+} from "@ontomato/agent-shell-ui";
 import { CodeEditor } from "@ontomato/foundation-ui/code";
 import { MarkdownView } from "@ontomato/foundation-ui/markdown";
-import type {
-  AssistantAgentDefinition,
-  AssistantAgentInput,
-} from "@ontomato/contracts/assistant-chat";
+import { assistantAgentInputSchema, type AssistantAgentDefinition, type AssistantAgentInput } from "@ontomato/contracts/assistant-chat";
 import type { McpServiceOption } from "@ontomato/contracts/agent-runtime-mcp";
 import type { ModelOptions } from "@ontomato/contracts/model-settings";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { agentDefinitionsApi, type ObjectClassOption, type ObjectRelationOption } from "../api";
+import { createAssistantClient } from "../../workbench/assistant-host";
 import AgentBasicInfoFields from "./AgentBasicInfoFields.vue";
 import DataScopeGraph from "./DataScopeGraph.vue";
 import ModelSelectionSelect from "./ModelSelectionSelect.vue";
@@ -40,7 +46,7 @@ const emit = defineEmits<{
   deleted: [id: string];
   reloadModelOptions: [];
 }>();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const route = useRoute();
 
 interface Form {
@@ -74,9 +80,42 @@ function toForm(agent: AssistantAgentDefinition | null): Form {
   };
 }
 
+/** A draft's form is the page's own save request, so it fills the same fields a read agent does. */
+function fromInput(input: AssistantAgentInput): Form {
+  const avatar = agentAvatar(input.icon);
+  return {
+    name: input.name,
+    description: input.description,
+    avatarKey: avatar.key,
+    avatarColor: avatarSwatch(avatar.color).light,
+    enabled: input.enabled,
+    systemPrompt: input.systemPrompt,
+    modelId: input.modelSelection.modelId,
+    // A draft may name a domain skill without its id, which the server fills in: the selector compares the reference it
+    // was given either way.
+    skills: [...(input.skills as RuntimeSkillRef[])],
+    classNames: [...input.classNames],
+    mcpServiceIds: [...input.enabledMcpServiceIds],
+  };
+}
+
 const form = ref<Form>(toForm(props.agent));
 /** The avatar as the draft would store it, for the head's preview. */
 const formIcon = computed(() => storedAgentAvatar({ key: form.value.avatarKey, color: form.value.avatarColor }));
+/** The form's own field names under the page's words, for the line listing what the draft changed. */
+const CHANGED_FIELD_LABELS: Record<string, string> = {
+  name: "common.name",
+  description: "common.description",
+  avatarKey: "common.avatar",
+  avatarColor: "common.avatar",
+  enabled: "common.enable",
+  systemPrompt: "agents.prompt",
+  modelId: "agents.model",
+  skills: "agents.skills",
+  classNames: "agents.data",
+  mcpServiceIds: "admin.externalMcpServices",
+};
+
 const baseline = ref(JSON.stringify(form.value));
 const dirty = computed(() => JSON.stringify(form.value) !== baseline.value);
 watch(() => props.agent, (agent) => {
@@ -87,6 +126,42 @@ watch(() => props.agent, (agent) => {
 const saving = ref(false);
 const skillsReady = ref(false);
 const promptPreview = ref(false);
+
+/*
+ * A page link may carry a draft (an agent wrote this form and the reader saves it). The draft fills the form over the
+ * agent as it was read, the fields it changed are marked, and nothing is written here: until Save the owner holds the
+ * old values. A draft that arrives while this form has unsaved changes asks first, and dropping it only empties the form.
+ */
+const router = useRouter();
+const leaving = useLeaveConfirmation();
+const link = pageDraftLink(route.query);
+const changed = ref<ReadonlySet<string>>(new Set());
+if (link) {
+  void readPageDraft(createAssistantClient(), link, {
+    pageKey: "agent-settings",
+    operations: ["agent.create", "agent.update"] as const,
+  })
+    .then(async (draft) => {
+      // The address and the draft both name the object the draft changes: a draft for another agent is not filled here.
+      if (draft.operation === "agent.update" && draft.target.id !== props.agent?.id)
+        throw new Error(t("agents.draftOtherAgent"));
+      if (dirty.value && !(await leaving.confirm())) return;
+      const filled = fromInput(assistantAgentInputSchema.parse(draft.form));
+      changed.value = changedFields(toForm(props.agent), filled);
+      baseline.value = JSON.stringify(toForm(props.agent));
+      form.value = filled;
+    })
+    .catch((error: unknown) => ElMessage.error(error instanceof Error ? error.message : String(error)));
+}
+
+/** The fields the draft changed, under the page's own names, for the line above the form and each section's marker. */
+const changedLabels = computed(() => [...changed.value].map((field) => t(CHANGED_FIELD_LABELS[field] ?? field)));
+const changedLine = computed(() =>
+  t("agents.draftChanged", {
+    fields: new Intl.ListFormat(locale.value, { style: "long", type: "conjunction" }).format(changedLabels.value),
+  }),
+);
+const sectionChanged = (fields: readonly string[]) => fields.some((field) => changed.value.has(field));
 
 /** The page's sections in order, for its contents list; each one scrolls into view, nothing is hidden. */
 const sections = computed(() => [
@@ -153,6 +228,12 @@ async function save() {
       ? await agentDefinitionsApi.update(props.agent.id, input)
       : await agentDefinitionsApi.create(input);
     baseline.value = JSON.stringify(form.value);
+    changed.value = new Set();
+    // The draft was this page's own handoff: the saved form is what the address reopens.
+    if (link) {
+      const { draftSessionId: _session, draftRunId: _run, draftPath: _path, ...query } = route.query;
+      void router.replace({ query });
+    }
     ElMessage.success(props.agent ? t("analysis.agentUpdated") : t("analysis.agentCreated"));
     emit("saved", saved);
   } catch (error) {
@@ -233,9 +314,12 @@ useUnsavedChanges({ dirty: () => dirty.value, paths: () => [path] });
     </PlatformPageHeader>
 
     <div class="editor-body platform-page-gutter">
+      <p v-if="changedLabels.length" class="draft-changed" role="status">
+        {{ changedLine }}
+      </p>
       <div class="editor-layout">
         <el-form class="editor-form" label-position="top" :disabled="saving" @submit.prevent>
-          <section :ref="sectionRef('basics')" class="editor-section" data-section="basics">
+          <section :ref="sectionRef('basics')" class="editor-section" :class="{ changed: sectionChanged(['name', 'description', 'avatarKey', 'avatarColor', 'enabled']) }" data-section="basics">
             <h3>{{ t("agents.basic") }}</h3>
             <AgentBasicInfoFields
               v-model:name="form.name"
@@ -252,7 +336,7 @@ useUnsavedChanges({ dirty: () => dirty.value, paths: () => [path] });
             </div>
           </section>
 
-          <section :ref="sectionRef('model')" class="editor-section" data-section="model">
+          <section :ref="sectionRef('model')" class="editor-section" :class="{ changed: sectionChanged(['modelId']) }" data-section="model">
             <h3>{{ t("agents.model") }}</h3>
             <p class="section-hint">{{ t("agents.modelHint") }}</p>
             <ModelSelectionSelect v-model="form.modelId" class="model-select" :options="modelOptions" :aria-label="t('agents.model')" />
@@ -262,7 +346,7 @@ useUnsavedChanges({ dirty: () => dirty.value, paths: () => [path] });
             </div>
           </section>
 
-          <section :ref="sectionRef('prompt')" class="editor-section" data-section="prompt">
+          <section :ref="sectionRef('prompt')" class="editor-section" :class="{ changed: sectionChanged(['systemPrompt']) }" data-section="prompt">
             <div class="section-head">
               <div>
                 <h3>{{ t("agents.prompt") }}</h3>
@@ -277,7 +361,7 @@ useUnsavedChanges({ dirty: () => dirty.value, paths: () => [path] });
             <small class="prompt-count">{{ t("admin.agentEditorCharacters", { count: form.systemPrompt.length }) }} · Markdown</small>
           </section>
 
-          <section :ref="sectionRef('capabilities')" class="editor-section" data-section="capabilities">
+          <section :ref="sectionRef('capabilities')" class="editor-section" :class="{ changed: sectionChanged(['skills', 'mcpServiceIds']) }" data-section="capabilities">
             <div class="section-head">
               <div>
                 <h3>{{ t("agents.capabilities") }}</h3>
@@ -325,7 +409,7 @@ useUnsavedChanges({ dirty: () => dirty.value, paths: () => [path] });
             </div>
           </section>
 
-          <section :ref="sectionRef('data')" class="editor-section" data-section="data">
+          <section :ref="sectionRef('data')" class="editor-section" :class="{ changed: sectionChanged(['classNames']) }" data-section="data">
             <div class="section-head">
               <div><h3>{{ t("agents.data") }}</h3><p>{{ t("agents.dataHint") }}</p></div>
             </div>
@@ -378,6 +462,18 @@ useUnsavedChanges({ dirty: () => dirty.value, paths: () => [path] });
 }
 .editor-section + .editor-section {
   border-top: 1px solid var(--el-border-color);
+}
+.editor-section.changed h3 {
+  color: var(--el-color-primary);
+}
+/* The line naming what the draft changed: the reader sees the extent before reading the fields. */
+.draft-changed {
+  margin: var(--spacing-md) 0 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-sm);
+  background: var(--el-color-primary-light-9);
+  color: var(--el-text-color-primary);
+  font-size: var(--text-sm);
 }
 .editor-section h3 {
   margin: 0 0 var(--spacing-lg);

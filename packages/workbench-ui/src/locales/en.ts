@@ -855,7 +855,9 @@ export default {
     "dataScopeList": "Object types",
     "dataScopeNoClasses": "This domain has no object types yet",
     "dataScopeReset": "Reset view",
-    "discardConfirm": "Discard the unsaved changes to this agent?"
+    "discardConfirm": "Discard the unsaved changes to this agent?",
+    "draftChanged": "Filled from the conversation; changed: {fields}. Review and save.",
+    "draftOtherAgent": "This draft was written for another agent; open that agent's page to save it."
   },
   "scheduledTasks": {
     "title": "Scheduled tasks",
