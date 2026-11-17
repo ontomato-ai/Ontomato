@@ -2,6 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, h, nextTick, ref, type App } from "vue";
 import CapabilityMap from "../components/CapabilityMap.vue";
 import { buildCapabilityMap } from "../components/capability-map-model";
+import {
+  CAPABILITY_LABEL_SIZE,
+  CAPABILITY_LABEL_WIDTH,
+  capabilityKinds,
+  capabilityMapLayout,
+  type CapabilityNode,
+} from "../components/capability-map-rendering";
 import ActionDefinitionView from "../components/actionCreation/ActionDefinitionView.vue";
 import OntologyAssetCatalog from "../components/OntologyAssetCatalog.vue";
 import { installObjectViewHost } from "./object-view-host";
@@ -143,4 +150,43 @@ it("exposes both relations when one member created and published the same action
   expect(legend).toContain("Action 1");
   expect(legend).toContain("Process 0");
   expect(legend.some((item) => item?.includes("NaN"))).toBe(false);
+});
+
+it("opens the capability map with every name readable and none overlapping, small domain or large", () => {
+  const domain = (counts: Partial<Record<CapabilityNode["kind"], number>>): CapabilityNode[] =>
+    capabilityKinds.flatMap((kind) =>
+      Array.from({ length: counts[kind] ?? 0 }, (_, index) => ({
+        id: `${kind}:${index}`,
+        kind,
+        layer: kind === "subject" || kind === "role" ? ("governance" as const) : ("capability" as const),
+        label: `${kind} ${index}`,
+        detail: "",
+      })),
+    );
+  // The canvases the page gives the map in a 1440×900 window: the open-source domain, and the internal one with ninety
+  // objects that a fitted ring drew at two pixels a name.
+  const small = capabilityMapLayout(domain({ action: 3, metric: 5, function: 8, skill: 6 }), { width: 946, height: 627 });
+  const large = capabilityMapLayout(
+    domain({ subject: 19, role: 7, action: 8, workflow: 2, trigger: 2, metric: 20, function: 26, skill: 6 }),
+    { width: 946, height: 734 },
+  );
+
+  // The small one is drawn whole, at natural size.
+  expect(small.zoom).toBe(1);
+  expect(small.offset.x).toBeGreaterThanOrEqual(0);
+  expect(small.offset.x + small.width * small.zoom).toBeLessThanOrEqual(946);
+  expect(small.offset.y + small.height * small.zoom).toBeLessThanOrEqual(627);
+  // The large one does not fit at a readable size, so it opens readable at its start and runs on to the right.
+  expect(large.zoom * CAPABILITY_LABEL_SIZE).toBeGreaterThanOrEqual(11);
+  expect(large.offset.y + large.height * large.zoom).toBeLessThanOrEqual(734);
+
+  for (const layout of [small, large]) {
+    const points = Object.values(layout.positions);
+    // Two names collide when they sit within a label's width side by side and within a node and its label one above
+    // the other.
+    const collisions = points.flatMap((a, i) =>
+      points.slice(i + 1).filter((b) => Math.abs(a.x - b.x) < CAPABILITY_LABEL_WIDTH && Math.abs(a.y - b.y) < 56),
+    );
+    expect(collisions).toEqual([]);
+  }
 });
