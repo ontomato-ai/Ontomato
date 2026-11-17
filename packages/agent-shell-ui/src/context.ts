@@ -72,7 +72,7 @@ export function conversationQuestions(
     pending: conversation.pendingQuestions,
     sending: conversation.sending,
     answer: async (requestId, answer) => Boolean((await conversation.answerQuestion(requestId, answer))?.delivery),
-    view: reactive<QuestionView>({ open: false, current: null, drafts: {}, skipped: [] }),
+    view: reactive<QuestionView>({ open: true, current: null, drafts: {}, skipped: [] }),
   };
 }
 
