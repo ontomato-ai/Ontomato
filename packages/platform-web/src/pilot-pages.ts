@@ -1,45 +1,23 @@
-import type { Component } from "vue";
-import type { RouteLocationNormalizedLoaded } from "vue-router";
+import { defineAsyncComponent } from "vue";
+import type { PilotPage, PilotPageResolver } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 
 /**
- * A page that may open beside the conversation, addressed by its page key: the platform knows the three pilots and no
- * more (DESIGN.md "Applications and shells"). Each resolver maps the address to the props the page's own component
- * takes, so the page keeps one component, one editor controller and one address; the page beside the conversation is
- * that same page, not a second, smaller version of it.
+ * The pages this assembly mounts beside the conversation (DESIGN.md "Applications and shells"). Each is the page's own
+ * route component, given the props its address names, so the page beside the conversation is that page — one instance,
+ * one address — and enlarging it goes to the address itself.
  *
- * A page is registered by the assembly that mounts it. The shell does not import an application's routes, and an
- * application's page does not import another application's.
+ * Only the pages whose own line has finished registering are here: the dashboards now, the knowledge report when its
+ * migration lands, the agent settings inside the workbench that already mounts them.
  */
-export interface PageResolver {
-  pageKey: string;
-  /** The application's own address, whose first pages open beside the conversation. */
-  prefix: string;
-  /** Whether this address is a page of this resolver. */
-  matches(route: RouteLocationNormalizedLoaded): boolean;
-  /** The page's component and its props for this address. */
-  props(route: RouteLocationNormalizedLoaded): Record<string, unknown>;
-  /** Enlarged, the page opens at its own address in the application. */
-  component: () => Promise<Component>;
-}
+const dashboards = defineAsyncComponent(() => import("./pages/DashboardsRoute.vue"));
 
-/**
- * The pilots the platform mounts beside the conversation. The dashboards and the knowledge report are registered by
- * their own lines; the agent settings are the workbench's, which mounts the page in its own conversation application.
- */
-export const pageResolvers: readonly PageResolver[] = [
-  {
-    pageKey: "dashboards",
-    prefix: platformRoutes.dashboards.path,
-    matches: (route) => route.path === platformRoutes.dashboards.path,
-    props: (route) => ({
-      dashboardId: typeof route.query.dashboardId === "string" ? route.query.dashboardId : undefined,
-    }),
-    component: () => import("./pages/DashboardsRoute.vue"),
-  },
+const pages: readonly { prefix: string; page: PilotPage }[] = [
+  { prefix: platformRoutes.dashboards.path, page: { address: platformRoutes.dashboards.path, component: dashboards } },
 ];
 
-/** The resolver of an address, when the address belongs to a page that may open beside the conversation. */
-export function pageResolver(path: string): PageResolver | null {
-  return pageResolvers.find((resolver) => path === resolver.prefix || path.startsWith(`${resolver.prefix}/`)) ?? null;
-}
+/** The page an address opens beside the conversation, or null for an address that is no registered page. */
+export const resolvePilotPage: PilotPageResolver = (address) => {
+  const path = address.split("?")[0]!.replace(/\/+$/, "");
+  return pages.find((candidate) => path === candidate.prefix)?.page ?? null;
+};

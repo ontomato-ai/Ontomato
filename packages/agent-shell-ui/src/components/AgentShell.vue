@@ -79,7 +79,14 @@ const props = withDefaults(
   { artifactRenderers: () => [], toolRenderers: () => [], title: "", bottom: null, conversations: true },
 );
 const slots = useSlots();
-const emit = defineEmits<{ error: [message: string]; featureAction: [id: string]; openBottom: []; run: [change: ShellRunChange] }>();
+const emit = defineEmits<{
+  error: [message: string];
+  featureAction: [id: string];
+  openBottom: [];
+  run: [change: ShellRunChange];
+  /** The paired page asks to be enlarged at its own address; the host knows where that is. */
+  openPage: [id: string, address: string];
+}>();
 const featureId = defineModel<string | null>("featureId", { default: null });
 const agentId = defineModel<string | null>("agentId", { default: null });
 const sessionId = defineModel<string | null>("sessionId", { default: null });
@@ -384,6 +391,7 @@ onMounted(() => {
       @send="sendFromPage"
       @stop="conversation.cancel"
       @expand="pageView = 'full'"
+      @open-address="emit('openPage', featureId!, currentFeature?.href ?? '')"
       @collapse="pageView = 'side'"
       @close="closePage"
     >

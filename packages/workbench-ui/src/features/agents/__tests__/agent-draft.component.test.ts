@@ -16,6 +16,10 @@ import { agentDefinitionsApi } from "../api";
 const i18n = workbenchI18n();
 const t = i18n.global.t as (key: string) => string;
 
+const AGENT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const OTHER = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const DRAFT = (name: string) => `/agents/settings/${AGENT}?draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2F${name}.page-draft.json`;
+
 const draft = vi.hoisted(() => ({ read: vi.fn() }));
 vi.mock("../../workbench/assistant-host", () => ({ createAssistantClient: () => ({ readPageDraft: draft.read }) }));
 
@@ -30,7 +34,7 @@ const global = {
 
 function agent(): AssistantAgentDefinition {
   return {
-    id: "agent-1", name: "Sales analyst", description: "", icon: null, enabled: true, systemPrompt: "Be brief.",
+    id: AGENT, name: "Sales analyst", description: "", icon: null, enabled: true, systemPrompt: "Be brief.",
     modelSelection: { modelId: null }, skills: [], classNames: [], enabledMcpServiceIds: [], sortOrder: 3,
   } as AssistantAgentDefinition;
 }
@@ -51,14 +55,14 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-async function open(path: string, form: AssistantAgentInput, target: { id?: string } = { id: "agent-1" }) {
+async function open(path: string, form: AssistantAgentInput, target: { id?: string } = { id: AGENT }, editing = target !== undefined && target.id !== undefined) {
   draft.read.mockResolvedValue({ pageKey: "agent-settings", operation: target.id ? "agent.update" : "agent.create", target, form });
   await router.push(path);
   vi.spyOn(agentDefinitionsApi, "listMcpServiceOptions").mockResolvedValue([]);
   const update = vi.spyOn(agentDefinitionsApi, "update").mockImplementation(async (id, written) => ({ ...agent(), ...written, id }) as AssistantAgentDefinition);
   const create = vi.spyOn(agentDefinitionsApi, "create").mockImplementation(async (written) => ({ ...agent(), ...written }) as AssistantAgentDefinition);
   const wrapper = mount(AgentEditor, {
-    props: { agent: target.id ? agent() : null, classes: [], relations: [], outlineLoading: false, modelOptions: options, modelOptionsFailed: false },
+    props: { agent: editing ? agent() : null, classes: [], relations: [], outlineLoading: false, modelOptions: options, modelOptionsFailed: false },
     global,
     attachTo: document.body,
   });
@@ -72,7 +76,7 @@ const saveButton = (wrapper: VueWrapper) =>
 
 describe("the agent editor's page draft", () => {
   it("fills the form and marks what the draft changed without writing anything", async () => {
-    const { wrapper, update } = await open("/agents/settings/agent-1?draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2Fa.page-draft.json", input({ name: "Renamed analyst", description: "covers EMEA" }));
+    const { wrapper, update } = await open(DRAFT("a"), input({ name: "Renamed analyst", description: "covers EMEA" }));
 
     expect(draft.read).toHaveBeenCalledWith("s", "r", "outputs/drafts/a.page-draft.json");
     expect((wrapper.find("input").element as HTMLInputElement).value).toBe("Renamed analyst");
@@ -83,7 +87,7 @@ describe("the agent editor's page draft", () => {
   });
 
   it("saves the filled form once, then drops the draft from the address", async () => {
-    const { wrapper, update } = await open("/agents/settings/agent-1?draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2Fa.page-draft.json", input({ name: "Renamed analyst" }));
+    const { wrapper, update } = await open(DRAFT("a"), input({ name: "Renamed analyst" }));
 
     await saveButton(wrapper).trigger("click");
     await flushPromises();
@@ -101,8 +105,16 @@ describe("the agent editor's page draft", () => {
     expect(create.mock.calls[0]![0]).toMatchObject({ name: "New analyst" });
   });
 
+  it("refuses a create draft on a page that edits an existing agent", async () => {
+    const { wrapper, update } = await open(DRAFT("d"), input({ name: "Another" }), {}, true);
+
+    expect(wrapper.find(".draft-changed").exists()).toBe(false);
+    expect((wrapper.find("input").element as HTMLInputElement).value).toBe("Sales analyst");
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it("refuses a draft written for another agent", async () => {
-    const { wrapper, update } = await open("/agents/settings/agent-1?draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2Fc.page-draft.json", input({ name: "Other" }), { id: "agent-2" });
+    const { wrapper, update } = await open(DRAFT("c"), input({ name: "Other" }), { id: OTHER });
 
     expect(wrapper.find(".draft-changed").exists()).toBe(false);
     expect((wrapper.find("input").element as HTMLInputElement).value).toBe("Sales analyst");

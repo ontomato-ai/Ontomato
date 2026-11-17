@@ -8,19 +8,21 @@ import {
   AgentShell, useAgentNav, useSessionRunFeed,
   type PageContext, type ShellFeatureDeclaration, type ShellWorkbenchDeclaration,
 } from "@ontomato/agent-shell-ui";
-import { AgentModelsPage, ontologyAgentModelPages, ontologyAgentModelSource, usePageAccess } from "@ontomato/platform-shell";
+import {
+  AgentModelsPage, ontologyAgentModelPages, ontologyAgentModelSource, usePageAccess, usePilotPage,
+} from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { AgentSettingsNav, AgentSettingsPage, dataEngineTransport, useAgentDefinitions } from "../../agents";
 import { getWorkbenchAppearance } from "../api";
 import { createAssistantClient, createAssistantFeedback } from "../assistant-host";
-import { readRememberedAgent, rememberAgent } from "../remembered-agent";
+import { readRememberedAgent, readRememberedSession, rememberAgent, rememberSession } from "../remembered-agent";
 import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
 import DatasetActions from "./DatasetActions.vue";
 import DatasetDrilldown from "./DatasetDrilldown.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
-import { workbenchFeatures } from "../features";
+import { DASHBOARDS_PAGE_ID, dashboardsFeature, workbenchFeatures } from "../features";
 import FollowUpRenderer from "./FollowUpRenderer.vue";
 import ClarificationRenderer from "./ClarificationRenderer.vue";
 const artifactRenderers = [
@@ -91,18 +93,25 @@ const settingsAgentId = computed(() => {
   const id = route.params.agentId;
   return typeof id === "string" && !creatingAgent.value ? id : null;
 });
+/** The dashboards application's page, opened beside the conversation: the platform's registry draws it. */
+const pilot = usePilotPage();
+const dashboardsPage = computed(() => pilot(routes.dashboards.path));
+const inDashboards = computed(() => route.path === routes.dashboards.path);
 /**
- * The page the shell shows: the settings are the `agents` page, whose addresses are the settings' own screens; every
- * other page names its route. Closing the page (a new conversation) returns to the conversation.
+ * The page the shell shows: the settings are the `agents` page, whose addresses are the settings' own screens, the
+ * dashboards the `dashboards` page its own address opens, and every other page names its route. Closing the page (a new
+ * conversation) returns to the conversation.
  */
 const featureId = computed<string | null>({
   get: () => {
     if (inSettings.value) return "agents";
+    if (inDashboards.value) return DASHBOARDS_PAGE_ID;
     return Object.entries(featureRoutes).find(([, page]) => page.name === route.name)?.[0] ?? null;
   },
   set: (id) => {
     if (id === "agents" && inSettings.value) return;
-    const target = featureRoutes[id as keyof typeof featureRoutes] ?? routes.chat;
+    if (id === DASHBOARDS_PAGE_ID && inDashboards.value) return;
+    const target = id === DASHBOARDS_PAGE_ID ? routes.dashboards : featureRoutes[id as keyof typeof featureRoutes] ?? routes.chat;
     if (route.name !== target.name) void router.push({ name: target.name });
   },
 });
@@ -113,29 +122,53 @@ const featureId = computed<string | null>({
 const conversationId = ref<string | null>(
   !requestedAgent() && typeof route.query.sessionId === "string" ? route.query.sessionId : null,
 );
+/**
+ * The address names the conversation on a page that has one of its own, and only until the platform's own pages (a
+ * dashboard beside it) carry it: leaving those returns to the conversation the reader came from.
+ */
+const carriesSession = computed(() => !inSettings.value && !inDashboards.value);
 watch(
   () => route.query.sessionId,
   (id) => {
-    if (typeof id === "string" && id !== conversationId.value) conversationId.value = id;
+    if (carriesSession.value && typeof id === "string" && id !== conversationId.value) conversationId.value = id;
   },
 );
 const shell = ref<InstanceType<typeof AgentShell> | null>(null);
 
+/**
+ * An answer may link to a dashboard (`/dashboards?dashboardId=...`); the shell asks here rather than importing another
+ * application's routes, and the address opens the page beside the conversation.
+ */
+function pageLinks(href: string): (() => void) | null {
+  const address = href.replace(/^#/, "");
+  const page = pilot(address.split("?")[0]!);
+  if (!page) return null;
+  return () => void router.push(address);
+}
+
 watch(agentId, (id) => {
   if (id) rememberAgent(id);
+});
+// The conversation this tab holds is what a page's own composer goes on in: same tab, same agent.
+watch(conversationId, (id) => {
+  if (id && agentId.value) rememberSession(agentId.value, id);
 });
 
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: WORKBENCH_ID,
   label: appearance.value?.brand?.name || props.defaultBrandName,
-  features: workbenchFeatures(props.features),
+  features: workbenchFeatures(props.features, dashboardsFeature(inDashboards.value ? route.fullPath : routes.dashboards.path)),
 }));
 
 const labels = useShellLabels();
 
-/** The settings page beside the conversation: which page and agent it shows, for a message sent from its composer. */
+/**
+ * The page beside the conversation: the settings name the agent they show, a dashboard names itself, for a message sent
+ * from its composer. What is selected in a dashboard is the dashboard's own to report.
+ */
 const settingsAgents = useAgentDefinitions();
 const pageContext = computed<PageContext | null>(() => {
+  if (inDashboards.value) return { pageKey: "dashboard", url: route.fullPath, label: t("assistant.featureDashboards"), selection: [] };
   if (!inSettings.value) return null;
   const agent = settingsAgents.find(settingsAgentId.value);
   return {
@@ -189,6 +222,14 @@ function openSettings() {
   void router.push(agentId.value ? settingsPath(`/${agentId.value}`) : SETTINGS_PATH);
 }
 
+/**
+ * The page beside the conversation, enlarged: its own address, in the application that owns it. The conversation stays
+ * the one this tab holds, so leaving the page returns to it.
+ */
+function openPageAtItsAddress(id: string, address: string) {
+  if (id === DASHBOARDS_PAGE_ID) void router.push(address);
+}
+
 function backToChat() {
   const session = returnTo.value;
   featureId.value = null;
@@ -218,16 +259,21 @@ const bottomEntry = computed(() =>
  * sends its question again nor reopens what it named; the page then follows its own conversation behaviour. A disabled
  * or missing agent is reported and the page keeps the agent its own rule chose. An enabled one is selected, and then the
  * named conversation opens, or a new one starts and, with a question, sends it as its first message.
+ *
+ * A page's own composer (a dashboard's) sends its question here with `&page=`: the page it was written on opens beside
+ * the conversation, so the reader's next message carries it and its answer can name what the page shows.
  */
 async function openRequestedAgent() {
   const id = requestedAgent();
   if (!id) return;
   const session = queryText(route.query.sessionId);
   const prompt = queryText(route.query.prompt);
+  const page = queryText(route.query.page);
   const query = { ...route.query };
   delete query.agentId;
   delete query.sessionId;
   delete query.prompt;
+  delete query.page;
   void router.replace({ query });
   if (!nav.agents.value.some((agent) => agent.id === id && agent.enabled)) {
     ElMessage.error(t("assistant.agentUnavailable"));
@@ -240,11 +286,17 @@ async function openRequestedAgent() {
     nav.selectSession(session);
     return;
   }
-  nav.startNew();
-  if (!prompt) return;
-  // The shell sends in the conversation it has open: let it take the agent and the new conversation first.
-  await nextTick();
-  await shell.value!.send(prompt);
+  // The conversation this tab already holds with the agent goes on; a new tab, or another agent, starts a new one.
+  const held = readRememberedSession(id);
+  const continuing = held !== null && nav.sessions.value.some((row) => row.id === held);
+  if (continuing) nav.selectSession(held);
+  else nav.startNew();
+  // The message goes before the address changes: the shell is this page's, and the page it names is another one.
+  if (prompt) {
+    await nextTick();
+    await shell.value!.send(prompt);
+  }
+  if (page) void router.push(page);
 }
 // The same address entered while the page is open (another link to an agent) does the same.
 watch(() => route.query.agentId, openRequestedAgent);
@@ -279,6 +331,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
     v-model:feature-id="featureId"
     v-model:session-id="conversationId"
     :page-context="pageContext"
+    :page-links="pageLinks"
     :workbench="workbench"
     :title="workbench.label"
     :bottom="bottomEntry"
@@ -290,6 +343,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
     @error="ElMessage.error($event)"
     @feature-action="emit('featureAction', $event)"
     @open-bottom="openSettings"
+    @open-page="openPageAtItsAddress"
   >
     <!-- In the settings the application's column is the settings navigation; the editor is the whole main area. -->
     <template v-if="inSettings" #column>
@@ -310,6 +364,12 @@ function appearanceSaved(value: WorkbenchAppearance) {
         :agent-id="settingsAgentId"
         :creating="creatingAgent"
         @changed="shell?.reloadAgents()"
+      />
+      <component
+        :is="dashboardsPage!.component"
+        v-else-if="page === DASHBOARDS_PAGE_ID && dashboardsPage"
+        v-bind="dashboardsPage.props"
+        paired
       />
       <slot v-else name="feature" :feature-id="page" />
     </template>

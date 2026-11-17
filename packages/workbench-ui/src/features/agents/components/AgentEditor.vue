@@ -17,6 +17,7 @@ import {
 import { CodeEditor } from "@ontomato/foundation-ui/code";
 import { MarkdownView } from "@ontomato/foundation-ui/markdown";
 import { assistantAgentInputSchema, type AssistantAgentDefinition, type AssistantAgentInput } from "@ontomato/contracts/assistant-chat";
+import { z } from "zod";
 import type { McpServiceOption } from "@ontomato/contracts/agent-runtime-mcp";
 import type { ModelOptions } from "@ontomato/contracts/model-settings";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
@@ -142,8 +143,11 @@ if (link) {
     operations: ["agent.create", "agent.update"] as const,
   })
     .then(async (draft) => {
-      // The address and the draft both name the object the draft changes: a draft for another agent is not filled here.
-      if (draft.operation === "agent.update" && draft.target.id !== props.agent?.id)
+      // The draft's action and the page must name the same thing: a create fills only a new agent, an update only the
+      // agent the address names, by the id its owner gave it.
+      if (draft.operation === "agent.create" && props.agent) throw new Error(t("agents.draftOtherAgent"));
+      // The target id is the owner's opaque id; this page's objects are agents, so the page checks its format here.
+      if (draft.operation === "agent.update" && (draft.target.id !== props.agent?.id || !z.string().uuid().safeParse(draft.target.id).success))
         throw new Error(t("agents.draftOtherAgent"));
       if (dirty.value && !(await leaving.confirm())) return;
       const filled = fromInput(assistantAgentInputSchema.parse(draft.form));

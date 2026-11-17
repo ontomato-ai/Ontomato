@@ -4,7 +4,6 @@ import { randomId } from "@ontomato/contracts/random-id";
 import type {
   AgentHostAgent,
   AgentHostAgentList,
-  AgentHostPageAgents,
   AgentHostSendResult, AgentHostSendRequest,
   AgentHostArtifactResolution,
   AgentHostCreateSessionResponse,
@@ -16,13 +15,13 @@ import type {
   AgentHostSessionRunSnapshot,
 } from "@ontomato/contracts/agent-host";
 import {
-  agentHostPageAgentsSchema,
   agentHostSendResultSchema,
   agentHostSessionRunFrameSchema,
   agentHostSessionRunSnapshotSchema,
   agentHostStreamFrameSchema,
 } from "@ontomato/contracts/agent-host";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
+import { assistantAgentListSchema } from "@ontomato/contracts/assistant-chat";
 import { pageDraftSchema, type PageDraft } from "@ontomato/contracts/page-draft";
 import type { RuntimeCursor, RuntimeEventEnvelope, RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
 import { agentTasksFrameSchema, type AgentTasksFrame } from "@ontomato/contracts/agent-tasks";
@@ -275,7 +274,7 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
       return options.agents ? options.agents(agents) : agents;
     },
     async listPageAgents(page) {
-      return agentHostPageAgentsSchema.parse(await json(`/agents?${query({ ...page })}`));
+      return assistantAgentListSchema.parse(await json(`/agents?${query({ ...page })}`));
     },
     listSessions(agentId, cursor) {
       if (options.workspace) return options.workspace.listSessions(cursor);

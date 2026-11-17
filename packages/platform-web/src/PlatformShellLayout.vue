@@ -7,6 +7,7 @@ import { ElMessageBox } from "element-plus";
 import {
   agentModelLabelsKey,
   platformApplicationNameKey,
+  pilotPageKey,
   platformPageAccessKey,
   providePageActions,
   provideUnsavedChanges,
@@ -23,6 +24,7 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useApplicationCatalog } from "./catalog";
 import { nodeApiRequest } from "@ontomato/workbench-ui";
 import { appAt } from "./apps";
+import { resolvePilotPage } from "./pilot-pages";
 import { recentDestination } from "./recent-work";
 import { openApplicationKey, platformApplicationsKey, platformBrandKey, type PlatformAppDeclaration } from "./apps";
 import { useApplicationOpening } from "./application-opening";
@@ -138,6 +140,12 @@ const localeNames = computed(() =>
 
 /** What the shown page hands to its header: the frame reads it, the header presents it. */
 const pageActions = providePageActions();
+
+/**
+ * The pages the platform's assembly mounts beside a conversation: the conversation application asks for an address and
+ * draws the page's own component, so it never imports another application's page.
+ */
+provide(pilotPageKey, resolvePilotPage);
 
 /**
  * Leaving a draft with unsaved changes asks first: before the address leaves every page that edits it, and before the

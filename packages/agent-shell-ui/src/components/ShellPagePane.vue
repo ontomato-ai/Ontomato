@@ -26,7 +26,7 @@ const props = defineProps<{
   sending: boolean;
   disabled: boolean;
 }>();
-const emit = defineEmits<{ send: [text: string]; stop: []; expand: []; collapse: []; close: []; menu: [] }>();
+const emit = defineEmits<{ send: [text: string]; stop: []; expand: []; collapse: []; close: []; menu: []; openAddress: [] }>();
 const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value);
 const slots = useSlots();
@@ -75,7 +75,14 @@ const paneStyle = computed(() => ({
       >
         <Minimize2 :size="16" />
       </button>
-      <button v-else type="button" class="pane-button" :title="labels.expand" :aria-label="labels.expand" @click="emit('expand')">
+      <!-- Enlarged, a page that has its own address opens there (the one counter's pages are real addresses). -->
+      <button
+        type="button"
+        class="pane-button"
+        :title="labels.expand"
+        :aria-label="labels.expand"
+        @click="feature?.href ? emit('openAddress') : emit('expand')"
+      >
         <Maximize2 :size="16" />
       </button>
       <button type="button" class="pane-button" :title="labels.close" :aria-label="labels.close" @click="emit('close')">
