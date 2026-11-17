@@ -8,9 +8,11 @@ import type { AgentHostOwner } from "./types";
 export async function lockSessionClaim(tx: PoolClient, id: string) {
   await tx.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`agent-session:${id}`]);
 }
-export async function assertUnclaimedSession(tx: PoolClient, id: string, owner: AgentHostOwner) {
+export async function assertUnclaimedSession(tx: PoolClient, id: string, owner: AgentHostOwner, fromChannel = false) {
   const existing = await tx.query(`SELECT id FROM ${table("assistant_sessions")} WHERE id=$1 UNION ALL SELECT id FROM ${table("ops_sessions")} WHERE id=$1`, [id]);
   if (existing.rowCount) throw new HttpError(409, "Session identifier is already in use", "IDEMPOTENCY_CONFLICT");
+  // Trusted channel preparation already owns the runtime session; local surface checks still apply.
+  if (fromChannel) return;
   try { await new RuntimeClient(owner.domainId).session(id); }
   catch (error) { if (error instanceof HttpError && error.status === 404) return; throw error; }
   throw new HttpError(409, "Session identifier is already in use", "IDEMPOTENCY_CONFLICT");

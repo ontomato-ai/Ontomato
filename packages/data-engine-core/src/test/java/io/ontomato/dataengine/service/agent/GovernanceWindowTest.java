@@ -67,7 +67,7 @@ class GovernanceWindowTest extends PostgresTestDatabase {
     when(identity.hasKnowledgeGovernanceAccess()).thenReturn(true);
     when(identity.getCurrentCredentialExpiresAt()).thenReturn(System.currentTimeMillis()+1_200_000);
     governance=new KnowledgeGovernanceService(store,new AgentRuntimeClient(url,"ontology","http://ontology"),
-      new GovernanceRuntimeClient(url,"service"),definitions,grants,mock(KnowledgeService.class),mock(AdminService.class));
+      new GovernanceRuntimeClient(url,"service"),definitions,grants,mock(KnowledgeService.class),mock(AdminService.class),mock(io.ontomato.dataengine.schedules.ScheduleIdentity.class,CALLS_REAL_METHODS));
     ReflectionTestUtils.setField(governance,"identityService",identity);
     governance.initialize();
     var access=new OntologyAgentAccess(mock(QueryAccessService.class),identity,grants,store);

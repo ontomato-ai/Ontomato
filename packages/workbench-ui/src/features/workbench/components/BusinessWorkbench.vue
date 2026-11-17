@@ -24,7 +24,9 @@ import DatasetActions from "./DatasetActions.vue";
 import ChartFileActions from "./ChartFileActions.vue";
 import DatasetDrilldown from "./DatasetDrilldown.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
-import { AGENT_SETTINGS_PAGE_ID, DASHBOARDS_PAGE_ID, workbenchFeatures } from "../features";
+import {
+  AGENT_SETTINGS_PAGE_ID, DASHBOARDS_PAGE_ID, GOVERNANCE_REPORT_PAGE_ID, governanceReportPageFeature, workbenchFeatures,
+} from "../features";
 import FollowUpRenderer from "./FollowUpRenderer.vue";
 import ClarificationRenderer from "./ClarificationRenderer.vue";
 const artifactRenderers = [
@@ -103,7 +105,17 @@ const settingsAgentId = computed(() => {
 const pilot = usePilotPage();
 const pageAddress = computed(() => (typeof route.query.page === "string" ? route.query.page : null));
 const pilotPage = computed(() => (pageAddress.value ? pilot(pageAddress.value) : null));
-const inDashboards = computed(() => pageAddress.value !== null && pilotPage.value !== null);
+/** Which of the platform's pages the parameter names: the dashboards application, or one governance record's report. */
+const pilotFeatureId = computed(() => {
+  const path = pageAddress.value?.split("?")[0];
+  if (!path || !pilotPage.value) return null;
+  if (path === routes.dashboards.path) return DASHBOARDS_PAGE_ID;
+  if (path.startsWith("/governance/reports/")) return GOVERNANCE_REPORT_PAGE_ID;
+  return null;
+});
+const inPilotPage = computed(() => pilotFeatureId.value !== null);
+const inDashboards = computed(() => pilotFeatureId.value === DASHBOARDS_PAGE_ID);
+const inGovernanceReport = computed(() => pilotFeatureId.value === GOVERNANCE_REPORT_PAGE_ID);
 /**
  * The page the shell shows: the settings are the `agents` page, whose addresses are the settings' own screens, the
  * dashboards the `dashboards` page its own address opens, and every other page names its route. Closing the page (a new
@@ -112,18 +124,17 @@ const inDashboards = computed(() => pageAddress.value !== null && pilotPage.valu
 const featureId = computed<string | null>({
   get: () => {
     if (inSettings.value) return AGENT_SETTINGS_PAGE_ID;
-    if (inDashboards.value) return DASHBOARDS_PAGE_ID;
+    if (pilotFeatureId.value) return pilotFeatureId.value;
     return Object.entries(featureRoutes).find(([, page]) => page.name === route.name)?.[0] ?? null;
   },
   set: (id) => {
     if (id === AGENT_SETTINGS_PAGE_ID && inSettings.value) return;
     // Closing the page beside the conversation only drops the parameter: the conversation stays.
-    if (inDashboards.value) {
+    if (inPilotPage.value || id === DASHBOARDS_PAGE_ID || id === GOVERNANCE_REPORT_PAGE_ID) {
       const { page: _page, ...query } = route.query;
       void router.replace({ query });
       return;
     }
-    if (id === DASHBOARDS_PAGE_ID) return;
     const target = featureRoutes[id as keyof typeof featureRoutes] ?? routes.chat;
     if (route.name !== target.name) void router.push({ name: target.name });
   },
@@ -178,20 +189,33 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   features: workbenchFeatures(
     props.features,
     { agents: t("assistant.featureAgents"), dashboards: t("assistant.featureDashboards") },
-    pageAddress.value ?? routes.dashboards.path,
+    inDashboards.value ? pageAddress.value! : routes.dashboards.path,
+    inGovernanceReport.value
+      ? governanceReportPageFeature(t("assistant.featureGovernanceReport"), pageAddress.value!)
+      : null,
   ),
 }));
 
 const labels = useShellLabels();
 
 /**
- * The page beside the conversation: the settings name the agent they show, a dashboard names itself, for a message sent
- * from its composer. What is selected in a dashboard is the dashboard's own to report.
+ * The page beside the conversation: the settings name the agent they show, a dashboard names itself, a governance report
+ * names the record and the finding selected in it, for a message sent from its composer. What is selected in a
+ * dashboard is the dashboard's own to report.
  */
 const settingsAgents = useAgentDefinitions();
 const pageContext = computed<PageContext | null>(() => {
   if (inDashboards.value)
     return { pageKey: "dashboard", url: pageAddress.value!, label: t("assistant.featureDashboards"), selection: dashboardSelection.value };
+  if (inGovernanceReport.value) {
+    const issue = new URLSearchParams(pageAddress.value!.split("?")[1] ?? "").get("issue");
+    return {
+      pageKey: "governance-report",
+      url: pageAddress.value!,
+      label: t("assistant.featureGovernanceReport"),
+      selection: issue ? [{ kind: "issue", id: issue, label: `${t("assistant.governanceFinding")} ${issue}` }] : [],
+    };
+  }
   if (!inSettings.value) return null;
   const agent = settingsAgents.find(settingsAgentId.value);
   return {
@@ -386,10 +410,10 @@ function appearanceSaved(value: WorkbenchAppearance) {
       />
       <component
         :is="pilotPage!.component"
-        v-else-if="page === DASHBOARDS_PAGE_ID && pilotPage"
+        v-else-if="inPilotPage && page === pilotFeatureId && pilotPage"
         :key="pageAddress!"
         v-bind="pilotPage.props"
-        :navigate="(next: { dashboardId?: string }) => setPageAddress(pilotPage!.navigate?.(next) ?? pageAddress!)"
+        :navigate="(next: Record<string, string | undefined>) => setPageAddress(pilotPage!.navigate?.(next) ?? pageAddress!)"
       />
       <slot v-else name="feature" :feature-id="page" />
     </template>
