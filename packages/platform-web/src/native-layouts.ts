@@ -84,18 +84,17 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
   },
   {
     renderer: "governance",
-    home: platformRoutes.governance.path,
-    homePage: managerPaths.knowledge,
+    // The application opens on business knowledge; a report has an address of its own and is opened from the task or
+    // conversation that produced it.
+    home: platformRoutes.governanceKnowledge.path,
     sections: [
       {
         key: "governance:pages",
         titleKey: "platform.governance",
-        // User feedback sits with the conversations it was given on.
+        // User feedback sits with the business knowledge it was given on.
         paths: [platformRoutes.governanceKnowledge.path,platformRoutes.feedback.path],
       },
     ],
-    // Drawn at the foot of the application's own column; listed here so an account that may open only it lands there.
-    foot: platformRoutes.governanceModels.path,
   },
   {
     renderer: "app-builder",

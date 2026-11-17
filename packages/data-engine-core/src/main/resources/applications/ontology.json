@@ -30,7 +30,8 @@
     "permissions": [],
     "pageSkills": [{
       "permissionCode": "business-knowledge",
-      "skill": {"namespace": {"kind": "provider", "provider": "ontology"}, "name": "knowledge-governance"}
+      "skill": {"namespace": {"kind": "provider", "provider": "ontology"}, "name": "knowledge-governance"},
+      "defaults": [{"pageKey":"governance-report","agentKey":"knowledge-governance"}]
     }, {
       "permissionCode": "analysis-agent",
       "skill": {"namespace": {"kind": "provider", "provider": "workbench"}, "name": "ontomato-agent-builder"}

@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 const base = process.env.ONTOMATO_ONTOLOGY_URL?.replace(/\/$/, "");
 if (!base) throw new Error("Set ONTOMATO_ONTOLOGY_URL (see SKILL.md)");
 const [command, arg] = process.argv.slice(2),
-  stateFile = "work/.governance-run.json";
+  platform = process.env.ONTOMATO_SKILL_SCENARIO === "platform",
+  stateFile = platform ? "work/.governance-platform-window.json" : "work/.governance-run.json";
 const headers = {
   ...(process.env.ONTOMATO_EXECUTION_CALLBACK ? { "X-Ontomato-Callback-Credential": process.env.ONTOMATO_EXECUTION_CALLBACK, "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID } : {}),
   "content-type": "application/json",
@@ -17,7 +18,7 @@ const headers = {
 async function call(route, body, extra = {}) {
   const response = await fetch(base + "/ontology/ai/knowledge-governance" + route, {
     method: "POST",
-    headers: { ...headers, ...extra },
+    headers: { ...headers, ...(state?.token ? { tk: state.token, "X-API-Key": "" } : {}), ...extra },
     body: JSON.stringify(body),
     redirect: "error",
   });
@@ -26,23 +27,82 @@ async function call(route, body, extra = {}) {
     throw new Error(`HTTP ${response.status}: ${JSON.stringify(data)}`);
   return data;
 }
+const actions = {
+  "read-input":"read_input",
+  "import-knowledge":"import_knowledge",
+  "read-knowledge": "read_knowledge",
+  "read-ontology": "read_ontology",
+  "search-history": "search_history",
+  "read-history": "read_history",
+    "read-evidence": "read_evidence",
+  "collect-turn-artifacts": "collect_turn_artifacts",
+  "read-work-record": "read_work_record",
+  "update-work-record": "update_work_record",
+};
+if (!["begin", "close", ...Object.keys(actions)].includes(command))
+  throw new Error("Unknown governance command; see SKILL.md");
 const args = arg
   ? JSON.parse(arg.startsWith("@") ? await readFile(arg.slice(1), "utf8") : arg)
   : {};
-let state = process.env.ONTOMATO_RUN_ID
-  ? {
-      id: process.env.ONTOMATO_GOVERNANCE_ID,
-      sessionId: process.env.ONTOMATO_SESSION_ID,
-      runId: process.env.ONTOMATO_RUN_ID,
-    }
-  : null;
-if (!state)
-  try {
-    state = JSON.parse(await readFile(stateFile, "utf8"));
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
+if (platform && command === "import-knowledge") {
+  const response = await fetch(base + "/admin/getBussinessKnowledge", {
+    method: "POST", redirect: "error", headers, body: "{}",
+  });
+  const result = await response.json();
+  if (!response.ok || result.success !== true)
+    throw new Error(`HTTP ${response.status}: ${JSON.stringify(result)}`);
+  const existing = new Map(Object.entries(result.data));
+  const drafts = [];
+  await mkdir("outputs/drafts", { recursive: true });
+  for (const item of args.items) {
+    const previous = existing.get(item.id);
+    const draft = {
+      pageKey: "business-knowledge",
+      operation: previous ? "knowledge.update" : "knowledge.create",
+      target: previous ? { id: previous.knowledgeID } : {},
+      form: {
+        knowledgeID: previous ? previous.knowledgeID : "",
+        knowledgeTitle: item.title, knowledgeText: item.text,
+        knowledgeTags: item.tags ?? previous?.knowledgeTags ?? [],
+        status: previous ? previous.status : 0,
+      },
+    };
+    const path = `outputs/drafts/knowledge-${randomUUID()}.page-draft.json`;
+    await writeFile(path, JSON.stringify(draft, null, 2));
+    const query = new URLSearchParams({ draftSessionId: process.env.ONTOMATO_SESSION_ID,
+      draftRunId: process.env.ONTOMATO_RUN_ID, draftPath: path });
+    drafts.push({ path, href: `#/ontology/knowledge?${query}` });
   }
-if (command === "begin" || !state) {
+  console.log(JSON.stringify({ drafts }, null, 2));
+  process.exit(0);
+}
+let state = null;
+try {
+  state = JSON.parse(await readFile(stateFile, "utf8"));
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
+}
+if (platform) {
+  if (command === "close") throw new Error("Platform write windows close with the real run; close is only for external work");
+  if (!state || state.runId !== process.env.ONTOMATO_RUN_ID || command === "begin") {
+    const response = await fetch(process.env.ONTOMATO_GOVERNANCE_WINDOW_URL, {
+      method: "POST", redirect: "error",
+      headers: { "content-type": "application/json", tk: process.env.ONTOMATO_GOVERNANCE_CALLBACK,
+        "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID },
+      body: JSON.stringify((command === "begin" && args.id) ? { recordId: args.id } : {}),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${JSON.stringify(result)}`);
+    state = result;
+    await mkdir("work", { recursive: true });
+    await writeFile(stateFile, JSON.stringify(state));
+  }
+  if (command === "begin") {
+    console.log(JSON.stringify({ id: state.id, sessionId: state.sessionId, runId: state.runId, expiresAt: state.expiresAt }));
+    process.exit(0);
+  }
+}
+if (!platform && (command === "begin" || !state)) {
   await mkdir("work", { recursive: true });
   let key = randomUUID();
   const input = {
@@ -79,18 +139,6 @@ if (command === "close") {
   console.log("Closed");
   process.exit(0);
 }
-const actions = {
-  "read-input":"read_input",
-  "import-knowledge":"import_knowledge",
-  "read-knowledge": "read_knowledge",
-  "read-ontology": "read_ontology",
-  "search-history": "search_history",
-  "read-history": "read_history",
-    "read-evidence": "read_evidence",
-  "collect-turn-artifacts": "collect_turn_artifacts",
-  "read-work-record": "read_work_record",
-  "update-work-record": "update_work_record",
-};
 if (!actions[command])
   throw new Error("Unknown governance command; see SKILL.md");
 console.log(

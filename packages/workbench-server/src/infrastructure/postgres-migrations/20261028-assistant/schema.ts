@@ -28,7 +28,7 @@ export async function ensureAssistantSchema(c: QueryableClient) {
   CREATE INDEX IF NOT EXISTS assistant_sessions_owner ON ${t("assistant_sessions")}(domain_id,owner_id,updated_at DESC,id DESC);
   CREATE TABLE IF NOT EXISTS ${t("assistant_turns")} (
     id uuid PRIMARY KEY, session_id uuid NOT NULL REFERENCES ${t("assistant_sessions")}(id) ON DELETE CASCADE,
-    retrieval_scope_id uuid NOT NULL, request_seq integer NOT NULL, input_hash text NOT NULL, class_names jsonb NOT NULL DEFAULT '[]', admitted boolean NOT NULL DEFAULT false,
+    retrieval_scope_id uuid, governance_record_id uuid, request_seq integer NOT NULL, input_hash text NOT NULL, class_names jsonb NOT NULL DEFAULT '[]', admitted boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(session_id,request_seq));
   CREATE TABLE IF NOT EXISTS ${t("assistant_feedback")} (
     id uuid PRIMARY KEY, session_id uuid NOT NULL REFERENCES ${t("assistant_sessions")}(id) ON DELETE CASCADE,
@@ -45,6 +45,8 @@ export async function ensureAssistantSchema(c: QueryableClient) {
     user_id text NOT NULL, key text NOT NULL, value jsonb NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY(user_id,key));`);
+  await c.query(`ALTER TABLE ${t("assistant_turns")} ALTER COLUMN retrieval_scope_id DROP NOT NULL;
+    ALTER TABLE ${t("assistant_turns")} ADD COLUMN IF NOT EXISTS governance_record_id uuid`);
   // settled: the turn's child retrievals have been closed after it ended. The former open column was written and
   // never read; turns it marked closed had their children closed by the reads of that time, so it seeds settled
   // once and is then dropped.

@@ -554,4 +554,6 @@ export const productEn={
   productGalleryCategories:'Application categories',
   productObjectViewUnpublished:'This object view is not published yet',
   productObjectViewMismatch:'The published object view does not match this entry',
+  productRelationGraph:'Product relationship graph',
+  productProjectionCompositionGraph:'Product projections and compositions',
 };

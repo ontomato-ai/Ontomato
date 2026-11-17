@@ -112,7 +112,7 @@ public class ActionCreationService {
   }
 
   public JSONObject send(String id,String run,String message,String replyTo,OntologyAgentAccess.Context context) throws Exception {
-    KnowledgeGovernanceService.validateMessage(message);
+    AgentJson.message(message);
     var input=JSONObject.of("role","user","content",message,"timestamp",System.currentTimeMillis());
     if(replyTo!=null) input=JSONObject.of("role","notification","kind","agent-answer","source",JSONObject.of("kind","user"),"replyTo",replyTo,"content",message,"timestamp",System.currentTimeMillis());
     return channel.send(AGENT,id,run,input,null,context);

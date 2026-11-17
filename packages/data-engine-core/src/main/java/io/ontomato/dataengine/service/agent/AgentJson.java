@@ -39,6 +39,11 @@ public final class AgentJson {
     }
   }
 
+  public static void message(String message) {
+    if (message==null || message.isBlank() || message.length()>20_000)
+      throw AgentHttpException.invalid("A message of 1 to 20000 characters is required");
+  }
+
   public static String text(JSONObject input, String name) {
     if (!(input.get(name) instanceof String s) || s.isBlank())
       throw AgentHttpException.invalid(name + " is required");

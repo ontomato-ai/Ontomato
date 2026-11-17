@@ -9,6 +9,7 @@ export default {
   common: {
     add: "Add",
     all: "All",
+    back: "Back",
     basicInfo: "Basic Info",
     cancel: "Cancel",
     close: "Close",

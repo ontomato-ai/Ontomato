@@ -18,30 +18,28 @@ class AgentChannelBoundaryTest {
   private static final String SESSION="11111111-1111-4111-8111-111111111111", RUN="22222222-2222-4222-8222-222222222222";
   private final AgentCaller callers=mock(AgentCaller.class);
   private final AgentDirectory directory=mock(AgentDirectory.class);
-  private final KnowledgeGovernanceService governance=mock(KnowledgeGovernanceService.class);
   private final OntologyAgentStore store=mock(OntologyAgentStore.class);
   private org.springframework.test.web.servlet.MockMvc mvc() {
-    return MockMvcBuilders.standaloneSetup(new AgentChannelController(callers,directory,governance,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class),mock(OntologyRetrievalService.class),mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),mock(io.ontomato.dataengine.service.LangService.class)))
+    return MockMvcBuilders.standaloneSetup(new AgentChannelController(callers,directory,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class),mock(OntologyRetrievalService.class),mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),mock(io.ontomato.dataengine.service.LangService.class)))
       .addInterceptors(new BuildTestAccessInterceptor()).setControllerAdvice(new OntologyAgentErrors()).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
   }
   private String input(String mode,String role) {
-    return JSONObject.of("mode",mode,"language","en","agent",JSONObject.of("providerId","ontology","agentId",KnowledgeGovernanceService.AGENT),
+    return JSONObject.of("mode",mode,"language","en","agent",JSONObject.of("providerId","ontology","agentId",ActionCreationService.AGENT),
       "actor",JSONObject.of("id",RUN,"domainId","a"),"sessionId",SESSION,"runId",RUN,"inputId",RUN,
       "requestedBy",null,"root",JSONObject.of("session",JSONObject.of("providerId","ontology","sessionId",SESSION),"runId",RUN),"authority",JSONObject.of("classNames",java.util.List.of(),"executionKind","live"),
       "input",JSONObject.of("role",role,"kind","agent-answer","source",JSONObject.of("session",JSONObject.of("providerId","workbench","sessionId",SESSION),"runId",RUN),"replyTo",RUN,"content","Use the confirmed period","timestamp",1)).toJSONString();
   }
   @Test void jacksonMapsCarryTypedAnswersToTheSamePrepareEntrance() throws Exception {
     var owner=new OntologyAgentStore.Owner("user","a");
-    when(callers.governance(any(),eq("a"),eq("en"))).thenReturn(new OntologyAgentAccess.Context(owner,null,null,null,"en",1000L,RUN));
+    when(callers.query(any(),eq("a"),eq("en"),any(),any(),any(),isNull())).thenReturn(new OntologyAgentAccess.Context(owner,null,null,null,"en",1000L,RUN));
     mvc().perform(post("/platform/agent-channel/prepare").header("X-Domain-Id","a").contentType(MediaType.APPLICATION_JSON).content(input("steer","notification"))).andExpect(status().isOk());
     verify(store).run(SESSION,RUN,owner);
-    verifyNoInteractions(governance);
   }
   @Test void invalidModesAndRolesFailBeforeAnyBusinessAdmission() throws Exception {
     mvc().perform(post("/platform/agent-channel/prepare").header("X-Domain-Id","a").contentType(MediaType.APPLICATION_JSON).content(input("other","notification"))).andExpect(status().isBadRequest());
     mvc().perform(post("/platform/agent-channel/prepare").header("X-Domain-Id","a").contentType(MediaType.APPLICATION_JSON).content(input("run","assistant"))).andExpect(status().isBadRequest());
     mvc().perform(post("/platform/agent-channel/prepare").header("X-Domain-Id","a").contentType(MediaType.APPLICATION_JSON).content(input("run","notification").replace("Use the confirmed period","x".repeat(20001)))).andExpect(status().isBadRequest());
-    verifyNoInteractions(callers,governance,store);
+    verifyNoInteractions(callers,store);
   }
   @Test void crossDomainReferencesFailBeforeLookingUpIdentityOrCredentials() {
     var jdbc=mock(org.springframework.jdbc.core.JdbcTemplate.class);
@@ -51,16 +49,6 @@ class AgentChannelBoundaryTest {
     assertEquals("CROSS_DOMAIN",failure.code());
     verifyNoInteractions(jdbc,identities);
   }
-  @Test void callerAuthorizationDoesNotReuseTheBusinessRunId() throws Exception {
-    var runtime=mock(AgentRuntimeClient.class);
-    var context=new OntologyAgentAccess.Context(new OntologyAgentStore.Owner("user","a"),null,"login",null,"en",1000L,null);
-    var host=new KnowledgeGovernanceService(store,runtime,mock(OntologyAgentDefinitions.class),mock(io.ontomato.dataengine.service.QueryGrantService.class),mock(io.ontomato.dataengine.service.KnowledgeService.class),mock(io.ontomato.dataengine.service.AdminService.class),callers);
-    when(callers.open(anyString(),eq(context))).thenAnswer(call -> JSONObject.of("id",call.getArgument(0),"domainId","a"));
-    when(store.session(SESSION,context.owner())).thenReturn(JSONObject.of("agent_id",KnowledgeGovernanceService.AGENT));
-    host.send(SESSION,RUN,"Review knowledge",null,context);
-    verify(callers).open(argThat(id -> !id.equals(RUN)),eq(context));
-  }
-
   @Test void listUsesTheOntologyProviderProtocol() throws Exception {
     var actor=JSONObject.of("id",RUN,"domainId","a");
     when(directory.list(actor,"a","en",null)).thenReturn(JSONObject.of("agents",java.util.List.of()));
@@ -68,25 +56,6 @@ class AgentChannelBoundaryTest {
       .content(JSONObject.of("providerId","ontology","actor",actor,"language","en").toJSONString())).andExpect(status().isOk());
     verify(directory).list(actor,"a","en",null);
   }
-  @Test void ontologyDirectoryReturnsOnlyItsOwnAuthorizedDefinition() {
-    var actor=JSONObject.of("id",RUN,"domainId","a");
-    var identity=mock(io.ontomato.dataengine.service.IdentityService.class);
-    when(callers.restore(actor,"a")).thenReturn(new AgentCaller.Actor(RUN,new io.ontomato.dataengine.service.QueryAccessService.GrantUser("user","a"),1000L));
-    when(identity.hasKnowledgeGovernanceAccess("user","a")).thenReturn(true);
-    var actions=mock(ActionCreationService.class);
-    when(governance.agents("a")).thenReturn(java.util.List.of(JSONObject.of("id",KnowledgeGovernanceService.AGENT,"name","Governance","description","")));
-    var labels=mock(OntologyAgentLabels.class);
-    when(labels.localize(anyString(),any(),anyString())).thenAnswer(call->call.getArgument(1));
-    var own=new AgentDirectory(callers,identity,actions,governance,labels);
-    when(callers.executionUser(any(),isNull())).thenAnswer(call->((AgentCaller.Actor)call.getArgument(0)).user());
-    doThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN)).when(identity).requireQueryAccess("user","a");
-    var agents=own.list(actor,"a","en").getJSONArray("agents");
-    assertEquals(1,agents.size());
-    assertEquals("ontology",agents.getJSONObject(0).getJSONObject("ref").getString("providerId"));
-    when(identity.hasKnowledgeGovernanceAccess("user","a")).thenReturn(false);
-    assertTrue(own.list(actor,"a","en").getJSONArray("agents").isEmpty());
-  }
-
   @Test void buildTestRequestsCannotReachChannelCommandsStreamsOrProviderCallbacks() throws Exception {
     var mvc=mvc();String header="{\"kind\":\"build-test\",\"contextId\":null}";
     for(String action:java.util.List.of("commands","list","prepare","settle","read","cancel","callers","restore"))
@@ -94,7 +63,7 @@ class AgentChannelBoundaryTest {
         .andExpect(status().isUnprocessableEntity());
     for(String path:java.util.List.of("/tasks/"+RUN+"/events","/tasks/"+RUN+"/files/"+SESSION))
       mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/platform/agent-channel"+path).header("X-Ontomato-Execution-Context",header)).andExpect(status().isUnprocessableEntity());
-    verifyNoInteractions(callers,directory,governance,store);
+    verifyNoInteractions(callers,directory,store);
   }
 
   @Test void executionRestoreRequiresTheOriginalCredentialInsteadOfRecoveringAnInternalKey() {
@@ -113,7 +82,7 @@ class AgentChannelBoundaryTest {
   @Test void retrievalReadSummarizesBothBranchesAndExportsOriginalDatasetBytes() throws Exception {
     var retrieval=mock(OntologyRetrievalService.class);var tasks=mock(RetrievalTasks.class);
     var labels=mock(io.ontomato.dataengine.service.LangService.class);
-    var controller=new AgentChannelController(callers,directory,governance,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class),retrieval,tasks,mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),labels);
+    var controller=new AgentChannelController(callers,directory,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class),retrieval,tasks,mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),labels);
     var actor=JSONObject.of("id",RUN,"domainId","a");
     var owner=new OntologyAgentStore.Owner("user","a");
     when(callers.restore(actor,"a",false)).thenReturn(new AgentCaller.Actor(RUN,new io.ontomato.dataengine.service.QueryAccessService.GrantUser("user","a"),1000L));
@@ -133,6 +102,16 @@ class AgentChannelBoundaryTest {
     when(retrieval.datasetContent(SESSION,SESSION,owner)).thenReturn(original);
     input.put("fileId",SESSION);
     assertArrayEquals(original,(byte[])((org.springframework.http.ResponseEntity<?>)controller.read(input,request)).getBody());
+  }
+
+  @Test void removedOntologyGovernanceCannotBeReadThroughTheGenericProvider() throws Exception {
+    var actor=JSONObject.of("id",RUN,"domainId","a");
+    var owner=new OntologyAgentStore.Owner("user","a");
+    when(callers.restore(actor,"a",false)).thenReturn(new AgentCaller.Actor(RUN,new io.ontomato.dataengine.service.QueryAccessService.GrantUser("user","a"),1000L));
+    when(store.session(SESSION,owner)).thenReturn(JSONObject.of("agent_id","56a15178-ae22-4e6f-9974-ababeb42a676"));
+    var input=JSONObject.of("actor",actor,"execution",JSONObject.of("session",JSONObject.of("providerId","ontology","sessionId",SESSION),"runId",RUN));
+    mvc().perform(post("/platform/agent-channel/read").header("X-Domain-Id","a").contentType(MediaType.APPLICATION_JSON).content(input.toJSONString())).andExpect(status().isNotFound());
+    verify(store,never()).run(anyString(),anyString(),any());
   }
 
   @Test void backgroundGenerationDoesNotConsultWebIdentity() {
@@ -155,7 +134,7 @@ class AgentChannelBoundaryTest {
     when(callers.query(any(),eq("a"),eq("en"),any(),isNull(),any(),eq(executorRef))).thenReturn(admitted);
     var retrieval=mock(OntologyRetrievalService.class);
     when(retrieval.prepareRun(eq(SESSION),eq(RUN),any(),eq(RUN),isNull(),eq(RUN),eq(admitted))).thenReturn(JSONObject.of("input",JSONObject.of("role","user","content","Question")));
-    var controller=new AgentChannelController(callers,directory,governance,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class),retrieval,mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),mock(io.ontomato.dataengine.service.LangService.class));
+    var controller=new AgentChannelController(callers,directory,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class),retrieval,mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),mock(io.ontomato.dataengine.service.LangService.class));
     var mvc=MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new OntologyAgentErrors()).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
     var body=JSONObject.parseObject(input("run","user"));body.getJSONObject("agent").put("agentId",OntologyAgentStore.RETRIEVER);body.put("executionActor",executorRef);
     var response=mvc.perform(post("/platform/agent-channel/prepare").header("X-Domain-Id","a").contentType(MediaType.APPLICATION_JSON).content(body.toJSONString())).andExpect(status().isOk()).andReturn().getResponse();

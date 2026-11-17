@@ -9,11 +9,9 @@ import org.springframework.stereotype.Service;
 public class AgentDirectory {
   private final AgentCaller callers;
   private final OntologyAgentLabels labels;
-  private final IdentityService identity;
   private final ActionCreationService actions;
-  private final KnowledgeGovernanceService governance;
-  public AgentDirectory(AgentCaller callers,IdentityService identity,ActionCreationService actions,KnowledgeGovernanceService governance,OntologyAgentLabels labels) {
-    this.callers=callers; this.identity=identity;this.actions=actions;this.governance=governance;this.labels=labels;
+  public AgentDirectory(AgentCaller callers,ActionCreationService actions,OntologyAgentLabels labels) {
+    this.callers=callers; this.actions=actions;this.labels=labels;
   }
   public JSONObject list(JSONObject actor,String domain,String language) { return list(actor,domain,language,null); }
   public JSONObject list(JSONObject actor,String domain,String language,JSONObject executionActor) {
@@ -21,9 +19,6 @@ public class AgentDirectory {
     var executor=callers.executionUser(restored,executionActor);
     var executionOwner=new OntologyAgentStore.Owner(executor.getId(),domain);
     var agents=new JSONArray();
-    if (identity.hasKnowledgeGovernanceAccess(restored.user().getId(),domain)) for(var agent:governance.agents(domain)) agents.add(JSONObject.of(
-      "ref",JSONObject.of("providerId","ontology","agentId",agent.getString("id")),
-      "name",agent.getString("name"),"description",agent.getString("description")));
     try {
       identity.requireQueryAccess(executor.getId(),domain);
       agents.add(JSONObject.of("ref",JSONObject.of("providerId","ontology","agentId",OntologyAgentStore.RETRIEVER),"name","Data retrieval","description","Answer data questions with binding and retrieval results"));
