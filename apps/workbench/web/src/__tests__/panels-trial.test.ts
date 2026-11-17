@@ -116,8 +116,8 @@ describe("the platform objects this version reads", () => {
       objectType: "test:OnlyOnce",
       list: async () => [],
       read: async () => ({ primaryKey: "task-1", label: "Nightly", fields: {} }),
-      form: async () => ({ fields: [], values: {} }),
-      changed: async () => ({ fields: [], values: {} }),
+      form: async () => ({ fields: [], values: {}, revision: 0 }),
+      changed: async () => ({ fields: [], values: {}, revision: 0 }),
       save,
     });
     expect(registeredPlatformObjects()).toContain("test:OnlyOnce");
@@ -127,8 +127,8 @@ describe("the platform objects this version reads", () => {
       objectType: "test:OnlyOnce",
       list: async () => [],
       read: async () => ({ primaryKey: "", label: "", fields: {} }),
-      form: async () => ({ fields: [], values: {} }),
-      changed: async () => ({ fields: [], values: {} }),
+      form: async () => ({ fields: [], values: {}, revision: 0 }),
+      changed: async () => ({ fields: [], values: {}, revision: 0 }),
       save: async () => ({ primaryKey: "", label: "", fields: {} }),
     })).toThrow(/already registered/);
     expect(() => platformObjectFor("test:NotRegistered")).toThrow(/reads no platform object/);
@@ -193,6 +193,10 @@ describe("a panel instance", () => {
       operation: "platform:ScheduledTask.save",
       read: async () => ({ operation: "autotest", caseSetId: "cases-1" }),
       save: async () => ({}),
+      // Which slot takes the draft and what it changed is this test's subject; the form's own save and showing are the
+      // component's, checked where the component is mounted.
+      submit: async () => ({}),
+      apply: () => {},
     });
     const received = await receivePanelDraft(
       "panels-trial-a-tasks",
@@ -220,8 +224,8 @@ describe("a panel's module", () => {
       objectType: SCHEDULED_TASK,
       list: async () => [{ primaryKey: "task-1", label: "Nightly", fields: {} }],
       read: async (primaryKey) => ({ primaryKey, label: "Nightly", fields: { application: "operations", state: "on" } }),
-      form: async () => ({ fields: [], values: {} }),
-      changed: async () => ({ fields: [], values: {} }),
+      form: async () => ({ fields: [], values: {}, revision: 0 }),
+      changed: async () => ({ fields: [], values: {}, revision: 0 }),
       save: async (primaryKey) => ({ primaryKey: primaryKey!, label: "Nightly", fields: {} }),
     });
     const panelInstance = instance();
