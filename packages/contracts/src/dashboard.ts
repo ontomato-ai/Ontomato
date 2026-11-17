@@ -1,30 +1,18 @@
 import { z } from "zod";
 import { chartDisplaySchema } from "./chart-data/display";
-export { chartFormatSchema as dashboardFormatSchema } from "./chart-data/display";
+import { chartInputs, type ChartInputRoles } from "./chart-data/inputs";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldSchema, formFieldErrorSchema, formValuesSchema } from "./form-fields";
 import type { LegacyDashboardChartEntry, LegacyDashboardMetricEntry } from "./dashboard-legacy";
 export type { DataPlan, TransformSpec, AbcProgramDashboard, AbcProgramParameter, AbcProgramOutKeyRef, LegacyInlineEntry } from "./dashboard-legacy";
 
-/** Input roles name final metric columns. Numeric roles never request a calculation. */
-export const dashboardChartInputs: Record<string, { required: string[]; numeric: string[]; arrays?: string[]; optional?: string[]; singleRow?: boolean }> = {
-  bar: { required: ["xAxis", "yAxis"], numeric: ["yAxis"] },
-  line: { required: ["xAxis", "yAxis"], numeric: ["yAxis"] },
-  "area-line": { required: ["xAxis", "yAxis"], numeric: ["yAxis"] },
-  "pictorial-bar": { required: ["xAxis", "yAxis"], numeric: ["yAxis"] },
-  "bar-line": { required: ["xAxis", "barSeries", "lineSeries"], numeric: ["barSeries", "lineSeries"], arrays: ["barSeries"] },
-  pie: { required: ["name", "value"], numeric: ["value", "share"], optional: ["share"] },
-  "nightingale-rose": { required: ["name", "value"], numeric: ["value", "share"], optional: ["share"] },
-  treemap: { required: ["name", "value"], numeric: ["value", "share"], optional: ["share"] },
-  funnel: { required: ["name", "value"], numeric: ["value", "share"], optional: ["share"] },
-  sankey: { required: ["source", "target", "value"], numeric: ["value"] },
-  scatter: { required: ["xAxis", "yAxis"], numeric: ["xAxis", "yAxis", "size"], optional: ["name", "size"] },
-  radar: { required: ["name", "value"], numeric: ["value"] },
-  sunburst: { required: ["id", "parent", "name", "value"], numeric: ["value", "share"], optional: ["share"] },
-  boxplot: { required: ["category", "min", "q1", "median", "q3", "max"], numeric: ["min", "q1", "median", "q3", "max"] },
-  gauge: { required: ["value"], numeric: ["value"], singleRow: true },
-  "liquid-fill": { required: ["value"], numeric: ["value"], singleRow: true },
-};
+const dashboardChartTypes = [
+  "bar", "line", "area-line", "pictorial-bar", "bar-line", "pie", "nightingale-rose", "treemap", "funnel",
+  "sankey", "scatter", "radar", "sunburst", "boxplot", "gauge", "liquid-fill",
+];
+export const dashboardChartInputs: Record<string, ChartInputRoles> = Object.fromEntries(
+  dashboardChartTypes.map(type => [type, chartInputs[type]]),
+);
 const text = z.string().min(1);
 export const dashboardLayoutSchema = z.object({ colSpan: z.number().optional(), rowSpan: z.number().optional() }).strict();
 export type DashboardLayout = z.infer<typeof dashboardLayoutSchema>;

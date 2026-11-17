@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { chartInputs } from "./inputs";
+import { chartMapResources } from "./maps";
 import { chartDisplaySchema, type ChartDisplay } from "./display";
 import { chartFileSchema, type ChartBinding, type ChartFile, type ChartOption } from "./schema";
 
@@ -15,34 +17,11 @@ export type LegacyChartSpec = {
   axisNames?: { x?: string; y?: string; y2?: string };
   graphInput?: "object" | "edges";
   graph?: { layout?: "force" | "circular" | "none"; directed?: boolean; showRelationLabels?: boolean };
-  map?: { resource: string; available: boolean; coordinateSystem: string; resourceCoordinateSystem: string; regionsMatched: boolean; featureNameProperty?: string };
+  map?: { resource: string; coordinateSystem: string; regionsMatched: boolean; featureNameProperty?: string };
   provenance?: {
     kind?: "standard" | "custom-skill" | "custom-script" | "html";
     multipleDataSources?: boolean; businessAggregation?: boolean; graphCallbacks?: string[];
   };
-};
-const roles: Record<string, { required: string[]; optional?: string[]; arrays?: string[] }> = {
-  bar: { required: ["xAxis", "yAxis"], arrays: ["yAxis"] },
-  line: { required: ["xAxis", "yAxis"], arrays: ["yAxis"] },
-  "area-line": { required: ["xAxis", "yAxis"], arrays: ["yAxis"] },
-  "pictorial-bar": { required: ["xAxis", "yAxis"], arrays: ["yAxis"] },
-  "bar-line": { required: ["xAxis", "barSeries", "lineSeries"], arrays: ["barSeries"] },
-  pie: { required: ["name", "value"], optional: ["share"] },
-  donut: { required: ["name", "value"], optional: ["share"] },
-  "nightingale-rose": { required: ["name", "value"], optional: ["share"] },
-  funnel: { required: ["name", "value"], optional: ["share"] },
-  treemap: { required: ["name", "value"], optional: ["share"] },
-  sunburst: { required: ["id", "parent", "name", "value"], optional: ["share"] },
-  sankey: { required: ["source", "target", "value"] },
-  scatter: { required: ["xAxis", "yAxis"], optional: ["name", "size"] },
-  radar: { required: ["name", "value"] },
-  boxplot: { required: ["category", "min", "q1", "median", "q3", "max"] },
-  gauge: { required: ["value"] },
-  "liquid-fill": { required: ["value"] },
-  timeline: { required: ["date", "name", "description"] },
-  "leaflet-map": { required: ["lng", "lat", "name"], optional: ["value"] },
-  map: { required: ["lng", "lat", "name"], optional: ["value"] },
-  "admin-choropleth-map": { required: ["name", "value"] },
 };
 const fieldMapSchema = z.record(z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]));
 /** Conversion consumes drawing roles, never a dashboard, object view or product storage record. */
@@ -56,19 +35,16 @@ export function legacyChartToFile(input: LegacyChartSpec): { ok: true; file: Cha
   if (origin?.businessAggregation) return fail("BUSINESS_AGGREGATION_REQUIRED");
   if (origin?.graphCallbacks?.length) return fail("CUSTOM_GRAPH_CALLBACK", undefined, origin.graphCallbacks);
   const type = input.type;
-  const isGraph = type === "graph" || type === "network-graph";
-  if (isGraph && !input.graphInput) return fail("GRAPH_INPUT_REQUIRED");
-  const spec = isGraph ? input.graphInput === "object"
-    ? { required: ["nodes", "links"] }
-    : { required: ["source", "target"], optional: ["value", "relation", "sourceName", "targetName", "sourceCategory", "targetCategory"] }
-    : roles[type];
-  if (!spec) return fail("UNSUPPORTED_CHART_TYPE", undefined, [type]);
+  const inputs = chartInputs[type];
+  if (!inputs) return fail("UNSUPPORTED_CHART_TYPE", undefined, [type]);
+  if (inputs.inputs && !input.graphInput) return fail("GRAPH_INPUT_REQUIRED");
+  const spec = inputs.inputs ? inputs.inputs[input.graphInput!] : inputs;
   const mapped = fieldMapSchema.safeParse(input.fields);
   if (!mapped.success) return fail("INVALID_FIELD_MAPPING", undefined, mapped.error.issues.map(issue => issue.path.join(".")));
   const missing = spec.required.filter(role => input.fields[role] === undefined);
   if (missing.length) return fail(type === "boxplot" ? "MISSING_QUARTILE_COLUMNS" : "MISSING_FIELDS", missing);
   const selectedRoles = [...spec.required, ...(spec.optional ?? []).filter(role => input.fields[role] !== undefined)];
-  const invalid = selectedRoles.filter(role => Array.isArray(input.fields[role]) && !("arrays" in spec && spec.arrays?.includes(role)));
+  const invalid = selectedRoles.filter(role => Array.isArray(input.fields[role]) && !(spec.arrays?.includes(role) || spec.optionalArrays?.includes(role)));
   if (invalid.length) return fail("INVALID_FIELD_MAPPING", invalid);
   const display = chartDisplaySchema.safeParse(input.display ?? {});
   if (!display.success) {
@@ -79,8 +55,8 @@ export function legacyChartToFile(input: LegacyChartSpec): { ok: true; file: Cha
   if ((type === "gauge" || type === "liquid-fill") && !display.data.formats?.[f.value]) return fail("PERCENT_SCALE_REQUIRED", [f.value]);
   if (["leaflet-map", "map", "admin-choropleth-map"].includes(type)) {
     const map = input.map;
-    if (!map || !map.available || map.resource !== "china-provinces") return fail("MAP_RESOURCE_MISSING");
-    if (map.coordinateSystem !== map.resourceCoordinateSystem || map.resourceCoordinateSystem !== "GCJ-02") return fail("MAP_COORDINATE_MISMATCH");
+    if (!map || !Object.hasOwn(chartMapResources, map.resource)) return fail("MAP_RESOURCE_MISSING");
+    if (map.coordinateSystem !== chartMapResources[map.resource]) return fail("MAP_COORDINATE_MISMATCH");
     if (!map.regionsMatched) return fail("MAP_REGION_MISMATCH");
   }
   const dimensions = [...new Set([

@@ -245,7 +245,7 @@ function materialize(option: ChartOption, bindings: ChartBinding[], rows: ChartR
       }
       case "timeline": {
         const f = binding.fields;
-        const events = timelineRows(rows, f.date);
+        const events = rows;
         const axes = Array.isArray(option.yAxis) ? option.yAxis : [option.yAxis ?? {}];
         axes[series.yAxisIndex ?? 0].data = events.map((_, index) => index);
         option.yAxis = Array.isArray(option.yAxis) ? axes : axes[0];
@@ -294,21 +294,14 @@ export function fillChartFile<T = unknown>(input: unknown, metric: { columns: re
   if (rowIssues.length) return { ok: false, code: "INVALID_METRIC_OUTPUT", issues: rowIssues, missingColumns: [] };
   const { ontomato, ...option } = file;
   const bindings = ontomato.bindings ?? [], display = ontomato.display ?? {};
-  const issues = bindings.flatMap(binding => shapeIssues(binding, rows, file));
+  // Intrinsic timeline ordering precedes the caller's display ordering and limit.
+  const timeline = bindings.find(binding => binding.shape === "timeline");
+  const selected = displayRows(timeline?.shape === "timeline" ? timelineRows(rows, timeline.fields.date) : rows, display);
+  const issues = bindings.flatMap(binding => shapeIssues(binding, selected, file));
   if (issues.length) return { ok: false, code: "INVALID_SHAPE_DATA", issues, missingColumns: [] };
   option.dataset[0].dimensions = keys;
-  option.dataset[0].source = rows;
-  materialize(option, bindings, rows, display);
-  const presented = displayRows(rows, display);
-  // A timeline's intrinsic order is date descending, including before a display limit is applied.
-  const timeline = bindings.find(binding => binding.shape === "timeline");
-  const selected = timeline?.shape === "timeline" ? displayRows(timelineRows(rows, timeline.fields.date), display) : presented;
-  if (display.sort?.length || display.displayLimit !== undefined) {
-    const selectionIssues = bindings.flatMap(binding => shapeIssues(binding, selected, file));
-    if (selectionIssues.length) return { ok: false, code: "INVALID_SHAPE_DATA", issues: selectionIssues, missingColumns: [] };
-    materialize(option, bindings, selected, display);
-  }
   option.dataset[0].source = selected;
+  materialize(option, bindings, selected, display);
   visualGeometry(option, selected, keys);
   return { ok: true, option, presentation: { bindings, display }, truncation: metric.truncation, rowCount: rows.length, displayedRowCount: selected.length };
 }

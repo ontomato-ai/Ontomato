@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  chartFileSchema, fillChartFile, legacyChartToFile, validateChartFile,
+  chartFileSchema, chartFormatSchema, fillChartFile, legacyChartToFile, validateChartFile,
   type ChartFile, type ChartOption, type ChartRow, type FilledChart, type LegacyChartSpec,
 } from "./index";
 import { chartAxisBounds, chartBrandColors } from "../chart-presentation";
-import { dashboardFormatSchema, dashboardPresentationSchema } from "../dashboard";
+import { dashboardPresentationSchema } from "../dashboard";
 
-const map = { resource: "china-provinces", available: true, coordinateSystem: "GCJ-02", resourceCoordinateSystem: "GCJ-02", regionsMatched: true };
+const map = { resource: "china-provinces", coordinateSystem: "GCJ-02", regionsMatched: true };
 function make(input: LegacyChartSpec): ChartFile {
   const result = legacyChartToFile(input);
   assert.equal(result.ok, true, JSON.stringify(result));
@@ -194,6 +194,7 @@ test("unconvertible configurations are diagnosed rather than guessed", () => {
     [{ type: "graph", fields: { source: "s", target: "t" } }, "GRAPH_INPUT_REQUIRED"],
     [{ type: "graph", fields: { source: "s", target: "t" }, graphInput: "edges", provenance: { graphCallbacks: ["custom-click"] } }, "CUSTOM_GRAPH_CALLBACK"],
     [{ type: "map", fields: { lng: "x", lat: "y", name: "n" } }, "MAP_RESOURCE_MISSING"],
+    [{ type: "map", fields: { lng: "x", lat: "y", name: "n" }, map: { ...map, resource: "unknown" } }, "MAP_RESOURCE_MISSING"],
     [{ type: "map", fields: { lng: "x", lat: "y", name: "n" }, map: { ...map, coordinateSystem: "WGS-84" } }, "MAP_COORDINATE_MISMATCH"],
     [{ type: "admin-choropleth-map", fields: { name: "n", value: "v" }, map: { ...map, regionsMatched: false } }, "MAP_REGION_MISMATCH"],
   ];
@@ -244,7 +245,7 @@ test("filled options can use the shared brand and axis functions without mutatin
 });
 test("dashboard uses the same display contract and explicit percentage scale", () => {
   assert.equal(dashboardPresentationSchema.safeParse({ name: "Card", sort: [{ field: "x", order: "asc" }], formats: { y: { kind: "percent", scale: 100 } } }).success, true);
-  assert.equal(dashboardFormatSchema.safeParse({ kind: "percent" }).success, false);
+  assert.equal(chartFormatSchema.safeParse({ kind: "percent" }).success, false);
 });
 
 test("column names in metadata are literal names even when they match an option key", () => {
@@ -270,5 +271,35 @@ test("conflicting graph attributes fail instead of selecting a display meaning",
   if (!result.ok) {
     assert.equal(result.code, "INVALID_SHAPE_DATA");
     assert.equal(result.issues[0].reason, "CONFLICTING_GRAPH_NAME");
+  }
+});
+
+test("display selection precedes shape validation of rows that will not be drawn", () => {
+  const file = make({ type: "gauge", fields: { value: "value" }, display: { displayLimit: 1, formats: { value: { kind: "percent", scale: 100 } } } });
+  const result = fill(file, [{ value: 0.25 }, { value: "not drawn" }]);
+  assert.equal(result.option.series[0].data[0].value, 0.25);
+  assert.equal(result.rowCount, 2);
+  assert.equal(result.displayedRowCount, 1);
+});
+test("timeline applies display sorting after its intrinsic date order", () => {
+  const file = make({ type: "timeline", fields: { date: "date", name: "name", description: "description" }, display: { sort: [{ field: "name", order: "asc" }], displayLimit: 2 } });
+  const result = fill(file, [
+    { date: "2025-01-01", name: "B", description: "d" },
+    { date: "2024-01-01", name: "A", description: "d" },
+    { date: "2026-01-01", name: "C", description: "d" },
+  ]);
+  for (const series of result.option.series) assert.deepEqual(series.data.map((item: ChartOption) => item.name), ["A", "B"]);
+  assert.deepEqual(result.option.dataset[0].source.map((row: ChartRow) => row.name), ["A", "B"]);
+});
+test("a display limit that omits a required tree parent remains a shape error", () => {
+  const file = make({ type: "sunburst", fields: { id: "id", parent: "parent", name: "name", value: "value" }, display: { displayLimit: 1 } });
+  const result = fillChartFile(file, {
+    columns: file.dataset[0].dimensions.map(key => ({ key })),
+    rows: [{ id: "child", parent: "root", name: "C", value: 3 }, { id: "root", parent: null, name: "R", value: 10 }],
+  });
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.code, "INVALID_SHAPE_DATA");
+    assert.equal(result.issues[0].reason, "MISSING_TREE_PARENT");
   }
 });

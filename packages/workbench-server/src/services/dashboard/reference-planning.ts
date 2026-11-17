@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import {
-  dashboardChartInputs, dashboardFormatSchema, metricReferenceChartSchema, metricReferenceMetricSchema,
+  dashboardChartInputs, metricReferenceChartSchema, metricReferenceMetricSchema,
   type DashboardGroup, type DashboardMetricReference, type DashboardMetricOutput, type MetricReferenceChartEntry, type MetricReferenceEntry,
 } from "@ontomato/contracts/dashboard";
+import { chartFormatSchema } from "@ontomato/contracts/chart-data";
 import { runAuxiliary } from "../../platform/agent-runtime/runtime";
 import { renderPrompt } from "../../core/prompts/loader";
 import { buildModelDataView } from "../../utils/model-data-view";
@@ -95,7 +96,7 @@ export async function mapMetricFields(
 ) {
   const inputs = dashboardInputs(chartType);
   const fieldPlanSchema = z.object({
-    fields: chartFieldSchema(chartType), formats: z.record(dashboardFormatSchema).optional(),
+    fields: chartFieldSchema(chartType), formats: z.record(chartFormatSchema).optional(),
   }).strict().superRefine((mapping, context) => {
     const combined = { ...presentation, formats: { ...presentation.formats, ...mapping.formats } };
     for (const issue of outputMappingIssues(chartType, mapping.fields, output, combined))
