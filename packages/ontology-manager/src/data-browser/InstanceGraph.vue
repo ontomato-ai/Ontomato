@@ -211,8 +211,11 @@ function updateOverviewRelations() {
       .map((node) => [node.id, { x: Number(node.style?.x || 0), y: Number(node.style?.y || 0) }]));
     const aggregated = overviewRelations(nodes.value, edges.value, positions, selectedNode.value?.id);
     const existingAnchors = target.getNodeData().filter((node) => node.data?.anchor);
-    if (!existingAnchors.length) target.addData({ nodes: aggregated.nodes });
-    else target.updateNodeData(aggregated.nodes);
+    const anchorIds = new Set(existingAnchors.map((node) => node.id));
+    const addedAnchors = aggregated.nodes.filter((node) => !anchorIds.has(node.id));
+    const updatedAnchors = aggregated.nodes.filter((node) => anchorIds.has(node.id));
+    if (addedAnchors.length) target.addData({ nodes: addedAnchors });
+    if (updatedAnchors.length) target.updateNodeData(updatedAnchors);
     const nextEdges = aggregateRelations.value ? aggregated.edges : (() => {
       const geometry = instanceEdgeGeometry(edges.value);
       return edges.value.map((edge, index) => ({
@@ -481,7 +484,8 @@ function updateClassGroups() {
   }
   classGroups.value = overviewClassHeadings([...groups].map(([name, points]) => {
     const label = classLabels.value[name] || name;
-    const width = Math.min(Math.max(64, textWidth(label, 12) + 20), 180,
+    const count = classCount(name, points.length);
+    const width = Math.min(Math.max(64, textWidth(label, 12) + textWidth(count, 12) + 30), 240,
       Math.max(80, graphRef.value!.clientWidth - 32));
     const left = Math.min(...points.map(p => p.x));
     const right = Math.max(...points.map(p => p.x));
@@ -489,6 +493,11 @@ function updateClassGroups() {
     const bottom = Math.max(...points.map(p => p.y)) + 40 * zoom;
     return { name, bounds: { x: left, y: top, width: right - left, height: bottom - top }, width, height: 26 };
   }), instances, { x: 8, y: 8, width: graphRef.value.clientWidth - 16, height: graphRef.value.clientHeight - 16 });
+}
+
+function classCount(name: string, shown: number) {
+  const total = summary.value?.classes.find((item) => item.class === name)?.instanceCount;
+  return `${shown.toLocaleString(context.locale)} / ${total == null ? '…' : total.toLocaleString(context.locale)}`;
 }
 
 async function showDirectNeighborhood() {
@@ -604,10 +613,6 @@ async function expandNeighbors() {
   if (!node || !version || !target || expanding.value || rendering.value || filtersDirty.value || versionChanged.value) return;
   const page = neighborPages.value[node.id];
   if (page?.nextOffset === null) return;
-  if (nodes.value.length >= 1000 || edges.value.length >= 2000) {
-    message.info(ot("instanceGraphBudget"));
-    return;
-  }
   const request = graphRequest;
   expanding.value = true;
   try {
@@ -618,10 +623,6 @@ async function expandNeighbors() {
     const knownEdges = new Set(edges.value.map((item) => JSON.stringify([item.source, item.target, item.type])));
     const addedNodes = result.nodes.filter((item) => !knownNodes.has(item.id));
     const addedEdges = result.edges.filter((item) => !knownEdges.has(JSON.stringify([item.source, item.target, item.type])));
-    if (nodes.value.length + addedNodes.length > 1000 || edges.value.length + addedEdges.length > 2000) {
-      message.info(ot("instanceGraphBudget"));
-      return;
-    }
     const center = target.getNodeData(node.id).style ?? { x: 0, y: 0 };
     nodes.value = [...nodes.value, ...addedNodes];
     edges.value = [...edges.value, ...addedEdges];
@@ -848,10 +849,11 @@ onBeforeUnmount(() => {
         <div v-for="group in classGroups" :key="group.name" class="class-group"
           :style="{ left: `${group.x}px`, top: `${group.y}px`, width: `${group.width}px`, height: `${group.height}px`, '--group-color': colorForClass(group.name) }">
         <button
-          :title="`${classLabels[group.name] || group.name} · ${nodes.filter(node => node.class === group.name).length} / ${summary.classes.find(item => item.class === group.name)?.instanceCount?.toLocaleString(context.locale) ?? '…'}`"
+          :title="`${classLabels[group.name] || group.name} · ${classCount(group.name, nodes.filter(node => node.class === group.name).length)}`"
           :class="{ 'is-selected': selectedClass === group.name }" :aria-pressed="selectedClass === group.name"
           @click.stop="chooseClass(group.name)">
           <span class="legend-label">{{ classLabels[group.name] || group.name }}</span>
+          <span class="legend-count">{{ classCount(group.name, nodes.filter(node => node.class === group.name).length) }}</span>
         </button>
         </div>
       </div>
@@ -1328,6 +1330,7 @@ onBeforeUnmount(() => {
 .sample-legend button.is-selected { background: color-mix(in srgb, var(--group-color) 32%, var(--el-bg-color)); color: var(--el-text-color-primary); font-weight: var(--font-semibold); }
 .sample-legend button:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: -2px; }
 .legend-label { width: 100%; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: color-mix(in srgb, var(--group-color) 45%, var(--el-text-color-primary)); }
+.legend-count { flex: none; margin-left: 6px; color: var(--el-text-color-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .class-option-count { float: right; margin-left: 12px; color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums; }
 .instance-candidates { display: grid; gap: 2px; min-width: 0; max-height: 260px; overflow: auto; }
 .instance-candidates button {
