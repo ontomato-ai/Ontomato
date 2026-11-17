@@ -165,14 +165,23 @@ watch(
 const shell = ref<InstanceType<typeof AgentShell> | null>(null);
 
 /**
- * An answer may link to a dashboard (`/dashboards?dashboardId=...`); the shell asks here rather than importing another
- * application's routes, and the address opens the page beside the conversation.
+ * An answer may link a page of the platform (`/governance/reports/<id>`, `/ontology/knowledge?...`); the shell asks here
+ * rather than importing another application's routes.
+ *
+ * The pages this assembly mounts beside a conversation open there, and the application's own address does not change. Any
+ * other page of the platform that the router can resolve opens at its real address, its query kept as it was written, so
+ * a draft handoff's parameters travel with it; an address the router does not resolve is no page and stays text. A host
+ * outside the platform (another scheme, another host) is never one of these.
  */
 function pageLinks(href: string): (() => void) | null {
   const address = href.replace(/^#/, "");
-  if (!pilot(address)) return null;
-  // The page opens beside the conversation; the application's own address does not change.
-  return () => void router.push({ query: { ...route.query, page: address } });
+  if (!address.startsWith("/") || address.startsWith("//")) return null;
+  const pilotPage = pilot(address);
+  if (pilotPage) return () => void router.push({ query: { ...route.query, page: address } });
+  const resolved = router.resolve(address);
+  // The catch-all route answers any address with the start page; that is no page of its own.
+  if (!resolved.matched.length || resolved.matched.some((record) => "redirect" in record && record.redirect)) return null;
+  return () => void router.push({ path: resolved.path, query: resolved.query, hash: resolved.hash });
 }
 
 watch(agentId, (id) => {
