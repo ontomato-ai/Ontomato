@@ -20,7 +20,7 @@ export async function renderObjectView(owner: { domainId: string; userId: string
     const reference = skillReference(skill, owner.domainId);
     // Public renderers can change during development after startup publication.
     if (skill.isPublic) await publishSkill(skill.path, reference);
-    const skills = await prepareAssistantSkills(owner.domainId, [reference]);
+    const skills = await prepareAssistantSkills(owner.domainId, { kind: "object-view", skills: [reference] }, credentials);
     const request = codeExecutionRequestSchema.parse({
       language: "python", locale: credentials.locale || "en",
       files: [{ path: "input.json", content: JSON.stringify({ compact: true, ...input, locale: credentials.locale }) }, {
