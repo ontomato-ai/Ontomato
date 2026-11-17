@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { chartDisplaySchema } from "./chart-data/display";
+export { chartFormatSchema as dashboardFormatSchema } from "./chart-data/display";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldSchema, formFieldErrorSchema, formValuesSchema } from "./form-fields";
 import type { LegacyDashboardChartEntry, LegacyDashboardMetricEntry } from "./dashboard-legacy";
@@ -30,20 +32,11 @@ export const dashboardMetricReferenceSchema = z.object({
   kind: z.literal("metric"), metricId: text, parameters: runtimeJsonObjectSchema,
 }).strict();
 export type DashboardMetricReference = z.infer<typeof dashboardMetricReferenceSchema>;
-export const dashboardFormatSchema = z.object({
-  kind: z.enum(["number", "percent", "text", "date", "currency"]),
-  decimals: z.number().int().min(0).optional(),
-  scale: z.union([z.literal(1), z.literal(100)]).optional(),
-  currency: z.string().optional(),
-}).strict().refine(v => v.kind !== "percent" || v.scale !== undefined, "Percent formatting requires an explicit scale");
 const sourceSchema = z.object({
   sessionId: text.optional(), artifactId: text.optional(), datasetKey: text.optional(), subQuestion: z.string().optional(),
 }).strict();
-export const dashboardPresentationSchema = z.object({
+export const dashboardPresentationSchema = chartDisplaySchema.extend({
   name: text,
-  sort: z.array(z.object({ field: text, order: z.enum(["asc", "desc"]) }).strict()).optional(),
-  displayLimit: z.number().int().positive().optional(),
-  formats: z.record(dashboardFormatSchema).optional(),
   layout: dashboardLayoutSchema.optional(),
   style: z.object({ colors: z.array(z.string()).optional() }).strict().optional(),
 }).strict();

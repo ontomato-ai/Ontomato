@@ -1,43 +1,35 @@
-# E1 chart file contract
+# E1 图文件格式（供 E2–F 使用）
 
-Import `@ontomato/contracts/chart-data`. A `.chart.json` is a JSON ECharts option with exactly one `dataset: [{id:"metric", dimensions:[column names], source:[row objects]}]`. Saved reusable files have an empty source. MetricView identity belongs to the consumer. Series have stable `id`s; native series use `datasetId:"metric"` and named `encode`. No functions, callbacks, formatter templates, custom renderer/transform or business data outside the metric dataset. `ontomato` contains only `bindings` and `display`; it is removed before ECharts.
+入口 `@ontomato/contracts/chart-data`。文件是 JSON ECharts option，加保留字段 `ontomato`；业务行只放 `dataset:[{id:"metric",dimensions:[列名],source:[行对象]}]`，复用时 source 为空。MetricView 引用由消费对象保存。series 有稳定 id；原生图声明 `datasetId:"metric"` 和列名 encode。禁止函数、脚本、renderer、自定义 transform、formatter 模板/表达式，以及另存 series.data/links/indicator。
 
-`display` owns `sort:[{field,order:"asc"|"desc"}]`, positive `displayLimit`, and `formats:{column:{kind,decimals?,scale?,currency?}}`. Percent requires `scale:100` for fractions (0.25 → 25%) or `scale:1` for percentage points (25 → 25%). Values remain unchanged; formatting belongs to presentation. Missing sort values stay last, ties retain input order.
+`ontomato` 仅有 `bindings`、`display`。display = `{sort?:[{field,order:"asc"|"desc"}],displayLimit?:正整数,formats?:{列名:{kind,decimals?,scale?,currency?}}}`；沿用原仪表盘定义。百分比明确指定 scale：100 表示 0.25→25%，1 表示 25→25%；原数值不改。排序稳定，null 始终在后。
 
-Each binding has `seriesId`, `shape`, `fields` (column names only); graph additionally has `input:"object"|"edges"` as specified in design 8.2. Required roles below are plain column names; `?` denotes optional roles.
+binding = `{seriesId,shape,fields}`；graph 另有 8.2 要求的 `input:"object"|"edges"`。以下角色值均为**列名**（不解释路径或代码），`?` 为可选：
 
-| shape | fields | native output |
+| shape | fields | 装填 |
 | --- | --- | --- |
-| items | name, value, share? | treemap data |
-| tree | id, parent, name, value, share? | sunburst children; null parent is root |
-| links | source, target, value | sankey nodes/links, no weight aggregation |
-| radar | name, value | radar indicator and one value array; max × 1.15 |
-| boxplot | category, min, q1, median, q3, max | category axis and five-value tuples |
-| single | value | gauge ring geometry; original value retained for formatting |
-| timeline | date, name, description | line/scatter on vertical categories; date descending, stable ties, undated last |
-| graph / object | nodes, links | one row containing JSON arrays of standard nodes/links |
-| graph / edges | source, target, value?, relation?, sourceName?, targetName?, sourceCategory?, targetCategory? | graph nodes/links/categories; degree affects size only |
+| items | name,value,share? | treemap 平面项 |
+| tree | id,parent,name,value,share? | null parent 为根，按 id 连 children |
+| links | source,target,value | sankey 唯一端点、逐行 links，不合权重 |
+| radar | name,value | 每行一轴、一个值数组，max×1.15 |
+| boxplot | category,min,q1,median,q3,max | 类目轴、原样五值数组 |
+| single | value | gauge 圆环几何；原值保留在 rawValue |
+| timeline | date,name,description | line/scatter 纵向类目，日期倒序、同日稳定、无日期在后 |
+| graph/object | nodes,links | 零/一行，两列为 JSON 数组；节点 id/name/category，边 source/target/value/relation |
+| graph/edges | source,target,value?,relation?,sourceName?,targetName?,sourceCategory?,targetCategory? | 端点连 nodes/links/categories，度数只影响尺寸 |
 
-Graph object arrays use native node `id/name/category` and link `source/target/value/relation` properties; extra JSON attributes are preserved, callbacks are rejected. Normalize old nested field names before producing that MetricView. Duplicate tree IDs, cycles, absent parents, invalid radar axes and invalid graph identities fail explicitly.
+graph/object 保留额外 JSON 属性；旧节点内的 label/group、边的 edges 等名称须在 MetricView 中明确规范成上述属性/列映射，不猜属性。标准邻接高亮与拖动由后续平台组件负责，外部回调不转换。
 
-| old type | series / binding |
+| 旧图型 | series / shape（空表示不写 bindings） |
 | --- | --- |
-| bar, pictorial-bar | bar / none |
-| line, area-line | line (areaStyle for area) / none |
-| bar-line | bar + line with explicit yAxisIndex / none |
-| pie, donut, nightingale-rose | pie (donut radius / roseType) / none |
-| funnel | funnel / none |
-| treemap, sunburst, sankey | treemap/items, sunburst/tree, sankey/links |
-| scatter | scatter / none; visualMap size 6–40px (constant range: 14px) |
-| radar, boxplot | radar/radar, boxplot/boxplot |
-| gauge, liquid-fill | gauge/single (existing ring behavior) |
-| timeline | line + scatter / timeline on both series |
-| graph, network-graph | graph / graph with explicit input |
-| leaflet-map, map | geo + scatter / none; fixed china-provinces map |
-| admin-choropleth-map | map + visualMap / none |
+| bar、pictorial-bar；line、area-line；bar-line | bar；line（面积加 areaStyle）；bar+line/显式双轴 / 空 |
+| pie、donut、nightingale-rose；funnel；scatter | pie（donut 半径、roseType）；funnel；scatter+6–40px visualMap（常量为14px） / 空 |
+| treemap；sunburst；sankey；radar；boxplot | treemap/items；sunburst/tree；sankey/links；radar/radar；boxplot/boxplot |
+| gauge、liquid-fill；timeline；graph、network-graph | gauge/single（实际旧圆环）；line+scatter/timeline；graph/graph |
+| leaflet-map、map；admin-choropleth-map | geo+scatter；map+visualMap / 空；固定 china-provinces，明确资源/坐标/地区匹配前提 |
 
-`validateChartFile(unknown, columns?)` returns `{ok:true,file}` or `{ok:false,code,issues,missingColumns}`; missing encode/binding/display columns use `CARD_OUTPUT_MISMATCH`. `fillChartFile(unknown, {columns,rows,truncation?})` returns `{ok:true,option,presentation:{bindings,display},truncation,rowCount,displayedRowCount}` or a structured failure. It replaces source, materializes shapes, applies display ordering/limit consistently to dataset and shaped data, and removes `ontomato`; the presentation sidecar lets later fixed formatters use original values without inspecting stripped metadata. Truncation passes through unchanged. No DOM/ECharts runtime or business aggregation.
+`validateChartFile(unknown,columns?)` → `{ok:true,file}` 或 `{ok:false,code,issues,missingColumns}`。所需 encode/binding/display 列不在输出中时为 `CARD_OUTPUT_MISMATCH`，不修补。`fillChartFile(unknown,{columns,rows,truncation?})` → `{ok:true,option,presentation:{bindings,display},truncation,rowCount,displayedRowCount}` 或同类错误：替换 source→装填→display 排序/限行→去掉 ontomato；截断信息原样带出。presentation 供后续固定格式化函数使用（含 single 原值、timeline 原日期/说明），option 可交现有配色与轴函数。若限行截断树的必需父节点，明确报形状错误。
 
-`legacyChartToFile({type,fields,display?,...})` returns `{ok:true,file}` (empty source) or `{ok:false,code,...}`. Roles use dashboard names (`xAxis/yAxis`, `barSeries/lineSeries`) for axis charts, binding names above for special shapes, `lng/lat/name/value?` for points, `name/value` for regions; graph requires `graphInput`. Optional series/axis labels are explicit settings. Map conversion requires declared matching resource, coordinate system and region coverage; no inferred offsets or resources.
+`legacyChartToFile({type,fields,display?,seriesNames?,axisNames?,graphInput?,graph?,map?,provenance?})` → `{ok:true,file}`（空 source）或 `{ok:false,code,fields?,details?}`。轴图角色 xAxis/yAxis（yAxis 可数组）、barSeries/lineSeries；其他见上表；点位 lng/lat/name/value?，行政区 name/value。对象视图图型枚举为 bar/line/donut/timeline/graph/leaflet-map，但技能选择器实际上列出本域全部技能，不能据此承诺自定义技能可转。
 
-Conversion reason codes: `UNSUPPORTED_CHART_TYPE`, `MISSING_FIELDS`, `INVALID_FIELD_MAPPING`, `MISSING_QUARTILE_COLUMNS`, `PERCENT_SCALE_REQUIRED`, `CUSTOM_SKILL`, `CUSTOM_SCRIPT`, `HTML_ONLY`, `CUSTOM_GRAPH_CALLBACK`, `MULTIPLE_DATA_SOURCES`, `BUSINESS_AGGREGATION_REQUIRED`, `GRAPH_INPUT_REQUIRED`, `MAP_RESOURCE_MISSING`, `MAP_COORDINATE_MISMATCH`, `MAP_REGION_MISMATCH`. Invalid runtime rows return `INVALID_METRIC_OUTPUT` / `INVALID_SHAPE_DATA`, with issues identifying rows/roles. These diagnoses require corrected MetricView/configuration or manual regeneration; no guessed conversion.
+不可转换码：`UNSUPPORTED_CHART_TYPE`、`MISSING_FIELDS`、`INVALID_FIELD_MAPPING`、`MISSING_QUARTILE_COLUMNS`、`PERCENT_SCALE_REQUIRED`、`CUSTOM_SKILL`、`CUSTOM_SCRIPT`、`HTML_ONLY`、`CUSTOM_GRAPH_CALLBACK`、`MULTIPLE_DATA_SOURCES`、`BUSINESS_AGGREGATION_REQUIRED`、`GRAPH_INPUT_REQUIRED`、`MAP_RESOURCE_MISSING`、`MAP_COORDINATE_MISMATCH`、`MAP_REGION_MISMATCH`。运行时行/形状错误为 `INVALID_METRIC_OUTPUT` / `INVALID_SHAPE_DATA`，非法树、负值/空雷达轴、非法图身份均明确失败。配色、布局、坐标轴及文本格式化不在本模块。

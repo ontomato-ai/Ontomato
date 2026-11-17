@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
+    "./chart-data": "./src/chart-data/index.ts",
     "./*": "./src/*.ts"
   },
   "scripts": {
