@@ -12,6 +12,7 @@ export interface ExportMarkdownPdfInput {
   title?: string;
   timeoutMs?: number;
   renderInlineCharts?: boolean;
+  locale?: string;
 }
 
 function escapeHtml(value: string) {
@@ -53,11 +54,11 @@ async function renderInlineCharts(nodes: readonly ParsedNode[], timeoutMs: numbe
   return charts;
 }
 
-function buildPdfHtml(title: string, bodyHtml: string) {
+function buildPdfHtml(title: string, bodyHtml: string, locale?: string) {
   const safeTitle = escapeHtml(title);
 
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="${escapeHtml(locale || "zh-CN")}">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -199,7 +200,7 @@ export async function exportMarkdownPdf(input: ExportMarkdownPdfInput) {
     const charts = input.renderInlineCharts
       ? await renderInlineCharts(nodes, timeoutMs)
       : new Map<ParsedNode, string>();
-    const html = buildPdfHtml(input.title || t("report.defaultTitle"), reportHtml(nodes, charts));
+    const html = buildPdfHtml(input.title || t("report.defaultTitle"), reportHtml(nodes, charts), input.locale);
     await page.setContent(html, {
       waitUntil: "load",
       timeout: timeoutMs,
