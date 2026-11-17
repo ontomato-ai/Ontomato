@@ -1,12 +1,10 @@
-import { z } from "zod";
 import { assistantAgentListSchema } from "@ontomato/contracts/assistant-chat";
 import type { AssistantAgentsQuery } from "@ontomato/contracts/page-skills";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { config } from "../../config/application";
-import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
-import { currentProductGrants, withProductGrants } from "../product-assets/grants";
+import { withProductGrants } from "../product-assets/grants";
+import { canUseNativeAgent } from "../product-assets/native-agent-access";
 import { nativeProfileId } from "../product-assets/platform-assets";
 import { profileIdForPrincipal } from "../product-assets/agent-profile";
 import { assistantStore, type AssistantOwner } from "./store";
@@ -20,14 +18,7 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
     const agents = [];
     for (const agent of definitions) {
       const native = await nativeProfileId(owner.domainId, agent.id);
-      if (native) {
-        const grants = currentProductGrants(owner).use;
-        if (!grants.has(native) || !grants.has(agent.id)) continue;
-        const response = await backendPost("platform-agent-identity", `${config.dataQuery.baseUrl}/agent-principals/check-user-scoped`, { id: agent.id }, {
-          headers: buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey), retries: 1,
-        });
-        if (!z.object({ allowed: z.boolean() }).parse(JSON.parse(response.text)).allowed) continue;
-      }
+      if (native && !await canUseNativeAgent(owner, credentials, agent.id, native)) continue;
       const profile = native ? null : await profileIdForPrincipal(owner, agent.id);
       agents.push({
         id: agent.id, name: assistantName(agent, credentials.locale), description: assistantDescription(agent, credentials.locale),

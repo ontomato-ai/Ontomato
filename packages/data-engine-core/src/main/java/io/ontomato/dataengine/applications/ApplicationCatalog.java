@@ -43,7 +43,6 @@ public class ApplicationCatalog {
     public PageSkills.Projection pageSkills(User user) {
         var mappings = all().stream().filter(app -> inDomain(app,user))
             .flatMap(app -> app.getList("pageSkills",PageSkills.Mapping.class).stream()).toList();
-        PageSkills.validate(mappings);
         return new PageSkills.Projection(access.pageSkills(mappings,user), mappings.stream().map(PageSkills.Mapping::skill).distinct().toList());
     }
     public JSONObject require(String id) {
