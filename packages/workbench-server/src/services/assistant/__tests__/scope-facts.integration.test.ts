@@ -1,3 +1,4 @@
+import { ensureAssistantDefaultPromptSchema } from "../../../infrastructure/postgres-migrations/20261105-assistant-default-prompts/schema";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
@@ -10,7 +11,7 @@ if(!database)throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable Post
 const owner={domainId:"domain",userId:"user"},agent=randomUUID(),session=randomUUID(),legacy=randomUUID();
 beforeAll(async()=>{
   state.schema="scope_facts_"+randomUUID().replaceAll("-","");state.pool=new pg.Pool({connectionString:database});
-  await state.pool.query(`CREATE SCHEMA "${state.schema}"`);await ensureAssistantSchema(state.pool);
+  await state.pool.query(`CREATE SCHEMA "${state.schema}"`);await ensureAssistantSchema(state.pool);await ensureAssistantDefaultPromptSchema(state.pool);
   await state.pool.query(`INSERT INTO "${state.schema}".assistant_agents(id,domain_id,kind,name,system_prompt) VALUES($1,'domain','custom','Agent','')`,[agent]);
   await state.pool.query(`INSERT INTO "${state.schema}".assistant_sessions(id,domain_id,owner_id,agent_id) VALUES($1,'domain','user',$2)`,[session,agent]);
   await state.pool.query(`INSERT INTO "${state.schema}".assistant_turns(id,session_id,retrieval_scope_id,request_seq,input_hash) VALUES($1,$2,$1,0,'old')`,[legacy,session]);
@@ -30,4 +31,12 @@ it("keeps old references and records new retrieval/governance references only wh
   expect(await assistantStore.governanceWindow(id,owner)).toBe(record);
   expect(await assistantStore.governanceRecord(session,owner)).toBe(record);
   expect(await assistantStore.governanceWindow(id,{...owner,domainId:"other"})).toBeNull();
+});
+
+it("seeds a stable governance preset in both existing and new domains",async()=>{
+  const first=(await assistantStore.agents(owner.domainId)).find(agent=>agent.kind==="knowledge-governance")!;
+  expect(first.enabled).toBe(true);expect(first.skills).toContainEqual({namespace:{kind:"provider",provider:"ontology"},name:"knowledge-governance"});
+  expect((await assistantStore.agents(owner.domainId)).find(agent=>agent.kind==="knowledge-governance")?.id).toBe(first.id);
+  const second=(await assistantStore.agents("new-domain")).find(agent=>agent.kind==="knowledge-governance")!;
+  expect(second.domain_id).toBe("new-domain");expect(second.id).not.toBe(first.id);
 });

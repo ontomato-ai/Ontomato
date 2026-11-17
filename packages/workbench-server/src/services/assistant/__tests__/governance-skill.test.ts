@@ -44,6 +44,7 @@ it("external begin and close retain user authentication and create no platform w
 it("platform knowledge import emits separate original-page forms and never calls Java import",async()=>{
   const result=JSON.parse((await command("import-knowledge",true,{items:[
     {id:"new",title:"New",text:"New text",tags:["new-tag"],sourceIds:["source"]},
+    {id:"existing",title:"Changed",text:"Changed text",sourceIds:["source"]},
   ]})).stdout);
   expect(calls.map(call=>call.path)).toEqual(["/admin/getBussinessKnowledge"]);
   const drafts=await Promise.all(result.drafts.map(async(entry:{path:string;href:string})=>{
@@ -56,6 +57,7 @@ it("platform knowledge import emits separate original-page forms and never calls
   }));
   expect(drafts).toEqual([
     {pageKey:"business-knowledge",operation:"knowledge.create",target:{},form:{knowledgeID:"",knowledgeTitle:"New",knowledgeText:"New text",knowledgeTags:["new-tag"],status:0}},
+    {pageKey:"business-knowledge",operation:"knowledge.update",target:{id:"existing"},form:{knowledgeID:"existing",knowledgeTitle:"Changed",knowledgeText:"Changed text",knowledgeTags:["retained"],status:1}},
   ]);
-  expect(result.drafts).toHaveLength(1);
+  expect(new Set(result.drafts.map((entry:{path:string})=>entry.path)).size).toBe(2);
 });
