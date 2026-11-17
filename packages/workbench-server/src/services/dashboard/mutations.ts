@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { validateStoredChartFile } from "@ontomato/contracts/chart-data";
-import type { MetricReferenceChartEntry } from "@ontomato/contracts/dashboard";
+import type { MetricReferenceChartEntry, DashboardAuthoringForm } from "@ontomato/contracts/dashboard";
 import { prepareChartImport } from "../charts/import";
 import { randomUUID } from "node:crypto";
 
@@ -73,7 +73,7 @@ export async function addDashboardChart(
 export async function renameDashboard(
   ownerId: string,
   domainId: string,
-  body: any,
+  body: DashboardAuthoringForm<"dashboard.rename">,
 ) {
   const detail = ensureDashboard(
     ownerId,
@@ -94,7 +94,7 @@ export async function deleteDashboardById(
 export async function renameDashboardDimension(
   ownerId: string,
   domainId: string,
-  body: any,
+  body: DashboardAuthoringForm<"dashboard.group.rename">,
 ) {
   const detail = ensureDashboard(
     ownerId,
@@ -120,7 +120,7 @@ export async function deleteDashboardDimension(
 export async function renameDashboardChart(
   ownerId: string,
   domainId: string,
-  body: any,
+  body: DashboardAuthoringForm<"dashboard.chart.rename">,
 ) {
   const detail = ensureDashboard(
     ownerId,
@@ -178,7 +178,7 @@ export async function replaceDashboardLayout(ownerId: string, domainId: string, 
 export async function renameDashboardMetric(
   ownerId: string,
   domainId: string,
-  body: any,
+  body: DashboardAuthoringForm<"dashboard.metric.rename">,
 ) {
   const detail = ensureDashboard(
     ownerId,

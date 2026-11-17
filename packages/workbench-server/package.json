@@ -13,7 +13,8 @@
     "test:integration": "vitest run src/services/ops-diagnosis/__tests__/runtime-http.integration.test.ts src/services/assistant/__tests__/definitions.integration.test.ts",
     "test:wire": "vitest run src/services/assistant/__tests__/ontology-wire.integration.test.ts",
     "build:report-skill": "node report-skill/build.mjs",
-    "build:chart-skill": "node chart-skill/build.mjs"
+    "build:chart-skill": "node chart-skill/build.mjs",
+    "build:dashboard-skill": "node dashboard-skill/build.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
