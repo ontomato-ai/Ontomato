@@ -231,8 +231,6 @@ export const en = {
   "api.noAvailableDashboardData":
     "No available data in current analysis results. Please verify that the query results contain table data before retrying.",
   "api.dashboardNotFound": "Dashboard not found",
-  "api.cannotGenerateChartInterpretation":
-    "Unable to generate structured chart interpretation at this time",
   "api.backendRequestFailed": (params?: Record<string, any>) =>
     `Backend request failed: ${params?.message ?? ""}`,
   "api.dslsCannotBeEmpty": "DSLs cannot be empty",

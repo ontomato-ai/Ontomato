@@ -4,7 +4,15 @@
     shadow="never"
     :body-style="{ padding: '0', height: '100%', overflow: 'hidden' }"
   >
-    <div ref="rootRef" class="metric-container">
+    <div
+      ref="rootRef"
+      class="metric-container"
+      :class="{ 'metric-container--selected': selected }"
+      tabindex="0"
+      @click="selectUnlessControl"
+      @focusin="select"
+      @keydown.enter.prevent="select"
+    >
       <div class="title-row">
         <h3 class="title" :title="name">{{ name }}</h3>
         <span
@@ -18,7 +26,6 @@
         </span>
         <DropdownMenu
           scene="metric"
-          :metric-ref="metricRef"
           trigger-class="metric-more"
           @command="(cmd) => emit('command', cmd)"
         />
@@ -28,7 +35,7 @@
         :class="['value-container', { 'value-container--transparent-loading': transparentLoading }]"
         element-loading-text=""
       >
-        <div v-if="metricRef && metric.error" class="metric-error" role="alert" :title="metric.error.message">
+        <div v-if="metric.error" class="metric-error" role="alert" :title="metric.error.message">
           <strong v-if="errorHeadline">{{ errorHeadline }}</strong>
           <span>{{ metric.error.message }}</span>
         </div>
@@ -46,7 +53,6 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import interact from "interactjs";
 import { TriangleAlert } from "lucide-vue-next";
-import { isMetricReferenceEntry } from "@ontomato/contracts/dashboard";
 import DropdownMenu from "./DropdownMenu.vue";
 import { clamp, parseGridColumns, partialResultNotice } from "./utils/dashboardHelper";
 import { cardErrorHeadline, metricCardValue } from "./utils/metricCard";
@@ -59,6 +65,8 @@ const transparentLoading = workbenchContent().dashboard.loadingMask === "transpa
 const { t } = useI18n();
 
 const props = defineProps({
+  /** Whether this card is the one the reader chose: a message sent from beside the page asks about it. */
+  selected: { type: Boolean, default: false },
   metric: {
     type: Object,
     default: () => ({
@@ -70,29 +78,26 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["command", "layout-change", "resize-active"]);
+const emit = defineEmits(["command", "layout-change", "resize-active", "select"]);
 
-function formatValue(value) {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "string") return value;
+/** The reader asked for this card: one card is chosen at a time, and choosing it again keeps it chosen. */
+function select() {
+  emit("select", { id: props.metric.id, name: name.value, kind: "metric" });
+}
 
-  const num = Number(value);
-  if (!Number.isFinite(num)) return String(value);
-
-  if (num % 1 !== 0) {
-    return num.toFixed(2);
-  }
-  return num.toLocaleString();
+/** Its menu and the resize handle act on the card; choosing it is the reader pointing at the card itself. */
+function selectUnlessControl(event) {
+  const target = event.target;
+  if (target?.closest(".metric-more, .resize-handle, .el-dropdown-menu, .el-dialog")) return;
+  select();
 }
 
 const name = computed(() => String(props.metric?.name || ""));
 const unit = computed(() => String(props.metric?.unit || "").trim());
 const loading = computed(() => String(props.metric?.state || "").trim() === "loading");
-/** A metric-reference card shows the single row's value as the metric gave it; zero rows are "no data". */
-const metricRef = computed(() => isMetricReferenceEntry(props.metric));
+/** A number card shows the single row's value as the metric gave it; zero rows are "no data". */
 const errorHeadline = computed(() => (props.metric?.error ? cardErrorHeadline(props.metric.error, t) : null));
 const formattedValue = computed(() => {
-  if (!metricRef.value) return formatValue(props.metric?.value);
   if (props.metric.state !== "ready" && props.metric.state !== "empty") return "";
   const value = metricCardValue(props.metric, props.metric.rows);
   return value.empty ? t("common.noData") : value.text;
@@ -172,6 +177,11 @@ onBeforeUnmount(() => {
 
 .metric-card:hover {
   border-color: var(--el-border-color-dark);
+}
+
+.metric-container.metric-container--selected {
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 2px var(--el-color-primary);
 }
 
 .metric-container {

@@ -12,7 +12,6 @@ export const ossProduct: WorkbenchProduct = {
     sessionId: /session[\s_-]*id\s*[=::-]\s*([a-zA-Z0-9_-]+)/i,
     backendNodeId: /backend[\s_-]*node[\s_-]*id\s*[=::-]\s*([a-zA-Z0-9_.:-]+)/i,
   },
-  chartFieldAnnotationPattern: /\s*[()(][^))]*[))]\s*/g,
   datasetClassPathPatterns: {
     line: /^(\/[^\s,,]+)/,
     tableCell: /^(\/[^\s,,|]+)/,

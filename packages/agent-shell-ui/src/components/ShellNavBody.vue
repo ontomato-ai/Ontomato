@@ -56,6 +56,8 @@ const emit = defineEmits<{
   loadMore: [];
   retry: [];
 }>();
+/** The pages the column offers as entries; a page the host only opens beside the conversation is not one. */
+const listedFeatures = computed(() => props.workbench.features.filter((feature) => feature.listed !== false));
 const deletingSession = ref<AgentHostSession | null>(null);
 const deleteDialog = ref<HTMLDialogElement | null>(null);
 const sessionMenu = ref<string | null>(null);
@@ -174,7 +176,7 @@ onBeforeUnmount(() => {
       <span class="nav-label">{{ labels.newConversation }}</span>
     </button>
 
-    <template v-for="feature in workbench.features" :key="feature.id">
+    <template v-for="feature in listedFeatures" :key="feature.id">
       <a v-if="feature.availability === 'link'" class="nav-item" :href="feature.href" target="_blank" rel="noopener">
         <component :is="featureIcon(feature.icon)" :size="16" aria-hidden="true" />
         <span class="nav-label">{{ feature.label }}</span>

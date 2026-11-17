@@ -26,7 +26,7 @@ describe("MetricViewData through a template ref", () => {
         },
       }),
     }));
-    app.provide(metricViewsKey, { read: async () => [{ reads: ++reads }] });
+    app.provide(metricViewsKey, { read: async () => [{ reads: ++reads }], describe: async () => [] });
     app.mount(document.createElement("div"));
     apps.push(app);
     await settle();

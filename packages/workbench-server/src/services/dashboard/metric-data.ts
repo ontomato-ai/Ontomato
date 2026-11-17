@@ -1,6 +1,7 @@
+import { validateStoredChartFile, type ChartDisplay } from "@ontomato/contracts/chart-data";
 import { z } from "zod";
 import {
-  dashboardChartInputs, isMetricReferenceEntry,
+  dashboardChartInputs,
   type DashboardCardRequest, type DashboardSaveParameters, type DashboardMetricOutput,
   type MetricReferenceEntry, type DashboardCardData,
 } from "@ontomato/contracts/dashboard";
@@ -11,7 +12,7 @@ import { DashboardMetricClient } from "./metric-client";
 import { HttpError } from "../../utils/errors";
 
 type FieldMappings = Record<string, string | string[]>;
-type Presentation = Pick<MetricReferenceEntry, "sort" | "formats">;
+type Presentation = Pick<ChartDisplay, "sort" | "formats">;
 type OutputIssue = { path: (string | number)[]; message: string; fields: string[] };
 const scalarInputs = { required: ["value"], numeric: ["value"], singleRow: true };
 
@@ -65,8 +66,15 @@ export function outputMappingIssues(
 }
 
 export function requireMatchingOutput(card: MetricReferenceEntry, output: DashboardMetricOutput): void {
-  const chartType = "chartType" in card ? card.chartType : "metric";
-  const mappings = "fields" in card ? card.fields : { value: card.valueField };
+  if ("chartFile" in card) {
+    const checked = validateStoredChartFile(card.chartFile.content, output.columns);
+    if (!checked.ok) throw new HttpError(422, `Metric output changed; ${checked.issues.map(issue=>`${issue.path.join(".")}: ${issue.message}`).join("; ")}`, checked.code, {
+      metricId:card.query.metricId,cardId:card.id,fields:checked.missingColumns,missingColumns:checked.missingColumns,issues:checked.issues,
+    });
+    return;
+  }
+  const chartType = "metric";
+  const mappings = { value: card.valueField };
   const parsed = chartFieldSchema(chartType).safeParse(mappings);
   const issues = parsed.success ? outputMappingIssues(chartType, parsed.data, output, card)
     : parsed.error.issues.map(issue => ({
@@ -85,7 +93,6 @@ async function ownedCard(owner: AssistantOwner, request: DashboardCardRequest) {
   const detail = await getOwnedDashboard(owner.userId, owner.domainId, request.dashboardId);
   const card = detail.groups.flatMap(group => [...group.charts, ...group.metrics]).find(entry => entry.id === request.cardId);
   if (!card) throw new HttpError(404, "Dashboard card not found", "NOT_FOUND");
-  if (!isMetricReferenceEntry(card)) throw new HttpError(400, "Use the legacy card endpoint", "LEGACY_CARD");
   return { detail, card };
 }
 
@@ -94,7 +101,12 @@ export async function queryMetricCard(owner: AssistantOwner, request: DashboardC
   const spec = await client.describe(card.query.metricId);
   const output = await client.execute(card.query, spec.revision);
   requireMatchingOutput(card, output);
-  return { card, metric: { id: spec.id, name: spec.name, revision: spec.revision, status: spec.status }, ...output };
+  const metric = { id:spec.id,name:spec.name,revision:spec.revision,status:spec.status };
+  if ("chartFile" in card) {
+    const {chartFile,...presentation}=card;
+    return {card:presentation,file:chartFile,metric,...output};
+  }
+  return {card,metric,...output};
 }
 
 export async function metricCardParameterForm(owner: AssistantOwner, request: DashboardCardRequest, client: DashboardMetricClient) {

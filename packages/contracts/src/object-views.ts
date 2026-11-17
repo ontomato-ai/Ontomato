@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { randomId } from "./random-id";
+import { storedChartFileSchema } from "./chart-data";
 
 export const viewBindingSchema = z.discriminatedUnion("source", [
   z.object({ source: z.literal("literal"), value: z.unknown() }).strict(),
@@ -14,9 +15,9 @@ export const viewConditionSchema = z.object({
   operator: z.enum(["eq", "ne", "present", "empty"]),
   value: z.string().max(1000).default(""),
 }).strict();
-export const viewWidgetSchema = z.object({
+export const nonChartViewWidgetSchema = z.object({
   id: z.string().min(1).max(100),
-  kind: z.enum(["text", "properties", "metric", "table", "chart", "links", "input", "action", "button"]),
+  kind: z.enum(["text", "properties", "metric", "table", "links", "input", "action", "button"]),
   title: z.string().max(200),
   span: z.number().int().min(1).max(12),
   height: z.number().int().min(80).max(1200).default(240),
@@ -46,6 +47,15 @@ export const viewWidgetSchema = z.object({
   onClick: z.enum(["refresh", "setVariable", "openObject"]).default("refresh"),
   targetClass: z.string().max(200).default(""),
 }).strict();
+export const chartViewWidgetSchema = z.object({
+  id: z.string().min(1).max(100), kind: z.literal("chart"), title: z.string().max(200),
+  span: z.number().int().min(1).max(12), height: z.number().int().min(80).max(1200).default(240),
+  resourceId: z.string().min(1).max(200), chartFile: storedChartFileSchema,
+  parameters: z.record(z.string().max(200), viewBindingSchema), visibleWhen: viewConditionSchema.optional(),
+}).strict();
+export const viewWidgetSchema = z.discriminatedUnion("kind", [nonChartViewWidgetSchema, chartViewWidgetSchema]);
+export type ChartViewWidget = z.infer<typeof chartViewWidgetSchema>;
+export type NonChartViewWidget = z.infer<typeof nonChartViewWidgetSchema>;
 export type ViewWidget = z.infer<typeof viewWidgetSchema>;
 export const objectViewDocumentSchema = z.object({
   schemaVersion: z.literal(1),
@@ -88,14 +98,19 @@ export type ObjectViewState = {
   versions: ObjectViewVersion[];
 };
 
-export function createViewWidget(kind: ViewWidget["kind"]): ViewWidget {
+/** A new component: a chart carries its MetricView and its file, every other kind its own defaults. */
+export function createViewWidget(kind: NonChartViewWidget["kind"]): NonChartViewWidget;
+// eslint-disable-next-line no-redeclare -- TypeScript overload; one runtime implementation.
+export function createViewWidget(kind: "chart", chart: Pick<ChartViewWidget, "resourceId" | "chartFile" | "parameters">): ChartViewWidget;
+// eslint-disable-next-line no-redeclare -- TypeScript overload; one runtime implementation.
+export function createViewWidget(kind: ViewWidget["kind"], chart?: Pick<ChartViewWidget, "resourceId" | "chartFile" | "parameters">): ViewWidget {
   const sizes = {
     text: { span: 12, height: 120 }, properties: { span: 12, height: 240 },
     metric: { span: 4, height: 80 }, table: { span: 12, height: 360 },
     chart: { span: 6, height: 320 }, links: { span: 12, height: 360 },
     input: { span: 6, height: 80 }, action: { span: 4, height: 80 }, button: { span: 4, height: 80 },
   };
-  return viewWidgetSchema.parse({ id: randomId(), kind, title: kind, ...sizes[kind] });
+  return viewWidgetSchema.parse({ id: randomId(), kind, title: kind, ...sizes[kind], ...chart });
 }
 export function createObjectView(className: string, title = className): ObjectViewDocument {
   return objectViewDocumentSchema.parse({
@@ -134,10 +149,10 @@ export function objectViewProductIssues(document: ObjectViewDocument): string[] 
   return document.tabs.flatMap(tab => tab.sections.flatMap(section => section.widgets.flatMap(widget => {
     const issues: string[] = [];
     if (widget.visibleWhen && !(widget.visibleWhen.binding.source === "variable" && !widget.visibleWhen.binding.path.includes(".") && ["present", "empty"].includes(widget.visibleWhen.operator))) issues.push("Visibility only checks presence of a local interaction variable; move business comparisons to a capability");
-    if (widget.binding?.source === "object" || Object.values(widget.parameters).some(binding => binding.source === "object")) issues.push("Bind the selected object with context.primaryKey, not object properties");
+    if ((widget.kind !== "chart" && widget.binding?.source === "object") || Object.values(widget.parameters).some(binding => binding.source === "object")) issues.push("Bind the selected object with context.primaryKey, not object properties");
     if (["properties", "links", "metric", "table", "chart", "action"].includes(widget.kind) && !widget.resourceId) issues.push("Bind a published capability before saving this view");
-    if (widget.resultPath || (widget.binding && ["properties", "links", "metric", "table", "chart", "action"].includes(widget.kind))) issues.push("Capability results cannot be replaced or transformed by view bindings");
-    if (widget.contextFields.length) issues.push("Use a MetricView to display Action context");
+    if (widget.kind !== "chart" && (widget.resultPath || (widget.binding && ["properties", "links", "metric", "table", "chart", "action"].includes(widget.kind)))) issues.push("Capability results cannot be replaced or transformed by view bindings");
+    if (widget.kind !== "chart" && widget.contextFields.length) issues.push("Use a MetricView to display Action context");
     return issues.map(issue => `${widget.id}: ${issue}`);
   })));
 }
@@ -145,7 +160,7 @@ export function objectViewProductIssues(document: ObjectViewDocument): string[] 
 export function objectProjectionIssues(document:ObjectViewDocument):string[]{
   const capabilityDocument: ObjectViewDocument={...document,tabs:document.tabs.map(tab=>({...tab,sections:tab.sections.map(section=>({...section,widgets:section.widgets.map(widget=>['properties','links'].includes(widget.kind)&&!widget.resourceId?{...widget,resourceId:'direct-object-read'}:widget)}))}))};
   const issues=objectViewProductIssues(capabilityDocument);
-  for(const widget of document.tabs.flatMap(tab=>tab.sections.flatMap(section=>section.widgets)))if(widget.resourceId||!['properties','links','text'].includes(widget.kind))issues.push(`${widget.id}: ObjectViews project object attributes and relationships; compose MetricWidgets and ActionViews in a Page`);
+  for(const widget of document.tabs.flatMap(tab=>tab.sections.flatMap(section=>section.widgets)))if(widget.kind!=='chart'&&(widget.resourceId||!['properties','links','text'].includes(widget.kind)))issues.push(`${widget.id}: ObjectViews project object attributes and relationships; compose MetricWidgets and ActionViews in a Page`);
   for(const widget of document.tabs.flatMap(tab=>tab.sections.flatMap(section=>section.widgets)))if(widget.kind==='links'&&!widget.resourceId&&!widget.relation)issues.push(`${widget.id}: Select an ObjectType relationship`);
   return issues;
 }

@@ -12,40 +12,53 @@ import type { ShellFeatureDeclaration } from "@ontomato/agent-shell-ui";
  * declaration, and their composer offers every agent: the settings' skill arrives with the configuration skill, the
  * dashboards' with the dashboard mapping.
  */
-const agentSettingsFeature: ShellFeatureDeclaration = {
-  id: "agents",
-  label: "agents",
+/** The ids are what the conversation's parameter and the host's slots name; the labels are what a reader reads. */
+export const AGENT_SETTINGS_PAGE_ID = "agents";
+const agentSettingsFeature = (label: string): ShellFeatureDeclaration => ({
+  id: AGENT_SETTINGS_PAGE_ID,
+  label,
   icon: "agents",
   availability: "page",
+  listed: false,
   withConversation: true,
-};
+});
 
 /** The dashboards are an application of their own: this application opens one beside its conversation, not a copy. */
 export const DASHBOARDS_PAGE_ID = "dashboards";
 
 /**
  * The dashboards page beside the conversation. Its address is what this application's page parameter names: enlarging
- * it opens the dashboard application at that board.
+ * it opens the dashboard application at that board. Its skill narrows the composer to the agents that can read and draft
+ * a board's cards, by the domain membership the dashboards application itself is open to.
  */
-export function dashboardsPageFeature(address: string): ShellFeatureDeclaration {
-  return { id: DASHBOARDS_PAGE_ID, label: "dashboards", icon: "dashboards", availability: "page", withConversation: true, address };
+export function dashboardsPageFeature(label: string, address: string): ShellFeatureDeclaration {
+  return {
+    id: DASHBOARDS_PAGE_ID,
+    label,
+    icon: "dashboard",
+    availability: "page",
+    listed: false,
+    withConversation: true,
+    address,
+    pageSkill: { pageKey: "dashboard", access: "domain-member" },
+  };
 }
 
 /** One governance record's report, opened beside the conversation that wrote it. */
 export const GOVERNANCE_REPORT_PAGE_ID = "governance-report";
 
 /**
- * The report page beside the conversation. Its address is what this application's page parameter names, `label` its
- * word in the column and the pane's title, and its own skill narrows this page's composer to the agents that carry it —
- * the governance preset the platform's mapping names for `governance-report`, with the business knowledge menu code it
- * is registered under.
+ * The report page beside the conversation. Its address is what this application's page parameter names, and its own
+ * skill narrows the composer to the agents that carry it: the governance preset the platform's mapping names for
+ * `governance-report`, under the business knowledge menu code.
  */
-export function governanceReportPageFeature(address: string, label: string): ShellFeatureDeclaration {
+export function governanceReportPageFeature(label: string, address: string): ShellFeatureDeclaration {
   return {
     id: GOVERNANCE_REPORT_PAGE_ID,
     label,
     icon: "report",
     availability: "page",
+    listed: false,
     withConversation: true,
     address,
     pageSkill: { pageKey: "governance-report", permissionCode: "business-knowledge" },
@@ -54,8 +67,16 @@ export function governanceReportPageFeature(address: string, label: string): She
 
 export function workbenchFeatures(
   editionFeatures: readonly ShellFeatureDeclaration[],
-  dashboards = dashboardsPageFeature(""),
+  /** The two pages this application opens beside its conversation, named in the reader's language. */
+  pages: { agents: string; dashboards: string },
+  dashboardsAddress = "",
+  /** A governance record's report, declared only while the conversation's page parameter names one. */
   governanceReport: ShellFeatureDeclaration | null = null,
 ): ShellFeatureDeclaration[] {
-  return [agentSettingsFeature, dashboards, ...(governanceReport ? [governanceReport] : []), ...editionFeatures];
+  return [
+    agentSettingsFeature(pages.agents),
+    dashboardsPageFeature(pages.dashboards, dashboardsAddress),
+    ...(governanceReport ? [governanceReport] : []),
+    ...editionFeatures,
+  ];
 }

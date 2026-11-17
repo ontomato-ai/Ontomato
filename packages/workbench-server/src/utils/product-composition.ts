@@ -8,7 +8,7 @@ export function normalizeComposition(id:string,input:ProductAssetInput):{input:P
   if(document.kind==='widget'&&document.widget.kind!=='platform'){
     const widget=document.widget;
     const presentation={fieldLabels:widget.fieldLabels,fieldOptions:widget.fieldOptions,variable:widget.variable};
-    if(['metric','table','chart'].includes(widget.kind))return {input:productAssetInputSchema.parse({...input,document:{kind:'metric-widget',presentation,renders:{kind:'MetricView',id:widget.resourceId},renderer:widget.kind==='metric'?'number':widget.kind,parameters:widget.parameters,fields:widget.fields,valueField:widget.valueField,labelField:widget.labelField,chartType:widget.chartType,height:widget.height}}),children:[]};
+    if(['metric','table'].includes(widget.kind))return {input:productAssetInputSchema.parse({...input,document:{kind:'metric-widget',presentation,renders:{kind:'MetricView',id:widget.resourceId},renderer:widget.kind==='metric'?'number':widget.kind,parameters:widget.parameters,fields:widget.fields,valueField:widget.valueField,labelField:widget.labelField,chartType:widget.chartType,height:widget.height}}),children:[]};
     if(widget.kind==='action')return {input:productAssetInputSchema.parse({...input,document:{kind:'action-view',presentation,renders:{kind:'Action',id:widget.resourceId},renderer:'form',parameters:widget.parameters,readOnlyParameters:widget.readOnlyParameters}}),children:[]};
   }
   if(document.kind==='layout-template')return {input:{...input,document:{...document,kind:'page' as const,isTemplate:true,compositionVersion:2 as const}},children:[]};

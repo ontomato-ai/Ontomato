@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick, reactive, type App } from "vue";
 import { createObjectView, createViewWidget } from "@ontomato/contracts/object-views";
+import { chartFile, chartWidget } from "./chart-fixture";
 import ObjectViewRuntime from "../object-views/ObjectViewRuntime.vue";
 import ObjectViewBuilder from "../object-views/ObjectViewBuilder.vue";
 import ObjectViewPage from "../object-views/ObjectViewPage.vue";
@@ -25,6 +26,16 @@ function mount(child: () => ReturnType<typeof h>) {
 }
 async function settle() { for (let index = 0; index < 12; index++) { await new Promise(resolve => setTimeout(resolve, 0)); await nextTick(); } }
 const answer = (data: unknown) => new Response(JSON.stringify({ success: true, data }));
+// The platform chart is the shared component; this stub reports the file and output it is given.
+vi.mock("@ontomato/foundation-ui/chart", async importOriginal => ({
+  ...(await importOriginal<typeof import("@ontomato/foundation-ui/chart")>()),
+  MetricChart: {
+    props: ["file", "metric", "height", "undated", "empty"],
+    setup: (props: { file: unknown; metric: { rows: unknown } }) => () => h("div", { class: "drawn" }, JSON.stringify({ file: props.file, rows: props.metric.rows })),
+  },
+}));
+/** A component without a chart: the fields and interactions these cases configure. */
+const widget = createViewWidget;
 /** The data engine's Action form with one text field per value; `parameters` answers a submission. */
 const actionForm = (values: Record<string, string>, parameters: Record<string, unknown> | null = null) => ({
   fields: Object.keys(values).map(key => ({ key, label: key, type: "text", required: false, defaultValue: null, help: null, multiline: false, placeholder: null, maxLength: 65536 })),
@@ -34,9 +45,9 @@ const actionForm = (values: Record<string, string>, parameters: Record<string, u
 describe("configured object view interaction", () => {
   it('selects a declared result row and passes capability detail values to an Action without object reads',async()=>{
     const view=createObjectView('Order');
-    const details=createViewWidget('properties');details.resourceId='details';details.variable='details';
-    const metric=createViewWidget('metric');metric.resourceId='counts';metric.resultIndex=1;metric.valueField='count';
-    const action=createViewWidget('action');action.resourceId='edit';action.title='Edit selected';action.parameters={id:{source:'context',path:'primaryKey'},name:{source:'variable',path:'details.name'}};
+    const details=widget('properties');details.resourceId='details';details.variable='details';
+    const metric=widget('metric');metric.resourceId='counts';metric.resultIndex=1;metric.valueField='count';
+    const action=widget('action');action.resourceId='edit';action.title='Edit selected';action.parameters={id:{source:'context',path:'primaryKey'},name:{source:'variable',path:'details.name'}};
     view.tabs[0].sections[0].widgets=[details,metric,action];
     const forms:unknown[]=[];
     vi.stubGlobal('fetch',async(url:string,init:RequestInit)=>{
@@ -62,8 +73,8 @@ describe("configured object view interaction", () => {
   });
   it('renders capability-bound properties and links without reading the object or relationships',async()=>{
     const view=createObjectView('Order');
-    const details=createViewWidget('properties');details.resourceId='details';details.parameters={id:{source:'context',path:'primaryKey'}};
-    const links=createViewWidget('links');links.resourceId='items';links.fields=['name'];
+    const details=widget('properties');details.resourceId='details';details.parameters={id:{source:'context',path:'primaryKey'}};
+    const links=widget('links');links.resourceId='items';links.fields=['name'];
     view.tabs[0].sections[0].widgets=[details,links];
     const requests:string[]=[];
     vi.stubGlobal('fetch',async(url:string,init:RequestInit)=>{
@@ -100,8 +111,8 @@ describe("configured object view interaction", () => {
   });
   it("shows a dependent action when a previously missing row-selection variable is assigned", async () => {
     const view = createObjectView("Person");
-    const table = createViewWidget("table"); table.variable = "selected"; table.binding = { source: "literal", value: [{ id: "exchange-1", name: "Conference" }] };
-    const action = createViewWidget("action"); action.title = "Maintain exchange"; action.resourceId = "maintain";
+    const table = widget("table"); table.variable = "selected"; table.binding = { source: "literal", value: [{ id: "exchange-1", name: "Conference" }] };
+    const action = widget("action"); action.title = "Maintain exchange"; action.resourceId = "maintain";
     action.visibleWhen = { binding: { source: "variable", path: "selected.id" }, operator: "present", value: "" };
     view.tabs[0].sections[0].widgets = [table, action];
     const element = mount(() => h(ObjectViewRuntime, { document: view, object: {}, reference: { className: "Person", primaryKey: "1" } }));
@@ -112,7 +123,7 @@ describe("configured object view interaction", () => {
   });
   it("shows an empty list property as empty, not as its raw value", async () => {
     const view = createObjectView("Person");
-    const properties = createViewWidget("properties"); properties.fields = ["photoWorks", "tags"];
+    const properties = widget("properties"); properties.fields = ["photoWorks", "tags"];
     view.tabs[0].sections[0].widgets = [properties];
     vi.stubGlobal("fetch", async () => answer({}));
     const element = mount(() => h(ObjectViewRuntime, { document: view, object: { photoWorks: [], tags: ["a"] }, reference: { className: "Person", primaryKey: "1" } }));
@@ -122,9 +133,9 @@ describe("configured object view interaction", () => {
 
   it("uses configured select options and does not label an unknown code as a degree", async () => {
     const view = createObjectView("Person");
-    const properties = createViewWidget("properties"); properties.fields = ["degree"];
+    const properties = widget("properties"); properties.fields = ["degree"];
     properties.fieldOptions = { degree: [{ value: "Doctor", label: "Doctor" }, { value: "Master", label: "Master" }] };
-    const action = createViewWidget("action"); action.resourceId = "degree"; action.title = "Edit degree";
+    const action = widget("action"); action.resourceId = "degree"; action.title = "Edit degree";
     action.fieldOptions = properties.fieldOptions;
     action.parameters = { degree: { source: "object", path: "degree" } };
     view.tabs[0].sections[0].widgets = [properties, action];
@@ -139,7 +150,7 @@ describe("configured object view interaction", () => {
   });
   it("shows the current person read-only and executes what the form answers for the bound identity", async () => {
     const view = createObjectView("Person");
-    const action = createViewWidget("action"); action.resourceId = "degree"; action.title = "Edit degree";
+    const action = widget("action"); action.resourceId = "degree"; action.title = "Edit degree";
     action.contextFields = ["name"];
     action.readOnlyParameters = ["person_id"];
     action.parameters = { person_id: { source: "object", path: "id" } };
@@ -170,7 +181,7 @@ describe("configured object view interaction", () => {
   });
   it("shows the field errors the form answers and executes nothing", async () => {
     const view = createObjectView("Order");
-    const action = createViewWidget("action"); action.resourceId = "ship"; action.title = "Ship order";
+    const action = widget("action"); action.resourceId = "ship"; action.title = "Ship order";
     view.tabs[0].sections[0].widgets = [action];
     let executions = 0;
     vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
@@ -190,8 +201,8 @@ describe("configured object view interaction", () => {
   });
   it("shows success and refreshed properties after submitting an action", async () => {
     const view = createObjectView("Person");
-    const properties = createViewWidget("properties"); properties.fields = ["degree"];
-    const action = createViewWidget("action"); action.resourceId = "update-degree"; action.title = "Update degree";
+    const properties = widget("properties"); properties.fields = ["degree"];
+    const action = widget("action"); action.resourceId = "update-degree"; action.title = "Update degree";
     view.tabs[0].sections[0].widgets = [properties, action];
     vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
       if (!url.endsWith("/action/form")) return answer({});
@@ -214,7 +225,7 @@ describe("configured object view interaction", () => {
   });
   it("Action button sends the complete Java form result including null, empty string and zero", async () => {
     const view = createObjectView("Order");
-    const action = createViewWidget("action"); action.resourceId = "ship"; action.title = "Ship order";
+    const action = widget("action"); action.resourceId = "ship"; action.title = "Ship order";
     view.tabs[0].sections[0].widgets = [action];
     const parameters = { optional: null, text: "", count: 0 };
     let sent: unknown;
@@ -231,8 +242,8 @@ describe("configured object view interaction", () => {
   });
   it("reads a bound MetricView again after an Action succeeds", async () => {
     const view = createObjectView("Order");
-    const metric = createViewWidget("metric"); metric.resourceId = "metric-1"; metric.valueField = "value";
-    const action = createViewWidget("action"); action.resourceId = "ship"; action.title = "Ship order";
+    const metric = widget("metric"); metric.resourceId = "metric-1"; metric.valueField = "value";
+    const action = widget("action"); action.resourceId = "ship"; action.title = "Ship order";
     view.tabs[0].sections[0].widgets = [metric, action];
     let reads = 0;
     vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
@@ -250,9 +261,9 @@ describe("configured object view interaction", () => {
   it("updates a bound metric and conditional component when an input variable changes", async () => {
     const view = createObjectView("Order");
     view.variables.filter = "initial";
-    const input = createViewWidget("input"); input.variable = "filter";
-    const metric = createViewWidget("metric"); metric.binding = { source: "variable", path: "filter" };
-    const text = createViewWidget("text"); text.text = "Now visible";
+    const input = widget("input"); input.variable = "filter";
+    const metric = widget("metric"); metric.binding = { source: "variable", path: "filter" };
+    const text = widget("text"); text.text = "Now visible";
     text.visibleWhen = { binding: { source: "variable", path: "filter" }, operator: "eq", value: "changed" };
     view.tabs[0].sections[0].widgets = [input, metric, text];
     const element = mount(() => h(ObjectViewRuntime, { document: view, object: { id: "1" }, reference: { className: "Order", primaryKey: "1" } }));
@@ -324,10 +335,42 @@ describe("configured object view interaction", () => {
     expect(calls.find(call => call.url.endsWith("/publish"))?.body).toMatchObject({ revision: 1, expectedRevision: 1, form: "full" });
     expect(element.textContent).toContain("Published 1");
   });
+  it("creates a chart by bringing in one of the author's dashboard charts, keeping its file and MetricView", async () => {
+    const calls: Array<{ url: string; body: Record<string, any> }> = [];
+    // The view already reads the object's attributes: this case adds a chart to it.
+    const draft = createObjectView("Order");
+    draft.tabs[0].sections[0].widgets[0].resourceId = "order-details";
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      const body = init.body ? JSON.parse(String(init.body)) : {}; calls.push({ url, body });
+      const data = url.endsWith("/edit") ? { revision: 0, publishedRevision: null, versions: [{ revision: 0, createdAt: 0, author: "author", description: "", document: draft }] }
+        : url.endsWith("getMetas") ? { classDef: [{ className: "Order", showName: "Order", attrs: [{ name: "id", primaryKey: true }] }] }
+        : url.endsWith("/dashboards") ? [{ id: "board-1", name: "Sales", createdAt: 0, updatedAt: 0 }]
+        : url.includes("/dashboards/board-1") ? { id: "board-1", ownerId: "author", name: "Sales", createdAt: 0, updatedAt: 0, groups: [{ id: "g", title: "Sales", metrics: [], charts: [{ id: "card-1", name: "Orders by kind", query: { kind: "metric", metricId: "orders", parameters: { year: 2026 } }, chartFile: { name: "orders.chart.json", content: chartFile() } }] }] }
+        : url.endsWith("/object-views/save") ? { assetId: "view-1", revision: 1, publishedRevision: null, versions: [{ revision: 1, document: body.document }] } : [];
+      return new Response(JSON.stringify({ success: true, data }));
+    });
+    const element = mount(() => h(ObjectViewBuilder, { className: "Order" }));
+    await settle();
+    const bringIn = Array.from(element.querySelectorAll(".palette button")).find(button => button.textContent?.trim() === "Bring in a chart") as HTMLButtonElement;
+    bringIn.click();
+    await settle();
+    const dialog = document.querySelector(".el-overlay-dialog")!;
+    const choose = Array.from(dialog.querySelectorAll("button")).find(button => button.textContent?.trim() === "Bring in") as HTMLButtonElement;
+    choose.click(); await settle();
+    // Saving waits for the editor to be ready, so the draft is taken after the canvas holds the chart.
+    const saveDraft = Array.from(element.querySelectorAll(".builder-actions button"))[0] as HTMLButtonElement;
+    saveDraft.click();
+    await settle();
+    const saved = calls.find(call => call.url.endsWith("/object-views/save"))?.body.document.tabs[0].sections[0].widgets;
+    expect(saved).toHaveLength(2);
+    expect(saved[1]).toMatchObject({ kind: "chart", title: "Orders by kind", resourceId: "orders", chartFile: chartFile(), parameters: { year: { source: "literal", value: 2026 } } });
+    // The source dashboard is only read.
+    expect(calls.some(call => /\/dashboards\/[^/]+$/.test(call.url) && call.body && Object.keys(call.body).length)).toBe(false);
+  });
   it("preserves input state when the host recreates an identical object reference", async () => {
     const view = createObjectView("Order");
-    const input = createViewWidget("input"); input.variable = "filter";
-    const metric = createViewWidget("metric"); metric.binding = { source: "variable", path: "filter" };
+    const input = widget("input"); input.variable = "filter";
+    const metric = widget("metric"); metric.binding = { source: "variable", path: "filter" };
     view.variables.filter = "initial";
     view.tabs[0].sections[0].widgets = [input, metric];
     const version = ref(0);
@@ -351,8 +394,8 @@ describe("configured object view interaction", () => {
   });
   it("does not reload published configuration when runtime variables or object data change", async () => {
     const view = createObjectView("Order");
-    const input = createViewWidget("input"); input.variable = "filter";
-    const metric = createViewWidget("metric"); metric.binding = { source: "variable", path: "filter" };
+    const input = widget("input"); input.variable = "filter";
+    const metric = widget("metric"); metric.binding = { source: "variable", path: "filter" };
     view.variables.filter = "initial";
     view.tabs[0].sections[0].widgets = [input, metric];
     let reads = 0;
@@ -372,7 +415,7 @@ describe("configured object view interaction", () => {
   it("sends fixed text separately from typed bindings and displays execution errors", async () => {
     const view = createObjectView("Order");
     view.variables.limit = 7;
-    const chart = createViewWidget("chart"); chart.resourceId = "metric-1";
+    const chart = chartWidget(); chart.resourceId = "metric-1";
     chart.parameters = {
       top_n: { source: "literal", value: "abc" },
       limit: { source: "variable", path: "limit" },
@@ -381,6 +424,7 @@ describe("configured object view interaction", () => {
     view.tabs[0].sections[0].widgets = [chart];
     vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
       if (url.endsWith("queryById")) return answer({ function: { parameters: [] } });
+      if (url.endsWith("/metrics/describe")) return answer({ outputColumns: [{ key: "kind" }, { key: "amount" }] });
       expect(JSON.parse(String(init.body))).toEqual({
         id: "metric-1", param: { limit: 7, count: 3 }, parameterTexts: { top_n: "abc" },
       });
@@ -390,16 +434,47 @@ describe("configured object view interaction", () => {
     await settle();
     expect(element.textContent).toContain("Invalid value for top_n");
   });
+  it("fills the view's chart from the bound MetricView and runs no skill when the object or a parameter changes", async () => {
+    const view = createObjectView("Order");
+    view.variables.filter = "initial";
+    const input = widget("input"); input.variable = "filter";
+    const chart = chartWidget(); chart.resourceId = "metric-1";
+    chart.parameters = { id: { source: "context", path: "primaryKey" }, filter: { source: "variable", path: "filter" } };
+    view.tabs[0].sections[0].widgets = [input, chart];
+    const actions: string[] = [], reads: Array<Record<string, unknown>> = [];
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      actions.push(url);
+      if (url.endsWith("queryById")) return answer({ function: { parameters: [] } });
+      if (url.endsWith("/metrics/describe")) return answer({ outputColumns: [{ key: "kind" }, { key: "amount" }, { key: "region" }] });
+      const body = JSON.parse(String(init.body));
+      if (body.id === "metric-1") reads.push(body.param);
+      return answer([{ kind: "A", amount: 1, region: "east" }]);
+    });
+    const reference = ref({ className: "Order", primaryKey: "1" });
+    const element = mount(() => h(ObjectViewRuntime, { document: view, object: {}, reference: reference.value }));
+    await settle();
+    expect(reads.at(-1)).toEqual({ id: "1", filter: "initial" });
+    // The MetricView declares one more column than the file draws; the chart fills from the declared columns.
+    expect(element.querySelector(".drawn")?.textContent).toContain('"rows":[{"kind":"A","amount":1,"region":"east"}]');
+    const field = element.querySelector("input")!;
+    field.value = "changed"; field.dispatchEvent(new Event("input", { bubbles: true })); await settle();
+    expect(reads.at(-1)).toEqual({ id: "1", filter: "changed" });
+    // Another object reads the same MetricView again: its identity is the new one and the variables are its defaults.
+    reference.value = { className: "Order", primaryKey: "2" }; await settle();
+    expect(reads.at(-1)).toEqual({ id: "2", filter: "initial" });
+    expect(actions.some(url => url.includes("/skills"))).toBe(false);
+  });
   it("queries a bound MetricView once for each changed parameter", async () => {
     const view = createObjectView("Order");
     view.variables.filter = "initial";
-    const input = createViewWidget("input"); input.variable = "filter";
-    const metric = createViewWidget("metric"); metric.resourceId = "metric-1"; metric.valueField = "value";
+    const input = widget("input"); input.variable = "filter";
+    const metric = widget("metric"); metric.resourceId = "metric-1"; metric.valueField = "value";
     metric.parameters.filter = { source: "variable", path: "filter" };
     view.tabs[0].sections[0].widgets = [input, metric];
     const values: string[] = [];
     vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
       if (_url.endsWith("queryById")) return new Response(JSON.stringify({ success: true, data: { function: { queryPackage: { manifest: { parameterDefs: [{ name: "page_offset", value: 0 }] } } } } }));
+      if (_url.endsWith("/metrics/describe")) return new Response(JSON.stringify({ outputColumns: [{ key: "value" }] }));
       const body = JSON.parse(String(init.body)); values.push(body.param.filter);
       expect(body.param.page_offset).toBe(0);
       return new Response(JSON.stringify({ success: true, data: [{ value: body.param.filter }] }));
@@ -414,7 +489,7 @@ describe("configured object view interaction", () => {
   });
   it("uses the current binding after clearing a query and never displays the previous query rows", async () => {
     const view = reactive(createObjectView("Order"));
-    const table = createViewWidget("table"); table.resourceId = "query-1";
+    const table = widget("table"); table.resourceId = "query-1";
     table.binding = { source: "literal", value: [{ name: "Bound row" }] };
     view.tabs[0].sections[0].widgets = [table];
     vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ success: true, data: [{ name: "Query row" }] })));

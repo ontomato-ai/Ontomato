@@ -19,11 +19,13 @@ import { createAssistantClient, createAssistantFeedback } from "../assistant-hos
 import { readRememberedAgent, readRememberedSession, rememberAgent, rememberSession } from "../remembered-agent";
 import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
+import { dashboardSelection } from "../../dashboard";
 import DatasetActions from "./DatasetActions.vue";
+import ChartFileActions from "./ChartFileActions.vue";
 import DatasetDrilldown from "./DatasetDrilldown.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
 import {
-  DASHBOARDS_PAGE_ID, GOVERNANCE_REPORT_PAGE_ID, dashboardsPageFeature, governanceReportPageFeature, workbenchFeatures,
+  AGENT_SETTINGS_PAGE_ID, DASHBOARDS_PAGE_ID, GOVERNANCE_REPORT_PAGE_ID, governanceReportPageFeature, workbenchFeatures,
 } from "../features";
 import FollowUpRenderer from "./FollowUpRenderer.vue";
 import ClarificationRenderer from "./ClarificationRenderer.vue";
@@ -121,12 +123,12 @@ const inGovernanceReport = computed(() => pilotFeatureId.value === GOVERNANCE_RE
  */
 const featureId = computed<string | null>({
   get: () => {
-    if (inSettings.value) return "agents";
+    if (inSettings.value) return AGENT_SETTINGS_PAGE_ID;
     if (pilotFeatureId.value) return pilotFeatureId.value;
     return Object.entries(featureRoutes).find(([, page]) => page.name === route.name)?.[0] ?? null;
   },
   set: (id) => {
-    if (id === "agents" && inSettings.value) return;
+    if (id === AGENT_SETTINGS_PAGE_ID && inSettings.value) return;
     // Closing the page beside the conversation only drops the parameter: the conversation stays.
     if (inPilotPage.value || id === DASHBOARDS_PAGE_ID || id === GOVERNANCE_REPORT_PAGE_ID) {
       const { page: _page, ...query } = route.query;
@@ -186,11 +188,10 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   label: appearance.value?.brand?.name || props.defaultBrandName,
   features: workbenchFeatures(
     props.features,
-    dashboardsPageFeature(pageAddress.value ?? routes.dashboards.path),
-    // A report is one record's: it is this application's page only while the address names one, so the column lists it
-    // for that conversation and never as an entry of its own.
+    { agents: t("assistant.featureAgents"), dashboards: t("assistant.featureDashboards") },
+    inDashboards.value ? pageAddress.value! : routes.dashboards.path,
     inGovernanceReport.value
-      ? governanceReportPageFeature(pageAddress.value!, t("assistant.featureGovernanceReport"))
+      ? governanceReportPageFeature(t("assistant.featureGovernanceReport"), pageAddress.value!)
       : null,
   ),
 }));
@@ -204,9 +205,9 @@ const labels = useShellLabels();
  */
 const settingsAgents = useAgentDefinitions();
 const pageContext = computed<PageContext | null>(() => {
-  if (inDashboards.value) return { pageKey: "dashboard", url: pageAddress.value!, label: t("assistant.featureDashboards"), selection: [] };
+  if (inDashboards.value)
+    return { pageKey: "dashboard", url: pageAddress.value!, label: t("assistant.featureDashboards"), selection: dashboardSelection.value };
   if (inGovernanceReport.value) {
-    const [, recordId = ""] = /^\/governance\/reports\/([^/?]+)/.exec(pageAddress.value!) ?? [];
     const issue = new URLSearchParams(pageAddress.value!.split("?")[1] ?? "").get("issue");
     return {
       pageKey: "governance-report",
@@ -400,9 +401,9 @@ function appearanceSaved(value: WorkbenchAppearance) {
       />
     </template>
     <template #feature="{ featureId: page }">
-      <AgentModelsPage v-if="page === 'agents' && modelsOpen" :source="modelSource" :path="modelsPage.path" />
+      <AgentModelsPage v-if="page === AGENT_SETTINGS_PAGE_ID && modelsOpen" :source="modelSource" :path="modelsPage.path" />
       <AgentSettingsPage
-        v-else-if="page === 'agents'"
+        v-else-if="page === AGENT_SETTINGS_PAGE_ID"
         :agent-id="settingsAgentId"
         :creating="creatingAgent"
         @changed="shell?.reloadAgents()"
@@ -420,8 +421,10 @@ function appearanceSaved(value: WorkbenchAppearance) {
       <DatasetDrilldown :artifact="artifact" :title="title" :selected-row-indices="selectedRowIndices" />
     </template>
     <template #artifact-actions="{ artifact, title }">
-      <!-- A dataset added to a board opens the dashboards application, which is where boards live. -->
+      <!-- A file added to a board opens the dashboards application, which is where boards live: a dataset is planned
+           into cards there, a chart file is put on the board as it is. -->
       <DatasetActions :artifact="artifact" :title="title" @open-dashboard="openDashboardApplication" />
+      <ChartFileActions :artifact="artifact" :title="title" @open-dashboard="openDashboardApplication" />
     </template>
     <template #message-actions="{ sessionId, runId }">
       <TurnDiagnoseButton v-if="sessionId && runId" :session-id="sessionId" :run-id="runId" />
