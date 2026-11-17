@@ -9,7 +9,7 @@ import {appIcon} from '@ontomato/platform-shell';
 import {nodeApiRequest} from '@ontomato/workbench-ui';
 import {defaultPersonalWorkspace,personalWorkspaceSchema} from '@ontomato/contracts/personal-workspace';
 import {useI18n} from 'vue-i18n';
-import {openApplicationKey,platformApplicationsKey} from '../apps';
+import {appAt,openApplicationKey,platformApplicationsKey} from '../apps';
 const props=defineProps<{asset:ProductAsset;rows:Record<string,unknown>[];loading?:boolean;objectType:string}>();
 const router=useRouter();
 const {locale,t}=useI18n();
@@ -17,8 +17,8 @@ const openApplication=inject(openApplicationKey,undefined);
 const applications=inject(platformApplicationsKey,undefined);
 function application(id:unknown){return applications?.value.find(app=>app.id===id);}
 function applicationIcon(id:unknown){return appIcon(application(id)?.icon??'app-window');}
-/** Application rows show the platform's current name and description for their application; other rows show what was read. */
-function rowApplication(row:Record<string,unknown>){return props.objectType==='platform:FavoriteApplication'?application(row.id):props.objectType==='platform:RecentVisit'?application(row.appId):undefined;}
+/** Application rows show the platform's current name and description for their application; other rows show what was read. A recent visit finds its application from its path, as the rail did when recording it. */
+function rowApplication(row:Record<string,unknown>){return props.objectType==='platform:FavoriteApplication'?application(row.id):props.objectType==='platform:RecentVisit'&&applications&&typeof row.path==='string'?appAt(applications.value,row.path.split('?')[0]!)??undefined:undefined;}
 function rowValue(row:Record<string,unknown>,field:string){return field==='description'&&props.objectType==='platform:FavoriteApplication'?application(row.id)?.description??row[field]:row[field];}
 const changed=ref<Record<string,{pinned:boolean;title:string}>>({}),error=ref(''),saving=ref(false);
 const order=ref<string[]>();
