@@ -141,6 +141,15 @@ public class OntologyRetrievalController {
     return store.openCaller(AgentJson.id(key), context.owner(), body);
   }
 
+  @PutMapping("/ontology/retrieval-callers/{id}/user-quotes")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void userQuotes(@PathVariable String id,@RequestBody Map<String,Object> body,HttpServletRequest req) {
+    access.service(req);var context=access.current(req);
+    AgentJson.fields(JSONObject.from(body),"recentUserMessages");
+    if(!(body.get("recentUserMessages") instanceof List<?> quotes) || quotes.stream().anyMatch(value -> !(value instanceof String))) throw AgentHttpException.invalid("recentUserMessages must be a string array");
+    store.updateUserQuotes(AgentJson.id(id),context.owner(),new JSONArray(quotes));
+  }
+
   @GetMapping("/ontology/retrieval-callers/{id}")
   public Object callerStatus(@PathVariable String id, HttpServletRequest req) {
     var owner = access.callerOwner(req, AgentJson.id(id));

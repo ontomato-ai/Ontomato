@@ -27,7 +27,7 @@ vi.mock("../../../services/assistant/service", () => ({
     isAppBuilder: async (_owner: unknown, input: { agentId?: string; sessionId?: string }) =>
       input.agentId === fixture.builderAgent || input.sessionId === fixture.builderSession,
     create: async (_id: string, _owner: unknown, input: { agentId: string }) => ({ agentId: input.agentId }),
-    start: async (sessionId: string) => ({ sessionId }),
+    send: async (sessionId: string) => ({ sessionId }),
   },
 }));
 

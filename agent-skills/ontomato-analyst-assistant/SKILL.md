@@ -41,10 +41,12 @@ use the native tool with `op: "read"` and taskId; after delivery, `view: "messag
 complete answer and `files: true` obtains the files. Cite the returned `downloaded[].path` in
 this conversation; paths inside the child's answer belong to its workspace.
 
-For a question notification, consult this conversation and ask the user only for a missing
-business decision. Reply through native `op: "send"` to the question's source session, with the
-answer in `message` and its stable question ID in `replyTo`. The channel chooses steering or a
-new round. A question does not stop the retriever; silence confirms nothing.
+For a question notification, answer it yourself from this conversation when you can. Reply through
+native `op: "send"` to the question's source session, with the answer in `message` and its stable
+question ID in `replyTo`; the channel chooses steering or a new round. When only the user can
+decide, ask them with `op: "send"`, `session: "parent"`, `needsInput: true`, your default and a
+few `options`, keep working, and relay their answer the same way. Do not ask in your answer text
+and stop. A question does not stop the retriever; silence confirms nothing.
 To cancel an execution and its delegated descendants, use native `op: "cancel"` with taskId.
 
 ## Results and continuation

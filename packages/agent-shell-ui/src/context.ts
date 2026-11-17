@@ -1,6 +1,8 @@
-import { inject, type InjectionKey, type Ref, type Slot } from "vue";
+import { inject, reactive, type InjectionKey, type Ref, type Slot } from "vue";
+import type { AgentPendingQuestion } from "@ontomato/contracts/agent-channel";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { ShellTaskPort } from "./host";
+import type { useAgentConversation } from "./useAgentConversation";
 import type {
   ArtifactRendererOverride,
   OpenArtifact,
@@ -30,6 +32,48 @@ export interface ShellContext {
   pageLink(href: string): (() => void) | null;
   /** Continue the current conversation from an explicit artifact action. */
   continueConversation?: (message: string) => Promise<void>;
+  /** The questions the conversation's agents asked the reader, answered from the panel over each of its composers. */
+  questions: ShellQuestions;
+}
+
+export interface ShellQuestions {
+  /** Every question asked of the reader that has no answer yet, as the conversation's host reports it. */
+  pending: Readonly<Ref<AgentPendingQuestion[]>>;
+  /** A message of the conversation is on its way; an answer waits until it has arrived. */
+  sending: Readonly<Ref<boolean>>;
+  /** Sends the reader's answer to one question; resolves to whether it was delivered. */
+  answer(requestId: string, answer: string): Promise<boolean>;
+  view: QuestionView;
+}
+
+/** The reader's unsent answer to one question: the option picked (its index, or the reader's own answer) and that text. */
+export interface QuestionDraft {
+  choice: number | "other" | null;
+  other: string;
+}
+
+/**
+ * What the reader does with the questions on this page, shared by the panels over the conversation's composers (the
+ * conversation's own and a full page's): whether the panel is open and on which question, the unsent drafts, and the
+ * questions skipped here. None of it is sent or kept, so a reload lists every unanswered question again.
+ */
+export interface QuestionView {
+  open: boolean;
+  current: string | null;
+  drafts: Record<string, QuestionDraft>;
+  skipped: string[];
+}
+
+/** A conversation's questions for the shell context, with a view of its own for the page that holds the conversation. */
+export function conversationQuestions(
+  conversation: Pick<ReturnType<typeof useAgentConversation>, "pendingQuestions" | "sending" | "answerQuestion">,
+): ShellQuestions {
+  return {
+    pending: conversation.pendingQuestions,
+    sending: conversation.sending,
+    answer: async (requestId, answer) => Boolean((await conversation.answerQuestion(requestId, answer))?.delivery),
+    view: reactive<QuestionView>({ open: false, current: null, drafts: {}, skipped: [] }),
+  };
 }
 
 /** The message whose Markdown is rendering; artifact references resolve within its run. */

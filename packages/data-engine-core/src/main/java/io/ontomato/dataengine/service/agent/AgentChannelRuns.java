@@ -25,10 +25,10 @@ public class AgentChannelRuns {
     if(grant!=null) request.put("credentialFrom",grant.getString("runId"));
     else request.put("credential",credential(context));
   }
-  public JSONObject start(String agentId,String session,String run,JSONObject input,JSONObject parameters,OntologyAgentAccess.Context context) throws Exception {
-    return start(agentId,session,run,input,parameters,context,null);
+  public JSONObject send(String agentId,String session,String run,JSONObject input,JSONObject parameters,OntologyAgentAccess.Context context) throws Exception {
+    return send(agentId,session,run,input,parameters,context,null);
   }
-  public JSONObject start(String agentId,String session,String run,JSONObject input,JSONObject parameters,OntologyAgentAccess.Context context,String sourceRun) throws Exception {
+  public JSONObject send(String agentId,String session,String run,JSONObject input,JSONObject parameters,OntologyAgentAccess.Context context,String sourceRun) throws Exception {
     var actor=callers.open(UUID.randomUUID().toString(),context);
     var agent=JSONObject.of("providerId","ontology","agentId",agentId);
     String domain=context.owner().domainId();

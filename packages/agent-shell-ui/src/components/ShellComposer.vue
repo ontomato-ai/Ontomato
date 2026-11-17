@@ -7,9 +7,14 @@ import type { ShellLabels } from "../types";
  * The one message box of the platform: the conversation shell's, and the platform home's question box. Its words come
  * from the host that places it. A host may put controls at its lower left (`tools`, the home's agent picker); the box
  * then holds the message above a row with those controls and the send button, otherwise it is one row.
+ *
+ * While the agent works (`busy`) the reader still sends: the message goes into the running reply. The stop button stands
+ * beside the send button then, which shows once there is something to send. Only a message still on its way (`sending`)
+ * holds the next one back, and the box keeps its text until it can go.
  */
 const props = defineProps<{
   busy: boolean;
+  sending?: boolean;
   disabled?: boolean;
   autofocus?: boolean;
   labels: Pick<ShellLabels, "placeholder" | "send" | "stop">;
@@ -20,7 +25,8 @@ const stacked = computed(() => slots.tools !== undefined);
 const text = ref("");
 const input = ref<HTMLTextAreaElement | null>(null);
 const composing = ref(false);
-const canSend = computed(() => !props.busy && !props.disabled && text.value.trim().length > 0);
+const hasText = computed(() => text.value.trim().length > 0);
+const canSend = computed(() => !props.sending && !props.disabled && hasText.value);
 
 /**
  * The composer is as tall as what it shows: the message, or while it is empty its placeholder, so a long hint is read in
@@ -80,26 +86,28 @@ defineExpose({ focus: () => input.value?.focus() });
       @compositionend="composing = false"
     />
     <div v-if="stacked" class="composer-tools"><slot name="tools" /></div>
-    <button
-      v-if="busy"
-      type="button"
-      class="composer-button stop"
-      :title="labels.stop"
-      :aria-label="labels.stop"
-      @click="emit('stop')"
-    >
-      <Square :size="12" fill="currentColor" />
-    </button>
-    <button
-      v-else
-      type="submit"
-      class="composer-button"
-      :disabled="!canSend"
-      :title="labels.send"
-      :aria-label="labels.send"
-    >
-      <ArrowUp :size="17" />
-    </button>
+    <div class="composer-actions">
+      <button
+        v-if="busy"
+        type="button"
+        class="composer-button stop"
+        :title="labels.stop"
+        :aria-label="labels.stop"
+        @click="emit('stop')"
+      >
+        <Square :size="12" fill="currentColor" />
+      </button>
+      <button
+        v-if="!busy || hasText"
+        type="submit"
+        class="composer-button"
+        :disabled="!canSend"
+        :title="labels.send"
+        :aria-label="labels.send"
+      >
+        <ArrowUp :size="17" />
+      </button>
+    </div>
   </form>
 </template>
 
@@ -147,7 +155,7 @@ defineExpose({ focus: () => input.value?.focus() });
 .composer.stacked textarea {
   grid-area: input;
 }
-.composer.stacked .composer-button {
+.composer.stacked .composer-actions {
   grid-area: send;
 }
 .composer-tools {
@@ -189,6 +197,11 @@ textarea {
 }
 textarea::placeholder {
   color: var(--el-text-color-placeholder);
+}
+.composer-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
 }
 .composer-button {
   display: grid;

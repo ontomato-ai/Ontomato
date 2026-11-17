@@ -417,12 +417,12 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
   }));
   app.post("/v1/channel/sessions/:sessionId/runs", route(async (req, res) => {
     const ctx = scope(req), headers = runtimeAdmissionHeadersSchema.parse(req.headers);
-    const body = z.object({ channel: agentRunContextSchema, language: z.string().min(1), input: agentInputSchema, credential: agentCredentialSchema.optional(), credentialFrom: runtimeIdSchema.optional(), context: z.record(z.unknown()).optional() }).strict().parse(req.body);
+    const body = z.object({ channel: agentRunContextSchema, language: z.string().min(1), input: agentInputSchema, replyTo: runtimeIdSchema.optional(), credential: agentCredentialSchema.optional(), credentialFrom: runtimeIdSchema.optional(), context: z.record(z.unknown()).optional() }).strict().parse(req.body);
     if (Boolean(body.credential) === Boolean(body.credentialFrom)) throw new RuntimeError(400,"INVALID_REQUEST","Provide exactly one initiating credential or source execution");
     const source = body.credentialFrom ? await runtime.channel.facts.intent(ctx.scope,body.credentialFrom) : null;
     const channel = source ? {...body.channel,root:source.channel.root} : body.channel;
     const credential = body.credential ?? runtime.channel.credential(source!.channel);
-    res.status(202).json(await runtime.channel.request(ctx.scope, runtimeIdSchema.parse(req.params.sessionId), headers["idempotency-key"], channel, body.input, body.language, body.context as import("@ontomato/contracts/agent-channel").AgentRunIntent["context"], credential));
+    res.status(202).json(await runtime.channel.request(ctx.scope, runtimeIdSchema.parse(req.params.sessionId), headers["idempotency-key"], channel, body.replyTo ? {role:"notification",kind:"agent-answer",source:{kind:"user"},content:body.input.content,timestamp:body.input.timestamp,replyTo:body.replyTo} : body.input, body.language, body.context as import("@ontomato/contracts/agent-channel").AgentRunIntent["context"], credential));
   }));
   app.get("/v1/channel/sessions/:sessionId/tasks", route(async (req, res) => {
     res.json(await runtime.channel.tasks(scope(req).scope, runtimeIdSchema.parse(req.params.sessionId)));

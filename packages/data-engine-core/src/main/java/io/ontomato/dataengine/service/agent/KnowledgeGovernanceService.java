@@ -149,17 +149,18 @@ public class KnowledgeGovernanceService {
     });
   }
 
-  public boolean start(String id,String run,String message,OntologyAgentAccess.Context context) throws Exception {
+  public JSONObject send(String id,String run,String message,String replyTo,OntologyAgentAccess.Context context) throws Exception {
     validateMessage(message);
     var actor=callers.open(UUID.randomUUID().toString(),context);
     var agent=JSONObject.of("providerId","ontology","agentId",session(id,context.owner()).getString("agent_id"));
     runtime.json(context.owner().domainId(),run,"/v1/channel/sessions/"+id+"/bind","POST",JSONObject.of("agent",agent,"actor",actor),null);
     var source=JSONObject.of("session",JSONObject.of("providerId","ontology","sessionId",id),"runId",run);
-    runtime.json(context.owner().domainId(),run,"/v1/channel/sessions/"+id+"/runs","POST",JSONObject.of(
+    var request=JSONObject.of(
       "credential",AgentChannelRuns.credential(context),"language",context.language(),"channel",JSONObject.of("agent",agent,"actor",actor,"requestedBy",null,"root",source,
         "authority",JSONObject.of("classNames",List.of(),"executionKind","live")),
-      "input",JSONObject.of("role","user","content",message,"timestamp",System.currentTimeMillis())),run);
-    return false;
+      "input",JSONObject.of("role","user","content",message,"timestamp",System.currentTimeMillis()));
+    if(replyTo!=null) request.put("replyTo",replyTo);
+    return runtime.json(context.owner().domainId(),run,"/v1/channel/sessions/"+id+"/runs","POST",request,run);
   }
 
   public static void validateMessage(String message) {

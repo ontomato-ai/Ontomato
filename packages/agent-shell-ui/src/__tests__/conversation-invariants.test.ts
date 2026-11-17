@@ -26,7 +26,7 @@ const partial = {
   stopReason: "pending" as const,
   timestamp: 2,
 };
-const user = { id: userId, runId, messageSeq: 0, message: { role: "user" as const, content: "hello", timestamp: 1 } };
+const user = { contextSeq: 0, id: userId, runId, messageSeq: 0, message: { role: "user" as const, content: "hello", timestamp: 1 } };
 
 function envelope(seq: number, event: RuntimeEventEnvelope["event"]): RuntimeEventEnvelope {
   return { sessionId, cursor: { runId, seq, streamId }, timestamp, event };
@@ -42,7 +42,7 @@ function run(overrides: Partial<AgentHostRun> = {}): AgentHostRun {
 }
 
 function snapshot(overrides: Partial<AgentHostRunSnapshot> = {}): AgentHostRunSnapshot {
-  return {
+  return { pendingQuestions: [],
     run: run(),
     cursor: { runId, seq: 3, streamId },
     messages: [user],
@@ -57,7 +57,7 @@ function history(
   messages: AgentHostSessionHistory["messages"],
   runs: AgentHostSessionHistory["runs"] = [],
 ): AgentHostSessionHistory {
-  return {
+  return { pendingQuestions: [],
     // Only the fields the projection reads; the page itself is contract-checked where it is parsed.
     session: { id: sessionId } as unknown as AgentHostSessionHistory["session"],
     page: { messageSeq: 0, olderCursor: null, nextCursor: null, throughCursor: "" },
@@ -89,7 +89,7 @@ describe("delegated tasks in a reply", () => {
       { type: "toolCall" as const, id: "delegate", name: "bash", arguments: { command: "node skills/ontomato-analyst-assistant/ontomato.mjs agent start --agent ontology/retrieval --message 'Sales'" } },
     ] };
     applyRunSnapshot(state, snapshot({
-      messages: [user, { id: replyId, runId, messageSeq: 1, message: delegation }],
+      messages: [user, { contextSeq: 1, id: replyId, runId, messageSeq: 1, message: delegation }],
       pendingMessages: [{ id: partialId, message: { ...partial, timestamp: 4 } }],
     }));
     const response = conversationItems(state, tasks).find((item) => item.kind === "response")!;
@@ -116,7 +116,7 @@ describe("live cut over partials", () => {
       run: run({ status: "stopped", stopReason: "stop", finishedAt: timestamp, answerMessageId: partialId }),
       messages: [
         user,
-        { id: partialId, runId, messageSeq: 1, message: { ...partial, content: [{ type: "text", text: "Finished" }], stopReason: "stop" as const } },
+        { contextSeq: 1, id: partialId, runId, messageSeq: 1, message: { ...partial, content: [{ type: "text", text: "Finished" }], stopReason: "stop" as const } },
       ],
     }));
 

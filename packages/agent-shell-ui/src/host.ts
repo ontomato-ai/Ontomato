@@ -4,7 +4,7 @@ import { randomId } from "@ontomato/contracts/random-id";
 import type {
   AgentHostAgent,
   AgentHostAgentList,
-  AgentHostAdmission,
+  AgentHostSendResult, AgentHostSendRequest,
   AgentHostArtifactResolution,
   AgentHostCreateSessionResponse,
   AgentHostRunSnapshot,
@@ -15,6 +15,7 @@ import type {
   AgentHostSessionRunSnapshot,
 } from "@ontomato/contracts/agent-host";
 import {
+  agentHostSendResultSchema,
   agentHostSessionRunFrameSchema,
   agentHostSessionRunSnapshotSchema,
   agentHostStreamFrameSchema,
@@ -89,8 +90,8 @@ export interface AgentHostClient {
   readHistory(sessionId: string, query?: SessionHistoryQuery): Promise<AgentHostSessionHistory>;
   deleteSession(sessionId: string): Promise<void>;
   renameSession(sessionId: string, title: string): Promise<void>;
-  /** Every message, including the answer to a clarifying question, starts a run in the same session. */
-  startRun(sessionId: string, message: string): Promise<AgentHostRunSnapshot>;
+  /** The host decides whether input steers the current execution or starts its next run. */
+  send(sessionId: string, input: AgentHostSendRequest): Promise<AgentHostSendResult>;
   readRun(sessionId: string, runId: string): Promise<AgentHostRunSnapshot>;
   subscribe(
     sessionId: string,
@@ -271,10 +272,8 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
     async renameSession(sessionId, title) {
       await call(session(sessionId), send("PATCH", { title }));
     },
-    async startRun(sessionId, message) {
-      return (
-        await json<AgentHostAdmission>(`${session(sessionId)}/runs`, send("POST", { message }, true))
-      ).snapshot;
+    async send(sessionId, input) {
+      return agentHostSendResultSchema.parse(await json(`${session(sessionId)}/runs`, send("POST", input, true)));
     },
     readRun(sessionId, runId) {
       return json<AgentHostRunSnapshot>(run(sessionId, runId));

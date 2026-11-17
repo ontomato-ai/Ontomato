@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
   artifact_id uuid PRIMARY KEY, output_id uuid NOT NULL REFERENCES ontology_retrieval_outputs(id),
   run_id uuid NOT NULL REFERENCES ontology_agent_runs(id), path text NOT NULL);
 """);
+    jdbc.execute("UPDATE ontology_agent_runs r SET request=r.request || jsonb_build_object('userQuotes',v.input->'userQuotes') FROM ontology_retrievals v WHERE r.session_id=v.id AND NOT r.request ? 'userQuotes'");
     // A database created before this column existed is never altered by CREATE TABLE IF NOT EXISTS, and
     // sites upgrade by replacing the image. Without this, every retrieval start fails on insert.
     jdbc.execute("ALTER TABLE ontology_agent_runs ADD COLUMN IF NOT EXISTS language text");
@@ -187,6 +188,30 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
         });
   }
 
+  /** A caller scope's host-supplied messages replace any model-written quotes. */
+  static void applyCallerUserQuotes(JSONObject input, JSONObject callerInput) {
+    if (callerInput == null) return;
+    JSONArray quotes = callerInput.getJSONArray("recentUserMessages");
+    input.put("userQuotes", quotes == null ? new JSONArray() : quotes);
+  }
+
+  public void updateUserQuotes(String id,Owner owner,JSONArray quotes) {
+    transaction(() -> {
+      var row=caller(id,owner,true);if(row.getBooleanValue("closed")) throw closed();
+      update("UPDATE ontology_retrieval_callers SET input=jsonb_set(input,'{recentUserMessages}',?::jsonb) WHERE id=?",AgentJson.json(quotes),uuid(id));
+      return null;
+    });
+  }
+  static String answerSource(JSONObject message) {
+    if("user".equals(message.getString("role"))) return "user";
+    var source=message.getJSONObject("source");return source.containsKey("session")?"agent":source.getString("kind");
+  }
+  static JSONObject decision(String run,JSONObject message) {
+    var result=JSONObject.of("id",UUID.randomUUID().toString(),"runId",run,"text",message.getString("content"),"scope","task","source",answerSource(message),"supersedesId",null);
+    if("agent".equals(result.getString("source"))) result.put("sourceExecution",message.get("source"));
+    return result;
+  }
+
   public void closeScope(String id,Owner owner) {
     transaction(() -> {
       update("INSERT INTO ontology_retrieval_callers VALUES(?,?,?,'','{}',true,now()) ON CONFLICT DO NOTHING",uuid(id),owner.userId(),owner.domainId());
@@ -204,14 +229,14 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
         uuid(id),id);
   }
 
-  /** A reply confirms the same task-scoped user decision as a stopped-round continuation. */
-  public void confirmAnswer(String session,String run,Owner owner,String message) {
+  /** A reply confirms the same task-scoped decision as a stopped-round continuation. */
+  public void confirmAnswer(String session,String run,Owner owner,JSONObject message) {
     transaction(() -> {
       gate(session,run,owner);
       var current=one("SELECT * FROM ontology_retrievals WHERE id=? FOR UPDATE",uuid(session));
       if(!run.equals(current.getString("current_run_id"))) throw conflict("Retrieval round changed");
       var decisions=current.getJSONArray("decisions");
-      decisions.add(JSONObject.of("id",UUID.randomUUID().toString(),"runId",run,"text",message,"scope","task","source","user","supersedesId",null));
+      decisions.add(decision(run,message));
       update("UPDATE ontology_retrievals SET decisions=?::jsonb,revision=revision+1 WHERE id=?",AgentJson.json(decisions),uuid(session));
       update("UPDATE ontology_agent_runs SET decision_revision=decision_revision+1 WHERE id=?",uuid(run));
       return null;
@@ -245,6 +270,9 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
       String language) {
     return transaction(
         () -> {
+          var identity=AgentJson.copy(request);
+          if(identity.getBooleanValue("agentChannel")) identity.remove("userQuotes");
+          String fingerprint=AgentJson.hash(identity);
           JSONObject scope = callerId == null ? null : caller(callerId, owner, true);
           one(
               "SELECT id FROM ontology_agent_sessions WHERE id=? AND domain_id=? AND user_id=? FOR"
@@ -258,11 +286,13 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
             if (!sessionId.equals(previous.getString("session_id")))
               throw conflict("Run target changed");
             if (previous.getString("input_hash").isEmpty()) throw closed();
-            if (!AgentJson.hash(request).equals(previous.getString("input_hash"))
+            if (!fingerprint.equals(previous.getString("input_hash"))
                 || !Objects.equals(callerId, previous.getString("caller_id")))
               throw conflict("Run input changed");
             return new Admission(previous, true);
           }
+          if(scope!=null) applyCallerUserQuotes(input,scope.getJSONObject("input"));
+          var snapshot=AgentJson.copy(request);snapshot.put("userQuotes",input.get("userQuotes"));
           long deadline = System.currentTimeMillis() + seconds * 1000L;
           if (credentialExpiry != null) deadline = Math.min(deadline, credentialExpiry);
           if (scope != null) {
@@ -308,20 +338,7 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
             decisions = r.getJSONArray("decisions");
             decisionRevision = old.getIntValue("decision_revision");
             if (!external && request.getBooleanValue("confirmAnswer")) {
-              decisions.add(
-                  JSONObject.of(
-                      "id",
-                      UUID.randomUUID().toString(),
-                      "runId",
-                      old.getString("id"),
-                      "text",
-                      request.getString("message"),
-                      "scope",
-                      "task",
-                      "source",
-                      "user",
-                      "supersedesId",
-                      null));
+              decisions.add(decision(old.getString("id"),request.getJSONObject("channelInput")));
               decisionRevision++;
             }
           }
@@ -331,8 +348,8 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
                   + " VALUES(?,?,?,?::jsonb,true,?::timestamptz,?,?,?,false,?)",
               uuid(id),
               uuid(sessionId),
-              AgentJson.hash(request),
-              AgentJson.json(request),
+              fingerprint,
+              AgentJson.json(snapshot),
               Instant.ofEpochMilli(deadline).toString(),
               callerId == null ? null : uuid(callerId),
               external,

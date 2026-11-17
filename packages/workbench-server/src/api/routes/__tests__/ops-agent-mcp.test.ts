@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ create: vi.fn(), start: vi.fn(), snapshot: vi.fn() }));
 vi.mock("../../../services/ops-diagnosis/service", () => ({
   createDiagnosis: mocks.create,
-  diagnosisService: { start: mocks.start, snapshot: mocks.snapshot },
+  diagnosisService: { send: mocks.start, snapshot: mocks.snapshot },
 }));
 import { HttpError } from "../../../utils/errors";
 import { installWorkbenchIdentity } from "../../../identity/installed";
@@ -112,7 +112,7 @@ describe("ops agent MCP compatibility", () => {
     const value = readToolPayload(await client.callTool({ name: "send", arguments: { message: " diagnose " } }));
     expect(value).toEqual({ status: "completed", sessionId, answer: "diagnosed" });
     const startArgs = mocks.start.mock.calls[0];
-    expect(startArgs).toContain("diagnose"); expect(startArgs).toContainEqual({ userId: "system", domainId: "default" });
+    expect(startArgs).toContainEqual({message:"diagnose"}); expect(startArgs).toContainEqual({ userId: "system", domainId: "default" });
   });
   it("polls running work without submitting another message", async () => {
     mocks.snapshot.mockResolvedValue(snapshot("running", null));

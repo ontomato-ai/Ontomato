@@ -18,10 +18,10 @@ import {agentPrincipalCredentials} from '../product-assets/agent-principal';
 import {environment} from '../../config/environment';
 
 export interface AssistantPreparation {
-  a: AgentRow; session: SessionRow; turn: TurnRow; message: string; input: AgentInput; ontologyContext: string | null;
+  a: AgentRow; session: SessionRow; turn: TurnRow; message: string; input: AgentInput; inputId: string; ontologyContext: string | null;
   owner: AssistantOwner; credentials: AssistantCredentials;
 }
-export async function prepareAnalystRun({ a, session, turn, message, input, ontologyContext, owner, credentials }: AssistantPreparation): Promise<RuntimeStartRunRequest> {
+export async function prepareAnalystRun({ a, session, turn, input, inputId, ontologyContext, owner, credentials }: AssistantPreparation): Promise<RuntimeStartRunRequest> {
   const sessionId = session.id, id = turn.id;
   const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
   const profile=await profileForSession(owner,credentials,session.id,session.agent_id);
@@ -34,15 +34,17 @@ export async function prepareAnalystRun({ a, session, turn, message, input, onto
     if (previous.id === id) continue;
     for (const link of await new OntologyRetrievalClient(owner, previous.retrieval_scope_id).links()) continuationIds.add(link.retrievalId);
   }
-  const userMessages = recentUserMessages(
-    (await client.session(sessionId)).messages, id, input.role === "notification" ? null : message, new Date(turn.created_at).getTime(),
-  );
-  if(!profile)await new OntologyRetrievalClient(owner, turn.retrieval_scope_id).open({
-    classNames: turn.class_names,
-    continuationIds: [...continuationIds].sort(),
-    deadlineAt: new Date(new Date(turn.created_at).getTime() + getQueryTimeoutMs()).toISOString(),
-    recentUserMessages: userMessages,
-  }, credentials);
+  if(!profile) {
+    const userMessages = recentUserMessages(
+      (await client.session(sessionId)).messages, inputId,
+    );
+    await new OntologyRetrievalClient(owner, turn.retrieval_scope_id).open({
+      classNames: turn.class_names,
+      continuationIds: [...continuationIds].sort(),
+      deadlineAt: new Date(new Date(turn.created_at).getTime() + getQueryTimeoutMs()).toISOString(),
+      recentUserMessages: userMessages,
+    }, credentials);
+  }
   return {
     language: resolveLocale(credentials.locale),
     input,

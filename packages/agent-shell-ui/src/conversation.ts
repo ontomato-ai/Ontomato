@@ -1,3 +1,4 @@
+import type { AgentPendingQuestion } from "@ontomato/contracts/agent-channel";
 import type { AgentHostRunSnapshot, AgentHostSessionHistory } from "@ontomato/contracts/agent-host";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type {
@@ -18,6 +19,7 @@ export interface ConversationMessage {
   runId: string | null;
   /** Session message sequence once settled; pending partials sort after settled history. */
   messageSeq: number | null;
+  contextSeq: number | null;
   arrival: number;
   message: RuntimeMessage;
 }
@@ -51,10 +53,11 @@ export interface ConversationState {
   messages: Record<string, ConversationMessage>;
   runs: Record<string, RunView>;
   arrivals: number;
+  pendingQuestions: AgentPendingQuestion[];
 }
 
 export function emptyConversation(sessionId: string | null = null): ConversationState {
-  return { sessionId, messages: {}, runs: {}, arrivals: 0 };
+  return { sessionId, messages: {}, runs: {}, arrivals: 0, pendingQuestions: [] };
 }
 
 function upsertMessage(
@@ -63,15 +66,17 @@ function upsertMessage(
   runId: string | null,
   message: RuntimeMessage,
   messageSeq: number | null,
+  contextSeq: number | null,
 ) {
   const existing = state.messages[id];
   if (existing) {
     existing.message = message;
+    if(contextSeq !== null) existing.contextSeq=contextSeq;
     existing.runId = runId ?? existing.runId;
     if (messageSeq !== null) existing.messageSeq = messageSeq;
     return;
   }
-  state.messages[id] = { id, runId, messageSeq, arrival: state.arrivals++, message };
+  state.messages[id] = { id, runId, messageSeq, contextSeq, arrival: state.arrivals++, message };
 }
 
 function ensureRun(state: ConversationState, runId: string): RunView {
@@ -103,6 +108,7 @@ function toolOutput(content: { type: string; text?: string }[]): string {
 
 /** Replaces one run's live projection with an authoritative snapshot. */
 export function applyRunSnapshot(state: ConversationState, snapshot: AgentHostRunSnapshot) {
+  state.pendingQuestions=snapshot.pendingQuestions;
   const run = ensureRun(state, snapshot.run.id);
   run.status = snapshot.run.status;
   run.stopReason = snapshot.run.stopReason;
@@ -124,19 +130,20 @@ export function applyRunSnapshot(state: ConversationState, snapshot: AgentHostRu
     };
   }
   for (const record of snapshot.messages)
-    upsertMessage(state, record.id, record.runId, record.message, record.messageSeq);
+    upsertMessage(state, record.id, record.runId, record.message, record.messageSeq, record.contextSeq);
   // A partial that settled or vanished between snapshots is replaced, never kept as a duplicate.
   for (const message of Object.values(state.messages)) {
     if (message.runId === snapshot.run.id && message.messageSeq === null)
       delete state.messages[message.id];
   }
   for (const pending of snapshot.pendingMessages)
-    upsertMessage(state, pending.id, snapshot.run.id, pending.message, null);
+    upsertMessage(state, pending.id, snapshot.run.id, pending.message, null, null);
 }
 
 /** Merge a bounded durable page without replacing newer live state during backward paging. */
 export function applyHistoryPage(state: ConversationState, page: AgentHostSessionHistory, older = false) {
   state.sessionId = page.session.id;
+  if(!older) state.pendingQuestions=page.pendingQuestions;
   for (const value of page.runs) {
     const run = ensureRun(state, value.id);
     if (!older || !run.cursor) {
@@ -150,7 +157,7 @@ export function applyHistoryPage(state: ConversationState, page: AgentHostSessio
     }
   }
   for (const record of page.messages) {
-    upsertMessage(state, record.id, record.runId, record.message, record.messageSeq);
+    upsertMessage(state, record.id, record.runId, record.message, record.messageSeq, record.contextSeq);
     if (!record.runId) continue;
     const run = ensureRun(state, record.runId), message = record.message;
     if (message.role === "assistant") {
@@ -193,6 +200,7 @@ function applyDelta(message: RuntimeMessage, event: RuntimeAssistantStreamEvent)
   if (message.role !== "assistant") return;
   const content = message.content;
   switch (event.type) {
+
     case "text_start":
       content[event.contentIndex] = { type: "text", text: "" };
       return;
@@ -236,17 +244,20 @@ export function applyEnvelope(state: ConversationState, envelope: RuntimeEventEn
     return false;
   run.cursor = { seq: envelope.cursor.seq, streamId: envelope.cursor.streamId };
   const event = envelope.event;
-  if (event.type === "notification_received") {
-    upsertMessage(state, event.messageId, null, event.message, event.messageSeq);
+  if (event.type === "input_received") {
+    upsertMessage(state, event.messageId, null, event.message, event.messageSeq, null);
     return true;
   }
   switch (event.type) {
+    case "pending_questions_changed":
+      state.pendingQuestions=event.pendingQuestions;
+      break;
     case "agent_start":
       run.status = "running";
       run.createdAt ??= envelope.timestamp;
       break;
     case "message_start":
-      upsertMessage(state, event.messageId, run.id, structuredClone(event.message), null);
+      upsertMessage(state, event.messageId, run.id, structuredClone(event.message), null, null);
       break;
     case "message_update": {
       const message = state.messages[event.messageId];
@@ -254,7 +265,7 @@ export function applyEnvelope(state: ConversationState, envelope: RuntimeEventEn
       break;
     }
     case "message_end":
-      upsertMessage(state, event.messageId, run.id, event.message, event.messageSeq);
+      upsertMessage(state, event.messageId, run.id, event.message, event.messageSeq, event.type === "message_end" ? event.contextSeq : null);
       break;
     case "tool_execution_start":
       run.tools[event.toolCallId] = {
@@ -310,6 +321,9 @@ export function findArtifact(run: RunView | undefined, path: string) {
 
 export function orderedMessages(state: ConversationState): ConversationMessage[] {
   return Object.values(state.messages).sort((a, b) => {
+    if (a.contextSeq !== null && b.contextSeq !== null) return a.contextSeq - b.contextSeq;
+    if(a.contextSeq !== null) return -1;
+    if(b.contextSeq !== null) return 1;
     if (a.messageSeq !== null && b.messageSeq !== null) return a.messageSeq - b.messageSeq;
     if (a.messageSeq !== null) return -1;
     if (b.messageSeq !== null) return 1;
@@ -319,5 +333,5 @@ export function orderedMessages(state: ConversationState): ConversationMessage[]
 
 /** Receipt and later consumption merge by the same identity, even before there is a run. */
 export function applyNotifications(state: ConversationState, records: AgentHostSessionHistory["messages"]) {
-  for (const record of records) upsertMessage(state, record.id, record.runId, record.message, record.messageSeq);
+  for (const record of records) upsertMessage(state, record.id, record.runId, record.message, record.messageSeq, record.contextSeq);
 }

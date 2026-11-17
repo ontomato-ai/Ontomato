@@ -66,11 +66,11 @@ public class GovernanceScheduleApplication implements ScheduleApplication {
     var context = new OntologyAgentAccess.Context(captured.owner(),captured.access(),actor.token(),actor.apiKey(),captured.language(),captured.expiresAt(),captured.callerId());
     try {
       governance.create(session, context.owner(), false);
-      governance.start(
+      governance.send(
           session,
           execution.runId().toString(),
           execution.definition().content().path("instruction").asText(),
-          context);
+          null,context);
       var state = ScheduleForms.execution("running");
       state.set("handle", object("sessionId", session));
       state.set("resultLink", link(session));

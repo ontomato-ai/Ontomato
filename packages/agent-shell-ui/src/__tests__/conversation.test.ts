@@ -14,11 +14,11 @@ function envelope(seq: number, event: RuntimeEventEnvelope["event"]): RuntimeEve
   return { sessionId, cursor: { runId, seq, streamId }, timestamp: new Date(0).toISOString(), event };
 }
 
-const snapshot: AgentHostRunSnapshot = {
+const snapshot: AgentHostRunSnapshot = { pendingQuestions: [],
   run: { id: runId, sessionId, status: "running", stopReason: null, errorMessage: null, answerMessageId: null, workspaceCommit: null, createdAt: new Date(0).toISOString(), finishedAt: null, resolvedSkills: [] },
   cursor: { runId, seq: 3, streamId },
   messages: [
-    { id: userId, runId, messageSeq: 0, message: { role: "user", content: "hello", timestamp: 1 } },
+    { contextSeq: 0, id: userId, runId, messageSeq: 0, message: { role: "user", content: "hello", timestamp: 1 } },
   ],
   pendingMessages: [],
   toolExecutions: [],
@@ -51,7 +51,7 @@ describe("conversation projection", () => {
     // Until the runtime names the answer, streamed text is process.
     expect(items[1]).toMatchObject({ running: true, answerMessageId: null, process: [{ kind: "note", text: "Hi", final: false }] });
 
-    applyEnvelope(state, envelope(7, {
+    applyEnvelope(state, envelope(7, { contextSeq: 1,
       type: "message_end",
       messageId: replyId,
       messageSeq: 1,
@@ -80,7 +80,7 @@ describe("conversation projection", () => {
     applyRunSnapshot(state, {
       ...snapshot,
       run: { ...snapshot.run, status: "stopped", stopReason: "length", finishedAt: new Date(1).toISOString() },
-      messages: [...snapshot.messages, { id: replyId, runId, messageSeq: 1, message }],
+      messages: [...snapshot.messages, { contextSeq: 1, id: replyId, runId, messageSeq: 1, message }],
     });
     expect(conversationItems(state)[1]).toMatchObject({
       answerMessageId: null,
