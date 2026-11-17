@@ -140,17 +140,16 @@ if (command === "close") {
 }
 if (!actions[command])
   throw new Error("Unknown governance command; see SKILL.md");
-console.log(
-  JSON.stringify(
-    await call(
-      `/${state.id}/runs/${state.runId}/actions/${actions[command]}`,
-      args,
-      {
-        "X-Ontomato-Session-Id": state.sessionId,
-        "X-Ontomato-Run-Id": state.runId,
-      },
-    ),
-    null,
-    2,
-  ),
+const result = await call(
+  `/${state.id}/runs/${state.runId}/actions/${actions[command]}`,
+  args,
+  {
+    "X-Ontomato-Session-Id": state.sessionId,
+    "X-Ontomato-Run-Id": state.runId,
+  },
 );
+console.log(JSON.stringify(
+  platform ? { ...result, reportHref: `#/governance/reports/${state.id}` } : result,
+  null,
+  2,
+));
