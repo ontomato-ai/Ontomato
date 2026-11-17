@@ -42,6 +42,24 @@ async function editableAgent(id: string, owner: AssistantOwner) {
 export async function readAgentDefinition(id: string, owner: AssistantOwner, locale?: string) {
   return view(await editableAgent(id, owner), locale);
 }
+/** The checks every save makes before it writes; a draft's validation runs exactly these and changes nothing. */
+async function checkedDefinition(
+  input: AssistantAgentInput,
+  owner: AssistantOwner,
+  credentials: AssistantCredentials,
+) {
+  await validateModelSelection(owner.domainId, input.modelSelection);
+  const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
+  await validateAssistantSkills(owner.domainId, skills, credentials);
+  return skills;
+}
+export async function validateAgentDefinition(
+  input: AssistantAgentInput,
+  owner: AssistantOwner,
+  credentials: AssistantCredentials,
+) {
+  await checkedDefinition(input, owner, credentials);
+}
 export async function saveAgentDefinition(
   id: string,
   input: AssistantAgentInput,
@@ -50,9 +68,7 @@ export async function saveAgentDefinition(
 ) {
   const locale = credentials.locale;
   return withDomainSkills(owner.domainId, async () => {
-    await validateModelSelection(owner.domainId, input.modelSelection);
-    const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
-    await validateAssistantSkills(owner.domainId, skills, credentials);
+    const skills = await checkedDefinition(input, owner, credentials);
     const agent = await editableAgent(id, owner);
     await transaction(async client=>{
     await lockProducts(client,owner);
@@ -86,9 +102,7 @@ export async function createAgentDefinition(
   credentials: AssistantCredentials,
 ) {
   return withDomainSkills(owner.domainId, async () => {
-    await validateModelSelection(owner.domainId, input.modelSelection);
-    const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
-    await validateAssistantSkills(owner.domainId, skills, credentials);
+    const skills = await checkedDefinition(input, owner, credentials);
     const pool = getPostgresPool();
     const existing = (
       await pool.query(

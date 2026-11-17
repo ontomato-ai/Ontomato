@@ -38,7 +38,7 @@ export function effectiveAssistantSkills(
 }
 
 function platformSkills() {
-  return ["assistant-report","application-design"].map((name) => {
+  return ["assistant-report","application-design","ontomato-agent-builder"].map((name) => {
     const root = path.join(workbenchServerResourceRoot, "resources/runtime-skills", name);
     const parsed = readSkillMarkdown(path.join(root, "SKILL.md"));
     if (!parsed) throw new Error(`Missing platform skill: ${name}`);
