@@ -4,7 +4,7 @@ vi.mock('../../../utils/backend-client',()=>({backendGet:mocks.get,backendPost:m
 vi.mock('../../../config/application',()=>({config:{dataQuery:{baseUrl:'http://ontology'}}}));
 vi.mock('../../../config/environment',()=>({environment:{agentRuntime:()=>({queryServiceToken:'service'})}}));
 vi.mock('../../../infrastructure/postgres',()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
-vi.mock('../../../infrastructure/postgres-transaction',()=>({transaction:async(action:Function)=>action({query:mocks.query})}));
+vi.mock('../../../infrastructure/postgres-transaction',()=>({transaction:async(action:(client:{query:typeof mocks.query})=>unknown)=>action({query:mocks.query})}));
 vi.mock('../store',()=>({lockProducts:async()=>{}}));
 vi.mock('../ontology',()=>({ontologyRegistration:()=>null,synchronizeProductOntology:async()=>{}}));
 vi.mock('../../assistant/store',()=>({assistantStore:{agents:mocks.agents}}));
