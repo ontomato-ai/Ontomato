@@ -6,7 +6,7 @@ import ElementPlus from "element-plus";
 import { ref } from "vue";
 import { workbenchI18n } from "../../../i18n";
 import { ontologyServiceAccessKey, openOntologyServiceAccess } from "../../../app/ontology-service";
-import { platformPageAccessKey } from "@ontomato/platform-shell";
+import { pilotPageKey, platformPageAccessKey } from "@ontomato/platform-shell";
 import BusinessWorkbench from "../components/BusinessWorkbench.vue";
 
 /*
@@ -29,6 +29,8 @@ const started = vi.hoisted(() => [] as string[]);
 const opened = vi.hoisted(() => [] as string[]);
 /** The conversations the host lists, whether the column had read them before the page's message arrived, and how slow. */
 const hosted = vi.hoisted(() => ({ sessions: [] as string[], loads: 0, slowLoads: false }));
+/** What choosing a conversation did: the real navigation closes the page beside the conversation it leaves. */
+const left = vi.hoisted(() => [] as string[]);
 
 vi.mock("@ontomato/agent-shell-ui", async () => {
   const { defineComponent, h } = await import("vue");
@@ -59,11 +61,13 @@ vi.mock("@ontomato/agent-shell-ui", async () => {
         startNew: () => {
           started.push("new");
           options.setSessionId(null);
+          left.push("new");
           options.onLeaveConversation();
         },
         selectSession: (id: string) => {
           opened.push(id);
           options.setSessionId(id);
+          left.push(id);
           options.onLeaveConversation();
         },
       };
@@ -85,6 +89,7 @@ afterEach(() => {
   sent.splice(0);
   started.splice(0);
   opened.splice(0);
+  left.splice(0);
   hosted.sessions = [];
   hosted.loads = 0;
   hosted.slowLoads = false;
@@ -113,6 +118,9 @@ async function fromPage(agentId: string) {
     global: { plugins: [i18n, ElementPlus, router], provide: {
       [ontologyServiceAccessKey as symbol]: openOntologyServiceAccess,
       [platformPageAccessKey as symbol]: () => true,
+      // The assembly's own page beside the conversation: this board, which is what the address carries.
+      [pilotPageKey as symbol]: (address: string) =>
+        address.startsWith("/dashboards") ? { id: "dashboards", component: { render: () => null }, props: { paired: true } } : null,
     } },
   });
   wrappers.push(wrapper);
@@ -141,6 +149,29 @@ async function fromPageWithAddressChanging(agentId: string) {
  * settles and settles again while it waits. The question is sent once — a message sent twice is three runs of the same
  * question and three answers.
  */
+/**
+ * Choosing the conversation closes the page open beside the one being left — that is what this platform's column does —
+ * and the page the message came from must still be open when the message has been placed: it is the page the reader was
+ * on, and the one the answer is about.
+ */
+it("keeps the page open beside the conversation the message opened", async () => {
+  sessionStorage.setItem("ontomato.workbench.conversation", JSON.stringify({ agentId: assistant!.id, sessionId: held }));
+  hosted.sessions = [held];
+
+  const { router } = await fromPage(assistant!.id);
+
+  // The column was asked to leave a conversation for this one, and the page it came from came back with the message.
+  expect(left).toEqual([held]);
+  expect(router.currentRoute.value.query.page).toBe("/dashboards?dashboardId=board-a");
+});
+
+it("keeps the page open when the message starts a new conversation", async () => {
+  const { router } = await fromPage(assistant!.id);
+
+  expect(left).toEqual(["new"]);
+  expect(router.currentRoute.value.query.page).toBe("/dashboards?dashboardId=board-a");
+});
+
 it("sends the page's message once however often the entry runs while it waits", async () => {
   sessionStorage.setItem("ontomato.workbench.conversation", JSON.stringify({ agentId: assistant!.id, sessionId: held }));
   hosted.sessions = [held];

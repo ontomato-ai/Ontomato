@@ -360,16 +360,19 @@ async function openRequestedAgent() {
   await nextTick();
   if (session) {
     nav.selectSession(session);
-    return;
+  } else {
+    // The conversation this tab already holds with the agent goes on; a new tab, or another agent, starts a new one.
+    // Coming from a page, this runs on the way in, before the column has read the agent's conversations: the held one is
+    // looked up in the host's list rather than in a list that is still empty, or every page message would start anew.
+    const held = readRememberedSession(id);
+    if (held && !nav.sessions.value.some((row) => row.id === held)) await nav.loadSessions();
+    const continuing = held !== null && nav.sessions.value.some((row) => row.id === held);
+    if (continuing) nav.selectSession(held);
+    else nav.startNew();
   }
-  // The conversation this tab already holds with the agent goes on; a new tab, or another agent, starts a new one.
-  // Coming from a page, this runs on the way in, before the column has read the agent's conversations: the held one is
-  // looked up in the host's list rather than in a list that is still empty, or every page message would start anew.
-  const held = readRememberedSession(id);
-  if (held && !nav.sessions.value.some((row) => row.id === held)) await nav.loadSessions();
-  const continuing = held !== null && nav.sessions.value.some((row) => row.id === held);
-  if (continuing) nav.selectSession(held);
-  else nav.startNew();
+  // Choosing a conversation closes whatever page was open beside the old one; the page this message came from stays open
+  // beside the conversation it was written for.
+  if (page) await router.replace({ query: { ...route.query, page } });
   if (prompt) {
     await nextTick();
     await shell.value!.send(prompt);
