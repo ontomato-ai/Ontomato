@@ -232,11 +232,20 @@ function sendFromPage(text: string) {
 }
 
 /**
- * The page address the conversation's last carried message named; null when it is not known (the conversation was just
- * opened, so its first message carries the page again). A draft parameter or a fragment is the same page.
+ * The page address the conversation's last carried message named, per conversation; null for one the shell has not sent
+ * in (just opened, so its first message carries the page again). A draft parameter or a fragment is the same page.
+ *
+ * `carriedIn` is the conversation that message went to. Sending the first message of a new conversation is not the
+ * reader moving: the conversation it created is where the page was just carried, so the note stands until another
+ * conversation is opened or a new one is started.
  */
 const carriedPage = ref<string | null>(null);
-watch(sessionId, () => (carriedPage.value = null));
+let carriedIn: string | null = null;
+watch(sessionId, (id) => {
+  if (id === carriedIn) return;
+  carriedPage.value = null;
+  carriedIn = id;
+});
 
 async function send(input: string) {
   const agent = agentId.value;
@@ -249,7 +258,9 @@ async function send(input: string) {
   const text = line ? `${input}\n\n${line}` : input;
   const result = await conversation.send(agent, text);
   if (!result) return;
-  // Only a message the host accepted moved the conversation's page; a refused one carries it again next time.
+  // Only a message the host accepted moved the conversation's page; a refused one carries it again next time. It went to
+  // the conversation this send started, or to the one it was written in.
+  carriedIn = result.createdSession?.id ?? conversation.state.sessionId ?? null;
   if (page) carriedPage.value = samePageAddress(page.url);
   if (!result.delivery) {
     // The conversation was created but its run refused: the host takes it as listed (still empty), so sending again
