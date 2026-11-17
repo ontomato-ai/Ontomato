@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick, ref } from "vue";
 import { definePanel, type PanelManifest } from "@ontomato/contracts/panel-manifest";
-import type { ProductProjection } from "@ontomato/contracts/product-panels";
+import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { createPanelInstance, applyPanelRequest } from "../../../../../packages/apps-sdk/src/panel/instance";
 import { PanelFormAdapters, receivePanelDraft } from "../../../../../packages/apps-sdk/src/panel/draft";
 import { portsOf } from "../../../../../packages/apps-sdk/src/panel/ports-of";
@@ -34,6 +34,22 @@ const panel = definePanel({
   },
   operations: [{ id: "task.clear", label: "Clear", kind: "state", sets: { selectedTask: null } }],
 });
+
+/** The panel's own registered definition: what the host read and the frame was handed. */
+const registered: ProductPanel = {
+  id: "panel-schedules",
+  domainId: "domain-1",
+  ownerId: "owner-1",
+  revision: 1,
+  createdAt: "2026-11-18T00:00:00.000Z",
+  updatedAt: "2026-11-18T00:00:00.000Z",
+  editable: false,
+  name: "Scheduled tasks",
+  description: "",
+  visibility: "domain",
+  content: { html: '<div id="app"></div>', module: 'import {mountPanel} from "@ontomato/sdk/panel";' },
+  manifest: panel,
+};
 
 /** The records the platform holds, as the frame reads them by ID. */
 function record(id: string, componentId: string, binding: ProductProjection["binding"]): ProductProjection {
@@ -192,6 +208,7 @@ describe("a panel's module", () => {
     const app = createApp({ setup: () => () => h(Panel) });
     // The panel's context is what a real mount provides; the instance is handed to each projection through it.
     app.provide(panelContextKey, {
+      panel: registered,
       manifest: panel,
       instance: panelInstance,
       projection: (id: string) => panelInstance.projection(id),
