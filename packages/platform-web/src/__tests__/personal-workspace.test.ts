@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import { createI18n } from "vue-i18n";
+import { englishMessages } from "@ontomato/ontology-manager/i18n";
 import { createMemoryHistory, createRouter } from "vue-router";
 import ElementPlus from "element-plus";
 import { defaultPersonalWorkspace } from "@ontomato/contracts/personal-workspace";
@@ -63,7 +64,7 @@ async function page(stubs: Record<string, boolean> = {}) {
   const open = vi.fn();
   const wrapper = mount(Workspace, { global: {
     stubs,
-    plugins: [router, ElementPlus, createI18n({ legacy: false, locale: "en", messages: { en: {} } })],
+    plugins: [router, ElementPlus, createI18n({ legacy: false, locale: "en", messages: { en: { ontology: englishMessages.ontology } } })],
     provide: { [openApplicationKey as symbol]: open },
   } });
   await flushPromises();
