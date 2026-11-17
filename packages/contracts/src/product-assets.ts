@@ -1,32 +1,26 @@
 import { z } from "zod";
 import { personalWorkspaceSchema } from "./personal-workspace";
-import { viewWidgetSchema } from "./object-views";
-import {metricProjectionSchema,actionProjectionSchema,collectionProjectionSchema,objectProjectionSchema,navigationSchema,agentProfileSchema,ontologyParameterTypeSchema} from './product-projections';
+import { viewWidgetSchema, nonChartViewWidgetSchema, type ViewWidget } from "./object-views";
+import {metricProjectionSchema,metricValueProjectionSchema,metricChartProjectionSchema,actionProjectionSchema,collectionProjectionSchema,objectProjectionSchema,navigationSchema,agentProfileSchema,ontologyParameterTypeSchema} from './product-projections';
 
 const id = z.string().min(1).max(200);
 const title = z.string().trim().min(1).max(200);
 // Product widgets bind interfaces and interaction state; object reads and business predicates belong to capabilities.
-export const productWidgetSchema = viewWidgetSchema.strict().superRefine((widget, ctx) => {
-  if (!["text", "metric", "table", "chart", "input", "action", "button"].includes(widget.kind))
+export const productWidgetSchema = nonChartViewWidgetSchema.strict().superRefine((widget, ctx) => {
+  if (!["text", "metric", "table", "input", "action", "button"].includes(widget.kind))
     ctx.addIssue({ code: "custom", message: "Use a published MetricView to read business data" });
-  if (["metric", "table", "chart", "action"].includes(widget.kind) && !widget.resourceId)
+  if (["metric", "table", "action"].includes(widget.kind) && !widget.resourceId)
     ctx.addIssue({ code: "custom", message: "A published capability ID is required" });
   if (widget.visibleWhen || widget.binding?.source === "object" || widget.binding?.source === "context" || Object.values(widget.parameters).some(binding => binding.source === "object" || binding.source === "context"))
     ctx.addIssue({ code: "custom", message: "Product widgets use capability parameters and local interaction variables, not business predicates" });
-  if(widget.kind === "chart" && (!widget.valueField || !widget.labelField))
-    ctx.addIssue({code:"custom",message:"Chart value and label fields are required"});
   if(widget.kind === "metric" && !widget.valueField)
     ctx.addIssue({code:"custom",message:"Metric value field is required"});
   if(widget.resultPath || widget.resultIndex)
     ctx.addIssue({code:"custom",message:"Leave resultPath empty: MetricViews return a row array"});
-  if(widget.binding && ['metric','table','chart','action'].includes(widget.kind))
+  if(widget.binding && ['metric','table','action'].includes(widget.kind))
     ctx.addIssue({code:'custom',message:'Capability widgets cannot replace results with a local binding'});
   if(widget.targetClass||widget.onClick==='openObject'||widget.relation||widget.contextFields.length)
     ctx.addIssue({code:'custom',message:'Use an object-view asset for business object navigation'});
-  if(widget.skillId!=='echarts'&&widget.kind==='chart')
-    ctx.addIssue({code:'custom',message:'Product charts use the registered ECharts renderer'});
-  if(widget.kind==='chart'&&!['bar','line','donut'].includes(widget.chartType))
-    ctx.addIssue({code:'custom',message:'This product chart supports bar, line or donut; use the existing object view for other visualizations'});
   if(widget.binding?.source === "literal" && widget.kind !== "text" && widget.kind !== "button")
     ctx.addIssue({code:"custom",message:"Business results must come from the referenced capability"});
 });
@@ -39,14 +33,14 @@ const applicationDocumentSchema=z.object({kind:z.literal('application'),applicat
 export const platformWidgetSchema=z.object({kind:z.literal('platform'),source:z.enum(['assistant','apps','data','tasks','conversations','objects','recent']),placeholder:z.string().max(500).default(''),limit:z.number().int().min(1).max(20).default(4),workspace:personalWorkspaceSchema.optional()}).strict();
 export const productPlatformRuntimeKey=Symbol.for('ontomato.product-platform-runtime');
 export const productAgentRuntimeKey=Symbol.for('ontomato.product-agent-runtime');
-export const productDocumentSchema = z.discriminatedUnion("kind", [
+export const productDocumentSchema = z.union([
   metricProjectionSchema,actionProjectionSchema,collectionProjectionSchema,objectProjectionSchema,
   navigationSchema.innerType(),agentProfileSchema,
   pageDocumentSchema.extend({workspace:personalWorkspaceSchema.optional()}),
   z.object({ kind: z.literal("layout-template"), workspace: personalWorkspaceSchema, children: placements,compositionVersion:z.literal(2).optional() }).strict(),
   z.object({ kind: z.literal("widget"), widget: z.union([productWidgetSchema,platformWidgetSchema]) }).strict(),
   z.object({ kind: z.literal("operation-panel"), widgets: widgetsSchema.refine(widgets=>widgets.some(widget=>widget.kind==='action'),'An operation panel requires an Action entry') }).strict(),
-  z.object({ kind: z.literal("widget-group"), widgets: widgetsSchema.refine(widgets=>widgets.every(widget=>['text','metric','table','chart'].includes(widget.kind)),'Display groups only contain presentation widgets') }).strict(),
+  z.object({ kind: z.literal("widget-group"), widgets: widgetsSchema.refine(widgets=>widgets.every(widget=>['text','metric','table'].includes(widget.kind)),'Display groups only contain presentation widgets') }).strict(),
   z.object({ kind: z.literal("dashboard"), dashboardId: id }).strict(),
   z.object({ kind: z.literal("object-view"), className: id, primaryKey: z.string().min(1).max(1000).optional(), form: z.literal("full").default("full") }).strict(),
   applicationDocumentSchema,
@@ -62,9 +56,9 @@ export const productAssetInputSchema = z.object({
     if(!result.success)context.addIssue({code:'custom',message:'Navigation requires distinct nodes and a valid entry'});
   }
   const widgets=productWidgets(asset.document);
-  const variables=new Set(widgets.filter(widget=>['input','table','button'].includes(widget.kind)&&widget.variable).map(widget=>widget.variable));
+  const variables=new Set(widgets.flatMap(widget=>widget.kind!=='chart'&&['input','table','button'].includes(widget.kind)&&widget.variable?[widget.variable]:[]));
   for(const widget of widgets){
-    const bindings=[...Object.values(widget.parameters),...(widget.binding?[widget.binding]:[])];
+    const bindings=[...Object.values(widget.parameters),...(widget.kind!=='chart'&&widget.binding?[widget.binding]:[])];
     for(const binding of bindings){
       if(binding.source==='variable'&&!['metric-widget','action-view'].includes(asset.document.kind)&&!variables.has(binding.path.split('.')[0]))context.addIssue({code:'custom',message:`Interaction variable has no source: ${binding.path}`});
     }
@@ -78,8 +72,8 @@ export const productAssetSchema = productAssetInputSchema.innerType().extend({
 export type ProductAssetInput = z.infer<typeof productAssetInputSchema>;
 export type ProductAsset = z.infer<typeof productAssetSchema>;
 export const productSaveSchema = productAssetInputSchema.innerType().extend({ revision: z.number().int().nonnegative() }).strict();
-export const productAuthoringDocumentSchema=z.discriminatedUnion('kind',[
-  metricProjectionSchema.extend({renderer:z.enum(['number','trend','gauge','chart']).default('number')}),actionProjectionSchema,collectionProjectionSchema,objectProjectionSchema,navigationSchema.innerType(),agentProfileSchema,
+export const productAuthoringDocumentSchema=z.union([
+  metricValueProjectionSchema.extend({renderer:z.literal('number').default('number')}),metricChartProjectionSchema,actionProjectionSchema,collectionProjectionSchema,objectProjectionSchema,navigationSchema.innerType(),agentProfileSchema,
   pageDocumentSchema,applicationDocumentSchema,
 ]);
 export const productAuthoringSchema=productSaveSchema.omit({visibility:true}).extend({document:productAuthoringDocumentSchema});
@@ -123,8 +117,11 @@ export function productReferences(document: ProductDocument): ProductReference[]
   }
   return [...new Map(references.map(reference => [`${reference.kind}:${reference.id}`, reference])).values()];
 }
-export function productWidgets(document:ProductDocument){
-  if(document.kind==='metric-widget')return [viewWidgetSchema.parse({id:'projection',...document.presentation,kind:['number','gauge'].includes(document.renderer)?'metric':document.renderer==='table'?'table':'chart',title:'',span:12,resourceId:document.renders.id,parameters:document.parameters,fields:document.fields,valueField:document.valueField,labelField:document.labelField,chartType:document.renderer==='trend'?'line':document.chartType,height:document.height})];
+export function productWidgets(document:ProductDocument):ViewWidget[]{
+  if(document.kind==='metric-widget'){
+    if(document.renderer==='chart')return [{id:'projection',kind:'chart',title:'',span:12,resourceId:document.renders.id,chartFile:document.chartFile,parameters:document.parameters,height:document.height}];
+    return [viewWidgetSchema.parse({id:'projection',...document.presentation,kind:document.renderer==='number'?'metric':'table',title:'',span:12,resourceId:document.renders.id,parameters:document.parameters,fields:document.fields,valueField:document.valueField,labelField:document.labelField,chartType:document.chartType,height:document.height})];
+  }
   if(document.kind==='action-view')return [viewWidgetSchema.parse({id:'projection',...document.presentation,kind:'action',title:'',span:12,resourceId:document.renders.id,parameters:document.parameters,readOnlyParameters:document.readOnlyParameters})];
   return document.kind==='widget'&&document.widget.kind!=='platform'?[document.widget]:document.kind==='operation-panel'||document.kind==='widget-group'?document.widgets:[];
 }

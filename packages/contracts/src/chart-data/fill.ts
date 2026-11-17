@@ -3,7 +3,7 @@ import { runtimeJsonObjectSchema, runtimeJsonValueSchema, type RuntimeJsonValue 
 import type { ChartDisplay } from "./display";
 import {
   chartExecutionIssues, chartMetricColumnSchema, validateChartFile, zodIssues,
-  type ChartBinding, type ChartFailure, type ChartFile, type ChartIssue, type ChartMetricColumn, type ChartOption, type ChartRow,
+  type ChartBinding, type ChartFailure, type ChartIssue, type ChartMetricColumn, type ChartOption, type ChartRow,
 } from "./schema";
 
 const metricRowsSchema = z.object({ columns: z.array(chartMetricColumnSchema), rows: z.array(runtimeJsonObjectSchema) });
@@ -22,7 +22,7 @@ const linkSchema = z.object({
 type GraphNode = z.infer<typeof nodeSchema>;
 type GraphLink = z.infer<typeof linkSchema>;
 
-function shapeIssues(binding: ChartBinding, rows: ChartRow[], file: ChartFile): ChartIssue[] {
+function shapeIssues(binding: ChartBinding, rows: ChartRow[]): ChartIssue[] {
   const issues: ChartIssue[] = [];
   const add = (index: number, field: string, reason: string, message: string) => issues.push({ path: ["rows", index, field], reason, message });
   const test = (index: number, field: string, schema: z.ZodTypeAny) => {
@@ -79,7 +79,7 @@ function shapeIssues(binding: ChartBinding, rows: ChartRow[], file: ChartFile): 
     case "single": {
       const f = binding.fields;
       if (rows.length > 1) add(1, f.value, "SINGLE_ROW_REQUIRED", "Single requires zero or one row");
-      if (file.ontomato.display?.formats?.[f.value]?.kind === "percent") numeric([f.value]);
+      numeric([f.value]);
       break;
     }
     case "timeline": break;
@@ -239,8 +239,7 @@ function materialize(option: ChartOption, bindings: ChartBinding[], rows: ChartR
         const f = binding.fields, format = display.formats![f.value];
         const raw = rows.length ? rows[0][f.value] : null;
         const percent = format.kind === "percent" && raw !== null;
-        series.progress = { ...series.progress, show: percent };
-        series.data = rows.length ? [{ value: percent ? Number(raw) / (format.scale === 100 ? 1 : 100) : 0, rawValue: raw, name: series.name ?? f.value }] : [];
+        series.data = rows.length ? [{ value: percent ? Number(raw) / (format.scale === 100 ? 1 : 100) : raw === null ? null : Number(raw), rawValue: raw, name: series.name ?? f.value }] : [];
         break;
       }
       case "timeline": {
@@ -297,7 +296,7 @@ export function fillChartFile<T = unknown>(input: unknown, metric: { columns: re
   // Intrinsic timeline ordering precedes the caller's display ordering and limit.
   const timeline = bindings.find(binding => binding.shape === "timeline");
   const selected = displayRows(timeline?.shape === "timeline" ? timelineRows(rows, timeline.fields.date) : rows, display);
-  const issues = bindings.flatMap(binding => shapeIssues(binding, selected, file));
+  const issues = bindings.flatMap(binding => shapeIssues(binding, selected));
   if (issues.length) return { ok: false, code: "INVALID_SHAPE_DATA", issues, missingColumns: [] };
   option.dataset[0].dimensions = keys;
   option.dataset[0].source = selected;

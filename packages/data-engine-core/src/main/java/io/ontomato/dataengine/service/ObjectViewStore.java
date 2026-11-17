@@ -5,6 +5,8 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import jakarta.annotation.PostConstruct;
 import java.util.HashSet;
+import java.util.Map;
+import java.util.List;
 import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -178,7 +180,11 @@ public class ObjectViewStore {
     }
 
     private static void validateProductWidget(JSONObject widget) {
-        onlyFields(widget, Set.of("id", "kind", "title", "span", "height", "fields", "fieldOptions", "fieldLabels", "readOnlyParameters", "contextFields", "text", "binding", "visibleWhen", "resourceId", "skillId", "parameters", "resultPath", "resultIndex", "valueField", "labelField", "chartType", "latitudeField", "longitudeField", "dateField", "descriptionField", "relation", "direction", "variable", "onClick", "targetClass"));
+        if ("chart".equals(widget.getString("kind"))) {
+            onlyFields(widget, Set.of("id", "kind", "title", "span", "height", "resourceId", "chartFile", "parameters", "visibleWhen"));
+            if (!(widget.get("parameters") instanceof Map)) throw new IllegalArgumentException("Missing chart parameter bindings");
+            validateChartFile(widget.get("chartFile"));
+        } else onlyFields(widget, Set.of("id", "kind", "title", "span", "height", "fields", "fieldOptions", "fieldLabels", "readOnlyParameters", "contextFields", "text", "binding", "visibleWhen", "resourceId", "skillId", "parameters", "resultPath", "resultIndex", "valueField", "labelField", "chartType", "latitudeField", "longitudeField", "dateField", "descriptionField", "relation", "direction", "variable", "onClick", "targetClass"));
         if(widget.containsKey("resultIndex") && (!(widget.get("resultIndex") instanceof Integer) || widget.getIntValue("resultIndex")<0 || widget.getIntValue("resultIndex")>10000))throw new IllegalArgumentException("Invalid result row index");
         String kind = widget.getString("kind");
         JSONObject visibility = widget.getJSONObject("visibleWhen");
@@ -196,6 +202,17 @@ public class ObjectViewStore {
             throw new IllegalArgumentException("View bindings cannot replace capability results");
         JSONArray context = widget.getJSONArray("contextFields");
         if (context != null && !context.isEmpty()) throw new IllegalArgumentException("Use a MetricView for Action context");
+    }
+
+    /** Java owns storage bounds and empty snapshots; contracts owns the complete chart grammar. */
+    private static void validateChartFile(Object value) {
+        if (!(value instanceof Map<?, ?> file)
+                || !(file.get("dataset") instanceof List<?> datasets) || datasets.size() != 1
+                || !(datasets.get(0) instanceof Map<?, ?> metric) || !"metric".equals(metric.get("id"))
+                || !(metric.get("source") instanceof List<?> source) || !source.isEmpty())
+            throw new IllegalArgumentException("Chart files require one empty metric dataset");
+        if (file.get("ontomato") instanceof Map<?, ?> metadata && metadata.containsKey("metric"))
+            throw new IllegalArgumentException("The widget owns the stored MetricView reference");
     }
 
     private static void onlyFields(JSONObject object, Set<String> allowed) {

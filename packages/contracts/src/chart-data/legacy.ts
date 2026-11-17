@@ -124,7 +124,7 @@ export function legacyChartToFile(input: LegacyChartSpec): { ok: true; file: Cha
       option.tooltip = { show: false };
       bind("gauge", "single", selectedFields, {
         name: seriesName(f.value), startAngle: 90, endAngle: -270, radius: "75%", min: 0, max: 1,
-        progress: { show: false, roundCap: true, width: 18 }, axisLine: { roundCap: true, lineStyle: { width: 18 } },
+        progress: { show: display.data.formats![f.value].kind === "percent", roundCap: true, width: 18 }, axisLine: { roundCap: true, lineStyle: { width: 18 } },
         axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false }, pointer: { show: false },
         detail: { show: true, fontSize: 34, fontWeight: 700, offsetCenter: [0, 0] },
       });

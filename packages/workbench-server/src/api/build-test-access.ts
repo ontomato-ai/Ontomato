@@ -24,7 +24,6 @@ const ALLOWED: readonly Access[] = [
   ["GET", /^\/observe(?:\/.*)?$/],
   // skills.ts, mcp.ts: definitions and parameter forms, not skill or MCP execution
   ["GET", /^\/skills(?:\/.*)?$/],
-  ["POST", /^\/skills\/[^/]+\/render$/],
   ["GET", /^\/mcp(?:\/.*)?$/],
   // app-builder.ts: builder and SDK metadata
   ["GET", /^\/app-builder\/bootstrap$/],

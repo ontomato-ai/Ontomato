@@ -16,7 +16,7 @@ it('rejects legacy object reads even when the class view has been published',asy
 });
 it('checks underlying published metric output and parameter contracts',async()=>{
   const document=createObjectView('Order');
-  const widget=document.tabs[0].sections[0].widgets[0];widget.resourceId='details';widget.fields=['name'];widget.parameters={id:{source:'context',path:'primaryKey'}};
+  const widget=document.tabs[0].sections[0].widgets[0];if(widget.kind==='chart')throw new Error('Expected properties');widget.resourceId='details';widget.fields=['name'];widget.parameters={id:{source:'context',path:'primaryKey'}};
   mocks.post.mockResolvedValue({text:JSON.stringify({success:true,data:{publishedRevision:1,versions:[{revision:2,document:createObjectView('Order')},{revision:1,document}]}})});
   mocks.describe.mockResolvedValue({status:'PUBLISHED',outputColumns:[{key:'name'}],parameterDefs:[{name:'id'}]});
   await expect(validateProduct(owner,input,{token:'caller'})).resolves.toBeUndefined();
@@ -38,4 +38,28 @@ it('rejects capability configuration hidden inside an ObjectView',async()=>{
   layout.tabs[0].sections[0].widgets[0].resourceId='details';
   const view=productAssetInputSchema.parse({name:'Person',document:{kind:'object-projection',renders:{kind:'ObjectType',id:'Person'},renderer:'full',layout}});
   await expect(validateProduct(owner,view,{})).rejects.toMatchObject({code:'LEGACY_INLINE_LOGIC'});
+});
+
+function chartFile(): import('@ontomato/contracts/chart-data').ChartFile {return {dataset:[{id:'metric',dimensions:['name','value'],source:[]}],series:[{id:'main',type:'bar',datasetId:'metric',encode:{x:'name',y:'value'}}],ontomato:{}};}
+it('validates MetricWidget chart columns, empty snapshots and parameter signatures at admission',async()=>{
+  const {productAssetInputSchema}=await import('@ontomato/contracts/product-assets');
+  const chart=productAssetInputSchema.parse({name:'Chart',document:{kind:'metric-widget',renders:{kind:'MetricView',id:'metric'},renderer:'chart',chartFile:chartFile(),parameters:{}}});
+  mocks.describe.mockResolvedValue({status:'PUBLISHED',outputColumns:[{key:'name'},{key:'value'}],parameterDefs:[]});
+  await expect(validateProduct(owner,chart,{})).resolves.toBeUndefined();
+  mocks.describe.mockResolvedValue({status:'PUBLISHED',outputColumns:[{key:'name'}],parameterDefs:[]});
+  await expect(validateProduct(owner,chart,{})).rejects.toMatchObject({code:'CARD_OUTPUT_MISMATCH',details:{missingColumns:['value']}});
+  mocks.describe.mockResolvedValue({status:'PUBLISHED',outputColumns:[{key:'name'},{key:'value'}],parameterDefs:[]});
+  if(chart.document.kind!=='metric-widget'||chart.document.renderer!=='chart')throw new Error('Expected chart');
+  chart.document.chartFile.dataset[0].source=[{name:'A',value:1}];
+  expect(productAssetInputSchema.safeParse(chart).success).toBe(false);
+});
+it('admits only chart-file widgets in ObjectViews and checks their MetricView columns',async()=>{
+  const {productAssetInputSchema}=await import('@ontomato/contracts/product-assets');
+  const layout=createObjectView('platform:people');
+  layout.tabs[0].sections[0].widgets=[{id:'chart',kind:'chart',title:'Chart',span:12,height:240,resourceId:'metric',chartFile:chartFile(),parameters:{}}];
+  const chart=productAssetInputSchema.parse({name:'Chart',document:{kind:'object-projection',renders:{kind:'ObjectType',id:'platform:people'},renderer:'full',layout}});
+  mocks.describe.mockResolvedValue({status:'PUBLISHED',outputColumns:[{key:'name'}],parameterDefs:[]});
+  await expect(validateProduct(owner,chart,{})).rejects.toMatchObject({code:'CARD_OUTPUT_MISMATCH'});
+  mocks.describe.mockResolvedValue({status:'PENDING_REVIEW',outputColumns:[{key:'name'},{key:'value'}],parameterDefs:[]});
+  await expect(validateProduct(owner,chart,{})).rejects.toMatchObject({code:'UNPUBLISHED_CAPABILITY'});
 });

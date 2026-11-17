@@ -44,6 +44,9 @@ export function chartExecutionIssues(value: RuntimeJsonValue, path: (string | nu
   ]);
 }
 
+export const chartMetricReferenceSchema = z.object({ metricId: column, parameters: runtimeJsonObjectSchema }).strict();
+export type ChartMetricReference = z.infer<typeof chartMetricReferenceSchema>;
+
 const seriesSchema = z.object({
   id: column, type: column.refine(type => type !== "custom", "Custom renderers are not supported"),
   datasetId: z.literal("metric").optional(),
@@ -54,7 +57,7 @@ const fileBaseSchema = z.object({
     id: z.literal("metric"), dimensions: z.array(column), source: z.array(runtimeJsonObjectSchema),
   }).strict()).length(1),
   series: z.array(seriesSchema).min(1),
-  ontomato: z.object({ bindings: z.array(chartBindingSchema).optional(), display: chartDisplaySchema.optional() }).strict(),
+  ontomato: z.object({ bindings: z.array(chartBindingSchema).optional(), display: chartDisplaySchema.optional(), metric: chartMetricReferenceSchema.optional() }).strict(),
 }).catchall(runtimeJsonValueSchema);
 
 export const chartFileSchema = fileBaseSchema.superRefine((file, context) => {
@@ -126,4 +129,33 @@ export function validateChartFile(input: unknown, columns?: readonly ChartMetric
     };
   }
   return { ok: true, file: parsed.data };
+}
+
+function storedChartIssues(file: ChartFile): ChartIssue[] {
+  return [
+    ...(file.dataset[0].source.length ? [{ path: ["dataset", 0, "source"], reason: "NONEMPTY_SNAPSHOT", message: "Stored chart files must have an empty source" }] : []),
+    ...(Object.hasOwn(file.ontomato, "metric") ? [{ path: ["ontomato", "metric"], reason: "EMBEDDED_METRIC_REFERENCE", message: "The consumer owns the stored MetricView reference" }] : []),
+  ];
+}
+
+export const storedChartFileSchema = chartFileSchema.superRefine((file, context) => {
+  for (const issue of storedChartIssues(file)) context.addIssue({ code: "custom", path: issue.path, message: issue.message });
+});
+
+/** Storage keeps presentation only; capability existence and execution belong to the caller. */
+export function validateStoredChartFile(input: unknown, columns?: readonly ChartMetricColumn[]): { ok: true; file: ChartFile } | ChartFailure {
+  const result = validateChartFile(input, columns);
+  if (!result.ok) return result;
+  const issues = storedChartIssues(result.file);
+  return issues.length ? { ok: false, code: "INVALID_CHART_FILE", issues, missingColumns: [] } : result;
+}
+
+/** Split a conversation artifact without changing its snapshot or embedded reference in place. */
+export function splitChartFileForStorage(input: unknown): { ok: true; file: ChartFile; metric: ChartMetricReference | undefined } | ChartFailure {
+  const result = validateChartFile(input);
+  if (!result.ok) return result;
+  const metric = result.file.ontomato.metric;
+  delete result.file.ontomato.metric;
+  result.file.dataset[0].source = [];
+  return { ok: true, file: result.file, metric };
 }

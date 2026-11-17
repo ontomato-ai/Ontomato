@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  chartFileSchema, chartFormatSchema, fillChartFile, legacyChartToFile, validateChartFile,
+  chartFileSchema, chartFormatSchema, fillChartFile, splitChartFileForStorage, validateStoredChartFile, legacyChartToFile, validateChartFile,
   type ChartFile, type ChartOption, type ChartRow, type FilledChart, type LegacyChartSpec,
 } from "./index";
 import { chartAxisBounds, chartBrandColors } from "../chart-presentation";
 import { dashboardPresentationSchema } from "../dashboard";
 
-const map = { resource: "china-provinces", coordinateSystem: "GCJ-02", regionsMatched: true };
+const map = { resource: "china-provinces", coordinateSystem: "WGS-84", regionsMatched: true };
 function make(input: LegacyChartSpec): ChartFile {
   const result = legacyChartToFile(input);
   assert.equal(result.ok, true, JSON.stringify(result));
@@ -104,7 +104,8 @@ test("single separates percent geometry from raw values and distinguishes empty,
     assert.equal(result.option.series[0].data[0].rawValue, raw);
     assert.equal(result.presentation.display.formats?.value.scale, scale);
     assert.equal(fill(file, [{ value: 0 }]).option.series[0].progress.show, true);
-    assert.equal(fill(file, [{ value: null }]).option.series[0].progress.show, false);
+    assert.equal(fill(file, [{ value: null }]).option.series[0].progress.show, true);
+    assert.equal(fill(file, [{ value: null }]).option.series[0].data[0].value, null);
     assert.deepEqual(fill(file, []).option.series[0].data, []);
   }
 });
@@ -195,7 +196,7 @@ test("unconvertible configurations are diagnosed rather than guessed", () => {
     [{ type: "graph", fields: { source: "s", target: "t" }, graphInput: "edges", provenance: { graphCallbacks: ["custom-click"] } }, "CUSTOM_GRAPH_CALLBACK"],
     [{ type: "map", fields: { lng: "x", lat: "y", name: "n" } }, "MAP_RESOURCE_MISSING"],
     [{ type: "map", fields: { lng: "x", lat: "y", name: "n" }, map: { ...map, resource: "unknown" } }, "MAP_RESOURCE_MISSING"],
-    [{ type: "map", fields: { lng: "x", lat: "y", name: "n" }, map: { ...map, coordinateSystem: "WGS-84" } }, "MAP_COORDINATE_MISMATCH"],
+    [{ type: "map", fields: { lng: "x", lat: "y", name: "n" }, map: { ...map, coordinateSystem: "GCJ-02" } }, "MAP_COORDINATE_MISMATCH"],
     [{ type: "admin-choropleth-map", fields: { name: "n", value: "v" }, map: { ...map, regionsMatched: false } }, "MAP_REGION_MISMATCH"],
   ];
   for (const [input, code] of cases) {
@@ -301,5 +302,78 @@ test("a display limit that omits a required tree parent remains a shape error", 
   if (!result.ok) {
     assert.equal(result.code, "INVALID_SHAPE_DATA");
     assert.equal(result.issues[0].reason, "MISSING_TREE_PARENT");
+  }
+});
+
+test("numeric single values use the file's bounds and preserve its progress setting", () => {
+  const file = make({ type: "gauge", fields: { value: "value" }, display: { formats: { value: { kind: "number" } } } });
+  assert.equal(file.series[0].progress.show, false);
+  file.series[0].min = -50;
+  file.series[0].max = 150;
+  file.series[0].progress.show = true;
+  for (const raw of [70, 0, null]) {
+    const series = fill(file, [{ value: raw }]).option.series[0];
+    assert.equal(series.data[0].value, raw);
+    assert.equal(series.data[0].rawValue, raw);
+    assert.equal(series.progress.show, true);
+    assert.equal(series.min, -50);
+    assert.equal(series.max, 150);
+  }
+  assert.deepEqual(fill(file, []).option.series[0].data, []);
+});
+
+test("object charts admit only file-based presentation while other ObjectView restrictions remain", async () => {
+  const {createObjectView, viewWidgetSchema, objectProjectionIssues} = await import("../object-views");
+  const file = make({type:"bar",fields:{xAxis:"name",yAxis:"value"}});
+  const chart = {id:"chart",kind:"chart" as const,title:"Chart",span:12,height:240,resourceId:"metric",chartFile:file,parameters:{}};
+  const layout = createObjectView("Order");
+  layout.tabs[0].sections[0].widgets = [viewWidgetSchema.parse(chart)];
+  assert.deepEqual(objectProjectionIssues(layout), []);
+  for (const old of [{skillId:"echarts"},{chartType:"bar"},{resultPath:"rows"},{resultIndex:0},{valueField:"value"}])
+    assert.equal(viewWidgetSchema.safeParse({...chart,...old}).success,false);
+  layout.tabs[0].sections[0].widgets.push(viewWidgetSchema.parse({id:"metric",kind:"metric",title:"Count",span:4,resourceId:"metric"}));
+  assert.ok(objectProjectionIssues(layout).length > 0);
+  layout.tabs[0].sections[0].widgets = [viewWidgetSchema.parse({...chart,parameters:{id:{source:"object",path:"amount"}}})];
+  assert.ok(objectProjectionIssues(layout).length > 0);
+});
+test("MetricWidget charts reject parallel drawing fields and retain one metric reference", async () => {
+  const {productAssetInputSchema,productReferences} = await import("../product-assets");
+  const file = make({type:"bar",fields:{xAxis:"name",yAxis:"value"}});
+  const document={kind:"metric-widget",renderer:"chart",renders:{kind:"MetricView",id:"metric"},parameters:{},chartFile:file};
+  const parsed=productAssetInputSchema.parse({name:"Chart",document});
+  assert.deepEqual(productReferences(parsed.document),[{kind:"metric",id:"metric"}]);
+  for(const old of [{chartType:"bar"},{valueField:"value"},{fields:["name"]},{format:{kind:"number"}},{display:{limit:1}}])
+    assert.equal(productAssetInputSchema.safeParse({name:"Chart",document:{...document,...old}}).success,false);
+  for(const renderer of ["trend","gauge"])
+    assert.equal(productAssetInputSchema.safeParse({name:"Chart",document:{...document,renderer}}).success,false);
+});
+
+test("conversation files can carry a MetricView reference and split into presentation-only storage", () => {
+  const conversation = make({type:"bar",fields:{xAxis:"name",yAxis:"value"}});
+  conversation.dataset[0].source = [{name:"A",value:70}];
+  conversation.ontomato.metric = {metricId:"metric-view",parameters:{objectId:"A",filter:{enabled:true},ids:[1,null]}};
+  assert.equal(validateChartFile(conversation).ok,true);
+  const split=splitChartFileForStorage(conversation);
+  assert.equal(split.ok,true);
+  if(split.ok){
+    assert.deepEqual(split.metric,conversation.ontomato.metric);
+    assert.deepEqual(split.file.dataset[0].source,[]);
+    assert.equal(Object.hasOwn(split.file.ontomato,"metric"),false);
+    assert.equal(validateStoredChartFile(split.file).ok,true);
+  }
+  assert.equal(conversation.dataset[0].source.length,1);
+  assert.equal(conversation.ontomato.metric.metricId,"metric-view");
+});
+test("stored chart validation rejects either a snapshot or an embedded reference", () => {
+  for(const kind of ["snapshot","reference"]){
+    const file=make({type:"bar",fields:{xAxis:"name",yAxis:"value"}});
+    if(kind==="snapshot")file.dataset[0].source=[{name:"A",value:1}];
+    else file.ontomato.metric={metricId:"metric",parameters:{}};
+    const result=validateStoredChartFile(file);
+    assert.equal(result.ok,false);
+    if(!result.ok){
+      assert.equal(result.code,"INVALID_CHART_FILE");
+      assert.equal(result.issues[0].reason,kind==="snapshot"?"NONEMPTY_SNAPSHOT":"EMBEDDED_METRIC_REFERENCE");
+    }
   }
 });

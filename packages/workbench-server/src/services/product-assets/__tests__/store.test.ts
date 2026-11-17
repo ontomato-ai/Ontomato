@@ -105,10 +105,10 @@ describe('product mutation boundary',()=>{
     expect(mocks.query.mock.calls.some(([sql])=>sql.includes('INSERT INTO product_user_overlays'))).toBe(false);
   });
   it('returns content metadata for only the visible paginated assets without including documents',async()=>{
-    mocks.query.mockResolvedValueOnce({rows:[{total:1}]}).mockResolvedValueOnce({rows:[{id:'chart',ownerId:'alice',name:'Chart',kind:'widget',createdAt:new Date(),updatedAt:new Date()}]}).mockResolvedValueOnce({rows:[{id:'chart',details:{widgetKind:'chart',chartType:'bar'}}]});
+    mocks.query.mockResolvedValueOnce({rows:[{total:1}]}).mockResolvedValueOnce({rows:[{id:'chart',ownerId:'alice',name:'Chart',kind:'metric-widget',createdAt:new Date(),updatedAt:new Date()}]}).mockResolvedValueOnce({rows:[{id:'chart',details:{renderer:'chart'}}]});
     const {queryProducts}=await import('../store');
-    const result=await queryProducts(owner,productQuerySchema.parse({kind:'widget'}));
-    expect(result.items[0].details).toEqual({widgetKind:'chart',chartType:'bar'});
+    const result=await queryProducts(owner,productQuerySchema.parse({kind:'metric-widget'}));
+    expect(result.items[0].details).toEqual({renderer:'chart'});
     expect(result.items[0]).not.toHaveProperty('document');
     expect(mocks.query.mock.calls[2][1]).toEqual(['one',['chart']]);
   });
