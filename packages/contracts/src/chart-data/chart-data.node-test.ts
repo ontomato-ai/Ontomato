@@ -29,6 +29,7 @@ const cases: { type: string; fields: LegacyChartSpec["fields"]; native: string[]
   { type: "sunburst", fields: { id: "id", parent: "parent", name: "category", value: "amount" }, native: ["sunburst"] },
   { type: "sankey", fields: { source: "from", target: "to", value: "amount" }, native: ["sankey"] },
   { type: "scatter", fields: { xAxis: "x", yAxis: "y", size: "size", name: "name" }, native: ["scatter"] },
+  { type: "heatmap", fields: { xAxis: "x", yAxis: "y", value: "value" }, native: ["heatmap"] },
   { type: "radar", fields: { name: "category", value: "amount" }, native: ["radar"] },
   { type: "boxplot", fields: { category: "category", min: "a", q1: "b", median: "c", q3: "d", max: "e" }, native: ["boxplot"] },
   ...["gauge", "liquid-fill"].map(type => ({ type, fields: { value: "amount" }, native: ["gauge"], extra: { display: { formats: { amount: { kind: "percent" as const, scale: 100 as const } } } } })),
@@ -168,6 +169,27 @@ test("scatter geometry spans 6–40px without modifying dataset values; constant
   assert.deepEqual(result.option.visualMap.inRange.symbolSize, [6, 40]);
   assert.equal(result.option.dataset[0].source[1].size, 200);
   assert.deepEqual(fill(file, [{ x: 1, y: 2, size: 100 }]).option.visualMap.inRange.symbolSize, [14, 14]);
+});
+test("heatmap keeps two category axes and a continuous value scale", () => {
+  const file = make({ type: "heatmap", fields: { xAxis: "x", yAxis: "y", value: "value" } });
+  assert.equal(file.xAxis.type, "category");
+  assert.equal(file.yAxis.type, "category");
+  assert.deepEqual(file.series[0].encode, { x: "x", y: "y", value: "value" });
+  assert.equal(file.ontomato.bindings, undefined);
+  const result = fill(file, [{ x: "A", y: "B", value: 1 }, { x: "A", y: "B", value: 9 }]);
+  assert.equal(result.option.visualMap.min, 1);
+  assert.equal(result.option.visualMap.max, 9);
+  assert.deepEqual(result.option.dataset[0].source, [{ x: "A", y: "B", value: 1 }, { x: "A", y: "B", value: 9 }]);
+});
+test("leaflet point maps scale marker size from the value column", () => {
+  const file = make({ type: "leaflet-map", fields: { lng: "lng", lat: "lat", name: "name", value: "value" }, map });
+  const result = fill(file, [{ lng: 121, lat: 31, name: "A", value: 100 }, { lng: 122, lat: 32, name: "B", value: 200 }]);
+  assert.equal(result.option.series[0].coordinateSystem, "geo");
+  assert.equal(result.option.visualMap.min, 100);
+  assert.equal(result.option.visualMap.max, 200);
+  assert.deepEqual(result.option.visualMap.inRange.symbolSize, [6, 40]);
+  assert.equal(result.option.dataset[0].source[1].value, 200);
+  assert.equal(make({ type: "leaflet-map", fields: { lng: "lng", lat: "lat", name: "name" }, map }).visualMap, undefined);
 });
 test("native multi-series mapping preserves labels, separate axes and area geometry", () => {
   const file = make({ type: "bar-line", fields: { xAxis: "x", barSeries: ["a", "b"], lineSeries: "ratio" }, seriesNames: { a: "Amount", ratio: "Rate" }, axisNames: { y: "Money", y2: "Percent" } });

@@ -118,6 +118,12 @@ export function legacyChartToFile(input: LegacyChartSpec): { ok: true; file: Cha
       if (f.size) option.visualMap = { type: "continuous", dimension: f.size, seriesIndex: 0, show: false, inRange: { symbolSize: [6, 40] } };
       break;
     }
+    case "heatmap":
+      option.xAxis = { type: "category" };
+      option.yAxis = { type: "category" };
+      nativeSeries("main", "heatmap", { x: f.xAxis, y: f.yAxis, value: f.value });
+      option.visualMap = { type: "continuous", dimension: f.value, seriesIndex: 0 };
+      break;
     case "radar": option.radar = { radius: "68%" }; bind("radar", "radar", selectedFields, { name: seriesName(f.value) }); break;
     case "boxplot": axes(); bind("boxplot", "boxplot", selectedFields); break;
     case "gauge": case "liquid-fill":
@@ -148,6 +154,7 @@ export function legacyChartToFile(input: LegacyChartSpec): { ok: true; file: Cha
     case "leaflet-map": case "map":
       option.geo = { map: input.map!.resource, roam: true };
       nativeSeries("main", "scatter", { lng: f.lng, lat: f.lat, itemName: f.name, ...(f.value ? { value: f.value, tooltip: [f.name, f.value] } : {}) }, { coordinateSystem: "geo", symbolSize: 10 });
+      if (f.value) option.visualMap = { type: "continuous", dimension: f.value, seriesIndex: 0, show: false, inRange: { symbolSize: [6, 40] } };
       break;
     case "admin-choropleth-map":
       nativeSeries("main", "map", { itemName: f.name, value: f.value }, { map: input.map!.resource, roam: true, ...(input.map!.featureNameProperty ? { nameProperty: input.map!.featureNameProperty } : {}) });
