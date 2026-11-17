@@ -3,10 +3,11 @@
 // them. Run it where the workspace's TypeScript loader is available, because it checks every body against the contracts:
 //
 //   node --import tsx packages/apps-sdk/examples/panels/schedules-trial/register.mjs \
-//     --base https://host/wenshu --token <credential>          # or --token-file <path>
+//     --base https://host/wenshu [--token <credential> | --token-file <path>]
 //
-// The credential is read from the argument or the file and never written into a file of this repository or printed.
-// Every body is the contracts' own shape, so a body the platform would refuse fails here first.
+// The credential is read from the argument or the file and never written into a file of this repository or printed. It
+// may be omitted: the open-source platform has no login token and signs in anonymously, and then no credential header is
+// sent at all. Every body is the contracts' own shape, so a body the platform would refuse fails here first.
 import { readFileSync } from "node:fs";
 import {
   productPanelInputSchema,
@@ -21,29 +22,54 @@ const args = Object.fromEntries(
     return pairs;
   }, []),
 );
-if (!args.base) throw new Error("usage: node register.mjs --base <platform url> --token <token> | --token-file <path>");
+if (!args.base) throw new Error("usage: node register.mjs --base <platform url> [--token <token> | --token-file <path>]");
 const base = args.base.replace(/\/+$/, "");
+// No credential is the anonymous identity, which the open-source platform accepts; the header is then left out rather
+// than sent empty.
 const token = args.token ?? (args["token-file"] ? readFileSync(args["token-file"], "utf8").trim() : "");
-if (!token) throw new Error("A credential is required: --token or --token-file");
 
-async function call(method, path, body, { missing } = {}) {
+/**
+ * One request. A refusal is reported with the platform's own code: `code` is what tells a caller the definition already
+ * exists (`PRODUCT_CONFLICT`) apart from one it may not touch (`PRODUCT_FORBIDDEN`), and the two are not the same answer.
+ */
+async function call(method, path, body) {
   const response = await fetch(`${base}${path}`, {
     method,
-    headers: { "Content-Type": "application/json", Accept: "application/json", tk: token },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...(token ? { tk: token } : {}),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await response.text();
   const answer = text ? JSON.parse(text) : null;
   if (response.ok) return answer;
-  // A definition that does not exist yet is the ordinary first run, not a failure; anything else is.
-  if (missing && response.status === 404 && answer?.error?.code === missing) return null;
-  throw new Error(`${method} ${path} failed: ${response.status} ${answer?.error?.message ?? text}`);
+  const refusal = new Error(`${method} ${path} failed: ${response.status} ${answer?.error?.message ?? text}`);
+  refusal.status = response.status;
+  refusal.code = answer?.error?.code;
+  throw refusal;
 }
 
-/** Creates a product at revision 0, or replaces it at the revision it has now: the same call either way. */
+/**
+ * Registers a product: created at revision 0 when nothing holds its ID, replaced at the revision it holds now when
+ * something does.
+ *
+ * Which of the two it is comes from the write, not from a read. A read of an ID nothing holds cannot answer "nothing
+ * holds it": the platform checks the use grant before it looks the definition up, and an ID it has never registered has
+ * no grant, so a missing definition reads as 403 `PRODUCT_FORBIDDEN` — deliberately, since that is what keeps the
+ * endpoint from telling a stranger which IDs exist. The write does say so: a revision-0 create over an occupied ID is
+ * refused with 409 `PRODUCT_CONFLICT`, and only then is the current revision read and the write repeated with it.
+ */
 async function put(path, input) {
-  const current = await call("GET", path, undefined, { missing: "PRODUCT_UNAVAILABLE" });
-  const revision = current?.projection?.revision ?? current?.panel?.revision ?? 0;
+  try {
+    return await call("PUT", path, { ...input, revision: 0 });
+  } catch (refusal) {
+    if (refusal.code !== "PRODUCT_CONFLICT") throw refusal;
+  }
+  const current = await call("GET", path);
+  const revision = current?.projection?.revision ?? current?.panel?.revision;
+  if (!revision) throw new Error(`GET ${path} answered without a revision, so ${path} cannot be replaced`);
   return call("PUT", path, { ...input, revision });
 }
 
