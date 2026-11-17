@@ -398,6 +398,8 @@ export default {
     "showChart": "Show chart",
     "showData": "Show data",
     "dragToMoveGroup": "Drag to move group",
+    "scrollTabsLeft": "Scroll boards left",
+    "scrollTabsRight": "Scroll boards right",
     "layoutSaveFailedRetry": "Layout save failed, retrying...",
     "created": "Created",
     "loadDashboardFailed": "Failed to load dashboard",

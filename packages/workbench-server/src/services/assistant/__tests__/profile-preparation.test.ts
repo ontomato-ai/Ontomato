@@ -1,4 +1,5 @@
 import {beforeEach,expect,it,vi} from 'vitest';
+import {defaultAssistantSkills} from '../../../config/assistant-defaults';
 const mocks=vi.hoisted(()=>({profile:vi.fn(),skills:vi.fn(),environment:vi.fn(),open:vi.fn(),callback:vi.fn(),principal:vi.fn(),scoped:vi.fn(),native:vi.fn(),grants:new Set<string>(),check:vi.fn()}));
 vi.mock('../../product-assets/agent-profile',()=>({profileForSession:mocks.profile}));
 vi.mock('../../product-assets/platform-assets',()=>({nativeProfileId:mocks.native}));
@@ -13,7 +14,7 @@ vi.mock('../skills',()=>({needsRetrievalScope:()=>false,hasGovernanceSkill:()=>f
 vi.mock('../context',()=>({assistantOntologyContext:vi.fn()}));
 vi.mock('../store',()=>({assistantStore:{turns:async()=>[]}}));
 vi.mock('../../../infrastructure/agent-runtime/client',()=>({RuntimeClient:class{session=async()=>({messages:[{id:'input',messageSeq:1,message:{role:'user',content:'Question',timestamp:1}}]});}}));
-vi.mock('../../../platform/agent-runtime/runtime',()=>({messageText:(message:{content:string})=>message.content,runDefinition:(_prompt:string,_model:unknown,skills:unknown,_locale:unknown,externalMcp:unknown)=>({skills,externalMcp}),userSkillEnvironment:mocks.environment}));
+vi.mock('../../../platform/agent-runtime/runtime',()=>({messageText:(message:{content:string})=>message.content,runDefinition:(systemPrompt:string,_model:unknown,skills:unknown,_locale:unknown,externalMcp:unknown)=>({systemPrompt,skills,externalMcp}),userSkillEnvironment:mocks.environment}));
 vi.mock('../ontology-retrieval',()=>({OntologyRetrievalClient:class{open=mocks.open;}}));
 vi.mock('../../agent-runtime/callback-credential',()=>({callbackCredential:mocks.callback}));
 import {prepareAnalystRun,type AssistantPreparation} from '../prepare';
@@ -31,6 +32,17 @@ it('limits a Profile run to its projection tools without passing human business 
   expect(JSON.stringify(run)).not.toContain('human-secret');
 });
 function nativeRequest(){return {a:{id:'agent',skills:[{name:'analyst'}],enabled_mcp_service_ids:['external'],model_selection:{modelId:null}},session:{id:'session',agent_id:'agent'},turn:{id:'run',created_at:new Date(),retrieval_scope_id:'scope',class_names:[]},message:'Question',inputId:'input',input:{role:'user',content:'Question',timestamp:1},ontologyContext:null,owner:{domainId:'domain',userId:'human'},credentials:{token:'human-secret',locale:'en'}} as unknown as AssistantPreparation;}
+it.each(['regular','analysis'])('prepares the default %s with reusable chart producers and their shared instruction',async(kind)=>{
+ const request=nativeRequest();request.a.kind=kind;request.a.skills=defaultAssistantSkills;
+ mocks.skills.mockResolvedValue({skills:request.a.skills,pageDrafts:false});mocks.environment.mockReturnValue({values:{},secrets:{}});
+ const run=await prepareAnalystRun(request);
+ for(const name of ['echarts','leaflet','admin-choropleth-map']){
+   expect(run.definition.skills).toContainEqual({name,namespace:{kind:'provider',provider:'workbench'}});
+   expect(run.definition.systemPrompt).toContain(name);
+ }
+ expect(run.definition.systemPrompt).toContain('Do not hand-write ECharts options');
+ expect(run.definition.systemPrompt).not.toContain('containing an ECharts option object as plain JSON');
+});
 it('preserves native tools while exchanging human credentials for user-scoped Agent authority',async()=>{
  mocks.native.mockResolvedValue('native-profile');mocks.check.mockResolvedValue({text:JSON.stringify({allowed:true})});
  mocks.scoped.mockResolvedValue({token:'ap2.scoped',locale:'en'});mocks.skills.mockResolvedValue({skills:[{name:'analyst'}],pageDrafts:false});mocks.environment.mockImplementation(credentials=>({values:{},secrets:{tk:credentials.token}}));
