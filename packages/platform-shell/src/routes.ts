@@ -42,6 +42,9 @@ export const platformRoutes = {
   governance: { name: "KnowledgeGovernance", path: "/governance/chat/:sessionId?" },
   /** 应用构建: the workspace in the address, the open conversation as `?sessionId=`. */
   appBuilder: { name: "AppBuilder", path: "/app-builder/:workspaceId?" },
+  agentBuilder:{name:'AgentBuilder',path:'/agent-builder'},
+  agentBuilderNew:{name:'AgentBuilderNew',path:'/agent-builder/new'},
+  agentBuilderAgent:{name:'AgentBuilderAgent',path:'/agent-builder/:agentId'},
   feedback: { name: "Feedback", path: "/governance/feedback" },
   /** The models of the knowledge governance agents, at the foot of the application's column. */
    governanceModels: { name: "GovernanceModels", path: "/settings/model-config/governance" },

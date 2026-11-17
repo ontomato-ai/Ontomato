@@ -19,6 +19,7 @@ import {agentPrincipalCredentials} from './agent-principal';
 import {synchronizeProductOntology} from './ontology';
 import {definitionTriggerSchema} from '@ontomato/contracts/product-subscriptions';
 import {readDefinitionTrigger} from './triggers';
+import {nativeAgentAsset,nativeApplicationAsset} from './platform-assets';
 
 export const releaseSnapshotSchema=z.object({schemaVersion:z.literal(1),roots:z.array(z.string()),assets:z.array(productAssetSchema),triggers:z.array(definitionTriggerSchema).optional(),contracts:z.array(z.object({kind:z.enum(['metric','action','definition','object-type','trigger']),id:z.string(),hash:z.string().min(1),contractVersion:z.union([z.literal(1),z.literal(2)]).optional()}))}).superRefine((snapshot,context)=>{
   const ids=new Set(snapshot.assets.map(asset=>asset.id));
@@ -129,6 +130,7 @@ async function captureAuthorizedRelease(owner:ProductOwner,roots:string[],creden
   const byId=new Map(assets.map(asset=>[asset.id,asset]));
   const readCaptured=async(id:string)=>{const asset=byId.get(id);if(!asset)throw new HttpError(409,'Release dependency is missing','PRODUCT_UNAVAILABLE');return asset;};
   for(const asset of assets){
+    if(await nativeAgentAsset(owner.domainId,asset.id)||await nativeApplicationAsset(owner.domainId,asset.id))throw new HttpError(409,'Platform-native assets use their registered execution boundary; they cannot be frozen as declarative projections','PRODUCT_UNPINNABLE_DEPENDENCY');
     await validateComposition(asset.id,asset,readCaptured);
     await validatePageBindings(owner,asset,readCaptured,credentials);
     await validateProduct(owner,asset,credentials);

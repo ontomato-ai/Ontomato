@@ -4,6 +4,8 @@ import {normalizeComposition} from '../../../utils/product-composition';
 import {productAssetInputSchema} from '@ontomato/contracts/product-assets';
 
 export async function ensureProductAssetsSchema(client: QueryableClient) {
+  await client.query(`CREATE TABLE IF NOT EXISTS ${t('product_native_agent_bindings')}(domain_id text NOT NULL,asset_id text NOT NULL,agent_id text NOT NULL,PRIMARY KEY(domain_id,asset_id),UNIQUE(domain_id,agent_id));
+    CREATE TABLE IF NOT EXISTS ${t('product_native_application_bindings')}(domain_id text NOT NULL,asset_id text NOT NULL,application_id text NOT NULL,PRIMARY KEY(domain_id,asset_id),UNIQUE(domain_id,application_id));`);
   await client.query(`CREATE TABLE IF NOT EXISTS ${t("product_assets")} (
     domain_id text NOT NULL, id text NOT NULL, owner_id text NOT NULL,
     name text NOT NULL, description text NOT NULL DEFAULT '', visibility text NOT NULL DEFAULT 'private',

@@ -54,6 +54,7 @@ export function workbenchPages(
       (location) => ({ ...location, redirect: { name: routes.externalMcp.name } }),
     ),
     { ...routes.chat, component, meta: { workbench: true } },
+    ...[routes.agentBuilder,routes.agentBuilderNew,routes.agentBuilderAgent].map(location=>({...location,component,meta:{workbench:true,page:routes.agents.path}})),
     // The application's prefix is no page: it opens the conversation, which is where the platform is entered.
     { path: "/agents", redirect: (to) => capabilityTabLink(to) ?? { name: routes.chat.name, query: to.query } },
     // The first agent's screen is a page, so its old tab link moves on as the screen is entered: from a bookmark, a

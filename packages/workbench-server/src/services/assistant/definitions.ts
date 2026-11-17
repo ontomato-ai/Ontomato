@@ -16,6 +16,9 @@ import { withDomainSkills } from "../skills/operations";
 import { effectiveSystemPrompt, storedSystemPrompt } from "./prompts";
 import { assistantName, assistantDescription } from "./labels";
 import {isAppBuilderKind} from '../app-builder/definition';
+import {transaction} from '../../infrastructure/postgres-transaction';
+import {lockProducts} from '../product-assets/store';
+import {synchronizeNativeProfile} from '../product-assets/platform-assets';
 const view = (a: AgentRow, locale?: string) =>
   assistantAgentDefinitionSchema.parse({
     id: a.id,
@@ -49,7 +52,9 @@ export async function saveAgentDefinition(
     const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
     await validateAssistantSkills(owner.domainId, skills);
     const agent = await editableAgent(id, owner);
-    await getPostgresPool().query(
+    await transaction(async client=>{
+    await lockProducts(client,owner);
+    await client.query(
       `UPDATE ${t("assistant_agents")} SET name=$3,description=$4,enabled=$5,system_prompt=$6,model_selection=$7,model_reference_migrated=true,skills=$8,icon=$9,class_names=$10,enabled_mcp_service_ids=$11,sort_order=$12 WHERE id=$1 AND domain_id=$2`,
       [
         id,
@@ -66,6 +71,9 @@ export async function saveAgentDefinition(
         input.sortOrder,
       ],
     );
+    const updated=await client.query(`SELECT * FROM ${t('assistant_agents')} WHERE id=$1 AND domain_id=$2`,[id,owner.domainId]);
+    await synchronizeNativeProfile(client,owner,updated.rows[0],locale);
+    });
     return readAgentDefinition(id, owner, locale);
   });
 }

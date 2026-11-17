@@ -12,6 +12,8 @@ export function createProductsClient(request: Pick<ManagerRequest,"request">) {
     return result;
   }
   return {
+    synchronizePlatform:async()=>send('/synchronize-platform','POST',{}),
+    nativeBinding:async(id:string)=>{const result=await send(`/${encodeURIComponent(id)}`);return {agentId:result.nativeAgentId as string|undefined,applicationId:result.nativeApplicationId as string|undefined};},
     graph:async()=>productGraphSchema.parse((await send('/graph')).graph),
     defaultProjectionWarnings:async()=>defaultProjectionWarningsSchema.parse(await send('/validation/default-projections')),
     projections:async(kind:'ObjectType'|'Definition'|'MetricView'|'Action',id:string)=>{const result=await send('/projections?'+new URLSearchParams({kind,id}));return {...result,assets:result.assets.map((asset:unknown)=>productAssetSchema.parse(asset))};},
