@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
-import { productAssetSchema, productAssetInputSchema, productReferences, productTypes, type ProductAsset, type ProductAssetInput, type ProductQuery } from "@ontomato/contracts/product-assets";
+import { productAssetSchema, productAssetInputSchema, productDefaultTexts, productReferences, productTypes, type ProductAsset, type ProductAssetInput, type ProductQuery } from "@ontomato/contracts/product-assets";
 import { defaultPersonalWorkspace, personalWorkspaceSchema, type PersonalWorkspace } from "@ontomato/contracts/personal-workspace";
 import { getPostgresPool as db, qualifiedTable as t } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
@@ -241,7 +241,7 @@ async function authorizedPersonalHome(owner:ProductOwner,credentials:AssistantCr
     workspace.dashboardIds = [...new Set([...workspace.dashboardIds, ...(previous?.dashboard_ids ?? [])])].slice(0,100);
     workspace.applicationIds = [...new Set([...workspace.applicationIds, ...(previous?.favorites ?? []).filter((ref: {kind:string}) => ref.kind === "application").map((ref: {id:string}) => ref.id)])].filter(id=>id!=="home"&&id!=="personal-workspace").slice(0,100);
     workspace.agentIds = [...new Set([...workspace.agentIds, ...(previous?.favorites ?? []).filter((ref: {kind:string}) => ref.kind === "agent").map((ref: {id:string}) => ref.id)])].slice(0,100);
-    const input=productAssetInputSchema.parse({name:"我的主页", document:{kind:"page",workspace,children:[]}});
+    const input=productAssetInputSchema.parse({name:productDefaultTexts.initialHomeName, document:{kind:"page",workspace,children:[]}});
     await validateProduct(owner,input,credentials);
     const result = await writeProduct(client, owner, randomUUID(), input, 0);
     await client.query(`INSERT INTO ${t("product_home")} (domain_id,user_id,asset_id) VALUES($1,$2,$3)`, [owner.domainId, owner.userId, result.id]);
@@ -254,12 +254,12 @@ async function materializeProductHome(client:PoolClient,owner:ProductOwner,home:
   if(home.document.kind!=='page')throw new Error('Home must be a Page');
   const sections={main:['apps','conversations','objects'],sidebar:['tasks','recent']};
   const targets:Record<string,{type:string;fields:string[];name:string}>={
-    apps:{type:'platform:FavoriteApplication',fields:['name','description','path'],name:'常用应用'},
-    data:{type:'platform:Dashboard',fields:['name','updatedAt'],name:'关注的数据'},
-    tasks:{type:'platform:Task',fields:['title','enabled','pause','pauseMessage','resultSummary','resultPath'],name:'任务动态'},
-    conversations:{type:'platform:Conversation',fields:['title','updatedAt','agentId','pinned'],name:'继续工作'},
-    objects:{type:'platform:Favorite',fields:['title','className','primaryKey'],name:'我的收藏'},
-    recent:{type:'platform:RecentVisit',fields:['title','visitedAt','path'],name:'最近访问'},
+    apps:{type:'platform:FavoriteApplication',fields:['name','description','path'],name:productDefaultTexts.apps},
+    data:{type:'platform:Dashboard',fields:['name','updatedAt'],name:productDefaultTexts.data},
+    tasks:{type:'platform:Task',fields:['title','enabled','pause','pauseMessage','resultSummary','resultPath'],name:productDefaultTexts.tasks},
+    conversations:{type:'platform:Conversation',fields:['title','updatedAt','agentId','pinned'],name:productDefaultTexts.conversations},
+    objects:{type:'platform:Favorite',fields:['title','className','primaryKey'],name:productDefaultTexts.objects},
+    recent:{type:'platform:RecentVisit',fields:['title','visitedAt','path'],name:productDefaultTexts.recent},
   };
   const children=[...home.document.children];
   for(const [column,names] of [['main',sections.main],['sidebar',sections.sidebar]] as const)for(const name of names){
@@ -272,7 +272,7 @@ async function materializeProductHome(client:PoolClient,owner:ProductOwner,home:
     await writeProduct(client,owner,id,productAssetInputSchema.parse({name:target.name,document:{kind:'collection-view',renders:{kind:'Definition',id:definitionId},renderer:'list',parameters:{},fields:target.fields,pageSize:4,isDefault:true}}),0);
     children.push({assetId:id,column});
   }
-  return writeProduct(client,owner,home.id,{name:'我的工作台',description:'常用入口与正在进行的工作',visibility:home.visibility,document:{...home.document,layout:{mode:'columns',mainWidth:8,gap:'comfortable'},children,compositionVersion:2}},home.revision);
+  return writeProduct(client,owner,home.id,{name:productDefaultTexts.homeName,description:productDefaultTexts.homeDescription,visibility:home.visibility,document:{...home.document,layout:{mode:'columns',mainWidth:8,gap:'comfortable'},children,compositionVersion:2}},home.revision);
 }
 
 /** Persist legacy built-ins once; rendering thereafter follows only the page composition. */
@@ -286,8 +286,8 @@ async function materializeWorkspaceBlocks(client:PoolClient,owner:ProductOwner,h
   for(const block of blocks){
     const blockId=`workspace-block-${home.id}-${block.section}`;
     const section=block.section as 'assistant'|'apps'|'data'|'tasks'|'conversations'|'objects'|'recent';
-    const name={assistant:'你想了解哪些数据？',apps:'常用应用',data:'关注的数据',tasks:'任务动态',conversations:'继续分析',objects:'收藏的对象',recent:'最近访问'}[section];
-    await writeProduct(client,owner,blockId,productAssetInputSchema.parse({name,description:section==='assistant'?'用日常语言提问，让智能体帮你查询和分析':'',document:{kind:'widget',widget:{kind:'platform',source:section,placeholder:section==='assistant'?'例如：按学院统计在职教职工人数，并比较人员构成':'',limit:4,workspace}}}),0);
+    const name={assistant:productDefaultTexts.legacyAssistant,apps:productDefaultTexts.apps,data:productDefaultTexts.data,tasks:productDefaultTexts.tasks,conversations:productDefaultTexts.legacyConversations,objects:productDefaultTexts.legacyObjects,recent:productDefaultTexts.recent}[section];
+    await writeProduct(client,owner,blockId,productAssetInputSchema.parse({name,description:section==='assistant'?productDefaultTexts.legacyAssistantDescription:'',document:{kind:'widget',widget:{kind:'platform',source:section,placeholder:section==='assistant'?productDefaultTexts.legacyAssistantPlaceholder:'',limit:4,workspace}}}),0);
     if(section==='assistant')children.unshift({assetId:blockId,column:'main'});
     else children.push({assetId:blockId,column:block.column as 'main'|'sidebar'});
   }

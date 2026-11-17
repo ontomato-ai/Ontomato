@@ -4,9 +4,8 @@ import { workspaceObjectHostKey, type WorkspaceObjectHost } from "@ontomato/cont
 import { ElAlert, ElButton, ElSkeleton, vLoading } from "element-plus";
 import { ArrowLeft, Settings2, RefreshCw, Star } from "lucide-vue-next";
 import { createObjectView, objectViewDocumentSchema, objectViewProductIssues, type ObjectReference, type ObjectViewDocument } from "@ontomato/contracts/object-views";
-import { useManagerClient, useManagerContext, useOntologyText } from "../context";
+import { useManagerClient, useOntologyText } from "../context";
 const { ot } = useOntologyText();
-const managerContext = useManagerContext();
 import ObjectViewRuntime from "./ObjectViewRuntime.vue";
 import { computed } from "vue";
 import { instanceName, type InstanceNameAttribute } from "./instance-name";
@@ -18,8 +17,8 @@ const client = useManagerClient();
 const workspaceHost = inject<WorkspaceObjectHost | null>(workspaceObjectHostKey, null);
 const pinned = ref(false), pinBusy = ref(false), pinError = ref("");
 const pinLabel = computed(() => pinned.value
-  ? (managerContext.locale.startsWith("zh") ? "取消收藏" : "Remove from favorites")
-  : (managerContext.locale.startsWith("zh") ? "收藏到工作台" : "Add to workspace favorites"));
+  ? ot("productHomeRemoveFavorite")
+  : ot("productHomeAddFavorite"));
 async function togglePin() {
   if (!workspaceHost) return;
   const reference = { ...props.reference, title: (displayName.value || props.reference.primaryKey).slice(0, 200) };
@@ -58,7 +57,7 @@ async function load() {
   try {
     const state = await client.objectViewRequest("read", props.reference.className, "full");
     if (current !== request) return;
-    if(state.assetId){if(!state.publishedAsset)throw new Error('此对象视图尚未发布');const published=productAssetSchema.parse(state.publishedAsset);if(published.id!==state.assetId||published.revision!==state.publishedRevision||published.document.kind!=='object-projection'||published.document.renders.id!==props.reference.className)throw new Error('已发布对象视图与当前入口不一致');projection.value=published;return;}
+    if(state.assetId){if(!state.publishedAsset)throw new Error(ot('productObjectViewUnpublished'));const published=productAssetSchema.parse(state.publishedAsset);if(published.id!==state.assetId||published.revision!==state.publishedRevision||published.document.kind!=='object-projection'||published.document.renders.id!==props.reference.className)throw new Error(ot('productObjectViewMismatch'));projection.value=published;return;}
     document.value = state.versions[0] ? objectViewDocumentSchema.parse(state.versions[0].document) : createObjectView(props.reference.className);
     if (!state.versions[0]) document.value.tabs[0].sections[0].widgets[0].title = ot('ovKindProperties');
     const issues=objectViewProductIssues(document.value);
