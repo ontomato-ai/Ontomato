@@ -5,7 +5,7 @@ import { shellContextKey, type ShellContext } from "../context";
 // The platform chart draws a chart file with the platform's rules; a legacy plain option is only read as it was stored.
 vi.mock("@ontomato/foundation-ui/chart", () => ({
   EChart: { props: ["option"], template: '<div class="legacy-chart" />' },
-  MetricChart: { props: ["file"], template: '<div class="platform-chart" />' },
+  MetricChart: { props: ["file", "metric"], template: '<div class="platform-chart"><span class="metric">{{ JSON.stringify(metric) }}</span></div>' },
   useChartTheme: () => ref({ color: ["#111111"] }),
 }));
 
@@ -39,6 +39,11 @@ it("draws a chart file with the platform chart and a legacy option as it was sto
   try {
     expect(platform.root.querySelector(".platform-chart")).not.toBeNull();
     expect(platform.root.querySelector(".legacy-chart")).toBeNull();
+    // The shell hands the platform chart the file's own snapshot as a metric output: its columns and its rows.
+    expect(JSON.parse(platform.root.querySelector(".metric")!.textContent!)).toEqual({
+      columns: [{ key: "kind" }, { key: "amount" }],
+      rows: [{ kind: "甲", amount: 20 }],
+    });
   } finally { platform.app.unmount(); platform.root.remove(); }
 
   const legacy = await draw(JSON.stringify({ series: [{ type: "pie", data: [{ name: "甲", value: 1 }] }] }));

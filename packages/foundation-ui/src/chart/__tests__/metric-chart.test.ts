@@ -41,16 +41,8 @@ it("shows a result with no rows as empty, and a partial result's own hint", () =
   expect(partial.find(".drawn").exists()).toBe(true);
 });
 
-it("fills the file from its own snapshot rows when no metric output is given", () => {
-  const snapshot = { ...file, dataset: [{ id: "metric", dimensions: ["kind", "amount"], source: [{ kind: "甲", amount: 20 }] }] };
-  const wrapper = mount(MetricChart, { props: { file: snapshot }, global: { stubs: stub } });
-  const option = wrapper.findComponent(stub.EChart).props("option") as { series: { data?: unknown[] }[] };
-  expect(option.series[0].data).toBeUndefined();
-  expect(wrapper.find(".drawn").exists()).toBe(true);
-});
-
 it("states a file the boundary rejects rather than drawing it", () => {
-  const wrapper = mount(MetricChart, { props: { file: { series: [] } }, global: { stubs: stub } });
+  const wrapper = mount(MetricChart, { props: { file: { series: [] }, metric: { columns: [], rows: [] } }, global: { stubs: stub } });
   expect(wrapper.text()).toContain("INVALID_CHART_FILE");
   expect(wrapper.find(".drawn").exists()).toBe(false);
 });

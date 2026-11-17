@@ -16,8 +16,8 @@ import { useChartTheme } from "./theme";
 const props = withDefaults(defineProps<{
   /** The chart document: an ECharts option with `dataset[id=metric]` and the reserved `ontomato` metadata. */
   file: unknown;
-  /** The metric output to draw; without one the file's own snapshot rows are drawn. */
-  metric?: { columns: readonly ChartMetricColumn[]; rows: ChartRow[]; truncation?: { truncationHint: string } };
+  /** The metric output to draw: the columns it returns, its rows and its truncation. */
+  metric: { columns: readonly ChartMetricColumn[]; rows: ChartRow[]; truncation?: { truncationHint: string } };
   /** Where the chart stands: a conversation's inline reply or a panel of its own. */
   presentation?: "inline" | "panel";
   /** Height of the chart, in pixels or as a CSS length. */
@@ -32,14 +32,7 @@ const theme = useChartTheme();
 const drawn = ref<{ width: number; height: number }>({ width: 0, height: 0 });
 const chartHeight = computed(() => props.height ?? (props.presentation === "panel" ? "min(68vh, 560px)" : 320));
 
-/** The rows a snapshot file carries itself; a file written for reuse has none. */
-const metric = computed(() => {
-  if (props.metric) return props.metric;
-  const dataset = (props.file as { dataset?: { dimensions?: string[]; source?: ChartRow[] }[] } | null)?.dataset?.[0];
-  return { columns: (dataset?.dimensions ?? []).map((key) => ({ key })), rows: dataset?.source ?? [] };
-});
-
-const filled = computed(() => fillChartFile<{ truncationHint: string }>(props.file, metric.value));
+const filled = computed(() => fillChartFile<{ truncationHint: string }>(props.file, props.metric));
 
 const option = computed(() => {
   if (!filled.value.ok) return null;

@@ -5,10 +5,11 @@ import { shellContextKey } from "../context";
 import type { ArtifactRendererProps } from "../types";
 import { useArtifactText } from "./useArtifactBlob";
 import { chartBrandColors, chartReadingLayout } from "@ontomato/contracts/chart-presentation";
+import type { ChartRow } from "@ontomato/contracts/chart-data";
 
 /**
- * .chart.json: a chart file, drawn by the platform's chart from its own snapshot rows, or a legacy plain ECharts
- * option, which is read as it was stored and drawn in the platform's theme.
+ * .chart.json: a chart file, drawn by the platform's chart from the snapshot rows the file carries, or a legacy plain
+ * ECharts option, which is read as it was stored and drawn in the platform's theme.
  */
 const props = defineProps<ArtifactRendererProps>();
 const shell = inject(shellContextKey)!;
@@ -28,6 +29,18 @@ const parsed = computed<{ value: Record<string, unknown> | null; file: boolean; 
   } catch {
     return { value: null, file: false, invalid: true };
   }
+});
+
+/**
+ * A conversation's chart file carries its own rows: its `dataset[id=metric]` is the snapshot of the MetricView the run
+ * took. Adapting that snapshot to a metric output is the shell's job, so the platform chart stays one shape of input.
+ */
+const snapshot = computed(() => {
+  const dataset = (parsed.value.value as { dataset?: { dimensions?: string[]; source?: unknown[] }[] } | null)?.dataset?.[0];
+  return {
+    columns: (dataset?.dimensions ?? []).map((key) => ({ key })),
+    rows: (dataset?.source ?? []) as ChartRow[],
+  };
 });
 
 const option = computed<Record<string, unknown> | null>(() => {
@@ -54,6 +67,7 @@ watch(text, () => {
     <MetricChart
       v-else-if="parsed.file && parsed.value"
       :file="parsed.value"
+      :metric="snapshot"
       :presentation="presentation"
       :height="presentation === 'panel' ? 'min(68vh, 560px)' : 320"
       :undated="shell.labels.value.chartUndated"
