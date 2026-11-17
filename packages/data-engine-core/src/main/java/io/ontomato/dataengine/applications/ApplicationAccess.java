@@ -10,5 +10,6 @@ public interface ApplicationAccess {
     void requireConnectedRegistration(User user);
     boolean canMaintain(JSONObject application, User user);
     boolean canEnter(JSONObject application, User user);
+    java.util.List<PageSkills.Mapping> pageSkills(java.util.List<PageSkills.Mapping> mappings, User user);
     void declare(JSONObject application, ApplicationCatalog.Declaration declaration, boolean created);
 }
