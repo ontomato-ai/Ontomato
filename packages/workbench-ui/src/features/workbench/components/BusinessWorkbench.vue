@@ -22,7 +22,7 @@ import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vu
 import DatasetActions from "./DatasetActions.vue";
 import DatasetDrilldown from "./DatasetDrilldown.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
-import { DASHBOARDS_PAGE_ID, dashboardsPageFeature, workbenchFeatures } from "../features";
+import { AGENT_SETTINGS_PAGE_ID, DASHBOARDS_PAGE_ID, workbenchFeatures } from "../features";
 import FollowUpRenderer from "./FollowUpRenderer.vue";
 import ClarificationRenderer from "./ClarificationRenderer.vue";
 const artifactRenderers = [
@@ -109,12 +109,12 @@ const inDashboards = computed(() => pageAddress.value !== null && pilotPage.valu
  */
 const featureId = computed<string | null>({
   get: () => {
-    if (inSettings.value) return "agents";
+    if (inSettings.value) return AGENT_SETTINGS_PAGE_ID;
     if (inDashboards.value) return DASHBOARDS_PAGE_ID;
     return Object.entries(featureRoutes).find(([, page]) => page.name === route.name)?.[0] ?? null;
   },
   set: (id) => {
-    if (id === "agents" && inSettings.value) return;
+    if (id === AGENT_SETTINGS_PAGE_ID && inSettings.value) return;
     // Closing the page beside the conversation only drops the parameter: the conversation stays.
     if (inDashboards.value) {
       const { page: _page, ...query } = route.query;
@@ -173,7 +173,11 @@ watch(conversationId, (id) => {
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: WORKBENCH_ID,
   label: appearance.value?.brand?.name || props.defaultBrandName,
-  features: workbenchFeatures(props.features, dashboardsPageFeature(pageAddress.value ?? routes.dashboards.path)),
+  features: workbenchFeatures(
+    props.features,
+    { agents: t("assistant.featureAgents"), dashboards: t("assistant.featureDashboards") },
+    pageAddress.value ?? routes.dashboards.path,
+  ),
 }));
 
 const labels = useShellLabels();
@@ -370,9 +374,9 @@ function appearanceSaved(value: WorkbenchAppearance) {
       />
     </template>
     <template #feature="{ featureId: page }">
-      <AgentModelsPage v-if="page === 'agents' && modelsOpen" :source="modelSource" :path="modelsPage.path" />
+      <AgentModelsPage v-if="page === AGENT_SETTINGS_PAGE_ID && modelsOpen" :source="modelSource" :path="modelsPage.path" />
       <AgentSettingsPage
-        v-else-if="page === 'agents'"
+        v-else-if="page === AGENT_SETTINGS_PAGE_ID"
         :agent-id="settingsAgentId"
         :creating="creatingAgent"
         @changed="shell?.reloadAgents()"

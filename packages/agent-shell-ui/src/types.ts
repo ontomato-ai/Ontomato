@@ -61,6 +61,12 @@ export interface ShellFeatureDeclaration {
   icon: string;
   /** page: host content in the main area; action: the host reacts in place; link: navigate away. */
   availability: "page" | "action" | "link" | "unavailable";
+  /**
+   * Whether the application's column lists this page as an entry. A page declared only so the host can open it beside the
+   * conversation — the settings, a dashboard — has no entry of its own and is not listed; the column has its own way to
+   * the pages a reader starts from.
+   */
+  listed?: boolean;
   href?: string;
   hint?: string;
   /**

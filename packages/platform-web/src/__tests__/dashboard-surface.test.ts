@@ -8,6 +8,7 @@ import { pageCounterKey } from "@ontomato/agent-shell-ui";
 import { pilotPageKey, platformPageAccessKey } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
+import en from "@ontomato/workbench-ui/locales/en";
 import { BusinessWorkbench } from "@ontomato/workbench-ui/features/workbench";
 import { useDashboardStore } from "@ontomato/workbench-ui/features/dashboard";
 import elementEn from "element-plus/es/locale/lang/en";
@@ -39,7 +40,7 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@ontomato/agent-shell-ui")>()),
   AgentShell: defineComponent({
     name: "AgentShell",
-    props: ["featureId", "pageContext", "pageLinks"],
+    props: ["featureId", "pageContext", "pageLinks", "workbench"],
     emits: ["update:featureId"],
     setup(props, { slots, expose }) {
       shellProps.value = props as unknown as Record<string, unknown>;
@@ -70,7 +71,7 @@ vi.mock("../../workbench-ui/src/features/workbench/assistant-host", () => ({
 
 installWorkbenchI18n({
   supported: ["en"], defaultLocale: "en", initialLocale: "en", switchEnabled: false, save: null,
-  messages: { en: {} }, elementLocale: () => elementEn,
+  messages: { en }, elementLocale: () => elementEn,
 });
 
 const wrappers: VueWrapper[] = [];
@@ -119,6 +120,24 @@ const provide = (router?: Router) => ({
 });
 
 const boardShown = () => useDashboardStore().currentDashboardId;
+
+describe("the pages beside the conversation are not entries of its column", () => {
+  it("names them in the reader's language and leaves the column to the application's own entries", async () => {
+    const router = await routerAt(platformRoutes.chat.path);
+    const wrapper = mount(BusinessWorkbench, {
+      props: { defaultLogo: "", defaultBrandName: "Ontomato" },
+      global: { plugins: [workbenchI18n(), ElementPlus, router], provide: provide(router) },
+    });
+    wrappers.push(wrapper);
+    await flushPromises();
+
+    const features = (shellProps.value as unknown as { workbench: { features: { id: string; label: string; listed?: boolean }[] } })
+      .workbench.features;
+    // The page's title is what the shell shows for it: the settings and a board are named, not named by their keys.
+    expect(features.find((feature) => feature.id === "agents")).toMatchObject({ label: "Agent settings", listed: false });
+    expect(features.find((feature) => feature.id === "dashboards")).toMatchObject({ label: "Dashboards", listed: false });
+  });
+});
 
 describe("the board belongs to the page it is mounted on", () => {
   it("beside the conversation, a board change moves the page parameter and leaves the dashboards address alone", async () => {

@@ -12,13 +12,16 @@ import type { ShellFeatureDeclaration } from "@ontomato/agent-shell-ui";
  * declaration, and their composer offers every agent: the settings' skill arrives with the configuration skill, the
  * dashboards' with the dashboard mapping.
  */
-const agentSettingsFeature: ShellFeatureDeclaration = {
-  id: "agents",
-  label: "agents",
+/** The ids are what the conversation's parameter and the host's slots name; the labels are what a reader reads. */
+export const AGENT_SETTINGS_PAGE_ID = "agents";
+const agentSettingsFeature = (label: string): ShellFeatureDeclaration => ({
+  id: AGENT_SETTINGS_PAGE_ID,
+  label,
   icon: "agents",
   availability: "page",
+  listed: false,
   withConversation: true,
-};
+});
 
 /** The dashboards are an application of their own: this application opens one beside its conversation, not a copy. */
 export const DASHBOARDS_PAGE_ID = "dashboards";
@@ -27,13 +30,15 @@ export const DASHBOARDS_PAGE_ID = "dashboards";
  * The dashboards page beside the conversation. Its address is what this application's page parameter names: enlarging
  * it opens the dashboard application at that board.
  */
-export function dashboardsPageFeature(address: string): ShellFeatureDeclaration {
-  return { id: DASHBOARDS_PAGE_ID, label: "dashboards", icon: "dashboards", availability: "page", withConversation: true, address };
+export function dashboardsPageFeature(label: string, address: string): ShellFeatureDeclaration {
+  return { id: DASHBOARDS_PAGE_ID, label, icon: "dashboard", availability: "page", listed: false, withConversation: true, address };
 }
 
 export function workbenchFeatures(
   editionFeatures: readonly ShellFeatureDeclaration[],
-  dashboards = dashboardsPageFeature(""),
+  /** The two pages this application opens beside its conversation, named in the reader's language. */
+  pages: { agents: string; dashboards: string },
+  dashboardsAddress = "",
 ): ShellFeatureDeclaration[] {
-  return [agentSettingsFeature, dashboards, ...editionFeatures];
+  return [agentSettingsFeature(pages.agents), dashboardsPageFeature(pages.dashboards, dashboardsAddress), ...editionFeatures];
 }
