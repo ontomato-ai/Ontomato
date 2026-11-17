@@ -47,7 +47,7 @@ conversational governance definition or model selection.
   again through history. Later steered user messages are outside this batch. External
   begin material remains attached to its external window.
 - Provider process/results use `/governance/reports/:recordId` when a record exists;
-  any session with a saved governance record uses that page rather than an inline process. Scheduling selects the ordinary
+  only a run with its own saved governance record uses that page rather than an inline process. Scheduling selects the ordinary
   governance definition in the agents adapter; the old governance scheduling declaration
   and Java executor are removed.
 
