@@ -30,8 +30,11 @@ vi.mock("@ontomato/workbench-ui/features/dashboard", async (importOriginal) => (
   DashboardPanel: defineComponent({ name: "DashboardPanel", setup: () => () => h("div", { class: "panel" }) }),
 }));
 
-// The workbench's shell is the conversation application; these read the page it draws beside the chat and its links.
+// The workbench's shell is the conversation application; these read the page it draws beside the chat and its links,
+// and the message the host asks it to send.
 const shellProps = ref<Record<string, unknown> | null>(null);
+const sent: string[] = [];
+const agent = { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Assistant", description: "", icon: null, enabled: true };
 vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@ontomato/agent-shell-ui")>()),
   AgentShell: defineComponent({
@@ -40,12 +43,12 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => ({
     emits: ["update:featureId"],
     setup(props, { slots, expose }) {
       shellProps.value = props as unknown as Record<string, unknown>;
-      expose({ reloadAgents: () => {}, send: async () => {} });
+      expose({ reloadAgents: () => {}, send: async (text: string) => sent.push(text) });
       return () => h("div", { class: "shell" }, [slots.feature?.({ featureId: props.featureId })]);
     },
   }),
   useAgentNav: () => ({
-    agents: ref([]),
+    agents: ref([agent]),
     sessions: ref([]),
     sessionsState: ref("ready"),
     nextCursor: ref(null),
@@ -73,6 +76,7 @@ installWorkbenchI18n({
 const wrappers: VueWrapper[] = [];
 beforeEach(() => {
   setActivePinia(createPinia());
+  sent.splice(0);
   vi.stubGlobal("fetch", async (url: string) =>
     String(url).includes("/dashboards/queryList")
       ? Response.json(boards())
@@ -102,13 +106,15 @@ async function routerAt(path: string, query: Record<string, string> = {}): Promi
   return router;
 }
 
-const provide = () => ({
+const provide = (router?: Router) => ({
   [pilotPageKey as symbol]: resolvePilotPage,
   [platformPageAccessKey as symbol]: () => true,
   [pageCounterKey as symbol]: {
-    agents: async () => [],
-    preferredAgentId: ref<string | null>(null),
-    ask: () => {},
+    agents: async () => [agent],
+    preferredAgentId: ref<string | null>(agent.id),
+    // What the platform's assembly does with a page's message: the counter's address, with the page it was written on.
+    ask: (agentId: string, text: string, page: string) =>
+      void router?.push({ path: platformRoutes.chat.path, query: { agentId, prompt: text, page } }),
   },
 });
 
@@ -119,7 +125,7 @@ describe("the board belongs to the page it is mounted on", () => {
     const router = await routerAt(platformRoutes.chat.path);
     const wrapper = mount(BusinessWorkbench, {
       props: { defaultLogo: "", defaultBrandName: "Ontomato" },
-      global: { plugins: [workbenchI18n(), ElementPlus, router], provide: provide() },
+      global: { plugins: [workbenchI18n(), ElementPlus, router], provide: provide(router) },
     });
     wrappers.push(wrapper);
     await flushPromises();
@@ -141,7 +147,7 @@ describe("the board belongs to the page it is mounted on", () => {
     const router = await routerAt(platformRoutes.chat.path);
     const wrapper = mount(BusinessWorkbench, {
       props: { defaultLogo: "", defaultBrandName: "Ontomato" },
-      global: { plugins: [workbenchI18n(), ElementPlus, router], provide: provide() },
+      global: { plugins: [workbenchI18n(), ElementPlus, router], provide: provide(router) },
     });
     wrappers.push(wrapper);
     await flushPromises();
@@ -154,7 +160,7 @@ describe("the board belongs to the page it is mounted on", () => {
     await router.push("/dashboards?dashboardId=board-a");
     await flushPromises();
     const standalone = mount(DashboardsPage, {
-      global: { plugins: [workbenchI18n(), ElementPlus, router], provide: provide() },
+      global: { plugins: [workbenchI18n(), ElementPlus, router], provide: provide(router) },
     });
     wrappers.push(standalone);
     await flushPromises();
@@ -166,9 +172,41 @@ describe("the board belongs to the page it is mounted on", () => {
     expect(router.currentRoute.value.query).toEqual({ dashboardId: "board-b" });
   });
 
+  it("sends from the board's own composer into the counter, with the same board beside the message", async () => {
+    const router = await routerAt("/dashboards", { dashboardId: "board-a" });
+    const standalone = mount(DashboardsPage, {
+      global: { plugins: [workbenchI18n(), ElementPlus, router], provide: provide(router) },
+    });
+    wrappers.push(standalone);
+    await flushPromises();
+
+    await standalone.find("textarea").setValue("Which region grew fastest?");
+    await flushPromises();
+    await standalone.find("form.composer").trigger("submit");
+    await flushPromises();
+
+    // The counter, at the address the page's message names: the message is sent and the board stays beside it.
+    expect(router.currentRoute.value.path).toBe(platformRoutes.chat.path);
+    expect(router.currentRoute.value.query.agentId).toBe(agent.id);
+    expect(router.currentRoute.value.query.page).toBe("/dashboards?dashboardId=board-a");
+    // The reader is at the counter now: the dashboards application's own page has gone with the address.
+    standalone.unmount();
+    wrappers.splice(wrappers.indexOf(standalone), 1);
+    const wrapper = mount(BusinessWorkbench, {
+      props: { defaultLogo: "", defaultBrandName: "Ontomato" },
+      global: { plugins: [workbenchI18n(), ElementPlus, router], provide: provide() },
+    });
+    wrappers.push(wrapper);
+    await flushPromises();
+
+    expect(sent).toEqual(["Which region grew fastest?"]);
+    expect(router.currentRoute.value.query.page).toBe("/dashboards?dashboardId=board-a");
+    expect(boardShown()).toBe("board-a");
+  });
+
   it("from its own address back beside the conversation, a board change moves the page parameter again", async () => {
     const router = await routerAt("/dashboards", { dashboardId: "board-a" });
-    const standalone = mount(DashboardsPage, { global: { plugins: [workbenchI18n(), ElementPlus, router], provide: provide() } });
+    const standalone = mount(DashboardsPage, { global: { plugins: [workbenchI18n(), ElementPlus, router], provide: provide(router) } });
     wrappers.push(standalone);
     await flushPromises();
     expect(boardShown()).toBe("board-a");
@@ -180,7 +218,7 @@ describe("the board belongs to the page it is mounted on", () => {
 
     const wrapper = mount(BusinessWorkbench, {
       props: { defaultLogo: "", defaultBrandName: "Ontomato" },
-      global: { plugins: [workbenchI18n(), ElementPlus, router], provide: provide() },
+      global: { plugins: [workbenchI18n(), ElementPlus, router], provide: provide(router) },
     });
     wrappers.push(wrapper);
     await flushPromises();
