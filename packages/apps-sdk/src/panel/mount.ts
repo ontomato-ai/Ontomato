@@ -103,7 +103,8 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   app.mount(element);
 
   // The draft the address names belongs to this panel, so the SDK reads it and hands it to the form projection that
-  // performs its operation. An unsaved form is the reader's: a draft never replaces it unasked.
+  // performs its operation. That component puts its values in the form and marks what it changed; nothing is written
+  // until the reader saves.
   const link = pageDraftLinkOf(message.url);
   if (link) {
     const received = await receivePanelDraft<Record<string, unknown>>(
@@ -112,7 +113,10 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
       createAssistantClient(appContext),
       link,
     );
-    if (received) draft.value = received;
+    if (received) {
+      draft.value = received;
+      instance.forms.apply(received);
+    }
   }
 
   report({ instance, draft, unsaved, changed: (id) => projectionListeners.forEach((listener) => listener(id)) });

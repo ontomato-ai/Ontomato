@@ -91,14 +91,20 @@ export interface PanelInstanceView {
 export interface PanelInstanceOptions {
   /** The application use to open; changing it is another instance. */
   useId: () => string;
-  /** The name a message gives the page, e.g. the panel's name or the application's. */
-  label: () => string;
+  /** What a message calls the page: the panel's own name, and whatever the page adds to it (its application, say). */
+  label: (panel: ProductPanel) => string;
   /**
-   * The page's address as the reader and a message see it — the application's address plus the relation's path. The
-   * instance's declared deep-linkable state is added to it here, and that is the only thing this address carries beyond
-   * the page itself: no credential and no form value ever goes into it.
+   * The page's address as the reader and a message see it — the application's address plus the relation's path, without
+   * any state. The instance's declared deep-linkable state is added to it here, and that is the only thing the address
+   * carries beyond the page itself: no credential and no form value ever goes into it.
    */
   address: () => string;
+  /**
+   * The state the page was opened at, as the address named it: the instance starts from this, and never re-reads the
+   * address afterwards. A reader's selection is reported upward, so the page writes it into the address — and reading it
+   * back here would fight that write and rebuild the instance.
+   */
+  initial: () => Record<string, unknown>;
 }
 
 /**
@@ -139,11 +145,10 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   async function adopt(record: ProductPanel) {
     const base = await port.sdkBase();
     panel.value = record;
-    // The state an address restores is checked against the panel's own declaration, so a link never sets another field.
+    // The state the page was opened at is checked against the panel's own declaration, so a link never sets another
+    // field. It is read once, at load: after that the instance is what the address follows, not the other way round.
     state.value = Object.fromEntries(
-      Object.entries(panelAddressState(address.value || options.address())).filter(
-        ([name]) => record.manifest.state[name]?.deepLink,
-      ),
+      Object.entries(options.initial()).filter(([name]) => record.manifest.state[name]?.deepLink),
     ) as Record<string, PanelStateValue>;
     address.value = panelAddress(options.address(), state.value);
     const message: PanelHostMessage = {
@@ -151,7 +156,9 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       panel: record,
       pageKey: use.value!.pageKey,
       url: address.value,
-      label: options.label(),
+      // What a message calls the page: the panel's own registered name, which its author wrote, with the application's
+      // when the page passes one.
+      label: options.label(record),
       state: state.value,
     };
     document.value = panelFrameDocument(record, base, message);

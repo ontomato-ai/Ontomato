@@ -60,7 +60,7 @@ export interface PanelInstance {
 export function createPanelInstance(manifest: PanelManifest, options: PanelInstanceOptions): PanelInstance {
   const state = createPanelState(manifest, options.initial);
   const registrations = shallowRef<readonly PanelProjectionRegistration[]>([]);
-  const operations = computed(() => panelOperations(manifest, registrations.value, state));
+  const operations = computed(() => panelOperations(manifest, registrations.value, state, forms));
   const forms = new PanelFormAdapters();
   const draft = shallowRef<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
   const pageContext = computed<PageContext>(() => ({

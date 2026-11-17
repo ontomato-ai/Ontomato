@@ -15,10 +15,12 @@ const props = defineProps<{
   port: PanelHostPort;
   /** The application use to open. Another use is another instance with its own state. */
   useId: string;
-  /** The name a message gives this page, e.g. the panel's name. */
-  label: string;
+  /** What a message calls the page, before the panel's own name: its application, say. Empty means the panel's name. */
+  label?: string;
   /** The page's address as the reader sees it; the instance's deep-linkable state is added to it. */
   address: string;
+  /** The state the address named when the page opened; the instance starts from it and never re-reads the address. */
+  initial?: Record<string, unknown>;
   /** The title drawn above the frame; absent when the frame is the whole surface. */
   title?: string;
 }>();
@@ -31,8 +33,9 @@ const emit = defineEmits<{
 
 const view = usePanelInstance(props.port, {
   useId: () => props.useId,
-  label: () => props.label,
+  label: (panel) => (props.label ? `${props.label} · ${panel.name}` : panel.name),
   address: () => props.address,
+  initial: () => props.initial ?? {},
 });
 const frame = ref<HTMLIFrameElement | null>(null);
 watch(

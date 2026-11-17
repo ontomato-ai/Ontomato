@@ -140,8 +140,8 @@ describe("the platform objects this version reads", () => {
       objectType: "test:Saved",
       list: async () => [],
       read: async () => ({ primaryKey: "task-1", label: "Nightly", fields: {} }),
-      form: async () => ({ fields: [], values: {} }),
-      changed: async () => ({ fields: [], values: {} }),
+      form: async () => ({ fields: [], values: {}, revision: 3 }),
+      changed: async () => ({ fields: [], values: {}, revision: 3 }),
       save,
     });
     const instanceUnderTest = instance({ selectedTask: task("task-1") });
@@ -153,8 +153,12 @@ describe("the platform objects this version reads", () => {
       ] },
       invoke: (handlerRef, call) => instanceUnderTest.runHandler(handlerRef, call),
     });
-    await instanceUnderTest.runHandler("test:Saved.save", { target: { kind: "object", objectType: "test:Saved", primaryKey: "task-1" }, input: { operation: "inspection", instruction: "look" } });
-    expect(save).toHaveBeenCalledWith("task-1", { operation: "inspection", instruction: "look" });
+    await instanceUnderTest.runHandler("test:Saved.save", {
+      target: { kind: "object", objectType: "test:Saved", primaryKey: "task-1" },
+      input: { operation: "inspection", instruction: "look", revision: 3 },
+    });
+    // The revision the caller read the object at travels with the write, so the owner can refuse one over a newer change.
+    expect(save).toHaveBeenCalledWith("task-1", { operation: "inspection", instruction: "look" }, 3);
     registration();
   });
 });

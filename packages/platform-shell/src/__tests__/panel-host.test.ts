@@ -135,7 +135,7 @@ describe("the panel host", () => {
     });
     const scope = effectScope();
     const open = (useId: string) =>
-      scope.run(() => usePanelInstance(port, { useId: () => useId, label: () => useId, address: () => `/applications/app-a/${useId}` }))!;
+      scope.run(() => usePanelInstance(port, { useId: () => useId, label: (panel) => panel.name, address: () => `/applications/app-a/${useId}`, initial: () => ({}) }))!;
     const a = open("use-a");
     const b = open("use-b");
     const q = open("use-q");
@@ -171,7 +171,7 @@ describe("the panel host", () => {
     });
     const scope = effectScope();
     const open = (useId: string) =>
-      scope.run(() => usePanelInstance(port, { useId: () => useId, label: () => useId, address: () => `/applications/app-a/${useId}` }))!;
+      scope.run(() => usePanelInstance(port, { useId: () => useId, label: (panel) => panel.name, address: () => `/applications/app-a/${useId}`, initial: () => ({}) }))!;
     const a = open("use-a");
     const b = open("use-b");
     const q = open("use-q");
@@ -201,8 +201,8 @@ describe("the panel host", () => {
       ],
     });
     const scope = effectScope();
-    const a = scope.run(() => usePanelInstance(port, { useId: () => "use-a", label: () => "Scheduled tasks", address: () => "/applications/app-a/a/schedules" }))!;
-    const q = scope.run(() => usePanelInstance(port, { useId: () => "use-q", label: () => "Task summary", address: () => "/applications/app-a/summary" }))!;
+    const a = scope.run(() => usePanelInstance(port, { useId: () => "use-a", label: (panel) => panel.name, address: () => "/applications/app-a/a/schedules", initial: () => ({}) }))!;
+    const q = scope.run(() => usePanelInstance(port, { useId: () => "use-q", label: (panel) => panel.name, address: () => "/applications/app-a/summary", initial: () => ({}) }))!;
     await Promise.all([a.ready, q.ready]);
     const frameA = frameWindow();
     a.frame(frameA);
@@ -221,6 +221,65 @@ describe("the panel host", () => {
     fromFrame(frameA, { kind: "dirty", dirty: false });
     await vi.waitFor(() => expect(a.document.value).not.toBe(beforeA));
     expect(q.panel.value?.name).toBe("Task summary");
+    scope.stop();
+  });
+
+  it("keeps a page's other parameters, and replaces only its own state", () => {
+    expect(panelAddress("/a/schedules?tab=runs&state=%7B%7D", { selectedTask: null })).toBe(
+      `/a/schedules?tab=runs&state=${encodeURIComponent(JSON.stringify({ selectedTask: null }))}`,
+    );
+    // No state is no parameter: an address is the same page whether or not the reader has selected something in it.
+    expect(panelAddress("/a/schedules?tab=runs&state=%7B%7D", {})).toBe("/a/schedules?tab=runs");
+    expect(panelAddress("/a/schedules", {})).toBe("/a/schedules");
+  });
+
+  it("starts from the state the address named, and follows its own reports from then on", async () => {
+    let initial = { selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" } };
+    const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
+    const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
+    const scope = effectScope();
+    const a = scope.run(() =>
+      usePanelInstance(port, {
+        useId: () => "use-a",
+        label: (panel) => panel.name,
+        address: () => "/applications/app-a/a/schedules",
+        initial: () => initial,
+      }),
+    )!;
+    await a.ready;
+    const frame = frameWindow();
+    a.frame(frame);
+    // The page opened at the address's state, and the address says so.
+    expect(a.state.value).toEqual(initial);
+    expect(panelAddressState(a.address.value)).toEqual(initial);
+
+    // The reader selects something: the instance reports it, the address follows it, and the opening state is not read
+    // again — which would overwrite the selection with what the address said before.
+    initial = { selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-0" } };
+    fromFrame(frame, { kind: "state", state: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-2" } } });
+    expect(panelAddressState(a.address.value)).toEqual({ selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-2" } });
+    expect(a.state.value).toEqual({ selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-2" } });
+    scope.stop();
+  });
+
+  it("names the page in a message by the panel's own name", async () => {
+    const panel = record("panel-p", "Scheduled tasks", panelP);
+    const panels = new Map([["panel-p", panel]]);
+    const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
+    const scope = effectScope();
+    const a = scope.run(() =>
+      usePanelInstance(port, {
+        useId: () => "use-a",
+        label: (shown) => `Trial A · ${shown.name}`,
+        address: () => "/applications/app-a/a/schedules",
+        initial: () => ({}),
+      }),
+    )!;
+    await a.ready;
+    const frame = frameWindow();
+    a.frame(frame);
+    // The page's label is built from the record's own name — never the page key, which is only the panel's key.
+    expect(a.document.value).toContain('"label":"Trial A · Scheduled tasks"');
     scope.stop();
   });
 
@@ -252,7 +311,7 @@ describe("the panel host", () => {
     const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
     const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
     const scope = effectScope();
-    const a = scope.run(() => usePanelInstance(port, { useId: () => "use-a", label: () => "Scheduled tasks", address: () => "/applications/app-a/a/schedules" }))!;
+    const a = scope.run(() => usePanelInstance(port, { useId: () => "use-a", label: (panel) => panel.name, address: () => "/applications/app-a/a/schedules", initial: () => ({}) }))!;
     await a.ready;
     const frameA = frameWindow();
     a.frame(frameA);

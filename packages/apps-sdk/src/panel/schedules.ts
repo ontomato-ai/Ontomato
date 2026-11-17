@@ -11,6 +11,10 @@ import { registerPlatformObject, type PlatformObjectRecord } from "./platform-ob
  * `createSchedulesApi` over this frame's request path, so the scheduled-tasks service decides what the reader may see,
  * which fields an application's form has and whether a save is valid; nothing here reimplements any of it.
  *
+ * A task's revision travels with the form it was read with: the save sends that revision, so a task somebody else
+ * changed after the reader opened it is refused by the service (409) and the reader is told, rather than their change
+ * silently replacing the other one. Nothing here re-reads and retries.
+ *
  * The one operation this step's panels use — running a task now — is registered here too, as the handler a projection
  * bound to `schedules.runNow` reaches.
  */
@@ -46,19 +50,16 @@ function record(task: PlatformTask): PlatformObjectRecord {
 
 /**
  * Registers the scheduled tasks this version's panels read and write: the list, one task, its application's form (which
- * the application answers again when a field it depends on changes), and the save. Then `schedules.runNow`, which runs
- * one task now and leaves its schedule as it is.
+ * the application answers again when a field it depends on changes), and the save at the task's own revision. Then
+ * `schedules.runNow`, which runs one task now and leaves its schedule as it is.
  */
 export function registerSchedulesPlatformObject(context: AppContext): void {
   const api = createSchedulesApi(schedulesHost(context));
 
-  async function task(primaryKey: string): Promise<PlatformTask> {
-    return api.task(primaryKey);
-  }
-
+  /** The task's application's form for the values it holds, with the task's revision. */
   async function form(task: PlatformTask, values: Readonly<Record<string, string>>, changedField: string | null) {
     const answer = await api.form(task.appId, { values, changedField, taskId: task.id, timeZone: task.timeZone });
-    return { fields: answer.fields, values: answer.values };
+    return { fields: answer.fields, values: answer.values, revision: task.revision };
   }
 
   registerPlatformObject({
@@ -67,30 +68,29 @@ export function registerSchedulesPlatformObject(context: AppContext): void {
       return (await api.list(null)).tasks.map(record);
     },
     async read(primaryKey) {
-      return record(await task(primaryKey));
+      return record(await api.task(primaryKey));
     },
     async form(primaryKey) {
-      // A task the reader selected: its own application answers, with its own current values.
-      const current = await task(primaryKey!);
-      return form(current, current.content, null);
+      const task = await api.task(primaryKey);
+      return form(task, task.content, null);
     },
     async changed(primaryKey, values, field) {
-      return form(await task(primaryKey!), values, field);
+      return form(await api.task(primaryKey), values, field);
     },
-    async save(primaryKey, values) {
-      if (!primaryKey) throw new Error("The panels of this step change a task; they do not create one");
-      const current = await task(primaryKey);
-      const asked = await api.form(current.appId, { values, changedField: null, taskId: current.id, timeZone: current.timeZone });
+    async save(primaryKey, values, revision) {
+      const task = await api.task(primaryKey);
+      const asked = await api.form(task.appId, { values, changedField: null, taskId: task.id, timeZone: task.timeZone });
       return record(
-        await api.update(current.id, {
-          title: current.title,
-          appId: current.appId,
+        await api.update(task.id, {
+          title: task.title,
+          appId: task.appId,
           content: values,
           formRevision: asked.formRevision,
-          frequency: current.frequency,
-          timeZone: current.timeZone,
-          notifyEmail: current.notifyEmail,
-          revision: current.revision,
+          frequency: task.frequency,
+          timeZone: task.timeZone,
+          notifyEmail: task.notifyEmail,
+          // The revision the form was opened at, not the one the task has now: a save over somebody else's is refused.
+          revision,
         }),
       );
     },
@@ -100,7 +100,7 @@ export function registerSchedulesPlatformObject(context: AppContext): void {
     handlerRef: "schedules.runNow",
     async invoke({ target }) {
       if (target?.kind !== "object") throw new Error("Run now acts on the selected task");
-      // The service replays a repeated key with the run it created; this one is new per call, so this is a new run.
+      // The service replays a repeated key with the run it created; this one is new per call.
       const run = await api.runNow(target.primaryKey, randomId());
       return { runId: run.id, status: run.status, trigger: run.trigger };
     },

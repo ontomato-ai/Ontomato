@@ -78,12 +78,19 @@ export function panelMessageOf<T>(schema: { safeParse(value: unknown): { success
   return parsed.success ? parsed.data : null;
 }
 
-/** The address a panel instance is opened at: the use's path, the state it restores, and nothing else. */
+/**
+ * The address a panel instance is at: the page's own address with the state it restores — and nothing else. The page's
+ * other parameters are kept, its own `state` is replaced, and a page with no state carries none, so an address is the
+ * same page whatever the reader has selected in it.
+ */
 export function panelAddress(path: string, state: Record<string, unknown>): string {
   const values = panelOpenRequestSchema.shape.state.parse(state);
-  return Object.keys(values).length
-    ? `${path}${path.includes("?") ? "&" : "?"}${new URLSearchParams({ state: JSON.stringify(values) })}`
-    : path;
+  const [route, search = ""] = path.split("?");
+  const query = new URLSearchParams(search);
+  query.delete("state");
+  if (Object.keys(values).length) query.set("state", JSON.stringify(values));
+  const rest = query.toString();
+  return rest ? `${route}?${rest}` : route!;
 }
 
 /** The state an address restores, or none. The host checks it against the panel's declaration before using it. */

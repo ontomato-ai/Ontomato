@@ -27,9 +27,20 @@ export interface PanelFormAdapter<Form extends object, Target extends { id?: str
   read(target: Target): Promise<Form>;
   /** Writes the filled form through the owner's own interface. */
   save(form: Form, target: Target): Promise<unknown>;
+  /**
+   * Saves what the form holds now — its values and the revision it was read at. This is the frame's own save, which a
+   * person's header button and a panel's save operation both reach; an agent's call is the projection's registered
+   * operation, made by the platform with the revision it was given.
+   */
+  submit(): Promise<unknown>;
+  /**
+   * Shows a draft that names this form: its values in the form, the fields it changed marked, and nothing written until
+   * the reader saves. The object the draft addresses becomes the selected one, so the panel shows what is being edited.
+   */
+  apply(draft: ReceivedPanelDraft<Form>): void;
   /** Whether this form holds unsaved changes of the reader's, as the host must be told. */
   dirty?(): boolean;
-  /** Drops the reader's changes and shows the object as its owner holds it. */
+  /** Drops the reader's changes — a received draft included — and shows the object as its owner holds it. */
   discard?(): void;
 }
 
@@ -74,6 +85,20 @@ export class PanelFormAdapters {
   /** Whether any registered form holds unsaved changes of the reader's. */
   dirty(): boolean {
     return [...this.#bySlot.values()].some((adapter) => adapter.dirty?.() === true);
+  }
+
+  /** Saves what the form in a slot holds now. */
+  submit(slot: string): Promise<unknown> {
+    const adapter = this.#bySlot.get(slot);
+    if (!adapter) throw new Error(`Slot '${slot}' holds no form`);
+    return adapter.submit();
+  }
+
+  /** Hands a draft to the form that takes its operation. */
+  apply(draft: ReceivedPanelDraft<Record<string, unknown>>): void {
+    const slot = this.slotOf(draft.operation);
+    if (!slot) throw new Error(`No form projection performs '${draft.operation}'`);
+    this.#bySlot.get(slot)!.apply(draft);
   }
 }
 
