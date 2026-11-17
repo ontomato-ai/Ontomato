@@ -1,22 +1,31 @@
 <script setup lang="ts">
-import { computed, inject } from "vue";
-import { ChevronLeft, ChevronRight, Database, ShieldCheck, X } from "lucide-vue-next";
-import type { AgentTask, AgentTasksSnapshot, RetrievalTask } from "@ontomato/contracts/agent-tasks";
+import { computed, inject, ref } from "vue";
+import { ChevronLeft, ChevronRight, Database, ShieldCheck, MessageSquare, X } from "lucide-vue-next";
+import type { AgentTask,AgentTasksSnapshot } from "@ontomato/contracts/agent-tasks";
 import { shellContextKey } from "../../context";
+import TaskProcess from "./TaskProcess.vue";
 
 /**
- * The work one reply delegated, as a list: each retrieval with the quality checks of its branches beneath it. It shows
- * status only and leads to where the task is shown, the card in the reply's process or the review after the reply.
+ * Delegated executions and their branch checks. Direct work locates its card; deeper inline work
+ * opens only its process here, while page-backed work links to the page its provider declares.
  */
 const props = defineProps<{ snapshot: AgentTasksSnapshot; rounds: string[] }>();
 const runId = defineModel<string>("runId", { required: true });
 const emit = defineEmits<{ locate: [taskId: string]; close: [] }>();
 const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value.tasks!);
+const selectedTaskId = ref<string | null>(null);
 const index = computed(() => props.rounds.indexOf(runId.value));
-const retrievals = computed(() => props.snapshot.tasks.filter((task): task is RetrievalTask =>
-  task.kind === "retrieval" && task.root.runId === runId.value));
-const checks = (parent: AgentTask) => props.snapshot.tasks.filter((task) => task.kind === "quality" && task.parentTaskId === parent.id);
+const rows=computed(()=>{
+  const tasks=props.snapshot.tasks.filter(task=>task.root.runId===runId.value),result:{task:AgentTask;depth:number}[]=[];
+  const visit=(parent:string|null,depth:number)=>{for(const task of tasks.filter(task=>task.parentTaskId===parent)){result.push({task,depth});visit(task.id,depth+1);}};
+  visit(null,0);return result;
+});
+function select(task:AgentTask,depth:number) {
+  if (task.kind === "agent" && depth > 0) {
+    selectedTaskId.value = selectedTaskId.value === task.id ? null : task.id;
+  } else emit("locate",task.id);
+}
 const result = (task: AgentTask) => props.snapshot.qualityResults.find((value) => value.taskId === task.id);
 </script>
 
@@ -38,25 +47,30 @@ const result = (task: AgentTask) => props.snapshot.qualityResults.find((value) =
       </button>
     </header>
     <ol class="tasks">
-      <li v-for="task in retrievals" :key="task.id">
-        <button type="button" class="task-row" @click="emit('locate', task.id)">
-          <Database :size="14" />
-          <span class="name">{{ labels.retriever }}</span>
-          <span class="question">{{ task.question }}</span>
-          <span class="status" :class="task.status">{{ labels.status[task.status] }}</span>
-        </button>
-        <ol v-if="checks(task).length" class="checks">
-          <li v-for="check in checks(task)" :key="check.id">
-            <button type="button" class="task-row" @click="emit('locate', check.id)">
-              <ShieldCheck :size="14" />
-              <span class="name">{{ labels.quality }}</span>
-              <span v-if="check.kind === 'quality'" class="source">{{ labels.checkedBranch[check.checks.source] }}</span>
-              <span class="status" :class="check.status">
-                {{ result(check) ? labels.score(Math.round(result(check)!.score)) : labels.status[check.status] }}
-              </span>
-            </button>
-          </li>
-        </ol>
+      <li v-for="row in rows" :key="row.task.id" :style="{ marginInlineStart: `${row.depth * 16}px` }">
+        <component
+          :is="row.task.kind==='agent' && row.task.process.mode==='page'?'a':'button'"
+          :type="row.task.kind==='agent' && row.task.process.mode==='page'?undefined:'button'"
+          :aria-expanded="row.depth > 0 && row.task.kind === 'agent' && row.task.process.mode === 'inline' ? selectedTaskId === row.task.id : undefined"
+          :href="row.task.kind==='agent' && row.task.process.mode==='page'?row.task.process.href:undefined" class="task-row"
+          @click="!(row.task.kind==='agent' && row.task.process.mode==='page') && select(row.task,row.depth)">
+          <ShieldCheck v-if="row.task.kind==='quality'" :size="14" />
+          <Database v-else-if="row.task.retrieval" :size="14" />
+          <MessageSquare v-else :size="14" />
+          <span v-if="row.task.kind==='quality'" class="name">{{ labels.quality }}</span>
+          <span v-else-if="row.task.retrieval" class="name">{{ labels.retriever }}</span>
+          <span v-if="row.task.kind==='quality'" class="source">{{ labels.checkedBranch[row.task.checks.source] }}</span>
+          <span v-else class="question">{{ row.task.title }}</span>
+          <span class="status" :class="row.task.status">{{ row.task.kind==='quality' && result(row.task)?labels.score(Math.round(result(row.task)!.score)):labels.status[row.task.status] }}</span>
+        </component>
+        <div v-if="row.depth > 0 && selectedTaskId === row.task.id && row.task.kind === 'agent' && row.task.process.mode === 'inline' && shell.tasks" class="task-process-panel">
+          <TaskProcess
+            :port="shell.tasks"
+            :session-id="snapshot.sessionId"
+            :task-id="row.task.id"
+            :run-id="row.task.process.runtimeRunId"
+          />
+        </div>
       </li>
     </ol>
   </aside>
@@ -138,7 +152,14 @@ button {
   border-left: 1px solid var(--el-border-color);
   padding-left: 6px;
 }
+.task-process-panel {
+  min-width: 0;
+  margin: 4px 8px 8px;
+  padding-left: 8px;
+  border-left: 1px solid var(--el-border-color-lighter);
+}
 .task-row {
+  text-decoration: none;
   display: flex;
   align-items: center;
   gap: 8px;

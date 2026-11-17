@@ -109,6 +109,12 @@ class OntologyGenerationContractTest {
     code = mock(RuntimeCodeClient.class);
     sessions = mock(SessionRegistryService.class);
     when(sessions.getNodeId()).thenReturn("fixture-node");
+    var callers=mock(AgentCaller.class);
+    var channel=mock(AgentChannelRuns.class);
+    when(callers.ownerContext(any(),any(),anyString(),anyLong())).thenAnswer(call->new OntologyAgentAccess.Context(call.getArgument(0),call.getArgument(1),null,null,call.getArgument(2),call.getArgument(3),null));
+    var admission=new org.springframework.beans.factory.support.DefaultListableBeanFactory();
+    admission.registerSingleton("callers",callers);
+    admission.registerSingleton("channel",channel);
     generation =
         new OntologyGenerationService(
             store,
@@ -117,7 +123,12 @@ class OntologyGenerationContractTest {
             grants,
             sessions,
             operations,
-            code, permissionLookup);
+            code, permissionLookup,admission.getBeanProvider(AgentCaller.class),admission.getBeanProvider(AgentChannelRuns.class));
+    when(channel.send(anyString(),anyString(),anyString(),any(),any(),any(),nullable(String.class))).thenAnswer(call->{
+      String agent=call.getArgument(0),sid=call.getArgument(1),rid=call.getArgument(2);
+      var prepared=generation.prepare(sid,rid,OntologyGenerationService.kindForAgent(agent),call.getArgument(3),call.getArgument(4),call.getArgument(5));
+      return runtime.json(owner.domainId(),rid,"/v1/sessions/"+sid+"/runs","POST",prepared,rid);
+    });
     when(runtime.json(any(), anyString(), anyString(), anyString(), any(), any()))
         .thenAnswer(
             call -> {

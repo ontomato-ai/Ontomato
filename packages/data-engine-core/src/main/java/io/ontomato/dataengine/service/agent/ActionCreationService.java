@@ -36,6 +36,7 @@ public class ActionCreationService {
   public static final String AGENT =
       UUID.nameUUIDFromBytes("ontology-action-creation".getBytes(StandardCharsets.UTF_8)).toString();
 
+  private final AgentChannelRuns channel;
   private final OntologyAgentStore store;
   private final AgentRuntimeClient runtime;
   private final OntologyAgentDefinitions definitions;
@@ -57,7 +58,8 @@ public class ActionCreationService {
       BusinessConfigService businessConfig,
       KnowledgeDao knowledge,
       LangService langService,
-      SessionRegistryService sessions) {
+      SessionRegistryService sessions, AgentChannelRuns channel) {
+    this.channel=channel;
     this.store = store;
     this.runtime = runtime;
     this.definitions = definitions;
@@ -109,11 +111,19 @@ public class ActionCreationService {
     return replayed;
   }
 
-  public boolean start(String id, String run, String message, OntologyAgentAccess.Context context)
-      throws Exception {
+  public JSONObject send(String id,String run,String message,String replyTo,OntologyAgentAccess.Context context) throws Exception {
+    KnowledgeGovernanceService.validateMessage(message);
+    var input=JSONObject.of("role","user","content",message,"timestamp",System.currentTimeMillis());
+    if(replyTo!=null) input=JSONObject.of("role","notification","kind","agent-answer","source",JSONObject.of("kind","user"),"replyTo",replyTo,"content",message,"timestamp",System.currentTimeMillis());
+    return channel.send(AGENT,id,run,input,null,context);
+  }
+  public void authorize(Owner owner) { operations.requireWriteAccess(owner); }
+  public JSONObject prepare(String id,String run,JSONObject inputMessage,OntologyAgentAccess.Context context) throws Exception {
+    String message=AgentJson.text(inputMessage,"content");
     if (message == null || message.isBlank() || message.length() > 20_000)
       throw AgentHttpException.invalid("A message of 1 to 20000 characters is required");
     Owner owner = context.owner();
+    authorize(owner);
     session(id, owner);
     JSONObject snapshot = runtime.json(owner.domainId(), id, "/v1/sessions/" + id, "GET", null, null);
     JSONObject latest = snapshot.getJSONObject("latestRun");
@@ -125,7 +135,7 @@ public class ActionCreationService {
     long deadline = Math.min(System.currentTimeMillis() + 600_000,
         context.expiresAt() == null ? Long.MAX_VALUE : context.expiresAt());
     if (deadline <= System.currentTimeMillis()) throw closed();
-    JSONObject input = JSONObject.of("message", message);
+    JSONObject input = JSONObject.of("message",message,"input",inputMessage,"agentChannel",true);
     boolean replayed =
         store.transaction(
             () -> {
@@ -168,8 +178,6 @@ public class ActionCreationService {
                   uuid(id));
               return false;
             });
-    if (replayed) return true;
-
     try {
       operations.createSandbox(sandbox, owner.domainId());
       definitions.publishGeneration();
@@ -186,7 +194,7 @@ public class ActionCreationService {
               "ontology-generation",
               run,
               deadline,
-              List.of(),
+              context.access().classNames(),
               null);
       String queryToken =
           grants.issue(
@@ -195,7 +203,7 @@ public class ActionCreationService {
               "retrieval-exploration",
               run,
               deadline,
-              List.of(),
+              context.access().classNames(),
               null);
       store.transaction(() -> store.gate(id, run, owner));
       String prompt =
@@ -206,24 +214,12 @@ public class ActionCreationService {
               businessConfig,
               context.language(),
               langService,
-              admin.getJSONRule(owner.domainId()),
+              io.ontomato.dataengine.service.QueryPermissions.visibleRule(admin.getJSONRule(owner.domainId()),context.access().permission(),context.access().classNames()),
               owner.domainId());
-      runtime.json(
-          owner.domainId(),
-          run,
-          "/v1/sessions/" + id + "/runs",
-          "POST",
-          JSONObject.of(
+      return JSONObject.of(
               "language",
               context.language(),
-              "input",
-              JSONObject.of(
-                  "role",
-                  "user",
-                  "content",
-                  message,
-                  "timestamp",
-                  Instant.parse(row.getString("created_at")).toEpochMilli()),
+              "input",inputMessage,
               "definition",
               definitions.actionCreation(context.owner().domainId(), prompt, context.language(), remaining),
               "environment",
@@ -243,35 +239,26 @@ public class ActionCreationService {
                       "ONTOMATO_TK",
                       generationToken,
                       "ONTOMATO_QUERY_TK",
-                      queryToken))),
-          run);
+                      queryToken)));
     } catch (Exception error) {
-      cancel(id, run, owner);
+      cancelProvider(id,run,owner);
       throw error;
     }
-    return false;
   }
 
   public void settle(String run) {
     store.update("UPDATE ontology_agent_runs SET open=false WHERE id=?", uuid(run));
   }
 
-  public void cancel(String id, String run, Owner owner) throws Exception {
-    session(id, owner);
-    store.closeRun(id, run, owner);
-    dropSandbox(run, owner.domainId());
-    grants.revoke(owner.domainId(), run);
-    try {
-      runtime.json(
-          owner.domainId(),
-          run,
-          "/v1/sessions/" + id + "/run-intents/" + run + "/cancel",
-          "POST",
-          Map.of(),
-          null);
-    } catch (Exception ignored) {
-      // The runtime may already have stopped the run; closing our side is enough.
-    }
+  public void cancelProvider(String id,String run,Owner owner) {
+    session(id,owner);
+    store.closeRun(id,run,owner);
+    dropSandbox(run,owner.domainId());
+    grants.revoke(owner.domainId(),run);
+  }
+  public void cancel(String id,String run,Owner owner) throws Exception {
+    session(id,owner);
+    runtime.json(owner.domainId(),run,"/v1/sessions/"+id+"/run-intents/"+run+"/cancel","POST",Map.of(),null);
   }
 
   public void delete(String id, Owner owner) throws Exception {

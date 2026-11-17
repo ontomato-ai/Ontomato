@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RuntimeEventEnvelope } from "@ontomato/contracts/agent-runtime-events";
 import type { AgentHostRunSnapshot } from "@ontomato/contracts/agent-host";
-import { applyEnvelope, applyRunSnapshot, emptyConversation } from "../conversation";
+import { applyEnvelope, applyRunSnapshot, emptyConversation, orderedMessages } from "../conversation";
 import { conversationItems } from "../view";
 
 const runId = "11111111-1111-4111-8111-111111111111";
@@ -14,11 +14,11 @@ function envelope(seq: number, event: RuntimeEventEnvelope["event"]): RuntimeEve
   return { sessionId, cursor: { runId, seq, streamId }, timestamp: new Date(0).toISOString(), event };
 }
 
-const snapshot: AgentHostRunSnapshot = {
+const snapshot: AgentHostRunSnapshot = { pendingQuestions: [],
   run: { id: runId, sessionId, status: "running", stopReason: null, errorMessage: null, answerMessageId: null, workspaceCommit: null, createdAt: new Date(0).toISOString(), finishedAt: null, resolvedSkills: [] },
   cursor: { runId, seq: 3, streamId },
   messages: [
-    { id: userId, runId, messageSeq: 0, message: { role: "user", content: "hello", timestamp: 1 } },
+    { contextSeq: 0, id: userId, runId, messageSeq: 0, message: { role: "user", content: "hello", timestamp: 1 } },
   ],
   pendingMessages: [],
   toolExecutions: [],
@@ -51,7 +51,7 @@ describe("conversation projection", () => {
     // Until the runtime names the answer, streamed text is process.
     expect(items[1]).toMatchObject({ running: true, answerMessageId: null, process: [{ kind: "note", text: "Hi", final: false }] });
 
-    applyEnvelope(state, envelope(7, {
+    applyEnvelope(state, envelope(7, { contextSeq: 1,
       type: "message_end",
       messageId: replyId,
       messageSeq: 1,
@@ -80,12 +80,27 @@ describe("conversation projection", () => {
     applyRunSnapshot(state, {
       ...snapshot,
       run: { ...snapshot.run, status: "stopped", stopReason: "length", finishedAt: new Date(1).toISOString() },
-      messages: [...snapshot.messages, { id: replyId, runId, messageSeq: 1, message }],
+      messages: [...snapshot.messages, { contextSeq: 1, id: replyId, runId, messageSeq: 1, message }],
     });
     expect(conversationItems(state)[1]).toMatchObject({
       answerMessageId: null,
       answerText: "",
       process: [{ kind: "steps", steps: [{ kind: "thinking", text: "Plan" }] }, { kind: "note", text: "Partial" }],
     });
+  });
+});
+
+/** A question the agent asks its reader is never consumed by the model; it must not fall below later replies. */
+describe("message order", () => {
+  it("keeps an unconsumed question where it arrived and waiting input after what came before", () => {
+    const state = emptyConversation(sessionId);
+    const add = (id: string, messageSeq: number, contextSeq: number | null, text: string) =>
+      (state.messages[id] = { id, runId, messageSeq, contextSeq, arrival: messageSeq, message: { role: "user", content: text, timestamp: messageSeq } });
+    add("first", 1, 1, "first");
+    add("question", 3, null, "question");
+    add("reply", 2, 2, "reply");
+    add("later", 4, 3, "later");
+    add("waiting", 5, null, "waiting");
+    expect(orderedMessages(state).map((m) => m.id)).toEqual(["first", "reply", "question", "later", "waiting"]);
   });
 });

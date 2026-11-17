@@ -1,5 +1,5 @@
 import type { RuntimeJsonValue, RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
-import type { AgentTasksSnapshot, QualityResult, QualityTask, RetrievalTask } from "@ontomato/contracts/agent-tasks";
+import type { AgentTasksSnapshot, QualityResult, QualityTask,ChannelAgentTask } from "@ontomato/contracts/agent-tasks";
 import { orderedMessages, type ConversationState } from "./conversation";
 import { skillOfCommand } from "./tools";
 import type { ProcessStepView } from "./types";
@@ -13,7 +13,8 @@ export type ProcessStep = ProcessStepView;
 export type ProcessBlock =
   | { kind: "note"; key: string; text: string; final: boolean; runId: string }
   | { kind: "steps"; key: string; steps: ProcessStep[]; active: boolean }
-  | { kind: "task"; key: string; task: RetrievalTask };
+  | { kind: "input"; key: string; messageId: string; text: string; source: "user"; replyTo?: string; runId: string; final: true }
+  | { kind: "task"; key: string; task: ChannelAgentTask };
 
 /** Another party's review of the reply's data: one quality check of one retrieval branch. */
 export interface ResponseReview {
@@ -27,6 +28,8 @@ export interface UserItem {
   kind: "user";
   key: string;
   text: string;
+  /** The reader answered one of the agents' questions with it. */
+  answer: boolean;
 }
 
 export interface ResponseItem {
@@ -49,7 +52,7 @@ export interface ResponseItem {
   finishedAt: number | null;
 }
 
-export type ConversationItem = UserItem | ResponseItem;
+export type ConversationItem = UserItem | ResponseItem | { kind: "notification"; key: string; text: string; error?: boolean };
 
 /** Generic one-line summary of a tool call: the first short string argument. */
 export function toolSummary(args: Record<string, RuntimeJsonValue>): string {
@@ -75,15 +78,16 @@ function userText(content: string | { type: string; text?: string }[]): string {
  */
 export function conversationItems(state: ConversationState, tasks: AgentTasksSnapshot | null = null): ConversationItem[] {
   const items: ConversationItem[] = [];
-  const retrievals = new Map<string, RetrievalTask[]>();
+  const retrievals = new Map<string, Array<ChannelAgentTask>>();
   const reviews = new Map<string, ResponseReview[]>();
   for (const task of tasks?.tasks ?? []) {
-    if (task.kind === "retrieval") {
+    if (task.kind === "agent") {
+      if (task.kind === "agent" && task.parentTaskId !== null) continue;
       retrievals.set(task.root.runId, [...(retrievals.get(task.root.runId) ?? []), task]);
       continue;
     }
     const parent = tasks!.tasks.find((candidate) => candidate.id === task.parentTaskId);
-    const delivered = parent?.kind === "retrieval" ? parent.branches.flatMap((branch) => branch.datasets) : [];
+    const delivered = parent?.kind === "agent" && parent.retrieval ? parent.retrieval.branches.flatMap((branch) => branch.datasets) : [];
     reviews.set(task.root.runId, [...(reviews.get(task.root.runId) ?? []), {
       task,
       result: tasks!.qualityResults.find((result) => result.taskId === task.id) ?? null,
@@ -99,6 +103,7 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
     }
   };
   let response: ResponseItem | null = null;
+  const responses=new Map<string,ResponseItem>();
   const toolResults = new Map<string, string>();
   for (const entry of Object.values(state.messages)) {
     const message = entry.message;
@@ -107,7 +112,8 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
   }
 
   const openResponse = (runId: string): ResponseItem => {
-    if (response && response.runId === runId) return response;
+    const known=responses.get(runId);
+    if(known) return response=known;
     response = {
       kind: "response",
       key: runId,
@@ -123,17 +129,29 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
       finishedAt: null,
     };
     items.push(response);
+    responses.set(runId,response);
     return response;
   };
 
   for (const entry of orderedMessages(state)) {
     const message = entry.message;
     if (message.role === "system" || message.role === "toolResult") continue;
-    if (message.role === "user") {
-      response = null;
-      items.push({ kind: "user", key: entry.id, text: userText(message.content) });
+    const userAnswer=message.role === "notification" && message.kind === "agent-answer" && "kind" in message.source && message.source.kind === "user";
+    if (message.role === "user" || userAnswer) {
+      const current=entry.runId ? responses.get(entry.runId) : undefined;
+      if(current && entry.contextSeq !== null) {
+        place(current,message.timestamp);
+        current.process.push({kind:"input",key:entry.id,messageId:entry.id,text:userText(message.content),source:"user",...(message.role === "notification" ? {replyTo:message.replyTo}:{}),runId:current.runId,final:true});
+      } else items.push({ kind: "user", key: entry.id, text: userText(message.content), answer: userAnswer });
+      for (const failure of tasks?.preparationFailures ?? []) if (failure.inputId === entry.id) items.push({ kind: "notification",key: `preparation:${failure.runId}`,text: failure.error,error: true });
       continue;
     }
+    if (message.role === "notification") {
+      items.push({ kind: "notification", key: entry.id, text: message.content });
+      for (const failure of tasks?.preparationFailures ?? []) if (failure.inputId === entry.id) items.push({ kind: "notification",key: `preparation:${failure.runId}`,text: failure.error,error: true });
+      continue;
+    }
+    if (!entry.runId) continue;
     const current = openResponse(entry.runId);
     place(current, message.timestamp);
     const run = state.runs[entry.runId];
@@ -151,7 +169,7 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
       const key = `${entry.id}:${index}`;
       if (block.type === "text") {
         if (!block.text || answer) return;
-        current.process.push({ kind: "note", key, text: block.text, final: settled, runId: entry.runId });
+        current.process.push({ kind: "note", key, text: block.text, final: settled, runId: current.runId });
         return;
       }
       let process = current.process.at(-1);

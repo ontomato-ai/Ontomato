@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
+import { computed, inject, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
 import { PanelRightOpen } from "lucide-vue-next";
-import { shellContextKey, type ShellContext } from "../context";
+import { conversationQuestions, shellContextKey, type ShellContext } from "../context";
 import type { AgentHostClient } from "../host";
 import type { AgentNav } from "../useAgentNav";
 import type {
@@ -13,6 +13,7 @@ import type {
   ShellWorkbenchDeclaration,
   ToolRendererOverride,
 } from "../types";
+import { sessionRunNotices } from "../session-run-notices";
 import { useAgentConversation } from "../useAgentConversation";
 import ShellColumn from "./ShellColumn.vue";
 import ShellConversation from "./ShellConversation.vue";
@@ -84,6 +85,11 @@ const openArtifact = ref<OpenArtifact | null>(null);
 const taskFocus = ref<{ taskId: string; at: number } | null>(null);
 
 const conversation = useAgentConversation(() => props.client, () => agentId.value);
+const notice = inject(sessionRunNotices, null);
+if (notice) watch(notice, frame => {
+  if (frame?.type !== "run_started" || frame.sessionId !== conversation.state.sessionId || frame.runId in conversation.state.runs || frame.runId === conversation.activeRunId.value) return;
+  void conversation.followRun(frame.runId).catch(report);
+});
 const nav = props.nav;
 const { currentAgent } = nav;
 const currentFeature = computed(() => props.workbench.features.find((feature) => feature.id === featureId.value) ?? null);
@@ -133,9 +139,10 @@ provide(shellContextKey, {
     };
   },
   continueConversation: async (message) => {
-    if (conversation.busy.value) throw new Error(props.labels.working);
+    if (conversation.sending.value) throw new Error(props.labels.working);
     await send(message);
   },
+  questions: conversationQuestions(conversation),
 });
 
 /** The replies that delegated work, in order; a reply's own entry opens the task list at it. */
@@ -192,7 +199,7 @@ async function send(input: string) {
   const text = context ? `${input}\n\n${context}` : input;
   const result = await conversation.send(agent, text);
   if (!result) return;
-  if (!result.snapshot) {
+  if (!result.delivery) {
     // The conversation was created but its run refused: the host takes it as listed (still empty), so sending again
     // goes on in the conversation the host knows.
     void nav.loadSessions();
@@ -210,7 +217,7 @@ async function send(input: string) {
   }
   // Sending in a conversation already listed moves it up, and titles it when the host has not yet. Its run state is the
   // feed's to read, from the admission onwards.
-  const { sessionId: runSession } = result.snapshot.run;
+  const runSession = result.delivery.sessionRef.sessionId;
   const entry = nav.sessions.value.find((row) => row.id === runSession);
   if (entry) nav.promoteSession(entry, text);
 }
@@ -312,6 +319,7 @@ onMounted(() => {
         :send-error="conversation.sendError.value"
         :pending-input="conversation.pendingInput.value"
         :busy="conversation.busy.value"
+        :sending="conversation.sending.value"
         :feedback="feedback"
         @send="send"
         @stop="conversation.cancel"
@@ -329,6 +337,7 @@ onMounted(() => {
       :feature="currentFeature"
       :view="pageView"
       :busy="conversation.busy.value"
+      :sending="conversation.sending.value"
       :disabled="!currentAgent?.enabled"
       @send="sendFromPage"
       @stop="conversation.cancel"

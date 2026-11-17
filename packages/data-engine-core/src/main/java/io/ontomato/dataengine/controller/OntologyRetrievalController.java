@@ -16,21 +16,10 @@ public class OntologyRetrievalController {
   private final RetrievalTasks tasks;
 
   public OntologyRetrievalController(
-      OntologyRetrievalService retrieval, OntologyAgentStore store, OntologyAgentAccess access, RetrievalTasks tasks) {
+      OntologyRetrievalService retrieval, OntologyAgentStore store, OntologyAgentAccess access,RetrievalTasks tasks) {
     this.retrieval = retrieval;
     this.store = store;
-    this.access = access;
-    this.tasks = tasks;
-  }
-
-  @PostMapping("/ontology/retrievals")
-  @ResponseStatus(HttpStatus.ACCEPTED)
-  public Object start(
-      @RequestHeader("Idempotency-Key") String key,
-      @RequestBody JSONObject body,
-      HttpServletRequest req)
-      throws Exception {
-    return retrieval.start(AgentJson.id(key), body, access.current(req));
+    this.access = access;this.tasks=tasks;
   }
 
   @GetMapping("/ontology/retrievals/{id}")
@@ -41,11 +30,6 @@ public class OntologyRetrievalController {
     return runId == null ? retrieval.get(id, owner) : retrieval.get(id, runId, owner);
   }
 
-  @GetMapping("/ontology/retrievals/{id}/results")
-  public Object results(@PathVariable String id,@RequestParam(defaultValue="0") long after,HttpServletRequest req) {
-    return retrieval.poll(AgentJson.id(id),after,access.reader(req,id,null));
-  }
-
   @PostMapping("/ontology/retrievals/{id}/retriever/cancel")
   public Object cancelRetriever(@PathVariable String id,@RequestBody JSONObject body,HttpServletRequest req) throws Exception {
     return retrieval.cancelRetriever(AgentJson.id(id),AgentJson.id(body.getString("expectedRoundId")),access.current(req).owner());
@@ -54,24 +38,6 @@ public class OntologyRetrievalController {
   @GetMapping("/ontology/retrievals/{id}/datasets/{artifact}/content")
   public ResponseEntity<byte[]> datasetContent(@PathVariable String id,@PathVariable String artifact,HttpServletRequest req) throws Exception {
     return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(retrieval.datasetContent(AgentJson.id(id),AgentJson.id(artifact),access.reader(req,id,null)));
-  }
-
-  @PostMapping("/ontology/retrievals/{id}/answers")
-  @ResponseStatus(HttpStatus.ACCEPTED)
-  public Object answer(
-      @PathVariable String id,
-      @RequestHeader("Idempotency-Key") String key,
-      @RequestBody JSONObject body,
-      HttpServletRequest req)
-      throws Exception {
-    return retrieval.answer(AgentJson.id(id), AgentJson.id(key), body, access.current(req));
-  }
-
-  @PostMapping("/ontology/retrievals/{id}/cancel")
-  public Object cancel(@PathVariable String id, HttpServletRequest req) throws Exception {
-    var owner = access.current(req).owner();
-    return retrieval.cancel(
-        AgentJson.id(id), store.retrieval(id, owner).getString("current_run_id"), owner);
   }
 
   @DeleteMapping("/ontology/retrievals/{id}")
@@ -88,6 +54,10 @@ public class OntologyRetrievalController {
         AgentJson.id(id), AgentJson.id(artifact), access.reader(req, id, null));
   }
 
+  @GetMapping("/ontology/retrievals/{id}/runs/{run}/quality")
+  public Object quality(@PathVariable String id,@PathVariable String run,HttpServletRequest request) {
+    return JSONObject.of("quality",tasks.qualityEvidence(AgentJson.id(id),AgentJson.id(run),access.reader(request,id,run)));
+  }
   @GetMapping("/ontology/retrievals/{id}/runs/{run}/evidence")
   public Object evidence(@PathVariable String id, @PathVariable String run, HttpServletRequest req)
       throws Exception {
@@ -171,10 +141,13 @@ public class OntologyRetrievalController {
     return store.openCaller(AgentJson.id(key), context.owner(), body);
   }
 
-  /** The workbench reads the tasks of a conversation's callers; it, not this service, knows which conversation they are. */
-  @GetMapping("/ontology/retrieval-callers/tasks")
-  public Object callerTasks(@RequestParam List<String> callerIds, HttpServletRequest req) {
-    return tasks.forCallers(callerIds, access.serviceDomain(req));
+  @PutMapping("/ontology/retrieval-callers/{id}/user-quotes")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void userQuotes(@PathVariable String id,@RequestBody Map<String,Object> body,HttpServletRequest req) {
+    access.service(req);var context=access.current(req);
+    AgentJson.fields(JSONObject.from(body),"recentUserMessages");
+    if(!(body.get("recentUserMessages") instanceof List<?> quotes) || quotes.stream().anyMatch(value -> !(value instanceof String))) throw AgentHttpException.invalid("recentUserMessages must be a string array");
+    store.updateUserQuotes(AgentJson.id(id),context.owner(),new JSONArray(quotes));
   }
 
   @GetMapping("/ontology/retrieval-callers/{id}")
@@ -190,8 +163,8 @@ public class OntologyRetrievalController {
         store.callerRuns(id, owner));
   }
 
-  @PostMapping("/ontology/retrieval-callers/{id}/close")
-  public Object closeCaller(@PathVariable String id, HttpServletRequest req) throws Exception {
+  @PostMapping("/ontology/retrieval-callers/{id}/close-scope")
+  public Object closeScope(@PathVariable String id, HttpServletRequest req) throws Exception {
     // A not-yet-open intent uses the verified original user, not an asserted body owner.
     io.ontomato.dataengine.service.agent.OntologyAgentStore.Owner owner;
     if (req.getHeader("tk") != null && !req.getHeader("tk").isBlank()
@@ -207,7 +180,7 @@ public class OntologyRetrievalController {
         return JSONObject.of("id", id, "closed", true);
       }
     access.service(req);
-    retrieval.closeCaller(AgentJson.id(id), owner);
+    store.closeScope(AgentJson.id(id),owner);
     return JSONObject.of("id", id, "closed", true);
   }
 }

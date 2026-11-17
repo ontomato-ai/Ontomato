@@ -421,7 +421,7 @@ async function main() {
     await vectorDelete(api, argv.slice(1));
     return;
   }
-  if (cmd === "distinct-values" || cmd === "execute-dsl")
+  if (cmd === "distinct-values" || cmd === "execute-dsl" || cmd === "agent")
     return analystCommand(api,argv,async()=>{await bindTestTarget(api,workspaceId);return headers(api);});
   if (cmd === "action" && argv[1] === "re-explain") {
     const rest = argv.slice(2);
@@ -448,9 +448,6 @@ async function main() {
   if (cmd === "action") {
     await assetCommand(api, "action", argv.slice(1));
     return;
-  }
-  if (cmd === "ask") {
-    die("BUILD_TEST_UNSUPPORTED: ask is not a build-test execution; use MetricView or execute-dsl");
   }
   if(!cmd) return usage();
   die(`BUILD_TEST_UNSUPPORTED: command not supported: ${cmd}`);

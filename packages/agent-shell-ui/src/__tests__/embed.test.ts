@@ -25,7 +25,7 @@ const labels = { placeholder: "Message", send: "Send", stop: "Stop" } as unknown
  * navigation state reads the agents and sessions once, a forked one reads them twice.
  */
 function client() {
-  const read = { agents: vi.fn(), sessions: vi.fn(), createSession: vi.fn(), startRun: vi.fn() };
+  const read = { agents: vi.fn(), sessions: vi.fn(), createSession: vi.fn(), send: vi.fn() };
   read.agents.mockResolvedValue([
     { id: agentId, name: "assistant", description: "", icon: null, enabled: true },
   ]);
@@ -38,7 +38,7 @@ function client() {
     createdAt: new Date(0).toISOString(),
     latestRun: null,
   });
-  read.startRun.mockResolvedValue({
+  const snapshot={ pendingQuestions: [],
     run: {
       id: runId,
       sessionId: createdSessionId,
@@ -54,12 +54,13 @@ function client() {
     pendingMessages: [],
     toolExecutions: [],
     artifacts: [],
-  });
+  };
+  read.send.mockResolvedValue({delivery:{messageId:runId,sessionRef:{providerId:"workbench",sessionId:createdSessionId},runId,delivery:"run",status:"running"},input:{id:runId,runId,messageSeq:1,contextSeq:1,message:{role:"user",content:"hello",timestamp:1}},snapshot,pendingQuestions:[],replayed:false});
   const port = {
     listAgents: read.agents,
     listSessions: read.sessions,
     createSession: read.createSession,
-    startRun: read.startRun,
+    send: read.send,
     subscribe: () => () => {},
     readRun: vi.fn(),
     readHistory: vi.fn(),

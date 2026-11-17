@@ -1,6 +1,9 @@
 import type { ShellLabels } from "@ontomato/agent-shell-ui";
-/** The shell labels the page formats from a pattern (steps, elapsed time, a column's filter, a partial dataset). */
-type Formatted = "steps" | "elapsed" | "worked" | "truncatedRows" | "filterColumn";
+/**
+ * The shell labels the page formats from a pattern (steps, elapsed time, a column's filter, a partial dataset, the
+ * questions waiting and an answer sent while a reply ran).
+ */
+type Formatted = "steps" | "elapsed" | "worked" | "truncatedRows" | "filterColumn" | "questionsWaiting" | "answered";
 
 /**
  * Governance text. `shell` is the shell's labels as stored: those the page formats from text keep their keys but hold
@@ -113,6 +116,15 @@ export const englishGovernance: GovernanceMessages = {
     "filterEmpty": "(Empty)",
     "elapsed": "{time} elapsed",
     "worked": "Worked for {time}",
+    "questionsWaiting": "{n} pending question | {n} pending questions",
+    "questionDefault": "Default assumption",
+    "questionOptionDefault": "Default",
+    "questionOptionOther": "Other",
+    "questionOtherPlaceholder": "Type your own answer",
+    "questionSkip": "Skip",
+    "questionPrevious": "Previous question",
+    "questionNext": "Next question",
+    "answered": "Answer: {text}",
   }
 };
 /** The page's vue-i18n translation: a named-parameter lookup and a plural lookup that sets `{n}` and `{count}`. */
@@ -137,6 +149,8 @@ export function shellLabels(t: GovernanceTranslate): ShellLabels {
     worked: (time: string) => t("governance.shell.worked", { time }),
     truncatedRows: (limit: number) => t("governance.shell.truncatedRows", { limit }),
     filterColumn: (column: string) => t("governance.shell.filterColumn", { column }),
+    questionsWaiting: (n: number) => t("governance.shell.questionsWaiting", n),
+    answered: (text: string) => t("governance.shell.answered", { text }),
     selectRow: undefined,
     selectedRows: undefined,
     analyzeSelectionMessage: undefined,

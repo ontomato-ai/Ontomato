@@ -25,11 +25,11 @@ plain JSON; HTTP failures retain `{error:{code,message},correlationId}`.
 | Method and path | Request / response |
 | --- | --- |
 | POST /v1/sessions | `{}`; 201 `{session,replayed}` |
-| GET /v1/sessions/:id | `{session,messages,latestRun}` complete snapshot |
+| GET /v1/sessions/:id | `{session,messages,latestRun,pendingQuestions}` complete snapshot |
 | GET /v1/sessions/:id/history | bounded conversation history page; `before`, `after`, `through`, optional recovery `runId` |
 | POST /v1/sessions/status | `{sessionIds}`; ordered `{sessions:[{session,latestRun}]}` |
 | GET /v1/sessions/run-events | SSE, `ready` then `run_started`/`run_stopped` lifecycle notices for the host + domain; identity only, no replay |
-| POST /v1/sessions/:id/runs | StartRun below; 202 `{run,replayed}` |
+| POST /v1/sessions/:id/runs | StartRun below; 202 `{run,replayed}` (direct execution admission) |
 | GET /v1/runs/:id | `{run,messages,pendingMessages,toolExecutions,artifacts,cursor}` |
 | GET /v1/runs/:id/status | `{run}` lifecycle view only; with `waitFor=stopped` (and `timeoutMs` ≤ 60000, default 30000) held until the run stops or the timeout, which returns it still running |
 | GET /v1/runs/:id/final-reply | The message named by the run's `answerMessageId`, or `null` |
@@ -347,3 +347,124 @@ never full messages, thinking, tools or annotations. Artifact content is read th
 Only hosts configured with `domainHistory: true` can read another host's projection; shipped
 configuration grants this to ontology alone. Other runtime routes remain host-scoped.
 `definition.agentId` is an optional opaque host-owned agent identity for filtering.
+
+## Agent channel
+
+`agent-channel.ts` owns provider/session/execution references, directory entries, actor references,
+inputs and provider callbacks.
+
+Host conversation sends return `{delivery,input,pendingQuestions,replayed}`. `delivery` includes
+`messageId/sessionRef/runId`, `delivery: "steer" | "run"` and `status: "starting" | "running"`.
+The actual run ID can differ from the input request ID; a preparing intent has no run snapshot.
+Web user sends steer by default and answers use replyTo with an authenticated user source.
+All host shell clients expose send, including governance, Action creation and diagnosis.
+Session/history/run snapshots include the session-level pendingQuestions, independently of
+the loaded history window; pending_questions_changed carries its complete current projection.
+Questions have optional options with label, description and exactly one isDefault.
+Input receipt uses input_received; consumption retains the same ID and adds contextSeq to
+message records and message_end. Receipt messageSeq remains the history pagination cursor.
+Migration 6 upgrades the existing version 5 schema: persisted event names and message_end
+consumption sequences change together before the runtime opens its service. Fixed server configuration maps providers to host credentials and
+callback URLs. Models cannot supply identity, domain, credentials or callback addresses.
+
+The native `agent` tool is installed by the runtime for provider-prepared runs with an actor reference. Retrieval, Action creation and ontology model generation all enter through provider prepare. `start` creates a child session; `send` is
+restricted to the creator and created children. Inputs have one stable message ID and sequence
+assigned on receipt, with a null runId until consumed. Notifications retain their role through
+history and UI; only the model boundary presents them as explicitly attributed context.
+
+Provider `prepare` receives mode `run` or `steer`, the execution language and a typed input, including question kind and
+replyTo. Questions do not stop the sender. The runtime consumes ordinary queued notifications at the end-of-loop boundary and steering inputs through PI getSteeringMessages. The runtime reserves a preparing
+intent under the session lock, calls prepare outside it, then confirms admission under the lock.
+At a terminal loop boundary it atomically consumes inputs or seals the loop. Later input belongs
+to the next intent. Each execution fixes requestedBy and root independently of the creation tree.
+
+Callbacks are POST list/prepare/settle/read/cancel beneath the configured provider URL. List
+receives `{providerId,actor,language}` and returns only that provider's accessible entries. The runtime
+calls every registered provider directly and merges their lists; Java answers only the ontology
+provider's list and identity recovery. There is no separate directory port or Java-to-Node lookup.
+Prepare receives requestedBy (nullable) and the fixed root. Run mode returns a runtime start request; steer mode acknowledges the host's input recording and can return updated host context. The runtime retains typed input and its original receipt ID in both cases. Settle closes
+business eligibility; read returns the host's delivery projection. Retrieval summaries are one sentence
+with the outcome, row count and delivered file names; full answers are read through `view: "messages"`.
+Native `read(files: true)` writes the original provider bytes beneath the caller's `outputs/agents/`
+and returns the exact paths to cite, so the ordinary artifact snapshot and renderer can resolve them. Cancel closes eligibility
+before runtime cancellation. Runtime cancellation includes execution descendants and suppresses
+automatic wakeup from that cancellation. No platform task table or delegation budget is added.
+
+### Admission and external commands
+
+Retrieval admission, binding startup, caller quotes, continuation scope and decision revisions
+remain in Java provider prepare. An agent-answer with replyTo records the existing confirmed
+decision in both run and steer modes. Delivery does not store an immutable decisionRevision;
+the retrieval extension reports the execution's current revision. Both branches finish before
+result notification; quality jobs continue as branch-owned attachments and publish changes.
+Quality and candidate model calls inherit the source execution's credential chain by run reference;
+its in-memory credentials remain until these attachments finish without delaying result notification.
+The ontology-only retriever cancellation command preserves binding; generic cancel covers the
+execution and its delegated descendants. Natural parent completion does not cancel children.
+Action creation and generation prepare retain their existing write and sandbox admission.
+
+Provider prepare also receives inputId, the stable receipt ID used to bound host user quotes.
+A genuine user answer retains source.kind=user; agent and external answers are confirmed
+decisions, not user quotes. Retrieval callers update their current quotes through the host-only
+user-quotes endpoint; each retrieval round freezes its quotes in its existing run request for
+both branches and their quality checks.
+
+A replyTo send automatically steers an active recipient or prepares its next run when idle.
+An ordinary busy send fails with SESSION_BUSY before recording an input unless steer is explicit.
+A question requires a defaultAssumption and never ends the sender's loop. A root with no creator
+records its outgoing question in its own read/events; it does not fabricate a parent run.
+
+POST `/platform/agent-channel/commands` accepts the five verbs from agent-channel.ts. The Java
+boundary authenticates tk/API Key and derives the domain; the runtime uses the same execute
+path as the native tool, with an explicit external caller rather than a synthetic RuntimeRun.
+Reads and cancellation resolve an existing task's actor only after checking its canonical user
+and domain. GET `/platform/agent-channel/tasks/:taskId/events` registers the subscription before
+reading a task_snapshot and pushes changes. The files endpoint rechecks exact-run delivery
+ownership. Native read(files:true) copies delivered bytes into the caller's inputs/agents;
+standalone CLI read --files downloads the same bytes to outputs. CLI --follow consumes SSE.
+No external provider registration endpoint is introduced.
+
+Channel commands, task events/files and provider callbacks have no BuildTestAccess declaration
+or Node build-test route registration. Requests carrying an execution-context header are refused
+with 422 before side effects. Native agent commands also refuse build-test authority. Existing
+host prepare restrictions remain in force; no test context becomes live delegation.
+Node auxiliary one-shot model calls are not registered conversational agents and expose no agent tool.
+
+Failed preparations are projected from the existing admission intent in `preparationFailures`.
+The conversation shows the failure beside its received input, including when an expired actor
+prevents an automatic wake. Diagnostics are not new model inputs and cannot trigger another wake.
+
+An agent caller ID is an independent authorization reference, not a run or retrieval-scope ID.
+Keep these identities distinct when migrating retrieval: its old caller row owns business input
+and closure, while the agent caller's lifetime also covers children after their parent stops.
+
+Intent reads are scoped to their use: task IDs use a domain/task lookup, read/cancel authorization
+walks requestedBy ancestors, and task snapshots use a recursive CTE seeded by this conversation's
+direct delegations. Direct child reads and recursive joins use requestedBy expression indexes;
+conversation seeds use a requester-session expression index. No domain-wide intent list is read.
+
+### Initiating credentials and delegated authorization
+
+The initiating tk/API Key is kept only in runtime memory under the delegation root and is
+sent to provider prepare/list as private authentication headers. No credential is persisted in
+an intent, binding, message or snapshot. All executions in the chain, including business
+settlement and notification wakeups, retain that root until they finish; the last completion
+drops the credential. Provider read.settled includes outstanding business attachments, so quality
+does not prolong the execution status but does retain credentials until its work ends. A runtime restart loses it, and later preparation fails explicitly with
+CALLER_CREDENTIAL_INVALID and a request to start again. There is no refresh, recovery or
+internal-Key acquisition for delegation. Read-only history resolves its recorded owner.
+
+The initiating credential owns chain identity, domain, expiry and permission to use each agent;
+an AgentProfile's tools retain its configured agent principal, ordinary retrieval and governance
+retain the initiator's authority, and delegation preserves each agent's existing execution subject. Java-owned nested model executions reference their source run
+when admission originates from a scoped grant, retaining the same root without copying secrets.
+
+An agent-answer is projected for every model request as one attributed context message with
+its original question, the question's default assumption, and the answer. The channel resolves
+the question by replyTo from the domain-scoped input record. Steering, next-round context and
+compaction share this projection; senders supply only answer and replyTo. Durable input and
+host confirmed-decision recording retain the original answer, and deliveries gain no revision field.
+
+Provider list receives the caller's language on both native and external commands. Each owner
+uses its definition or installed locale labels for names and descriptions, preserving custom
+names. The channel only combines and filters entries and owns no translation table.

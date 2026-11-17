@@ -39,7 +39,7 @@ public class MetricSettlementController {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Settlement requires the end user credential");
     String session = sessions.beginNewSession(body);
     try {
-      return OntologyGenerationService.asOwner(access.user(), () -> settlement.settle(session, body,
+      return OntologyGenerationService.asOwner(access, () -> settlement.settle(session, body,
           access.user(), lang, true, null, work -> work.run()));
     } finally {
       sessions.endSession(session);

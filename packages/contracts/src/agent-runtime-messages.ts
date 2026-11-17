@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { agentNotificationSchema } from "./agent-channel";
 import {
   runtimeJsonObjectSchema,
   runtimeJsonValueSchema,
@@ -144,6 +145,7 @@ export const runtimeToolResultMessageSchema = z
 export const runtimeMessageSchema = z.discriminatedUnion("role", [
   runtimeSystemMessageSchema,
   runtimeUserMessageSchema,
+  agentNotificationSchema,
   runtimeAssistantMessageSchema,
   runtimeToolResultMessageSchema,
 ]);

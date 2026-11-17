@@ -1,3 +1,4 @@
+import type { AgentNotification } from "@ontomato/contracts/agent-channel";
 import type { Message } from "@earendil-works/pi-ai";
 
 /** Port of the existing Harness character estimate and provider-usage policy for PI messages. */
@@ -59,10 +60,12 @@ export function cutPoint(messages: Message[], contextWindow: number) {
     threshold--;
   return threshold;
 }
-export function serializeConversation(messages: Message[]) {
+export function serializeConversation(messages: Array<Message | AgentNotification>) {
   const parts: string[] = [];
   for (const message of messages) {
-    if (message.role === "user") {
+    if (message.role === "notification") {
+      parts.push(`[Agent notification ${JSON.stringify(message.source)}; ${message.kind}]: ${message.content}`);
+    } else if (message.role === "user") {
       const text =
         typeof message.content === "string"
           ? message.content

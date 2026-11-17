@@ -9,7 +9,7 @@ import {
   createRuntimeHttp,
 } from "@ontomato/agent-runtime";
 
-function jsonSetting(name: "AGENT_RUNTIME_HOSTS") {
+function jsonSetting(name: "AGENT_RUNTIME_HOSTS" | "AGENT_CHANNEL_PROVIDERS") {
   try {
     return JSON.parse(process.env[name] || "[]") as unknown;
   } catch {
@@ -27,6 +27,7 @@ const hostSchema = z
       publishProviders: z.array(z.string()).optional(),
       domainSkills: z.boolean().optional(),
       domainHistory: z.boolean().optional(),
+      channelGateway: z.boolean().optional(),
     }),
   )
   .min(1);
@@ -46,6 +47,7 @@ const runtime = new AgentRuntime({
   root: path.resolve(process.env.AGENT_RUNTIME_ROOT || "data/agent-runtime"),
   modelRuntimeToken: process.env.ONTOMATO_MODEL_RUNTIME_TOKEN,
   modelSeed: { baseUrl: process.env.LLM_BASE_URL, apiKey: process.env.LLM_API_KEY, modelName: process.env.LLM_MODEL },
+  agentProviders: z.array(z.object({ id: z.string().min(1), hostId: z.string().min(1), url: z.string().url(), token: z.string().min(1) }).strict()).parse(jsonSetting("AGENT_CHANNEL_PROVIDERS")),
   eventBufferSize: process.env.AGENT_RUNTIME_EVENT_BUFFER_SIZE
     ? z.coerce
         .number()

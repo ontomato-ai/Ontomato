@@ -462,5 +462,49 @@
   {
     "key": "AgentRole.knowledgeGovernance",
     "value": "Knowledge Governance Agent"
+  },
+  {
+    "key": "OntologyAgent.retrieval.name",
+    "value": "Data retrieval"
+  },
+  {
+    "key": "OntologyAgent.retrieval.description",
+    "value": "Answer a data question using the ontology"
+  },
+  {
+    "key": "OntologyAgent.governance.name",
+    "value": "Knowledge governance"
+  },
+  {
+    "key": "OntologyAgent.governance.description",
+    "value": "Review business knowledge and save recommendations"
+  },
+  {
+    "key": "OntologyAgent.action.name",
+    "value": "Action creation"
+  },
+  {
+    "key": "OntologyAgent.action.description",
+    "value": "Describe a write action in conversation; the agent drafts and tests it"
+  },
+  {
+    "key": "AgentChannel.retrieval.starting",
+    "value": "Data retrieval is starting: {0} datasets, {1} rows; files: {2}."
+  },
+  {
+    "key": "AgentChannel.retrieval.running",
+    "value": "Data retrieval is running: {0} datasets, {1} rows; files: {2}."
+  },
+  {
+    "key": "AgentChannel.retrieval.completed",
+    "value": "Data retrieval completed: {0} datasets, {1} rows; files: {2}."
+  },
+  {
+    "key": "AgentChannel.retrieval.failed",
+    "value": "Data retrieval failed: {0} datasets, {1} rows; files: {2}."
+  },
+  {
+    "key": "AgentChannel.retrieval.cancelled",
+    "value": "Data retrieval was cancelled: {0} datasets, {1} rows; files: {2}."
   }
 ]

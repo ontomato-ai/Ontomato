@@ -1,4 +1,5 @@
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { configureI18n } from "../../../i18n";
 import { appTextEn } from "../../../i18n/app-text-en";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
@@ -33,6 +34,25 @@ describe("default assistant prompts", () => {
     expect(
       effectiveSystemPrompt({ kind: "regular", system_prompt: "custom" }),
     ).toBe("custom");
+  });
+
+  it.each(["regular", "analysis"])("%s delegates through the skill without obsolete transport instructions", (kind) => {
+    const template=getPromptTemplate(`assistant.${kind}.system`);
+    expect(template).toContain("ontomato-analyst-assistant/SKILL.md");
+    expect(template).not.toMatch(/ontomato-analyst-assistant\s+ask|\bask\s+--|--resume|cancel-retriever|resume (?:that|the same|that same) retrieval/i);
+    const customized="Use ontomato-analyst-assistant ask according to my own instructions";
+    expect(effectiveSystemPrompt({kind,system_prompt:customized})).toBe(customized);
+  });
+
+  it("the product analyst skill preserves metadata commands and uses native delegation", () => {
+    const skill=readFileSync(path.resolve("../../agent-skills/ontomato-analyst-assistant/SKILL.md"),"utf8");
+    expect(skill).toContain('op: "list"');expect(skill).toContain('op: "start"');expect(skill).toContain('op: "read"');
+    expect(skill).toContain("notification");
+    for(const command of ["dataset-desc","classes","schema <class>...","relationships <class>...","metrics <question>","knowledge <question>"])
+      expect(skill).toContain(command);
+    expect(skill).toContain("The host supplies ONTOMATO_ONTOLOGY_URL");
+    expect(skill).toContain('op: "cancel"');
+    expect(skill).not.toMatch(/node[^\r\n`]*\bagent\b|--follow|--files|--reply-to|retriever-cancel/);
   });
 
   it("stores NULL when a built-in agent still equals the current template", () => {

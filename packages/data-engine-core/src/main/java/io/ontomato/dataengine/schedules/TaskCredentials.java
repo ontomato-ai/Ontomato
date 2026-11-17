@@ -102,7 +102,7 @@ ON CONFLICT(domain_id,creator_id) DO UPDATE SET valid=true,sealed_key=EXCLUDED.s
             sealed);
   }
 
-  static class Invalid extends RuntimeException {}
+  public static class Invalid extends RuntimeException {}
 
   @Transactional
   public void prepareForSetup(User user) {

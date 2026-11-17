@@ -13,6 +13,11 @@ export function readJson(argument) {
 function commandHeaders(headers) {
   return typeof headers === "function" ? headers() : headers;
 }
+async function agentHeaders(cfg,headers) {
+  const supplied=await commandHeaders(headers);
+  const credential=supplied.tk || supplied["X-API-Key"] ? {} : process.env.ONTOMATO_API_KEY ? {"X-API-Key":process.env.ONTOMATO_API_KEY} : process.env.ONTOMATO_TK || cfg.tk ? {tk:process.env.ONTOMATO_TK || cfg.tk} : {};
+  return {"Accept-Language":process.env.ONTOMATO_LANGUAGE ?? "en",...credential,...supplied};
+}
 async function json(url, headers, body) {
   const response = await fetch(url, {
     method: body === undefined ? "GET" : "POST",
@@ -55,7 +60,13 @@ export async function analystCommand(cfg, argv, headers = {}) {
     /\/$/,
     "",
   );
-  if (command === "ask") return ask(cfg, args, await commandHeaders(headers));
+  if (command === "agent") return agentChannelCommand(cfg,args,headers);
+  if (command === "retriever-cancel") {
+    const run=take(args,"--run");
+    if(args.length!==1 || !run) throw new Error("retriever-cancel requires sessionId --run runId from the task snapshot");
+    console.log(JSON.stringify(await json(`${ontology}/ontology/retrievals/${encodeURIComponent(args[0])}/retriever/cancel`,await agentHeaders(cfg,headers),{expectedRoundId:run})));
+    return;
+  }
   if (command === "run") return runAction(ontology, args, headers);
   if (command === "pending") return pending(ontology, args, headers);
   if (command === "actions") return listActions(ontology, await commandHeaders(headers));
@@ -97,7 +108,7 @@ export async function analystCommand(cfg, argv, headers = {}) {
     body = { id: args[0], revision, parameters: args[1] ? readJson(args[1]) : {}, ...(bindingId ? { bindingId } : {}) };
   } else
     throw new Error(
-      "Commands: dataset-desc, classes, schema, relationships, dsl-reference, distinct-values, execute-dsl, metrics, execute-metric, knowledge, pending, actions, run, ask",
+      "Commands: dataset-desc, classes, schema, relationships, dsl-reference, distinct-values, execute-dsl, metrics, execute-metric, knowledge, pending, actions, run, agent, retriever-cancel",
     );
   // Resolve dynamic execution credentials only after input validation, once per command.
   headers = await commandHeaders(headers);
@@ -277,72 +288,91 @@ async function listActions(ontology, headers) {
   console.log(JSON.stringify({ count: rows.length, actions: rows }, null, 2));
 }
 
-async function ask(cfg, args, headers) {
-  const base = (cfg.ontologyUrl || `${cfg.envUrl}/api/data-query`).replace(/\/$/, "") + "/ontology/retrievals";
-  const locale = take(args, "--lang") ?? process.env.ONTOMATO_LANGUAGE ?? "en",
-    resume = take(args, "--resume"), answers = take(args, "--answers"), status = take(args, "--status"),
-    cancel = take(args, "--cancel"), cancelRetriever = take(args, "--cancel-retriever"), wait = take(args, "--wait");
-  const requestId = take(args, "--request-id") ?? randomUUID();
-  let cursor = Number(take(args, "--after") ?? 0);
-  if (!Number.isSafeInteger(cursor) || cursor < 0) throw new Error("--after must be a nonnegative result cursor");
-  headers = { ...headers, "Accept-Language": locale,
-    ...(process.env.ONTOMATO_RETRIEVAL_CALLER_ID ? { "X-Ontomato-Retrieval-Caller-Id": process.env.ONTOMATO_RETRIEVAL_CALLER_ID } : {}),
-  };
-  const poll = (id) => json(`${base}/${encodeURIComponent(id)}/results?after=${cursor}`, headers);
-  if (cancel) {
-    console.log(JSON.stringify(await json(`${base}/${encodeURIComponent(cancel)}/cancel`, headers, {}), null, 2)); return;
+function flag(args,name) {
+  const index=args.indexOf(name);
+  if(index<0) return false;
+  args.splice(index,1); return true;
+}
+function reference(value,field) {
+  if(!value || value.indexOf("/")<1) throw new Error(`${field} requires provider/id from agent list or a task snapshot`);
+  const slash=value.indexOf("/");
+  return { providerId:value.slice(0,slash),[field === "agent" ? "agentId" : "sessionId"]:value.slice(slash+1) };
+}
+function text(value) {
+  if(value===undefined) throw new Error("--message is required");
+  return value.startsWith("@")?fs.readFileSync(value.slice(1),"utf8"):value;
+}
+async function downloadAgentFiles(ontology,headers,snapshot) {
+  if(!Array.isArray(snapshot.files)) throw new Error("Task snapshot has no file references");
+  const directory=path.resolve(process.env.ONTOMATO_OUTPUT_DIR || "outputs");
+  fs.mkdirSync(directory,{recursive:true});
+  const downloaded=[];
+  for(const file of snapshot.files) {
+    if(!file.name || path.basename(file.name)!==file.name || [".",".."].includes(file.name)) throw new Error("Invalid delivered file name");
+    const prefix=`/platform/agent-channel/tasks/${encodeURIComponent(snapshot.taskId)}/files/`;
+    if(typeof file.href!=="string" || !file.href.startsWith(prefix)) throw new Error("Invalid delivered file reference");
+    const response=await fetch(ontology+file.href,{headers,redirect:"error"});
+    if(!response.ok) throw new Error(`File read failed: HTTP ${response.status}`);
+    const destination=path.join(directory,`${file.id}-${file.name}`),temporary=destination+`.${randomUUID()}.download`;
+    try { fs.writeFileSync(temporary,Buffer.from(await response.arrayBuffer()));fs.renameSync(temporary,destination); }
+    finally { if(fs.existsSync(temporary)) fs.unlinkSync(temporary); }
+    downloaded.push({id:file.id,path:destination});
   }
-  if (cancelRetriever) {
-    const current = await poll(cancelRetriever);
-    const result = await json(`${base}/${encodeURIComponent(cancelRetriever)}/retriever/cancel`, headers, { expectedRoundId: current.roundId });
-    console.log(JSON.stringify({ retrievalId: cancelRetriever, pending: result.pending, cursor: current.cursor }, null, 2)); return;
-  }
-  if (status) { console.log(JSON.stringify(await poll(status), null, 2)); return; }
-  let snapshot;
-  if (wait) snapshot = await poll(wait);
-  else if (resume) {
-    if (!answers) throw new Error("--resume requires --answers @file");
-    const reply = readJson(answers);
-    if (!reply || !reply.expectedRunId || !Number.isInteger(reply.expectedDecisionRevision) || typeof reply.message !== "string" || !reply.message.trim())
-      throw new Error("Reply requires expectedRunId, expectedDecisionRevision and message from ask --status");
-    console.log(JSON.stringify({ requestId }));
-    snapshot = await json(`${base}/${encodeURIComponent(resume)}/answers`, { ...headers, "Idempotency-Key": requestId }, reply);
-  } else {
-    if (!args.length) throw new Error("ask requires a complete question");
-    console.log(JSON.stringify({ requestId }));
-    snapshot = await json(base, { ...headers, "Idempotency-Key": requestId }, {
-      question: args.join(" "), interaction: "resumable", userQuotes: [], previousDatasetIds: [],
-    });
-  }
-  console.log(JSON.stringify({ retrievalId: snapshot.id, runtimeSessionId: snapshot.runtimeSessionId }));
-  // Empty or failed binding searches produce no delivery. Keep waiting for the retriever.
-  while (!snapshot.deliveries.length && (snapshot.pending.retriever || snapshot.pending.bindings)) {
-    cursor = snapshot.cursor;
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    snapshot = await poll(snapshot.id);
-  }
-  const files = [];
-  for (const delivery of snapshot.deliveries) {
-    for (const dataset of delivery.data.datasets) {
-      const id = dataset.id;
-      if (![snapshot.id, id].every(value => /^[0-9a-f-]{36}$/i.test(value))) throw new Error("Invalid dataset identity");
-      const response = await fetch(`${base}/${snapshot.id}/datasets/${id}/content`, { headers, redirect: "error" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
-      const root = path.resolve(process.env.ONTOMATO_OUTPUT_DIR ?? "outputs"),
-        output = path.join(root, "retrievals", snapshot.id, `${id}.dataset.json`);
-      fs.mkdirSync(path.dirname(output), { recursive: true });
-      const scratch = path.join(path.dirname(root), "work"); fs.mkdirSync(scratch, { recursive: true });
-      const temporary = path.join(scratch, `.retrieval-${id}-${randomUUID()}.download`);
-      fs.writeFileSync(temporary, Buffer.from(await response.arrayBuffer())); fs.renameSync(temporary, output);
-      files.push({ path: path.relative(process.cwd(), output).split(path.sep).join("/"), datasetId: id,
-        source: delivery.source, rowCount: dataset.rowCount, ...(dataset.binding ? { binding: dataset.binding } : {}) });
+  return {...snapshot,downloaded};
+}
+async function followAgentTask(ontology,headers,taskId,files) {
+  const response=await fetch(`${ontology}/platform/agent-channel/tasks/${encodeURIComponent(taskId)}/events`,{headers:{...headers,Accept:"text/event-stream"},redirect:"error"});
+  if(!response.ok) throw new Error(`Task stream failed: HTTP ${response.status}`);
+  const reader=response.body.getReader(),decoder=new TextDecoder();
+  let buffer="",data=[];
+  try {
+    for(;;) {
+      const chunk=await reader.read();
+      if(chunk.done) throw new Error("Task stream ended before delivery");
+      buffer+=decoder.decode(chunk.value,{stream:true});
+      let newline;
+      while((newline=buffer.indexOf("\n"))>=0) {
+        const line=buffer.slice(0,newline).replace(/\r$/u,"");buffer=buffer.slice(newline+1);
+        if(line.startsWith("data:")) data.push(line.slice(5).trimStart());
+        else if(line==="" && data.length) {
+          const frame=JSON.parse(data.join("\n"));data=[];
+          if(frame.type==="error") throw new Error(frame.error.message);
+          if(frame.type!=="task_snapshot") continue;
+          const snapshot=frame.task;
+          if(!Array.isArray(snapshot.questions)) throw new Error("Task snapshot has no question references");
+          const delivered=["completed","failed","cancelled"].includes(snapshot.status) || snapshot.questions.some(question=>!question.answered);
+          console.log(JSON.stringify(delivered && files ? await downloadAgentFiles(ontology,headers,snapshot) : snapshot));
+          if(delivered) return;
+        }
+      }
     }
-  }
-  const answer = snapshot.deliveries.map(d => d.data.answer).filter(Boolean).join("\n\n");
-  console.log(JSON.stringify({ retrievalId: snapshot.id, roundId: snapshot.roundId, runtimeSessionId: snapshot.runtimeSessionId,
-    runtimeRunId: snapshot.runtimeRunId, decisionRevision: snapshot.decisionRevision, run: snapshot.run,
-    pending: snapshot.pending, cursor: snapshot.cursor, answer, files, deliveries: snapshot.deliveries }, null, 2));
-  const failed = snapshot.deliveries.find(d => d.source === "retriever" && (d.data.error || ["error", "aborted"].includes(d.data.run?.stopReason)));
-  if (failed && !files.length && !snapshot.pending.retriever && !snapshot.pending.bindings)
-    throw new Error(failed.data.error ?? failed.data.run.errorMessage ?? "Retrieval stopped");
+  } finally { await reader.cancel(); }
+}
+/** The sole transport for native-channel commands in every standalone skill package. */
+export async function agentChannelCommand(cfg,argv,headers={}) {
+  const [op,...args]=argv;
+  let command;
+  const follow=flag(args,"--follow"),files=flag(args,"--files");
+  if(op==="list") command={op,query:args.join(" ") || undefined};
+  else if(op==="start") {
+    const agent=reference(take(args,"--agent"),"agent"),message=text(take(args,"--message")),title=take(args,"--title"),context=take(args,"--context");
+    command={op,agent,message,...(title?{title}:{}),...(context?{context:readJson(context)}:{})};
+  } else if(op==="send") {
+    const recipient=take(args,"--session"),session=recipient==="parent"?"parent":reference(recipient,"session"),message=text(take(args,"--message"));
+    const replyTo=take(args,"--reply-to"),steer=flag(args,"--steer"),needsInput=flag(args,"--needs-input"),defaultAssumption=take(args,"--default-assumption");
+    if(needsInput && !defaultAssumption) throw new Error("--needs-input requires --default-assumption");
+    command={op,session,message,...(replyTo?{replyTo}:{}),...(steer?{steer:true}:{}),...(needsInput?{needsInput:true,defaultAssumption}:{})};
+  } else if(op==="read") {
+    const view=take(args,"--view"),cursor=take(args,"--cursor"),limit=take(args,"--limit");
+    command={op,taskId:args.shift(),...(view?{view}:{}),...(cursor?{cursor:finiteNumber(cursor,"--cursor")} : {}),...(limit?{limit:finiteNumber(limit,"--limit")} : {}),...(files?{files:true}:{})};
+  } else if(op==="cancel") command={op,taskId:args.shift()};
+  else throw new Error("agent requires list, start, send, read or cancel");
+  if(op!=="list" && args.length) throw new Error(`Unexpected agent arguments: ${args.join(" ")}`);
+  if((op==="read" || op==="cancel") && !command.taskId) throw new Error("A task ID is required");
+  if((follow || files) && op!=="read") throw new Error("--follow and --files belong to agent read");
+  const ontology=(cfg.ontologyUrl || `${cfg.envUrl}/api/data-query`).replace(/\/$/u,"");
+  headers=await agentHeaders(cfg,headers);
+  if(follow) return followAgentTask(ontology,headers,command.taskId,files);
+  const result=await json(`${ontology}/platform/agent-channel/commands`,headers,command);
+  console.log(JSON.stringify(op==="read" && files ? await downloadAgentFiles(ontology,headers,result) : result,null,2));
 }

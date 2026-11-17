@@ -21,11 +21,12 @@ import org.springframework.stereotype.Service;
 @DependsOn("ontologyAgentStore")
 public class KnowledgeGovernanceService {
   public static final String AGENT = "56a15178-ae22-4e6f-9974-ababeb42a676";
+  private final AgentCaller callers;
   public static boolean isAgent(String id) { return id != null && id.startsWith("56a15178-"); }
   public List<JSONObject> agents(String domain) {
     var result=new ArrayList<JSONObject>();
     result.add(JSONObject.of("id",AGENT,"name","Knowledge governance","description","Review knowledge and extract sourced ontology data","icon",null,"enabled",true));
-    result.addAll(store.rows("SELECT id,name,true AS enabled FROM ontology_governance_agents WHERE domain_id=? ORDER BY name,id",domain));
+    for(var row:store.rows("SELECT id,name FROM ontology_governance_agents WHERE domain_id=? ORDER BY name,id",domain)) result.add(JSONObject.of("id",row.getString("id"),"name",row.getString("name"),"description","","icon",null,"enabled",true));
     return result;
   }
   public JSONObject createAgent(String domain,String name) {
@@ -34,6 +35,7 @@ public class KnowledgeGovernanceService {
     store.update("INSERT INTO ontology_governance_agents(id,domain_id,name) VALUES(?::uuid,?,?)",id,domain,name.strip());
     return JSONObject.of("id",id,"name",name.strip());
   }
+
   private final OntologyAgentStore store;
   private final AgentRuntimeClient runtime;
   private final OntologyAgentDefinitions definitions;
@@ -46,8 +48,8 @@ public class KnowledgeGovernanceService {
 
   public KnowledgeGovernanceService(OntologyAgentStore store, AgentRuntimeClient runtime,
       OntologyAgentDefinitions definitions, QueryGrantService grants, KnowledgeService knowledge,
-      AdminService admin) {
-    this.store=store; this.runtime=runtime; this.definitions=definitions;
+      AdminService admin, AgentCaller callers) {
+    this.callers=callers; this.store=store; this.runtime=runtime; this.definitions=definitions;
     this.grants=grants; this.knowledge=knowledge; this.admin=admin;
   }
 
@@ -147,34 +149,51 @@ public class KnowledgeGovernanceService {
     });
   }
 
-  public boolean start(String id,String run,String message,OntologyAgentAccess.Context context) throws Exception {
+  public JSONObject send(String id,String run,String message,String replyTo,OntologyAgentAccess.Context context) throws Exception {
+    validateMessage(message);
+    var actor=callers.open(UUID.randomUUID().toString(),context);
+    var agent=JSONObject.of("providerId","ontology","agentId",session(id,context.owner()).getString("agent_id"));
+    runtime.json(context.owner().domainId(),run,"/v1/channel/sessions/"+id+"/bind","POST",JSONObject.of("agent",agent,"actor",actor),null);
+    var source=JSONObject.of("session",JSONObject.of("providerId","ontology","sessionId",id),"runId",run);
+    var request=JSONObject.of(
+      "credential",AgentChannelRuns.credential(context),"language",context.language(),"channel",JSONObject.of("agent",agent,"actor",actor,"requestedBy",null,"root",source,
+        "authority",JSONObject.of("classNames",List.of(),"executionKind","live")),
+      "input",JSONObject.of("role","user","content",message,"timestamp",System.currentTimeMillis()));
+    if(replyTo!=null) request.put("replyTo",replyTo);
+    return runtime.json(context.owner().domainId(),run,"/v1/channel/sessions/"+id+"/runs","POST",request,run);
+  }
+
+  public static void validateMessage(String message) {
     if (message==null || message.isBlank() || message.length()>20_000)
       throw AgentHttpException.invalid("A message of 1 to 20000 characters is required");
+  }
+
+  public JSONObject prepare(String id,String run,JSONObject input,OntologyAgentAccess.Context context) throws Exception {
+    String message=input.getString("content");
     session(id,context.owner());
     var snapshot=runtime.json(context.owner().domainId(),id,"/v1/sessions/"+id,"GET",null,null);
     var latest=snapshot.getJSONObject("latestRun");
     if (latest!=null && !"running".equals(latest.getJSONObject("run").getString("status")))
       settle(latest.getJSONObject("run").getString("id"));
-    var admission=admit(id,run,JSONObject.of("message",message),context,false);
-    if (admission.replayed()) return true;
+    var admission=admit(id,run,JSONObject.of("message",message,"input",input),context,false);
     var row=admission.row();
     long deadline=Instant.parse(row.getString("deadline")).toEpochMilli();
     try {
       definitions.publishGovernance();
       var token=grants.issue(context.owner().userId(),context.owner().domainId(),"knowledge-governance",run,deadline,List.of(),null);
       store.transaction(() -> gate(id,run,context.owner()));
-      runtime.json(context.owner().domainId(),run,"/v1/sessions/"+id+"/runs","POST",JSONObject.of(
+      return JSONObject.of(
         "language",context.language(),
         "definition",definitions.governance(context.owner().domainId(), context.language(),deadline-System.currentTimeMillis(),session(id,context.owner()).getString("agent_id")),
-        "input",JSONObject.of("role","user","content",message,"timestamp",Instant.parse(row.getString("created_at")).toEpochMilli()),
+        "input",input,
+
         "environment",JSONObject.of("values",JSONObject.of("ONTOMATO_ONTOLOGY_URL",runtime.ontologyUrl(),"ONTOMATO_GOVERNANCE_ID",id),
-          "secrets",JSONObject.of("ONTOMATO_GOVERNANCE_TK",token))),run);
+          "secrets",JSONObject.of("ONTOMATO_GOVERNANCE_TK",token)));
     } catch (Exception error) {
       // Seal this intent even if the runtime accepted it before the transport failed.
-      cancel(id,run,context.owner());
+      store.closeRun(id,run,context.owner());
       throw error;
     }
-    return false;
   }
 
   public JSONObject begin(String key,JSONObject input,OntologyAgentAccess.Context context) throws Exception {

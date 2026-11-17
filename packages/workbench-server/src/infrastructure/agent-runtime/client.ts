@@ -211,6 +211,11 @@ export class RuntimeClient {
   async deleteSession(id: string) {
     await this.request(`/v1/sessions/${encodeURIComponent(id)}`, "DELETE");
   }
+  async channelStream(path: string, signal: AbortSignal) {
+    const response = await fetch(environment.agentRuntime().url.replace(/\/$/, "") + path, { headers: this.headers(), signal });
+    if (!response.ok) throw new HttpError(response.status, "Agent channel stream failed");
+    return response;
+  }
   async stream(
     cursor: RuntimeCursor,
     onFrame: (frame: RuntimeStreamFrame) => Promise<void>,

@@ -1,6 +1,6 @@
 import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import type { AgentHostSessionHistory } from "@ontomato/contracts/agent-host";
-import type { AgentHostAgentList, AgentHostCreateSessionResponse, AgentHostSessionPage, AgentHostSessionSnapshot, AgentHostAdmission, AgentHostCancelResponse, AgentHostArtifactResolution } from "@ontomato/contracts/agent-host";
+import type { AgentHostAgentList, AgentHostCreateSessionResponse, AgentHostSessionPage, AgentHostSessionSnapshot, AgentHostSendResult, AgentHostSendRequest, AgentHostCancelResponse, AgentHostArtifactResolution } from "@ontomato/contracts/agent-host";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { RuntimeRunSnapshot } from "@ontomato/contracts/agent-runtime";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -17,7 +17,7 @@ export interface AgentHostService {
   snapshot(id: string, owner: AgentHostOwner): Promise<AgentHostSessionSnapshot>;
   delete(id: string, owner: AgentHostOwner): Promise<void>;
   rename(id: string, title: string, owner: AgentHostOwner): Promise<void>;
-  start(session: string, run: string, message: string, owner: AgentHostOwner, credentials: AssistantCredentials): Promise<AgentHostAdmission>;
+  send(session: string, run: string, input: AgentHostSendRequest, owner: AgentHostOwner, credentials: AssistantCredentials): Promise<AgentHostSendResult>;
   /** Rejects with 404 unless the run belongs to the owner's session, by the host's own records only. */
   ownRun(session: string, run: string, owner: AgentHostOwner): Promise<void>;
   readRun(session: string, run: string, owner: AgentHostOwner): Promise<RuntimeRunSnapshot>;

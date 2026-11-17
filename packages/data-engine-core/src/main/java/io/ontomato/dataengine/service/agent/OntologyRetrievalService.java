@@ -27,11 +27,10 @@ public class OntologyRetrievalService {
   private final OntologyBindingRetrieval bindings;
   private final RetrievalResults results;
   private final RetrievalTasks tasks;
+  private final AgentChannelRuns channel;
+  private final AgentChannelChanges changes;
   private final Set<String> launching = ConcurrentHashMap.newKeySet();
 
-  private record AdmissionFlight(Owner owner, String hash, CompletableFuture<JSONObject> result) {}
-
-  private final ConcurrentMap<String, AdmissionFlight> preparing = new ConcurrentHashMap<>();
   private final Set<String> observing = ConcurrentHashMap.newKeySet();
   private final ExecutorService workers = Executors.newCachedThreadPool();
   private static final org.slf4j.Logger LOG =
@@ -46,7 +45,7 @@ public class OntologyRetrievalService {
       QueryOutputService outputs,
       QueryJobService jobs,
       QueryQualityService quality,
-      OntologyAgentAccess access, OntologyBindingRetrieval bindings, RetrievalResults results, RetrievalTasks tasks) {
+      OntologyAgentAccess access, OntologyBindingRetrieval bindings, RetrievalResults results, RetrievalTasks tasks, AgentChannelRuns channel,AgentChannelChanges changes) {
     this.store = store;
     this.runtime = runtime;
     this.definitions = definitions;
@@ -59,59 +58,8 @@ public class OntologyRetrievalService {
     this.bindings = bindings;
     this.results = results;
     this.tasks = tasks;
-  }
-
-  private JSONObject admitOnce(
-      String runId,
-      String sessionId,
-      Object request,
-      OntologyAgentAccess.Context context,
-      Callable<JSONObject> operation)
-      throws Exception {
-    return admitOnce(
-        runId,
-        sessionId,
-        request,
-        context,
-        new java.util.concurrent.atomic.AtomicBoolean(),
-        operation);
-  }
-
-  private JSONObject admitOnce(
-      String runId,
-      String sessionId,
-      Object request,
-      OntologyAgentAccess.Context context,
-      java.util.concurrent.atomic.AtomicBoolean replayed,
-      Callable<JSONObject> operation)
-      throws Exception {
-    String hash =
-        AgentJson.hash(
-            JSONObject.of(
-                "sessionId", sessionId, "request", request, "callerId", context.callerId()));
-    var flight = new AdmissionFlight(context.owner(), hash, new CompletableFuture<>());
-    var old = preparing.putIfAbsent(runId, flight);
-    if (old != null) {
-      replayed.set(true);
-      if (!old.owner().equals(context.owner())) throw AgentHttpException.missing();
-      if (!old.hash().equals(hash)) throw conflict("Admission input changed");
-      try {
-        return old.result().get();
-      } catch (ExecutionException error) {
-        if (error.getCause() instanceof Exception cause) throw cause;
-        throw error;
-      }
-    }
-    try {
-      var result = operation.call();
-      flight.result().complete(result);
-      return result;
-    } catch (Exception error) {
-      flight.result().completeExceptionally(error);
-      throw error;
-    } finally {
-      preparing.remove(runId, flight);
-    }
+    this.channel = channel;
+    this.changes=changes;
   }
 
   public static int timeout(JSONObject body) {
@@ -165,20 +113,29 @@ public class OntologyRetrievalService {
         input.put("classNames", requested == null || requested.isEmpty() ? allowed : requested);
       }
       // The host owns the user's words; the model-supplied quotes never win in a caller scope.
-      applyCallerUserQuotes(input, callerInput);
+      OntologyAgentStore.applyCallerUserQuotes(input, callerInput);
+    }
+    var authority=context.access().classNames();
+    if(!authority.isEmpty()) {
+      var requested=input.getList("classNames",String.class);
+      if(requested!=null && !requested.isEmpty() && !authority.containsAll(requested)) throw new AgentHttpException(403,"FORBIDDEN","Class scope cannot be widened");
+      input.put("classNames",requested==null || requested.isEmpty()?authority:requested);
     }
     input.put("classNames", QueryAccessService.classScope(context.access().permission(), input.getList("classNames", String.class)));
     return input;
   }
 
-  /** A caller scope's host-supplied messages replace any model-written quotes. */
-  static void applyCallerUserQuotes(JSONObject input, JSONObject callerInput) {
-    if (callerInput == null) return;
-    JSONArray quotes = callerInput.getJSONArray("recentUserMessages");
-    input.put("userQuotes", quotes == null ? new JSONArray() : quotes);
+  static JSONArray userQuotes(JSONArray messages,String inputId) {
+    var quotes=new JSONArray();
+    int through=java.util.stream.IntStream.range(0,messages.size()).filter(index -> inputId.equals(messages.getJSONObject(index).getString("id"))).findFirst().orElseThrow();
+    for(int index=0;index<=through;index++) {
+      var record=messages.getJSONObject(index);var message=record.getJSONObject("message");
+      if("user".equals(message.getString("role")) || ("agent-answer".equals(message.getString("kind")) && "user".equals(message.getJSONObject("source").getString("kind")))) quotes.add(message.getString("content"));
+    }
+    return new JSONArray(quotes.subList(Math.max(0,quotes.size()-10),quotes.size()));
   }
 
-  /** Confirmed user clarifications, in the order they were recorded. */
+  /** Confirmed answers, in the order they were recorded. */
   static List<String> confirmedDecisions(JSONArray decisions) {
     if (decisions == null) return List.of();
     List<String> texts = new ArrayList<>();
@@ -188,7 +145,7 @@ public class OntologyRetrievalService {
       String source = decision.getString("source");
       if (text != null
           && !text.isBlank()
-          && (source == null || "user".equals(source)))
+          && (source == null || List.of("user","agent","external").contains(source)))
         texts.add(text);
     }
     return texts;
@@ -209,161 +166,62 @@ public class OntologyRetrievalService {
     return replayed;
   }
 
-  public JSONObject start(String id, JSONObject body, OntologyAgentAccess.Context context)
-      throws Exception {
-    var input = scopedInput(body, context);
-    for (String previous : input.getList("previousDatasetIds", String.class))
-      datasetForOwner(previous, context.owner());
-    String runId =
-        UUID.nameUUIDFromBytes(("ontology-retrieval:" + id).getBytes(StandardCharsets.UTF_8))
-            .toString();
-    return admitOnce(
-        runId,
-        id,
-        input,
-        context,
-        () -> {
-          store.createSession(id, context.owner(), RETRIEVER);
-          var admission =
-              store.admit(
-                  id,
-                  runId,
-                  context.owner(),
-                  input,
-                  input,
-                  context.callerId(),
-                  false,
-                  timeout(input),
-                  context.expiresAt(),
-                  false,
-                  context.language());
-          if (!admission.replayed()) launch(id, runId, input, context);
-          return poll(id, 0, context.owner());
-        });
+  public JSONObject send(String session,String run,String message,String replyTo,OntologyAgentAccess.Context context) throws Exception {
+    var input=JSONObject.of("role","user","content",message,"timestamp",System.currentTimeMillis());
+    if(replyTo!=null) input=JSONObject.of("role","notification","kind","agent-answer","source",JSONObject.of("kind","user"),"replyTo",replyTo,"content",message,"timestamp",System.currentTimeMillis());
+    return channel.send(RETRIEVER,session,run,input,null,context);
   }
 
-  public JSONObject answer(
-      String id, String key, JSONObject body, OntologyAgentAccess.Context context)
-      throws Exception {
-    return admitOnce(key, id, body, context, () -> answerWork(id, key, body, context));
+  /** One business admission owns both the model and binding branches. */
+  public JSONObject prepareRun(String session,String run,JSONObject message,String inputId,JSONObject parameters,String rootRunId,OntologyAgentAccess.Context context) throws Exception {
+    launching.add(run);
+    try {
+      var records=store.rows("SELECT r.input FROM ontology_retrievals r JOIN ontology_agent_sessions s ON s.id=r.id WHERE r.id=? AND s.user_id=? AND s.domain_id=?",uuid(session),context.owner().userId(),context.owner().domainId());
+      boolean continuation=!records.isEmpty();
+      var inputBody=continuation?records.getFirst().getJSONObject("input"):JSONObject.of("question",AgentJson.text(message,"content"));
+      if (!continuation && parameters!=null) {
+        AgentJson.fields(parameters,"classNames","previousDatasetIds","timeoutSeconds","interaction");
+        inputBody.putAll(parameters);
+      }
+      if(context.callerId()==null) {
+        var messages=runtime.json(context.owner().domainId(),session,"/v1/sessions/"+session,"GET",null,null).getJSONArray("messages");
+        inputBody.put("userQuotes",userQuotes(messages,inputId));
+      }
+      if (continuation && !context.access().classNames().isEmpty()) {
+        var original=inputBody.getList("classNames",String.class);
+        if(original==null || original.isEmpty() || !context.access().classNames().containsAll(original)) throw new AgentHttpException(403,"FORBIDDEN","The prior retrieval exceeds this caller scope");
+      }
+      var input=scopedInput(inputBody,context);
+      for(String previous:input.getList("previousDatasetIds",String.class)) datasetForOwner(previous,context.owner());
+      var request=JSONObject.of("message",message.getString("content"),"channelInput",message,"agentChannel",true,"rootRunId",rootRunId,"timeoutSeconds",timeout(input),
+        "confirmAnswer","user".equals(message.getString("role")) || ("agent-answer".equals(message.getString("kind")) && message.containsKey("replyTo")));
+      if(continuation) {
+        var prior=store.retrieval(session,context.owner());
+        var old=store.run(session,prior.getString("current_run_id"),context.owner());
+        if(old.getBooleanValue("runtime_admitted") && old.getBooleanValue("open")) reconcile(session,old.getString("id"),context.owner(),runtime.run(context.owner().domainId(),old.getString("id")));
+        request.put("expectedRunId",old.getString("id"));request.put("expectedDecisionRevision",old.getIntValue("decision_revision"));
+      }
+      store.createSession(session,context.owner(),RETRIEVER);
+      var admitted=store.admit(session,run,context.owner(),input,request,context.callerId(),false,timeout(input),context.expiresAt(),continuation,context.language());
+      if(!admitted.replayed()) bindings.start(session,run,input,context);
+      return runtimeRequest(session,run,message,context);
+    } catch(Exception error) {
+      var admitted=store.rows("SELECT id FROM ontology_agent_runs WHERE id=? AND session_id=?",uuid(run),uuid(session));
+      if(!admitted.isEmpty()) {
+        store.closeRun(session,run,context.owner());
+        var record=store.run(session,run,context.owner());
+        boolean modelOnly=record.getJSONObject("request").getBooleanValue("modelCancelled");
+        if(!modelOnly) bindings.cancel(session,run,context.owner());
+        grants.revoke(context.owner().domainId(),run);
+        if(!modelOnly) admissionFailed(session,run,context.owner(),error.getMessage());
+      }
+      throw error;
+    } finally { launching.remove(run); }
   }
-
-  private JSONObject answerWork(
-      String id, String key, JSONObject body, OntologyAgentAccess.Context context)
-      throws Exception {
-    AgentJson.fields(
-        body, "expectedRunId", "expectedDecisionRevision", "message", "timeoutSeconds");
-    AgentJson.id(body.getString("expectedRunId"));
-    AgentJson.text(body, "message");
-    if (!(body.get("expectedDecisionRevision") instanceof Number revision)
-        || revision.intValue() < 0
-        || revision.doubleValue() != revision.intValue())
-      throw AgentHttpException.invalid("Invalid decision revision");
-    var request = AgentJson.copy(body);
-    request.put("timeoutSeconds", timeout(body));
-    if (store
-        .rows("SELECT id FROM ontology_agent_runs WHERE id=? AND session_id=?", uuid(key), uuid(id))
-        .isEmpty()) {
-      // Continuation admission needs current runtime facts; lightweight reads never reconcile synchronously.
-      var prior = store.run(id, store.retrieval(id, context.owner()).getString("current_run_id"), context.owner());
-      if (!prior.getBooleanValue("external") && prior.getBooleanValue("runtime_admitted"))
-        reconcile(id, prior.getString("id"), context.owner(), runtime.run(context.owner().domainId(), prior.getString("id")));
-      var previous = get(id, context.owner());
-      if (previous.getJSONObject("run") == null
-          || !"stopped".equals(previous.getJSONObject("run").getString("status")))
-        throw new AgentHttpException(409, "SESSION_BUSY", "A retrieval run is active");
-    }
-    var original = store.retrieval(id, context.owner()).getJSONObject("input");
-    if (context.callerId() != null) {
-      var callerInput =
-          store.caller(context.callerId(), context.owner(), false).getJSONObject("input");
-      var allowed = callerInput.getList("classNames", String.class);
-      var originalClasses = original.getList("classNames", String.class);
-      if (!allowed.isEmpty()
-          && (originalClasses == null
-              || originalClasses.isEmpty()
-              || !allowed.containsAll(originalClasses)))
-        throw new AgentHttpException(
-            403, "FORBIDDEN", "The prior retrieval exceeds this caller scope");
-      applyCallerUserQuotes(original, callerInput);
-    }
-
-    var accepted =
-        store.admit(
-            id,
-            key,
-            context.owner(),
-            original,
-            request,
-            context.callerId(),
-            false,
-            timeout(request),
-            context.expiresAt(),
-            true,
-            context.language());
-    long cursor = accepted.run().getLongValue("result_after");
-    if (!accepted.replayed()) launch(id, key, original, context);
-    return poll(id, cursor, context.owner());
-  }
-
-  public boolean message(
-      String session, String key, String message, OntologyAgentAccess.Context context)
-      throws Exception {
-    var replayed = new java.util.concurrent.atomic.AtomicBoolean();
-    admitOnce(
-        key,
-        session,
-        JSONObject.of("message", message),
-        context,
-        replayed,
-        () -> {
-          store.session(session, context.owner());
-          var existing =
-              store.rows(
-                  "SELECT * FROM ontology_agent_runs WHERE id=? AND session_id=?",
-                  uuid(key),
-                  uuid(session));
-          if (!existing.isEmpty()) {
-            replayed.set(true);
-            if (existing.get(0).getString("input_hash").isEmpty()) throw closed();
-            if (!message.equals(existing.get(0).getJSONObject("request").getString("message"))
-                || !Objects.equals(context.callerId(), existing.get(0).getString("caller_id")))
-              throw conflict("Message input changed");
-            return snapshot(session, key, context.owner());
-          }
-          var records = store.rows("SELECT * FROM ontology_retrievals WHERE id=?", uuid(session));
-          if (!records.isEmpty()) {
-            var latest = get(session, context.owner());
-            return answerWork(
-                session,
-                key,
-                JSONObject.of(
-                    "expectedRunId",
-                    latest.getString("runtimeRunId"),
-                    "expectedDecisionRevision",
-                    latest.getIntValue("decisionRevision"),
-                    "message",
-                    message),
-                context);
-          }
-          var input = scopedInput(JSONObject.of("question", message), context);
-
-          store.admit(
-              session,
-              key,
-              context.owner(),
-              input,
-              JSONObject.of("message", message, "timeoutSeconds", 600),
-              context.callerId(),
-              false,
-              600,
-              context.expiresAt(),
-              false,
-              context.language());
-          prepare(session, key, context);
-          return snapshot(session, key, context.owner());
-        });
-    return replayed.get();
+  public JSONObject prepareSteer(String session,String run,JSONObject message,OntologyAgentAccess.Context context) throws Exception {
+    store.run(session,run,context.owner());
+    if("agent-answer".equals(message.getString("kind")) && message.containsKey("replyTo")) store.confirmAnswer(session,run,context.owner(),message);
+    return JSONObject.of("accepted",true,"context",modelContext(session,run,context));
   }
 
   public JSONObject begin(String key, JSONObject body, OntologyAgentAccess.Context context) {
@@ -390,49 +248,10 @@ public class OntologyRetrievalService {
         "id", id, "sessionId", id, "runId", key, "expiresAt", a.run().getString("deadline"));
   }
 
-  private void launch(String id, String run, JSONObject input, OntologyAgentAccess.Context context) {
-    launching.add(run);
-    workers.submit(() -> {
-      try {
-        runtime.json(context.owner().domainId(), run, "/v1/sessions", "POST", Map.of(), id);
-        prepare(id, run, context);
-      } catch (Exception failure) {
-        try {
-          var existing = runtime.run(context.owner().domainId(), run);
-          store.update("UPDATE ontology_agent_runs SET runtime_admitted=true WHERE id=?", uuid(run));
-          reconcile(id, run, context.owner(), existing);
-        } catch (AgentHttpException missing) {
-          if (missing.status() == 404 || missing.status() == 410) admissionFailed(id,run,context.owner(),failure.getMessage());
-        } catch (Exception uncertain) {
-          LOG.warn("Retriever admission awaits reconciliation: {}", run, uncertain);
-        }
-      } finally { launching.remove(run); }
-    });
-    bindings.start(id, run, input, context);
-  }
-
   private void admissionFailed(String id,String run,Owner owner,String error) {
     String message=error==null ? "Retriever admission failed" : error;
     store.update("UPDATE ontology_agent_runs SET open=false,admission_error=? WHERE id=? AND runtime_admitted=false",message,uuid(run));
     results.publish(id,run,owner,"retriever",run,JSONObject.of("answer","","run",null,"error",message,"datasets",new JSONArray()));
-  }
-
-  public JSONObject poll(String id,long after,Owner owner) {
-    var record=store.retrieval(id,owner);
-    var row=store.run(id,record.getString("current_run_id"),owner);
-    var deliveries=results.after(id,after,owner);
-    long cursor=deliveries.isEmpty()?after:deliveries.get(deliveries.size()-1).getLongValue("cursor");
-    var observed=row.getJSONObject("observed_state");
-    boolean delivered = !store.rows("SELECT 1 AS delivered FROM ontology_retrieval_deliveries WHERE run_id=? AND source='retriever'",uuid(row.getString("id"))).isEmpty();
-    // A stopped run that still owes its delivery is finished by the recovery sweep, not by this read.
-    boolean pending = !row.getBooleanValue("external") && !delivered;
-    var response = JSONObject.of("id",id,"roundId",row.getString("id"),"cursor",cursor,"deliveries",deliveries,
-        "decisionRevision",row.getIntValue("decision_revision"),"runtimeSessionId",row.getBooleanValue("runtime_admitted")?id:null,
-        "runtimeRunId",row.getBooleanValue("runtime_admitted")?row.getString("id"):null,
-        "run",observed==null?null:state(observed),"pending",JSONObject.of("retriever",pending,"bindings",bindings.pending(id,owner)));
-    response.put("bindings",bindings.snapshot(id,row.getString("id"),owner));
-    response.put("qualityTasks",tasks.qualityReferences(id,row.getString("id"),owner));
-    return response;
   }
 
   public JSONObject cancelRetriever(String id,String expected,Owner owner) throws Exception {
@@ -443,20 +262,17 @@ public class OntologyRetrievalService {
       if (!expected.equals(current.getString("current_run_id"))) throw conflict("Retrieval round changed");
       store.closeRun(id,expected,owner); return null;
     });
-    cancelWork(id,expected,owner);
-    return poll(id,results.cursor(id,owner),owner);
+    store.update("UPDATE ontology_agent_runs SET request=request || '{\"modelCancelled\":true}'::jsonb WHERE id=?",uuid(expected));
+    grants.revoke(owner.domainId(),expected);
+    runtime.json(owner.domainId(),expected,"/v1/channel/runs/"+expected+"/stop-model","POST",Map.of(),null);
+    if(!store.run(id,expected,owner).getBooleanValue("runtime_admitted")) results.publish(id,expected,owner,"retriever",expected,JSONObject.of("answer","","run",null,"datasets",new JSONArray()));
+    return JSONObject.of("accepted",true,"sessionId",id,"runId",expected);
   }
 
-  private void prepare(String id, String runId, OntologyAgentAccess.Context context)
-      throws Exception {
-    try {
-      var record = store.retrieval(id, context.owner());
-      var input = record.getJSONObject("input");
-      var row = store.run(id, runId, context.owner());
-      long deadline = Instant.parse(row.getString("deadline")).toEpochMilli();
-      String grant =
-          access.exploration(
-              context, id, id, runId, deadline, input.getList("classNames", String.class));
+  private String modelContext(String id,String runId,OntologyAgentAccess.Context context) throws Exception {
+    var record=store.retrieval(id,context.owner());
+    var input=record.getJSONObject("input");
+    var row=store.run(id,runId,context.owner());
       var prior = new JSONArray();
       var ids = new LinkedHashSet<>(input.getList("previousDatasetIds", String.class));
       for (var old :
@@ -501,7 +317,7 @@ public class OntologyRetrievalService {
               "question",
               input.getString("question"),
               "userQuotes",
-              input.get("userQuotes"),
+              row.getJSONObject("request").get("userQuotes"),
               "overview",
               scopedOverview(context.access(), input.getList("classNames", String.class)),
               "knowledge",
@@ -516,58 +332,32 @@ public class OntologyRetrievalService {
               record.get("decisions"),
               "answer",
               row.getJSONObject("request").getString("message"));
-      definitions.publish();
-      var values =
-          JSONObject.of(
-              "ONTOMATO_ONTOLOGY_URL", runtime.ontologyUrl(), "ONTOMATO_RETRIEVAL_ID", id);
-      var secrets =
-          JSONObject.of(
-              "ONTOMATO_TK",
-              grant);
-      if (context.apiKey() != null) secrets.put("ONTOMATO_API_KEY", context.apiKey());
-      store.transaction(() -> store.gate(id, runId, context.owner()));
-      runtime.json(
-          context.owner().domainId(),
-          runId,
-          "/v1/sessions/" + id + "/runs",
-          "POST",
-          JSONObject.of(
-              "language",
-              context.language(),
-              "input",
-              JSONObject.of(
-                  "role",
-                  "user",
-                  "content",
-                  AgentJson.json(user),
-                  "timestamp",
-                  Instant.parse(row.getString("created_at")).toEpochMilli()),
-              "definition",
-              definitions.definition(context.owner().domainId(), context.language(), deadline - System.currentTimeMillis()),
-              "environment",
-              JSONObject.of("values", values, "secrets", secrets)),
-          runId);
-      store.update("UPDATE ontology_agent_runs SET runtime_admitted=true WHERE id=?", uuid(runId));
-    } catch (Exception failure) {
-      try {
-        runtime.run(context.owner().domainId(), runId);
-      } catch (AgentHttpException absent) {
-        if (absent.status() == 404) {
-          store.closeRun(id, runId, context.owner());
-          runtime.json(
-              context.owner().domainId(),
-              runId,
-              "/v1/sessions/" + id + "/run-intents/" + runId + "/cancel",
-              "POST",
-              Map.of(),
-              null);
-          grants.revoke(context.owner().domainId(), runId);
-        }
-      } catch (Exception unavailable) {
-        failure.addSuppressed(unavailable);
-      }
-      throw failure;
+    return AgentJson.json(user);
+  }
+  private JSONObject runtimeRequest(String id,String runId,JSONObject message,OntologyAgentAccess.Context context) throws Exception {
+    var record=store.retrieval(id,context.owner());
+    var input=record.getJSONObject("input");
+    var row=store.run(id,runId,context.owner());
+    long deadline=Instant.parse(row.getString("deadline")).toEpochMilli();
+    String grant=access.exploration(context,id,id,runId,deadline,input.getList("classNames",String.class));
+    definitions.publish();
+    var definition=definitions.definition(context.owner().domainId(),context.language(),deadline-System.currentTimeMillis());
+    definition.put("context",modelContext(id,runId,context));
+    store.transaction(() -> store.gate(id,runId,context.owner()));
+    return JSONObject.of("language",context.language(),"input",message,"definition",definition,
+      "environment",JSONObject.of("values",JSONObject.of("ONTOMATO_ONTOLOGY_URL",runtime.ontologyUrl(),"ONTOMATO_RETRIEVAL_ID",id),"secrets",JSONObject.of("ONTOMATO_TK",grant)));
+  }
+
+  private Object scopedOverview(QueryAccessService.Access access, List<String> classNames) {
+    var value = JSONObject.from(ontology.overview(access));
+    if (classNames != null && !classNames.isEmpty()) {
+      value.put("classes", value.getJSONArray("classes").stream()
+          .map(JSONObject::from).filter(c -> classNames.contains(c.getString("name"))).toList());
+      var relationships = value.getJSONArray("relationships");
+      if (relationships != null) value.put("relationships", relationships.stream().map(JSONObject::from)
+          .filter(r -> classNames.contains(r.getString("from")) && classNames.contains(r.getString("to"))).toList());
     }
+    return value;
   }
 
   public JSONObject get(String id, Owner owner) throws Exception {
@@ -719,6 +509,14 @@ public class OntologyRetrievalService {
     }
   }
 
+  public List<JSONObject> deliveries(String session,String run,Owner owner) { return results.forRun(session,run,owner); }
+  public void cancelProvider(String session,String run,Owner owner) {
+    store.closeRun(session,run,owner);
+    store.update("UPDATE ontology_agent_runs SET request=request - 'modelCancelled' WHERE id=?",uuid(run));
+    bindings.cancel(session,run,owner);
+    grants.revoke(owner.domainId(),run);
+  }
+
   public JSONObject cancel(String id, String runId, Owner owner) throws Exception {
     for(var run:store.rows("SELECT id FROM ontology_agent_runs WHERE session_id=?",uuid(id)))
       bindings.cancel(id,run.getString("id"),owner);
@@ -790,28 +588,6 @@ public class OntologyRetrievalService {
     return new QueryAccessService.GrantUser(owner.userId(), owner.domainId());
   }
 
-  public void closeCaller(String id, Owner owner) throws Exception {
-    store.closeCaller(id, owner);
-    // Retry unfinished cancellation even when the scope was already closed.
-    for (var link : store.callerRuns(id, owner)) {
-      String session = link.getString("retrievalId"), run = link.getString("runId");
-      bindings.cancel(session, run, owner);
-      if (run.equals(store.retrieval(session, owner).getString("current_run_id")))
-        cancelWork(session, run, owner);
-    }
-  }
-
-  private Object scopedOverview(QueryAccessService.Access access, List<String> classNames) {
-    var value = JSONObject.from(ontology.overview(access));
-    if (classNames != null && !classNames.isEmpty()) {
-      value.put("classes", value.getJSONArray("classes").stream()
-          .map(JSONObject::from).filter(c -> classNames.contains(c.getString("name"))).toList());
-      var relationships = value.getJSONArray("relationships");
-      if (relationships != null) value.put("relationships", relationships.stream().map(JSONObject::from)
-          .filter(r -> classNames.contains(r.getString("from")) && classNames.contains(r.getString("to"))).toList());
-    }
-    return value;
-  }
 
   public JSONObject prepareOutput(
       String id, String runId, String key, JSONObject body, OntologyAgentAccess.Context context) {
@@ -853,7 +629,7 @@ public class OntologyRetrievalService {
         JSONObject.of("submissionId", key, "recipe", recipe, "sourceAnalysis", body.get("sourceAnalysis"));
     jobs.start(
         key,
-        context.access().user(),
+        context.access(),
         "output",
         jobInput,
         session ->
@@ -973,10 +749,11 @@ public class OntologyRetrievalService {
         JSONObject.of(
             "id",
             qc,
+            "sourceRunId",runId,
             "question",
             input.getString("question"),
             "userQuotes",
-            input.get("userQuotes"),
+            row.getJSONObject("request").get("userQuotes"),
             "confirmedDecisions",
             confirmedDecisions(retrievalRecord.getJSONArray("decisions")),
             "programs",
@@ -987,7 +764,8 @@ public class OntologyRetrievalService {
             input.getOrDefault("classNames", List.of())),
         subject(owner),
         language == null ? "en" : language);
-    store.update("UPDATE ontology_agent_runs SET qc_admitted=true WHERE id=?", uuid(runId));
+    store.update("UPDATE ontology_agent_runs SET qc_admitted=true WHERE id=?",uuid(runId));
+    changes.run(id,runId,owner,"quality");
   }
 
   @Scheduled(fixedDelay = 500)
@@ -1013,7 +791,7 @@ public class OntologyRetrievalService {
                 + " (r.external=false AND r.observed_state->>'status'='stopped' AND NOT EXISTS"
                 + " (SELECT 1 FROM ontology_retrieval_deliveries d WHERE d.run_id=r.id AND d.source='retriever')))")) {
       String id = row.getString("id");
-      if (preparing.containsKey(id) || launching.contains(id) || !observing.add(id)) continue;
+      if (launching.contains(id) || !observing.add(id)) continue;
       workers.submit(
           () -> {
             try (var ignored = io.ontomato.dataengine.logging.ServiceLogContext.open(java.util.Map.of(
@@ -1035,7 +813,10 @@ public class OntologyRetrievalService {
               if (row.getBooleanValue("cancel_requested") && !row.getBooleanValue("cancel_confirmed")) cancelWork(session, id, owner);
               // Only the lifecycle view is read each pass; the full snapshot once the run has stopped.
               var view = runtime.status(owner.domainId(), id);
-              if(!row.getBooleanValue("runtime_admitted")) store.update("UPDATE ontology_agent_runs SET runtime_admitted=true WHERE id=?",uuid(id));
+              if(!row.getBooleanValue("runtime_admitted")) {
+                store.update("UPDATE ontology_agent_runs SET runtime_admitted=true WHERE id=?",uuid(id));
+                changes.run(session,id,owner,"progress");
+              }
               if ("running".equals(view.getString("status"))) {
                 if (Instant.parse(row.getString("deadline")).toEpochMilli() <= System.currentTimeMillis()) {
                   store.closeRun(session, id, owner);
@@ -1049,6 +830,10 @@ public class OntologyRetrievalService {
             } catch (AgentHttpException error) {
               if (error.status() == 404) {
                 try {
+                  if(row.getJSONObject("request").getBooleanValue("agentChannel") && !row.getBooleanValue("runtime_admitted")) {
+                    var intent=runtime.json(row.getString("domain_id"),id,"/v1/channel/sessions/"+row.getString("session_id")+"/intents/"+id,"GET",null,null);
+                    if("starting".equals(intent.getString("status"))) return;
+                  }
                   if(!row.getBooleanValue("runtime_admitted")) admissionFailed(row.getString("session_id"),id,owner(row),"Retriever admission was interrupted");
                   // An admitted run the runtime no longer has can never deliver: close the round with that failure.
                   else results.publish(row.getString("session_id"),id,owner(row),"retriever",id,JSONObject.of("answer","","run",null,

@@ -1,3 +1,4 @@
+import { agentChannelRouter } from "../api/routes/agent-channel";
 import { createHealthRouter } from "../api/routes/health";
 import { appBuilderRouter } from "../api/routes/app-builder";
 import { workspacePreviewRouter, workspaceRouter, mountHostedStatic } from "../api/routes/workspaces";
@@ -182,6 +183,7 @@ export function createWorkbenchApp(): Express {
   app.use("/api/workspaces", workspacePreviewRouter);
   app.use(unwrapCallbackCredential);
   app.use(["/api/observe/logs", "/api/observe/runtime-logs"], serviceLogAuthResponse);
+  app.use("/internal/agent-channel", agentChannelRouter);
   app.post("/internal/schedule-applications/:appId/runs/status", scheduleExecutionStatus);
   app.use("/api", identity.authenticate);
   app.use("/api", (req, _res, next) => {

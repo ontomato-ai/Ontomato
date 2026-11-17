@@ -308,7 +308,7 @@ class QueryRuntimeBoundaryTest {
             sessions,
             runtime,
             new org.springframework.jdbc.datasource.DataSourceTransactionManager(
-                jdbc.getDataSource()));
+                jdbc.getDataSource()),mock(io.ontomato.dataengine.service.agent.AgentChannelChanges.class));
     jobs.initialize();
     String id = UUID.randomUUID().toString();
     var count = new java.util.concurrent.atomic.AtomicInteger();

@@ -21,7 +21,7 @@ beforeEach(()=>{vi.resetAllMocks();});
 it('limits a Profile run to its projection tools without passing human business credentials or inherited skills',async()=>{
   mocks.profile.mockResolvedValue({id:'profile',principalId:'agent',releaseId:'release',instructions:'Instructions',tools:[],contextViews:[]});
   mocks.principal.mockResolvedValue({token:'agent-execution'});mocks.callback.mockReturnValue({value:'sealed-callback'});
-  const request={a:{skills:[{name:'inherited'}],enabled_mcp_service_ids:['inherited'],model_selection:{modelId:null}},session:{id:'session',agent_id:'agent'},turn:{id:'run',created_at:new Date(),retrieval_scope_id:'scope',class_names:[]},message:'Question',owner:{domainId:'domain',userId:'human'},credentials:{token:'human-secret',locale:'en'}} as unknown as AssistantPreparation;
+  const request={a:{skills:[{name:'inherited'}],enabled_mcp_service_ids:['inherited'],model_selection:{modelId:null}},session:{id:'session',agent_id:'agent'},turn:{id:'run',created_at:new Date(),retrieval_scope_id:'scope',class_names:[]},message:'Question',input:{role:'user',content:'Question',timestamp:1},ontologyContext:null,owner:{domainId:'domain',userId:'human'},credentials:{token:'human-secret',locale:'en'}} as unknown as AssistantPreparation;
   const run=await prepareAnalystRun(request);
   expect(run.definition.skills).toEqual([]);expect(run.definition.externalMcp).toEqual([]);
   expect(run.definition.toolSurface).toBe('product');

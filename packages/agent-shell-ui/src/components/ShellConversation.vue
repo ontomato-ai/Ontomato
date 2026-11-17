@@ -6,6 +6,7 @@ import type { ShellFeedbackPort } from "../types";
 import { shellContextKey } from "../context";
 import type { ConversationItem } from "../view";
 import ShellComposer from "./ShellComposer.vue";
+import ShellQuestions from "./ShellQuestions.vue";
 import ShellResponse from "./ShellResponse.vue";
 
 const props = defineProps<{
@@ -21,6 +22,8 @@ const props = defineProps<{
   sendError: string | null;
   pendingInput: string | null;
   busy: boolean;
+  /** A message is on its way: the composer holds the next one until it has arrived. */
+  sending: boolean;
   feedback?: ShellFeedbackPort;
 }>();
 const emit = defineEmits<{ send: [text: string]; stop: []; retry: []; loadOlder: [] }>();
@@ -152,8 +155,9 @@ function send(text: string) {
       <div class="empty-inner">
         <h1 class="greeting">{{ labels.greeting }}</h1>
         <p v-if="agent?.description" class="agent-description">{{ agent.description }}</p>
+        <ShellQuestions />
         <div v-if="$slots['composer-context']" class="composer-context"><slot name="composer-context" /></div>
-        <ShellComposer :busy="busy" :disabled="!agent?.enabled" autofocus :labels="labels" @send="send" @stop="emit('stop')" />
+        <ShellComposer :busy="busy" :sending="sending" :disabled="!agent?.enabled" autofocus :labels="labels" @send="send" @stop="emit('stop')" />
         <p v-if="sendError" class="send-error" role="alert"><CircleAlert :size="14" />{{ sendError }}</p>
       </div>
     </div>
@@ -184,8 +188,9 @@ function send(text: string) {
           </div>
           <template v-for="item in items" :key="item.key">
             <div v-if="item.kind === 'user'" class="user-turn">
-              <div class="user-bubble">{{ item.text }}</div>
+              <div class="user-bubble">{{ item.answer ? labels.answered(item.text) : item.text }}</div>
             </div>
+            <div v-else-if="item.kind === 'notification'" class="agent-notification" :class="{ failed: item.error }" :role="item.error ? 'alert' : 'note'"><CircleAlert :size="14" /><span>{{ item.text }}</span></div>
             <ShellResponse v-else :item="item" :session-id="sessionId" :feedback="feedback" />
           </template>
           <div v-if="pendingInput !== null" class="user-turn">
@@ -207,14 +212,18 @@ function send(text: string) {
           <ArrowDown :size="16" />
         </button>
         <p v-if="sendError" class="send-error" role="alert"><CircleAlert :size="14" />{{ sendError }}</p>
+        <ShellQuestions />
         <div v-if="$slots['composer-context']" class="composer-context"><slot name="composer-context" /></div>
-        <ShellComposer :busy="busy" :disabled="!agent?.enabled" :labels="labels" @send="send" @stop="emit('stop')" />
+        <ShellComposer :busy="busy" :sending="sending" :disabled="!agent?.enabled" :labels="labels" @send="send" @stop="emit('stop')" />
       </div>
     </template>
   </div>
 </template>
 
 <style scoped>
+.agent-notification { display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px; margin: 12px 0; border-left: 2px solid var(--el-color-info); color: var(--el-text-color-secondary); font-size: var(--text-sm); white-space: pre-wrap; }
+.agent-notification.failed { border-color: var(--el-color-danger); color: var(--el-color-danger); }
+.agent-notification svg { flex-shrink: 0; margin-top: 3px; }
 .conversation {
   position: relative;
   display: flex;

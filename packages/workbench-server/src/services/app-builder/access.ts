@@ -21,6 +21,7 @@ export async function assertAppBuilderAccess(credentials: AssistantCredentials):
     );
     applications = navigationResponseSchema.parse(JSON.parse(response.text)).data;
   } catch (error) {
+    if (error instanceof HttpError && (error.status === 401 || error.status === 403)) throw error;
     throw new HttpError(
       502,
       "Unable to read the application catalog",

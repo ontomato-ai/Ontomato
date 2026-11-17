@@ -2,30 +2,53 @@ import { Agent } from "undici";
 import { logHeaders } from "@ontomato/service-logging";
 import { createLogger } from "../logging/logger";
 import { getLocale, tApp } from "../i18n";
+import { HttpError } from "./errors";
 
 const logger = createLogger("backend-client");
 // Disables the underlying headers/body timeouts; ordinary requests and SSE are each controlled by their own AbortSignal.
 export const backendDispatcher = new Agent({ headersTimeout: 0, bodyTimeout: 0 });
 
-export class AuthFailedError extends Error {
+function backendFailure(detail: string): { message?: string; code?: string } {
+  try {
+    const parsed = JSON.parse(detail);
+    const error = parsed?.error && typeof parsed.error === "object" ? parsed.error : parsed;
+    return {
+      message: typeof error?.message === "string" && error.message.trim() ? error.message : undefined,
+      code: typeof error?.code === "string" ? error.code : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+export class AuthFailedError extends HttpError {
+  readonly detail: string;
   constructor(
     message: string,
-    readonly status?: number,
-    readonly detail = "",
-    readonly headers?: Headers
+    status = 401,
+    detail = "",
+    readonly headers?: Headers,
+    detailLimit = detail.length,
   ) {
-    super(message);
+    const failure = backendFailure(detail);
+    super(status, failure.message ?? message, failure.code ?? "UNAUTHORIZED");
+    this.detail = detail.slice(0, detailLimit);
     this.name = "AuthFailedError";
   }
 }
 
-export class BackendResponseError extends Error {
+export class BackendResponseError extends HttpError {
+  readonly detail: string;
   constructor(
-    readonly status: number,
-    readonly detail: string,
-    readonly headers?: Headers
+    status: number,
+    detail: string,
+    readonly headers?: Headers,
+    detailLimit = detail.length,
   ) {
-    super(tApp("foundation.backend.httpError", { status, detail }));
+    const failure = backendFailure(detail);
+    super(status, failure.message ?? tApp("foundation.backend.httpError", { status, detail: "" }),
+      failure.code ?? (status === 403 ? "FORBIDDEN" : undefined));
+    this.detail = detail.slice(0, detailLimit);
     this.name = "BackendResponseError";
   }
 }
@@ -156,16 +179,17 @@ type BufferedBackendResponse = Pick<Response, "headers" | "status" | "statusText
 export async function checkBackendResponse(response: Response, detailLimit = 200): Promise<void> {
   if (response.ok) return;
   // The received HTTP status decides the classification; a body read failure only affects the error detail.
-  const detail = String(await response.text().catch(() => "")).slice(0, detailLimit);
-  if (response.status === 401 || response.status === 403) {
+  const detail = String(await response.text().catch(() => ""));
+  if (response.status === 401) {
     throw new AuthFailedError(
       tApp("foundation.backend.tokenExpired", { status: response.status }),
       response.status,
       detail,
-      response.headers
+      response.headers,
+      detailLimit,
     );
   }
-  throw new BackendResponseError(response.status, detail, response.headers);
+  throw new BackendResponseError(response.status, detail, response.headers, detailLimit);
 }
 
 export function backendGet(

@@ -1,3 +1,4 @@
+import { agentRunContextSchema, agentNotificationSchema, agentAuthoritySchema, agentPendingQuestionSchema } from "./agent-channel";
 import { workspaceCommitSchema } from "./workspaces";
 import { serviceLogCorrelationSchema } from "./service-logging";
 import { z } from "zod";
@@ -49,6 +50,7 @@ export const runtimeAgentDefinitionSchema = z
   .object({
     agentId: runtimeKeySchema.optional(),
     systemPrompt: z.string(),
+    context: z.string().optional(),
     modelId: modelSelectionSchema.shape.modelId,
     skills: z.array(runtimeSkillRefSchema),
     sandbox: z.object({ limits: codeLimitsSchema }).strict(),
@@ -82,7 +84,9 @@ export const runtimeStartRunRequestSchema = z
   .object({
     language: runtimeKeySchema,
     definition: runtimeAgentDefinitionSchema,
-    input: runtimeUserMessageSchema,
+    input: z.union([runtimeUserMessageSchema, agentNotificationSchema]),
+    channel: agentRunContextSchema.optional(),
+    authority: agentAuthoritySchema.optional(),
     environment: runtimeEnvironmentSchema,
   })
   .strict();
@@ -116,6 +120,7 @@ const runtimeRunFields = {
   answerMessageId: runtimeIdSchema.nullable(),
   /** Commit created by this run, never the workspace HEAD from another run. */
   workspaceCommit: workspaceCommitSchema.nullable(),
+  channel: agentRunContextSchema.optional(),
   resolvedSkills: z.array(runtimeRegisteredSkillSchema),
   environment: z.object({
     values: z.record(z.string()),
@@ -160,12 +165,13 @@ export const runtimeCreateSessionResponseSchema = z
   })
   .strict();
 
-/** Raw settled history is append-only. Compaction never replaces these rows. */
+/** Inputs receive an ID and sequence on receipt; runId stays null until a safe consumption boundary. */
 export const runtimeMessageRecordSchema = z
   .object({
     id: runtimeIdSchema,
-    runId: runtimeIdSchema,
+    runId: runtimeIdSchema.nullable(),
     messageSeq: runtimeSequenceSchema,
+    contextSeq: runtimeSequenceSchema.nullable(),
     message: runtimeSettledMessageSchema,
   })
   .strict();
@@ -174,6 +180,7 @@ export const runtimeRunSnapshotSchema = z
     run: runtimeRunSchema,
     cursor: runtimeCursorSchema,
     messages: z.array(runtimeMessageRecordSchema),
+    pendingQuestions: z.array(agentPendingQuestionSchema),
     // Latest full live partials through cursor, not deltas to append to settled messages.
     pendingMessages: z.array(
       z.object({ id: runtimeIdSchema, message: runtimeMessageSchema }).strict(),
@@ -187,6 +194,7 @@ export const runtimeSessionSnapshotSchema = z
     session: runtimeSessionSchema,
     // Includes settled messages of the active run; merge using message IDs, never array offsets.
     messages: z.array(runtimeMessageRecordSchema),
+    pendingQuestions: z.array(agentPendingQuestionSchema),
     latestRun: runtimeRunSnapshotSchema.nullable(),
   })
   .strict();
@@ -274,3 +282,5 @@ export type RuntimeSessionStatusesRequest = z.infer<
 export type RuntimeSessionStatusesResponse = z.infer<
   typeof runtimeSessionStatusesResponseSchema
 >;
+
+export type RuntimeMessageRecord = z.infer<typeof runtimeMessageRecordSchema>;

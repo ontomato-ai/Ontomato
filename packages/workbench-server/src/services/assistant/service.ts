@@ -1,3 +1,12 @@
+import { agentHostSendResultSchema, type AgentHostSendRequest } from "@ontomato/contracts/agent-host";
+import { resolveLocale } from "../../i18n";
+import { assertAppBuilderAccess } from "../app-builder/access";
+import { ChannelProcessClient } from "../agent-host/process";
+import { agentProfileForPrincipal } from "../product-assets/agent-profile";
+import { assistantOntologyContext } from "./context";
+import { openAgentCaller } from "../agent-host/caller";
+import type { AgentPrepareRequest, AgentRunContext } from "@ontomato/contracts/agent-channel";
+import type { RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
 import { prepareAnalystRun } from "./prepare";
 import { prepareAppBuilderRun } from "../app-builder/prepare";
 import {isAppBuilderKind} from '../app-builder/definition';
@@ -31,8 +40,8 @@ import {
   messageText,
   type AssistantCredentials,
 } from "../../platform/agent-runtime/runtime";
-import { OntologyRetrievalClient, readCallerTasks } from "./ontology-retrieval";
-import { agentTasksSnapshotSchema } from "@ontomato/contracts/agent-tasks";
+import { OntologyRetrievalClient } from "./ontology-retrieval";
+import { agentTasksSnapshotSchema, type AgentTasksSnapshot } from "@ontomato/contracts/agent-tasks";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
 import { createLogger } from "../../logging/logger";
@@ -182,6 +191,7 @@ export const assistantService = {
       s = await new RuntimeClient(owner.domainId, undefined, owner.userId).session(id);
     return {
       session: sessionView(await assistantStore.session(row.id, owner), s.latestRun?.run ?? null),
+      pendingQuestions: s.pendingQuestions,
       messages: publicMessages(s.messages),
       latestRun: s.latestRun ? publicSnapshot(s.latestRun) : null,
     };
@@ -201,90 +211,64 @@ export const assistantService = {
    * ontology service ran for that reply, so the turn's run is their root. Settled while nothing will change before the
    * conversation's next run: the latest turn has been settled and the ontology service owes nothing.
    */
-  async tasks(sessionId: string, owner: AssistantOwner) {
-    await assistantStore.session(sessionId, owner);
-    const turns = await assistantStore.turns(sessionId);
-    if (!turns.length || await assistantStore.isBuilderRun(turns[0].id, owner))
-      return { snapshot: { sessionId, tasks: [], qualityResults: [] }, settled: true };
-    const runs = new Map(turns.map((turn) => [turn.retrieval_scope_id, turn.id]));
-    const read = await readCallerTasks(owner, [...runs.keys()]);
-    const snapshot = agentTasksSnapshotSchema.parse({
-      sessionId,
-      tasks: read.tasks.map(({ callerId, ...task }) => ({ ...task, root: { sessionId, runId: runs.get(callerId) } })),
-      qualityResults: read.qualityResults,
-    });
-    return { snapshot, settled: read.settled && turns.at(-1)!.settled };
+  async tasks(sessionId:string,owner:AssistantOwner,supplied?:AgentTasksSnapshot) {
+    await assistantStore.session(sessionId,owner);
+    return {snapshot:supplied ?? await this.channelTasks(sessionId,owner),settled:false};
+  },
+  async channelTasks(sessionId: string, owner: AssistantOwner) {
+    return agentTasksSnapshotSchema.parse(await new RuntimeClient(owner.domainId, undefined, owner.userId).request(`/v1/channel/sessions/${sessionId}/tasks`));
   },
   /** A retrieval task's own run, through the caller scope of the reply that delegated it. */
-  async taskProcess(sessionId: string, taskId: string, owner: AssistantOwner) {
-    const task = (await this.tasks(sessionId, owner)).snapshot.tasks.find((candidate) => candidate.id === taskId);
-    if (task?.kind !== "retrieval" || task.process.mode !== "inline") throw new HttpError(404, "Task process not found", "NOT_FOUND");
-    const turn = await assistantStore.turn(task.root.runId, owner);
-    return { client: new OntologyRetrievalClient(owner, turn.retrieval_scope_id), process: task.process };
+  async taskProcess(sessionId:string,taskId:string,owner:AssistantOwner) {
+    const task=(await this.tasks(sessionId,owner)).snapshot.tasks.find(task=>task.id===taskId);
+    if(task?.kind!=="agent" || task.process.mode!=="inline") throw new HttpError(404,"Task process not found","NOT_FOUND");
+    return {client:new ChannelProcessClient(owner,sessionId,taskId),process:task.process};
   },
-  /** What a turn owes after it ends: closing its child retrievals in the ontology service. Safe to repeat. */
-  async settleTurn(id: string, owner: AssistantOwner, credentials: AssistantCredentials = {}) {
-    if (!await assistantStore.isBuilderRun(id, owner)) await this.stopChildren(id, owner, credentials);
+  /** Parent completion records its own turn only; delegated executions retain their authorization. */
+  async settleTurn(id: string) { await assistantStore.settled(id); },
+  async cancelScope(id: string,owner: AssistantOwner,credentials: AssistantCredentials) {
+    if (!await assistantStore.isBuilderRun(id,owner)) await new OntologyRetrievalClient(owner,id).closeScope(credentials);
     await assistantStore.settled(id);
   },
-  async stopChildren(
-    id: string,
-    owner: AssistantOwner,
-    credentials: AssistantCredentials,
-  ) {
-    await new OntologyRetrievalClient(owner, id).close(credentials);
+  async prepare(body: AgentPrepareRequest, owner: AssistantOwner, credentials: AssistantCredentials): Promise<RuntimeStartRunRequest> {
+    const { sessionId, runId: id, input, authority } = body;
+    const { agent: a, ontologyContext } = await this.admitAgent(body.agent.agentId,owner,credentials,authority);
+    const context = isAppBuilderKind(a.kind) ? z.object({ workspaceId: z.string().uuid() }).strict().safeParse(body.context) : null;
+    if (context && !context.success) throw new HttpError(400,"App builder requires context.workspaceId containing an owned workspace UUID","CONTEXT_REQUIRED");
+    const workspace = context?.success ? context.data.workspaceId : undefined;
+    if (workspace) await new RuntimeClient(owner.domainId,undefined,owner.userId).request(`/v1/channel/sessions/${sessionId}/workspace`,"POST",{ workspaceId: workspace,ownerId: owner.userId });
+    const { row: session } = await assistantStore.create(sessionId,owner,a.id,"delegated",workspace);
+    const message = input.content;
+    const { row: turn } = await assistantStore.reserve(sessionId,id,message,owner,a.class_names);
+    const request = await withDomainSkills(owner.domainId,async () => {
+      const prepare = isAppBuilderKind(a.kind) ? prepareAppBuilderRun : prepareAnalystRun;
+      return prepare({ a,session,turn,message,input,inputId:body.inputId,ontologyContext,owner,credentials });
+    });
+    await assistantStore.admitted(id,message);
+    return { ...request,input,authority: { classNames: a.class_names,executionKind: isAppBuilderKind(a.kind) ? "build-test" : "live" } };
   },
-  async start(
-    sessionId: string,
-    id: string,
-    message: string,
-    owner: AssistantOwner,
-    credentials: AssistantCredentials,
-  ) {
-    const session = await assistantStore.session(sessionId, owner),
-      client = new RuntimeClient(owner.domainId, undefined, owner.userId);
-    const a = await assistantStore.agent(session.agent_id, owner);
-    if (!a.enabled)
-      throw new HttpError(409, "Agent disabled", "AGENT_DISABLED");
-    const { row: turn, replayed } = await assistantStore.reserve(
-      sessionId,
-      id,
-      message,
-      owner,
-      a.class_names,
-    );
-    if (replayed) {
-      try {
-        return {
-          snapshot: publicSnapshot(await this.readRun(sessionId, id, owner)),
-          replayed: true,
-        };
-      } catch (e) {
-        if (!(e instanceof HttpError && e.status === 404)) throw e;
-      }
+  async admitAgent(id: string, owner: AssistantOwner, credentials: AssistantCredentials, authority?: AgentRunContext["authority"]) {
+    const a = await assistantStore.agent(id,owner);
+    if (!a.enabled) throw new HttpError(409,"Agent disabled","AGENT_DISABLED");
+    if (authority?.executionKind === "build-test" && !isAppBuilderKind(a.kind)) throw new HttpError(403,"Build-test runs cannot delegate to a live agent","BUILD_TEST_FORBIDDEN");
+    if (authority?.classNames.length) {
+      a.class_names = a.class_names.length ? a.class_names.filter(name => authority.classNames.includes(name)) : authority.classNames;
+      if (!a.class_names.length) throw new HttpError(403,"No authorized classes in the delegated scope","FORBIDDEN");
     }
-    try {
-      await withDomainSkills(owner.domainId, async () => {
-        const prepare = isAppBuilderKind(a.kind) ? prepareAppBuilderRun : prepareAnalystRun;
-        const request = await prepare({ a, session, turn, message, owner, credentials });
-        await client.start(sessionId, id, request);
-      });
-    } catch (error) {
-      try {
-        const found = await client.run(id);
-        await assistantStore.admitted(id, message);
-        return { snapshot: publicSnapshot(found), replayed };
-      } catch (readError) {
-        if (readError instanceof HttpError && readError.status === 404) {
-          await this.settleTurn(id, owner, credentials);
-        }
-      }
-      if (error instanceof HttpError && error.status === 410)
-        throw new HttpError(404, "Run not found", "NOT_FOUND");
-      throw error;
-    }
-    await assistantStore.admitted(id, message);
-    return { snapshot: publicSnapshot(await client.run(id)), replayed };
+    if (isAppBuilderKind(a.kind)) await assertAppBuilderAccess(credentials);
+    const profile = isAppBuilderKind(a.kind) ? null : await agentProfileForPrincipal(owner,credentials,a.id);
+    const ontologyContext = isAppBuilderKind(a.kind) || profile ? null : await assistantOntologyContext(a,credentials);
+    return { agent: a,ontologyContext };
+  },
+  async send(sessionId: string, id: string, input: AgentHostSendRequest, owner: AssistantOwner, credentials: AssistantCredentials) {
+    const session = await assistantStore.session(sessionId, owner), a = await assistantStore.agent(session.agent_id, owner);
+    const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
+    const actor = await openAgentCaller(owner, credentials), agent = { providerId: "workbench", agentId: session.agent_id };
+    await client.request(`/v1/channel/sessions/${sessionId}/bind`, "POST", { agent, actor });
+    const channel: AgentRunContext = { agent, actor, authority: { classNames: a.class_names, executionKind: isAppBuilderKind(a.kind) ? "build-test" : "live" }, requestedBy: null, root: { session: { providerId: "workbench", sessionId }, runId: id } };
+    const accepted = agentHostSendResultSchema.omit({snapshot:true}).parse(await client.request(`/v1/channel/sessions/${sessionId}/runs`, "POST", { channel, credential: {token:credentials.token ?? null,apiKey:credentials.apiKey ?? null}, language: resolveLocale(credentials.locale), input: { role: "user", content: input.message, timestamp: Date.now() }, replyTo: input.replyTo, ...(session.workspace_id ? { context: { workspaceId: session.workspace_id } } : {}) }, id));
+    return agentHostSendResultSchema.parse({ ...accepted, snapshot: accepted.delivery.delivery === "run" && accepted.delivery.status === "running" ? publicSnapshot(await client.run(accepted.delivery.runId)) : null });
+
   },
   /**
    * The one place a turn is finished after it ends, and repaired after a lost start response: walks every
@@ -327,7 +311,7 @@ export const assistantService = {
           }
         }
       }
-      if (!view || view.status === "stopped") await this.settleTurn(turn.id, owner);
+      if (!view || view.status === "stopped") await this.settleTurn(turn.id);
     } catch (e) {
       logger.warn("Assistant turn reconciliation failed", {
         runId: turn.id,
@@ -362,7 +346,6 @@ export const assistantService = {
       if (runtime && runtime.run.sessionId !== sessionId)
         throw new HttpError(404, "Run not found");
     }
-    await this.settleTurn(id, owner, credentials);
     const c = new RuntimeClient(owner.domainId, undefined, owner.userId);
     await c.request(
       `/v1/sessions/${sessionId}/run-intents/${id}/cancel`,
@@ -393,7 +376,7 @@ export const assistantService = {
     for (const scope of scopes) {
       const ontology = new OntologyRetrievalClient(owner, scope.retrieval_scope_id);
       try {
-        await ontology.close();
+        await ontology.closeScope();
         for (const link of await ontology.links()) {
           if (removed.has(link.retrievalId)) continue;
           await ontology.delete(link.retrievalId);

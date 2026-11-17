@@ -1,10 +1,12 @@
+import { AgentChannel, type AgentProvider } from "./channel";
+import { agentNotificationSchema, type AgentRunIntent } from "@ontomato/contracts/agent-channel";
 import { Workspaces } from "./workspaces";
 import type { RuntimeSessionHistory, SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { ServiceLogStore, withServiceLogContext, getServiceLogContext, updateServiceLogContext } from "@ontomato/service-logging";
 import { runtimeLogging, runtimeLogger, runtimeDiagnostic } from "./logging";
 import { ArtifactFiles } from "./files";
 import { SessionSandbox } from "./sandbox";
-import { mkdir, chmod, readFile } from "node:fs/promises";
+import { mkdir, chmod, readFile, writeFile, rename } from "node:fs/promises";
 import { CodeExecutor } from "./code";
 import { signalUid, assertWorkerPolicy, type WorkerPolicy } from "./worker";
 import { randomUUID } from "node:crypto";
@@ -77,6 +79,7 @@ interface Active {
   toolShapes: Map<string, number>;
   // Arguments of the tool calls in progress: the end event does not carry them.
   toolArgs: Map<string, unknown>;
+  sealed: boolean;
 }
 /** Aborts a run on its own behalf with the reason the stop notice reports. */
 class RunStop extends Error {}
@@ -92,10 +95,12 @@ export interface RuntimeOptions {
   modelRuntimeToken?: string;
   modelSeed?: { baseUrl?: string; apiKey?: string; modelName?: string };
   eventBufferSize?: number;
+  agentProviders?: AgentProvider[];
 }
 
 /** Only the wire profile is persisted; provider diagnostics are deliberately not part of it. */
-function projectMessage(message: Message): RuntimeMessage {
+function projectMessage(message: Message | RuntimeMessage): RuntimeMessage {
+  if (message.role === "notification") return agentNotificationSchema.parse(message);
   const shape =
     message.role === "assistant"
       ? runtimeAssistantMessageSchema.shape
@@ -119,6 +124,7 @@ function key(scope: Scope, id: string) {
 }
 
 export class AgentRuntime {
+  readonly channel: AgentChannel;
   readonly workspaces: Workspaces;
   readonly store: RuntimeStore;
   readonly logs: ServiceLogStore;
@@ -135,6 +141,7 @@ export class AgentRuntime {
   constructor(readonly options: RuntimeOptions) {
     modelKeySealKey(options.modelRuntimeToken);
     this.store = options.store;
+    this.channel = new AgentChannel(this);
     this.logs = new ServiceLogStore("agent-runtime", this.store.connectionString, this.store.schema, runtimeLogging.warn);
     this.mcp = new RuntimeMcpServices(this.store);
     this.models = new RuntimeModelSettings(this.store, options.modelRuntimeToken, options.modelSeed);
@@ -159,7 +166,7 @@ export class AgentRuntime {
       this.files,
     );
   }
-  private async locked<T>(
+  async locked<T>(
     scope: Scope,
     sessionId: string,
     fn: () => Promise<T>,
@@ -210,6 +217,7 @@ export class AgentRuntime {
     runId: string,
     correlationId: string,
     body: unknown,
+    reserved = false,
   ) {
     const request = runtimeStartRunRequestSchema.parse(body);
     const fingerprint = digest({
@@ -230,7 +238,7 @@ export class AgentRuntime {
       let skills: InstalledSkill[] = [];
       // Read-only checks for unusable dependencies belong before admission, so a new run fails with
       // 422/503 instead of starting and reporting the same problem as a stopped run.
-      if (!admitted.rowCount) {
+      if (!admitted.rowCount || reserved) {
         config = await this.models.resolve(scope.domainId, request.definition.modelId);
         assertWorkerPolicy(this.worker);
         skills = await Promise.all(
@@ -253,6 +261,7 @@ export class AgentRuntime {
         correlationId,
         language: request.language,
         definition: request.definition,
+        channel: request.channel,
         createdAt: new Date().toISOString(),
         finishedAt: null,
         stopReason: null,
@@ -272,6 +281,7 @@ export class AgentRuntime {
         run,
         fingerprint,
         request.input,
+        reserved,
       );
       if (accepted.replayed) {
         const persisted = await this.store.pool.query(`SELECT log_context FROM ${this.store.table("runs")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [scope.hostId, scope.domainId, runId]);
@@ -298,6 +308,7 @@ export class AgentRuntime {
         toolCalls: 0,
         toolShapes: new Map(),
         toolArgs: new Map(),
+        sealed: false,
       };
       // Register before any further await so a cancel that follows the admission response always
       // finds this run instead of returning it still running.
@@ -313,7 +324,7 @@ export class AgentRuntime {
         await withServiceLogContext(logContext, () => this.execute(active, config!, request, skills));
       })().finally(() => this.active.delete(key(scope, runId)));
       void active.done.catch(() =>
-        withServiceLogContext(logContext, () => runtimeLogger.error("Runtime persistence failed; run will be interrupted on restart")),
+        withServiceLogContext(logContext, () => runtimeLogger.error("Runtime execution finalization failed")),
       );
       try {
         await loading;
@@ -323,6 +334,35 @@ export class AgentRuntime {
       }
       return accepted;
     });
+  }
+  async importAgentFile(scope:Scope,runId:string,taskId:string,file:{id:string;name:string},data:Buffer) {
+    const sandbox=this.active.get(key(scope,runId))!.sandbox!;
+    const relative=path.posix.join("outputs","agents",taskId,`${file.id}-${file.name}`),destination=path.join(sandbox.workspace,relative),temporary=destination+`.${randomUUID()}.download`;
+    await mkdir(path.dirname(destination),{recursive:true});
+    await writeFile(temporary,data);await rename(temporary,destination);
+    return relative;
+  }
+  async updateHostContext(scope: Scope,runId: string,context: string) {
+    const active=this.active.get(key(scope,runId))!;
+    active.run.definition.context=context;
+    await this.store.pool.query(`UPDATE ${this.store.table("runs")} SET run=jsonb_set(run,'{definition,context}',$4::jsonb) WHERE host_id=$1 AND domain_id=$2 AND id=$3`,[scope.hostId,scope.domainId,runId,JSON.stringify(context)]);
+  }
+  seal(scope: Scope, runId: string) { this.active.get(key(scope, runId))!.sealed = true; }
+  acceptsInput(scope: Scope, runId: string) { const active=this.active.get(key(scope,runId));return !!active && !active.sealed; }
+  async questionsChanged(scope: Scope, sessionId: string) {
+    await this.locked(scope,sessionId,async()=>{
+      const session=await this.store.session(scope,sessionId);
+      if(!session.activeRunId) return;
+      const active=this.active.get(key(scope,session.activeRunId))!;
+      const envelope=await this.store.append(scope,session.activeRunId,{type:"pending_questions_changed",pendingQuestions:await this.channel.facts.pendingQuestions(scope,sessionId)});
+      this.publish(active,envelope);
+    });
+  }
+  async inputReceived(scope: Scope, runId: string, row: import("./store").MessageRow) {
+    const active = this.active.get(key(scope, runId));
+    if (!active || active.sealed) return;
+    const envelope = await this.store.append(scope, runId, { type: "input_received", messageId: row.id, messageSeq: row.messageSeq, message: row.message as import("@ontomato/contracts/agent-channel").AgentInput });
+    this.publish(active, envelope);
   }
   private publish(active: Active, envelope: RuntimeEventEnvelope) {
     active.frames.push(envelope);
@@ -377,7 +417,7 @@ export class AgentRuntime {
         ),
       });
     if (event.type === "message_start") {
-      const id = randomUUID();
+      const id = this.channel.inputIds.get(event.message) ?? randomUUID();
       active.currentMessageId = id;
       const message = projectMessage(event.message as Message);
       if (message.role === "assistant" && message.stopReason === "pending")
@@ -443,6 +483,7 @@ export class AgentRuntime {
         type: "message_end",
         messageId: active.currentMessageId!,
         messageSeq: 0,
+        contextSeq: null,
         message: projectMessage(event.message as Message),
       });
     if (event.type === "tool_execution_end") {
@@ -510,7 +551,7 @@ export class AgentRuntime {
     let closeMcp = async () => {};
     try {
       const mcpConfigs = await this.mcp.resolve(scope, request.definition.externalMcp.map((ref) => ref.id));
-      const rows = await this.store.messages(scope, run.sessionId);
+      const rows = await this.store.contextMessages(scope, run.sessionId);
       const summaryRow = (
         await this.store.pool.query(
           `SELECT * FROM ${this.store.table("compactions")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 ORDER BY covered_seq DESC LIMIT 1`,
@@ -522,9 +563,9 @@ export class AgentRuntime {
       let usageResetAt = summaryRow
         ? new Date(summaryRow.created_at).getTime()
         : 0;
-      const previous = rows
-        .filter((r) => r.messageSeq > covered)
-        .map((r) => r.message as Message);
+      const previous = await Promise.all(rows
+        .filter((r) => r.messageSeq > covered && r.runId !== null)
+        .map((r) => this.channel.modelMessage(scope.domainId,r.message)));
       const messages = recoverContext(previous);
       if (summary)
         messages.unshift({
@@ -558,6 +599,7 @@ export class AgentRuntime {
       closeMcp = mcp.close;
       tools.push(...mcp.tools);
       tools.push(...productTools(request,run.id));
+      if (run.channel) tools.push(this.channel.tool(scope, run));
       if (new Set(tools.map((t) => t.name)).size !== tools.length)
         throw new Error("Exposed tool names must be unique");
       const model = piModel(config);
@@ -566,23 +608,25 @@ export class AgentRuntime {
         {
           model,
           toolExecution: "sequential",
-          convertToLlm: (m) => m as Message[],
+          convertToLlm: (m) => Promise.all(m.map(message => this.channel.modelMessage(scope.domainId,message as RuntimeMessage))),
+          getFollowUpMessages: run.channel ? () => this.channel.followUp(scope, run) : undefined,
+          getSteeringMessages: run.channel ? () => this.channel.steering(scope,run) : undefined,
           prepareRequest: async ({ context }) => {
             signal.throwIfAborted();
             const system = [
               request.definition.systemPrompt,
+              request.definition.context,
               skillCatalog(sandbox.workspace, skills),
             ]
               .filter(Boolean)
               .join("\n\n");
             const raw = (
-              await this.store.messages(scope, run.sessionId)
+              await this.store.contextMessages(scope, run.sessionId)
             ).filter(
-              (r) => r.messageSeq > covered && r.message.role !== "system",
+              (r) => r.messageSeq > covered && r.runId !== null && r.message.role !== "system",
             );
-            let effective = recoverContext(
-              raw.map((r) => r.message as Message),
-            );
+            const projected = await Promise.all(raw.map(r => this.channel.modelMessage(scope.domainId,r.message)));
+            let effective = recoverContext(projected);
             if (summary)
               effective.unshift({
                 role: "user",
@@ -601,13 +645,13 @@ export class AgentRuntime {
             );
             if (estimate >= config.contextWindow * 0.8) {
               const cut = cutPoint(
-                raw.map((r) => r.message as Message),
+                projected,
                 config.contextWindow,
               );
               if (cut > 0) {
                 try {
                   const source = raw.slice(0, cut);
-                  const prompt = `<conversation>\n${serializeConversation(source.map((r) => r.message as Message))}\n</conversation>\n${summary ? `<previous-summary>\n${summary}\n</previous-summary>\n` : ""}${summary ? request.definition.compaction.updatePrompt : request.definition.compaction.summarizePrompt}`;
+                  const prompt = `<conversation>\n${serializeConversation(projected.slice(0,cut))}\n</conversation>\n${summary ? `<previous-summary>\n${summary}\n</previous-summary>\n` : ""}${summary ? request.definition.compaction.updatePrompt : request.definition.compaction.summarizePrompt}`;
                   const next = await completeSummary(
                     modelStream(
                       config,
@@ -659,7 +703,7 @@ export class AgentRuntime {
                       timestamp: Date.now(),
                     },
                     ...recoverContext(
-                      raw.slice(cut).map((r) => r.message as Message),
+                      projected.slice(cut),
                     ),
                   ];
                 } catch {
@@ -729,15 +773,20 @@ export class AgentRuntime {
       failure = safeMessage(error);
     }
     runtimeLogger.info(reason === "error" ? "run failed" : "run completed");
+    let next: AgentRunIntent | undefined;
     await this.locked(scope, run.sessionId, async () => {
+      active.sealed = true;
       active.pending.clear();
       const before = (await this.store.run(scope, run.id)).seq;
       await this.store.finish(scope, run.id, reason, failure, workspaceCommit);
-      // The stop is committed, whatever the reason; subscribers only learn that this run ended.
+      // The lifecycle notice follows the finish commit, independently of subsequent intent preparation.
       this.publishSessionRun(scope, { type: "run_stopped", sessionId: run.sessionId, runId: run.id });
+      const stopped = (await this.store.run(scope, run.id)).run;
+      next = await this.channel.nextLocked(scope, stopped);
       for (const envelope of await this.store.events(scope, run.id))
         if (envelope.cursor.seq > before) this.publish(active, envelope);
     });
+    await this.channel.stopped(scope, (await this.store.run(scope, run.id)).run, next);
     // The stop is committed: wake everyone waiting for it.
     for (const wake of this.waiters.get(key(scope, run.id)) ?? []) wake();
   }
@@ -833,8 +882,9 @@ export class AgentRuntime {
         if (tool.status === "running") tool.status = "unknown";
     return {
       run: state.run,
+      pendingQuestions: await this.channel.facts.pendingQuestions(scope,state.run.sessionId),
       cursor: { runId, seq: state.seq, streamId: state.streamId },
-      messages: includeHistory ? await this.store.messages(scope, state.run.sessionId, undefined, runId) : [],
+      messages: includeHistory ? await this.store.messages(scope, state.run.sessionId, undefined, runId) : await this.store.consumedInputs(scope,state.run.sessionId,runId),
       pendingMessages: active
         ? [...active.pending].map(([id, message]) => ({
             id,
@@ -887,6 +937,7 @@ export class AgentRuntime {
       const session = await this.store.session(scope, sessionId);
       return {
         session,
+        pendingQuestions: await this.channel.facts.pendingQuestions(scope,sessionId),
         messages: await this.store.messages(scope, sessionId),
         latestRun: session.latestRunId
           ? await this.snapshotUnlocked(scope, session.latestRunId)
@@ -898,7 +949,7 @@ export class AgentRuntime {
     return this.locked(scope, sessionId, async () => {
       const session = await this.store.session(scope, sessionId);
       const window = await this.store.historyWindow(scope, sessionId, query);
-      const ids = new Set(window.messages.map(message => message.runId));
+      const ids = new Set(window.messages.flatMap(message => message.runId ? [message.runId] : []));
       if (query.runId) {
         const selected = await this.store.run(scope, query.runId);
         if (selected.run.sessionId !== sessionId) throw new RuntimeError(404, "NOT_FOUND", "Run not found");
@@ -916,7 +967,7 @@ export class AgentRuntime {
           pendingMessages: snapshot.pendingMessages.filter(entry => entry.message.role !== "system"),
         };
       }
-      return { session: { ...session, latestRun: currentRun }, ...window, runs: runs.filter(run => ids.has(run.id)), latestRun };
+      return { pendingQuestions:await this.channel.facts.pendingQuestions(scope,sessionId), session: { ...session, latestRun: currentRun }, ...window, runs: runs.filter(run => ids.has(run.id)), latestRun };
     });
   }
   /**
@@ -971,6 +1022,12 @@ export class AgentRuntime {
     });
   }
   async closeRunIntent(scope: Scope, sessionId: string, runId: string) {
+    const entry = (await this.store.pool.query(`SELECT intent FROM ${this.store.table("admissions")} WHERE host_id=$1 AND domain_id=$2 AND key=$3`,[scope.hostId,scope.domainId,runId])).rows[0];
+    if (entry?.intent) {
+      const intent = await this.channel.facts.intent(scope,runId);
+      if (intent.session.sessionId !== sessionId) throw new RuntimeError(404,"NOT_FOUND","Run not found");
+      await this.channel.cancel(scope,intent); return;
+    }
     const admitted = await this.locked(scope, sessionId, async () => {
       await this.store.session(scope, sessionId);
       return this.store.closeAdmission(scope, runId, "run", sessionId);
@@ -978,8 +1035,12 @@ export class AgentRuntime {
     // Run settlement takes the session lock; never await it while holding that lock.
     if (admitted) await this.cancel(scope, runId);
   }
-  async cancel(scope: Scope, id: string) {
-    await this.store.run(scope, id);
+  async cancel(scope: Scope, id: string, executionOnly = false) {
+    const { run } = await this.store.run(scope, id);
+    if (run.channel && !executionOnly) {
+      await this.channel.cancel(scope, await this.channel.facts.intent(scope,id));
+      return { run: (await this.store.run(scope,id)).run };
+    }
     const active = this.active.get(key(scope, id));
     active?.controller.abort();
     await active?.done;

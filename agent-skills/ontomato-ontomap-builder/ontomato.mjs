@@ -54,8 +54,8 @@ async function requestJson(cfg, method, backendPath, body, headers) {
   return json;
 }
 
-async function ask(cfg, argv) {
-  return analystCommand(cfg, ["ask", ...argv]);
+async function agent(cfg, argv) {
+  return analystCommand(cfg, argv);
 }
 
 // test-datasource and use-datasource take the same arguments and send the same body.
@@ -293,7 +293,7 @@ function usage() {
   ontomato.mjs upload-vector <json|@file>
   ontomato.mjs upload-vectors <file.jsonl> [--from <lines>] [--batch <lines>]
   ontomato.mjs delete-vector <class> <attribute> <objectId> <path>
-  ontomato.mjs ask [--lang <tag>] <question>`);
+  ontomato.mjs agent list|start|send|read|cancel [options]`);
 }
 
 async function main() {
@@ -408,8 +408,8 @@ async function main() {
     await dbImport(cfg, argv.slice(1));
     return;
   }
-  if (cmd === "ask") {
-    await ask(cfg, argv.slice(1));
+  if (cmd === "agent" || cmd === "retriever-cancel") {
+    await agent(cfg, argv);
     return;
   }
   usage();

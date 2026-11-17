@@ -5,6 +5,7 @@ import { pageDockSpaceKey, shellContextKey } from "../context";
 import type { ShellFeatureDeclaration } from "../types";
 import { usePanelWidth } from "../usePanelWidth";
 import ShellComposer from "./ShellComposer.vue";
+import ShellQuestions from "./ShellQuestions.vue";
 
 /**
  * One host page, rendered once and kept mounted while it moves between the two places it can sit (DESIGN "Agent
@@ -13,14 +14,16 @@ import ShellComposer from "./ShellComposer.vue";
  * are not declared `withConversation` only ever show full, without composer or controls.
  *
  * The page may put its own controls in the header row (`header`, in place of its title). Full, the composer floats over
- * the bottom of the page, the host's `composer-context` inside it before the input; the pane measures that dock and keeps
- * as much room under the page's content, so multiline input never covers the end of the page. A page that scrolls itself
+ * the bottom of the page, the host's `composer-context` inside it before the input and the conversation's questions over
+ * it; the pane measures that dock and keeps as much room under the page's content, so multiline input or an open question
+ * never covers the end of the page. A page that scrolls itself
  * keeps the room on its own (`scrollsItself`): the pane gives it its whole height and the measured space.
  */
 const props = defineProps<{
   feature: ShellFeatureDeclaration | null;
   view: "full" | "side";
   busy: boolean;
+  sending: boolean;
   disabled: boolean;
 }>();
 const emit = defineEmits<{ send: [text: string]; stop: []; expand: []; collapse: []; close: []; menu: [] }>();
@@ -81,7 +84,8 @@ const paneStyle = computed(() => ({
     </header>
     <div class="pane-body"><slot /></div>
     <div v-if="paired && view === 'full'" ref="dock" class="pane-dock">
-      <ShellComposer :busy="busy" :disabled="disabled" :labels="labels" @send="emit('send', $event)" @stop="emit('stop')">
+      <ShellQuestions />
+      <ShellComposer :busy="busy" :sending="sending" :disabled="disabled" :labels="labels" @send="emit('send', $event)" @stop="emit('stop')">
         <template v-if="slots['composer-context']" #context><slot name="composer-context" /></template>
       </ShellComposer>
     </div>
@@ -203,8 +207,8 @@ const paneStyle = computed(() => ({
   pointer-events: none;
 }
 /*
- * Full, the composer floats over the page, one compact row with what a message carries inside it; only the composer
- * takes the pointer, the page shows around it.
+ * Full, the composer floats over the page, one compact row with what a message carries inside it, the questions over it;
+ * only they take the pointer, the page shows around them.
  */
 .pane-dock {
   --shell-composer-control: var(--control-height);

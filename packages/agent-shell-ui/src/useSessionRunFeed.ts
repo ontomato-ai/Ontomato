@@ -1,4 +1,5 @@
-import { onBeforeUnmount, onMounted, watch } from "vue";
+import { onBeforeUnmount, onMounted, watch, provide, shallowRef, readonly } from "vue";
+import { sessionRunNotices } from "./session-run-notices";
 import type {
   AgentHostSession,
   AgentHostSessionRunFrame,
@@ -24,6 +25,8 @@ export interface SessionRunFeedOptions {
  * state itself comes from the snapshot, and a conversation no list shows is not added.
  */
 export function useSessionRunFeed(options: SessionRunFeedOptions) {
+  const notice = shallowRef<AgentHostSessionRunFrame | null>(null);
+  provide(sessionRunNotices, readonly(notice));
   const ids = () => [...new Set(options.sessions().map((row) => row.id))];
   let detach: (() => void) | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -59,6 +62,7 @@ export function useSessionRunFeed(options: SessionRunFeedOptions) {
     detach = options.port.subscribe({
       async frame(frame) {
         if (stopped) return;
+        notice.value = frame;
         options.onNotice?.(frame);
         // `ready` is the runtime's barrier: every change from here on is a frame, so the rows are read once now.
         if (frame.type === "ready") {

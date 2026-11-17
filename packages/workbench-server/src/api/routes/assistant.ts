@@ -21,12 +21,10 @@ import {
 } from "@ontomato/contracts/assistant-chat";
 import { assistantService } from "../../services/assistant/service";
 import { agentTasksFrameSchema } from "@ontomato/contracts/agent-tasks";
-import { setTimeout as delay } from "node:timers/promises";
 import { publicFrame, publicSnapshot } from "../../platform/agent-runtime/projection";
-import { readRuntimeFrames } from "../../infrastructure/agent-runtime/client";
+import { RuntimeClient, readSseFrames, readRuntimeFrames } from "../../infrastructure/agent-runtime/client";
 const router: ReturnType<typeof Router> = Router(),
-  uuid = z.string().uuid(),
-  TASK_READ_MS = 2000;
+  uuid = z.string().uuid();
 
 import { context, id, wrap } from "../utils/agent-host";
 import { createAgentHostRouter } from "./agent-host";
@@ -66,32 +64,21 @@ router.get("/agent-skills", agentAdmin, wrap(async (req, res) => {
 router.get("/sessions/:sessionId/tasks", wrap(async (req, res) => {
   res.json((await assistantService.tasks(id(req, "sessionId"), context(req).owner)).snapshot);
 }));
-/**
- * Every change to the conversation's tasks as a complete snapshot. The ontology service's projection is the only source
- * of change, read again every TASK_READ_MS while anything can still change; once settled the stream ends, and the shell
- * opens it again when the conversation's next run starts. A reconnect simply reads the whole snapshot again.
- */
+/** Subscribe before reading the snapshot; runtime changes trigger projections without a polling loop. */
 router.get("/sessions/:sessionId/tasks/events", wrap(async (req, res) => {
   const sessionId = id(req, "sessionId"), owner = context(req).owner;
-  let current = await assistantService.tasks(sessionId, owner);
-  const abort = new AbortController();
-  res.on("close", () => abort.abort());
-  res.set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" });
-  res.flushHeaders();
-  let sent = "";
+  await assistantService.snapshot(sessionId, owner);
+  const abort = new AbortController(); res.on("close", () => abort.abort());
+  const upstream = await new RuntimeClient(owner.domainId, undefined, owner.userId).channelStream(`/v1/channel/sessions/${sessionId}/events`, abort.signal);
+  res.set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" }); res.flushHeaders();
+  const frameSchema = z.union([z.object({ type: z.literal("ready") }).strict(), agentTasksFrameSchema]);
   try {
-    for (;;) {
-      const frame = JSON.stringify(agentTasksFrameSchema.parse({ type: "tasks_snapshot", ...current.snapshot, settled: current.settled }));
-      res.write(frame === sent ? ": unchanged\n\n" : `event: tasks\ndata: ${frame}\n\n`);
-      sent = frame;
-      if (current.settled) return;
-      await delay(TASK_READ_MS);
-      if (abort.signal.aborted) return;
-      current = await assistantService.tasks(sessionId, owner);
-    }
-  } finally {
-    res.end();
-  }
+    await readSseFrames(upstream, value => frameSchema.parse(value), async frame => {
+      if (frame.type === "ready") return;
+      const current = await assistantService.tasks(sessionId, owner, frame);
+      res.write(`event: tasks\ndata: ${JSON.stringify({ type: "tasks_snapshot", ...current.snapshot, settled: false })}\n\n`);
+    }, abort.signal, comment => { res.write(`${comment}\n\n`); });
+  } finally { res.end(); }
 }));
 router.get("/sessions/:sessionId/tasks/:taskId/process", wrap(async (req, res) => {
   const { client, process } = await assistantService.taskProcess(id(req, "sessionId"), id(req, "taskId"), context(req).owner);

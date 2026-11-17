@@ -38,23 +38,22 @@ class RetrievalTasksTest {
     var running = new JSONArray(List.of(
         RetrievalTasks.bindingBranch(JSONObject.of("status", "running"), retriever),
         RetrievalTasks.retrieverBranch(row, retriever)));
-    assertEquals("running", RetrievalTasks.retrievalTask(row, running).getString("status"));
+    assertEquals("running", RetrievalTasks.roundStatus(running).getString("status"));
 
     var ended = new JSONArray(List.of(
         RetrievalTasks.bindingBranch(JSONObject.of("status", "completed"), retriever),
         RetrievalTasks.retrieverBranch(row, retriever)));
-    var task = RetrievalTasks.retrievalTask(row, ended);
+    var task = RetrievalTasks.roundStatus(ended);
     assertEquals("completed", task.getString("status"));
     assertEquals("cancelled", ended.getJSONObject(1).getString("status"));
-    assertEquals("inline", task.getJSONObject("process").getString("mode"));
-    assertEquals("Sales by region?", task.getString("question"));
+    assertNull(task.get("error"));
   }
 
   @Test
   void aRoundWithoutAnyDeliveryFailsWithItsBranchsReason() {
     var row = round();
     var deliveries = List.of(delivery("retriever", stopped("length"), 0));
-    var task = RetrievalTasks.retrievalTask(row, new JSONArray(List.of(RetrievalTasks.retrieverBranch(row, deliveries))));
+    var task = RetrievalTasks.roundStatus(new JSONArray(List.of(RetrievalTasks.retrieverBranch(row, deliveries))));
     assertEquals("failed", task.getString("status"));
     assertEquals("LENGTH_LIMIT", task.getJSONObject("error").getString("code"));
   }

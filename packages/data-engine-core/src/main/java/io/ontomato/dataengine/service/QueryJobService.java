@@ -21,6 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 @DependsOn("jdbcInitDb")
 public class QueryJobService {
+  private final io.ontomato.dataengine.service.agent.AgentChannelChanges changes;
   private final JdbcTemplate jdbc;
   private final SessionRegistryService sessions;
   private final RuntimeCodeClient runtime;
@@ -36,7 +37,8 @@ public class QueryJobService {
       JdbcTemplate jdbc,
       SessionRegistryService sessions,
       RuntimeCodeClient runtime,
-      org.springframework.transaction.PlatformTransactionManager manager) {
+      org.springframework.transaction.PlatformTransactionManager manager,io.ontomato.dataengine.service.agent.AgentChannelChanges changes) {
+    this.changes=changes;
     this.jdbc = jdbc;
     this.sessions = sessions;
     this.runtime = runtime;
@@ -49,12 +51,14 @@ public class QueryJobService {
         "CREATE TABLE IF NOT EXISTS ontology_query_jobs (id uuid NOT NULL, domain_id text NOT NULL,"
             + " user_id text NOT NULL, kind text NOT NULL, fingerprint text NOT NULL, state jsonb"
             + " NOT NULL, owner_node text NOT NULL, PRIMARY KEY(domain_id,user_id,id))");
+    var interrupted=jdbc.queryForList("SELECT id::text FROM ontology_query_jobs WHERE owner_node=? AND kind='quality' AND state->>'status'='running'",String.class,sessions.getNodeId());
     jdbc.update(
         "UPDATE ontology_query_jobs SET state=state ||"
             + " '{\"status\":\"interrupted\",\"error\":{\"code\":\"JOB_INTERRUPTED\",\"message\":\"Ontology"
             + " service restarted; unknown work was not replayed\"}}'::jsonb WHERE"
             + " state->>'status'='running' AND owner_node=?",
         sessions.getNodeId());
+    for(String id:interrupted) changes.job(id);
   }
 
   public JSONObject get(String id, User user, String kind) {
@@ -84,7 +88,12 @@ public class QueryJobService {
         .toString();
   }
 
+  public JSONObject start(String id,QueryAccessService.Access access,String kind,Object input,Operation operation) {
+    return start(id,access.user(),kind,input,session -> io.ontomato.dataengine.service.agent.OntologyGenerationService.asOwner(access,() -> operation.execute(session)));
+  }
+
   public JSONObject start(String id, User user, String kind, Object input, Operation operation) {
+    String sourceRun=io.ontomato.dataengine.service.agent.OntologyGenerationService.sourceRun();
     String sessionId = sessionId(id, user);
     UUID uuid = UUID.fromString(id);
     String hash = OntologyQueryService.digest(input);
@@ -124,7 +133,7 @@ public class QueryJobService {
                 currentJob.set(new Job(id, user));
                 Object result =
                     io.ontomato.dataengine.service.agent.OntologyGenerationService.asOwner(
-                        user, () -> operation.execute(sessionId));
+                        user, () -> io.ontomato.dataengine.service.agent.OntologyGenerationService.asSourceRun(sourceRun,() -> operation.execute(sessionId)));
                 state.put("status", "completed");
                 state.put("result", result);
               } catch (Exception e) {
@@ -153,12 +162,20 @@ public class QueryJobService {
                 sessions.registerEnd(sessionId);
                 running.remove(sessionId);
                 currentJob.remove();
+                if(kind.equals("quality")) changes.job(id);
+                else if(kind.equals("candidate") && sourceRun!=null) changes.execution(sourceRun);
               }
               return null;
             });
     running.put(sessionId, task);
     executor.execute(io.ontomato.dataengine.logging.ServiceLogContext.wrap(task));
     return accepted;
+  }
+
+  public boolean candidateRunning(String qualityId,User user) {
+    return jdbc.queryForObject(
+        "SELECT EXISTS(SELECT 1 FROM ontology_query_jobs WHERE id=? AND domain_id=? AND user_id=? AND kind='candidate' AND state->>'status'='running')",
+        Boolean.class,UUID.fromString(QueryQualityService.candidateId(qualityId)),user.getDomainId(),user.getId());
   }
 
   /** Shares the job row lock with cancellation; model calls never hold this transaction. */
@@ -225,7 +242,8 @@ public class QueryJobService {
       if (task != null) task.cancel(true);
       if (kind.equals("output")) runtime.closeIntent(user.getDomainId(), sessionId(id, user));
     }
-    return get(id, user, kind);
+    if(kind.equals("quality")) changes.job(id);
+    return get(id,user,kind);
   }
 
   @PreDestroy

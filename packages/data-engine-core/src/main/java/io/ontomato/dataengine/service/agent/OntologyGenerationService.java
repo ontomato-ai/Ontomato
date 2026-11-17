@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 /** Runs ontology definitions and consumes only this run's immutable delivery. */
@@ -27,7 +28,12 @@ public class OntologyGenerationService {
           "dashboard",
           "describe",
           "quality");
+  private static final ThreadLocal<QueryAccessService.Access> CURRENT_ACCESS = new ThreadLocal<>();
   private static final ThreadLocal<Owner> CURRENT = new ThreadLocal<>();
+  private static final ThreadLocal<String> SOURCE_RUN = new ThreadLocal<>();
+  // Admission composes identity and permissions only when execution starts, never during metadata construction.
+  private final ObjectProvider<AgentCaller> callers;
+  private final ObjectProvider<AgentChannelRuns> channel;
   private final OntologyAgentStore store;
   private final AgentRuntimeClient runtime;
   private final OntologyAgentDefinitions definitions;
@@ -50,7 +56,8 @@ public class OntologyGenerationService {
       QueryGrantService grants,
       SessionRegistryService sessions,
       GenerationOperations operations,
-      RuntimeCodeClient code, @Lazy DataPermissionLookup permissions) {
+      RuntimeCodeClient code, @Lazy DataPermissionLookup permissions,ObjectProvider<AgentCaller> callers,ObjectProvider<AgentChannelRuns> channel) {
+    this.callers=callers; this.channel=channel;
     this.store = store;
     this.runtime = runtime;
     this.definitions = definitions;
@@ -81,13 +88,33 @@ public class OntologyGenerationService {
     }
   }
 
+  public static <T> T asOwner(QueryAccessService.Access access,Work<T> work) {
+    var previous=CURRENT_ACCESS.get();CURRENT_ACCESS.set(access);
+    try { return asOwner(access.user(),work); }
+    finally { if(previous==null) CURRENT_ACCESS.remove(); else CURRENT_ACCESS.set(previous); }
+  }
+  public static String sourceRun() { return SOURCE_RUN.get(); }
+
+  /** Background host work inherits the initiating chain by reference, never by copying credentials. */
+  public static <T> T asSourceRun(String run, Work<T> work) {
+    String previous=SOURCE_RUN.get();
+    if(run==null) SOURCE_RUN.remove(); else SOURCE_RUN.set(run);
+    try { return work.run(); }
+    catch(RuntimeException error) { throw error; }
+    catch(Exception error) { throw new IllegalStateException(error.getMessage(),error); }
+    finally { if(previous==null) SOURCE_RUN.remove(); else SOURCE_RUN.set(previous); }
+  }
   public Map<String, Object> authorizedRule(Map<String, Object> rule, String domain) {
-    var actor = owner(domain);
-    return QueryPermissions.visibleRule(rule, permissions.getDataPermission(actor.userId(), domain), List.of());
+    var access=executionAccess(domain);
+    return QueryPermissions.visibleRule(rule,access.permission(),access.classNames());
   }
 
   public QueryAccessService.Access executionAccess(String domain) {
     var actor = owner(domain);
+    if(CURRENT_ACCESS.get()!=null) return CURRENT_ACCESS.get();
+    var request=org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+    if(request instanceof org.springframework.web.context.request.ServletRequestAttributes servlet && servlet.getRequest().getAttribute(QueryGrantService.ATTRIBUTE) instanceof JSONObject grant)
+      return new QueryAccessService.Access(new QueryAccessService.GrantUser(actor.userId(),domain),permissions.getDataPermission(actor.userId(),domain),grant,null,grant.getLong("expiresAt"));
     return new QueryAccessService.Access(new QueryAccessService.GrantUser(actor.userId(), domain),
         permissions.getDataPermission(actor.userId(), domain), null, null, null);
   }
@@ -111,13 +138,14 @@ public class OntologyGenerationService {
         .toString();
   }
 
-  public JSONObject open(
-      String kind, String businessId, String source, Owner owner, boolean external) {
-    if (kind.equals("action")) operations.requireWriteAccess(owner);
-    String session = UUID.randomUUID().toString(), run = UUID.randomUUID().toString();
+  public JSONObject open(String kind,String businessId,String source,Owner owner,boolean external) {
+    return openAt(kind,businessId,source,owner,external,UUID.randomUUID().toString(),UUID.randomUUID().toString(),false);
+  }
+  private JSONObject openAt(String kind,String businessId,String source,Owner owner,boolean external,String session,String run,boolean channelManaged) {
+    if(kind.equals("action")) operations.requireWriteAccess(owner);
     String sandbox = kind.equals("action") ? "a" + run.replace("-", "") : null;
     String agent = agentId(kind);
-    if (!external) active.add(run);
+    if (!external && !channelManaged) active.add(run);
     try {
       store.transaction(
           () -> {
@@ -129,7 +157,7 @@ public class OntologyGenerationService {
                 uuid(run),
                 uuid(session),
                 AgentJson.hash(JSONObject.of("kind", kind, "businessId", businessId)),
-                "{}",
+                AgentJson.json(channelManaged?JSONObject.of("agentChannel",true):new JSONObject()),
                 Instant.now().plusSeconds(deadlineSeconds(kind)).toString(),
                 external);
             store.update(
@@ -200,53 +228,10 @@ public class OntologyGenerationService {
     var delivery = new Generation(session, run, owner);
     try {
       checkBusiness(businessId);
-      if (metricView) definitions.publishMetricView();
-      else definitions.publishGeneration();
-      runtime.json(domain, run, "/v1/sessions", "POST", Map.of(), session);
-      var row = store.run(session, run, owner);
-      long deadline = Instant.parse(row.getString("deadline")).toEpochMilli();
-      String credential =
-          grants.issue(
-              owner.userId(), domain, "ontology-generation", run, deadline, List.of(), null);
-      store.transaction(() -> store.gate(session, run, owner));
-      runtime.json(
-          domain,
-          run,
-          "/v1/sessions/" + session + "/runs",
-          "POST",
-          JSONObject.of(
-              "language", lang == null ? "en" : lang,
-              "input",
-                  JSONObject.of(
-                      "role",
-                      "user",
-                      "content",
-                      "Complete the ontology "
-                          + kind
-                          + " task. Read the "
-                          + (metricView ? "metricview-generation" : "ontology-generation")
-                          + " skill and write outputs/result.json.",
-                      "timestamp",
-                      Instant.parse(row.getString("created_at")).toEpochMilli()),
-              "definition",
-                  metricView
-                      ? definitions.metricView(domain, prompt, lang, deadline - System.currentTimeMillis())
-                      : definitions.generation(
-                          domain, kind, prompt, lang, deadline - System.currentTimeMillis()),
-              "environment",
-                  JSONObject.of(
-                      "values",
-                      JSONObject.of(
-                          "ONTOMATO_ONTOLOGY_URL",
-                          runtime.ontologyUrl(),
-                          "ONTOMATO_GENERATION_ID",
-                          run,
-                          "ONTOMATO_GENERATION_KIND",
-                          kind),
-                      "secrets",
-                      JSONObject.of(
-                          "ONTOMATO_TK", credential))),
-          run);
+      runtime.json(domain,run,"/v1/sessions","POST",Map.of(),session);
+      var context=callers.getObject().ownerContext(owner,executionAccess(domain),lang==null?"en":lang,Instant.parse(store.run(session,run,owner).getString("deadline")).toEpochMilli());
+      channel.getObject().send(agentId(kind),session,run,JSONObject.of("role","notification","kind","agent-message","source",JSONObject.of("kind","external"),"content","Complete the ontology "+kind+" task. Read the "+(metricView?"metricview-generation":"ontology-generation")+" skill and write outputs/result.json.","timestamp",System.currentTimeMillis()),
+        JSONObject.of("kind",kind,"businessId",businessId,"prompt",prompt,"source",source),context,sourceRun());
       while (true) {
         checkBusiness(businessId);
         var current = store.run(session, run, owner);
@@ -305,6 +290,39 @@ public class OntologyGenerationService {
       if (error instanceof RuntimeException runtimeError) throw runtimeError;
       throw new IllegalStateException("Ontology generation failed", error);
     }
+  }
+
+  public static String kindForAgent(String agent) {
+    return KINDS.stream().filter(kind -> agentId(kind).equals(agent)).findFirst().orElse(null);
+  }
+  public JSONObject prepare(String session,String run,String kind,JSONObject input,JSONObject parameters,OntologyAgentAccess.Context context) throws Exception {
+    AgentJson.fields(parameters,"kind","businessId","prompt","source");
+    String businessId=AgentJson.text(parameters,"businessId"),prompt=AgentJson.text(parameters,"prompt");
+    checkBusiness(businessId);
+    var rows=store.rows("SELECT id FROM ontology_agent_runs WHERE id=?",uuid(run));
+    if(rows.isEmpty()) openAt(kind,businessId,parameters.getString("source"),context.owner(),false,session,run,true);
+    var row=store.run(session,run,context.owner());
+    var owned=store.one("SELECT kind,business_id FROM ontology_generations WHERE run_id=?",uuid(run));
+    if(!kind.equals(owned.getString("kind")) || !businessId.equals(owned.getString("business_id"))) throw conflict("Generation target changed");
+    store.update("UPDATE ontology_agent_runs SET request=request || ?::jsonb WHERE id=?",AgentJson.json(JSONObject.of("agentChannel",true,"input",input)),uuid(run));
+    if(kind.equals("metric")) definitions.publishMetricView(); else definitions.publishGeneration();
+    long deadline=Instant.parse(row.getString("deadline")).toEpochMilli();
+    if(context.expiresAt()!=null) deadline=Math.min(deadline,context.expiresAt());
+    var definition=kind.equals("metric")?definitions.metricView(context.owner().domainId(),prompt,context.language(),deadline-System.currentTimeMillis()):definitions.generation(context.owner().domainId(),kind,prompt,context.language(),deadline-System.currentTimeMillis());
+    String token=grants.issue(context.owner().userId(),context.owner().domainId(),"ontology-generation",run,deadline,context.access().classNames(),null);
+    store.transaction(() -> store.gate(session,run,context.owner()));
+    return JSONObject.of("language",context.language(),"input",input,"definition",definition,
+      "environment",JSONObject.of("values",JSONObject.of("ONTOMATO_ONTOLOGY_URL",runtime.ontologyUrl(),"ONTOMATO_GENERATION_ID",run,"ONTOMATO_GENERATION_KIND",kind),"secrets",JSONObject.of("ONTOMATO_TK",token)));
+  }
+  public void settleProvider(String session,String run,Owner owner) throws Exception {
+    store.run(session,run,owner);
+    var snapshot=runtime.run(owner.domainId(),run);
+    store.update("UPDATE ontology_agent_runs SET open=false,observed_state=?::jsonb WHERE id=?",AgentJson.json(snapshot.getJSONObject("run")),uuid(run));
+    grants.revoke(owner.domainId(),run);
+  }
+  public void cancelProvider(String session,String run,Owner owner) {
+    store.closeRun(session,run,owner);active.remove(run);
+    reconcileCancellation(session,run,owner,false);
   }
 
   private JSONObject packageFile(String domain, String session, String run, String path) throws Exception {
@@ -369,10 +387,10 @@ public class OntologyGenerationService {
   public void close(String session, String run, Owner owner) {
     store.closeRun(session, run, owner);
     active.remove(run);
-    reconcileCancellation(session, run, owner);
+    reconcileCancellation(session,run,owner,true);
   }
 
-  private void reconcileCancellation(String session, String run, Owner owner) {
+  private void reconcileCancellation(String session, String run, Owner owner,boolean interruptRuntime) {
     boolean interrupted = Thread.interrupted();
     try {
       tolerateMissing(() -> grants.revoke(owner.domainId(), run));
@@ -381,7 +399,8 @@ public class OntologyGenerationService {
           store.rows(
               "SELECT execution_id FROM ontology_generation_tests WHERE run_id=?", uuid(run)))
         tolerateMissing(() -> code.closeIntent(owner.domainId(), test.getString("execution_id")));
-      if (!store.run(session, run, owner).getBooleanValue("external"))
+      var intent=store.run(session,run,owner);
+      if (interruptRuntime && !intent.getBooleanValue("external") && (intent.getJSONObject("observed_state")==null || !"stopped".equals(intent.getJSONObject("observed_state").getString("status"))))
         tolerateMissing(
             () ->
                 runtime.json(
@@ -461,7 +480,8 @@ public class OntologyGenerationService {
       boolean expired = Instant.parse(row.getString("deadline")).toEpochMilli() <= now;
       if ((row.getBooleanValue("cancel_requested")
               || expired
-              || (!row.getBooleanValue("external") && !active.contains(run)))
+              || (!row.getBooleanValue("external") && !active.contains(run)
+                  && (!row.getJSONObject("request").getBooleanValue("agentChannel") || row.getJSONObject("observed_state")!=null && "stopped".equals(row.getJSONObject("observed_state").getString("status")))))
           && cleanupRetries.due(run))
         close(row.getString("session_id"), run, OntologyAgentStore.owner(row));
     }

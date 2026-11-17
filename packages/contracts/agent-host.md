@@ -21,7 +21,7 @@ projection, using the runtime's stored namespace/name/digest/description.
 | GET `S` | — | `AgentHostSessionSnapshot` for complete evidence/history consumers |
 | GET `S/history` | optional before/after/through cursor, recovery runId | `AgentHostSessionHistory` for the shared conversation shell |
 | DELETE `S` | — | 204; active run: 409 `SESSION_BUSY` |
-| POST `S/runs` | `{message:string}` | 202 `AgentHostAdmission` |
+| POST `S/runs` | `AgentHostSendRequest` (`{message,replyTo?}`) | 202 `AgentHostSendResult` |
 | GET `R` | — | `AgentHostRunSnapshot` |
 | GET `R/events` | `afterSeq`, `streamId` from snapshot cursor | SSE |
 | POST `R/cancel` | `{}`, including owned unadmitted intent | `AgentHostCancelResponse` |
@@ -33,11 +33,24 @@ Use the host's existing authentication, API base and language. The host checks
 verified identity, domain and resource access; the browser receives no runtime
 service credential, environment or system prompt. Inaccessible/deleted resources
 return 404, with no host deletion tombstones. Creation requires UUID
-`Idempotency-Key`, also the session/run ID and identical to its runtime ID. Matching
-retries return the original admission; changed input returns 409
-`IDEMPOTENCY_CONFLICT`. Only an active run blocks a new message (`SESSION_BUSY`),
-with no predecessor/revision check. All continuation, clarification and follow-up
-messages use the same endpoint/session. No completion or `needs_input` protocol.
+`Idempotency-Key`: a session creation key is its session ID; a send key identifies the
+received input. Matching retries return the same receipt; changed input returns 409
+`IDEMPOTENCY_CONFLICT`. The shared client exposes `send`, never assumes a new run,
+and receives `{delivery,input,snapshot,pendingQuestions,replayed}`. Delivery carries
+`messageId/sessionRef/runId`, `delivery: "steer" | "run"` and
+`status: "starting" | "running"`. Preparing executions have no snapshot; only a newly
+admitted round includes one. A send into an open or preparing run joins that execution;
+after its loop is sealed it belongs to the next intent. Steer creates no host turn and
+does not change latestRun or emit a new run_started notice.
+
+Clarification answers use replyTo on the same send endpoint. The authenticated host
+marks their source as user; agent/external answers retain their actual source.
+Session/history/run snapshots include the complete session-level pendingQuestions,
+independent of the loaded history window. Each question has requestId/source/message/
+defaultAssumption and optional options (`label/description?/isDefault`, exactly one
+default). A pending_questions_changed run event replaces this projection. A question
+is pending until an answer receipt references it; skipping it is local UI state.
+Outgoing questions addressed to the user are never consumed by their own agent.
 
 `AgentHostSession.latestRun` names the session's latest run as
 `{id,status,stopReason}` only, so a list page costs one status read rather than one
@@ -70,7 +83,10 @@ for display. No model title or suggestions are required by this contract.
 Snapshots include the run's admitted `resolvedSkills: RuntimeRegisteredSkill[]`
 (namespace/name/digest/description) and preserve PI messages, tools, files and
 `running/stopped`, `stopReason`,
-`errorMessage`. Merge settled messages by ID in messageSeq order; replace partials.
+`errorMessage`. Merge by stable message ID, retain messageSeq as the receipt/history
+cursor and use contextSeq for consumed display order; replace partials. input_received
+records receipt before the same message is assigned to a run at message_end. A run
+can contain several user inputs inside one response.
 SSE uses `event: runtime`, JSON `AgentHostStreamFrame` and `id: <cursor.seq>` for
 event frames. Preserve IDs, cursors and deltas; heartbeat comments carry no state.
 Broken transport resumes from the last applied event cursor. On snapshot_required,
@@ -101,7 +117,8 @@ the previously subscribed run's status during repair even if it has no missing
 message. Every query still checks host/domain/session access.
 
 Only the initial tail/repair response supplies `latestRun`'s live cut: settled
-messages and artifacts are absent there, and tool executions include only the
+messages are absent except consumed inputs, which update receipts already seen before
+consumption; artifacts are absent, and tool executions include only the
 remainder not yet represented by settled tool-result messages. History body
 messages appear once. Later repair pages carry durable bodies through the fixed
 cut, not another live baseline. Their session header can be current while their

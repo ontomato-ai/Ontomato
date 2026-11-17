@@ -83,9 +83,19 @@ return computed<ShellLabels>(() => ({
   filterEmpty: t("assistant.datasetFilterEmpty"),
   elapsed: (time) => t("assistant.elapsed", { time }),
   worked: (time) => t("assistant.worked", { time }),
+  questionsWaiting: (count) => t("assistant.questionsWaiting", { n: count }, count),
+  questionDefault: t("assistant.questionDefault"),
+  questionOptionDefault: t("assistant.questionOptionDefault"),
+  questionOptionOther: t("assistant.questionOptionOther"),
+  questionOtherPlaceholder: t("assistant.questionOtherPlaceholder"),
+  questionSkip: t("assistant.questionSkip"),
+  questionPrevious: t("assistant.questionPrevious"),
+  questionNext: t("assistant.questionNext"),
+  answered: (text) => t("assistant.answered", { text }),
   tasks: {
     retriever: t("assistant.taskRetriever"),
     status: {
+      starting: t("assistant.taskStarting"),
       running: t("assistant.taskRunning"),
       completed: t("assistant.taskCompleted"),
       failed: t("assistant.taskFailed"),
@@ -109,6 +119,7 @@ return computed<ShellLabels>(() => ({
     nextRound: t("assistant.taskNextRound"),
     quality: t("assistant.taskQuality"),
     errors: {
+      QUERY_JOB_FAILED: t("assistant.reviewFailed"),
       LENGTH_LIMIT: t("assistant.taskErrorLengthLimit"),
       ADMISSION_FAILED: t("assistant.taskErrorAdmissionFailed"),
       RUN_UNAVAILABLE: t("assistant.taskErrorRunUnavailable"),

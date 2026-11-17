@@ -37,7 +37,7 @@ class QueryQualityServiceTest {
   @BeforeEach
   void setUp() {
     quality = new QueryQualityService(jobs, checks);
-    when(jobs.start(anyString(), any(), eq("quality"), any(), any()))
+    when(jobs.start(anyString(), any(io.ontomato.dataengine.core.bean.User.class), eq("quality"), any(), any()))
         .thenAnswer(
             invocation -> {
               QueryJobService.Operation operation = invocation.getArgument(4);
@@ -47,7 +47,7 @@ class QueryQualityServiceTest {
                   "status", "completed",
                   "result", qualityResult.get());
             });
-    when(jobs.start(anyString(), any(), eq("candidate"), any(), any()))
+    when(jobs.start(anyString(), any(io.ontomato.dataengine.core.bean.User.class), eq("candidate"), any(), any()))
         .thenAnswer(
             invocation -> {
               candidateInput.set(invocation.getArgument(3));
@@ -65,6 +65,34 @@ class QueryQualityServiceTest {
             })
         .when(checks)
         .check(any(), anyList(), anyList(), anyList(), anyList(), eq(DOMAIN));
+  }
+
+  @Test
+  void backgroundQualityAndCandidatesKeepTheSourceCredentialChainWithoutBlockingDelivery() throws Exception {
+    var jdbc=mock(org.springframework.jdbc.core.JdbcTemplate.class);
+    when(jdbc.update(anyString(),any(Object[].class))).thenReturn(1);
+    var sessions=mock(SessionRegistryService.class);
+    when(sessions.getNodeId()).thenReturn("test-node");
+    var source=new AtomicReference<String>();
+    var candidateSource=new AtomicReference<String>();
+    var done=new java.util.concurrent.CountDownLatch(1);
+    doAnswer(call -> {
+      source.set(io.ontomato.dataengine.service.agent.OntologyGenerationService.sourceRun());
+      var check=(ABCHarnessCheck)call.getArgument(0);check.setScore(88.0);
+      return null;
+    }).when(checks).check(any(),anyList(),anyList(),anyList(),anyList(),eq(DOMAIN));
+    doAnswer(call -> {
+      candidateSource.set(io.ontomato.dataengine.service.agent.OntologyGenerationService.sourceRun());
+      done.countDown();return null;
+    }).when(checks).generateCandidates(any(),anyList(),any(JSONArray.class),eq(DOMAIN));
+    var running=new QueryJobService(jdbc,sessions,mock(RuntimeCodeClient.class),new org.springframework.jdbc.datasource.DataSourceTransactionManager(),mock(io.ontomato.dataengine.service.agent.AgentChannelChanges.class));
+    try {
+      var body=body(JSONObject.of("problem","hidden"));body.put("sourceRunId","retrieval-run");
+      new QueryQualityService(running,checks).start(body,user(),"en");
+      assertNull(io.ontomato.dataengine.service.agent.OntologyGenerationService.sourceRun());
+      assertTrue(done.await(5,java.util.concurrent.TimeUnit.SECONDS));
+      assertEquals("retrieval-run",source.get());assertEquals("retrieval-run",candidateSource.get());
+    } finally { running.close(); }
   }
 
   @Test
@@ -124,7 +152,7 @@ class QueryQualityServiceTest {
 
   @Test
   void candidateAdmissionFailureDoesNotChangeTheQualityResult() throws Exception {
-    when(jobs.start(anyString(), any(), eq("candidate"), any(), any()))
+    when(jobs.start(anyString(), any(io.ontomato.dataengine.core.bean.User.class), eq("candidate"), any(), any()))
         .thenThrow(new IllegalStateException("admission failed"));
 
     quality.start(body(JSONObject.of("problem", "hidden")), user(), "en");
@@ -150,7 +178,7 @@ class QueryQualityServiceTest {
 
     quality.start(body(JSONObject.of("problem", "hidden")), user(), "en");
 
-    verify(jobs, never()).start(anyString(), any(), eq("candidate"), any(), any());
+    verify(jobs, never()).start(anyString(), any(io.ontomato.dataengine.core.bean.User.class), eq("candidate"), any(), any());
   }
 
   @Test
@@ -170,7 +198,7 @@ class QueryQualityServiceTest {
   void bindingBranchDoesNotStartACandidateJob() throws Exception {
     quality.start(body(JSONObject.of("problem", "hidden")), user(), "en", false);
 
-    verify(jobs, never()).start(anyString(), any(), eq("candidate"), any(), any());
+    verify(jobs, never()).start(anyString(), any(io.ontomato.dataengine.core.bean.User.class), eq("candidate"), any(), any());
     verify(checks).check(any(), anyList(), anyList(), anyList(), anyList(), eq(DOMAIN));
   }
 

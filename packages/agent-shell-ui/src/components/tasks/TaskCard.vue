@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject } from "vue";
 import { ChevronRight, CircleAlert, Database, LoaderCircle } from "lucide-vue-next";
-import type { AgentTaskError, RetrievalTask } from "@ontomato/contracts/agent-tasks";
+import type { AgentTaskError,ChannelAgentTask } from "@ontomato/contracts/agent-tasks";
 import { shellContextKey } from "../../context";
 import { useAutoFold } from "../../useAutoFold";
 import TaskProcess from "./TaskProcess.vue";
@@ -10,10 +10,10 @@ import TaskProcess from "./TaskProcess.vue";
  * A retrieval the reply delegated, in the reply's process: who does it, how each branch ended and, while the retriever
  * works, its own live process. It shows the work only; the data reaches the reader through the reply.
  */
-const props = defineProps<{ task: RetrievalTask; sessionId: string }>();
+const props = defineProps<{ task: ChannelAgentTask; sessionId: string }>();
 const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value.tasks!);
-const running = computed(() => props.task.status === "running");
+const running = computed(() => props.task.status === "running" || props.task.status === "starting");
 const { open, toggle } = useAutoFold(() => running.value);
 
 function reason(error: AgentTaskError) {
@@ -23,18 +23,18 @@ function reason(error: AgentTaskError) {
 
 <template>
   <div :id="`agent-task-${task.id}`" class="task" :class="{ open }">
-    <button type="button" class="task-summary" :aria-expanded="open" @click="toggle">
+    <component :is="task.process.mode === 'page' ? 'a' : 'button'" :type="task.process.mode === 'page' ? undefined : 'button'" :href="task.process.mode === 'page' ? task.process.href : undefined" class="task-summary" :aria-expanded="task.process.mode === 'page' ? undefined : open" @click="task.process.mode !== 'page' && toggle()">
       <LoaderCircle v-if="running" :size="14" class="spin" />
       <CircleAlert v-else-if="task.status === 'failed'" :size="14" class="danger" />
       <Database v-else :size="14" />
-      <span class="executor">{{ labels.retriever }}</span>
+      <span v-if="task.retrieval" class="executor">{{ labels.retriever }}</span>
       <span class="status">{{ labels.status[task.status] }}</span>
-      <span class="detail">{{ task.question }}</span>
+      <span class="detail">{{ task.title }}</span>
       <ChevronRight :size="14" class="chevron" />
-    </button>
-    <div v-if="open" class="task-body">
-      <ul class="branches">
-        <li v-for="branch in task.branches" :key="branch.source" class="branch">
+    </component>
+    <div v-if="open && task.process.mode !== 'page'" class="task-body">
+      <ul v-if="task.retrieval" class="branches">
+        <li v-for="branch in task.retrieval!.branches" :key="branch.source" class="branch">
           <div class="branch-line">
             <span class="branch-name">{{ labels.branch[branch.source] }}</span>
             <span class="branch-status" :class="branch.status">{{ labels.status[branch.status] }}</span>
@@ -68,6 +68,7 @@ function reason(error: AgentTaskError) {
   line-height: var(--leading-sm);
 }
 .task-summary {
+  text-decoration: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;

@@ -2,7 +2,7 @@
 import { computed, provide, ref, toRef, watch } from "vue";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "../host";
-import { shellContextKey } from "../context";
+import { conversationQuestions, shellContextKey } from "../context";
 import type { ConversationItem } from "../view";
 import type {
   ArtifactRendererOverride,
@@ -103,6 +103,7 @@ provide(shellContextKey, {
   },
   openArtifactKey: noOpenArtifact,
   pageLink: () => null,
+  questions: conversationQuestions(conversation),
 });
 
 watch(
@@ -146,19 +147,19 @@ watch(
 async function send(text: string) {
   const result = await conversation.send(props.agentId, text);
   if (!result) return;
-  if (!result.snapshot) {
+  if (!result.delivery) {
     // The session was created but its run refused: it is still the host's, so sending again goes on in it.
     emit("update:sessionId", result.createdSession.id);
     return;
   }
   // Track the run before the host opens the newly created session; opening resets the projection
   // and must not be mistaken for a finished run.
-  lastRunId = result.snapshot.run.id;
+  lastRunId = result.delivery.runId;
   if (result.createdSession) emit("update:sessionId", result.createdSession.id);
   const sessionId =
-    result.snapshot.run.sessionId ?? result.createdSession?.id ?? conversation.state.sessionId;
-  const run = result.snapshot.run;
-  if (sessionId && run.status === "stopped")
+    result.delivery.sessionRef.sessionId;
+  const run = result.snapshot?.run;
+  if (sessionId && run?.status === "stopped")
     emitRunComplete(sessionId, run.id, run.stopReason !== "aborted" && !run.errorMessage);
 }
 
@@ -201,6 +202,7 @@ defineExpose({
       :send-error="conversation.sendError.value"
       :pending-input="conversation.pendingInput.value"
       :busy="conversation.busy.value"
+      :sending="conversation.sending.value"
       :feedback="feedback"
       @send="send"
       @stop="conversation.cancel"

@@ -26,7 +26,10 @@ The skills cover different tasks on this same platform: `ontomato-ontomap-builde
 
 ## This skill’s role
 
-Answer business questions using the current ontology and its permitted data. This package reads definitions and queries data; it does not change the data source, ontomap, permissions or business records. It needs no product checkout. Choose `ask` for a natural-language question, `execute-dsl` when you need to control the query, or the separately configured analysis MCP service for a report.
+If you are already the product retriever, use the direct query commands and data-retrieval
+for delivery; do not delegate the same question to another retriever.
+
+Answer business questions using the current ontology and its permitted data. This package reads definitions and queries data; it does not change the data source, ontomap, permissions or business records. It needs no product checkout. Use the accessible retriever from `agent list` for a natural-language question, `execute-dsl` when you need to control the query, or the separately configured analysis MCP service for a report.
 
 ## Configuration
 
@@ -64,40 +67,42 @@ Run `node ontomato.mjs <command>` from this directory. JSON accepts `@file`.
 | `actions` | The actions your roles are granted by an active revision, with the granting process; the same intersection the executor uses |
 | `run <actionId> [@parameters.json]` | `POST /action/execute`: perform one step your roles are granted; a refusal is reported with its real cause |
 | `knowledge <question> [--limit n]` | `POST /ontology/query/knowledge/search`: relevant business knowledge |
-| `ask [--lang en] [--request-id UUID] "complete question"` | Start concurrent binding execution and retrieval; return the first deliverable results and download their files |
-| `ask --status <retrievalId>` | Read branch status, available results, cursor and each branch's quality task |
-| `ask --wait <retrievalId> --after <cursor>` | Wait for later results without starting another query; download only the returned results |
-| `ask --cancel-retriever <retrievalId>` | Cancel only the current retriever, retaining binding results and their QC |
-| `ask --cancel <retrievalId>` | Cancel unfinished work in both branches; keep accepted results |
-| `ask --resume <retrievalId> --answers @answers.json [--request-id UUID]` | Explicit answers in the same session, new run |
 
-`ask` prints its request ID before creating work and then the retrieval/session IDs.
-The ontology host runs binding recall/execution and the retriever concurrently.
-They do not share execution results. Only a successfully executed binding can
-return early; no match or a binding failure keeps ask waiting for the retriever.
-A successful result with zero rows is still a result, with its completeness flags.
-The response includes pending branch status, a result cursor and downloaded files.
-Cancel the retriever only when a binding's meaning, conditions and parameter values
-fully answer the question. Otherwise, including when it keeps a condition the
-question changes or drops, wait with the returned cursor for later results; a
-binding never shows that a request cannot be answered. Keep the new cursor after every
-wait. Do not restart ask for this question or treat lookup failure as empty data.
-Binding files are formal host results with null selfCheck, not agent self-checks.
-The retriever retains its existing metric-use and comparison requirements.
-Keep them to inspect or retry an uncertain response. Reusing a request ID with
-changed input is an error. Status returns the authoritative PI run state, messages and file artifact IDs.
-A normal stop may be a question, not a dataset. Ask the user and resume the same
-retrieval with their text; silence does not select a recommendation.
+## Standalone agent commands (outside the product)
 
-```json
-{"expectedRunId":"<run from status>","expectedDecisionRevision":0,
- "message":"Use active employees only"}
-```
+In an Ontomato conversation, delegation follows the native `agent` tool and
+`ontomato-analyst-assistant`; the CLI entry below is for standalone use.
 
-Use this envelope with ask --resume <id> --answers @file and a fresh request ID.
-Reuse that same request ID/envelope after a lost response. Quality checks run
-separately after delivery as their own tasks; they never hold up your answer. The product retriever uses direct
-ontology commands and the data-retrieval file script, never recursively ask.
+| Command | API and result |
+| --- | --- |
+| `agent list [query]` | List accessible agents and their provider/id references |
+| `agent start --agent <providerId>/<agentId> --message @question.txt [--context @context.json]` | Admit binding and retrieval together; return taskId and sessionRef immediately |
+| `agent read <taskId> [--follow] [--files]` | Read a snapshot or follow its SSE updates; download delivered files without changing their bytes |
+| `agent send --session <providerId>/<sessionId> --message @answer.txt --reply-to <questionId>` | Answer in the same conversation; steer while running, otherwise start its next round |
+| `agent send --session <providerId>/<sessionId> --message @question.txt [--steer]` | Continue that conversation; ordinary messages fail while busy unless explicitly steered |
+| `agent cancel <taskId>` | Cancel this execution and its delegated descendants; keep accepted results |
+| `retriever-cancel <sessionId> --run <runId>` | Ontology business command: stop only the retriever, preserving binding results and QC |
+
+
+## Standalone delegation and results
+
+Use `agent list` to identify the accessible data retriever and `agent start` with its returned
+reference and one complete question. Preserve the user's wording and established scope.
+`start` and `send` acknowledge admission, not a result. Use `read --follow` for events and
+`read --files` to download delivered bytes; do not replace event following with polling or sleeps.
+
+For a received question, consult this conversation and ask the user only for a missing business
+decision. Send the answer to the question's session with `replyTo` (CLI: `--reply-to`), using
+its stable question ID. The recipient may still be running; the channel chooses steering or a
+new round. Silence confirms nothing. Without a product parent, questions appear in reads/events;
+`read --follow` returns on an unanswered question or a terminal snapshot, so a question is not completion.
+
+Binding and retriever branches run independently. A successful binding, including zero rows,
+is available before the retriever finishes. Check its meaning, conditions and parameters before
+using it as the answer; otherwise keep the retriever's task. Lookup failure is not empty data.
+Preserve partial-result limits. Both branches settle before the final result notification;
+quality checks continue separately. Formal binding files have null selfCheck.
+
 
 ## Acting on your own work
 
@@ -122,14 +127,14 @@ credential problem, and retrying with different parameters will not change it.
 Read overview, schema/relationships and knowledge. Retrieve metric specifications
 before inventing a calculation. Inspect exact stored values when needed. For DSL,
 follow [the reference entry guide](references/dsl.md) and fetch the rules for the
-actual classes; the Java service owns the grammar. `ask` does this orchestration
+actual classes; the Java service owns the grammar. The retriever does this orchestration
 for natural-language questions. It can take several minutes.
 
 An `answer` is data, not permission to claim complete coverage. Preserve `truncated`,
 `rowLimit` and `truncationHint`, including an empty partial result. Null, false and
 zero are distinct values. Missing relationships/fields are ontology gaps; do not
 invent joins or request elevated credentials to force a result. Report the business
-answer with scope, assumptions and limits. Final datasets from `ask` are rerun
+answer with scope, assumptions and limits. Final datasets from the retriever are rerun
 under the user's authorization and stored as immutable artifacts. This external
 client never requests or selects exploration credentials.
 
@@ -159,6 +164,8 @@ curl -o report.pdf "<downloadUrl>"
 Only report tasks that already have report text can be downloaded; conversation tasks have no report.
 
 
-`ask` uses the ontology URL and the same entry inside and outside Ontomato. It prints the retrieval/run/decision revision, current deliveries, pending status, cursor and downloaded dataset file paths under `outputs/retrievals/`. Reference those paths directly; do not rebuild the data. Resume with `ask --resume <retrievalId> --answers @reply.json`; the file includes `expectedRunId`, `expectedDecisionRevision` and `message`. Reuse `--request-id` after an uncertain response.
-
-`ONTOMATO_TK` is the current user token; API-key callers can use `ONTOMATO_API_KEY`. In a hosted assistant, optional `ONTOMATO_RETRIEVAL_CALLER_ID` binds ask to its parent lifecycle. It is an association ID, not a credential; the command passes it automatically. External agents leave it unset. The retriever itself uses direct queries and data-retrieval's dataset command, not recursive ask.
+`ONTOMATO_TK` supplies a current user token; API-key callers use `ONTOMATO_API_KEY`.
+The domain comes from the credential. `agent` commands use `/platform/agent-channel/commands`;
+`read --follow` uses the task's events endpoint. Do not retry an uncertain admission by
+starting a second task; inspect the returned task reference. Hosted agents use the native
+tool so delegation, results and cancellation remain attached to their actual conversation.

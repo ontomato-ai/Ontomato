@@ -22,7 +22,7 @@ export interface SessionRow {
   agent_id: string;
   workspace_id: string | null;
   title: string;
-  origin: "user" | "scheduled";
+  origin: "user" | "scheduled" | "delegated";
   latest_run_id: string | null;
   created_at: Date;
   updated_at: Date;
@@ -97,6 +97,10 @@ export const assistantStore = {
         [domainId],
       )
     ).rows;
+  },
+  async channelAgents(domainId: string): Promise<AgentRow[]> {
+    await this.agents(domainId);await this.appBuilder(domainId);
+    return (await db().query(`SELECT * FROM ${table("assistant_agents")} WHERE domain_id=$1 ORDER BY sort_order,name,id`,[domainId])).rows;
   },
   async appBuilder(domainId: string): Promise<AgentRow> {
     await db().query(

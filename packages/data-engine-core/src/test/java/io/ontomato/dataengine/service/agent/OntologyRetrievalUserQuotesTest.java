@@ -15,7 +15,7 @@ class OntologyRetrievalUserQuotesTest {
     JSONObject callerInput =
         JSONObject.of("recentUserMessages", JSONArray.of("first user message", "current user message"));
 
-    OntologyRetrievalService.applyCallerUserQuotes(input, callerInput);
+    OntologyAgentStore.applyCallerUserQuotes(input, callerInput);
 
     assertEquals(
         List.of("first user message", "current user message"),
@@ -26,7 +26,7 @@ class OntologyRetrievalUserQuotesTest {
   void externalCallWithoutACallerKeepsItsOwnQuotes() {
     JSONObject input = JSONObject.of("question", "How many?", "userQuotes", JSONArray.of("external quote"));
 
-    OntologyRetrievalService.applyCallerUserQuotes(input, null);
+    OntologyAgentStore.applyCallerUserQuotes(input, null);
 
     assertEquals(List.of("external quote"), input.getList("userQuotes", String.class));
   }
@@ -35,13 +35,13 @@ class OntologyRetrievalUserQuotesTest {
   void callerWithoutMessagesDoesNotFallBackToModelQuotes() {
     JSONObject input = JSONObject.of("question", "How many?", "userQuotes", JSONArray.of("model rewrite"));
 
-    OntologyRetrievalService.applyCallerUserQuotes(input, new JSONObject());
+    OntologyAgentStore.applyCallerUserQuotes(input, new JSONObject());
 
     assertEquals(List.of(), input.getList("userQuotes", String.class));
   }
 
   @Test
-  void confirmedDecisionsKeepOnlyUserText() {
+  void confirmedDecisionsIncludeAgentAnswersWithoutTreatingThemAsUserQuotes() {
     JSONArray decisions =
         JSONArray.of(
             JSONObject.of("text", "Only active employees", "source", "user"),
@@ -50,7 +50,7 @@ class OntologyRetrievalUserQuotesTest {
             JSONObject.of("text", "Exclude contractors", "source", "user"));
 
     assertEquals(
-        List.of("Only active employees", "Exclude contractors"),
+        List.of("Only active employees", "Use last month", "Exclude contractors"),
         OntologyRetrievalService.confirmedDecisions(decisions));
     assertEquals(List.of(), OntologyRetrievalService.confirmedDecisions(null));
   }

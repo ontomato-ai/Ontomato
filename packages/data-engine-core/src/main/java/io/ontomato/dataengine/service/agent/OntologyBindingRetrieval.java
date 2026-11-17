@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 /** The host executes bindings independently of the retriever's runtime and write gate. */
 @Service
 public class OntologyBindingRetrieval {
+  private final AgentChannelChanges changes;
   private final OntologyAgentStore store;
   private final MetricViewDao metrics;
   private final MetricViewService metricService;
@@ -28,8 +29,8 @@ public class OntologyBindingRetrieval {
   private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(OntologyBindingRetrieval.class);
 
   public OntologyBindingRetrieval(OntologyAgentStore store, MetricViewDao metrics, MetricViewService metricService,
-      QueryOutputService outputs, QueryJobService jobs, QueryQualityService quality, RetrievalResults results, SessionRegistryService sessions) {
-    this.store=store; this.metrics=metrics; this.metricService=metricService; this.outputs=outputs;
+      QueryOutputService outputs, QueryJobService jobs, QueryQualityService quality, RetrievalResults results, SessionRegistryService sessions,AgentChannelChanges changes) {
+    this.changes=changes;this.store=store; this.metrics=metrics; this.metricService=metricService; this.outputs=outputs;
     this.jobs=jobs; this.quality=quality; this.results=results; this.sessions=sessions;
   }
 
@@ -93,7 +94,7 @@ public class OntologyBindingRetrieval {
                 uuid(id), uuid(run), AgentJson.json(request));
             return null;
           });
-          jobs.start(id, context.access().user(), "output", JSONObject.of("recipe",recipe,"classNames",request.get("classNames")),
+          jobs.start(id, context.access(), "output", JSONObject.of("recipe",recipe,"classNames",request.get("classNames")),
               execution -> outputs.execute(execution, AgentJson.copy(recipe), null, context.access(), context.language(), scope));
           JSONObject job;
           do {
@@ -120,7 +121,7 @@ public class OntologyBindingRetrieval {
           LOG.warn("Binding candidate failed for {}: {}", run, failure.getMessage());
         }
       }
-      store.update("UPDATE ontology_binding_runs SET open=false,status='completed' WHERE run_id=? AND open=true", uuid(run));
+      if(store.update("UPDATE ontology_binding_runs SET open=false,status='completed' WHERE run_id=? AND open=true",uuid(run))!=0) changes.run(retrieval,run,owner,"delivery");
       settleQuality(run,owner);
     } catch (Exception failure) {
       cancel(retrieval, run, owner);
@@ -180,10 +181,8 @@ public class OntologyBindingRetrieval {
 
   public void cancel(String retrieval, String run, Owner owner) {
     store.run(retrieval,run,owner);
-    store.transaction(() -> {
-      store.update("UPDATE ontology_binding_runs SET open=false,status='cancelled' WHERE run_id=? AND open=true",uuid(run));
-      return null;
-    });
+    boolean changed=store.transaction(() -> store.update("UPDATE ontology_binding_runs SET open=false,status='cancelled' WHERE run_id=? AND open=true",uuid(run))!=0);
+    if(changed) changes.run(retrieval,run,owner,"delivery");
     settleQuality(run,owner);
     for(var output:store.rows("SELECT id FROM ontology_binding_outputs WHERE run_id=? AND dataset IS NULL",uuid(run)))
       try { jobs.cancel(output.getString("id"),subject(owner),"output"); }
@@ -220,10 +219,11 @@ public class OntologyBindingRetrieval {
     }
     var request=accepted.get(0).getJSONObject("request");
     // A binding branch only reports its conclusion; it never creates a new candidate.
-    quality.start(JSONObject.of("id",branch.getString("qc_id"),"question",request.getString("question"),
+    quality.start(JSONObject.of("id",branch.getString("qc_id"),"sourceRunId",run,"question",request.getString("question"),
         "userQuotes",request.get("userQuotes"),"confirmedDecisions",request.get("confirmedDecisions"),
         "programs",programs,"recipes",recipes,"classNames",request.get("classNames")),subject(owner),request.getString("language"),false);
     store.update("UPDATE ontology_binding_runs SET qc_admitted=true WHERE run_id=?",uuid(run));
+    changes.job(branch.getString("qc_id"));
   }
 
   @Scheduled(fixedDelay=1000)
