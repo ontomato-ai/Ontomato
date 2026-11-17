@@ -5,6 +5,7 @@ import { useRoute } from "vue-router";
 import {
   DashboardHome, useDashboardStore, type DashboardSurface,
 } from "@ontomato/workbench-ui/features/dashboard";
+import { DASHBOARDS_PAGE_SKILL } from "@ontomato/workbench-ui/features/workbench";
 import { PageComposer } from "@ontomato/agent-shell-ui";
 import AppPage from "./AppPage.vue";
 
@@ -64,11 +65,14 @@ const opened = store
   .catch(() => {});
 void opened;
 
+/** The page's own configuration error: its composer names it and the page shows it, rather than choosing another agent. */
+const problem = ref<string | null>(null);
 const labels = computed(() => ({
   placeholder: t("assistant.placeholder"),
   send: t("assistant.send"),
   stop: t("assistant.stop"),
   agent: t("assistant.agent"),
+  pageAgentUnavailable: t("assistant.pageAgentUnavailable"),
 }));
 /** The page's own address: the counter opens this same board beside the message. */
 const page = computed(
@@ -82,6 +86,18 @@ const page = computed(
     labels: { save: t('common.save'), discard: t('common.cancel'), unsavedChanges: t('admin.unsavedChanges') },
   }">
     <DashboardHome />
-    <PageComposer v-if="!props.paired" :page="page" :labels="labels" />
+    <!-- The page's own composer offers the agents this page can work with, the same declaration the conversation reads. -->
+    <PageComposer v-if="!props.paired" :page="page" :labels="labels" :page-skill="DASHBOARDS_PAGE_SKILL" @error="problem = $event" />
+    <p v-if="problem" class="page-composer-error" role="alert">{{ problem }}</p>
   </component>
 </template>
+
+<style scoped>
+/* The page's own configuration error, at the foot where its composer would be: the reader is told, not left guessing. */
+.page-composer-error {
+  width: min(760px, 100%);
+  margin: 0 auto var(--spacing-md);
+  color: var(--el-color-danger);
+  font-size: var(--text-sm);
+}
+</style>
