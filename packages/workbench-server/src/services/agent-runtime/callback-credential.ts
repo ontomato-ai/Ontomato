@@ -16,7 +16,6 @@ const claimsSchema = z
     expiresAt: z.number(),
     token: z.string(),
     apiKey: z.string(),
-    methods: z.array(z.enum(["GET", "POST", "PUT", "DELETE"])).optional(),
   })
   .strict();
 function key() {
@@ -63,7 +62,7 @@ export const unwrapCallbackCredential: RequestHandler = (req, _res, next) => {
       ),
     );
     if (
-      !(claims.methods ?? ["POST", "GET"]).includes(req.method as "GET" | "POST" | "PUT" | "DELETE") ||
+      !["POST", "GET"].includes(req.method) ||
       !req.path.startsWith(claims.pathPrefix) ||
       claims.expiresAt <= Date.now() ||
       req.header("X-Ontomato-Run-Id") !== claims.runId

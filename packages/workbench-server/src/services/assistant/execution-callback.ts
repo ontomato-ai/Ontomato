@@ -20,7 +20,6 @@ export function executionSkillEnvironment(_owner: AssistantOwner, initiatorCrede
     secrets: { ONTOMATO_EXECUTION_CALLBACK: callbackCredential({
       pathPrefix, runId, expiresAt: Date.now() + getQueryTimeoutMs(),
       token: initiatorCredentials.token ?? "", apiKey: initiatorCredentials.apiKey ?? "",
-      methods: ["GET", "POST", "PUT", "DELETE"],
     }).value },
   };
 }

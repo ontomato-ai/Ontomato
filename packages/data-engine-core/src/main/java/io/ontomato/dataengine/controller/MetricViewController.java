@@ -44,8 +44,11 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RestController
 public class MetricViewController {
-    @org.springframework.beans.factory.annotation.Autowired
-    private io.ontomato.dataengine.service.agent.AgentExecutionScope agentExecutionScope;
+    private final io.ontomato.dataengine.service.agent.AgentExecutionScope agentExecutionScope;
+
+    public MetricViewController(io.ontomato.dataengine.service.agent.AgentExecutionScope agentExecutionScope) {
+        this.agentExecutionScope = agentExecutionScope;
+    }
 
     @org.springframework.beans.factory.annotation.Autowired
     private io.ontomato.dataengine.service.BuildTestContextService buildTests;
