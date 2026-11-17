@@ -73,15 +73,14 @@ describe("the board row", () => {
       { id: "d3", name: "三" },
       { id: "d4", name: "四" },
     ];
-    const at = await router({ dashboardId: "d4" });
+    const at = await router({ dashboardId: "d1" });
     const wrapper = mount(DashboardHome, { global: { plugins: [workbenchI18n(), createPinia(), at, ElementPlus], stubs: { EChart: true, transition: false } } });
     await flushPromises();
     layOutStrip(wrapper.element);
-    // A panel measured again at another width (the side panel, the window) reopens the row at that width.
-    window.dispatchEvent(new Event("resize"));
-    await flushPromises();
 
-    // The fourth board is the open one and it did not fit: the row moved so that it does.
+    // The row at its real width: opening the fourth board moves it so that the board is in sight.
+    await at.push({ path: "/", query: { dashboardId: "d4" } });
+    await flushPromises();
     expect(wrapper.find(".tab.active .tab-open").text()).toBe("四");
     const strip = wrapper.find(".tabs").element as HTMLElement;
     expect(strip.scrollLeft).toBeGreaterThan(0);

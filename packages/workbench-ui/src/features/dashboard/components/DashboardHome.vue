@@ -157,8 +157,7 @@ watch(tabsRef, (element, previous) => {
   if (previous) resize.unobserve(previous);
   if (element) resize.observe(element);
 });
-onMounted(() => window.addEventListener("resize", revealOpenBoard, { passive: true }));
-onBeforeUnmount(() => window.removeEventListener("resize", revealOpenBoard));
+onBeforeUnmount(() => resize.disconnect());
 
 /** Dropping the draft only empties this page: the saved board stays as it was, and the address stops naming the draft. */
 function discardDraft() {
