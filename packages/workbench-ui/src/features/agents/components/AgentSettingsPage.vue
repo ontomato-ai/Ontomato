@@ -8,7 +8,7 @@ import { useAgentDefinitions } from "../definitions";
  * The agent settings' main area: the editor of the agent the address names or the editor of a new one. The list is not
  * here — it is the column's (DESIGN.md "Applications and shells").
  *
- * `/agents/settings` opens the first agent, `/agents/settings/<id>` that agent and `/agents/settings/new` a new one, so
+ * `/ontology/agents` opens the first agent, `/ontology/agents/<id>` that agent and `/ontology/agents/new` a new one, so
  * every screen has an address to link, bookmark and reload.
  */
 const props = defineProps<{
