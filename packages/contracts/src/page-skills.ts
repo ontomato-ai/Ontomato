@@ -12,7 +12,7 @@ const pageSkillFields = {
 /** The application owns the mapping; leaf pages retain their existing menu codes. */
 export const pageSkillSchema = z.union([
   z.object({ permissionCode: z.string().min(1), ...pageSkillFields }).strict(),
-  z.object({ access: z.literal("domain-member"), ...pageSkillFields }).strict(),
+  z.object({ access: z.literal("domain-member"), pageKey: z.string().min(1), ...pageSkillFields }).strict(),
 ]);
 export type PageSkill = z.infer<typeof pageSkillSchema>;
 
@@ -22,7 +22,7 @@ export const pageSkillsProjectionSchema = z.object({
 }).strict();
 export type PageSkillsProjection = z.infer<typeof pageSkillsProjectionSchema>;
 
-/** pageKey selects a local default; permissionCode/access locates the mapping. */
+/** Menu mappings use permissionCode; domain-member mappings use access + pageKey. pageKey also selects a local default. */
 export const assistantAgentsQuerySchema = z.union([
   z.object({}).strict(),
   z.object({ pageKey: z.string().min(1), permissionCode: z.string().min(1) }).strict(),
