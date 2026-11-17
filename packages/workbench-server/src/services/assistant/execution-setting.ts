@@ -25,7 +25,7 @@ export async function prepareExecutionSetting(owner: AssistantOwner, oldExecutio
 }
 const resolvedSchema = z.object({ executionUserId: z.string().min(1), apiKey: z.string().min(1).nullable() }).strict();
 /** The definition comes from storage; run requests cannot override its execution user. */
-export async function resolveAgentExecution(agent: AgentRow, initiator: AssistantOwner,
+export async function resolveAgentExecution(agent: Pick<AgentRow, "id" | "execution_user_id">, initiator: AssistantOwner,
   initiatorCredentials: AssistantCredentials): Promise<{ executionUserId: string; credentials: AssistantCredentials }> {
   const response = await internalRequest("resolve", { domainId: initiator.domainId, agentId: agent.id,
     executionUserId: agent.execution_user_id, initiatorId: initiator.userId }, initiatorCredentials);
