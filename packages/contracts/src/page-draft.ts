@@ -1,12 +1,13 @@
 import { z } from "zod";
-import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeKeySchema, runtimeRelativePathSchema } from "./agent-runtime-values";
+import { runtimeJsonObjectSchema, runtimeKeySchema, runtimeRelativePathSchema } from "./agent-runtime-values";
 
 /*
  * A page draft: what an agent wrote for one page to fill in and the reader to save. The envelope is the same
  * everywhere; `form` is the page's own save request, so only the page checks its structure.
  */
+/** The target id is opaque here; the page and the object's owner check its format (an agent id is a UUID, a knowledge id is not). */
 export const pageDraftTargetSchema = z
-  .object({ id: runtimeIdSchema.optional() })
+  .object({ id: z.string().min(1).max(200).optional() })
   .strict();
 
 export const pageDraftSchema = z
@@ -23,7 +24,7 @@ export interface PageDraft<Form> {
   pageKey: string;
   /** The page's own form action, e.g. `agent.create` or `agent.update`. */
   operation: string;
-  /** The object changed; a create leaves the id out. */
+  /** The object changed, by its owner's opaque id; a create leaves the id out. */
   target: { id?: string };
   form: Form;
 }
