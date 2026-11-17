@@ -64,11 +64,10 @@ function fieldLabel(field:string){return 'presentation' in props.asset.document?
         <dt>组件标识</dt><dd><code>{{widget.id}}</code></dd>
         <dt>布局</dt><dd>{{widget.span}} / 12 列 · {{widget.height}}px</dd>
         <template v-if="widget.resourceId"><dt>能力标识</dt><dd><code>{{widget.resourceId}}</code></dd></template>
-        <template v-if="widget.kind==='chart'"><dt>图表样式</dt><dd>{{({bar:'柱状图',line:'折线图',donut:'环形图'} as Record<string,string>)[widget.chartType]??widget.chartType}}</dd></template>
-        <template v-if="widget.valueField"><dt>数值字段</dt><dd><code>{{widget.valueField}}</code></dd></template>
-        <template v-if="widget.labelField"><dt>标签字段</dt><dd><code>{{widget.labelField}}</code></dd></template>
-        <template v-if="widget.fields.length"><dt>展示字段</dt><dd class="field-list"><code v-for="field in widget.fields" :key="field">{{field}}</code></dd></template>
-        <template v-if="widget.text"><dt>文案</dt><dd class="configuration-text">{{widget.text}}</dd></template>
+        <template v-if="widget.kind!=='chart'&&widget.valueField"><dt>数值字段</dt><dd><code>{{widget.valueField}}</code></dd></template>
+        <template v-if="widget.kind!=='chart'&&widget.labelField"><dt>标签字段</dt><dd><code>{{widget.labelField}}</code></dd></template>
+        <template v-if="widget.kind!=='chart'&&widget.fields.length"><dt>展示字段</dt><dd class="field-list"><code v-for="field in widget.fields" :key="field">{{field}}</code></dd></template>
+        <template v-if="widget.kind!=='chart'&&widget.text"><dt>文案</dt><dd class="configuration-text">{{widget.text}}</dd></template>
       </dl>
       <div v-if="Object.keys(widget.parameters).length" class="parameter-bindings"><h4>参数绑定</h4><div v-for="(binding,name) in widget.parameters" :key="name" class="parameter-row"><code>{{name}}</code><span>{{binding.source==='literal'?'固定值':binding.source==='variable'?'交互变量':'对象上下文'}}</span><CodeEditor v-if="binding.source==='literal'&&binding.value!==null&&typeof binding.value==='object'" :model-value="bindings(binding.value)" language="json" readonly :min-height="80"/><code v-else>{{binding.source==='literal'?bindings(binding.value):binding.path}}</code></div></div>
     </section>

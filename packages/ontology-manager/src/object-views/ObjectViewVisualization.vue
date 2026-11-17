@@ -1,73 +1,23 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
-import type { ViewWidget } from "@ontomato/contracts/object-views";
-import { useManagerClient, useOntologyText, useManagerContext } from "../context";
-import { themedChartHtml } from "@ontomato/contracts/chart-presentation";
-import { useChartTheme } from "@ontomato/foundation-ui/chart";
-import { HtmlPreview } from "@ontomato/foundation-ui/preview";
-const props = defineProps<{ widget: ViewWidget; rows: Record<string, unknown>[]; value: unknown }>();
-const client = useManagerClient();
-const context = useManagerContext();
+import type { ChartRow } from "@ontomato/contracts/chart-data";
+import type { ChartViewWidget } from "@ontomato/contracts/object-views";
+import { MetricChart } from "@ontomato/foundation-ui/chart";
+import { useOntologyText } from "../context";
+
+/**
+ * A view's chart: the file saved in this version, filled from the MetricView output the runtime read for the current
+ * object and parameters. The file names the columns it draws; the rows are the read's current result. No skill runs
+ * here, and the component keeps no copy of the data.
+ */
+const props = defineProps<{ widget: ChartViewWidget; rows: Record<string, unknown>[] }>();
 const { ot } = useOntologyText();
-const chartTheme = useChartTheme();
-const html = ref("");
-const error = ref("");
-const loading = ref(false);
-const empty = computed(() => {
-  if (props.widget.chartType !== "graph") return props.rows.length === 0;
-  const value = props.value;
-  if (value == null) return true;
-  if (Array.isArray(value)) return value.length === 0;
-  if (typeof value === "object") {
-    const nodes = (value as { nodes?: unknown }).nodes;
-    return Object.keys(value).length === 0 || (Array.isArray(nodes) && nodes.length === 0);
-  }
-  return false;
-});
-let request = 0;
-onBeforeUnmount(() => { request++; });
-// The skill's charts are drawn in the platform's chart theme, with the page's theme properties inside the frame.
-const displayedHtml = computed(() =>
-  themedChartHtml(client.viewSkillHtml(html.value), chartTheme.value, context.presentation.themeProperties[context.theme]));
-watch(() => JSON.stringify([props.widget, props.value, props.rows, context.locale]), async () => {
-  const current = ++request;
-  html.value = ""; error.value = ""; loading.value = false;
-  if (empty.value) return;
-  loading.value = true;
-  try {
-    const widget = props.widget;
-    const result = await client.renderViewSkill(widget.skillId, {
-      data: widget.chartType === "graph" ? props.value : props.rows,
-      chartType: widget.chartType === "graph" ? "network-graph" : widget.chartType,
-      title: widget.title, xField: widget.labelField, yField: widget.valueField,
-      showTitle: false,
-      compact: true,
-      dateField: widget.dateField, descriptionField: widget.descriptionField,
-      latitudeField: widget.latitudeField, longitudeField: widget.longitudeField,
-      labelField: widget.labelField, valueField: widget.valueField,
-      nameField: "label", typeField: "group", relationField: "label",
-    });
-    if (current === request) html.value = result;
-  } catch (reason) {
-    if (current === request) error.value = reason instanceof Error ? reason.message : String(reason);
-  } finally { if (current === request) loading.value = false; }
-}, { immediate: true });
+const columns = props.widget.chartFile.dataset[0].dimensions.map(key => ({ key }));
 </script>
 <template>
-  <div class="skill-visualization" :aria-busy="loading" :style="{ height: widget.height + 'px' }">
-    <div v-if="empty" class="visualization-empty" role="status">{{ ot('ovNoChartData') }}</div>
-    <div v-if="loading" class="visualization-loading" role="status"><span class="loading-indicator" aria-hidden="true" />{{ ot('ovLoading') }}</div>
-    <p v-if="error" class="visualization-error" role="alert">{{ error }}</p>
-    <HtmlPreview v-if="html" :html="displayedHtml" :title="widget.title" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer" :style="context.presentation.themeProperties[context.theme]" />
+  <div class="view-chart" :style="{ height: widget.height + 'px' }">
+    <MetricChart :file="widget.chartFile" :metric="{ columns, rows: rows as ChartRow[] }" :height="widget.height" :undated="ot('ovUndated')" :empty="ot('ovNoChartData')" />
   </div>
 </template>
 <style scoped>
-.skill-visualization { box-sizing: border-box; min-width: 0; max-width: 100%; overflow: hidden; display: flex; flex-direction: column; background: var(--el-bg-color); }
-iframe { height: 100%; min-height: 0; flex: 1; background: var(--el-bg-color); }
-.visualization-loading { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--el-text-color-secondary); }
-.visualization-empty { flex: 1; display: grid; place-items: center; padding: 24px; color: var(--el-text-color-secondary); text-align: center; }
-.loading-indicator { width: 14px; height: 14px; border: 2px solid var(--el-border-color); border-top-color: var(--el-color-primary); border-radius: 50%; animation: visualization-spin .8s linear infinite; }
-.visualization-error { margin: 0; padding: var(--manager-content-gap); overflow: auto; color: var(--el-color-danger); overflow-wrap: anywhere; }
-@keyframes visualization-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .loading-indicator { animation: none; } }
+.view-chart { box-sizing: border-box; min-width: 0; max-width: 100%; overflow: hidden; }
 </style>

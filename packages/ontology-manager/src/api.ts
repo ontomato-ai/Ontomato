@@ -684,33 +684,14 @@ export function createManagerClient(
     return objectViewRequest("save", document.className, form, { document, expectedRevision, description });
   }
 
-  /**
-   * Every skill of the domain: a package says nothing about drawing charts, so the author picks one and the preview shows
-   * whether it can. Until object views keep their own generated charts (requirement 46820517), this is the whole choice.
-   */
-  async function loadViewSkills() {
+  /** Every skill of the domain, for the capability overview. Charts are drawn from a chart file, not by a skill. */
+  async function loadSkills() {
     const response = await send("/skills", { method: "GET" }, "");
     // Declared as a list, so an answer without one is an empty list rather than undefined: a caller that iterates
     // this must not have to know that the service can answer with a body of another shape.
     return Array.isArray(response.skills)
       ? (response.skills as Array<{ id: string; title: string }>)
       : [];
-  }
-
-  async function renderViewSkill(id: string, input: Record<string, unknown>) {
-    const response = await send(`/skills/${encodeURIComponent(id)}/render`, { method: "POST", body: JSON.stringify({ input }) }, "");
-    return String(response.result.html);
-  }
-
-  function viewSkillHtml(html: string) {
-    return html.replace(/(["'])(\/api\/(?:skills\/resources|echart)\/[^"'<>\s]+)\1/g, (_match, quote: string, resource: string) => {
-      const url = new URL(resource, "http://skill.local");
-      if (url.pathname.endsWith("/echarts/scripts/echarts.min.js")) return `${quote}${context.apiBase}/echart/echarts.min.js${quote}`;
-      url.searchParams.delete("tk"); url.searchParams.delete("apiKey");
-      if (context.credential?.type === "token") url.searchParams.set("tk", context.credential.token);
-      if (context.credential?.type === "apiKey") url.searchParams.set("apiKey", context.credential.apiKey);
-      return `${quote}${context.apiBase}${url.pathname.slice(4)}${url.search}${quote}`;
-    });
   }
 
   async function loadViewLinks(className: string, primaryKey: string, relationship: string, direction: "incoming" | "outgoing", offset: number) {
@@ -913,9 +894,7 @@ export function createManagerClient(
     /** Action execution: the same client apps get from the SDK. */
     actions: createActionsClient(transport),
     loadViewLinks,
-    loadViewSkills,
-    renderViewSkill,
-    viewSkillHtml,
+    loadSkills,
     request,
     loadInstanceGraphStatistics,
     dispose: transport.dispose,

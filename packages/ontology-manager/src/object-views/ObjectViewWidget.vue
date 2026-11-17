@@ -5,7 +5,7 @@ import { ElButton, ElForm, ElInput, ElTable, ElTableColumn, ElAlert, ElSkeleton,
 import { FormFields } from "@ontomato/foundation-ui/form";
 import ElDialog from "../ManagerDialog.vue";
 import { formFieldKey, type FormField } from "@ontomato/contracts/form-fields";
-import { readViewPath, resolveViewBinding, resolveViewParameters, type ViewWidget, type ObjectReference } from "@ontomato/contracts/object-views";
+import { readViewPath, resolveViewBinding, resolveViewParameters, type NonChartViewWidget, type ViewWidget, type ObjectReference } from "@ontomato/contracts/object-views";
 import type { MetricViewDataSlots } from "../app-components/types";
 import { useManagerClient, useOntologyText } from "../context";
 import ObjectViewVisualization from "./ObjectViewVisualization.vue";
@@ -23,6 +23,8 @@ const error = ref("");
 const loading = ref(false);
 const dataLoaded = ref(false);
 const isDataWidget = computed(() => ["metric", "table", "chart", "links"].includes(props.widget.kind));
+/** The widget as a component without a chart: its fields, text and interactions. */
+const detail = computed(() => props.widget as NonChartViewWidget);
 const actionOpen = ref(false);
 /** The Action's fields as the data engine declares them, the draft of their text and the errors on them. */
 const actionFields = shallowRef<FormField[]>([]);
@@ -32,15 +34,15 @@ const offset = ref(0);
 const hasMore = ref(false);
 const linkTarget = ref({ className: "", primaryKey: "" });
 const fieldLabels = ref<Record<string, string>>({});
-watch(() => [props.reference.className, props.widget.kind, props.widget.relation, props.widget.direction], async () => {
+watch(() => [props.reference.className, props.widget.kind, detail.value.relation, detail.value.direction], async () => {
   fieldLabels.value = {};
   if (!["properties", "links", "action"].includes(props.widget.kind)) return;
   const className = props.reference.className;
   try {
     const ontology = await client.loadOntology();
     if (className !== props.reference.className) return;
-    const relation = ontology.relations.find(item => item.relationship === props.widget.relation);
-    const target = props.widget.kind === "links" && relation ? (props.widget.direction === "incoming" ? relation.fromclass : relation.toclass) : className;
+    const relation = ontology.relations.find(item => item.relationship === detail.value.relation);
+    const target = props.widget.kind === "links" && relation ? (detail.value.direction === "incoming" ? relation.fromclass : relation.toclass) : className;
     fieldLabels.value = Object.fromEntries((ontology.objects.find(item => item.className === target)?.attrs || []).map(attr => [attr.name, attr.showName || attr.name]));
   } catch { /* Raw field names remain available when metadata cannot be loaded. */ }
 }, { immediate: true });
@@ -58,20 +60,20 @@ watch(() => JSON.stringify([props.reference.className, props.reference.primaryKe
 });
 /** The view's own display of the Action's fields: its labels, and its choices in place of free text. */
 const actionFormFields = computed(() => actionFields.value.map((field): FormField => {
-  const label = props.widget.fieldLabels[field.key] || field.label;
-  const options = props.widget.fieldOptions[field.key];
+  const label = detail.value.fieldLabels[field.key] || field.label;
+  const options = detail.value.fieldOptions[field.key];
   return options
     ? {
       key: field.key, label, required: field.required, defaultValue: null, help: field.help, type: "select", refreshOnChange: false,
-      options: options.map(option => ({ ...option, description: null, disabled: false, disabledReason: null })),
+      options: options.map((option: { value: string; label: string }) => ({ ...option, description: null, disabled: false, disabledReason: null })),
     }
     : { ...field, label };
 }));
-const bindingValue = computed(() => resolveViewBinding(props.widget.binding, props.object, props.variables, props.reference));
+const bindingValue = computed(() => resolveViewBinding(detail.value.binding, props.object, props.variables, props.reference));
 // After a failed read the component shows no result rather than the one read for earlier parameters.
-const selectedData = computed(() => props.metricView?.error ? undefined : readViewPath(props.metricView?.data, props.widget.resultPath));
-watch(()=>[selectedData.value,props.widget.variable],()=>{
-  if(props.widget.kind==='properties'&&props.widget.resourceId&&props.widget.variable)emit('variable',props.widget.variable,Array.isArray(selectedData.value)?selectedData.value[props.widget.resultIndex]:undefined);
+const selectedData = computed(() => props.metricView?.error ? undefined : readViewPath(props.metricView?.data, detail.value.resultPath));
+watch(()=>[selectedData.value,detail.value.variable],()=>{
+  if(props.widget.kind==='properties'&&props.widget.resourceId&&detail.value.variable)emit('variable',detail.value.variable,Array.isArray(selectedData.value)?selectedData.value[detail.value.resultIndex]:undefined);
 },{immediate:true});
 // Shown loading and failure: the bound MetricView's read, otherwise the component's own relation read and Action.
 const busy = computed(() => props.metricView?.loading ?? loading.value);
@@ -81,9 +83,9 @@ const rows = computed<Record<string, unknown>[]>(() => {
   const value = props.widget.kind === "links" && !props.widget.resourceId ? data.value : selectedData.value ?? bindingValue.value;
   return Array.isArray(value) ? value.filter(row => row !== null && typeof row === "object") : [];
 });
-const fields = computed(() => props.widget.fields.length ? props.widget.fields : Object.keys(rows.value[0] || {}));
-const propertyObject = computed(() => props.widget.resourceId ? rows.value[props.widget.resultIndex] ?? {} : props.object);
-const propertyFields = computed(() => props.widget.fields.length ? props.widget.fields : Object.keys(propertyObject.value));
+const fields = computed(() => detail.value.fields.length ? detail.value.fields : Object.keys(rows.value[0] || {}));
+const propertyObject = computed(() => props.widget.resourceId ? rows.value[detail.value.resultIndex] ?? {} : props.object);
+const propertyFields = computed(() => detail.value.fields.length ? detail.value.fields : Object.keys(propertyObject.value));
 function format(value: unknown) {
   if (value == null) return "—";
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.0+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return value.slice(0, 10);
@@ -92,7 +94,7 @@ function format(value: unknown) {
 function displayField(field: string, value: unknown) {
   // An empty list is as empty as a missing value (the visualization reads it the same way).
   if (value == null || value === "" || (Array.isArray(value) && value.length === 0)) return "—";
-  const options = props.widget.fieldOptions[field];
+  const options = detail.value.fieldOptions[field];
   if (!options || value == null || value === "") return format(value);
   return options.find(option => option.value === String(value))?.label || ot("ovUnrecognizedOption");
 }
@@ -106,14 +108,14 @@ async function load() {
   data.value = undefined;
   hasMore.value = false;
   try {
-    if (!props.widget.relation || !props.reference.primaryKey) return;
-    const result = await client.loadViewLinks(props.reference.className, props.reference.primaryKey, props.widget.relation, props.widget.direction, offset.value);
+    if (!detail.value.relation || !props.reference.primaryKey) return;
+    const result = await client.loadViewLinks(props.reference.className, props.reference.primaryKey, detail.value.relation, detail.value.direction, offset.value);
     if (current !== request) return;
     data.value = result.rows;
     hasMore.value = result.hasMore;
     linkTarget.value = { className: result.targetClass, primaryKey: result.targetPk };
   } catch (reason) {
-    if (current === request) error.value = `${props.widget.title || props.widget.relation}: ${reason instanceof Error ? reason.message : String(reason)}`;
+    if (current === request) error.value = `${props.widget.title || detail.value.relation}: ${reason instanceof Error ? reason.message : String(reason)}`;
   } finally { if (current === request) { loading.value = false; dataLoaded.value = true; } }
 }
 watch(() => JSON.stringify([props.reference.className, props.reference.primaryKey, props.widget, parameters.value, props.refresh]), () => { offset.value = 0; void load(); }, { immediate: true });
@@ -121,22 +123,22 @@ watch(() => JSON.stringify([props.reference.className, props.reference.primaryKe
 watch(() => props.refresh, () => { void props.metricView?.reload(); });
 function page(delta: number) { offset.value = Math.max(0, offset.value + delta); void load(); }
 function selectRow(row: Record<string, unknown>) {
-  if (props.widget.variable) emit("variable", props.widget.variable, row);
+  if (detail.value.variable) emit("variable", detail.value.variable, row);
 }
 function openRow(row: Record<string, unknown>) {
-  const className = props.widget.kind === "links" && !props.widget.resourceId ? linkTarget.value.className : props.widget.targetClass;
-  const key = props.widget.kind === "links" && !props.widget.resourceId ? linkTarget.value.primaryKey : props.widget.valueField;
+  const className = props.widget.kind === "links" && !props.widget.resourceId ? linkTarget.value.className : detail.value.targetClass;
+  const key = props.widget.kind === "links" && !props.widget.resourceId ? linkTarget.value.primaryKey : detail.value.valueField;
   if (className && row[key] != null) emit("open", { className, primaryKey: String(row[key]) });
 }
 function click() {
-  if (props.widget.onClick === "refresh") emit("refresh");
-  else if (props.widget.onClick === "setVariable" && props.widget.variable) emit("variable", props.widget.variable, bindingValue.value);
-  else if (props.widget.onClick === "openObject" && props.widget.targetClass && bindingValue.value != null) emit("open", { className: props.widget.targetClass, primaryKey: String(bindingValue.value) });
+  if (detail.value.onClick === "refresh") emit("refresh");
+  else if (detail.value.onClick === "setVariable" && detail.value.variable) emit("variable", detail.value.variable, bindingValue.value);
+  else if (detail.value.onClick === "openObject" && detail.value.targetClass && bindingValue.value != null) emit("open", { className: detail.value.targetClass, primaryKey: String(bindingValue.value) });
 }
 /** The view's choices a field holds no option of; read-only fields keep their bound value. */
 function unchosen(values: Record<string, string>) {
-  return Object.keys(values).filter(name => props.widget.fieldOptions[name] && !props.widget.readOnlyParameters.includes(name)
-    && !props.widget.fieldOptions[name].some(option => option.value === values[name]));
+  return Object.keys(values).filter(name => detail.value.fieldOptions[name] && !detail.value.readOnlyParameters.includes(name)
+    && !detail.value.fieldOptions[name].some(option => option.value === values[name]));
 }
 function enterAction(key: string, value: string) {
   actionValues.value[key] = value;
@@ -152,7 +154,7 @@ async function execute() {
   error.value = "";
   try {
     const form = await client.actions.form({
-      id: props.widget.resourceId, parameters: actionBindings.value, values: actionValues.value, readOnlyParameters: props.widget.readOnlyParameters,
+      id: props.widget.resourceId, parameters: actionBindings.value, values: actionValues.value, readOnlyParameters: detail.value.readOnlyParameters,
     });
     if (current !== actionRequest) return;
     actionErrors.value = Object.fromEntries(form.errors.map(fieldError => [formFieldKey(fieldError.field, "/values/")!, fieldError.message]));
@@ -171,7 +173,7 @@ async function openAction() {
   error.value = "";
   try {
     const form = await client.actions.form({
-      id: props.widget.resourceId, parameters: actionBindings.value, readOnlyParameters: props.widget.readOnlyParameters,
+      id: props.widget.resourceId, parameters: actionBindings.value, readOnlyParameters: detail.value.readOnlyParameters,
     });
     if (current !== actionRequest) return;
     actionFields.value = form.fields;
@@ -199,17 +201,15 @@ async function openAction() {
       </el-table>
       <div v-if="widget.kind === 'links' && !widget.resourceId && (hasMore || offset > 0)" class="pages"><el-button :disabled="loading || offset === 0" @click="page(-50)">{{ ot('ovPrevious') }}</el-button><span>{{ rows.length ? offset + 1 : 0 }}–{{ offset + rows.length }}</span><el-button :disabled="loading || !hasMore" @click="page(50)">{{ ot('ovNext') }}</el-button></div>
     </template>
-    <template v-else-if="widget.kind === 'chart' && !failure">
-      <ObjectViewVisualization :widget="widget" :rows="rows" :value="widget.chartType==='graph' && Array.isArray(selectedData)?selectedData[widget.resultIndex]:selectedData ?? bindingValue" />
-    </template>
+    <ObjectViewVisualization v-else-if="widget.kind === 'chart' && !failure" :widget="widget" :rows="rows" />
     <el-input v-else-if="widget.kind === 'input'" :model-value="format(variables[widget.variable] ?? '')" :placeholder="widget.text" @update:model-value="emit('variable', widget.variable, $event)" />
     <el-button v-else-if="widget.kind === 'button'" @click="click">{{ widget.text || widget.title }}</el-button>
     <el-button v-else-if="widget.kind === 'action'" type="primary" :disabled="preview || !widget.resourceId" @click="openAction">{{ widget.text || widget.title }}</el-button>
     <el-dialog v-model="actionOpen" class="object-action-dialog" :title="widget.title" width="min(480px, calc(100% - 32px))" :append-to-body="false">
       <el-alert v-if="error" :title="error" type="error" :closable="false" />
-      <dl v-if="widget.contextFields.length" class="action-context properties"><template v-for="field in widget.contextFields" :key="field"><dt>{{ widget.fieldLabels[field] || fieldLabels[field] || field }}</dt><dd>{{ displayField(field, object[field]) }}</dd></template></dl>
+      <dl v-if="detail.contextFields.length" class="action-context properties"><template v-for="field in detail.contextFields" :key="field"><dt>{{ detail.fieldLabels[field] || fieldLabels[field] || field }}</dt><dd>{{ displayField(field, object[field]) }}</dd></template></dl>
       <el-form label-position="top" @submit.prevent="execute">
-        <FormFields :fields="actionFormFields" :values="actionValues" :errors="actionErrors" :disabled="loading" :choose-placeholder="ot('ovChooseOption')" :read-only="widget.readOnlyParameters" @input="enterAction" @choose="(field, value) => enterAction(field.key, value)" />
+        <FormFields :fields="actionFormFields" :values="actionValues" :errors="actionErrors" :disabled="loading" :choose-placeholder="ot('ovChooseOption')" :read-only="detail.readOnlyParameters" @input="enterAction" @choose="(field, value) => enterAction(field.key, value)" />
       </el-form>
       <template #footer><el-button @click="actionOpen = false">{{ ot('ovCancel') }}</el-button><el-button type="primary" :loading="loading" @click="execute">{{ ot('ovSubmit') }}</el-button></template>
     </el-dialog>

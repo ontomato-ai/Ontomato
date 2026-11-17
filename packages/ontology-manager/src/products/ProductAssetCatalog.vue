@@ -6,8 +6,9 @@ import { ArrowLeft, Plus, RefreshCw, ChevronRight, MoreHorizontal } from "lucide
 import { randomId } from "@ontomato/contracts/random-id";
 import { ElMessageBox } from "element-plus";
 import { productAssetInputSchema, productWidgets, type ProductAsset, type ProductDocument } from "@ontomato/contracts/product-assets";
+import {isMetricChartProjection} from '@ontomato/contracts/product-projections';
 import { defaultPersonalWorkspace } from "@ontomato/contracts/personal-workspace";
-import { createViewWidget } from "@ontomato/contracts/object-views";
+import { createViewWidget, type NonChartViewWidget } from "@ontomato/contracts/object-views";
 import { useManagerClient, useManagerContext, useManagerCounts,useOntologyText } from "../context";
 import ProductAssetRuntime from "./ProductAssetRuntime.vue";
 import ProductAssetConfiguration from './ProductAssetConfiguration.vue';
@@ -50,7 +51,7 @@ async function searchChildren(search=''){try{const result=await client.products.
 const widgetIndex=ref(0);
 const editorWidgets=computed(()=>productWidgets(document.value));
 const typeIcons=productIcons;
-const rendererOptions=computed(()=>({'metric-widget':['number','trend','gauge','chart'],'action-view':['form','button','dialog','inline'],'collection-view':['table','list','chart','map','3d-scene'],'object-projection':['full','summary','card','text','3d']} as Record<string,string[]>)[document.value.kind]??[]);
+const rendererOptions=computed(()=>({'metric-widget':['number','chart','table'],'action-view':['form','button','dialog','inline'],'collection-view':['table','list','3d-scene'],'object-projection':['full','summary','card','text','3d']} as Record<string,string[]>)[document.value.kind]??[]);
 const references = computed(() => expandedReferences.value);
 const parentAssets=ref<{id:string;name:string}[]>([]);
 const expandedReferences=ref<import('@ontomato/contracts/product-assets').ProductReference[]>([]);
@@ -101,6 +102,8 @@ async function loadDependencies(event:Event){const target=event.target as HTMLDe
 const children = computed(() => "children" in document.value ? document.value.children : []);
 const candidates = computed(() => childOptions.value);
 const widget=computed(()=>editorWidgets.value[widgetIndex.value]);
+/** The widget without a chart: its value and label fields and text; a chart keeps its drawing in the file. */
+const detail=computed(()=>widget.value as NonChartViewWidget|undefined);
 function updatePlatformResources(value:string){try{if(document.value.kind==='widget'&&document.value.widget.kind==='platform')document.value.widget.workspace=JSON.parse(value);}catch{error.value='资源选择 JSON 无效';}}
 function updateProfileReferences(field:'tools'|'contextViews',value:string){if(document.value.kind==='agent-profile')document.value[field]=value.split('\n').map(id=>id.trim()).filter(Boolean);}
 function updateProjectionFields(value:string){if('fields' in document.value)document.value.fields=value.split('\n').map(field=>field.trim()).filter(Boolean);}
@@ -150,9 +153,9 @@ function edit(asset:ProductAsset|null,newKind="page") {
     'agent-profile':{kind:'agent-profile',principalId:'',instructions:'',tools:[],contextViews:[]},
     page:{kind:"page",children:[]},
     "layout-template":{kind:"layout-template",workspace:defaultPersonalWorkspace(),children:[]},
-    widget:{kind:"widget",widget:createViewWidget("metric")},
-    "operation-panel":{kind:"operation-panel",widgets:[createViewWidget("action")]},
-    "widget-group":{kind:"widget-group",widgets:[createViewWidget("metric")]},
+    widget:{kind:"widget",widget:createViewWidget("metric") as NonChartViewWidget},
+    "operation-panel":{kind:"operation-panel",widgets:[createViewWidget("action") as NonChartViewWidget]},
+    "widget-group":{kind:"widget-group",widgets:[createViewWidget("metric") as NonChartViewWidget]},
     dashboard:{kind:"dashboard",dashboardId:""},
     "object-view":{kind:"object-view",className:"",form:"full"},
     application:{kind:"application",applicationId:"",children:[]},
@@ -160,8 +163,9 @@ function edit(asset:ProductAsset|null,newKind="page") {
   document.value=JSON.parse(JSON.stringify(asset?.document ?? defaults[newKind]!));
   raw.value=JSON.stringify(document.value,null,2);advanced.value=false;
   const widget=productWidgets(document.value)[0];
-  metricId.value=widget?.resourceId ?? "";valueField.value=widget?.valueField ?? "";
-  labelField.value=widget?.labelField ?? "";
+  metricId.value=widget?.resourceId ?? "";
+  valueField.value=widget&&widget.kind!=='chart'?widget.valueField:"";
+  labelField.value=widget&&widget.kind!=='chart'?widget.labelField:"";
   parameters.value=JSON.stringify(widget?.parameters ?? {},null,2);
   editing.value=true;
   if('children' in document.value)void searchChildren();
@@ -178,18 +182,23 @@ function toggleAdvanced() {
 }
 function readWidgetFields(){
   const widget=editorWidgets.value[widgetIndex.value];
-  metricId.value=widget?.resourceId??'';valueField.value=widget?.valueField??'';labelField.value=widget?.labelField??'';parameters.value=JSON.stringify(widget?.parameters??{},null,2);
+  metricId.value=widget?.resourceId??'';
+  valueField.value=widget&&widget.kind!=='chart'?widget.valueField:'';
+  labelField.value=widget&&widget.kind!=='chart'?widget.labelField:'';
+  parameters.value=JSON.stringify(widget?.parameters??{},null,2);
 }
 function applyWidgetFields(){
   if(document.value.kind==='metric-widget'){
-    document.value.renders.id=metricId.value;document.value.valueField=valueField.value;document.value.labelField=labelField.value;document.value.parameters=JSON.parse(parameters.value);return;
+    document.value.renders.id=metricId.value;document.value.parameters=JSON.parse(parameters.value);
+    if(isMetricChartProjection(document.value))return;
+    document.value.valueField=valueField.value;document.value.labelField=labelField.value;return;
   }
   if(document.value.kind==='action-view'){document.value.renders.id=metricId.value;document.value.parameters=JSON.parse(parameters.value);return;}
-  const item=widget.value;
-  if(item){item.resourceId=metricId.value;item.valueField=valueField.value;item.labelField=labelField.value;item.parameters=JSON.parse(parameters.value);}
+  const item=detail.value;
+  if(item){item.resourceId=metricId.value;item.parameters=JSON.parse(parameters.value);item.valueField=valueField.value;item.labelField=labelField.value;}
 }
 function chooseWidget(index:number){try{applyWidgetFields();widgetIndex.value=index;readWidgetFields();}catch{error.value='请先修正当前组件的参数 JSON';}}
-function addWidget(){if(!('widgets' in document.value))return;try{applyWidgetFields();document.value.widgets.push(createViewWidget(document.value.kind==='operation-panel'?'action':'metric'));widgetIndex.value=document.value.widgets.length-1;readWidgetFields();}catch{error.value='请先修正参数 JSON';}}
+function addWidget(){if(!('widgets' in document.value))return;try{applyWidgetFields();document.value.widgets.push(createViewWidget(document.value.kind==='operation-panel'?'action':'metric') as NonChartViewWidget);widgetIndex.value=document.value.widgets.length-1;readWidgetFields();}catch{error.value='请先修正参数 JSON';}}
 function removeWidget(){if(!('widgets' in document.value))return;document.value.widgets.splice(widgetIndex.value,1);widgetIndex.value=0;readWidgetFields();}
 async function addChild() { if(childId.value && "children" in document.value && !children.value.some(child=>child.assetId===childId.value)){try{const asset=await client.products.get(childId.value);assets.value.push(asset);document.value.children.push({assetId:childId.value,column:childColumn.value});}catch(reason){error.value=reason instanceof Error?reason.message:String(reason);}} }
 async function save() { await run(async()=>{
@@ -245,7 +254,7 @@ async function remove() { if(!selected.value)return;await run(async()=>{await El
         <h2>基本信息</h2>
         <el-form label-position="top" :disabled="busy"><el-form-item label="名称"><el-input v-model="name"/></el-form-item><el-form-item label="说明"><el-input v-model="description" type="textarea"/></el-form-item><el-form-item v-if="!selected" label="初始授权"><el-select v-model="visibility"><el-option value="private" label="仅创建者使用与编辑"/><el-option value="domain" label="创建者编辑，域内成员使用"/></el-select></el-form-item><p v-else>使用与编辑权限由授权记录管理。</p>
           <template v-if="!advanced">
-            <el-form-item v-if="document.kind==='widget'" label="组件实现"><el-select :model-value="document.widget.kind==='platform'?'platform':'capability'" @change="document={kind:'widget',widget:$event==='platform'?{kind:'platform',source:'assistant',placeholder:'',limit:4}:createViewWidget('metric')}"><el-option value="capability" label="能力展示与操作"/><el-option value="platform" label="平台交互"/></el-select></el-form-item>
+            <el-form-item v-if="document.kind==='widget'" label="组件实现"><el-select :model-value="document.widget.kind==='platform'?'platform':'capability'" @change="document={kind:'widget',widget:$event==='platform'?{kind:'platform',source:'assistant',placeholder:'',limit:4}:createViewWidget('metric') as NonChartViewWidget}"><el-option value="capability" label="能力展示与操作"/><el-option value="platform" label="平台交互"/></el-select></el-form-item>
             <template v-if="document.kind==='widget'&&document.widget.kind==='platform'"><el-form-item label="内容来源"><el-select v-model="document.widget.source"><el-option v-for="(label,key) in {assistant:'智能问数',apps:'应用与智能体入口',data:'仪表盘集合',tasks:'任务动态',conversations:'分析会话',objects:'收藏对象',recent:'最近访问'}" :key="key" :value="key" :label="label"/></el-select></el-form-item><el-form-item v-if="document.widget.source==='assistant'" label="输入提示"><el-input v-model="document.widget.placeholder"/></el-form-item><el-form-item label="展示条数"><el-input-number v-model="document.widget.limit" :min="1" :max="20"/></el-form-item><el-form-item label="资源选择（JSON）"><el-input :model-value="JSON.stringify(document.widget.workspace??{},null,2)" type="textarea" :rows="5" @change="updatePlatformResources"/></el-form-item></template>
            <template v-if="'widgets' in document"><h3>组合内容</h3><div class="toolbar"><el-select :model-value="widgetIndex" aria-label="编辑组合内组件" @change="chooseWidget"><el-option v-for="(item,index) in editorWidgets" :key="item.id" :value="index" :label="item.title||`组件 ${index+1}`"/></el-select><el-button @click="addWidget">添加组件</el-button><el-button :disabled="editorWidgets.length<=1" @click="removeWidget">移除</el-button></div></template>
            <el-form-item v-if="widget&&document.kind!=='metric-widget'&&document.kind!=='action-view'" label="组件标题"><el-input v-model="widget.title"/></el-form-item>
@@ -256,13 +265,12 @@ async function remove() { if(!selected.value)return;await run(async()=>{await El
            <el-form-item v-if="document.kind==='collection-view'" label="Definition 参数绑定"><el-input :model-value="JSON.stringify(document.parameters,null,2)" type="textarea" :rows="4" @change="updateCollectionParameters"/></el-form-item>
            <el-form-item v-if="document.kind==='collection-view'" label="每页展示条数"><el-input-number v-model="document.pageSize" :min="1" :max="50"/></el-form-item>
            <el-form-item v-if="document.kind==='metric-widget'" label="显示格式（白名单配置 JSON）"><el-input :model-value="document.format?JSON.stringify(document.format,null,2):''" type="textarea" :rows="3" placeholder='{"kind":"number","decimals":2,"unit":"人"}' @change="updateMetricFormat"/></el-form-item>
-           <el-form-item v-if="document.kind==='metric-widget'&&document.renderer==='chart'" label="图表样式"><el-select v-model="document.chartType"><el-option value="bar" label="柱状图"/><el-option value="line" label="折线图"/><el-option value="donut" label="环形图"/></el-select></el-form-item>
            <el-form-item v-if="document.kind==='action-view'" label="只读绑定参数（每行一个）"><el-input :model-value="document.readOnlyParameters.join('\n')" type="textarea" @change="updateReadOnlyParameters"/></el-form-item>
             <el-form-item v-if="document.kind==='object-projection'&&document.renderer==='full'" label="对象布局"><el-input :model-value="document.layout?JSON.stringify(document.layout,null,2):''" type="textarea" :rows="8" @change="updateObjectLayout"/><p>仅呈现对象属性、关系和说明。指标与业务操作请创建独立投影，再由页面组合。</p></el-form-item>
            <el-form-item v-if="document.kind==='page'" label="带本体类型的页面参数"><el-input :model-value="JSON.stringify(document.params??{},null,2)" type="textarea" :rows="4" placeholder='{"selected":{"kind":"object","objectType":"Person"}}' @change="updatePageParameters"/></el-form-item>
             <template v-if="document.kind==='navigation'"><el-form-item label="入口节点"><el-select v-model="document.entry"><el-option v-for="node in document.nodes" :key="node.id" :value="node.id" :label="node.label||node.id"/></el-select></el-form-item><section v-for="(node,index) in document.nodes" :key="index" class="navigation-node"><header><strong>页面节点 {{index+1}}</strong><el-button text @click="document.nodes.splice(index,1)">移除</el-button></header><div class="node-fields"><el-form-item label="节点 ID"><el-input v-model="node.id"/></el-form-item><el-form-item label="菜单名称"><el-input v-model="node.label"/></el-form-item><el-form-item label="页面资产 ID"><el-input v-model="node.pageId"/></el-form-item><el-form-item label="深链接"><el-input v-model="node.path" placeholder="/页面路径"/></el-form-item></div></section><el-button class="add-node" @click="document.nodes.push({id:`page-${document.nodes.length+1}`,label:'',pageId:'',path:`/page-${document.nodes.length+1}`})">添加页面节点</el-button></template>
-            <template v-if="widget&&!['metric-widget','action-view'].includes(document.kind)"><el-form-item label="组件类型"><el-select v-model="widget.kind"><el-option v-for="value in (document.kind==='widget-group'?['metric','table','chart','text']:['metric','table','chart','text','action'])" :key="value" :value="value" :label="({metric:'指标卡',table:'表格',chart:'图表',text:'文字',action:'操作入口'} as Record<string,string>)[value]"/></el-select></el-form-item><el-form-item v-if="widget.kind==='text'" label="文字"><el-input v-model="widget.text" type="textarea"/></el-form-item></template>
-            <template v-if="widget&&widget.kind!=='text'"><el-form-item label="已发布能力"><el-select v-model="metricId" filterable allow-create default-first-option placeholder="选择已发布指标或操作"><el-option v-for="capability in capabilities.filter(item=>item.status==='PUBLISHED'&&item.id)" :key="capability.id" :value="capability.id!" :label="capability.name"/></el-select></el-form-item><el-form-item v-if="widget && ['metric','chart','table'].includes(widget.kind)" label="数值字段"><el-input v-model="valueField"/></el-form-item><template v-if="widget?.kind==='chart'"><el-form-item label="图表样式"><el-select v-model="widget.chartType"><el-option value="bar" label="柱状图"/><el-option value="donut" label="环形图"/><el-option value="line" label="折线图"/></el-select></el-form-item><el-form-item label="标签字段"><el-input v-model="labelField"/></el-form-item></template><el-form-item label="参数绑定（literal / variable）"><el-input v-model="parameters" type="textarea" :rows="4"/></el-form-item></template>
+            <template v-if="detail&&!['metric-widget','action-view'].includes(document.kind)"><el-form-item label="组件类型"><el-select v-model="detail.kind"><el-option v-for="value in (document.kind==='widget-group'?['metric','table','text']:['metric','table','text','action'])" :key="value" :value="value" :label="({metric:'指标卡',table:'表格',text:'文字',action:'操作入口'} as Record<string,string>)[value]"/></el-select></el-form-item><el-form-item v-if="detail.kind==='text'" label="文字"><el-input v-model="detail.text" type="textarea"/></el-form-item></template>
+            <template v-if="detail&&detail.kind!=='text'"><el-form-item label="已发布能力"><el-select v-model="metricId" filterable allow-create default-first-option placeholder="选择已发布指标或操作"><el-option v-for="capability in capabilities.filter(item=>item.status==='PUBLISHED'&&item.id)" :key="capability.id" :value="capability.id!" :label="capability.name"/></el-select></el-form-item><el-form-item v-if="detail && ['metric','table'].includes(detail.kind)" label="数值字段"><el-input v-model="valueField"/></el-form-item><el-form-item label="参数绑定（literal / variable）"><el-input v-model="parameters" type="textarea" :rows="4"/></el-form-item></template>
            <template v-if="document.kind==='object-view'"><el-form-item label="使用已发布视图的对象类"><el-select v-model="document.className" filterable allow-create default-first-option><el-option v-for="item in classes" :key="item.className" :value="item.className" :label="item.showName||item.className"/></el-select></el-form-item><el-form-item label="默认对象主键（可选）"><el-input v-model="document.primaryKey" clearable placeholder="留空时运行页面选择对象" @clear="delete (document as Extract<ProductDocument,{kind:'object-view'}>).primaryKey"/></el-form-item><p>引用类上已有的视图定义。对象选择与视图定义独立，不复制对象内容。</p></template>
            <p v-if="document.kind==='page'">资源选择和交互偏好按当前使用者保存，不属于共享页面配置。</p>
           <el-form-item v-if="document.kind==='dashboard'" label="现有仪表盘 ID"><el-input v-model="document.dashboardId"/></el-form-item>
