@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { dropdownBoundaryOptions } from "@ontomato/foundation-ui/overlay";
 import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import { MoreHorizontal, Plus } from "lucide-vue-next";
+import { ChevronLeft, ChevronRight, MoreHorizontal, Plus } from "lucide-vue-next";
 import { pageDraftLink, readPageDraft, withoutPageDraftQuery, type PageDraftLink } from "@ontomato/agent-shell-ui";
 import { createAssistantClient } from "../../workbench/assistant-host";
 import { useDashboardStore } from "../stores/dashboard";
@@ -108,6 +108,58 @@ async function readDraft(pageLink: PageDraftLink) {
   await store.selectDashboard(detail.id);
 }
 
+/* ======================== the boards list ======================== */
+
+/*
+ * The boards scroll sideways when they do not fit — beside a conversation at the platform's panel width, and on a
+ * narrow page. The one open is always in sight, opened from a link or chosen in the list, so a reader never has to
+ * guess which board is shown; the arrows appear only on the side where more boards wait.
+ */
+const tabsRef = ref<HTMLElement | null>(null);
+const overflow = ref({ left: false, right: false });
+
+function measureOverflow() {
+  const element = tabsRef.value;
+  if (!element) return;
+  const max = element.scrollWidth - element.clientWidth;
+  overflow.value = { left: element.scrollLeft > 0, right: element.scrollLeft < max };
+}
+
+/** Brings the open board into sight: it is the one a reader came to see. */
+function revealOpenBoard() {
+  const strip = tabsRef.value;
+  if (!strip) return;
+  const open = strip.querySelector<HTMLElement>(".tab.active");
+  if (!open) return;
+  const left = open.offsetLeft;
+  const right = left + open.offsetWidth;
+  if (left < strip.scrollLeft) strip.scrollLeft = left;
+  else if (right > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = right - strip.clientWidth;
+  measureOverflow();
+}
+
+/** A step is one board's own width, so one press moves the list by what the reader sees. */
+function scrollTabs(direction: 1 | -1) {
+  const strip = tabsRef.value;
+  if (!strip) return;
+  const step = strip.querySelector<HTMLElement>(".tab")?.offsetWidth ?? strip.clientWidth;
+  strip.scrollBy({ left: direction * step, behavior: "smooth" });
+}
+
+watch([() => currentDashboardId.value, dashboardItems, () => loadingDashboards.value], async () => {
+  await nextTick();
+  revealOpenBoard();
+}, { immediate: true });
+
+// A panel's width is the platform's to change (the side panel, the window): the open board and the arrows follow it.
+const resize = new ResizeObserver(() => revealOpenBoard());
+watch(tabsRef, (element, previous) => {
+  if (previous) resize.unobserve(previous);
+  if (element) resize.observe(element);
+});
+onMounted(() => window.addEventListener("resize", revealOpenBoard, { passive: true }));
+onBeforeUnmount(() => window.removeEventListener("resize", revealOpenBoard));
+
 /** Dropping the draft only empties this page: the saved board stays as it was, and the address stops naming the draft. */
 function discardDraft() {
   draft.value = null;
@@ -149,7 +201,18 @@ watch(
   <div class="dashboard-home">
     <!-- The page's own bar: its boards and the way to make one. The title above it is the application header's. -->
     <div class="home-bar" role="tablist" :aria-label="t('analysis.myDashboards')">
-      <div v-loading="loadingDashboards" class="tabs">
+      <!-- The boards scroll when they do not fit; the arrows say so and step one board's width at a time. -->
+      <button
+        v-if="overflow.left"
+        type="button"
+        class="tabs-scroll tabs-scroll--left"
+        :aria-label="t('dashboard.scrollTabsLeft')"
+        :title="t('dashboard.scrollTabsLeft')"
+        @click="scrollTabs(-1)"
+      >
+        <ChevronLeft :size="16" />
+      </button>
+      <div ref="tabsRef" v-loading="loadingDashboards" class="tabs" @scroll.passive="measureOverflow">
         <div
           v-for="item in dashboardItems"
           :key="item.id"
@@ -195,6 +258,16 @@ watch(
           </template>
         </div>
       </div>
+      <button
+        v-if="overflow.right"
+        type="button"
+        class="tabs-scroll tabs-scroll--right"
+        :aria-label="t('dashboard.scrollTabsRight')"
+        :title="t('dashboard.scrollTabsRight')"
+        @click="scrollTabs(1)"
+      >
+        <ChevronRight :size="16" />
+      </button>
       <el-button class="create" @click="store.promptCreateDashboard()">
         <Plus :size="15" />
         <span>{{ t("analysis.createDashboard") }}</span>
@@ -249,6 +322,31 @@ watch(
   flex: 1;
   min-width: 0;
   overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+/* The arrows stand where the boards do not fit; they are the bar's own height, so the row does not grow. */
+.tabs-scroll {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+}
+.tabs-scroll:hover {
+  background: var(--el-fill-color);
+  color: var(--el-text-color-primary);
+}
+.tabs-scroll:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
 }
 .tab {
   display: flex;
