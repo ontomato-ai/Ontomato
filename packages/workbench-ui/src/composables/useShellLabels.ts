@@ -58,6 +58,8 @@ return computed<ShellLabels>(() => ({
   loading: t("assistant.loading"),
   emptyFile: t("assistant.emptyFile"),
   invalidChart: t("assistant.invalidChart"),
+  chartUndated: t("assistant.chartUndated"),
+  noChartRows: t("assistant.noChartRows"),
   toolRead: t("assistant.toolRead"),
   toolWrite: t("assistant.toolWrite"),
   toolEdit: t("assistant.toolEdit"),

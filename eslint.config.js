@@ -195,7 +195,10 @@ export default [
     // capability, exported by capability subpath): it depends only on Vue, Element Plus, ECharts, markstream-vue,
     // CodeMirror and the product Markdown, never on a platform package or a host. It may name the wire contracts'
     // types, so a shape it draws has one definition, but carries no contract code: the TypeScript form of the rule tells
-    // a type import from a value import.
+    // a type import from a value import. The chart file's filling and presentation rules are the exception: they are
+    // the pure code the browser, the export and the server share (overall design 8.1, 8.4), and the browser's chart
+    // component is their caller. Contracts stay a lower pure layer that never depends on the foundation UI, so this
+    // import runs downward and forms no cycle.
     files: ["packages/foundation-ui/src/**/*.{ts,vue}"],
     ignores: ["packages/foundation-ui/src/**/__tests__/**"],
     rules: {
@@ -206,9 +209,10 @@ export default [
           message: "foundation-ui may depend only on Vue, Element Plus, ECharts, markstream-vue, CodeMirror and the product Markdown; the packages that use it depend on it, not the other way round",
         },
         {
-          regex: "^@ontomato/contracts(/|$)",
+          // Only these three subpaths are value code the browser shares with the export and the server.
+          regex: "^@ontomato/contracts(?!(/chart-data|/chart-presentation|/chart-maps)(/|$))(/|$)",
           allowTypeImports: true,
-          message: "foundation-ui may name contract types (import type) but carries no contract code",
+          message: "foundation-ui may name contract types (import type) but carries no contract code; only chart-data, chart-presentation and chart-maps are shared value code",
         },
       ]),
     },

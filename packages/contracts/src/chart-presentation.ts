@@ -1,4 +1,17 @@
+import type { ChartFormat } from "./chart-data/display";
+import type { ChartBinding } from "./chart-data/schema";
+
 type Option = Record<string, any>;
+
+/**
+ * A copy that keeps every value's type. The rules below never change a caller's option: copying a function-bearing
+ * option as data would drop the callbacks the previous rule attached.
+ */
+function copy<Value>(value: Value): Value {
+  if (Array.isArray(value)) return value.map(copy) as Value;
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, copy(item)])) as Value;
+  return value;
+}
 
 /** Brand owns categorical and measure colours; explicit data marks and continuous scales remain data-owned. */
 export function chartBrandColors(source: Option, theme: Record<string, unknown>): Option {
@@ -106,6 +119,230 @@ export function chartAxisBounds(source: Option, height: number): Option {
     ...(source.xAxis ? { xAxis: capped(source.xAxis, Math.max(72, Math.round(height * 0.3))) } : {}),
     ...(source.yAxis ? { yAxis: capped(source.yAxis, 200) } : {}),
   };
+}
+
+/**
+ * Titles and legends get separate bands; scrolling keeps long legends in their own band. A narrow column cuts a long
+ * title short and hides category labels that would overlap. Axis bounds follow the shared rule.
+ */
+export function chartReadingLayout(source: Option, height = 320, presentation: "inline" | "panel" = "panel", width?: number): Option {
+  const option = copy(source);
+  // The card header names the chart and the tooltip names each category, so neither is lost on screen.
+  const each = (value: Option | Option[], change: (item: Option) => Option) => Array.isArray(value) ? value.map(change) : change(value);
+  // Forcing every label (interval 0) stops ECharts from spacing them out; where they fit, they all still show.
+  const hideOverlapping = (label: Option | undefined) => label?.hideOverlap === false ? label
+    : { ...label, hideOverlap: true, ...(label?.interval === 0 ? { interval: "auto" } : {}) };
+  if (width && option.title) {
+    const fit = (style: Option | undefined) => ({ ...style, width: width - 24, overflow: style?.overflow ?? "truncate" });
+    option.title = each(option.title, (title) => ({ ...title, textStyle: fit(title.textStyle), subtextStyle: fit(title.subtextStyle) }));
+  }
+  for (const key of ["xAxis", "yAxis"]) if (option[key]) option[key] = each(option[key], (axis) =>
+    axis.type === "category" || (axis.type == null && Array.isArray(axis.data))
+      ? { ...axis, axisLabel: hideOverlapping(axis.axisLabel) }
+      : axis);
+  const series = [option.series ?? []].flat();
+  const pies = series.filter((item) => item.type === "pie");
+  const singleInlinePie = presentation === "inline" && pies.length === 1;
+  // A single inline pie uses the whole reading column; multiple pies retain their comparison layout.
+  if (singleInlinePie) {
+    option.series = series.map((item) => item.type === "pie" ? {
+      ...item, left: 0, right: 0, width: undefined,
+      center: ["50%", Array.isArray(item.center) ? item.center[1] ?? "50%" : "50%"],
+    } : item);
+  }
+  const titles = [option.title].flat().filter(Boolean);
+  if (!option.legend) return chartAxisBounds(option, height);
+  const hasTitle = titles.some((title) => title.show !== false && (title.text || title.subtext));
+  const pixels = (value: unknown) => typeof value === "number" ? value : typeof value === "string" && value.endsWith("%") ? parseFloat(value) * height / 100 : Number(value) || 0;
+  const legends = [option.legend].flat();
+  let reservedBottom = 0;
+  option.legend = legends.map((legend) => {
+    if (legend.show === false || (legend.orient === "vertical" && !singleInlinePie)) return legend;
+    if (legend.bottom == null && legend.top !== "bottom" && !hasTitle && !singleInlinePie) return legend;
+    const bottom = pixels(legend.bottom);
+    const fontSize = pixels(legend.textStyle?.fontSize) || 12;
+    const band = Math.max(40, fontSize * 2 + 20);
+    reservedBottom = Math.max(reservedBottom, bottom + band + 12);
+    // Let ECharts size the content before centering; a 90% box left-aligns short legend contents.
+    return { ...legend, type: "scroll", orient: "horizontal", top: null, bottom, left: "center", right: null, width: "auto", height: band, align: "auto" };
+  });
+  if (reservedBottom) {
+    if (option.grid || option.xAxis || option.yAxis) option.grid = [option.grid ?? {}].flat().map((grid) => ({
+      ...grid, outerBoundsMode: "same", outerBoundsContain: "all",
+      bottom: Math.max(pixels(grid.bottom), reservedBottom),
+    }));
+    if (option.series) option.series = [option.series].flat().map((series) => {
+      if (!["pie", "funnel", "gauge"].includes(series.type)) return series;
+      return { ...series, top: Math.max(pixels(series.top), hasTitle ? 48 : 12), bottom: Math.max(pixels(series.bottom), reservedBottom),
+        center: series.type === "pie" || series.type === "gauge" ? [series.center?.[0] ?? "50%", "50%"] : series.center };
+    });
+  }
+  return chartAxisBounds(option, height);
+}
+
+/** A value without a format is shown as it came; a missing value is a dash. */
+export const chartMissingValue = "—";
+
+/**
+ * One value as its display format writes it. A number keeps its value and takes the format's kind and decimals; a
+ * percentage states its scale, so `100` reads 0.25 as 25% and `1` reads 25 as 25%.
+ */
+export function chartValueText(value: unknown, format?: ChartFormat): string {
+  if (value === null || value === undefined) return chartMissingValue;
+  if (!format || format.kind === "text") return typeof value === "object" ? JSON.stringify(value) : String(value);
+  if (format.kind === "date") {
+    const date = new Date(value as string | number);
+    return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString();
+  }
+  const number = Number(value);
+  if (typeof value === "boolean" || typeof value === "object" || !Number.isFinite(number)) return String(value);
+  const digits = format.decimals === undefined ? {} : { minimumFractionDigits: format.decimals, maximumFractionDigits: format.decimals };
+  if (format.kind === "percent") return `${(format.scale === 100 ? number * 100 : number).toLocaleString(undefined, digits)}%`;
+  if (format.kind === "currency" && format.currency) return number.toLocaleString(undefined, { style: "currency", currency: format.currency, ...digits });
+  return number.toLocaleString(undefined, digits);
+}
+
+/**
+ * Ticks are axis positions, not metric values: they keep the format's kind and scale but not its fixed decimals,
+ * so a 0.5 tick under a whole-number format reads 0.5 rather than a second "1".
+ */
+export function chartTickFormat(format: ChartFormat): ChartFormat {
+  const { decimals: _, ...rest } = format;
+  return rest;
+}
+
+const undatedText = "Undated";
+
+/**
+ * A timeline event's label: its date, its name over at most two lines and its description. An event the metric gives
+ * no readable date for says so in the reader's language instead of a blank line.
+ */
+export function chartTimelineLabel(event: { date?: unknown; name?: unknown; description?: unknown }, undated = undatedText): string[] {
+  const time = event.date === null || event.date === undefined || event.date === "" ? NaN : Date.parse(String(event.date));
+  const date = Number.isFinite(time) ? String(event.date).slice(0, 10) : undated;
+  const name = String(event.name ?? "");
+  const lines = [name.slice(0, 24), name.slice(24, 48)].filter(Boolean);
+  const description = String(event.description ?? "");
+  return [date, ...lines, description].filter((line) => line !== "");
+}
+
+/**
+ * The standard behaviour of a graph: dragging nodes and highlighting a node's neighbours belong to the platform, so a
+ * file written by any author gets them without stating them.
+ */
+export function chartGraphBehaviour(source: Option): Option {
+  const option = copy(source);
+  if (!option.series) return option;
+  const adjust = (series: Option) => series.type === "graph"
+    ? { ...series, draggable: true, emphasis: { ...series.emphasis, focus: "adjacency" } }
+    : series;
+  option.series = Array.isArray(option.series) ? option.series.map(adjust) : adjust(option.series);
+  return option;
+}
+
+/** A single (gauge) centre reads the value the metric gave, formatted; the ring itself only shows a ratio. */
+export function chartSingleText(raw: unknown, format?: ChartFormat): string {
+  return chartValueText(raw, format);
+}
+
+type Formats = Record<string, ChartFormat> | undefined;
+
+/** The first column a series encodes to one role. */
+function encodedColumn(series: Option, role: string): string | undefined {
+  const value = series.encode?.[role];
+  return [value].flat().find((column): column is string => typeof column === "string");
+}
+
+/** The column a series encodes to a role after the one its value takes, such as an item's share. */
+function secondColumn(series: Option, role: string): string | undefined {
+  const columns = [series.encode?.[role]].flat().filter((column): column is string => typeof column === "string");
+  return columns[1];
+}
+
+/** A column's format, when the metric's display settings state one. */
+const formatOf = (formats: Formats, column: string | undefined) => column ? formats?.[column] : undefined;
+
+/**
+ * An item is a name and its value, and a metric may also give its share; both read their own formats. A tooltip breaks
+ * its lines as HTML, a series label as text.
+ */
+function itemText(name: string, value: unknown, share: unknown, formats: Formats, valueColumn?: string, shareColumn?: string) {
+  const text = [chartValueText(value, formatOf(formats, valueColumn))];
+  if (share !== undefined && shareColumn) text.push(chartValueText(share, formatOf(formats, shareColumn)));
+  return { name, text: text.join(" · ") };
+}
+
+const itemSeries = new Set(["pie", "funnel", "treemap", "sunburst", "graph"]);
+const measureSeries = new Set(["line", "bar", "scatter", "effectScatter", "pictorialBar", "radar", "themeRiver", "boxplot", "sankey"]);
+
+/**
+ * The fixed formats of `display.formats` on every place a value shows: axis labels, tooltips and series labels. Values
+ * stay as they came; only their written form changes. A gauge's centre reads the metric's own value rather than the
+ * ring's ratio, and a timeline's labels carry its date, name and description.
+ */
+export function chartFormats(source: Option, presentation: { bindings: ChartBinding[]; display: { formats?: Formats } }, undated?: string): Option {
+  const option = copy(source);
+  const formats = presentation.display.formats;
+  if (!formats) return option;
+  const bindings = new Map(presentation.bindings.map((binding) => [binding.seriesId, binding]));
+  const series: Option[] = [option.series ?? []].flat();
+  const fields = (binding: ChartBinding) => binding.fields as Record<string, string>;
+  for (const target of series) {
+    const binding = bindings.get(String(target.id));
+    if (binding?.shape === "single") {
+      const format = formatOf(formats, fields(binding).value);
+      if (format) target.detail = { ...target.detail, formatter: (params: { data: { rawValue?: unknown } }) => chartSingleText(params.data.rawValue, format) };
+      continue;
+    }
+    if (binding?.shape === "timeline") {
+      target.label = { ...target.label, formatter: (params: { data: { date?: unknown; name?: unknown; description?: unknown } }) => chartTimelineLabel(params.data, undated).join("\n") };
+      continue;
+    }
+    if (binding?.shape === "boxplot") {
+      const stats = fields(binding);
+      const roles = ["min", "q1", "median", "q3", "max"];
+      option.tooltip = { ...option.tooltip, trigger: "item", formatter: (params: { name: string; value: unknown[] }) =>
+        [params.name, ...params.value.map((value, index) => chartValueText(value, formatOf(formats, stats[roles[index]!])))] .join("<br/>") };
+      continue;
+    }
+    if (binding?.shape === "items" || binding?.shape === "tree" || binding?.shape === "radar") {
+      const shown = fields(binding);
+      const work = (params: { name: string; value: unknown; data?: { share?: unknown } }) => itemText(params.name, params.value, params.data?.share, formats, shown.value, shown.share);
+      target.label = { ...target.label, formatter: (params: Parameters<typeof work>[0]) => { const item = work(params); return [item.name, item.text].join("\n"); } };
+      target.tooltip = { ...target.tooltip, formatter: (params: Parameters<typeof work>[0]) => { const item = work(params); return [item.name, item.text].join("<br/>"); } };
+      continue;
+    }
+    // An item series names its own value column; its tooltip and label write that value in its format.
+    const valueColumn = encodedColumn(target, "value");
+    const format = formatOf(formats, valueColumn);
+    if (!format) continue;
+    const work = (params: { name: string; value: unknown; data?: { share?: unknown } }) => itemText(params.name, params.value, params.data?.share, formats, valueColumn, secondColumn(target, "tooltip"));
+    if (itemSeries.has(target.type) || target.label?.show) target.label = { ...target.label, formatter: (params: Parameters<typeof work>[0]) => { const item = work(params); return [item.name, item.text].join("\n"); } };
+    target.tooltip = { ...target.tooltip, formatter: (params: Parameters<typeof work>[0]) => { const item = work(params); return [item.name, item.text].join("<br/>"); } };
+  }
+  // A measure series shows one column; its labels write that column's value in the format the metric states.
+  for (const target of series) {
+    if (bindings.has(String(target.id)) || !measureSeries.has(target.type)) continue;
+    const column = encodedColumn(target, "y");
+    const format = formatOf(formats, column);
+    if (!format) continue;
+    target.tooltip = { ...target.tooltip, valueFormatter: (value: unknown) => chartValueText(value, format) };
+    if (target.label?.show) target.label = { ...target.label, formatter: (params: { value: unknown }) => chartValueText(params.value, format) };
+  }
+  // Each axis writes the column its series encode to it; tick positions keep the kind but not the fixed decimals.
+  for (const [key, role] of [["xAxis", "x"], ["yAxis", "y"]] as const) {
+    if (!option[key]) continue;
+    const axes: Option[] = [option[key]].flat();
+    const formatted = axes.map((axis, index) => {
+      const shown = series.find((item) => !bindings.has(String(item.id)) && (item[`${role}AxisIndex`] ?? 0) === index && encodedColumn(item, role));
+      const format = formatOf(formats, shown && encodedColumn(shown, role));
+      if (!format) return axis;
+      const written = axis.type === "category" ? format : chartTickFormat(format);
+      return { ...axis, axisLabel: { ...axis.axisLabel, formatter: (tick: unknown) => chartValueText(tick, written) } };
+    });
+    option[key] = Array.isArray(option[key]) ? formatted : formatted[0];
+  }
+  return option;
 }
 
 /** Runs inside an HTML artifact's sandbox; no access to the parent document or credentials. */

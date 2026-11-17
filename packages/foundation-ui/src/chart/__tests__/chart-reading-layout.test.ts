@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { chartReadingLayout } from "../renderers/chart-layout";
+import { chartReadingLayout } from "@ontomato/contracts/chart-presentation";
 
 it("centers a single inline donut across the full plot even without a legend", () => {
   const source = { series: [{ type: "pie", center: ["35%", "45%"], left: 20, width: "70%", radius: ["40%", "65%"] }] };

@@ -564,6 +564,8 @@ export default {
     "loading": "Loading…",
     "emptyFile": "This file is empty.",
     "invalidChart": "This chart file could not be drawn.",
+    "chartUndated": "Undated",
+    "noChartRows": "No rows to draw.",
     "featureDashboards": "Dashboards",
     "featureAgents": "Agent settings",
     "featureOpsDiagnosis": "Operations diagnosis",
