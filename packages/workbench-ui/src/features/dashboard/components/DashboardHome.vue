@@ -1,24 +1,91 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
-import {dropdownBoundaryOptions} from '@ontomato/foundation-ui/overlay';
+import { computed, onMounted, ref, watch } from "vue";
+import { dropdownBoundaryOptions } from "@ontomato/foundation-ui/overlay";
 import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
+import { useRoute, useRouter } from "vue-router";
 import { MoreHorizontal, Plus } from "lucide-vue-next";
+import { pageDraftPathSchema, type PageDraft } from "@ontomato/contracts/page-draft";
+import { createAssistantClient } from "../../workbench/assistant-host";
 import { useDashboardStore } from "../stores/dashboard";
 import DashboardPanel from "./DashboardPanel.vue";
+import { acceptDraft, boardIdentity, DraftRejected, type AcceptedDraft } from "../draft";
+import { fetchDashboardLocalDetail } from "../api";
+import { cardError, type CardError } from "./utils/metricCard";
 
-/** The dashboard feature page of the workbench shell: dashboard tabs above the selected board. */
+/**
+ * The dashboard feature page of the workbench shell: dashboard tabs above the selected board. A link an agent wrote
+ * may name a page draft: this page reads it, checks it against the board the reader owns, and hands it to the board,
+ * which shows its changes and saves nothing until the reader says so.
+ */
 const { t } = useI18n();
 const store = useDashboardStore();
+const route = useRoute();
+const router = useRouter();
 const openMenuId = ref<string | null>(null);
 const { dashboardItems, loadingDashboards, currentDashboardId, editingDashboardId, editingDashboardName } =
   storeToRefs(store);
+const shell = createAssistantClient();
+
+const draft = ref<AcceptedDraft | null>(null);
+const draftFailure = ref<CardError | null>(null);
+
+/** The three values a draft link carries: the run artifact and nothing else. */
+function draftLink() {
+  const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+  const sessionId = text(route.query.draftSessionId);
+  const runId = text(route.query.draftRunId);
+  // The path is an address, not a form: the draft file's own location is all it may name.
+  const path = pageDraftPathSchema.safeParse(text(route.query.draftPath));
+  return sessionId && runId && path.success ? { sessionId, runId, path: path.data } : null;
+}
+
+/**
+ * Reads the draft the link names, and fills it only after this page and the board agree with it: its page key, its
+ * save action, the board it names, and every object it addresses. A rejection states what did not match.
+ */
+async function readDraft(link: { sessionId: string; runId: string; path: string }) {
+  const file: PageDraft<Record<string, unknown>> = await shell.readPageDraft(link.sessionId, link.runId, link.path);
+  const id = String((file.form as { dashboardId?: string; id?: string }).dashboardId ?? (file.form as { id?: string }).id ?? "");
+  const detail = await fetchDashboardLocalDetail(id);
+  if (!detail) throw new DraftRejected(t("dashboard.draft.unavailable"));
+  draft.value = acceptDraft(file, boardIdentity(detail));
+  await store.selectDashboard(detail.id);
+}
+
+function discardDraft() {
+  draft.value = null;
+  draftFailure.value = null;
+  void router.replace({ query: { dashboardId: currentDashboardId.value || undefined } });
+}
+
+const failureText = computed(() => draftFailure.value?.message ?? "");
 
 onMounted(async () => {
   await store.loadDashboards({ notifyError: true });
+  const link = draftLink();
+  if (link) {
+    try {
+      await readDraft(link);
+      return;
+    } catch (error) {
+      draftFailure.value = cardError(error);
+      // A draft this page cannot fill leaves the reader on their own board.
+    }
+  }
   if (!currentDashboardId.value && dashboardItems.value[0])
     void store.selectDashboard(dashboardItems.value[0].id);
 });
+
+watch(
+  () => route.query,
+  (query, previous) => {
+    if (query.draftSessionId === previous?.draftSessionId && query.draftRunId === previous?.draftRunId && query.draftPath === previous?.draftPath) return;
+    const link = draftLink();
+    if (link) void readDraft(link).catch((error: unknown) => { draftFailure.value = cardError(error); });
+    else if (draft.value) discardDraft();
+  },
+);
 </script>
 
 <template>
@@ -76,8 +143,15 @@ onMounted(async () => {
         <span>{{ t("analysis.createDashboard") }}</span>
       </el-button>
     </div>
+    <p v-if="failureText" class="draft-failure" role="alert">{{ failureText }}</p>
     <div class="home-body">
-      <DashboardPanel v-if="currentDashboardId" :key="currentDashboardId" :dashboard-id="currentDashboardId" />
+      <DashboardPanel
+        v-if="currentDashboardId"
+        :key="`${currentDashboardId}:${draft ? draft.operation : 'saved'}`"
+        :dashboard-id="currentDashboardId"
+        :draft="draft"
+        @discard-draft="discardDraft"
+      />
       <el-empty v-else-if="!loadingDashboards" :description="t('analysis.noDashboards')" />
     </div>
   </div>
@@ -98,6 +172,11 @@ onMounted(async () => {
   flex-wrap: wrap;
   flex-shrink: 0;
   border-bottom: 1px solid var(--el-border-color);
+}
+.draft-failure {
+  margin: var(--spacing-sm) 0 0;
+  color: var(--el-color-danger);
+  font-size: var(--text-sm);
 }
 .home-body {
   flex: 1;

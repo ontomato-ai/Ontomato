@@ -1,22 +1,27 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { isMetricReferenceEntry, type MetricReferenceMetricEntry, type MetricReferenceChartEntry } from "@ontomato/contracts/dashboard";
-import { EChart, useChartTheme } from "@ontomato/foundation-ui/chart";
+import type { DashboardCardData, MetricReferenceMetricEntry } from "@ontomato/contracts/dashboard";
+import { MetricChart } from "@ontomato/foundation-ui/chart";
 import { ElButton } from "element-plus";
-import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
 import { fetchDashboardLocalDetail, queryDashboardCard } from "../api";
-import { metricCardValue, metricChartOption } from "./utils/metricCard";
+import { cardChart, metricCardValue } from "./utils/metricCard";
 
+/**
+ * The reader's followed dashboard cards, read through the same query-card the board uses: a number card shows its
+ * metric's value, a chart card the platform's chart over its own file and this output.
+ */
 const props = defineProps<{ dashboardId: string; revision: number; cardIds?: string[] }>();
 const emit = defineEmits<{ select: [card: { id: string; name: string }] }>();
 const { locale } = useI18n();
-const theme = useChartTheme();
-const charts = ref<{ id: string; name: string; option: Record<string, any> | null; error: string; partial: boolean }[]>([]);
+/** What the platform's chart fills into the file: this output's columns and rows, with the truncation when there is one. */
+type Output = { columns: DashboardCardData["columns"]; rows: DashboardCardData["rows"]; truncation?: NonNullable<DashboardCardData["truncation"]> };
+const charts = ref<{ id: string; name: string; file: unknown; output: Output | null; error: string; partial: boolean }[]>([]);
 const loading = ref(false);
 const error = ref("");
 const missing = ref(0);
 const metrics = ref<{ id: string; name: string; value: string; unit: string; error: string; partial: boolean }[]>([]);
+const zh = () => locale.value.startsWith("zh");
 let generation = 0;
 onBeforeUnmount(() => { generation++; });
 watch(() => [props.dashboardId, props.revision, props.cardIds], async () => {
@@ -25,22 +30,22 @@ watch(() => [props.dashboardId, props.revision, props.cardIds], async () => {
   try {
     const board = await fetchDashboardLocalDetail(props.dashboardId);
     if (current !== generation) return;
-    if (!board) throw new Error(locale.value.startsWith("zh") ? "仪表盘当前不可访问" : "Dashboard unavailable");
-    const allMetrics = board.groups.flatMap(group => group.metrics).filter((card): card is MetricReferenceMetricEntry => isMetricReferenceEntry(card));
-    const allCharts = board.groups.flatMap(group => group.charts ?? []).filter((card): card is MetricReferenceChartEntry => isMetricReferenceEntry(card));
-    const selected = <T extends { id: string }>(items: T[], limit: number) => props.cardIds === undefined ? items.slice(0, limit)
+    if (!board) throw new Error(zh() ? "仪表盘当前不可访问" : "Dashboard unavailable");
+    const allMetrics = board.groups.flatMap(group => group.metrics);
+    const allCharts = board.groups.flatMap(group => group.charts ?? []);
+    const selected = <T extends { id: string }>(items: readonly T[], limit: number) => props.cardIds === undefined ? items.slice(0, limit)
       : props.cardIds.flatMap(id => items.filter(item => item.id === id));
-    const cards = selected(allMetrics, 3);
+    const cards = selected<MetricReferenceMetricEntry>(allMetrics, 3);
     const chartCards = selected(allCharts, 2);
     missing.value = props.cardIds?.filter(id => ![...allMetrics, ...allCharts].some(card => card.id === id)).length ?? 0;
-    charts.value = chartCards.map(card => ({ id: card.id, name: card.name, option: null, error: "", partial: false }));
+    charts.value = chartCards.map(card => ({ id: card.id, name: card.name, file: card.chartFile.content, output: null, error: "", partial: false }));
     metrics.value = cards.map(card => ({ id: card.id, name: card.name, value: "", unit: card.unit ?? "", error: "", partial: false }));
     await Promise.all([...cards.map(async (card, index) => {
       try {
         const output = await queryDashboardCard(props.dashboardId, card.id);
         if (current !== generation) return;
         const value = metricCardValue(card, output.rows);
-        Object.assign(metrics.value[index]!, { value: value.empty ? (locale.value.startsWith("zh") ? "暂无数据" : "No data") : value.text,
+        Object.assign(metrics.value[index]!, { value: value.empty ? (zh() ? "暂无数据" : "No data") : value.text,
           partial: !!output.truncation });
       } catch (failure) {
         if (current === generation) metrics.value[index]!.error = failure instanceof Error ? failure.message : String(failure);
@@ -49,7 +54,11 @@ watch(() => [props.dashboardId, props.revision, props.cardIds], async () => {
       try {
         const output = await queryDashboardCard(props.dashboardId, card.id);
         if (current !== generation) return;
-        charts.value[index] = { id: card.id, name: output.card.name, option: output.rows.length ? metricChartOption(output.card as MetricReferenceChartEntry, output) : null, error: "", partial: !!output.truncation };
+        if (!("file" in output)) return;
+        const filled = cardChart(card.chartFile.content, output);
+        charts.value[index] = { id: card.id, name: output.card.name, file: output.file.content,
+          output: { columns: output.columns, rows: output.rows, truncation: output.truncation ?? undefined },
+          error: filled.ok ? "" : (zh() ? "图表与指标输出不符" : "The chart does not match the metric's output"), partial: !!output.truncation };
       } catch (failure) { if (current === generation) charts.value[index]!.error = failure instanceof Error ? failure.message : String(failure); }
     })]);
   } catch (failure) { if (current === generation) error.value = failure instanceof Error ? failure.message : String(failure); }
@@ -66,22 +75,22 @@ watch(() => [props.dashboardId, props.revision, props.cardIds], async () => {
         <p v-if="metric.error" role="alert" class="preview-error">{{ metric.error }}</p>
         <template v-else>
           <strong v-if="metric.value">{{ metric.value }} <small>{{ metric.unit }}</small></strong>
-          <span v-else class="preview-skeleton skeleton-value" role="status" :aria-label="locale.startsWith('zh') ? '读取指标中' : 'Loading metric'" />
-          <small v-if="metric.partial">{{ locale.startsWith('zh') ? '结果已截断，请查看仪表盘' : 'Partial result; open dashboard' }}</small>
+          <span v-else class="preview-skeleton skeleton-value" role="status" :aria-label="zh() ? '读取指标中' : 'Loading metric'" />
+          <small v-if="metric.partial">{{ zh() ? '结果已截断，请查看仪表盘' : 'Partial result; open dashboard' }}</small>
         </template>
       </div>
     </div>
-    <p v-if="missing" role="note">{{ locale.startsWith('zh') ? `${missing} 项关注内容已删除或不可访问，请重新选择` : `${missing} followed cards are unavailable. Update your selection.` }}</p>
-    <div v-if="loading && !error && !metrics.length && !charts.length" class="preview-values" role="status" :aria-label="locale.startsWith('zh') ? '读取指标中' : 'Loading metrics'"><div v-for="item in 3" :key="item" class="preview-value" aria-hidden="true"><span class="preview-skeleton skeleton-label" /><span class="preview-skeleton skeleton-value" /></div></div>
-    <p v-else-if="!loading && !metrics.length && !charts.length && !error">{{ props.cardIds?.length === 0 ? (locale.startsWith('zh') ? '未选择展示内容，可在配置工作台中选择或恢复默认展示' : 'No cards selected. Choose cards or restore the default selection in workspace settings.') : (locale.startsWith('zh') ? '打开仪表盘查看图表与明细' : 'Open dashboard for charts and details') }}</p>
+    <p v-if="missing" role="note">{{ zh() ? `${missing} 项关注内容已删除或不可访问，请重新选择` : `${missing} followed cards are unavailable. Update your selection.` }}</p>
+    <div v-if="loading && !error && !metrics.length && !charts.length" class="preview-values" role="status" :aria-label="zh() ? '读取指标中' : 'Loading metrics'"><div v-for="item in 3" :key="item" class="preview-value" aria-hidden="true"><span class="preview-skeleton skeleton-label" /><span class="preview-skeleton skeleton-value" /></div></div>
+    <p v-else-if="!loading && !metrics.length && !charts.length && !error">{{ props.cardIds?.length === 0 ? (zh() ? '未选择展示内容，可在配置工作台中选择或恢复默认展示' : 'No cards selected. Choose cards or restore the default selection in workspace settings.') : (zh() ? '打开仪表盘查看图表与明细' : 'Open dashboard for charts and details') }}</p>
     <div v-if="charts.length" class="preview-charts">
     <section v-for="chart in charts" :key="chart.id" class="preview-chart">
       <el-button text class="chart-open" @click="emit('select', { id: chart.id, name: chart.name })">{{ chart.name }}</el-button>
       <p v-if="chart.error" role="alert" class="preview-error">{{ chart.error }}</p>
-      <EChart v-else-if="chart.option" :option="chartBrandColors(chart.option, theme)" :theme="theme" height="220px" />
-      <div v-else-if="loading" class="preview-skeleton skeleton-chart" role="status" :aria-label="locale.startsWith('zh') ? '读取图表中' : 'Loading chart'" />
-      <p v-else>{{ locale.startsWith('zh') ? '暂无数据' : 'No data' }}</p>
-      <small v-if="chart.partial">{{ locale.startsWith('zh') ? '结果已截断，请查看完整仪表盘' : 'Partial result; open full dashboard' }}</small>
+      <MetricChart v-else-if="chart.output" :file="chart.file" :metric="chart.output" height="220px" :empty="zh() ? '暂无数据' : 'No data'" />
+      <div v-else-if="loading" class="preview-skeleton skeleton-chart" role="status" :aria-label="zh() ? '读取图表中' : 'Loading chart'" />
+      <p v-else>{{ zh() ? '暂无数据' : 'No data' }}</p>
+      <small v-if="chart.partial">{{ zh() ? '结果已截断，请查看完整仪表盘' : 'Partial result; open full dashboard' }}</small>
     </section>
     </div>
   </div>

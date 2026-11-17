@@ -7,33 +7,40 @@ import { createDashboardLoader } from "../utils/dashboardHelper";
 import { workbenchI18n } from "../../../../i18n";
 
 /**
- * A dashboard widget refresh keeps the data engine's partial-result marker on the widget it fills:
- * the chart and the metric show the localized header with the hint verbatim, and a partial chart
+ * A dashboard widget refresh keeps the data engine's partial-result marker on the widget it fills.
+ * The chart and the number card show the localized header with the hint verbatim, and a partial chart
  * without rows never says "no data". A complete refresh leaves no marker. Doubles: the dashboard
- * API boundary, the chart drawing and the resize library.
+ * API boundary, the platform's chart and the resize library.
  */
 const api = vi.hoisted(() => ({ response: {} as Record<string, unknown> }));
+const file = {
+  name: "sites.chart.json",
+  content: {
+    dataset: [{ id: "metric", dimensions: ["town", "count"], source: [] }],
+    series: [{ id: "count", type: "bar", datasetId: "metric", encode: { x: "town", y: "count" } }],
+    ontomato: {},
+  },
+};
 vi.mock("../../api", () => ({
   fetchDashboardLocalDetail: async () => ({
+    id: "d1",
     groups: [
       {
+        id: "g1",
         title: "Sites",
-        charts: [
-          {
-            id: "c1",
-            name: "Sites by town",
-            chartType: "bar",
-            conditions: [],
-            fields: { x: "town", y: "count" },
-            abcProgram: { code: "print(1)" },
-          },
-        ],
-        metrics: [{ id: "m1", name: "Site count", abcProgram: { code: "print(1)" } }],
+        charts: [{ id: "c1", name: "Sites by town", query: { kind: "metric", metricId: "m1", parameters: {} }, chartFile: file }],
+        metrics: [{ id: "n1", name: "Site count", query: { kind: "metric", metricId: "m2", parameters: {} }, valueField: "count" }],
       },
     ],
   }),
-  getAnswerByDslConditionParam: async () => api.response,
-  getConditionsFromDsl: async () => [],
+  queryDashboardCard: async (_dashboardId: string, cardId: string) =>
+    cardId === "c1"
+      ? { card: { id: "c1", name: "Sites by town", query: { kind: "metric", metricId: "m1", parameters: {} } }, file, metric: { id: "m1", name: "Sites", revision: "r1", status: "PUBLISHED" }, columns: [{ key: "town", label: "Town", type: null }, { key: "count", label: "Count", type: null }], ...api.response }
+      : { card: { id: "n1", name: "Site count", query: { kind: "metric", metricId: "m2", parameters: {} }, valueField: "count" }, metric: { id: "m2", name: "Sites", revision: "r1", status: "PUBLISHED" }, columns: [{ key: "count", label: "Count", type: null }], ...api.response },
+}));
+vi.mock("@ontomato/foundation-ui/chart", () => ({
+  MetricChart: { name: "MetricChart", props: ["file", "metric", "height", "empty"], template: '<div class="drawn-chart" />' },
+  useChartTheme: () => ({ value: {} }),
 }));
 vi.mock("interactjs", () => ({
   default: Object.assign(() => ({ resizable: () => ({ unset: () => {} }) }), {
@@ -64,8 +71,8 @@ afterEach(() => {
 });
 
 describe("dashboard widget refresh with a partial result", () => {
-  it("keeps the marker on the chart and the metric, and shows it instead of 'no data'", async () => {
-    const { chart, metric } = await load({ data: [], rawData: [], fields: {}, dsl: {}, ...MARKER });
+  it("keeps the marker on the chart and the number card, and shows it instead of 'no data'", async () => {
+    const { chart, metric } = await load({ rows: [], truncation: MARKER });
     expect(chart.truncation).toMatchObject(MARKER);
     expect(metric.truncation).toMatchObject(MARKER);
 
@@ -84,7 +91,7 @@ describe("dashboard widget refresh with a partial result", () => {
   });
 
   it("leaves a complete refresh unmarked", async () => {
-    const { chart, metric } = await load({ data: [], rawData: [], fields: {}, dsl: {} });
+    const { chart, metric } = await load({ rows: [], truncation: null });
     expect(chart.truncation).toBeUndefined();
     expect(metric.truncation).toBeUndefined();
     const chartCard = mount(ChartCard, { props: { chart }, global: { plugins: [i18n, ElementPlus], stubs: { EChart: true } } });

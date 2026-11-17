@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { isMetricReferenceEntry } from "@ontomato/contracts/dashboard";
 import { fetchDashboardLocalDetail } from "../api";
 
 const props = defineProps<{ dashboardId: string }>();
@@ -19,7 +18,7 @@ watch(() => props.dashboardId, async id => {
     const board = await fetchDashboardLocalDetail(id);
     if (current !== generation) return;
     if (!board) throw new Error(locale.value.startsWith("zh") ? "仪表盘当前不可访问" : "Dashboard unavailable");
-    cards.value = board.groups.flatMap(group => [...group.metrics, ...(group.charts ?? [])]).filter(isMetricReferenceEntry);
+    cards.value = board.groups.flatMap(group => [...group.metrics, ...(group.charts ?? [])]);
   } catch (failure) { if (current === generation) error.value = failure instanceof Error ? failure.message : String(failure); }
   finally { if (current === generation) loading.value = false; }
 }, { immediate: true });

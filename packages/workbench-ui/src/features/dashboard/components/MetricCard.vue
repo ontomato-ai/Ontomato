@@ -18,7 +18,6 @@
         </span>
         <DropdownMenu
           scene="metric"
-          :metric-ref="metricRef"
           trigger-class="metric-more"
           @command="(cmd) => emit('command', cmd)"
         />
@@ -28,7 +27,7 @@
         :class="['value-container', { 'value-container--transparent-loading': transparentLoading }]"
         element-loading-text=""
       >
-        <div v-if="metricRef && metric.error" class="metric-error" role="alert" :title="metric.error.message">
+        <div v-if="metric.error" class="metric-error" role="alert" :title="metric.error.message">
           <strong v-if="errorHeadline">{{ errorHeadline }}</strong>
           <span>{{ metric.error.message }}</span>
         </div>
@@ -46,7 +45,6 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import interact from "interactjs";
 import { TriangleAlert } from "lucide-vue-next";
-import { isMetricReferenceEntry } from "@ontomato/contracts/dashboard";
 import DropdownMenu from "./DropdownMenu.vue";
 import { clamp, parseGridColumns, partialResultNotice } from "./utils/dashboardHelper";
 import { cardErrorHeadline, metricCardValue } from "./utils/metricCard";
@@ -72,27 +70,12 @@ const props = defineProps({
 
 const emit = defineEmits(["command", "layout-change", "resize-active"]);
 
-function formatValue(value) {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "string") return value;
-
-  const num = Number(value);
-  if (!Number.isFinite(num)) return String(value);
-
-  if (num % 1 !== 0) {
-    return num.toFixed(2);
-  }
-  return num.toLocaleString();
-}
-
 const name = computed(() => String(props.metric?.name || ""));
 const unit = computed(() => String(props.metric?.unit || "").trim());
 const loading = computed(() => String(props.metric?.state || "").trim() === "loading");
-/** A metric-reference card shows the single row's value as the metric gave it; zero rows are "no data". */
-const metricRef = computed(() => isMetricReferenceEntry(props.metric));
+/** A number card shows the single row's value as the metric gave it; zero rows are "no data". */
 const errorHeadline = computed(() => (props.metric?.error ? cardErrorHeadline(props.metric.error, t) : null));
 const formattedValue = computed(() => {
-  if (!metricRef.value) return formatValue(props.metric?.value);
   if (props.metric.state !== "ready" && props.metric.state !== "empty") return "";
   const value = metricCardValue(props.metric, props.metric.rows);
   return value.empty ? t("common.noData") : value.text;
