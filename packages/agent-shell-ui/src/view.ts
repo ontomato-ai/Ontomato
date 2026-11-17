@@ -52,7 +52,8 @@ export interface ResponseItem {
   finishedAt: number | null;
 }
 
-export type ConversationItem = UserItem | ResponseItem | { kind: "notification"; key: string; text: string; error?: boolean };
+/** A question an agent asked is model-written Markdown, rendered within the run that holds it; other notifications stay plain text. */
+export type ConversationItem = UserItem | ResponseItem | { kind: "notification"; key: string; text: string; error?: boolean; markdownRunId?: string };
 
 /** Generic one-line summary of a tool call: the first short string argument. */
 export function toolSummary(args: Record<string, RuntimeJsonValue>): string {
@@ -147,7 +148,8 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
       continue;
     }
     if (message.role === "notification") {
-      items.push({ kind: "notification", key: entry.id, text: message.content });
+      items.push({ kind: "notification", key: entry.id, text: message.content,
+        ...(message.kind === "agent-question" && "session" in message.source ? { markdownRunId: entry.runId ?? message.source.runId } : {}) });
       for (const failure of tasks?.preparationFailures ?? []) if (failure.inputId === entry.id) items.push({ kind: "notification",key: `preparation:${failure.runId}`,text: failure.error,error: true });
       continue;
     }
