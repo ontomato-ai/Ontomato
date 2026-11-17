@@ -3,6 +3,7 @@ import {createApp,h,nextTick,ref,type App} from 'vue';
 import {productAssetSchema} from '@ontomato/contracts/product-assets';
 import MetricProjectionRuntime from '../products/MetricProjectionRuntime.vue';
 import ProductAssetCatalog from '../products/ProductAssetCatalog.vue';
+import DashboardChartPicker from '../components/DashboardChartPicker.vue';
 import {installObjectViewHost} from './object-view-host';
 import {chartFile} from './chart-fixture';
 /** The platform chart is the shared component; this stub reports the file and the output it is given. */
@@ -55,7 +56,8 @@ describe('a MetricWidget chart',()=>{
 });
 
 describe('a chart MetricWidget',()=>{
-  it('asks for an existing chart when one is created and keeps only what the chart brings',async()=>{
+  const settle=async()=>{for(let i=0;i<10;i++){await new Promise(resolve=>setTimeout(resolve,0));await nextTick();}};
+  it('asks for an existing chart only when the presentation is a chart, and keeps what the chart brings',async()=>{
     const calls:string[]=[];
     vi.stubGlobal('fetch',async(url:string)=>{
       calls.push(url);
@@ -65,13 +67,33 @@ describe('a chart MetricWidget',()=>{
     });
     const element=document.createElement('div');document.body.append(element);
     app=createApp({render:()=>h(ProductAssetCatalog,{createKind:'metric-widget'})});installObjectViewHost(app);app.mount(element);
-    for(let i=0;i<10;i++){await new Promise(resolve=>setTimeout(resolve,0));await nextTick();}
+    await settle();
+    // A new MetricWidget shows a number until its presentation becomes a chart: it asks for nothing and reads no dashboard.
+    expect(calls.some(url=>url.includes('/dashboards'))).toBe(false);
+    expect(document.querySelector('.el-overlay-dialog')?.textContent?.trim()).toBeFalsy();
+  });
+});
+
+describe('bringing in a dashboard chart',()=>{
+  const settle=async()=>{for(let i=0;i<10;i++){await new Promise(resolve=>setTimeout(resolve,0));await nextTick();}};
+  it('lists the author\'s dashboards and hands over the chosen card as stored',async()=>{
+    const calls:string[]=[];
+    vi.stubGlobal('fetch',async(url:string)=>{
+      calls.push(url);
+      if(url.endsWith('/dashboards'))return Response.json({success:true,data:[{id:'board-1',name:'Sales',createdAt:0,updatedAt:0},{id:'board-2',name:'Stock',createdAt:0,updatedAt:0}]});
+      if(url.includes('/dashboards/board-1'))return Response.json({success:true,data:{id:'board-1',ownerId:'author',name:'Sales',createdAt:0,updatedAt:0,groups:[{id:'g',title:'Sales',metrics:[],charts:[{id:'card-1',name:'Orders by kind',query:{kind:'metric',metricId:'orders',parameters:{year:2026}},chartFile:{name:'orders.chart.json',content:chartFile()}}]}]}});
+      return Response.json({success:true,data:{id:'board-2',ownerId:'author',name:'Stock',createdAt:0,updatedAt:0,groups:[]}});
+    });
+    const picked:unknown[]=[];
+    const element=document.createElement('div');document.body.append(element);
+    app=createApp({render:()=>h(DashboardChartPicker,{modelValue:true,onPick:(chart:unknown)=>picked.push(chart)})});installObjectViewHost(app);app.mount(element);
+    await settle();
+    expect(document.querySelector('.el-overlay-dialog')?.textContent).toContain('Sales');
     const choose=Array.from(document.querySelectorAll('.el-overlay-dialog button')).find(button=>button.textContent?.trim()==='Bring in') as HTMLButtonElement;
-    expect(choose).toBeDefined();
     choose.click();
-    for(let i=0;i<10;i++){await new Promise(resolve=>setTimeout(resolve,0));await nextTick();}
-    // The form now holds the chart the card brought: its file's columns.
-    expect(element.textContent).toContain('kind · amount');
-    expect(calls.some(url=>url.includes('/dashboards'))).toBe(true);
+    await settle();
+    expect(picked).toEqual([{id:'card-1',name:'Orders by kind',query:{kind:'metric',metricId:'orders',parameters:{year:2026}},chartFile:{name:'orders.chart.json',content:chartFile()}}]);
+    // Reading is all this does: no card is saved back to the source dashboard.
+    expect(calls.every(url=>url.includes('/dashboards'))).toBe(true);
   });
 });

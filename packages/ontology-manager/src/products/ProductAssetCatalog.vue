@@ -61,11 +61,11 @@ const widgetIndex=ref(0);
 /** A chart MetricWidget enters only by bringing in an existing chart. */
 const chartPicker=ref(false);
 function bringChart(chart:MetricReferenceChartEntry){
-  if(document.value.kind!=='metric-widget')return;
-  document.value.renderer='chart';
-  document.value.renders.id=chart.query.metricId;
-  document.value.chartFile=chart.chartFile.content;
-  document.value.parameters=Object.fromEntries(Object.entries(chart.query.parameters).map(([name,value])=>[name,{source:'literal' as const,value}]));
+  const projection=document.value as Extract<ProductDocument,{kind:'metric-widget'}>;
+  projection.renderer='chart';
+  projection.renders.id=chart.query.metricId;
+  projection.chartFile=chart.chartFile.content;
+  projection.parameters=Object.fromEntries(Object.entries(chart.query.parameters).map(([name,value])=>[name,{source:'literal' as const,value}]));
   if(!name.value.trim())name.value=chart.name;
   raw.value=JSON.stringify(document.value,null,2);
 }
@@ -190,7 +190,7 @@ function edit(asset:ProductAsset|null,newKind="page") {
   };
   document.value=JSON.parse(JSON.stringify(asset?.document ?? defaults[newKind]!));
   // A new chart MetricWidget has nothing to show until a chart is brought in, so it asks for one right away.
-  chartPicker.value=!asset&&newKind==='metric-widget';
+  chartPicker.value=!asset&&document.value.kind==='metric-widget'&&document.value.renderer==='chart';
   raw.value=JSON.stringify(document.value,null,2);advanced.value=false;
   const widget=productWidgets(document.value)[0];
   metricId.value=widget?.resourceId ?? "";
