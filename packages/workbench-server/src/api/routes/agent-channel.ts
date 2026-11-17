@@ -1,18 +1,13 @@
-import { timingSafeEqual } from "node:crypto";
-import { Router } from "express";
-import { environment } from "../../config/environment";
 import { HttpError } from "../../utils/errors";
+import { platformService } from "../middleware/platform-service";
+import { Router } from "express";
 import { buildTestAccess } from "../build-test-access";
 import { wrap } from "../utils/agent-host";
 import { agentChannelService } from "../../services/agent-host/channel";
 
 export const agentChannelRouter = Router();
 agentChannelRouter.use(buildTestAccess);
-agentChannelRouter.use((req, _res, next) => {
-  const actual = Buffer.from(req.header("X-Ontomato-Query-Service-Token") ?? ""), expected = Buffer.from(environment.agentRuntime().queryServiceToken);
-  if (!expected.length || actual.length !== expected.length || !timingSafeEqual(actual, expected)) return next(new HttpError(403, "Platform service authorization required", "FORBIDDEN"));
-  next();
-});
+agentChannelRouter.use(platformService);
 for (const action of ["list", "prepare", "settle", "read", "cancel"] as const) {
   agentChannelRouter.post("/" + action, wrap(async (req, res) => {
     const domain = req.header("X-Domain-Id");

@@ -224,144 +224,6 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   }
 
   @Test
-  void governanceUsesThePersistedCreatorAndItsOwnWorkRecord() throws Exception {
-    var agentStore =
-        new io.ontomato.dataengine.service.agent.OntologyAgentStore(
-            jdbc, transactions.getTransactionManager());
-    agentStore.initialize();
-    var grants =
-        new QueryGrantService(
-            jdbc, "governance-signing", new WorkbenchServiceAuthentication("service"));
-    grants.initialize();
-    var captured = new AtomicReference<com.alibaba.fastjson2.JSONObject>();
-    var fixtureError = new AtomicReference<Throwable>();
-    var providerHost = new AtomicReference<io.ontomato.dataengine.service.agent.KnowledgeGovernanceService>();
-    var providerContext = new AtomicReference<io.ontomato.dataengine.service.agent.OntologyAgentAccess.Context>();
-    var fixtureExecutor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
-    var fixture = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-    fixture.createContext(
-        "/v1",
-        exchange -> {
-          byte[] response;
-          try {
-            String path = exchange.getRequestURI().getPath();
-            if (exchange.getRequestMethod().equals("POST") && path.endsWith("/runs")) {
-              var request =
-                  com.alibaba.fastjson2.JSON.parseObject(exchange.getRequestBody().readAllBytes());
-              String run = exchange.getRequestHeaders().getFirst("Idempotency-Key");
-              if (path.contains("/channel/")) request = providerHost.get().prepare(
-                  request.getJSONObject("channel").getJSONObject("root").getJSONObject("session").getString("sessionId"),
-                  run,request.getJSONObject("input"),providerContext.get());
-              String token =
-                  request
-                      .getJSONObject("environment")
-                      .getJSONObject("secrets")
-                      .getString("ONTOMATO_GOVERNANCE_TK");
-              captured.set(
-                  grants.verify(
-                      token,
-                      run,
-                      "/ontology/ai/knowledge-governance/session/runs/" + run + "/actions/read"));
-              response = "{}".getBytes();
-            } else if (path.endsWith("/status"))
-              response = "{\"run\":{\"status\":\"stopped\",\"stopReason\":\"stop\"}}".getBytes();
-            else if (path.endsWith("/final-reply"))
-              response =
-                  "{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Review completed\"}]}"
-                      .getBytes();
-            else response = "{\"latestRun\":null}".getBytes();
-            exchange.sendResponseHeaders(200, response.length);
-            exchange.getResponseBody().write(response);
-          } catch (Throwable error) {
-            fixtureError.set(error);
-            response = error.toString().getBytes();
-            exchange.sendResponseHeaders(500, response.length);
-            exchange.getResponseBody().write(response);
-          } finally {
-            exchange.close();
-          }
-        });
-    fixture.setExecutor(fixtureExecutor);
-    fixture.start();
-    try {
-      var runtime =
-          new AgentRuntimeClient(
-              "http://127.0.0.1:" + fixture.getAddress().getPort(), "host", "http://fixture");
-      var definitions = mock(io.ontomato.dataengine.service.agent.OntologyAgentDefinitions.class);
-      when(definitions.resource(anyString())).thenCallRealMethod();
-      when(definitions.governance(anyString(), anyString(), anyLong()))
-          .thenReturn(new com.alibaba.fastjson2.JSONObject());
-      var callers = mock(io.ontomato.dataengine.service.agent.AgentCaller.class);
-      when(callers.open(anyString(),any(io.ontomato.dataengine.service.agent.OntologyAgentAccess.Context.class))).thenAnswer(call -> {
-        var context = (io.ontomato.dataengine.service.agent.OntologyAgentAccess.Context)call.getArgument(1);
-        providerContext.set(context);
-        return com.alibaba.fastjson2.JSONObject.of("id",call.getArgument(0),"domainId",context.owner().domainId());
-      });
-      var governance =
-          new io.ontomato.dataengine.service.agent.KnowledgeGovernanceService(
-              agentStore,
-              runtime,
-              definitions,
-              grants,
-              mock(KnowledgeService.class),
-              mock(AdminService.class),
-              callers);
-      providerHost.set(governance);
-      governance.initialize();
-      when(identities.hasKnowledgeGovernanceAccess("alice", "sales")).thenReturn(true);
-      var access =
-          new io.ontomato.dataengine.service.agent.OntologyAgentAccess(
-              mock(QueryAccessService.class), identities, grants, agentStore);
-      var provider =
-          new io.ontomato.dataengine.service.agent.scheduling.GovernanceScheduleApplication(
-              governance, access, runtime, agentStore, identities);
-      var registry = scheduleApplications(List.of(provider), mockWorkbench());
-      var service =
-          new PlatformTasks(store, identities, identity, credentials, registry, transactions);
-      ReflectionTestUtils.setField(service, "configuredZone", "UTC");
-      UUID task = UUID.randomUUID(), run = UUID.randomUUID();
-      var input = fixtureDefinition("governance");
-      ((com.fasterxml.jackson.databind.node.ObjectNode) input)
-          .set("content", object("instruction", "Review knowledge"));
-      ((com.fasterxml.jackson.databind.node.ObjectNode) input).put("formRevision", "governance-v1");
-      service.create(task, input, "en", true);
-      service.manual(task, run, "en");
-      var scheduler =
-          new PlatformScheduler(
-              store, transactions, registry, credentials, identity, mock(TaskMail.class));
-      try {
-        scheduler.dispatch(run);
-        assertNull(fixtureError.get(), String.valueOf(fixtureError.get()));
-        assertEquals("alice", captured.get().getString("userId"));
-        assertEquals("sales", captured.get().getString("domainId"));
-        assertEquals("knowledge-governance", captured.get().getString("purpose"));
-        jdbc.update(
-            "UPDATE ontology_governance_work SET work=jsonb_set(work,'{summary}','\"Three"
-                + " recommendations\"') WHERE run_id=?",
-            run);
-        scheduler.settle(Instant.now());
-        assertEquals("completed", store.run(run).status());
-        assertEquals("Three recommendations", store.run(run).resultSummary());
-        assertEquals("Review completed", store.run(run).result());
-        sample("platformTaskRunSchema", store.run(run).wire());
-        assertEquals(
-            0, jdbc.queryForObject("SELECT count(*) FROM platform_task_credential", Integer.class));
-        when(identities.hasKnowledgeGovernanceAccess("alice", "sales")).thenReturn(false);
-        assertEquals(
-            "PERMISSION_DENIED",
-            assertThrows(
-                    ScheduleException.class, () -> service.manual(task, UUID.randomUUID(), "en"))
-                .code);
-      } finally {
-        scheduler.stop();
-      }
-    } finally {
-      fixture.stop(0);
-      fixtureExecutor.close();
-    }
-  }
-
-  @Test
   void localApplicationDenialsUseTheRequestAndPersistedRunLanguageWithoutPermissionCodes()
       throws Exception {
     doThrow(
@@ -370,14 +232,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
                 "Operation permission is required: /action/execute"))
         .when(identities)
         .requireActionExecutionAccess("alice", "sales");
-    var governance =
-        new io.ontomato.dataengine.service.agent.scheduling.GovernanceScheduleApplication(
-            mock(io.ontomato.dataengine.service.agent.KnowledgeGovernanceService.class),
-            mock(io.ontomato.dataengine.service.agent.OntologyAgentAccess.class),
-            mock(AgentRuntimeClient.class),
-            mock(io.ontomato.dataengine.service.agent.OntologyAgentStore.class),
-            identities);
-    var registry = scheduleApplications(List.of(ontology, governance), mockWorkbench());
+    var registry = scheduleApplications(List.of(ontology), mockWorkbench());
     var service =
         new PlatformTasks(store, identities, identity, credentials, registry, transactions);
     ReflectionTestUtils.setField(service, "configuredZone", "UTC");
@@ -392,7 +247,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
       var directory = parse(directoryResponse.getContentAsString());
       sample("platformScheduleApplicationsSchema", directory);
       var reasons = new java.util.HashSet<String>();
-      for (String app : List.of("ontology", "governance")) {
+      for (String app : List.of("ontology")) {
         var descriptor =
             java.util.stream.StreamSupport.stream(
                     directory.path("applications").spliterator(), false)
@@ -407,10 +262,6 @@ class PlatformScheduleTest extends PostgresTestDatabase {
         var input =
             (com.fasterxml.jackson.databind.node.ObjectNode)
                 (app.equals("ontology") ? definition("function:f") : fixtureDefinition(app));
-        if (app.equals("governance")) {
-          input.set("content", object("instruction", "Review knowledge"));
-          input.put("formRevision", "governance-v1");
-        }
         UUID taskId = UUID.randomUUID();
         store.insert(
             taskId,

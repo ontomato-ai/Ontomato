@@ -16,10 +16,21 @@ public class KnowledgeGovernanceController {
   public KnowledgeGovernanceController(KnowledgeGovernanceService governance,OntologyAgentAccess access) {
     this.governance=governance;this.access=access;
   }
-  @PostMapping("/agents")
-  public Object createAgent(@RequestBody JSONObject input,HttpServletRequest request){
-    AgentJson.fields(input,"name");
-    return governance.createAgent(access.governance(request).owner().domainId(),input.getString("name"));
+  @PostMapping("/skill-package")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void publishSkill(HttpServletRequest request) throws Exception {
+    access.service(request);
+    governance.publishSkill();
+  }
+  @PostMapping("/platform-windows")
+  public Object register(@RequestBody java.util.Map<String,Object> input,HttpServletRequest request) {
+    access.service(request);
+    return governance.registerPlatform(JSONObject.from(input),access.governance(request));
+  }
+  @PostMapping("/platform-windows/{run}/close")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void closePlatform(@PathVariable String run,HttpServletRequest request) {
+    governance.closePlatform(AgentJson.id(run),access.serviceDomain(request));
   }
   @GetMapping("/{id}/work")
   public Object work(@PathVariable String id,HttpServletRequest request) {
@@ -39,22 +50,23 @@ public class KnowledgeGovernanceController {
   @PostMapping("/{id}/skill-runs/{run}/close")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   public void close(@PathVariable String id,@PathVariable String run,HttpServletRequest request) throws Exception {
-    governance.cancel(AgentJson.id(id),AgentJson.id(run),access.governance(request).owner());
+    governance.closeExternal(AgentJson.id(id),AgentJson.id(run),access.governance(request).owner());
   }
   @PostMapping("/{id}/runs/{run}/actions/{action}")
   public Object action(@PathVariable String id,@PathVariable String run,@PathVariable String action,
       @RequestBody JSONObject input,HttpServletRequest request) throws Exception {
     AgentJson.id(id);AgentJson.id(run);
-    if (!id.equals(request.getHeader("X-Ontomato-Session-Id")) || !run.equals(request.getHeader("X-Ontomato-Run-Id")))
+    if (!run.equals(request.getHeader("X-Ontomato-Run-Id")))
       throw AgentHttpException.invalid("Run identity mismatch");
     var grant=(JSONObject)request.getAttribute(QueryGrantService.ATTRIBUTE);
-    Owner owner;
-    if (grant==null) owner=access.governance(request).owner();
+    Owner owner,executor;
+    if (grant==null) {owner=access.governance(request).owner();executor=owner;}
     else {
       if (!"knowledge-governance".equals(grant.getString("purpose")) || !run.equals(grant.getString("runId")))
         throw AgentHttpException.missing();
-      owner=new Owner(grant.getString("userId"),grant.getString("domainId"));
+      owner=new Owner(AgentJson.text(grant,"initiatorUserId"),grant.getString("domainId"));
+      executor=new Owner(grant.getString("userId"),grant.getString("domainId"));
     }
-    return governance.action(id,run,action,input,owner);
+    return governance.action(id,run,action,input,owner,executor);
   }
 }

@@ -178,7 +178,7 @@ const systemIntegrationPages: readonly PlatformPage[] = [
  */
 const agentModelPages: readonly PlatformPage[] = ontologyAgentModelPages.map((page) => ({
   path: page.path,
-  titleKey: page.app==='ontology'?'platform.ontologyAgentModels':page.app==='governance'?'platform.governanceAgentModels':'platform.conversationAgentModels',
+  titleKey: page.app==='ontology'?'platform.ontologyAgentModels':'platform.conversationAgentModels',
   descriptionKey: "platform.agentModels.description",
   icon: Cpu,
   permissions: ["system-config"],

@@ -7,27 +7,26 @@ compatibility: Requires Node.js 18 or newer, an Ontomato ontology-service URL an
 # Knowledge governance
 
 Use `node <this-skill>/scripts/governance.mjs <command> @work/arguments.json`.
-Read [commands](references/commands.md) for argument shapes. These are ordinary
-commands in Claude Code, Codex and the product runtime. They save governance work
-and evidence references; import-knowledge writes pending business knowledge through the host's permission checks.
+Read [commands](references/commands.md) for arguments and [extraction](references/extraction.md)
+when extracting knowledge. Preserve source IDs, evidence and uncertainty; do not invent business rules.
+The Java work record is the governance report. Read it when resuming or after compaction;
+update the same issue ID for the same disagreement. Confirming meaning does not save a knowledge asset.
 
-For extraction and import, read [extraction](references/extraction.md) before preparing records.
+In platform runs, the host supplies `ONTOMATO_SKILL_SCENARIO=platform`, a window callback
+and the real run identity. The first command requests a write window from Node; no report
+is created merely because this skill is installed. Use the returned record ID in
+`/governance/reports/<recordId>`. The host closes writes when the run ends or stops.
+Do not call close or switch to external begin in a platform run.
 
-Set ONTOMATO_ONTOLOGY_URL (ontology service base), ONTOMATO_TK or ONTOMATO_API_KEY, and
-optionally ONTOMATO_LANGUAGE / ONTOMATO_CORRELATION_ID. Product execution supplies
-ONTOMATO_GOVERNANCE_ID, ONTOMATO_SESSION_ID, ONTOMATO_RUN_ID and a scoped ONTOMATO_GOVERNANCE_TK. Use these values
-as supplied. They select a host-authorized run; they do not grant permission.
+Outside the platform, set `ONTOMATO_ONTOLOGY_URL`, `ONTOMATO_TK` or `ONTOMATO_API_KEY`,
+and optionally `ONTOMATO_LANGUAGE` / `ONTOMATO_CORRELATION_ID`.
+Run `begin` with `{"message":"Material to govern"}` and optional `id` to continue a record;
+the first ordinary command also begins external work if none exists. Keep the returned IDs.
+External begin replaces the previous window, creates no runtime agent, and uses your own permissions.
+Run `close` when finished. Expired or closed writes fail with HTTP 409; begin a new round explicitly.
 
-Outside the product, if ONTOMATO_RUN_ID is absent, the command calls begin to
-obtain host business work identity and stores it in work/.governance-run.json.
-You can explicitly run `begin @work/begin.json` with `{"message":"Review knowledge"}`
-and optional `id` to continue an existing external work record. Begin closes the
-previous open run for that record. It creates no runtime agent, and all operations
-use your own user permissions. Keep the returned IDs to inspect or continue.
-When done, run `close`. Expired/closed run updates return HTTP 409; begin a new
-round explicitly to continue, rather than retrying a write against a closed gate.
-
-Read the current work record first and when current progress is needed after
-conversation compaction. After changes, use the authoritative returned record.
-Read knowledge and ontology, inspect relevant history/evidence, and preserve source
-IDs in issues. Explain evidence and uncertainty; do not invent business rules.
+Commands save governance work and source references. In platform runs, `import-knowledge` writes
+one `outputs/drafts/*.page-draft.json` file per item and prints its business-knowledge page link.
+It reads existing knowledge to select create/update; creates use an empty knowledgeID and pending
+status, while updates keep the existing ID and status. Outside the platform it calls Java import
+with your credential. Report imported knowledge only after that interface confirms it.

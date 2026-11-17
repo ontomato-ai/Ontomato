@@ -50,17 +50,17 @@ export async function readAssistantTurnEvidence(
     queries: AssistantQueryEvidence[] = [],
     retrievalRuns: AgentHostRunSnapshot[] = [],
     artifacts = [...run.artifacts];
-  const ontology = new OntologyRetrievalClient(owner, turn.retrieval_scope_id);
-  const links = await ontology.links();
+  const ontology = turn.retrieval_scope_id ? new OntologyRetrievalClient(owner,turn.retrieval_scope_id) : null;
+  const links = ontology ? await ontology.links() : [];
   for (const link of links) {
-    const evidence = await ontology.evidence(link.retrievalId, link.runId);
+    const evidence = await ontology!.evidence(link.retrievalId, link.runId);
     const child = evidence.snapshot.runtimeSessionId && evidence.snapshot.runtimeRunId
-      ? await ontology.run(evidence.snapshot.runtimeSessionId, link.runId) : null;
+      ? await ontology!.run(evidence.snapshot.runtimeSessionId, link.runId) : null;
     if (child) retrievalRuns.push(child);
     const datasets = [];
     for (const artifactId of child ? evidence.snapshot.datasetArtifactIds : []) {
-      const data = await ontology.dataset(link.retrievalId, artifactId);
-      artifacts.push(await ontology.artifact(child!.run.sessionId, artifactId));
+      const data = await ontology!.dataset(link.retrievalId, artifactId);
+      artifacts.push(await ontology!.artifact(child!.run.sessionId, artifactId));
       datasets.push(projectDataset(data.id, data.payload, {
         retrievalId: link.retrievalId,
         runtimeSessionId: child!.run.sessionId,
@@ -68,7 +68,7 @@ export async function readAssistantTurnEvidence(
       }));
     }
     for (const output of evidence.snapshot.bindings?.datasets ?? []) {
-      const data = await ontology.dataset(link.retrievalId, output.id);
+      const data = await ontology!.dataset(link.retrievalId, output.id);
       datasets.push(projectDataset(data.id, data.payload, { source: "binding", retrievalId: link.retrievalId,
         bindingOutputId: data.id, runtimeSessionId: null, runtimeRunId: null }));
     }
@@ -83,7 +83,7 @@ export async function readAssistantTurnEvidence(
       fullContent: child ? answerText(child) : "",
       backendSessions: [],
       // Each branch's quality task of this round, with its conclusion once it completed.
-      qcResult: await ontology.quality(link.retrievalId,link.runId),
+      qcResult: await ontology!.quality(link.retrievalId,link.runId),
       datasetsPayload: datasets.map((d) => ({
         id: d.id,
         datasetKey: d.id,

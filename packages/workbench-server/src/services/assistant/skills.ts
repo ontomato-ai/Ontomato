@@ -1,3 +1,5 @@
+import { publishGovernanceSkill } from "./governance";
+import { GOVERNANCE_SKILL } from "./governance-definition";
 import { APP_BUILDER_SKILL } from "../app-builder/definition";
 import path from "node:path";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
@@ -37,6 +39,17 @@ export function effectiveAssistantSkills(
   return [...new Map(effective.map(skill => [runtimeSkillKey(skill), skill])).values()];
 }
 
+const RETRIEVAL_SKILLS = new Set(["ontomato-analyst-assistant"]);
+
+/** The selectable ontology query skill is the only assistant skill that needs a retrieval caller. */
+export function needsRetrievalScope(skills: readonly RuntimeSkillRef[]) {
+  return skills.some(skill => skill.namespace.kind === "provider" && skill.namespace.provider === "ontology"
+    && RETRIEVAL_SKILLS.has(skill.name));
+}
+export function hasGovernanceSkill(skills: readonly RuntimeSkillRef[]) {
+  return skills.some(skill => runtimeSkillKey(skill) === runtimeSkillKey(GOVERNANCE_SKILL));
+}
+
 function platformSkills() {
   return ["assistant-report","application-design"].map((name) => {
     const root = path.join(workbenchServerResourceRoot, "resources/runtime-skills", name);
@@ -56,6 +69,7 @@ export async function assistantSkillCatalog(domainId: string, credentials: Assis
   const pages = projection ?? await readPageSkills(credentials);
   const locale = credentials.locale;
   const options: AssistantSkillOption[] = [
+    { skill: GOVERNANCE_SKILL, title: tForLocale(locale, "assistant.default.knowledge-governance.name"), description: tForLocale(locale, "assistant.default.knowledge-governance.description") },
     ...platformSkills().map(({ root: _root, ...entry }) => ({ ...entry,
       title: entry.skill.name==='assistant-report'?tForLocale(locale, "assistant.skills.report.title"):entry.title,
       description: entry.skill.name==='assistant-report'?tForLocale(locale, "assistant.skills.report.description"):entry.description })),
@@ -93,6 +107,8 @@ export async function prepareAssistantSkills(domainId: string, agent: { kind: st
   const selected = await validateAssistantSkills(domainId, effectiveAssistantSkills(agent, projection), initiatorCredentials, projection);
   const registry = await skillRegistryManager.forDomain(domainId);
   for (const ref of selected) {
+    if (ref.name === GOVERNANCE_SKILL.name && ref.namespace.kind === "provider" && ref.namespace.provider === GOVERNANCE_SKILL.namespace.provider)
+      await publishGovernanceSkill(domainId);
     if (ref.namespace.kind !== "domain") continue;
     const source = registry.getSkillById(ref.name);
     if (!source || source.isPublic) throw new HttpError(404, `Domain skill not found: ${ref.name}`, "SKILL_NOT_FOUND");

@@ -1,4 +1,7 @@
 export const en = {
+  "assistant.governance.report.title": "Governance report",
+  "assistant.default.knowledge-governance.name": "Knowledge governance",
+  "assistant.default.knowledge-governance.description": "Review business knowledge with traceable evidence",
   "assistant.default.regular.name": "Assistant",
   "assistant.default.analysis.name": "Analyst",
   "assistant.default.regular.description": "Ask questions about your data",

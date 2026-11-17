@@ -17,7 +17,6 @@ export const ontologyAgentModelPages = [
   // The data retrieval chain of the conversation: the retriever, the check of its questions, the description of a
   // program the answer runs and the dashboard generated when an answer is added to a board.
   { app: "agents", path: platformRoutes.agentModels.path, kinds: ["retrieval", "quality", "describe", "dashboard"] },
-  { app: "governance", path: platformRoutes.governanceModels.path, kinds: ["knowledge", "knowledgeGovernance"] },
   {
     app: "ontology",
     path: platformRoutes.ontologyModels.path,
@@ -73,7 +72,7 @@ export function ontologyAgentModelSource(transport: DataEngineTransport, page: A
           .sort((a, b) => kinds.indexOf(a.kind) - kinds.indexOf(b.kind))
           .map((agent) => ({
             id: agent.id,
-            kind: agent.kind==='knowledgeGovernance'&&agent.id!=='56a15178-ae22-4e6f-9974-ababeb42a676'?null:agent.kind,
+            kind: agent.kind,
             name: agent.name,
             description: null,
             modelId: agent.modelSelection.modelId,

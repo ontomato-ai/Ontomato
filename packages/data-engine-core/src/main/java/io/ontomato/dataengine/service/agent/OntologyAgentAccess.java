@@ -59,19 +59,11 @@ public class OntologyAgentAccess {
       identity.getCurrentCredentialExpiresAt(), null);
   }
 
-  /** Build the same governance context for a verified persisted background creator. */
-  public Context scheduledGovernance(io.ontomato.dataengine.core.bean.User user, String language) {
-    if (user == null || !user.isEnable() || user.getDomainId() == null)
-      throw new AgentHttpException(403, "FORBIDDEN", "A current domain member is required");
-    if (!identity.hasKnowledgeGovernanceAccess(user.getId(), user.getDomainId()))
-      throw new AgentHttpException(403, "FORBIDDEN", "Business knowledge permission is required");
-    return new Context(new OntologyAgentStore.Owner(user.getId(), user.getDomainId()), null, null, null, language, null, null);
-  }
-
   public boolean governanceAllowed() { return identity.hasKnowledgeGovernanceAccess(); }
 
   public Context forAgent(HttpServletRequest request, String agent) {
-    return KnowledgeGovernanceService.isAgent(agent) ? governance(request) : current(request);
+    if (!OntologyAgentStore.isKnownAgent(agent)) throw AgentHttpException.missing();
+    return current(request);
   }
 
   public Context forSession(HttpServletRequest request, String session) {
@@ -179,22 +171,19 @@ public class OntologyAgentAccess {
    */
   public final class SessionReads {
     private final OntologyAgentStore.Owner owner;
-    private final boolean governance;
     private final boolean query;
 
     private SessionReads(
-        OntologyAgentStore.Owner owner, boolean governance, boolean query) {
+        OntologyAgentStore.Owner owner, boolean query) {
       this.owner = owner;
-      this.governance = governance;
       this.query = query;
     }
 
     public boolean readable(String session) {
       try {
         var row = store.session(session, owner);
-        return KnowledgeGovernanceService.isAgent(row.getString("agent_id"))
-            ? governance
-            : query;
+        String agent=row.getString("agent_id");
+        return query && OntologyAgentStore.isKnownAgent(agent);
       } catch (AgentHttpException error) {
         if (error.status() == 404 || error.status() == 403) return false;
         throw error;
@@ -210,7 +199,7 @@ public class OntologyAgentAccess {
   public SessionReads sessionReads(HttpServletRequest request) {
     var context = authenticated(request);
     return new SessionReads(
-        context.owner(), identity.hasKnowledgeGovernanceAccess(), queryAllowed());
+        context.owner(), queryAllowed());
   }
 
   /** Only the capability's own 403 means no query permission; every other failure propagates. */

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { credentialsForRun } from "../../services/assistant/execution";
-import type { RuntimeCallbackRequest } from "../../services/agent-runtime/callback-credential";
+import type { RuntimeCallback } from "../../services/agent-runtime/callback-credential";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { productAuthoringSchema, productTypes,productQuerySchema } from "@ontomato/contracts/product-assets";
@@ -104,7 +104,7 @@ router.post('/:id/sessions',wrap(async(req,res)=>{
 }));
 router.post('/:id/tools/:toolId',wrap(async(req,res)=>{const c=context(req);const {parameters}=z.object({parameters:z.record(z.unknown())}).strict().parse(req.body);res.json({result:await executeProfileTool(c.owner,c.credentials,String(req.params.id),String(req.params.toolId),parameters)});}));
 router.post('/:id/releases/:releaseId/tools/:toolId',wrap(async(req,res)=>{
-  const c=context(req),callback=(req as RuntimeCallbackRequest).runtimeCallback;
+  const c=context(req),callback=(res.locals.runtimeCallback as RuntimeCallback | undefined);
   const {parameters}=z.object({parameters:z.record(z.unknown())}).strict().parse(req.body);
   const sessionId=callback ? z.string().uuid().parse(req.query.sessionId) : z.string().uuid().optional().parse(req.query.sessionId);
   const execution=callback ? (await credentialsForRun(c.owner,callback.runId,c.credentials,sessionId)).credentials : undefined;

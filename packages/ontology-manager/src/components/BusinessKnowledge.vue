@@ -1,6 +1,7 @@
 <script setup lang="ts">
-const emit = defineEmits<{ governance: [] }>();
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { createAgentHostClient } from "@ontomato/agent-shell-ui";
+import { assistantAgentListSchema } from "@ontomato/contracts/assistant-chat";
 import {
   ElButton,
   ElCheckbox,
@@ -22,8 +23,19 @@ import { useManagerClient, useManagerContext, useOntologyText, useSharedText } f
 import { PlatformPageHeader } from "@ontomato/platform-shell";
 import { useManagerFeedback } from "../feedback";
 
+/**
+ * `pageDraft` is the agent draft the address named, if any: the originating run and the draft's path inside it. The page
+ * reads it through that run's artifacts and fills it in; `draftApplied` tells the host the address no longer needs it.
+ * `governance` asks the host to open a governance conversation with the agent the page's skill mapping names.
+ */
+const props = withDefaults(defineProps<{
+  pageDraft?: { sessionId: string; runId: string; path: string } | null;
+}>(), { pageDraft: null });
+const emit = defineEmits<{ draftApplied: []; governance: [agentId: string] }>();
+
 const context = useManagerContext();
 const client = useManagerClient();
+
 const { ot } = useOntologyText();
 const { t } = useSharedText();
 const { message, confirm } = useManagerFeedback();
@@ -53,6 +65,15 @@ const tagOptions = computed(() => [
 function emptyKnowledge(): BusinessKnowledge {
   return { knowledgeID: "", knowledgeTitle: "", knowledgeText: "", knowledgeTags: [], status: 1 };
 }
+
+/**
+ * The draft an agent wrote for this page. The address carries the originating run and the draft's path; the draft is
+ * read through that run's own artifacts, and filling it in is the whole of what this page does with an agent's work:
+ * nothing is saved until the reader saves, and what was filled is held against the entry it was compared with, so the
+ * fields the draft changed can be marked.
+ */
+const draftBase = ref<BusinessKnowledge | null>(null);
+const draftFields = ref<ReadonlySet<keyof BusinessKnowledge>>(new Set());
 
 // Space-separated terms, case-insensitive; an entry matches when every term occurs in its title, content or tags.
 const terms = computed(() => query.value.trim().toLowerCase().split(/\s+/).filter(Boolean));
@@ -188,6 +209,86 @@ function toggleAllVisible(value: boolean) {
     : checked.value.filter((id) => !ids.includes(id));
 }
 
+/** Whether the draft changed this field against the entry the form was filled from. */
+const draftTouched = (field: keyof BusinessKnowledge) => draftFields.value.has(field);
+
+/** The fields of `form` whose value differs from `base`; the form itself is the page's own save input. */
+function changedFields(base: BusinessKnowledge, form: BusinessKnowledge): (keyof BusinessKnowledge)[] {
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  const fields: (keyof BusinessKnowledge)[] = ["knowledgeTitle", "knowledgeText", "knowledgeTags", "status"];
+  return fields.filter((field) => !same(base[field], form[field]));
+}
+
+/**
+ * Fills a draft into this page's form. An update reads the entry it names from the list and compares against it; a
+ * create compares against the page's own new-entry defaults. A draft whose form is not this page's save input, or whose
+ * operation or target is not one this page holds, is reported rather than guessed at.
+ */
+async function applyDraft(sessionId: string, runId: string, path: string) {
+  const read = createAgentHostClient({ request: (path, init) => client.request(path, init, "") });
+  const envelope = await read.readPageDraft(sessionId, runId, path);
+  if (envelope.pageKey !== "business-knowledge")
+    throw new Error(ot("knowledgeDraftOtherPage", { page: envelope.pageKey }));
+  if (envelope.operation !== "knowledge.create" && envelope.operation !== "knowledge.update")
+    throw new Error(ot("knowledgeDraftNoForm", { operation: envelope.operation }));
+  const form = formOf(envelope.form);
+  const base = envelope.operation === "knowledge.create"
+    ? emptyKnowledge()
+    : list.value.find((item) => item.knowledgeID === envelope.target.id);
+  if (!base) throw new Error(ot("knowledgeDraftTargetMissing", { id: envelope.target.id ?? "" }));
+  if (envelope.operation === "knowledge.update" && form.knowledgeID !== envelope.target.id)
+    throw new Error(ot("knowledgeDraftTargetMismatch", { form: form.knowledgeID }));
+  // A manual edit in progress is not overwritten silently: the existing question decides, and a refusal leaves it.
+  if (!(await leaveEdit())) return false;
+  draftBase.value = base;
+  draftFields.value = new Set(changedFields(base, form));
+  Object.assign(draft, form);
+  editing.value = true;
+  narrowDetail.value = true;
+  return true;
+}
+
+/** The draft's `form` as this page's save input; a form of another shape is the draft's own error, not a partial fill. */
+function formOf(value: Record<string, unknown>): BusinessKnowledge {
+  const tags = value.knowledgeTags;
+  if (typeof value.knowledgeID !== "string" || typeof value.knowledgeTitle !== "string" ||
+    typeof value.knowledgeText !== "string" || typeof value.status !== "number" ||
+    !Array.isArray(tags) || tags.some((tag) => typeof tag !== "string"))
+    throw new Error(ot("knowledgeDraftFormInvalid"));
+  return {
+    knowledgeID: value.knowledgeID, knowledgeTitle: value.knowledgeTitle,
+    knowledgeText: value.knowledgeText, knowledgeTags: tags as string[], status: value.status,
+  };
+}
+
+/** The draft the address names: reading it fills the form, and a saved one leaves the address's parameters behind. */
+async function readDraft() {
+  const draft = props.pageDraft;
+  if (!draft) return;
+  try {
+    if (await applyDraft(draft.sessionId, draft.runId, draft.path)) message.info(ot("knowledgeDraftApply"));
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : String(error));
+  }
+}
+
+/**
+ * The governance conversation: the page's skill mapping names the agent a governance run uses, and the agent platform
+ * opens a new conversation with it. The id is read from the platform rather than written here, so a domain's own preset
+ * definition is the one opened.
+ */
+async function openGovernance() {
+  try {
+    const list = assistantAgentListSchema.parse(await (await client.request(
+      `/assistant/agents?${new URLSearchParams({ pageKey: "governance-report", permissionCode: "business-knowledge" })}`,
+      {}, "")).json());
+    if (!list.defaultAgentId) throw new Error(ot("knowledgeGovernanceUnavailable"));
+    emit("governance", list.defaultAgentId);
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : ot("knowledgeGovernanceUnavailable"));
+  }
+}
+
 async function save() {
   if (!draft.knowledgeTitle.trim()) {
     message.warning(ot("knowledgeTitleRequired"));
@@ -200,7 +301,11 @@ async function save() {
     editing.value = false;
     // A new entry's ID is assigned by the data engine and not returned, so only an edit keeps its selection.
     selectedID.value = draft.knowledgeID || null;
+    const applied = draftBase.value !== null;
+    draftBase.value = null;
+    draftFields.value = new Set();
     await load();
+    if (applied) emit("draftApplied");
   } catch (error) {
     message.error(error instanceof Error ? error.message : ot("knowledgeSaveFailed"));
   } finally {
@@ -261,7 +366,12 @@ async function removeChecked() {
   }
   await load();
 }
-onMounted(load);
+onMounted(async () => {
+  await load();
+  await readDraft();
+});
+// Another draft at the same page (a link opened while it is shown) is filled the same way.
+watch(() => props.pageDraft?.path, () => void readDraft());
 </script>
 
 <template>
@@ -269,7 +379,7 @@ onMounted(load);
     <!-- The platform's one page header: the title, its line of description, and this page's own buttons. -->
     <PlatformPageHeader compact :title="t('nav.businessKnowledge')" :description="ot('knowledgeDesc')">
       <template #actions>
-        <el-button @click="emit('governance')">
+        <el-button @click="openGovernance">
           <BookOpen :size="16" />
           {{ ot("knowledgeGovernance") }}
         </el-button>
@@ -370,10 +480,12 @@ onMounted(load);
 
           <el-form v-if="editing" :model="draft" label-position="top" class="knowledge-form">
             <h2>{{ ot(draft.knowledgeID ? "knowledgeEdit" : "knowledgeAdd") }}</h2>
-            <el-form-item :label="ot('knowledgeTitle')" required>
+            <!-- The agent wrote this form; the fields it changed against the entry are marked until the reader saves. -->
+            <p v-if="draftBase" class="knowledge-draft-note" role="status">{{ ot("knowledgeDraftApply") }}</p>
+            <el-form-item :label="ot('knowledgeTitle')" required :class="{ 'draft-changed': draftTouched('knowledgeTitle') }">
               <el-input v-model="draft.knowledgeTitle" :placeholder="ot('knowledgeTitlePlaceholder')" />
             </el-form-item>
-            <el-form-item :label="ot('knowledgeContent')" required>
+            <el-form-item :label="ot('knowledgeContent')" required :class="{ 'draft-changed': draftTouched('knowledgeText') }">
               <el-input
                 v-model="draft.knowledgeText"
                 type="textarea"
@@ -381,7 +493,7 @@ onMounted(load);
                 :placeholder="ot('knowledgeContentPlaceholder')"
               />
             </el-form-item>
-            <el-form-item :label="ot('knowledgeTags')">
+            <el-form-item :label="ot('knowledgeTags')" :class="{ 'draft-changed': draftTouched('knowledgeTags') }">
               <el-select
                 v-model="draft.knowledgeTags"
                 multiple
@@ -398,7 +510,7 @@ onMounted(load);
                 />
               </el-select>
             </el-form-item>
-            <el-form-item :label="ot('status')">
+            <el-form-item :label="ot('status')" :class="{ 'draft-changed': draftTouched('status') }">
               <el-radio-group v-model="draft.status">
                 <el-radio :value="0">{{ ot("pendingReview") }}</el-radio>
                 <el-radio :value="1">{{ ot("knowledgeApproved") }}</el-radio>
@@ -657,6 +769,16 @@ onMounted(load);
   display: flex;
   flex-direction: column;
   gap: var(--manager-module-gap);
+}
+.knowledge-draft-note {
+  margin: 0;
+  color: var(--el-color-primary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+.knowledge-form .draft-changed :deep(.el-form-item__label) {
+  color: var(--el-color-primary);
+  font-weight: var(--font-semibold);
 }
 .knowledge-form h2,
 .knowledge-form :deep(.el-form-item),

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import type { PageSkillsProjection } from "@ontomato/contracts/page-skills";
@@ -17,6 +18,7 @@ vi.mock("../../../core/skills/registry/manager", () => ({ skillRegistryManager: 
 vi.mock("../../skills/skill-manager", () => ({ skillManager: { getAllSkills: async () => [] }, skillReference: vi.fn() }));
 vi.mock("../../agent-runtime/skills", () => ({ publishSkill: vi.fn() }));
 vi.mock("../../../i18n", () => ({ tForLocale: (_locale: string, key: string) => key }));
+vi.mock("../governance",()=>({publishGovernanceSkill:vi.fn()}));
 vi.mock("../store", () => ({ assistantStore: { agents: mocks.agents } }));
 vi.mock("../labels", () => ({ assistantName: (a: AgentRow) => a.name, assistantDescription: (a: AgentRow) => a.description }));
 vi.mock("../../product-assets/platform-assets", () => ({ nativeProfileId: mocks.native }));
@@ -119,4 +121,12 @@ it("exposes projection failures instead of continuing with stale authorization",
   mocks.get.mockRejectedValue(new Error("Java unavailable"));
   await expect(listAssistantAgents(owner, credentials)).rejects.toThrow("Java unavailable");
   await expect(prepareAssistantSkills(owner.domainId, definition(0, "regular"), credentials)).rejects.toThrow("Java unavailable");
+});
+
+it("uses the governance preset for reports and leaves the business-knowledge page on the ordinary default",async()=>{
+  const declaration=JSON.parse(readFileSync(new URL("../../../../../data-engine-core/src/main/resources/applications/ontology.json",import.meta.url),"utf8"));
+  current.pageSkills=declaration.declaration.pageSkills;
+  mocks.agents.mockResolvedValue([definition(0,"regular",[report]),definition(1,"knowledge-governance",[page])]);
+  expect((await listAssistantAgents(owner,credentials,query)).defaultAgentId).toBe(ids[1]);
+  expect((await listAssistantAgents(owner,credentials,{pageKey:"business-knowledge",permissionCode:"business-knowledge"})).defaultAgentId).toBe(ids[0]);
 });

@@ -11,7 +11,7 @@ import { HttpError } from "../../utils/errors";
 import {assistantRetrievalOperationSchema} from "@ontomato/contracts/assistant-retrieval";
 import {OntologyRetrievalClient} from "../../services/assistant/ontology-retrieval";
 import { credentialsForRun, runForOwner } from "../../services/assistant/execution";
-import type { RuntimeCallbackRequest } from "../../services/agent-runtime/callback-credential";
+import type { RuntimeCallback } from "../../services/agent-runtime/callback-credential";
 
 export const assistantExecutionRouter = Router();
 const ontologyPath = /^\/(?:ontology\/(?:query|ai\/(?:generation|knowledge-governance))(?:\/|$)|action(?:\/|$)|metricView(?:\/|$)|data\/queryInfoByNode$|knowledge(?:\/|$)|admin\/(?:getBussinessKnowledge)$)/;
@@ -19,7 +19,7 @@ const workbenchPath = /^\/api\/(?:assistant|product-assets|dashboards|feedback|m
 
 assistantExecutionRouter.post("/:runId/retrieval",wrap(async(req,res)=>{
   const runId=z.string().uuid().parse(req.params.runId);
-  const callback=(req as RuntimeCallbackRequest).runtimeCallback;
+  const callback=(res.locals.runtimeCallback as RuntimeCallback | undefined);
   if(!callback || callback.runId!==runId)throw new HttpError(403,"A run callback is required","FORBIDDEN");
   const operation=assistantRetrievalOperationSchema.parse(req.body);
   const {owner,credentials:initiator}=context(req);
@@ -35,7 +35,7 @@ assistantExecutionRouter.post("/:runId/retrieval",wrap(async(req,res)=>{
 
 assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
   const runId = z.string().uuid().parse(req.params.runId);
-  const callback = (req as RuntimeCallbackRequest).runtimeCallback;
+  const callback = (res.locals.runtimeCallback as RuntimeCallback | undefined);
   if (!callback || callback.runId !== runId) throw new HttpError(403, "A run callback is required", "FORBIDDEN");
   const target = z.enum(["ontology", "workbench"]).parse(req.params.target);
   const path = "/" + req.params[0];
@@ -43,10 +43,10 @@ assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
     !(target === "ontology" ? ontologyPath : workbenchPath).test(path) || path.startsWith("/api/assistant/executions/"))
     throw new HttpError(403, "Path is outside the execution callback", "FORBIDDEN");
   const { owner, credentials: initiatorCredentials } = context(req);
-  const ownership = target === "ontology" ? /\/actions\/(?:read_work_record|update_work_record|read_input|search_history|read_history|read_evidence|collect_turn_artifacts)$/u.test(path)
-    : /^\/api\/(?:assistant|feedback|query-history|product-assets|memories|preferences|personal-workspace)(?:\/|$)/u.test(path);
-  const credentials: AssistantCredentials = ownership ? initiatorCredentials : (await credentialsForRun(owner, runId, initiatorCredentials)).credentials;
-  if(ownership)await runForOwner(owner,runId);
+  const grantAction=target==="ontology" && callback.businessGrant && /^\/ontology\/ai\/knowledge-governance\/[^/]+\/runs\/[^/]+\/actions\/[^/]+$/u.test(path);
+  const ownership=target==="workbench" && /^\/api\/(?:assistant|feedback|query-history|product-assets|memories|preferences|personal-workspace)(?:\/|$)/u.test(path);
+  const credentials: AssistantCredentials = ownership || grantAction ? initiatorCredentials : (await credentialsForRun(owner, runId, initiatorCredentials)).credentials;
+  if(ownership || grantAction)await runForOwner(owner,runId);
   const headers = buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey, credentials.headers);
   if (callback.businessGrant) { headers.tk = callback.businessGrant; delete headers["X-API-Key"]; }
   headers["X-Ontomato-Run-Id"] = runId;
