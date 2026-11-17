@@ -985,3 +985,341 @@ watch(
   { immediate: true },
 );
 </script>
+
+<style scoped>
+.dash-root {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  align-self: stretch;
+  overflow: auto;
+  background: var(--shell-workspace-bg, var(--el-bg-color));
+}
+
+.dash-root.is-layout-pending {
+  visibility: hidden;
+}
+
+/* Empty state: no dimensions */
+.empty-state {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0 24px;
+  margin: 0;
+  box-sizing: border-box;
+  background: transparent;
+}
+
+.empty-state__content {
+  text-align: center;
+  transform: translateY(-24px);
+}
+
+.empty-state__icon {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  margin: 0 auto var(--spacing-lg);
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
+}
+
+.empty-state__title {
+  font-size: var(--text-xl);
+  font-weight: var(--font-semibold);
+  color: var(--el-text-color-primary);
+  margin-bottom: 8px;
+}
+
+.empty-state__desc {
+  font-size: var(--text-sm);
+  color: var(--el-text-color-secondary);
+  margin-bottom: 20px;
+}
+
+/* Main body */
+.bi-dashboard {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  padding: var(--spacing-lg) 0 0;
+  box-sizing: border-box;
+  background-color: transparent;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg-xl);
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-md);
+  padding: var(--surface-padding);
+  box-shadow: var(--shadow-card);
+}
+
+/* ===============================
+   group header (icon + title + more)
+================================ */
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding-right: 2px;
+  margin-bottom: 12px;
+  box-sizing: border-box;
+}
+
+.group-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-md);
+  cursor: grab;
+  color: var(--el-text-color-tertiary);
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+.group-drag-handle:hover {
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+}
+
+.group-title {
+  flex: 1;
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--el-text-color-primary);
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.01em;
+}
+
+.group-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--el-text-color-tertiary);
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.group-more:hover {
+  background: var(--el-fill-color-dark);
+  color: var(--el-color-primary);
+}
+
+.group-header :deep(.el-icon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+/* ===============================
+   metric card
+================================ */
+.metrics-section {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  grid-auto-rows: 102px;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.metrics-section.metrics-empty {
+  margin-bottom: 0;
+}
+
+/* ===============================
+   chart area
+================================ */
+.charts-wrapper {
+  position: relative;
+}
+
+.charts-section {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  grid-auto-rows: 360px;
+  gap: 14px;
+}
+
+.charts-section--empty {
+  min-height: 200px;
+  border: 1.5px dashed var(--el-border-color-dark);
+  border-radius: var(--radius-md);
+  background: var(--el-fill-color-extra-light);
+}
+
+.charts-empty-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.charts-empty-hint {
+  text-align: center;
+  user-select: none;
+  padding: 24px;
+}
+
+.charts-empty-hint__title {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--el-text-color-secondary);
+  margin-bottom: 6px;
+}
+
+.charts-empty-hint__desc {
+  font-size: var(--text-sm);
+  color: var(--el-text-color-tertiary);
+  line-height: 1.7;
+}
+
+.charts-empty-hint__hl {
+  font-weight: var(--font-semibold);
+  color: var(--el-color-primary);
+}
+
+/* ===============================
+   drag effect
+================================ */
+.drag-ghost {
+  opacity: 0.45;
+  border-radius: var(--radius-md);
+}
+.drag-dragging {
+  cursor: grabbing !important;
+  border-radius: var(--radius-md);
+}
+
+/* ===============================
+   a draft's bar: what it changes, and the ways out
+================================ */
+.draft-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+  padding: var(--spacing-md);
+  margin-top: var(--spacing-lg);
+  background: var(--el-bg-color);
+  border-top: 1px solid var(--el-color-primary);
+  box-shadow: var(--shadow-card);
+}
+
+.draft-bar__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 200px;
+  font-size: var(--text-sm);
+  color: var(--el-text-color-secondary);
+}
+
+.draft-bar__text strong {
+  color: var(--el-text-color-primary);
+}
+
+.draft-bar__board {
+  color: var(--el-text-color-primary);
+}
+
+.draft-bar__failure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-basis: 100%;
+  font-size: var(--text-sm);
+  color: var(--el-color-danger);
+}
+
+.draft-bar__actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+/* Others */
+.empty {
+  text-align: center;
+  margin-top: 20px;
+  color: var(--el-text-color-tertiary);
+  font-size: var(--text-sm);
+}
+
+.btn-icon {
+  margin-right: 6px;
+}
+@media (max-width: 700px) {
+  :where(html.workbench-mobile-navigation) .bi-dashboard {
+    padding: var(--spacing-lg) 0 env(safe-area-inset-bottom);
+    gap: 12px;
+  }
+  :where(html.workbench-mobile-navigation) .block {
+    padding: 12px 10px;
+    border-radius: 12px;
+  }
+  :where(html.workbench-mobile-navigation) .group-header {
+    margin-bottom: 8px;
+  }
+  :where(html.workbench-mobile-navigation) .group-title {
+    font-size: var(--text-base);
+  }
+  :where(html.workbench-mobile-navigation) .metrics-section,
+  :where(html.workbench-mobile-navigation) .charts-section {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  :where(html.workbench-mobile-navigation) .metrics-section > *,
+  :where(html.workbench-mobile-navigation) .charts-section > * {
+    grid-column: 1 / -1 !important;
+  }
+  :where(html.workbench-mobile-navigation) .charts-section {
+    grid-auto-rows: 300px;
+  }
+  :where(html.workbench-mobile-navigation) .group-drag-handle {
+    display: none;
+  }
+  :where(html.workbench-mobile-navigation) .empty-state {
+    padding: 16px;
+  }
+  :where(html.workbench-mobile-navigation) .empty-state__content {
+    transform: none;
+  }
+}
+</style>
