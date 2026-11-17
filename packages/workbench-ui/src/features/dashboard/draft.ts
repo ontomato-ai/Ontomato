@@ -1,40 +1,22 @@
-import { z } from "zod";
 import type { PageDraft } from "@ontomato/contracts/page-draft";
 import {
-  dashboardReplaceLayoutSchema,
-  dashboardSaveParametersSchema,
+  dashboardAuthoring,
+  dashboardOperationSchema,
+  type DashboardAuthoringForm,
   type DashboardDetail,
   type DashboardLayout,
+  type DashboardOperation,
 } from "@ontomato/contracts/dashboard";
 
 /*
  * What the dashboard page does with a draft an agent wrote: it checks the draft against the board the reader owns,
  * lays it over a copy of that board for the reader to see, and saves it through the same request a reader's own edit
- * sends. The envelope belongs to the platform; each operation's form is this page's own save body.
+ * sends. The envelope belongs to the platform and each save action's body to `dashboardAuthoring`, so this page only
+ * resolves what a draft addresses and what the reader is shown.
  */
 
 /** The dashboard page's registration key; a draft for another page is not filled here. */
 export const DASHBOARD_PAGE_KEY = "dashboard";
-
-const renameSchema = z.object({ id: z.string().min(1), name: z.string().min(1) }).strict();
-const chartRenameSchema = z.object({ id: z.string().min(1), chartId: z.string().min(1), resultSetName: z.string().min(1) }).strict();
-const metricRenameSchema = z.object({ id: z.string().min(1), metricId: z.string().min(1), metricName: z.string().min(1) }).strict();
-const groupRenameSchema = z.object({ id: z.string().min(1), groupId: z.string().min(1), dimensionName: z.string().min(1) }).strict();
-
-/**
- * The page's save actions and the body each one sends: the same bodies the page's own edit actions post, so a draft
- * never invents a second save path.
- */
-export const dashboardDraftOperations = {
-  "dashboard.layout": dashboardReplaceLayoutSchema,
-  "dashboard.rename": renameSchema,
-  "dashboard.chart.rename": chartRenameSchema,
-  "dashboard.metric.rename": metricRenameSchema,
-  "dashboard.group.rename": groupRenameSchema,
-  "dashboard.card.parameters": dashboardSaveParametersSchema,
-} as const;
-
-export type DashboardDraftOperation = keyof typeof dashboardDraftOperations;
 
 /** The board one draft addresses, by the operation's own dashboard field. */
 function dashboardIdOf(form: unknown): string {
@@ -79,7 +61,7 @@ export class DraftRejected extends Error {
  * The object one operation changes, resolved against the board: a rename names one object, a parameter edit names a
  * card of either kind, and the board's own rename or a layout names no card.
  */
-function addressOf(operation: DashboardDraftOperation, form: unknown, board: BoardIdentity): DraftAddress {
+function addressOf(operation: DashboardOperation, form: unknown, board: BoardIdentity): DraftAddress {
   const body = form as { chartId?: string; metricId?: string; groupId?: string; cardId?: string };
   switch (operation) {
     case "dashboard.rename":
@@ -108,7 +90,7 @@ function addressOf(operation: DashboardDraftOperation, form: unknown, board: Boa
  * operation's own schema has read it. The body is the page's save request, so the page posts it as it is.
  */
 export type AcceptedDraft = {
-  operation: DashboardDraftOperation;
+  operation: DashboardOperation;
   id: string;
   form: unknown;
   address: DraftAddress;
@@ -120,24 +102,26 @@ export type AcceptedDraft = {
  */
 export function acceptDraft(draft: PageDraft<Record<string, unknown>>, board: BoardIdentity): AcceptedDraft {
   if (draft.pageKey !== DASHBOARD_PAGE_KEY) throw new DraftRejected(`This draft is for ${draft.pageKey}, not ${DASHBOARD_PAGE_KEY}`);
-  if (!(draft.operation in dashboardDraftOperations)) throw new DraftRejected(`Unknown dashboard action: ${draft.operation}`);
-  const operation = draft.operation as DashboardDraftOperation;
-  const parsed = dashboardDraftOperations[operation].safeParse(draft.form);
+  const known = dashboardOperationSchema.safeParse(draft.operation);
+  if (!known.success) throw new DraftRejected(`Unknown dashboard action: ${draft.operation}`);
+  const operation = known.data;
+  const parsed = dashboardAuthoring[operation].schema.safeParse(draft.form);
   if (!parsed.success) throw new DraftRejected(`This draft's ${operation} body is invalid: ${parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")}`);
-  const id = dashboardIdOf(parsed.data);
+  const form = parsed.data as DashboardAuthoringForm<typeof operation>;
+  const id = dashboardIdOf(form);
   if (draft.target.id !== undefined && draft.target.id !== id) throw new DraftRejected("This draft names two different dashboards");
   if (id !== board.id) throw new DraftRejected("This draft is for another dashboard");
-  const address = addressOf(operation, parsed.data, board);
+  const address = addressOf(operation, form, board);
   if (operation === "dashboard.layout") {
     // A layout names the whole board: every group, card and number card it lists must be this board's own.
-    const layout = parsed.data as { groups: { id: string; charts: { id: string }[]; metrics: { id: string }[] }[] };
+    const layout = form as { groups: { id: string; charts: { id: string }[]; metrics: { id: string }[] }[] };
     for (const group of layout.groups) {
       if (!board.groups.has(group.id)) throw new DraftRejected(`This dashboard has no group ${group.id}`);
       for (const card of group.charts) if (!board.charts.has(card.id)) throw new DraftRejected(`This dashboard has no chart ${card.id}`);
       for (const card of group.metrics) if (!board.metrics.has(card.id)) throw new DraftRejected(`This dashboard has no number card ${card.id}`);
     }
   }
-  return { operation, id, form: parsed.data, address };
+  return { operation, id, form, address };
 }
 
 /**
