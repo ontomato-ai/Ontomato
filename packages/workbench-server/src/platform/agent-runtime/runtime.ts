@@ -22,11 +22,18 @@ export interface AssistantCredentials {
   apiKey?: string;
   locale?: string;
 }
+/**
+ * The scenario a skill script runs in. Inside the platform a page's own save is the only writer of that page's data;
+ * the same skill package run outside the platform (a reader's own key, the Skill suite) writes directly.
+ */
+const SKILL_SCENARIO = "platform";
+
 export function userSkillEnvironment(credentials: AssistantCredentials): RuntimeEnvironment {
   return {
     values: {
       ONTOMATO_WORKBENCH_URL: environment.agentRuntime().callbackUrl.replace(/\/$/, ""),
       ONTOMATO_ONTOLOGY_URL: getApiConfig().baseUrl!.replace(/\/$/, ""),
+      ONTOMATO_SKILL_SCENARIO: SKILL_SCENARIO,
     },
     secrets: {
       ...(credentials.apiKey ? { ONTOMATO_API_KEY: credentials.apiKey }

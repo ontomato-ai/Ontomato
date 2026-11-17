@@ -29,6 +29,7 @@ import {
 import {
   datasetPayloadSchema,
 } from "@ontomato/contracts/data-retrieval";
+import { pageDraftSchema } from "@ontomato/contracts/page-draft";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { withDomainSkills } from "../skills/operations";
 import {
@@ -439,6 +440,19 @@ export const assistantService = {
         ),
       );
     return { artifact: result.artifacts.at(-1) ?? null };
+  },
+  /** The page draft a run wrote: its own artifact read, then the envelope every page receives. */
+  async pageDraft(
+    sessionId: string,
+    runId: string,
+    path: string,
+    owner: AssistantOwner,
+  ) {
+    const { artifact } = await this.resolve(sessionId, runId, path, owner);
+    if (!artifact) throw new HttpError(404, "Page draft not found");
+    return pageDraftSchema.parse(
+      JSON.parse((await this.content(sessionId, artifact.id, owner)).toString("utf-8")),
+    );
   },
   async datasetSource(sessionId: string, id: string, owner: AssistantOwner) {
     const a = await this.artifact(sessionId, id, owner);
