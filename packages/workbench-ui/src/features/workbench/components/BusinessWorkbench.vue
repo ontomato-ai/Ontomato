@@ -4,11 +4,14 @@ import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import { AgentShell, useAgentNav, useSessionRunFeed, type ShellFeatureDeclaration, type ShellWorkbenchDeclaration } from "@ontomato/agent-shell-ui";
+import {
+  AgentShell, useAgentNav, useSessionRunFeed,
+  type PageContext, type ShellFeatureDeclaration, type ShellWorkbenchDeclaration,
+} from "@ontomato/agent-shell-ui";
 import { AgentModelsPage, ontologyAgentModelPages, ontologyAgentModelSource, usePageAccess } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
-import { AgentSettingsNav, AgentSettingsPage, dataEngineTransport } from "../../agents";
+import { AgentSettingsNav, AgentSettingsPage, dataEngineTransport, useAgentDefinitions } from "../../agents";
 import { getWorkbenchAppearance } from "../api";
 import { createAssistantClient, createAssistantFeedback } from "../assistant-host";
 import { readRememberedAgent, rememberAgent } from "../remembered-agent";
@@ -129,6 +132,19 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
 }));
 
 const labels = useShellLabels();
+
+/** The settings page beside the conversation: which page and agent it shows, for a message sent from its composer. */
+const settingsAgents = useAgentDefinitions();
+const pageContext = computed<PageContext | null>(() => {
+  if (!inSettings.value) return null;
+  const agent = settingsAgents.find(settingsAgentId.value);
+  return {
+    pageKey: "agent-settings",
+    url: route.fullPath,
+    label: agent ? `${t("agents.title")} · ${agent.name}` : t("agents.title"),
+    selection: settingsAgentId.value && agent ? [{ kind: "agent", id: agent.id, label: agent.name }] : [],
+  };
+});
 
 /**
  * The one navigation state: the platform column lists the agents and conversations from it, and this conversation
@@ -262,7 +278,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
     v-model:agent-id="agentId"
     v-model:feature-id="featureId"
     v-model:session-id="conversationId"
-    agent-picker
+    :page-context="pageContext"
     :workbench="workbench"
     :title="workbench.label"
     :bottom="bottomEntry"

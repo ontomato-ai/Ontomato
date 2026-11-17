@@ -3,7 +3,9 @@ import type { ShellLabels } from "@ontomato/agent-shell-ui";
  * The shell labels the page formats from a pattern (steps, elapsed time, a column's filter, a partial dataset, the
  * questions waiting and an answer sent while a reply ran).
  */
-type Formatted = "steps" | "elapsed" | "worked" | "truncatedRows" | "filterColumn" | "questionsWaiting" | "answered";
+type Formatted =
+  | "steps" | "elapsed" | "worked" | "truncatedRows" | "filterColumn" | "questionsWaiting" | "answered"
+  | "pageContext" | "selectionContext";
 
 /**
  * Governance text. `shell` is the shell's labels as stored: those the page formats from text keep their keys but hold
@@ -68,6 +70,8 @@ export const englishGovernance: GovernanceMessages = {
     "thinking": "Thinking",
     "working": "Working",
     "switchWhileRunning": "Finish or stop the running reply before switching agents",
+    "pageContext": "Current page: {page}",
+    "selectionContext": "Selected: {selection}",
     "toolInput": "Input",
     "toolOutput": "Output",
     "stopped": "Stopped",
@@ -150,6 +154,8 @@ export function shellLabels(t: GovernanceTranslate): ShellLabels {
     truncatedRows: (limit: number) => t("governance.shell.truncatedRows", { limit }),
     filterColumn: (column: string) => t("governance.shell.filterColumn", { column }),
     questionsWaiting: (n: number) => t("governance.shell.questionsWaiting", n),
+    pageContext: (page: string) => t("governance.shell.pageContext", { page }),
+    selectionContext: (selection: string) => t("governance.shell.selectionContext", { selection }),
     answered: (text: string) => t("governance.shell.answered", { text }),
     selectRow: undefined,
     selectedRows: undefined,

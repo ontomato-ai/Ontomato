@@ -541,6 +541,8 @@ export default {
     "thinking": "Thinking",
     "working": "Working",
     "switchWhileRunning": "Finish or stop the running reply before switching agents",
+    "pageContext": "Current page: {page}",
+    "selectionContext": "Selected: {selection}",
     "toolInput": "Input",
     "toolOutput": "Output",
     "stopped": "Stopped",

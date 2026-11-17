@@ -164,6 +164,10 @@ export interface ShellLabels {
   working: string;
   /** The composer's agent choice while a reply runs: the running conversation keeps the agent it started with. */
   switchWhileRunning: string;
+  /** A message's last line names the page it was written on. */
+  pageContext: (page: string) => string;
+  /** The same line names what was selected in the page. */
+  selectionContext: (selection: string) => string;
   toolInput: string;
   toolOutput: string;
   stopped: string;

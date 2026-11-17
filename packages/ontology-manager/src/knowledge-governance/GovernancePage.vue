@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch, type Component } from "vue";
 import { X } from "lucide-vue-next";
-import { AgentShell, createAgentHostClient, useAgentNav, useSessionRunFeed } from "@ontomato/agent-shell-ui";
+import { AgentShell, createAgentHostClient, useAgentNav, useSessionRunFeed, type PageContext } from "@ontomato/agent-shell-ui";
 import {
   AgentModelsPage,
   ontologyAgentModelPages,
@@ -177,9 +177,15 @@ watch(
 
 const progress = computed(() => work.value?.knowledgeTotal === null || !work.value ? "" :
   t("progress", { done: work.value.reviewedKnowledgeIds.length, total: work.value.knowledgeTotal }));
-const pageContext = computed(() => {
+/** The report page the conversation sits beside, and the issue the reader opened in it. */
+const pageContext = computed<PageContext>(() => {
   const issue = work.value?.issues.find((item) => item.id === selectedIssue.value);
-  return t("context", { page: issue ? t("contextIssue", { report: t("report"), title: issue.title }) : t("report") });
+  return {
+    pageKey: "governance-report",
+    url: window.location.hash.replace(/^#/, ""),
+    label: t("report"),
+    selection: issue ? [{ kind: "issue", id: issue.id, label: issue.title }] : [],
+  };
 });
 function toggleIssue(id: string) {
   selectedIssue.value = selectedIssue.value === id ? null : id;

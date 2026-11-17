@@ -2,6 +2,7 @@
 import { computed, inject, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
 import { PanelRightOpen } from "lucide-vue-next";
 import { conversationQuestions, shellContextKey, type ShellContext } from "../context";
+import { pageContextLine, pageMoved, samePageAddress, type PageContext } from "../page-context";
 import type { AgentHostClient } from "../host";
 import type { AgentNav } from "../useAgentNav";
 import type {
@@ -56,8 +57,11 @@ const props = withDefaults(
     feedback?: ShellFeedbackPort;
     artifactRenderers?: readonly ArtifactRendererOverride[];
     toolRenderers?: readonly ToolRendererOverride[];
-    /** One line naming the open page and its selection, appended to messages sent while a paired page is open. */
-    pageContext?: string | null;
+    /**
+     * The open page and what was selected in it, appended to messages sent while a paired page is open: the selection
+     * every time, the page itself on the conversation's first message or once the address moved elsewhere.
+     */
+    pageContext?: PageContext | null;
     /** Recognises an in-app address in an answer and returns how to open its page; null leaves it as text. */
     pageLinks?: ShellContext["pageLink"];
     /**
@@ -215,13 +219,26 @@ function sendFromPage(text: string) {
   void send(text);
 }
 
+/**
+ * The page address the conversation's last carried message named; null when it is not known (the conversation was just
+ * opened, so its first message carries the page again). A draft parameter or a fragment is the same page.
+ */
+const carriedPage = ref<string | null>(null);
+watch(sessionId, () => (carriedPage.value = null));
+
 async function send(input: string) {
   const agent = agentId.value;
   if (!agent) return;
-  const context = pairedPage.value ? props.pageContext?.trim() : "";
-  const text = context ? `${input}\n\n${context}` : input;
+  const page = pairedPage.value ? props.pageContext ?? null : null;
+  const carriesPage = page !== null && pageMoved(carriedPage.value, page);
+  const line = page
+    ? pageContextLine(page, { page: props.labels.pageContext, selection: props.labels.selectionContext }, carriesPage)
+    : "";
+  const text = line ? `${input}\n\n${line}` : input;
   const result = await conversation.send(agent, text);
   if (!result) return;
+  // Only a message the host accepted moved the conversation's page; a refused one carries it again next time.
+  if (page) carriedPage.value = samePageAddress(page.url);
   if (!result.delivery) {
     // The conversation was created but its run refused: the host takes it as listed (still empty), so sending again
     // goes on in the conversation the host knows.

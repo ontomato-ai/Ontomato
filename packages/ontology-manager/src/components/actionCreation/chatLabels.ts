@@ -22,6 +22,8 @@ export function actionChatLabels(overrides: Partial<ShellLabels> = {}): ShellLab
     thinking: "Thinking",
     working: "Working",
     switchWhileRunning: "Finish or stop the running reply before switching agents",
+    pageContext: (page) => `Current page: ${page}`,
+    selectionContext: (selection) => `Selected: ${selection}`,
     toolInput: "Input",
     toolOutput: "Output",
     stopped: "Stopped",

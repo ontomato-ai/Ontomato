@@ -26,6 +26,7 @@ export {
 export { default as ShellColumn } from "./components/ShellColumn.vue";
 export { default as ToolStep } from "./components/ToolStep.vue";
 export { pageDockSpaceKey, useConversationContinuation, usePageDockSpace } from "./context";
+export { pageContextLine, pageMoved, samePageAddress, type PageContext, type PageSelection } from "./page-context";
 export { useAgentNav, type AgentNav, type AgentNavOptions } from "./useAgentNav";
 export { useSessionRunFeed, type SessionRunFeedOptions } from "./useSessionRunFeed";
 export {
