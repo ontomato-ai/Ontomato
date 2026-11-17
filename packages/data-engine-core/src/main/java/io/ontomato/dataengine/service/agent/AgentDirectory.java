@@ -1,7 +1,6 @@
 package io.ontomato.dataengine.service.agent;
 
 import com.alibaba.fastjson2.*;
-import io.ontomato.dataengine.service.IdentityService;
 import org.springframework.stereotype.Service;
 
 /** Definition owners authorize their own entries; the directory stores no definition or permission copy. */
@@ -20,7 +19,7 @@ public class AgentDirectory {
     var executionOwner=new OntologyAgentStore.Owner(executor.getId(),domain);
     var agents=new JSONArray();
     try {
-      identity.requireQueryAccess(executor.getId(),domain);
+      callers.requireQueryUser(executor);
       agents.add(JSONObject.of("ref",JSONObject.of("providerId","ontology","agentId",OntologyAgentStore.RETRIEVER),"name","Data retrieval","description","Answer data questions with binding and retrieval results"));
       try { actions.authorize(executionOwner);agents.add(JSONObject.of("ref",JSONObject.of("providerId","ontology","agentId",ActionCreationService.AGENT),"name","Action creation","description","Draft and test an action")); }
       catch(org.springframework.web.server.ResponseStatusException denied) { if(denied.getStatusCode().value()!=403) throw denied; }

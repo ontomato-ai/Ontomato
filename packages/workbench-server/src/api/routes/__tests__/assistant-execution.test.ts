@@ -76,3 +76,16 @@ it('configuration keeps the original operator even when the selected business ex
  expect(headers).toMatchObject({tk:'initiator-token'});expect(headers).not.toHaveProperty('X-API-Key');
  expect(mocks.restore).not.toHaveBeenCalled();
 });
+
+it("lets Java restore V for governance business Grants without a Node key exchange",async()=>{
+ mocks.restore.mockRejectedValue(new Error('V lookup must stay in Java'));
+ const upstream=vi.fn(async()=>Response.json({items:[]}));vi.stubGlobal('fetch',upstream);
+ expect((await call('ontology/ontology/ai/knowledge-governance/record/runs/'+run+'/actions/read_knowledge',{tk:'oq.business.grant'})).status).toBe(200);
+ expect(mocks.restore).not.toHaveBeenCalled();
+ expect((upstream.mock.calls[0] as unknown as [string,NonNullable<Parameters<typeof fetch>[1]>])[1].headers).toMatchObject({tk:'oq.business.grant'});
+});
+it("the platform knowledge page read outside the governance Grant uses V",async()=>{
+ const upstream=vi.fn(async()=>Response.json({success:true,data:{}}));vi.stubGlobal('fetch',upstream);
+ expect((await call('ontology/admin/getBussinessKnowledge')).status).toBe(200);
+ expect((upstream.mock.calls[0] as unknown as [string,NonNullable<Parameters<typeof fetch>[1]>])[1].headers).toMatchObject({'X-API-Key':'selected-user-key'});
+});

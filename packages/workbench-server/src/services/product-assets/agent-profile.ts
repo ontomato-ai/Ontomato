@@ -91,14 +91,19 @@ async function readProfileObjectContext(owner:ProductOwner,profile:Awaited<Retur
 export async function agentProfileForAgent(owner:ProductOwner,credentials:AssistantCredentials,agentId:string,executionCredentials?:AssistantCredentials){
   return withProductGrants(owner,()=>authorizedProfileForAgent(owner,credentials,agentId,executionCredentials));
 }
-export async function profileForSession(owner:ProductOwner,credentials:AssistantCredentials,sessionId:string,agentId:string,executionCredentials?:AssistantCredentials){
+export interface ProfileSessionSource { profileId:string; releaseId?:string; contextObjects?:{className:string;primaryKey:string}[] }
+export async function profileSourceForSession(owner:ProductOwner,sessionId:string,agentId:string):Promise<ProfileSessionSource|null>{
   const result=await getPostgresPool().query(`SELECT profile_id,release_id,context_objects FROM ${t('product_profile_sessions')} WHERE domain_id=$1 AND session_id=$2`,[owner.domainId,sessionId]);
-  if(!result.rows[0]){
-    const native=await nativeProfileId(owner.domainId,agentId);
-    if(native)return null;
-    return agentProfileForAgent(owner,credentials,agentId,executionCredentials);
-  }
-  const {profile_id:id,release_id:releaseId}=result.rows[0];
+  if(result.rows[0])return {profileId:result.rows[0].profile_id,releaseId:result.rows[0].release_id,contextObjects:result.rows[0].context_objects??[]};
+  if(await nativeProfileId(owner.domainId,agentId))return null;
+  const id=await profileIdForAgent(owner,agentId);
+  return id===null?null:{profileId:id};
+}
+export async function profileForSession(owner:ProductOwner,credentials:AssistantCredentials,sessionId:string,agentId:string,executionCredentials?:AssistantCredentials,suppliedSource?:ProfileSessionSource|null){
+  const source=suppliedSource===undefined?await profileSourceForSession(owner,sessionId,agentId):suppliedSource;
+  if(source===null)return null;
+  if(!source.releaseId)return withProductGrants(owner,()=>authorizedProfileForAgent(owner,credentials,agentId,executionCredentials,source.profileId));
+  const {profileId:id,releaseId}=source;
   await requireProductUse(owner,id);
   const snapshot=await readProductRelease(owner,releaseId,id);
   const profile=snapshotAsset(snapshot,id);
@@ -107,11 +112,11 @@ export async function profileForSession(owner:ProductOwner,credentials:Assistant
   const issues=await productReleaseIssues(owner,snapshot,executionCredentials);
   const assembled=await assembleAgentProfile(owner,credentials,id,snapshot.assets,issues,executionCredentials);
   const objectContext=[];
-  for(const selection of result.rows[0].context_objects??[])if(assembled.contextViews.some(view=>view.objectType===selection.className))objectContext.push(await readProfileObjectContext(owner,assembled,executionCredentials,selection));
+  for(const selection of source.contextObjects??[])if(assembled.contextViews.some(view=>view.objectType===selection.className))objectContext.push(await readProfileObjectContext(owner,assembled,executionCredentials,selection));
   return {...assembled,releaseId,objectContext};
 }
-async function authorizedProfileForAgent(owner:ProductOwner,credentials:AssistantCredentials,agentId:string,executionCredentials?:AssistantCredentials){
-  const id=await profileIdForAgent(owner,agentId);
+async function authorizedProfileForAgent(owner:ProductOwner,credentials:AssistantCredentials,agentId:string,executionCredentials?:AssistantCredentials,knownId?:string){
+  const id=knownId??await profileIdForAgent(owner,agentId);
   if(id===null)return null;
   const {snapshot,releaseId}=await readActiveProductBundle(owner,id);
   const profile=snapshotAsset(snapshot,id);

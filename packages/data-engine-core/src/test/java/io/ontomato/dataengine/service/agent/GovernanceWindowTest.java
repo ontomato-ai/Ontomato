@@ -15,6 +15,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -36,6 +37,9 @@ class GovernanceWindowTest extends PostgresTestDatabase {
   private KnowledgeGovernanceService governance;
   private MockMvc http;
   private String token;
+  private IdentityService identity;
+  private AgentExecutionAccess executions;
+  private QueryGrantService grants;
 
   @BeforeEach void setup() throws Exception {
     server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
@@ -58,28 +62,32 @@ class GovernanceWindowTest extends PostgresTestDatabase {
     String url="http://127.0.0.1:"+server.getAddress().getPort();
     var store=new OntologyAgentStore(jdbc,new DataSourceTransactionManager(dataSource));
     store.initialize();
-    var grants=new QueryGrantService(jdbc,"test-signing",new WorkbenchServiceAuthentication("service"));
+    grants=new QueryGrantService(jdbc,"test-signing",new WorkbenchServiceAuthentication("service"));
     grants.initialize();
     var definitions=mock(OntologyAgentDefinitions.class);
     when(definitions.resource(anyString())).thenCallRealMethod();
-    var identity=mock(IdentityService.class);
+    identity=mock(IdentityService.class);
+    executions=mock(AgentExecutionAccess.class);
     when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser(owner.userId(),owner.domainId()));
     when(identity.hasKnowledgeGovernanceAccess()).thenReturn(true);
+    when(identity.hasKnowledgeGovernanceAccess(owner.userId(),owner.domainId())).thenReturn(true);
     when(identity.getCurrentCredentialExpiresAt()).thenReturn(System.currentTimeMillis()+1_200_000);
     governance=new KnowledgeGovernanceService(store,new AgentRuntimeClient(url,"ontology","http://ontology"),
-      new GovernanceRuntimeClient(url,"service"),definitions,grants,mock(KnowledgeService.class),mock(AdminService.class));
+      new GovernanceRuntimeClient(url,"service"),definitions,grants,mock(KnowledgeService.class),mock(AdminService.class),executions);
     ReflectionTestUtils.setField(governance,"identityService",identity);
     governance.initialize();
     var access=new OntologyAgentAccess(mock(QueryAccessService.class),identity,grants,store);
+    var filter=new io.ontomato.dataengine.controller.QueryGrantFilter(grants);
+    ReflectionTestUtils.setField(filter,"executions",executions);
     http=MockMvcBuilders.standaloneSetup(new KnowledgeGovernanceController(governance,access))
-      .setControllerAdvice(new OntologyAgentErrors()).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+      .addFilters(filter).setControllerAdvice(new OntologyAgentErrors()).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
   }
   @AfterEach void stopFixture() {if(server!=null)server.stop(0);}
   private JSONObject binding(String id) {
     return JSONObject.of("recordId",record,"domainId",owner.domainId(),"ownerId",owner.userId(),"runtimeHostId","workbench","sessionId",session,"runId",id,"expiresAt",Instant.now().plusSeconds(900).toString());
   }
-  private void open() throws Exception {
-    var input=binding(run);
+  private void open() throws Exception {open(binding(run));}
+  private void open(JSONObject input) throws Exception {
     var response=http.perform(post("/ontology/ai/knowledge-governance/platform-windows")
       .header("X-Ontomato-Query-Service-Token","service").contentType(MediaType.APPLICATION_JSON).content(input.toJSONString()))
       .andExpect(status().isOk()).andReturn().getResponse();
@@ -148,4 +156,45 @@ class GovernanceWindowTest extends PostgresTestDatabase {
     assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM ontology_governance_records",Integer.class));
   }
   private OntologyAgentAccess.Context context() {return new OntologyAgentAccess.Context(owner,null,"login",null,"en",System.currentTimeMillis()+600_000,null);}
+
+  private void selectedWindow() throws Exception {
+    when(executions.require("domain","executor")).thenReturn(new QueryAccessService.GrantUser("executor","domain"));
+    when(identity.hasKnowledgeGovernanceAccess("executor","domain")).thenReturn(true);
+    var input=binding(run);input.put("executionActor",JSONObject.of("userId","executor","domainId","domain"));open(input);
+  }
+  @Test void selectedGrantKeepsOwnerAndUsesTheExecutionUserWithoutBorrowingItsIdentityForRecords() throws Exception {
+    selectedWindow();
+    var claims=grants.verify(token,run,"/ontology/ai/knowledge-governance/"+record+"/runs/"+run+"/actions/read_input");
+    assertEquals("executor",claims.getString("userId"));assertEquals("user",claims.getString("initiatorUserId"));
+    assertEquals("executor",claims.getString("executionUserId"));
+    assertEquals("user",jdbc.queryForObject("SELECT owner_id FROM ontology_governance_records WHERE id=?::uuid",String.class,record));
+    assertThrows(AgentHttpException.class,()->governance.work(record,new OntologyAgentStore.Owner("executor","domain")));
+  }
+  @Test void executorKeyFailureDoesNotBlockTheSevenOwnerActionsOrWindowClosure() throws Exception {
+    selectedWindow();
+    when(executions.require("domain","executor")).thenThrow(new io.ontomato.dataengine.service.identity.UserCredentials.Invalid());
+    var target=JSONObject.of("hostId","workbench","runId",run);
+    for(String action:List.of("read_input","read_work_record","update_work_record","search_history","read_history","read_evidence","collect_turn_artifacts")) {
+      var input=Set.of("read_history","read_evidence","collect_turn_artifacts").contains(action)?target:action.equals("update_work_record")?JSONObject.of("summary","U owns this"):new JSONObject();
+      http.perform(post("/ontology/ai/knowledge-governance/"+record+"/runs/"+run+"/actions/"+action)
+        .header("tk",token).header("X-Ontomato-Run-Id",run).contentType(MediaType.APPLICATION_JSON).content(input.toJSONString())).andExpect(status().isOk());
+    }
+    http.perform(post("/ontology/ai/knowledge-governance/"+record+"/runs/"+run+"/actions/read_knowledge")
+      .header("tk",token).header("X-Ontomato-Run-Id",run).contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isConflict());
+    http.perform(post("/ontology/ai/knowledge-governance/platform-windows/"+run+"/close")
+      .header("X-Ontomato-Query-Service-Token","service").header("X-Domain-Id","domain")).andExpect(status().isNoContent());
+  }
+  @Test void businessActionsRequireTheExecutionUsersCurrentGovernancePermission() throws Exception {
+    selectedWindow();when(identity.hasKnowledgeGovernanceAccess("executor","domain")).thenReturn(false);
+    http.perform(post("/ontology/ai/knowledge-governance/"+record+"/runs/"+run+"/actions/read_ontology")
+      .header("tk",token).header("X-Ontomato-Run-Id",run).contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isForbidden());
+    assertTrue(governance.work(record,owner).getJSONObject("work").getJSONArray("sources").isEmpty());
+  }
+  @Test void nodeCannotChangeTheAuthenticatedOwnerWhenRegisteringAnExecutor() throws Exception {
+    var input=binding(run);input.put("ownerId","executor");input.put("executionActor",JSONObject.of("userId","executor","domainId","domain"));
+    http.perform(post("/ontology/ai/knowledge-governance/platform-windows").header("X-Ontomato-Query-Service-Token","service")
+      .contentType(MediaType.APPLICATION_JSON).content(input.toJSONString())).andExpect(status().isNotFound());
+    verifyNoInteractions(executions);
+    assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM ontology_governance_records",Integer.class));
+  }
 }

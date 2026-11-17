@@ -33,7 +33,7 @@ public class QueryGrantFilter extends OncePerRequestFilter {
     if (authorization != null && authorization.startsWith("oq.")) {
       try {
         var claims=grants.verify(authorization,request.getHeader("X-Ontomato-Run-Id"),request.getRequestURI());
-        if(claims.getString("executionUserId")!=null && !"knowledge-governance".equals(claims.getString("purpose")))
+        if(claims.getString("executionUserId")!=null && (!"knowledge-governance".equals(claims.getString("purpose")) || io.ontomato.dataengine.service.agent.KnowledgeGovernanceService.businessAction(request.getRequestURI().substring(request.getRequestURI().lastIndexOf('/')+1))))
           executions.require(claims.getString("domainId"),claims.getString("userId"));
         request.setAttribute(QueryGrantService.ATTRIBUTE,claims);
       } catch (io.ontomato.dataengine.service.agent.AgentHttpException e) {

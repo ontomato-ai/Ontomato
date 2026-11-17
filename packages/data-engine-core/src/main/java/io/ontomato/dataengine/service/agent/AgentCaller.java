@@ -63,7 +63,8 @@ public class AgentCaller {
     var actor=restore(ref,domain,!readOnly);
     return JSONObject.of("userId",identities.hostOwner(actor.user().getId()),"domainId",domain,"expiresAt",actor.expiresAt());
   }
-  public void requireQuery(Actor actor) { identity.requireQueryAccess(actor.user().getId(),actor.user().getDomainId()); }
+  public void requireQuery(Actor actor) { requireQueryUser(actor.user()); }
+  public void requireQueryUser(io.ontomato.dataengine.core.bean.User user) {identity.requireQueryAccess(user.getId(),user.getDomainId());}
   public OntologyAgentAccess.Context query(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root) { return execution(ref,domain,language,authority,requestedBy,root,null,true); }
   public OntologyAgentAccess.Context generation(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root) { return execution(ref,domain,language,authority,requestedBy,root,null,false); }
   public OntologyAgentAccess.Context query(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root,JSONObject executionActor) { return execution(ref,domain,language,authority,requestedBy,root,executionActor,true); }

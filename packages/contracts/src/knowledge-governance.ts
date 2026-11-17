@@ -1,4 +1,5 @@
 import { z } from "zod";
+import {agentExecutionActorRefSchema} from "./agent-channel";
 
 export const governanceSourceSchema = z.object({
   id: z.string().min(1),
@@ -62,7 +63,7 @@ export type GovernanceSourceRead = z.infer<typeof governanceSourceReadSchema>;
 export const governancePlatformWindowSchema = z.object({
   recordId: z.string().uuid(), domainId: z.string().min(1), ownerId: z.string().min(1),
   runtimeHostId: z.literal("workbench"), sessionId: z.string().uuid(), runId: z.string().uuid(),
-  expiresAt: z.string().datetime(),
+  expiresAt: z.string().datetime(), executionActor:agentExecutionActorRefSchema.nullable(),
 }).strict();
 export const governanceWindowSchema = z.object({
   id: z.string().uuid(), sessionId: z.string().uuid(), runId: z.string().uuid(), expiresAt: z.string().datetime(),
