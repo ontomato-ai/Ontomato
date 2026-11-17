@@ -46,17 +46,21 @@ export type ProductProjectionInput = z.infer<typeof productProjectionInputSchema
 export const productProjectionSchema = productProjectionInputSchema.extend(currentRecordFields).strict();
 export type ProductProjection = z.infer<typeof productProjectionSchema>;
 
-/** Locations in the existing product file storage, not application routes or inline copies. */
+const panelText = z.string().refine(value => new TextEncoder().encode(value).byteLength <= 256 * 1024,
+  "Panel text must not exceed 256 KiB");
+
+/** Text owned by the current panel record, returned under the panel's use Grant. */
 export const productPanelContentSchema = z.object({
-  html: z.string().min(1),
-  module: z.string().min(1),
-  recipes: z.string().min(1).optional(),
+  html: panelText,
+  module: panelText,
+  recipes: panelText.optional(),
 }).strict();
 export type ProductPanelContent = z.infer<typeof productPanelContentSchema>;
 
 export const productPanelInputSchema = z.object({
   ...editableDefinitionFields,
   content: productPanelContentSchema,
+  /** Supplied by the registrant's module export; Node validates references without executing module text. */
   manifest: panelManifestSchema,
 }).strict();
 export type ProductPanelInput = z.infer<typeof productPanelInputSchema>;
