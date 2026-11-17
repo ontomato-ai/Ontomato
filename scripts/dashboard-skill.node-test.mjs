@@ -31,7 +31,10 @@ test("draft validates and writes the page's save form without an API call",async
   const result=JSON.parse((await invoke(dir,api.base,["draft","--operation","dashboard.rename","--form","form.json","--out","outputs/drafts/rename.page-draft.json"])).stdout);
   const draft=JSON.parse(await readFile(path.join(dir,result.path),"utf8"));
   assert.deepEqual(draft,{pageKey:"dashboard",operation:"dashboard.rename",target:{id:"board:custom"},form:{id:"board:custom",name:"Renamed"}});
-  const link=new URL(result.link,"http://page.test/");
+  const href=result.link.match(/^\[[^\]]+\]\(([^)]+)\)$/)?.[1];
+  assert.ok(href,"Draft output must include a clickable page link, not a file preview");
+  const link=new URL(href,"http://page.test/");
+  assert.equal(link.hash.split("?")[0],"#/dashboards");
   const query=new URLSearchParams(link.hash.split("?")[1]);
   assert.deepEqual([...query.keys()].sort(),["draftPath","draftRunId","draftSessionId"]);
   assert.equal(query.get("draftPath"),result.path);

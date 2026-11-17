@@ -37,6 +37,6 @@ async function run(){
   await mkdir(path.dirname(out),{recursive:true});
   await writeFile(out,JSON.stringify(draft,null,2)+"\n");
   const query=new URLSearchParams({draftSessionId:sessionId,draftRunId:runId,draftPath:out});
-  return {path:out,link:`#/dashboards?${query}`};
+  return {path:out,link:`[Review dashboard changes](#/dashboards?${query})`};
 }
 run().then(result=>console.log(JSON.stringify(result,null,2))).catch(error=>{console.error(error.message);process.exitCode=1;});

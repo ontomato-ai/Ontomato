@@ -29,6 +29,8 @@ Read the card and its parameters. Use the returned columns, actual rows and expl
 
 Each draft addresses one existing save action. The page receives it, marks changes and provides its save action. Its link carries only the draft session/run/path; the dashboard ID stays in target and form.
 
+Return the command's `link` as a clickable Markdown link, keeping its target unchanged. You may translate its label. Do not put the page URL in a code block, link to the `.page-draft.json` file, or build a URL from an `ONTOMATO_*_URL`: that file opens a JSON preview; the printed page link opens the dashboard with the draft.
+
 | Operation | Save body |
 | --- | --- |
 | `dashboard.layout` | `{id,groups}`. Keep every desired group/card ID and omit query/source from all card patches; chart patches contain id and optional name/layout/chartFile. |
