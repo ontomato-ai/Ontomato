@@ -24,6 +24,9 @@ beforeEach(async () => {
     executed.push("card-parameter-form");
     res.json({ success: true, data: { fields: [] } });
   });
+  for(const path of ["/api/assistant/charts/prepare-import","/api/dashboards/add-chart-file"]){
+    app.post(path,(_req,res)=>{executed.push(path);res.json({success:true});});
+  }
   app.post("/api/skills/import", (_req, res) => {
     executed.push("skills-import");
     res.json({ success: true });
@@ -81,4 +84,11 @@ it("keeps a request without the build-test header on its original path", async (
 it.each(["list","prepare","settle","read","cancel"])("refuses headed provider %s callbacks before service authorization",async action=>{
   const response=await fetch(`${base}/internal/agent-channel/${action}`,{method:"POST",headers:testHeader()});
   expect(response.status).toBe(422);expect(await response.json()).toMatchObject({code:BUILD_TEST_UNSUPPORTED});expect(executed).toEqual([]);
+});
+
+it.each(["/assistant/charts/prepare-import","/dashboards/add-chart-file"])("refuses build-test chart imports before settlement at %s",async path=>{
+  const response=await fetch(`${base}/api${path}`,{method:"POST",headers:testHeader()});
+  expect(response.status).toBe(422);
+  expect(await response.json()).toMatchObject({code:BUILD_TEST_UNSUPPORTED});
+  expect(executed).toEqual([]);
 });

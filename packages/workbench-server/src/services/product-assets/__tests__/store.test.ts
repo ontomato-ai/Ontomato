@@ -7,11 +7,30 @@ vi.mock('../../../infrastructure/postgres',()=>({qualifiedTable:(name:string)=>n
 vi.mock('../../../infrastructure/postgres-transaction',()=>({transaction:async(fn:(client:{query:typeof mocks.query})=>unknown)=>fn({query:mocks.query})}));
 vi.mock('../validation',()=>({validateProduct:mocks.validate,validatePageBindings:vi.fn()}));
 vi.mock('../ontology',()=>({ontologyRegistration:()=>null,synchronizeProductOntology:async()=>{}}));
-import {saveProduct} from '../store';
+import {saveProduct,getApplicationProduct} from '../store';
 const owner={domainId:'one',userId:'alice'},credentials={token:'test-caller'};
 const input=()=>productAssetInputSchema.parse({name:'Text',document:{kind:'widget',widget:{id:'text',kind:'text',title:'Note',span:12,text:'Hello'}}});
 beforeEach(()=>{mocks.query.mockReset();mocks.validate.mockReset();access.use=new Set(['shared','home','hidden','chart']);access.edit=new Set(['home','chart']);});
 describe('product mutation boundary',()=>{
+  it('resolves imported application identities using only use grants',async()=>{
+    access.use.add('imported');access.edit.add('edit-only');
+    mocks.query.mockImplementation(async(sql:string,args:unknown[])=>{
+      if(sql.startsWith('SELECT id FROM')){
+        expect(args[0]).toBe(owner.domainId);
+        expect(args[2]).toContain('imported');
+        expect(args[2]).not.toContain('edit-only');
+        return {rows:[{id:'imported'}]};
+      }
+      return {rows:[{id:'imported',ownerId:'alice',name:'App',description:'',visibility:'private',document:{kind:'application',applicationId:'app-original',children:[]},revision:1,createdAt:new Date(),updatedAt:new Date()}]};
+    });
+    expect((await getApplicationProduct(owner,'app-original')).id).toBe('imported');
+  });
+  it('rejects unavailable or ambiguous application identities',async()=>{
+    mocks.query.mockResolvedValue({rows:[]});
+    await expect(getApplicationProduct(owner,'missing')).rejects.toMatchObject({code:'PRODUCT_UNAVAILABLE'});
+    mocks.query.mockResolvedValue({rows:[{id:'one'},{id:'two'}]});
+    await expect(getApplicationProduct(owner,'ambiguous')).rejects.toMatchObject({code:'PRODUCT_CONFLICT'});
+  });
   it('creates new homes from Page and CollectionView documents without closed platform widgets',async()=>{
     const records=new Map<string,Record<string,unknown>>(),overlays=new Map<string,unknown>();
     mocks.query.mockImplementation(async(sql:string,args:unknown[]=[])=>{

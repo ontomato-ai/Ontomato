@@ -178,10 +178,7 @@ export async function validateProduct(owner: ProductOwner, input: ProductAssetIn
       // Existing dashboards are personal. Shared templates use reusable capability widgets instead.
       if (input.visibility === "domain") throw new HttpError(400,"Shared assets must use MetricView widgets instead of personal dashboards","PRIVATE_DEPENDENCY");
       const dashboard = await getOwnedDashboard(owner.userId, owner.domainId, reference.id);
-       if (dashboard.groups.some(group => [...group.charts,...group.metrics].some(card => card.query?.kind !== "metric")))
-         throw new HttpError(400,"Migrate legacy inline dashboard logic to published MetricViews first","LEGACY_INLINE_LOGIC");
        for(const group of dashboard.groups)for(const card of [...group.charts,...group.metrics]){
-         if(card.query?.kind!=='metric')continue;
          const metric=await client.describe(card.query.metricId);
          if(metric.status!=='PUBLISHED')throw new HttpError(400,'Publish the MetricView first','UNPUBLISHED_CAPABILITY');
          const parameters=new Set(metric.parameterDefs.map(parameter=>String(parameter.name)));

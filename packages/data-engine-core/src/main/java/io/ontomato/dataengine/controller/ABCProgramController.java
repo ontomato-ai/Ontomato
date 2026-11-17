@@ -11,7 +11,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.PythonExecuteResult;
-import io.ontomato.dataengine.bean.abcHarness.ABCHarnessDashboard;
 import io.ontomato.dataengine.bean.abcHarness.ABCHarnessProgram;
 import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.config.ControllerConst;
@@ -51,31 +50,6 @@ public class ABCProgramController {
 				timeoutMinutes = 1;
 			}
 			Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), program, user.getId(), curUserDataPermission, lang, timeoutMinutes, user.getDomainId());
-			ret.put("success", true);
-			ret.put("data", o[0]);
-			((PythonExecuteResult)o[1]).markCompleteness(ret);
-		} catch (Exception e) {
-			log.error(e.getMessage(), e);
-			ret.put("success", false);
-			ret.put("message", e.getMessage());
-		}
-        return ret;
-    }
-	
-	@PostMapping("/abcProgram/queryDataByDashboard")
-    @ResponseBody
-    public JSONObject queryDataByDashboard(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
-		JSONObject ret = new JSONObject();
-		try {
-			UserDataPermission curUserDataPermission = identityService.getCurrentUserDataPermission();
-	    	User user = SystemUtils.getCurUser();
-			ABCHarnessDashboard dashboard = param.to(ABCHarnessDashboard.class);
-			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
-    		int timeoutMinutes = Long.valueOf(businessConfig.getDslCookerTimeout() / 60000).intValue();
-			if (timeoutMinutes <= 0) {
-				timeoutMinutes = 1;
-			}
-			Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), dashboard, user.getId(), curUserDataPermission, lang, timeoutMinutes, user.getDomainId());
 			ret.put("success", true);
 			ret.put("data", o[0]);
 			((PythonExecuteResult)o[1]).markCompleteness(ret);

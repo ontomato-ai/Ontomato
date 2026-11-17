@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSkillSchema } from "./page-skills";
 
 const names = z.record(z.string().min(1)).refine((value) => Boolean(value.en), "An English name is required");
 const key = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/);
@@ -11,6 +12,7 @@ export const applicationDeclarationSchema = z.object({
   icon: z.string().min(1),
   groups: z.array(z.object({ key, names, sort: z.number().int() }).strict()),
   permissions: z.array(z.object({ code: key, names, groupKey: key, sort: z.number().int() }).strict()),
+  pageSkills: z.array(pageSkillSchema).optional(),
 }).strict();
 export type ApplicationDeclaration = z.infer<typeof applicationDeclarationSchema>;
 export const builtinApplicationSchema = z.object({

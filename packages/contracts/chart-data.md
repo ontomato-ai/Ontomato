@@ -27,12 +27,12 @@ Graph object input preserves extra JSON attributes and supports the standard obj
 | Legacy types | Native series / shape (none means no bindings) |
 | --- | --- |
 | bar,pictorial-bar; line,area-line; bar-line | bar; line with areaStyle for area; bar+line with explicit separate axes / none |
-| pie,donut,nightingale-rose; funnel; scatter | pie with donut radius or roseType; funnel; scatter with 6–40px visualMap (constant size: 14px) / none |
+| pie,donut,nightingale-rose; funnel; scatter; heatmap | pie with donut radius or roseType; funnel; scatter with 6–40px visualMap (constant size: 14px); heatmap with two category axes and a continuous value visualMap / none |
 | treemap; sunburst; sankey; radar; boxplot | treemap/items; sunburst/tree; sankey/links; radar/radar; boxplot/boxplot |
 | gauge,liquid-fill; timeline; graph,network-graph | gauge/single (existing ring behavior); line+scatter/timeline; graph/graph |
-| leaflet-map,map; admin-choropleth-map | geo+scatter; map+visualMap / none; china-provinces with explicit resource/coordinate/region prerequisites |
+| leaflet-map,map; admin-choropleth-map | geo+scatter with a 6–40px value visualMap when value is mapped; map+visualMap / none; china-provinces with explicit resource/coordinate/region prerequisites |
 
-`legacyChartToFile({type,fields,display?,seriesNames?,axisNames?,graphInput?,graph?,map?,provenance?})` returns `{ok:true,file}` with an empty source, or `{ok:false,code,fields?,details?}`. Axis roles are `xAxis/yAxis` (conversion also accepts multiple yAxis columns) or `barSeries/lineSeries`; other roles are listed above. Points use `lng/lat/name/value?`; regions use `name/value`. Object views currently enumerate bar/line/donut/timeline/graph/leaflet-map, but their skill selector lists every domain skill; that does not imply custom skills are convertible.
+`legacyChartToFile({type,fields,display?,seriesNames?,axisNames?,graphInput?,graph?,map?,provenance?})` returns `{ok:true,file}` with an empty source, or `{ok:false,code,fields?,details?}`. Axis roles are `xAxis/yAxis` (conversion also accepts multiple yAxis columns) or `barSeries/lineSeries`; other roles are listed above. Points use `lng/lat/name/value?`; heatmaps use `xAxis/yAxis/value`; regions use `name/value`. Object views currently enumerate bar/line/donut/timeline/graph/leaflet-map, but their skill selector lists every domain skill; that does not imply custom skills are convertible.
 
 `chartInputs` is the shared role table, including `numeric`, `singleRow`, `arrays` and optional roles. Its `optionalArrays` identifies scalar roles that native conversion also accepts as multiple series; the current dashboard's scalar yAxis requirement remains unchanged. Graph's object/edges role variants share the same table. Dashboard types select entries by name rather than duplicating roles.
 

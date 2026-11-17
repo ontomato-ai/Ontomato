@@ -3,8 +3,11 @@ import {ref,watch,onBeforeUnmount,computed,inject} from 'vue';
 import {productRenderersKey} from './renderers';
 import type {ProductAsset} from '@ontomato/contracts/product-assets';
 import {resolveViewParameters} from '@ontomato/contracts/object-views';
-import {useManagerClient} from '../context';
+import {useManagerClient,useOntologyText} from '../context';
+import {useProductText} from './default-texts';
 import {ElAlert,ElButton,ElTable,ElTableColumn,vLoading} from 'element-plus';
+const {ot}=useOntologyText();
+const productText=useProductText();
 const props=defineProps<{asset:ProductAsset;pageState?:Record<string,unknown>}>();const client=useManagerClient();
 const rows=ref<Record<string,unknown>[]>([]),error=ref(''),loading=ref(false);
 const offset=ref(0),hasMore=ref(false);
@@ -30,14 +33,14 @@ watch(()=>JSON.stringify([props.asset,props.pageState]),()=>{offset.value=0;void
 function page(delta:number){offset.value=Math.max(0,offset.value+delta*pageSize.value);void load();}
 </script>
 <template>
-  <section class="collection-projection"><h3>{{asset.name}}</h3><el-alert v-if="error" :title="error" type="error" :closable="false"/>
+  <section class="collection-projection"><h3>{{productText(asset.name)}}</h3><el-alert v-if="error" :title="error" type="error" :closable="false"/>
     <template v-if="asset.document.kind==='collection-view'">
       <component :is="platformRenderer" v-if="platformRenderer" :asset="asset" :rows="rows" :loading="loading"/>
-      <template v-else-if="asset.document.renderer==='3d-scene'"><component :is="sceneRenderer" v-if="sceneRenderer" :asset="asset" :rows="rows"/><el-alert v-else title="当前宿主未注册 3D 场景渲染器" type="error" :closable="false"/></template>
+      <template v-else-if="asset.document.renderer==='3d-scene'"><component :is="sceneRenderer" v-if="sceneRenderer" :asset="asset" :rows="rows"/><el-alert v-else :title="ot('productNo3dSceneRenderer')" type="error" :closable="false"/></template>
       <ul v-else-if="asset.document.renderer==='list'" v-loading="loading" class="collection-list"><li v-for="(row,index) in rows" :key="index"><dl><template v-for="field in asset.document.fields" :key="field"><dt>{{asset.document.presentation?.fieldLabels[field]??field}}</dt><dd>{{row[field]??'—'}}</dd></template></dl></li></ul>
-      <el-table v-else v-loading="loading" :data="rows" empty-text="当前范围内暂无记录"><el-table-column v-for="field in asset.document.fields" :key="field" :prop="field" :label="asset.document.presentation?.fieldLabels[field]??field" min-width="150" show-overflow-tooltip><template #default="{row}">{{row[field]===null||row[field]===undefined||row[field]===''?'—':row[field]}}</template></el-table-column></el-table>
+      <el-table v-else v-loading="loading" :data="rows" :empty-text="ot('productNoRecordsInScope')"><el-table-column v-for="field in asset.document.fields" :key="field" :prop="field" :label="asset.document.presentation?.fieldLabels[field]??field" min-width="150" show-overflow-tooltip><template #default="{row}">{{row[field]===null||row[field]===undefined||row[field]===''?'—':row[field]}}</template></el-table-column></el-table>
     </template>
-    <footer v-if="offset||hasMore"><el-button :disabled="loading||!offset" @click="page(-1)">上一页</el-button><span>{{rows.length?offset+1:0}}–{{offset+rows.length}}</span><el-button :disabled="loading||!hasMore" @click="page(1)">下一页</el-button></footer>
+    <footer v-if="offset||hasMore"><el-button :disabled="loading||!offset" @click="page(-1)">{{ot('productPreviousPage')}}</el-button><span>{{rows.length?offset+1:0}}–{{offset+rows.length}}</span><el-button :disabled="loading||!hasMore" @click="page(1)">{{ot('productNextPage')}}</el-button></footer>
   </section>
 </template>
 <style scoped>

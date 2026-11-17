@@ -6,7 +6,6 @@ import { DashboardMetricClient } from "../../../services/dashboard/metric-client
 import { OntologyRetrievalClient } from "../../../services/assistant/ontology-retrieval";
 import { assertAppBuilderAccess } from "../../../services/app-builder/access";
 import { WorkspaceBuildTests } from "../../../services/app-builder/build-tests";
-import { getDashboardConditions, queryDashboardData } from "../../../services/dashboard/dsl-execution";
 import { wrap } from "../agent-host";
 
 vi.mock("../../../logging/logger", () => ({ createLogger: () => ({ error() {}, warn() {}, info() {}, debug() {} }) }));
@@ -23,9 +22,6 @@ describe("backend refusals at HTTP consumers", () => {
     ["retrieval SSE", () => retrieval.events("session", "run", { seq: 0, streamId: "stream" }, new AbortController().signal)],
     ["application admission", () => assertAppBuilderAccess({})],
     ["build test", () => new WorkspaceBuildTests(owner, {}, "workspace").java("GET", "/current")],
-    ["dashboard conditions", () => getDashboardConditions([{}], "token")],
-    ["dashboard DSL rows", () => queryDashboardData({ dsl: {}, fields: { x: "name" } }, "token")],
-    ["dashboard ABC rows", () => queryDashboardData({ abcProgram: { code: "print(1)", outKeyRefs: [{ key: "k" }] }, fields: { x: "name" } }, "token")],
   ] as const)("keeps the Java refusal through %s and the agent-host HTTP boundary", async (_name, operation) => {
     const message = "Operation permission is required: /protected/read";
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ success: false, code: 403, message }, { status: 403 })));

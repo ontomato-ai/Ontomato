@@ -11,17 +11,14 @@ import { prepareAnalystRun } from "./prepare";
 import { prepareAppBuilderRun } from "../app-builder/prepare";
 import {isAppBuilderKind} from '../app-builder/definition';
 import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
-import { assistantDescription, assistantName } from "./labels";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   assistantFeedbackSchema,
   type AssistantFeedbackWrite,
 } from "@ontomato/contracts/assistant-chat";
-import {
-  agentHostSessionSchema,
-  agentHostAgentSchema,
-} from "@ontomato/contracts/agent-host";
+import { agentHostSessionSchema } from "@ontomato/contracts/agent-host";
+import { listAssistantAgents } from "./agents";
 import {
   runtimeArtifactSchema,
   type RuntimeArtifact,
@@ -29,6 +26,7 @@ import {
 import {
   datasetPayloadSchema,
 } from "@ontomato/contracts/data-retrieval";
+import { pageDraftSchema } from "@ontomato/contracts/page-draft";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { withDomainSkills } from "../skills/operations";
 import {
@@ -70,19 +68,7 @@ export const assistantService = {
     const agentId = "agentId" in input ? input.agentId : (await assistantStore.session(input.sessionId, owner)).agent_id;
     return isAppBuilderKind((await assistantStore.agent(agentId, owner)).kind);
   },
-  async agents(owner: AssistantOwner, locale?: string) {
-    return {
-      agents: (await assistantStore.agents(owner.domainId, locale)).map((a) =>
-        agentHostAgentSchema.parse({
-          id: a.id,
-          name: assistantName(a, locale),
-          description: assistantDescription(a, locale),
-          icon: a.icon ?? null,
-          enabled: a.enabled,
-        }),
-      ),
-    };
-  },
+  agents: listAssistantAgents,
   /** Scheduled tasks start their conversations here too, marked with their origin. */
   async create(id: string, owner: AssistantOwner, input: { agentId: string; workspaceId?: string }, origin: SessionRow["origin"] = "user") {
     const { row, replayed } = await assistantStore.create(
@@ -439,6 +425,19 @@ export const assistantService = {
         ),
       );
     return { artifact: result.artifacts.at(-1) ?? null };
+  },
+  /** The page draft a run wrote: its own artifact read, then the envelope every page receives. */
+  async pageDraft(
+    sessionId: string,
+    runId: string,
+    path: string,
+    owner: AssistantOwner,
+  ) {
+    const { artifact } = await this.resolve(sessionId, runId, path, owner);
+    if (!artifact) throw new HttpError(404, "Page draft not found");
+    return pageDraftSchema.parse(
+      JSON.parse((await this.content(sessionId, artifact.id, owner)).toString("utf-8")),
+    );
   },
   async datasetSource(sessionId: string, id: string, owner: AssistantOwner) {
     const a = await this.artifact(sessionId, id, owner);

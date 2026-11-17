@@ -28,11 +28,11 @@ const ALLOWED: readonly Access[] = [
   // app-builder.ts: builder and SDK metadata
   ["GET", /^\/app-builder\/bootstrap$/],
   ["GET", /^\/apps-sdk\/current$/],
+  // assistant.ts /charts/prepare-import and dashboards.ts /add-chart-file stay unsupported: imports may settle metrics.
   // dashboards.ts: definition reads and metric parameter conversion, not card data execution
   ["GET", /^\/dashboards$/],
   ["GET", /^\/dashboards\/[^/]+$/],
   ["POST", /^\/dashboards\/groups$/],
-  ["POST", /^\/dashboards\/query-by-id$/],
   ["POST", /^\/dashboards\/card-parameter-form$/],
   // schedule-applications.ts: description and parameter validation, not a run
   ["GET", /^\/platform\/schedule-applications\/[^/]+$/],
