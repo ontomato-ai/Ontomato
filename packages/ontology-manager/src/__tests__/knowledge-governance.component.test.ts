@@ -2,11 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp, h, nextTick, reactive, ref, type App } from "vue";
 import { platformPageAccessKey } from "@ontomato/platform-shell";
 import { createI18n } from "vue-i18n";
-import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { createManager } from "../context";
 import { englishMessages, managerMessageTree } from "../i18n";
 import GovernancePage from "../knowledge-governance/GovernancePage.vue";
-import { managerStandaloneRoutes, registerGovernanceScreen } from "../routes";
 
 /* One governance record's report: what it reads, how it pages one source, and that switching records never keeps the
  * previous one on screen. The conversation that wrote the record is the agent platform's, so nothing here reads or
@@ -86,23 +84,6 @@ async function settle() {
   for (let i = 0; i < 8; i++) await nextTick();
 }
 
-/** Mounts the application at an address of its own, under the routes the platform registers for it. */
-async function mountAt(path: string) {
-  const history = createMemoryHistory();
-  history.replace(path);
-  const router = createRouter({ history, routes: [{ path: "/", component: RouterView, children: managerStandaloneRoutes() }] });
-  const host = document.createElement("div");
-  document.body.appendChild(host);
-  const app = createApp(RouterView);
-  installManager(app);
-  app.use(router);
-  app.mount(host);
-  mounted.push(app);
-  await router.isReady();
-  await vi.waitFor(() => expect(host.querySelector(".report, .report-state")).not.toBeNull());
-  return { host, router };
-}
-
 beforeEach(() => {
   mounted = [];
   responses = new Map();
@@ -165,13 +146,52 @@ describe("governance report", () => {
     expect(host.textContent).not.toContain("First finding");
   });
 
-  it("opens the report of the record the address names", async () => {
+  it("shows the record's report with its own title and way back when it is not beside a conversation", async () => {
     responses.set("/record-1/work", work("Checked the order rule", [issue("Order status rule")]));
-    const { host, router } = await mountAt("/governance/reports/record-1");
+    const { host } = mountPage("record-1");
+    await settle();
 
-    expect(router.currentRoute.value.fullPath).toBe("/governance/reports/record-1");
     expect(host.textContent).toContain("Checked the order rule");
-    expect(host.textContent).not.toContain("Loading…");
+    expect(host.querySelector(".report")).not.toBeNull();
+    // At its own address the page draws its title and the way back; beside the conversation the shell does.
+    expect(host.querySelector(".governance-title")).not.toBeNull();
+    expect(host.querySelector(".governance-back")).not.toBeNull();
+  });
+
+  it("beside the conversation the shell draws the frame, so the page shows only its report", async () => {
+    responses.set("/record-1/work", work("Checked the order rule"));
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const app = createApp({ render: () => h(GovernancePage, { recordId: "record-1", paired: true }) });
+    installManager(app);
+    app.mount(host);
+    mounted.push(app);
+    await settle();
+
+    expect(host.querySelector(".report")).not.toBeNull();
+    expect(host.querySelector(".governance-title")).toBeNull();
+    expect(host.querySelector(".governance-back")).toBeNull();
+  });
+
+  it("marks the finding its address names as selected, and asks the host when another is chosen", async () => {
+    responses.set("/record-1/work", work("", [issue("Order status rule"), issue("Refund rule")]));
+    const chosen: (string | null)[] = [];
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const app = createApp({
+      render: () => h(GovernancePage, { recordId: "record-1", issueId: "Order status rule", onSelect: (id: string | null) => chosen.push(id) }),
+    });
+    installManager(app);
+    app.mount(host);
+    mounted.push(app);
+    await settle();
+
+    const selected = host.querySelector(".issue.selected .issue-title");
+    expect(selected?.textContent).toBe("Order status rule");
+    const heads = [...host.querySelectorAll<HTMLButtonElement>(".issue-head")];
+    heads.find((head) => head.textContent?.includes("Refund rule"))!.click();
+    await settle();
+    expect(chosen).toEqual(["Refund rule"]);
   });
 
   it("stops loading the report of a record the reader has left", async () => {

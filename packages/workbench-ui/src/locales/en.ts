@@ -568,6 +568,8 @@ export default {
     "emptyFile": "This file is empty.",
     "invalidChart": "This chart file could not be drawn.",
     "featureDashboards": "Dashboards",
+    "featureGovernanceReport": "Governance report",
+    "governanceFinding": "Finding",
     "featureAgents": "Agent settings",
     "featureOpsDiagnosis": "Operations diagnosis",
     "featureSchedule": "Scheduled tasks",

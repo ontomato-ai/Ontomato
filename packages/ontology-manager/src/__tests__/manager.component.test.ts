@@ -63,11 +63,13 @@ const metas = (classes: string[]) => ({
 });
 
 function respond(url: string, body?: Record<string, unknown>): Response {
-  const path = url.replace(/^.*\/data-query/, "").replace(/^.*\/assistant\/sessions\/[^/]+\/runs\//, "/runs/");
+  const path = url.replace(/^.*\/data-query/, "");
   const status = statusFor(path);
   if (status !== 200) return json({ success: false }, status);
   if (path === "/admin/getBussinessKnowledge") return json({ success: true, data: knowledge });
-  if (path.includes("/page-draft?")) return json(drafts.get(path.split("/runs/")[1]!.split("/")[0]!) ?? {});
+  // Only the platform's own address answers a draft: a page asking the data engine for one gets the empty engine answer.
+  const draft = new URL(url, "http://page.invalid").pathname.match(/\/api\/assistant\/sessions\/[^/]+\/runs\/([^/]+)\/page-draft$/);
+  if (draft) return json(drafts.get(draft[1]!) ?? {});
   if (path.endsWith("BussinessKnowledge") && body?.knowledgeText === "")
     return json({ success: false, message: "Business knowledge content is required" });
   if (path === "/admin/editBussinessKnowledge") {
@@ -166,7 +168,7 @@ beforeEach(() => {
   knowledgeDeleteFails = new Set();
   drafts = new Map();
   vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
-    const path = url.replace(/^.*\/data-query/, "").replace(/^.*\/assistant\/sessions\/[^/]+\/runs\//, "/runs/");
+    const path = url.replace(/^.*\/data-query/, "");
     const body = init.body === undefined ? undefined : JSON.parse(String(init.body));
     requests.push({
       url,
