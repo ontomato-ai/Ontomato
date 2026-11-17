@@ -5,6 +5,7 @@ import ProductGraphDialog from './ProductGraphDialog.vue';
 import {type ProductGraph} from '@ontomato/contracts/product-graph';
 import {productTypes} from '@ontomato/contracts/product-assets';
 import {useOntologyText} from '../context';
+import {useProductText} from './default-texts';
 import {localizedProductTypes,localizedProductCategories} from './catalog-labels';
 const props=defineProps<{graph:ProductGraph;expanded?:boolean}>();
 const fullscreen=ref(false),scale=ref(1),canvas=ref<HTMLElement>();
@@ -15,6 +16,7 @@ onBeforeUnmount(()=>observer?.disconnect());
 const emit=defineEmits<{open:[id:string]}>();
 const graphId=useId().replace(/:/g,'');
 const {ot}=useOntologyText();
+const productText=useProductText();
 const focusedNode=ref<string|null>(null);
 function related(edge:ProductGraph['edges'][number]){return edge.source===focusedNode.value||edge.target===focusedNode.value;}
 const columns=computed(()=>[{id:'principal',name:ot('productGraphPrincipals')},...localizedProductCategories(ot),{id:'ontology',name:ot('productOntologyElements')},{id:'legacy',name:ot('productLegacyAssets')}]);
@@ -47,7 +49,7 @@ function edgePath(edge:ProductGraph['edges'][number]){
      <defs><marker :id="`${graphId}-arrow`" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M 2 1 L 8 5 L 2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
     <text v-for="(column,index) in visibleColumns" :key="column.id" :x="index*300+10" y="22" class="column-label">{{column.name}}</text>
     <g v-for="(edge,index) in graph.edges" :key="`${edge.source}:${edge.target}:${edge.relation}`" :class="{'related-edge':related(edge),'muted-edge':focusedNode&&!related(edge)}"><title>{{labels[edge.relation]}}</title><path :id="`${graphId}-edge-${index}`" :d="edgePath(edge)" class="edge" :marker-end="`url(#${graphId}-arrow)`"/><text v-if="related(edge)" class="edge-label"><textPath :href="`#${graphId}-edge-${index}`" startOffset="45%">{{labels[edge.relation]}}</textPath></text></g>
-     <g v-for="node in graph.nodes" :key="node.id" :transform="`translate(${positions.get(node.id)!.x},${positions.get(node.id)!.y})`" :class="['node',{'is-asset':node.assetId}]" :role="node.assetId?'link':undefined" :tabindex="node.assetId?0:undefined" @mouseenter="focusedNode=node.id" @mouseleave="focusedNode=null" @focus="focusedNode=node.id" @blur="focusedNode=null" @click="node.assetId&&emit('open',node.assetId)" @keydown.enter="node.assetId&&emit('open',node.assetId)"><title>{{node.name}} · {{nodeLabel(node)}} · {{node.assetId??node.id}}</title><rect width="220" height="54" rx="6"/><svg x="10" y="6" width="200" height="24"><text x="0" y="16">{{node.name}}</text></svg><text x="10" y="42" class="node-kind">{{nodeLabel(node)}}{{node.revision?` · r${node.revision}`:''}}</text></g>
+     <g v-for="node in graph.nodes" :key="node.id" :transform="`translate(${positions.get(node.id)!.x},${positions.get(node.id)!.y})`" :class="['node',{'is-asset':node.assetId}]" :role="node.assetId?'link':undefined" :tabindex="node.assetId?0:undefined" @mouseenter="focusedNode=node.id" @mouseleave="focusedNode=null" @focus="focusedNode=node.id" @blur="focusedNode=null" @click="node.assetId&&emit('open',node.assetId)" @keydown.enter="node.assetId&&emit('open',node.assetId)"><title>{{productText(node.name)}} · {{nodeLabel(node)}} · {{node.assetId??node.id}}</title><rect width="220" height="54" rx="6"/><svg x="10" y="6" width="200" height="24"><text x="0" y="16">{{productText(node.name)}}</text></svg><text x="10" y="42" class="node-kind">{{nodeLabel(node)}}{{node.revision?` · r${node.revision}`:''}}</text></g>
     </svg></div><ProductGraphDialog v-if="!expanded" v-model="fullscreen" :graph="graph" @open="emit('open',$event)"/></div>
 </template>
 <style scoped>

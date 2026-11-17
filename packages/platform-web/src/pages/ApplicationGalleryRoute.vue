@@ -10,14 +10,14 @@ import {HomeTile,homeCategories,homeItems,itemKey,itemRef,matches,readHomeState,
 import {openApplicationKey,platformApplicationsKey} from '../apps';
 import {useApplicationCatalog} from '../catalog';
 import AppPage from './AppPage.vue';
-const {t,locale}=useI18n(),router=useRouter(),catalog=useApplicationCatalog();
+const {t}=useI18n(),router=useRouter(),catalog=useApplicationCatalog();
 const applications=inject(platformApplicationsKey)!,openApplication=inject(openApplicationKey)!;
 const agents=ref<AgentHostAgent[]>([]),favorites=ref<HomeItemRef[]>([]),query=ref(''),category=ref<HomeCategory>('all');
 const loading=ref(true),saving=ref(false),error=ref('');
 const items=computed(()=>homeItems(applications.value,agents.value));
 const shown=computed(()=>items.value.filter(item=>(category.value==='all'||item.category===category.value)&&matches(item,query.value)));
 const favoriteKeys=computed(()=>new Set(favorites.value.map(itemKey)));
-const labels=computed(()=>locale.value.startsWith('zh')?{title:'应用广场',description:'发现应用与智能体，收藏后从主页快速进入',empty:'没有匹配的应用',search:'搜索应用或智能体',retry:'重试'}:{title:'Application gallery',description:'Discover applications and agents; pin shortcuts to your home',empty:'No matching applications',search:'Search applications or agents',retry:'Retry'});
+const labels=computed(()=>({title:t('ontology.productGalleryTitle'),description:t('ontology.productGalleryDescription'),empty:t('ontology.productGalleryEmpty'),search:t('ontology.productGallerySearch'),retry:t('ontology.productRetry')}));
 async function load(){loading.value=true;error.value='';try{const [list,state]=await Promise.all([createAssistantClient().listAgents(),readHomeState(),catalog.refresh()]);agents.value=list;favorites.value=state.favorites;if(catalog.error.value)throw new Error(catalog.error.value);}catch(e){error.value=e instanceof Error?e.message:String(e);}finally{loading.value=false;}}
 onMounted(()=>void load());
 function open(item:HomeItem){if(item.kind==='application')openApplication(item.id);else void router.push({path:'/agents/chat',query:{agentId:item.id}});}

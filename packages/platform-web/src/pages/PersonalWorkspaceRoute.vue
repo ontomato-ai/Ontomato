@@ -11,7 +11,7 @@ import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { nodeApiRequest } from "@ontomato/workbench-ui";
 import { defaultPersonalWorkspace, personalWorkspaceSchema, recentWorkListSchema, type RecentWork, type WorkspaceSection } from "@ontomato/contracts/personal-workspace";
-import { ManagerFrame, ObjectViewPage, ProductAssetRuntime } from "@ontomato/ontology-manager";
+import { ManagerFrame, ObjectViewPage, ProductAssetRuntime, useProductText } from "@ontomato/ontology-manager";
 import { DashboardCardPicker, DashboardMetricPreview } from "@ontomato/workbench-ui/features/dashboard";
 import type { DashboardListItem } from "@ontomato/contracts/dashboard";
 import { platformSchedulesPath, platformTaskListSchema, type PlatformTask } from "@ontomato/contracts/platform-schedules";
@@ -26,6 +26,7 @@ import { AppWindow, ArrowUpRight, CircleAlert, Clock3, LayoutDashboard, MoreHori
 import WorkspaceResourceDetail, { type WorkspaceResource } from "./WorkspaceResourceDetail.vue";
 import { agentHostAgentListSchema, agentHostCreateSessionResponseSchema, agentHostSessionSnapshotSchema, type AgentHostAgent, type AgentHostSession } from "@ontomato/contracts/agent-host";
 const { locale, t } = useI18n();
+const productText = useProductText();
 const props=defineProps<{productAssetId?:string;platformWidgetAsset?:ProductAsset;preview?:boolean;pinnedAssets?:ProductAsset[];embedded?:boolean;pageState?:Record<string,unknown>;unavailableAssets?:string[]}>();
 const personalHome=computed(()=>!props.productAssetId&&!props.platformWidgetAsset&&!props.embedded);
 const today=computed(()=>new Intl.DateTimeFormat(locale.value,{month:'long',day:'numeric',weekday:'long'}).format(new Date()));
@@ -379,7 +380,7 @@ const actions = computed(() => [
 ]);
 </script>
 <template>
-  <component :is="props.platformWidgetAsset||props.embedded?'div':AppPage" :class="{'platform-widget-host':props.platformWidgetAsset||props.embedded,'is-platform-widget':!!props.platformWidgetAsset}" :title="homeAsset?.name ?? text.title" :description="homeAsset?.description ?? ''" :actions="actions" :labels="{ save: text.save, discard: text.cancel, unsavedChanges: text.unsaved }">
+  <component :is="props.platformWidgetAsset||props.embedded?'div':AppPage" :class="{'platform-widget-host':props.platformWidgetAsset||props.embedded,'is-platform-widget':!!props.platformWidgetAsset}" :title="homeAsset ? productText(homeAsset.name) : text.title" :description="productText(homeAsset?.description ?? '')" :actions="actions" :labels="{ save: text.save, discard: text.cancel, unsavedChanges: text.unsaved }">
     <div v-if="errors.config" role="alert" class="workspace-error">{{ errors.config }} <el-button @click="readConfig">{{ text.retry }}</el-button></div>
     <WorkspaceSkeleton v-if="!ready && busy.config" :label="text.loading" :rows="6" />
     <el-alert v-if="analysisError" :title="analysisError" type="error" :closable="false" />
@@ -388,14 +389,14 @@ const actions = computed(() => [
     <div v-if="ready" class="workspace-grid" :class="{ 'personal-workspace':personalHome,'tasks-first': config.layout === 'tasks','product-layout':!!pageLayout,'single-column':pageLayout?.mode==='grid'||pageLayout?.mainWidth===12 }" :style="pageGridStyle">
       <div v-for="(sections, column) in columns" :key="column" class="workspace-column" :class="{ 'activity-column': sections.includes('tasks') }">
       <div v-for="child in productChildren(column)" :key="child.id" class="product-placement" :style="{gridColumn:`span ${child.width??(child.span==='half'?6:12)}`}">
-    <el-alert v-if="props.unavailableAssets?.includes(child.id)" :title="t('ontology.productAssetContractChanged',{name:child.asset?.name??child.id})" type="error" :closable="false"/>
+    <el-alert v-if="props.unavailableAssets?.includes(child.id)" :title="t('ontology.productAssetContractChanged',{name:child.asset?productText(child.asset.name):child.id})" type="error" :closable="false"/>
     <section v-else-if="child.section==='assistant'" class="workspace-welcome" :class="{'half-width':child.span==='half'}">
-      <div class="workspace-heading"><Sparkles :size="20" aria-hidden="true" /><h1>{{ child.asset?.name }}</h1></div>
-      <p v-if="child.asset?.description">{{ child.asset.description }}</p>
+      <div class="workspace-heading"><Sparkles :size="20" aria-hidden="true" /><h1>{{ child.asset ? productText(child.asset.name) : '' }}</h1></div>
+      <p v-if="child.asset?.description">{{ productText(child.asset.description) }}</p>
       <WorkspaceSkeleton v-if="busy.agents" :label="text.loading" :rows="1" composer />
       <div v-else-if="errors.agents" role="alert">{{ errors.agents }} <el-button @click="readAgents">{{ text.retry }}</el-button></div>
       <div v-else-if="canChat&&enabledAgents.length" class="workspace-ask">
-         <ShellComposer :busy="false" :labels="{ placeholder: child.asset?platformWidget(child.asset.document)?.placeholder??'':'', send: workspaceText.send, stop: workspaceText.stop }" @send="ask">
+         <ShellComposer :busy="false" :labels="{ placeholder: child.asset?productText(platformWidget(child.asset.document)?.placeholder??''):'', send: workspaceText.send, stop: workspaceText.stop }" @send="ask">
           <template #tools>
             <AgentPicker variant="pill" :agents="enabledAgents" :agent-id="agentId" :label="workspaceText.agent" @select="agentId = $event" />
           </template>
@@ -403,10 +404,10 @@ const actions = computed(() => [
       </div>
       <p v-else>{{ workspaceText.noAgent }}</p>
     </section>
-      <section v-else-if="!child.section" class="workspace-section workspace-product" :class="{'home-chart':child.span==='half','home-overview':child.asset?.document.kind==='widget-group'}"><header v-if="child.asset?.document.kind==='widget-group'||child.asset?.document.kind==='page'"><h2>{{child.asset.name}}</h2></header><PersonalWorkspaceRoute v-if="child.asset?.document.kind==='page'" embedded :product-asset-id="child.id" :pinned-assets="props.pinnedAssets" :unavailable-assets="props.unavailableAssets" :page-state="props.pageState"/><ManagerFrame v-else-if="child.asset"><ProductAssetRuntime :asset="child.asset" :page-state="props.pageState" :revision="previewRevision" @refresh="previewRevision++"/></ManagerFrame><p v-else>{{text.unavailable}}</p><p v-if="child.asset?.description" class="overview-note">{{child.asset.description}}</p></section>
+      <section v-else-if="!child.section" class="workspace-section workspace-product" :class="{'home-chart':child.span==='half','home-overview':child.asset?.document.kind==='widget-group'}"><header v-if="child.asset?.document.kind==='widget-group'||child.asset?.document.kind==='page'"><h2>{{productText(child.asset.name)}}</h2></header><PersonalWorkspaceRoute v-if="child.asset?.document.kind==='page'" embedded :product-asset-id="child.id" :pinned-assets="props.pinnedAssets" :unavailable-assets="props.unavailableAssets" :page-state="props.pageState"/><ManagerFrame v-else-if="child.asset"><ProductAssetRuntime :asset="child.asset" :page-state="props.pageState" :revision="previewRevision" @refresh="previewRevision++"/></ManagerFrame><p v-else>{{text.unavailable}}</p><p v-if="child.asset?.description" class="overview-note">{{productText(child.asset.description)}}</p></section>
       <template v-for="section in [child.section]" v-else :key="section">
       <section class="workspace-section" :class="{'half-width':child.span==='half'}" :data-section="section">
-        <header><h2>{{ child.asset?.name }}</h2>
+        <header><h2>{{ child.asset ? productText(child.asset.name) : '' }}</h2>
           <div v-if="section === 'apps' || section === 'data' || section === 'tasks'" class="section-actions">
             <el-button v-if="!props.platformWidgetAsset&&section === 'apps' && canBuild" text @click="router.push({ name: platformRoutes.appBuilder.name })">{{ text.build }} <ArrowUpRight :size="14" aria-hidden="true" /></el-button>
             <el-button v-if="!props.platformWidgetAsset&&(section === 'apps' || section === 'data')" text :disabled="saving || refreshing" @click="configure('resources')">{{ section === 'apps' ? (t('ontology.productHomeManageApplications')) : (t('ontology.productHomeManageFollowed')) }}</el-button>
@@ -414,7 +415,7 @@ const actions = computed(() => [
             <el-button v-if="section === 'data' && catalog.applications.value.some(app => app.id === 'dashboards')" text @click="router.push(platformRoutes.dashboards.path)">{{ text.all }} <ArrowUpRight :size="14" aria-hidden="true" /></el-button>
           </div>
         </header>
-        <p v-if="child.asset?.description" class="overview-note">{{child.asset.description}}</p>
+        <p v-if="child.asset?.description" class="overview-note">{{productText(child.asset.description)}}</p>
         <template v-if="section === 'objects'">
           <p v-if="errors.objectsSave" role="alert" class="workspace-error">{{ errors.objectsSave }}</p>
           <p v-if="!config.pinnedObjects.length" class="workspace-empty">{{ t('ontology.productHomePinObjectHint') }}</p>
@@ -548,8 +549,8 @@ const actions = computed(() => [
         <el-button v-if="catalog.applications.value.some(app=>app.id==='ontology')" text @click="editing=false;router.push({path:platformRoutes.products.path,query:homeAsset?{id:homeAsset.id}:{}})">{{t('ontology.productHomeManageComponents')}}</el-button>
         <template v-if="homeAsset?.editable&&!props.pinnedAssets"><h3>{{t('ontology.productHomeProductComponents')}}</h3>
          <p class="settings-note">{{t('ontology.productHomeComposeHint')}}</p>
-        <div v-for="(child,index) in draftChildren" :key="child.assetId" class="section-editor-row"><span>{{productAssets.find(asset=>asset.id===child.assetId)?.name??text.unavailable}}</span><el-select v-model="child.column" :aria-label="t('ontology.productComponentPlacement')"><el-option value="main" :label="t('ontology.productMainColumn')"/><el-option value="sidebar" :label="t('ontology.productSidebar')"/></el-select><el-select :model-value="child.width??(child.span==='half'?6:12)" :aria-label="t('ontology.productComponentWidth')" @update:model-value="child.width=Number($event)"><el-option v-for="width in [2,3,4,6,12]" :key="width" :value="width" :label="width===12?t('ontology.productFullRow'):t('ontology.productColumnsOf12',{width})"/></el-select><el-button :disabled="index===0" @click="draftChildren.splice(index-1,0,...draftChildren.splice(index,1))">{{t('ontology.productMoveUp')}}</el-button><el-button @click="draftChildren.splice(index,1)">{{t('ontology.productRemove')}}</el-button></div>
-        <div class="resource-toolbar"><el-select v-model="addProductId" filterable :placeholder="t('ontology.productChooseAsset')" :aria-label="t('ontology.productChooseAsset')"><el-option v-for="asset in reusableProducts" :key="asset.id" :value="asset.id" :label="asset.name"/></el-select><el-button :disabled="!addProductId" @click="addProduct">{{t('ontology.productAddComponent')}}</el-button></div>
+        <div v-for="(child,index) in draftChildren" :key="child.assetId" class="section-editor-row"><span>{{productText(productAssets.find(asset=>asset.id===child.assetId)?.name??text.unavailable)}}</span><el-select v-model="child.column" :aria-label="t('ontology.productComponentPlacement')"><el-option value="main" :label="t('ontology.productMainColumn')"/><el-option value="sidebar" :label="t('ontology.productSidebar')"/></el-select><el-select :model-value="child.width??(child.span==='half'?6:12)" :aria-label="t('ontology.productComponentWidth')" @update:model-value="child.width=Number($event)"><el-option v-for="width in [2,3,4,6,12]" :key="width" :value="width" :label="width===12?t('ontology.productFullRow'):t('ontology.productColumnsOf12',{width})"/></el-select><el-button :disabled="index===0" @click="draftChildren.splice(index-1,0,...draftChildren.splice(index,1))">{{t('ontology.productMoveUp')}}</el-button><el-button @click="draftChildren.splice(index,1)">{{t('ontology.productRemove')}}</el-button></div>
+        <div class="resource-toolbar"><el-select v-model="addProductId" filterable :placeholder="t('ontology.productChooseAsset')" :aria-label="t('ontology.productChooseAsset')"><el-option v-for="asset in reusableProducts" :key="asset.id" :value="asset.id" :label="productText(asset.name)"/></el-select><el-button :disabled="!addProductId" @click="addProduct">{{t('ontology.productAddComponent')}}</el-button></div>
         </template><el-form-item :label="text.data">
           <el-select v-model="draft.dashboardIds" multiple filterable :disabled="busy.data || !!errors.data">
             <el-option v-for="board in dashboards" :key="board.id" :value="board.id" :label="board.name" />

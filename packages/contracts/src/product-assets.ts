@@ -155,3 +155,20 @@ export const productCountsResponseSchema=z.object({counts:z.record(z.number().in
 export const productSummarySchema=productAssetSchema.omit({document:true}).extend({kind:productQuerySchema.shape.kind.unwrap(),details:z.object({isTemplate:z.boolean().optional(),embeddable:z.boolean().optional(),renderer:z.string().optional(),widgetKind:z.string().optional(),chartType:z.string().optional(),section:z.string().optional(),className:z.string().optional(),resourceId:z.string().optional(),childCount:z.number().int().nonnegative().optional(),widgetCount:z.number().int().nonnegative().optional(),widgetKinds:z.array(z.string()).optional()}).default({})});
 export type ProductSummary=z.infer<typeof productSummarySchema>;
 export const productPageSchema=z.object({items:z.array(productSummarySchema),total:z.number().int().nonnegative(),page:z.number(),pageSize:z.number()});
+/** Chinese defaults the server writes into generated home assets; displays translate a name, description or placeholder only while it still equals one of these. */
+export const productDefaultTexts={
+  homeName:'我的工作台',
+  homeDescription:'常用入口与正在进行的工作',
+  initialHomeName:'我的主页',
+  apps:'常用应用',
+  data:'关注的数据',
+  tasks:'任务动态',
+  conversations:'继续工作',
+  objects:'我的收藏',
+  recent:'最近访问',
+  legacyAssistant:'你想了解哪些数据？',
+  legacyAssistantDescription:'用日常语言提问，让智能体帮你查询和分析',
+  legacyAssistantPlaceholder:'例如：按学院统计在职教职工人数，并比较人员构成',
+  legacyConversations:'继续分析',
+  legacyObjects:'收藏的对象',
+} as const;

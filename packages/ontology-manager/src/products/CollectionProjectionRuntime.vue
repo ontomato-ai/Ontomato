@@ -4,11 +4,13 @@ import {productRenderersKey} from './renderers';
 import type {ProductAsset} from '@ontomato/contracts/product-assets';
 import {resolveViewParameters} from '@ontomato/contracts/object-views';
 import {useManagerClient,useOntologyText} from '../context';
+import {useProductText} from './default-texts';
 import {ElAlert,ElButton,ElTable,ElTableColumn,vLoading} from 'element-plus';
 import {EChart,useChartTheme} from '@ontomato/foundation-ui/chart';
 import ObjectViewVisualization from '../object-views/ObjectViewVisualization.vue';
 import {viewWidgetSchema} from '@ontomato/contracts/object-views';
 const {ot}=useOntologyText();
+const productText=useProductText();
 const props=defineProps<{asset:ProductAsset;pageState?:Record<string,unknown>}>();const client=useManagerClient();
 const rows=ref<Record<string,unknown>[]>([]),error=ref(''),loading=ref(false);
 const offset=ref(0),hasMore=ref(false);
@@ -18,7 +20,7 @@ const renderers=inject(productRenderersKey,new Map());
 const sceneRenderer=renderers.get('collection-view:3d-scene');
 const objectType=ref('');
 const platformRenderer=computed(()=>renderers.get(`collection-view:${objectType.value}:${props.asset.document.kind==='collection-view'?props.asset.document.renderer:''}`));
-const mapWidget=computed(()=>{const fields=props.asset.document.kind==='collection-view'?props.asset.document.fields:[];return viewWidgetSchema.parse({id:'map',kind:'chart',title:props.asset.name,span:12,height:360,skillId:'leaflet',chartType:'leaflet-map',latitudeField:fields[0]??'latitude',longitudeField:fields[1]??'longitude',labelField:fields[2]??''});});
+const mapWidget=computed(()=>{const fields=props.asset.document.kind==='collection-view'?props.asset.document.fields:[];return viewWidgetSchema.parse({id:'map',kind:'chart',title:productText(props.asset.name),span:12,height:360,skillId:'leaflet',chartType:'leaflet-map',latitudeField:fields[0]??'latitude',longitudeField:fields[1]??'longitude',labelField:fields[2]??''});});
 const chartOption=computed(()=>{
   const fields=props.asset.document.kind==='collection-view'?props.asset.document.fields:[];
   return {tooltip:{trigger:'axis'},grid:{left:48,right:16,top:16,bottom:48},xAxis:{type:'category',data:rows.value.map(row=>String(row[fields[0]]??''))},yAxis:{type:'value'},series:[{type:'bar',data:rows.value.map(row=>row[fields[1]])}]};
@@ -40,7 +42,7 @@ watch(()=>JSON.stringify([props.asset,props.pageState]),()=>{offset.value=0;void
 function page(delta:number){offset.value=Math.max(0,offset.value+delta*pageSize.value);void load();}
 </script>
 <template>
-  <section class="collection-projection"><h3>{{asset.name}}</h3><el-alert v-if="error" :title="error" type="error" :closable="false"/>
+  <section class="collection-projection"><h3>{{productText(asset.name)}}</h3><el-alert v-if="error" :title="error" type="error" :closable="false"/>
     <template v-if="asset.document.kind==='collection-view'">
       <component :is="platformRenderer" v-if="platformRenderer" :asset="asset" :rows="rows" :loading="loading"/>
       <template v-else-if="asset.document.renderer==='3d-scene'"><component :is="sceneRenderer" v-if="sceneRenderer" :asset="asset" :rows="rows"/><el-alert v-else :title="ot('productNo3dSceneRenderer')" type="error" :closable="false"/></template>

@@ -9,11 +9,13 @@ import {type ProductQuery,type ProductSummary} from '@ontomato/contracts/product
 import {productIcons} from './product-icons';
 import {rendererLabel} from './renderer-labels';
 import {localizedProductTypes,localizedProductCategories} from './catalog-labels';
+import {useProductText} from './default-texts';
 import {productCategory} from '@ontomato/contracts/product-graph';
 import type {ProductGraph} from '@ontomato/contracts/product-graph';
 import ProductGraphDialog from './ProductGraphDialog.vue';
 import {useManagerClient,useManagerContext,useManagerCounts,useOntologyText} from '../context';
 const {ot}=useOntologyText();
+const productText=useProductText();
 const identityName=useIdentityNames();
 const catalogTypes=computed(()=>localizedProductTypes(ot));
 const categories=computed(()=>localizedProductCategories(ot));
@@ -102,7 +104,7 @@ onBeforeUnmount(()=>{clearTimeout(timer);generation++;});
     <div class="directory-toolbar"><el-input v-model="search" clearable :placeholder="ot('productSearchName',{type:activeType.name})" :aria-label="ot('productSearchAssetName')" @input="scheduleSearch"/><el-select v-if="activeKind==='page'" :model-value="query.pageForm??'all'" :aria-label="ot('productPageForm')" @change="update({pageForm:$event,page:1})"><el-option value="all" :label="ot('productAllPageForms')"/><el-option value="page" :label="ot('productStandardPage')"/><el-option value="embeddable" :label="ot('productEmbeddablePage')"/><el-option value="template" :label="ot('productPageTemplate')"/></el-select><el-select :model-value="query.scope??'all'" :aria-label="ot('productAssetScope')" @change="changeScope"><el-option value="all" :label="ot('productScopeAll')"/><el-option value="mine" :label="ot('productScopeMine')"/><el-option value="shared" :label="ot('productScopeShared')"/></el-select><el-select :model-value="query.sort??'structure'" :aria-label="ot('productAssetSort')" @change="update({sort:$event,page:1})"><el-option value="structure" :label="ot('productSortStructure')"/><el-option value="name" :label="ot('productSortName')"/><el-option value="updated" :label="ot('productSortUpdated')"/></el-select></div>
     <el-alert v-if="error" class="directory-error" :title="error" type="error" :closable="false"><el-button text @click="load">{{ot('productRetry')}}</el-button></el-alert>
     <div ref="scroll" class="directory-table"><el-table v-loading="loading" :data="items" row-key="id" @row-click="openRow">
-      <el-table-column :label="ot('productName')" min-width="280"><template #default="{row}"><button class="asset-name" @click.stop="open(row.id)"><span><strong>{{row.name}}</strong><small v-if="row.description">{{row.description}}</small></span></button></template></el-table-column>
+      <el-table-column :label="ot('productName')" min-width="280"><template #default="{row}"><button class="asset-name" @click.stop="open(row.id)"><span><strong>{{productText(row.name)}}</strong><small v-if="row.description">{{productText(row.description)}}</small></span></button></template></el-table-column>
       <el-table-column :label="ot('productContentAndConfiguration')" min-width="230"><template #default="{row}"><span>{{assetDetails(row)||'—'}}</span><small v-if="row.details.resourceId" class="capability-reference" :title="`${capabilityName(row)} · ${row.details.resourceId}`">{{ot('productCapabilityReference',{label:capabilityLabel(row),name:capabilityName(row)})}}</small></template></el-table-column>
       <el-table-column :label="ot('productCurrentGrant')" width="120"><template #default="{row}">{{row.editable?ot('productEditable'):ot('productReadOnly')}}</template></el-table-column><el-table-column :label="ot('productOwner')" min-width="150"><template #default="{row}"><span :title="row.ownerId">{{identityName(row.ownerId,ot('productOwner'))}}</span></template></el-table-column><el-table-column :label="ot('productUpdatedAt')" width="180"><template #default="{row}"><span class="asset-date">{{date(row.updatedAt)}}</span></template></el-table-column><template #empty><span>{{loading?ot('productLoading'):error?ot('productLoadFailed'):ot('productNoMatchingAssets')}}</span></template></el-table></div>
     <footer><el-pagination :current-page="query.page??1" :page-size="query.pageSize??20" :page-sizes="[20,50,100]" :total="total" layout="total, sizes, prev, pager, next" @current-change="changePage" @size-change="changeSize"/></footer>

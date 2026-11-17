@@ -7,7 +7,9 @@ import { useManagerContext,useOntologyText,useManagerClient } from '../context';
 import {rendererLabel} from './renderer-labels';
 import {localizedProductTypes} from './catalog-labels';
 import {useIdentityNames} from './identity-names';
+import {useProductText} from './default-texts';
 const {ot}=useOntologyText();
+const productText=useProductText();
 const identityName=useIdentityNames();
 
 const props=defineProps<{asset:ProductAsset}>();
@@ -36,7 +38,7 @@ watch(()=>props.asset,async asset=>{
   if(current===generation)targetName.value=name||ot('productNameUnavailable');
  }catch{if(current===generation)targetName.value=ot('productNameUnavailable');}
 },{immediate:true});
-function referenceName(id:string){return names.value[id]??ot('productLoadingAssetName');}
+function referenceName(id:string){return productText(names.value[id]??ot('productLoadingAssetName'));}
 function fieldLabel(field:string){return 'presentation' in props.asset.document?props.asset.document.presentation?.fieldLabels[field]??field:field;}
 </script>
 <template>
@@ -54,7 +56,7 @@ function fieldLabel(field:string){return 'presentation' in props.asset.document?
       <template v-if="asset.document.kind==='object-view'"><dt>{{ot('productObjectClass')}}</dt><dd><code>{{asset.document.className}}</code></dd><dt>{{ot('productViewForm')}}</dt><dd>{{asset.document.form}}</dd><dt>{{ot('productDefaultObject')}}</dt><dd><code v-if="asset.document.primaryKey">{{asset.document.primaryKey}}</code><span v-else>{{ot('productSelectAtRuntime')}}</span></dd></template>
       <template v-if="asset.document.kind==='application'"><dt>{{ot('productPlatformApplication')}}</dt><dd><code>{{asset.document.applicationId}}</code></dd><dt v-if="asset.document.workspaceId">{{ot('productSourceWorkspace')}}</dt><dd v-if="asset.document.workspaceId"><code>{{asset.document.workspaceId}}</code></dd></template>
       <template v-if="asset.document.kind==='dashboard'"><dt>{{ot('productDashboardId')}}</dt><dd><code>{{asset.document.dashboardId}}</code></dd></template>
-      <template v-if="asset.document.kind==='widget'&&asset.document.widget.kind==='platform'"><dt>{{ot('productPlatformContent')}}</dt><dd>{{({assistant:ot('productSourceAssistant'),apps:ot('productSourceApps'),data:ot('productSourceData'),tasks:ot('productSourceTasks'),conversations:ot('productSourceConversations'),objects:ot('productSourceObjects'),recent:ot('productSourceRecent')})[asset.document.widget.source]}}</dd><dt>{{ot('productItemLimit')}}</dt><dd>{{asset.document.widget.limit}}</dd><dt v-if="asset.document.widget.placeholder">{{ot('productInputHint')}}</dt><dd v-if="asset.document.widget.placeholder">{{asset.document.widget.placeholder}}</dd></template>
+      <template v-if="asset.document.kind==='widget'&&asset.document.widget.kind==='platform'"><dt>{{ot('productPlatformContent')}}</dt><dd>{{({assistant:ot('productSourceAssistant'),apps:ot('productSourceApps'),data:ot('productSourceData'),tasks:ot('productSourceTasks'),conversations:ot('productSourceConversations'),objects:ot('productSourceObjects'),recent:ot('productSourceRecent')})[asset.document.widget.source]}}</dd><dt>{{ot('productItemLimit')}}</dt><dd>{{asset.document.widget.limit}}</dd><dt v-if="asset.document.widget.placeholder">{{ot('productInputHint')}}</dt><dd v-if="asset.document.widget.placeholder">{{productText(asset.document.widget.placeholder)}}</dd></template>
       <template v-if="'workspace' in asset.document&&asset.document.workspace"><dt>{{ot('productLayoutFocus')}}</dt><dd>{{({data:ot('productLayoutData'),tasks:ot('productLayoutTasks'),assistant:ot('productLayoutAssistant')})[asset.document.workspace.layout]}}</dd><dt>{{ot('productObjectOpening')}}</dt><dd>{{asset.document.workspace.objectOpening==='drawer'?ot('productSidebar'):ot('productPage')}}</dd></template>
     </dl>
      <section v-if="'children' in asset.document&&asset.document.children.length" class="widget-configuration"><header><strong>{{ot('productCompositionReferences')}}</strong><span>{{ot('productItemsInOrder',{count:asset.document.children.length})}}</span></header><ol class="composition-config"><li v-for="child in asset.document.children" :key="child.assetId"><span>{{asset.document.kind==='page'&&asset.document.layout?.mode==='grid'?ot('productGridColumn'):child.column==='main'?ot('productMainColumn'):ot('productSidebar')}} · {{ot('productColumnsOf12',{width:child.width??(child.span==='half'?6:12)})}}</span><strong>{{referenceName(child.assetId)}}</strong><code class="reference-id">{{child.assetId}}</code></li></ol></section>
