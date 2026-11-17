@@ -31,7 +31,6 @@ export type PanelHostMessage = z.infer<typeof panelHostMessageSchema>;
 
 /** What a running panel frame tells its host. */
 export const panelFrameMessageSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("ready") }).strict(),
   /** What a message from this instance carries now: the one page context line. */
   z.object({ kind: z.literal("context"), context: pageContextSchema }).strict(),
   /** The instance's deep-linkable state, which the host keeps in the address. */
