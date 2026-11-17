@@ -58,36 +58,50 @@ const chosenCardId = computed(() => {
 
 /**
  * Writes the chosen card into the address this page is shown at: its own query at its own address, the conversation's
- * page parameter beside one, which is the address the platform's composer sends.
+ * page parameter beside one, which is the address the platform's composer sends. The card travels with its name and the
+ * board with its own, because the message names a selection by its name and the page's skill finds it by its id.
  */
-function writeCard(cardId: string | undefined) {
-  if (!currentDashboardId.value) return;
+function writeCard(card: { id: string; name: string } | null) {
+  const board = dashboardItems.value.find((item) => item.id === currentDashboardId.value);
+  // A board is the page itself, so its name always travels; a card adds its own, and its absence clears the last one.
+  const written: Record<string, string> = { dashboardName: board?.name || "", cardId: card?.id ?? "", cardName: card?.name ?? "" };
   const paired = typeof route.query.page === "string" ? route.query.page : "";
   if (paired) {
     const [path, search = ""] = paired.split("?");
     const target = new URLSearchParams(search);
-    if (cardId) target.set("cardId", cardId);
-    else target.delete("cardId");
+    for (const [key, value] of Object.entries(written)) {
+      if (value) target.set(key, value);
+      else target.delete(key);
+    }
     void router.replace({ query: { ...route.query, page: `${path}${target.size ? `?${target}` : ""}` } });
     return;
   }
   const query: Record<string, string> = {};
   for (const [key, value] of Object.entries(route.query)) if (typeof value === "string" && value) query[key] = value;
-  if (cardId) query.cardId = cardId;
-  else delete query.cardId;
+  for (const [key, value] of Object.entries(written)) {
+    if (value) query[key] = value;
+    else delete query[key];
+  }
   void router.replace({ query });
 }
 
 /**
  * The reader chose a card, or let go of it; the board it sits in is the one the address already names.
  *
- * Switching boards drops the card: the card chosen on the last board is not this one's.
+ * A board opening names itself in the address, and switching boards drops the card: the card chosen on the last board is
+ * not this one's.
  */
 watch(
-  () => currentDashboardId.value,
-  (id, previous) => {
-    if (previous && previous !== id) writeCard(undefined);
+  [() => currentDashboardId.value, dashboardItems, () => loadingDashboards.value],
+  ([id]) => {
+    const board = dashboardItems.value.find((item) => item.id === id);
+    if (!board) return;
+    const address = pageAddress();
+    // The board names itself in the address it is sent from; a board the address already names keeps its card.
+    if (address.dashboardId === id && address.dashboardName === board.name) return;
+    writeCard(address.cardId && address.dashboardId === id ? { id: String(address.cardId), name: String(address.cardName ?? address.cardId) } : null);
   },
+  { immediate: true },
 );
 
 /**
@@ -281,7 +295,7 @@ watch(
         :draft="draft"
         :card-id="chosenCardId"
         @discard-draft="discardDraft"
-        @select-card="(card: { id: string } | null) => writeCard(card ? card.id : undefined)"
+        @select-card="(card: { id: string; name: string } | null) => writeCard(card)"
       />
       <el-empty v-else-if="!loadingDashboards" :description="t('analysis.noDashboards')" />
     </div>

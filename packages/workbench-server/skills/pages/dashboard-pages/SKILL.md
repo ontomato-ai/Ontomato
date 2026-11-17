@@ -21,6 +21,10 @@ API commands use `ONTOMATO_WORKBENCH_URL` before `/api`, the supplied `ONTOMATO_
 | `draft --operation OP --form work/form.json --out outputs/drafts/name.page-draft.json` | Validate the save body, write a PageDraft and print its dashboard link. |
 | `save --operation OP --form work/form.json` | Send the same validated body to the original save API; available for direct use outside the platform. |
 
+## Find what the reader selected
+
+A message sent from beside the board ends with a `Selected:` line naming the board and, when the reader chose one, the card: each entry is `name (id)`. Take the ids from that line — the board's for `--dashboard-id`, the card's for `--card-id` — and read them from the API as they are; the names are what the reader sees, not something to look up by. A message that names only the board is about the board, and which card it means has to be asked.
+
 ## Explain the selected result
 
 Read the card and its parameters. Use the returned columns, actual rows and explicit value formats; preserve nulls and real zeros. Account for display sorting/limits when explaining the visible chart, separately from MetricView truncation. Describe only the returned scope when truncation is present. Totals, shares, units and business calculations belong to the MetricView, not to a guessed chart calculation. An unavailable result is not zero. Use IDs read from the page or API rather than guessing them from labels.

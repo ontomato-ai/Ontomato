@@ -19,7 +19,7 @@ import { createAssistantClient, createAssistantFeedback } from "../assistant-hos
 import { readRememberedAgent, readRememberedSession, rememberAgent, rememberSession } from "../remembered-agent";
 import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
-import { dashboardSelection } from "../../dashboard";
+import { dashboardSelectionFrom } from "../../dashboard";
 import DatasetActions from "./DatasetActions.vue";
 import ChartFileActions from "./ChartFileActions.vue";
 import DatasetDrilldown from "./DatasetDrilldown.vue";
@@ -214,8 +214,11 @@ const labels = useShellLabels();
  */
 const settingsAgents = useAgentDefinitions();
 const pageContext = computed<PageContext | null>(() => {
-  if (inDashboards.value)
-    return { pageKey: "dashboard", url: pageAddress.value!, label: t("assistant.featureDashboards"), selection: dashboardSelection.value };
+  if (inDashboards.value) {
+    // The selection is the page's address: the board, and the card the address names with its own name and id.
+    const address = Object.fromEntries(new URLSearchParams(pageAddress.value!.split("?")[1] ?? ""));
+    return { pageKey: "dashboard", url: pageAddress.value!, label: t("assistant.featureDashboards"), selection: dashboardSelectionFrom(address) };
+  }
   if (inGovernanceReport.value) {
     const issue = new URLSearchParams(pageAddress.value!.split("?")[1] ?? "").get("issue");
     return {
