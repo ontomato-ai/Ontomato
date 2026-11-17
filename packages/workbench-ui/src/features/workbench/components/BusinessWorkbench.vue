@@ -184,9 +184,12 @@ const canOpen = usePageAccess();
 const editsAgents = computed(() => canOpen(routes.ontologyAgents.path));
 const opensModels = computed(() => canOpen(routes.agentModels.path));
 
-/** The agent settings are one page of the platform's own navigation: this entry opens it at the agent in use. */
+/**
+ * The agent settings are one page of the platform's own navigation: this entry opens it at the agent in use. An account
+ * without the agents' permission goes to the models the conversations run on, which is the platform's own settings page.
+ */
 function openSettings() {
-  if (!editsAgents.value) return void router.push(routes.agentModels.path);
+  if (!editsAgents.value) return void router.push(routes.systemAgentModels.path);
   void router.push(
     agentId.value
       ? { name: routes.ontologyAgent.name, params: { agentId: agentId.value } }
