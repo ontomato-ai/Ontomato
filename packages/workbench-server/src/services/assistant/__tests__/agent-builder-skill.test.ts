@@ -1,0 +1,103 @@
+import { spawn } from "node:child_process";
+import { createServer, type Server, type ServerResponse } from "node:http";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, expect, it, vi } from "vitest";
+import { workbenchServerResourceRoot } from "../../../content/resources";
+
+const script = path.resolve(workbenchServerResourceRoot, "resources/runtime-skills/ontomato-agent-builder/scripts/page.mjs");
+const agentId = "11111111-1111-4111-8111-111111111111";
+const servers: Server[] = [];
+afterEach(async () => {
+  for (const server of servers.splice(0)) await new Promise<void>((resolve) => server.close(() => resolve()));
+});
+
+function run(args: string[], env: Record<string, string>, cwd: string) {
+  return new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn(process.execPath, [script, ...args], { cwd, env: { ONTOMATO_LANGUAGE: "en", ...env } });
+    let stdout = "", stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ code, stdout, stderr }));
+  });
+}
+
+async function serve(handler: (url: string, body: unknown, response: ServerResponse) => void) {
+  const server = createServer((request, response) => {
+    let text = "";
+    request.on("data", (chunk) => { text += chunk; });
+    request.on("end", () => handler(request.url ?? "", text ? JSON.parse(text) : null, response));
+  });
+  servers.push(server);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("No listener");
+  return `http://127.0.0.1:${address.port}`;
+}
+
+const form = { name: "Agent", description: "", icon: null, enabled: true, systemPrompt: "Prompt",
+  modelSelection: { modelId: null }, skills: [], classNames: [], enabledMcpServiceIds: [], sortOrder: 0,
+  executionUserId: "22222222-2222-4222-8222-222222222222" };
+
+it("refuses to write directly inside the platform before sending any request", async () => {
+  const requested = vi.fn();
+  const base = await serve((url, _body, response) => { requested(url); response.end("{}"); });
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-builder-skill-"));
+  const env = { ONTOMATO_SKILL_SCENARIO: "platform", ONTOMATO_WORKBENCH_URL: base, ONTOMATO_ONTOLOGY_URL: base, ONTOMATO_TK: "session-token" };
+  for (const args of [["create", "@work/agent.json"], ["update", agentId, "@work/agent.json"], ["delete", agentId]]) {
+    const result = await run(args, env, cwd);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("draft");
+  }
+  expect(requested).not.toHaveBeenCalled();
+});
+
+it("writes a draft that keeps the execution user and prints the page link", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-builder-draft-"));
+  await writeFile(path.join(cwd, "form.json"), JSON.stringify(form));
+  const env = { ONTOMATO_SKILL_SCENARIO: "platform", ONTOMATO_SESSION_ID: "session", ONTOMATO_RUN_ID: "run" };
+  const written = await run(["draft", "update", agentId, "@form.json"], env, cwd);
+  expect(written.code).toBe(0);
+  expect(JSON.parse(await readFile(path.join(cwd, "outputs/drafts/agent.page-draft.json"), "utf8"))).toEqual({
+    pageKey: "agent-settings", operation: "agent.update", target: { id: agentId }, form,
+  });
+  const linked = await run(["draft-link", "@outputs/drafts/agent.page-draft.json"], env, cwd);
+  expect(linked.code).toBe(0);
+  expect(linked.stdout.trim()).toBe(
+    `#/ontology/agents/${agentId}?draftSessionId=session&draftRunId=run&draftPath=outputs%2Fdrafts%2Fagent.page-draft.json`,
+  );
+});
+
+it("validates the draft's target and form together", async () => {
+  const seen: { url: string; body: unknown }[] = [];
+  const base = await serve((url, body, response) => {
+    seen.push({ url, body });
+    response.statusCode = 204;
+    response.end();
+  });
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-builder-validate-"));
+  await writeFile(path.join(cwd, "form.json"), JSON.stringify(form));
+  const env = { ONTOMATO_SKILL_SCENARIO: "platform", ONTOMATO_WORKBENCH_URL: base, ONTOMATO_ONTOLOGY_URL: base, ONTOMATO_TK: "session-token" };
+  expect((await run(["draft", "update", agentId, "@form.json"], env, cwd)).code).toBe(0);
+  const validated = await run(["validate-draft", "@outputs/drafts/agent.page-draft.json"], env, cwd);
+  expect(validated.code).toBe(0);
+  expect(validated.stdout.trim()).toBe("ok");
+  expect(seen).toEqual([{ url: "/api/assistant/agent-definitions/validate", body: { target: { id: agentId }, form } }]);
+});
+
+it("lists the users a governance administrator may choose, and reports when none may be set", async () => {
+  const seen: string[] = [];
+  const base = await serve((url, _body, response) => {
+    seen.push(url);
+    response.setHeader("Content-Type", "application/json");
+    response.end(JSON.stringify({ canSetExecutionUser: false, users: [] }));
+  });
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-builder-execution-"));
+  const env = { ONTOMATO_SKILL_SCENARIO: "platform", ONTOMATO_WORKBENCH_URL: base, ONTOMATO_ONTOLOGY_URL: base, ONTOMATO_TK: "session-token" };
+  const result = await run(["execution-users", "ali"], env, cwd);
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({ canSetExecutionUser: false, users: [] });
+  expect(seen).toEqual(["/platform/agent-execution/options?keyword=ali&pageNum=1&pageSize=100"]);
+});
