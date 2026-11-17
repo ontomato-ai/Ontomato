@@ -9,8 +9,10 @@ import type {
 } from "@ontomato/contracts/dashboard";
 import {
   dashboardAddArtifactSchema,
+  dashboardAddChartFileSchema,
   dashboardSourceSchema,
   type DashboardAddArtifact,
+  type DashboardAddChartFile,
 } from "@ontomato/contracts/dashboard-artifacts";
 import { nodeApiGet, nodeApiPost } from "../../utils/api";
 import { workbenchContent } from "../../content";
@@ -34,6 +36,13 @@ export async function fetchDashboardGroups(id: string): Promise<Pick<DashboardGr
 /** Adds a conversation dataset file to an existing dashboard group. */
 export async function addDatasetToDashboard(input: DashboardAddArtifact) {
   await nodeApiPost("/dashboards/add-chart", dashboardAddArtifactSchema.parse(input));
+}
+
+/** Adds a conversation chart file, as it is, to a dashboard group or to a new dashboard of its own. */
+export async function addChartFileToDashboard(input: DashboardAddChartFile) {
+  const json = await nodeApiPost("/dashboards/add-chart-file", dashboardAddChartFileSchema.parse(input));
+  if (!json?.data?.id) throw new Error(json?.error || workbenchContent().text.createDashboardFailed);
+  return { id: String(json.data.id), name: String(json.data.name || "") };
 }
 
 /** Plans a new dashboard from conversation dataset files. */
@@ -61,10 +70,6 @@ export async function fetchDashboardLocalDetail(
   return json?.data ?? null;
 }
 
-export async function queryDashboardById(args: any) {
-  return nodeApiPost("/dashboards/query-by-id", args || {});
-}
-
 export async function renameDashboard(id: string, name: string) {
   const json = await nodeApiPost("/dashboards/modify", { id, name });
   return json?.success === true;
@@ -85,41 +90,13 @@ export async function deleteDimension(id: string, groupId: string) {
   return json?.success === true;
 }
 
-export async function modifyResultSetName(
-  id: string,
-  chartId: string,
-  resultSetName: string,
-  _dimensionId?: string,
-  _resultSetId?: string
-) {
+export async function modifyResultSetName(id: string, chartId: string, resultSetName: string) {
   const json = await nodeApiPost("/dashboards/modifyResultSetName", { id, chartId, resultSetName });
   return json?.success === true;
 }
 
 export async function deleteResultSet(id: string, chartId: string) {
   const json = await nodeApiPost("/dashboards/deleteResultSet", { id, chartId });
-  return json?.success === true;
-}
-
-export async function modifyResultSetChartType(id: string, chartId: string, chartType: string) {
-  const json = await nodeApiPost("/dashboards/modifyResultSetChartType", {
-    id,
-    chartId,
-    chartType,
-  });
-  return json?.success === true;
-}
-
-export async function modifyResultSetConditions(
-  id: string,
-  chartId: string,
-  conditions: unknown[]
-) {
-  const json = await nodeApiPost("/dashboards/modifyResultSetConditions", {
-    id,
-    chartId,
-    conditions,
-  });
   return json?.success === true;
 }
 
@@ -138,39 +115,7 @@ export async function deleteMetric(id: string, metricId: string) {
   return json?.success === true;
 }
 
-export async function analyzeChart(args: any) {
-  return nodeApiPost("/dashboards/ai/analyze", args || {});
-}
-
-export async function getAnswerByDslConditionParam(args: {
-  dsl?: Record<string, unknown>;
-  abcProgram?: Record<string, unknown>;
-  conditions?: unknown[];
-  chartType?: string;
-  chartTitle?: string;
-  fields?: Record<string, unknown>;
-  dataPlan?: unknown;
-  timeoutMs?: number;
-}) {
-  return nodeApiPost("/dashboards/getAnswerByDslConditionParam", args || {});
-}
-
-export async function getConditionsFromDsls(dsls: Array<Record<string, unknown>>) {
-  return nodeApiPost("/dashboards/getConditionsFromDsls", {
-    dsls: Array.isArray(dsls) ? dsls : [],
-  });
-}
-
-export async function getConditionsFromDsl(dsl: Record<string, unknown>) {
-  const payload = await getConditionsFromDsls([dsl || {}]);
-  const raw = payload?.data?.conditions;
-  if (Array.isArray(raw) && raw.length > 0 && Array.isArray(raw[0])) {
-    return raw[0];
-  }
-  return Array.isArray(raw) ? raw : [];
-}
-
-/** One metric-reference card's current result: the metric's output columns and rows, read by the card's id. */
+/** One metric-reference card's current result: the card's chart file and the metric's output, read by the card's id. */
 export async function queryDashboardCard(dashboardId: string, cardId: string): Promise<DashboardCardData> {
   const json = await nodeApiPost("/dashboards/query-card", { dashboardId, cardId });
   return json.data;

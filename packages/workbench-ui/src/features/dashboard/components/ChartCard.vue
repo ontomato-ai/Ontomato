@@ -1,7 +1,19 @@
 <template>
-  <div ref="rootRef" class="chart-container">
+  <div ref="rootRef" class="chart-container" :class="{ 'chart-container--draft': draft }">
     <div class="chart-header">
-      <h3 :title="title">{{ title }}</h3>
+      <h3 :title="shownTitle">
+        <span v-if="renamed" class="chart-original-name">{{ title }}</span>
+        {{ shownTitle }}
+      </h3>
+      <span
+        v-if="chartChanged"
+        class="chart-draft-badge"
+        role="note"
+        :title="t('dashboard.draft.chartChanged')"
+        :aria-label="t('dashboard.draft.chartChanged')"
+      >
+        {{ t("dashboard.draft.chartChanged") }}
+      </span>
       <span
         v-if="partialNotice && state !== 'empty'"
         class="chart-partial"
@@ -13,16 +25,10 @@
       </span>
       <ChartToolbar
         :data-open="dataOpen"
-        :disabled-types="disabledChartTypes"
-        :conditions="conditions"
-        :attr-show-name-map="props.attrShowNameMap"
-        :parameterized="metricRef"
         @edit-parameters="emit('edit-parameters', props.chart)"
         @open-zoom="openZoom"
         @toggle-data="toggleData"
         @command="handleCommand"
-        @conditions-change="handleConditionsChange"
-        @open-ai="() => emit('ai-request', props.chart)"
       />
     </div>
     <div
@@ -30,30 +36,36 @@
       :class="['chart-wrapper', { 'chart-wrapper--transparent-loading': transparentLoading }]"
       :element-loading-text="t('common.loading')"
     >
-      <EChart v-if="chart.option" :option="cardOption" :theme="theme" height="100%" @resize="drawn.track" />
+      <div class="chart-wrapper__canvas">
+        <MetricChart
+          v-if="state === 'ready'"
+          :key="drawnFile.name"
+          :file="drawnFile.content"
+          :metric="output"
+          :empty="t('common.noData')"
+        />
+        <div v-if="state === 'empty'" class="chart-mask">
+          {{ partialNotice || t("common.noData") }}
+        </div>
+        <div v-else-if="state === 'error'" class="chart-mask chart-mask--error" role="alert">
+          <strong v-if="errorHeadline">{{ errorHeadline }}</strong>
+          <span>{{ chart.error.message }}</span>
+        </div>
+      </div>
       <ChartDataOverlay
         :open="dataOpen"
         :table="table"
         :total="(chart.rows ?? []).length"
-        :source-label="metricRef ? t('dashboard.viewMetric') : t('common.viewDsl')"
-        @view-dsl="handleViewDsl"
+        :source-label="t('dashboard.viewMetric')"
+        @view-dsl="handleViewQuery"
       />
-      <div v-if="state === 'empty'" class="chart-mask">
-        {{ partialNotice || t("common.noData") }}
-      </div>
-      <div v-else-if="state === 'error' && metricRef" class="chart-mask chart-mask--error" role="alert">
-        <strong v-if="errorHeadline">{{ errorHeadline }}</strong>
-        <span>{{ chart.error.message }}</span>
-      </div>
-      <div v-else-if="state === 'error' && !dataOpen" class="chart-mask">
-        {{ t("analysis.cannotGenerateChart") }}
-      </div>
     </div>
     <ChartZoomModal
       :open="modalOpen"
       :mode="modalMode"
-      :title="title"
-      :option="chart.option"
+      :title="shownTitle"
+      :file="drawnFile.content"
+      :metric="output"
       :table="table"
       @close="closeZoom"
     />
@@ -63,21 +75,17 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import interact from "interactjs";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { TriangleAlert } from "lucide-vue-next";
-import { EChart, useChartTheme } from "@ontomato/foundation-ui/chart";
+import { MetricChart } from "@ontomato/foundation-ui/chart";
 import ChartDataOverlay from "./ChartDataOverlay.vue";
 import ChartToolbar from "./ChartToolbar.vue";
 import ChartZoomModal from "./ChartZoomModal.vue";
-import { isMetricReferenceEntry } from "@ontomato/contracts/dashboard";
-import { chartTable, extractTabularDataFromOption } from "./utils/chartTabular";
-import { fitChart, useDrawnSize } from "./utils/chartFit";
-import { cardErrorHeadline, metricCardTable } from "./utils/metricCard";
-import { modifyResultSetName, deleteResultSet } from "../api";
+import { cardErrorHeadline, chartCardTable } from "./utils/metricCard";
+import { deleteResultSet, modifyResultSetName } from "../api";
 import { clamp, parseGridColumns, partialResultNotice } from "./utils/dashboardHelper";
-import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
 import { useI18n } from "vue-i18n";
 import { workbenchContent } from "../../../content";
 
@@ -86,20 +94,24 @@ const transparentLoading = workbenchContent().dashboard.loadingMask === "transpa
 
 const { t } = useI18n();
 
+/**
+ * One chart card: the platform's chart draws the card's own `.chart.json` file filled from the metric's current output.
+ * A draft may name another file or another name for the same card; it draws that file over this output and touches
+ * nothing the card has saved.
+ */
 const props = defineProps({
   chart: { type: Object, required: true },
   dashboardId: { type: String, default: "" },
-  conditions: { type: Array, default: () => [] },
-  attrShowNameMap: { type: Object, default: () => ({}) },
+  /** A draft's chart file for this card, drawn over the saved one. */
+  previewFile: { type: Object, default: null },
+  /** A draft's name for this card. */
+  previewName: { type: String, default: "" },
+  /** Whether the card is shown as a draft: it says so, and does not save its layout while it is one. */
+  draft: { type: Boolean, default: false },
 });
-const loading = computed(() => state.value === "loading");
-
 const emit = defineEmits([
   "chart-renamed",
   "chart-deleted",
-  "chart-conditions-changed",
-  "ai-request",
-  "view-dsl",
   "view-metric",
   "edit-parameters",
   "layout-change",
@@ -108,50 +120,41 @@ const emit = defineEmits([
 
 const rootRef = ref(null);
 let interactable = null;
-const theme = useChartTheme();
-const drawn = useDrawnSize();
-/** The card's option in the brand colours of the platform's chart theme, laid out for the size the card draws it at. */
-const cardOption = computed(() => fitChart(chartBrandColors(props.chart.option, theme.value), drawn.size.value));
+const loading = computed(() => props.chart.state === "loading");
+const title = computed(() => String(props.chart?.title || props.chart?.name || ""));
+const renamed = computed(() => Boolean(props.previewName) && props.previewName !== title.value);
+const shownTitle = computed(() => (props.previewName ? props.previewName : title.value));
+const chartChanged = computed(() => Boolean(props.previewFile));
+/** The file this card draws: the draft's when it names one, otherwise the card's saved file. */
+const drawnFile = computed(() => (props.previewFile ? props.previewFile : props.chart.chartFile));
+/** This refresh's output for the card; the platform's chart fills it into the file. */
+const output = computed(() => ({
+  columns: props.chart.columns ?? [],
+  rows: props.chart.rows ?? [],
+  truncation: props.chart.truncation ?? undefined,
+}));
 const dataOpen = ref(false);
-/** A metric-reference card: its data and parameters come from the metric it references. */
-const metricRef = computed(() => isMetricReferenceEntry(props.chart));
 const errorHeadline = computed(() => (props.chart?.error ? cardErrorHeadline(props.chart.error, t) : null));
 
 const TABLE_ROWS = 500;
-/** The data table, the zoomed table and the AI input all read this refresh's rows. */
-const table = computed(() =>
-  metricRef.value
-    ? metricCardTable(props.chart.columns ?? [], (props.chart.rows ?? []).slice(0, TABLE_ROWS), props.chart.formats)
-    : chartTable(extractTabularDataFromOption(props.chart?.rows || []), TABLE_ROWS)
-);
+/** The data table and the zoomed table read this refresh's rows, written in the formats the card's file states. */
+const table = computed(() => {
+  const data = { columns: output.value.columns, rows: output.value.rows, truncation: props.chart.truncation ?? null };
+  const table = chartCardTable(drawnFile.value.content, data);
+  return { columns: table.columns, rows: table.rows.slice(0, TABLE_ROWS) };
+});
 
 const modalOpen = ref(false);
 const modalMode = ref("chart");
 
-const title = computed(() => props.chart?.title || "");
-
-function handleViewDsl() {
-  if (metricRef.value) emit("view-metric", props.chart);
-  else emit("view-dsl", { title: title.value, dsl: props.chart?.dsl ?? null });
-}
-
-const ALL_CHART_TYPES = ["pie", "bar", "line", "scatter", "radar", "heatmap"];
-
-const disabledChartTypes = computed(() => {
-  const rows = props.chart?.rows || [];
-  if (!rows || !Array.isArray(rows) || rows.length === 0) return ALL_CHART_TYPES.slice();
-  return [];
-});
-
 /** Zero rows of a partial result are not "no data": the empty mask shows this notice instead. */
 const partialNotice = computed(() => partialResultNotice(props.chart?.truncation, t));
 
-const state = computed(() => {
-  const opt = props.chart?.option;
-  if (opt === null || opt === undefined) return "empty";
-  const raw = opt && typeof opt === "object" ? opt.__ragchatState : null;
-  return raw === "loading" || raw === "empty" || raw === "error" ? raw : null;
-});
+const state = computed(() => props.chart?.state ?? "empty");
+
+function handleViewQuery() {
+  emit("view-metric", props.chart);
+}
 
 async function handleCommand(cmd) {
   const dashboardId = String(props.dashboardId || "").trim();
@@ -222,36 +225,6 @@ function openZoom() {
 function closeZoom() {
   modalOpen.value = false;
 }
-
-function handleConditionsChange(f) {
-  const dashboardId = String(props.dashboardId || "").trim();
-  const chartId = String(props.chart?.id || "").trim();
-  const chartTitle = String(props.chart?.title || "").trim();
-  const dataPlan = props.chart?.dataPlan;
-
-  emit("chart-conditions-changed", {
-    chartId,
-    chartTitle,
-    dataPlan,
-    conditions: f,
-    chartType: String(props.chart?.chartType || "").trim(),
-    fields: props.chart?.fields,
-    dashboardId,
-    dsl: props.chart?.dsl,
-    abcProgram: props.chart?.abcProgram,
-    source: props.chart?.source,
-  });
-}
-
-// A legacy chart that cannot be drawn shows its rows instead; a metric card's failure shows its reason.
-watch(
-  () => state.value,
-  (nextState) => {
-    if (nextState !== "error" || metricRef.value) return;
-    dataOpen.value = true;
-  },
-  { immediate: true }
-);
 
 /* ======================== resize (grid layout) ========================= */
 function setupResize() {
@@ -325,6 +298,11 @@ onBeforeUnmount(() => {
   border-color: var(--el-border-color-dark);
 }
 
+.chart-container--draft {
+  border-color: var(--el-color-primary);
+  border-style: dashed;
+}
+
 /* The header is as tall as the tools' buttons, so it keeps its height when they appear. */
 .chart-header {
   display: flex;
@@ -347,11 +325,34 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+/* A draft's name stands beside the name it replaces, so the reader sees both. */
+.chart-original-name {
+  margin-right: 6px;
+  color: var(--el-text-color-tertiary);
+  font-weight: var(--font-normal);
+  text-decoration: line-through;
+}
+
+.chart-draft-badge {
+  flex-shrink: 0;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  font-size: var(--text-xs);
+}
+
 .chart-wrapper {
   width: 100%;
   flex: 1;
   min-height: 280px;
   position: relative;
+}
+
+.chart-wrapper__canvas {
+  position: absolute;
+  inset: 0;
 }
 
 .chart-wrapper--transparent-loading :deep(.el-loading-mask) {

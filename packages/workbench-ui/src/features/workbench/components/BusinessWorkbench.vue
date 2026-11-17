@@ -15,6 +15,7 @@ import { readRememberedAgent, rememberAgent } from "../remembered-agent";
 import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
 import DatasetActions from "./DatasetActions.vue";
+import ChartFileActions from "./ChartFileActions.vue";
 import DatasetDrilldown from "./DatasetDrilldown.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
 import { workbenchFeatures } from "../features";
@@ -301,8 +302,10 @@ function appearanceSaved(value: WorkbenchAppearance) {
       <DatasetDrilldown :artifact="artifact" :title="title" :selected-row-indices="selectedRowIndices" />
     </template>
     <template #artifact-actions="{ artifact, title }">
-      <!-- A dataset added to a board opens the dashboards application, which is where boards live. -->
+      <!-- A file added to a board opens the dashboards application, which is where boards live: a dataset is planned
+           into cards there, a chart file is put on the board as it is. -->
       <DatasetActions :artifact="artifact" :title="title" @open-dashboard="openDashboardApplication" />
+      <ChartFileActions :artifact="artifact" :title="title" @open-dashboard="openDashboardApplication" />
     </template>
     <template #message-actions="{ sessionId, runId }">
       <TurnDiagnoseButton v-if="sessionId && runId" :session-id="sessionId" :run-id="runId" />

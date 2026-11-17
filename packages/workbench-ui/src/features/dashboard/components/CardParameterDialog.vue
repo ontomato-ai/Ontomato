@@ -3,7 +3,7 @@ import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { FormFields } from "@ontomato/foundation-ui/form";
 import { formFieldKey } from "@ontomato/contracts/form-fields";
-import type { DashboardMetricReference, DashboardParameterForm } from "@ontomato/contracts/dashboard";
+import type { DashboardParameterForm } from "@ontomato/contracts/dashboard";
 import { ApiRequestError } from "../../../utils/api";
 import { fetchCardParameterForm, saveCardParameters } from "../api";
 import { cardError, cardErrorHeadline, type CardError } from "./utils/metricCard";
@@ -11,14 +11,23 @@ import { cardError, cardErrorHeadline, type CardError } from "./utils/metricCard
 /**
  * Edits one card's parameters through the metric's own form: the fields, values, read-only keys and validation are
  * the metric's; only the keys the reader edited are sent, and the metric interprets the text.
+ *
+ * A draft fills the first values and keeps its own revision: when the metric moved since the draft was written, the
+ * draft's text stays, the reader is told to read the form again, and nothing is saved under the new definition.
  */
-const props = defineProps<{ dashboardId: string; card: { id: string; name: string } | null }>();
+const props = defineProps<{
+  dashboardId: string;
+  card: { id: string; name: string } | null;
+  /** A draft's parameter body for this card: the revision it was written against and the values it changes. */
+  draft?: { revision: string; values: Record<string, unknown> } | null;
+}>();
 const visible = defineModel<boolean>({ required: true });
-const emit = defineEmits<{ saved: [cardId: string, query: DashboardMetricReference] }>();
+const emit = defineEmits<{ saved: [cardId: string] }>();
 const { t } = useI18n();
 
 const form = ref<DashboardParameterForm | null>(null);
-const draft = ref<Record<string, string>>({});
+const draftValues = ref<Record<string, string>>({});
+const original = ref<Record<string, string>>({});
 const edited = ref(new Set<string>());
 const fieldErrors = ref<Record<string, string>>({});
 const failure = ref<CardError | null>(null);
@@ -26,26 +35,49 @@ const loading = ref(false);
 const saving = ref(false);
 const failureHeadline = computed(() => (failure.value ? cardErrorHeadline(failure.value, t) : null));
 
+/** The revision the form was written against says whether this draft still addresses the same definition. */
+const unchanged = computed(() => !props.draft || !form.value || props.draft.revision === form.value.revision);
+/** The draft's changes, original value beside new, for the keys the form does not show or the reader cannot type into. */
+const changes = computed(() => {
+  if (!form.value) return [];
+  return form.value.fields
+    .filter((field) => edited.value.has(field.key))
+    .map((field) => ({ key: field.key, label: field.label, from: original.value[field.key] ?? "", to: draftValues.value[field.key] ?? "" }));
+});
+
 watch(visible, async (open) => {
   if (!open || !props.card) return;
   form.value = null;
-  draft.value = {};
+  draftValues.value = {};
+  original.value = {};
   edited.value = new Set();
   fieldErrors.value = {};
   failure.value = null;
   loading.value = true;
   try {
     form.value = await fetchCardParameterForm(props.dashboardId, props.card.id);
-    draft.value = { ...form.value.values };
+    original.value = { ...form.value.values };
+    draftValues.value = { ...form.value.values, ...textValues(form.value.readOnly, props.draft?.values) };
+    edited.value = new Set(Object.keys(textValues(form.value.readOnly, props.draft?.values)));
   } catch (error) {
     failure.value = cardError(error);
   } finally {
     loading.value = false;
   }
-});
+}, { immediate: true });
+
+/** A draft's values as this form writes text; its read-only keys stay out, the metric owns those. */
+function textValues(readOnly: readonly string[], values: Record<string, unknown> | undefined) {
+  const text: Record<string, string> = {};
+  for (const [key, value] of Object.entries(values ?? {})) {
+    if (readOnly.includes(key)) continue;
+    text[key] = typeof value === "object" ? JSON.stringify(value) : String(value ?? "");
+  }
+  return text;
+}
 
 function edit(key: string, value: string) {
-  draft.value = { ...draft.value, [key]: value };
+  draftValues.value = { ...draftValues.value, [key]: value };
   edited.value = new Set(edited.value).add(key);
   const { [key]: _, ...rest } = fieldErrors.value;
   fieldErrors.value = rest;
@@ -56,13 +88,13 @@ async function save() {
   saving.value = true;
   failure.value = null;
   try {
-    const saved = await saveCardParameters({
+    await saveCardParameters({
       dashboardId: props.dashboardId,
       cardId: card.id,
       revision: form.value!.revision,
-      values: Object.fromEntries([...edited.value].map((key) => [key, draft.value[key]!])),
+      values: Object.fromEntries([...edited.value].map((key) => [key, draftValues.value[key]!])),
     });
-    emit("saved", card.id, saved.query);
+    emit("saved", card.id);
     visible.value = false;
   } catch (error) {
     const details = error instanceof ApiRequestError ? (error.payload.details as { errors?: { field: string; message: string }[] }) : undefined;
@@ -99,9 +131,9 @@ async function save() {
       <el-form v-if="form && form.fields.length" label-position="top" @submit.prevent>
         <FormFields
           :fields="form.fields"
-          :values="draft"
+          :values="draftValues"
           :errors="fieldErrors"
-          :disabled="saving"
+          :disabled="saving || !unchanged"
           :choose-placeholder="t('dashboard.choose')"
           :read-only="form.readOnly"
           @input="edit"
@@ -109,6 +141,14 @@ async function save() {
         />
       </el-form>
       <p v-else-if="form" class="note">{{ t("dashboard.noParameters") }}</p>
+      <el-descriptions v-if="changes.length" :column="1" border class="changes">
+        <el-descriptions-item v-for="change in changes" :key="change.key" :label="change.label">
+          <span class="was">{{ change.from || "—" }}</span>
+          <span class="arrow" aria-hidden="true">→</span>
+          <span class="now">{{ change.to || "—" }}</span>
+        </el-descriptions-item>
+      </el-descriptions>
+      <p v-if="!unchanged" class="note" role="note">{{ t("dashboard.draft.revisionChanged") }}</p>
       <div v-if="failure" class="failure" role="alert">
         <strong v-if="failureHeadline">{{ failureHeadline }}</strong>
         <span>{{ failure.message }}</span>
@@ -116,7 +156,7 @@ async function save() {
     </div>
     <template #footer>
       <el-button :disabled="saving" @click="visible = false">{{ t("common.cancel") }}</el-button>
-      <el-button type="primary" :loading="saving" :disabled="!form || edited.size === 0" @click="save">
+      <el-button type="primary" :loading="saving" :disabled="!form || edited.size === 0 || !unchanged" @click="save">
         {{ t("common.save") }}
       </el-button>
     </template>
@@ -131,6 +171,20 @@ async function save() {
   margin: 0;
   color: var(--el-text-color-secondary);
   font-size: var(--text-sm);
+}
+.changes {
+  margin-top: var(--spacing-md);
+}
+.was {
+  color: var(--el-text-color-tertiary);
+  text-decoration: line-through;
+}
+.arrow {
+  margin: 0 6px;
+  color: var(--el-text-color-tertiary);
+}
+.now {
+  font-weight: var(--font-semibold);
 }
 .failure {
   display: flex;
