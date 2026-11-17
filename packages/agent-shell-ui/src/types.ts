@@ -183,6 +183,10 @@ export interface ShellLabels {
   loading: string;
   emptyFile: string;
   invalidChart: string;
+  /** A timeline event whose date the metric does not give. */
+  chartUndated: string;
+  /** A chart whose metric returned no rows. */
+  noChartRows: string;
   toolRead: string;
   toolWrite: string;
   toolEdit: string;
