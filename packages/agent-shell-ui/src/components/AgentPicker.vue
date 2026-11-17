@@ -178,6 +178,8 @@ onBeforeUnmount(close);
 }
 .agent-menu {
   position: fixed;
+  /* `[popover]` arrives with `inset: 0`; cleared, the one edge placed against the trigger decides where the list sits. */
+  inset: auto;
   margin: 0;
   padding: var(--spacing-xs);
   overflow-y: auto;
