@@ -1,10 +1,9 @@
 import { z } from "zod";
+import { storedChartFileSchema } from "./chart-data";
 import { chartDisplaySchema } from "./chart-data/display";
 import { chartInputs, type ChartInputRoles } from "./chart-data/inputs";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldSchema, formFieldErrorSchema, formValuesSchema } from "./form-fields";
-import type { LegacyDashboardChartEntry, LegacyDashboardMetricEntry } from "./dashboard-legacy";
-export type { DataPlan, TransformSpec, AbcProgramDashboard, AbcProgramParameter, AbcProgramOutKeyRef, LegacyInlineEntry } from "./dashboard-legacy";
 
 const dashboardChartTypes = [
   "bar", "line", "area-line", "pictorial-bar", "bar-line", "pie", "nightingale-rose", "treemap", "funnel",
@@ -21,17 +20,17 @@ export const dashboardMetricReferenceSchema = z.object({
 }).strict();
 export type DashboardMetricReference = z.infer<typeof dashboardMetricReferenceSchema>;
 const sourceSchema = z.object({
-  sessionId: text.optional(), artifactId: text.optional(), datasetKey: text.optional(), subQuestion: z.string().optional(),
+  sessionId: text.optional(), runId: text.optional(), artifactId: text.optional(), datasetKey: text.optional(), subQuestion: z.string().optional(),
 }).strict();
 export const dashboardPresentationSchema = chartDisplaySchema.extend({
   name: text,
   layout: dashboardLayoutSchema.optional(),
   style: z.object({ colors: z.array(z.string()).optional() }).strict().optional(),
 }).strict();
-export const metricReferenceChartSchema = dashboardPresentationSchema.extend({
-  id: text, query: dashboardMetricReferenceSchema, source: sourceSchema.optional(),
-  chartType: text.refine(v => Object.hasOwn(dashboardChartInputs, v), "Unsupported chart type"),
-  fields: z.record(z.union([text, z.array(text).min(1)])),
+export const dashboardChartFileSchema = z.object({ name: text.endsWith(".chart.json"), content: storedChartFileSchema }).strict();
+export const metricReferenceChartSchema = z.object({
+  id: text, name: text, query: dashboardMetricReferenceSchema,
+  chartFile: dashboardChartFileSchema, layout: dashboardLayoutSchema.optional(), source: sourceSchema.optional(),
 }).strict();
 export const metricReferenceMetricSchema = dashboardPresentationSchema.extend({
   id: text, query: dashboardMetricReferenceSchema, source: sourceSchema.optional(),
@@ -40,12 +39,17 @@ export const metricReferenceMetricSchema = dashboardPresentationSchema.extend({
 export type MetricReferenceChartEntry = z.infer<typeof metricReferenceChartSchema>;
 export type MetricReferenceMetricEntry = z.infer<typeof metricReferenceMetricSchema>;
 export type MetricReferenceEntry = MetricReferenceChartEntry | MetricReferenceMetricEntry;
-export type DashboardChartEntry = MetricReferenceChartEntry | LegacyDashboardChartEntry;
-export type DashboardMetricEntry = MetricReferenceMetricEntry | LegacyDashboardMetricEntry;
-export function isMetricReferenceEntry(entry: DashboardChartEntry | DashboardMetricEntry): entry is MetricReferenceEntry {
-  return entry.query?.kind === "metric";
-}
-export type DashboardGroup = { id: string; title: string; charts: DashboardChartEntry[]; metrics: DashboardMetricEntry[] };
+export type DashboardChartEntry = MetricReferenceChartEntry;
+export type DashboardMetricEntry = MetricReferenceMetricEntry;
+export const dashboardGroupSchema = z.object({ id: text, title: z.string(), charts: z.array(metricReferenceChartSchema), metrics: z.array(metricReferenceMetricSchema) }).strict();
+export const dashboardGroupsSchema = z.array(dashboardGroupSchema);
+export type DashboardGroup = z.infer<typeof dashboardGroupSchema>;
+const chartLayoutPatchSchema = metricReferenceChartSchema.pick({ id:true, name:true, layout:true, chartFile:true }).partial({name:true,layout:true,chartFile:true});
+const metricLayoutPatchSchema = metricReferenceMetricSchema.omit({query:true,source:true}).partial().required({id:true});
+export const dashboardReplaceLayoutSchema = z.object({
+  id: text, groups: z.array(z.object({ id:text, title:z.string(), charts:z.array(chartLayoutPatchSchema), metrics:z.array(metricLayoutPatchSchema) }).strict()),
+}).strict();
+export type DashboardReplaceLayout = z.infer<typeof dashboardReplaceLayoutSchema>;
 export type DashboardDetail = {
   id: string; ownerId: string; name: string; createdAt: number; updatedAt: number;
   source?: { sessionId?: string; artifactId?: string; threadId?: string; requestSeq?: number };
@@ -77,8 +81,10 @@ export type DashboardSaveParameters = z.infer<typeof dashboardSaveParametersSche
 export type DashboardMetricDescription = z.infer<typeof dashboardMetricDescriptionSchema>;
 export type DashboardMetricOutput = z.infer<typeof dashboardMetricOutputSchema>;
 export type DashboardParameterForm = z.infer<typeof dashboardParameterFormSchema>;
-export type DashboardCardData = DashboardMetricOutput & {
-  card: MetricReferenceEntry;
-  metric: Pick<DashboardMetricDescription, "id" | "name" | "revision" | "status">;
-};
+const cardMetricSchema = dashboardMetricDescriptionSchema.pick({id:true,name:true,revision:true,status:true});
+export const dashboardCardDataSchema = z.union([
+  dashboardMetricOutputSchema.extend({card:metricReferenceChartSchema.omit({chartFile:true}),file:dashboardChartFileSchema,metric:cardMetricSchema}).strict(),
+  dashboardMetricOutputSchema.extend({card:metricReferenceMetricSchema,metric:cardMetricSchema}).strict(),
+]);
+export type DashboardCardData = z.infer<typeof dashboardCardDataSchema>;
 export type DashboardRow = Record<string, z.infer<typeof runtimeJsonValueSchema>>;

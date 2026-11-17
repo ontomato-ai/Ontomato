@@ -1,4 +1,3 @@
-import type { AbcProgramDashboard } from "@ontomato/contracts/dashboard";
 import type { QueryDatasetIdentity, ResultTruncation } from "@ontomato/contracts/query-execution";
 import { runAuxiliary } from "../../platform/agent-runtime/runtime";
 import { renderPrompt } from "../../core/prompts/loader";
@@ -27,7 +26,14 @@ export interface Dataset extends QueryDatasetIdentity, Partial<ResultTruncation>
   columns: string[];
   data: Record<string, unknown>[];
   dsl?: unknown;
-  abcProgram?: AbcProgramDashboard;
+  abcProgram?: {
+    title:string;code:string;
+    queryPackage?:import("@ontomato/contracts/query-package").QueryPackage;
+    parameterValues?:Record<string,unknown>;
+    sourceAnalysis?:import("@ontomato/contracts/query-subgraph").QuerySubgraph;
+    outKeyRefs:Array<{key:string;className?:string;attrName?:string;asGroupBy?:boolean;statCal?:boolean}>;
+    parameters?:Array<{key:string;type?:string;value?:unknown}>;
+  };
   sourceAnalysis?: import("@ontomato/contracts/query-subgraph").QuerySubgraph;
   subQuestion?: string;
   fieldDisplayPlan?: FieldDisplayPlan;
