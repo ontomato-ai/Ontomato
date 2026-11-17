@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.schedules;
 
+import io.ontomato.dataengine.service.identity.UserCredentials;
 import static io.ontomato.dataengine.schedules.ScheduleJson.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -434,7 +435,7 @@ DROP INDEX IF EXISTS platform_task_owner,platform_task_due,platform_task_one_run
             "INSERT INTO platform_task_credential VALUES(?,?,?,?)",
             string(row, "domain_id"),
             creator(string(row, "domain_id"), string(row, "owner_id")),
-            TaskCredentials.seal(key, env("AGENT_RUNTIME_ONTOLOGY_TOKEN", "")),
+            UserCredentials.seal(key, env("AGENT_RUNTIME_ONTOLOGY_TOKEN", "")),
             "valid".equals(row.get("state")) && (oss || key != null));
       }
     if (exists(node, "scheduled_tasks"))

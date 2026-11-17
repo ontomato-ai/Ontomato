@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.schedules;
 
+import io.ontomato.dataengine.service.identity.UserCredentials;
 import static io.ontomato.dataengine.schedules.ScheduleJson.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -21,7 +22,7 @@ public class PlatformScheduler {
   private final TaskStore store;
   private final TransactionTemplate transactions;
   private final ScheduleApplications applications;
-  private final TaskCredentials credentials;
+  private final UserCredentials credentials;
   private final ScheduleIdentity identity;
   private final TaskMail mail;
   private final Instant boot = Instant.now();
@@ -36,7 +37,7 @@ public class PlatformScheduler {
       TaskStore store,
       TransactionTemplate transactions,
       ScheduleApplications applications,
-      TaskCredentials credentials,
+      UserCredentials credentials,
       ScheduleIdentity identity,
       TaskMail mail) {
     this.store = store;
@@ -179,7 +180,7 @@ public class PlatformScheduler {
           }
         }
       }
-    } catch (TaskCredentials.Invalid invalid) {
+    } catch (UserCredentials.Invalid invalid) {
       failure(run, "credential_invalid", "The creator's background credential is invalid", true);
     } catch (ScheduleException error) {
       switch (error.code) {

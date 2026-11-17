@@ -40,6 +40,7 @@ export interface TurnRow {
   created_at: Date;
 }
 export interface AgentRow {
+  execution_user_id: string | null;
   id: string;
   domain_id: string;
   kind: string;

@@ -11,6 +11,7 @@ import {
   runtimeTimestampSchema,
 } from "./agent-runtime-values";
 export const assistantAgentDefinitionSchema = agentHostAgentSchema.extend({
+  executionUserId: z.string().trim().min(1).nullable(),
   modelSelection: modelSelectionSchema,
   skills: z.array(runtimeSkillRefSchema),
   classNames: z.array(z.string().trim().min(1)).default([]),
@@ -48,9 +49,20 @@ export const assistantAgentInputSchema = assistantAgentDefinitionSchema
     id: true,
   })
   .extend({
+    executionUserId: assistantAgentDefinitionSchema.shape.executionUserId.optional(),
     modelSelection: modelSelectionSchema.default({ modelId: null }),
     skills: z.array(assistantSkillInputSchema),
   });
+export const assistantAgentValidationSchema = z.object({
+  target: z.object({ id: z.string().uuid().optional() }).strict(),
+  form: assistantAgentInputSchema,
+}).strict();
+export type AssistantAgentValidation = z.infer<typeof assistantAgentValidationSchema>;
+export const agentExecutionOptionsSchema = z.object({
+  canSetExecutionUser: z.boolean(),
+  users: z.array(z.object({ id: z.string().min(1), name: z.string() }).strict()),
+}).strict();
+export type AgentExecutionOptions = z.infer<typeof agentExecutionOptionsSchema>;
 export type AssistantAgentDefinition = z.infer<
   typeof assistantAgentDefinitionSchema
 >;

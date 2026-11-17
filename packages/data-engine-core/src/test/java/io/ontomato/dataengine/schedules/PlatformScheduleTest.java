@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.schedules;
 
+import io.ontomato.dataengine.service.identity.UserCredentials;
 import static io.ontomato.dataengine.schedules.ScheduleJson.*;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
@@ -49,7 +50,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   private FunctionDao functions;
   private IdentityService identities;
   private ScheduleIdentity identity;
-  private TaskCredentials credentials;
+  private UserCredentials credentials;
   private ScheduleApplications applications;
   private OntologyScheduleApplication ontology;
   private PlatformTasks tasks;
@@ -86,7 +87,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     when(identity.interactiveLogin()).thenReturn(true);
     when(identity.issueKey(user)).thenReturn("test-key");
     when(identity.accepts("test-key", "sales", "alice")).thenReturn(true);
-    credentials = new TaskCredentials(store, identity, "test-seal");
+    credentials = new UserCredentials(store.jdbc(), identity, "test-seal");
     actions = spy(new ActionServiceImpl());
     doReturn(List.of()).when(actions).queryList(anyString(), isNull(), isNull(), anyString());
     grantsForActions = mock(CapabilityGrantLookup.class);
@@ -1297,7 +1298,7 @@ CREATE TABLE platform_task_credential(domain_id text,owner_id text,sealed_key te
         null);
     jdbc.update(
         "INSERT INTO platform_task_credential VALUES('sales','alice',?,true)",
-        TaskCredentials.seal("test-key", "test-seal"));
+        UserCredentials.seal("test-key", "test-seal"));
     var migration = new ScheduleMigration(jdbc, store, false);
     migration.check();
     assertTrue(TaskStore.column(jdbc, "platform_task", "target"));

@@ -18,6 +18,7 @@ the complete selectable skill catalogue and per-run package preparation.
 | GET `/agent-definitions` | — | `AssistantAgentDefinitionList` |
 | GET `/agent-definitions/:agentId` | — | `AssistantAgentDefinition` |
 | POST `/agent-definitions` | `AssistantAgentInput`, UUID Idempotency-Key | 201 `AssistantAgentDefinition` |
+| POST `/agent-definitions/validate` | `{target:{id?: UUID},form:AssistantAgentInput}`; omit target.id on creation | 204; no writes or Key preparation |
 | PUT `/agent-definitions/:agentId` | `AssistantAgentInput` | `AssistantAgentDefinition` |
 | DELETE `/agent-definitions/:agentId` | — | 204; existing history remains readable |
 | POST `S/export/ppt` | `{}` | PPTX from runtime history and accepted datasets |
@@ -27,7 +28,12 @@ the complete selectable skill catalogue and per-run package preparation.
 | DELETE `S/feedback/:feedbackId` | — | 204 |
 
 Definitions contain one systemPrompt, one skills list, modelSelection, name, description,
-icon, enabled, classNames, enabledMcpServiceIds and sortOrder. Both presets are ordinary
+icon, enabled, classNames, enabledMcpServiceIds, sortOrder and executionUserId.
+The execution user is a nullable domain user ID: null uses the initiator. Creation
+defaults to null; omitted updates preserve the stored reference. Java authorizes
+changes with the original operator credential and domain administrator permission.
+Validation reads the real old definition and prepares no Key. Saves validate all
+settings before preparing a selected user credential; Node stores only its ID. Both presets are ordinary
 editable definitions. The common `/agents` endpoint exposes only selector metadata,
 never the prompt or these business settings. Deleted definitions do not delete
 history, and cannot admit new runs. Old executor/dimension/report/summary/hot-report
