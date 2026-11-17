@@ -1,17 +1,16 @@
 <script setup lang="ts">
-import type { ChartRow } from "@ontomato/contracts/chart-data";
+import type { ChartMetricColumn, ChartRow } from "@ontomato/contracts/chart-data";
 import type { ChartViewWidget } from "@ontomato/contracts/object-views";
 import { MetricChart } from "@ontomato/foundation-ui/chart";
 import { useOntologyText } from "../context";
 
 /**
  * A view's chart: the file saved in this version, filled from the MetricView output the runtime read for the current
- * object and parameters. The file names the columns it draws; the rows are the read's current result. No skill runs
- * here, and the component keeps no copy of the data.
+ * object and parameters. The columns are what that MetricView declares, so a file that draws fewer of them still fills;
+ * the rows are the read's current result. No skill runs here, and the component keeps no copy of the data.
  */
-const props = defineProps<{ widget: ChartViewWidget; rows: Record<string, unknown>[] }>();
+defineProps<{ widget: ChartViewWidget; columns: ChartMetricColumn[]; rows: Record<string, unknown>[] }>();
 const { ot } = useOntologyText();
-const columns = props.widget.chartFile.dataset[0].dimensions.map(key => ({ key }));
 </script>
 <template>
   <div class="view-chart" :style="{ height: widget.height + 'px' }">

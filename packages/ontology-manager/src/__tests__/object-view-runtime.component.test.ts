@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick, reactive, type App } from "vue";
-import { createObjectView, createViewWidget, type NonChartViewWidget } from "@ontomato/contracts/object-views";
+import { createObjectView, createViewWidget } from "@ontomato/contracts/object-views";
 import { chartWidget } from "./chart-fixture";
 import ObjectViewRuntime from "../object-views/ObjectViewRuntime.vue";
 import ObjectViewBuilder from "../object-views/ObjectViewBuilder.vue";
@@ -35,7 +35,7 @@ vi.mock("@ontomato/foundation-ui/chart", async importOriginal => ({
   },
 }));
 /** A component without a chart: the fields and interactions these cases configure. */
-const widget = (kind: NonChartViewWidget["kind"]) => createViewWidget(kind) as NonChartViewWidget;
+const widget = createViewWidget;
 /** The data engine's Action form with one text field per value; `parameters` answers a submission. */
 const actionForm = (values: Record<string, string>, parameters: Record<string, unknown> | null = null) => ({
   fields: Object.keys(values).map(key => ({ key, label: key, type: "text", required: false, defaultValue: null, help: null, multiline: false, placeholder: null, maxLength: 65536 })),
@@ -392,6 +392,7 @@ describe("configured object view interaction", () => {
     view.tabs[0].sections[0].widgets = [chart];
     vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
       if (url.endsWith("queryById")) return answer({ function: { parameters: [] } });
+      if (url.endsWith("/metrics/describe")) return answer({ outputColumns: [{ key: "kind" }, { key: "amount" }] });
       expect(JSON.parse(String(init.body))).toEqual({
         id: "metric-1", param: { limit: 7, count: 3 }, parameterTexts: { top_n: "abc" },
       });
@@ -412,15 +413,17 @@ describe("configured object view interaction", () => {
     vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
       actions.push(url);
       if (url.endsWith("queryById")) return answer({ function: { parameters: [] } });
+      if (url.endsWith("/metrics/describe")) return answer({ outputColumns: [{ key: "kind" }, { key: "amount" }, { key: "region" }] });
       const body = JSON.parse(String(init.body));
       if (body.id === "metric-1") reads.push(body.param);
-      return answer([{ kind: "A", amount: 1 }]);
+      return answer([{ kind: "A", amount: 1, region: "east" }]);
     });
     const reference = ref({ className: "Order", primaryKey: "1" });
     const element = mount(() => h(ObjectViewRuntime, { document: view, object: {}, reference: reference.value }));
     await settle();
     expect(reads.at(-1)).toEqual({ id: "1", filter: "initial" });
-    expect(element.querySelector(".drawn")?.textContent).toContain('"rows":[{"kind":"A","amount":1}]');
+    // The MetricView declares one more column than the file draws; the chart fills from the declared columns.
+    expect(element.querySelector(".drawn")?.textContent).toContain('"rows":[{"kind":"A","amount":1,"region":"east"}]');
     const field = element.querySelector("input")!;
     field.value = "changed"; field.dispatchEvent(new Event("input", { bubbles: true })); await settle();
     expect(reads.at(-1)).toEqual({ id: "1", filter: "changed" });
@@ -439,6 +442,7 @@ describe("configured object view interaction", () => {
     const values: string[] = [];
     vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
       if (_url.endsWith("queryById")) return new Response(JSON.stringify({ success: true, data: { function: { queryPackage: { manifest: { parameterDefs: [{ name: "page_offset", value: 0 }] } } } } }));
+      if (_url.endsWith("/metrics/describe")) return new Response(JSON.stringify({ outputColumns: [{ key: "value" }] }));
       const body = JSON.parse(String(init.body)); values.push(body.param.filter);
       expect(body.param.page_offset).toBe(0);
       return new Response(JSON.stringify({ success: true, data: [{ value: body.param.filter }] }));

@@ -51,6 +51,7 @@ const tab = computed(() => document.value.tabs.find(item => item.id === selected
 const section = computed(() => tab.value?.sections.find(item => item.id === selectedSection.value) || tab.value?.sections[0]);
 const widget = computed(() => section.value?.widgets.find(item => item.id === selectedWidget.value));
 /** The selected widget as a component without a chart: its fields, text and interactions. */
+/** The selected widget without a chart: its fields, text and interactions. */
 const detail = computed(() => widget.value as NonChartViewWidget);
 const kinds: NonChartViewWidget["kind"][] = ["text", "properties", "links"];
 const reference = computed(() => previewReference.value);
@@ -168,7 +169,7 @@ async function restoreVersion() {
 }
 function addWidget(kind: NonChartViewWidget["kind"]) {
   if (!section.value) return;
-  const item = createViewWidget(kind) as NonChartViewWidget;
+  const item = createViewWidget(kind);
   item.title = ot(widgetMessageKeys[kind]);
   section.value.widgets.push(item);
   selectedWidget.value = item.id;

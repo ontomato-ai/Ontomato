@@ -98,7 +98,12 @@ export type ObjectViewState = {
   versions: ObjectViewVersion[];
 };
 
-export function createViewWidget(...[kind, chart]: [kind: NonChartViewWidget["kind"]] | [kind: "chart", chart: Pick<ChartViewWidget, "resourceId" | "chartFile" | "parameters">]): ViewWidget {
+/** A new component: a chart carries its MetricView and its file, every other kind its own defaults. */
+export function createViewWidget(kind: NonChartViewWidget["kind"]): NonChartViewWidget;
+// eslint-disable-next-line no-redeclare -- TypeScript overload; one runtime implementation.
+export function createViewWidget(kind: "chart", chart: Pick<ChartViewWidget, "resourceId" | "chartFile" | "parameters">): ChartViewWidget;
+// eslint-disable-next-line no-redeclare -- TypeScript overload; one runtime implementation.
+export function createViewWidget(kind: ViewWidget["kind"], chart?: Pick<ChartViewWidget, "resourceId" | "chartFile" | "parameters">): ViewWidget {
   const sizes = {
     text: { span: 12, height: 120 }, properties: { span: 12, height: 240 },
     metric: { span: 4, height: 80 }, table: { span: 12, height: 360 },

@@ -23,7 +23,7 @@ const error = ref("");
 const loading = ref(false);
 const dataLoaded = ref(false);
 const isDataWidget = computed(() => ["metric", "table", "chart", "links"].includes(props.widget.kind));
-/** The widget as a component without a chart: its fields, text and interactions. */
+/** The widget as a component without a chart: its fields, text and interactions. A chart reads only its file. */
 const detail = computed(() => props.widget as NonChartViewWidget);
 const actionOpen = ref(false);
 /** The Action's fields as the data engine declares them, the draft of their text and the errors on them. */
@@ -201,7 +201,7 @@ async function openAction() {
       </el-table>
       <div v-if="widget.kind === 'links' && !widget.resourceId && (hasMore || offset > 0)" class="pages"><el-button :disabled="loading || offset === 0" @click="page(-50)">{{ ot('ovPrevious') }}</el-button><span>{{ rows.length ? offset + 1 : 0 }}–{{ offset + rows.length }}</span><el-button :disabled="loading || !hasMore" @click="page(50)">{{ ot('ovNext') }}</el-button></div>
     </template>
-    <ObjectViewVisualization v-else-if="widget.kind === 'chart' && !failure" :widget="widget" :rows="rows" />
+    <ObjectViewVisualization v-else-if="widget.kind === 'chart' && !failure" :widget="widget" :rows="rows" :columns="metricView?.columns ?? []" />
     <el-input v-else-if="widget.kind === 'input'" :model-value="format(variables[widget.variable] ?? '')" :placeholder="widget.text" @update:model-value="emit('variable', widget.variable, $event)" />
     <el-button v-else-if="widget.kind === 'button'" @click="click">{{ widget.text || widget.title }}</el-button>
     <el-button v-else-if="widget.kind === 'action'" type="primary" :disabled="preview || !widget.resourceId" @click="openAction">{{ widget.text || widget.title }}</el-button>

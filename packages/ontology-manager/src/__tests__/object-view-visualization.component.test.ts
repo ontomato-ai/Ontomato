@@ -21,21 +21,23 @@ vi.mock("@ontomato/foundation-ui/chart", () => ({
 
 let app: App | undefined;
 afterEach(() => { app?.unmount(); app = undefined; drawn.length = 0; document.body.innerHTML = ""; vi.unstubAllGlobals(); });
+/** The columns a MetricView declares; the file draws the first two of them. */
+const columns = [{ key: "kind" }, { key: "amount" }, { key: "region" }];
 function mount(widget: ChartViewWidget, rows: Record<string, unknown>[]) {
   const element = document.createElement("div"); document.body.append(element);
-  app = createApp(defineComponent({ setup() { return () => h(ObjectViewVisualization, { widget, rows }); } }));
+  app = createApp(defineComponent({ setup() { return () => h(ObjectViewVisualization, { widget, columns, rows }); } }));
   installObjectViewHost(app);
   app.mount(element);
   return element;
 }
 
 describe("Object View chart rendering", () => {
-  it("fills the saved file from the current MetricView output and names the file's columns", async () => {
-    const element = mount(chartWidget(), [{ kind: "A", amount: 7 }]);
+  it("fills the saved file from the current MetricView output, including a column the file does not draw", async () => {
+    const element = mount(chartWidget(), [{ kind: "A", amount: 7, region: "east" }]);
     await nextTick();
     expect(drawn).toHaveLength(1);
     expect(drawn[0].file).toEqual(chartFile());
-    expect(drawn[0].metric).toEqual({ columns: [{ key: "kind" }, { key: "amount" }], rows: [{ kind: "A", amount: 7 }] });
+    expect(drawn[0].metric).toEqual({ columns, rows: [{ kind: "A", amount: 7, region: "east" }] });
     expect(drawn[0].height).toBe(320);
     expect(element.querySelector(".view-chart")?.getAttribute("style")).toContain("height: 320px");
   });
@@ -43,7 +45,7 @@ describe("Object View chart rendering", () => {
   it("draws a result with no rows as empty rather than keeping the previous object's rows", async () => {
     const rows = reactive<Record<string, unknown>[]>([]);
     const element = document.createElement("div"); document.body.append(element);
-    app = createApp(defineComponent({ setup() { return () => h(ObjectViewVisualization, { widget: chartWidget(), rows }); } }));
+    app = createApp(defineComponent({ setup() { return () => h(ObjectViewVisualization, { widget: chartWidget(), columns, rows }); } }));
       installObjectViewHost(app);
     app.mount(element);
     await nextTick();

@@ -103,6 +103,7 @@ const children = computed(() => "children" in document.value ? document.value.ch
 const candidates = computed(() => childOptions.value);
 const widget=computed(()=>editorWidgets.value[widgetIndex.value]);
 /** The widget without a chart: its value and label fields and text; a chart keeps its drawing in the file. */
+/** The widget without a chart: its value and label fields and text; a chart keeps its drawing in the file. */
 const detail=computed(()=>widget.value as NonChartViewWidget|undefined);
 function updatePlatformResources(value:string){try{if(document.value.kind==='widget'&&document.value.widget.kind==='platform')document.value.widget.workspace=JSON.parse(value);}catch{error.value='资源选择 JSON 无效';}}
 function updateProfileReferences(field:'tools'|'contextViews',value:string){if(document.value.kind==='agent-profile')document.value[field]=value.split('\n').map(id=>id.trim()).filter(Boolean);}
@@ -153,9 +154,9 @@ function edit(asset:ProductAsset|null,newKind="page") {
     'agent-profile':{kind:'agent-profile',principalId:'',instructions:'',tools:[],contextViews:[]},
     page:{kind:"page",children:[]},
     "layout-template":{kind:"layout-template",workspace:defaultPersonalWorkspace(),children:[]},
-    widget:{kind:"widget",widget:createViewWidget("metric") as NonChartViewWidget},
-    "operation-panel":{kind:"operation-panel",widgets:[createViewWidget("action") as NonChartViewWidget]},
-    "widget-group":{kind:"widget-group",widgets:[createViewWidget("metric") as NonChartViewWidget]},
+    widget:{kind:"widget",widget:createViewWidget("metric")},
+    "operation-panel":{kind:"operation-panel",widgets:[createViewWidget("action")]},
+    "widget-group":{kind:"widget-group",widgets:[createViewWidget("metric")]},
     dashboard:{kind:"dashboard",dashboardId:""},
     "object-view":{kind:"object-view",className:"",form:"full"},
     application:{kind:"application",applicationId:"",children:[]},
@@ -198,7 +199,7 @@ function applyWidgetFields(){
   if(item){item.resourceId=metricId.value;item.parameters=JSON.parse(parameters.value);item.valueField=valueField.value;item.labelField=labelField.value;}
 }
 function chooseWidget(index:number){try{applyWidgetFields();widgetIndex.value=index;readWidgetFields();}catch{error.value='请先修正当前组件的参数 JSON';}}
-function addWidget(){if(!('widgets' in document.value))return;try{applyWidgetFields();document.value.widgets.push(createViewWidget(document.value.kind==='operation-panel'?'action':'metric') as NonChartViewWidget);widgetIndex.value=document.value.widgets.length-1;readWidgetFields();}catch{error.value='请先修正参数 JSON';}}
+function addWidget(){if(!('widgets' in document.value))return;try{applyWidgetFields();document.value.widgets.push(createViewWidget(document.value.kind==='operation-panel'?'action':'metric'));widgetIndex.value=document.value.widgets.length-1;readWidgetFields();}catch{error.value='请先修正参数 JSON';}}
 function removeWidget(){if(!('widgets' in document.value))return;document.value.widgets.splice(widgetIndex.value,1);widgetIndex.value=0;readWidgetFields();}
 async function addChild() { if(childId.value && "children" in document.value && !children.value.some(child=>child.assetId===childId.value)){try{const asset=await client.products.get(childId.value);assets.value.push(asset);document.value.children.push({assetId:childId.value,column:childColumn.value});}catch(reason){error.value=reason instanceof Error?reason.message:String(reason);}} }
 async function save() { await run(async()=>{
@@ -254,7 +255,7 @@ async function remove() { if(!selected.value)return;await run(async()=>{await El
         <h2>基本信息</h2>
         <el-form label-position="top" :disabled="busy"><el-form-item label="名称"><el-input v-model="name"/></el-form-item><el-form-item label="说明"><el-input v-model="description" type="textarea"/></el-form-item><el-form-item v-if="!selected" label="初始授权"><el-select v-model="visibility"><el-option value="private" label="仅创建者使用与编辑"/><el-option value="domain" label="创建者编辑，域内成员使用"/></el-select></el-form-item><p v-else>使用与编辑权限由授权记录管理。</p>
           <template v-if="!advanced">
-            <el-form-item v-if="document.kind==='widget'" label="组件实现"><el-select :model-value="document.widget.kind==='platform'?'platform':'capability'" @change="document={kind:'widget',widget:$event==='platform'?{kind:'platform',source:'assistant',placeholder:'',limit:4}:createViewWidget('metric') as NonChartViewWidget}"><el-option value="capability" label="能力展示与操作"/><el-option value="platform" label="平台交互"/></el-select></el-form-item>
+            <el-form-item v-if="document.kind==='widget'" label="组件实现"><el-select :model-value="document.widget.kind==='platform'?'platform':'capability'" @change="document={kind:'widget',widget:$event==='platform'?{kind:'platform',source:'assistant',placeholder:'',limit:4}:createViewWidget('metric')}"><el-option value="capability" label="能力展示与操作"/><el-option value="platform" label="平台交互"/></el-select></el-form-item>
             <template v-if="document.kind==='widget'&&document.widget.kind==='platform'"><el-form-item label="内容来源"><el-select v-model="document.widget.source"><el-option v-for="(label,key) in {assistant:'智能问数',apps:'应用与智能体入口',data:'仪表盘集合',tasks:'任务动态',conversations:'分析会话',objects:'收藏对象',recent:'最近访问'}" :key="key" :value="key" :label="label"/></el-select></el-form-item><el-form-item v-if="document.widget.source==='assistant'" label="输入提示"><el-input v-model="document.widget.placeholder"/></el-form-item><el-form-item label="展示条数"><el-input-number v-model="document.widget.limit" :min="1" :max="20"/></el-form-item><el-form-item label="资源选择（JSON）"><el-input :model-value="JSON.stringify(document.widget.workspace??{},null,2)" type="textarea" :rows="5" @change="updatePlatformResources"/></el-form-item></template>
            <template v-if="'widgets' in document"><h3>组合内容</h3><div class="toolbar"><el-select :model-value="widgetIndex" aria-label="编辑组合内组件" @change="chooseWidget"><el-option v-for="(item,index) in editorWidgets" :key="item.id" :value="index" :label="item.title||`组件 ${index+1}`"/></el-select><el-button @click="addWidget">添加组件</el-button><el-button :disabled="editorWidgets.length<=1" @click="removeWidget">移除</el-button></div></template>
            <el-form-item v-if="widget&&document.kind!=='metric-widget'&&document.kind!=='action-view'" label="组件标题"><el-input v-model="widget.title"/></el-form-item>
