@@ -19,7 +19,7 @@ import { config } from "../../config/application";
 /** Read authorization anew for each directory or admission request. */
 export async function readPageSkills(credentials: AssistantCredentials): Promise<PageSkillsProjection> {
   const response = await backendGet("page-skills", `${config.dataQuery.baseUrl}/platform/page-skills`, {
-    headers: buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey), retries: 0,
+    headers: buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey), retries: 1,
   });
   return z.object({ success: z.literal(true), data: pageSkillsProjectionSchema }).parse(JSON.parse(response.text)).data;
 }

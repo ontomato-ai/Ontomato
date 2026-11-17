@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { assistantAgentListSchema } from "@ontomato/contracts/assistant-chat";
 import {
-  agentHostAgentListSchema,
   agentHostRunSnapshotSchema,
 } from "@ontomato/contracts/agent-host";
 import { environment } from "../../../../config/environment";
@@ -58,7 +58,7 @@ export async function executeApiChat(
   }
   let admitted = false;
   try {
-    const { agents } = agentHostAgentListSchema.parse(await request("/agents"));
+    const { agents } = assistantAgentListSchema.parse(await request("/agents"));
     const agent = agents[0];
     if (!agent?.enabled) throw new Error("Query assistant is unavailable");
     await request("/sessions", "POST", { agentId: agent.id }, sessionId);

@@ -24,7 +24,7 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
         const grants = currentProductGrants(owner).use;
         if (!grants.has(native) || !grants.has(agent.id)) continue;
         const response = await backendPost("platform-agent-identity", `${config.dataQuery.baseUrl}/agent-principals/check-user-scoped`, { id: agent.id }, {
-          headers: buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey), retries: 0,
+          headers: buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey), retries: 1,
         });
         if (!z.object({ allowed: z.boolean() }).parse(JSON.parse(response.text)).allowed) continue;
       }

@@ -1,4 +1,4 @@
-import { agentHostSendResultSchema, type AgentHostSendRequest } from "@ontomato/contracts/agent-host";
+import { agentHostSendResultSchema, type AgentHostSendRequest, type AgentHostAgentList } from "@ontomato/contracts/agent-host";
 import { resolveLocale } from "../../i18n";
 import { openAgentCaller } from "../agent-host/caller";
 import type { AgentInput, AgentRunContext } from "@ontomato/contracts/agent-channel";
@@ -67,7 +67,7 @@ function canonical(value: unknown): string {
   return JSON.stringify(value);
 }
 
-export const diagnosisService: AgentHostService = {
+export const diagnosisService: AgentHostService & { agents(owner: AgentHostOwner, locale?: string): Promise<AgentHostAgentList> } = {
   async agents(_owner, locale) {
     const zh = locale?.startsWith("zh");
     return { agents: [{ id: DIAGNOSIS_AGENT_ID, name: zh ? "运维诊断" : "Operations diagnosis", description: zh ? "只读取证与故障诊断" : "Read evidence and diagnose faults", icon: "wrench", enabled: true }] };
