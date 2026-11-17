@@ -333,19 +333,6 @@ export function registerGovernanceScreen(id: "feedback", screen: Component) {
   governanceScreens[id] = screen;
 }
 
-/**
- * One governance record's report, inside the Manager frame like the pages it is reached from, and the feedback records
- * the platform's pages ship. The report is the record's own address (`/governance/reports/:recordId`): the conversation
- * that wrote it is the agent platform's, so nothing here holds or names a conversation.
- */
-const GovernanceReportPage = defineComponent({
-  name: "ManagerGovernanceReportPage",
-  props: { recordId: { type: String, required: true } },
-  setup(props) {
-    const router = useRouter();
-    return () => h(GovernancePage, { recordId: props.recordId, onBack: () => void router.push(managerPaths.knowledge) });
-  },
-});
 
 /** The feedback records: a page of this application, its screen supplied by the edition that holds both. */
 const FeedbackPage = defineComponent({
@@ -433,19 +420,6 @@ export function managerRoutes(): RouteRecordRaw[] {
 export function managerStandaloneRoutes(): RouteRecordRaw[] {
   return [
     {path:'/ontology/models',redirect:{name:routes.ontologyModels.name}},
-    {
-      path: "/governance/reports",
-      meta: { service: true },
-      component: ManagerFrame,
-      children: [
-        {
-          ...routes.governance,
-          component: GovernanceReportPage,
-          props: stringParam("recordId"),
-          meta: { page: managerPaths.knowledge },
-        },
-      ],
-    },
     {
       path: routes.governanceKnowledge.path,
       meta: { service: true },

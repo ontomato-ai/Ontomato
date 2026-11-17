@@ -31,9 +31,31 @@ export function dashboardsPageFeature(address: string): ShellFeatureDeclaration 
   return { id: DASHBOARDS_PAGE_ID, label: "dashboards", icon: "dashboards", availability: "page", withConversation: true, address };
 }
 
+/** One governance record's report, opened beside the conversation that wrote it. */
+export const GOVERNANCE_REPORT_PAGE_ID = "governance-report";
+
+/**
+ * The report page beside the conversation. Its address is what this application's page parameter names, `label` its
+ * word in the column and the pane's title, and its own skill narrows this page's composer to the agents that carry it —
+ * the governance preset the platform's mapping names for `governance-report`, with the business knowledge menu code it
+ * is registered under.
+ */
+export function governanceReportPageFeature(address: string, label: string): ShellFeatureDeclaration {
+  return {
+    id: GOVERNANCE_REPORT_PAGE_ID,
+    label,
+    icon: "report",
+    availability: "page",
+    withConversation: true,
+    address,
+    pageSkill: { pageKey: "governance-report", permissionCode: "business-knowledge" },
+  };
+}
+
 export function workbenchFeatures(
   editionFeatures: readonly ShellFeatureDeclaration[],
   dashboards = dashboardsPageFeature(""),
+  governanceReport: ShellFeatureDeclaration | null = null,
 ): ShellFeatureDeclaration[] {
-  return [agentSettingsFeature, dashboards, ...editionFeatures];
+  return [agentSettingsFeature, dashboards, ...(governanceReport ? [governanceReport] : []), ...editionFeatures];
 }
