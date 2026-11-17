@@ -43,9 +43,10 @@ void candidates
   .then(({ agents: list, defaultAgentId }) => {
     agents.value = list.filter((agent) => agent.enabled);
     const offered = (id: string | null | undefined) => agents.value.some((agent) => agent.id === id);
-    const remembered = props.pageSkill ? undefined : counter.preferredAgentId.value;
+    const remembered = props.pageSkill ? null : counter.preferredAgentId.value;
     // The page's registered default (the platform's own agent when it registered none), else the remembered one, else the first.
-    chosen.value = offered(defaultAgentId) ? defaultAgentId! : offered(remembered) ? remembered : agents.value[0]?.id ?? null;
+    const initial = offered(defaultAgentId) ? defaultAgentId : offered(remembered) ? remembered : agents.value[0]?.id;
+    chosen.value = initial ?? null;
   })
   // The page's own configuration keeps its own words and the service's reason; anything else is the service's error.
   .catch((reason: unknown) => emit("error", candidatesFailureReason(reason, props.labels.pageAgentUnavailable)));
