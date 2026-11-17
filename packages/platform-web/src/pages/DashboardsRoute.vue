@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
-import { DashboardHome, provideDashboardSurface, useDashboardStore } from "@ontomato/workbench-ui/features/dashboard";
+import {
+  DashboardHome, useDashboardStore, type DashboardSurface,
+} from "@ontomato/workbench-ui/features/dashboard";
 import { PageComposer } from "@ontomato/agent-shell-ui";
 import AppPage from "./AppPage.vue";
 
@@ -28,23 +30,30 @@ const props = withDefaults(
   { paired: false, dashboardId: undefined, navigate: undefined },
 );
 
-if (props.paired) {
-  const shown = ref(props.dashboardId ?? "");
-  watch(() => props.dashboardId, (id) => (shown.value = id ?? ""));
-  provideDashboardSurface({
-    get dashboardId() {
-      return shown.value;
-    },
-    navigate(dashboardId: string | undefined) {
-      shown.value = dashboardId ?? "";
-      props.navigate?.(dashboardId ? { dashboardId } : {});
-    },
-  });
-}
-
 const { t } = useI18n();
 const route = useRoute();
 const store = useDashboardStore();
+
+/*
+ * The board this page shows is its own context, not the page load's: beside a conversation it is the conversation's page
+ * parameter, at its own address the address's query. The page tells the store which it is while it is mounted, so the
+ * store never keeps a surface from a page that has gone (the board stays correct across enlarging and collapsing).
+ */
+const shown = ref(props.dashboardId ?? "");
+watch(() => props.dashboardId, (id) => (shown.value = id ?? ""));
+const surface: DashboardSurface | null = props.paired
+  ? {
+      get dashboardId() {
+        return shown.value;
+      },
+      navigate(dashboardId: string | undefined) {
+        shown.value = dashboardId ?? "";
+        props.navigate?.(dashboardId ? { dashboardId } : {});
+      },
+    }
+  : null;
+store.bindSurface(surface);
+onBeforeUnmount(() => store.bindSurface(null));
 
 // The address names the board; without one the first board opens, as the page always did.
 const opened = store
