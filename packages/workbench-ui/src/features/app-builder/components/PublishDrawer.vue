@@ -3,7 +3,7 @@ import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { CircleAlert, ExternalLink, ShieldCheck, Table2 } from "lucide-vue-next";
+import { CircleAlert, ExternalLink, ShieldCheck } from "lucide-vue-next";
 import type { HostedRelease } from "@ontomato/contracts/workspaces";
 import { formatRelativeTime } from "../../../utils/relative-time";
 import { builderApi } from "../api";
@@ -11,6 +11,9 @@ import { errorText, shortCommit } from "../panel";
 import type { AppBuilderPlatform } from "../platform";
 import { applicationName, catalogDeclaration, newDeclaration, publishable, type Publication } from "../publication";
 import type { WorkspaceView } from "../workspace-view";
+import {ApplicationIconPicker,appIcon} from '@ontomato/platform-shell';
+import {recommendApplicationIcon} from '@ontomato/contracts/application-icons';
+import {apiPut} from '../../../utils/api';
 
 /**
  * Publishing the workspace as an application on the platform's rail, beside the page so the preview stays usable.
@@ -41,6 +44,10 @@ const commits = computed(() => props.view.commits.filter(publishable));
 const commitOf = (id: string) => props.view.commits.find((commit) => commit.id === id);
 const commit = ref<string | null>(null);
 const name = ref("");
+const icon=ref('app-window'),manualIcon=ref(false),savingIcon=ref(false);
+watch(name,value=>{if(!manualIcon.value&&!publication.application)icon.value=recommendApplicationIcon(value);});
+watch(()=>publication.application?.icon,value=>{if(value)icon.value=value;});
+async function saveIcon(){if(!publication.application)return;savingIcon.value=true;try{await apiPut(`/platform/applications/${encodeURIComponent(publication.application.id)}/icon`,{icon:icon.value});await catalog.refresh();}catch(error){ElMessage.error(errorText(error));}finally{savingIcon.value=false;}}
 // The newest commit until the reader picks another, and the next newest when the picked one is gone.
 watch(commits, (list) => {
   if (!list.some((item) => item.id === commit.value)) commit.value = list[0]?.id ?? null;
@@ -48,6 +55,7 @@ watch(commits, (list) => {
 watch(open, (value) => {
   if (!value) return;
   name.value = workspace.value.name;
+  manualIcon.value=false;icon.value=publication.application?.icon??recommendApplicationIcon(name.value);
   commit.value = commits.value[0]?.id ?? null;
   void publication.loadReleases();
 }, { immediate: true });
@@ -69,6 +77,7 @@ const canPublish = computed(() =>
 async function publish() {
   const app = publication.application;
   const declaration = app ? catalogDeclaration(app) : newDeclaration(name.value.trim());
+  declaration.icon=icon.value;
   const exported = new Set(publication.releases!.map((release) => release.releaseId));
   publishing.value = true;
   try {
@@ -132,7 +141,7 @@ async function rollback(release: HostedRelease) {
           <p class="help">{{ t("appBuilder.appNameHint") }}</p>
         </template>
         <div v-else class="app">
-          <span class="app-icon"><Table2 :size="18" aria-hidden="true" /></span>
+          <span class="app-icon"><component :is="appIcon(publication.application!.icon)" :size="18" aria-hidden="true" /></span>
           <span class="app-text">
             <strong>{{ appName }}</strong>
             <span class="hash">{{ publication.application!.id }}</span>
@@ -141,6 +150,10 @@ async function rollback(release: HostedRelease) {
             {{ t("appBuilder.openOnRail") }}
           </el-button>
         </div>
+        <template v-if="publication.status==='new'||publication.status==='published'">
+          <ApplicationIconPicker v-model="icon" :name="publication.application?appName:name" :locale="locale" :disabled="publishing||savingIcon" @update:model-value="manualIcon=true"/>
+          <el-button v-if="publication.application" :disabled="icon===publication.application.icon" :loading="savingIcon" @click="saveIcon">{{locale.startsWith('zh')?'保存应用图标':'Save application icon'}}</el-button>
+        </template>
       </section>
 
       <section v-if="permissions" class="section access">

@@ -49,7 +49,7 @@ public class ActionDao extends BaseDao {
 
 	private static final String TABLE_NAME = "action";
 
-	private static final String COLUMNS = "id, name, description, origin, function_id, code_segments, business_meaning, code_hash, explanation_version, status, class_names, domain_id, submission_criteria, target, create_timestamp, modify_timestamp, created_by, reviewed_by";
+	private static final String COLUMNS = "id, name, description, origin, function_id, code_segments, business_meaning, code_hash, explanation_version, status, class_names, domain_id, submission_criteria, target, create_timestamp, modify_timestamp, created_by, reviewed_by, approval_mode";
 
 	@PostConstruct
 	public void initIndex() {
@@ -78,6 +78,7 @@ public class ActionDao extends BaseDao {
 						+ "modify_timestamp BIGINT, "
 						+ "created_by VARCHAR(64), "
 						+ "reviewed_by VARCHAR(64), "
+						+ "approval_mode VARCHAR(16), "
 						+ "brief TEXT, "
 						+ "brief_vector vector"
 						+ ")");
@@ -86,11 +87,16 @@ public class ActionDao extends BaseDao {
 		jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS submission_criteria TEXT");
 		jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS created_by VARCHAR(64)");
 		jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS reviewed_by VARCHAR(64)");
+		jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS approval_mode VARCHAR(16)");
 		jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_" + TABLE_NAME + "_domain_id ON " + TABLE_NAME + "(domain_id)");
 	}
 
 	public void validateDefinition(Action action) {
 		io.ontomato.dataengine.service.ActionPreconditionService.requireBusinessConditions(action.getSubmissionCriteria());
+		String mode = action.getApprovalMode();
+		if (mode != null && !Action.APPROVAL_AUTO.equals(mode) && !Action.APPROVAL_HUMAN.equals(mode)
+				&& !Action.APPROVAL_TWO_KEYS.equals(mode))
+			throw new IllegalArgumentException("approvalMode must be auto, human or twoKeys");
 		if (action.getTarget() != null) action.getTarget().validate(action, admin.getJSONRule(action.getDomainId()));
 	}
 
@@ -123,7 +129,7 @@ public class ActionDao extends BaseDao {
 		retrievalGate.write(domainId, () -> {
 			PGvector pgVector = new PGvector(embeddingService.embedding(brief, domainId));
 			return jdbcTemplate.update(
-				"INSERT INTO " + TABLE_NAME + " (" + COLUMNS + ", brief, brief_vector) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::vector) "
+				"INSERT INTO " + TABLE_NAME + " (" + COLUMNS + ", brief, brief_vector) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::vector) "
 						+ "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, "
 						+ "origin = EXCLUDED.origin, function_id = EXCLUDED.function_id, code_segments = EXCLUDED.code_segments, business_meaning = EXCLUDED.business_meaning, code_hash = EXCLUDED.code_hash, explanation_version = EXCLUDED.explanation_version, "
 						+ "status = EXCLUDED.status, class_names = EXCLUDED.class_names, domain_id = EXCLUDED.domain_id, submission_criteria = EXCLUDED.submission_criteria, target = EXCLUDED.target, "
@@ -131,13 +137,15 @@ public class ActionDao extends BaseDao {
 						// created_by is deliberately absent: it records the first save and must survive later ones.
 						// reviewed_by keeps the stored value when this save carries no subject (background work).
 						+ "reviewed_by = COALESCE(EXCLUDED.reviewed_by, action.reviewed_by), "
+						// An update that omits approvalMode must not silently open the gate.
+						+ "approval_mode = COALESCE(EXCLUDED.approval_mode, action.approval_mode), "
 						+ "brief = EXCLUDED.brief, brief_vector = EXCLUDED.brief_vector",
 				action.getId(), action.getName(), action.getDescription(), action.getOrigin(),
 				function.getId(), JSON.toJSONString(action.getCodeSegments(), Feature.WriteMapNullValue), JSON.toJSONString(action.getBusinessMeaning(), Feature.WriteMapNullValue),
 				action.getCodeHash(), action.getExplanationVersion(),
 				action.getStatus(), classNamesStr, action.getDomainId(), JSON.toJSONString(action.getSubmissionCriteria(), Feature.WriteMapNullValue),
 				action.getTarget() == null ? null : JSON.toJSONString(action.getTarget()), action.getCreateTimestamp(), action.getModifyTimestamp(),
-				action.getCreatedBy(), action.getReviewedBy(), brief, pgVector);
+				action.getCreatedBy(), action.getReviewedBy(), action.getApprovalMode(), brief, pgVector);
 		});
 		return action;
 	}
@@ -351,6 +359,7 @@ public class ActionDao extends BaseDao {
 		action.setDomainId(rs.getString("domain_id"));
 		action.setCreatedBy(rs.getString("created_by"));
 		action.setReviewedBy(rs.getString("reviewed_by"));
+		action.setApprovalMode(rs.getString("approval_mode"));
 		action.setTarget(JSON.parseObject(rs.getString("target"), ActionTarget.class));
 		String submissionCriteria = rs.getString("submission_criteria");
 		action.setSubmissionCriteria(submissionCriteria == null ? null : JSONObject.parseObject(submissionCriteria));

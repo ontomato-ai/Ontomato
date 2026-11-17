@@ -222,7 +222,7 @@ async function deleteAuthorizedProduct(owner:ProductOwner,id:string,revision:num
 
 /** Migrate once under the same lock used for editing; legacy rows are retained solely for rollback. */
 export async function personalHome(owner: ProductOwner,credentials:AssistantCredentials={}) {
-  return withProductGrants(owner,async()=>{const home=await authorizedPersonalHome(owner,credentials);await synchronizeProductOntology(owner);return home;});
+  return withProductGrants(owner,async()=>{let home=await authorizedPersonalHome(owner,credentials);const legacy=await db().query(`SELECT id,revision FROM ${t('product_assets')} WHERE domain_id=$1 AND owner_id=$2 AND document->>'kind'='widget' AND document->'widget'->>'kind'='platform' AND id=ANY($3::text[])`,[owner.domainId,owner.userId,home.document.kind==='page'?home.document.children.map(child=>child.assetId):[]]);for(const row of legacy.rows){const {migratePlatformProjection}=await import('./platform-migration');await migratePlatformProjection(owner,credentials,row.id,row.revision);}home=await getProduct(owner,home.id);await synchronizeProductOntology(owner);return home;});
 }
 async function authorizedPersonalHome(owner:ProductOwner,credentials:AssistantCredentials){
   return transaction(async client => {
@@ -232,7 +232,7 @@ async function authorizedPersonalHome(owner:ProductOwner,credentials:AssistantCr
       const existing=await getProduct(owner,home.rows[0].asset_id,client);
       if(existing.document.kind!=='page')throw new Error('Home must be a page');
       if(existing.document.compositionVersion===2)return existing;
-      return materializeWorkspaceBlocks(client,owner,existing);
+       return materializeProductHome(client,owner,existing);
     }
     const legacy = await client.query(`SELECT value FROM ${t("user_preferences")} WHERE user_id=$1 AND key=$2`, [owner.userId, `personal-workspace:${owner.domainId}`]);
     const previousHome = await client.query(`SELECT dashboard_ids,favorites FROM ${t("platform_home_preferences")} WHERE domain_id=$1 AND user_id=$2`, [owner.domainId, owner.userId]);

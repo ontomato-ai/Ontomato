@@ -11,6 +11,7 @@ import {
   saveFavorites,
 } from "../../services/platform-home/service";
 import { context, wrap } from "../utils/agent-host";
+import {ensurePlatformAssets} from '../../services/product-assets/platform-assets';
 
 const router: ReturnType<typeof Router> = Router();
 const applicationId = z.string().min(1);
@@ -18,6 +19,7 @@ const applicationId = z.string().min(1);
 router.get(
   "/",
   wrap(async (req, res) => {
+    await ensurePlatformAssets(context(req).owner,context(req).credentials);
     res.json(await readHome(context(req).owner,context(req).credentials));
   }),
 );

@@ -25,6 +25,8 @@ public class AgentPrincipalService implements InitializingBean {
     public static final String ATTRIBUTE=AgentPrincipalService.class.getName();
     private final JdbcTemplate db;
     private final String signingKey;
+    @org.springframework.beans.factory.annotation.Autowired @org.springframework.context.annotation.Lazy private io.ontomato.dataengine.schedules.ScheduleIdentity identities;
+    @org.springframework.beans.factory.annotation.Autowired @org.springframework.context.annotation.Lazy private ProductGrantService grants;
     public AgentPrincipalService(JdbcTemplate db,@Value("${ONTOMATO_QUERY_SIGNING_KEY:}") String signingKey){this.db=db;this.signingKey=signingKey;}
     @Override public void afterPropertiesSet(){db.execute("""
         CREATE TABLE IF NOT EXISTS agent_principal(domain_id text NOT NULL,id text NOT NULL,name text NOT NULL,enabled boolean NOT NULL DEFAULT true,revision bigint NOT NULL DEFAULT 1,PRIMARY KEY(domain_id,id));
@@ -39,6 +41,30 @@ public class AgentPrincipalService implements InitializingBean {
         public boolean isEnable(){return true;}
     }
     public record Execution(Principal principal,long expiresAt) {}
+    public record UserExecution(Principal principal,User user,long expiresAt) {}
+    public static final String USER_ATTRIBUTE=ATTRIBUTE+".user";
+    public String issueUserScoped(String domain,String id,String userId,long expiresAt){
+        var principal=find(domain,id);var user=identities.creator(domain,userId);
+        if(principal==null||!userScoped(domain,id)||user==null||!user.isEnable()||!domain.equals(user.getDomainId())||!grants.allowedFor(domain,userId,id,"use"))throw denied("Agent use Grant required");
+        if(expiresAt<=System.currentTimeMillis()||expiresAt>System.currentTimeMillis()+3_600_000)throw new IllegalArgumentException("Agent execution expiry must be within one hour");
+        String body=Base64.getUrlEncoder().withoutPadding().encodeToString(JSON.toJSONBytes(Map.of("domainId",domain,"id",id,"userId",userId,"revision",principal.revision(),"expiresAt",expiresAt)));
+        return "ap2."+body+"."+sign("user-scoped\0"+body);
+    }
+    public UserExecution verifyUserScoped(String token){
+        try{
+            var parts=token.split("\\.");
+            if(parts.length!=3||!"ap2".equals(parts[0])||!MessageDigest.isEqual(sign("user-scoped\0"+parts[1]).getBytes(StandardCharsets.UTF_8),parts[2].getBytes(StandardCharsets.UTF_8)))throw denied("Invalid Agent execution credential");
+            var claims=JSON.parseObject(Base64.getUrlDecoder().decode(parts[1]));String domain=claims.getString("domainId"),id=claims.getString("id"),userId=claims.getString("userId");
+            var principal=find(domain,id);var user=identities.creator(domain,userId);long expiry=claims.getLongValue("expiresAt");
+            if(principal==null||principal.revision()!=claims.getLongValue("revision")||!userScoped(domain,id)||expiry<=System.currentTimeMillis()||user==null||!user.isEnable()||!domain.equals(user.getDomainId())||!grants.allowedFor(domain,userId,id,"use")||!grants.allowedFor(domain,userId,"default-agent-profile-"+id,"use"))throw denied("Agent execution expired or revoked");
+            return new UserExecution(principal,user,expiry);
+        }catch(ResponseStatusException failure){throw failure;}catch(Exception failure){throw denied("Invalid Agent execution credential");}
+    }
+    public static UserExecution currentUserExecution(){
+        var attributes=org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+        return attributes instanceof org.springframework.web.context.request.ServletRequestAttributes servlet?(UserExecution)servlet.getRequest().getAttribute(USER_ATTRIBUTE):null;
+    }
+    public static boolean userExecution(HttpServletRequest request){return request.getAttribute(USER_ATTRIBUTE) instanceof UserExecution;}
     public Principal find(String domain,String id){
         var rows=db.query("SELECT name,revision FROM agent_principal WHERE domain_id=? AND id=? AND enabled=true",(row,index)->new Principal(id,domain,row.getString(1),row.getLong(2)),domain,id);
         return rows.isEmpty()?null:rows.getFirst();

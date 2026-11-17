@@ -127,6 +127,7 @@ export default {
   nav: {
     actionManagement: "Actions",
     workflowManagement: "Workflows",
+    triggerManagement: "Triggers",
     capabilityMap: "Capability Map",
     dataBrowser: "Data Browser",
     functionDefinitions: "Functions",

@@ -2,12 +2,13 @@ import {beforeEach,expect,it,vi} from 'vitest';
 const mocks=vi.hoisted(()=>({get:vi.fn(),list:vi.fn(),save:vi.fn(),query:vi.fn(),active:vi.fn()}));
 vi.mock('../store',()=>({getProduct:mocks.get,listProducts:mocks.list,saveProduct:mocks.save,lockProducts:async()=>{}}));
 vi.mock('../releases',()=>({activeProductBundle:mocks.active}));
+vi.mock('../platform-assets',()=>({nativeAgentAsset:async()=>undefined,ensurePlatformAssets:async()=>{}}));
 vi.mock('../platform-objects',()=>({platformObjectProvider:()=>({})}));
 vi.mock('../../../infrastructure/postgres',()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
 vi.mock('../../../infrastructure/postgres-transaction',()=>({transaction:async(action:(client:{query:typeof mocks.query})=>unknown)=>action({query:mocks.query})}));
 import {migratePlatformProjection} from '../platform-migration';
 const owner={domainId:'domain',userId:'author'};
-beforeEach(()=>{vi.resetAllMocks();mocks.query.mockResolvedValue({rows:[]});});
+beforeEach(()=>{vi.resetAllMocks();mocks.query.mockResolvedValue({rows:[]});mocks.list.mockResolvedValue([]);});
 it('keeps a legacy task placement identity and replaces its closed source with a Definition projection',async()=>{
   mocks.get.mockResolvedValue({id:'task',revision:1,editable:true,name:'Tasks',description:'',visibility:'private',document:{kind:'widget',widget:{kind:'platform',source:'tasks',limit:7}}});
   await migratePlatformProjection(owner,{},'task',1);
@@ -17,6 +18,15 @@ it('does not invent an AgentProfile when migrating the legacy question panel',as
   mocks.get.mockResolvedValue({id:'ask',revision:1,editable:true,name:'Ask',description:'',visibility:'private',document:{kind:'widget',widget:{kind:'platform',source:'assistant'}}});
   await expect(migratePlatformProjection(owner,{},'ask',1)).rejects.toMatchObject({code:'PRODUCT_PROFILE_REQUIRED'});
   expect(mocks.save).not.toHaveBeenCalled();expect(mocks.query).not.toHaveBeenCalled();
+});
+it('replaces an old question panel with an existing native Profile without requiring a declarative release',async()=>{
+ mocks.get.mockImplementation(async(_owner,id)=>id==='ask'?{id:'ask',revision:1,editable:true,name:'Ask',description:'',visibility:'private',document:{kind:'widget',widget:{kind:'platform',source:'assistant'}}}:{id:'profile',document:{kind:'agent-profile',principalId:'agent'}});
+ mocks.list.mockResolvedValue([{id:'profile',document:{kind:'agent-profile',principalId:'agent'}}]);
+ const native=vi.spyOn(await import('../platform-assets'),'nativeAgentAsset').mockResolvedValue('agent' as never);
+ await migratePlatformProjection(owner,{},'ask',1);
+ expect(mocks.save).toHaveBeenCalledWith(owner,'ask',expect.objectContaining({document:{kind:'page',children:[{assetId:'profile',column:'main'}]}}),1,{},true);
+ expect(mocks.active).not.toHaveBeenCalled();
+ native.mockRestore();
 });
 it('extracts the original authors widget preferences without overwriting another principals overlay',async()=>{
   const {defaultPersonalWorkspace}=await import('@ontomato/contracts/personal-workspace');

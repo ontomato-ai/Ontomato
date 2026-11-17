@@ -4,15 +4,18 @@ import {useRouter} from 'vue-router';
 import {ElButton,ElMessageBox,vLoading} from 'element-plus';
 import {platformRoutes} from '@ontomato/platform-shell/routes';
 import {inject,ref,computed} from 'vue';
-import {AppWindow,ArrowUpRight} from 'lucide-vue-next';
+import {ArrowUpRight} from 'lucide-vue-next';
+import {appIcon} from '@ontomato/platform-shell';
 import {nodeApiRequest} from '@ontomato/workbench-ui';
 import {defaultPersonalWorkspace,personalWorkspaceSchema} from '@ontomato/contracts/personal-workspace';
 import {useI18n} from 'vue-i18n';
-import {openApplicationKey} from '../apps';
+import {openApplicationKey,platformApplicationsKey} from '../apps';
 const props=defineProps<{asset:ProductAsset;rows:Record<string,unknown>[];loading?:boolean;objectType:string}>();
 const router=useRouter();
 const {locale,t}=useI18n();
 const openApplication=inject(openApplicationKey,undefined);
+const applications=inject(platformApplicationsKey,undefined);
+function applicationIcon(id:unknown){return appIcon(applications?.value.find(app=>app.id===id)?.icon??'app-window');}
 const changed=ref<Record<string,{pinned:boolean;title:string}>>({}),error=ref(''),saving=ref(false);
 const order=ref<string[]>();
 const rows=computed(()=>order.value?[...props.rows].sort((a,b)=>{const rank=(id:unknown)=>{const index=order.value!.indexOf(String(id));return index<0?order.value!.length:index;};return rank(a.id)-rank(b.id);}):props.rows);
@@ -55,7 +58,7 @@ function open(row:Record<string,unknown>){
     <p v-if="error" role="alert">{{error}}</p>
     <div v-if="!loading&&!rows.length" class="collection-empty"><p>{{({ 'platform:FavoriteApplication':t('ontology.productEmptyFavoriteApplications'),'platform:Conversation':t('ontology.productEmptyConversations'),'platform:Task':t('ontology.productEmptyTasks'),'platform:Favorite':t('ontology.productEmptyFavorites'),'platform:RecentVisit':t('ontology.productEmptyRecent'),'platform:Dashboard':t('ontology.productEmptyDashboards')} as Record<string,string>)[objectType]??t('ontology.productEmptyContent')}}</p><el-button v-if="objectType==='platform:FavoriteApplication'" text @click="router.push('/applications')">{{t('ontology.productGoToGallery')}} <ArrowUpRight :size="14"/></el-button></div>
     <div :class="{'application-shortcuts':objectType==='platform:FavoriteApplication'}"><article v-for="row in rows" :key="String(row.id)">
-      <AppWindow v-if="objectType==='platform:FavoriteApplication'" :size="22" class="shortcut-icon"/>
+      <component :is="applicationIcon(row.id)" v-if="objectType==='platform:FavoriteApplication'" :size="22" class="shortcut-icon"/>
       <el-button text class="resource-title" :title="resourceTitle(row)" @click="open(row)">{{resourceTitle(row)}}</el-button>
       <template v-if="objectType==='platform:Task'">
         <span>{{row.pause?t('ontology.productTaskPaused'):row.activeRunId?t('ontology.productTaskRunning'):row.enabled?t('ontology.productTaskEnabled'):t('ontology.productTaskDisabled')}}</span>

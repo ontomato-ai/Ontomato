@@ -14,7 +14,7 @@ import { getQueryTimeoutMs } from "../../config/query-settings";
 import {profileForSession} from '../product-assets/agent-profile';
 import {profileRuntimeTools} from '../product-assets/runtime-tools';
 import {callbackCredential} from '../agent-runtime/callback-credential';
-import {agentPrincipalCredentials} from '../product-assets/agent-principal';
+import {agentPrincipalCredentials,userScopedAgentCredentials} from '../product-assets/agent-principal';
 import {environment} from '../../config/environment';
 import {nativeProfileId} from '../product-assets/platform-assets';
 import {requireProductUse} from '../product-assets/grants';
@@ -32,6 +32,7 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
   const platformProfile=await nativeProfileId(owner.domainId,a.id);
   if(platformProfile){await requireProductUse(owner,platformProfile);await requireProductUse(owner,a.id);const checked=await backendPost('platform-agent-identity',config.dataQuery.baseUrl+'/agent-principals/check-user-scoped',{id:a.id},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});if(JSON.parse(checked.text).allowed!==true)throw new HttpError(403,'Platform Agent identity is disabled or unavailable','AGENT_PRINCIPAL_FORBIDDEN');}
   const profile=await profileForSession(owner,credentials,session.id,session.agent_id);
+  if(platformProfile&&!credentials.token?.startsWith('ap2.'))credentials=await userScopedAgentCredentials(owner.domainId,a.id,owner.userId,credentials.locale);
   if(profile)await agentPrincipalCredentials(owner.domainId,profile.principalId,credentials.locale,owner.userId);
   const skills = profile?[]:await prepareAssistantSkills(owner.domainId, a.skills);
   const skillEnvironment = profile?{values:{ONTOMATO_WORKBENCH_URL:environment.agentRuntime().callbackUrl.replace(/\/$/,'')},secrets:{}}:userSkillEnvironment(credentials);

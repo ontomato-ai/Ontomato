@@ -256,12 +256,17 @@ export const assistantService = {
       if (!a.class_names.length) throw new HttpError(403,"No authorized classes in the delegated scope","FORBIDDEN");
     }
     if (isAppBuilderKind(a.kind)) await assertAppBuilderAccess(credentials);
-    const profile = isAppBuilderKind(a.kind) ? null : await agentProfileForPrincipal(owner,credentials,a.id);
+    const {nativeProfileId}=await import('../product-assets/platform-assets');
+    const native=await nativeProfileId(owner.domainId,a.id);
+    if(native){const {requireProductUse}=await import('../product-assets/grants');await requireProductUse(owner,native);await requireProductUse(owner,a.id);if(!credentials.token?.startsWith('ap2.')){const {userScopedAgentCredentials}=await import('../product-assets/agent-principal');credentials=await userScopedAgentCredentials(owner.domainId,a.id,owner.userId,credentials.locale);}}
+    const profile = isAppBuilderKind(a.kind)||native ? null : await agentProfileForPrincipal(owner,credentials,a.id);
     const ontologyContext = isAppBuilderKind(a.kind) || profile ? null : await assistantOntologyContext(a,credentials);
     return { agent: a,ontologyContext };
   },
   async send(sessionId: string, id: string, input: AgentHostSendRequest, owner: AssistantOwner, credentials: AssistantCredentials) {
     const session = await assistantStore.session(sessionId, owner), a = await assistantStore.agent(session.agent_id, owner);
+    const {nativeProfileId}=await import('../product-assets/platform-assets');const native=await nativeProfileId(owner.domainId,a.id);
+    if(native){const {requireProductUse}=await import('../product-assets/grants');await requireProductUse(owner,native);await requireProductUse(owner,a.id);const {userScopedAgentCredentials}=await import('../product-assets/agent-principal');credentials=await userScopedAgentCredentials(owner.domainId,a.id,owner.userId,credentials.locale);}
     const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
     const actor = await openAgentCaller(owner, credentials), agent = { providerId: "workbench", agentId: session.agent_id };
     await client.request(`/v1/channel/sessions/${sessionId}/bind`, "POST", { agent, actor });

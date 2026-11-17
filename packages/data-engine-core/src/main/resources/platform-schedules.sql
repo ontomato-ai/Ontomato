@@ -27,3 +27,7 @@ CREATE TABLE IF NOT EXISTS platform_task_credential (
  domain_id text NOT NULL, creator_id text NOT NULL, sealed_key text, valid boolean NOT NULL,
  PRIMARY KEY(domain_id,creator_id)
 );
+
+-- A task migrated to a Trigger keeps its history but stops being scheduled: the trigger owns the firing now, and
+-- leaving the row armed would fire the same moment twice.
+ALTER TABLE platform_task ADD COLUMN IF NOT EXISTS migrated_to_trigger VARCHAR(64);

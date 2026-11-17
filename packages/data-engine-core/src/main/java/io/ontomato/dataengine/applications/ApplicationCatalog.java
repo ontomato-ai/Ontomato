@@ -53,6 +53,13 @@ public class ApplicationCatalog {
         var app = require(id);
         return inDomain(app,user) && access.canEnter(app,user);
     }
+    public boolean canReconcileProducts(User user){return access.administrator(user)&&canEnter("app-builder",user);}
+    public void updateIcon(String id,String icon,User user){
+        var app=require(id);
+        if(app.getString("domainId")==null||!inDomain(app,user)||!access.canMaintain(app,user))throw denied();
+        if(icon==null||!icon.matches("[a-z][a-z0-9-]{0,63}"))throw bad("Invalid application icon");
+        db.update("UPDATE sys_application SET icon=?,updated_at=now() WHERE id=?",icon,id);
+    }
     public JSONObject view(JSONObject app) {
         var result = new JSONObject(app);
         var entry = new JSONObject(app.getJSONObject("entry"));
