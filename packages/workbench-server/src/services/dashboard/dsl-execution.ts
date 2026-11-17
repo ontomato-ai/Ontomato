@@ -13,6 +13,7 @@ import { backendPost, BackendResponseError } from "../../utils/backend-client";
 import { buildAbcProgramQueryPayload, normalizeAbcProgram } from "./abc-program";
 export const ABC_PROGRAM_DASHBOARD_TIMEOUT_MS = 300_000;
 export function wrapDashboardBackendError(error: unknown, messageKey: string) {
+  if (error instanceof BackendResponseError && error.status < 500) return error;
   if (!(error instanceof BackendResponseError || error instanceof SyntaxError)) return error;
   return new Error(
     t(messageKey, {
