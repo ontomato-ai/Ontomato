@@ -12,8 +12,8 @@ vi.mock('../../product-assets/agent-principal',()=>({agentPrincipalCredentials:m
 vi.mock('../skills',()=>({prepareAssistantSkills:mocks.skills}));
 vi.mock('../context',()=>({assistantOntologyContext:vi.fn()}));
 vi.mock('../store',()=>({assistantStore:{turns:async()=>[]}}));
-vi.mock('../../../infrastructure/agent-runtime/client',()=>({RuntimeClient:class{session=async()=>({messages:[]});}}));
-vi.mock('../../../platform/agent-runtime/runtime',()=>({runDefinition:(_prompt:string,_model:unknown,skills:unknown,_locale:unknown,externalMcp:unknown)=>({skills,externalMcp}),userSkillEnvironment:mocks.environment}));
+vi.mock('../../../infrastructure/agent-runtime/client',()=>({RuntimeClient:class{session=async()=>({messages:[{id:'input',messageSeq:1,message:{role:'user',content:'Question',timestamp:1}}]});}}));
+vi.mock('../../../platform/agent-runtime/runtime',()=>({messageText:(message:{content:string})=>message.content,runDefinition:(_prompt:string,_model:unknown,skills:unknown,_locale:unknown,externalMcp:unknown)=>({skills,externalMcp}),userSkillEnvironment:mocks.environment}));
 vi.mock('../ontology-retrieval',()=>({OntologyRetrievalClient:class{open=mocks.open;}}));
 vi.mock('../../agent-runtime/callback-credential',()=>({callbackCredential:mocks.callback}));
 import {prepareAnalystRun,type AssistantPreparation} from '../prepare';
@@ -30,7 +30,7 @@ it('limits a Profile run to its projection tools without passing human business 
   expect(mocks.environment).not.toHaveBeenCalled();expect(mocks.skills).not.toHaveBeenCalled();expect(mocks.open).not.toHaveBeenCalled();
   expect(JSON.stringify(run)).not.toContain('human-secret');
 });
-function nativeRequest(){return {a:{id:'agent',skills:[{name:'analyst'}],enabled_mcp_service_ids:['external'],model_selection:{modelId:null}},session:{id:'session',agent_id:'agent'},turn:{id:'run',created_at:new Date(),retrieval_scope_id:'scope',class_names:[]},message:'Question',owner:{domainId:'domain',userId:'human'},credentials:{token:'human-secret',locale:'en'}} as unknown as AssistantPreparation;}
+function nativeRequest(){return {a:{id:'agent',skills:[{name:'analyst'}],enabled_mcp_service_ids:['external'],model_selection:{modelId:null}},session:{id:'session',agent_id:'agent'},turn:{id:'run',created_at:new Date(),retrieval_scope_id:'scope',class_names:[]},message:'Question',inputId:'input',input:{role:'user',content:'Question',timestamp:1},ontologyContext:null,owner:{domainId:'domain',userId:'human'},credentials:{token:'human-secret',locale:'en'}} as unknown as AssistantPreparation;}
 it('preserves native tools and current-user data credentials after identity authorization',async()=>{
  mocks.native.mockResolvedValue('native-profile');mocks.check.mockResolvedValue({text:JSON.stringify({allowed:true})});
  mocks.skills.mockResolvedValue([{name:'analyst'}]);mocks.environment.mockReturnValue({values:{},secrets:{tk:'human-secret'}});
