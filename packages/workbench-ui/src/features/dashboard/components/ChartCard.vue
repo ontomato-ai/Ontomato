@@ -50,6 +50,7 @@
           :key="drawnFile.name"
           :file="drawnFile.content"
           :metric="output"
+          height="100%"
           :empty="t('common.noData')"
         />
         <div v-if="state === 'empty'" class="chart-mask">
@@ -382,6 +383,16 @@ onBeforeUnmount(() => {
 .chart-wrapper__canvas {
   position: absolute;
   inset: 0;
+}
+
+/*
+ * The card's chart fills the room the card gives it: the platform's chart takes a height, and here that height is the
+ * card's own, not the panel default it draws a page-sized chart with. The chart's own padding comes out of that height,
+ * so its canvas ends where the card's room ends.
+ */
+.chart-wrapper__canvas :deep(.metric-chart) {
+  height: 100%;
+  box-sizing: border-box;
 }
 
 .chart-wrapper--transparent-loading :deep(.el-loading-mask) {
