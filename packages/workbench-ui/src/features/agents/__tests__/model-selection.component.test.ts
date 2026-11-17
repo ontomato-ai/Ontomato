@@ -41,6 +41,7 @@ function agent(modelId: string | null): AssistantAgentDefinition {
     description: "",
     icon: null,
     enabled: true,
+    executionUserId: null,
     systemPrompt: "Be brief.",
     modelSelection: { modelId },
     skills: [],

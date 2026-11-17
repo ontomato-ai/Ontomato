@@ -10,7 +10,7 @@ async function internalRequest(path: string, body: object, credentials: Assistan
     ...credentials,
     headers: { ...buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey),
       "X-Ontomato-Query-Service-Token": environment.agentRuntime().queryServiceToken },
-    retries: 0,
+    retries: 1,
   });
 }
 export async function validateExecutionSetting(owner: AssistantOwner, oldExecutionUserId: string | null,

@@ -36,7 +36,7 @@ const query = { pageKey: "governance-report", permissionCode: "business-knowledg
 const ids = ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222", "33333333-3333-4333-8333-333333333333", "44444444-4444-4444-8444-444444444444"];
 function definition(index: number, kind: string, skills: RuntimeSkillRef[] = [report, page]): AgentRow {
   return { id: ids[index], domain_id: "domain", kind, name: kind, description: "", icon: null, enabled: true,
-    system_prompt: "private prompt", model_selection: { modelId: null }, skills, class_names: [], enabled_mcp_service_ids: [], sort_order: index, execution_user_id: null };
+    execution_user_id: null, system_prompt: "private prompt", model_selection: { modelId: null }, skills, class_names: [], enabled_mcp_service_ids: [], sort_order: index };
 }
 function projection(allowed = true): PageSkillsProjection {
   return { pageSkills: allowed ? [{ permissionCode: "business-knowledge", skill: page }] : [], registeredSkills: [page, dashboard] };

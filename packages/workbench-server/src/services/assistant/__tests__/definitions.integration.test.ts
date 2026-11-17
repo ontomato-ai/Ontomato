@@ -3,15 +3,17 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { assistantAgentInputSchema } from "@ontomato/contracts/assistant-chat";
 
-const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "" }));
+const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", setting: vi.fn(), prepare: vi.fn() }));
 vi.mock("../../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
 }));
-vi.mock("../../../infrastructure/agent-runtime/client", () => ({ RuntimeClient: class { async modelOptions() { return { models: [{ name: "configured", displayName: "Configured" }], defaultModelId: "configured" }; } } }));
+vi.mock("../../../infrastructure/agent-runtime/client", () => ({ RuntimeClient: class { async modelOptions() { return { models: [{ ref: "test/configured", type: "chat", displayName: "Configured" }], defaultModelId: "test/configured" }; } } }));
+vi.mock("../execution-setting", () => ({ validateExecutionSetting: state.setting, prepareExecutionSetting: state.prepare }));
 vi.mock("../skills", () => ({ validateAssistantSkills: vi.fn().mockResolvedValue([]) }));
 vi.mock("../../skills/operations", () => ({ withDomainSkills: async (_domain: string, work: () => Promise<unknown>) => work() }));
-import { createAgentDefinition, saveAgentDefinition } from "../definitions";
+import { HttpError } from "../../../utils/errors";
+import { createAgentDefinition, saveAgentDefinition, validateAgentDefinition } from "../definitions";
 import { readDiagnosisModel, saveDiagnosisModel } from "../../ops-diagnosis/model-settings";
 
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
@@ -27,8 +29,9 @@ describe("agent creation on PostgreSQL", () => {
     await state.pool.query(`CREATE TABLE "${state.schema}".assistant_agents (
       id uuid PRIMARY KEY, domain_id text, kind text, name text, description text, enabled boolean,
       system_prompt text, model_selection jsonb, skills jsonb, icon text, class_names jsonb,
-      enabled_mcp_service_ids jsonb, sort_order integer)`);
-    await state.pool.query(`CREATE TABLE "${state.schema}".ops_diagnosis_settings (domain_id text PRIMARY KEY, model_selection jsonb NOT NULL)`);
+      enabled_mcp_service_ids jsonb, sort_order integer, execution_user_id text, model_reference_migrated boolean)`);
+    await state.pool.query(`CREATE TABLE "${state.schema}".product_native_agent_bindings (domain_id text, agent_id text, asset_id text)`);
+    await state.pool.query(`CREATE TABLE "${state.schema}".ops_diagnosis_settings (domain_id text PRIMARY KEY, model_selection jsonb NOT NULL, model_reference_migrated boolean)`);
   });
   afterAll(async () => {
     if (state.pool) {
@@ -48,19 +51,48 @@ describe("agent creation on PostgreSQL", () => {
     const stored = await state.pool!.query(`SELECT kind FROM "${state.schema}".assistant_agents WHERE id=$1`, [id]);
     expect(stored.rows[0].kind).toBe(id);
   });
+  it("defaults execution to self and preserves a selected user on an omitted update", async () => {
+    const id = randomUUID(), owner = { userId: "owner", domainId: "execution" };
+    const input = assistantAgentInputSchema.parse({ name: "Execution", description: "", icon: null,
+      enabled: true, systemPrompt: "Prompt", skills: [] });
+    expect((await createAgentDefinition(id, input, owner, {})).executionUserId).toBeNull();
+    expect((await saveAgentDefinition(id, { ...input, executionUserId: "target" }, owner, {})).executionUserId).toBe("target");
+    expect((await saveAgentDefinition(id, { ...input, name: "Updated" }, owner, {})).executionUserId).toBe("target");
+  });
+  it("rejects unauthorized execution changes before either the definition or Key changes", async () => {
+    const id = randomUUID(), owner = { userId: "operator", domainId: "denied" };
+    const input = assistantAgentInputSchema.parse({ name: "Protected", description: "", icon: null,
+      enabled: true, systemPrompt: "Prompt", skills: [], executionUserId: "selected" });
+    await createAgentDefinition(id, input, owner, { token: "original" });
+    const before = (await state.pool!.query(`SELECT * FROM "${state.schema}".assistant_agents WHERE id=$1`, [id])).rows[0];
+    state.prepare.mockClear();
+    state.setting.mockImplementation(async (_owner, oldId, newId) => {
+      if (oldId !== newId) throw new HttpError(403, "Denied", "FORBIDDEN");
+    });
+    for (const executionUserId of [null, "other"]) {
+      await expect(saveAgentDefinition(id, { ...input, executionUserId }, owner, { token: "original" }))
+        .rejects.toMatchObject({ status: 403 });
+    }
+    expect((await state.pool!.query(`SELECT * FROM "${state.schema}".assistant_agents WHERE id=$1`, [id])).rows[0]).toEqual(before);
+    expect(state.prepare).not.toHaveBeenCalled();
+    const { executionUserId: _omitted, ...otherFields } = input;
+    await validateAgentDefinition({ target: { id }, form: otherFields }, owner, { token: "original" });
+    expect(state.prepare).not.toHaveBeenCalled();
+    state.setting.mockReset();
+  });
   it("persists selection, accepts default and rejects a missing reference before writing", async () => {
     const id = randomUUID(), owner = { userId: "owner", domainId: "selection" };
-    const input = assistantAgentInputSchema.parse({ name: "Selected", description: "", icon: null, enabled: true, systemPrompt: "Test", skills: [], modelSelection: { modelId: "configured" } });
-    expect((await createAgentDefinition(id, input, owner, {})).modelSelection).toEqual({ modelId: "configured" });
-    await expect(saveAgentDefinition(id, { ...input, modelSelection: { modelId: "missing" } }, owner, {})).rejects.toMatchObject({ status: 400 });
+    const input = assistantAgentInputSchema.parse({ name: "Selected", description: "", icon: null, enabled: true, systemPrompt: "Test", skills: [], modelSelection: { modelId: "test/configured" } });
+    expect((await createAgentDefinition(id, input, owner, {})).modelSelection).toEqual({ modelId: "test/configured" });
+    await expect(saveAgentDefinition(id, { ...input, modelSelection: { modelId: "test/missing" } }, owner, {})).rejects.toMatchObject({ status: 400 });
     expect((await saveAgentDefinition(id, { ...input, modelSelection: { modelId: null } }, owner, {})).modelSelection).toEqual({ modelId: null });
   });
   it("keeps diagnosis selection domain-owned and validates changes", async () => {
     expect(await readDiagnosisModel("diagnosis-a")).toEqual({ modelSelection: { modelId: null } });
-    await saveDiagnosisModel("diagnosis-a", { modelId: "configured" });
-    expect(await readDiagnosisModel("diagnosis-a")).toEqual({ modelSelection: { modelId: "configured" } });
+    await saveDiagnosisModel("diagnosis-a", { modelId: "test/configured" });
+    expect(await readDiagnosisModel("diagnosis-a")).toEqual({ modelSelection: { modelId: "test/configured" } });
     expect(await readDiagnosisModel("diagnosis-b")).toEqual({ modelSelection: { modelId: null } });
-    await expect(saveDiagnosisModel("diagnosis-a", { modelId: "missing" })).rejects.toMatchObject({ status: 400 });
+    await expect(saveDiagnosisModel("diagnosis-a", { modelId: "test/missing" })).rejects.toMatchObject({ status: 400 });
   });
   it("replays the same definition and refuses the same id from another domain", async () => {
     const id = randomUUID();

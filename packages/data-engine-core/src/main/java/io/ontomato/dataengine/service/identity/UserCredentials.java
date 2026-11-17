@@ -1,6 +1,5 @@
 package io.ontomato.dataengine.service.identity;
 
-import io.ontomato.dataengine.schedules.ScheduleException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import io.ontomato.dataengine.core.bean.User;
@@ -71,7 +70,7 @@ public class UserCredentials {
         StandardCharsets.UTF_8);
   }
 
-  void lockOwner(String domain, String owner) {
+  public void lockOwner(String domain, String owner) {
     db
         .query(
             "SELECT pg_advisory_xact_lock(hashtextextended(?,0))", r -> {}, domain + "/" + owner);
@@ -90,7 +89,11 @@ public class UserCredentials {
     if (states.contains(true) || (onlyRenew && (states.isEmpty() || !identity.interactiveLogin())))
       return;
     if (!identity.interactiveLogin())
-      throw new ScheduleException(403, "INTERACTIVE_LOGIN_REQUIRED", "A login session is required");
+      throw new io.ontomato.dataengine.service.agent.AgentHttpException(403, "INTERACTIVE_LOGIN_REQUIRED", "A login session is required");
+    issueAndStore(user);
+  }
+
+  private void issueAndStore(User user) {
     var sealed = seal(identity.issueKey(user), secret);
     db
         .update(
@@ -103,7 +106,7 @@ ON CONFLICT(domain_id,creator_id) DO UPDATE SET valid=true,sealed_key=EXCLUDED.s
   }
 
   /** An explicit administrator save may prepare a missing key; reads never renew one. */
-  @Transactional
+  @Transactional(noRollbackFor = Invalid.class)
   public void prepareForExecutionSetting(User user) {
     lockOwner(user.getDomainId(), user.getId());
     var states = db.queryForList(
@@ -113,11 +116,7 @@ ON CONFLICT(domain_id,creator_id) DO UPDATE SET valid=true,sealed_key=EXCLUDED.s
       forOwner(user.getDomainId(), user.getId());
       return;
     }
-    var sealed = seal(identity.issueKey(user), secret);
-    db.update("""
-        INSERT INTO platform_task_credential VALUES(?,?,?,true)
-        ON CONFLICT(domain_id,creator_id) DO UPDATE SET valid=true,sealed_key=EXCLUDED.sealed_key
-        """, user.getDomainId(), user.getId(), sealed);
+    issueAndStore(user);
   }
 
   public static class Invalid extends io.ontomato.dataengine.service.agent.AgentHttpException {
