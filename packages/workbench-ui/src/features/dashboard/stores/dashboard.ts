@@ -1,4 +1,4 @@
-import { computed, ref } from "vue";
+import { computed, ref, shallowRef } from "vue";
 import { defineStore } from "pinia";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
@@ -10,17 +10,29 @@ import {
 } from "../api";
 import type { DashboardSidebarItem } from "../../workbench";
 import { t } from "../../../i18n";
+import type { DashboardSurface } from "../dashboard-surface";
 
 
 export const useDashboardStore = defineStore("dashboard", () => {
   const route = useRoute();
   const router = useRouter();
+  /*
+   * Where the dashboard page is mounted: its own application at its address, or the page beside a conversation. This is
+   * a singleton of the page load, so it holds no mount context of its own: the page component that draws it sets the
+   * surface it is mounted with and clears it when it goes, and the store reads the board and its navigation from that.
+   */
+  const surface = shallowRef<DashboardSurface | null>(null);
+
+  function bindSurface(next: DashboardSurface | null) {
+    surface.value = next;
+  }
   const dashboardItems = ref<DashboardSidebarItem[]>([]);
   const loadingDashboards = ref(false);
   const editingDashboardId = ref("");
   const editingDashboardName = ref("");
 
   const currentDashboardId = computed(() => {
+    if (surface.value) return surface.value.dashboardId;
     const raw = route.query.dashboardId;
     return typeof raw === "string"
       ? raw.trim()
@@ -40,6 +52,10 @@ export const useDashboardStore = defineStore("dashboard", () => {
 
   function selectDashboard(dashboardId?: string) {
     const id = String(dashboardId || "").trim();
+    if (surface.value) {
+      surface.value.navigate(id || undefined);
+      return Promise.resolve();
+    }
     return updateRoute({ dashboardId: id || undefined });
   }
 
@@ -158,6 +174,7 @@ export const useDashboardStore = defineStore("dashboard", () => {
   }
 
   return {
+    bindSurface,
     currentDashboardId,
     isDashboardView,
     dashboardItems,

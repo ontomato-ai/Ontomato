@@ -63,7 +63,7 @@ it("projects and admits the same skills, and rereads revocation on the next requ
     current = projection(allowed);
     const directory = await listAssistantAgents(owner, credentials);
     for (const row of rows) {
-      const admitted = await prepareAssistantSkills(owner.domainId, row, credentials);
+      const admitted = (await prepareAssistantSkills(owner.domainId, row, credentials)).skills;
       expect(directory.agents.find(a => a.id === row.id)?.effectiveSkills).toEqual(admitted);
       expect(admitted.some(skill => skill.name === page.name)).toBe(allowed);
     }

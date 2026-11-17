@@ -90,7 +90,8 @@ export async function validateAssistantSkills(domainId: string, refs: readonly R
 /** The caller holds the domain operation boundary until runtime admission finishes. */
 export async function prepareAssistantSkills(domainId: string, agent: { kind: string; skills: readonly RuntimeSkillRef[] }, credentials: AssistantCredentials) {
   const projection = await readPageSkills(credentials);
-  const selected = await validateAssistantSkills(domainId, effectiveAssistantSkills(agent, projection), credentials, projection);
+  const effective = effectiveAssistantSkills(agent, projection);
+  const selected = await validateAssistantSkills(domainId, effective, credentials, projection);
   const registry = await skillRegistryManager.forDomain(domainId);
   for (const ref of selected) {
     if (ref.namespace.kind !== "domain") continue;
@@ -98,5 +99,7 @@ export async function prepareAssistantSkills(domainId: string, agent: { kind: st
     if (!source || source.isPublic) throw new HttpError(404, `Domain skill not found: ${ref.name}`, "SKILL_NOT_FOUND");
     await publishSkill(source.path, ref, domainId);
   }
-  return selected;
+  // A change this run may make is covered by a page skill only when the run itself loaded one.
+  const pageSkills = new Set(projection.registeredSkills.map(runtimeSkillKey));
+  return { skills: selected, pageDrafts: effective.some((ref) => pageSkills.has(runtimeSkillKey(ref))) };
 }

@@ -53,7 +53,6 @@ function workspaceCommand(workspace: Workspace, command: "rename" | "delete") {
 <template>
   <div class="builder-column">
     <div class="column-head">{{ t("appBuilder.title") }}</div>
-    <slot name="agent"/>
     <button type="button" class="nav-item primary" @click="emit('startConversation')">
       <SquarePen :size="16" aria-hidden="true" />
       <span class="nav-label">{{ t("appBuilder.startConversation") }}</span>

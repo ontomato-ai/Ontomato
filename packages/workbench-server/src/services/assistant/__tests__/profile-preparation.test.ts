@@ -33,7 +33,7 @@ it('limits a Profile run to its projection tools without passing human business 
 function nativeRequest(){return {a:{id:'agent',skills:[{name:'analyst'}],enabled_mcp_service_ids:['external'],model_selection:{modelId:null}},session:{id:'session',agent_id:'agent'},turn:{id:'run',created_at:new Date(),retrieval_scope_id:'scope',class_names:[]},message:'Question',inputId:'input',input:{role:'user',content:'Question',timestamp:1},ontologyContext:null,owner:{domainId:'domain',userId:'human'},credentials:{token:'human-secret',locale:'en'}} as unknown as AssistantPreparation;}
 it('preserves native tools while exchanging human credentials for user-scoped Agent authority',async()=>{
  mocks.native.mockResolvedValue('native-profile');mocks.check.mockResolvedValue({text:JSON.stringify({allowed:true})});
- mocks.scoped.mockResolvedValue({token:'ap2.scoped',locale:'en'});mocks.skills.mockResolvedValue([{name:'analyst'}]);mocks.environment.mockImplementation(credentials=>({values:{},secrets:{tk:credentials.token}}));
+ mocks.scoped.mockResolvedValue({token:'ap2.scoped',locale:'en'});mocks.skills.mockResolvedValue({skills:[{name:'analyst'}],pageDrafts:false});mocks.environment.mockImplementation(credentials=>({values:{},secrets:{tk:credentials.token}}));
  const run=await prepareAnalystRun(nativeRequest());
  expect(run.definition.skills).toEqual([{name:'analyst'}]);expect(run.definition.externalMcp).toEqual([{id:'external'}]);
  expect(run.environment.secrets).toEqual({tk:'ap2.scoped'});expect(run.definition.toolSurface).toBeUndefined();

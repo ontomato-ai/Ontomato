@@ -5,11 +5,11 @@ import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   AgentShell,
-  AgentPicker,
   ShellColumn,
   useAgentNav,
   useSessionRunFeed,
   type AgentHostAgent,
+  type PageContext,
   type ShellLabels,
   type ShellRunChange,
   type ShellWorkbenchDeclaration,
@@ -227,16 +227,21 @@ const contextPage = computed(() => {
   if (commit) return `${label} · ${shortCommit(commit.id)} ${commit.message}`;
   return id ? `${label} · ${shortCommit(id)}` : label;
 });
-/** The object selected in the preview's app, while the preview is the open view. */
-const contextObject = computed(() => {
+/**
+ * The page the builder shows and what is selected in it: the open tab as the message names it, and the object the preview
+ * app reports, which rides on every message while the preview is open.
+ */
+const pageContext = computed<PageContext>(() => {
   const selection = tab.value === "preview" ? previewContext.value?.selection : null;
-  return selection ? selectedObject(selection, t) : null;
+  return {
+    pageKey: "app-builder",
+    url: route.fullPath,
+    label: contextPage.value,
+    selection: selection
+      ? [{ kind: "object", id: selection.primaryKey, label: selectedObject(selection, t) }]
+      : [],
+  };
 });
-const pageContext = computed(() =>
-  contextObject.value
-    ? t("appBuilder.contextSelection", { page: contextPage.value, object: contextObject.value })
-    : t("appBuilder.context", { page: contextPage.value }),
-);
 const tabIcon = computed(() => PANEL_TABS.find((item) => item.id === tab.value)!.icon);
 
 const labels = computed<ShellLabels>(() => ({
@@ -383,7 +388,7 @@ const columnEvents = {
     @error="ElMessage.error($event)"
   >
     <template #column>
-      <WorkspaceColumn v-bind="column" v-on="columnEvents"><template #agent><AgentPicker v-if="nav.agents.value.length>1" :agents="nav.agents.value" :agent-id="agentId" :label="labels.agent" @select="agentId=$event;sessionId=null"/></template></WorkspaceColumn>
+      <WorkspaceColumn v-bind="column" v-on="columnEvents" />
     </template>
     <template #page-header>
       <PanelHeader
@@ -419,9 +424,9 @@ const columnEvents = {
         <ComposerContext
           :page-open="pageOpen"
           :inline="inline"
-          :page="contextPage"
+          :page="pageContext.label"
           :icon="tabIcon"
-          :selection="contextObject"
+          :selection="pageContext.selection[0]?.label ?? null"
           :busy="busy"
           @open-session="openConversation(workspaceId!, $event)"
         />
