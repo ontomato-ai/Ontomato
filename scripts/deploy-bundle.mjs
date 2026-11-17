@@ -61,14 +61,14 @@ export function parseBundleOptions(argv) {
 }
 
 // Product entries own their image list and validation; this module only transports and packs it.
-export function buildBundle(options, { name, deployDir, installDir, images, validateImages }) {
+export function buildBundle(options, { name, deployDir, installDir, images, validateImages, imageFlags = ["--workbench", "--data-engine", "--agent-runtime", "--gateway", "--postgres"] }) {
   const arch = options["--arch"];
   const version = options["--version"];
   const tools = resolve(options["--tool-bundle"]);
   const mirror = join(tools, "mirror.py");
   execute("python3", [mirror, "tools-verify", "--bundle", tools, "--arch", arch]);
   const imageArgs = (refs) => refs.flatMap((ref, i) => [
-    ["--workbench", "--data-engine", "--agent-runtime", "--gateway", "--postgres"][i], ref,
+    imageFlags[i], ref,
   ]);
   const resolved = JSON.parse(output("python3", [mirror, "resolve", "--arch", arch, ...imageArgs(images)]));
   validateImages(resolved);
