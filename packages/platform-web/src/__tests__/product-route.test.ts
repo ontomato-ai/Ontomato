@@ -1,6 +1,7 @@
 import {afterEach,expect,it,vi} from 'vitest';
 import {mount,flushPromises,type VueWrapper} from '@vue/test-utils';
 import {createRouter,createMemoryHistory} from 'vue-router';
+import {createI18n} from 'vue-i18n';
 import {productAssetSchema} from '@ontomato/contracts/product-assets';
 const mocks=vi.hoisted(()=>({request:vi.fn()}));
 vi.mock('@ontomato/workbench-ui',()=>({nodeApiRequest:mocks.request}));
@@ -13,7 +14,7 @@ const asset=(id:string,document:unknown)=>productAssetSchema.parse({id,name:id,d
 async function open(id:string,query:Record<string,string>={}){
   const router=createRouter({history:createMemoryHistory(),routes:[{path:'/products/:id',component:ProductRoute,props:route=>({productAssetId:route.params.id,applicationId:route.query.applicationId})}]});
   await router.push({path:`/products/${id}`,query});await router.isReady();
-  wrapper=mount({template:'<router-view />'},{global:{plugins:[router]}});await flushPromises();return wrapper;
+  wrapper=mount({template:'<router-view />'},{global:{plugins:[router,createI18n({legacy:false,locale:'en',messages:{en:{}}})]}});await flushPromises();return wrapper;
 }
 it('runs a declarative Applications Navigation entry from its frozen release tree',async()=>{
   const root=asset('app',{kind:'application',applicationId:'app',navigationId:'nav',children:[]});

@@ -11,19 +11,19 @@ import {useI18n} from 'vue-i18n';
 import {openApplicationKey} from '../apps';
 const props=defineProps<{asset:ProductAsset;rows:Record<string,unknown>[];loading?:boolean;objectType:string}>();
 const router=useRouter();
-const {locale}=useI18n();
+const {locale,t}=useI18n();
 const openApplication=inject(openApplicationKey,undefined);
 const changed=ref<Record<string,{pinned:boolean;title:string}>>({}),error=ref(''),saving=ref(false);
 const order=ref<string[]>();
 const rows=computed(()=>order.value?[...props.rows].sort((a,b)=>{const rank=(id:unknown)=>{const index=order.value!.indexOf(String(id));return index<0?order.value!.length:index;};return rank(a.id)-rank(b.id);}):props.rows);
 function resourceTitle(row:Record<string,unknown>){
- const raw=String(changed.value[String(row.id)]?.title??row.title??row.name??'未命名内容');
+ const raw=String(changed.value[String(row.id)]?.title??row.title??row.name??t('ontology.productUntitledItem'));
  if(props.objectType!=='platform:Conversation')return raw;
- const quoted=raw.match(/"title"\s*:\s*"([^"\n]+)"/);if(quoted)return quoted[1]+' · 分析';
- return raw.split(/\n|\{\s*"/)[0].replace(/(?:对象引用|分析上下文)\s*[:：][\s\S]*$/,'').trim().slice(0,70)||'未命名分析';
+ const quoted=raw.match(/"title"\s*:\s*"([^"\n]+)"/);if(quoted)return t('ontology.productConversationAnalysis',{title:quoted[1]});
+ return raw.split(/\n|\{\s*"/)[0].replace(/(?:对象引用|分析上下文)\s*[:：][\s\S]*$/,'').trim().slice(0,70)||t('ontology.productUntitledAnalysis');
 }
 function summary(value:unknown){return String(value??'').replace(/!\[[^\]]*\]\([^)]*\)/g,'').replace(/\[([^\]]+)\]\([^)]*\)/g,'$1').replace(/[`#*|]/g,'').split(/\n\s*\n/)[0].trim().slice(0,180);}
-function fieldLabel(field:string){return props.asset.document.kind==='collection-view'?props.asset.document.presentation?.fieldLabels[field]??({description:'说明',updatedAt:'更新时间',visitedAt:'最近访问'} as Record<string,string>)[field]??field:field;}
+function fieldLabel(field:string){return props.asset.document.kind==='collection-view'?props.asset.document.presentation?.fieldLabels[field]??({description:t('ontology.productDescription'),updatedAt:t('ontology.productUpdatedAt'),visitedAt:t('ontology.productVisitedAt')} as Record<string,string>)[field]??field:field;}
 function fieldValue(field:string,value:unknown){if(['updatedAt','visitedAt'].includes(field)&&value){const date=new Date(String(value));if(Number.isFinite(date.getTime()))return date.toLocaleString(locale.value);}return value??'—';}
 async function pin(row:Record<string,unknown>,action:'toggle'|'rename'|'up'){
   if(saving.value)return;
@@ -34,7 +34,7 @@ async function pin(row:Record<string,unknown>,action:'toggle'|'rename'|'up'){
     const workspace=personalWorkspaceSchema.parse(overlay.workspace??defaultPersonalWorkspace());
     const id=String(row.id),index=workspace.pinnedAnalyses.findIndex(item=>item.sessionId===id);
     if(action==='toggle'){if(index<0)workspace.pinnedAnalyses.push({sessionId:id,title:String(row.title??id).slice(0,200)});else workspace.pinnedAnalyses.splice(index,1);}
-    else if(index>=0&&action==='rename'){const result=await ElMessageBox.prompt('名称','重命名收藏',{inputValue:workspace.pinnedAnalyses[index].title});workspace.pinnedAnalyses[index].title=result.value.trim();}
+    else if(index>=0&&action==='rename'){const result=await ElMessageBox.prompt(t('ontology.productName'),t('ontology.productRenamePinned'),{inputValue:workspace.pinnedAnalyses[index].title});workspace.pinnedAnalyses[index].title=result.value.trim();}
     else if(index>0&&action==='up'){const [item]=workspace.pinnedAnalyses.splice(index,1);workspace.pinnedAnalyses.splice(index-1,0,item);}
     const saved=await nodeApiRequest(endpoint,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:overlay.revision,workspace})});const result=await saved.json();if(!saved.ok)throw new Error(result.error?.message??'Preferences could not be saved');
     const selected=workspace.pinnedAnalyses.find(item=>item.sessionId===id);changed.value[id]={pinned:!!selected,title:selected?.title??String(row.title??id)};
@@ -53,18 +53,18 @@ function open(row:Record<string,unknown>){
 <template>
   <div v-loading="loading" class="platform-collection">
     <p v-if="error" role="alert">{{error}}</p>
-    <div v-if="!loading&&!rows.length" class="collection-empty"><p>{{({ 'platform:FavoriteApplication':'还没有常用应用，可在应用广场收藏常用入口。','platform:Conversation':'还没有分析会话，从智能分析开始一个问题。','platform:Task':'暂无任务动态。','platform:Favorite':'在对象详情中收藏记录，方便下次继续查看。','platform:RecentVisit':'最近访问过的内容会出现在这里。','platform:Dashboard':'还没有关注的数据。'} as Record<string,string>)[objectType]??'暂无内容'}}</p><el-button v-if="objectType==='platform:FavoriteApplication'" text @click="router.push('/applications')">前往应用广场 <ArrowUpRight :size="14"/></el-button></div>
+    <div v-if="!loading&&!rows.length" class="collection-empty"><p>{{({ 'platform:FavoriteApplication':t('ontology.productEmptyFavoriteApplications'),'platform:Conversation':t('ontology.productEmptyConversations'),'platform:Task':t('ontology.productEmptyTasks'),'platform:Favorite':t('ontology.productEmptyFavorites'),'platform:RecentVisit':t('ontology.productEmptyRecent'),'platform:Dashboard':t('ontology.productEmptyDashboards')} as Record<string,string>)[objectType]??t('ontology.productEmptyContent')}}</p><el-button v-if="objectType==='platform:FavoriteApplication'" text @click="router.push('/applications')">{{t('ontology.productGoToGallery')}} <ArrowUpRight :size="14"/></el-button></div>
     <div :class="{'application-shortcuts':objectType==='platform:FavoriteApplication'}"><article v-for="row in rows" :key="String(row.id)">
       <AppWindow v-if="objectType==='platform:FavoriteApplication'" :size="22" class="shortcut-icon"/>
       <el-button text class="resource-title" :title="resourceTitle(row)" @click="open(row)">{{resourceTitle(row)}}</el-button>
       <template v-if="objectType==='platform:Task'">
-        <span>{{row.pause?'已暂停':row.activeRunId?'运行中':row.enabled?'已启用':'已停用'}}</span>
+        <span>{{row.pause?t('ontology.productTaskPaused'):row.activeRunId?t('ontology.productTaskRunning'):row.enabled?t('ontology.productTaskEnabled'):t('ontology.productTaskDisabled')}}</span>
         <p v-if="row.pauseMessage">{{summary(row.pauseMessage)}}</p><p v-else-if="row.resultSummary">{{summary(row.resultSummary)}}</p>
-        <el-button v-if="typeof row.resultPath==='string'&&row.resultPath.startsWith('/')&&!row.resultPath.startsWith('//')" text @click="router.push(row.resultPath)">查看结果</el-button>
+        <el-button v-if="typeof row.resultPath==='string'&&row.resultPath.startsWith('/')&&!row.resultPath.startsWith('//')" text @click="router.push(row.resultPath)">{{t('ontology.productViewResult')}}</el-button>
       </template>
       <template v-if="objectType==='platform:Conversation'">
-        <el-button text :disabled="saving" @click="pin(row,'toggle')">{{(changed[String(row.id)]?.pinned??row.pinned)?'取消收藏':'收藏'}}</el-button>
-        <template v-if="changed[String(row.id)]?.pinned??row.pinned"><el-button text :disabled="saving" @click="pin(row,'rename')">重命名</el-button><el-button text :disabled="saving" @click="pin(row,'up')">上移</el-button></template>
+        <el-button text :disabled="saving" @click="pin(row,'toggle')">{{(changed[String(row.id)]?.pinned??row.pinned)?t('ontology.productUnpin'):t('ontology.productPin')}}</el-button>
+        <template v-if="changed[String(row.id)]?.pinned??row.pinned"><el-button text :disabled="saving" @click="pin(row,'rename')">{{t('ontology.productRename')}}</el-button><el-button text :disabled="saving" @click="pin(row,'up')">{{t('ontology.productMoveUp')}}</el-button></template>
       </template>
       <dl v-if="objectType!=='platform:Task'"><template v-for="field in asset.document.kind==='collection-view'?asset.document.fields.filter(field=>!['title','name','id','path','primaryKey','agentId','pinned','className'].includes(field)):[]" :key="field"><dt>{{fieldLabel(field)}}</dt><dd>{{fieldValue(field,row[field])}}</dd></template></dl>
     </article></div>

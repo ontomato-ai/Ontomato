@@ -4,9 +4,10 @@ import type {ProductAsset} from '@ontomato/contracts/product-assets';
 import {resolveViewParameters} from '@ontomato/contracts/object-views';
 import {formFieldKey,type FormField} from '@ontomato/contracts/form-fields';
 import {FormFields} from '@ontomato/foundation-ui/form';
-import {useManagerClient} from '../context';
+import {useManagerClient,useOntologyText} from '../context';
 import ManagerDialog from '../ManagerDialog.vue';
 import {ElAlert,ElButton,ElForm} from 'element-plus';
+const {ot}=useOntologyText();
 const props=defineProps<{asset:ProductAsset;pageState?:Record<string,unknown>;preview?:boolean}>();
 const emit=defineEmits<{refresh:[]}>();
 const client=useManagerClient();
@@ -30,7 +31,7 @@ async function load(){
 watch(()=>JSON.stringify([props.asset,props.pageState,props.preview]),()=>{generation++;open.value=false;error.value='';completed.value=false;fields.value=[];values.value={};loading.value=false;if(projection.value&&['form','inline'].includes(projection.value.renderer))void load();},{immediate:true});
 async function submit(){
   if(!projection.value||loading.value||props.preview)return;
-  for(const [name,options] of Object.entries(projection.value.presentation?.fieldOptions??{}))if(!projection.value.readOnlyParameters.includes(name)&&!options.some(option=>option.value===values.value[name])){errors.value[name]='请选择有效选项';return;}
+  for(const [name,options] of Object.entries(projection.value.presentation?.fieldOptions??{}))if(!projection.value.readOnlyParameters.includes(name)&&!options.some(option=>option.value===values.value[name])){errors.value[name]=ot('productChooseValidOption');return;}
   const current=generation;loading.value=true;error.value='';completed.value=false;
   try{
     const form=await client.actions.form({id:projection.value.renders.id,parameters:bindings.value,values:values.value,readOnlyParameters:projection.value.readOnlyParameters});
@@ -43,7 +44,7 @@ async function submit(){
 }
 function enter(name:string,value:string){values.value[name]=value;delete errors.value[name];completed.value=false;}
 </script>
-<template><section v-if="projection" class="action-projection"><el-alert v-if="error" :title="error" type="error" :closable="false"/><el-alert v-if="completed" title="操作成功" type="success" :closable="false"/><el-button v-if="['button','dialog'].includes(projection.renderer)" :disabled="preview" :loading="loading" @click="load">{{asset.name}}</el-button><component :is="['button','dialog'].includes(projection.renderer)?ManagerDialog:'section'" v-if="open" v-model="open" :title="asset.name"><el-form label-position="top" @submit.prevent="submit"><FormFields :fields="displayFields" :values="values" :errors="errors" :disabled="loading||preview" :read-only="projection.readOnlyParameters" choose-placeholder="请选择" @input="enter" @choose="(field,value)=>enter(field.key,value)"/><el-button native-type="submit" type="primary" :loading="loading" :disabled="preview">{{asset.name}}</el-button></el-form></component></section></template>
+<template><section v-if="projection" class="action-projection"><el-alert v-if="error" :title="error" type="error" :closable="false"/><el-alert v-if="completed" :title="ot('productActionSucceeded')" type="success" :closable="false"/><el-button v-if="['button','dialog'].includes(projection.renderer)" :disabled="preview" :loading="loading" @click="load">{{asset.name}}</el-button><component :is="['button','dialog'].includes(projection.renderer)?ManagerDialog:'section'" v-if="open" v-model="open" :title="asset.name"><el-form label-position="top" @submit.prevent="submit"><FormFields :fields="displayFields" :values="values" :errors="errors" :disabled="loading||preview" :read-only="projection.readOnlyParameters" :choose-placeholder="ot('productChoose')" @input="enter" @choose="(field,value)=>enter(field.key,value)"/><el-button native-type="submit" type="primary" :loading="loading" :disabled="preview">{{asset.name}}</el-button></el-form></component></section></template>
 <style scoped>
 .action-projection{display:flex;flex-direction:column;align-items:stretch;gap:var(--manager-content-gap);min-width:0;max-width:100%;font-size:var(--text-sm)}
 .action-projection>.el-button{align-self:flex-start}.action-projection :deep(.el-form){width:100%;max-width:860px;min-width:0}
