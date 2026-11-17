@@ -77,6 +77,11 @@ export interface ShellFeatureDeclaration {
    */
   scrollsItself?: boolean;
   /**
+   * The page's own address, when the platform mounts it beside a conversation: enlarging it opens that address in the
+   * application that owns it, and the page keeps its own state while it sits beside the chat.
+   */
+  address?: string;
+  /**
    * The page's own skill: an agent is a candidate for this page's composer when its effective skills carry it. A page
    * with a menu code names it, so the candidates follow the reader's menu permission; a page open to every member of the
    * domain says so instead.

@@ -182,6 +182,11 @@ watch(sessionId, (id) => {
 }, { immediate: true });
 
 
+/** The page beside the conversation, enlarged: its own address, which the host opens in the page's application. */
+function openPageAtItsAddress() {
+  emit("openPage", featureId.value!, currentFeature.value?.address ?? "");
+}
+
 function closePage() {
   featureId.value = null;
   pageView.value = "full";
@@ -391,7 +396,7 @@ onMounted(() => {
       @send="sendFromPage"
       @stop="conversation.cancel"
       @expand="pageView = 'full'"
-      @open-address="emit('openPage', featureId!, currentFeature?.href ?? '')"
+      @open-address="openPageAtItsAddress"
       @collapse="pageView = 'side'"
       @close="closePage"
     >

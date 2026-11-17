@@ -22,7 +22,7 @@ import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vu
 import DatasetActions from "./DatasetActions.vue";
 import DatasetDrilldown from "./DatasetDrilldown.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
-import { DASHBOARDS_PAGE_ID, dashboardsFeature, workbenchFeatures } from "../features";
+import { DASHBOARDS_PAGE_ID, dashboardsPageFeature, workbenchFeatures } from "../features";
 import FollowUpRenderer from "./FollowUpRenderer.vue";
 import ClarificationRenderer from "./ClarificationRenderer.vue";
 const artifactRenderers = [
@@ -93,10 +93,15 @@ const settingsAgentId = computed(() => {
   const id = route.params.agentId;
   return typeof id === "string" && !creatingAgent.value ? id : null;
 });
-/** The dashboards application's page, opened beside the conversation: the platform's registry draws it. */
+/**
+ * The page beside the conversation is carried by this application's own address (`?page=<the page's address>`), so the
+ * conversation stays where it is and the page is mounted from the assembly's registry, with the props its address gives
+ * it and the way back for its own navigation.
+ */
 const pilot = usePilotPage();
-const dashboardsPage = computed(() => pilot(routes.dashboards.path));
-const inDashboards = computed(() => route.path === routes.dashboards.path);
+const pageAddress = computed(() => (typeof route.query.page === "string" ? route.query.page : null));
+const pilotPage = computed(() => (pageAddress.value ? pilot(pageAddress.value) : null));
+const inDashboards = computed(() => pageAddress.value !== null && pilotPage.value !== null);
 /**
  * The page the shell shows: the settings are the `agents` page, whose addresses are the settings' own screens, the
  * dashboards the `dashboards` page its own address opens, and every other page names its route. Closing the page (a new
@@ -110,11 +115,22 @@ const featureId = computed<string | null>({
   },
   set: (id) => {
     if (id === "agents" && inSettings.value) return;
-    if (id === DASHBOARDS_PAGE_ID && inDashboards.value) return;
-    const target = id === DASHBOARDS_PAGE_ID ? routes.dashboards : featureRoutes[id as keyof typeof featureRoutes] ?? routes.chat;
+    // Closing the page beside the conversation only drops the parameter: the conversation stays.
+    if (inDashboards.value) {
+      const { page: _page, ...query } = route.query;
+      void router.replace({ query });
+      return;
+    }
+    if (id === DASHBOARDS_PAGE_ID) return;
+    const target = featureRoutes[id as keyof typeof featureRoutes] ?? routes.chat;
     if (route.name !== target.name) void router.push({ name: target.name });
   },
 });
+
+/** The page beside the conversation says where it moved: the parameter is its address, changed in place. */
+function setPageAddress(address: string) {
+  void router.replace({ query: { ...route.query, page: address } });
+}
 /**
  * The open conversation. The address carries it while the settings are shown, so leaving them (or reloading) returns to
  * the conversation the reader came from instead of to a blank one.
@@ -126,7 +142,7 @@ const conversationId = ref<string | null>(
  * The address names the conversation on a page that has one of its own, and only until the platform's own pages (a
  * dashboard beside it) carry it: leaving those returns to the conversation the reader came from.
  */
-const carriesSession = computed(() => !inSettings.value && !inDashboards.value);
+const carriesSession = computed(() => !inSettings.value);
 watch(
   () => route.query.sessionId,
   (id) => {
@@ -141,9 +157,9 @@ const shell = ref<InstanceType<typeof AgentShell> | null>(null);
  */
 function pageLinks(href: string): (() => void) | null {
   const address = href.replace(/^#/, "");
-  const page = pilot(address.split("?")[0]!);
-  if (!page) return null;
-  return () => void router.push(address);
+  if (!pilot(address)) return null;
+  // The page opens beside the conversation; the application's own address does not change.
+  return () => void router.push({ query: { ...route.query, page: address } });
 }
 
 watch(agentId, (id) => {
@@ -157,7 +173,7 @@ watch(conversationId, (id) => {
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: WORKBENCH_ID,
   label: appearance.value?.brand?.name || props.defaultBrandName,
-  features: workbenchFeatures(props.features, dashboardsFeature(inDashboards.value ? route.fullPath : routes.dashboards.path)),
+  features: workbenchFeatures(props.features, dashboardsPageFeature(pageAddress.value ?? routes.dashboards.path)),
 }));
 
 const labels = useShellLabels();
@@ -168,7 +184,7 @@ const labels = useShellLabels();
  */
 const settingsAgents = useAgentDefinitions();
 const pageContext = computed<PageContext | null>(() => {
-  if (inDashboards.value) return { pageKey: "dashboard", url: route.fullPath, label: t("assistant.featureDashboards"), selection: [] };
+  if (inDashboards.value) return { pageKey: "dashboard", url: pageAddress.value!, label: t("assistant.featureDashboards"), selection: [] };
   if (!inSettings.value) return null;
   const agent = settingsAgents.find(settingsAgentId.value);
   return {
@@ -226,8 +242,8 @@ function openSettings() {
  * The page beside the conversation, enlarged: its own address, in the application that owns it. The conversation stays
  * the one this tab holds, so leaving the page returns to it.
  */
-function openPageAtItsAddress(id: string, address: string) {
-  if (id === DASHBOARDS_PAGE_ID) void router.push(address);
+function openPageAtItsAddress(_id: string, address: string) {
+  if (address) void router.push(address);
 }
 
 function backToChat() {
@@ -261,7 +277,7 @@ const bottomEntry = computed(() =>
  * named conversation opens, or a new one starts and, with a question, sends it as its first message.
  *
  * A page's own composer (a dashboard's) sends its question here with `&page=`: the page it was written on opens beside
- * the conversation, so the reader's next message carries it and its answer can name what the page shows.
+ * the conversation and stays there, so the reader's next message carries it and its answer can name what the page shows.
  */
 async function openRequestedAgent() {
   const id = requestedAgent();
@@ -269,11 +285,8 @@ async function openRequestedAgent() {
   const session = queryText(route.query.sessionId);
   const prompt = queryText(route.query.prompt);
   const page = queryText(route.query.page);
-  const query = { ...route.query };
-  delete query.agentId;
-  delete query.sessionId;
-  delete query.prompt;
-  delete query.page;
+  // The link's own parameters go; the page it was written on stays, carried by the address from here on.
+  const { agentId: _agent, sessionId: _session, prompt: _prompt, ...query } = route.query;
   void router.replace({ query });
   if (!nav.agents.value.some((agent) => agent.id === id && agent.enabled)) {
     ElMessage.error(t("assistant.agentUnavailable"));
@@ -291,12 +304,11 @@ async function openRequestedAgent() {
   const continuing = held !== null && nav.sessions.value.some((row) => row.id === held);
   if (continuing) nav.selectSession(held);
   else nav.startNew();
-  // The message goes before the address changes: the shell is this page's, and the page it names is another one.
+  if (page) void router.replace({ query: { ...query, page } });
   if (prompt) {
     await nextTick();
     await shell.value!.send(prompt);
   }
-  if (page) void router.push(page);
 }
 // The same address entered while the page is open (another link to an agent) does the same.
 watch(() => route.query.agentId, openRequestedAgent);
@@ -366,10 +378,11 @@ function appearanceSaved(value: WorkbenchAppearance) {
         @changed="shell?.reloadAgents()"
       />
       <component
-        :is="dashboardsPage!.component"
-        v-else-if="page === DASHBOARDS_PAGE_ID && dashboardsPage"
-        v-bind="dashboardsPage.props"
-        paired
+        :is="pilotPage!.component"
+        v-else-if="page === DASHBOARDS_PAGE_ID && pilotPage"
+        :key="pageAddress!"
+        v-bind="pilotPage.props"
+        :navigate="(next: { dashboardId?: string }) => setPageAddress(pilotPage!.navigate?.(next) ?? pageAddress!)"
       />
       <slot v-else name="feature" :feature-id="page" />
     </template>

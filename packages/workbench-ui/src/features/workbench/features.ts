@@ -23,14 +23,17 @@ const agentSettingsFeature: ShellFeatureDeclaration = {
 /** The dashboards are an application of their own: this application opens one beside its conversation, not a copy. */
 export const DASHBOARDS_PAGE_ID = "dashboards";
 
-/** The dashboards page beside the conversation, at the board the address names; it opens there when enlarged. */
-export function dashboardsFeature(address: string): ShellFeatureDeclaration {
-  return { id: DASHBOARDS_PAGE_ID, label: "dashboards", icon: "dashboards", availability: "page", withConversation: true, href: address };
+/**
+ * The dashboards page beside the conversation. Its address is what this application's page parameter names: enlarging
+ * it opens the dashboard application at that board.
+ */
+export function dashboardsPageFeature(address: string): ShellFeatureDeclaration {
+  return { id: DASHBOARDS_PAGE_ID, label: "dashboards", icon: "dashboards", availability: "page", withConversation: true, address };
 }
 
 export function workbenchFeatures(
   editionFeatures: readonly ShellFeatureDeclaration[],
-  dashboards = dashboardsFeature(""),
+  dashboards = dashboardsPageFeature(""),
 ): ShellFeatureDeclaration[] {
   return [agentSettingsFeature, dashboards, ...editionFeatures];
 }

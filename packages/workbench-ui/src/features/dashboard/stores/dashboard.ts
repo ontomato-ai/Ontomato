@@ -10,17 +10,21 @@ import {
 } from "../api";
 import type { DashboardSidebarItem } from "../../workbench";
 import { t } from "../../../i18n";
+import { useDashboardSurface } from "../dashboard-surface";
 
 
 export const useDashboardStore = defineStore("dashboard", () => {
   const route = useRoute();
   const router = useRouter();
+  // Beside a conversation the board is the surface's, not the address's: the page keeps one store either way.
+  const surface = useDashboardSurface();
   const dashboardItems = ref<DashboardSidebarItem[]>([]);
   const loadingDashboards = ref(false);
   const editingDashboardId = ref("");
   const editingDashboardName = ref("");
 
   const currentDashboardId = computed(() => {
+    if (surface) return surface.dashboardId;
     const raw = route.query.dashboardId;
     return typeof raw === "string"
       ? raw.trim()
@@ -40,6 +44,10 @@ export const useDashboardStore = defineStore("dashboard", () => {
 
   function selectDashboard(dashboardId?: string) {
     const id = String(dashboardId || "").trim();
+    if (surface) {
+      surface.navigate(id || undefined);
+      return Promise.resolve();
+    }
     return updateRoute({ dashboardId: id || undefined });
   }
 

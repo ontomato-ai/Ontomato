@@ -24,6 +24,10 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useApplicationCatalog } from "./catalog";
 import { nodeApiRequest } from "@ontomato/workbench-ui";
 import { appAt } from "./apps";
+import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
+import { pageCounterKey, type PageCounter } from "@ontomato/agent-shell-ui";
+import { createAssistantClient } from "@ontomato/workbench-ui/features/workbench/assistant-host";
+import { readRememberedAgent } from "@ontomato/workbench-ui";
 import { resolvePilotPage } from "./pilot-pages";
 import { recentDestination } from "./recent-work";
 import { openApplicationKey, platformApplicationsKey, platformBrandKey, type PlatformAppDeclaration } from "./apps";
@@ -146,6 +150,23 @@ const pageActions = providePageActions();
  * draws the page's own component, so it never imports another application's page.
  */
 provide(pilotPageKey, resolvePilotPage);
+
+/*
+ * The one counter a page at its own address sends to (DESIGN.md "Applications and shells"): its agents, the agent this
+ * tab last used, and the address that opens the conversation with the page beside it. The pages themselves only show
+ * the platform's composer and hand over the message.
+ */
+const counterAgents = ref<readonly AgentHostAgent[]>([]);
+void createAssistantClient()
+  .listAgents()
+  .then((list) => (counterAgents.value = list.filter((agent) => agent.enabled)));
+provide(pageCounterKey, {
+  agents: counterAgents,
+  preferredAgentId: ref(readRememberedAgent()),
+  ask(agentId, text, page) {
+    void router.push({ path: platformRoutes.chat.path, query: { agentId, prompt: text, page } });
+  },
+} satisfies PageCounter);
 
 /**
  * Leaving a draft with unsaved changes asks first: before the address leaves every page that edits it, and before the

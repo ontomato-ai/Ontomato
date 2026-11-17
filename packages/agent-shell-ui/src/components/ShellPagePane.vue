@@ -75,13 +75,13 @@ const paneStyle = computed(() => ({
       >
         <Minimize2 :size="16" />
       </button>
-      <!-- Enlarged, a page that has its own address opens there (the one counter's pages are real addresses). -->
+      <!-- Enlarged, a page that has its own address opens there; a page without one grows inside the shell. -->
       <button
         type="button"
         class="pane-button"
         :title="labels.expand"
         :aria-label="labels.expand"
-        @click="feature?.href ? emit('openAddress') : emit('expand')"
+        @click="feature?.address ? emit('openAddress') : emit('expand')"
       >
         <Maximize2 :size="16" />
       </button>

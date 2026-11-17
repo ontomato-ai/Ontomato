@@ -1,12 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { useRoute, useRouter } from "vue-router";
-import { DashboardHome, useDashboardStore } from "@ontomato/workbench-ui/features/dashboard";
-import { createAssistantClient } from "@ontomato/workbench-ui/features/workbench/assistant-host";
-import { readRememberedAgent } from "@ontomato/workbench-ui/features/workbench";
-import { AgentPicker, ShellComposer, type AgentHostAgent } from "@ontomato/agent-shell-ui";
-import { platformRoutes } from "@ontomato/platform-shell/routes";
+import { useRoute } from "vue-router";
+import { DashboardHome, provideDashboardSurface, useDashboardStore } from "@ontomato/workbench-ui/features/dashboard";
+import { PageComposer } from "@ontomato/agent-shell-ui";
 import AppPage from "./AppPage.vue";
 
 /**
@@ -16,14 +13,37 @@ import AppPage from "./AppPage.vue";
  * the boards are tabs of the page itself, and the address carries the open board as `?dashboardId=`, so a board can be
  * linked and reloaded.
  *
- * There is one counter (DESIGN.md "Applications and shells"): the page's composer carries its message to the agent
- * platform, with the same agent this tab last used and the page it was written on, so the conversation opens beside this
- * same board.
+ * The same page also opens beside a conversation, mounted by the agent platform's page pane with the props of its
+ * address: `paired`, `dashboardId` and `navigate`. Then it has no frame of its own (the shell draws the header and the
+ * composer) and its board navigation goes through `navigate`, which changes the address the conversation carries.
  */
-const props = withDefaults(defineProps<{ paired?: boolean }>(), { paired: false });
+const props = withDefaults(
+  defineProps<{
+    paired?: boolean;
+    /** The board the conversation's page parameter names; the address's own query when this page is the application. */
+    dashboardId?: string;
+    /** The page's own navigation beside a conversation: the conversation's parameter, not the browser's address. */
+    navigate?: (next: { dashboardId?: string }) => void;
+  }>(),
+  { paired: false, dashboardId: undefined, navigate: undefined },
+);
+
+if (props.paired) {
+  const shown = ref(props.dashboardId ?? "");
+  watch(() => props.dashboardId, (id) => (shown.value = id ?? ""));
+  provideDashboardSurface({
+    get dashboardId() {
+      return shown.value;
+    },
+    navigate(dashboardId: string | undefined) {
+      shown.value = dashboardId ?? "";
+      props.navigate?.(dashboardId ? { dashboardId } : {});
+    },
+  });
+}
+
 const { t } = useI18n();
 const route = useRoute();
-const router = useRouter();
 const store = useDashboardStore();
 
 // The address names the board; without one the first board opens, as the page always did.
@@ -35,52 +55,24 @@ const opened = store
   .catch(() => {});
 void opened;
 
-const agents = ref<AgentHostAgent[]>([]);
-void createAssistantClient().listAgents().then((list) => (agents.value = list.filter((agent) => agent.enabled)));
-const agentId = ref<string | null>(null);
-const remembered = readRememberedAgent();
-const chosen = computed(() => agentId.value ?? agents.value.find((agent) => agent.id === remembered)?.id ?? agents.value[0]?.id ?? null);
-const labels = computed(() => ({ placeholder: t("assistant.placeholder"), send: t("assistant.send"), stop: t("assistant.stop") }));
-
-function ask(text: string) {
-  if (!chosen.value) return;
-  void router.push({
-    path: platformRoutes.chat.path,
-    query: {
-      agentId: chosen.value,
-      prompt: text,
-      page: `${route.path}${Object.keys(route.query).length ? `?${new URLSearchParams(route.query as Record<string, string>)}` : ""}`,
-    },
-  });
-}
+const labels = computed(() => ({
+  placeholder: t("assistant.placeholder"),
+  send: t("assistant.send"),
+  stop: t("assistant.stop"),
+  agent: t("assistant.agent"),
+}));
+/** The page's own address: the counter opens this same board beside the message. */
+const page = computed(
+  () => `${route.path}${Object.keys(route.query).length ? `?${new URLSearchParams(route.query as Record<string, string>)}` : ""}`,
+);
 </script>
 
 <template>
-  <!-- Beside the conversation the shell's page pane owns the frame and the composer; enlarged, this page is the app. -->
   <component :is="props.paired ? 'div' : AppPage" v-bind="props.paired ? {} : {
     title: t('assistant.featureDashboards'),
     labels: { save: t('common.save'), discard: t('common.cancel'), unsavedChanges: t('admin.unsavedChanges') },
   }">
     <DashboardHome />
-    <div v-if="!props.paired && agents.length" class="dashboard-ask">
-      <ShellComposer :busy="false" :labels="labels" @send="ask">
-        <template #agent>
-          <AgentPicker variant="pill" :agents="agents" :agent-id="chosen" :label="t('assistant.agent')" @select="agentId = $event" />
-        </template>
-      </ShellComposer>
-    </div>
+    <PageComposer v-if="!props.paired" :page="page" :labels="labels" />
   </component>
 </template>
-
-<style scoped>
-/* At the foot of the board, the platform's one composer: what a message asks about is the board above it. */
-.dashboard-ask {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
-  width: min(760px, 100%);
-  margin-inline: auto;
-  padding: var(--spacing-md) 0;
-  background: var(--el-bg-color);
-}
-</style>

@@ -2,6 +2,7 @@ export { default as AgentShell } from "./components/AgentShell.vue";
 export { default as DatasetSelectionButton } from "./components/DatasetSelectionButton.vue";
 export { default as AgentChatPanel } from "./components/AgentChatPanel.vue";
 export { default as ShellComposer } from "./components/ShellComposer.vue";
+export { default as PageComposer } from "./components/PageComposer.vue";
 export { default as ShellDockRoom } from "./components/ShellDockRoom.vue";
 export { default as AgentAvatar } from "./components/AgentAvatar.vue";
 export { default as AgentPicker } from "./components/AgentPicker.vue";
@@ -27,6 +28,7 @@ export { default as ShellColumn } from "./components/ShellColumn.vue";
 export { default as ToolStep } from "./components/ToolStep.vue";
 export { pageDockSpaceKey, useConversationContinuation, usePageDockSpace } from "./context";
 export { pageContextLine, pageMoved, samePageAddress, type PageContext, type PageSelection } from "./page-context";
+export { pageCounterKey, usePageCounter, type PageCounter } from "./page-counter";
 export { useAgentNav, type AgentNav, type AgentNavOptions } from "./useAgentNav";
 export { useSessionRunFeed, type SessionRunFeedOptions } from "./useSessionRunFeed";
 export {
