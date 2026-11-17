@@ -28,6 +28,7 @@ vi.mock("../../product-assets/grants", () => ({
 }));
 import { assistantSkillCatalog, effectiveAssistantSkills, prepareAssistantSkills, validateAssistantSkills } from "../skills";
 import { listAssistantAgents } from "../agents";
+import { workbenchApplications } from "../../applications/builtins";
 
 const page: RuntimeSkillRef = { namespace: { kind: "provider", provider: "ontology" }, name: "knowledge-governance" };
 const report: RuntimeSkillRef = { namespace: { kind: "provider", provider: "workbench" }, name: "assistant-report" };
@@ -123,6 +124,15 @@ it("exposes projection failures instead of continuing with stale authorization",
   await expect(prepareAssistantSkills(owner.domainId, definition(0, "regular"), credentials)).rejects.toThrow("Java unavailable");
 });
 
+it("offers the registered dashboard page skill to the default agent for the dashboard query",async()=>{
+  const mapping=workbenchApplications.find(app=>app.id==="dashboards")?.declaration.pageSkills?.find(entry=>"access" in entry&&entry.access==="domain-member");
+  expect(mapping).toBeDefined();
+  current={pageSkills:[mapping!],registeredSkills:[mapping!.skill]};
+  const query=assistantAgentsQuerySchema.parse(Object.fromEntries(new URLSearchParams("pageKey=dashboard&access=domain-member")));
+  const result=await listAssistantAgents(owner,credentials,query);
+  expect(result.defaultAgentId).toBe(ids[0]);
+  expect(result.agents.find(agent=>agent.id===ids[0])?.effectiveSkills).toContainEqual({namespace:{kind:"provider",provider:"workbench"},name:"dashboard-pages"});
+});
 it("uses the governance preset for reports and leaves the business-knowledge page on the ordinary default",async()=>{
   const declaration=JSON.parse(readFileSync(new URL("../../../../../data-engine-core/src/main/resources/applications/ontology.json",import.meta.url),"utf8"));
   current.pageSkills=declaration.declaration.pageSkills;

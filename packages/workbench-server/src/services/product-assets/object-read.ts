@@ -27,11 +27,11 @@ export async function readPlatformObjectAsset(owner:ProductOwner,credentials:Ass
     const primaryKeyField=result.data.classDef?.attrs?.find((attribute:{name:string;primaryKey?:boolean;primary_key?:boolean})=>attribute.primaryKey===true||attribute.primary_key===true)?.name;
     if(primaryKeyField)record[primaryKeyField]=primaryKey;
     const widgets=document.layout?.tabs.flatMap(tab=>tab.sections.flatMap(section=>section.widgets))??[];
-    const fields=new Set([...document.fields,...(document.renderer==='full'?widgets.filter(widget=>widget.kind==='properties'&&!widget.resourceId).flatMap(widget=>widget.fields):[]),...(document.renderer==='full'&&document.layout?.titleField?[document.layout.titleField]:[])]);
+    const fields=new Set([...document.fields,...(document.renderer==='full'?widgets.flatMap(widget=>widget.kind==='properties'&&!widget.resourceId?widget.fields:[]):[]),...(document.renderer==='full'&&document.layout?.titleField?[document.layout.titleField]:[])]);
     const allProperties=document.renderer==='full'&&widgets.some(widget=>widget.kind==='properties'&&!widget.resourceId&&!widget.fields.length);
     return {object:allProperties?record:Object.fromEntries([...fields].filter(field=>Object.hasOwn(record,field)).map(field=>[field,record[field]]))};
   }
-  const layoutFields=asset.document.renderer==='full'?asset.document.layout?.tabs.flatMap(tab=>tab.sections.flatMap(section=>section.widgets.filter(widget=>widget.kind==='properties'&&!widget.resourceId).flatMap(widget=>widget.fields)))??[]:[];
+  const layoutFields=asset.document.renderer==='full'?asset.document.layout?.tabs.flatMap(tab=>tab.sections.flatMap(section=>section.widgets.flatMap(widget=>widget.kind==='properties'&&!widget.resourceId?widget.fields:[])))??[]:[];
   const fields=[...new Set(['id',...asset.document.fields,...layoutFields])];
   const rows=await readPlatformObjects(owner,credentials,asset.document.renders.id,{},fields);
   const object=rows.find(row=>row.id===primaryKey);

@@ -51,7 +51,7 @@ async function queryAuthorizedProducts(owner:ProductOwner,query:ProductQuery){
   const result=await db().query(`SELECT id,owner_id AS "ownerId",name,description,visibility,revision,created_at AS "createdAt",updated_at AS "updatedAt",document->>'kind' AS kind FROM ${t('product_assets')} WHERE ${where} ORDER BY ${order} LIMIT $${args.length+1} OFFSET $${args.length+2}`,[...args,query.pageSize,(query.page-1)*query.pageSize]);
   const details=await db().query(`SELECT id,jsonb_strip_nulls(jsonb_build_object(
     'isTemplate',document->'isTemplate','embeddable',document->'embeddable','renderer',document->>'renderer',
-    'widgetKind',document->'widget'->>'kind','chartType',CASE WHEN document->'widget'->>'kind'='chart' THEN document->'widget'->>'chartType' END,
+    'widgetKind',document->'widget'->>'kind',
     'section',document->'widget'->>'source','className',COALESCE(document->>'className',CASE WHEN document->'renders'->>'kind'='ObjectType' THEN document->'renders'->>'id' END),'resourceId',COALESCE(document->'renders'->>'id',document->'widget'->>'resourceId'),
     'childCount',CASE WHEN document ? 'children' THEN jsonb_array_length(document->'children') END,
     'widgetCount',CASE WHEN document ? 'widgets' THEN jsonb_array_length(document->'widgets') END,

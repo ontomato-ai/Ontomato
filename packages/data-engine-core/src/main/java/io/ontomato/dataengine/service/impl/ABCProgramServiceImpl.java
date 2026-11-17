@@ -32,20 +32,6 @@ public class ABCProgramServiceImpl implements ABCProgramService {
   }
 
   @Override
-  public Object[] execute(String id, ABCHarnessDashboard dashboard, String user, UserDataPermission permission,
-      String lang, int timeout, String domain) throws Exception {
-    var graph = sourceAnalysis(dashboard.getSourceAnalysis(), dashboard.getOutKeyRefs());
-    var parameters = dashboard.getParameterValues() == null ? new JSONObject() : QueryPackage.copy(dashboard.getParameterValues());
-    if (dashboard.getParameters() != null)
-      for (var parameter : dashboard.getParameters()) parameters.put(parameter.getKey(), parameter.getValue());
-    if (dashboard.getQueryPackage() != null)
-      return executePackage(id, dashboard.getQueryPackage(), parameters, graph, user, permission, lang, timeout, domain);
-    var result = pythonExecuteService.execute(id, dashboard.getCode(), timeout, lang,
-        PythonAuthority.read(user, domain), parameters, Map.of());
-    return new Object[]{authorized(result, graph, permission), result};
-  }
-
-  @Override
   public Object[] execute(String id, Function function, String user, UserDataPermission permission,
       String sandbox, String lang, int timeout, String domain) throws Exception {
     return execute(id, function, user, permission, sandbox, lang, timeout, domain, new ExecutionContext(null, null, ExecutionTarget.LIVE));

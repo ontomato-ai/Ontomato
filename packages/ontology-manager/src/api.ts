@@ -4,6 +4,7 @@ import type { DataAdaptersData } from "@ontomato/contracts/data-adapters";
 import type { ObjectViewDocument, ObjectViewState } from "@ontomato/contracts/object-views";
 import { createActionsClient } from "./clients/actions";
 import { createProductsClient } from "./clients/products";
+import type { DashboardDetail, DashboardListItem } from "@ontomato/contracts/dashboard";
 import { createMetricViewsClient } from "./clients/metric-views";
 import type { MessageKey, TextParams } from "./i18n";
 
@@ -684,11 +685,8 @@ export function createManagerClient(
     return objectViewRequest("save", document.className, form, { document, expectedRevision, description });
   }
 
-  /**
-   * Every skill of the domain: a package says nothing about drawing charts, so the author picks one and the preview shows
-   * whether it can. Until object views keep their own generated charts (requirement 46820517), this is the whole choice.
-   */
-  async function loadViewSkills() {
+  /** Every skill of the domain, for the capability overview. Charts are drawn from a chart file, not by a skill. */
+  async function loadSkills() {
     const response = await send("/skills", { method: "GET" }, "");
     // Declared as a list, so an answer without one is an empty list rather than undefined: a caller that iterates
     // this must not have to know that the service can answer with a body of another shape.
@@ -697,20 +695,18 @@ export function createManagerClient(
       : [];
   }
 
-  async function renderViewSkill(id: string, input: Record<string, unknown>) {
-    const response = await send(`/skills/${encodeURIComponent(id)}/render`, { method: "POST", body: JSON.stringify({ input }) }, "");
-    return String(response.result.html);
+  /**
+   * The author's own dashboards and one dashboard's cards: the charts a view or a product chart can be brought in from.
+   * Reading uses the author's own credentials, so no chart grant is involved.
+   */
+  async function loadDashboards() {
+    const response = await send("/dashboards", { method: "GET" }, "");
+    return (response.data ?? []) as DashboardListItem[];
   }
 
-  function viewSkillHtml(html: string) {
-    return html.replace(/(["'])(\/api\/(?:skills\/resources|echart)\/[^"'<>\s]+)\1/g, (_match, quote: string, resource: string) => {
-      const url = new URL(resource, "http://skill.local");
-      if (url.pathname.endsWith("/echarts/scripts/echarts.min.js")) return `${quote}${context.apiBase}/echart/echarts.min.js${quote}`;
-      url.searchParams.delete("tk"); url.searchParams.delete("apiKey");
-      if (context.credential?.type === "token") url.searchParams.set("tk", context.credential.token);
-      if (context.credential?.type === "apiKey") url.searchParams.set("apiKey", context.credential.apiKey);
-      return `${quote}${context.apiBase}${url.pathname.slice(4)}${url.search}${quote}`;
-    });
+  async function loadDashboard(id: string) {
+    const response = await send(`/dashboards/${encodeURIComponent(id)}`, { method: "GET" }, "");
+    return response.data as DashboardDetail;
   }
 
   async function loadViewLinks(className: string, primaryKey: string, relationship: string, direction: "incoming" | "outgoing", offset: number) {
@@ -913,9 +909,9 @@ export function createManagerClient(
     /** Action execution: the same client apps get from the SDK. */
     actions: createActionsClient(transport),
     loadViewLinks,
-    loadViewSkills,
-    renderViewSkill,
-    viewSkillHtml,
+    loadDashboards,
+    loadDashboard,
+    loadSkills,
     request,
     loadInstanceGraphStatistics,
     dispose: transport.dispose,

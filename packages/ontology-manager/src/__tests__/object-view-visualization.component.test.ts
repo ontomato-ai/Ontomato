@@ -1,81 +1,77 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createApp, defineComponent, h, reactive, nextTick, type App } from "vue";
-import { createViewWidget } from "@ontomato/contracts/object-views";
+import { createApp, defineComponent, h, nextTick, reactive, type App } from "vue";
+import type { ChartViewWidget } from "@ontomato/contracts/object-views";
 import ObjectViewVisualization from "../object-views/ObjectViewVisualization.vue";
 import { installObjectViewHost } from "./object-view-host";
+import { chartFile, chartWidget } from "./chart-fixture";
 
-let app: App;
-afterEach(() => { app?.unmount(); document.body.innerHTML = ""; vi.unstubAllGlobals(); });
-describe("Object View skill rendering", () => {
-  it.each([
-    { chartType: "bar", value: [] },
-    { chartType: "graph", value: { nodes: [], edges: [] } },
-    { chartType: "graph", value: null },
-  ] as const)("shows an empty state without rendering empty $chartType data and recovers when data arrives", async ({ chartType, value }) => {
-    const fetch = vi.fn(async () => new Response(JSON.stringify({ success: true, result: { html: "<html>chart</html>" } })));
-    vi.stubGlobal("fetch", fetch);
-    const state = reactive<{ rows: Record<string, unknown>[]; value: unknown }>({ rows: [], value });
-    const element = document.createElement("div"); document.body.append(element);
-    app = createApp(defineComponent({ setup() {
-      return () => h(ObjectViewVisualization, { widget: { ...createViewWidget("chart"), chartType }, rows: state.rows, value: state.value });
-    } }));
-    installObjectViewHost(app, "/api", "test");
-    app.mount(element);
-    await nextTick();
-    expect(element.textContent).toContain("No chart data");
-    expect(fetch).not.toHaveBeenCalled();
-    state.rows = [{ label: "A", value: 1 }];
-    state.value = { nodes: [{ id: "one" }], edges: [] };
-    for (let i = 0; i < 5; i++) { await new Promise(resolve => setTimeout(resolve, 0)); await nextTick(); }
-    expect(fetch).toHaveBeenCalledTimes(1);
-    expect(element.querySelector("iframe")).not.toBeNull();
-    state.rows = [];
-    state.value = value;
-    await nextTick();
-    expect(element.textContent).toContain("No chart data");
-    expect(element.querySelector("iframe")).toBeNull();
-  });
-  it("executes the selected visualization skill and embeds its HTML with deployment resource paths", async () => {
-    const calls: Array<{ url: string; body: any }> = [];
-    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
-      calls.push({ url, body: JSON.parse(String(init.body)) });
-      return new Response(JSON.stringify({ success: true, result: { html: '<html><script src="/api/skills/resources/executable/visualization/echarts/scripts/echarts.min.js"></script></html>' } }));
-    });
-    const element = document.createElement("div"); document.body.append(element);
-    app = createApp(defineComponent({ setup() {
-      return () => h(ObjectViewVisualization, { widget: { ...createViewWidget("chart"), chartType: "donut", labelField: "level", valueField: "count" }, rows: [{ level: "A", count: 7 }], value: [] });
-    } }));
-    installObjectViewHost(app, "/prefix/api", "secret");
-    app.mount(element);
-    for (let i = 0; i < 5; i++) { await new Promise(resolve => setTimeout(resolve, 0)); await nextTick(); }
-    expect(calls[0].url).toBe("/prefix/api/skills/echarts/render");
-    expect(calls[0].body.input).toMatchObject({ data: [{ level: "A", count: 7 }], chartType: "donut", xField: "level", yField: "count", showTitle: false });
-    const frame = element.querySelector("iframe")!;
-    expect(frame.srcdoc).toContain("/prefix/api/");
-    expect(frame.srcdoc).not.toContain('src="/api/');
-    expect(frame.getAttribute("sandbox")).toBe("allow-scripts allow-same-origin");
-  });
-  it("draws the skill's charts in the platform's chart theme and follows the page into dark", async () => {
-    // A brand stylesheet as @ontomato/design-tokens writes one: the light values on :root, the dark ones on html.dark.
-    const brand = document.createElement("style");
-    brand.textContent = ":root { --chart-1: #111111; --el-text-color-primary: #101010; } html.dark { --chart-1: #eeeeee; --el-text-color-primary: #f0f0f0; }";
-    document.head.append(brand);
-    try {
-      vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ success: true, result: { html: "<html><head></head>chart</html>" } })));
-      const element = document.createElement("div"); document.body.append(element);
-      app = createApp(defineComponent({ setup() {
-        return () => h(ObjectViewVisualization, { widget: { ...createViewWidget("chart"), chartType: "bar" }, rows: [{ label: "A", value: 1 }], value: [] });
-      } }));
-      installObjectViewHost(app);
-      app.mount(element);
-      const frame = () => element.querySelector("iframe")?.srcdoc ?? "";
+/**
+ * The view's chart draws the file saved in this version, filled from the MetricView output the runtime read. The
+ * platform chart is stubbed: its own states are the platform component's tests, while this component decides which
+ * columns, file and rows a view passes it.
+ */
+const drawn: Array<{ file: unknown; metric: { columns: { key: string }[]; rows: Record<string, unknown>[] }; height: number }> = [];
+// The platform chart is the shared component; this test records the file and the output a view hands it.
+vi.mock("@ontomato/foundation-ui/chart", () => ({
+  MetricChart: {
+    props: ["file", "metric", "height", "undated", "empty"],
+    setup: (props: never) => () => { drawn.push(props as never); return h("div", { class: "drawn" }); },
+  },
+}));
 
-      await vi.waitFor(() => expect(frame()).toContain("#111111"));
-      document.documentElement.classList.add("dark");
-      await vi.waitFor(() => expect(frame()).toContain("#eeeeee"));
-    } finally {
-      brand.remove();
-      document.documentElement.classList.remove("dark");
-    }
+let app: App | undefined;
+/** The MetricView's declared columns: one more than the file draws. */
+const columns = [{ key: "kind" }, { key: "amount" }, { key: "region" }];
+const described: string[] = [];
+afterEach(() => { app?.unmount(); app = undefined; drawn.length = 0; described.length = 0; document.body.innerHTML = ""; vi.unstubAllGlobals(); });
+function mount(widget: ChartViewWidget, rows: Record<string, unknown>[]) {
+  vi.stubGlobal("fetch", async (url: string) => {
+    if (!url.endsWith("/metrics/describe")) throw new Error(`Unexpected request: ${url}`);
+    described.push(url);
+    return new Response(JSON.stringify({ outputColumns: columns }));
+  });
+  const element = document.createElement("div"); document.body.append(element);
+  app = createApp(defineComponent({ setup() { return () => h(ObjectViewVisualization, { widget, rows }); } }));
+  installObjectViewHost(app);
+  app.mount(element);
+  return element;
+}
+
+/** The describe read and the redraw it causes both settle a tick after mount. */
+async function settle() {
+  for (let index = 0; index < 4; index++) { await new Promise(resolve => setTimeout(resolve, 0)); await nextTick(); }
+}
+
+describe("Object View chart rendering", () => {
+  it("fills the saved file from the declared MetricView columns, including one the file does not draw", async () => {
+    const element = mount(chartWidget(), [{ kind: "A", amount: 7, region: "east" }]);
+    await settle();
+    expect(described).toHaveLength(1);
+    expect(drawn.at(-1)?.file).toEqual(chartFile());
+    expect(drawn.at(-1)?.metric).toEqual({ columns, rows: [{ kind: "A", amount: 7, region: "east" }] });
+    expect(drawn.at(-1)?.height).toBe(320);
+    expect(element.querySelector(".view-chart")?.getAttribute("style")).toContain("height: 320px");
+  });
+
+  it("reads the columns once for the MetricView and again only when the widget is bound to another one", async () => {
+    const widget = reactive(chartWidget());
+    mount(widget, [{ kind: "A", amount: 7 }]);
+    await settle();
+    expect(described).toHaveLength(1);
+    widget.resourceId = "metric-2";
+    await settle();
+    expect(described).toHaveLength(2);
+  });
+
+  it("draws a result with no rows as empty rather than keeping the previous object's rows", async () => {
+    const rows = reactive<Record<string, unknown>[]>([]);
+    mount(chartWidget(), rows);
+    await settle();
+    rows.push({ kind: "B", amount: 3 });
+    await nextTick();
+    expect(drawn.at(-1)?.metric.rows).toEqual([{ kind: "B", amount: 3 }]);
+    rows.splice(0);
+    await nextTick();
+    expect(drawn.at(-1)?.metric.rows).toEqual([]);
   });
 });

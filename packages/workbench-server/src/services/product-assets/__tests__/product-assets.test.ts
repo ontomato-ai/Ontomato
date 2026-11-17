@@ -48,9 +48,15 @@ describe("product asset admission",()=>{
     const document=productAssetInputSchema.parse({name:'Object view',document:{kind:'object-view',className:'Employee',form:'full'}}).document;
     expect(productReferences(document)).toEqual([{kind:'object-view',id:'Employee'}]);
     expect(productReferences({...document,primaryKey:'alice'} as typeof document)).toEqual(productReferences(document));
-    const chart=productAssetInputSchema.parse({name:'Chart',document:{kind:'widget',widget:{...widget,kind:'chart',labelField:'department',chartType:'bar'}}});
-    if(chart.document.kind!=='widget')throw new Error('Expected widget');
-    const donut={...chart.document,widget:{...chart.document.widget,chartType:'donut' as const}};
-    expect(productReferences(donut)).toEqual(productReferences(chart.document));
+    const file={dataset:[{id:'metric',dimensions:['name','value'],source:[]}],series:[{id:'main',type:'bar',datasetId:'metric',encode:{x:'name',y:'value'}}],ontomato:{}};
+    const chart=productAssetInputSchema.parse({name:'Chart',document:{kind:'metric-widget',renders:{kind:'MetricView',id:'published-metric'},renderer:'chart',chartFile:file,parameters:{}}});
+    if(chart.document.kind!=='metric-widget'||chart.document.renderer!=='chart')throw new Error('Expected chart');
+    const pie=productAssetInputSchema.parse({name:'Pie',document:{...chart.document,chartFile:{...file,series:[{id:'main',type:'pie',datasetId:'metric',encode:{itemName:'name',value:'value'}}]}}});
+    expect(productReferences(pie.document)).toEqual(productReferences(chart.document));
   });
+});
+
+it('rejects retired inline chart widgets and Collection chart/map renderers',()=>{
+  expect(productAssetInputSchema.safeParse({name:'Old chart',document:{kind:'widget',widget:{...widget,kind:'chart'}}}).success).toBe(false);
+  for(const renderer of ['chart','map'])expect(productAssetInputSchema.safeParse({name:'Collection',document:{kind:'collection-view',renders:{kind:'Definition',id:'definition'},renderer,parameters:{},fields:['name','value']}}).success).toBe(false);
 });

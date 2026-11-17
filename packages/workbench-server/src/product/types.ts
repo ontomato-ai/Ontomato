@@ -16,8 +16,6 @@ export interface WorkbenchProduct {
   appLogSourceType: Extract<LogSourceType, "data-agent-app" | "ontomato-app">;
   /** Matching rules for sessionId / backendNodeId in log text. Each edition keeps its pre-migration regex as-is (the enterprise edition also matches full-width colons). */
   logIdPatterns: { sessionId: RegExp; backendNodeId: RegExp };
-  /** Bracket annotations (e.g. units) stripped from model-returned field names during dashboard field mapping. Each edition keeps its pre-migration regex as-is (the enterprise edition also matches full-width brackets). */
-  chartFieldAnnotationPattern: RegExp;
   /** Class path extraction from dataset class-definition Markdown: line-start form and table-cell form. Each edition keeps its pre-migration regex as-is (the enterprise edition also ends on full-width commas). */
   datasetClassPathPatterns: { line: RegExp; tableCell: RegExp };
   /**

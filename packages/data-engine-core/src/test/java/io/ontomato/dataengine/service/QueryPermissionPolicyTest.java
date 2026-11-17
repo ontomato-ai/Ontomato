@@ -259,17 +259,17 @@ class QueryPermissionPolicyTest {
   }
 
   @Test
-  void incompleteStoredFunctionAndDashboardRejectBeforeExecution() {
+  void incompleteStoredFunctionAndProgramRejectBeforeExecution() {
     var function = storedMetric("broken", false).getFunction();
-    var dashboard = new io.ontomato.dataengine.bean.abcHarness.ABCHarnessDashboard();
-    dashboard.setOutKeyRefs(function.getReturnDef().getOutKeyRefs());
+    var program = new io.ontomato.dataengine.bean.abcHarness.ABCHarnessProgram();
+    program.setOutKeyRefs(function.getReturnDef().getOutKeyRefs());
     var python = mock(PythonExecuteService.class);
     var programs = new io.ontomato.dataengine.service.impl.ABCProgramServiceImpl();
     org.springframework.test.util.ReflectionTestUtils.setField(programs, "pythonExecuteService", python);
     assertEquals("Incomplete stored source declaration", assertThrows(IllegalArgumentException.class,
         () -> programs.execute("run", function, "user", permission(), null, "en", 1, "domain")).getMessage());
     assertEquals("Incomplete stored source declaration", assertThrows(IllegalArgumentException.class,
-        () -> programs.execute("run", dashboard, "user", permission(), "en", 1, "domain")).getMessage());
+        () -> programs.execute("run", program, "user", permission(), "en", 1, "domain")).getMessage());
     verifyNoInteractions(python);
   }
 

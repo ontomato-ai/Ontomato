@@ -66,11 +66,10 @@ function fieldLabel(field:string){return 'presentation' in props.asset.document?
         <dt>{{ot('productComponentId')}}</dt><dd><code>{{widget.id}}</code></dd>
         <dt>{{ot('productLayout')}}</dt><dd>{{ot('productColumnsOf12',{width:widget.span})}} · {{widget.height}}px</dd>
         <template v-if="widget.resourceId"><dt>{{ot('productCapabilityId')}}</dt><dd><code>{{widget.resourceId}}</code></dd></template>
-        <template v-if="widget.kind==='chart'"><dt>{{ot('productChartStyle')}}</dt><dd>{{({bar:ot('productChartBar'),line:ot('productChartLine'),donut:ot('productChartDonut')} as Record<string,string>)[widget.chartType]??widget.chartType}}</dd></template>
-        <template v-if="widget.valueField"><dt>{{ot('productValueField')}}</dt><dd><code>{{widget.valueField}}</code></dd></template>
-        <template v-if="widget.labelField"><dt>{{ot('productLabelField')}}</dt><dd><code>{{widget.labelField}}</code></dd></template>
-        <template v-if="widget.fields.length"><dt>{{ot('productDisplayFields')}}</dt><dd class="field-list"><code v-for="field in widget.fields" :key="field">{{field}}</code></dd></template>
-        <template v-if="widget.text"><dt>{{ot('productWidgetCopy')}}</dt><dd class="configuration-text">{{widget.text}}</dd></template>
+        <template v-if="widget.kind!=='chart'&&widget.valueField"><dt>{{ot('productValueField')}}</dt><dd><code>{{widget.valueField}}</code></dd></template>
+        <template v-if="widget.kind!=='chart'&&widget.labelField"><dt>{{ot('productLabelField')}}</dt><dd><code>{{widget.labelField}}</code></dd></template>
+        <template v-if="widget.kind!=='chart'&&widget.fields.length"><dt>{{ot('productDisplayFields')}}</dt><dd class="field-list"><code v-for="field in widget.fields" :key="field">{{field}}</code></dd></template>
+        <template v-if="widget.kind!=='chart'&&widget.text"><dt>{{ot('productWidgetCopy')}}</dt><dd class="configuration-text">{{widget.text}}</dd></template>
       </dl>
       <div v-if="Object.keys(widget.parameters).length" class="parameter-bindings"><h4>{{ot('productParameterBindings')}}</h4><div v-for="(binding,name) in widget.parameters" :key="name" class="parameter-row"><code>{{name}}</code><span>{{binding.source==='literal'?ot('productBindingLiteral'):binding.source==='variable'?ot('productBindingVariable'):ot('productObjectContext')}}</span><CodeEditor v-if="binding.source==='literal'&&binding.value!==null&&typeof binding.value==='object'" :model-value="bindings(binding.value)" language="json" readonly :min-height="80"/><code v-else>{{binding.source==='literal'?bindings(binding.value):binding.path}}</code></div></div>
     </section>

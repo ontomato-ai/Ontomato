@@ -55,6 +55,9 @@ describe("metric reference planning output boundary", () => {
     const result = await planReferenceDashboard([dataset], client() as unknown as DashboardMetricClient);
     expect(result.groups[0].charts).toHaveLength(2);
     expect(result.groups[0].metrics).toEqual([]);
+    expect(result.groups[0].charts[0].chartFile.content.dataset[0].source).toEqual([]);
+    expect(result.groups[0].charts[0]).not.toHaveProperty("chartType");
+    expect(result.groups[0].charts[0]).not.toHaveProperty("fields");
     expect(model.warn).not.toHaveBeenCalled();
   });
 
@@ -207,13 +210,20 @@ describe("metric reference planning output boundary", () => {
 
   it("keeps output mismatch errors for saved cards when their referenced columns disappear", () => {
     const saved = {
-      id: "saved-card", name: "Counts", chartType: "bar",
+      id: "saved-card", name: "Counts",
       query: { kind: "metric" as const, metricId: "metric-1", parameters: {} },
-      fields: { xAxis: "category", yAxis: "missing" },
+      chartFile:{name:"chart.chart.json",content:{dataset:[{id:"metric" as const,dimensions:["category","missing"],source:[]}],series:[{id:"main",type:"bar",datasetId:"metric" as const,encode:{x:"category",y:"missing"}}],ontomato:{}}},
     };
     expect(() => requireMatchingOutput(saved, output)).toThrow(expect.objectContaining({
-      status: 422, code: "CARD_OUTPUT_MISMATCH", message: expect.stringContaining("fields.yAxis"),
+      status: 422, code: "CARD_OUTPUT_MISMATCH", message: expect.stringContaining("series.0.encode.y"),
       details: expect.objectContaining({ cardId: "saved-card", fields: ["missing"] }),
     }));
   });
+});
+
+it("reports file compilation failure at its chart plan path",async()=>{
+  const single={...dataset,data:[dataset.data[0]]};
+  const api=client();api.execute.mockResolvedValue({...output,rows:single.data});
+  model.run.mockResolvedValueOnce(JSON.stringify({name:"Gauge",groups:[{title:"One",charts:[{...charts[0],chartType:"gauge"}],metrics:[]}]})).mockResolvedValueOnce('{"fields":{"value":"amount"}}');
+  await expect(planReferenceDashboard([single],api as unknown as DashboardMetricClient)).rejects.toMatchObject({code:"DASHBOARD_PLAN_INVALID",details:{issues:[expect.objectContaining({path:["groups",0,"charts",0]})]}});
 });

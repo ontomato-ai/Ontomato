@@ -1,6 +1,6 @@
 import type { QueryBackendSession } from "@ontomato/contracts/query-execution";
 import type { ResultTruncation } from "@ontomato/contracts/query-execution";
-import type { AbcProgramDashboard } from "@ontomato/contracts/dashboard";
+import type { Dataset } from "../data-query/adapter";
 import type { RuntimeRunSnapshot } from "@ontomato/contracts/agent-runtime";
 
 /** Read-only retrieval evidence for the existing diagnosis consumers. */
@@ -19,7 +19,7 @@ export interface AssistantQueryEvidence {
     title: string;
     rows: Record<string, unknown>[];
     dsl?: unknown;
-    abcProgram?: AbcProgramDashboard;
+    abcProgram?: Dataset["abcProgram"];
   } & Partial<ResultTruncation>>;
   fullContent: string;
   qcResult?: any;

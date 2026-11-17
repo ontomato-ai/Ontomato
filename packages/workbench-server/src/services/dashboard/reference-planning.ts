@@ -2,18 +2,22 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import {
-  dashboardChartInputs, dashboardFormatSchema, metricReferenceChartSchema, metricReferenceMetricSchema,
-  type DashboardGroup, type DashboardMetricReference, type DashboardMetricOutput, type MetricReferenceChartEntry, type MetricReferenceEntry,
+  dashboardChartInputs, metricReferenceChartSchema, metricReferenceMetricSchema,
+  type DashboardGroup, type DashboardMetricReference, type DashboardMetricOutput,
 } from "@ontomato/contracts/dashboard";
+import { legacyChartToFile, validateStoredChartFile, chartFormatSchema, type ChartDisplay } from "@ontomato/contracts/chart-data";
 import { runAuxiliary } from "../../platform/agent-runtime/runtime";
 import { renderPrompt } from "../../core/prompts/loader";
 import { buildModelDataView } from "../../utils/model-data-view";
 import { HttpError } from "../../utils/errors";
 import { createLogger } from "../../logging/logger";
-import { cleanJsonBlock } from "./planning/core/chart-recommender";
 import { DashboardMetricClient } from "./metric-client";
 import { chartFieldSchema, dashboardInputs, outputMappingIssues } from "./metric-data";
 import type { DashboardDatasetInput } from "./types";
+
+function cleanJsonBlock(text: string) {
+  return text.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+}
 
 const planned = z.object({ datasetKey: z.string(), name: z.string().min(1), calculation: z.string().min(1).optional() });
 const chartPlan = planned.extend({ chartType: z.string().refine(type => Object.hasOwn(dashboardChartInputs, type)) }).strict();
@@ -91,11 +95,11 @@ async function model<T>(key: string, input: unknown, schema: z.ZodType<T>, local
 
 export async function mapMetricFields(
   chartType: string, name: string, output: DashboardMetricOutput, locale?: string,
-  presentation: Pick<MetricReferenceEntry, "sort" | "formats"> = {},
+  presentation: Pick<ChartDisplay, "sort" | "formats"> = {},
 ) {
   const inputs = dashboardInputs(chartType);
   const fieldPlanSchema = z.object({
-    fields: chartFieldSchema(chartType), formats: z.record(dashboardFormatSchema).optional(),
+    fields: chartFieldSchema(chartType), formats: z.record(chartFormatSchema).optional(),
   }).strict().superRefine((mapping, context) => {
     const combined = { ...presentation, formats: { ...presentation.formats, ...mapping.formats } };
     for (const issue of outputMappingIssues(chartType, mapping.fields, output, combined))
@@ -146,13 +150,18 @@ export async function planReferenceDashboard(
     return { dataset, ...await task };
   }
   const groups: DashboardGroup[] = [];
-  for (const group of plan.groups) {
+  for (const [groupIndex,group] of plan.groups.entries()) {
     const result: DashboardGroup = { id: randomUUID(), title: group.title, charts: [], metrics: [] };
-    for (const chart of group.charts) {
+    for (const [chartIndex,chart] of group.charts.entries()) {
       const { dataset, query, output } = await source(chart, chart.chartType);
       const mapped = await mapMetricFields(chart.chartType, chart.name, output, client.credentials.locale);
+      const converted = legacyChartToFile({type:chart.chartType,fields:mapped.fields,display:{formats:mapped.formats},seriesNames:Object.fromEntries(output.columns.map(column=>[column.key,column.label??column.key]))});
+      const path = ["groups",groupIndex,"charts",chartIndex];
+      if (!converted.ok) throw new HttpError(502, `Invalid chart plan at ${path.join(".")}: ${converted.code}`, "DASHBOARD_PLAN_INVALID", {issues:[{path,code:converted.code,fields:converted.fields,details:converted.details}]});
+      const checked=validateStoredChartFile(converted.file,output.columns);
+      if(!checked.ok)throw new HttpError(502,`Invalid chart plan at ${path.join(".")}`,"DASHBOARD_PLAN_INVALID",{issues:checked.issues.map(issue=>({...issue,path:[...path,...issue.path]}))});
       const entry = metricReferenceChartSchema.parse({
-        id: randomUUID(), name: chart.name, chartType: chart.chartType, query, ...mapped,
+        id: randomUUID(), name: chart.name, query, chartFile:{name:"chart.chart.json",content:converted.file},
         source: { ...dataset.source, datasetKey: dataset.datasetKey, subQuestion: dataset.subQuestion },
         layout: { colSpan: 12, rowSpan: 1 },
       });
@@ -174,11 +183,3 @@ export async function planReferenceDashboard(
   return { name: plan.name, groups };
 }
 
-export async function changeMetricChartType(card: MetricReferenceChartEntry, chartType: string, client: DashboardMetricClient) {
-  if (!Object.hasOwn(dashboardChartInputs, chartType)) throw new HttpError(400, "Unsupported chart type", "INVALID_REQUEST");
-  const spec = await client.describe(card.query.metricId);
-  const output = await client.execute(card.query, spec.revision);
-  const mapped = await mapMetricFields(chartType, card.name, output, client.credentials.locale, card);
-  const changed = { ...card, chartType, fields: mapped.fields };
-  return changed;
-}

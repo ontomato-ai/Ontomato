@@ -3,6 +3,7 @@ import { createObjectView, createViewWidget, objectViewDocumentSchema, objectVie
 import { createManagerClient } from "../api";
 import { englishMessages } from "../i18n";
 import { instanceName } from "../object-views/instance-name";
+import { chartWidget } from "./chart-fixture";
 
 afterEach(() => { vi.unstubAllGlobals(); });
 describe("object view bindings and documents", () => {
@@ -23,7 +24,7 @@ describe("object view bindings and documents", () => {
     expect(objectViewProductIssues(view).length).toBeGreaterThan(0);
   });
   it("preserves saved widget dimensions through the schema", () => {
-    expect(viewWidgetSchema.parse({ ...createViewWidget("chart"), span: 9, height: 480 })).toMatchObject({ span: 9, height: 480 });
+    expect(viewWidgetSchema.parse({ ...chartWidget(), span: 9, height: 480 })).toMatchObject({ span: 9, height: 480 });
   });
   it("uses enabled business keys for names and never falls back to technical identifiers", () => {
     const attrs = [{ name: "id" }, { name: "code", bizzkey: true }, { name: "org_name", bizzkey: true }];

@@ -35,11 +35,11 @@
         <!-- Default chart/metric menu (no create-dimension entry) -->
         <template v-else>
           <el-dropdown-item command="rename">{{ t("common.rename") }}</el-dropdown-item>
-          <el-dropdown-item v-if="scene === 'metric' && metricRef" command="parameters">
+          <el-dropdown-item v-if="scene === 'metric'" command="parameters">
             {{ t("dashboard.editParameters") }}
           </el-dropdown-item>
-          <el-dropdown-item v-if="scene === 'metric'" command="view_dsl">
-            {{ metricRef ? t("dashboard.viewMetric") : t("common.viewDsl") }}
+          <el-dropdown-item v-if="scene === 'metric'" command="view-query">
+            {{ t("dashboard.viewMetric") }}
           </el-dropdown-item>
           <el-dropdown-item command="delete" divided>{{ t("common.delete") }}</el-dropdown-item>
         </template>
@@ -67,8 +67,6 @@ defineProps({
   iconColor: { type: String, default: "" },
   iconSize: { type: [Number, String], default: undefined },
   scene: { type: String, default: "" }, // 'dimension' | 'metric' | ''(default: chart)
-  /** The card references a metric: it offers its parameters and shows the metric instead of a DSL. */
-  metricRef: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["command", "visible-change"]);

@@ -4,10 +4,12 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
+    "./chart-data": "./src/chart-data/index.ts",
     "./*": "./src/*.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/chart-data/*.node-test.ts src/chart-import.node-test.ts src/dashboard-authoring.node-test.ts",
     "generate:query-package": "node --import tsx scripts/query-package-schema.mjs",
     "generate:query-subgraph": "node scripts/query-subgraph-schema.mjs",
     "check:query-subgraph": "node scripts/check-query-subgraph.mjs",

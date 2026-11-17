@@ -1,11 +1,11 @@
-import { mix, rgbTriplet, type BrandMode, type BrandSource } from "@ontomato/design-tokens";
+import { rgbTriplet, type BrandMode, type BrandSource } from "@ontomato/design-tokens";
 import { workbenchBrand } from "../../brand";
 
 /**
- * The colours the dashboard generator writes into its options in one mode, all derived from the edition's brand
- * source (DESIGN.md "Charts and the ontology graph"): series take `dataviz` in its fixed order, labels use the ink
- * roles and the rest uses the neutral roles. The charts are drawn in the platform's chart theme
- * (`@ontomato/foundation-ui/chart`), which reads the same brand from its stylesheet.
+ * The chart roles the edition's brand fills in one mode, all derived from its brand source (DESIGN.md "Charts and the
+ * ontology graph"): series take `dataviz` in its fixed order, labels use the ink roles and the rest uses the neutral
+ * roles. Charts are drawn in the platform's chart theme (`@ontomato/foundation-ui/chart`), which reads the same brand
+ * from its stylesheet; these roles are what a reader of the brand expects a chart to be made of.
  */
 export interface ChartPalette {
   /** Categorical series colours, the brand's `dataviz` for this mode. */
@@ -43,15 +43,4 @@ export function currentMode(): BrandMode {
 /** The palette of the installed brand in the mode the workbench shows now. */
 export function currentChartPalette(): ChartPalette {
   return chartPalette(workbenchBrand(), currentMode());
-}
-
-/** Bar fill: the series colour, lighter toward the chart surface at the top. */
-export function barGradientStops(color: string, surface: string): [string, string] {
-  return [mix(color, surface, 0.3), color];
-}
-
-/** Area fill under a line: the series colour fading out. */
-export function areaGradientStops(color: string): [string, string, string] {
-  const rgb = rgbTriplet(color);
-  return [`rgba(${rgb}, 0.4)`, `rgba(${rgb}, 0.1)`, `rgba(${rgb}, 0.02)`];
 }

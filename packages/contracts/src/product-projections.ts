@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {storedChartFileSchema} from './chart-data';
 import {viewBindingSchema,objectViewDocumentSchema} from './object-views';
 
 const id=z.string().min(1).max(200);
@@ -30,9 +31,15 @@ export function formatProjectionValue(value:unknown,options?:{kind:DisplayFormat
     return result+(options.unit?` ${options.unit}`:options.kind==='percent'?' %':'');
   }catch{return String(value);}
 }
-export const metricProjectionSchema=z.object({kind:z.literal('metric-widget'),...base,renders:z.object({kind:z.literal('MetricView'),id}).strict(),renderer:z.enum(['number','trend','gauge','chart','table']).default('number'),parameters,fields:z.array(id).default([]),valueField:z.string().default(''),labelField:z.string().default(''),chartType:z.enum(['bar','line','donut']).default('bar'),format:format.optional(),display:projectionDisplaySchema.optional(),height:z.number().int().min(80).max(1200).default(240)}).strict();
+export const metricProjectionSchema=z.object({kind:z.literal('metric-widget'),...base,renders:z.object({kind:z.literal('MetricView'),id}).strict(),renderer:z.enum(['number','chart','table']).default('number'),chartFile:storedChartFileSchema.optional(),parameters,fields:z.array(id).default([]),valueField:z.string().default(''),labelField:z.string().default(''),chartType:z.enum(['bar','line','donut']).default('bar'),format:format.optional(),display:projectionDisplaySchema.optional(),height:z.number().int().min(80).max(1200).default(240)}).strict();
+export type MetricProjection = z.infer<typeof metricProjectionSchema>;
+export type MetricChartProjection = MetricProjection & {renderer:'chart';chartFile:z.infer<typeof storedChartFileSchema>};
+/** Narrow a parsed product document to its file-based chart presentation. */
+export function isMetricChartProjection(document:{kind:string;renderer?:string;chartFile?:MetricProjection['chartFile']}):document is MetricChartProjection{
+  return document.kind==='metric-widget'&&document.renderer==='chart'&&document.chartFile!==undefined;
+}
 export const actionProjectionSchema=z.object({kind:z.literal('action-view'),...base,renders:z.object({kind:z.literal('Action'),id}).strict(),renderer:z.enum(['form','button','dialog','inline']).default('form'),parameters,readOnlyParameters:z.array(id).default([])}).strict();
-export const collectionProjectionSchema=z.object({kind:z.literal('collection-view'),...base,renders:z.object({kind:z.literal('Definition'),id}).strict(),renderer:z.enum(['table','list','chart','map','3d-scene']).default('table'),parameters,fields:z.array(id).default([]),pageSize:z.number().int().min(1).max(50).optional()}).strict();
+export const collectionProjectionSchema=z.object({kind:z.literal('collection-view'),...base,renders:z.object({kind:z.literal('Definition'),id}).strict(),renderer:z.enum(['table','list','3d-scene']).default('table'),parameters,fields:z.array(id).default([]),pageSize:z.number().int().min(1).max(50).optional()}).strict();
 export const objectProjectionSchema=z.object({kind:z.literal('object-projection'),...base,renders:z.object({kind:z.literal('ObjectType'),id}).strict(),renderer:z.enum(['full','summary','card','text','3d']).default('full'),fields:z.array(id).default([]),primaryKey:z.string().max(1000).optional(),layout:objectViewDocumentSchema.optional()}).strict();
 export const navigationSchema=z.object({kind:z.literal('navigation'),entry:id,nodes:z.array(z.object({id,pageId:id,label:z.string().max(200),path:z.string().regex(/^\/(?!\/)/)}).strict()).min(1).max(100)}).strict().refine(value=>new Set(value.nodes.map(node=>node.id)).size===value.nodes.length&&new Set(value.nodes.map(node=>node.path)).size===value.nodes.length&&value.nodes.some(node=>node.id===value.entry),'Navigation requires distinct nodes, distinct paths and a valid entry');
 export const agentProfileSchema=z.object({kind:z.literal('agent-profile'),agentId:id,instructions:z.string().max(50000),tools:z.array(id).max(100).refine(ids=>new Set(ids).size===ids.length,'Duplicate tool projection'),contextViews:z.array(id).max(100).refine(ids=>new Set(ids).size===ids.length,'Duplicate context projection')}).strict();

@@ -1,3 +1,6 @@
+import { validateStoredChartFile } from "@ontomato/contracts/chart-data";
+import type { DashboardMetricDescription } from "@ontomato/contracts/dashboard";
+import type { ViewWidget } from "@ontomato/contracts/object-views";
 import { productReferences, productWidgets,platformWidget, type ProductAssetInput,type ProductAsset } from "@ontomato/contracts/product-assets";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { DashboardMetricClient } from "../dashboard/metric-client";
@@ -10,6 +13,18 @@ import { objectViewDocumentSchema, objectViewProductIssues,objectProjectionIssue
 import {readDefinition} from './definitions';
 import {platformObjectProvider} from './platform-objects';
 import {pageBindingType} from '@ontomato/contracts/product-page-state';
+
+/** Product storage owns empty snapshots; chart-data owns the format and output references. */
+function validateMetricFields(widget: ViewWidget, metric: Pick<DashboardMetricDescription, "outputColumns">) {
+  if (widget.kind === "chart") {
+    const result = validateStoredChartFile(widget.chartFile, metric.outputColumns);
+    if (!result.ok) throw new HttpError(400, "Invalid chart file for MetricView output", result.code, result);
+  } else {
+    const fields = new Set(metric.outputColumns.map(column => column.key));
+    for (const field of [...widget.fields, widget.valueField, widget.labelField].filter(Boolean))
+      if (!fields.has(field)) throw new HttpError(400, `MetricView has no output column: ${field}`, "INVALID_PRODUCT_FIELD");
+  }
+}
 
 /** Validate a Page binding against the capability signature, not only its parameter name. */
 export async function validatePageBindings(owner:ProductOwner,input:ProductAssetInput,read:(id:string)=>Promise<ProductAsset>,credentials:AssistantCredentials){
@@ -54,14 +69,12 @@ export async function validateProduct(owner: ProductOwner, input: ProductAssetIn
     }
   }
   if(['metric-widget','action-view','collection-view'].includes(input.document.kind)&&'parameters' in input.document&&Object.values(input.document.parameters).some(binding=>['object','context'].includes(binding.source)))throw new HttpError(400,'Bind projection parameters to typed Page state or literal values','INVALID_PRODUCT_PARAMETER');
-  if(input.document.kind==='metric-widget'){
+  if(input.document.kind==='metric-widget'&&input.document.renderer!=='chart'){
     if(input.document.display){const metric=await new DashboardMetricClient(owner.domainId,credentials).describe(input.document.renders.id);const fields=new Set(metric.outputColumns.map(column=>column.key));if([...(input.document.display.sort??[]).map(sort=>sort.field),...Object.keys(input.document.display.formats??{})].some(field=>!fields.has(field)))throw new HttpError(400,'Display configuration references an unavailable field','INVALID_PRODUCT_FIELD');}
-    if(['number','gauge'].includes(input.document.renderer)&&!input.document.valueField)throw new HttpError(400,'Select a numeric output field','INVALID_PRODUCT_FIELD');
-    if(['chart','trend'].includes(input.document.renderer)&&(!input.document.valueField||!input.document.labelField))throw new HttpError(400,'Select chart value and label fields','INVALID_PRODUCT_FIELD');
+    if(input.document.renderer==='number'&&!input.document.valueField)throw new HttpError(400,'Select a numeric output field','INVALID_PRODUCT_FIELD');
   }
   if(input.document.kind==='collection-view'){
     if(!input.document.fields.length)throw new HttpError(400,'Select collection output fields','INVALID_PRODUCT_FIELD');
-    if(['chart','map'].includes(input.document.renderer)&&input.document.fields.length<2)throw new HttpError(400,'Collection charts and maps require two mapped fields','INVALID_PRODUCT_FIELD');
     const definition=await readDefinition(owner,input.document.renders.id);
     const objectType=definition.objectType;
     const available=objectType.startsWith('platform:')?Object.keys(platformObjectProvider(objectType).fields):JSON.parse((await backendPost('collection-output-schema',config.dataQuery.baseUrl+'/ontology/query/schema',{classNames:[objectType]},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey,credentials.headers),retries:1})).text).classes?.find((object:{className:string})=>object.className===objectType)?.attrs?.map((attribute:{name:string})=>attribute.name);
@@ -83,8 +96,7 @@ export async function validateProduct(owner: ProductOwner, input: ProductAssetIn
         else if(['properties','links','metric','table','chart'].includes(widget.kind)){
           const metric=await new DashboardMetricClient(owner.domainId,credentials).describe(widget.resourceId);
           if(metric.status!=='PUBLISHED')throw new HttpError(400,'Publish the MetricView first','UNPUBLISHED_CAPABILITY');
-          const fields=new Set(metric.outputColumns.map(column=>column.key));
-          for(const field of [...widget.fields,widget.valueField,widget.labelField].filter(Boolean))if(!fields.has(field))throw new HttpError(400,`MetricView has no output column: ${field}`,'INVALID_PRODUCT_FIELD');
+          validateMetricFields(widget, metric);
           const parameters=new Set(metric.parameterDefs.map(parameter=>String(parameter.name)));
           if(Object.keys(widget.parameters).some(name=>!parameters.has(name)))throw new HttpError(400,'Unknown capability parameter','INVALID_PRODUCT_PARAMETER');
           for(const parameter of metric.parameterDefs)if(!Object.hasOwn(widget.parameters,String(parameter.name))&&(!Object.hasOwn(parameter,'value')||parameter.value===null))throw new HttpError(400,`Bind the MetricView parameter: ${parameter.name}`,'MISSING_PRODUCT_PARAMETER');
@@ -121,8 +133,7 @@ export async function validateProduct(owner: ProductOwner, input: ProductAssetIn
        }else if(['properties','links','metric','table','chart'].includes(widget.kind)){
          const metric=await new DashboardMetricClient(owner.domainId,credentials).describe(widget.resourceId);
          if(metric.status!=='PUBLISHED')throw new HttpError(400,'Publish the MetricView first','UNPUBLISHED_CAPABILITY');
-         const fields=new Set(metric.outputColumns.map(column=>column.key));
-         for(const field of [...widget.fields,widget.valueField,widget.labelField].filter(Boolean))if(!fields.has(field))throw new HttpError(400,`MetricView has no output column: ${field}`,'INVALID_PRODUCT_FIELD');
+         validateMetricFields(widget, metric);
          const parameters=new Set(metric.parameterDefs.map(parameter=>String(parameter.name)));
          if(Object.keys(widget.parameters).some(name=>!parameters.has(name)))throw new HttpError(400,'Unknown capability parameter','INVALID_PRODUCT_PARAMETER');
          for(const definition of metric.parameterDefs)if(!Object.hasOwn(widget.parameters,String(definition.name))&&(!Object.hasOwn(definition,'value')||definition.value===null))throw new HttpError(400,`Bind the MetricView parameter: ${definition.name}`,'MISSING_PRODUCT_PARAMETER');
@@ -138,10 +149,7 @@ export async function validateProduct(owner: ProductOwner, input: ProductAssetIn
       const metric = await client.describe(reference.id);
       if (metric.status !== "PUBLISHED") throw new HttpError(400,"Publish the MetricView first","UNPUBLISHED_CAPABILITY");
       for (const widget of widgets.filter(widget => widget.resourceId === reference.id)) {
-        const fields = new Set(metric.outputColumns.map(column => column.key));
-        for (const field of [...widget.fields, widget.valueField, widget.labelField].filter(Boolean)) {
-          if (!fields.has(field)) throw new HttpError(400, `MetricView has no output column: ${field}`, "INVALID_PRODUCT_FIELD");
-        }
+        validateMetricFields(widget, metric);
         const parameters = new Set(metric.parameterDefs.map(parameter => String(parameter.name)));
         if (Object.keys(widget.parameters).some(name => !parameters.has(name))) throw new HttpError(400,"Unknown capability parameter","INVALID_PRODUCT_PARAMETER");
         for(const definition of metric.parameterDefs){
@@ -163,17 +171,14 @@ export async function validateProduct(owner: ProductOwner, input: ProductAssetIn
       const fields=new Set(form.data.fields.map((field:{key:string})=>field.key));
       if(widgets.filter(widget=>widget.resourceId===reference.id).some(widget=>Object.keys(widget.parameters).some(name=>!fields.has(name))))
         throw new HttpError(400,"Unknown Action parameter","INVALID_PRODUCT_PARAMETER");
-      if(widgets.filter(widget=>widget.resourceId===reference.id).some(widget=>widget.readOnlyParameters.some(name=>!fields.has(name)||!Object.hasOwn(widget.parameters,name))))
+      if(widgets.filter(widget=>widget.resourceId===reference.id).some(widget=>widget.kind!=='chart'&&widget.readOnlyParameters.some(name=>!fields.has(name)||!Object.hasOwn(widget.parameters,name))))
         throw new HttpError(400,'Read-only Action parameters must exist and have a binding','INVALID_PRODUCT_PARAMETER');
     }
     if (reference.kind === "dashboard") {
       // Existing dashboards are personal. Shared templates use reusable capability widgets instead.
       if (input.visibility === "domain") throw new HttpError(400,"Shared assets must use MetricView widgets instead of personal dashboards","PRIVATE_DEPENDENCY");
       const dashboard = await getOwnedDashboard(owner.userId, owner.domainId, reference.id);
-       if (dashboard.groups.some(group => [...group.charts,...group.metrics].some(card => card.query?.kind !== "metric")))
-         throw new HttpError(400,"Migrate legacy inline dashboard logic to published MetricViews first","LEGACY_INLINE_LOGIC");
        for(const group of dashboard.groups)for(const card of [...group.charts,...group.metrics]){
-         if(card.query?.kind!=='metric')continue;
          const metric=await client.describe(card.query.metricId);
          if(metric.status!=='PUBLISHED')throw new HttpError(400,'Publish the MetricView first','UNPUBLISHED_CAPABILITY');
          const parameters=new Set(metric.parameterDefs.map(parameter=>String(parameter.name)));

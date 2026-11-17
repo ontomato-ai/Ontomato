@@ -1,9 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ossBrand } from "@ontomato/design-tokens/oss";
 import type { BrandSource } from "@ontomato/design-tokens";
-import { installWorkbenchBrand } from "../../../brand";
-import { chartPalette } from "../chart-palette";
-import { EchartsGenerator } from "../components/utils/echartsGenerator";
+import { installWorkbenchBrand, workbenchBrand } from "../../../brand";
+import { chartPalette, currentChartPalette, currentMode } from "../chart-palette";
 
 /** A brand unlike the open-source one, to show the charts follow whichever brand the edition installs. */
 const other: BrandSource = {
@@ -32,14 +31,11 @@ describe("chart colours", () => {
     }
   });
 
-  it("reach the generated dashboard options", () => {
+  it("follow the brand the edition installs, read when asked", () => {
     installWorkbenchBrand(other);
-    const option = EchartsGenerator.generate("pie", "Share", { x: "name", y: "value" }, [
-      { name: "a", value: 1 },
-      { name: "b", value: 2 },
-    ]);
-    const text = JSON.stringify(option);
-    expect(text).toContain(other.light.surface);
-    expect(text).not.toMatch(new RegExp(ossBrand.light.surface, "i"));
+    expect(workbenchBrand()).toBe(other);
+    const palette = currentChartPalette();
+    expect(palette.series).toEqual(other.dataviz[currentMode()]);
+    expect(palette.text).toBe(other[currentMode()].ink);
   });
 });
