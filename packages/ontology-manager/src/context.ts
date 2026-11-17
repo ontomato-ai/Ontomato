@@ -1,4 +1,4 @@
-import { computed, inject, onMounted, reactive, type App, type InjectionKey, type Ref } from "vue";
+import { inject, onMounted, reactive, type App, type InjectionKey, type Ref } from "vue";
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from "vue-router";
 import { useI18n } from "vue-i18n";
 import {
@@ -10,7 +10,6 @@ import {
 } from "./api";
 import { metricViewsKey } from "./clients/metric-views";
 import type { MessageKey, SharedKey, TextParams } from "./i18n";
-import { shellLabels, type GovernanceTranslate } from "./knowledge-governance/messages";
 import { emptyOntologyResourceCounts, type OntologyResourceCounts } from "./workspace";
 
 export type ManagerTheme = "light" | "dark";
@@ -230,14 +229,8 @@ export function usePlatformText() {
   return { pt: (key: "platform.operations" | "platform.governance") => translate(key) };
 }
 
-/** Knowledge governance text from the `governance` entries, and the agent shell's labels in the current language. */
+/** Knowledge governance text from the `governance` entries of the page's vue-i18n tree. */
 export function useGovernanceText() {
-  const i18n = useI18n();
-  const translate = i18n.t as GovernanceTranslate;
-  const t = (key: string, params: TextParams = {}) => translate(`governance.text.${key}`, params);
-  // Reading the locale makes the labels follow a language switch.
-  const labels = computed(() => (void i18n.locale.value, {
-    ...shellLabels(translate), sessionActions: i18n.t("governance.shell.more"),
-  }));
-  return { t, labels };
+  const { t: translate } = useI18n();
+  return { t: (key: string, params: TextParams = {}) => translate(`governance.text.${key}`, params) };
 }

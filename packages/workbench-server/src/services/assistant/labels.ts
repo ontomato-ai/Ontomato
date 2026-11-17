@@ -1,7 +1,7 @@
 import { tForLocale } from "../../i18n";
 
 export function assistantName(agent: { kind: string; name: string }, locale?: string) {
-  const defaults: Record<string, string> = { regular: "Assistant", analysis: "Analyst" };
+  const defaults: Record<string, string> = { regular: "Assistant", analysis: "Analyst", "knowledge-governance": "Knowledge governance" };
   return defaults[agent.kind] === agent.name
     ? tForLocale(locale, `assistant.default.${agent.kind}.name`) : agent.name;
 }
@@ -11,6 +11,7 @@ export function assistantDescription(agent: { kind: string; description: string 
   const defaults: Record<string, string> = {
     regular: "Ask questions about your data",
     analysis: "Investigate questions and produce reports",
+    "knowledge-governance": "Review business knowledge with traceable evidence",
   };
   return defaults[agent.kind] === agent.description
     ? tForLocale(locale, `assistant.default.${agent.kind}.description`)

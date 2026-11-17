@@ -190,17 +190,6 @@ public class OntologyAgentDefinitions {
             "updatePrompt",
             prompt(language, "data-retrieval", "compaction/update")));
   }
-  public static final Map<String,Object> GOVERNANCE_SKILL = Map.of(
-    "namespace", Map.of("kind","provider","provider","ontology"), "name","knowledge-governance");
-
-  public void publishGovernance() throws Exception {
-    var files = new ArrayList<Map<String,String>>();
-    for (String path : List.of("SKILL.md", "scripts/governance.mjs", "references/commands.md","references/extraction.md"))
-      files.add(Map.of("path",path,"content",resource("ontology-skills/knowledge-governance/"+path)));
-    runtime.json(null,"ontology-governance-skills","/v1/skills","POST",
-      Map.of("skill",GOVERNANCE_SKILL,"files",files),null);
-  }
-
   /**
    * The conversational action creator: the action maker task prompt plus the generation skill, in
    * a persistent session. It has a write sandbox and can revise the files from the previous turn.
@@ -223,23 +212,6 @@ public class OntologyAgentDefinitions {
                 resource("ontology-contracts/agent-artifact-markdown-prompt.json"), String.class)
             + "\n\n"
             + prompt(language, "generation", "action_creation"));
-    return value;
-  }
-
-  public JSONObject governance(String domain, String language, long remainingMs) {
-    return governance(domain,language,remainingMs,KnowledgeGovernanceService.AGENT);
-  }
-  public JSONObject governance(String domain,String language,long remainingMs,String agent) {
-    var value = definition(domain, language,remainingMs);
-    value.put("agentId",agent);
-    value.put("modelId", models.modelId(domain, agent));
-    value.put("skills",List.of(GOVERNANCE_SKILL));
-    value.put("systemPrompt",prompt(language,"knowledge-governance","main/system") + "\n\n" +
-      JSON.parseObject(resource("ontology-contracts/agent-artifact-markdown-prompt.json"),String.class));
-    value.put("compaction",Map.of(
-      "systemPrompt",prompt(language,"knowledge-governance","compaction/system"),
-      "summarizePrompt",prompt(language,"knowledge-governance","compaction/summarize/user"),
-      "updatePrompt",prompt(language,"knowledge-governance","compaction/update/user")));
     return value;
   }
 

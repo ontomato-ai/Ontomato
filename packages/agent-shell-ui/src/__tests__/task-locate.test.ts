@@ -50,7 +50,7 @@ it("opens a finished reply's folded process when the reader picks one of its tas
 it("opens a deeper task's read-only process through the existing proxy and links page-backed work", async () => {
   const child: ChannelAgentTask = { ...task, id:"99999999-9999-4999-8999-999999999999", title:"Nested review", parentTaskId:task.id, status:"running",
     process:{mode:"inline",runtimeSessionId:task.sessionRef.sessionId,runtimeRunId:task.runId} };
-  const page: ChannelAgentTask = { ...task,id:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",title:"Governance",parentTaskId:child.id,process:{mode:"page",href:"/governance/chat/record"} };
+  const page: ChannelAgentTask = { ...task,id:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",title:"Governance",parentTaskId:child.id,process:{mode:"page",href:"/governance/reports/record-1"} };
   const snapshot: AgentHostRunSnapshot = { pendingQuestions: [],
     run:{id:child.runId,sessionId:child.sessionRef.sessionId,status:"running",stopReason:null,errorMessage:null,answerMessageId:null,workspaceCommit:null,createdAt:new Date(0).toISOString(),finishedAt:null,resolvedSkills:[]},
     cursor:{runId:child.runId,seq:1,streamId:child.id},messages:[],toolExecutions:[],artifacts:[],
@@ -69,7 +69,7 @@ it("opens a deeper task's read-only process through the existing proxy and links
     expect(port.subscribeProcess).toHaveBeenCalledWith(task.root.sessionId,child.id,expect.objectContaining({seq:1,streamId:child.id}),expect.any(Object));
     await vi.waitFor(() => expect(root.textContent).toContain("Inspecting nested records"));
     expect(root.querySelector("textarea")).toBeNull();expect(locate).not.toHaveBeenCalled();
-    expect(root.querySelector("a.task-row")?.getAttribute("href")).toBe("/governance/chat/record");
+    expect(root.querySelector("a.task-row")?.getAttribute("href")).toBe("/governance/reports/record-1");
     row.click();await nextTick();expect(detach).toHaveBeenCalledOnce();
   } finally {app.unmount();root.remove();}
 });

@@ -1,3 +1,5 @@
+import { closeGovernanceWindow } from "./governance";
+import { needsRetrievalScope } from "./skills";
 import { agentHostSendResultSchema, type AgentHostSendRequest } from "@ontomato/contracts/agent-host";
 import { resolveLocale } from "../../i18n";
 import { assertAppBuilderAccess } from "../app-builder/access";
@@ -211,9 +213,11 @@ export const assistantService = {
     return {client:new ChannelProcessClient(owner,sessionId,taskId),process:task.process};
   },
   /** Parent completion records its own turn only; delegated executions retain their authorization. */
-  async settleTurn(id: string) { await assistantStore.settled(id); },
+  async settleTurn(id: string, owner: AssistantOwner) { await closeGovernanceWindow(id,owner); await assistantStore.settled(id); },
   async cancelScope(id: string,owner: AssistantOwner,credentials: AssistantCredentials) {
-    if (!await assistantStore.isBuilderRun(id,owner)) await new OntologyRetrievalClient(owner,id).closeScope(credentials);
+    await closeGovernanceWindow(id,owner);
+    const turn=await assistantStore.turn(id,owner);
+    if (turn.retrieval_scope_id) await new OntologyRetrievalClient(owner,turn.retrieval_scope_id).closeScope(credentials);
     await assistantStore.settled(id);
   },
   async prepare(body: AgentPrepareRequest, owner: AssistantOwner, credentials: AssistantCredentials): Promise<RuntimeStartRunRequest> {
@@ -246,7 +250,7 @@ export const assistantService = {
     const native=await nativeProfileId(owner.domainId,a.id);
     if(native){const {requireProductUse}=await import('../product-assets/grants');await requireProductUse(owner,native);await requireProductUse(owner,a.id);if(!credentials.token?.startsWith('ap2.')){const {userScopedAgentCredentials}=await import('../product-assets/agent-principal');credentials=await userScopedAgentCredentials(owner.domainId,a.id,owner.userId,credentials.locale);}}
     const profile = isAppBuilderKind(a.kind)||native ? null : await agentProfileForPrincipal(owner,credentials,a.id);
-    const ontologyContext = isAppBuilderKind(a.kind) || profile ? null : await assistantOntologyContext(a,credentials);
+    const ontologyContext = isAppBuilderKind(a.kind) || profile || !needsRetrievalScope(a.skills) ? null : await assistantOntologyContext(a,credentials);
     return { agent: a,ontologyContext };
   },
   async send(sessionId: string, id: string, input: AgentHostSendRequest, owner: AssistantOwner, credentials: AssistantCredentials) {
@@ -302,7 +306,7 @@ export const assistantService = {
           }
         }
       }
-      if (!view || view.status === "stopped") await this.settleTurn(turn.id);
+      if (!view || view.status === "stopped") await this.settleTurn(turn.id,owner);
     } catch (e) {
       logger.warn("Assistant turn reconciliation failed", {
         runId: turn.id,
@@ -337,6 +341,7 @@ export const assistantService = {
       if (runtime && runtime.run.sessionId !== sessionId)
         throw new HttpError(404, "Run not found");
     }
+    if (existing) await closeGovernanceWindow(id,owner);
     const c = new RuntimeClient(owner.domainId, undefined, owner.userId);
     await c.request(
       `/v1/sessions/${sessionId}/run-intents/${id}/cancel`,
@@ -361,8 +366,7 @@ export const assistantService = {
     }
     if (snapshot?.latestRun?.run.status === "running")
       throw new HttpError(409, "Conversation is running", "SESSION_BUSY");
-    const agent = await assistantStore.agent((await assistantStore.session(sessionId, owner)).agent_id, owner);
-    const scopes = isAppBuilderKind(agent.kind) ? [] : (await db().query(`SELECT retrieval_scope_id FROM ${table("assistant_turns")} WHERE session_id=$1`, [sessionId])).rows;
+    const scopes = (await db().query(`SELECT retrieval_scope_id FROM ${table("assistant_turns")} WHERE session_id=$1 AND retrieval_scope_id IS NOT NULL`, [sessionId])).rows;
     const removed = new Set<string>();
     for (const scope of scopes) {
       const ontology = new OntologyRetrievalClient(owner, scope.retrieval_scope_id);
@@ -442,6 +446,7 @@ export const assistantService = {
   async datasetSource(sessionId: string, id: string, owner: AssistantOwner) {
     const a = await this.artifact(sessionId, id, owner);
     for (const turn of await assistantStore.turns(sessionId)) {
+      if (!turn.retrieval_scope_id) continue;
       const ontology = new OntologyRetrievalClient(owner, turn.retrieval_scope_id);
       for (const link of await ontology.links()) {
         const evidence = await ontology.evidence(link.retrievalId, link.runId);

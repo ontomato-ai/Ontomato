@@ -544,12 +544,12 @@ onBeforeUnmount(() => {
             <strong>{{ relations.length }}</strong>
             {{ t("nav.relationTypes") }}
           </span>
-          <el-button :loading="productGraphLoading" @click="showProductGraph">产品关系图</el-button>
+          <el-button :loading="productGraphLoading" @click="showProductGraph">{{ ot('productRelationGraph') }}</el-button>
           <el-button :icon="RefreshCw" class="manager-icon-button" :title="t('common.refresh')" :aria-label="t('common.refresh')" @click="refresh" />
         </div>
       </template>
     </PlatformPageHeader>
-    <ProductGraphDialog v-if="productGraph" v-model="productGraphOpen" title="产品投影与组合关系" :graph="productGraph" @open="emit('open-product',$event)"/>
+    <ProductGraphDialog v-if="productGraph" v-model="productGraphOpen" :title="ot('productProjectionCompositionGraph')" :graph="productGraph" @open="emit('open-product',$event)"/>
     <el-alert v-if="productGraphError" :title="productGraphError" type="error" :closable="false"/>
 
     <!-- The page under the header takes the page gutter: the explorer, the graph and the inspector start where the
