@@ -16,7 +16,9 @@ public class PlatformTaskController {
   @ExceptionHandler(Exception.class)
   public ResponseEntity<?> failure(Exception error) {
     int status =
-        error instanceof org.springframework.web.ErrorResponse problem
+        error instanceof io.ontomato.dataengine.service.agent.AgentHttpException credential
+            ? credential.status()
+            : error instanceof org.springframework.web.ErrorResponse problem
             ? problem.getStatusCode().value()
             : error instanceof IllegalArgumentException
                     || error
@@ -28,7 +30,9 @@ public class PlatformTaskController {
                 : 503;
     if (status >= 500) status = 503;
     String code =
-        error instanceof ScheduleException schedule
+        error instanceof io.ontomato.dataengine.service.agent.AgentHttpException credential
+            ? credential.code()
+            : error instanceof ScheduleException schedule
             ? schedule.code
             : status == 401
                 ? "UNAUTHENTICATED"
@@ -38,7 +42,9 @@ public class PlatformTaskController {
                         ? "TASK_NOT_FOUND"
                         : status == 400 ? "INVALID_REQUEST" : "DEPENDENCY_UNAVAILABLE";
     String message =
-        error instanceof org.springframework.web.server.ResponseStatusException http
+        error instanceof io.ontomato.dataengine.service.agent.AgentHttpException credential
+            ? credential.getMessage()
+            : error instanceof org.springframework.web.server.ResponseStatusException http
             ? http.getReason()
             : status >= 500 ? "Task service unavailable" : "Invalid request";
     var detail =

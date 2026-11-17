@@ -43,6 +43,7 @@ function agent(classNames: string[]): AssistantAgentDefinition {
     description: "",
     icon: null,
     enabled: true,
+    executionUserId: null,
     systemPrompt: "",
     modelSelection: { modelId: null },
     skills: [],

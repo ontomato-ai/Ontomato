@@ -198,6 +198,8 @@
                                 <include>**/PlatformScheduleTest.java</include>
                                 <include>**/PageSkillsContractTest.java</include>
                                 <include>**/TriggerServiceCredentialTest.java</include>
+                                <include>**/AgentExecutionSettingsTest.java</include>
+                                <include>**/AnonymousAgentExecutionIdentityTest.java</include>
                                 <include>**/ParameterFormsTest.java</include>
                                 <include>**/VectorResourcePostgresBoundaryTest.java</include>
                                 <include>**/AssetLookupPostgresBoundaryTest.java</include>
