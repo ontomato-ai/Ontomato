@@ -70,18 +70,9 @@ async function open(path: string, form: AssistantAgentInput, target: { id?: stri
     global: { ...global, provide: address.provide },
     attachTo: document.body,
   });
-  return finish(mounted, update, create, address.go);
-}
-
-async function finish(
-  wrapper: VueWrapper,
-  update: ReturnType<typeof vi.spyOn>,
-  create: ReturnType<typeof vi.spyOn>,
-  go: ReturnType<typeof editorAddress>["go"],
-) {
-  wrappers.push(wrapper);
+  wrappers.push(mounted);
   await flushPromises();
-  return { wrapper, update, create, go };
+  return { wrapper: mounted, update, create, go: address.go };
 }
 
 const saveButton = (wrapper: VueWrapper) =>
