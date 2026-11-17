@@ -80,13 +80,24 @@ it("offers only the page's candidates and starts from its registered default", a
   expect(drawn.shown().agentId).toBe("assistant");
 });
 
-it("keeps the remembered agent while it is one of the page's candidates", async () => {
+it("starts from the page's registered default even when the remembered agent is also a candidate", async () => {
+  // The reader has just talked to the remembered agent; this page is mapped to another one, and starts on it.
   const drawn = draw({
-    pageAgents: async () => ({ agents: [agent("assistant", "Assistant"), agent("remembered", "Analyst")], defaultAgentId: "assistant" }),
+    pageAgents: async () => ({ agents: [agent("governance", "Knowledge governance"), agent("remembered", "Assistant")], defaultAgentId: "governance" }),
   });
   await new Promise((resolve) => setTimeout(resolve));
 
-  expect(drawn.shown().agentId).toBe("remembered");
+  expect(drawn.shown().agents.map((item) => item.id)).toEqual(["governance", "remembered"]);
+  expect(drawn.shown().agentId).toBe("governance");
+});
+
+it("starts from the platform's own agent for a page that registered no default", async () => {
+  // Without a registered default the directory names the platform's own agent as the default; it is chosen, not the
+  // remembered one.
+  const drawn = draw({ pageAgents: async () => ({ agents: [agent("assistant", "Assistant"), agent("remembered", "Analyst")] }) });
+  await new Promise((resolve) => setTimeout(resolve));
+
+  expect(drawn.shown().agentId).toBe("assistant");
 });
 
 it("offers every agent to a page without a skill, and keeps the remembered one", async () => {
@@ -98,11 +109,21 @@ it("offers every agent to a page without a skill, and keeps the remembered one",
   expect(drawn.shown().agentId).toBe("remembered");
 });
 
-it("names the page's configuration error rather than choosing another agent", async () => {
-  const drawn = draw({ pageAgents: async () => Promise.reject(new Error("The page's default agent is unavailable")) });
+it("names the page's configuration error with the service's reason, rather than choosing another agent", async () => {
+  const drawn = draw({
+    pageAgents: async () => Promise.reject(Object.assign(new Error("The page's default agent is unavailable"), { code: "PAGE_DEFAULT_AGENT_UNAVAILABLE" })),
+  });
   await new Promise((resolve) => setTimeout(resolve));
 
-  expect(drawn.errors).toEqual([labels.pageAgentUnavailable]);
+  expect(drawn.errors).toEqual([`${labels.pageAgentUnavailable} The page's default agent is unavailable`]);
   // No agent, no composer: the page cannot be asked to work on what it cannot do.
   expect(drawn.root.querySelector(".page-ask")).toBeNull();
+});
+
+it("shows the service's own error when the candidates could not be read at all", async () => {
+  // A broken connection is not a misconfigured page: the reader sees what went wrong.
+  const drawn = draw({ pageAgents: async () => Promise.reject(new Error("Failed to fetch")) });
+  await new Promise((resolve) => setTimeout(resolve));
+
+  expect(drawn.errors).toEqual(["Failed to fetch"]);
 });

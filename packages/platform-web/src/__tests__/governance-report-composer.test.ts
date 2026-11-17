@@ -28,9 +28,13 @@ vi.mock("@ontomato/ontology-manager", () => ({
 const governanceAgent = {
   id: "11111111-1111-4111-8111-111111111111", name: "Knowledge governance", description: "", icon: null, enabled: true,
 };
+/*
+ * The reader has just talked to the platform's own assistant, and the remembered agent is one of this page's candidates
+ * too: the page still starts from the agent its mapping names, not from the one this tab last used.
+ */
 const composerQueries: unknown[] = [];
 const pageAgents = vi.fn(async () => ({
-  agents: [governanceAgent, { ...governanceAgent, id: "22222222-2222-4222-8222-222222222222", name: "Assistant" }],
+  agents: [{ ...governanceAgent, id: "33333333-3333-4333-8333-333333333333", name: "Assistant" }, governanceAgent],
   defaultAgentId: governanceAgent.id,
 }));
 
@@ -89,7 +93,7 @@ describe("the report's own composer at its address", () => {
     await wrapper.find(".switch-trigger").trigger("click");
     await flushPromises();
     expect(wrapper.findAll(".agent-menu .option-name").map((option) => option.text())).toEqual([
-      governanceAgent.name, "Assistant",
+      "Assistant", governanceAgent.name,
     ]);
     expect(wrapper.find(".agent-menu .agent-option.current .option-name").text()).toBe(governanceAgent.name);
     wrapper.unmount();

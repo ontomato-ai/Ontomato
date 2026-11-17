@@ -29,25 +29,39 @@ const counter = usePageCounter()!;
  * The agents are read when the page draws its composer, not when the platform starts: the counter answers, and the page
  * only shows what it may talk to. A page with a skill is answered by that page's directory, and its refusal is shown as
  * the configuration error it is rather than being covered by another agent.
+ *
+ * The page's own default wins over the agent this tab last used: DESIGN "Applications and shells" — a page that
+ * registered a default starts from it while it is available, and the remembered agent is the choice of pages without a
+ * declaration. Someone who has just talked to another agent still opens a report on the agent the report is mapped to.
  */
 const agents = ref<readonly AgentHostAgent[]>([]);
 const chosen = ref<string | null>(null);
 const candidates = props.pageSkill
   ? counter.pageAgents(props.pageSkill)
   : counter.agents().then((list) => ({ agents: list, defaultAgentId: undefined as string | undefined }));
-/** The agent this tab last used; it is a choice only where the page offers it. */
-const preferred = counter.preferredAgentId.value;
 void candidates
   .then(({ agents: list, defaultAgentId }) => {
     agents.value = list.filter((agent) => agent.enabled);
-    // The agent this tab last used while the page offers it, else the page's registered default, else the first one.
     const offered = (id: string | null | undefined) => agents.value.some((agent) => agent.id === id);
-    chosen.value = offered(preferred) ? preferred : offered(defaultAgentId) ? defaultAgentId! : agents.value[0]?.id ?? null;
+    const remembered = props.pageSkill ? undefined : counter.preferredAgentId.value;
+    // The page's registered default (the platform's own agent when it registered none), else the remembered one, else the first.
+    chosen.value = offered(defaultAgentId) ? defaultAgentId! : offered(remembered) ? remembered : agents.value[0]?.id ?? null;
   })
-  // The page's own configuration: the reader is told the page cannot offer an agent, not shown the transport's words.
-  .catch(() => emit("error", props.labels.pageAgentUnavailable));
+  // The page's own configuration keeps its own words and the service's reason; anything else is the service's error.
+  .catch((reason: unknown) => emit("error", candidatesFailureReason(reason, props.labels.pageAgentUnavailable)));
 /** The agent the message goes to: the one chosen here, else the one selected when the page opened. */
 const agentId = computed(() => chosen.value ?? agents.value[0]?.id ?? null);
+
+/**
+ * Why the page offered no agent. A page whose mapping or registered default is gone is the page's configuration — the
+ * page's own sentence, with the service's reason for it; a network failure or a refused request is that error, word for
+ * word, so the reader can tell a broken page from a broken connection.
+ */
+function candidatesFailureReason(reason: unknown, own: string): string {
+  const code = (reason as { code?: unknown } | null)?.code;
+  const detail = reason instanceof Error ? reason.message : String(reason);
+  return code === "PAGE_DEFAULT_AGENT_UNAVAILABLE" ? `${own} ${detail}` : detail;
+}
 
 function ask(text: string) {
   if (!agentId.value) return;
