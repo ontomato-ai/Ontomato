@@ -16,7 +16,7 @@ export function metadataOf(componentId: string): ComponentMetadata {
   return componentMeta(componentId);
 }
 
-/** The component a projection record draws. */
-export function componentOf(projection: ProductProjection): Component {
+/** The component a projection record draws, fetched if this frame has not drawn it yet. */
+export function componentOf(projection: ProductProjection): Promise<Component> {
   return componentFor(projection.componentId);
 }

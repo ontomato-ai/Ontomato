@@ -1,7 +1,6 @@
 import { createApp, h, provide, ref, watch, type Component, type Ref } from "vue";
 import ElementPlus from "element-plus";
 import { createAppContext, type AppContext } from "../context";
-import { createAssistantClient } from "../chat";
 import {
   PANEL_HOST_CHANNEL,
   panelHostFrameMessageSchema,
@@ -9,7 +8,7 @@ import {
   panelMessageOf,
   type PanelHostMessage,
 } from "@ontomato/contracts/panel-host";
-import type { PageDraft } from "@ontomato/contracts/page-draft";
+import { pageDraftSchema, type PageDraft } from "@ontomato/contracts/page-draft";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { panelContextKey, type PanelContext, type ProjectionSlot } from "./context";
@@ -110,7 +109,9 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     const received = await receivePanelDraft<Record<string, unknown>>(
       message.pageKey,
       instance.forms,
-      createAssistantClient(appContext),
+      // The draft is read over this frame's own transport, at the agent host's route: the panel needs one read, not the
+      // conversation client, whose module pulls the whole shell in and would defer the panel's first draw by seconds.
+      { readPageDraft: (sessionId, runId, path) => readDraft(transport, sessionId, runId, path) },
       link,
     );
     if (received) {
@@ -121,6 +122,19 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
 
   report({ instance, draft, unsaved, changed: (id) => projectionListeners.forEach((listener) => listener(id)) });
   return { context, appContext };
+}
+
+/** Reads the draft one run wrote, as the reader, through the frame's own request layer. */
+async function readDraft(transport: ReturnType<typeof contextTransport>, sessionId: string, runId: string, path: string) {
+  const query = new URLSearchParams({ path }).toString();
+  const response = await transport.request(
+    `/assistant/sessions/${encodeURIComponent(sessionId)}/runs/${encodeURIComponent(runId)}/page-draft?${query}`,
+    {},
+    "",
+  );
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error?.message ?? `The draft at ${path} could not be read`);
+  return pageDraftSchema.parse(body);
 }
 
 /** The run's facts as the host wrote them into this document, before the module ran. */

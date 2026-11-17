@@ -125,9 +125,11 @@ describe("a panel's instance", () => {
     expect(form.operations.map((operation) => operation.handlerRef)).toEqual(["schedules.update"]);
   });
 
-  it("draws the component the catalogue names, and refuses one this version has not got", () => {
-    expect(componentFor("MarkdownView")).not.toBe(componentFor("FormFields"));
-    expect(() => componentFor("NoSuchComponent")).toThrow(/no component 'NoSuchComponent'/);
+  it("draws the component the catalogue names, and refuses one this version has not got", async () => {
+    // A component is fetched the first time a projection names it, and the same one twice is one fetch.
+    expect(await componentFor("MarkdownView")).not.toBe(await componentFor("FormFields"));
+    expect(await componentFor("MarkdownView")).toBe(await componentFor("MarkdownView"));
+    await expect(componentFor("NoSuchComponent")).rejects.toThrow(/no component 'NoSuchComponent'/);
   });
 
   it("runs an operation through the handler reference the catalogue registered, not one of the panel's own", async () => {

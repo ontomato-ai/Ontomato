@@ -1,5 +1,11 @@
 import type { PageDraft } from "@ontomato/contracts/page-draft";
-import { changedFields, pageDraftLink, readPageDraft, withoutPageDraftQuery, type PageDraftLink } from "@ontomato/agent-shell-ui";
+import {
+  changedFields,
+  pageDraftLink,
+  readPageDraft,
+  withoutPageDraftQuery,
+  type PageDraftLink,
+} from "@ontomato/contracts/page-draft";
 
 /*
  * A draft a panel receives (overall design 3.4, "receive drafts"): the envelope stays `@ontomato/contracts/page-draft`'s

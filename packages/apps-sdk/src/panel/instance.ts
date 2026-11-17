@@ -7,7 +7,7 @@ import { panelOperations } from "./operations";
 import type { PanelProjectionRegistration } from "./ports";
 import { PanelFormAdapters, type PageDraftLink, type ReceivedPanelDraft } from "./draft";
 import { handlerFor } from "./handlers";
-import { pageDraftLink } from "@ontomato/agent-shell-ui";
+import { pageDraftLink } from "@ontomato/contracts/page-draft";
 import type { PanelOperationBinding } from "./types";
 
 /*

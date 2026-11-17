@@ -36,23 +36,32 @@ function start() {
   if (!declaration) throw new Error(`The panel declares no slot '${props.slot}'`);
   loading.value = true;
   failure.value = null;
-  void panel!.projection(declaration.projectionId).then(
-    (projection) => {
-      registered?.();
-      registered = panel!.instance.register({
-        slot: props.slot,
-        projectionId: projection.id,
-        ports: portsOf(projection),
-        invoke: (handlerRef, call) => panel!.invoke(handlerRef, call),
-      });
-      loaded.value = { projection, component: componentFor(projection.componentId) };
-      loading.value = false;
-    },
-    (reason: unknown) => {
-      failure.value = reason instanceof Error ? reason : new Error(String(reason));
-      loading.value = false;
-    },
-  );
+  void panel!.projection(declaration.projectionId).then((projection) => {
+    // The ports are the record's and its catalogue entry's, so they are registered before anything is drawn: the
+    // header and an agent can list and run this projection's operations while its component is still being fetched.
+    registered?.();
+    registered = panel!.instance.register({
+      slot: props.slot,
+      projectionId: projection.id,
+      ports: portsOf(projection),
+      invoke: (handlerRef, call) => panel!.invoke(handlerRef, call),
+    });
+    // The component the record names is fetched the first time a panel names it; every later projection of the same one
+    // draws at once.
+    componentFor(projection.componentId).then(
+      (component) => {
+        loaded.value = { projection, component };
+        loading.value = false;
+      },
+      (reason: unknown) => {
+        failure.value = reason instanceof Error ? reason : new Error(String(reason));
+        loading.value = false;
+      },
+    );
+  }, (reason: unknown) => {
+    failure.value = reason instanceof Error ? reason : new Error(String(reason));
+    loading.value = false;
+  });
 }
 
 watch(
