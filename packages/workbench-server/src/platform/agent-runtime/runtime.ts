@@ -27,7 +27,6 @@ export interface AssistantCredentials {
  * the same skill package run outside the platform (a reader's own key, the Skill suite) writes directly.
  */
 const SKILL_SCENARIO = "platform";
-const PLATFORM_DRAFT_RULE = "Inside this platform, prepare changes to page-managed data as PageDraft artifacts for the page to review and save. Use page skills to read data and draft changes; do not call the page's save/write APIs or commands directly.";
 
 export function userSkillEnvironment(credentials: AssistantCredentials): RuntimeEnvironment {
   return {
@@ -50,7 +49,7 @@ export function runDefinition(
   externalMcp: RuntimeStartRunRequest["definition"]["externalMcp"] = [],
 ): RuntimeStartRunRequest["definition"] {
   return {
-    systemPrompt: systemPrompt + "\n\n" + PLATFORM_DRAFT_RULE + "\n\n" + getOutputLanguageInstruction(resolveLocale(locale)),
+    systemPrompt: systemPrompt + "\n\n" + getOutputLanguageInstruction(resolveLocale(locale)),
     modelId,
     skills,
     externalMcp,
