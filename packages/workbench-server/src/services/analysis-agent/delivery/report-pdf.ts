@@ -9,11 +9,13 @@ function analysisReportPdfFileName(taskName: string, now: Date): string {
 export async function exportAnalysisReportPdf(
   source: { title: string; markdown: string },
   now: Date,
+  locale?: string,
 ) {
   const bytes = await exportMarkdownPdf({
     title: source.title,
     markdown: source.markdown,
     renderInlineCharts: true,
+    locale,
   });
   return { bytes, fileName: analysisReportPdfFileName(source.title, now) };
 }

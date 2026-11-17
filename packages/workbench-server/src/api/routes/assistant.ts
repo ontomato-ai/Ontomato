@@ -25,13 +25,11 @@ import { agentTasksFrameSchema } from "@ontomato/contracts/agent-tasks";
 import { pageDraftPathSchema } from "@ontomato/contracts/page-draft";
 import { publicFrame, publicSnapshot } from "../../platform/agent-runtime/projection";
 import { RuntimeClient, readSseFrames, readRuntimeFrames } from "../../infrastructure/agent-runtime/client";
-import chartImportRouter from "./chart-import";
 const router: ReturnType<typeof Router> = Router(),
   uuid = z.string().uuid();
 
 import { context, id, wrap } from "../utils/agent-host";
 import { createAgentHostRouter } from "./agent-host";
-router.use("/charts",chartImportRouter);
 const guardBuilder: RequestHandler = (req, res, next) => {
   wrap(async () => {
     const c = context(req);

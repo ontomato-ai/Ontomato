@@ -1,11 +1,12 @@
 import {beforeEach,expect,it,vi} from "vitest";
 vi.mock("../../../i18n",()=>({t:(key:string)=>key,tApp:(key:string)=>key}));
-const mocks=vi.hoisted(()=>({owned:vi.fn(),get:vi.fn(),save:vi.fn(),create:vi.fn(),prepare:vi.fn(),plan:vi.fn()}));
+const mocks=vi.hoisted(()=>({owned:vi.fn(),get:vi.fn(),save:vi.fn(),create:vi.fn(),prepare:vi.fn(),plan:vi.fn(),describe:vi.fn(),metricClient:vi.fn()}));
 vi.mock("../store",()=>({getDashboard:mocks.get,saveDashboard:mocks.save,createDashboard:mocks.create,deleteDashboard:vi.fn()}));
 vi.mock("../access",async()=>({...await vi.importActual<typeof import("../access")>("../access"),getOwnedDashboard:mocks.owned}));
 vi.mock("../../charts/import",()=>({prepareChartImport:mocks.prepare}));
 vi.mock("../reference-planning",()=>({planReferenceDashboard:mocks.plan}));
 vi.mock("../create-from-analysis",()=>({resolveDashboardDatasets:vi.fn()}));
+vi.mock("../metric-client",()=>({DashboardMetricClient:class{constructor(domainId:string,credentials:unknown){mocks.metricClient(domainId,credentials);}describe=mocks.describe;}}));
 import {queryMetricCard} from "../metric-data";
 import {addDashboardChartFile,replaceDashboardLayout} from "../mutations";
 import {HttpError} from "../../../utils/errors";
@@ -16,7 +17,7 @@ const file={name:"chart.chart.json",content:{dataset:[{id:"metric" as const,dime
 const source={sessionId:"s",runId:"r",artifactId:"a"};
 function board(){return {id:"board",ownerId:"reader",name:"Board",groups:[{id:"group",title:"Group",charts:[{id:"card",name:"Chart",query,chartFile:file}],metrics:[]}]};}
 beforeEach(()=>{
-  vi.resetAllMocks();mocks.get.mockResolvedValue(board());mocks.owned.mockResolvedValue(board());
+  vi.resetAllMocks();mocks.describe.mockResolvedValue({outputColumns:[{key:"name"},{key:"value"}]});mocks.get.mockResolvedValue(board());mocks.owned.mockResolvedValue(board());
   mocks.prepare.mockResolvedValue({file,query,metric:{name:"Metric",status:"PENDING_REVIEW",revision:"revision"},source});
 });
 it("returns one file beside current rows and passes truncation through",async()=>{
@@ -37,7 +38,7 @@ it("checks the target before importing and appends only the prepared drawing",as
   await expect(addDashboardChartFile("reader","domain",{source,target:{dashboardId:"missing",groupId:"group"}},{})).rejects.toMatchObject({status:404});
   expect(mocks.prepare).not.toHaveBeenCalled();
   await addDashboardChartFile("reader","domain",{source,target:{dashboardId:"board",groupId:"group"}},{});
-  expect(mocks.save.mock.calls[0][2].groups[0].charts[1]).toMatchObject({chartFile:file,query,source});
+  expect(mocks.save.mock.calls[0][2].groups[0].charts[1]).toMatchObject({name:"chart",chartFile:file,query,source});
   expect(mocks.plan).not.toHaveBeenCalled();
 });
 it("does not create a dashboard when file preparation is rejected",async()=>{
@@ -46,7 +47,24 @@ it("does not create a dashboard when file preparation is rejected",async()=>{
   expect(mocks.create).not.toHaveBeenCalled();
 });
 it("keeps the saved query when layout edits replace only the drawing",async()=>{
-  await replaceDashboardLayout("reader","domain",{id:"board",groups:[{id:"group",title:"Group",charts:[{id:"card",name:"Renamed",chartFile:file}],metrics:[]}]});
+  await replaceDashboardLayout("reader","domain",{id:"board",groups:[{id:"group",title:"Group",charts:[{id:"card",name:"Renamed",chartFile:structuredClone(file)}],metrics:[]}]},{});
   expect(mocks.save.mock.calls[0][2].groups[0].charts[0]).toMatchObject({name:"Renamed",query,chartFile:file});
-  await expect(replaceDashboardLayout("reader","domain",{id:"board",groups:[{id:"group",title:"Group",charts:[{id:"card",query:{...query,metricId:"other"}}],metrics:[]}]})).rejects.toMatchObject({code:"INVALID_REQUEST"});
+  expect(mocks.describe).not.toHaveBeenCalled();
+  await expect(replaceDashboardLayout("reader","domain",{id:"board",groups:[{id:"group",title:"Group",charts:[{id:"card",query:{...query,metricId:"other"}}],metrics:[]}]},{})).rejects.toMatchObject({code:"INVALID_REQUEST"});
+});
+
+it("describes only changed chart files using the current caller's credentials",async()=>{
+  const saved=board();saved.groups[0].charts.push({...saved.groups[0].charts[0],id:"other",query:{...query,metricId:"other-metric"}});
+  mocks.get.mockResolvedValue(saved);
+  const changed=structuredClone(file);changed.content.series[0].type="line";
+  const credentials={token:"caller",apiKey:"caller-key",locale:"en"};
+  await replaceDashboardLayout("reader","domain",{id:"board",groups:[{id:"group",title:"Group",charts:[{id:"card",chartFile:changed},{id:"other",chartFile:structuredClone(file)}],metrics:[]}]},credentials);
+  expect(mocks.metricClient).toHaveBeenCalledWith("domain",credentials);
+  expect(mocks.describe.mock.calls.map(([id])=>id)).toEqual(["metric"]);
+  expect(mocks.save.mock.calls[0][2].groups[0].charts[0]).toMatchObject({query,chartFile:changed});
+});
+it("rejects changed files with missing columns before saving any layout changes",async()=>{
+  const changed=structuredClone(file);changed.content.dataset[0].dimensions.push("missing");changed.content.series[0].encode.y="missing";
+  await expect(replaceDashboardLayout("reader","domain",{id:"board",groups:[{id:"group",title:"Changed",charts:[{id:"card",chartFile:changed}],metrics:[]}]},{})).rejects.toMatchObject({status:422,code:"CARD_OUTPUT_MISMATCH",details:{cardId:"card",metricId:"metric",missingColumns:["missing"]}});
+  expect(mocks.save).not.toHaveBeenCalled();
 });

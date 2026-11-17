@@ -13,7 +13,8 @@
     "test:integration": "vitest run src/services/ops-diagnosis/__tests__/runtime-http.integration.test.ts src/services/assistant/__tests__/definitions.integration.test.ts",
     "test:wire": "vitest run src/services/assistant/__tests__/ontology-wire.integration.test.ts",
     "build:report-skill": "node report-skill/build.mjs",
-    "build:chart-skill": "node chart-skill/build.mjs"
+    "build:chart-skill": "node chart-skill/build.mjs",
+    "build:dashboard-skill": "node dashboard-skill/build.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
@@ -22,6 +23,7 @@
     "adm-zip": "0.5.17",
     "archiver": "8.0.0",
     "cors": "2.8.6",
+    "echarts": "6.0.0",
     "express": "4.22.1",
     "multer": "2.1.1",
     "pg": "8.20.0",
@@ -47,7 +49,6 @@
     "typescript": "5.9.3",
     "vitest": "1.6.0",
     "@resvg/resvg-wasm": "2.6.2",
-    "echarts": "6.0.0",
     "esbuild": "0.27.4",
     "pptxgenjs": "4.0.1"
   }

@@ -1,7 +1,6 @@
 import { Router, type Router as ExpressRouter } from "express";
 
 import { getOwnedDashboard, listDashboardGroups, parseDashboardInput } from "../../services/dashboard/access";
-import { analyzeChartWithLlm } from "../../services/dashboard/chart-analysis";
 import { createDashboardFromAnalysis } from "../../services/dashboard/create-from-analysis";
 import {
   addDashboardChart,
@@ -21,7 +20,7 @@ import {
 import { listDashboards } from "../../services/dashboard/store";
 import { requireDomainId, type AuthenticatedRequest } from "../../utils/request-identity";
 import { asyncHandler } from "../utils/http";
-import { dashboardCardRequestSchema, dashboardSaveParametersSchema } from "@ontomato/contracts/dashboard";
+import { dashboardCardRequestSchema, dashboardAuthoring } from "@ontomato/contracts/dashboard";
 import { dashboardSourceSchema, dashboardAddArtifactSchema, dashboardAddChartFileSchema } from "@ontomato/contracts/dashboard-artifacts";
 import { DashboardMetricClient } from "../../services/dashboard/metric-client";
 import { queryMetricCard, metricCardParameterForm, saveMetricCardParameters } from "../../services/dashboard/metric-data";
@@ -42,9 +41,9 @@ router.post("/card-parameter-form", asyncHandler(async (req, res) => {
   const { owner, client } = metricContext(req as AuthenticatedRequest);
   res.json({ success: true, data: await metricCardParameterForm(owner, parseDashboardInput(dashboardCardRequestSchema, req.body), client) });
 }));
-router.post("/save-card-parameters", asyncHandler(async (req, res) => {
+router.post(dashboardAuthoring["dashboard.card.parameters"].path, asyncHandler(async (req, res) => {
   const { owner, client } = metricContext(req as AuthenticatedRequest);
-  res.json({ success: true, data: await saveMetricCardParameters(owner, parseDashboardInput(dashboardSaveParametersSchema, req.body), client) });
+  res.json({ success: true, data: await saveMetricCardParameters(owner, parseDashboardInput(dashboardAuthoring["dashboard.card.parameters"].schema, req.body), client) });
 }));
 router.get(
   "/",
@@ -147,12 +146,12 @@ router.post("/add-chart-file",asyncHandler(async(req,res)=>{
   }else res.json({success:true,data});
 }));
 router.post(
-  "/modify",
+  dashboardAuthoring["dashboard.rename"].path,
   asyncHandler(async (req, res) => {
     await renameDashboard(
       (req as AuthenticatedRequest).userId,
       requireDomainId(req as AuthenticatedRequest),
-      req.body || {}
+      parseDashboardInput(dashboardAuthoring["dashboard.rename"].schema, req.body)
     );
     res.json({ success: true });
   })
@@ -169,12 +168,12 @@ router.post(
   })
 );
 router.post(
-  "/modifyDimensionName",
+  dashboardAuthoring["dashboard.group.rename"].path,
   asyncHandler(async (req, res) => {
     await renameDashboardDimension(
       (req as AuthenticatedRequest).userId,
       requireDomainId(req as AuthenticatedRequest),
-      req.body || {}
+      parseDashboardInput(dashboardAuthoring["dashboard.group.rename"].schema, req.body)
     );
     res.json({ success: true });
   })
@@ -191,12 +190,12 @@ router.post(
   })
 );
 router.post(
-  "/modifyResultSetName",
+  dashboardAuthoring["dashboard.chart.rename"].path,
   asyncHandler(async (req, res) => {
     await renameDashboardChart(
       (req as AuthenticatedRequest).userId,
       requireDomainId(req as AuthenticatedRequest),
-      req.body || {}
+      parseDashboardInput(dashboardAuthoring["dashboard.chart.rename"].schema, req.body)
     );
     res.json({ success: true });
   })
@@ -213,23 +212,24 @@ router.post(
   })
 );
 router.post(
-  "/modifyLayout",
+  dashboardAuthoring["dashboard.layout"].path,
   asyncHandler(async (req, res) => {
     await replaceDashboardLayout(
       (req as AuthenticatedRequest).userId,
       requireDomainId(req as AuthenticatedRequest),
-      req.body || {}
+      req.body || {},
+      {token:(req as AuthenticatedRequest).token,apiKey:(req as AuthenticatedRequest).apiKey,locale:(req as AuthenticatedRequest).locale}
     );
     res.json({ success: true });
   })
 );
 router.post(
-  "/modifyMetricName",
+  dashboardAuthoring["dashboard.metric.rename"].path,
   asyncHandler(async (req, res) => {
     await renameDashboardMetric(
       (req as AuthenticatedRequest).userId,
       requireDomainId(req as AuthenticatedRequest),
-      req.body || {}
+      parseDashboardInput(dashboardAuthoring["dashboard.metric.rename"].schema, req.body)
     );
     res.json({ success: true });
   })
@@ -243,12 +243,6 @@ router.post(
       req.body || {}
     );
     res.json({ success: true });
-  })
-);
-router.post(
-  "/ai/analyze",
-  asyncHandler(async (req, res) => {
-    res.json({ success: true, data: await analyzeChartWithLlm(req.body || {}) });
   })
 );
 export default router;

@@ -88,3 +88,21 @@ export const dashboardCardDataSchema = z.union([
 ]);
 export type DashboardCardData = z.infer<typeof dashboardCardDataSchema>;
 export type DashboardRow = Record<string, z.infer<typeof runtimeJsonValueSchema>>;
+
+const authoringName = z.string().trim().min(1);
+export const dashboardRenameSchema = z.object({id:text,name:authoringName}).strict();
+export const dashboardChartRenameSchema = z.object({id:text,chartId:text,resultSetName:authoringName}).strict();
+export const dashboardMetricRenameSchema = z.object({id:text,metricId:text,metricName:authoringName}).strict();
+export const dashboardGroupRenameSchema = z.object({id:text,groupId:text,dimensionName:z.string().trim()}).strict();
+/** Forms are the existing save bodies; paths are relative to /api/dashboards. */
+export const dashboardAuthoring = {
+  "dashboard.layout": {schema:dashboardReplaceLayoutSchema,path:"/modifyLayout"},
+  "dashboard.rename": {schema:dashboardRenameSchema,path:"/modify"},
+  "dashboard.chart.rename": {schema:dashboardChartRenameSchema,path:"/modifyResultSetName"},
+  "dashboard.metric.rename": {schema:dashboardMetricRenameSchema,path:"/modifyMetricName"},
+  "dashboard.group.rename": {schema:dashboardGroupRenameSchema,path:"/modifyDimensionName"},
+  "dashboard.card.parameters": {schema:dashboardSaveParametersSchema,path:"/save-card-parameters"},
+} as const;
+export type DashboardOperation = keyof typeof dashboardAuthoring;
+export const dashboardOperationSchema = z.enum(Object.keys(dashboardAuthoring) as [DashboardOperation,...DashboardOperation[]]);
+export type DashboardAuthoringForm<Operation extends DashboardOperation = DashboardOperation> = z.infer<(typeof dashboardAuthoring)[Operation]["schema"]>;
