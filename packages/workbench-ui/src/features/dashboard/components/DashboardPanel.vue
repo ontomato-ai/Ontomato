@@ -239,8 +239,10 @@ const { t } = useI18n();
 const props = defineProps({
   dashboardId: { type: String, default: "" },
   draft: { type: Object, default: null },
+  /** The card the page's own address names as chosen, so a board reopened at that address shows the same one chosen. */
+  cardId: { type: String, default: "" },
 });
-const emit = defineEmits(["discard-draft"]);
+const emit = defineEmits(["discard-draft", "select-card"]);
 
 const dragDisabled = ref(false);
 const chartGroups = ref(null);
@@ -886,6 +888,11 @@ async function handleMetricCommand(cmd, m) {
  * The card the reader points at is what a message sent from beside the page asks about: choosing one card chooses it
  * alone, the board it sits in rides along, and the page reports both to the platform. The board is reported on its own
  * as soon as it is drawn, so a question about the board needs no card chosen first.
+ *
+ * The choice also belongs to the page's address, because the page is read again somewhere else: the composer at the
+ * foot of the board's own application carries the address into the conversation, where the board is mounted beside it
+ * and the choice has to be the same one. The page therefore takes the chosen card from its address and reports each
+ * choice back to it; this component only follows.
  */
 const chosen = ref("");
 
@@ -896,6 +903,7 @@ function isSelected(cardId, kind) {
 function selectCard(card) {
   chosen.value = `${card.kind}:${card.id}`;
   reportSelection();
+  emit("select-card", { id: card.id, kind: card.kind });
   // A card chosen in a narrow pane is shown, not only marked: the reader asked for this one.
   nextTick(() => document.querySelector(`[data-card-id="${card.id}"]`)?.scrollIntoView?.({ block: "nearest", behavior: "smooth" }));
 }
@@ -917,6 +925,17 @@ watch(() => normalizeId(props.dashboardId), () => {
   reportSelection();
 }, { immediate: true });
 watch(chartGroups, () => reportSelection());
+
+/** The address says which card is chosen, and a board read again restores that choice once its cards are drawn. */
+watch([() => props.cardId, chartGroups], ([cardId]) => {
+  const cards = [...(chartGroups.value || []).flatMap((group) => [...group.charts, ...group.metrics])];
+  const card = cards.find((item) => item.id === cardId);
+  if (!card) return;
+  const kind = (chartGroups.value || []).some((group) => group.charts.some((item) => item.id === card.id)) ? "chart" : "metric";
+  if (chosen.value === `${kind}:${card.id}`) return;
+  chosen.value = `${kind}:${card.id}`;
+  reportSelection();
+});
 
 onBeforeUnmount(() => clearDashboardSelection());
 

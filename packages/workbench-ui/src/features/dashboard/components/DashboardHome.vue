@@ -47,6 +47,50 @@ function pageAddress(): Record<string, unknown> {
 const link = computed(() => pageDraftLink(pageAddress()));
 
 /**
+ * The card chosen in the board, as the page's own address names it. The address carries it because the board is read
+ * again elsewhere: the composer at the foot of this page sends the address into the conversation, which mounts the
+ * board beside it, and the question written there is about the same card.
+ */
+const chosenCardId = computed(() => {
+  const value = pageAddress().cardId;
+  return typeof value === "string" ? value : "";
+});
+
+/**
+ * Writes the chosen card into the address this page is shown at: its own query at its own address, the conversation's
+ * page parameter beside one, which is the address the platform's composer sends.
+ */
+function writeCard(cardId: string | undefined) {
+  if (!currentDashboardId.value) return;
+  const paired = typeof route.query.page === "string" ? route.query.page : "";
+  if (paired) {
+    const [path, search = ""] = paired.split("?");
+    const target = new URLSearchParams(search);
+    if (cardId) target.set("cardId", cardId);
+    else target.delete("cardId");
+    void router.replace({ query: { ...route.query, page: `${path}${target.size ? `?${target}` : ""}` } });
+    return;
+  }
+  const query: Record<string, string> = {};
+  for (const [key, value] of Object.entries(route.query)) if (typeof value === "string" && value) query[key] = value;
+  if (cardId) query.cardId = cardId;
+  else delete query.cardId;
+  void router.replace({ query });
+}
+
+/**
+ * The reader chose a card, or let go of it; the board it sits in is the one the address already names.
+ *
+ * Switching boards drops the card: the card chosen on the last board is not this one's.
+ */
+watch(
+  () => currentDashboardId.value,
+  (id, previous) => {
+    if (previous && previous !== id) writeCard(undefined);
+  },
+);
+
+/**
  * Reads the draft the link names through the platform's own reader, which checks the page it was written for and one of
  * this page's save actions, then hands it to the board only once the board it names is this reader's: every object a
  * draft addresses has to be that board's own.
@@ -163,7 +207,9 @@ watch(
         :key="`${currentDashboardId}:${draft ? draft.operation : 'saved'}`"
         :dashboard-id="currentDashboardId"
         :draft="draft"
+        :card-id="chosenCardId"
         @discard-draft="discardDraft"
+        @select-card="(card: { id: string } | null) => writeCard(card ? card.id : undefined)"
       />
       <el-empty v-else-if="!loadingDashboards" :description="t('analysis.noDashboards')" />
     </div>

@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia } from "pinia";
-import { createMemoryHistory, createRouter } from "vue-router";
+import { createMemoryHistory, createRouter, type Router } from "vue-router";
 import ElementPlus from "element-plus";
 import DashboardPanel from "../DashboardPanel.vue";
+import DashboardHome from "../DashboardHome.vue";
 import { clearDashboardSelection, dashboardSelection } from "../../selection";
 import { workbenchI18n } from "../../../../i18n";
+
 
 /**
  * The card a reader points at is what a message sent from beside the page asks about: choosing a card reports the board
@@ -38,7 +40,9 @@ const board = {
   ],
 };
 
+vi.mock("../../../workbench/assistant-host", () => ({ createAssistantClient: () => ({ readPageDraft: async () => ({}), }) }));
 vi.mock("../../api", () => ({
+  fetchDashboardList: async () => [{ id: "d1", name: "Sales", createdAt: 0, updatedAt: 0 }],
   fetchDashboardLocalDetail: async () => board,
   queryDashboardCard: async (_dashboardId: string, cardId: string) =>
     cardId === "c1"
@@ -61,11 +65,18 @@ vi.mock("interactjs", () => ({
   }),
 }));
 
-const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/", component: { template: "<div />" } }] });
+/** Each test opens the page at its own address: the store keeps the page it is mounted on, and one page's is not another's. */
+async function openRouter(query: Record<string, string> = {}) {
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/", component: { template: "<div />" } }] });
+  await router.push({ path: "/", query });
+  await router.isReady();
+  return router;
+}
+let router: Router;
 const global = () => ({ plugins: [workbenchI18n(), createPinia(), router, ElementPlus], stubs: { EChart: true } });
 
 async function open() {
-  await router.push("/");
+  router = await openRouter();
   const wrapper = mount(DashboardPanel, { props: { dashboardId: "d1", draft: null }, global: global() });
   await flushPromises();
   return wrapper;
@@ -111,6 +122,55 @@ describe("what the dashboard reports as selected", () => {
     await wrapper.find(".chart-container .ai-chart-tool-btn[title='" + workbenchI18n().global.t("dashboard.zoomIn") + "']").trigger("click");
     await flushPromises();
     expect(dashboardSelection.value.at(-1)).toMatchObject({ kind: "dashboard-card-chart", id: "c1" });
+    wrapper.unmount();
+  });
+
+  it("writes the chosen card into the page's own address, which is the address the footer's composer sends", async () => {
+    router = await openRouter({ dashboardId: "d1" });
+    const wrapper = mount(DashboardHome, { global: { plugins: [workbenchI18n(), createPinia(), router, ElementPlus], stubs: { EChart: true, transition: false } } });
+    await flushPromises();
+    expect(router.currentRoute.value.query).toEqual({ dashboardId: "d1" });
+
+    await wrapper.find(".chart-container").trigger("click");
+    await flushPromises();
+    // The board and the card the question is about: read again beside the conversation, it opens the same card chosen.
+    expect(router.currentRoute.value.query).toEqual({ dashboardId: "d1", cardId: "c1" });
+    expect(dashboardSelection.value.at(-1)).toMatchObject({ kind: "dashboard-card-chart", id: "c1" });
+    wrapper.unmount();
+  });
+
+  it("restores the card the page's own address names", async () => {
+    router = await openRouter({ dashboardId: "d1", cardId: "c1" });
+    const wrapper = mount(DashboardHome, { global: { plugins: [workbenchI18n(), createPinia(), router, ElementPlus], stubs: { EChart: true, transition: false } } });
+    await flushPromises();
+    expect(wrapper.find(".chart-container").classes()).toContain("chart-container--selected");
+    expect(dashboardSelection.value.at(-1)).toMatchObject({ kind: "dashboard-card-chart", id: "c1" });
+    wrapper.unmount();
+  });
+
+  it("restores the chosen card from the page parameter beside a conversation, and keeps the choice there", async () => {
+    const page = (query: Record<string, string>) => `/dashboards?${new URLSearchParams(query)}`;
+    router = await openRouter({ page: page({ dashboardId: "d1", cardId: "n1" }) });
+    const wrapper = mount(DashboardHome, { global: { plugins: [workbenchI18n(), createPinia(), router, ElementPlus], stubs: { EChart: true, transition: false } } });
+    await flushPromises();
+    expect(wrapper.find(".metric-container").classes()).toContain("metric-container--selected");
+    expect(dashboardSelection.value.at(-1)).toEqual({ kind: "dashboard-card-metric", id: "n1", label: "Total revenue" });
+
+    // Another card moves the conversation's page parameter, not the browser's address.
+    await wrapper.find(".chart-container").trigger("click");
+    await flushPromises();
+    expect(router.currentRoute.value.path).toBe("/");
+    expect(router.currentRoute.value.query.page).toBe(page({ dashboardId: "d1", cardId: "c1" }));
+    wrapper.unmount();
+  });
+
+  it("shows the card its address names chosen, once the board is drawn", async () => {
+    router = await openRouter();
+    const wrapper = mount(DashboardPanel, { props: { dashboardId: "d1", draft: null, cardId: "n1" }, global: global() });
+    await flushPromises();
+    expect(wrapper.find(".metric-container").classes()).toContain("metric-container--selected");
+    expect(wrapper.find(".chart-container").classes()).not.toContain("chart-container--selected");
+    expect(dashboardSelection.value.at(-1)).toEqual({ kind: "dashboard-card-metric", id: "n1", label: "Total revenue" });
     wrapper.unmount();
   });
 
