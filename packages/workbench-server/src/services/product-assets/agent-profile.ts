@@ -104,16 +104,22 @@ export async function profileForSession(owner:ProductOwner,credentials:Assistant
   return {...assembled,releaseId,objectContext};
 }
 async function authorizedProfileForPrincipal(owner:ProductOwner,credentials:AssistantCredentials,principalId:string){
-  const access=currentProductGrants(owner);
-  const result=await getPostgresPool().query(`SELECT asset.id FROM ${t('product_bundle_heads')} head JOIN ${t('product_releases')} release ON release.domain_id=head.domain_id AND release.release_id=head.release_id JOIN ${t('product_assets')} asset ON asset.domain_id=head.domain_id AND asset.id=head.bundle_id WHERE head.domain_id=$1 AND asset.id=ANY($3::text[]) AND EXISTS(SELECT 1 FROM jsonb_array_elements(release.snapshot->'assets') frozen WHERE frozen->>'id'=head.bundle_id AND frozen->'document'->>'kind'='agent-profile' AND frozen->'document'->>'principalId'=$2) ORDER BY asset.id LIMIT 2`,[owner.domainId,principalId,[...access.use]]);
-  if(result.rows.length>1)throw new HttpError(409,'Principal has multiple active Profiles; select one explicitly','AGENT_PROFILE_AMBIGUOUS');
-  if(!result.rows[0])return null;
-  const id=result.rows[0].id;
+  const id=await profileIdForPrincipal(owner,principalId);
+  if(id===null)return null;
   const {snapshot,releaseId}=await readActiveProductBundle(owner,id);
   const issues=await productReleaseIssues(owner,snapshot,credentials);
   const profile=snapshotAsset(snapshot,id);
   if(profile.document.kind!=='agent-profile'||profile.document.principalId!==principalId)throw new HttpError(409,'Published Profile embodies another principal','AGENT_PROFILE_PRINCIPAL_CHANGED');
   return {...await assembleAgentProfile(owner,credentials,id,snapshot.assets,issues),releaseId};
+}
+/** Directory projection needs the execution surface, without assembling instructions or tools. */
+export async function profileIdForPrincipal(owner:ProductOwner,principalId:string):Promise<string|null>{
+ return withProductGrants(owner,async()=>{
+  const access=currentProductGrants(owner);
+  const result=await getPostgresPool().query(`SELECT asset.id FROM ${t('product_bundle_heads')} head JOIN ${t('product_releases')} release ON release.domain_id=head.domain_id AND release.release_id=head.release_id JOIN ${t('product_assets')} asset ON asset.domain_id=head.domain_id AND asset.id=head.bundle_id WHERE head.domain_id=$1 AND asset.id=ANY($3::text[]) AND EXISTS(SELECT 1 FROM jsonb_array_elements(release.snapshot->'assets') frozen WHERE frozen->>'id'=head.bundle_id AND frozen->'document'->>'kind'='agent-profile' AND frozen->'document'->>'principalId'=$2) ORDER BY asset.id LIMIT 2`,[owner.domainId,principalId,[...access.use]]);
+  if(result.rows.length>1)throw new HttpError(409,'Principal has multiple active Profiles; select one explicitly','AGENT_PROFILE_AMBIGUOUS');
+  return result.rows[0]?.id??null;
+ });
 }
 export async function executeProfileTool(owner:ProductOwner,credentials:AssistantCredentials,profileId:string,assetId:string,parameters:Record<string,unknown>,releaseId?:string,sessionId?:string){
   await requireProductUse(owner,profileId);

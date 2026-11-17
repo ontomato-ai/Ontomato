@@ -34,7 +34,7 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
   const profile=await profileForSession(owner,credentials,session.id,session.agent_id);
   if(platformProfile&&!credentials.token?.startsWith('ap2.'))credentials=await userScopedAgentCredentials(owner.domainId,a.id,owner.userId,credentials.locale);
   if(profile)await agentPrincipalCredentials(owner.domainId,profile.principalId,credentials.locale,owner.userId);
-  const skills = profile?[]:await prepareAssistantSkills(owner.domainId, a.skills);
+  const skills = profile?[]:await prepareAssistantSkills(owner.domainId, a, credentials);
   const skillEnvironment = profile?{values:{ONTOMATO_WORKBENCH_URL:environment.agentRuntime().callbackUrl.replace(/\/$/,'')},secrets:{}}:userSkillEnvironment(credentials);
 
   const continuationIds = new Set<string>();

@@ -11,17 +11,14 @@ import { prepareAnalystRun } from "./prepare";
 import { prepareAppBuilderRun } from "../app-builder/prepare";
 import {isAppBuilderKind} from '../app-builder/definition';
 import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
-import { assistantDescription, assistantName } from "./labels";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   assistantFeedbackSchema,
   type AssistantFeedbackWrite,
 } from "@ontomato/contracts/assistant-chat";
-import {
-  agentHostSessionSchema,
-  agentHostAgentSchema,
-} from "@ontomato/contracts/agent-host";
+import { agentHostSessionSchema } from "@ontomato/contracts/agent-host";
+import { listAssistantAgents } from "./agents";
 import {
   runtimeArtifactSchema,
   type RuntimeArtifact,
@@ -70,19 +67,7 @@ export const assistantService = {
     const agentId = "agentId" in input ? input.agentId : (await assistantStore.session(input.sessionId, owner)).agent_id;
     return isAppBuilderKind((await assistantStore.agent(agentId, owner)).kind);
   },
-  async agents(owner: AssistantOwner, locale?: string) {
-    return {
-      agents: (await assistantStore.agents(owner.domainId, locale)).map((a) =>
-        agentHostAgentSchema.parse({
-          id: a.id,
-          name: assistantName(a, locale),
-          description: assistantDescription(a, locale),
-          icon: a.icon ?? null,
-          enabled: a.enabled,
-        }),
-      ),
-    };
-  },
+  agents: listAssistantAgents,
   /** Scheduled tasks start their conversations here too, marked with their origin. */
   async create(id: string, owner: AssistantOwner, input: { agentId: string; workspaceId?: string }, origin: SessionRow["origin"] = "user") {
     const { row, replayed } = await assistantStore.create(
