@@ -672,7 +672,7 @@ const ontologyEn = {
   knowledgeDiscardTitle: "Discard Changes",
   knowledgeDiscardConfirm: "The current edit has unsaved changes. Discard them?",
 
-  workflowTitle: "Business Processes",
+  workflowTitle: "Workflows",
   workflowDesc:
     "Once a workflow is active, each step’s role determines who can perform its action, and its scope determines which records they can work on. Action preconditions check only the record’s state, such as whether it is awaiting approval.",
   workflowRefresh: "Refresh",
