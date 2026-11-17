@@ -386,7 +386,6 @@ export default {
     "settingsGroups": { "models": "Models", "system": "System", "connections": "Connections", "records": "Logs and monitoring" },
     "ontologyAgentModels":"Ontology agent models",
     "builderAgentModels":"App builder models",
-    "governanceAgentModels":"Knowledge governance models",
     "conversationAgentModels":"Data analysis models",
     "agentModels": {
       "title": "Models",

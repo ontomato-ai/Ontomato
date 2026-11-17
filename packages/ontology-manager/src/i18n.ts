@@ -670,6 +670,9 @@ const ontologyEn = {
   knowledgeBatchApproveFailed: "{failed} of {total} knowledge entries could not be approved",
   knowledgeDiscardTitle: "Discard Changes",
   knowledgeDiscardConfirm: "The current edit has unsaved changes. Discard them?",
+  knowledgeGovernanceUnavailable: "No knowledge governance agent is available to this account",
+  knowledgeDraftApply: "The assistant filled this form. Nothing is saved until you save it.",
+  knowledgeDraftInvalid: "This knowledge draft cannot be filled in: {reason}",
 
   workflowTitle: "Workflows",
   workflowDesc:

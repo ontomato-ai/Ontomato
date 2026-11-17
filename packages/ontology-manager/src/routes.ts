@@ -1,7 +1,7 @@
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { AgentModelsPage, ontologyAgentModelPages, ontologyAgentModelSource } from "@ontomato/platform-shell";
-import { defineAsyncComponent, defineComponent, h, ref, watch, type Component, type PropType } from "vue";
-import { useRoute, useRouter, type RouteLocationRaw, type RouteRecordRaw } from "vue-router";
+import { defineAsyncComponent, defineComponent, h, ref, type Component, type PropType } from "vue";
+import { useRoute, useRouter, type RouteRecordRaw } from "vue-router";
 import type { ObjectReference } from "@ontomato/contracts/object-views";
 import { useManagerClient, useManagerCounts } from "./context";
 import ManagerFrame from "./ManagerFrame.vue";
@@ -23,7 +23,6 @@ import type { AssetTab, ModelResource } from "./workspace";
  * bring Markdown and code highlighting, and knowledge governance brings the agent shell.
  */
 const GovernancePage = defineAsyncComponent(() => import("./knowledge-governance/GovernancePage.vue"));
-const GovernanceModelsPage=defineAsyncComponent(()=>import('./knowledge-governance/GovernanceModelsPage.vue'));
 const DataBrowser = defineAsyncComponent(() => import("./data-browser/DataBrowser.vue"));
 const VisualModeling = defineAsyncComponent(() => import("./visual-modeling/VisualModeling.vue"));
 const OntologyAssetDetail = defineAsyncComponent(() => import("./components/OntologyAssetDetail.vue"));
@@ -287,13 +286,37 @@ const OntologyModelsPage = defineComponent({
   },
 });
 
+/** The draft an address names: the originating run and the draft's path inside it, when all three are there. */
+function draftOf(query: Record<string, unknown>) {
+  const sessionId = query.draftSessionId, runId = query.draftRunId, path = query.draftPath;
+  return typeof sessionId === "string" && typeof runId === "string" && typeof path === "string"
+    ? { sessionId, runId, path }
+    : null;
+}
+
+/**
+ * Business knowledge, and the draft an agent wrote for it: a page link carries the originating run and the draft's path
+ * (`draftSessionId/draftRunId/draftPath`), and the page reads the draft through that run's own artifacts. A saved draft
+ * leaves the address, so a reload does not fill it again.
+ */
 const KnowledgePage = defineComponent({
   name: "ManagerKnowledgePage",
   setup() {
     const router = useRouter();
+    const route = useRoute();
     return () =>
       h("section", { class: "knowledge-surface" }, [
-        h(BusinessKnowledge, { onGovernance: () => void router.push({ name: routes.governance.name }) }),
+        h(BusinessKnowledge, {
+          pageDraft: draftOf(route.query),
+          // The saved draft's parameters leave the address, so a reload does not fill the form again.
+          onDraftApplied: () => {
+            const { draftSessionId: _session, draftRunId: _run, draftPath: _path, ...query } = route.query;
+            void router.replace({ query });
+          },
+          // The governance conversation is the agent platform's page: this page only names the agent it maps to.
+          onGovernance: (agentId: string) =>
+            void router.push({ path: routes.chat.path, query: { agentId } }),
+        }),
       ]);
   },
 });
@@ -311,59 +334,23 @@ export function registerGovernanceScreen(id: "feedback", screen: Component) {
 }
 
 /**
- * The address of each page of the governance application. `null` is the conversation's own address: the report is the
- * open conversation's work record, so it has no address of its own.
+ * One governance record's report, inside the Manager frame like the pages it is reached from, and the feedback records
+ * the platform's pages ship. The report is the record's own address (`/governance/reports/:recordId`): the conversation
+ * that wrote it is the agent platform's, so nothing here holds or names a conversation.
  */
-const governancePageRoutes: Record<string, { name: string; path: string } | null> = {
-  report: null,
-  feedback: routes.feedback,
-  knowledge:routes.governanceKnowledge,
-  models: routes.governanceModels,
-};
-
-/**
- * The governance application at its address: the page its column opened and the conversation open with it. Switching
- * pages never drops the conversation (the agent-app states): the report shows that conversation's work, and the feedback
- * records carry it in their address (`?sessionId=`), so coming back to the report or the conversation finds it again.
- */
-const KnowledgeGovernancePage = defineComponent({
-  name: "ManagerKnowledgeGovernancePage",
-  props: { sessionId: { type: String, default: "" }, page: { type: String, default: "" } },
+const GovernanceReportPage = defineComponent({
+  name: "ManagerGovernanceReportPage",
+  props: { recordId: { type: String, required: true } },
   setup(props) {
     const router = useRouter();
-    const route=useRoute();
-    // The conversation the page last asked for. The address catches up a few turns later, and a page change in between
-    // (a recent conversation chosen while the feedback records are open) must keep this one, not the address's.
-    let conversation = props.sessionId || null;
-    watch(
-      () => props.sessionId,
-      (id) => (conversation = id || null),
-    );
-    function address(page: string | null): RouteLocationRaw {
-      const target = page ? governancePageRoutes[page] : null;
-      return target
-        ? { name: target.name, query: conversation ? { sessionId: conversation } : {} }
-        : { name: routes.governance.name, params: { sessionId: conversation ?? "" } };
-    }
-    return () =>
-      h(GovernancePage, {
-        sessionId: props.sessionId || null,
-        page: props.page || null,
-        // A page this package does not ship (the feedback records) comes from the edition that assembles both.
-        screens: governanceScreens,
-        // Opening or starting a conversation updates the address of the page that is open.
-        onSession: (id: string | null) => {
-          conversation = id;
-          void router.replace(address(props.page || null));
-        },
-        // Each page has an address of its own, so a column entry can be linked and reloaded.
-        onPage: (id: string | null) => {
-          if(!new Set<string>([routes.governance.name,routes.governanceKnowledge.name,routes.feedback.name]).has(String(route.name)))return;
-          if ((props.page || null) !== id) void router.push(address(id));
-        },
-        onBack: () => void router.push(managerPaths.knowledge),
-      });
+    return () => h(GovernancePage, { recordId: props.recordId, onBack: () => void router.push(managerPaths.knowledge) });
   },
+});
+
+/** The feedback records: a page of this application, its screen supplied by the edition that holds both. */
+const FeedbackPage = defineComponent({
+  name: "ManagerGovernanceFeedbackPage",
+  setup: () => () => h(governanceScreens.feedback!),
 });
 
 const stringParam = (name: string) => (route: { params: Record<string, unknown> }) => {
@@ -438,57 +425,41 @@ export function managerRoutes(): RouteRecordRaw[] {
 }
 
 /**
- * The Manager pages that fill the window, outside the service layout and its sidebar: knowledge governance is a
- * conversation of its own, entered from business knowledge and left through its back link. It is still a page of the
- * business knowledge entry (`meta.page`), so the same permission opens it.
+ * The Manager pages that fill the window, outside the service layout and its sidebar: one governance record's report,
+ * entered from the task or conversation that produced it and left through its back link. It is still a page of the
+ * business knowledge entry (`meta.page`), so the same permission opens it. The feedback records and business knowledge
+ * open at their own addresses, so a link to either lands on that page.
  */
 export function managerStandaloneRoutes(): RouteRecordRaw[] {
   return [
     {path:'/ontology/models',redirect:{name:routes.ontologyModels.name}},
-    {path:'/governance/models',redirect:{name:routes.governanceModels.name}},
-    {path:routes.governanceKnowledge.path,meta:{service:true},component:ManagerFrame,children:[{...routes.governanceKnowledge,component:KnowledgeGovernancePage,props:(route:{query:Record<string,unknown>})=>({page:'knowledge',sessionId:typeof route.query.sessionId==='string'?route.query.sessionId:''}),meta:{page:managerPaths.knowledge}}]},
     {
-      path: "/governance/chat",
+      path: "/governance/reports",
       meta: { service: true },
       component: ManagerFrame,
       children: [
         {
           ...routes.governance,
-          component: KnowledgeGovernancePage,
-          props: stringParam("sessionId"),
+          component: GovernanceReportPage,
+          props: stringParam("recordId"),
           meta: { page: managerPaths.knowledge },
         },
       ],
     },
-    // The feedback records are a page of the same application: same column, same conversation (`?sessionId=`), its
-    // own screen.
     {
-      path: "/governance/feedback",
+      path: routes.governanceKnowledge.path,
       meta: { service: true },
       component: ManagerFrame,
       children: [
-        {
-          ...routes.feedback,
-          component: KnowledgeGovernancePage,
-          props: (route: { query: Record<string, unknown> }) => ({
-            page: "feedback",
-            sessionId: typeof route.query.sessionId === "string" ? route.query.sessionId : "",
-          }),
-          meta: { page: routes.feedback.path },
-        },
+        { ...routes.governanceKnowledge, component: KnowledgePage, meta: { page: managerPaths.knowledge } },
       ],
     },
-    // The models of the governance agents, at the foot of the same column.
     {
-      path: routes.governanceModels.path,
+      path: routes.feedback.path,
       meta: { service: true },
       component: ManagerFrame,
       children: [
-        {
-          ...routes.governanceModels,
-          component: GovernanceModelsPage,
-          meta: { page: routes.governanceModels.path },
-        },
+        { ...routes.feedback, component: FeedbackPage, meta: { page: routes.feedback.path } },
       ],
     },
   ];
