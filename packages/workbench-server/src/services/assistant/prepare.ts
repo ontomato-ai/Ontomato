@@ -1,10 +1,8 @@
-import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
-import { GOVERNANCE_SKILL } from "./governance-definition";
 import type { AgentInput } from "@ontomato/contracts/agent-channel";
 import type { RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
 import { ARTIFACT_MARKDOWN_PROMPT } from "@ontomato/contracts/agent-artifact-markdown";
 import { ASSISTANT_INTERACTION_CONTEXT } from "./interaction-context";
-import { prepareAssistantSkills } from "./skills";
+import { prepareAssistantSkills, needsRetrievalScope, hasGovernanceSkill } from "./skills";
 import { assistantStore, type AgentRow, type AssistantOwner, type SessionRow, type TurnRow } from "./store";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { runDefinition, userSkillEnvironment, type AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -37,60 +35,39 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
   if(platformProfile&&!credentials.token?.startsWith('ap2.'))credentials=await userScopedAgentCredentials(owner.domainId,a.id,owner.userId,credentials.locale);
   if(profile)await agentPrincipalCredentials(owner.domainId,profile.principalId,credentials.locale,owner.userId);
   const skills = profile?[]:await prepareAssistantSkills(owner.domainId, a.skills);
-  const skillEnvironment = profile?{values:{ONTOMATO_WORKBENCH_URL:environment.agentRuntime().callbackUrl.replace(/\/$/,'')},secrets:{}}:undefined;
-
-  const continuationIds = new Set<string>();
-  for (const previous of profile?[]:await assistantStore.turns(sessionId)) {
-    if (previous.id === id) continue;
-    for (const link of await new OntologyRetrievalClient(owner, previous.retrieval_scope_id).links()) continuationIds.add(link.retrievalId);
-  }
-  if(!profile) {
-    const userMessages = recentUserMessages(
-      (await client.session(sessionId)).messages, inputId,
-    );
-    await new OntologyRetrievalClient(owner, turn.retrieval_scope_id).open({
-      classNames: turn.class_names,
-      continuationIds: [...continuationIds].sort(),
-      deadlineAt: new Date(new Date(turn.created_at).getTime() + getQueryTimeoutMs()).toISOString(),
-      recentUserMessages: userMessages,
+  const retrieval = needsRetrievalScope(skills);
+  const skillEnvironment = profile?{values:{ONTOMATO_WORKBENCH_URL:environment.agentRuntime().callbackUrl.replace(/\/$/,'')},secrets:{}}:userSkillEnvironment(credentials);
+  if (retrieval) {
+    const continuationIds = new Set<string>();
+    for (const previous of await assistantStore.turns(sessionId)) {
+      if (previous.id === id || !previous.retrieval_scope_id) continue;
+      for (const link of await new OntologyRetrievalClient(owner, previous.retrieval_scope_id).links()) continuationIds.add(link.retrievalId);
+    }
+    const userMessages = recentUserMessages((await client.session(sessionId)).messages, inputId);
+    const opened = await new OntologyRetrievalClient(owner, id).open({
+      classNames: turn.class_names, continuationIds: [...continuationIds].sort(),
+      deadlineAt: new Date(new Date(turn.created_at).getTime() + getQueryTimeoutMs()).toISOString(), recentUserMessages: userMessages,
     }, credentials);
+    await assistantStore.recordRetrievalScope(id, owner, opened.id);
+    turn.retrieval_scope_id = opened.id;
   }
-  const prepared = commonAssistantRun({a, session, turn, input, credentials},
-    (profile ? profile.instructions+'\n\nProduct projection interfaces (not authorization):\n'+JSON.stringify({tools:profile.tools,contextViews:profile.contextViews,issues:profile.issues,...('objectContext' in profile?{objectContext:profile.objectContext}:{})})
-      : effectiveSystemPrompt(a, resolveLocale(credentials.locale)))+"\n\nInitial ontology context:\n"+ontologyContext,
-    skills, skillEnvironment, profile ? [] : a.enabled_mcp_service_ids.map(id => ({id})));
-  prepared.environment.values.ONTOMATO_RETRIEVAL_CALLER_ID = turn.retrieval_scope_id;
-  if (profile) {
-    prepared.definition.productTools=profileRuntimeTools(profile,sessionId);
-    prepared.definition.toolSurface="product";
-    prepared.environment.secrets.ONTOMATO_PRODUCT_CALLBACK=callbackCredential({pathPrefix:`/api/product-assets/${encodeURIComponent(profile.id)}/releases/${profile.releaseId}/tools/`,runId:id,expiresAt:Date.now()+getQueryTimeoutMs(),token:credentials.token??'',apiKey:credentials.apiKey??''}).value;
-  }
-  return prepared;
-}
-
-export async function prepareGovernanceRun(preparation: AssistantPreparation): Promise<RuntimeStartRunRequest> {
-  const {a, owner, credentials}=preparation;
-  const skills=await prepareAssistantSkills(owner.domainId,a.skills);
-  return commonAssistantRun(preparation,effectiveSystemPrompt(a,resolveLocale(credentials.locale)),skills);
-}
-
-/** Ordinary assistants share platform interaction, artifact and callback assembly. */
-function commonAssistantRun(
-  {a,session,turn,input,credentials}: Pick<AssistantPreparation,"a"|"session"|"turn"|"input"|"credentials">,
-  instructions: string, skills: RuntimeSkillRef[], skillEnvironment=userSkillEnvironment(credentials),
-  externalMcp: RuntimeStartRunRequest["definition"]["externalMcp"]=a.enabled_mcp_service_ids.map(id=>({id})),
-): RuntimeStartRunRequest {
-  const governance=skills.some(skill=>skill.name===GOVERNANCE_SKILL.name && skill.namespace.kind==="provider" && skill.namespace.provider===GOVERNANCE_SKILL.namespace.provider);
-  const callbackPath=`/api/assistant/sessions/${session.id}/governance-window`;
+  const instructions = profile
+    ? profile.instructions+'\n\nProduct projection interfaces (not authorization):\n'+JSON.stringify({tools:profile.tools,contextViews:profile.contextViews,issues:profile.issues,...('objectContext' in profile?{objectContext:profile.objectContext}:{})})
+    : effectiveSystemPrompt(a,resolveLocale(credentials.locale)) + (retrieval ? "\n\nInitial ontology context:\n"+ontologyContext : "");
+  const governance=hasGovernanceSkill(skills),callbackPath=`/api/assistant/sessions/${session.id}/governance-window`;
   return {
     language: resolveLocale(credentials.locale), input,
     definition: {agentId:session.agent_id,...runDefinition(instructions+"\n\n"+ARTIFACT_MARKDOWN_PROMPT+ASSISTANT_INTERACTION_CONTEXT,
-      a.model_selection.modelId,skills,credentials.locale,externalMcp)},
+      a.model_selection.modelId,skills,credentials.locale,profile?[]:a.enabled_mcp_service_ids.map(id=>({id}))),
+      ...(profile?{productTools:profileRuntimeTools(profile,sessionId),toolSurface:"product" as const}:{})},
     environment: {
       values: {...skillEnvironment.values,ONTOMATO_ASSISTANT_SESSION_ID:session.id,
+        ...(retrieval?{ONTOMATO_RETRIEVAL_CALLER_ID:turn.retrieval_scope_id!}:{}),
         ...(governance?{ONTOMATO_GOVERNANCE_WINDOW_URL:environment.agentRuntime().callbackUrl.replace(/\/$/,"")+callbackPath}:{})},
       secrets: {...skillEnvironment.secrets,
-        ...(governance?{ONTOMATO_GOVERNANCE_CALLBACK:callbackCredential({pathPrefix:callbackPath,runId:turn.id,expiresAt:new Date(turn.created_at).getTime()+600_000,token:credentials.token??"",apiKey:credentials.apiKey??""}).value}:{})},
+        ...(governance?{ONTOMATO_GOVERNANCE_CALLBACK:callbackCredential({pathPrefix:callbackPath,runId:turn.id,expiresAt:new Date(turn.created_at).getTime()+600_000,token:credentials.token??"",apiKey:credentials.apiKey??""}).value}:{}),
+        ...(profile?{ONTOMATO_PRODUCT_CALLBACK:callbackCredential({pathPrefix:`/api/product-assets/${encodeURIComponent(profile.id)}/releases/${profile.releaseId}/tools/`,runId:id,expiresAt:Date.now()+getQueryTimeoutMs(),token:credentials.token??'',apiKey:credentials.apiKey??''}).value}:{}),
+      },
     },
   };
 }

@@ -1,59 +1,81 @@
-import { configureI18n } from "../../../i18n";
-import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { beforeEach, expect, it, vi } from "vitest";
 import { HttpError } from "../../../utils/errors";
-const mocks=vi.hoisted(()=>({query:vi.fn(),agent:vi.fn(),session:vi.fn(),turn:vi.fn(),create:vi.fn(),reserve:vi.fn(),admitted:vi.fn(),settled:vi.fn(),close:vi.fn(),access:vi.fn(),skills:vi.fn(),request:vi.fn(),run:vi.fn(),retrieval:vi.fn(),overview:vi.fn()}));
-vi.mock("../store",()=>({assistantStore:{agent:mocks.agent,session:mocks.session,turn:mocks.turn,create:mocks.create,reserve:mocks.reserve,admitted:mocks.admitted,settled:mocks.settled,runKind:async()=>"knowledge-governance"}}));
+import { configureI18n } from "../../../i18n";
+import { en, enLocaleMeta } from "../../../i18n/locales/en";
+const mocks=vi.hoisted(()=>({query:vi.fn(),agent:vi.fn(),session:vi.fn(),turn:vi.fn(),turns:vi.fn(),create:vi.fn(),reserve:vi.fn(),admitted:vi.fn(),settled:vi.fn(),close:vi.fn(),access:vi.fn(),skills:vi.fn(),request:vi.fn(),run:vi.fn(),open:vi.fn(),links:vi.fn(),scope:vi.fn(),scopeClose:vi.fn(),overview:vi.fn(),record:vi.fn(),recordWindow:vi.fn()}));
+vi.mock("../store",()=>({assistantStore:{agent:mocks.agent,session:mocks.session,turn:mocks.turn,turns:mocks.turns,create:mocks.create,reserve:mocks.reserve,admitted:mocks.admitted,settled:mocks.settled,recordRetrievalScope:mocks.scope,governanceRecord:mocks.record,recordGovernanceWindow:mocks.recordWindow}}));
 vi.mock("../governance",()=>({closeGovernanceWindow:mocks.close,requireGovernanceAccess:mocks.access}));
-vi.mock("../skills",()=>({prepareAssistantSkills:mocks.skills}));
+vi.mock("../../../core/skills/registry/manager",()=>({skillRegistryManager:{}}));
+vi.mock("../../skills/skill-manager",()=>({skillManager:{},skillReference:vi.fn()}));
+vi.mock("../skills",async original=>({...await original<typeof import("../skills")>(),prepareAssistantSkills:mocks.skills}));
 vi.mock("../context",()=>({assistantOntologyContext:mocks.overview}));
-vi.mock("../ontology-retrieval",()=>({OntologyRetrievalClient:class {constructor(){mocks.retrieval();}}}));
-vi.mock("../prompts",()=>({effectiveSystemPrompt:()=>"Governance instructions"}));
+vi.mock("../ontology-retrieval",()=>({OntologyRetrievalClient:class {open=mocks.open;links=mocks.links;closeScope=mocks.scopeClose;}}));
+vi.mock("../prompts",()=>({effectiveSystemPrompt:()=>"Instructions"}));
 vi.mock("../../skills/operations",()=>({withDomainSkills:async(_domain:string,fn:()=>Promise<unknown>)=>fn()}));
 vi.mock("../../product-assets/platform-assets",()=>({nativeProfileId:async()=>null}));
-vi.mock("../../product-assets/agent-profile",()=>({agentProfileForPrincipal:async()=>null}));
+vi.mock("../../product-assets/agent-profile",()=>({agentProfileForPrincipal:async()=>null,profileForSession:async()=>null}));
 vi.mock("../../agent-runtime/callback-credential",()=>({callbackCredential:()=>({value:"callback"})}));
+vi.mock("../../agent-host/caller",()=>({restoreAgentCaller:async()=>({owner:{domainId:"domain",userId:"user"},credentials:{}})}));
 vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://ontology"}}}));
+vi.mock("../../../config/query-settings",()=>({getQueryTimeoutMs:()=>600_000}));
 vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({callbackUrl:"http://workbench"})}}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
-vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class {request=mocks.request;run=mocks.run;}}));
-vi.mock("../../../platform/agent-runtime/runtime",()=>({userSkillEnvironment:()=>({values:{ONTOMATO_ONTOLOGY_URL:"http://ontology",ONTOMATO_SKILL_SCENARIO:"platform"},secrets:{ONTOMATO_TK:"user"}}),runDefinition:(systemPrompt:string,modelId:string,skills:unknown[])=>({systemPrompt,modelId,skills})}));
+vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class {request=mocks.request;run=mocks.run;session=async()=>({messages:[{id:"22222222-2222-4222-8222-222222222222",messageSeq:1,message:{role:"user",content:"Review knowledge",timestamp:1}}]});}}));
+vi.mock("../../../platform/agent-runtime/runtime",()=>({messageText:(message:{content:string})=>message.content,answerText:()=>"",userSkillEnvironment:()=>({values:{ONTOMATO_ONTOLOGY_URL:"http://ontology",ONTOMATO_SKILL_SCENARIO:"platform"},secrets:{ONTOMATO_TK:"user"}}),runDefinition:(systemPrompt:string,modelId:string,skills:unknown[])=>({systemPrompt,modelId,skills})}));
 import { assistantService } from "../service";
+import { agentChannelService } from "../../agent-host/channel";
 import type { AgentPrepareRequest } from "@ontomato/contracts/agent-channel";
 configureI18n({defaultLocale:"en",appTextLocale:"en",languageSwitchEnabled:false,packs:{en:{messages:en,...enLocaleMeta}}});
 const owner={domainId:"domain",userId:"user"},sessionId="11111111-1111-4111-8111-111111111111",runId="22222222-2222-4222-8222-222222222222",agentId="33333333-3333-4333-8333-333333333333";
 const skill={namespace:{kind:"provider",provider:"ontology"},name:"knowledge-governance"};
 beforeEach(()=>{
   vi.clearAllMocks();
-  mocks.agent.mockResolvedValue({id:agentId,kind:"knowledge-governance",enabled:true,class_names:[],skills:[skill],model_selection:{modelId:"provider/model"},enabled_mcp_service_ids:[]});
+  mocks.agent.mockResolvedValue({id:agentId,kind:"custom",enabled:true,class_names:[],skills:[skill],model_selection:{modelId:"provider/model"},enabled_mcp_service_ids:[]});
   const session={id:sessionId,agent_id:agentId,owner_id:"user",domain_id:"domain",workspace_id:null};
-  const turn={id:runId,session_id:sessionId,created_at:new Date()};
-  mocks.session.mockResolvedValue(session);mocks.turn.mockResolvedValue(turn);
+  const turn={id:runId,session_id:sessionId,created_at:new Date(),retrieval_scope_id:null,governance_record_id:null,class_names:[]};
+  mocks.session.mockResolvedValue(session);mocks.turn.mockResolvedValue(turn);mocks.turns.mockResolvedValue([]);
   mocks.create.mockResolvedValue({row:session});mocks.reserve.mockResolvedValue({row:turn});
-  mocks.query.mockResolvedValue({rows:[{session_id:sessionId}]});mocks.skills.mockResolvedValue([skill]);
+  mocks.query.mockResolvedValue({rows:[{session_id:sessionId}]});mocks.skills.mockResolvedValue([skill]);mocks.overview.mockResolvedValue("overview");
+  mocks.open.mockResolvedValue({id:runId});mocks.links.mockResolvedValue([]);mocks.record.mockResolvedValue(null);
   mocks.close.mockResolvedValue(undefined);mocks.admitted.mockResolvedValue(undefined);mocks.settled.mockResolvedValue(undefined);
 });
 function preparation(): AgentPrepareRequest {return {mode:"run",agent:{providerId:"workbench",agentId},sessionId,runId,inputId:runId,input:{role:"user",content:"Review knowledge",timestamp:1},language:"en",authority:{classNames:[],executionKind:"live"},requestedBy:null,root:{session:{providerId:"workbench",sessionId},runId},actor:{id:runId,domainId:"domain"}};}
-it("prepares governance through the ordinary provider without requiring query access or opening a report",async()=>{
+it("a custom definition with governance alone needs no query access and opens no report during preparation",async()=>{
   mocks.overview.mockRejectedValue(new Error("Query permission denied"));
   const prepared=await assistantService.prepare(preparation(),owner,{token:"user"});
   expect(prepared.definition).toMatchObject({agentId,modelId:"provider/model",skills:[skill]});
   expect(prepared.environment.values).toMatchObject({ONTOMATO_ASSISTANT_SESSION_ID:sessionId,ONTOMATO_SKILL_SCENARIO:"platform",ONTOMATO_ONTOLOGY_URL:"http://ontology"});
   expect(prepared.environment.values).not.toHaveProperty("ONTOMATO_RETRIEVAL_CALLER_ID");
-  expect(mocks.overview).not.toHaveBeenCalled();expect(mocks.retrieval).not.toHaveBeenCalled();expect(mocks.close).not.toHaveBeenCalled();
+  expect(mocks.overview).not.toHaveBeenCalled();expect(mocks.open).not.toHaveBeenCalled();expect(mocks.recordWindow).not.toHaveBeenCalled();
+});
+it("the selected query skill opens and records its actual scope regardless of preset kind",async()=>{
+  const querySkill={namespace:{kind:"provider",provider:"ontology"},name:"ontomato-analyst-assistant"};
+  const agent=await mocks.agent();mocks.agent.mockResolvedValue({...agent,kind:"knowledge-governance",skills:[querySkill]});mocks.skills.mockResolvedValue([querySkill]);
+  const prepared=await assistantService.prepare(preparation(),owner,{token:"user"});
+  expect(mocks.overview).toHaveBeenCalled();expect(mocks.scope).toHaveBeenCalledWith(runId,owner,runId);
+  expect(prepared.environment.values.ONTOMATO_RETRIEVAL_CALLER_ID).toBe(runId);
+});
+it("a failed scope opening never records an opened scope",async()=>{
+  const querySkill={namespace:{kind:"provider",provider:"ontology"},name:"ontomato-analyst-assistant"};
+  mocks.skills.mockResolvedValue([querySkill]);mocks.open.mockRejectedValue(new Error("admission failed"));
+  await expect(assistantService.prepare(preparation(),owner,{token:"user"})).rejects.toThrow("admission failed");
+  expect(mocks.scope).not.toHaveBeenCalled();
+});
+it("cancellation follows the round's saved scope after definition skills change",async()=>{
+  mocks.turn.mockResolvedValue({id:runId,session_id:sessionId,retrieval_scope_id:runId});
+  await assistantService.cancelScope(runId,owner,{token:"user"});
+  expect(mocks.scopeClose).toHaveBeenCalledWith({token:"user"});
+  mocks.scopeClose.mockClear();mocks.turn.mockResolvedValue({id:runId,session_id:sessionId,retrieval_scope_id:null});
+  await assistantService.cancelScope(runId,owner,{token:"user"});expect(mocks.scopeClose).not.toHaveBeenCalled();
 });
 it("closes the Java gate before asking the runtime to stop",async()=>{
-  let closed=false;mocks.close.mockImplementation(async()=>{closed=true;});
-  mocks.request.mockImplementation(async()=>{expect(closed).toBe(true);});
+  let closed=false;mocks.close.mockImplementation(async()=>{closed=true;});mocks.request.mockImplementation(async()=>{expect(closed).toBe(true);});
   mocks.run.mockRejectedValue(new HttpError(404,"not admitted"));
   await expect(assistantService.cancel(sessionId,runId,owner,{token:"user"})).resolves.toEqual({run:null});
-  expect(mocks.close).toHaveBeenCalledWith(runId,owner.domainId);
+  expect(mocks.close).toHaveBeenCalledWith(runId,owner);
 });
-it("closes failed admission and terminal runs through the same data-service boundary",async()=>{
-  mocks.skills.mockRejectedValueOnce(new Error("Skill admission failed"));
-  await expect(assistantService.prepare(preparation(),owner,{token:"user"})).rejects.toThrow("Skill admission failed");
-  expect(mocks.close).toHaveBeenCalledWith(runId,owner.domainId);
-  await assistantService.settleTurn(runId,owner);
-  await assistantService.cancelScope(runId,owner,{token:"user"});
-  expect(mocks.retrieval).not.toHaveBeenCalled();expect(mocks.settled).toHaveBeenCalledWith(runId);
+it("a custom agent's provider result follows its saved governance record",async()=>{
+  mocks.record.mockResolvedValue(agentId);mocks.run.mockResolvedValue({run:{id:runId,sessionId,status:"running",stopReason:null},messages:[],artifacts:[]});
+  const result=await agentChannelService.read({actor:{id:runId,domainId:"domain"},execution:{session:{providerId:"workbench",sessionId},runId}},"domain");
+  expect(result).toMatchObject({process:{mode:"page",href:`/governance/reports/${agentId}`},results:[{href:`/governance/reports/${agentId}`} ]});
 });

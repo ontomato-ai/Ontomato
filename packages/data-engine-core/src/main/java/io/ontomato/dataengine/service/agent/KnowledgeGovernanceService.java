@@ -134,10 +134,6 @@ public class KnowledgeGovernanceService {
       Instant.parse(result.getString("expiresAt")).toEpochMilli(),List.of(),null));
     return result;
   }
-  public JSONObject platformRecord(String run,String domain) {
-    var rows=store.rows("SELECT w.record_id FROM ontology_governance_windows w JOIN ontology_governance_records r ON r.id=w.record_id WHERE w.run_id=? AND r.domain_id=? AND NOT w.external",uuid(run),domain);
-    return JSONObject.of("recordId",rows.isEmpty()?null:rows.getFirst().getString("record_id"));
-  }
   public void closePlatform(String run,String domain) {
     store.update("UPDATE ontology_governance_windows w SET closed=true FROM ontology_governance_records r WHERE w.record_id=r.id AND w.run_id=? AND r.domain_id=? AND NOT w.external",uuid(run),domain);
   }

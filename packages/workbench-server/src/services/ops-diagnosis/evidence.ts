@@ -65,7 +65,7 @@ export async function resolveDiagnosisEvidence(target: DiagnosisTarget, caller: 
     if (!correlationId) result.gaps.push({ source: snapshot.run.id, code: "CORRELATION_UNAVAILABLE", message: "Correlation is unavailable; the supplied log queries cover this run ID only." });
   };
   add("workbench", publicSnapshot(root), root.run.correlationId);
-  try {
+  if (turn.retrieval_scope_id) try {
     const links = retrievalCallerSchema.parse(await ontologyRead(`/ontology/retrieval-callers/${turn.retrieval_scope_id}`, caller));
     for (const link of links.retrievals) {
       const evidence = retrievalEvidenceSchema.parse(await ontologyRead(`/ontology/retrievals/${link.retrievalId}/runs/${link.runId}/evidence`, caller));

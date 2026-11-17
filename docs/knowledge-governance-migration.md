@@ -9,9 +9,10 @@ conversational governance definition or model selection.
 ## Interfaces and ownership
 
 - Ordinary assistant APIs and the existing workbench provider create and run governance.
-  Governance preparation uses the same platform prompt/environment assembly as ordinary
-  assistants, without ontology query context, Action catalogue or a retrieval scope.
-  It requires business-knowledge access, without adding a query permission requirement.
+  Governance uses ordinary assistant preparation. The selected ontology query skill alone
+  enables ontology overview/context and a retrieval scope; the predicate lives in skills.ts.
+  The governance preset selects governance alone and therefore adds no query permission
+  requirement. Kind identifies preset data, not a separate execution path.
 - `POST /api/assistant/sessions/:sessionId/governance-window` is a run-scoped callback.
   It accepts only optional `recordId`. Node verifies the authenticated initiator, the
   persisted current/admitted turn, live runtime status and access to a selected record.
@@ -21,8 +22,8 @@ conversational governance definition or model selection.
   the existing scoped governance grant. Registration requires both workbench service
   authentication and the current initiator credential. Expired credentials fail.
   Records are created only when the skill requests a window.
-- Java `GET .../platform-windows/:runId` returns the record reference; `POST
-  .../platform-windows/:runId/close` closes it. Both require service authentication.
+- Java `POST .../platform-windows/:runId/close` closes the window using service
+  authentication. Node saves only the returned record reference in its accepted turn.
   `POST .../skill-package` publishes the capability-owned skill with the same service boundary.
 - `GET .../:recordId/work`, `GET .../:recordId/sources/:sourceId`, and existing
   `POST .../:recordId/runs/:runId/actions/:action` retain the data-service ownership rules.
@@ -45,7 +46,7 @@ conversational governance definition or model selection.
   again through history. Later steered user messages are outside this batch. External
   begin material remains attached to its external window.
 - Provider process/results use `/governance/reports/:recordId` when a record exists;
-  governance never uses an inline live model process. Scheduling now selects the ordinary
+  any session with a saved governance record uses that page rather than an inline process. Scheduling selects the ordinary
   governance definition in the agents adapter; the old governance scheduling declaration
   and Java executor are removed.
 
@@ -57,6 +58,14 @@ expiry and closure. Platform rows bind the real host/session/run; only external 
 begin material. `ontology_governance_work` retains per-window work snapshots, with the old
 `ontology_agent_runs` foreign key removed. New governance data has no dependency on Java
 host sessions/runs and stores no conversation title, platform input message or running state.
+
+Node assistant_turns.retrieval_scope_id is nullable and is assigned only after Java opens
+that caller. Its governance_record_id is a nullable reference assigned only after Java
+registers a window. Cleanup/evidence/continuations use these per-turn references; provider
+page links use the session's latest recorded governance reference. No current-kind or
+current-skill lookup reconstructs a past round. Existing retrieval_scope_id values remain
+unchanged. For an old caller that never existed, service-only close-scope is a successful
+no-op, and links returns 404 handled by the existing deletion path.
 
 ## Runtime history
 

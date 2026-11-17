@@ -157,7 +157,7 @@ describe("assistant ontology provenance", () => {
 
   it("explicit cancellation closes only the parent query scope with its own credential", async () => {
     route.set(`/ontology/retrieval-callers/parent-run/close`, { closed: true });
-    vi.spyOn(assistantStore,"runKind").mockResolvedValue("regular");
+    vi.spyOn(assistantStore,"turn").mockResolvedValue({retrieval_scope_id:"parent-run"} as never);
     vi.spyOn(assistantStore,"settled").mockResolvedValue();
     await assistantService.cancelScope("parent-run",owner,{token:"user-token"});
     const close = calls.requests.find((r) => r.path === "/ontology/retrieval-callers/parent-run/close-scope");

@@ -9,7 +9,7 @@ vi.mock('../prompts',()=>({effectiveSystemPrompt:()=> 'Instructions'}));
 vi.mock('../../../i18n',()=>({resolveLocale:(locale:string)=>locale}));
 vi.mock('../../../config/environment',()=>({environment:{agentRuntime:()=>({callbackUrl:'http://workbench.test'})}}));
 vi.mock('../../product-assets/agent-principal',()=>({agentPrincipalCredentials:mocks.principal,userScopedAgentCredentials:mocks.scoped}));
-vi.mock('../skills',()=>({prepareAssistantSkills:mocks.skills}));
+vi.mock('../skills',()=>({needsRetrievalScope:()=>false,hasGovernanceSkill:()=>false,prepareAssistantSkills:mocks.skills}));
 vi.mock('../context',()=>({assistantOntologyContext:vi.fn()}));
 vi.mock('../store',()=>({assistantStore:{turns:async()=>[]}}));
 vi.mock('../../../infrastructure/agent-runtime/client',()=>({RuntimeClient:class{session=async()=>({messages:[{id:'input',messageSeq:1,message:{role:'user',content:'Question',timestamp:1}}]});}}));

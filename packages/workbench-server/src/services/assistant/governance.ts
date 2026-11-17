@@ -41,13 +41,13 @@ export async function openGovernanceWindow(sessionId: string, runId: string, rec
   const expiresAt = new Date(Math.min(new Date(turn.created_at).getTime() + 600_000, access.expiresAt ?? Infinity)).toISOString();
   const binding = governancePlatformWindowSchema.parse({ recordId: recordId ?? session.id, domainId: session.domain_id, ownerId: session.owner_id,
     runtimeHostId: "workbench", sessionId: turn.session_id, runId: turn.id, expiresAt });
-  return governanceWindowSchema.parse(await request("/platform-windows", owner.domainId, credentials, binding));
+  const window=governanceWindowSchema.parse(await request("/platform-windows", owner.domainId, credentials, binding));
+  await assistantStore.recordGovernanceWindow(runId,owner,window.id);
+  return window;
 }
-export async function governanceRecord(runId: string, domain: string) {
-  return z.object({ recordId: z.string().uuid().nullable() }).parse(await request(`/platform-windows/${runId}`, domain)).recordId;
-}
-export async function closeGovernanceWindow(runId: string, domain: string) {
-  await request(`/platform-windows/${runId}/close`, domain, {}, {});
+export async function closeGovernanceWindow(runId: string, owner: AssistantOwner) {
+  if (await assistantStore.governanceWindow(runId,owner))
+    await request(`/platform-windows/${runId}/close`, owner.domainId, {}, {});
 }
 
 /** The ontology capability publishes its own skill namespace. */

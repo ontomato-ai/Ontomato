@@ -32,10 +32,6 @@ public class KnowledgeGovernanceController {
     access.service(request);
     return governance.registerPlatform(JSONObject.from(input),access.governance(request));
   }
-  @GetMapping("/platform-windows/{run}")
-  public Object platformRecord(@PathVariable String run,HttpServletRequest request) {
-    return governance.platformRecord(AgentJson.id(run),access.serviceDomain(request));
-  }
   @PostMapping("/platform-windows/{run}/close")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   public void closePlatform(@PathVariable String run,HttpServletRequest request) {

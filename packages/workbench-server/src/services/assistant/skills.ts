@@ -13,6 +13,17 @@ import { publishSkill } from "../agent-runtime/skills";
 import { tForLocale } from "../../i18n";
 import { readSkillMarkdown } from '../../core/skills/manifest';
 
+const RETRIEVAL_SKILLS = new Set(["ontomato-analyst-assistant"]);
+
+/** The selectable ontology query skill is the only assistant skill that needs a retrieval caller. */
+export function needsRetrievalScope(skills: readonly RuntimeSkillRef[]) {
+  return skills.some(skill => skill.namespace.kind === "provider" && skill.namespace.provider === "ontology"
+    && RETRIEVAL_SKILLS.has(skill.name));
+}
+export function hasGovernanceSkill(skills: readonly RuntimeSkillRef[]) {
+  return skills.some(skill => runtimeSkillKey(skill) === runtimeSkillKey(GOVERNANCE_SKILL));
+}
+
 function platformSkills() {
   return ["assistant-report","application-design"].map((name) => {
     const root = path.join(workbenchServerResourceRoot, "resources/runtime-skills", name);

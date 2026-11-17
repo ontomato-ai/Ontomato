@@ -1,6 +1,5 @@
-import { hasRetrievalScope } from "./retrieval-scope";
 import { closeGovernanceWindow, requireGovernanceAccess } from "./governance";
-import { GOVERNANCE_KIND } from "./governance-definition";
+import { needsRetrievalScope, hasGovernanceSkill } from "./skills";
 import { agentHostSendResultSchema, type AgentHostSendRequest } from "@ontomato/contracts/agent-host";
 import { resolveLocale } from "../../i18n";
 import { assertAppBuilderAccess } from "../app-builder/access";
@@ -10,7 +9,7 @@ import { assistantOntologyContext } from "./context";
 import { openAgentCaller } from "../agent-host/caller";
 import type { AgentPrepareRequest, AgentRunContext } from "@ontomato/contracts/agent-channel";
 import type { RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
-import { prepareAnalystRun, prepareGovernanceRun } from "./prepare";
+import { prepareAnalystRun } from "./prepare";
 import { prepareAppBuilderRun } from "../app-builder/prepare";
 import {isAppBuilderKind} from '../app-builder/definition';
 import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
@@ -77,7 +76,7 @@ export const assistantService = {
   async agents(owner: AssistantOwner, locale?: string, credentials: AssistantCredentials = {}) {
     return {
       agents: (await Promise.all((await assistantStore.agents(owner.domainId, locale)).map(async a => {
-        if (a.kind === GOVERNANCE_KIND) {
+        if (hasGovernanceSkill(a.skills)) {
           try { await requireGovernanceAccess(owner, credentials); }
           catch (error) { if (error instanceof HttpError && error.status === 403) return null; throw error; }
         }
@@ -235,10 +234,11 @@ export const assistantService = {
     return {client:new ChannelProcessClient(owner,sessionId,taskId),process:task.process};
   },
   /** Parent completion records its own turn only; delegated executions retain their authorization. */
-  async settleTurn(id: string, owner: AssistantOwner) { await closeGovernanceWindow(id,owner.domainId); await assistantStore.settled(id); },
+  async settleTurn(id: string, owner: AssistantOwner) { await closeGovernanceWindow(id,owner); await assistantStore.settled(id); },
   async cancelScope(id: string,owner: AssistantOwner,credentials: AssistantCredentials) {
-    await closeGovernanceWindow(id,owner.domainId);
-    if (hasRetrievalScope(await assistantStore.runKind(id,owner))) await new OntologyRetrievalClient(owner,id).closeScope(credentials);
+    await closeGovernanceWindow(id,owner);
+    const turn=await assistantStore.turn(id,owner);
+    if (turn.retrieval_scope_id) await new OntologyRetrievalClient(owner,turn.retrieval_scope_id).closeScope(credentials);
     await assistantStore.settled(id);
   },
   async prepare(body: AgentPrepareRequest, owner: AssistantOwner, credentials: AssistantCredentials): Promise<RuntimeStartRunRequest> {
@@ -253,13 +253,13 @@ export const assistantService = {
       const message = input.content;
       const { row: turn } = await assistantStore.reserve(sessionId,id,message,owner,a.class_names);
       const request = await withDomainSkills(owner.domainId,async () => {
-        const prepare = isAppBuilderKind(a.kind) ? prepareAppBuilderRun : a.kind === GOVERNANCE_KIND ? prepareGovernanceRun : prepareAnalystRun;
+        const prepare = isAppBuilderKind(a.kind) ? prepareAppBuilderRun : prepareAnalystRun;
         return prepare({ a,session,turn,message,input,inputId:body.inputId,ontologyContext,owner,credentials });
       });
       await assistantStore.admitted(id,message);
       return { ...request,input,authority: { classNames: a.class_names,executionKind: isAppBuilderKind(a.kind) ? "build-test" : "live" } };
     } catch (error) {
-      await closeGovernanceWindow(id,owner.domainId);
+      await closeGovernanceWindow(id,owner);
       throw error;
     }
   },
@@ -272,12 +272,12 @@ export const assistantService = {
       if (!a.class_names.length) throw new HttpError(403,"No authorized classes in the delegated scope","FORBIDDEN");
     }
     if (isAppBuilderKind(a.kind)) await assertAppBuilderAccess(credentials);
-    if (a.kind === GOVERNANCE_KIND) await requireGovernanceAccess(owner,credentials);
+    if (hasGovernanceSkill(a.skills)) await requireGovernanceAccess(owner,credentials);
     const {nativeProfileId}=await import('../product-assets/platform-assets');
     const native=await nativeProfileId(owner.domainId,a.id);
     if(native){const {requireProductUse}=await import('../product-assets/grants');await requireProductUse(owner,native);await requireProductUse(owner,a.id);if(!credentials.token?.startsWith('ap2.')){const {userScopedAgentCredentials}=await import('../product-assets/agent-principal');credentials=await userScopedAgentCredentials(owner.domainId,a.id,owner.userId,credentials.locale);}}
     const profile = isAppBuilderKind(a.kind)||native ? null : await agentProfileForPrincipal(owner,credentials,a.id);
-    const ontologyContext = !hasRetrievalScope(a.kind) || profile ? null : await assistantOntologyContext(a,credentials);
+    const ontologyContext = isAppBuilderKind(a.kind) || profile || !needsRetrievalScope(a.skills) ? null : await assistantOntologyContext(a,credentials);
     return { agent: a,ontologyContext };
   },
   async send(sessionId: string, id: string, input: AgentHostSendRequest, owner: AssistantOwner, credentials: AssistantCredentials) {
@@ -368,7 +368,7 @@ export const assistantService = {
       if (runtime && runtime.run.sessionId !== sessionId)
         throw new HttpError(404, "Run not found");
     }
-    if (existing) await closeGovernanceWindow(id,owner.domainId);
+    if (existing) await closeGovernanceWindow(id,owner);
     const c = new RuntimeClient(owner.domainId, undefined, owner.userId);
     await c.request(
       `/v1/sessions/${sessionId}/run-intents/${id}/cancel`,
@@ -393,8 +393,7 @@ export const assistantService = {
     }
     if (snapshot?.latestRun?.run.status === "running")
       throw new HttpError(409, "Conversation is running", "SESSION_BUSY");
-    const agent = await assistantStore.agent((await assistantStore.session(sessionId, owner)).agent_id, owner);
-    const scopes = !hasRetrievalScope(agent.kind) ? [] : (await db().query(`SELECT retrieval_scope_id FROM ${table("assistant_turns")} WHERE session_id=$1`, [sessionId])).rows;
+    const scopes = (await db().query(`SELECT retrieval_scope_id FROM ${table("assistant_turns")} WHERE session_id=$1 AND retrieval_scope_id IS NOT NULL`, [sessionId])).rows;
     const removed = new Set<string>();
     for (const scope of scopes) {
       const ontology = new OntologyRetrievalClient(owner, scope.retrieval_scope_id);
@@ -474,6 +473,7 @@ export const assistantService = {
   async datasetSource(sessionId: string, id: string, owner: AssistantOwner) {
     const a = await this.artifact(sessionId, id, owner);
     for (const turn of await assistantStore.turns(sessionId)) {
+      if (!turn.retrieval_scope_id) continue;
       const ontology = new OntologyRetrievalClient(owner, turn.retrieval_scope_id);
       for (const link of await ontology.links()) {
         const evidence = await ontology.evidence(link.retrievalId, link.runId);

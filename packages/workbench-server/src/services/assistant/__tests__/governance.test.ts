@@ -3,20 +3,21 @@ import express from "express";
 import type { Server } from "node:http";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
-const mocks = vi.hoisted(() => ({ session: vi.fn(), domainSession: vi.fn(), turn: vi.fn(), status: vi.fn(), get: vi.fn(), post: vi.fn() }));
+const mocks = vi.hoisted(() => ({ session: vi.fn(), domainSession: vi.fn(), turn: vi.fn(), status: vi.fn(), get: vi.fn(), post: vi.fn(), record:vi.fn(), window:vi.fn() }));
 vi.mock("../../../identity/installed", () => ({ workbenchIdentity: () => ({ requireDomainId: (input: {domainId:string}) => input.domainId }) }));
-vi.mock("../store", () => ({ assistantStore: { session: mocks.session, domainSession: mocks.domainSession, turn: mocks.turn } }));
+vi.mock("../store", () => ({ assistantStore: { session: mocks.session, domainSession: mocks.domainSession, turn: mocks.turn, recordGovernanceWindow:mocks.record, governanceWindow:mocks.window } }));
 vi.mock("../../../infrastructure/agent-runtime/client", () => ({ RuntimeClient: class { status = mocks.status; } }));
 vi.mock("../../../config/environment", () => ({ environment: { agentRuntime: () => ({ queryServiceToken: "service", token: "runtime-secret" }) } }));
 vi.mock("../../../config/data-query-api", () => ({ getApiConfig: () => ({ baseUrl: "http://ontology" }) }));
 vi.mock("../../../utils/backend-client", () => ({ backendGet: mocks.get, backendPost: mocks.post, buildBackendHeaders: () => ({ tk: "current-user" }) }));
-import { governanceRunStatus, openGovernanceWindow } from "../governance";
+import { governanceRunStatus, openGovernanceWindow, closeGovernanceWindow } from "../governance";
 import { assistantInternalRouter, governanceWindowsRouter } from "../../../api/routes/governance";
 import { callbackCredential, unwrapCallbackCredential } from "../../agent-runtime/callback-credential";
 const sessionId="11111111-1111-4111-8111-111111111111", runId="22222222-2222-4222-8222-222222222222", recordId="33333333-3333-4333-8333-333333333333";
 const owner={domainId:"domain",userId:"user"};
-let server: Server;
+let server: Server | undefined;
 beforeEach(() => {
+  server=undefined;
   vi.clearAllMocks();
   const session={id:sessionId,domain_id:"domain",owner_id:"user",latest_run_id:runId};
   mocks.session.mockResolvedValue(session);mocks.domainSession.mockResolvedValue(session);
@@ -25,7 +26,7 @@ beforeEach(() => {
   mocks.get.mockImplementation(async (_name:string,url:string) => ({text:JSON.stringify(url.endsWith("/access")?{ownerId:"user",domainId:"domain",expiresAt:Date.now()+30_000}:{work:{}})}));
   mocks.post.mockImplementation(async (_name:string,_url:string,input:{recordId:string;sessionId:string;runId:string;expiresAt:string}) => ({text:JSON.stringify({id:input.recordId,sessionId:input.sessionId,runId:input.runId,expiresAt:input.expiresAt,token:"governance-grant"})}));
 });
-afterEach(async () => {if(server) await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));});
+afterEach(async () => {const closing=server;if(closing) await new Promise<void>((resolve,reject)=>closing.close(error=>error?reject(error):resolve()));});
 it("binds a window to the persisted current run and credential expiry", async () => {
   const result=await openGovernanceWindow(sessionId,runId,recordId,owner,{token:"current-user"});
   expect(result.id).toBe(recordId);
@@ -84,4 +85,12 @@ it("keeps the status endpoint behind service authentication", async () => {
   const response=await fetch(url+path,{headers:{"X-Ontomato-Query-Service-Token":"service","X-Domain-Id":"domain"}});
   expect(response.status).toBe(200);
   expect(await response.json()).toEqual({sessionId,runId,status:"running",stopReason:null});
+});
+
+it("closes only a recorded governance window, independently of the current definition",async()=>{
+  mocks.window.mockResolvedValueOnce(null);
+  await closeGovernanceWindow(runId,owner);expect(mocks.post).not.toHaveBeenCalled();
+  mocks.window.mockResolvedValueOnce(recordId);mocks.post.mockResolvedValueOnce({text:""});
+  await closeGovernanceWindow(runId,owner);
+  expect(mocks.post.mock.calls[0][1]).toBe(`http://ontology/ontology/ai/knowledge-governance/platform-windows/${runId}/close`);
 });
