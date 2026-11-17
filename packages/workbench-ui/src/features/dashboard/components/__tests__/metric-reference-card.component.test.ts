@@ -137,6 +137,15 @@ describe("metric-reference cards on a dashboard", () => {
     expect(card.find(".ai-chart-data-overlay").text()).toContain("Region");
   });
 
+  it("gives the platform's chart the card's own room, not a page-sized default", async () => {
+    const group = await load();
+    const card = mount(ChartCard, { props: { chart: group.charts[0] }, global: { plugins, stubs: { EChart: true } } });
+    // The card is one tile of the board: the chart fills it, and its own padding comes out of that height.
+    expect(card.findComponent({ name: "MetricChart" }).props("height")).toBe("100%");
+    expect(card.find(".chart-wrapper").exists()).toBe(true);
+    card.unmount();
+  });
+
   it("draws the rows the file sorts and limits, and no slice the metric did not give", async () => {
     const group = await load();
     const displayed = chartCardTable(

@@ -1,6 +1,8 @@
 import {beforeEach,expect,it,vi} from 'vitest';
 import {createObjectView} from '@ontomato/contracts/object-views';
 import {isMetricChartProjection} from '@ontomato/contracts/product-projections';
+import {productAssetInputSchema} from '@ontomato/contracts/product-assets';
+import {HttpError} from '../../../utils/errors';
 const mocks=vi.hoisted(()=>({post:vi.fn(),describe:vi.fn(),dashboard:vi.fn()}));
 const definitions=vi.hoisted(()=>({read:vi.fn()}));
 vi.mock('../definitions',()=>({readDefinition:definitions.read}));
@@ -42,6 +44,21 @@ it('rejects capability configuration hidden inside an ObjectView',async()=>{
 });
 
 function chartFile(): import('@ontomato/contracts/chart-data').ChartFile {return {dataset:[{id:'metric',dimensions:['name','value'],source:[]}],series:[{id:'main',type:'bar',datasetId:'metric',encode:{x:'name',y:'value'}}],ontomato:{}};}
+it('admits an executable candidate in a personal dashboard but keeps shared product metrics published',async()=>{
+  const dashboard=productAssetInputSchema.parse({name:'Personal',visibility:'private',document:{kind:'dashboard',dashboardId:'board'}});
+  mocks.dashboard.mockResolvedValue({groups:[{charts:[{query:{kind:'metric',metricId:'candidate',parameters:{}}}],metrics:[]}]});
+  mocks.describe.mockResolvedValue({status:'PENDING_REVIEW',parameterDefs:[],outputColumns:[{key:'name'},{key:'value'}]});
+  await expect(validateProduct(owner,dashboard,{token:'alice'})).resolves.toBeUndefined();
+  const shared=productAssetInputSchema.parse({name:'Shared chart',visibility:'domain',document:{kind:'metric-widget',renderer:'chart',renders:{kind:'MetricView',id:'candidate'},chartFile:chartFile(),parameters:{}}});
+  await expect(validateProduct(owner,shared,{token:'alice'})).rejects.toMatchObject({code:'UNPUBLISHED_CAPABILITY'});
+  await expect(validateProduct(owner,{...dashboard,visibility:'domain'},{token:'alice'})).rejects.toMatchObject({code:'PRIVATE_DEPENDENCY'});
+});
+it('preserves current-user execution failures for another creator\'s candidate',async()=>{
+  const dashboard=productAssetInputSchema.parse({name:'Personal',document:{kind:'dashboard',dashboardId:'board'}});
+  mocks.dashboard.mockResolvedValue({groups:[{charts:[{query:{kind:'metric',metricId:'someone-elses-candidate',parameters:{}}}],metrics:[]}]});
+  mocks.describe.mockRejectedValue(new HttpError(404,'Not executable','METRIC_UNAVAILABLE'));
+  await expect(validateProduct(owner,dashboard,{token:'alice'})).rejects.toMatchObject({code:'METRIC_UNAVAILABLE'});
+});
 it('validates MetricWidget chart columns, empty snapshots and parameter signatures at admission',async()=>{
   const {productAssetInputSchema}=await import('@ontomato/contracts/product-assets');
   const chart=productAssetInputSchema.parse({name:'Chart',document:{kind:'metric-widget',renders:{kind:'MetricView',id:'metric'},renderer:'chart',chartFile:chartFile(),parameters:{}}});

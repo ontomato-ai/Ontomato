@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
+import type { AgentPageQuery } from "../host";
 import type { ShellLabels } from "../types";
 import { usePageCounter } from "../page-counter";
 import AgentPicker from "./AgentPicker.vue";
@@ -10,22 +11,58 @@ import ShellComposer from "./ShellComposer.vue";
  * The composer at the foot of a page at its own address: the conversation's own composer, with the agent the counter
  * last used, and what the page is written on carried with the message. Sending hands the message to the platform
  * assembly, which opens the counter with this page beside it; nothing is sent from here.
+ *
+ * A page that declares its own skill (`pageSkill`, the same declaration the conversation beside it reads) narrows the
+ * agents offered to the ones that carry it, and starts from the page's registered default: the alternative — every
+ * agent, with the remembered one selected — would offer an agent that cannot work on this page at all.
  */
 const props = defineProps<{
   /** The page's address, as the counter opens it beside the message. */
   page: string;
-  labels: Pick<ShellLabels, "placeholder" | "send" | "stop" | "agent">;
+  labels: Pick<ShellLabels, "placeholder" | "send" | "stop" | "agent" | "pageAgentUnavailable">;
+  /** The page's own skill declaration, when it has one; it is the one the page hands its conversation too. */
+  pageSkill?: AgentPageQuery;
 }>();
+const emit = defineEmits<{ error: [message: string] }>();
 const counter = usePageCounter()!;
 /**
  * The agents are read when the page draws its composer, not when the platform starts: the counter answers, and the page
- * only shows what it may talk to.
+ * only shows what it may talk to. A page with a skill is answered by that page's directory, and its refusal is shown as
+ * the configuration error it is rather than being covered by another agent.
+ *
+ * The page's own default wins over the agent this tab last used: DESIGN "Applications and shells" — a page that
+ * registered a default starts from it while it is available, and the remembered agent is the choice of pages without a
+ * declaration. Someone who has just talked to another agent still opens a report on the agent the report is mapped to.
  */
 const agents = ref<readonly AgentHostAgent[]>([]);
-void counter.agents().then((list) => (agents.value = list.filter((agent) => agent.enabled)));
-/** The agent the message goes to: the one chosen here, else the one the counter last used, else its first agent. */
-const chosen = ref<string | null>(counter.preferredAgentId.value);
+const chosen = ref<string | null>(null);
+const candidates = props.pageSkill
+  ? counter.pageAgents(props.pageSkill)
+  : counter.agents().then((list) => ({ agents: list, defaultAgentId: undefined as string | undefined }));
+void candidates
+  .then(({ agents: list, defaultAgentId }) => {
+    agents.value = list.filter((agent) => agent.enabled);
+    const offered = (id: string | null | undefined) => agents.value.some((agent) => agent.id === id);
+    const remembered = props.pageSkill ? null : counter.preferredAgentId.value;
+    // The page's registered default (the platform's own agent when it registered none), else the remembered one, else the first.
+    const initial = offered(defaultAgentId) ? defaultAgentId : offered(remembered) ? remembered : agents.value[0]?.id;
+    chosen.value = initial ?? null;
+  })
+  // The page's own configuration keeps its own words and the service's reason; anything else is the service's error.
+  .catch((reason: unknown) => emit("error", candidatesFailureReason(reason, props.labels.pageAgentUnavailable)));
+/** The agent the message goes to: the one chosen here, else the one selected when the page opened. */
 const agentId = computed(() => chosen.value ?? agents.value[0]?.id ?? null);
+
+/**
+ * Why the page offered no agent. A page whose mapping or registered default is gone is the page's configuration — the
+ * page's own sentence, with the service's reason for it; a network failure or a refused request is that error, word for
+ * word, so the reader can tell a broken page from a broken connection.
+ */
+function candidatesFailureReason(reason: unknown, own: string): string {
+  const code = (reason as { code?: unknown } | null)?.code;
+  const detail = reason instanceof Error ? reason.message : String(reason);
+  return code === "PAGE_DEFAULT_AGENT_UNAVAILABLE" ? `${own} ${detail}` : detail;
+}
 
 function ask(text: string) {
   if (!agentId.value) return;

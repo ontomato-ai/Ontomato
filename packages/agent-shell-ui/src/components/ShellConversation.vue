@@ -8,6 +8,7 @@ import type { ConversationItem } from "../view";
 import ShellComposer from "./ShellComposer.vue";
 import ShellQuestions from "./ShellQuestions.vue";
 import ShellResponse from "./ShellResponse.vue";
+import ShellMarkdown from "./ShellMarkdown.vue";
 
 const props = defineProps<{
   items: ConversationItem[];
@@ -262,7 +263,7 @@ async function send(text: string) {
             <div v-if="item.kind === 'user'" class="user-turn" :data-pin="item.key === pinTarget || undefined">
               <div class="user-bubble">{{ item.answer ? labels.answered(item.text) : item.text }}</div>
             </div>
-            <div v-else-if="item.kind === 'notification'" class="agent-notification" :class="{ failed: item.error }" :role="item.error ? 'alert' : 'note'"><CircleAlert :size="14" /><span>{{ item.text }}</span></div>
+            <div v-else-if="item.kind === 'notification'" class="agent-notification" :class="{ failed: item.error }" :role="item.error ? 'alert' : 'note'"><CircleAlert :size="14" /><ShellMarkdown v-if="item.markdownRunId" class="notification-markdown" :content="item.text" final :run-id="item.markdownRunId" /><span v-else>{{ item.text }}</span></div>
             <ShellResponse v-else :item="item" :session-id="sessionId" :feedback="feedback" />
           </template>
           <div v-if="pendingInput !== null" class="user-turn" :data-pin="pinTarget === PENDING || undefined">
@@ -297,6 +298,7 @@ async function send(text: string) {
 
 <style scoped>
 .agent-notification { display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px; margin: 12px 0; border-left: 2px solid var(--el-color-info); color: var(--el-text-color-secondary); font-size: var(--text-sm); white-space: pre-wrap; }
+.agent-notification .notification-markdown { min-width: 0; white-space: normal; }
 .agent-notification.failed { border-color: var(--el-color-danger); color: var(--el-color-danger); }
 .agent-notification svg { flex-shrink: 0; margin-top: 3px; }
 .conversation {

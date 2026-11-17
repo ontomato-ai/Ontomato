@@ -27,6 +27,12 @@ const agentSettingsFeature = (label: string): ShellFeatureDeclaration => ({
 export const DASHBOARDS_PAGE_ID = "dashboards";
 
 /**
+ * The dashboards' own skill, by the domain membership the dashboards application itself is open to: one declaration,
+ * read by the composer beside the conversation and by the page's own composer at its address.
+ */
+export const DASHBOARDS_PAGE_SKILL = { pageKey: "dashboard", access: "domain-member" } as const;
+
+/**
  * The dashboards page beside the conversation. Its address is what this application's page parameter names: enlarging
  * it opens the dashboard application at that board. Its skill narrows the composer to the agents that can read and draft
  * a board's cards, by the domain membership the dashboards application itself is open to.
@@ -40,12 +46,18 @@ export function dashboardsPageFeature(label: string, address: string): ShellFeat
     listed: false,
     withConversation: true,
     address,
-    pageSkill: { pageKey: "dashboard", access: "domain-member" },
+    pageSkill: DASHBOARDS_PAGE_SKILL,
   };
 }
 
 /** One governance record's report, opened beside the conversation that wrote it. */
 export const GOVERNANCE_REPORT_PAGE_ID = "governance-report";
+
+/**
+ * The report's own skill: the governance preset the platform's mapping names for `governance-report`, under the business
+ * knowledge menu code. One declaration, read by the composer beside the conversation and by the page's own composer.
+ */
+export const GOVERNANCE_REPORT_PAGE_SKILL = { pageKey: "governance-report", permissionCode: "business-knowledge" } as const;
 
 /**
  * The report page beside the conversation. Its address is what this application's page parameter names, and its own
@@ -61,7 +73,7 @@ export function governanceReportPageFeature(label: string, address: string): She
     listed: false,
     withConversation: true,
     address,
-    pageSkill: { pageKey: "governance-report", permissionCode: "business-knowledge" },
+    pageSkill: GOVERNANCE_REPORT_PAGE_SKILL,
   };
 }
 

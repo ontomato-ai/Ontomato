@@ -1,5 +1,5 @@
 import { validateStoredChartFile } from "@ontomato/contracts/chart-data";
-import type { DashboardMetricDescription } from "@ontomato/contracts/dashboard";
+import type { DashboardGroup, DashboardMetricDescription } from "@ontomato/contracts/dashboard";
 import type { ViewWidget } from "@ontomato/contracts/object-views";
 import { productReferences, productWidgets,platformWidget, type ProductAssetInput,type ProductAsset } from "@ontomato/contracts/product-assets";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -13,6 +13,16 @@ import { objectViewDocumentSchema, objectViewProductIssues,objectProjectionIssue
 import {readDefinition} from './definitions';
 import {platformObjectProvider} from './platform-objects';
 import {pageBindingType} from '@ontomato/contracts/product-page-state';
+
+/** Describe enforces Java's current-user execution rule, including creator-owned candidates. */
+export async function validatePersonalDashboardMetrics(groups: readonly DashboardGroup[], client: Pick<DashboardMetricClient, "describe">) {
+  for (const group of groups) for (const card of [...group.charts, ...group.metrics]) {
+    const metric = await client.describe(card.query.metricId);
+    const parameters = new Set(metric.parameterDefs.map(parameter => String(parameter.name)));
+    if (Object.keys(card.query.parameters).some(name => !parameters.has(name)))
+      throw new HttpError(400, "Unknown capability parameter", "INVALID_PRODUCT_PARAMETER");
+  }
+}
 
 /** Product storage owns empty snapshots; chart-data owns the format and output references. */
 function validateMetricFields(widget: ViewWidget, metric: Pick<DashboardMetricDescription, "outputColumns">) {
@@ -178,12 +188,7 @@ export async function validateProduct(owner: ProductOwner, input: ProductAssetIn
       // Existing dashboards are personal. Shared templates use reusable capability widgets instead.
       if (input.visibility === "domain") throw new HttpError(400,"Shared assets must use MetricView widgets instead of personal dashboards","PRIVATE_DEPENDENCY");
       const dashboard = await getOwnedDashboard(owner.userId, owner.domainId, reference.id);
-       for(const group of dashboard.groups)for(const card of [...group.charts,...group.metrics]){
-         const metric=await client.describe(card.query.metricId);
-         if(metric.status!=='PUBLISHED')throw new HttpError(400,'Publish the MetricView first','UNPUBLISHED_CAPABILITY');
-         const parameters=new Set(metric.parameterDefs.map(parameter=>String(parameter.name)));
-         if(Object.keys(card.query.parameters).some(name=>!parameters.has(name)))throw new HttpError(400,'Unknown capability parameter','INVALID_PRODUCT_PARAMETER');
-       }
+      await validatePersonalDashboardMetrics(dashboard.groups, client);
     }
     if (reference.kind === "application") {
       if(input.document.kind==='application'&&!input.document.workspaceId&&input.document.navigationId)continue;

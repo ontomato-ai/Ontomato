@@ -24,10 +24,11 @@ presentation. Ordinary web links retain their usual role. Renderer bytes come
 from the authenticated host proxy, not arbitrary filesystem paths. No custom
 Markdown directive or runtime business artifact type is needed.
 
-A .chart.json file is an ECharts option object serialized as JSON, exactly as it
-would be passed to `setOption`: no wrapper, functions or JavaScript. Colours and
-axis styling may be omitted; the host applies its own theme. A file that is not
-a JSON object is shown as an invalid chart, not guessed at.
+A .chart.json file follows [the shared chart-data format](chart-data.md). Agents
+create it through the echarts, leaflet or admin-choropleth-map skill; drawing
+instructions live only in the shared prompt above. The host fills its metric
+dataset and applies presentation rules before rendering. Historical plain option
+files remain readable but are not reusable chart files.
 
 Rendering rules verified in batch 3: an incomplete streamed reference shows a
 placeholder until the parser settles it; artifact components are keyed by run

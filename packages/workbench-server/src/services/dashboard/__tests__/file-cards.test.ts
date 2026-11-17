@@ -17,7 +17,7 @@ const file={name:"chart.chart.json",content:{dataset:[{id:"metric" as const,dime
 const source={sessionId:"s",runId:"r",artifactId:"a"};
 function board(){return {id:"board",ownerId:"reader",name:"Board",groups:[{id:"group",title:"Group",charts:[{id:"card",name:"Chart",query,chartFile:file}],metrics:[]}]};}
 beforeEach(()=>{
-  vi.resetAllMocks();mocks.describe.mockResolvedValue({outputColumns:[{key:"name"},{key:"value"}]});mocks.get.mockResolvedValue(board());mocks.owned.mockResolvedValue(board());
+  vi.resetAllMocks();mocks.describe.mockResolvedValue({status:"PENDING_REVIEW",parameterDefs:[{name:"year"}],outputColumns:[{key:"name"},{key:"value"}]});mocks.get.mockResolvedValue(board());mocks.owned.mockResolvedValue(board());
   mocks.prepare.mockResolvedValue({file,query,metric:{name:"Metric",status:"PENDING_REVIEW",revision:"revision"},source});
 });
 it("returns one file beside current rows and passes truncation through",async()=>{
@@ -45,6 +45,17 @@ it("does not create a dashboard when file preparation is rejected",async()=>{
   mocks.prepare.mockRejectedValue(new HttpError(422,"Missing source","METRIC_REFERENCE_REQUIRED"));
   await expect(addDashboardChartFile("reader","domain",{source,target:{name:"New"}},{})).rejects.toMatchObject({code:"METRIC_REFERENCE_REQUIRED"});
   expect(mocks.create).not.toHaveBeenCalled();
+});
+it("creates a personal dashboard from an executable candidate chart",async()=>{
+  mocks.create.mockImplementation(async(input)=>({...input,id:"new-board"}));
+  await expect(addDashboardChartFile("reader","domain",{source,target:{name:"New"}},{token:"reader"})).resolves.toMatchObject({id:"new-board"});
+  expect(mocks.create.mock.calls[0][0].groups[0].charts[0]).toMatchObject({query,chartFile:file});
+});
+it.each(["unavailable","parameter"])("does not store a new chart dashboard when %s admission fails",async(reason)=>{
+  if(reason==="unavailable")mocks.describe.mockRejectedValue(new HttpError(404,"Not executable","METRIC_UNAVAILABLE"));
+  else mocks.describe.mockResolvedValue({status:"PENDING_REVIEW",parameterDefs:[]});
+  await expect(addDashboardChartFile("reader","domain",{source,target:{name:"New"}},{})).rejects.toMatchObject({code:reason==="unavailable"?"METRIC_UNAVAILABLE":"INVALID_PRODUCT_PARAMETER"});
+  expect(mocks.create).not.toHaveBeenCalled();expect(mocks.save).not.toHaveBeenCalled();
 });
 it("keeps the saved query when layout edits replace only the drawing",async()=>{
   await replaceDashboardLayout("reader","domain",{id:"board",groups:[{id:"group",title:"Group",charts:[{id:"card",name:"Renamed",chartFile:structuredClone(file)}],metrics:[]}]},{});

@@ -165,7 +165,7 @@ class DeliveryTests(unittest.TestCase):
 
     def export_args(self):
         refs = list(self.data["images"].values())
-        return SimpleNamespace(gateway=refs[4], state=self.root / "state", output=self.root / "exported", arch="arm64",
+        return SimpleNamespace(praxis=refs[6], gateway=refs[4], state=self.root / "state", output=self.root / "exported", arch="arm64",
                                version="4.0.1", workbench=refs[0], data_engine=refs[1], manager=refs[2],
                                agent_runtime=refs[3], postgres=refs[5], bootstrap=False, insecure_source=False, network=None, authfile=None,
                                registry_repository=mirror.REGISTRY_REPOSITORY, cache_dir=None)
@@ -192,7 +192,7 @@ class DeliveryTests(unittest.TestCase):
         data = mirror.verify_bundle(args.output)
         self.assertEqual(data["images"], self.data["images"])
         names = [item["name"] for item in json.loads((args.output / "imageset.yaml").read_text())["mirror"]["additionalImages"]]
-        self.assertEqual(len(names), 6)
+        self.assertEqual(len(names), len(mirror.IMAGE_KEYS))
         self.assertTrue(all(name.endswith("@sha256:" + "a" * 64) for name in names))
 
 

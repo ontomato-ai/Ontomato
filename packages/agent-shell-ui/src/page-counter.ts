@@ -1,5 +1,6 @@
 import { inject, type InjectionKey, type Ref } from "vue";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
+import type { AgentPageQuery } from "./host";
 
 /**
  * The page's way back to the one counter (DESIGN.md "Applications and shells"): a page at its own address puts the same
@@ -10,6 +11,15 @@ import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 export interface PageCounter {
   /** The agents the account may talk to in the counter; read when a page shows its composer. */
   agents(): Promise<readonly AgentHostAgent[]>;
+  /**
+   * The page's own candidates: with the page's skill declaration, the agents that carry it and the page's registered
+   * default, read from the same directory the conversation's composer reads beside the page. A page without a
+   * declaration has no candidates of its own and offers `agents()`.
+   *
+   * A refusal (the reader holds no mapping for the page, or the page's registered default is gone) is the page's
+   * configuration error and is not replaced by another agent.
+   */
+  pageAgents(page: AgentPageQuery): Promise<{ agents: readonly AgentHostAgent[]; defaultAgentId?: string }>;
   /** The agent the counter last used, when the reader may still use it. */
   preferredAgentId: Readonly<Ref<string | null>>;
   /**
