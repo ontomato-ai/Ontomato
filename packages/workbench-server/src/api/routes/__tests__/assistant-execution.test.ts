@@ -22,7 +22,7 @@ beforeAll(async()=>{
 afterAll(async()=>{await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));});
 afterEach(()=>{vi.unstubAllGlobals();});
 beforeEach(()=>{vi.clearAllMocks();mocks.run.mockResolvedValue({status:"running"});mocks.restore.mockResolvedValue({executionUserId:'V',credentials:{apiKey:'selected-user-key',locale:'en',headers:{'X-Ontomato-Retrieval-Caller-Id':run}}});});
-function credential(methods:('GET'|'POST'|'PUT'|'DELETE')[]=['GET','POST']) {return callbackCredential({pathPrefix:`/api/assistant/executions/${run}/`,runId:run,expiresAt:Date.now()+60000,token:'initiator-token',apiKey:'',methods}).value;}
+function credential() {return callbackCredential({pathPrefix:`/api/assistant/executions/${run}/`,runId:run,expiresAt:Date.now()+60000,token:'initiator-token',apiKey:''}).value;}
 async function call(path:string,extra:Record<string,string>={},method='POST',token=credential()) {
  return nativeFetch(base+`/api/assistant/executions/${run}/`+path,{method,headers:{'content-type':'application/json','X-Ontomato-Callback-Credential':token,'X-Ontomato-Run-Id':run,...extra},...(method==='GET'?{}:{body:'{}'})});
 }
@@ -45,10 +45,11 @@ it('keeps an existing query Grant separate from callback authentication',async()
  expect((await call('ontology/ontology/ai/knowledge-governance/record/runs/'+run+'/actions/read_work_record',{tk:'oq.existing.grant'})).status).toBe(200);
  expect((upstream.mock.calls[0] as unknown as [string,NonNullable<Parameters<typeof fetch>[1]>])[1].headers).toMatchObject({tk:'oq.existing.grant'});
 });
-it('keeps path, run and expiry checks while allowing only explicitly declared methods',async()=>{
+it('keeps path, run and expiry checks while accepting only GET and POST',async()=>{
  const upstream=vi.fn(async()=>Response.json({ok:true}));vi.stubGlobal('fetch',upstream);
  expect((await call('workbench/api/assistant/agents',{},'PUT')).status).toBe(401);
- expect((await call('workbench/api/assistant/agents',{},'PUT',credential(['PUT']))).status).toBe(200);
+ expect((await call('workbench/api/assistant/agents',{},'DELETE')).status).toBe(401);
+ expect((await call('workbench/api/assistant/agents',{},'GET')).status).toBe(200);
  expect((await call('ontology/ontology/query/overview',{'X-Ontomato-Run-Id':other})).status).toBe(401);
  const expired=callbackCredential({pathPrefix:`/api/assistant/executions/${run}/`,runId:run,expiresAt:Date.now()-1,token:'initiator-token',apiKey:''}).value;
  expect((await call('ontology/ontology/query/overview',{},'GET',expired)).status).toBe(401);
@@ -70,7 +71,7 @@ it('does not accept an upstream path or headers on the fixed retrieval business 
 it('configuration keeps the original operator even when the selected business executor is invalid',async()=>{
  mocks.restore.mockRejectedValue(new Error('V is invalid'));
  const upstream=vi.fn(async()=>Response.json({saved:true}));vi.stubGlobal('fetch',upstream);
- expect((await call('workbench/api/assistant/agent-definitions/agent',{},'PUT',credential(['PUT']))).status).toBe(200);
+ expect((await call('workbench/api/assistant/agent-definitions/validate',{},'POST')).status).toBe(200);
  const headers=(upstream.mock.calls[0] as unknown as [string,NonNullable<Parameters<typeof fetch>[1]>])[1].headers;
  expect(headers).toMatchObject({tk:'initiator-token'});expect(headers).not.toHaveProperty('X-API-Key');
  expect(mocks.restore).not.toHaveBeenCalled();

@@ -43,7 +43,7 @@ assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
     !(target === "ontology" ? ontologyPath : workbenchPath).test(path) || path.startsWith("/api/assistant/executions/"))
     throw new HttpError(403, "Path is outside the execution callback", "FORBIDDEN");
   const { owner, credentials: initiatorCredentials } = context(req);
-  const ownership = target === "ontology" ? path.startsWith("/platform/agent-channel/") || /\/actions\/(?:read_work_record|update_work_record|read_input|search_history|read_history|read_evidence|collect_turn_artifacts)$/u.test(path)
+  const ownership = target === "ontology" ? /\/actions\/(?:read_work_record|update_work_record|read_input|search_history|read_history|read_evidence|collect_turn_artifacts)$/u.test(path)
     : /^\/api\/(?:assistant|feedback|query-history|product-assets|memories|preferences|personal-workspace)(?:\/|$)/u.test(path);
   const credentials: AssistantCredentials = ownership ? initiatorCredentials : (await credentialsForRun(owner, runId, initiatorCredentials)).credentials;
   if(ownership)await runForOwner(owner,runId);
