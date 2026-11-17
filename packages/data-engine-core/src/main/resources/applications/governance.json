@@ -7,12 +7,12 @@
   "entry": {
     "path": "/governance",
     "renderer": "governance",
-    "home": "/governance/chat"
+    "home": "/governance/knowledge"
   },
+  "scheduleAdapter": null,
   "entryAccess": [
     "business-knowledge",
-    "user-feedback",
-    "system-config"
+    "user-feedback"
   ],
   "declaration": {
     "names": {
