@@ -60,12 +60,6 @@ public class AgentCaller {
     var actor=restore(ref,domain,!readOnly);
     return JSONObject.of("userId",identities.hostOwner(actor.user().getId()),"domainId",domain,"expiresAt",actor.expiresAt());
   }
-  public OntologyAgentAccess.Context governance(JSONObject ref,String domain,String language) { return governance(ref,domain,language,true); }
-  public OntologyAgentAccess.Context governance(JSONObject ref,String domain,String language,boolean execution) {
-    var actor=restore(ref,domain,execution);
-    if (!identity.hasKnowledgeGovernanceAccess(actor.user().getId(),domain)) throw new AgentHttpException(403,"FORBIDDEN","Business knowledge permission is required");
-    return new OntologyAgentAccess.Context(actor.owner(),null,null,null,language,actor.expiresAt(),ref.getString("id"));
-  }
   public void requireQuery(Actor actor) { identity.requireQueryAccess(actor.user().getId(),actor.user().getDomainId()); }
   public OntologyAgentAccess.Context query(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root) { return execution(ref,domain,language,authority,requestedBy,root,true); }
   public OntologyAgentAccess.Context generation(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root) { return execution(ref,domain,language,authority,requestedBy,root,false); }

@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class OntologyAgentLabels {
   private static final Map<String,String> BUILTINS=Map.of(OntologyAgentStore.RETRIEVER,"OntologyAgent.retrieval",
-      KnowledgeGovernanceService.AGENT,"OntologyAgent.governance",ActionCreationService.AGENT,"OntologyAgent.action");
+      ActionCreationService.AGENT,"OntologyAgent.action");
   private final LangService language;
   public OntologyAgentLabels(LangService language) { this.language=language; }
   public JSONObject localize(String agentId,JSONObject agent,String locale) {

@@ -1,3 +1,5 @@
+import { publishGovernanceSkill } from "./governance";
+import { GOVERNANCE_SKILL } from "./governance-definition";
 import { APP_BUILDER_SKILL } from "../app-builder/definition";
 import path from "node:path";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
@@ -28,6 +30,7 @@ export async function registerAssistantSkills() {
 }
 export async function assistantSkillCatalog(domainId: string, locale?: string) {
   return assistantSkillCatalogSchema.parse({ skills: [
+    { skill: GOVERNANCE_SKILL, title: tForLocale(locale, "assistant.default.knowledge-governance.name"), description: tForLocale(locale, "assistant.default.knowledge-governance.description") },
     ...platformSkills().map(({ root: _root, ...entry }) => ({ ...entry,
       title: entry.skill.name==='assistant-report'?tForLocale(locale, "assistant.skills.report.title"):entry.title,
       description: entry.skill.name==='assistant-report'?tForLocale(locale, "assistant.skills.report.description"):entry.description })),
@@ -57,6 +60,8 @@ export async function prepareAssistantSkills(domainId: string, refs: readonly Ru
   const selected = await validateAssistantSkills(domainId, refs);
   const registry = await skillRegistryManager.forDomain(domainId);
   for (const ref of selected) {
+    if (ref.name === GOVERNANCE_SKILL.name && ref.namespace.kind === "provider" && ref.namespace.provider === GOVERNANCE_SKILL.namespace.provider)
+      await publishGovernanceSkill(domainId);
     if (ref.namespace.kind !== "domain") continue;
     const source = registry.getSkillById(ref.name);
     if (!source || source.isPublic) throw new HttpError(404, `Domain skill not found: ${ref.name}`, "SKILL_NOT_FOUND");

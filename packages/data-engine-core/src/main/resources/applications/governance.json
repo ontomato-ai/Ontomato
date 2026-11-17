@@ -14,7 +14,6 @@
     "user-feedback",
     "system-config"
   ],
-  "scheduleAdapter": "java:governance",
   "declaration": {
     "names": {
       "en": "Knowledge governance",

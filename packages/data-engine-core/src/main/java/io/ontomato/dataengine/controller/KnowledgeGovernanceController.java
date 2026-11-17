@@ -16,10 +16,30 @@ public class KnowledgeGovernanceController {
   public KnowledgeGovernanceController(KnowledgeGovernanceService governance,OntologyAgentAccess access) {
     this.governance=governance;this.access=access;
   }
-  @PostMapping("/agents")
-  public Object createAgent(@RequestBody JSONObject input,HttpServletRequest request){
-    AgentJson.fields(input,"name");
-    return governance.createAgent(access.governance(request).owner().domainId(),input.getString("name"));
+  @PostMapping("/skill-package")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void publishSkill(HttpServletRequest request) throws Exception {
+    access.service(request);
+    governance.publishSkill();
+  }
+  @GetMapping("/access")
+  public Object permission(HttpServletRequest request) {
+    var context=access.governance(request);
+    return JSONObject.of("ownerId",context.owner().userId(),"domainId",context.owner().domainId(),"expiresAt",context.expiresAt());
+  }
+  @PostMapping("/platform-windows")
+  public Object register(@RequestBody java.util.Map<String,Object> input,HttpServletRequest request) {
+    access.service(request);
+    return governance.registerPlatform(JSONObject.from(input),access.governance(request));
+  }
+  @GetMapping("/platform-windows/{run}")
+  public Object platformRecord(@PathVariable String run,HttpServletRequest request) {
+    return governance.platformRecord(AgentJson.id(run),access.serviceDomain(request));
+  }
+  @PostMapping("/platform-windows/{run}/close")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void closePlatform(@PathVariable String run,HttpServletRequest request) {
+    governance.closePlatform(AgentJson.id(run),access.serviceDomain(request));
   }
   @GetMapping("/{id}/work")
   public Object work(@PathVariable String id,HttpServletRequest request) {
@@ -39,7 +59,7 @@ public class KnowledgeGovernanceController {
   @PostMapping("/{id}/skill-runs/{run}/close")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   public void close(@PathVariable String id,@PathVariable String run,HttpServletRequest request) throws Exception {
-    governance.cancel(AgentJson.id(id),AgentJson.id(run),access.governance(request).owner());
+    governance.closeExternal(AgentJson.id(id),AgentJson.id(run),access.governance(request).owner());
   }
   @PostMapping("/{id}/runs/{run}/actions/{action}")
   public Object action(@PathVariable String id,@PathVariable String run,@PathVariable String action,

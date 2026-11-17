@@ -40,7 +40,7 @@ class OntologyAgentAccessTest {
 
   /** A stream outlives the request thread, so the read rule is captured there and only ownership is per frame. */
   @Test
-  void sessionReadsAppliesGovernanceAndQueryPermissionsAndKeepsStorageFailures() {
+  void sessionReadsAppliesQueryPermissionAndKeepsStorageFailures() {
     var queries = mock(QueryAccessService.class);
     var identity = mock(IdentityService.class);
     var store = mock(OntologyAgentStore.class);
@@ -49,7 +49,7 @@ class OntologyAgentAccessTest {
     var owner = new OntologyAgentStore.Owner("user", "domain");
     when(identity.getCurrentUser()).thenReturn(user);
     when(store.session("governed", owner))
-        .thenReturn(JSONObject.of("agent_id", KnowledgeGovernanceService.AGENT));
+        .thenReturn(JSONObject.of("agent_id", "56a15178-ae22-4e6f-9974-ababeb42a676"));
     when(store.session("retrieval", owner))
         .thenReturn(JSONObject.of("agent_id", OntologyAgentStore.RETRIEVER));
     when(store.session("foreign", owner)).thenThrow(AgentHttpException.missing());
@@ -57,11 +57,9 @@ class OntologyAgentAccessTest {
     var access =
         new OntologyAgentAccess(queries, identity, mock(QueryGrantService.class), store);
 
-    when(identity.hasKnowledgeGovernanceAccess()).thenReturn(true);
     var allowed = access.sessionReads(request);
     // The decision (and the verified owner) is fixed when the connection opens.
-    when(identity.hasKnowledgeGovernanceAccess()).thenReturn(false);
-    assertTrue(allowed.readable("governed"));
+    assertFalse(allowed.readable("governed"));
     assertTrue(allowed.readable("retrieval"));
     assertFalse(allowed.readable("foreign"));
     assertThrows(IllegalStateException.class, () -> allowed.readable("broken"));

@@ -14,7 +14,6 @@ public class AgentChannelController {
   private final io.ontomato.dataengine.service.LangService language;
   private final AgentCaller callers;
   private final AgentDirectory directory;
-  private final KnowledgeGovernanceService governance;
   private final OntologyRetrievalService retrieval;
   private final RetrievalTasks retrievalTasks;
   private final ActionCreationService actions;
@@ -22,11 +21,11 @@ public class AgentChannelController {
   private final OntologyAgentStore store;
   private final AgentRuntimeClient runtime;
   private final WorkbenchServiceAuthentication services;
-  public AgentChannelController(AgentCaller callers,AgentDirectory directory,KnowledgeGovernanceService governance,OntologyAgentStore store,AgentRuntimeClient runtime,WorkbenchServiceAuthentication services,OntologyRetrievalService retrieval,RetrievalTasks retrievalTasks,ActionCreationService actions,OntologyGenerationService generation,OntologyAgentAccess access,io.ontomato.dataengine.service.LangService language) {
+  public AgentChannelController(AgentCaller callers,AgentDirectory directory,OntologyAgentStore store,AgentRuntimeClient runtime,WorkbenchServiceAuthentication services,OntologyRetrievalService retrieval,RetrievalTasks retrievalTasks,ActionCreationService actions,OntologyGenerationService generation,OntologyAgentAccess access,io.ontomato.dataengine.service.LangService language) {
     this.language=language;
     this.access=access;
     this.retrieval=retrieval;this.retrievalTasks=retrievalTasks;this.actions=actions;this.generation=generation;
-    this.callers=callers; this.directory=directory; this.governance=governance; this.store=store; this.runtime=runtime; this.services=services;
+    this.callers=callers; this.directory=directory; this.store=store; this.runtime=runtime; this.services=services;
   }
   private JSONObject body(Map<String,Object> body) { return JSONObject.from(body); }
   private String domain(HttpServletRequest request) {
@@ -111,12 +110,11 @@ public class AgentChannelController {
     if(!"ontology".equals(ref.getString("providerId"))) throw AgentHttpException.missing();
     String agent=ref.getString("agentId"),session=AgentJson.id(body.getString("sessionId")),run=AgentJson.id(body.getString("runId"));
     String kind=OntologyGenerationService.kindForAgent(agent);
-    if(!KnowledgeGovernanceService.isAgent(agent) && !OntologyAgentStore.RETRIEVER.equals(agent) && !ActionCreationService.AGENT.equals(agent) && kind==null) throw AgentHttpException.missing();
+    if(!OntologyAgentStore.RETRIEVER.equals(agent) && !ActionCreationService.AGENT.equals(agent) && kind==null) throw AgentHttpException.missing();
     var authority=body.getJSONObject("authority");
     if("build-test".equals(authority.getString("executionKind")) && (body.getJSONObject("requestedBy")!=null || kind==null)) throw new AgentHttpException(422,"BUILD_TEST_UNSUPPORTED","The agent channel is not available in a build-test execution");
     var actor=body.getJSONObject("actor");String language=body.getString("language");
-    OntologyAgentAccess.Context context=KnowledgeGovernanceService.isAgent(agent)?callers.governance(actor,domain,language):
-      kind!=null?callers.generation(actor,domain,language,authority,body.getJSONObject("requestedBy"),body.getJSONObject("root")):
+    OntologyAgentAccess.Context context=kind!=null?callers.generation(actor,domain,language,authority,body.getJSONObject("requestedBy"),body.getJSONObject("root")):
       callers.query(actor,domain,language,authority,body.getJSONObject("requestedBy"),body.getJSONObject("root"));
     boolean steer="steer".equals(body.getString("mode"));
     JSONObject prepared;
@@ -129,10 +127,7 @@ public class AgentChannelController {
     } else if(kind!=null) {
       if(steer) {store.run(session,run,context.owner());return JSONObject.of("accepted",true);}
       prepared=generation.prepare(session,run,kind,body.getJSONObject("input"),body.getJSONObject("context"),context);
-    } else {
-      if(steer) {store.run(session,run,context.owner());return JSONObject.of("accepted",true);}
-      governance.create(session,context.owner(),false,agent);prepared=governance.prepare(session,run,body.getJSONObject("input"),context);
-    }
+    } else throw AgentHttpException.missing();
     var narrowed=AgentJson.copy(authority);
     if(context.access()!=null) {
       narrowed.put("classNames",context.access().classNames());
@@ -152,7 +147,7 @@ public class AgentChannelController {
     if (!List.of("user","notification").contains(role)) throw AgentHttpException.invalid("Unknown input role");
     String content=AgentJson.text(input,"content");
     String agent=body.getJSONObject("agent").getString("agentId");
-    if(KnowledgeGovernanceService.isAgent(agent) || ActionCreationService.AGENT.equals(agent)) KnowledgeGovernanceService.validateMessage(content);
+    if(ActionCreationService.AGENT.equals(agent)) AgentJson.message(content);
     if(input.containsKey("options")) validateOptions(input.get("options"));
     if (role.equals("notification")) {
       if (!List.of("agent-message","agent-result","agent-question","agent-answer").contains(input.getString("kind"))) throw AgentHttpException.invalid("Unknown notification kind");
@@ -178,6 +173,9 @@ public class AgentChannelController {
     if (!"ontology".equals(session.getString("providerId"))) throw AgentHttpException.missing();
     String id=AgentJson.id(session.getString("sessionId")),run=AgentJson.id(execution.getString("runId"));
     var record=store.session(id,actor.owner());
+    String agent=record.getString("agent_id");
+    if(!OntologyAgentStore.RETRIEVER.equals(agent) && !ActionCreationService.AGENT.equals(agent)
+        && OntologyGenerationService.kindForAgent(agent)==null) throw AgentHttpException.missing();
     store.run(id,run,actor.owner());
     return new Execution(id,run,record.getString("agent_id"),actor);
   }
@@ -189,7 +187,6 @@ public class AgentChannelController {
       store.update("UPDATE ontology_agent_runs SET runtime_admitted=true WHERE id=?",UUID.fromString(execution.run()));
       retrieval.reconcile(execution.session(),execution.run(),execution.actor().owner(),runtime.run(execution.actor().owner().domainId(),execution.run()));
     } else if(ActionCreationService.AGENT.equals(execution.agent())) actions.settle(execution.run());
-    else if(KnowledgeGovernanceService.isAgent(execution.agent())) governance.settle(execution.run());
     else generation.settleProvider(execution.session(),execution.run(),execution.actor().owner());
     return JSONObject.of("accepted",true);
   }
@@ -198,15 +195,13 @@ public class AgentChannelController {
     var execution=execution(body(input),request);
     if(OntologyAgentStore.RETRIEVER.equals(execution.agent())) retrieval.cancelProvider(execution.session(),execution.run(),execution.actor().owner());
     else if(ActionCreationService.AGENT.equals(execution.agent())) actions.cancelProvider(execution.session(),execution.run(),execution.actor().owner());
-    else if(KnowledgeGovernanceService.isAgent(execution.agent())) store.closeRun(execution.session(),execution.run(),execution.actor().owner());
     else generation.cancelProvider(execution.session(),execution.run(),execution.actor().owner());
     return JSONObject.of("accepted",true);
   }
   @PostMapping("/read")
   public Object read(@RequestBody Map<String,Object> input,HttpServletRequest request) throws Exception {
     var execution=execution(body(input),request); var owner=execution.actor().owner();
-    if(KnowledgeGovernanceService.isAgent(execution.agent())) callers.governance(body(input).getJSONObject("actor"),owner.domainId(),"en",false);
-    else if(OntologyAgentStore.RETRIEVER.equals(execution.agent()) || ActionCreationService.AGENT.equals(execution.agent())) callers.requireQuery(execution.actor());
+    if(OntologyAgentStore.RETRIEVER.equals(execution.agent()) || ActionCreationService.AGENT.equals(execution.agent())) callers.requireQuery(execution.actor());
     String fileId=body(input).getString("fileId");
     if(fileId!=null) {
       AgentJson.id(fileId);
@@ -242,11 +237,6 @@ public class AgentChannelController {
     }
     Object process=JSONObject.of("mode","inline","runtimeSessionId",execution.session(),"runtimeRunId",execution.run());
     var results=new ArrayList<JSONObject>();
-    if(KnowledgeGovernanceService.isAgent(execution.agent())) {
-      var work=store.one("SELECT work FROM ontology_governance_work WHERE run_id=?",UUID.fromString(execution.run())).getJSONObject("work");
-      summary=work.getString("summary");String href="/governance/chat/"+execution.session();
-      process=JSONObject.of("mode","page","href",href);results.add(JSONObject.of("kind","page","href",href,"title","Governance record"));
-    }
     var files=new ArrayList<JSONObject>();
     for(Object item:runtime.json(owner.domainId(),execution.run(),"/v1/runs/"+execution.run()+"/artifacts","GET",null,null).getJSONArray("artifacts")) {
       var file=JSONObject.from(item);String path=file.getString("path");

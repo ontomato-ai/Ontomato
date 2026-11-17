@@ -14,7 +14,7 @@ router.get(
   "/agents",
   wrap(async (req, res) => {
     const c = context(req);
-    res.json(await service.agents(c.owner, c.credentials.locale));
+    res.json(await service.agents(c.owner, c.credentials.locale, c.credentials));
   }),
 );
 router.get(

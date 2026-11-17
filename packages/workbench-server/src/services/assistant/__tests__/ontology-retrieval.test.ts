@@ -19,6 +19,7 @@ vi.mock("../../../utils/backend-client", async (importOriginal) => ({
     { headers: new Headers(), status: 200, statusText: "OK", text: JSON.stringify(route.get(path) ?? null) }
   ),
 }));
+vi.mock("../governance", () => ({ closeGovernanceWindow: vi.fn() }));
 vi.mock("../skills", () => ({ prepareAssistantSkills: vi.fn() }));
 
 configureI18n({
@@ -156,7 +157,7 @@ describe("assistant ontology provenance", () => {
 
   it("explicit cancellation closes only the parent query scope with its own credential", async () => {
     route.set(`/ontology/retrieval-callers/parent-run/close`, { closed: true });
-    vi.spyOn(assistantStore,"isBuilderRun").mockResolvedValue(false);
+    vi.spyOn(assistantStore,"runKind").mockResolvedValue("regular");
     vi.spyOn(assistantStore,"settled").mockResolvedValue();
     await assistantService.cancelScope("parent-run",owner,{token:"user-token"});
     const close = calls.requests.find((r) => r.path === "/ontology/retrieval-callers/parent-run/close-scope");
@@ -165,7 +166,7 @@ describe("assistant ontology provenance", () => {
   });
   it("natural completion never closes or cancels delegated work",async()=>{
     const settled=vi.spyOn(assistantStore,"settled").mockResolvedValue();
-    await assistantService.settleTurn("parent-run");
+    await assistantService.settleTurn("parent-run",owner);
     expect(settled).toHaveBeenCalledWith("parent-run");
     expect(calls.requests).toEqual([]);
   });

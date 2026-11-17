@@ -1,3 +1,6 @@
+import { hasRetrievalScope } from "../assistant/retrieval-scope";
+import { governanceRecord } from "../assistant/governance";
+import { GOVERNANCE_KIND } from "../assistant/governance-definition";
 import { profileForSession } from "../product-assets/agent-profile";
 import { recentUserMessages } from "../assistant/user-quotes";
 import { OntologyRetrievalClient } from "../assistant/ontology-retrieval";
@@ -52,7 +55,7 @@ export const agentChannelService = {
     if (body.mode === "steer") {
       const service = body.agent.providerId === "observe" ? diagnosisService : assistantService;
       await service.ownRun(body.sessionId, body.runId, owner);
-      if (body.agent.providerId === "workbench" && !await assistantStore.isBuilderRun(body.runId,owner) &&
+      if (body.agent.providerId === "workbench" && hasRetrievalScope(await assistantStore.runKind(body.runId,owner)) &&
         (body.input.role === "user" || (body.input.kind === "agent-answer" && "kind" in body.input.source && body.input.source.kind === "user"))) {
         const session=await assistantStore.session(body.sessionId,owner);
         if(!await profileForSession(owner,credentials,body.sessionId,session.agent_id)) {
@@ -78,8 +81,8 @@ export const agentChannelService = {
     return { body, service, owner, credentials };
   },
   async settle(raw: unknown, domain: string, _supplied: AssistantCredentials = {}) {
-    const { body } = await this.execution(raw, domain);
-    if (body.execution.session.providerId === "workbench") await assistantService.settleTurn(body.execution.runId);
+    const { body, owner } = await this.execution(raw, domain);
+    if (body.execution.session.providerId === "workbench") await assistantService.settleTurn(body.execution.runId,owner);
     return { accepted: true };
   },
   async cancel(raw: unknown, domain: string, _supplied: AssistantCredentials = {}) {
@@ -96,8 +99,13 @@ export const agentChannelService = {
     }
     const snapshot = await service.readRun(body.execution.session.sessionId, body.execution.runId, owner);
     const status = snapshot.run.status === "running" ? "running" : snapshot.run.stopReason === "stop" ? "completed" : snapshot.run.stopReason === "aborted" ? "cancelled" : "failed";
+    const agent = body.execution.session.providerId === "workbench" ? await assistantStore.agent((await assistantStore.session(body.execution.session.sessionId, owner)).agent_id, owner) : null;
+    const governance = agent?.kind === GOVERNANCE_KIND;
+    const recordId = governance ? await governanceRecord(body.execution.runId, domain) : null;
+    const href = recordId ? `/governance/reports/${recordId}` : null;
     return { settled: status !== "running", status, summary: answerText(snapshot) || snapshot.run.errorMessage || status,
-      process: { mode: "inline", runtimeSessionId: snapshot.run.sessionId, runtimeRunId: snapshot.run.id }, results: [],quality: [],
+      process: governance ? href ? { mode: "page", href } : { mode: "none" } : { mode: "inline", runtimeSessionId: snapshot.run.sessionId, runtimeRunId: snapshot.run.id },
+      results: href ? [{ kind: "page", href, title: assistantName(agent!) }] : [],quality: [],
       files:snapshot.artifacts.filter(file=>file.runId===snapshot.run.id && file.path.startsWith("outputs/")).map(file=>({id:file.id,name:path.posix.basename(file.path),mediaType:file.mediaType,href:`/platform/agent-channel/tasks/${snapshot.run.id}/files/${file.id}`})) };
   },
 };

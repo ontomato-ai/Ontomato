@@ -1,3 +1,4 @@
+import { GOVERNANCE_KIND, GOVERNANCE_SKILL } from "./governance-definition";
 import { APP_BUILDER, APP_BUILDER_KIND,isAppBuilderKind } from "../app-builder/definition";
 import type { ModelSelection } from "@ontomato/contracts/model-settings";
 import { lockSessionClaim, assertUnclaimedSession } from "../agent-host/session-claim";
@@ -91,6 +92,10 @@ export const assistantStore = {
           ],
         );
     }
+    await db().query(
+      `INSERT INTO ${table("assistant_agents")} (id,domain_id,kind,name,description,system_prompt,skills,sort_order) VALUES($1,$2,$3,$4,$5,NULL,$6,2) ON CONFLICT(domain_id,kind) DO NOTHING`,
+      [randomUUID(), domainId, GOVERNANCE_KIND, "Knowledge governance", "Review business knowledge with traceable evidence", JSON.stringify([GOVERNANCE_SKILL])],
+    );
     return (
       await db().query(
         `SELECT * FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind<>'app-builder' AND kind NOT LIKE 'app-builder:%' ORDER BY sort_order,name,id`,
@@ -111,13 +116,14 @@ export const assistantStore = {
     );
     return (await db().query(`SELECT * FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind=$2`, [domainId, APP_BUILDER_KIND])).rows[0];
   },
-  async isBuilderRun(id: string, owner: AssistantOwner): Promise<boolean> {
+  async runKind(id: string, owner: AssistantOwner): Promise<string> {
     const rows = (await db().query(
       `SELECT a.kind FROM ${table("assistant_turns")} t JOIN ${table("assistant_sessions")} s ON s.id=t.session_id
        JOIN ${table("assistant_agents")} a ON a.id=s.agent_id WHERE t.id=$1 AND s.domain_id=$2 AND s.owner_id=$3`,
       [id, owner.domainId, owner.userId],
     )).rows;
-    return rows.some(row => isAppBuilderKind(row.kind));
+    if (!rows.length) throw new HttpError(404, "Run not found", "NOT_FOUND");
+    return rows[0].kind;
   },
   async agent(id: string, owner: AssistantOwner): Promise<AgentRow> {
     const r = await db().query(
