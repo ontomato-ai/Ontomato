@@ -319,16 +319,26 @@ export function findArtifact(run: RunView | undefined, path: string) {
   return found;
 }
 
+/**
+ * Consumed messages follow the model's order. A received message the model never consumed (a question to the reader, an
+ * input still waiting) stands where it arrived: after the consumed messages received before it. Live partials come last.
+ */
 export function orderedMessages(state: ConversationState): ConversationMessage[] {
-  return Object.values(state.messages).sort((a, b) => {
-    if (a.contextSeq !== null && b.contextSeq !== null) return a.contextSeq - b.contextSeq;
-    if(a.contextSeq !== null) return -1;
-    if(b.contextSeq !== null) return 1;
-    if (a.messageSeq !== null && b.messageSeq !== null) return a.messageSeq - b.messageSeq;
-    if (a.messageSeq !== null) return -1;
-    if (b.messageSeq !== null) return 1;
-    return a.arrival - b.arrival;
-  });
+  const all = Object.values(state.messages);
+  const consumed = all.filter((m) => m.contextSeq !== null).sort((a, b) => a.contextSeq! - b.contextSeq!);
+  const received = all.filter((m) => m.contextSeq === null && m.messageSeq !== null).sort((a, b) => a.messageSeq! - b.messageSeq!);
+  const partial = all.filter((m) => m.contextSeq === null && m.messageSeq === null).sort((a, b) => a.arrival - b.arrival);
+  const after = new Map<number, ConversationMessage[]>();
+  for (const message of received) {
+    let at = -1;
+    consumed.forEach((other, index) => { if (other.messageSeq! < message.messageSeq!) at = index; });
+    after.set(at, [...(after.get(at) ?? []), message]);
+  }
+  return [
+    ...(after.get(-1) ?? []),
+    ...consumed.flatMap((message, index) => [message, ...(after.get(index) ?? [])]),
+    ...partial,
+  ];
 }
 
 /** Receipt and later consumption merge by the same identity, even before there is a run. */

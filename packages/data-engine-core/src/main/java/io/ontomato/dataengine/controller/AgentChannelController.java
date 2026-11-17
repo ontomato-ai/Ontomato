@@ -165,7 +165,7 @@ public class AgentChannelController {
     for(Object option:options) {
       if(!(option instanceof Map<?,?>)) throw AgentHttpException.invalid("option must be an object");
       var item=JSONObject.from(option);AgentJson.fields(item,"label","description","isDefault");AgentJson.text(item,"label");
-      if(!(item.get("isDefault") instanceof Boolean)) throw AgentHttpException.invalid("isDefault must be boolean");
+      if(item.containsKey("isDefault") && !(item.get("isDefault") instanceof Boolean)) throw AgentHttpException.invalid("isDefault must be boolean");
       if(item.containsKey("description") && !(item.get("description") instanceof String)) throw AgentHttpException.invalid("description must be a string");
       if(item.getBooleanValue("isDefault")) defaults++;
     }

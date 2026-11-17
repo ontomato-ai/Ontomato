@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RuntimeEventEnvelope } from "@ontomato/contracts/agent-runtime-events";
 import type { AgentHostRunSnapshot } from "@ontomato/contracts/agent-host";
-import { applyEnvelope, applyRunSnapshot, emptyConversation } from "../conversation";
+import { applyEnvelope, applyRunSnapshot, emptyConversation, orderedMessages } from "../conversation";
 import { conversationItems } from "../view";
 
 const runId = "11111111-1111-4111-8111-111111111111";
@@ -87,5 +87,20 @@ describe("conversation projection", () => {
       answerText: "",
       process: [{ kind: "steps", steps: [{ kind: "thinking", text: "Plan" }] }, { kind: "note", text: "Partial" }],
     });
+  });
+});
+
+/** A question the agent asks its reader is never consumed by the model; it must not fall below later replies. */
+describe("message order", () => {
+  it("keeps an unconsumed question where it arrived and waiting input after what came before", () => {
+    const state = emptyConversation(sessionId);
+    const add = (id: string, messageSeq: number, contextSeq: number | null, text: string) =>
+      (state.messages[id] = { id, runId, messageSeq, contextSeq, arrival: messageSeq, message: { role: "user", content: text, timestamp: messageSeq } });
+    add("first", 1, 1, "first");
+    add("question", 3, null, "question");
+    add("reply", 2, 2, "reply");
+    add("later", 4, 3, "later");
+    add("waiting", 5, null, "waiting");
+    expect(orderedMessages(state).map((m) => m.id)).toEqual(["first", "reply", "question", "later", "waiting"]);
   });
 });

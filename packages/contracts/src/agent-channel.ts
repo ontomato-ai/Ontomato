@@ -16,7 +16,7 @@ export const agentSteerPreparationSchema = z.object({ accepted: z.literal(true),
 export const agentProviderAcknowledgementSchema = z.object({ accepted: z.literal(true) }).strict();
 export const agentExecutionRefSchema = z.object({ session: agentSessionRefSchema, runId: id }).strict();
 export const agentMessageSourceSchema = z.union([agentExecutionRefSchema,z.object({ kind: z.enum(["external", "user"]) }).strict()]);
-export const agentQuestionOptionSchema = z.object({ label: key, description: z.string().optional(), isDefault: z.boolean() }).strict();
+export const agentQuestionOptionSchema = z.object({ label: key, description: z.string().optional(), isDefault: z.boolean().optional() }).strict();
 export const agentQuestionOptionsSchema = z.array(agentQuestionOptionSchema).min(1).refine(options => options.filter(option => option.isDefault).length === 1, "Exactly one option must be the default");
 export const agentPendingQuestionSchema = z.object({ requestId: id, source: agentExecutionRefSchema, message: z.string(), defaultAssumption: z.string(), options: agentQuestionOptionsSchema.optional() }).strict();
 export const agentInputDeliverySchema = z.object({ messageId: id, sessionRef: agentSessionRefSchema, runId: id, delivery: z.enum(["steer", "run"]), status: z.enum(["starting", "running"]) }).strict();
