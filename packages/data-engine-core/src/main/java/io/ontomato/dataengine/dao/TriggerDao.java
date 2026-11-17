@@ -76,20 +76,21 @@ public class TriggerDao {
 
 	public Trigger save(Trigger trigger, String actor, long now) {
 		trigger.validate();
-		boolean creating = trigger.getId() == null || trigger.getId().isBlank();
+		boolean named = trigger.getId() != null && !trigger.getId().isBlank();
+		// A caller may choose the id of a new trigger (the task migration reuses the task id), so creating means
+		// "no row yet", not "no id given".
+		var existing = named ? queryById(trigger.getId()) : null;
+		boolean creating = existing == null;
 		if (creating) {
-			trigger.setId(UUID.randomUUID().toString());
+			if (!named) trigger.setId(UUID.randomUUID().toString());
 			trigger.setVersion(1);
 			trigger.setCreateTimestamp(now);
 			trigger.setCreatedBy(actor);
 		} else {
-			var existing = queryById(trigger.getId());
-			if (existing != null) {
-				if (trigger.getCreatedBy() == null) trigger.setCreatedBy(existing.getCreatedBy());
-				if (trigger.getVersion() == null) trigger.setVersion(existing.getVersion());
-				if (trigger.getLastFireKey() == null) trigger.setLastFireKey(existing.getLastFireKey());
-				if (trigger.getLastFiredAt() == null) trigger.setLastFiredAt(existing.getLastFiredAt());
-			}
+			if (trigger.getCreatedBy() == null) trigger.setCreatedBy(existing.getCreatedBy());
+			if (trigger.getVersion() == null) trigger.setVersion(existing.getVersion());
+			if (trigger.getLastFireKey() == null) trigger.setLastFireKey(existing.getLastFireKey());
+			if (trigger.getLastFiredAt() == null) trigger.setLastFiredAt(existing.getLastFiredAt());
 		}
 		// Publication is the review moment and the only event that moves the revision: a draft edit is not a new
 		// revision, otherwise "which revision is in force" would change every time someone fixed a typo.
