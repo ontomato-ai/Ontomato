@@ -33,6 +33,11 @@ export const agentHostAgentSchema = z
 export const agentHostAgentListSchema = z
   .object({ agents: z.array(agentHostAgentSchema) })
   .strict();
+/** A page's agents, with the page's default agent; only a page-filtered directory carries the default. */
+export const agentHostPageAgentsSchema = agentHostAgentListSchema
+  .extend({ defaultAgentId: runtimeIdSchema.optional() })
+  .strict();
+export type AgentHostPageAgents = z.infer<typeof agentHostPageAgentsSchema>;
 export const agentHostRunSchema = runtimeRunViewSchema;
 /** A session row names its latest run without carrying the run's body: lists stay one read per page. */
 export const agentHostRunStatusSchema = z

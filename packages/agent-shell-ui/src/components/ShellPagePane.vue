@@ -86,6 +86,7 @@ const paneStyle = computed(() => ({
     <div v-if="paired && view === 'full'" ref="dock" class="pane-dock">
       <ShellQuestions />
       <ShellComposer :busy="busy" :sending="sending" :disabled="disabled" :labels="labels" @send="emit('send', $event)" @stop="emit('stop')">
+        <template v-if="slots['composer-agent']" #agent><slot name="composer-agent" /></template>
         <template v-if="slots['composer-context']" #context><slot name="composer-context" /></template>
       </ShellComposer>
     </div>
@@ -207,12 +208,10 @@ const paneStyle = computed(() => ({
   pointer-events: none;
 }
 /*
- * Full, the composer floats over the page, one compact row with what a message carries inside it, the questions over it;
- * only they take the pointer, the page shows around them.
+ * Full, the composer floats over the page, the platform's one row with what a message carries inside it, the questions
+ * over it; only they take the pointer, the page shows around them.
  */
 .pane-dock {
-  --shell-composer-control: var(--control-height);
-  --shell-composer-height: calc(var(--control-height) + 12px);
   position: absolute;
   z-index: 3;
   left: 50%;

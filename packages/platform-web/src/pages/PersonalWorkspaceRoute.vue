@@ -409,7 +409,7 @@ const actions = computed(() => [
       <div v-else-if="errors.agents" role="alert">{{ errors.agents }} <el-button @click="readAgents">{{ text.retry }}</el-button></div>
       <div v-else-if="canChat&&enabledAgents.length" class="workspace-ask">
          <ShellComposer :busy="false" :labels="{ placeholder: child.asset?platformWidget(child.asset.document)?.placeholder??'':'', send: workspaceText.send, stop: workspaceText.stop }" @send="ask">
-          <template #tools>
+          <template #agent>
             <AgentPicker variant="pill" :agents="enabledAgents" :agent-id="agentId" :label="workspaceText.agent" @select="agentId = $event" />
           </template>
         </ShellComposer>

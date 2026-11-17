@@ -67,6 +67,7 @@ export const englishGovernance: GovernanceMessages = {
     "steps": "{n} step | {n} steps",
     "thinking": "Thinking",
     "working": "Working",
+    "switchWhileRunning": "Finish or stop the running reply before switching agents",
     "toolInput": "Input",
     "toolOutput": "Output",
     "stopped": "Stopped",

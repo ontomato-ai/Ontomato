@@ -19,7 +19,7 @@ const t = i18n.global.t as (key: string) => string;
 const draft = vi.hoisted(() => ({ read: vi.fn() }));
 vi.mock("../../workbench/assistant-host", () => ({ createAssistantClient: () => ({ readPageDraft: draft.read }) }));
 
-const options: ModelOptions = { models: [{ ref: "gateway/qwen-main", name: "Qwen", type: "chat" }], defaultModelId: "gateway/qwen-main" };
+const options: ModelOptions = { models: [{ ref: "gateway/qwen-main", name: "Qwen", type: "chat" }], defaultModelId: "gateway/qwen-main", embeddingModelId: null };
 const SkillSelector = defineComponent({ emits: ["ready"], mounted() { this.$emit("ready", true); }, template: "<div />" });
 
 const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/agents/settings/:agentId", component: { template: "<div />" } }] });

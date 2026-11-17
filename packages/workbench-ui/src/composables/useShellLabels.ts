@@ -33,6 +33,7 @@ return computed<ShellLabels>(() => ({
   steps: (count) => t("assistant.steps", { n: count }, count),
   thinking: t("assistant.thinking"),
   working: t("assistant.working"),
+  switchWhileRunning: t("assistant.switchWhileRunning"),
   toolInput: t("assistant.toolInput"),
   toolOutput: t("assistant.toolOutput"),
   stopped: t("assistant.stopped"),

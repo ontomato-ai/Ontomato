@@ -81,7 +81,7 @@ onBeforeUnmount(close);
       @click="open ? close() : show()"
       @keydown.escape="close"
     >
-      <AgentAvatar v-if="current" :icon="current.icon" :size="variant === 'head' ? 24 : 22" />
+      <AgentAvatar v-if="current" :icon="current.icon" :size="variant === 'head' ? 24 : 20" />
       <span class="switch-name">{{ current?.name ?? label }}</span>
       <ChevronDown :size="variant === 'head' ? 16 : 14" class="switch-chevron" :class="{ open }" aria-hidden="true" />
     </button>
@@ -131,9 +131,9 @@ onBeforeUnmount(close);
 .head .switch-trigger:hover {
   background: var(--shell-panel-hover);
 }
-/* A borderless pill among other controls (the home's question box). */
+/* A borderless pill among other controls (a composer's row): the row's control height, no height of its own. */
 .pill .switch-trigger {
-  height: var(--control-height);
+  height: var(--shell-composer-control, var(--control-height));
   padding: 0 10px 0 5px;
   border-radius: var(--radius-full);
   font-size: var(--text-sm);

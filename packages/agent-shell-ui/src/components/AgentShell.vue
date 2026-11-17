@@ -15,6 +15,7 @@ import type {
 } from "../types";
 import { sessionRunNotices } from "../session-run-notices";
 import { useAgentConversation } from "../useAgentConversation";
+import AgentPicker from "./AgentPicker.vue";
 import ShellColumn from "./ShellColumn.vue";
 import ShellConversation from "./ShellConversation.vue";
 import ShellNavBody from "./ShellNavBody.vue";
@@ -64,7 +65,6 @@ const props = withDefaults(
      * appears in the column and the agents and sessions are read once.
      */
     nav: AgentNav;
-    agentPicker?: boolean;
     /** The application's name, at the top of the column when the application runs on one agent. */
     title?: string;
     /** The application's own entry at the foot of its column (its settings, the model the diagnosis runs on). */
@@ -186,6 +186,29 @@ function reopenPage() {
   pageView.value = "side";
 }
 
+/**
+ * The open page's own skill narrows who may take the message: the composer offers the agents that carry it, and the
+ * page's registered default when it has one. A page without the declaration leaves the platform's whole agent list.
+ */
+watch(
+  () => currentFeature.value?.pageSkill ?? null,
+  (page) => void nav.setPage(page).catch(report),
+);
+
+/**
+ * The agent is the composer's choice (DESIGN.md "Applications and shells"): one chooser, on the row the message is
+ * written on. The reader chooses only between conversations; a reply still running keeps the agent it started with, so
+ * the choice waits until it ends rather than moving the running conversation to another agent.
+ */
+function chooseAgent(id: string) {
+  if (id === agentId.value) return;
+  if (conversation.busy.value) {
+    emit("error", props.labels.switchWhileRunning);
+    return;
+  }
+  agentId.value = id;
+}
+
 /** Sending from a full page brings the conversation back beside it, so the reply is visible. */
 function sendFromPage(text: string) {
   pageView.value = "side";
@@ -259,7 +282,6 @@ onMounted(() => {
           :workbench="workbench"
           :title="title"
           :agents="nav.agents.value"
-          :agent-picker="agentPicker"
           :agent-id="agentId"
           :sessions="nav.sessions.value"
           :sessions-state="nav.sessionsState.value"
@@ -326,6 +348,9 @@ onMounted(() => {
         @retry="conversation.open(sessionId)"
         @load-older="conversation.loadOlder"
       >
+        <template #agent>
+          <AgentPicker variant="pill" :agents="nav.agents.value" :agent-id="agentId" :label="labels.agent" @select="chooseAgent" />
+        </template>
         <template v-if="slots['composer-context']" #composer-context>
           <slot name="composer-context" :page-open="pairedPage" :inline="false" :unstarted="unstarted" />
         </template>
@@ -347,6 +372,9 @@ onMounted(() => {
     >
       <template v-if="slots['page-header']" #header>
         <slot name="page-header" :feature-id="featureId" :view="pageView" />
+      </template>
+      <template #composer-agent>
+        <AgentPicker variant="pill" :agents="nav.agents.value" :agent-id="agentId" :label="labels.agent" @select="chooseAgent" />
       </template>
       <template v-if="slots['composer-context']" #composer-context>
         <slot name="composer-context" :page-open="true" :inline="true" :unstarted="unstarted" />

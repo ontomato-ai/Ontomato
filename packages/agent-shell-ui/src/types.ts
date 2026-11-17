@@ -76,6 +76,12 @@ export interface ShellFeatureDeclaration {
    * which keeps that room for them.
    */
   scrollsItself?: boolean;
+  /**
+   * The page's own skill: an agent is a candidate for this page's composer when its effective skills carry it. A page
+   * with a menu code names it, so the candidates follow the reader's menu permission; a page open to every member of the
+   * domain says so instead.
+   */
+  pageSkill?: { pageKey: string; permissionCode: string } | { pageKey: string; access: "domain-member" };
 }
 
 /** A workbench is a code declaration; its agents come from the host. */
@@ -156,6 +162,8 @@ export interface ShellLabels {
   steps: (count: number) => string;
   thinking: string;
   working: string;
+  /** The composer's agent choice while a reply runs: the running conversation keeps the agent it started with. */
+  switchWhileRunning: string;
   toolInput: string;
   toolOutput: string;
   stopped: string;

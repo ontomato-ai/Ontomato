@@ -4,9 +4,13 @@ import { ArrowUp, Square } from "lucide-vue-next";
 import type { ShellLabels } from "../types";
 
 /**
- * The one message box of the platform: the conversation shell's, and the platform home's question box. Its words come
- * from the host that places it. A host may put controls at its lower left (`tools`, the home's agent picker); the box
- * then holds the message above a row with those controls and the send button, otherwise it is one row.
+ * The one message box of the platform: the conversation shell's, the platform home's question box and the composer at
+ * the foot of a full page. Every one of them is the same control at the same height — a single row of what the message
+ * is written as: the agent it goes to (`agent`), the input, what the message carries (`context`) and send.
+ *
+ * A host may put more controls after the agent (`tools`, the home's own choices); they stay on the row, and the message
+ * that follows the input takes what is left. Long input grows the row rather than being cut, and a narrow width gives way
+ * in the input, never in the send button.
  *
  * While the agent works (`busy`) the reader still sends: the message goes into the running reply. The stop button stands
  * beside the send button then, which shows once there is something to send. Only a message still on its way (`sending`)
@@ -21,7 +25,6 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ send: [text: string]; stop: [] }>();
 const slots = useSlots();
-const stacked = computed(() => slots.tools !== undefined);
 const text = ref("");
 const input = ref<HTMLTextAreaElement | null>(null);
 const composing = ref(false);
@@ -71,8 +74,8 @@ defineExpose({ focus: () => input.value?.focus() });
 </script>
 
 <template>
-  <form class="composer" :class="{ disabled, stacked, 'with-context': $slots.context }" @submit.prevent="submit">
-    <div v-if="$slots.context" class="composer-context"><slot name="context" /></div>
+  <form class="composer" :class="{ disabled }" @submit.prevent="submit">
+    <div v-if="$slots.agent" class="composer-agent"><slot name="agent" /></div>
     <textarea
       ref="input"
       v-model="text"
@@ -85,7 +88,8 @@ defineExpose({ focus: () => input.value?.focus() });
       @compositionstart="composing = true"
       @compositionend="composing = false"
     />
-    <div v-if="stacked" class="composer-tools"><slot name="tools" /></div>
+    <div v-if="$slots.tools" class="composer-tools"><slot name="tools" /></div>
+    <div v-if="$slots.context" class="composer-context"><slot name="context" /></div>
     <div class="composer-actions">
       <button
         v-if="busy"
@@ -105,7 +109,7 @@ defineExpose({ focus: () => input.value?.focus() });
         :title="labels.send"
         :aria-label="labels.send"
       >
-        <ArrowUp :size="17" />
+        <ArrowUp :size="16" />
       </button>
     </div>
   </form>
@@ -113,22 +117,22 @@ defineExpose({ focus: () => input.value?.focus() });
 
 <style scoped>
 /*
- * The chat composer: a pill of the composer height (radius = height / 2) around one row of controls of
- * --shell-composer-control (the input line and the round send button), so a host makes it compact by setting the two
- * heights. The conversation shell raises it through --shell-composer-shadow; embedded chats keep it flat. What a message
- * carries (`context`) may sit in the row before the input.
+ * One row, one height for every host: a 40px container around 32px controls (the input line, the send button, whatever
+ * a host puts on the row), its radius half its height. The conversation shell raises it through --shell-composer-shadow;
+ * embedded chats keep it flat.
  */
 .composer {
-  --composer-control: var(--shell-composer-control, var(--control-height-lg));
-  --composer-inset: calc((var(--shell-composer-height) - var(--composer-control) - 2px) / 2);
+  --composer-control: var(--control-height);
+  --composer-height: var(--control-height-lg);
+  --composer-inset: calc((var(--composer-height) - var(--composer-control) - 2px) / 2);
   display: flex;
   align-items: flex-end;
-  gap: 8px;
-  min-height: var(--shell-composer-height);
-  padding: var(--composer-inset) var(--composer-inset) var(--composer-inset) 20px;
+  gap: 6px;
+  min-height: var(--composer-height);
+  padding: var(--composer-inset);
   box-sizing: border-box;
   border: 1px solid var(--el-border-color-dark);
-  border-radius: calc(var(--shell-composer-height) / 2);
+  border-radius: calc(var(--composer-height) / 2);
   background: var(--el-bg-color);
   box-shadow: var(--shell-composer-shadow, none);
   transition:
@@ -141,44 +145,15 @@ defineExpose({ focus: () => input.value?.focus() });
 .composer.disabled {
   opacity: 0.6;
 }
-/* With controls of the host's: the message on its own row, the controls and the send button under it. */
-.composer.stacked {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "input input"
-    "tools send";
-  align-items: center;
-  row-gap: 4px;
-  padding: 10px 10px 10px 20px;
-}
-.composer.stacked textarea {
-  grid-area: input;
-}
-.composer.stacked .composer-actions {
-  grid-area: send;
-}
+.composer-agent,
 .composer-tools {
-  grid-area: tools;
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: var(--spacing-xs);
   min-width: 0;
-  margin-left: -10px;
 }
-.composer.with-context {
-  padding-left: 12px;
-}
-/* Kept to its line beside the input, centred on the input's last line; the input takes the rest of the row. */
-.composer-context {
-  flex: 0 1 auto;
-  max-width: 55%;
-  min-width: 0;
-  margin-bottom: calc((var(--composer-control) - 24px) / 2);
-}
-.composer-context:empty {
-  display: none;
-}
+/* The message takes the rest of the row; the controls beside it keep their size however narrow the width gets. */
 textarea {
   flex: 1;
   min-width: 0;
@@ -197,6 +172,16 @@ textarea {
 }
 textarea::placeholder {
   color: var(--el-text-color-placeholder);
+}
+/* What the message carries, beside the input on its last line; cut short rather than pushing the input away. */
+.composer-context {
+  flex: 0 1 auto;
+  max-width: 45%;
+  min-width: 0;
+  margin-bottom: calc((var(--composer-control) - 24px) / 2);
+}
+.composer-context:empty {
+  display: none;
 }
 .composer-actions {
   display: flex;

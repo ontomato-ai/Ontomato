@@ -21,6 +21,7 @@ export function actionChatLabels(overrides: Partial<ShellLabels> = {}): ShellLab
     steps: (count) => `${count} step${count === 1 ? "" : "s"}`,
     thinking: "Thinking",
     working: "Working",
+    switchWhileRunning: "Finish or stop the running reply before switching agents",
     toolInput: "Input",
     toolOutput: "Output",
     stopped: "Stopped",
