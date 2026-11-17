@@ -64,4 +64,45 @@ class ObjectViewStoreTest {
         assertThrows(IllegalArgumentException.class, () -> store.publish("domain-a", "Order", "panel", 7, 9));
         verify(jdbc, never()).update(anyString(), any(Object[].class));
     }
+
+    private JSONObject chartDocument() {
+        JSONObject document = document();
+        var widgets = document.getJSONArray("tabs").getJSONObject(0).getJSONArray("sections").getJSONObject(0).getJSONArray("widgets");
+        widgets.set(0, JSONObject.parseObject("""
+            {"id":"chart","kind":"chart","title":"Chart","span":12,"height":240,"resourceId":"metric","parameters":{},
+             "chartFile":{"dataset":[{"id":"metric","dimensions":["name","value"],"source":[]}],
+                          "series":[{"id":"main","type":"bar","datasetId":"metric","encode":{"x":"name","y":"value"}}],"ontomato":{}}}
+            """));
+        return document;
+    }
+
+    @Test void chartStorageAcceptsOnlyEmptyMetricSnapshotsAndNewFields() {
+        JSONObject document = chartDocument();
+        assertDoesNotThrow(() -> ObjectViewStore.validateDocument("Order", document));
+        var widget = document.getJSONArray("tabs").getJSONObject(0).getJSONArray("sections").getJSONObject(0).getJSONArray("widgets").getJSONObject(0);
+        var source = widget.getJSONObject("chartFile").getJSONArray("dataset").getJSONObject(0).getJSONArray("source");
+        source.add(JSONObject.of("name", "A", "value", 1));
+        assertThrows(IllegalArgumentException.class, () -> ObjectViewStore.validateDocument("Order", document));
+        source.clear();
+        widget.getJSONObject("chartFile").getJSONObject("ontomato").put("metric", JSONObject.of("metricId", "metric", "parameters", JSONObject.of()));
+        assertThrows(IllegalArgumentException.class, () -> ObjectViewStore.validateDocument("Order", document));
+        widget.getJSONObject("chartFile").getJSONObject("ontomato").remove("metric");
+        widget.getJSONObject("chartFile").getJSONObject("ontomato").put("dataset", JSONObject.of("path", "accepted.json"));
+        assertThrows(IllegalArgumentException.class, () -> ObjectViewStore.validateDocument("Order", document));
+        widget.getJSONObject("chartFile").getJSONObject("ontomato").remove("dataset");
+        for (String field : new String[]{"skillId", "chartType", "valueField", "resultPath", "resultIndex"}) {
+            widget.put(field, "old");
+            assertThrows(IllegalArgumentException.class, () -> ObjectViewStore.validateDocument("Order", document));
+            widget.remove(field);
+        }
+        widget.getJSONObject("chartFile").getJSONArray("dataset").getJSONObject(0).put("id", "other");
+        assertThrows(IllegalArgumentException.class, () -> ObjectViewStore.validateDocument("Order", document));
+    }
+
+    @Test void chartFilesCountTowardTheWholeDocumentLengthLimit() {
+        JSONObject document = chartDocument();
+        var widget = document.getJSONArray("tabs").getJSONObject(0).getJSONArray("sections").getJSONObject(0).getJSONArray("widgets").getJSONObject(0);
+        widget.getJSONObject("chartFile").put("graphic", JSONObject.of("text", "x".repeat(1_000_001)));
+        assertThrows(IllegalArgumentException.class, () -> ObjectViewStore.validateDocument("Order", document));
+    }
 }

@@ -39,7 +39,7 @@ const {
   loadPlatformAccess,
   loadSubjects,
   loadTriggers,
-  loadViewSkills,
+  loadSkills,
 } = useManagerClient();
 
 const loading = ref(false);
@@ -325,7 +325,7 @@ async function refresh() {
         loadSmartAssets("actions"),
         loadSmartAssets("metrics"),
         loadSmartAssets("functions"),
-        loadViewSkills(),
+        loadSkills(),
         loadTriggers(),
         loadCapabilityGrants(),
         loadPlatformAccess(),

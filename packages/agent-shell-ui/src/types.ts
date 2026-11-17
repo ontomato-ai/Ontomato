@@ -61,6 +61,12 @@ export interface ShellFeatureDeclaration {
   icon: string;
   /** page: host content in the main area; action: the host reacts in place; link: navigate away. */
   availability: "page" | "action" | "link" | "unavailable";
+  /**
+   * Whether the application's column lists this page as an entry. A page declared only so the host can open it beside the
+   * conversation — the settings, a dashboard — has no entry of its own and is not listed; the column has its own way to
+   * the pages a reader starts from.
+   */
+  listed?: boolean;
   href?: string;
   hint?: string;
   /**
@@ -76,6 +82,17 @@ export interface ShellFeatureDeclaration {
    * which keeps that room for them.
    */
   scrollsItself?: boolean;
+  /**
+   * The page's own address, when the platform mounts it beside a conversation: enlarging it opens that address in the
+   * application that owns it, and the page keeps its own state while it sits beside the chat.
+   */
+  address?: string;
+  /**
+   * The page's own skill: an agent is a candidate for this page's composer when its effective skills carry it. A page
+   * with a menu code names it, so the candidates follow the reader's menu permission; a page open to every member of the
+   * domain says so instead.
+   */
+  pageSkill?: { pageKey: string; permissionCode: string } | { pageKey: string; access: "domain-member" };
 }
 
 /** A workbench is a code declaration; its agents come from the host. */
@@ -156,6 +173,12 @@ export interface ShellLabels {
   steps: (count: number) => string;
   thinking: string;
   working: string;
+  /** The composer's agent choice while a reply runs: the running conversation keeps the agent it started with. */
+  switchWhileRunning: string;
+  /** A message's last line names the page it was written on. */
+  pageContext: (page: string) => string;
+  /** The same line names what was selected in the page. */
+  selectionContext: (selection: string) => string;
   toolInput: string;
   toolOutput: string;
   stopped: string;
@@ -183,6 +206,10 @@ export interface ShellLabels {
   loading: string;
   emptyFile: string;
   invalidChart: string;
+  /** A timeline event whose date the metric does not give. */
+  chartUndated: string;
+  /** A chart whose metric returned no rows. */
+  noChartRows: string;
   toolRead: string;
   toolWrite: string;
   toolEdit: string;

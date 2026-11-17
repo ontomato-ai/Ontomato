@@ -4,7 +4,6 @@ import { CalendarClock, ExternalLink, SquarePen, Trash2, MoreHorizontal, Pencil,
 import type { AgentHostAgent, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { ShellLabels, ShellWorkbenchDeclaration } from "../types";
 import { featureIcon } from "../icons";
-import AgentPicker from "./AgentPicker.vue";
 
 /**
  * The navigation column of a conversation application: its head, a new conversation, the application's own pages, the
@@ -19,7 +18,6 @@ const props = withDefaults(defineProps<{
   /** The application's name, shown at the top when it runs on one agent. */
   title: string;
   agents: AgentHostAgent[];
-  agentPicker?: boolean;
   agentId: string | null;
   sessions: AgentHostSession[];
   sessionsState: "loading" | "ready" | "error";
@@ -51,7 +49,6 @@ const emit = defineEmits<{
   newConversation: [];
   selectFeature: [id: string];
   featureAction: [id: string];
-  selectAgent: [id: string];
   selectSession: [id: string];
   deleteSession: [id: string];
   renameSession: [id: string, title: string];
@@ -59,6 +56,8 @@ const emit = defineEmits<{
   loadMore: [];
   retry: [];
 }>();
+/** The pages the column offers as entries; a page the host only opens beside the conversation is not one. */
+const listedFeatures = computed(() => props.workbench.features.filter((feature) => feature.listed !== false));
 const deletingSession = ref<AgentHostSession | null>(null);
 const deleteDialog = ref<HTMLDialogElement | null>(null);
 const sessionMenu = ref<string | null>(null);
@@ -136,8 +135,6 @@ function saveRename(id: string) {
   cancelRename();
 }
 
-/** More than one agent means the head is a switcher; one agent leaves the application's name there. */
-const hasPicker = computed(() => props.conversations && (props.agentPicker || props.agents.length > 1));
 
 function requestDelete(session: AgentHostSession) {
   closeSessionMenu();
@@ -165,9 +162,8 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="navRoot" class="shell-nav-body">
-    <!-- The head: the agent this conversation runs on, or the application's name. -->
-    <AgentPicker v-if="hasPicker" :agents="agents" :agent-id="agentId" :label="labels.agent" @select="emit('selectAgent', $event)" />
-    <div v-else class="column-head">{{ title }}</div>
+    <!-- The head: the application's name. The agent the conversation runs on is chosen in its composer. -->
+    <div class="column-head">{{ title }}</div>
 
     <button
       v-if="conversations"
@@ -180,7 +176,7 @@ onBeforeUnmount(() => {
       <span class="nav-label">{{ labels.newConversation }}</span>
     </button>
 
-    <template v-for="feature in workbench.features" :key="feature.id">
+    <template v-for="feature in listedFeatures" :key="feature.id">
       <a v-if="feature.availability === 'link'" class="nav-item" :href="feature.href" target="_blank" rel="noopener">
         <component :is="featureIcon(feature.icon)" :size="16" aria-hidden="true" />
         <span class="nav-label">{{ feature.label }}</span>

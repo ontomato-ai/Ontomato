@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 public class AgentPrincipalController {
     public static final String EXECUTION_PATH="/agent-principals/execution";
     public static final String USER_SCOPED_REGISTRATION_PATH="/agent-principals/register-user-scoped";
+    public static final String USER_SCOPED_EXECUTION_PATH="/agent-principals/user-scoped-execution";
     private final AgentPrincipalService principals;
     private final WorkbenchServiceAuthentication authentication;
     private final io.ontomato.dataengine.service.ProductGrantService productGrants;
@@ -17,6 +18,7 @@ public class AgentPrincipalController {
     public AgentPrincipalController(AgentPrincipalService principals,WorkbenchServiceAuthentication authentication,io.ontomato.dataengine.service.ProductGrantService productGrants){this.principals=principals;this.authentication=authentication;this.productGrants=productGrants;}
     public record DelegatedExecutionRequest(String domainId,String principalId,String initiatorId,long expiresAt) {}
     public record UserScopedRegistration(String domainId,String principalId,String name) {}
+    @PostMapping(USER_SCOPED_EXECUTION_PATH) public Object userExecution(HttpServletRequest request,@RequestBody DelegatedExecutionRequest body){authentication.authenticate(request);return Map.of("token",principals.issueUserScoped(body.domainId(),body.principalId(),body.initiatorId(),body.expiresAt()),"expiresAt",body.expiresAt());}
     @PostMapping(USER_SCOPED_REGISTRATION_PATH) public Object registerUserScoped(HttpServletRequest request,@RequestBody UserScopedRegistration body){authentication.authenticate(request);principals.registerUserScoped(body.domainId(),body.principalId(),body.name());return Map.of("success",true);}
     @org.springframework.beans.factory.annotation.Autowired private io.ontomato.dataengine.service.IdentityService identity;
     public record UserScopedCheck(String id) {}

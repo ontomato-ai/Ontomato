@@ -39,7 +39,7 @@ const markBrand = computed(() => ({ ...props.brand, name: brandName.value }));
 /** The rail's applications, in order: the ontology applications, then the business ones (the external one last). */
 const scrolling = computed(() => {
   const of = (rail: PlatformApp["rail"]) => props.apps.filter((app) => (app.rail ?? "apps") === rail);
-  return [of("top"), of("apps")].filter((section) => section.length > 0);
+  return [of("top"), of("builders"), of("apps")].filter((section) => section.length > 0);
 });
 
 /**
@@ -193,7 +193,8 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
       </template>
     </div>
 
-    <!-- The platform's own applications: the foot of the rail, above the account and outside the scrolling area. -->
+    <div v-if="foot.length > 0 && scrolling.length > 0" class="rail-divider rail-management-divider" aria-hidden="true" />
+    <!-- Settings form the final group, above the account and outside the scrolling area. -->
     <ul v-if="foot.length > 0" class="rail-foot">
       <li v-for="app in foot" :key="app.id">
         <a
@@ -398,13 +399,9 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   padding: 0;
   list-style: none;
 }
-/*
- * The foot sits at the bottom, above the account: the business applications scroll under it, and the gap between the two
- * is the rail's own tone — no divider, and nothing of the platform among the applications.
- */
+/* Management stays above the account and has the same separator as the other application groups. */
 .rail-foot {
   flex-shrink: 0;
-  margin-top: 12px;
 }
 /* The hairline between the rail's sections: a short rule, never a group name. */
 .rail-divider {

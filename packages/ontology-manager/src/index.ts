@@ -24,4 +24,5 @@ export { default as ManagerFrame } from "./ManagerFrame.vue";
 export {dropdownBoundaryOptions} from '@ontomato/foundation-ui/overlay';
 export { default as ProductAssetRuntime } from "./products/ProductAssetRuntime.vue";
 export {productRenderersKey} from './products/renderers';
-export {default as GovernanceModelsPage} from './knowledge-governance/GovernanceModelsPage.vue';
+export {useProductText} from './products/default-texts';
+export { default as GovernancePage } from './knowledge-governance/GovernancePage.vue';

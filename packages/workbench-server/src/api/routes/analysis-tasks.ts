@@ -32,9 +32,13 @@ router.get(
           task.id,
           task.resultReport,
           { domainId: requireDomainId(r), userId: r.userId },
+          undefined,
+          undefined,
+          r.locale,
         ),
       },
       new Date(),
+      r.locale,
     );
     res
       .set({

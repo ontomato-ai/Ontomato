@@ -1,4 +1,5 @@
-import { profileForSession } from "../product-assets/agent-profile";
+import { governanceReportHref } from "../assistant/governance-report";
+import { tForLocale } from "../../i18n";
 import { recentUserMessages } from "../assistant/user-quotes";
 import { OntologyRetrievalClient } from "../assistant/ontology-retrieval";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
@@ -52,11 +53,10 @@ export const agentChannelService = {
     if (body.mode === "steer") {
       const service = body.agent.providerId === "observe" ? diagnosisService : assistantService;
       await service.ownRun(body.sessionId, body.runId, owner);
-      if (body.agent.providerId === "workbench" && !await assistantStore.isBuilderRun(body.runId,owner) &&
+      if (body.agent.providerId === "workbench" &&
         (body.input.role === "user" || (body.input.kind === "agent-answer" && "kind" in body.input.source && body.input.source.kind === "user"))) {
-        const session=await assistantStore.session(body.sessionId,owner);
-        if(!await profileForSession(owner,credentials,body.sessionId,session.agent_id)) {
-          const turn=await assistantStore.turn(body.runId,owner);
+        const turn=await assistantStore.turn(body.runId,owner);
+        if (turn.retrieval_scope_id) {
           const messages=(await new RuntimeClient(owner.domainId,undefined,owner.userId).session(body.sessionId)).messages;
           await new OntologyRetrievalClient(owner,turn.retrieval_scope_id).updateUserQuotes(recentUserMessages(messages,body.inputId),credentials);
         }
@@ -65,7 +65,7 @@ export const agentChannelService = {
     }
     if (body.agent.providerId === "observe") {
       if (body.agent.agentId !== DIAGNOSIS_AGENT_ID || body.authority.executionKind !== "live") throw new HttpError(403, "Diagnosis requires live execution authority", "BUILD_TEST_FORBIDDEN");
-      await createDiagnosis(body.sessionId, owner);
+      await createDiagnosis(body.sessionId, owner, null, true);
       return prepareDiagnosis(body.sessionId, body.runId, body.input, owner, credentials);
     }
     return assistantService.prepare(body,owner,credentials);
@@ -78,8 +78,8 @@ export const agentChannelService = {
     return { body, service, owner, credentials };
   },
   async settle(raw: unknown, domain: string, _supplied: AssistantCredentials = {}) {
-    const { body } = await this.execution(raw, domain);
-    if (body.execution.session.providerId === "workbench") await assistantService.settleTurn(body.execution.runId);
+    const { body, owner } = await this.execution(raw, domain);
+    if (body.execution.session.providerId === "workbench") await assistantService.settleTurn(body.execution.runId,owner);
     return { accepted: true };
   },
   async cancel(raw: unknown, domain: string, _supplied: AssistantCredentials = {}) {
@@ -88,7 +88,7 @@ export const agentChannelService = {
     return { accepted: true };
   },
   async read(raw: unknown, domain: string, _supplied: AssistantCredentials = {}) {
-    const { body, service, owner } = await this.execution(raw, domain);
+    const { body, service, owner, credentials } = await this.execution(raw, domain);
     if(body.fileId) {
       const artifact=await service.artifact(body.execution.session.sessionId,body.fileId,owner);
       if(artifact.runId!==body.execution.runId || !artifact.path.startsWith("outputs/")) throw new HttpError(404,"File was not delivered by this execution","NOT_FOUND");
@@ -96,8 +96,10 @@ export const agentChannelService = {
     }
     const snapshot = await service.readRun(body.execution.session.sessionId, body.execution.runId, owner);
     const status = snapshot.run.status === "running" ? "running" : snapshot.run.stopReason === "stop" ? "completed" : snapshot.run.stopReason === "aborted" ? "cancelled" : "failed";
+    const href = body.execution.session.providerId === "workbench" ? await governanceReportHref(body.execution.runId,owner) : null;
     return { settled: status !== "running", status, summary: answerText(snapshot) || snapshot.run.errorMessage || status,
-      process: { mode: "inline", runtimeSessionId: snapshot.run.sessionId, runtimeRunId: snapshot.run.id }, results: [],quality: [],
+      process: href ? { mode: "page", href } : { mode: "inline", runtimeSessionId: snapshot.run.sessionId, runtimeRunId: snapshot.run.id },
+      results: href ? [{ kind: "page", href, title: tForLocale(credentials.locale,"assistant.governance.report.title") }] : [],quality: [],
       files:snapshot.artifacts.filter(file=>file.runId===snapshot.run.id && file.path.startsWith("outputs/")).map(file=>({id:file.id,name:path.posix.basename(file.path),mediaType:file.mediaType,href:`/platform/agent-channel/tasks/${snapshot.run.id}/files/${file.id}`})) };
   },
 };

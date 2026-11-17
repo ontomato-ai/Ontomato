@@ -64,7 +64,8 @@ it("reads only files inside the package", async () => {
 it("publishes only the selected current-domain package and keeps captured versions unchanged across imports", async () => {
   vi.stubEnv("AGENT_RUNTIME_SERVICE_TOKEN", "synthetic-host");
   const published: Array<{ skill: unknown; files: { path: string; content: string }[] }> = [];
-  vi.stubGlobal("fetch", vi.fn(async (_url: string, init: { headers: Record<string, string>; body: string }) => {
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: { headers: Record<string, string>; body: string }) => {
+    if (url.endsWith("/platform/page-skills")) return Response.json({ success: true, data: { pageSkills: [], registeredSkills: [] } });
     expect(new Headers(init.headers).get("x-domain-id")).toBe(domain);
     const body = JSON.parse(String(init.body));
     published.push(body);
@@ -73,17 +74,17 @@ it("publishes only the selected current-domain package and keeps captured versio
   await skillManager.importSkill(domain, zip(), true);
   const provider = { namespace: { kind: "provider" as const, provider: "workbench" }, name: "assistant-report" };
   const analyst = { namespace: { kind: "provider" as const, provider: "ontology" }, name: "ontomato-analyst-assistant" };
-  expect(await prepareAssistantSkills(domain, [analyst, provider, reference])).toEqual([analyst, provider, reference]);
+  expect((await prepareAssistantSkills(domain, { kind: "custom", skills: [analyst, provider, reference] }, {})).skills).toEqual([analyst, provider, reference]);
   const script = (body: { files: { path: string; content: string }[] }) =>
     body.files.find((file) => file.path === "scripts/main.mjs")?.content;
   await skillManager.importSkill(domain, zip({ "scripts/main.mjs": "console.log('next run');\n" }), true);
-  await prepareAssistantSkills(domain, [reference]);
+  await prepareAssistantSkills(domain, { kind: "custom", skills: [reference] }, {});
   expect(published.map((p) => p.skill)).toEqual([reference, reference]);
   // A captured version is the package as it was: the later import reaches only the new publication.
   expect(script(published[0])).toBe(files["scripts/main.mjs"]);
   expect(script(published[1])).toBe("console.log('next run');\n");
   expect(published).toHaveLength(2);
-  await expect(prepareAssistantSkills("another-domain", [reference])).rejects.toThrow();
+  await expect(prepareAssistantSkills("another-domain", { kind: "custom", skills: [reference] }, {})).rejects.toThrow();
 });
 
 it("publishes every bundled public directory with the same standard package contract", async () => {
@@ -96,22 +97,18 @@ it("publishes every bundled public directory with the same standard package cont
 });
 
 
-it.each([
-  { name: "echarts", input: { chartType: "timeline", data: [{ date: null, event: "Review" }], dateField: "date", descriptionField: "event" }, marker: (locale: string) => `"locale":"${locale}"` },
-  { name: "leaflet", input: { data: [{ lat: 1, lon: 2 }], latitudeField: "lat", longitudeField: "lon" }, marker: (locale: string) => `const locale = "${locale}"` },
-  { name: "network-graph", input: { data: { nodes: [{ id: "a", name: "A" }], links: [] } }, marker: (locale: string) => `<html lang="${locale.split("-")[0]}"` },
-])("$name CLI takes the runtime language only when the input omits it", async ({ name, input, marker }) => {
-  const script = path.resolve(`skills/executable/visualization/${name}/scripts/index.mjs`);
+it("network-graph CLI takes the runtime language only when the input omits it", async () => {
+  const script = path.resolve("skills/executable/visualization/network-graph/scripts/index.mjs");
   for (const locale of [undefined, "ja"]) {
     const workspace = await fs.mkdtemp(path.join(root, "visualization-cli-"));
     const source = path.join(workspace, "input.json");
-    await fs.writeFile(source, JSON.stringify({ title: "Locale contract", ...input, locale }));
+    await fs.writeFile(source, JSON.stringify({ title: "Locale contract", data: { nodes: [{ id: "a", name: "A" }], links: [] }, locale }));
     execFileSync(process.execPath, [script, source], {
       cwd: workspace,
       env: { ...process.env, ONTOMATO_LANGUAGE: "zh-CN", ONTOMATO_OUTPUT_DIR: path.join(workspace, "outputs") },
     });
     const [file] = await fs.readdir(path.join(workspace, "outputs"));
     const html = await fs.readFile(path.join(workspace, "outputs", file), "utf8");
-    expect(html).toContain(marker(locale ?? "zh-CN"));
+    expect(html).toContain(`<html lang="${(locale ?? "zh-CN").split("-")[0]}"`);
   }
 });

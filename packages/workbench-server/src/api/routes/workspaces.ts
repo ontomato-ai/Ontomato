@@ -14,8 +14,7 @@ import { runtimeDataDir } from "../../content/layout";
 import { HttpError } from "../../utils/errors";
 import { assistantService } from "../../services/assistant/service";
 import { publishWorkspace, rollbackWorkspace, workspaceReleases } from "../../services/workspaces/hosted-apps";
-import {getProduct} from '../../services/product-assets/store';
-import {requireProductUse} from '../../services/product-assets/grants';
+import {getApplicationProduct} from '../../services/product-assets/store';
 import {backendGet,buildBackendHeaders} from '../../utils/backend-client';
 import {config} from '../../config/application';
 import {SOURCE_APPLICATION_CSP} from '../../services/workspaces/product-admission';
@@ -40,7 +39,7 @@ workspacePreviewRouter.get("/:id/preview/:token/*", wrap(async (req, res) => {
 export const workspaceRouter = Router();
 workspaceRouter.get('/applications/:appId/policy',wrap(async(req,res)=>{
   const {owner,credentials}=context(req),appId=hostedAppIdSchema.parse(req.params.appId);
-  await requireProductUse(owner,appId);await getProduct(owner,appId);
+   await getApplicationProduct(owner,appId);
   const response=await backendGet('application-network-policy',config.dataQuery.baseUrl+'/platform/applications/'+encodeURIComponent(appId),{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});
   const application=JSON.parse(response.text);
   if(application.success&&application.data?.kind==='connected'){res.json({messageBridge:0});return;}

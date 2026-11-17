@@ -1,11 +1,8 @@
 import { NextFunction, Request, Response, Router } from "express";
-import { z } from "zod";
 import multer from "multer";
 import { skillManager } from "../../services/skills/skill-manager";
-import { renderObjectView } from "../../services/skills/render-view";
 import { InvalidSkillPackageError } from "../../core/skills/manifest";
 import { t, tApp } from "../../i18n";
-import { validateBody } from "../middleware";
 import { requirePermission } from "../../identity/installed";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { asyncHandler, sendError } from "../utils/http";
@@ -22,15 +19,6 @@ function requireDomain(req: Request, res: Response, next: NextFunction): void {
   }
   next();
 }
-
-router.post("/:id/render", requireDomain, validateBody(z.object({ input: z.object({
-  data: z.unknown(), chartType: z.string().max(100), title: z.string().max(200),
-}).catchall(z.unknown()) })), asyncHandler(async (req: Request, res: Response) => {
-  const request = req as AuthenticatedRequest;
-  const result = await renderObjectView({ domainId: request.domainId!, userId: request.userId },
-    { token: request.token, apiKey: request.apiKey, locale: request.locale }, req.params.id, req.body.input);
-  res.json({ success: true, result });
-}));
 
 // Read-only endpoints — authenticated by the shared /api boundary.
 router.get(

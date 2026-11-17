@@ -27,6 +27,11 @@
     },
     "icon": "ontology",
     "groups": [],
-    "permissions": []
+    "permissions": [],
+    "pageSkills": [{
+      "permissionCode": "business-knowledge",
+      "skill": {"namespace": {"kind": "provider", "provider": "ontology"}, "name": "knowledge-governance"},
+      "defaults": [{"pageKey":"governance-report","agentKey":"knowledge-governance"}]
+    }]
   }
 }

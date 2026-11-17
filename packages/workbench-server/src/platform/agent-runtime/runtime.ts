@@ -22,11 +22,30 @@ export interface AssistantCredentials {
   apiKey?: string;
   locale?: string;
 }
+/**
+ * The scenario a skill script runs in. Inside the platform a page's own save is the only writer of that page's data;
+ * the same skill package run outside the platform (a reader's own key, the Skill suite) writes directly.
+ */
+const SKILL_SCENARIO = "platform";
+
+/**
+ * A change a page skill covers is a draft the reader saves, not a write of the agent's: the page's own form is what the
+ * draft fills, and the page's Save is what stores it. Only a run whose effective skills hold a registered page skill
+ * receives this rule; every other change keeps its own execution mechanism.
+ */
+const PLATFORM_DRAFT_RULE = [
+  "Page operations:",
+  "A change that a loaded page skill covers goes through that page's draft: write the draft file the skill's draft",
+  "command asks for, then link the reader to the page with it. The page fills its form, marks what changed and stays",
+  "unsaved; the reader reviews and saves there, and saying 'save' in the conversation does not save it for them.",
+  "Everything else — reading, retrieval, charts, reports, and data no page skill covers — keeps its own commands.",
+].join("\n");
 export function userSkillEnvironment(credentials: AssistantCredentials): RuntimeEnvironment {
   return {
     values: {
       ONTOMATO_WORKBENCH_URL: environment.agentRuntime().callbackUrl.replace(/\/$/, ""),
       ONTOMATO_ONTOLOGY_URL: getApiConfig().baseUrl!.replace(/\/$/, ""),
+      ONTOMATO_SKILL_SCENARIO: SKILL_SCENARIO,
     },
     secrets: {
       ...(credentials.apiKey ? { ONTOMATO_API_KEY: credentials.apiKey }
@@ -40,9 +59,12 @@ export function runDefinition(
   skills: RuntimeStartRunRequest["definition"]["skills"],
   locale?: string,
   externalMcp: RuntimeStartRunRequest["definition"]["externalMcp"] = [],
+  /** The run loaded a registered page skill, so a change it covers is a draft the reader saves. */
+  pageDrafts = false,
 ): RuntimeStartRunRequest["definition"] {
   return {
-    systemPrompt: systemPrompt + "\n\n" + getOutputLanguageInstruction(resolveLocale(locale)),
+    systemPrompt: [systemPrompt, pageDrafts ? PLATFORM_DRAFT_RULE : "", getOutputLanguageInstruction(resolveLocale(locale))]
+      .filter(Boolean).join("\n\n"),
     modelId,
     skills,
     externalMcp,

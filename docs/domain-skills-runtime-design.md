@@ -62,11 +62,17 @@ references together. Its catalogue must load successfully before saving.
 
 Six bundled public packages are standard sources published as workbench
 provider skills: growth-rate-calc, echarts, leaflet, network-graph,
-admin-choropleth-map and quality-trace-graph. Their calculations and interactive
-rendering stay in ordinary scripts. HTML embeds bundled library distribution
+admin-choropleth-map and quality-trace-graph. `echarts`, `leaflet` and
+`admin-choropleth-map` build reusable `.chart.json` files: one shared source under
+`packages/workbench-server/chart-skill` is bundled into each skill, and the platform
+chart component draws the file from its MetricView or its conversation snapshot.
+Those three carry no drawing library; the choropleth bundle carries the platform's
+`china-provinces` boundary resource so it can check region names before writing.
+`growth-rate-calc`, `network-graph` and `quality-trace-graph` keep ordinary script
+calculations and one-off HTML output, whose HTML embeds bundled library distribution
 assets so the exported package and result do not depend on workbench static routes.
-The canonical ECharts and Leaflet sources remain the existing bundled libraries;
-package-local copies carry them in the standalone distributions.
+The canonical ECharts source remains the bundled library used by those HTML skills;
+package-local copies carry it in the standalone distributions.
 The host-owned `assistant-report` writes a report and offers a PPT follow-up. The
 assistant plans slides; its bundled script reads the report's original chart/data
 files and writes `report.pptx` as a normal runtime artifact. The startup migration

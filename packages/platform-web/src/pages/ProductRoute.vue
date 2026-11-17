@@ -4,10 +4,13 @@ import {useRouter,useRoute} from "vue-router";
 import {validatePageState,validateProductNavigation} from '@ontomato/contracts/product-page-state';
 import {productAssetSchema,type ProductAsset} from "@ontomato/contracts/product-assets";
 import {nodeApiRequest} from "@ontomato/workbench-ui";
-import {ManagerFrame,ProductAssetRuntime} from "@ontomato/ontology-manager";
+import {ManagerFrame,ProductAssetRuntime,useProductText} from "@ontomato/ontology-manager";
 import PersonalWorkspace from "./PersonalWorkspaceRoute.vue";
 import {ElAlert,ElButton} from 'element-plus';
+import {useI18n} from 'vue-i18n';
 const props=defineProps<{productAssetId:string;embedded?:boolean;applicationId?:string}>();
+const {t}=useI18n();
+const productText=useProductText();
 const router=useRouter(),asset=ref<ProductAsset|null>(null),children=ref<ProductAsset[]>([]),error=ref("");
 const route=useRoute();
 const unavailableAssets=ref<string[]>([]);
@@ -53,11 +56,11 @@ watch(()=>[props.productAssetId,props.applicationId,route.query.navigationPath],
 </script>
 <template>
   <el-alert v-if="stateError" :title="stateError" type="error" :closable="false"/>
-  <el-alert v-else-if="rootUnavailable" title="引用能力的契约已变化，请显式升级此发布。" type="error" :closable="false"/>
+  <el-alert v-else-if="rootUnavailable" :title="t('ontology.productReleaseContractChanged')" type="error" :closable="false"/>
   <ManagerFrame v-else-if="!error&&asset?.document.kind==='object-projection'"><ProductAssetRuntime :asset="asset" :page-state="pageState"/></ManagerFrame>
   <section v-else-if="!error&&asset?.document.kind==='application'&&applicationNavigation" class="product-application"><ManagerFrame class="product-navigation"><ProductAssetRuntime :asset="applicationNavigation" @navigate="navigate"/></ManagerFrame><div class="product-application-content"><PersonalWorkspace v-if="selectedPage" :key="selectedPage.id" :product-asset-id="selectedPage.id" :pinned-assets="publishedChildren" :unavailable-assets="unavailableAssets" :embedded="embedded" :page-state="pageState"/></div></section>
   <PersonalWorkspace v-else-if="!error&&asset?.document.kind==='page'" :product-asset-id="productAssetId" :pinned-assets="applicationId?children:undefined" :embedded="embedded" :page-state="pageState" :unavailable-assets="unavailableAssets"/>
-   <section v-else class="product-page" :class="{'is-embedded':embedded}"><el-alert v-if="error" :title="error" type="error" :closable="false"/><template v-if="asset&&!error"><h1 v-if="!embedded">{{asset.name}}</h1><p v-if="!embedded">{{asset.description}}</p><el-alert v-if="directChildren.some(child=>unavailableAssets.includes(child.id))" title="部分投影的能力契约已变化，请升级发布。" type="error" :closable="false"/><ManagerFrame><ProductAssetRuntime :asset="asset" @navigate="navigate"/><section v-for="child in visibleDirectChildren" :key="child.id"><el-button v-if="child.document.kind==='page'" @click="navigate(child.id)">{{child.name}}</el-button><ProductAssetRuntime v-else :asset="child" @navigate="navigate"/></section></ManagerFrame><PersonalWorkspace v-if="selectedPage" :key="selectedPage.id" :product-asset-id="selectedPage.id" :pinned-assets="publishedChildren" :unavailable-assets="unavailableAssets" :embedded="embedded"/></template></section>
+   <section v-else class="product-page" :class="{'is-embedded':embedded}"><el-alert v-if="error" :title="error" type="error" :closable="false"/><template v-if="asset&&!error"><h1 v-if="!embedded">{{productText(asset.name)}}</h1><p v-if="!embedded">{{productText(asset.description)}}</p><el-alert v-if="directChildren.some(child=>unavailableAssets.includes(child.id))" :title="t('ontology.productProjectionContractChanged')" type="error" :closable="false"/><ManagerFrame><ProductAssetRuntime :asset="asset" @navigate="navigate"/><section v-for="child in visibleDirectChildren" :key="child.id"><el-button v-if="child.document.kind==='page'" @click="navigate(child.id)">{{productText(child.name)}}</el-button><ProductAssetRuntime v-else :asset="child" @navigate="navigate"/></section></ManagerFrame><PersonalWorkspace v-if="selectedPage" :key="selectedPage.id" :product-asset-id="selectedPage.id" :pinned-assets="publishedChildren" :unavailable-assets="unavailableAssets" :embedded="embedded"/></template></section>
 </template>
 <style scoped>
 .product-application{display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden}

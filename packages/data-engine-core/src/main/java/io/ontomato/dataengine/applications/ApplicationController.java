@@ -29,6 +29,9 @@ public class ApplicationController {
     public record Batch(List<ApplicationCatalog.Builtin> applications) {}
     public record Publication(ApplicationCatalog.Declaration declaration, String releaseId) {}
     public record Connected(String id, ApplicationCatalog.Declaration declaration, String upstream, String upstreamPrefix) {}
+    @GetMapping("/platform/page-skills")
+    @io.ontomato.dataengine.controller.BuildTestAccess(io.ontomato.dataengine.controller.BuildTestAccess.Access.NO_BUSINESS_DATA)
+    public R<PageSkills.Projection> pageSkills() { return R.of(catalog.pageSkills(current())); }
     @PostMapping("/platform/applications/connected")
     public R<JSONObject> connected(@RequestBody Connected body) {
         return R.of(catalog.connected(body.id(), body.declaration(), body.upstream(), body.upstreamPrefix(), current()));
@@ -51,6 +54,10 @@ public class ApplicationController {
         if (!catalog.inDomain(app,user)) throw ApplicationCatalog.denied();
         return R.of(catalog.view(app));
     }
+    @GetMapping("/platform/applications/platform-assets-access")
+    public R<?> productAssetsAccess(){return R.of(Map.of("allowed",catalog.canReconcileProducts(current())));}
+    public record IconUpdate(String icon) {}
+    @PutMapping("/platform/applications/{id}/icon") public R<?> updateIcon(@PathVariable String id,@RequestBody IconUpdate body){catalog.updateIcon(id,body.icon(),current());return R.of(Map.of("icon",body.icon()));}
     @PutMapping("/platform/applications/{id}/hosted-publication")
     public R<JSONObject> publish(@PathVariable String id, @RequestBody Publication body) {
         return R.of(catalog.publish(id, body.declaration(), body.releaseId(), current()));

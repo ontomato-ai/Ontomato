@@ -11,13 +11,6 @@ import type { AgentHostService } from "../../services/agent-host/types";
 export function createAgentHostRouter(service: AgentHostService, workspaces = false) {
 const router: ReturnType<typeof Router> = Router(), uuid = z.string().uuid();
 router.get(
-  "/agents",
-  wrap(async (req, res) => {
-    const c = context(req);
-    res.json(await service.agents(c.owner, c.credentials.locale));
-  }),
-);
-router.get(
   "/sessions",
   wrap(async (req, res) => {
     res.json(

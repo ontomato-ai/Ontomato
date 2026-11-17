@@ -28,7 +28,7 @@ import {publishedApplication,publishedApplicationRelease} from '../../services/p
 import {migratePlatformProjection} from '../../services/product-assets/platform-migration';
 import {objectViewAuthoring} from '../../services/product-assets/object-view-authoring';
 import {migrateDashboardPage} from '../../services/product-assets/dashboard-migration';
-import {synchronizePlatformAssets,nativeAgentAsset,nativeApplicationAsset} from '../../services/product-assets/platform-assets';
+import {synchronizePlatformAssets,ensurePlatformAssets,nativeAgentAsset,nativeApplicationAsset} from '../../services/product-assets/platform-assets';
 import {assertAppBuilderAccess} from '../../services/app-builder/access';
 import {requirePermission} from '../../identity/installed';
 
@@ -49,7 +49,7 @@ router.post('/:id/create-page',wrap(async(req,res)=>{
   res.json({asset:await saveProduct(owner,randomUUID(),{name,description:source.description,visibility:'private',document:{...source.document,kind:'page',isTemplate:false}},0,credentials)});
 }));
 router.get("/types", wrap(async (_req,res) => { res.json({types:productTypes,schema:zodToJsonSchema(productAuthoringSchema,{target:"jsonSchema7"})}); }));
-router.get('/query',wrap(async(req,res)=>{res.json(await queryProducts(context(req).owner,productQuerySchema.parse(req.query)));}));
+router.get('/query',wrap(async(req,res)=>{const c=context(req);await ensurePlatformAssets(c.owner,c.credentials);res.json(await queryProducts(c.owner,productQuerySchema.parse(req.query)));}));
 router.get('/counts',wrap(async(req,res)=>{res.json({counts:await countProductTypes(context(req).owner)});}));
 router.get('/graph',wrap(async(req,res)=>{const {owner,credentials}=context(req);res.json({graph:await registeredProductGraph(owner,await listProducts(owner),credentials)});}));
 router.get('/validation/default-projections',wrap(async(req,res)=>{const c=context(req);res.json(await validateDefaultProjections(c.owner,c.credentials));}));
@@ -64,7 +64,7 @@ router.get('/definitions/:id',wrap(async(req,res)=>{res.json({definition:await r
 router.put('/definitions/:id',wrap(async(req,res)=>{const c=context(req);const input=z.object({definition:z.unknown(),revision:z.number().int().nonnegative()}).strict().parse(req.body);if((input.definition as {id?:string})?.id!==req.params.id)throw new HttpError(400,'Definition ID mismatch','INVALID_REQUEST');res.json({definition:await saveDefinition(c.owner,c.credentials,input.definition,input.revision)});}));
 router.post('/definitions/:id/query',wrap(async(req,res)=>{const c=context(req);const input=z.object({parameters:z.record(z.unknown()),fields:z.array(z.string().min(1).max(200)).min(1).max(100),offset:z.number().int().nonnegative().default(0),projectionId:z.string().min(1).max(200).optional()}).strict().parse(req.body);res.json(await executeDefinition(c.owner,c.credentials,String(req.params.id),input.parameters,input.fields,input.offset,input.projectionId));}));
 router.get("/home", wrap(async (req,res) => { const c=context(req);res.json({asset:await personalHome(c.owner,c.credentials)}); }));
-router.get("/", wrap(async (req,res) => { res.json({assets:await listProducts(context(req).owner)}); }));
+router.get("/", wrap(async (req,res) => {const c=context(req);await ensurePlatformAssets(c.owner,c.credentials);res.json({assets:await listProducts(c.owner)}); }));
 router.get('/published/:applicationId',wrap(async(req,res)=>{const c=context(req);const snapshot=await publishedApplication(c.owner,c.credentials,String(req.params.applicationId));res.json({roots:snapshot.roots,assets:snapshot.assets,contracts:snapshot.contracts,triggers:snapshot.triggers??[],issues:await productReleaseIssues(c.owner,snapshot,c.credentials)});}));
 router.get('/published/:applicationId/:id',wrap(async(req,res)=>{
   const {owner,credentials}=context(req),snapshot=await publishedApplication(owner,credentials,String(req.params.applicationId));

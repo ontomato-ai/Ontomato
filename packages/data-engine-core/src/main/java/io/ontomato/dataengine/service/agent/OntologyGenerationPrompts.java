@@ -44,7 +44,6 @@ public class OntologyGenerationPrompts {
   public static final String QUESTION_CHECKER_V2_PROMPT = "question_checker-v2.md";
   public static final String PROGRAM_DESCRIPTIONS = "{{PROGRAM_DESCRIPTIONS}}";
 
-  public static final String ABC_PROGRAM_DASHBOARD_MAKER_PROMPT = "abc_program_dashboard_maker.md";
 
   public static final String READ_FUNCTION_MAKER_PROMPT = "read_function_maker.md";
 
@@ -175,39 +174,6 @@ public class OntologyGenerationPrompts {
 
     // The user's own messages and confirmed clarifications are the question to check.
     prompt = prompt.replace(USER_QUESTION, userQuestion(question, userQuotes, confirmedDecisions));
-
-    // language
-    String langValue = langService.get(lang, "lang");
-    prompt = prompt.replace(LANG, langValue);
-
-    return prompt;
-  }
-
-  public static String getAbcProgramDashboardMakerUserMessage(
-      ABCHarnessProgram program,
-      String lang,
-      LangService langService,
-      Map<String, Object> jsonRule) {
-    String prompt = template(ABC_PROGRAM_DASHBOARD_MAKER_PROMPT, lang);
-
-    Map<String, String> mapDBSchema = DBSchemaUtil.getDBSchema(jsonRule, null);
-    // dataset description
-    String datasetDesc = mapDBSchema.get(DBSchemaUtil.KEY_DATASET_DESC);
-    prompt = prompt.replace(DATASET_DESC, datasetDesc);
-
-    // class definition description
-    String classDef = DBSchemaUtil.generateClassNameMarkDown(jsonRule, null);
-    prompt = prompt.replace(CLASS_DEF, classDef);
-
-    // DSL syntax
-    String dslRule = DslRuleUtil.generateWholeDslRule(jsonRule);
-    prompt = prompt.replace(DSL_RULE, dslRule);
-
-    // user question corresponding to the hardcoded code
-    prompt = prompt.replace(USER_QUESTION, program.getQuestion());
-
-    prompt = prompt.replace(QUERY_LOGIC, JSON.toJSONString(
-        io.ontomato.dataengine.service.QuerySourceSnapshot.input(program), Feature.PrettyFormat, Feature.WriteMapNullValue));
 
     // language
     String langValue = langService.get(lang, "lang");

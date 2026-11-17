@@ -10,7 +10,7 @@
     body-class="chart-zoom-body"
     @close="emit('close')"
   >
-    <EChart v-if="mode === 'chart' && option" :option="modalOption" :theme="theme" height="100%" @resize="drawn.track" />
+    <MetricChart v-if="mode === 'chart'" :file="file" :metric="metric" height="100%" :empty="t('common.noData')" />
     <TablePreview
       v-if="mode === 'table'"
       :table="table"
@@ -21,40 +21,24 @@
 </template>
 
 <script setup>
-import { computed } from "vue";
-import { EChart, useChartTheme } from "@ontomato/foundation-ui/chart";
+import { MetricChart } from "@ontomato/foundation-ui/chart";
 import { TablePreview } from "@ontomato/foundation-ui/preview";
-import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
 import { useI18n } from "vue-i18n";
-import { workbenchContent } from "../../../content";
-import { fitChart, useDrawnSize } from "./utils/chartFit";
 
-const props = defineProps({
+defineProps({
   open: { type: Boolean, default: false },
   mode: { type: String, default: "chart" },
   title: { type: String, default: "" },
-  option: { type: Object, default: null },
+  /** The card's chart document, drawn at the dialog's size exactly as the card draws it. */
+  file: { type: Object, default: null },
+  /** The card's output for that document: its columns, rows and truncation. */
+  metric: { type: Object, default: null },
   /** The card's data as the table shows it. */
   table: { type: Object, required: true },
 });
 
 const emit = defineEmits(["close"]);
 const { t } = useI18n();
-
-const { zoomChartTheme } = workbenchContent().dashboard;
-const chartTheme = useChartTheme();
-const theme = computed(() => (zoomChartTheme === "dashboard" ? chartTheme.value : undefined));
-const drawn = useDrawnSize();
-/**
- * The card's own option (its formatters included) on the dialog's background, without the title the dialog header
- * shows, laid out for the dialog's size; brand colours come from the platform's chart theme in either zoom theme.
- */
-const modalOption = computed(() =>
-  fitChart(
-    chartBrandColors({ ...props.option, backgroundColor: "transparent", title: undefined }, chartTheme.value),
-    drawn.size.value
-  )
-);
 </script>
 
 <style>

@@ -17,10 +17,12 @@ import {
   Waypoints,
   Grid2X2,
   Bot,
+  AppWindow, Users, Microscope, Presentation, GraduationCap, Briefcase, ShoppingCart, Package, ClipboardList, ChartNoAxesCombined, Wallet, HeartPulse, Building2, Globe, Calendar, Folder, GitBranch,
 } from "lucide-vue-next";
 
 /** Applications name icons; the shell resolves a curated set so the rail does not pull in whole icon packs. */
 const appIcons: Record<string, Component> = {
+  'app-window':AppWindow,users:Users,microscope:Microscope,presentation:Presentation,'graduation-cap':GraduationCap,briefcase:Briefcase,'shopping-cart':ShoppingCart,package:Package,'clipboard-list':ClipboardList,chart:ChartNoAxesCombined,wallet:Wallet,'heart-pulse':HeartPulse,building:Building2,globe:Globe,calendar:Calendar,book:BookOpen,folder:Folder,workflow:GitBranch,database:Database,shield:ShieldCheck,
   'agent-builder':Bot,
   gallery: Grid2X2,
   /** 主页 */

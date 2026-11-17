@@ -4,6 +4,7 @@ import static io.ontomato.dataengine.service.agent.OntologyAgentStore.*;
 
 import com.alibaba.fastjson2.*;
 import com.alibaba.fastjson2.schema.JSONSchema;
+import io.ontomato.dataengine.schedules.ScheduleIdentity;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.KnowledgeService;
 import io.ontomato.dataengine.service.QueryGrantService;
@@ -16,239 +17,157 @@ import java.util.function.Consumer;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Service;
 
-/** Owns governance work and its write eligibility; execution and history belong to the runtime. */
+/** Owns governance records and write windows, independently of conversational hosts. */
 @Service
 @DependsOn("ontologyAgentStore")
 public class KnowledgeGovernanceService {
-  public static final String AGENT = "56a15178-ae22-4e6f-9974-ababeb42a676";
-  private final AgentCaller callers;
-  public static boolean isAgent(String id) { return id != null && id.startsWith("56a15178-"); }
-  public List<JSONObject> agents(String domain) {
-    var result=new ArrayList<JSONObject>();
-    result.add(JSONObject.of("id",AGENT,"name","Knowledge governance","description","Review knowledge and extract sourced ontology data","icon",null,"enabled",true));
-    for(var row:store.rows("SELECT id,name FROM ontology_governance_agents WHERE domain_id=? ORDER BY name,id",domain)) result.add(JSONObject.of("id",row.getString("id"),"name",row.getString("name"),"description","","icon",null,"enabled",true));
-    return result;
-  }
-  public JSONObject createAgent(String domain,String name) {
-    if(name==null||name.isBlank()||name.length()>200)throw AgentHttpException.invalid("A name of 1 to 200 characters is required");
-    String id="56a15178-"+UUID.randomUUID().toString().substring(9);
-    store.update("INSERT INTO ontology_governance_agents(id,domain_id,name) VALUES(?::uuid,?,?)",id,domain,name.strip());
-    return JSONObject.of("id",id,"name",name.strip());
-  }
-
   private final OntologyAgentStore store;
   private final AgentRuntimeClient runtime;
+  private final GovernanceRuntimeClient platform;
   private final OntologyAgentDefinitions definitions;
   private final QueryGrantService grants;
   private final KnowledgeService knowledge;
   private final AdminService admin;
+  private final ScheduleIdentity identities;
   @org.springframework.beans.factory.annotation.Autowired
   private io.ontomato.dataengine.service.IdentityService identityService;
   private final Map<String,JSONSchema> schemas = new HashMap<>();
 
   public KnowledgeGovernanceService(OntologyAgentStore store, AgentRuntimeClient runtime,
-      OntologyAgentDefinitions definitions, QueryGrantService grants, KnowledgeService knowledge,
-      AdminService admin, AgentCaller callers) {
-    this.callers=callers; this.store=store; this.runtime=runtime; this.definitions=definitions;
-    this.grants=grants; this.knowledge=knowledge; this.admin=admin;
+      GovernanceRuntimeClient platform, OntologyAgentDefinitions definitions, QueryGrantService grants,
+      KnowledgeService knowledge, AdminService admin, ScheduleIdentity identities) {
+    this.store=store; this.runtime=runtime; this.platform=platform; this.definitions=definitions;
+    this.grants=grants; this.knowledge=knowledge; this.admin=admin; this.identities=identities;
   }
 
   @PostConstruct
   public void initialize() {
     store.update("""
-      CREATE TABLE IF NOT EXISTS ontology_governance_sessions (
-        id uuid PRIMARY KEY REFERENCES ontology_agent_sessions(id), latest_run_id uuid,
-        revision bigint NOT NULL DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS ontology_governance_records (
+        id uuid PRIMARY KEY, owner_id text NOT NULL, domain_id text NOT NULL,
+        latest_run_id uuid, revision bigint NOT NULL DEFAULT 0);
+      CREATE INDEX IF NOT EXISTS ontology_governance_records_owner ON ontology_governance_records(domain_id,owner_id);
+      CREATE TABLE IF NOT EXISTS ontology_governance_windows (
+        run_id uuid PRIMARY KEY, record_id uuid NOT NULL REFERENCES ontology_governance_records(id),
+        external boolean NOT NULL, runtime_host_id text, session_id uuid,
+        expires_at timestamptz NOT NULL, closed boolean NOT NULL DEFAULT false, input_message text);
+      CREATE INDEX IF NOT EXISTS ontology_governance_windows_record ON ontology_governance_windows(record_id);
       CREATE TABLE IF NOT EXISTS ontology_governance_work (
-        run_id uuid PRIMARY KEY REFERENCES ontology_agent_runs(id),
-        work jsonb NOT NULL, revision bigint NOT NULL DEFAULT 0);
-      CREATE TABLE IF NOT EXISTS ontology_governance_agents(id uuid PRIMARY KEY,domain_id text NOT NULL,name text NOT NULL);
+        run_id uuid PRIMARY KEY, work jsonb NOT NULL, revision bigint NOT NULL DEFAULT 0);
+      ALTER TABLE ontology_governance_work DROP CONSTRAINT IF EXISTS ontology_governance_work_run_id_fkey;
       """);
     var input = JSON.parseObject(definitions.resource("ontology-skills/knowledge-governance/references/inputs.json"));
     for (String key : input.keySet()) schemas.put(key,JSONSchema.of(input.getJSONObject(key)));
+  }
+
+  public void publishSkill() throws Exception {
+    var files=new ArrayList<Map<String,String>>();
+    for (String path:List.of("SKILL.md","scripts/governance.mjs","references/commands.md","references/extraction.md"))
+      files.add(Map.of("path",path,"content",definitions.resource("ontology-skills/knowledge-governance/"+path)));
+    runtime.json(null,"governance-skill","/v1/skills","POST",Map.of("skill",Map.of(
+      "namespace",Map.of("kind","provider","provider","ontology"),"name","knowledge-governance"),"files",files),null);
   }
 
   private static JSONObject emptyWork() {
     return JSONObject.of("summary","","notes","","reviewedKnowledgeIds",new JSONArray(),
       "knowledgeTotal",null,"issues",new JSONArray(),"sources",new JSONArray());
   }
-  private JSONObject session(String id, Owner owner) {
-    var row=store.session(id,owner);
-    if (!isAgent(row.getString("agent_id"))) throw AgentHttpException.missing();
-    return row;
-  }
   private JSONObject state(String id, Owner owner, boolean lock) {
-    session(id,owner);
-    return store.one("SELECT * FROM ontology_governance_sessions WHERE id=?" + (lock?" FOR UPDATE":""),uuid(id));
-  }
-  public boolean create(String id, Owner owner, boolean external) throws Exception {
-    return create(id,owner,external,AGENT);
-  }
-  public boolean create(String id, Owner owner, boolean external,String agent) throws Exception {
-    if(agents(owner.domainId()).stream().noneMatch(value->agent.equals(value.getString("id"))))throw AgentHttpException.missing();
-    boolean replayed=store.transaction(() -> {
-      boolean existed=store.createSession(id,owner,agent,!external);
-      store.update("INSERT INTO ontology_governance_sessions(id) VALUES(?) ON CONFLICT DO NOTHING",uuid(id));
-      return existed;
-    });
-    if (!external) runtime.json(owner.domainId(),id,"/v1/sessions","POST",Map.of(),id);
-    return replayed;
+    return store.one("SELECT * FROM ontology_governance_records WHERE id=? AND owner_id=? AND domain_id=?" + (lock?" FOR UPDATE":""),
+      uuid(id),owner.userId(),owner.domainId());
   }
   public JSONObject work(String id, Owner owner) {
-    var state=state(id,owner,false);
-    String run=state.getString("latest_run_id");
-    return JSONObject.of("revision",state.getLongValue("revision"),"work",run==null?emptyWork():
+    var record=state(id,owner,false);
+    String run=record.getString("latest_run_id");
+    return JSONObject.of("revision",record.getLongValue("revision"),"work",run==null?emptyWork():
       store.one("SELECT work FROM ontology_governance_work WHERE run_id=?",uuid(run)).getJSONObject("work"));
   }
 
-  private record Admission(JSONObject row, boolean replayed) {}
-  /** A previous run holds the session only while the runtime still runs it (an external run: while open). */
-  private boolean busy(Owner owner,String run) {
-    var row=store.one("SELECT open,external FROM ontology_agent_runs WHERE id=?",uuid(run));
-    if (!row.getBooleanValue("open")) return false;
-    if (row.getBooleanValue("external")) return true;
-    try { return "running".equals(runtime.status(owner.domainId(),run).getString("status")); }
-    catch (AgentHttpException missing) { if (missing.status()==404) return false; throw missing; }
-    catch (Exception failure) { throw new IllegalStateException(failure); }
-  }
-  private Admission admit(String id,String run,JSONObject input,OntologyAgentAccess.Context context,boolean external) {
-    Owner owner=context.owner();
-    // Asked before the transaction: a runtime call does not belong inside it.
-    String previousRun=state(id,owner,false).getString("latest_run_id");
-    boolean previousBusy=previousRun!=null && busy(owner,previousRun);
+  private JSONObject open(String id,String run,Owner owner,boolean external,String host,String session,long deadline,String message) {
+    if (deadline<=System.currentTimeMillis()) throw closed();
     return store.transaction(() -> {
-      var state=state(id,owner,true);
-      if (session(id,owner).getBooleanValue("runtime_owned")==external)
-        throw conflict("Execution owner changed");
-      var previous=store.rows("SELECT * FROM ontology_agent_runs WHERE id=?",uuid(run));
-      if (!previous.isEmpty()) {
-        var row=previous.get(0);
-        if (!id.equals(row.getString("session_id")) || !AgentJson.hash(input).equals(row.getString("input_hash")))
-          throw conflict("Run input changed");
-        return new Admission(row,true);
+      store.update("INSERT INTO ontology_governance_records(id,owner_id,domain_id) VALUES(?,?,?) ON CONFLICT DO NOTHING",uuid(id),owner.userId(),owner.domainId());
+      var record=state(id,owner,true);
+      var existing=store.rows("SELECT * FROM ontology_governance_windows WHERE run_id=?",uuid(run));
+      if (!existing.isEmpty()) {
+        var row=existing.getFirst();
+        if (!id.equals(row.getString("record_id")) || row.getBooleanValue("external")!=external
+            || (external && !Objects.equals(message,row.getString("input_message")))
+            || !Objects.equals(host,row.getString("runtime_host_id")) || !Objects.equals(session,row.getString("session_id")))
+          throw conflict("Governance window binding changed");
+        gate(id,run,owner);
+        return window(row,id);
       }
-      String latest=state.getString("latest_run_id");
-      JSONObject work=emptyWork();
+      String latest=record.getString("latest_run_id");
+      var work=emptyWork();
       if (latest!=null) {
-        var old=store.one("SELECT * FROM ontology_agent_runs WHERE id=? FOR UPDATE",uuid(latest));
-        boolean active=latest.equals(previousRun) ? previousBusy : old.getBooleanValue("open");
-        if (!external && active)
-          throw new AgentHttpException(409,"SESSION_BUSY","A governance run is active");
-        store.update("UPDATE ontology_agent_runs SET open=false WHERE id=?",uuid(latest));
+        store.update("UPDATE ontology_governance_windows SET closed=true WHERE run_id=?",uuid(latest));
         work=store.one("SELECT work FROM ontology_governance_work WHERE run_id=?",uuid(latest)).getJSONObject("work");
       }
-      long deadline=System.currentTimeMillis()+600_000;
-      if (context.expiresAt()!=null) deadline=Math.min(deadline,context.expiresAt());
-      if (deadline<=System.currentTimeMillis()) throw closed();
-      store.update("INSERT INTO ontology_agent_runs(id,session_id,input_hash,request,open,deadline,external,decision_revision) VALUES(?,?,?,?::jsonb,true,?::timestamptz,?,0)",
-        uuid(run),uuid(id),AgentJson.hash(input),AgentJson.json(input),Instant.ofEpochMilli(deadline).toString(),external);
+      store.update("INSERT INTO ontology_governance_windows(run_id,record_id,external,runtime_host_id,session_id,expires_at,input_message) VALUES(?,?,?,?,?,?::timestamptz,?)",
+        uuid(run),uuid(id),external,host,session==null?null:uuid(session),Instant.ofEpochMilli(deadline).toString(),message);
       store.update("INSERT INTO ontology_governance_work(run_id,work) VALUES(?,?::jsonb)",uuid(run),AgentJson.json(work));
-      store.update("UPDATE ontology_governance_sessions SET latest_run_id=?,revision=revision+1 WHERE id=?",uuid(run),uuid(id));
-      store.update("UPDATE ontology_agent_sessions SET title=CASE WHEN title='' THEN ? ELSE title END,updated_at=now() WHERE id=?",input.getString("message"),uuid(id));
-      return new Admission(store.run(id,run,owner),false);
+      store.update("UPDATE ontology_governance_records SET latest_run_id=?,revision=revision+1 WHERE id=?",uuid(run),uuid(id));
+      return window(store.one("SELECT * FROM ontology_governance_windows WHERE run_id=?",uuid(run)),id);
     });
   }
-
-  public JSONObject send(String id,String run,String message,String replyTo,OntologyAgentAccess.Context context) throws Exception {
-    validateMessage(message);
-    var actor=callers.open(UUID.randomUUID().toString(),context);
-    var agent=JSONObject.of("providerId","ontology","agentId",session(id,context.owner()).getString("agent_id"));
-    runtime.json(context.owner().domainId(),run,"/v1/channel/sessions/"+id+"/bind","POST",JSONObject.of("agent",agent,"actor",actor),null);
-    var source=JSONObject.of("session",JSONObject.of("providerId","ontology","sessionId",id),"runId",run);
-    var request=JSONObject.of(
-      "credential",AgentChannelRuns.credential(context),"language",context.language(),"channel",JSONObject.of("agent",agent,"actor",actor,"requestedBy",null,"root",source,
-        "authority",JSONObject.of("classNames",List.of(),"executionKind","live")),
-      "input",JSONObject.of("role","user","content",message,"timestamp",System.currentTimeMillis()));
-    if(replyTo!=null) request.put("replyTo",replyTo);
-    return runtime.json(context.owner().domainId(),run,"/v1/channel/sessions/"+id+"/runs","POST",request,run);
+  private JSONObject window(JSONObject row,String id) {
+    return JSONObject.of("id",id,"sessionId",row.getBooleanValue("external")?id:row.getString("session_id"),"runId",row.getString("run_id"),"expiresAt",Instant.parse(row.getString("expires_at")).toString());
   }
-
-  public static void validateMessage(String message) {
-    if (message==null || message.isBlank() || message.length()>20_000)
-      throw AgentHttpException.invalid("A message of 1 to 20000 characters is required");
-  }
-
-  public JSONObject prepare(String id,String run,JSONObject input,OntologyAgentAccess.Context context) throws Exception {
-    String message=input.getString("content");
-    session(id,context.owner());
-    var snapshot=runtime.json(context.owner().domainId(),id,"/v1/sessions/"+id,"GET",null,null);
-    var latest=snapshot.getJSONObject("latestRun");
-    if (latest!=null && !"running".equals(latest.getJSONObject("run").getString("status")))
-      settle(latest.getJSONObject("run").getString("id"));
-    var admission=admit(id,run,JSONObject.of("message",message,"input",input),context,false);
-    var row=admission.row();
-    long deadline=Instant.parse(row.getString("deadline")).toEpochMilli();
-    try {
-      definitions.publishGovernance();
-      var token=grants.issue(context.owner().userId(),context.owner().domainId(),"knowledge-governance",run,deadline,List.of(),null);
-      store.transaction(() -> gate(id,run,context.owner()));
-      return JSONObject.of(
-        "language",context.language(),
-        "definition",definitions.governance(context.owner().domainId(), context.language(),deadline-System.currentTimeMillis(),session(id,context.owner()).getString("agent_id")),
-        "input",input,
-
-        "environment",JSONObject.of("values",JSONObject.of("ONTOMATO_ONTOLOGY_URL",runtime.ontologyUrl(),"ONTOMATO_GOVERNANCE_ID",id),
-          "secrets",JSONObject.of("ONTOMATO_GOVERNANCE_TK",token)));
-    } catch (Exception error) {
-      // Seal this intent even if the runtime accepted it before the transport failed.
-      store.closeRun(id,run,context.owner());
-      throw error;
-    }
-  }
-
-  public JSONObject begin(String key,JSONObject input,OntologyAgentAccess.Context context) throws Exception {
+  public JSONObject begin(String key,JSONObject input,OntologyAgentAccess.Context context) {
     validate("begin",input);
     String id=input.containsKey("id")?AgentJson.id(input.getString("id")):key;
-    if (!input.containsKey("id")) create(id,context.owner(),true);
-    var admission=admit(id,key,input,context,true);
-    return JSONObject.of("id",id,"sessionId",id,"runId",key,"expiresAt",Instant.parse(admission.row().getString("deadline")).toString());
+    long deadline=System.currentTimeMillis()+600_000;
+    if (context.expiresAt()!=null) deadline=Math.min(deadline,context.expiresAt());
+    return open(id,key,context.owner(),true,null,null,deadline,input.getString("message"));
   }
-  public void settle(String run) {
-    store.update("UPDATE ontology_agent_runs SET open=false WHERE id=?",uuid(run));
+  public JSONObject registerPlatform(JSONObject input,OntologyAgentAccess.Context context) {
+    AgentJson.fields(input,"recordId","domainId","ownerId","runtimeHostId","sessionId","runId","expiresAt");
+    var owner=context.owner();
+    if (!owner.domainId().equals(input.getString("domainId")) || !identities.hostOwner(owner.userId()).equals(input.getString("ownerId"))
+        || !"workbench".equals(input.getString("runtimeHostId"))) throw AgentHttpException.missing();
+    String id=AgentJson.id(input.getString("recordId")),session=AgentJson.id(input.getString("sessionId")),run=AgentJson.id(input.getString("runId"));
+    long deadline=Instant.parse(AgentJson.text(input,"expiresAt")).toEpochMilli();
+    if (context.expiresAt()!=null) deadline=Math.min(deadline,context.expiresAt());
+    var result=open(id,run,owner,false,"workbench",session,deadline,null);
+    result.put("token",grants.issue(owner.userId(),owner.domainId(),"knowledge-governance",run,
+      Instant.parse(result.getString("expiresAt")).toEpochMilli(),List.of(),null));
+    return result;
   }
-  public void cancel(String id,String run,Owner owner) throws Exception {
-    session(id,owner);
-    store.closeRun(id,run,owner);
-    var row=store.run(id,run,owner);
-    if (!row.getBooleanValue("external"))
-      runtime.json(owner.domainId(),run,"/v1/sessions/"+id+"/run-intents/"+run+"/cancel","POST",Map.of(),null);
+  public void closePlatform(String run,String domain) {
+    store.update("UPDATE ontology_governance_windows w SET closed=true FROM ontology_governance_records r WHERE w.record_id=r.id AND w.run_id=? AND r.domain_id=? AND NOT w.external",uuid(run),domain);
   }
-  public void delete(String id,Owner owner) throws Exception {
-    var row=session(id,owner);
-    for (var run:store.rows("SELECT id FROM ontology_agent_runs WHERE session_id=?",uuid(id)))
-      cancel(id,run.getString("id"),owner);
-    if (row.getBooleanValue("runtime_owned")) runtime.json(owner.domainId(),id,"/v1/sessions/"+id,"DELETE",null,null);
+  public void closeExternal(String id,String run,Owner owner) {
+    state(id,owner,false);
+    var row=store.one("SELECT external FROM ontology_governance_windows WHERE record_id=? AND run_id=?",uuid(id),uuid(run));
+    if (!row.getBooleanValue("external")) throw AgentHttpException.missing();
+    store.update("UPDATE ontology_governance_windows SET closed=true WHERE record_id=? AND run_id=?",uuid(id),uuid(run));
+  }
+  public void deleteByUser(String userId) {
     store.transaction(() -> {
-      state(id,owner,true);
-      store.update("DELETE FROM ontology_governance_work WHERE run_id IN (SELECT id FROM ontology_agent_runs WHERE session_id=?)",uuid(id));
-      store.update("DELETE FROM ontology_governance_sessions WHERE id=?",uuid(id));
-      store.update("DELETE FROM ontology_agent_runs WHERE session_id=?",uuid(id));
-      store.update("DELETE FROM ontology_agent_sessions WHERE id=?",uuid(id));
+      store.update("DELETE FROM ontology_governance_work WHERE run_id IN (SELECT w.run_id FROM ontology_governance_windows w JOIN ontology_governance_records r ON r.id=w.record_id WHERE r.owner_id=?)",userId);
+      store.update("DELETE FROM ontology_governance_windows WHERE record_id IN (SELECT id FROM ontology_governance_records WHERE owner_id=?)",userId);
+      store.update("DELETE FROM ontology_governance_records WHERE owner_id=?",userId);
       return null;
     });
   }
-
-  public void deleteByUser(String userId) throws Exception {
-    for (var row:store.rows("SELECT id,domain_id FROM ontology_agent_sessions WHERE user_id=? AND agent_id::text LIKE '56a15178-%'",userId))
-      delete(row.getString("id"),new Owner(userId,row.getString("domain_id")));
-  }
-
   private static AgentHttpException closed() {
     return new AgentHttpException(409,"GOVERNANCE_RUN_CLOSED","Governance run is closed");
   }
   private JSONObject gate(String id,String run,Owner owner) {
-    var state=state(id,owner,true);
-    var row=store.one("SELECT * FROM ontology_agent_runs WHERE id=? AND session_id=? FOR UPDATE",uuid(run),uuid(id));
-    if (!run.equals(state.getString("latest_run_id")) || !row.getBooleanValue("open")
-        || Instant.parse(row.getString("deadline")).toEpochMilli()<=System.currentTimeMillis()) throw closed();
+    var record=state(id,owner,true);
+    var row=store.one("SELECT * FROM ontology_governance_windows WHERE run_id=? AND record_id=? FOR UPDATE",uuid(run),uuid(id));
+    if (!run.equals(record.getString("latest_run_id")) || row.getBooleanValue("closed")
+        || Instant.parse(row.getString("expires_at")).toEpochMilli()<=System.currentTimeMillis()) throw closed();
     return row;
   }
-  public void requireRun(String id,String run,Owner owner) throws Exception {
-    session(id,owner);
-    var row=store.run(id,run,owner);
-    // A governance write is admitted only while its run is running; the lifecycle view is enough to tell.
-    if (!row.getBooleanValue("external")
-        && !"running".equals(runtime.status(owner.domainId(),run).getString("status"))) settle(run);
+  private void requireRunning(String domain,String session,String run) {
+    if (!"running".equals(platform.status(domain,session,run).getString("status"))) throw closed();
+  }
+  public void requireRun(String id,String run,Owner owner) {
+    state(id,owner,false);
+    var row=store.one("SELECT * FROM ontology_governance_windows WHERE run_id=? AND record_id=?",uuid(run),uuid(id));
+    if (!row.getBooleanValue("external")) requireRunning(owner.domainId(),row.getString("session_id"),run);
     store.transaction(() -> gate(id,run,owner));
   }
   private JSONObject mutate(String id,String run,Owner owner,Consumer<JSONObject> change) {
@@ -257,8 +176,7 @@ public class KnowledgeGovernanceService {
       var work=store.one("SELECT work FROM ontology_governance_work WHERE run_id=?",uuid(run)).getJSONObject("work");
       change.accept(work);
       store.update("UPDATE ontology_governance_work SET work=?::jsonb,revision=revision+1 WHERE run_id=?",AgentJson.json(work),uuid(run));
-      store.update("UPDATE ontology_governance_sessions SET revision=revision+1 WHERE id=?",uuid(id));
-      store.update("UPDATE ontology_agent_sessions SET updated_at=now() WHERE id=?",uuid(id));
+      store.update("UPDATE ontology_governance_records SET revision=revision+1 WHERE id=?",uuid(id));
       return work;
     });
   }
@@ -338,10 +256,18 @@ public class KnowledgeGovernanceService {
     validate(action,input);
     requireRun(id,run,owner);
     if(action.equals("read_input")) {
-      var request=store.run(id,run,owner).getJSONObject("request");
-      String text=request.getString("message");
-      if(text==null||text.isBlank())throw AgentHttpException.invalid("The current run has no source message");
-      var src=source("input",run,"Current user message",text);
+      var row=store.one("SELECT * FROM ontology_governance_windows WHERE record_id=? AND run_id=?",uuid(id),uuid(run));
+      JSONObject src;
+      String text;
+      if(row.getBooleanValue("external")) {
+        text=row.getString("input_message");
+        src=source("input",run,"External governance material",text);
+      } else {
+        var target=JSONObject.of("hostId",row.getString("runtime_host_id"),"runId",run);
+        text=history(target,owner).getString("question");
+        src=source("history",AgentJson.json(target),"Current user message","");
+      }
+      if(text==null || text.isBlank()) throw AgentHttpException.invalid("The current run has no source message");
       mutate(id,run,owner,w->remember(w,List.of(src)));
       return JSONObject.of("sourceId",src.getString("id"),"text",text);
     }
@@ -418,7 +344,7 @@ public class KnowledgeGovernanceService {
     }
     if (source==null) throw AgentHttpException.missing();
     String kind=source.getString("kind");
-    if(kind.equals("input")){var row=store.run(id,source.getString("target"),owner);return JSONObject.of("source",source,"page",page(List.of(material(sourceId,source.getString("title"),row.getJSONObject("request").getString("message"))),JSONObject.of("offset",offset)));}
+    if(kind.equals("input")){var row=store.one("SELECT input_message FROM ontology_governance_windows WHERE record_id=? AND run_id=?",uuid(id),uuid(source.getString("target")));return JSONObject.of("source",source,"page",page(List.of(material(sourceId,source.getString("title"),row.getString("input_message"))),JSONObject.of("offset",offset)));}
     if (kind.equals("artifact")) return JSONObject.of("source",source,"page",null);
     String target=source.getString("target");
     var values=kind.equals("history")?List.of(material(target,source.getString("title"),history(JSON.parseObject(target),owner))):originals(kind,owner.domainId());

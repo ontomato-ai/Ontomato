@@ -38,10 +38,13 @@ let functions: Record<string, unknown>[];
 let metricDetail: Record<string, unknown>;
 let dataAdapter: string;
 let instanceNodeCount: number;
+let largeOverview: boolean;
 let dataAdapters: DataAdapterInfo[];
 let knowledge: Record<string, Record<string, unknown>>;
 /** Knowledge IDs whose delete returns a business failure. */
 let knowledgeDeleteFails: Set<string>;
+/** The page draft each run wrote, as the agent platform serves it through `page-draft`. */
+let drafts: Map<string, unknown>;
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -64,6 +67,9 @@ function respond(url: string, body?: Record<string, unknown>): Response {
   const status = statusFor(path);
   if (status !== 200) return json({ success: false }, status);
   if (path === "/admin/getBussinessKnowledge") return json({ success: true, data: knowledge });
+  // Only the platform's own address answers a draft: a page asking the data engine for one gets the empty engine answer.
+  const draft = new URL(url, "http://page.invalid").pathname.match(/\/api\/assistant\/sessions\/[^/]+\/runs\/([^/]+)\/page-draft$/);
+  if (draft) return json(drafts.get(draft[1]!) ?? {});
   if (path.endsWith("BussinessKnowledge") && body?.knowledgeText === "")
     return json({ success: false, message: "Business knowledge content is required" });
   if (path === "/admin/editBussinessKnowledge") {
@@ -100,7 +106,7 @@ function respond(url: string, body?: Record<string, unknown>): Response {
     classes: [{ class: "Order", instanceCount: instanceNodeCount }, { class: "Item", instanceCount: 1 }],
     relationships: [{ source: "Order", target: "Item", count: 1 }],
     relationTypes: ["has"],
-    overviewNodes: [{ id: "Order:1", name: "First order", class: "Order" }, { id: "Item:2", name: "Spare part", class: "Item" }],
+    overviewNodes: largeOverview ? Array.from({length: 1000}, (_, index) => ({ id: `Order:${index + 1}`, name: `Order ${index + 1}`, class: "Order" })) : [{ id: "Order:1", name: "First order", class: "Order" }, { id: "Item:2", name: "Spare part", class: "Item" }],
     overviewEdges: [{ source: "Order:1", target: "Item:2", type: "has" }],
     nodeCount: instanceNodeCount, edgeCount: 1, componentCount: 1, isolatedNodeCount: 0,
     largestComponentSize: instanceNodeCount, version: "v1", generatedAt: "2026-10-10T00:00:00Z",
@@ -139,6 +145,7 @@ beforeEach(() => {
   graphRecord.nodeUpdates = [];
   graphRecord.edgeUpdates = [];
   instanceNodeCount = 2;
+  largeOverview = false;
   requests = [];
   mountedApps = [];
   held = new Map();
@@ -159,6 +166,7 @@ beforeEach(() => {
     k2: { knowledgeID: "k2", knowledgeTitle: "Legacy note", knowledgeText: "t2", status: 0 },
   };
   knowledgeDeleteFails = new Set();
+  drafts = new Map();
   vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
     const path = url.replace(/^.*\/data-query/, "");
     const body = init.body === undefined ? undefined : JSON.parse(String(init.body));
@@ -373,6 +381,27 @@ describe("Manager pages in the service router", () => {
     expect(graphRecord.layouts.length).toBe(0);
   });
 
+  it("expands neighbors beyond a full overview and adds an anchor for a newly encountered class", async () => {
+    largeOverview = true;
+    instanceNodeCount = 50000;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
+    const { root } = mountHost({ ...base, view: "/browser/data/Order" });
+    await settle();
+    (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[0] as HTMLElement).click();
+    await vi.waitFor(async () => {
+      await settle();
+      expect(graphRecord.dataBatches.flatMap(batch => batch.nodes || []).filter((node: any) => node.data?.node).length).toBe(1000);
+    }, { timeout: 10000 });
+    graphHandlers["node:click"]({ target: { id: "Order:1" } });
+    await settle();
+    (root().querySelector(".node-actions button") as HTMLButtonElement).click();
+    await settle();
+    expect(requests.some(request => request.url.endsWith("/instanceGraph/neighborhood"))).toBe(true);
+    const graphNodes = graphRecord.dataBatches.flatMap(batch => batch.nodes || []);
+    expect(graphNodes.some((node: any) => node.id === "Item:2")).toBe(true);
+    expect(graphNodes.some((node: any) => node.id === 'overview-class:"Item"')).toBe(true);
+  }, 20000);
+
   it("aggregates overview connections by default and reveals selected instance connections", async () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
     const { root } = mountHost({ ...base, view: "/browser/data/Order" });
@@ -437,7 +466,7 @@ describe("Manager pages in the service router", () => {
     (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[0] as HTMLElement).click();
     await settle();
 
-    const input = root().querySelector<HTMLInputElement>(".node-search input")!;
+    const input = root().querySelector<HTMLInputElement>(".instance-search input")!;
     expect(input).not.toBeNull();
     input.focus();
     input.value = "spare";
@@ -528,7 +557,11 @@ describe("Manager pages in the service router", () => {
     (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[0] as HTMLElement).click();
     await settle();
     graphRecord.zoom = 3;
-    (root().querySelector(".sample-legend button") as HTMLElement).click();
+    (root().querySelector(".node-search .el-select .el-select__wrapper") as HTMLElement).click();
+    await settle();
+    const option = [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")]
+      .find(item => item.textContent?.includes("Order-label"))!;
+    option.click();
     await settle();
     (root().querySelector(".instance-candidates button") as HTMLElement).click();
     await settle();
@@ -1243,6 +1276,75 @@ describe("Manager business knowledge page", () => {
     });
     expect(root().querySelector('[role="alert"]')).not.toBeNull();
     expect(document.body.querySelector(':scope > [role="alert"]')).toBeNull();
+  });
+
+  describe("a knowledge draft an agent wrote", () => {
+    const run = "run-1";
+    const link = (path = "outputs/drafts/knowledge-1.page-draft.json") =>
+      `/ontology/knowledge?draftSessionId=session-1&draftRunId=${run}&draftPath=${encodeURIComponent(path)}`;
+    const writes = () => requests.filter((request) =>
+      request.url.endsWith("/admin/editBussinessKnowledge") || request.url.endsWith("/admin/addBussinessKnowledge"));
+    const filled = () => ({
+      knowledgeID: "k-1", knowledgeTitle: "Refund window", knowledgeText: "Refunds within 14 days",
+      knowledgeTags: ["policy"], status: 1,
+    });
+
+    it("fills an update against the real entry, marks the changed field and calls no write endpoint", async () => {
+      drafts.set(run, { pageKey: "business-knowledge", operation: "knowledge.update", target: { id: "k-1" }, form: filled() });
+      const { root } = mountHost({ ...base, view: link() });
+      await settle();
+
+      const form = root().querySelector(".knowledge-form");
+      expect(form).not.toBeNull();
+      expect(form!.querySelector<HTMLInputElement>(".el-input__inner")!.value).toBe("Refund window");
+      expect(form!.querySelector<HTMLTextAreaElement>(".el-textarea__inner")!.value).toBe("Refunds within 14 days");
+      const marked = [...form!.querySelectorAll(".el-form-item.draft-changed")].map((item) => item.textContent);
+      expect(marked.some((text) => text?.includes("Title"))).toBe(true);
+      expect(marked.some((text) => text?.includes("Content"))).toBe(true);
+      expect(writes()).toEqual([]);
+    });
+
+    it("saves the filled form through the page's own save request after the reader saves, and the address drops the draft", async () => {
+      drafts.set(run, { pageKey: "business-knowledge", operation: "knowledge.update", target: { id: "k-1" }, form: filled() });
+      const { root, host } = mountHost({ ...base, view: link() });
+      await settle();
+      expect(host.view).toContain("draftPath");
+
+      buttonIn(root(), "Save").click();
+      await settle();
+
+      expect(writes().map((request) => request.body)).toEqual([filled()]);
+      expect(host.view).not.toContain("draftPath");
+    });
+
+    it("reports a draft of another page instead of filling the form", async () => {
+      drafts.set(run, { pageKey: "agent-settings", operation: "knowledge.update", target: { id: "k-1" }, form: filled() });
+      const { root } = mountHost({ ...base, view: link() });
+      await settle();
+
+      expect(root().querySelector(".knowledge-form")).toBeNull();
+      // The refusal is the page's own wording, with the other page's key in it — never a raw sentence from the code.
+      const alerts = [...root().querySelectorAll('[role="alert"]')].map((item) => item.textContent).join(" ");
+      expect(alerts).toContain("another page (agent-settings)");
+    });
+
+    it("asks before replacing a manual edit that has unsaved changes, and a refusal keeps it", async () => {
+      drafts.set(run, { pageKey: "business-knowledge", operation: "knowledge.update", target: { id: "k-1" }, form: filled() });
+      const { root, host } = mountHost({ ...base, view: "/ontology/knowledge" });
+      await settle();
+      buttonIn(root(), "Edit").click();
+      await settle();
+      typeInto(root().querySelector<HTMLInputElement>(".knowledge-form input")!, "Manual change");
+      await settle();
+
+      // The same page at a draft's address fills nothing over a manual edit until the reader agrees to drop it.
+      host.view = link();
+      await settle();
+      expect(confirmDialog()).not.toBeNull();
+      buttonIn(confirmDialog()!, "Cancel").click();
+      await settle();
+      expect(root().querySelector<HTMLInputElement>(".knowledge-form input")!.value).toBe("Manual change");
+    });
   });
 
   it("deletes after a viewport confirmation; messages stay in the Manager frame", async () => {

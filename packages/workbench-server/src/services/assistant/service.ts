@@ -1,3 +1,5 @@
+import { closeGovernanceWindow } from "./governance";
+import { needsRetrievalScope } from "./skills";
 import { agentHostSendResultSchema, type AgentHostSendRequest } from "@ontomato/contracts/agent-host";
 import { resolveLocale } from "../../i18n";
 import { assertAppBuilderAccess } from "../app-builder/access";
@@ -11,17 +13,14 @@ import { prepareAnalystRun } from "./prepare";
 import { prepareAppBuilderRun } from "../app-builder/prepare";
 import {isAppBuilderKind} from '../app-builder/definition';
 import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
-import { assistantDescription, assistantName } from "./labels";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   assistantFeedbackSchema,
   type AssistantFeedbackWrite,
 } from "@ontomato/contracts/assistant-chat";
-import {
-  agentHostSessionSchema,
-  agentHostAgentSchema,
-} from "@ontomato/contracts/agent-host";
+import { agentHostSessionSchema } from "@ontomato/contracts/agent-host";
+import { listAssistantAgents } from "./agents";
 import {
   runtimeArtifactSchema,
   type RuntimeArtifact,
@@ -29,6 +28,7 @@ import {
 import {
   datasetPayloadSchema,
 } from "@ontomato/contracts/data-retrieval";
+import { pageDraftSchema } from "@ontomato/contracts/page-draft";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { withDomainSkills } from "../skills/operations";
 import {
@@ -70,19 +70,7 @@ export const assistantService = {
     const agentId = "agentId" in input ? input.agentId : (await assistantStore.session(input.sessionId, owner)).agent_id;
     return isAppBuilderKind((await assistantStore.agent(agentId, owner)).kind);
   },
-  async agents(owner: AssistantOwner, locale?: string) {
-    return {
-      agents: (await assistantStore.agents(owner.domainId, locale)).map((a) =>
-        agentHostAgentSchema.parse({
-          id: a.id,
-          name: assistantName(a, locale),
-          description: assistantDescription(a, locale),
-          icon: a.icon ?? null,
-          enabled: a.enabled,
-        }),
-      ),
-    };
-  },
+  agents: listAssistantAgents,
   /** Scheduled tasks start their conversations here too, marked with their origin. */
   async create(id: string, owner: AssistantOwner, input: { agentId: string; workspaceId?: string }, origin: SessionRow["origin"] = "user") {
     const { row, replayed } = await assistantStore.create(
@@ -225,9 +213,11 @@ export const assistantService = {
     return {client:new ChannelProcessClient(owner,sessionId,taskId),process:task.process};
   },
   /** Parent completion records its own turn only; delegated executions retain their authorization. */
-  async settleTurn(id: string) { await assistantStore.settled(id); },
+  async settleTurn(id: string, owner: AssistantOwner) { await closeGovernanceWindow(id,owner); await assistantStore.settled(id); },
   async cancelScope(id: string,owner: AssistantOwner,credentials: AssistantCredentials) {
-    if (!await assistantStore.isBuilderRun(id,owner)) await new OntologyRetrievalClient(owner,id).closeScope(credentials);
+    await closeGovernanceWindow(id,owner);
+    const turn=await assistantStore.turn(id,owner);
+    if (turn.retrieval_scope_id) await new OntologyRetrievalClient(owner,turn.retrieval_scope_id).closeScope(credentials);
     await assistantStore.settled(id);
   },
   async prepare(body: AgentPrepareRequest, owner: AssistantOwner, credentials: AssistantCredentials): Promise<RuntimeStartRunRequest> {
@@ -237,7 +227,7 @@ export const assistantService = {
     if (context && !context.success) throw new HttpError(400,"App builder requires context.workspaceId containing an owned workspace UUID","CONTEXT_REQUIRED");
     const workspace = context?.success ? context.data.workspaceId : undefined;
     if (workspace) await new RuntimeClient(owner.domainId,undefined,owner.userId).request(`/v1/channel/sessions/${sessionId}/workspace`,"POST",{ workspaceId: workspace,ownerId: owner.userId });
-    const { row: session } = await assistantStore.create(sessionId,owner,a.id,"delegated",workspace);
+    const { row: session } = await assistantStore.create(sessionId,owner,a.id,"delegated",workspace,true);
     const message = input.content;
     const { row: turn } = await assistantStore.reserve(sessionId,id,message,owner,a.class_names);
     const request = await withDomainSkills(owner.domainId,async () => {
@@ -256,12 +246,17 @@ export const assistantService = {
       if (!a.class_names.length) throw new HttpError(403,"No authorized classes in the delegated scope","FORBIDDEN");
     }
     if (isAppBuilderKind(a.kind)) await assertAppBuilderAccess(credentials);
-    const profile = isAppBuilderKind(a.kind) ? null : await agentProfileForPrincipal(owner,credentials,a.id);
-    const ontologyContext = isAppBuilderKind(a.kind) || profile ? null : await assistantOntologyContext(a,credentials);
+    const {nativeProfileId}=await import('../product-assets/platform-assets');
+    const native=await nativeProfileId(owner.domainId,a.id);
+    if(native){const {requireProductUse}=await import('../product-assets/grants');await requireProductUse(owner,native);await requireProductUse(owner,a.id);if(!credentials.token?.startsWith('ap2.')){const {userScopedAgentCredentials}=await import('../product-assets/agent-principal');credentials=await userScopedAgentCredentials(owner.domainId,a.id,owner.userId,credentials.locale);}}
+    const profile = isAppBuilderKind(a.kind)||native ? null : await agentProfileForPrincipal(owner,credentials,a.id);
+    const ontologyContext = isAppBuilderKind(a.kind) || profile || !needsRetrievalScope(a.skills) ? null : await assistantOntologyContext(a,credentials);
     return { agent: a,ontologyContext };
   },
   async send(sessionId: string, id: string, input: AgentHostSendRequest, owner: AssistantOwner, credentials: AssistantCredentials) {
     const session = await assistantStore.session(sessionId, owner), a = await assistantStore.agent(session.agent_id, owner);
+    const {nativeProfileId}=await import('../product-assets/platform-assets');const native=await nativeProfileId(owner.domainId,a.id);
+    if(native){const {requireProductUse}=await import('../product-assets/grants');await requireProductUse(owner,native);await requireProductUse(owner,a.id);const {userScopedAgentCredentials}=await import('../product-assets/agent-principal');credentials=await userScopedAgentCredentials(owner.domainId,a.id,owner.userId,credentials.locale);}
     const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
     const actor = await openAgentCaller(owner, credentials), agent = { providerId: "workbench", agentId: session.agent_id };
     await client.request(`/v1/channel/sessions/${sessionId}/bind`, "POST", { agent, actor });
@@ -311,7 +306,7 @@ export const assistantService = {
           }
         }
       }
-      if (!view || view.status === "stopped") await this.settleTurn(turn.id);
+      if (!view || view.status === "stopped") await this.settleTurn(turn.id,owner);
     } catch (e) {
       logger.warn("Assistant turn reconciliation failed", {
         runId: turn.id,
@@ -346,6 +341,7 @@ export const assistantService = {
       if (runtime && runtime.run.sessionId !== sessionId)
         throw new HttpError(404, "Run not found");
     }
+    if (existing) await closeGovernanceWindow(id,owner);
     const c = new RuntimeClient(owner.domainId, undefined, owner.userId);
     await c.request(
       `/v1/sessions/${sessionId}/run-intents/${id}/cancel`,
@@ -370,8 +366,7 @@ export const assistantService = {
     }
     if (snapshot?.latestRun?.run.status === "running")
       throw new HttpError(409, "Conversation is running", "SESSION_BUSY");
-    const agent = await assistantStore.agent((await assistantStore.session(sessionId, owner)).agent_id, owner);
-    const scopes = isAppBuilderKind(agent.kind) ? [] : (await db().query(`SELECT retrieval_scope_id FROM ${table("assistant_turns")} WHERE session_id=$1`, [sessionId])).rows;
+    const scopes = (await db().query(`SELECT retrieval_scope_id FROM ${table("assistant_turns")} WHERE session_id=$1 AND retrieval_scope_id IS NOT NULL`, [sessionId])).rows;
     const removed = new Set<string>();
     for (const scope of scopes) {
       const ontology = new OntologyRetrievalClient(owner, scope.retrieval_scope_id);
@@ -435,9 +430,23 @@ export const assistantService = {
       );
     return { artifact: result.artifacts.at(-1) ?? null };
   },
+  /** The page draft a run wrote: its own artifact read, then the envelope every page receives. */
+  async pageDraft(
+    sessionId: string,
+    runId: string,
+    path: string,
+    owner: AssistantOwner,
+  ) {
+    const { artifact } = await this.resolve(sessionId, runId, path, owner);
+    if (!artifact) throw new HttpError(404, "Page draft not found");
+    return pageDraftSchema.parse(
+      JSON.parse((await this.content(sessionId, artifact.id, owner)).toString("utf-8")),
+    );
+  },
   async datasetSource(sessionId: string, id: string, owner: AssistantOwner) {
     const a = await this.artifact(sessionId, id, owner);
     for (const turn of await assistantStore.turns(sessionId)) {
+      if (!turn.retrieval_scope_id) continue;
       const ontology = new OntologyRetrievalClient(owner, turn.retrieval_scope_id);
       for (const link of await ontology.links()) {
         const evidence = await ontology.evidence(link.retrievalId, link.runId);

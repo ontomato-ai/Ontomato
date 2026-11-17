@@ -9,7 +9,7 @@ it.each(["apiKey", "token"] as const)("propagates the verified %s through listin
   const calls: { url: string; headers: Record<string, string> }[] = [];
   const fetch = vi.fn(async (url: string, init: { headers: Record<string, string>; method?: string }) => {
     calls.push({ url, headers: init.headers });
-    if (url.endsWith("/agents")) return new Response(JSON.stringify({ agents: [{ id: randomUUID(), name: "Assistant", description: "", icon: null, enabled: true }] }));
+    if (url.endsWith("/agents")) return new Response(JSON.stringify({ agents: [{ id: randomUUID(), name: "Assistant", description: "", icon: null, enabled: true, effectiveSkills: [] }] }));
     if (url.endsWith("/runs") && init.method === "POST") abort.abort();
     return new Response("{}");
   });

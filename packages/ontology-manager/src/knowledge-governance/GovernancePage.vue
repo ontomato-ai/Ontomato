@@ -1,311 +1,181 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch, type Component } from "vue";
-import { X } from "lucide-vue-next";
-import { AgentShell, createAgentHostClient, useAgentNav, useSessionRunFeed } from "@ontomato/agent-shell-ui";
-import {
-  AgentModelsPage,
-  ontologyAgentModelPages,
-  ontologyAgentModelSource,
-  useAgentModelLabels,
-  useLeaveConfirmation,
-  usePageAccess,
-} from "@ontomato/platform-shell";
-import { platformRoutes } from "@ontomato/platform-shell/routes";
-import "@ontomato/agent-shell-ui/style.css";
+import { computed, ref, watch } from "vue";
+import { ArrowLeft, X } from "lucide-vue-next";
 import {
   governanceSourceReadSchema, governanceWorkResponseSchema,
   type GovernanceSourceRead, type GovernanceWork,
 } from "@ontomato/contracts/knowledge-governance";
-import { useGovernanceText, useManagerClient, usePlatformText,useSharedText } from "../context";
-import { managerPaths } from "../navigation";
-import { governanceAgentId } from "./messages";
-import BusinessKnowledge from '../components/BusinessKnowledge.vue';
-import {ElButton,ElMessageBox} from 'element-plus';
+import { useGovernanceText, useManagerClient, useSharedText } from "../context";
 
 /**
- * Knowledge governance as an agent app (DESIGN.md "Agent apps"): the governance agent plus its pages, the report of
- * findings and the feedback the conversations were given on, and its agents' models at the foot of its column. The
- * report sits full or beside the conversation; the finding the reader selects is what "this" means in the next message.
- * Sources open inside the finding that cites them. The column lists a page only to an account that may open it.
+ * One governance record's report: the findings the review proposed and the sources it cites, read from the record
+ * itself. The conversation that produced the record is the agent platform's, so this page holds no shell, no
+ * conversation and no model selection of its own; it opens at `/governance/reports/:recordId`, whether a person or a
+ * scheduled task started that record's review, and the same component sits beside the conversation that wrote it.
+ *
+ * The finding the reader selected is `issueId`, part of the page's address rather than state of its own: the composer
+ * at the page's foot sends the page it was written on, so what is selected there is what a message is about, and the
+ * page keeps it when it moves between the conversation's side and its own address.
  */
 const props = defineProps<{
-  sessionId: string | null;
-  /** The page of this application the address opened, when it named one (the feedback records). */
-  page?: string | null;
-  /**
-   * The screens this application shows that are not this package's: the feedback records belong to the platform's
-   * pages, so the edition that assembles both hands the screen over rather than this package importing it.
-   */
-  screens?: Readonly<Record<string, Component>>;
+  recordId: string;
+  /** The finding this page shows as selected, when its address names one. */
+  issueId?: string | null;
+  /** Beside the conversation the shell draws the page's frame and closes it; at its own address this page does both. */
+  paired?: boolean;
 }>();
-const emit = defineEmits<{ session: [id: string | null]; page: [id: string | null] }>();
+const emit = defineEmits<{ back: []; select: [id: string | null] }>();
 const manager = useManagerClient();
-const { t, labels } = useGovernanceText();
-// The application's name is the platform's entry, the same one the rail reads.
-const { pt } = usePlatformText();
-const shared=useSharedText();
-const agentId = ref<string | null>(governanceAgentId);
-const sessionId = computed({ get: () => props.sessionId, set: (id) => emit("session", id) });
-/** The page shown beside the column; the address's page arrives through `page`. */
-const shownPage = ref<string | null>(props.page ?? null);
-/** A page holding unsaved changes (the models) stays until the reader confirms leaving it. */
-const leave = useLeaveConfirmation();
-const pagePaths: Readonly<Record<string, string>> = {
-  feedback: platformRoutes.feedback.path,
-  knowledge:platformRoutes.governanceKnowledge.path,
-  models: platformRoutes.governanceModels.path,
-};
-const featureId = computed({
-  get: () => shownPage.value,
-  set: (id: string | null) => {
-    const target = (id && pagePaths[id]) || platformRoutes.governance.path;
-    if (!leave.leaves(target)) {
-      shownPage.value = id;
-      return;
-    }
-    void leave.confirm().then((confirmed) => {
-      if (confirmed) shownPage.value = id;
-    });
-  },
-});
+const { t } = useGovernanceText();
+const { t: shared } = useSharedText();
 const work = ref<GovernanceWork | null>(null);
 const error = ref(""), loading = ref(false);
-const selectedIssue = ref<string | null>(null);
+const selectedIssue = computed(() => props.issueId ?? null);
 /** The source being read and where it shows: under a finding, or under the source list ("all"). */
 const source = ref<{ read: GovernanceSourceRead; anchor: string } | null>(null);
-const canOpen = usePageAccess();
-/**
- * The governance conversation and its report are pages of business knowledge (the conversation's route is): an account
- * without it holds no conversation here, and the column lists only the pages it may open.
- */
-const conversing = computed(() => canOpen(managerPaths.knowledge));
-const pages = computed(() => {
-  const entries = conversing.value ? [{ id: "report", label: t("report"), icon: "report" }] : [];
-  if(conversing.value)entries.push({id:'knowledge',label:shared.t('nav.businessKnowledge'),icon:'knowledge'});
-  if (props.screens?.feedback && canOpen(platformRoutes.feedback.path)) entries.push({ id: "feedback", label: t("feedback"), icon: "feedback" });
-  return entries;
-});
-/** The governance agents' models: the platform's model page over this application's requests, at the column's foot. */
-const modelsPage = ontologyAgentModelPages.find((page) => page.app === "governance")!;
-const modelSource = ontologyAgentModelSource(manager.dataEngine, modelsPage);
-const modelLabels = useAgentModelLabels();
-const bottom = computed(() => (canOpen(modelsPage.path) ? { label: modelLabels.value.title, icon: "models" } : null));
-const workbench = computed(() => ({
-  id: "knowledge-governance", label: pt("platform.governance"),
-  features: pages.value.map((page) => ({ ...page, availability: "page" as const, withConversation: true })),
-}));
-/** The screen of the page the address names, and the report when it names none. */
-const screen = computed(() => (featureId.value === "feedback" ? props.screens?.feedback ?? null : null));
 const base = "/ontology/ai/knowledge-governance";
 let workRead = 0, sourceRead = 0;
 const fail = (value: unknown) => { error.value = value instanceof Error ? value.message : String(value); };
 
 async function readWork() {
-  const id = sessionId.value, version = ++workRead;
-  // Without a conversation there is no work record, and a read still on its way for the one left no longer counts.
-  if (!id) { work.value = null; loading.value = false; return; }
+  const id = props.recordId, version = ++workRead;
   loading.value = true;
   try {
     const result = governanceWorkResponseSchema.parse(await (await manager.request(`${base}/${id}/work`)).json());
-    if (sessionId.value === id && version === workRead) { work.value = result.work; error.value = ""; }
-  } catch (reason) { if (sessionId.value === id && version === workRead) fail(reason); }
+    if (props.recordId === id && version === workRead) { work.value = result.work; error.value = ""; }
+  } catch (reason) { if (props.recordId === id && version === workRead) fail(reason); }
   finally { if (version === workRead) loading.value = false; }
 }
 async function readSource(id: string, anchor: string, offset = 0) {
-  const session = sessionId.value, version = ++sourceRead;
-  if (!session) return;
+  const record = props.recordId, version = ++sourceRead;
   try {
-    const result = governanceSourceReadSchema.parse(await (await manager.request(`${base}/${session}/sources/${encodeURIComponent(id)}?offset=${offset}`)).json());
-    if (session === sessionId.value && version === sourceRead) source.value = { read: result, anchor };
-  } catch (reason) { if (session === sessionId.value && version === sourceRead) fail(reason); }
+    const result = governanceSourceReadSchema.parse(await (await manager.request(`${base}/${record}/sources/${encodeURIComponent(id)}?offset=${offset}`)).json());
+    if (record === props.recordId && version === sourceRead) source.value = { read: result, anchor };
+  } catch (reason) { if (record === props.recordId && version === sourceRead) fail(reason); }
 }
 const sourceTitle = (id: string) => work.value?.sources.find((item) => item.id === id)?.title || t("sources");
 
-const client = createAgentHostClient({
-  request: (path, init) => manager.request(`/ontology/ai${path}`, init),
-  // The governance agent is the only one this page discusses; its work is read again once a run ends.
-  agents: (agents) =>
-    agents.filter((agent) => agent.id.startsWith('56a15178-'))
-      .map((agent) => agent.id===governanceAgentId?({ ...agent, name: t("title"), description: t("subtitle") }):agent),
-  onEvent: (session, envelope) => {
-    if (session === sessionId.value && envelope.event.type === "agent_end") void readWork();
-  },
-});
-/**
- * The one navigation state of this application: its column lists its conversations and the report entry, and the
- * conversation promotes into it while sending.
- */
-const nav = useAgentNav({
-  client: () => client,
-  agentId: () => agentId.value,
-  setAgentId: (id) => (agentId.value = id),
-  sessionId: () => sessionId.value,
-  setSessionId: (id) => (sessionId.value = id),
-  onLeaveConversation: () => (featureId.value = null),
-});
-const modelRevision=ref(0);
-async function createGovernanceAgent(){const result=await ElMessageBox.prompt('配置名称','新增知识治理智能体',{inputValidator:value=>!!value?.trim()});await manager.request('/ontology/ai/knowledge-governance/agents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:result.value.trim()})});modelRevision.value++;await nav.loadAgents();}
-// The one list notice stream of this page: every governance conversation it lists follows its run, open or not.
-useSessionRunFeed({
-  port: client.sessionRuns,
-  sessions: () => nav.sessions.value,
-  onError: fail,
-});
+/** Back to where the report was opened from (business knowledge): the report itself holds nothing unsaved. */
+const back = () => emit("back");
 
-onMounted(async () => {
-  if (!conversing.value) return;
-  await nav.loadAgents().catch(() => {});
-  await nav.loadSessions();
-});
-
-watch(sessionId, () => {
-  sourceRead++; source.value = null; work.value = null; selectedIssue.value = null; void readWork();
+watch(() => props.recordId, () => {
+  sourceRead++; source.value = null; work.value = null; void readWork();
 }, { immediate: true });
-watch(featureId, (value) => {
-  if (value === "report") void readWork();
-  // Every page of the application has an address of its own, so the column's entries can be linked and reloaded.
-  emit("page", value);
-});
-// The address opened one page already (`/governance/feedback`); a later one arrives as the route's own page.
-watch(
-  () => props.page,
-  (value) => {
-     if(value&&value!==shownPage.value)shownPage.value=value;
-     else if(!value&&shownPage.value&&shownPage.value!=='report')shownPage.value=null;
-  },
-);
 
 const progress = computed(() => work.value?.knowledgeTotal === null || !work.value ? "" :
   t("progress", { done: work.value.reviewedKnowledgeIds.length, total: work.value.knowledgeTotal }));
-const pageContext = computed(() => {
-  const issue = work.value?.issues.find((item) => item.id === selectedIssue.value);
-  return t("context", { page: issue ? t("contextIssue", { report: t("report"), title: issue.title }) : t("report") });
-});
 function toggleIssue(id: string) {
-  selectedIssue.value = selectedIssue.value === id ? null : id;
+  emit("select", selectedIssue.value === id ? null : id);
 }
 </script>
 
 <template>
   <div class="governance-page">
+    <!--
+      Its own address draws the page's title and the way back; beside the conversation the shell's pane header does
+      both (its own close and enlarge controls), so the page keeps only its content there.
+    -->
+    <header v-if="!props.paired" class="governance-head platform-page-gutter">
+      <button type="button" class="governance-back" :aria-label="shared('common.back')" :title="shared('common.back')" @click="back"><ArrowLeft :size="16" /></button>
+      <span class="governance-title">{{ t("title") }}</span>
+    </header>
     <p v-if="error" class="governance-error" role="alert">
       <span>{{ error }}</span>
-      <button type="button" :aria-label="labels.close" @click="error = ''"><X :size="14" /></button>
+      <button type="button" :aria-label="shared('common.close')" @click="error = ''"><X :size="14" /></button>
     </p>
-    <AgentShell v-model:session-id="sessionId" v-model:agent-id="agentId" v-model:feature-id="featureId"
-      :workbench="workbench" :title="pt('platform.governance')" :client="client" :labels="labels" :nav="nav"
-      :page-context="pageContext" :bottom="bottom" :conversations="conversing" @error="fail"
-      @open-bottom="featureId = 'models'">
-      <template #feature>
-        <section v-if="featureId==='models'" class="governance-model-settings"><div class="governance-model-actions"><ElButton @click="createGovernanceAgent">新增治理智能体</ElButton></div><AgentModelsPage :key="modelRevision" :source="modelSource" :path="modelsPage.path"/></section>
-        <BusinessKnowledge v-else-if="featureId==='knowledge'" @governance="featureId='report'"/>
-        <!--
-          The page the address names: another package's screen when the edition handed one over, else the report. A
-          handed-over screen is a platform page, so it takes the page gutter here, like every page does from its frame.
-        -->
-        <div v-else-if="screen" class="governance-screen platform-page-gutter">
-          <component :is="screen" />
-        </div>
-        <div v-else class="report platform-page-gutter" :aria-busy="loading">
-          <div v-if="loading && !work" class="report-state" role="status">
-            <p>{{ t("loading") }}</p>
-          </div>
-          <div v-else-if="!work?.summary && !work?.issues.length && !work?.sources.length && !progress" class="report-state">
-            <h2>{{ t("report") }}</h2>
-            <p>{{ t("noIssues") }}</p>
-          </div>
-          <template v-else>
-          <section class="report-summary">
-            <p class="report-hint">{{ t("reportHint") }}</p>
-            <p v-if="progress" class="report-progress">{{ progress }}</p>
-            <p v-if="work?.summary" class="report-text">{{ work.summary }}</p>
-          </section>
+    <!-- The report scrolls itself, so it marks where its content ends: the shell and the page's composer leave that room. -->
+    <div class="report platform-page-gutter shell-dock-room" :aria-busy="loading">
+      <div v-if="loading && !work" class="report-state" role="status">
+        <p>{{ t("loading") }}</p>
+      </div>
+      <div v-else-if="!work?.summary && !work?.issues.length && !work?.sources.length && !progress" class="report-state">
+        <h2>{{ t("report") }}</h2>
+        <p>{{ t("noIssues") }}</p>
+      </div>
+      <template v-else>
+      <section class="report-summary">
+        <p class="report-hint">{{ t("reportHint") }}</p>
+        <p v-if="progress" class="report-progress">{{ progress }}</p>
+        <p v-if="work?.summary" class="report-text">{{ work.summary }}</p>
+      </section>
 
-          <p v-if="!work?.issues.length" class="report-empty">{{ t("noIssues") }}</p>
-          <article
-            v-for="issue in work?.issues"
-            :key="issue.id"
-            class="issue"
-            :class="{ selected: selectedIssue === issue.id }"
+      <p v-if="!work?.issues.length" class="report-empty">{{ t("noIssues") }}</p>
+      <article
+        v-for="issue in work?.issues"
+        :key="issue.id"
+        class="issue"
+        :class="{ selected: selectedIssue === issue.id }"
+      >
+        <button type="button" class="issue-head" :aria-pressed="selectedIssue === issue.id" @click="toggleIssue(issue.id)">
+          <span class="issue-tags">
+            <span class="tag">{{ t(issue.category) }}</span>
+            <span class="tag" :class="issue.status">{{ t(issue.status) }}</span>
+          </span>
+          <span class="issue-title">{{ issue.title }}</span>
+        </button>
+        <dl class="issue-fields">
+          <dt>{{ t("problem") }}</dt><dd>{{ issue.problem }}</dd>
+          <template v-if="issue.before"><dt>{{ t("before") }}</dt><dd>{{ issue.before }}</dd></template>
+          <dt>{{ t("after") }}</dt><dd>{{ issue.after }}</dd>
+          <dt>{{ t("basis") }}</dt><dd>{{ issue.basis }}</dd>
+        </dl>
+        <div v-if="issue.sourceIds.length" class="source-chips">
+          <button
+            v-for="id in issue.sourceIds"
+            :key="id"
+            type="button"
+            class="chip"
+            :class="{ active: source?.anchor === issue.id && source.read.source.id === id }"
+            @click="readSource(id, issue.id)"
           >
-            <button type="button" class="issue-head" :aria-pressed="selectedIssue === issue.id" @click="toggleIssue(issue.id)">
-              <span class="issue-tags">
-                <span class="tag">{{ t(issue.category) }}</span>
-                <span class="tag" :class="issue.status">{{ t(issue.status) }}</span>
-              </span>
-              <span class="issue-title">{{ issue.title }}</span>
-            </button>
-            <dl class="issue-fields">
-              <dt>{{ t("problem") }}</dt><dd>{{ issue.problem }}</dd>
-              <template v-if="issue.before"><dt>{{ t("before") }}</dt><dd>{{ issue.before }}</dd></template>
-              <dt>{{ t("after") }}</dt><dd>{{ issue.after }}</dd>
-              <dt>{{ t("basis") }}</dt><dd>{{ issue.basis }}</dd>
-            </dl>
-            <div v-if="issue.sourceIds.length" class="source-chips">
-              <button
-                v-for="id in issue.sourceIds"
-                :key="id"
-                type="button"
-                class="chip"
-                :class="{ active: source?.anchor === issue.id && source.read.source.id === id }"
-                @click="readSource(id, issue.id)"
-              >
-                {{ sourceTitle(id) }}
-              </button>
-            </div>
-            <section v-if="source?.anchor === issue.id" class="source" aria-live="polite">
-              <header>
-                <strong>{{ source.read.source.title }}</strong>
-                <button type="button" class="source-close" :aria-label="labels.close" @click="source = null"><X :size="14" /></button>
-              </header>
-              <p v-if="!source.read.page" class="muted">{{ t("evidenceHint") }}</p>
-              <p v-else-if="!source.read.page.items.length" class="muted">{{ t("sourceMissing") }}</p>
-              <blockquote v-for="item in source.read.page?.items" :key="item.id">{{ item.text }}</blockquote>
-              <button v-if="source.read.page?.next" type="button" class="chip"
-                @click="readSource(source.read.source.id, issue.id, source.read.page.next.offset)">{{ t("more") }}</button>
-            </section>
-          </article>
-
-          <section class="report-sources">
-            <h2>{{ t("sources") }}</h2>
-            <p v-if="!work?.sources.length" class="muted">{{ t("noSources") }}</p>
-            <div class="source-chips">
-              <button v-for="item in work?.sources" :key="item.id" type="button" class="chip"
-                :class="{ active: source?.anchor === 'all' && source.read.source.id === item.id }"
-                @click="readSource(item.id, 'all')">{{ item.title }}</button>
-            </div>
-            <section v-if="source?.anchor === 'all'" class="source" aria-live="polite">
-              <header>
-                <strong>{{ source.read.source.title }}</strong>
-                <button type="button" class="source-close" :aria-label="labels.close" @click="source = null"><X :size="14" /></button>
-              </header>
-              <p v-if="!source.read.page" class="muted">{{ t("evidenceHint") }}</p>
-              <p v-else-if="!source.read.page.items.length" class="muted">{{ t("sourceMissing") }}</p>
-              <blockquote v-for="item in source.read.page?.items" :key="item.id">{{ item.text }}</blockquote>
-              <button v-if="source.read.page?.next" type="button" class="chip"
-                @click="readSource(source.read.source.id, 'all', source.read.page.next.offset)">{{ t("more") }}</button>
-            </section>
-          </section>
-          </template>
+            {{ sourceTitle(id) }}
+          </button>
         </div>
+        <section v-if="source?.anchor === issue.id" class="source" aria-live="polite">
+          <header>
+            <strong>{{ source.read.source.title }}</strong>
+            <button type="button" class="source-close" :aria-label="shared('common.close')" @click="source = null"><X :size="14" /></button>
+          </header>
+          <p v-if="!source.read.page" class="muted">{{ t("evidenceHint") }}</p>
+          <p v-else-if="!source.read.page.items.length" class="muted">{{ t("sourceMissing") }}</p>
+          <blockquote v-for="item in source.read.page?.items" :key="item.id">{{ item.text }}</blockquote>
+          <button v-if="source.read.page?.next" type="button" class="chip"
+            @click="readSource(source.read.source.id, issue.id, source.read.page.next.offset)">{{ t("more") }}</button>
+        </section>
+      </article>
+
+      <section class="report-sources">
+        <h2>{{ t("sources") }}</h2>
+        <p v-if="!work?.sources.length" class="muted">{{ t("noSources") }}</p>
+        <div class="source-chips">
+          <button v-for="item in work?.sources" :key="item.id" type="button" class="chip"
+            :class="{ active: source?.anchor === 'all' && source.read.source.id === item.id }"
+            @click="readSource(item.id, 'all')">{{ item.title }}</button>
+        </div>
+        <section v-if="source?.anchor === 'all'" class="source" aria-live="polite">
+          <header>
+            <strong>{{ source.read.source.title }}</strong>
+            <button type="button" class="source-close" :aria-label="shared('common.close')" @click="source = null"><X :size="14" /></button>
+          </header>
+          <p v-if="!source.read.page" class="muted">{{ t("evidenceHint") }}</p>
+          <p v-else-if="!source.read.page.items.length" class="muted">{{ t("sourceMissing") }}</p>
+          <blockquote v-for="item in source.read.page?.items" :key="item.id">{{ item.text }}</blockquote>
+          <button v-if="source.read.page?.next" type="button" class="chip"
+            @click="readSource(source.read.source.id, 'all', source.read.page.next.offset)">{{ t("more") }}</button>
+        </section>
+      </section>
       </template>
-    </AgentShell>
+    </div>
   </div>
 </template>
-<style scoped>.governance-model-settings{display:flex;flex-direction:column;height:100%;min-height:0}.governance-model-actions{padding:12px 24px;display:flex;justify-content:flex-end}.governance-model-settings :deep(.agent-models-page){flex:1;min-height:0}</style>
-
 <style scoped>
 /* The page fills the Manager frame (a size container), not the viewport. */
 .governance-page {
   position: relative;
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-height: 0;
-  height: 100%;
-}
-.governance-page :deep(.agent-shell) {
-  height: 100%;
-}
-.governance-screen {
   height: 100%;
 }
 .governance-error {
@@ -336,11 +206,12 @@ function toggleIssue(id: string) {
   color: inherit;
   cursor: pointer;
 }
-.governance-brand {
+.governance-head {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--spacing-xs);
   min-width: 0;
+  padding-block: var(--spacing-md) var(--spacing-xs);
 }
 .governance-back {
   display: grid;
@@ -369,17 +240,13 @@ function toggleIssue(id: string) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.governance-saved {
-  margin: 0;
-  padding: 0 8px;
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-}
 .report {
+  flex: 1;
+  min-height: 0;
   padding-block: var(--spacing-lg) var(--spacing-xl);
   font-size: var(--text-sm);
   line-height: var(--leading-sm);
+  overflow-y: auto;
   overflow-wrap: anywhere;
 }
 .report > * {
@@ -548,7 +415,7 @@ function toggleIssue(id: string) {
   font-size: var(--text-base);
   font-weight: 600;
 }
-@container page (max-width: 560px) {
+@container ontology-manager (max-width: 560px) {
   .issue-fields {
     grid-template-columns: 1fr;
     gap: 2px;

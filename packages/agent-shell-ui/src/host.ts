@@ -21,6 +21,8 @@ import {
   agentHostStreamFrameSchema,
 } from "@ontomato/contracts/agent-host";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
+import { assistantAgentListSchema } from "@ontomato/contracts/assistant-chat";
+import { pageDraftSchema, type PageDraft } from "@ontomato/contracts/page-draft";
 import type { RuntimeCursor, RuntimeEventEnvelope, RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
 import { agentTasksFrameSchema, type AgentTasksFrame } from "@ontomato/contracts/agent-tasks";
 
@@ -81,8 +83,22 @@ export interface ShellTaskPort {
   ): () => void;
 }
 
+/**
+ * The page whose skills the composer offers: the page's own skill is what an agent must carry to be a candidate. A page
+ * with a menu code names it; one that opens to every member of the domain says so instead.
+ */
+export type AgentPageQuery =
+  | { pageKey: string; permissionCode: string }
+  | { pageKey: string; access: "domain-member" };
+
 export interface AgentHostClient {
   listAgents(): Promise<AgentHostAgent[]>;
+  /**
+   * The agents that may take a message on this page, with the page's default agent when it registered one. A page the
+   * reader holds no skill mapping for is refused, and so is a registered default that is no longer available: the page
+   * shows the configuration error rather than choosing another agent.
+   */
+  listPageAgents(page: AgentPageQuery): Promise<{ agents: AgentHostAgent[]; defaultAgentId?: string }>;
   /** The agent's conversations, or those of the client's workspace when it has one. */
   listSessions(agentId: string, cursor: string | null): Promise<AgentHostSessionPage>;
   /** A new conversation with the agent, inside the client's workspace when it has one. */
@@ -102,6 +118,8 @@ export interface AgentHostClient {
   cancel(sessionId: string, runId: string): Promise<void>;
   /** The run's version of a path: at the run's end once stopped, the current one while running. */
   resolveArtifact(sessionId: string, runId: string, path: string): Promise<RuntimeArtifact | null>;
+  /** The page draft a run wrote, at the path its page link named; the host serves its drafts directory alone. */
+  readPageDraft(sessionId: string, runId: string, path: string): Promise<PageDraft<Record<string, unknown>>>;
   readArtifact(artifact: RuntimeArtifact): Promise<Blob>;
   tasks?: ShellTaskPort;
   /** The list's own state source: notices plus a light read, never the conversation being open. */
@@ -255,6 +273,9 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
       const agents = (await json<AgentHostAgentList>("/agents")).agents;
       return options.agents ? options.agents(agents) : agents;
     },
+    async listPageAgents(page) {
+      return assistantAgentListSchema.parse(await json(`/agents?${query({ ...page })}`));
+    },
     listSessions(agentId, cursor) {
       if (options.workspace) return options.workspace.listSessions(cursor);
       return json<AgentHostSessionPage>(`/sessions?${query({ agentId, ...(cursor ? { cursor } : {}) })}`);
@@ -289,6 +310,11 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
       return (
         await json<AgentHostArtifactResolution>(`${run(sessionId, runId)}/artifacts/resolve?${params}`)
       ).artifact;
+    },
+    async readPageDraft(sessionId, runId, path) {
+      return pageDraftSchema.parse(
+        await json(`${run(sessionId, runId)}/page-draft?${query({ path })}`),
+      );
     },
     async readArtifact(artifact) {
       return (await call(`${session(artifact.sessionId)}/artifacts/${enc(artifact.id)}/content`)).blob();

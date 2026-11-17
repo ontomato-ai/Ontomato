@@ -108,6 +108,8 @@ When custom source uses product assets, include `ontomato.products.json` in the 
 
 The declaration uses `{names, descriptions, icon, groups, permissions}`; names and descriptions use the platform's language keys. Reuse an existing application's declaration when publishing another version. Java `GET /platform/applications/<appId>` is authoritative for the current release; the newest export record is not proof of successful publication. The existing identity and business permissions apply to every operation.
 
+Choose a semantic icon from the platform library when first publishing: `users` for staff or teams, `microscope` for research, `presentation` for conferences, `graduation-cap` for education, `wallet` for finance, `shopping-cart` for orders, `package` for inventory, `clipboard-list` for tasks, `chart` for analytics, `workflow` for approvals, `book` for knowledge, or `app-window` as the generic fallback. Preserve an existing application's chosen icon on later publications. The publication configuration lets its owner search the system library and override the recommendation without republishing code.
+
 Publish only a commit that already exists. When files were changed in this run, finish the run first, then publish through the platform drawer or in a later run. Never call a dirty tree HEAD the new version. End with the actual result and workspace-relative file links so the host can show the changed source. Runtime supplies the run's commit separately; do not guess it from a reply or from another run's HEAD.
 
 ## Build-test vector operations

@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.controller;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -35,6 +36,38 @@ class ObjectViewBoundaryTest {
         clearInvocations(store);
         mvc.perform(post("/objectView/save").contentType(MediaType.APPLICATION_JSON)
                 .content(document.replace("\"source\":\"context\",\"path\":\"primaryKey\"", "\"source\":\"object\",\"path\":\"amount\""))).andExpect(status().isBadRequest());
+        verifyNoInteractions(store);
+    }
+
+    @Test void jacksonBoundChartFilesRequirePublishedMetricsAndRejectSnapshotsBeforePersistence() throws Exception {
+        var store = mock(ObjectViewStore.class);
+        var identity = mock(IdentityService.class);
+        var user = mock(User.class);
+        when(user.getDomainId()).thenReturn("domain");
+        when(identity.getCurrentUser()).thenReturn(user);
+        var metrics = mock(MetricViewService.class);
+        var metric = new io.ontomato.dataengine.bean.metricView.MetricView();
+        metric.setStatus("PUBLISHED");
+        when(metrics.requireExecutable("metric", user)).thenReturn(metric);
+        var mvc = MockMvcBuilders.standaloneSetup(new ObjectViewController(store, identity, metrics, mock(ActionService.class)))
+                .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+        String body = """
+            {"className":"Order","form":"full","expectedRevision":0,"description":"","document":{
+              "schemaVersion":1,"className":"Order","title":"Order","tabs":[{"id":"t","title":"t","sections":[{"id":"s","title":"","widgets":[{
+              "id":"chart","kind":"chart","title":"Chart","span":12,"height":240,"resourceId":"metric","parameters":{},
+              "chartFile":{"dataset":[{"id":"metric","source":[]}]}}]}]}]}}
+            """;
+        mvc.perform(post("/objectView/save").contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk());
+        var saved = org.mockito.ArgumentCaptor.forClass(JSONObject.class);
+        verify(store).save(eq("domain"), any(), eq("Order"), eq("full"), eq(0), saved.capture(), eq(""));
+        assertEquals(0, saved.getValue().getJSONArray("tabs").getJSONObject(0).getJSONArray("sections").getJSONObject(0)
+                .getJSONArray("widgets").getJSONObject(0).getJSONObject("chartFile").getJSONArray("dataset").getJSONObject(0).getJSONArray("source").size());
+        clearInvocations(store);
+        metric.setStatus("PENDING_REVIEW");
+        mvc.perform(post("/objectView/save").contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isBadRequest());
+        verifyNoInteractions(store);
+        metric.setStatus("PUBLISHED");
+        mvc.perform(post("/objectView/save").contentType(MediaType.APPLICATION_JSON).content(body.replace("\"source\":[]", "\"source\":[{\"value\":70}]"))).andExpect(status().isBadRequest());
         verifyNoInteractions(store);
     }
 }

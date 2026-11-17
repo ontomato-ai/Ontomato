@@ -4,9 +4,9 @@ import { promptSources } from "../../content/layout";
 import fs from "node:fs";
 import path from "node:path";
 
-export type DefaultAgentKind = "regular" | "analysis" | "app-builder";
+export type DefaultAgentKind = "regular" | "analysis" | "app-builder" | "knowledge-governance";
 
-const DEFAULT_KINDS = new Set<string>(["regular", "analysis", "app-builder"]);
+const DEFAULT_KINDS = new Set<string>(["regular", "analysis", "app-builder", "knowledge-governance"]);
 
 export function isDefaultAgentKind(kind: string): kind is DefaultAgentKind {
   return DEFAULT_KINDS.has(kind);

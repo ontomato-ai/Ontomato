@@ -101,7 +101,8 @@ export const workbenchApplications: BuiltinApplication[] = [
       },
       "icon": "dashboards",
       "groups": [],
-      "permissions": []
+      "permissions": [],
+      "pageSkills": [{access:"domain-member",skill:{namespace:{kind:"provider",provider:"workbench"},name:"dashboard-pages"}}]
     }
   },
   {

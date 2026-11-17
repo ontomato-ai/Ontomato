@@ -1,3 +1,4 @@
+import { GOVERNANCE_KIND, GOVERNANCE_SKILL } from "./governance-definition";
 import { APP_BUILDER, APP_BUILDER_KIND,isAppBuilderKind } from "../app-builder/definition";
 import type { ModelSelection } from "@ontomato/contracts/model-settings";
 import { lockSessionClaim, assertUnclaimedSession } from "../agent-host/session-claim";
@@ -31,7 +32,8 @@ export interface TurnRow {
   id: string;
   session_id: string;
   request_seq: number;
-  retrieval_scope_id: string;
+  retrieval_scope_id: string | null;
+  governance_record_id: string | null;
   input_hash: string;
   class_names: string[];
   admitted: boolean;
@@ -91,6 +93,10 @@ export const assistantStore = {
           ],
         );
     }
+    await db().query(
+      `INSERT INTO ${table("assistant_agents")} (id,domain_id,kind,name,description,system_prompt,skills,sort_order) VALUES($1,$2,$3,$4,$5,NULL,$6,2) ON CONFLICT(domain_id,kind) DO NOTHING`,
+      [randomUUID(), domainId, GOVERNANCE_KIND, "Knowledge governance", "Review business knowledge with traceable evidence", JSON.stringify([GOVERNANCE_SKILL])],
+    );
     return (
       await db().query(
         `SELECT * FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind<>'app-builder' AND kind NOT LIKE 'app-builder:%' ORDER BY sort_order,name,id`,
@@ -110,14 +116,6 @@ export const assistantStore = {
         JSON.stringify({ modelId: null }), JSON.stringify(APP_BUILDER.skills)],
     );
     return (await db().query(`SELECT * FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind=$2`, [domainId, APP_BUILDER_KIND])).rows[0];
-  },
-  async isBuilderRun(id: string, owner: AssistantOwner): Promise<boolean> {
-    const rows = (await db().query(
-      `SELECT a.kind FROM ${table("assistant_turns")} t JOIN ${table("assistant_sessions")} s ON s.id=t.session_id
-       JOIN ${table("assistant_agents")} a ON a.id=s.agent_id WHERE t.id=$1 AND s.domain_id=$2 AND s.owner_id=$3`,
-      [id, owner.domainId, owner.userId],
-    )).rows;
-    return rows.some(row => isAppBuilderKind(row.kind));
   },
   async agent(id: string, owner: AssistantOwner): Promise<AgentRow> {
     const r = await db().query(
@@ -177,7 +175,7 @@ export const assistantStore = {
       updatedAt: row.updatedAt.toISOString(),
     }));
   },
-  async create(id: string, owner: AssistantOwner, agentId: string, origin: SessionRow["origin"] = "user", workspaceId?: string) {
+  async create(id: string, owner: AssistantOwner, agentId: string, origin: SessionRow["origin"] = "user", workspaceId?: string, fromChannel = false) {
     return transaction(async (tx) => {
     await lockSessionClaim(tx, id);
     const existing = await tx.query(
@@ -194,7 +192,7 @@ export const assistantStore = {
         );
       return { row, replayed: true };
     }
-    await assertUnclaimedSession(tx, id, owner);
+    await assertUnclaimedSession(tx, id, owner, fromChannel);
     const a = await this.agent(agentId, owner);
     if (isAppBuilderKind(a.kind) && !workspaceId)
       throw new HttpError(400, "App builder conversations require a workspace", "INVALID_REQUEST");
@@ -253,7 +251,7 @@ export const assistantStore = {
         return { row: old.rows[0] as TurnRow, replayed: true };
       }
       const result = await c.query(
-        `INSERT INTO ${table("assistant_turns")} (id,session_id,request_seq,input_hash,class_names,retrieval_scope_id) SELECT $1,$2,COALESCE(MAX(request_seq),-1)+1,$3,$4,$1 FROM ${table("assistant_turns")} WHERE session_id=$2 RETURNING *`,
+        `INSERT INTO ${table("assistant_turns")} (id,session_id,request_seq,input_hash,class_names) SELECT $1,$2,COALESCE(MAX(request_seq),-1)+1,$3,$4 FROM ${table("assistant_turns")} WHERE session_id=$2 RETURNING *`,
         [
           id,
           sessionId,
@@ -263,6 +261,16 @@ export const assistantStore = {
       );
       return { row: result.rows[0] as TurnRow, replayed: false };
     });
+  },
+  async recordRetrievalScope(id: string, owner: AssistantOwner, scopeId: string) {
+    await db().query(`UPDATE ${table("assistant_turns")} t SET retrieval_scope_id=$4 FROM ${table("assistant_sessions")} s WHERE t.session_id=s.id AND t.id=$1 AND s.domain_id=$2 AND s.owner_id=$3`, [id,owner.domainId,owner.userId,scopeId]);
+  },
+  async recordGovernanceWindow(id: string, owner: AssistantOwner, recordId: string) {
+    await db().query(`UPDATE ${table("assistant_turns")} t SET governance_record_id=$4 FROM ${table("assistant_sessions")} s WHERE t.session_id=s.id AND t.id=$1 AND s.domain_id=$2 AND s.owner_id=$3`, [id,owner.domainId,owner.userId,recordId]);
+  },
+  async governanceWindow(id: string, owner: AssistantOwner): Promise<string | null> {
+    const row=(await db().query(`SELECT t.governance_record_id FROM ${table("assistant_turns")} t JOIN ${table("assistant_sessions")} s ON s.id=t.session_id WHERE t.id=$1 AND s.domain_id=$2 AND s.owner_id=$3`,[id,owner.domainId,owner.userId])).rows[0];
+    return row?.governance_record_id ?? null;
   },
   async admitted(id: string, message: string) {
     await transaction(async (c) => {

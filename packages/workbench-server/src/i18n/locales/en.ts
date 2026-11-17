@@ -1,4 +1,7 @@
 export const en = {
+  "assistant.governance.report.title": "Governance report",
+  "assistant.default.knowledge-governance.name": "Knowledge governance",
+  "assistant.default.knowledge-governance.description": "Review business knowledge with traceable evidence",
   "assistant.default.regular.name": "Assistant",
   "assistant.default.analysis.name": "Analyst",
   "assistant.default.regular.description": "Ask questions about your data",
@@ -228,8 +231,6 @@ export const en = {
   "api.noAvailableDashboardData":
     "No available data in current analysis results. Please verify that the query results contain table data before retrying.",
   "api.dashboardNotFound": "Dashboard not found",
-  "api.cannotGenerateChartInterpretation":
-    "Unable to generate structured chart interpretation at this time",
   "api.backendRequestFailed": (params?: Record<string, any>) =>
     `Backend request failed: ${params?.message ?? ""}`,
   "api.dslsCannotBeEmpty": "DSLs cannot be empty",

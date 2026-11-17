@@ -16,13 +16,12 @@ class KnowledgeGovernanceImportTest {
     var store=mock(OntologyAgentStore.class);
     var knowledge=mock(KnowledgeService.class);
     var identity=mock(IdentityService.class);
-    var service=new KnowledgeGovernanceService(store,mock(AgentRuntimeClient.class),mock(OntologyAgentDefinitions.class),mock(QueryGrantService.class),knowledge,mock(AdminService.class),mock(AgentCaller.class));
+    var service=new KnowledgeGovernanceService(store,mock(AgentRuntimeClient.class),mock(GovernanceRuntimeClient.class),mock(OntologyAgentDefinitions.class),mock(QueryGrantService.class),knowledge,mock(AdminService.class),mock(io.ontomato.dataengine.schedules.ScheduleIdentity.class,CALLS_REAL_METHODS));
     ReflectionTestUtils.setField(service,"identityService",identity);
     var owner=new OntologyAgentStore.Owner("user","domain");
     var work=JSONObject.of("sources",List.of(JSONObject.of("id","source")));
     when(identity.hasKnowledgeGovernanceAccess("user","domain")).thenReturn(true);
-    when(store.session(anyString(),eq(owner))).thenReturn(JSONObject.of("agent_id",KnowledgeGovernanceService.AGENT));
-    when(store.one(contains("ontology_governance_sessions"),any())).thenReturn(JSONObject.of("latest_run_id","11111111-1111-4111-8111-111111111111"));
+    when(store.one(contains("ontology_governance_records"),any(),any(),any())).thenReturn(JSONObject.of("latest_run_id","11111111-1111-4111-8111-111111111111"));
     when(store.one(contains("SELECT work"),any())).thenReturn(JSONObject.of("work",work));
     when(knowledge.getBussinessKnowledge("domain")).thenReturn(Map.of());
     var input=JSONObject.of("items",List.of(JSONObject.of("id","record","title","Source fact","text","A sourced statement","sourceIds",List.of("missing"))));

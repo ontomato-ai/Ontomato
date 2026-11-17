@@ -11,7 +11,9 @@ export { default as PlatformTabs } from "./PlatformTabs.vue";
 export { default as PlatformBrandMark } from "./PlatformBrandMark.vue";
 export { default as AgentModelsPage } from "./AgentModelsPage.vue";
 export { appIcon, resolveIcon } from "./icons";
+export {default as ApplicationIconPicker} from './ApplicationIconPicker.vue';
 export { platformPath, platformRoutes } from "./routes";
+export { openApplicationKey } from './application-opening';
 export {
   providePageActions,
   usePageActions,
@@ -32,6 +34,7 @@ export {
   type DataEngineTransport,
 } from "./agent-models";
 export { platformApplicationNameKey, platformPageAccessKey, useApplicationName, usePageAccess } from "./page-access";
+export { pilotPageKey, usePilotPage, type PilotPage, type PilotPageResolver } from "./pilot-pages";
 export {
   provideUnsavedChanges,
   useLeaveConfirmation,
