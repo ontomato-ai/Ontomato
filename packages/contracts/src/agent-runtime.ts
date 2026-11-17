@@ -1,4 +1,4 @@
-import { agentRunContextSchema, agentNotificationSchema, agentAuthoritySchema, agentPendingQuestionSchema } from "./agent-channel";
+import { agentRunContextSchema, agentNotificationSchema, agentAuthoritySchema, agentPendingQuestionSchema, agentExecutionActorRefSchema } from "./agent-channel";
 import { workspaceCommitSchema } from "./workspaces";
 import { serviceLogCorrelationSchema } from "./service-logging";
 import { z } from "zod";
@@ -87,6 +87,7 @@ export const runtimeStartRunRequestSchema = z
     input: z.union([runtimeUserMessageSchema, agentNotificationSchema]),
     channel: agentRunContextSchema.optional(),
     authority: agentAuthoritySchema.optional(),
+    executionActor: agentExecutionActorRefSchema.nullable().optional(),
     environment: runtimeEnvironmentSchema,
   })
   .strict();
@@ -121,6 +122,7 @@ const runtimeRunFields = {
   /** Commit created by this run, never the workspace HEAD from another run. */
   workspaceCommit: workspaceCommitSchema.nullable(),
   channel: agentRunContextSchema.optional(),
+  executionUserId: runtimeKeySchema.nullable().optional(),
   resolvedSkills: z.array(runtimeRegisteredSkillSchema),
   environment: z.object({
     values: z.record(z.string()),
@@ -149,6 +151,7 @@ export const runtimeRunViewSchema = z.object({
   createdAt: runtimeRunFields.createdAt,
   finishedAt: runtimeRunFields.finishedAt,
   resolvedSkills: runtimeRunFields.resolvedSkills,
+  executionUserId: runtimeRunFields.executionUserId,
 }).strict();
 export type RuntimeRunView = z.infer<typeof runtimeRunViewSchema>;
 export const runtimeAdmissionResponseSchema = z

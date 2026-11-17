@@ -4,9 +4,8 @@ import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { withProductGrants } from "../product-assets/grants";
-import { canUseNativeAgent } from "../product-assets/native-agent-access";
 import { nativeProfileId } from "../product-assets/platform-assets";
-import { profileIdForPrincipal } from "../product-assets/agent-profile";
+import { profileIdForAgent } from "../product-assets/agent-profile";
 import { assistantStore, type AssistantOwner } from "./store";
 import { assistantDescription, assistantName } from "./labels";
 import { effectiveAssistantSkills, readPageSkills } from "./skills";
@@ -18,8 +17,7 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
     const agents = [];
     for (const agent of definitions) {
       const native = await nativeProfileId(owner.domainId, agent.id);
-      if (native && !await canUseNativeAgent(owner, credentials, agent.id, native)) continue;
-      const profile = native ? null : await profileIdForPrincipal(owner, agent.id);
+      const profile = native ? null : await profileIdForAgent(owner, agent.id);
       agents.push({
         id: agent.id, name: assistantName(agent, credentials.locale), description: assistantDescription(agent, credentials.locale),
         icon: agent.icon, enabled: agent.enabled, effectiveSkills: effectiveAssistantSkills(agent, projection, profile !== null),

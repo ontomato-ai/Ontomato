@@ -55,7 +55,7 @@ public class ABCProgramServiceImpl implements ABCProgramService {
   public Object[] execute(String id, Function function, String user, UserDataPermission permission,
       String sandbox, String lang, int timeout, String domain, ExecutionContext context) throws Exception {
     ExecutionTarget target = context.target();
-    if(target.testing() && !Function.OPERATION_READ.equals(function.getOperation()))
+    if((target.testing() || !target.classNames().isEmpty()) && !Function.OPERATION_READ.equals(function.getOperation()))
       target.requireClasses(function.getReturnDef()==null?null:function.getReturnDef().getClassNames());
     if (!domain.equals(function.getDomainId())) throw new IllegalArgumentException("Function is outside the current domain");
     FunctionDao.requireSupported(function, lang);

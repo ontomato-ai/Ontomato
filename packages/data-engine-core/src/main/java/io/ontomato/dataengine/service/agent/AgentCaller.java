@@ -17,6 +17,9 @@ public class AgentCaller {
   @org.springframework.beans.factory.annotation.Autowired
   private io.ontomato.dataengine.service.BuildTestContextService contexts;
 
+  @org.springframework.beans.factory.annotation.Autowired
+  private AgentExecutionAccess executions;
+
   public AgentCaller(JdbcTemplate jdbc, ScheduleIdentity identities, IdentityService identity) {
     this.jdbc=jdbc; this.identities=identities; this.identity=identity;
   }
@@ -67,12 +70,20 @@ public class AgentCaller {
     return new OntologyAgentAccess.Context(actor.owner(),null,null,null,language,actor.expiresAt(),ref.getString("id"));
   }
   public void requireQuery(Actor actor) { identity.requireQueryAccess(actor.user().getId(),actor.user().getDomainId()); }
-  public OntologyAgentAccess.Context query(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root) { return execution(ref,domain,language,authority,requestedBy,root,true); }
-  public OntologyAgentAccess.Context generation(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root) { return execution(ref,domain,language,authority,requestedBy,root,false); }
-  private OntologyAgentAccess.Context execution(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root,boolean query) {
+  public OntologyAgentAccess.Context query(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root) { return execution(ref,domain,language,authority,requestedBy,root,null,true); }
+  public OntologyAgentAccess.Context generation(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root) { return execution(ref,domain,language,authority,requestedBy,root,null,false); }
+  public OntologyAgentAccess.Context query(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root,JSONObject executionActor) { return execution(ref,domain,language,authority,requestedBy,root,executionActor,true); }
+  public OntologyAgentAccess.Context generation(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root,JSONObject executionActor) { return execution(ref,domain,language,authority,requestedBy,root,executionActor,false); }
+  public io.ontomato.dataengine.core.bean.User executionUser(Actor actor,JSONObject executionActor) {
+    if(executionActor==null) return actor.user();
+    if(!actor.owner().domainId().equals(executionActor.getString("domainId"))) throw new AgentHttpException(403,"CROSS_DOMAIN","Execution user belongs to another domain");
+    return executions.require(actor.owner().domainId(), AgentJson.text(executionActor,"userId"));
+  }
+  private OntologyAgentAccess.Context execution(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root,JSONObject executionActor,boolean query) {
     var actor=restore(ref,domain);
-    if(query) requireQuery(actor);
-    var permission=identities.dataPermission(domain,actor.user().getId());
+    var executor=executionUser(actor,executionActor);
+    if(query) identity.requireQueryAccess(executor.getId(),domain);
+    var permission=identities.dataPermission(domain,executor.getId());
     var classes=query?io.ontomato.dataengine.service.QueryAccessService.classScope(permission,authority.getList("classNames",String.class)):authority.getList("classNames",String.class);
     var target=io.ontomato.dataengine.service.ExecutionTarget.LIVE;
     if ("build-test".equals(authority.getString("executionKind"))) {
@@ -82,19 +93,21 @@ public class AgentCaller {
       target.requireClasses(classes);
     }
     long expires=target.testing()?Math.min(actor.expiresAt(),target.expiresAt()):actor.expiresAt();
-    var access=new io.ontomato.dataengine.service.QueryAccessService.Access(actor.user(),permission,null,null,expires,classes,target);
+    var access=new io.ontomato.dataengine.service.QueryAccessService.Access(executor,permission,null,null,expires,classes,target,executionActor==null?null:executor.getId(),actor.owner().userId());
     String scope=null;
     for (String candidate:query?new LinkedHashSet<>(requestedBy==null?List.of(root.getString("runId")):List.of(root.getString("runId"),requestedBy.getString("runId"))):List.<String>of()) {
       var rows=jdbc.queryForList("SELECT id FROM ontology_retrieval_callers WHERE id=? AND user_id=? AND domain_id=? AND input_hash<>''",UUID.fromString(AgentJson.id(candidate)),actor.user().getId(),domain);
       if (!rows.isEmpty()) { scope=candidate; break; }
     }
-    return new OntologyAgentAccess.Context(actor.owner(),access,null,null,language,expires,scope);
+    return new OntologyAgentAccess.Context(actor.owner(),access,null,null,language,expires,scope,executionActor==null?null:executor.getId());
   }
   public OntologyAgentAccess.Context ownerContext(OntologyAgentStore.Owner owner,io.ontomato.dataengine.service.QueryAccessService.Access access,String language,long deadline) {
     if(access.expiresAt()!=null) deadline=Math.min(deadline,access.expiresAt());
-    String token=null,key=null;
+    String token=null,key=null,caller=null;
     var request=org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
     if (request instanceof org.springframework.web.context.request.ServletRequestAttributes servlet) {
+      caller=servlet.getRequest().getHeader("X-Ontomato-Retrieval-Caller-Id");
+      if(caller!=null)authorize(JSONObject.of("id",caller),owner);
       var current=identity.getCurrentUser();
       if (current!=null && current.getId().equals(owner.userId()) && owner.domainId().equals(current.getDomainId())) {
         token=servlet.getRequest().getHeader("tk"); key=servlet.getRequest().getHeader("X-API-Key");
@@ -103,7 +116,7 @@ public class AgentCaller {
         if(servlet.getRequest().getHeader(io.ontomato.dataengine.service.BuildTestContextService.HEADER)!=null) access=access.withTarget(contexts.resolve(servlet.getRequest()));
       }
     }
-    return new OntologyAgentAccess.Context(owner,access,token,key,language,deadline,null);
+    return new OntologyAgentAccess.Context(owner,access,token,key,language,deadline,caller,access.executionUserId());
   }
 
   public void authorize(JSONObject ref,OntologyAgentStore.Owner owner) {

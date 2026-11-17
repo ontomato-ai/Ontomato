@@ -16,6 +16,7 @@ import { installAssistantEvidenceReader } from "../platform/diagnosis/observe/wo
 import { installDiagnosisEvidenceReader } from "../platform/diagnosis/observe/workspaces/diagnosis-source";
 import { resolveDiagnosisEvidence } from "../services/ops-diagnosis/evidence";
 import type { AuthenticatedRequest } from "../utils/request-identity";
+import { assistantExecutionRouter } from "../api/routes/assistant-execution";
 import { unwrapCallbackCredential } from "../services/agent-runtime/callback-credential";
 import express, {
   Express,
@@ -203,6 +204,7 @@ export function createWorkbenchApp(): Express {
   app.use("/api", appBuilderRouter);
   app.use("/api/workspaces", workspaceRouter);
   app.use("/api/analysis-tasks", analysisTasksRouter);
+  app.use("/api/assistant/executions", assistantExecutionRouter);
   app.use("/api/assistant", assistantRouter);
   app.use("/api/platform/schedule-applications", scheduleApplicationsRouter);
   app.use("/api/platform/home", platformHomeRouter);

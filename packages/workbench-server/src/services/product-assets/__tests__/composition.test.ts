@@ -60,7 +60,7 @@ it('rejects nested Pages that would receive an object parameter of another ontol
 });
 it('allows a 3D ObjectView to serve as explicit Agent context without exposing undeclared fields',async()=>{
   const view=asset('twin',{kind:'object-projection',renders:{kind:'ObjectType',id:'Machine'},renderer:'3d',fields:['name']});
-  const profile=productAssetInputSchema.parse({name:'Twin',document:{kind:'agent-profile',principalId:'agent',instructions:'',tools:[],contextViews:['twin']}});
+  const profile=productAssetInputSchema.parse({name:'Twin',document:{kind:'agent-profile',agentId:'agent',instructions:'',tools:[],contextViews:['twin']}});
   await expect(validateComposition('profile',profile,async()=>view)).resolves.toBeUndefined();
   if(view.document.kind!=='object-projection')throw new Error('Expected ObjectView');
   view.document.fields=[];
@@ -79,7 +79,7 @@ it('keeps Navigation at the application root and projections inside Pages',async
 });
 it('rejects Actions exposed indirectly by an embedded AgentProfile on a display-only Page',async()=>{
   const action=asset('action',{kind:'action-view',renders:{kind:'Action',id:'approve'},parameters:{}});
-  const profile=asset('profile',{kind:'agent-profile',principalId:'agent',instructions:'',tools:['action'],contextViews:[]});
+  const profile=asset('profile',{kind:'agent-profile',agentId:'agent',instructions:'',tools:['action'],contextViews:[]});
   const page=productAssetInputSchema.parse({name:'Display',document:{kind:'page',embeddable:true,children:[{assetId:'profile'}]}});
   await expect(validateComposition('page',page,async id=>id==='profile'?profile:action)).rejects.toMatchObject({code:'INVALID_EMBEDDABLE_PAGE'});
 });

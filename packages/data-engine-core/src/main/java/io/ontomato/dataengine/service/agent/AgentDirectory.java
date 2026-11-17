@@ -15,16 +15,19 @@ public class AgentDirectory {
   public AgentDirectory(AgentCaller callers,IdentityService identity,ActionCreationService actions,KnowledgeGovernanceService governance,OntologyAgentLabels labels) {
     this.callers=callers; this.identity=identity;this.actions=actions;this.governance=governance;this.labels=labels;
   }
-  public JSONObject list(JSONObject actor,String domain,String language) {
+  public JSONObject list(JSONObject actor,String domain,String language) { return list(actor,domain,language,null); }
+  public JSONObject list(JSONObject actor,String domain,String language,JSONObject executionActor) {
     var restored=callers.restore(actor,domain);
+    var executor=callers.executionUser(restored,executionActor);
+    var executionOwner=new OntologyAgentStore.Owner(executor.getId(),domain);
     var agents=new JSONArray();
     if (identity.hasKnowledgeGovernanceAccess(restored.user().getId(),domain)) for(var agent:governance.agents(domain)) agents.add(JSONObject.of(
       "ref",JSONObject.of("providerId","ontology","agentId",agent.getString("id")),
       "name",agent.getString("name"),"description",agent.getString("description")));
     try {
-      callers.requireQuery(restored);
+      identity.requireQueryAccess(executor.getId(),domain);
       agents.add(JSONObject.of("ref",JSONObject.of("providerId","ontology","agentId",OntologyAgentStore.RETRIEVER),"name","Data retrieval","description","Answer data questions with binding and retrieval results"));
-      try { actions.authorize(restored.owner());agents.add(JSONObject.of("ref",JSONObject.of("providerId","ontology","agentId",ActionCreationService.AGENT),"name","Action creation","description","Draft and test an action")); }
+      try { actions.authorize(executionOwner);agents.add(JSONObject.of("ref",JSONObject.of("providerId","ontology","agentId",ActionCreationService.AGENT),"name","Action creation","description","Draft and test an action")); }
       catch(org.springframework.web.server.ResponseStatusException denied) { if(denied.getStatusCode().value()!=403) throw denied; }
     } catch(org.springframework.web.server.ResponseStatusException denied) { if(denied.getStatusCode().value()!=403) throw denied; }
     for(int index=0;index<agents.size();index++) {

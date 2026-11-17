@@ -122,7 +122,7 @@ public class OntologyAgentHost {
             "workspaceCommit",
             "createdAt",
             "finishedAt",
-            "resolvedSkills")) result.put(name, run.get(name));
+            "resolvedSkills","executionUserId")) result.put(name, run.get(name));
     return result;
   }
 

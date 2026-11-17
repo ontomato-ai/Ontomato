@@ -60,14 +60,17 @@ export class AgentChannel {
     }
     return value;
   }
+  private executionActor(intent: AgentRunIntent) {
+    return intent.executionUserId ? {userId:intent.executionUserId,domainId:intent.channel.actor.domainId} : null;
+  }
   async file(intent:AgentRunIntent,fileId:string) {
     const provider=this.provider(intent.session.providerId);
-    const response=await fetch(provider.url.replace(/\/$/u,"")+"/read",{method:"POST",redirect:"error",signal:AbortSignal.timeout(30000),headers:{"Content-Type":"application/json",Accept:"application/octet-stream","X-Ontomato-Query-Service-Token":provider.token,"X-Domain-Id":intent.channel.actor.domainId},body:JSON.stringify({execution:{session:intent.session,runId:intent.id},actor:intent.channel.actor,fileId})});
+    const response=await fetch(provider.url.replace(/\/$/u,"")+"/read",{method:"POST",redirect:"error",signal:AbortSignal.timeout(30000),headers:{"Content-Type":"application/json",Accept:"application/octet-stream","X-Ontomato-Query-Service-Token":provider.token,"X-Domain-Id":intent.channel.actor.domainId},body:JSON.stringify({execution:{session:intent.session,runId:intent.id},actor:intent.channel.actor,executionActor:this.executionActor(intent),fileId})});
     if(!response.ok) { const failure=z.object({error:z.object({code:z.string(),message:z.string()})}).parse(await response.json());throw new RuntimeError(response.status,failure.error.code,failure.error.message); }
     return response;
   }
   async callback(intent: AgentRunIntent, action: "settle" | "read" | "cancel") {
-    const value = await this.post(this.provider(intent.session.providerId), "/" + action, { execution: { session: intent.session, runId: intent.id }, actor: intent.channel.actor }, intent.channel.actor.domainId);
+    const value = await this.post(this.provider(intent.session.providerId), "/" + action, { execution: { session: intent.session, runId: intent.id }, actor: intent.channel.actor, executionActor: this.executionActor(intent) }, intent.channel.actor.domainId);
     return action === "read" ? value : agentProviderAcknowledgementSchema.parse(value);
   }
   private emitChange(scope: Scope, sessionId: string) { for (const listener of this.listeners.get(JSON.stringify([scope,sessionId])) ?? []) listener(); }
@@ -85,10 +88,10 @@ export class AgentChannel {
     set.add(listener); this.listeners.set(id, set);
     return () => { set.delete(listener); if (!set.size) this.listeners.delete(id); };
   }
-  async request(scope: Scope, sessionId: string, runId: string, channel: AgentRunContext, input: AgentInput, language: string, context: AgentRunIntent["context"] | undefined, credential: AgentCredential) {
+  async request(scope: Scope, sessionId: string, runId: string, channel: AgentRunContext, input: AgentInput, language: string, context: AgentRunIntent["context"] | undefined, credential: AgentCredential, inheritedExecutionUserId?:string|null) {
     if (scope.domainId !== channel.actor.domainId || this.provider(channel.agent.providerId).hostId !== scope.hostId)
       throw new RuntimeError(403, "CROSS_DOMAIN", "Agent identity and target must belong to the current domain and provider");
-    const accepted=await this.accept({providerId:channel.agent.providerId,sessionId},channel.actor,input,{steer:true,web:{runId,channel,language,context,credential}});
+    const accepted=await this.accept({providerId:channel.agent.providerId,sessionId},channel.actor,input,{steer:true,web:{runId,channel,language,context,credential,executionUserId:inheritedExecutionUserId}});
     return {...accepted,delivery:accepted.delivery!};
   }
   async prepare(intent: AgentRunIntent) {
@@ -96,9 +99,17 @@ export class AgentChannel {
     let hostPrepared = false;
     try {
       const input = (await this.facts.pending(scope, intent.session.sessionId)).find(row => row.id === intent.inputId)!.message as AgentInput;
-      const request: AgentPrepareRequest = { mode: "run", language: intent.language, agent: intent.channel.agent, sessionId: intent.session.sessionId, runId: intent.id, actor: intent.channel.actor, inputId: intent.inputId, input, authority: intent.channel.authority, requestedBy: intent.channel.requestedBy, root: intent.channel.root, context: intent.context };
+      const parent = intent.channel.requestedBy;
+      const inheritedExecution = intent.executionUserId!==undefined ? this.executionActor(intent) : parent ? this.executionActor(await this.facts.intent(this.scope(parent.session, scope.domainId), parent.runId)) : null;
+      const request: AgentPrepareRequest = { mode: "run", executionActor: inheritedExecution, language: intent.language, agent: intent.channel.agent, sessionId: intent.session.sessionId, runId: intent.id, actor: intent.channel.actor, inputId: intent.inputId, input, authority: intent.channel.authority, requestedBy: intent.channel.requestedBy, root: intent.channel.root, context: intent.context };
       const prepared = runtimeStartRunRequestSchema.parse(await this.post(this.provider(intent.session.providerId), "/prepare", request, scope.domainId, this.credential(intent.channel)));
       hostPrepared = true;
+      intent.executionUserId = prepared.executionActor?.userId ?? null;
+      await this.runtime.locked(scope, intent.session.sessionId, async () => {
+        const current = await this.facts.intent(scope, intent.id);
+        current.executionUserId = intent.executionUserId;
+        await this.facts.update(scope, current);
+      });
       const authority = prepared.authority ?? intent.channel.authority;
       const inherited = intent.channel.authority;
       if (inherited.executionKind === "build-test" && authority.executionKind !== "build-test") throw new RuntimeError(403,"BUILD_TEST_FORBIDDEN","A provider cannot change build-test authority to live");
@@ -138,7 +149,7 @@ export class AgentChannel {
   /** All inputs share receipt, admission and safe-boundary consumption. */
   private async accept(target: AgentSessionRef, actor: AgentRunContext["actor"], input: AgentInput, options: {
     requestedBy?: AgentExecutionRef; steer?: boolean; external?: ExternalAgentCaller;
-    web?: {runId:string;channel:AgentRunContext;language:string;context:AgentRunIntent["context"];credential:AgentCredential};
+    web?: {runId:string;channel:AgentRunContext;language:string;context:AgentRunIntent["context"];credential:AgentCredential;executionUserId?:string|null};
   } = {}) {
     const {requestedBy,steer=false,external,web}=options, scope=this.scope(target,actor.domainId);
     let launch: AgentRunIntent | undefined;
@@ -178,7 +189,7 @@ export class AgentChannel {
       const requester=requesterRun?.channel;
       const channel:AgentRunContext=web?.channel ?? {agent:binding.agent,actor:requestedBy || external ? actor : previous!.channel.actor,authority:external?.authority ?? requester?.authority ?? previous!.channel.authority,
         requestedBy:external?null:requestedBy ?? previous!.channel.requestedBy,root:external?{session:target,runId}:requester?.root ?? previous!.channel.root};
-      const intent=await this.facts.reserve(scope,target.sessionId,runId,received.id,channel,{language:web?.language ?? external?.language ?? requesterRun?.language ?? previous!.language,context:web?.context ?? binding.context,afterRunId:session.activeRunId ?? undefined});
+      const intent=await this.facts.reserve(scope,target.sessionId,runId,received.id,channel,{language:web?.language ?? external?.language ?? requesterRun?.language ?? previous!.language,context:web?.context ?? binding.context,executionUserId:web?web.executionUserId:external?null:requesterRun?requesterRun.executionUserId:previous?.executionUserId,afterRunId:session.activeRunId ?? undefined});
       if((web || external) && channel.root.runId===runId) this.remember(channel,web?.credential ?? external!.credential);
       this.retain(intent);
       if(!session.activeRunId) launch=intent;
@@ -209,7 +220,7 @@ export class AgentChannel {
     if(preparing) return this.facts.intent(scope,preparing);
     const rows = await this.facts.pending(scope, run.sessionId);
     if (!rows.length) return;
-    const next=await this.facts.reserve(scope, run.sessionId, randomUUID(), rows[0].id, run.channel, { language: intent.language,context: intent.context });
+    const next=await this.facts.reserve(scope, run.sessionId, randomUUID(), rows[0].id, run.channel, { language: intent.language,context: intent.context,executionUserId:run.executionUserId });
     this.retain(next);return next;
   }
   async stopped(scope: Scope, run: RuntimeRun, next?: AgentRunIntent) {
@@ -255,7 +266,7 @@ export class AgentChannel {
     let context: string | undefined;
     for (const row of pending) {
       const channel = run.channel!;
-      const prepared = agentSteerPreparationSchema.parse(await this.post(this.provider(channel.agent.providerId), "/prepare", { mode: "steer", language: run.language, agent: channel.agent, actor: channel.actor, sessionId: run.sessionId, runId: run.id, inputId: row.id, input: row.message, authority: channel.authority, requestedBy: channel.requestedBy, root: channel.root }, scope.domainId, this.credential(channel)));
+      const prepared = agentSteerPreparationSchema.parse(await this.post(this.provider(channel.agent.providerId), "/prepare", { mode: "steer", executionActor:run.executionUserId ? {userId:run.executionUserId,domainId:scope.domainId} : null, language: run.language, agent: channel.agent, actor: channel.actor, sessionId: run.sessionId, runId: run.id, inputId: row.id, input: row.message, authority: channel.authority, requestedBy: channel.requestedBy, root: channel.root }, scope.domainId, this.credential(channel)));
       if (prepared.context !== undefined) context = prepared.context;
     }
     await this.runtime.locked(scope,run.sessionId,async () => {
@@ -292,7 +303,7 @@ export class AgentChannel {
     const source:AgentExecutionRef|undefined=current?{session:{providerId:channel.agent!.providerId,sessionId:current.sessionId},runId:current.id}:undefined;
     if (command.op === "list") {
       const directories = await Promise.all((this.runtime.options.agentProviders ?? []).map(async provider => {
-        const result = agentDirectorySchema.parse(await this.post(provider,"/list",{ providerId: provider.id,actor: channel.actor,language:run.language },scope.domainId, external?.credential ?? this.credential(current!.channel!)));
+        const result = agentDirectorySchema.parse(await this.post(provider,"/list",{ providerId: provider.id,actor: channel.actor,executionActor:current?.executionUserId ? {userId:current.executionUserId,domainId:scope.domainId} : null,language:run.language },scope.domainId, external?.credential ?? this.credential(current!.channel!)));
         if (result.agents.some(entry => entry.ref.providerId !== provider.id)) throw new RuntimeError(502,"INVALID_PROVIDER_DIRECTORY","A provider must list only its own agents");
         return result.agents;
       }));

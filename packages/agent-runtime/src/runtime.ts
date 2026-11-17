@@ -262,6 +262,7 @@ export class AgentRuntime {
         language: request.language,
         definition: request.definition,
         channel: request.channel,
+        executionUserId: request.executionActor?.userId ?? null,
         createdAt: new Date().toISOString(),
         finishedAt: null,
         stopReason: null,

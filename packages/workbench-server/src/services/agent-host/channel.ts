@@ -1,4 +1,5 @@
-import { profileForSession } from "../product-assets/agent-profile";
+import { profileIdForAgent } from "../product-assets/agent-profile";
+import {nativeProfileId} from "../product-assets/platform-assets";
 import { recentUserMessages } from "../assistant/user-quotes";
 import { OntologyRetrievalClient } from "../assistant/ontology-retrieval";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
@@ -55,7 +56,7 @@ export const agentChannelService = {
       if (body.agent.providerId === "workbench" && !await assistantStore.isBuilderRun(body.runId,owner) &&
         (body.input.role === "user" || (body.input.kind === "agent-answer" && "kind" in body.input.source && body.input.source.kind === "user"))) {
         const session=await assistantStore.session(body.sessionId,owner);
-        if(!await profileForSession(owner,credentials,body.sessionId,session.agent_id)) {
+        if(await nativeProfileId(owner.domainId,session.agent_id) || !await profileIdForAgent(owner,session.agent_id)) {
           const turn=await assistantStore.turn(body.runId,owner);
           const messages=(await new RuntimeClient(owner.domainId,undefined,owner.userId).session(body.sessionId)).messages;
           await new OntologyRetrievalClient(owner,turn.retrieval_scope_id).updateUserQuotes(recentUserMessages(messages,body.inputId),credentials);

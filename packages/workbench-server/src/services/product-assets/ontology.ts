@@ -12,11 +12,13 @@ import {readProductGrantRecords} from './grants';
 import {DashboardMetricClient} from '../dashboard/metric-client';
 import {readDefinition} from './definitions';
 import {platformObjectTypes} from './platform-objects';
+import {assistantStore} from '../assistant/store';
+import {assistantName} from '../assistant/labels';
 
 export function ontologyRegistration(asset:ProductAsset){
   const document=asset.document;
   if('renders' in document)return {id:asset.id,kind:document.kind,name:asset.name,revision:asset.revision,targetKind:document.renders.kind,targetId:document.renders.id,isDefault:document.isDefault};
-  if(document.kind==='agent-profile')return {id:asset.id,kind:document.kind,name:asset.name,revision:asset.revision,targetKind:'AgentPrincipal',targetId:document.principalId,isDefault:false};
+  if(document.kind==='agent-profile')return {id:asset.id,kind:document.kind,name:asset.name,revision:asset.revision,targetKind:'AgentDefinition',targetId:document.agentId,isDefault:false};
   if(document.kind==='application')return {id:asset.id,kind:document.kind,name:asset.name,revision:asset.revision,targetKind:null,targetId:null,isDefault:false};
   return null;
 }
@@ -43,7 +45,7 @@ export async function readProductOntology(owner:ProductOwner){
 }
 export async function registeredProductGraph(owner:ProductOwner,assets:ProductAsset[],credentials?:AssistantCredentials){
   const graph=productGraph(assets),ontology=await readProductOntology(owner);
-  const targets:Record<string,string>={ObjectType:'object-type',Definition:'definition',MetricView:'metric',Action:'action',AgentPrincipal:'principal'};
+  const targets:Record<string,string>={ObjectType:'object-type',Definition:'definition',MetricView:'metric',Action:'action',AgentDefinition:'agent'};
   const registered=new Set(ontology.edges.map(edge=>JSON.stringify([`asset:${edge.source}`,edge.relation,`${targets[edge.target_kind]}:${edge.target_id}`])));
   const registrations=new Map(ontology.nodes.map(node=>[node.id,node]));
   for(const asset of assets)if(ontologyRegistration(asset)&&(registrations.get(asset.id)?.revision!==asset.revision||registrations.get(asset.id)?.kind!==asset.document.kind))throw new HttpError(409,'Product ontology registration is not current; retry after synchronization','PRODUCT_ONTOLOGY_PENDING');
@@ -75,10 +77,7 @@ async function resolveGraphNames(owner:ProductOwner,graph:ReturnType<typeof prod
           const result=await post('/admin/getMetas',{});
           return Object.fromEntries((result.data?.classDef??[]).map((item:{className:string;showName?:string;classDesc?:string})=>[item.className,item.showName||item.classDesc]));
         }
-        if(kind==='AgentPrincipal'){
-          const result=JSON.parse((await backendGet('product-graph-principals',config.dataQuery.baseUrl+'/agent-principals',{headers,retries:1})).text);
-          return Object.fromEntries((result.principals??[]).map((item:{id:string;name:string})=>[item.id,item.name]));
-        }
+        if(kind==='AgentDefinition')return Object.fromEntries((await assistantStore.agents(owner.domainId)).map(agent=>[agent.id,assistantName(agent,credentials.locale)]));
         const result=await post(kind==='role'?'/role/getRoleInfoPage':'/user/getUserInfoPage',{pageNum:1,pageSize:1000,cdt:''});
         return Object.fromEntries((result.data?.data??[]).map((item:{id:string;roleName?:string;userName?:string;loginCode?:string})=>[item.id,item.roleName||item.userName||item.loginCode]));
       }catch{return {};}
@@ -90,11 +89,8 @@ async function resolveGraphNames(owner:ProductOwner,graph:ReturnType<typeof prod
     try{
       let name:string|undefined;
       if(node.kind==='domain')name=productDefaultTexts.graphDomainMembers;
-      else if(node.kind==='role'||node.kind==='principal'||node.kind==='AgentPrincipal'){
-        const kind=node.kind==='principal'&&node.id.startsWith('principal:')?'AgentPrincipal':node.kind;
-        name=(await catalog(kind))[raw];
-        if(!name&&node.kind==='principal')name=(await catalog('AgentPrincipal'))[raw];
-      }
+      else if(node.kind==='AgentDefinition')name=(await catalog('AgentDefinition'))[raw];
+      else if(node.kind==='role'||node.kind==='principal')name=(await catalog(node.kind))[raw];
       else if(node.kind==='metric')name=(await new DashboardMetricClient(owner.domainId,credentials).describe(raw)).name;
       else if(node.kind==='definition'){
         const definition=await readDefinition(owner,raw);
@@ -108,7 +104,7 @@ async function resolveGraphNames(owner:ProductOwner,graph:ReturnType<typeof prod
         const result=JSON.parse((await backendGet('product-graph-application',config.dataQuery.baseUrl+'/platform/applications/'+encodeURIComponent(raw),{headers,retries:1})).text);
         const names=result.data?.names;name=names?.[credentials.locale??'']||names?.['zh-CN']||names?.en;
       }
-      node.name=name||({role:productDefaultTexts.graphRoleUnavailable,principal:productDefaultTexts.graphPrincipalUnavailable,AgentPrincipal:productDefaultTexts.graphAgentPrincipal,metric:productDefaultTexts.graphMetricUnavailable,action:productDefaultTexts.graphActionUnavailable,definition:productDefaultTexts.graphDefinitionUnavailable,'object-type':productDefaultTexts.graphObjectTypeUnavailable,application:productDefaultTexts.graphApplicationUnavailable} as Record<string,string>)[node.kind]||productDefaultTexts.graphNameUnavailable;
+      node.name=name||({role:productDefaultTexts.graphRoleUnavailable,principal:productDefaultTexts.graphPrincipalUnavailable,AgentDefinition:productDefaultTexts.graphNameUnavailable,metric:productDefaultTexts.graphMetricUnavailable,action:productDefaultTexts.graphActionUnavailable,definition:productDefaultTexts.graphDefinitionUnavailable,'object-type':productDefaultTexts.graphObjectTypeUnavailable,application:productDefaultTexts.graphApplicationUnavailable} as Record<string,string>)[node.kind]||productDefaultTexts.graphNameUnavailable;
     }catch{node.name=productDefaultTexts.graphNameUnavailable;}
   }));
 }

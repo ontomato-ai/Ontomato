@@ -23,6 +23,7 @@ public class AgentChannelRuns {
   public static void admissionCredential(JSONObject request,OntologyAgentAccess.Context context) {
     var grant=context.access()==null?null:context.access().grant();
     if(grant!=null) request.put("credentialFrom",grant.getString("runId"));
+    else if(context.callerId()!=null)request.put("credentialFrom",context.callerId());
     else request.put("credential",credential(context));
   }
   public JSONObject send(String agentId,String session,String run,JSONObject input,JSONObject parameters,OntologyAgentAccess.Context context) throws Exception {

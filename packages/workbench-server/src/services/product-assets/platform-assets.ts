@@ -4,7 +4,6 @@ import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres
 import {transaction} from '../../infrastructure/postgres-transaction';
 import {backendGet,backendPost,buildBackendHeaders} from '../../utils/backend-client';
 import {config} from '../../config/application';
-import {environment} from '../../config/environment';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {assistantStore} from '../assistant/store';
 import {effectiveSystemPrompt} from '../assistant/prompts';
@@ -44,8 +43,6 @@ export async function synchronizePlatformAssets(owner:ProductOwner,credentials:A
  const agents=(await assistantStore.agents(owner.domainId)).filter(agent=>['regular','analysis'].includes(agent.kind));
  const response=await backendGet('platform-product-catalog',config.dataQuery.baseUrl+'/platform/applications?purpose=navigation',{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1,timeoutMs:15_000});
  const catalog=JSON.parse(response.text);if(!Array.isArray(catalog.data))throw new Error('Application catalog unavailable');
- const token=environment.agentRuntime().queryServiceToken;
- for(const agent of agents){const result=await backendPost('default-agent-identity',config.dataQuery.baseUrl+'/agent-principals/register-user-scoped',{domainId:owner.domainId,principalId:agent.id,name:assistantName(agent,credentials.locale)},{headers:{'Content-Type':'application/json','X-Ontomato-Query-Service-Token':token},retries:1});if(JSON.parse(result.text).success!==true)throw new Error('Default Agent identity registration failed');const existing=await getPostgresPool().query(`SELECT owner_id FROM ${t('product_assets')} WHERE domain_id=$1 AND id=$2`,[owner.domainId,'default-agent-profile-'+agent.id]);await registerProductResource({...owner,userId:existing.rows[0]?.owner_id??owner.userId},agent.id,true);}
  const inserted:string[]=[];
  await transaction(async client=>{
   await lockProducts(client,owner);
@@ -62,7 +59,7 @@ export async function synchronizePlatformAssets(owner:ProductOwner,credentials:A
   for(const agent of agents){
    const id='default-agent-profile-'+agent.id;
    await client.query(`INSERT INTO ${t('product_native_agent_bindings')}(domain_id,asset_id,agent_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`,[owner.domainId,id,agent.id]);
-   await insert(id,assistantName(agent,credentials.locale),assistantDescription(agent,credentials.locale),{kind:'agent-profile',principalId:agent.id,instructions:effectiveSystemPrompt(agent,credentials.locale),tools:[],contextViews:[]});
+   await insert(id,assistantName(agent,credentials.locale),assistantDescription(agent,credentials.locale),{kind:'agent-profile',agentId:agent.id,instructions:effectiveSystemPrompt(agent,credentials.locale),tools:[],contextViews:[]});
   }
   for(const app of catalog.data){
    const already=await client.query(`SELECT 1 FROM ${t('product_assets')} WHERE domain_id=$1 AND (id=$2 OR document->>'applicationId'=$2) LIMIT 1`,[owner.domainId,app.id]);if(already.rows.length)continue;

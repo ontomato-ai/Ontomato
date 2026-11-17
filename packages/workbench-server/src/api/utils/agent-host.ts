@@ -2,7 +2,7 @@ import { createLogger } from "../../logging/logger";
 const logger = createLogger("agent-host");
 import type { Request, Response, RequestHandler } from "express";
 import { z } from "zod";
-import { requireDomainId, type AuthenticatedRequest } from "../../utils/request-identity";
+import { requireDomainId, credentialsFromRequest, type AuthenticatedRequest } from "../../utils/request-identity";
 import { HttpError } from "../../utils/errors";
 import { getRequestId } from "../../logging/log-context";
 const uuid = z.string().uuid();
@@ -10,7 +10,7 @@ export function context(req: Request) {
   const r = req as AuthenticatedRequest;
   return {
     owner: { domainId: requireDomainId(r), userId: r.userId },
-    credentials: { token: r.token, apiKey: r.apiKey, locale: r.locale },
+    credentials: credentialsFromRequest(r),
   };
 }
 export const id = (r: Request, key: string) => uuid.parse(r.params[key]);

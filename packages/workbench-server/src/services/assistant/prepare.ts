@@ -7,6 +7,9 @@ import { assistantStore, type AgentRow, type AssistantOwner, type SessionRow, ty
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { runDefinition, userSkillEnvironment, type AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { effectiveSystemPrompt } from "./prompts";
+import {assistantOntologyContext} from "./context";
+import {executionSkillEnvironment} from "./execution-callback";
+import {executionCallerCredentials} from "./execution";
 import { resolveLocale } from "../../i18n";
 import { recentUserMessages } from "./user-quotes";
 import { OntologyRetrievalClient } from "./ontology-retrieval";
@@ -14,44 +17,39 @@ import { getQueryTimeoutMs } from "../../config/query-settings";
 import {profileForSession} from '../product-assets/agent-profile';
 import {profileRuntimeTools} from '../product-assets/runtime-tools';
 import {callbackCredential} from '../agent-runtime/callback-credential';
-import {agentPrincipalCredentials,userScopedAgentCredentials} from '../product-assets/agent-principal';
 import {environment} from '../../config/environment';
-import {nativeProfileId} from '../product-assets/platform-assets';
-import {canUseNativeAgent} from '../product-assets/native-agent-access';
-import {HttpError} from '../../utils/errors';
 
 export interface AssistantPreparation {
   a: AgentRow; session: SessionRow; turn: TurnRow; message: string; input: AgentInput; inputId: string; ontologyContext: string | null;
   owner: AssistantOwner; credentials: AssistantCredentials;
+  executionUserId: string | null; executionCredentials: AssistantCredentials;
 }
-export async function prepareAnalystRun({ a, session, turn, input, inputId, ontologyContext, owner, credentials }: AssistantPreparation): Promise<RuntimeStartRunRequest> {
+export async function prepareAnalystRun({ a, session, turn, input, inputId, ontologyContext, owner, credentials, executionUserId, executionCredentials }: AssistantPreparation): Promise<RuntimeStartRunRequest> {
   const sessionId = session.id, id = turn.id;
   const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
-  const platformProfile=await nativeProfileId(owner.domainId,a.id);
-  if(platformProfile&&!await canUseNativeAgent(owner,credentials,a.id,platformProfile))throw new HttpError(403,'Platform Agent identity is disabled or unavailable','AGENT_PRINCIPAL_FORBIDDEN');
-  const profile=await profileForSession(owner,credentials,session.id,session.agent_id);
-  if(platformProfile&&!credentials.token?.startsWith('ap2.'))credentials=await userScopedAgentCredentials(owner.domainId,a.id,owner.userId,credentials.locale);
-  if(profile)await agentPrincipalCredentials(owner.domainId,profile.principalId,credentials.locale,owner.userId);
-  const prepared = profile?null:await prepareAssistantSkills(owner.domainId, a, credentials);
-  const skills = prepared?.skills ?? [];
-  const skillEnvironment = profile?{values:{ONTOMATO_WORKBENCH_URL:environment.agentRuntime().callbackUrl.replace(/\/$/,'')},secrets:{}}:userSkillEnvironment(credentials);
+  const businessCredentials = executionCallerCredentials(executionCredentials,id);
+  // The projection and the skills it may load belong to the initiator, not to whoever the agent runs as.
+  const skillsProjectionCredentials = credentials;
 
   const continuationIds = new Set<string>();
-  for (const previous of profile?[]:await assistantStore.turns(sessionId)) {
+  for (const previous of await assistantStore.turns(sessionId)) {
     if (previous.id === id) continue;
     for (const link of await new OntologyRetrievalClient(owner, previous.retrieval_scope_id).links()) continuationIds.add(link.retrievalId);
   }
-  if(!profile) {
-    const userMessages = recentUserMessages(
-      (await client.session(sessionId)).messages, inputId,
-    );
-    await new OntologyRetrievalClient(owner, turn.retrieval_scope_id).open({
-      classNames: turn.class_names,
-      continuationIds: [...continuationIds].sort(),
-      deadlineAt: new Date(new Date(turn.created_at).getTime() + getQueryTimeoutMs()).toISOString(),
-      recentUserMessages: userMessages,
-    }, credentials);
-  }
+  const userMessages = recentUserMessages(
+    (await client.session(sessionId)).messages, inputId,
+  );
+  await new OntologyRetrievalClient(owner, turn.retrieval_scope_id).open({
+    classNames: turn.class_names,
+    continuationIds: [...continuationIds].sort(),
+    deadlineAt: new Date(new Date(turn.created_at).getTime() + getQueryTimeoutMs()).toISOString(),
+    recentUserMessages: userMessages, executionUserId,
+  }, credentials);
+  const profile=await profileForSession(owner,credentials,session.id,session.agent_id,businessCredentials);
+  const skillEnvironment = profile ? {values:{ONTOMATO_WORKBENCH_URL:environment.agentRuntime().callbackUrl.replace(/\/$/,'')},secrets:{}} : executionUserId === null ? userSkillEnvironment(credentials) : executionSkillEnvironment(owner,credentials,id);
+  const prepared = profile?null:await prepareAssistantSkills(owner.domainId, a, skillsProjectionCredentials);
+  const skills = prepared?.skills ?? [];
+  if(!profile)ontologyContext=await assistantOntologyContext(a,businessCredentials);
   return {
     language: resolveLocale(credentials.locale),
     input,
