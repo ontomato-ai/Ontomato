@@ -30,6 +30,8 @@ It reads existing knowledge to select create/update; creates use an empty knowle
 status, while updates keep the existing ID and status. Outside the platform it calls Java import
 with your credential. Report imported knowledge only after that interface confirms it.
 
-In platform replies, give the reader each draft's `href` and, after saving governance work,
-`reportHref` using ordinary Markdown links: `[Title](href)`. Do not use image syntax for
-these page links, or link to or embed the draft file itself.
+In platform replies, keep the link targets in each draft's `link` and saved work's `reportLink`
+verbatim; you may adapt the link text to the reader's language.
+These are ready-to-paste Markdown links with in-app relative addresses: do not add a host
+or construct them with any `ONTOMATO_*_URL`. Do not use image syntax or link to or embed
+the draft file itself.
