@@ -2,6 +2,7 @@ import { BUILD_TEST_HEADER, type AppExecutionContext } from "@ontomato/contracts
 import type { AppHostCredential } from "@ontomato/contracts/app-host";
 import type { DataAdaptersData } from "@ontomato/contracts/data-adapters";
 import type { ObjectViewDocument, ObjectViewState } from "@ontomato/contracts/object-views";
+import type { PlatformTaskFrequency } from "@ontomato/contracts/platform-schedules";
 import { createActionsClient } from "./clients/actions";
 import { createProductsClient } from "./clients/products";
 import type { DashboardDetail, DashboardListItem } from "@ontomato/contracts/dashboard";
@@ -305,48 +306,14 @@ export interface TriggerRecord {
   conditionKind?: string | null;
   effectKind?: string | null;
   effect?: { actionId?: string; workflowId?: string } | null;
-  /** The stored condition, verbatim: the edit form has to restore the cadence, not just show its wording. */
-  condition?: { frequency?: Record<string, unknown>; timeZone?: string } | null;
+  /**
+   * The stored condition, verbatim. A time condition's frequency has the platform scheduler's shape; the page words it
+   * in the reader's language and the edit form restores it.
+   */
+  condition?: { frequency?: PlatformTaskFrequency | null; timeZone?: string } | null;
   enabled?: boolean;
-  /** Human wording of the cadence, derived from the condition. */
-  frequency?: string | null;
   nextRunAt?: string | null;
   lastFiredAt?: string | null;
-}
-
-/**
- * A cadence as words.
- *
- * The service holds it as a structured object (`{kind:"interval", every:60, unit:"minute"}`), not as a string, so a
- * page that only reads `text` shows a dash for every real trigger. Each kind is worded here instead of rendering the
- * object, because "每 60 分钟" is what an operator reads and `{"kind":"interval"}` is not.
- */
-function triggerFrequency(value: unknown): string | null {
-  if (typeof value === "string" && value.trim()) return value;
-  const frequency = value as { kind?: unknown; every?: unknown; unit?: unknown; time?: unknown; weekday?: unknown; day?: unknown; expression?: unknown; text?: unknown } | null | undefined;
-  if (!frequency) return null;
-  if (typeof frequency.text === "string" && frequency.text.trim()) return frequency.text;
-  const unitWords: Record<string, string> = { minute: "分钟", hour: "小时", day: "天" };
-  switch (frequency.kind) {
-    case "interval": {
-      const every = Number(frequency.every);
-      const unit = unitWords[String(frequency.unit)] ?? String(frequency.unit ?? "");
-      return Number.isFinite(every) && unit ? `每 ${every} ${unit}` : null;
-    }
-    case "daily":
-      return typeof frequency.time === "string" ? `每天 ${frequency.time}` : "每天";
-    case "weekly": {
-      const weekdays = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-      const day = weekdays[Number(frequency.weekday)] ?? "";
-      return typeof frequency.time === "string" ? `每${day} ${frequency.time}` : `每${day}`;
-    }
-    case "monthly":
-      return typeof frequency.time === "string" ? `每月 ${String(frequency.day)} 日 ${frequency.time}` : `每月 ${String(frequency.day)} 日`;
-    case "cron":
-      return typeof frequency.expression === "string" ? frequency.expression : null;
-    default:
-      return null;
-  }
 }
 
 export type ManagerClient = ReturnType<typeof createManagerClient>;
@@ -875,7 +842,6 @@ export function createManagerClient(
     const response = await post("/trigger/queryList", {});
     const rows = Array.isArray(response.data) ? (response.data as Array<Record<string, unknown>>) : [];
     return rows.map((row) => {
-      const condition = (row.condition ?? {}) as Record<string, unknown>;
       return {
         id: String(row.id ?? ""),
         name: typeof row.name === "string" && row.name.trim() ? row.name : String(row.id ?? ""),
@@ -887,7 +853,6 @@ export function createManagerClient(
         effect: (row.effect ?? null) as TriggerRecord["effect"],
         condition: (row.condition ?? null) as TriggerRecord["condition"],
         enabled: row.enabled === true,
-        frequency: triggerFrequency(condition.frequency),
         nextRunAt: typeof row.nextRunAt === "string" ? row.nextRunAt : null,
         lastFiredAt: typeof row.lastFiredAt === "string" ? row.lastFiredAt : null,
       };
