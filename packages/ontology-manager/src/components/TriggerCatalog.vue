@@ -137,10 +137,29 @@ function stamp(value: string | null | undefined) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
+/**
+ * What the trigger starts, in an operator's words: the kind, then the name of the action or process. The effect stores
+ * only an id; one no catalogue names any more (the action was deleted) is shown as stored rather than hidden.
+ */
 function effect(item: TriggerRecord) {
-  if (item.effectKind === "workflow") return `workflow · ${item.effect?.workflowId ?? "—"}`;
-  if (item.effectKind === "action") return `action · ${item.effect?.actionId ?? "—"}`;
+  if (item.effectKind === "workflow") {
+    return `${ot("triggerEffectWorkflow")} · ${nameOf(workflows.value, item.effect?.workflowId)}`;
+  }
+  if (item.effectKind === "action") {
+    return `${ot("triggerEffectAction")} · ${nameOf(actions.value, item.effect?.actionId)}`;
+  }
   return item.effectKind ?? "—";
+}
+
+function nameOf(catalogue: Array<{ id?: string; name: string }>, id: string | undefined) {
+  if (!id) return "—";
+  return catalogue.find((entry) => entry.id === id)?.name ?? id;
+}
+
+/** Time is the only condition kind the backend accepts; any other is shown as stored. */
+function conditionLabel(item: TriggerRecord) {
+  if (item.conditionKind === "time") return ot("triggerConditionTime");
+  return item.conditionKind ?? "—";
 }
 
 function statusLabel(status: string | undefined) {
@@ -334,12 +353,12 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column :label="ot('triggerColumnEffect')" min-width="220">
           <template #default="{ row }">
-            <span class="trigger-mono">{{ effect(row) }}</span>
+            <span>{{ effect(row) }}</span>
           </template>
         </el-table-column>
         <el-table-column :label="ot('triggerColumnCondition')" min-width="130">
           <template #default="{ row }">
-            <span>{{ row.conditionKind ?? "—" }}</span>
+            <span>{{ conditionLabel(row) }}</span>
           </template>
         </el-table-column>
         <el-table-column :label="ot('triggerColumnCadence')" min-width="130">
@@ -503,11 +522,6 @@ onMounted(async () => {
   margin-left: 6px;
   font-size: 11px;
   color: var(--el-text-color-secondary);
-}
-
-.trigger-mono {
-  font-family: var(--el-font-family-mono, monospace);
-  font-size: 12px;
 }
 
 .trigger-action {

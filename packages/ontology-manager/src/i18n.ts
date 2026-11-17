@@ -834,6 +834,7 @@ const ontologyEn = {
   triggerNamePlaceholder: "For example: start the leave process every hour",
   triggerDescription: "Description",
   triggerCondition: "Condition",
+  triggerConditionTime: "Time table",
   triggerFrequencyInterval: "Every N minutes/hours/days",
   triggerFrequencyDaily: "Daily",
   triggerFrequencyWeekly: "Weekly",

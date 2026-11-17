@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, h, nextTick, ref, type App } from "vue";
 import CapabilityMap from "../components/CapabilityMap.vue";
+import TriggerCatalog from "../components/TriggerCatalog.vue";
 import { buildCapabilityMap } from "../components/capability-map-model";
 import {
   CAPABILITY_LABEL_SIZE,
@@ -189,4 +190,50 @@ it("opens the capability map with every name readable and none overlapping, smal
     );
     expect(collisions).toEqual([]);
   }
+});
+
+it("names what a trigger starts and the kind of its condition, not the stored ids", async () => {
+  const root = document.body.appendChild(document.createElement("div"));
+  vi.stubGlobal("fetch", async (url: string) => {
+    const data = url.endsWith("/trigger/queryList")
+      ? [
+          {
+            id: "t1",
+            name: "Monthly approval",
+            status: "PENDING_REVIEW",
+            conditionKind: "time",
+            condition: { frequency: { kind: "monthly", day: 1, time: "00:00" } },
+            effectKind: "action",
+            effect: { actionId: "e2e-org-expense-v2-approve" },
+          },
+          {
+            id: "t2",
+            name: "Weekly review",
+            status: "PUBLISHED",
+            conditionKind: "time",
+            condition: { frequency: { kind: "weekly", weekday: 1, time: "09:00" } },
+            effectKind: "workflow",
+            effect: { workflowId: "deleted-process" },
+          },
+        ]
+      : url.endsWith("/action/queryList") ? [{ id: "e2e-org-expense-v2-approve", name: "Approve expense" }]
+      : [];
+    return new Response(JSON.stringify({ success: true, data }), { headers: { "content-type": "application/json" } });
+  });
+  app = createApp({ setup() {
+    provideManagerFeedback(ref(root));
+    return () => h(TriggerCatalog);
+  } });
+  installObjectViewHost(app);
+  app.mount(root);
+  await flush();
+  const rows = [...root.querySelectorAll(".el-table__body tr")].map((row) =>
+    [...row.querySelectorAll("td")].map((cell) => cell.textContent?.trim()),
+  );
+  // Effect and condition are the second and third columns.
+  expect(rows.map((cells) => cells.slice(1, 3))).toEqual([
+    ["Action · Approve expense", "Time table"],
+    // A process no catalogue names any more is still shown, by the id the trigger stored.
+    ["Process · deleted-process", "Time table"],
+  ]);
 });
