@@ -17,10 +17,15 @@ function required(value, what) {
 }
 
 function headers() {
-  if (env.ONTOMATO_TK && env.ONTOMATO_API_KEY) throw new Error("Set ONTOMATO_TK or ONTOMATO_API_KEY, not both");
+  const credentials = [
+    ["ONTOMATO_EXECUTION_CALLBACK", "X-Ontomato-Callback-Credential"],
+    ["ONTOMATO_TK", "tk"],
+    ["ONTOMATO_API_KEY", "X-API-Key"],
+  ].filter(([variable]) => env[variable]);
+  if (credentials.length > 1)
+    throw new Error("Set only one of ONTOMATO_EXECUTION_CALLBACK, ONTOMATO_TK or ONTOMATO_API_KEY");
   const result = { "Content-Type": "application/json", "Accept-Language": env.ONTOMATO_LANGUAGE || "en" };
-  if (env.ONTOMATO_TK) result.tk = env.ONTOMATO_TK;
-  else if (env.ONTOMATO_API_KEY) result["X-API-Key"] = env.ONTOMATO_API_KEY;
+  if (credentials.length) result[credentials[0][1]] = env[credentials[0][0]];
   for (const [variable, header] of [["ONTOMATO_RUN_ID", "X-Ontomato-Run-Id"], ["ONTOMATO_SESSION_ID", "X-Ontomato-Session-Id"], ["ONTOMATO_CORRELATION_ID", "X-Correlation-Id"]])
     if (env[variable]) result[header] = env[variable];
   return result;

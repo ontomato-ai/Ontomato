@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { createServer, type Server, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -24,11 +24,11 @@ function run(args: string[], env: Record<string, string>, cwd: string) {
   });
 }
 
-async function serve(handler: (url: string, body: unknown, response: ServerResponse) => void) {
+async function serve(handler: (url: string, body: unknown, response: ServerResponse, request: IncomingMessage) => void) {
   const server = createServer((request, response) => {
     let text = "";
     request.on("data", (chunk) => { text += chunk; });
-    request.on("end", () => handler(request.url ?? "", text ? JSON.parse(text) : null, response));
+    request.on("end", () => handler(request.url ?? "", text ? JSON.parse(text) : null, response, request));
   });
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -100,4 +100,24 @@ it("lists the users a governance administrator may choose, and reports when none
   expect(result.code).toBe(0);
   expect(JSON.parse(result.stdout)).toEqual({ canSetExecutionUser: false, users: [] });
   expect(seen).toEqual(["/platform/agent-execution/options?keyword=ali&pageNum=1&pageSize=100"]);
+});
+
+it("uses the execution callback credential instead of tk when the runtime provides one", async () => {
+  const seen: { url: string; headers: IncomingMessage["headers"] }[] = [];
+  const base = await serve((url, _body, response, request) => {
+    seen.push({ url, headers: request.headers });
+    response.setHeader("Content-Type", "application/json");
+    response.end(JSON.stringify({ agents: [] }));
+  });
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-builder-callback-"));
+  const env = { ONTOMATO_SKILL_SCENARIO: "platform", ONTOMATO_EXECUTION_CALLBACK: "wbc1-run", ONTOMATO_RUN_ID: "run-id",
+    ONTOMATO_WORKBENCH_URL: base, ONTOMATO_ONTOLOGY_URL: base };
+  const result = await run(["list"], env, cwd);
+  expect(result.code).toBe(0);
+  expect(seen).toHaveLength(1);
+  expect(seen[0].url).toBe("/api/assistant/agent-definitions");
+  expect(seen[0].headers["x-ontomato-callback-credential"]).toBe("wbc1-run");
+  expect(seen[0].headers["x-ontomato-run-id"]).toBe("run-id");
+  expect(seen[0].headers.tk).toBeUndefined();
+  expect(seen[0].headers["x-api-key"]).toBeUndefined();
 });
