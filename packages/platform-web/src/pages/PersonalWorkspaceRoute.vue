@@ -12,7 +12,7 @@ import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { nodeApiRequest } from "@ontomato/workbench-ui";
 import { defaultPersonalWorkspace, personalWorkspaceSchema, recentWorkListSchema, type RecentWork, type WorkspaceSection } from "@ontomato/contracts/personal-workspace";
-import { ManagerFrame, ObjectViewPage, ProductAssetRuntime } from "@ontomato/ontology-manager";
+import { ManagerFrame, ObjectViewPage, ProductAssetRuntime, useProductText } from "@ontomato/ontology-manager";
 import { DashboardCardPicker, DashboardMetricPreview } from "@ontomato/workbench-ui/features/dashboard";
 import type { DashboardListItem } from "@ontomato/contracts/dashboard";
 import { platformSchedulesPath, platformTaskListSchema, type PlatformTask } from "@ontomato/contracts/platform-schedules";
@@ -26,7 +26,8 @@ import WorkspaceSkeleton from "./WorkspaceSkeleton.vue";
 import { AppWindow, ArrowUpRight, CircleAlert, Clock3, LayoutDashboard, MoreHorizontal, Pin, RefreshCw, Settings2, Sparkles } from "lucide-vue-next";
 import WorkspaceResourceDetail, { type WorkspaceResource } from "./WorkspaceResourceDetail.vue";
 import { agentHostCreateSessionResponseSchema, agentHostSessionSnapshotSchema, type AgentHostAgent, type AgentHostSession } from "@ontomato/contracts/agent-host";
-const { locale } = useI18n();
+const { locale, t } = useI18n();
+const productText = useProductText();
 const props=defineProps<{productAssetId?:string;platformWidgetAsset?:ProductAsset;preview?:boolean;pinnedAssets?:ProductAsset[];embedded?:boolean;pageState?:Record<string,unknown>;unavailableAssets?:string[]}>();
 const personalHome=computed(()=>!props.productAssetId&&!props.platformWidgetAsset&&!props.embedded);
 const today=computed(()=>new Intl.DateTimeFormat(locale.value,{month:'long',day:'numeric',weekday:'long'}).format(new Date()));
@@ -121,7 +122,7 @@ async function readPinned() {
     const sessions: Record<string, AgentHostSession> = {}, failures: Record<string, string> = {};
     await Promise.all(config.value.pinnedAnalyses.map(async item => {
       try { sessions[item.sessionId] = agentHostSessionSnapshotSchema.parse(await json(`/api/assistant/sessions/${item.sessionId}`)).session; }
-      catch { failures[item.sessionId] = locale.value.startsWith("zh") ? "会话暂不可访问" : "Conversation unavailable"; }
+      catch { failures[item.sessionId] = t("ontology.productHomeConversationUnavailable"); }
     }));
     if (revision === pinReadRevision) { pinnedSessions.value = sessions; pinErrors.value = failures; }
   });
@@ -143,7 +144,7 @@ function pinConversation(item: { sessionId: string; title: string }) {
 async function renamePin(id: string) {
   const item = config.value.pinnedAnalyses.find(item => item.sessionId === id)!;
   try {
-    const result = await ElMessageBox.prompt(locale.value.startsWith("zh") ? "仅修改工作台中的名称" : "Change the name in this workspace only", locale.value.startsWith("zh") ? "重命名分析" : "Rename analysis", {
+    const result = await ElMessageBox.prompt(t("ontology.productHomeRenameAnalysisHint"), t("ontology.productHomeRenameAnalysis"), {
       inputValue: item.title, inputValidator: value => !!value?.trim() && value.trim().length <= 200,
       confirmButtonText: text.value.save, cancelButtonText: text.value.cancel,
     });
@@ -194,25 +195,24 @@ function conversationTitle(title: string) {
     .replace(/[\s，,；;：:]+$/, "").trim();
   return readable || workspaceText.value.untitled;
 }
-const workspaceText = computed(() => locale.value.startsWith("zh") ? {
-  heading: "你想了解哪些数据？", description: "用日常语言提问，让智能体帮你查询和分析", placeholder: "例如：按学院统计在职教职工人数，并比较人员构成", send: "发送问题", stop: "停止", agent: "智能体", continue: "继续分析", empty: "完成一次分析后，可从这里继续", untitled: "未命名分析", resources: "常用应用", noAgent: "暂无可用智能体，请检查智能体配置", recent: "最近访问",
-} : { heading: "What would you like to know?", description: "Ask in your own words to explore and analyze your data", placeholder: "For example: Compare active staff counts and composition by school", send: "Send question", stop: "Stop", agent: "Agent", continue: "Continue analysis", empty: "Return here after completing an analysis", untitled: "Untitled analysis", resources: "Applications", noAgent: "No enabled agents. Check agent configuration.", recent: "Recent resources" });
+const workspaceText = computed(() => ({
+  heading: t("ontology.productHomeAskHeading"), description: t("ontology.productHomeAskDescription"), placeholder: t("ontology.productHomeAskPlaceholder"), send: t("ontology.productHomeSendQuestion"), stop: t("ontology.productHomeStop"), agent: t("ontology.productHomeAgent"), continue: t("ontology.productHomeContinueAnalysis"), empty: t("ontology.productHomeAnalysisEmpty"), untitled: t("ontology.productUntitledAnalysis"), resources: t("ontology.productHomeResources"), noAgent: t("ontology.productHomeNoAgent"), recent: t("ontology.productHomeRecentResources"),
+}));
 async function ask(question: string) {
   if(props.preview)return;
   if (!agentId.value || !enabledAgents.value.some(agent => agent.id === agentId.value)) return;
   await router.push({ path: platformRoutes.chat.path, query: { agentId: agentId.value, prompt: question } });
 }
-const interactionLabels = computed(() => locale.value.startsWith("zh") ? {
-  title: "默认查看方式", metrics: "指标详情", tasks: "任务结果", drawer: "侧栏", page: "完整页面",
-  analyze: "交给助手分析", openPage: "在完整页面打开", intervention: "需要处理", finished: "最近完成", density: "展示密度", help: "点击资源标题时查看内容；需要分析时，使用独立的提问或分析按钮", configure: "选择资源",
-} : { title: "Default view", metrics: "Metric details", tasks: "Task results", drawer: "Side panel", page: "Full page",
-  analyze: "Analyze with assistant", openPage: "Open full page", intervention: "Needs intervention", finished: "Recently completed", density: "Display density", help: "Resource titles open content. Use the separate question or analysis actions to start an analysis.", configure: "Choose resources" });
+const interactionLabels = computed(() => ({
+  title: t("ontology.productHomeDefaultView"), metrics: t("ontology.productHomeMetricDetails"), tasks: t("ontology.productHomeTaskResults"), drawer: t("ontology.productHomeSidePanel"), page: t("ontology.productHomeFullPage"),
+  analyze: t("ontology.productHomeAnalyzeWithAssistant"), openPage: t("ontology.productHomeOpenFullPage"), intervention: t("ontology.productHomeNeedsIntervention"), finished: t("ontology.productHomeRecentlyCompleted"), density: t("ontology.productHomeDisplayDensity"), help: t("ontology.productHomeViewHelp"), configure: t("ontology.productHomeChooseResources"),
+}));
 async function analyze(target: WorkspaceResource, intent: "analyze" | "explain" = "analyze") {
   if (analysisBusy.value || !canChat.value) return;
   analysisBusy.value = true; analysisError.value = "";
   try {
     const agent = enabledAgents.value.find(item => item.id === agentId.value);
-    if (!agent) throw new Error(locale.value.startsWith("zh") ? "没有可用的智能体" : "No enabled assistant available");
+    if (!agent) throw new Error(t("ontology.productHomeNoEnabledAssistant"));
     const evidence = target.kind === "metric"
       ? await json("/api/dashboards/query-card", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dashboardId: target.dashboardId, cardId: target.cardId }) })
       : target.runId ? await json(`${platformSchedulesPath}/${target.taskId}/runs/${target.runId}`) : null;
@@ -244,29 +244,18 @@ function openTask(task: PlatformTask) {
   openResource({ kind: "task", title: task.title, taskId: task.id, runId, pauseMessage: task.pause?.message,
     path: router.resolve({ path: platformRoutes.schedules.path, query: { taskId: task.id, ...(runId ? { runId } : {}) } }).fullPath });
 }
-const text = computed(() => locale.value.startsWith("zh") ? {
-  title: "我的主页", intro: "问数、关注数据，继续日常工作", configure: "配置主页", refresh: "刷新",
-  save: "保存", cancel: "取消", unsaved: "有未保存的修改", layout: "布局重点", tasks: "我的定时任务", data: "关注的数据",
-  apps: "常用应用", tasksLayout: "任务优先", dataLayout: "数据优先", assistantLayout: "应用优先",
-  appsDescription: "固定工作中常用的应用，快速进入业务流程", dataDescription: "集中查看关注的仪表盘与关键指标", tasksDescription: "查看需要介入的任务和最近的执行结果", recentDescription: "回到最近打开的应用、会话与数据", application: "应用", dashboard: "仪表盘",
-  emptyTasks: "暂无定时任务", emptyData: "在配置中选择要关注的仪表盘", emptyApps: "在配置中固定常用应用",
-  all: "查看全部", result: "查看结果", running: "运行中", paused: "已暂停", disabled: "已停用", pending: "等待执行",
-  completed: "执行完成", failed: "执行失败", skipped: "已跳过", next: "下次执行", retry: "重试", loading: "加载中…",
-  chat: "打开智能助手", build: "构建应用",
-  unavailable: "资源已删除或当前不可访问，请在配置中重新选择。", selection: "按选择顺序展示，可取消后重新选择来调整顺序。",
-  attention: "任务动态", issues: "需介入", results: "近期结果", runningTasks: "运行中", clear: "当前没有需要介入的定时任务", recent: "最近访问", emptyRecent: "打开应用、仪表盘或分析会话后，可从这里继续", recentApps: "最近使用", pinned: "已固定", updated: "最近访问", noAttention: "异常任务和最近 7 天的结果会显示在这里", assistantHint: "智能助手", assistantDescription: "通过对话查询数据、分析问题", noApps: "暂无可用的常用应用",
-} : {
-  title: "Personal workspace", intro: "Ask questions, follow data and continue your work", configure: "Configure workspace", refresh: "Refresh",
-  save: "Save", cancel: "Cancel", unsaved: "Unsaved changes", layout: "Layout focus", tasks: "My scheduled tasks", data: "Followed data",
-  apps: "Applications", tasksLayout: "Tasks first", dataLayout: "Data first", assistantLayout: "Applications first",
-  appsDescription: "Keep the applications you use for your daily workflows close", dataDescription: "Follow dashboards and their key metrics in one place", tasksDescription: "Review task issues and recent execution results", recentDescription: "Return to recently opened applications, conversations and data", application: "Application", dashboard: "Dashboard",
-  emptyTasks: "No scheduled tasks yet", emptyData: "Select dashboards in workspace settings", emptyApps: "Pin applications in workspace settings",
-  all: "View all", result: "View result", running: "Running", paused: "Paused", disabled: "Disabled", pending: "Waiting",
-  completed: "Completed", failed: "Failed", skipped: "Skipped", next: "Next run", retry: "Retry", loading: "Loading…",
-  chat: "Open assistant", build: "Build application",
-  unavailable: "This resource was removed or is unavailable. Choose a replacement in settings.", selection: "Items appear in selection order. Deselect and select again to reorder.",
-  attention: "Task activity", issues: "Need intervention", results: "Recent results", runningTasks: "Running", clear: "No scheduled tasks need intervention", recent: "Recent work", emptyRecent: "Open an application, dashboard or analysis conversation to resume it here", recentApps: "Recently used", pinned: "Pinned", updated: "Last visited", noAttention: "Task issues and results from the last 7 days appear here", assistantHint: "Assistant", assistantDescription: "Query data and investigate questions in a conversation", noApps: "No frequently used applications yet",
-});
+const text = computed(() => ({
+  title: t("ontology.productHomeTitle"), intro: t("ontology.productHomeIntro"), configure: t("ontology.productHomeConfigure"), refresh: t("ontology.productRefresh"),
+  save: t("ontology.productSave"), cancel: t("ontology.productCancel"), unsaved: t("ontology.productHomeUnsaved"), layout: t("ontology.productLayoutFocus"), tasks: t("ontology.productHomeMyTasks"), data: t("ontology.productHomeFollowedData"),
+  apps: t("ontology.productHomeResources"), tasksLayout: t("ontology.productLayoutTasks"), dataLayout: t("ontology.productLayoutData"), assistantLayout: t("ontology.productLayoutAssistant"),
+  appsDescription: t("ontology.productHomeAppsDescription"), dataDescription: t("ontology.productHomeDataDescription"), tasksDescription: t("ontology.productHomeTasksDescription"), recentDescription: t("ontology.productHomeRecentDescription"), application: t("ontology.productApplication"), dashboard: t("ontology.productDashboard"),
+  emptyTasks: t("ontology.productHomeEmptyTasks"), emptyData: t("ontology.productHomeEmptyData"), emptyApps: t("ontology.productHomeEmptyApps"),
+  all: t("ontology.productHomeViewAll"), result: t("ontology.productViewResult"), running: t("ontology.productTaskRunning"), paused: t("ontology.productTaskPaused"), disabled: t("ontology.productTaskDisabled"), pending: t("ontology.productHomeTaskPending"),
+  completed: t("ontology.productHomeTaskCompleted"), failed: t("ontology.productHomeTaskFailed"), skipped: t("ontology.productHomeTaskSkipped"), next: t("ontology.productHomeNextRun"), retry: t("ontology.productRetry"), loading: t("ontology.productHomeLoading"),
+  chat: t("ontology.productHomeOpenAssistant"), build: t("ontology.productHomeBuildApplication"),
+  unavailable: t("ontology.productHomeResourceUnavailable"), selection: t("ontology.productHomeSelectionOrder"),
+  attention: t("ontology.productSourceTasks"), issues: t("ontology.productHomeNeedIntervention"), results: t("ontology.productHomeRecentResults"), runningTasks: t("ontology.productTaskRunning"), clear: t("ontology.productHomeNoInterventionTasks"), recent: t("ontology.productHomeRecentWork"), emptyRecent: t("ontology.productHomeEmptyRecent"), recentApps: t("ontology.productHomeRecentlyUsed"), pinned: t("ontology.productHomePinned"), updated: t("ontology.productVisitedAt"), noAttention: t("ontology.productHomeNoAttention"), assistantHint: t("ontology.productHomeAssistant"), assistantDescription: t("ontology.productHomeAssistantDescription"), noApps: t("ontology.productHomeNoApps"),
+}));
 const apps = computed(() => catalog.applications.value.filter(app => !["personal-workspace","workplace","home","application-gallery"].includes(app.id)));
 const canBuild = computed(() => catalog.applications.value.some(app => app.id === "app-builder"));
 const canChat = computed(() => catalog.applications.value.some(app => app.id === "agents"));
@@ -287,7 +276,7 @@ const resultTasks = computed(() => tasks.value.filter(task => task.latestResult?
 const taskGroups = computed(() => [
   { id: "issues", label: interactionLabels.value.intervention, items: issueTasks.value },
   { id: "running", label: text.value.running, items: runningTasks.value },
-  { id: "results", label: locale.value.startsWith("zh") ? "近期结果" : "Recent results", items: [...resultTasks.value].sort((a, b) => (b.lastRun?.finishedAt ?? "").localeCompare(a.lastRun?.finishedAt ?? "")) },
+  { id: "results", label: t("ontology.productHomeRecentResults"), items: [...resultTasks.value].sort((a, b) => (b.lastRun?.finishedAt ?? "").localeCompare(a.lastRun?.finishedAt ?? "")) },
 ].filter(group => group.items.length));
 const availableRecent = computed(() => recent.value.filter(item => !new URL(item.path, "https://workspace.invalid").searchParams.has("sessionId") && catalog.applications.value.some(app => app.id === item.appId)));
 function recentTitle(item: RecentWork) {
@@ -305,8 +294,8 @@ function recentContext(item: RecentWork) {
   const url = new URL(item.path, "https://workspace.invalid");
   const object = url.searchParams.get("key") ?? url.searchParams.get("primaryKey");
   const session = url.searchParams.get("sessionId");
-  if (object) return `${locale.value.startsWith("zh") ? "对象" : "Object"} · ${object}`;
-  if (session) return `${locale.value.startsWith("zh") ? "会话" : "Conversation"} · ${session.slice(0, 8)}`;
+  if (object) return t("ontology.productHomeObjectItem", { name: object });
+  if (session) return t("ontology.productHomeConversationItem", { id: session.slice(0, 8) });
   return "";
 }
 async function json(path: string, init: globalThis.RequestInit = {}) {
@@ -386,29 +375,29 @@ function taskSummary(value: string) {
     .split(/\n\s*\n/)[0]!.replace(/[*#`]/g, "").replace(/\s+/g, " ").trim();
 }
 const actions = computed(() => [
-  {id:'applications',label:locale.value.startsWith('zh')?'全部应用':'All applications',icon:AppWindow,onClick:()=>void router.push('/applications')},
+  {id:'applications',label:t('ontology.productHomeAllApplications'),icon:AppWindow,onClick:()=>void router.push('/applications')},
   { id: "refresh", label: text.value.refresh, icon: RefreshCw, disabled:refreshing.value||saving.value||editing.value, onClick: () => void refresh() },
     ...(ready.value ? [{ id: "configure", label: text.value.configure, icon: Settings2, disabled:saving.value||!!busy.value.config||!!busy.value.products, onClick: () => configure() }] : []),
 ]);
 </script>
 <template>
-  <component :is="props.platformWidgetAsset||props.embedded?'div':AppPage" :class="{'platform-widget-host':props.platformWidgetAsset||props.embedded,'is-platform-widget':!!props.platformWidgetAsset}" :title="homeAsset?.name ?? text.title" :description="homeAsset?.description ?? ''" :actions="actions" :labels="{ save: text.save, discard: text.cancel, unsavedChanges: text.unsaved }">
+  <component :is="props.platformWidgetAsset||props.embedded?'div':AppPage" :class="{'platform-widget-host':props.platformWidgetAsset||props.embedded,'is-platform-widget':!!props.platformWidgetAsset}" :title="homeAsset ? productText(homeAsset.name) : text.title" :description="productText(homeAsset?.description ?? '')" :actions="actions" :labels="{ save: text.save, discard: text.cancel, unsavedChanges: text.unsaved }">
     <div v-if="errors.config" role="alert" class="workspace-error">{{ errors.config }} <el-button @click="readConfig">{{ text.retry }}</el-button></div>
     <WorkspaceSkeleton v-if="!ready && busy.config" :label="text.loading" :rows="6" />
     <el-alert v-if="analysisError" :title="analysisError" type="error" :closable="false" />
     <el-alert v-if="errors.products" :title="errors.products" type="error" :closable="false" />
-    <section v-if="personalHome" class="personal-workspace-intro"><div><span class="workspace-date">{{today}}</span><h1>{{locale.startsWith('zh')?'从这里，继续你的工作':'Pick up where you left off'}}</h1><p>{{locale.startsWith('zh')?'常用应用、分析会话和关注的事项，都在你的工作台。':'Your applications, conversations and followed work in one place.'}}</p></div><div class="workspace-quick-links"><button v-if="canChat&&enabledAgents.length" @click="router.push({path:platformRoutes.chat.path,query:{agentId:agentId??undefined}})"><Sparkles :size="18"/><span>{{locale.startsWith('zh')?'开始智能分析':'Start an analysis'}}</span><ArrowUpRight :size="15"/></button><button @click="router.push('/applications')"><AppWindow :size="18"/><span>{{locale.startsWith('zh')?'浏览全部应用':'Explore applications'}}</span><ArrowUpRight :size="15"/></button></div></section>
+    <section v-if="personalHome" class="personal-workspace-intro"><div><span class="workspace-date">{{today}}</span><h1>{{t('ontology.productHomeIntroTitle')}}</h1><p>{{t('ontology.productHomeIntroDescription')}}</p></div><div class="workspace-quick-links"><button v-if="canChat&&enabledAgents.length" @click="router.push({path:platformRoutes.chat.path,query:{agentId:agentId??undefined}})"><Sparkles :size="18"/><span>{{t('ontology.productHomeStartAnalysis')}}</span><ArrowUpRight :size="15"/></button><button @click="router.push('/applications')"><AppWindow :size="18"/><span>{{t('ontology.productHomeExploreApplications')}}</span><ArrowUpRight :size="15"/></button></div></section>
     <div v-if="ready" class="workspace-grid" :class="{ 'personal-workspace':personalHome,'tasks-first': config.layout === 'tasks','product-layout':!!pageLayout,'single-column':pageLayout?.mode==='grid'||pageLayout?.mainWidth===12 }" :style="pageGridStyle">
       <div v-for="(sections, column) in columns" :key="column" class="workspace-column" :class="{ 'activity-column': sections.includes('tasks') }">
       <div v-for="child in productChildren(column)" :key="child.id" class="product-placement" :style="{gridColumn:`span ${child.width??(child.span==='half'?6:12)}`}">
-    <el-alert v-if="props.unavailableAssets?.includes(child.id)" :title="`${child.asset?.name??child.id}：引用能力契约已变化，请升级发布。`" type="error" :closable="false"/>
+    <el-alert v-if="props.unavailableAssets?.includes(child.id)" :title="t('ontology.productAssetContractChanged',{name:child.asset?productText(child.asset.name):child.id})" type="error" :closable="false"/>
     <section v-else-if="child.section==='assistant'" class="workspace-welcome" :class="{'half-width':child.span==='half'}">
-      <div class="workspace-heading"><Sparkles :size="20" aria-hidden="true" /><h1>{{ child.asset?.name }}</h1></div>
-      <p v-if="child.asset?.description">{{ child.asset.description }}</p>
+      <div class="workspace-heading"><Sparkles :size="20" aria-hidden="true" /><h1>{{ child.asset ? productText(child.asset.name) : '' }}</h1></div>
+      <p v-if="child.asset?.description">{{ productText(child.asset.description) }}</p>
       <WorkspaceSkeleton v-if="busy.agents" :label="text.loading" :rows="1" composer />
       <div v-else-if="errors.agents" role="alert">{{ errors.agents }} <el-button @click="readAgents">{{ text.retry }}</el-button></div>
       <div v-else-if="canChat&&enabledAgents.length" class="workspace-ask">
-         <ShellComposer :busy="false" :labels="{ placeholder: child.asset?platformWidget(child.asset.document)?.placeholder??'':'', send: workspaceText.send, stop: workspaceText.stop }" @send="ask">
+         <ShellComposer :busy="false" :labels="{ placeholder: child.asset?productText(platformWidget(child.asset.document)?.placeholder??''):'', send: workspaceText.send, stop: workspaceText.stop }" @send="ask">
           <template #tools>
             <AgentPicker variant="pill" :agents="enabledAgents" :agent-id="agentId" :label="workspaceText.agent" @select="agentId = $event" />
           </template>
@@ -416,29 +405,29 @@ const actions = computed(() => [
       </div>
       <p v-else>{{ workspaceText.noAgent }}</p>
     </section>
-      <section v-else-if="!child.section" class="workspace-section workspace-product" :class="{'home-chart':child.span==='half','home-overview':child.asset?.document.kind==='widget-group'}"><header v-if="child.asset?.document.kind==='widget-group'||child.asset?.document.kind==='page'"><h2>{{child.asset.name}}</h2></header><PersonalWorkspaceRoute v-if="child.asset?.document.kind==='page'" embedded :product-asset-id="child.id" :pinned-assets="props.pinnedAssets" :unavailable-assets="props.unavailableAssets" :page-state="props.pageState"/><ManagerFrame v-else-if="child.asset"><ProductAssetRuntime :asset="child.asset" :page-state="props.pageState" :revision="previewRevision" @refresh="previewRevision++"/></ManagerFrame><p v-else>{{text.unavailable}}</p><p v-if="child.asset?.description" class="overview-note">{{child.asset.description}}</p></section>
+      <section v-else-if="!child.section" class="workspace-section workspace-product" :class="{'home-chart':child.span==='half','home-overview':child.asset?.document.kind==='widget-group'}"><header v-if="child.asset?.document.kind==='widget-group'||child.asset?.document.kind==='page'"><h2>{{productText(child.asset.name)}}</h2></header><PersonalWorkspaceRoute v-if="child.asset?.document.kind==='page'" embedded :product-asset-id="child.id" :pinned-assets="props.pinnedAssets" :unavailable-assets="props.unavailableAssets" :page-state="props.pageState"/><ManagerFrame v-else-if="child.asset"><ProductAssetRuntime :asset="child.asset" :page-state="props.pageState" :revision="previewRevision" @refresh="previewRevision++"/></ManagerFrame><p v-else>{{text.unavailable}}</p><p v-if="child.asset?.description" class="overview-note">{{productText(child.asset.description)}}</p></section>
       <template v-for="section in [child.section]" v-else :key="section">
       <section class="workspace-section" :class="{'half-width':child.span==='half'}" :data-section="section">
-        <header><h2>{{ child.asset?.name }}</h2>
+        <header><h2>{{ child.asset ? productText(child.asset.name) : '' }}</h2>
           <div v-if="section === 'apps' || section === 'data' || section === 'tasks'" class="section-actions">
             <el-button v-if="!props.platformWidgetAsset&&section === 'apps' && canBuild" text @click="router.push({ name: platformRoutes.appBuilder.name })">{{ text.build }} <ArrowUpRight :size="14" aria-hidden="true" /></el-button>
-            <el-button v-if="!props.platformWidgetAsset&&(section === 'apps' || section === 'data')" text :disabled="saving || refreshing" @click="configure('resources')">{{ section === 'apps' ? (locale.startsWith('zh') ? '管理应用' : 'Manage applications') : (locale.startsWith('zh') ? '管理关注' : 'Manage followed data') }}</el-button>
+            <el-button v-if="!props.platformWidgetAsset&&(section === 'apps' || section === 'data')" text :disabled="saving || refreshing" @click="configure('resources')">{{ section === 'apps' ? (t('ontology.productHomeManageApplications')) : (t('ontology.productHomeManageFollowed')) }}</el-button>
             <el-button v-if="section === 'tasks' && catalog.applications.value.some(app => app.id === 'schedules')" text @click="router.push(platformRoutes.schedules.path)">{{ text.all }} <ArrowUpRight :size="14" aria-hidden="true" /></el-button>
             <el-button v-if="section === 'data' && catalog.applications.value.some(app => app.id === 'dashboards')" text @click="router.push(platformRoutes.dashboards.path)">{{ text.all }} <ArrowUpRight :size="14" aria-hidden="true" /></el-button>
           </div>
         </header>
-        <p v-if="child.asset?.description" class="overview-note">{{child.asset.description}}</p>
+        <p v-if="child.asset?.description" class="overview-note">{{productText(child.asset.description)}}</p>
         <template v-if="section === 'objects'">
           <p v-if="errors.objectsSave" role="alert" class="workspace-error">{{ errors.objectsSave }}</p>
-          <p v-if="!config.pinnedObjects.length" class="workspace-empty">{{ locale.startsWith('zh') ? '在对象详情中收藏教职工、机构或成果，可从这里快速返回' : 'Pin a person, organization or result from its object view to return here' }}</p>
+          <p v-if="!config.pinnedObjects.length" class="workspace-empty">{{ t('ontology.productHomePinObjectHint') }}</p>
           <article v-for="item in config.pinnedObjects.slice(0,blockLimit(child.asset))" :key="JSON.stringify([item.className, item.primaryKey])" class="workspace-item">
             <div class="resource-body"><button class="resource-link" @click="openObject(item)">{{ item.title }}</button>
             </div>
             <div class="object-row-actions">
-              <el-button v-if="canChat && enabledAgents.length" size="small" :icon="Sparkles" @click="askObject(item)">{{ locale.startsWith('zh') ? '提问' : 'Ask' }}</el-button>
+              <el-button v-if="canChat && enabledAgents.length" size="small" :icon="Sparkles" @click="askObject(item)">{{ t('ontology.productHomeAsk') }}</el-button>
               <el-dropdown trigger="click" placement="bottom-end" :popper-options="dropdownBoundaryOptions" :disabled="saving" @command="removeObject(item)">
-                <el-button class="row-icon-action" text :icon="MoreHorizontal" :disabled="saving" :aria-label="locale.startsWith('zh') ? `管理对象：${item.title}` : `Manage object: ${item.title}`" :title="locale.startsWith('zh') ? '更多操作' : 'More actions'" />
-                <template #dropdown><el-dropdown-menu><el-dropdown-item>{{ locale.startsWith('zh') ? '取消收藏' : 'Unpin' }}</el-dropdown-item></el-dropdown-menu></template>
+                <el-button class="row-icon-action" text :icon="MoreHorizontal" :disabled="saving" :aria-label="t('ontology.productHomeManageObject', { title: item.title })" :title="t('ontology.productHomeMoreActions')" />
+                <template #dropdown><el-dropdown-menu><el-dropdown-item>{{ t('ontology.productUnpin') }}</el-dropdown-item></el-dropdown-menu></template>
               </el-dropdown>
             </div>
           </article>
@@ -446,30 +435,30 @@ const actions = computed(() => [
         <template v-if="section === 'conversations'">
           <p v-if="errors.pinsSave" role="alert" class="workspace-error">{{ errors.pinsSave }}</p>
           <template v-if="pinned.length">
-            <h3>{{ locale.startsWith('zh') ? '已固定' : 'Pinned' }}</h3>
+            <h3>{{ t('ontology.productHomePinned') }}</h3>
             <WorkspaceSkeleton v-if="busy.pins" :label="text.loading" :rows="Math.min(pinned.length, 3)" />
             <article v-for="(item, index) in (busy.pins ? [] : pinned.slice(0,blockLimit(child.asset)))" :key="item.sessionId" class="workspace-item pinned-analysis">
               <div class="resource-body"><button class="resource-link" :disabled="!item.session || !enabledAgents.some(agent => agent.id === item.session?.agentId)" @click="router.push({ path: platformRoutes.chat.path, query: { agentId: item.session!.agentId, sessionId: item.sessionId } })">{{ item.title }}</button><p v-if="pinErrors[item.sessionId]">{{ pinErrors[item.sessionId] }}</p><p v-else-if="item.session && !busy.agents && !enabledAgents.some(agent => agent.id === item.session?.agentId)">{{ workspaceText.noAgent }}</p><p v-else-if="item.session">{{ date(item.session.updatedAt) }}</p>
               </div>
               <el-dropdown trigger="click" placement="bottom-end" :popper-options="dropdownBoundaryOptions" :disabled="saving" @command="(command: string) => command === 'rename' ? renamePin(item.sessionId) : command === 'up' ? movePin(index, -1) : command === 'down' ? movePin(index, 1) : updatePins(config.pinnedAnalyses.filter(pin => pin.sessionId !== item.sessionId))">
-                <el-button class="row-icon-action" text :disabled="saving" :icon="MoreHorizontal" :aria-label="locale.startsWith('zh') ? `管理分析：${item.title}` : `Manage analysis: ${item.title}`" :title="locale.startsWith('zh') ? '更多操作' : 'More actions'" />
+                <el-button class="row-icon-action" text :disabled="saving" :icon="MoreHorizontal" :aria-label="t('ontology.productHomeManageAnalysis', { title: item.title })" :title="t('ontology.productHomeMoreActions')" />
                 <template #dropdown><el-dropdown-menu>
-                  <el-dropdown-item command="rename">{{ locale.startsWith('zh') ? '重命名' : 'Rename' }}</el-dropdown-item>
-                  <el-dropdown-item command="up" :disabled="index === 0">{{ locale.startsWith('zh') ? '上移' : 'Move up' }}</el-dropdown-item>
-                  <el-dropdown-item command="down" :disabled="index === pinned.length - 1">{{ locale.startsWith('zh') ? '下移' : 'Move down' }}</el-dropdown-item>
-                  <el-dropdown-item command="unpin" divided>{{ locale.startsWith('zh') ? '取消固定' : 'Unpin' }}</el-dropdown-item>
+                  <el-dropdown-item command="rename">{{ t('ontology.productRename') }}</el-dropdown-item>
+                  <el-dropdown-item command="up" :disabled="index === 0">{{ t('ontology.productMoveUp') }}</el-dropdown-item>
+                  <el-dropdown-item command="down" :disabled="index === pinned.length - 1">{{ t('ontology.productHomeMoveDown') }}</el-dropdown-item>
+                  <el-dropdown-item command="unpin" divided>{{ t('ontology.productHomeUnpinAnalysis') }}</el-dropdown-item>
                 </el-dropdown-menu></template>
               </el-dropdown>
             </article>
           </template>
-          <h3 v-if="pinned.length && conversations.length">{{ locale.startsWith('zh') ? '最近分析' : 'Recent analyses' }}</h3>
+          <h3 v-if="pinned.length && conversations.length">{{ t('ontology.productHomeRecentAnalyses') }}</h3>
           <WorkspaceSkeleton v-if="busy.conversations" :label="text.loading" />
           <div v-else-if="errors.conversations" role="alert">{{ errors.conversations }} <el-button @click="readConversations">{{ text.retry }}</el-button></div>
           <p v-else-if="!conversations.length && !pinned.length" class="workspace-empty">{{ workspaceText.empty }}</p>
           <article v-for="item in conversations.slice(0,blockLimit(child.asset))" :key="item.sessionId" class="workspace-item conversation-item">
             <Sparkles :size="16" class="resource-icon" aria-hidden="true" />
             <div class="resource-body"><button class="resource-link" @click="router.push({ path: platformRoutes.chat.path, query: { agentId: item.agentId, sessionId: item.sessionId } })">{{ conversationTitle(item.title) }}</button><p>{{ enabledAgents.find(agent => agent.id === item.agentId)?.name }} · {{ date(item.updatedAt) }}</p></div>
-            <el-button class="row-icon-action pin-analysis" text :icon="Pin" :title="locale.startsWith('zh') ? '固定分析' : 'Pin analysis'" :aria-label="locale.startsWith('zh') ? '固定分析' : 'Pin analysis'" :disabled="saving || config.pinnedAnalyses.length >= 20" @click="pinConversation(item)" />
+            <el-button class="row-icon-action pin-analysis" text :icon="Pin" :title="t('ontology.productHomePinAnalysis')" :aria-label="t('ontology.productHomePinAnalysis')" :disabled="saving || config.pinnedAnalyses.length >= 20" @click="pinConversation(item)" />
           </article>
         </template>
         <template v-if="section === 'tasks'">
@@ -486,13 +475,13 @@ const actions = computed(() => [
             <h3>{{ group.label }}</h3>
             <article v-for="task in group.items.slice(0,blockLimit(child.asset))" :key="task.id" class="workspace-item" :class="{ 'needs-intervention': needsIntervention(task) }">
               <div class="resource-body"><button class="resource-link" @click="openTask(task)">{{ task.title }}</button>
-                <p v-if="group.id === 'results' && task.lastRun?.finishedAt">{{ locale.startsWith('zh') ? '生成于' : 'Generated' }} {{ date(task.lastRun.finishedAt) }}</p>
+                <p v-if="group.id === 'results' && task.lastRun?.finishedAt">{{ t('ontology.productHomeGeneratedAt') }} {{ date(task.lastRun.finishedAt) }}</p>
                 <p v-else><span class="task-status" :class="{ 'is-paused': !!task.pause, 'is-failed': !task.activeRunId && !task.pause && task.lastRun?.status === 'failed' }">{{ taskStatus(task) }}</span><span v-if="task.nextRunAt"> · {{ text.next }} {{ date(task.nextRunAt) }}</span></p>
                 <p v-if="task.pause" class="task-summary" :title="task.pause.message">{{ task.pause.message }}</p>
                 <p v-else-if="task.lastRun?.error?.message" class="task-summary" :title="task.lastRun.error.message">{{ task.lastRun.error.message }}</p>
                 <p v-else-if="task.lastRun?.resultSummary" class="task-summary">{{ taskSummary(task.lastRun.resultSummary) }}</p>
               </div>
-              <el-button v-if="needsIntervention(task)" size="small" type="primary" plain @click="router.push({ path: platformRoutes.schedules.path, query: { taskId: task.id } })">{{ locale.startsWith('zh') ? '去处理' : 'Resolve' }}</el-button>
+              <el-button v-if="needsIntervention(task)" size="small" type="primary" plain @click="router.push({ path: platformRoutes.schedules.path, query: { taskId: task.id } })">{{ t('ontology.productHomeResolve') }}</el-button>
             </article>
             </div>
           </template>
@@ -550,28 +539,28 @@ const actions = computed(() => [
     <el-dialog v-model="editing" :title="text.configure" width="min(740px, 94vw)" :close-on-click-modal="false" :close-on-press-escape="!saving" :show-close="!saving">
       <el-form label-position="top" :disabled="saving">
         <el-tabs v-model="settingsTab">
-        <el-tab-pane name="layout" :label="locale.startsWith('zh') ? '页面布局' : 'Layout'">
-         <template v-if="homeAsset?.document.kind==='page'"><el-form-item label="布局方式"><el-select v-model="draftPageLayout.mode"><el-option value="columns" label="主工作区与侧栏"/><el-option value="grid" label="单区栅格"/></el-select></el-form-item><el-form-item v-if="draftPageLayout.mode==='columns'" label="主工作区宽度"><el-select v-model="draftPageLayout.mainWidth"><el-option :value="8" label="三分之二"/><el-option :value="9" label="四分之三"/><el-option :value="12" label="整页"/></el-select></el-form-item><el-form-item label="区块间距"><el-select v-model="draftPageLayout.gap"><el-option value="compact" label="紧凑"/><el-option value="normal" label="标准"/><el-option value="comfortable" label="宽松"/></el-select></el-form-item></template>
+        <el-tab-pane name="layout" :label="t('ontology.productHomeLayoutTab')">
+         <template v-if="homeAsset?.document.kind==='page'"><el-form-item :label="t('ontology.productLayoutMode')"><el-select v-model="draftPageLayout.mode"><el-option value="columns" :label="t('ontology.productMainAreaAndSidebar')"/><el-option value="grid" :label="t('ontology.productSingleGrid')"/></el-select></el-form-item><el-form-item v-if="draftPageLayout.mode==='columns'" :label="t('ontology.productMainAreaWidth')"><el-select v-model="draftPageLayout.mainWidth"><el-option :value="8" :label="t('ontology.productWidthTwoThirds')"/><el-option :value="9" :label="t('ontology.productWidthThreeQuarters')"/><el-option :value="12" :label="t('ontology.productWidthFullPage')"/></el-select></el-form-item><el-form-item :label="t('ontology.productBlockGap')"><el-select v-model="draftPageLayout.gap"><el-option value="compact" :label="t('ontology.productGapCompact')"/><el-option value="normal" :label="t('ontology.productGapNormal')"/><el-option value="comfortable" :label="t('ontology.productGapComfortable')"/></el-select></el-form-item></template>
          <el-form-item v-else :label="text.layout">
           <el-select v-model="draft.layout" @change="draft.sections = presetSections(draft.layout)"><el-option value="tasks" :label="text.tasksLayout" /><el-option value="data" :label="text.dataLayout" /><el-option value="assistant" :label="text.assistantLayout" /></el-select>
         </el-form-item>
-         <p class="settings-note">{{locale.startsWith('zh')?'主页仅展示产品资产中配置的组成项。请在「资源内容」中调整位置、宽度与顺序，或进入产品资产管理区块内容。':'The page renders only configured product assets. Arrange placement, width and order under Resources.'}}</p>
+         <p class="settings-note">{{t('ontology.productHomeLayoutNote')}}</p>
         </el-tab-pane>
-        <el-tab-pane name="resources" :label="locale.startsWith('zh') ? '资源内容' : 'Resources'">
-        <el-button v-if="catalog.applications.value.some(app=>app.id==='ontology')" text @click="editing=false;router.push({path:platformRoutes.products.path,query:homeAsset?{id:homeAsset.id}:{}})">{{locale.startsWith('zh')?'管理组件与模板':'Manage components and templates'}}</el-button>
-        <template v-if="homeAsset?.editable&&!props.pinnedAssets"><h3>{{locale.startsWith('zh')?'产品层组件':'Product components'}}</h3>
-         <p class="settings-note">{{locale.startsWith('zh')?'选择已保存的投影、页面或智能体配置，按引用组织工作台内容。':'Compose saved projections, pages and agent profiles by reference.'}}</p>
-        <div v-for="(child,index) in draftChildren" :key="child.assetId" class="section-editor-row"><span>{{productAssets.find(asset=>asset.id===child.assetId)?.name??text.unavailable}}</span><el-select v-model="child.column" aria-label="组件位置"><el-option value="main" label="主栏"/><el-option value="sidebar" label="侧栏"/></el-select><el-select :model-value="child.width??(child.span==='half'?6:12)" aria-label="组件宽度" @update:model-value="child.width=Number($event)"><el-option v-for="width in [2,3,4,6,12]" :key="width" :value="width" :label="width===12?'整行':`${width}/12 列`"/></el-select><el-button :disabled="index===0" @click="draftChildren.splice(index-1,0,...draftChildren.splice(index,1))">上移</el-button><el-button @click="draftChildren.splice(index,1)">移除</el-button></div>
-        <div class="resource-toolbar"><el-select v-model="addProductId" filterable placeholder="选择产品资产" aria-label="选择产品资产"><el-option v-for="asset in reusableProducts" :key="asset.id" :value="asset.id" :label="asset.name"/></el-select><el-button :disabled="!addProductId" @click="addProduct">添加组件</el-button></div>
+        <el-tab-pane name="resources" :label="t('ontology.productHomeResourcesTab')">
+        <el-button v-if="catalog.applications.value.some(app=>app.id==='ontology')" text @click="editing=false;router.push({path:platformRoutes.products.path,query:homeAsset?{id:homeAsset.id}:{}})">{{t('ontology.productHomeManageComponents')}}</el-button>
+        <template v-if="homeAsset?.editable&&!props.pinnedAssets"><h3>{{t('ontology.productHomeProductComponents')}}</h3>
+         <p class="settings-note">{{t('ontology.productHomeComposeHint')}}</p>
+        <div v-for="(child,index) in draftChildren" :key="child.assetId" class="section-editor-row"><span>{{productText(productAssets.find(asset=>asset.id===child.assetId)?.name??text.unavailable)}}</span><el-select v-model="child.column" :aria-label="t('ontology.productComponentPlacement')"><el-option value="main" :label="t('ontology.productMainColumn')"/><el-option value="sidebar" :label="t('ontology.productSidebar')"/></el-select><el-select :model-value="child.width??(child.span==='half'?6:12)" :aria-label="t('ontology.productComponentWidth')" @update:model-value="child.width=Number($event)"><el-option v-for="width in [2,3,4,6,12]" :key="width" :value="width" :label="width===12?t('ontology.productFullRow'):t('ontology.productColumnsOf12',{width})"/></el-select><el-button :disabled="index===0" @click="draftChildren.splice(index-1,0,...draftChildren.splice(index,1))">{{t('ontology.productMoveUp')}}</el-button><el-button @click="draftChildren.splice(index,1)">{{t('ontology.productRemove')}}</el-button></div>
+        <div class="resource-toolbar"><el-select v-model="addProductId" filterable :placeholder="t('ontology.productChooseAsset')" :aria-label="t('ontology.productChooseAsset')"><el-option v-for="asset in reusableProducts" :key="asset.id" :value="asset.id" :label="productText(asset.name)"/></el-select><el-button :disabled="!addProductId" @click="addProduct">{{t('ontology.productAddComponent')}}</el-button></div>
         </template><el-form-item :label="text.data">
           <el-select v-model="draft.dashboardIds" multiple filterable :disabled="busy.data || !!errors.data">
             <el-option v-for="board in dashboards" :key="board.id" :value="board.id" :label="board.name" />
             <el-option v-for="id in draft.dashboardIds.filter(id => !dashboards.some(board => board.id === id))" :key="id" :value="id" :label="text.unavailable" />
           </el-select>
         </el-form-item>
-        <el-form-item v-for="id in draft.dashboardIds.filter(id => dashboards.some(board => board.id === id))" :key="id" :label="`${dashboards.find(board => board.id === id)?.name} · ${locale.startsWith('zh') ? '关注内容' : 'Followed cards'}`">
+        <el-form-item v-for="id in draft.dashboardIds.filter(id => dashboards.some(board => board.id === id))" :key="id" :label="`${dashboards.find(board => board.id === id)?.name} · ${t('ontology.productHomeFollowedCards')}`">
           <DashboardCardPicker v-model="draft.dashboardCards[id]" :dashboard-id="id" />
-          <el-button v-if="draft.dashboardCards[id] !== undefined" text @click="delete draft.dashboardCards[id]">{{ locale.startsWith('zh') ? '恢复默认展示' : 'Use default selection' }}</el-button>
+          <el-button v-if="draft.dashboardCards[id] !== undefined" text @click="delete draft.dashboardCards[id]">{{ t('ontology.productHomeUseDefaultSelection') }}</el-button>
         </el-form-item>
         <el-form-item :label="text.apps">
           <el-select v-model="draft.applicationIds" multiple filterable :disabled="catalog.loading.value || !!catalog.error.value">
@@ -579,7 +568,7 @@ const actions = computed(() => [
             <el-option v-for="id in draft.applicationIds.filter(id => !apps.some(app => app.id === id))" :key="id" :value="id" :label="text.unavailable" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="locale.startsWith('zh')?'常用智能体':'Pinned agents'"><el-select v-model="draft.agentIds" multiple filterable :disabled="busy.agents||!!errors.agents"><el-option v-for="agent in enabledAgents" :key="agent.id" :value="agent.id" :label="agent.name"/></el-select></el-form-item>
+        <el-form-item :label="t('ontology.productHomePinnedAgents')"><el-select v-model="draft.agentIds" multiple filterable :disabled="busy.agents||!!errors.agents"><el-option v-for="agent in enabledAgents" :key="agent.id" :value="agent.id" :label="agent.name"/></el-select></el-form-item>
         <p>{{ text.selection }}</p>
         </el-tab-pane>
         <el-tab-pane name="opening" :label="interactionLabels.title">
@@ -590,10 +579,10 @@ const actions = computed(() => [
             <el-option v-for="mode in (['drawer', 'page'] as const)" :key="mode" :value="mode" :label="interactionLabels[mode]" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="locale.startsWith('zh') ? '收藏对象' : 'Pinned objects'">
+        <el-form-item :label="t('ontology.productSourceObjects')">
           <el-select v-model="draft.objectOpening"><el-option value="drawer" :label="interactionLabels.drawer" /><el-option value="page" :label="interactionLabels.page" /></el-select>
         </el-form-item>
-        <p class="settings-note">{{ locale.startsWith('zh') ? '对象内容使用已配置的对象视图；在对象详情中通过「配置视图」维护。完整页面可返回工作台。' : 'Objects use their configured object views. Edit them from the object page. Full pages can return to the workspace.' }}</p>
+        <p class="settings-note">{{ t('ontology.productHomeObjectViewNote') }}</p>
         </el-tab-pane>
         </el-tabs>
         <p v-if="errors.save" role="alert" class="workspace-error">{{ errors.save }}</p>
@@ -602,8 +591,8 @@ const actions = computed(() => [
     </el-dialog>
     <el-drawer v-model="objectPreviewOpen" class="workspace-object-drawer" :title="objectPreview?.title" size="min(920px, 100vw)" destroy-on-close>
       <template v-if="objectPreview">
-        <div class="resource-toolbar"><el-button @click="openObjectPage(objectPreview)">{{ interactionLabels.openPage }}</el-button><el-button v-if="canChat && enabledAgents.length" type="primary" @click="askObject(objectPreview)">{{ locale.startsWith('zh') ? '就此对象提问' : 'Ask about this object' }}</el-button></div>
-        <ManagerFrame class="workspace-preview-frame"><ObjectViewPage class="workspace-object-preview" :reference="objectPreview" preview @open="objectPreview = { ...$event, title: locale.startsWith('zh') ? '关联对象' : 'Related object' }" /></ManagerFrame>
+        <div class="resource-toolbar"><el-button @click="openObjectPage(objectPreview)">{{ interactionLabels.openPage }}</el-button><el-button v-if="canChat && enabledAgents.length" type="primary" @click="askObject(objectPreview)">{{ t('ontology.productHomeAskAboutObject') }}</el-button></div>
+        <ManagerFrame class="workspace-preview-frame"><ObjectViewPage class="workspace-object-preview" :reference="objectPreview" preview @open="objectPreview = { ...$event, title: t('ontology.productHomeRelatedObject') }" /></ManagerFrame>
       </template>
     </el-drawer>
     <el-drawer v-model="resourceOpen" :title="resource?.title" size="min(680px, 100vw)" destroy-on-close>
@@ -611,7 +600,7 @@ const actions = computed(() => [
         <div class="resource-toolbar">
           <el-button @click="resourceOpen = false; router.push(resource.path)">{{ interactionLabels.openPage }}</el-button>
           <el-button v-if="canChat" type="primary" :disabled="!enabledAgents.length" :loading="analysisBusy" @click="analyze(resource)">{{ interactionLabels.analyze }}</el-button>
-          <el-button v-if="canChat && resource.kind === 'metric'" :disabled="!enabledAgents.length" :loading="analysisBusy" @click="analyze(resource, 'explain')">{{ locale.startsWith('zh') ? '解释指标口径' : 'Explain metric definition' }}</el-button>
+          <el-button v-if="canChat && resource.kind === 'metric'" :disabled="!enabledAgents.length" :loading="analysisBusy" @click="analyze(resource, 'explain')">{{ t('ontology.productHomeExplainMetric') }}</el-button>
         </div>
         <el-alert v-if="analysisError" :title="analysisError" type="error" :closable="false" />
         <WorkspaceResourceDetail :resource="resource" />

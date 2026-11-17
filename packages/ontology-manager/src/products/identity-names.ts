@@ -1,8 +1,9 @@
 import {ref,onMounted} from 'vue';
-import {useManagerClient} from '../context';
+import {useManagerClient,useOntologyText} from '../context';
 
 /** Resolve labels through the current caller; identifiers remain available in tooltips. */
 export function useIdentityNames(){
+ const {ot}=useOntologyText();
  const client=useManagerClient(),names=ref<Record<string,string>>({});
  onMounted(async()=>{
   const entries=await Promise.allSettled([
@@ -18,5 +19,5 @@ export function useIdentityNames(){
   }
   names.value=resolved;
  });
- return (id:string,kind='主体')=>id==='*'?'域内成员':id==='system'?'系统':names.value[id]??`${kind}名称暂不可用`;
+ return (id:string,kind=ot('productPrincipal'))=>id==='*'?ot('productDomainMembers'):id==='system'?ot('productSystem'):names.value[id]??ot('productIdentityUnavailable',{kind});
 }
