@@ -13,5 +13,6 @@ public class AnonymousApplicationAccess implements ApplicationAccess {
     public void requireConnectedRegistration(User user) {}
     public boolean canMaintain(JSONObject application, User user) { return true; }
     public boolean canEnter(JSONObject application, User user) { return true; }
+    public java.util.List<PageSkills.Mapping> pageSkills(java.util.List<PageSkills.Mapping> mappings, User user) { return mappings; }
     public void declare(JSONObject application, ApplicationCatalog.Declaration declaration, boolean created) {}
 }
