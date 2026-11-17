@@ -270,11 +270,76 @@ async function dbImport(cfg, argv) {
   }
 }
 
+function stripSqlComments(sql) {
+  return sql.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ");
+}
+
+// This skill holds no DDL authority. Schema changes are proposed, reviewed and applied by a human
+// or CI; only data statements run here. The check happens before credentials are required so the
+// refusal is the same whether or not a database client is configured.
+function assertNoDdl(sql) {
+  const cleaned = stripSqlComments(sql);
+  if (/(^|;)\s*(create|alter|drop|truncate|comment\s+on|grant|revoke|rename)\b/i.test(cleaned))
+    die(
+      "DDL is not executed by this skill.\n" +
+        "Write a migration proposal instead: ontomato.mjs propose-schema @proposal.json\n" +
+        "A human or CI applies it after review; then continue with the data steps.",
+    );
+}
+
 function dbSql(cfg, argv) {
   if (argv[0] == null) die("db-sql requires SQL or @file.sql");
+  const sql = readInput(argv[0]);
+  assertNoDdl(sql);
   const db = database(cfg);
-  runSql(db, transaction(db, [readInput(argv[0])]));
+  runSql(db, transaction(db, [sql]));
   console.log("sql executed");
+}
+
+// A schema proposal is an artifact, not an action: it records the ontomap diff and the SQL a human
+// needs to review. It deliberately does not connect to the business database.
+function proposeSchema(cfg, argv) {
+  if (argv[0] == null) die("propose-schema requires a JSON payload");
+  const payload = JSON.parse(readInput(argv[0]));
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload))
+    die("propose-schema payload must be a JSON object");
+  if (typeof payload.title !== "string" || !payload.title.trim())
+    die("propose-schema requires a non-empty title");
+  if (typeof payload.rationale !== "string" || !payload.rationale.trim())
+    die("propose-schema requires a non-empty rationale");
+  if (!Array.isArray(payload.statements) || payload.statements.length === 0 ||
+      payload.statements.some((item) => typeof item !== "string" || !item.trim()))
+    die("propose-schema requires statements: an array of non-empty SQL strings");
+
+  const dir = path.resolve(process.cwd(), cfg.proposalDir || "proposals");
+  fs.mkdirSync(dir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const slug = payload.title
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "schema";
+  const base = `${stamp}-${slug}`;
+  const proposal = {
+    id: base,
+    createdAt: new Date().toISOString(),
+    status: "proposed",
+    title: payload.title.trim(),
+    rationale: payload.rationale.trim(),
+    requestedBy: payload.requestedBy ?? null,
+    dialect: payload.dialect ?? cfg.databaseType ?? null,
+    statements: payload.statements.map((item) => item.trim()),
+    ontomapChanges: payload.ontomapChanges ?? null,
+  };
+  const jsonPath = path.join(dir, `${base}.json`);
+  const sqlPath = path.join(dir, `${base}.sql`);
+  fs.writeFileSync(jsonPath, `${JSON.stringify(proposal, null, 2)}\n`);
+  const header = `-- Ontomato schema proposal\n-- Title: ${proposal.title}\n-- Created: ${proposal.createdAt}\n-- Rationale: ${proposal.rationale}\n-- Status: proposed; not applied\n\n`;
+  fs.writeFileSync(
+    sqlPath,
+    header + proposal.statements.map((item) => `${item.replace(/;+$/, "")};`).join("\n\n") + "\n",
+  );
+  console.log(JSON.stringify({ proposal: jsonPath, sql: sqlPath }, null, 2));
 }
 
 function usage() {
@@ -288,6 +353,7 @@ function usage() {
   ontomato.mjs save-knowledge <json|@file>
   ontomato.mjs delete-knowledge <id>
   ontomato.mjs db-sql <sql|@file.sql>
+  ontomato.mjs propose-schema <json|@file>
   ontomato.mjs db-import <table> <file.csv> [--from <rows>] [--batch <rows>]
   ontomato.mjs import-test-data <file.zip>
   ontomato.mjs upload-vector <json|@file>
@@ -402,6 +468,10 @@ async function main() {
   }
   if (cmd === "db-sql") {
     dbSql(cfg, argv.slice(1));
+    return;
+  }
+  if (cmd === "propose-schema") {
+    proposeSchema(cfg, argv.slice(1));
     return;
   }
   if (cmd === "db-import") {

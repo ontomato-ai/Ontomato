@@ -104,6 +104,24 @@ public interface ScheduleApplication {
 
   default void detach(UUID taskId) {}
 
+  /**
+   * Whether new tasks may be created for this application.
+   *
+   * <p>A retired application keeps its history readable and its existing tasks editable — an operator still needs to
+   * switch one off — but must not accept a new one, or the surface it was retired in favour of is never the only path.
+   * The ontology application returns false because its triggers are capability objects now.</p>
+   */
+  default boolean acceptsNewTasks() {
+    return true;
+  }
+
+  /** The refusal shown when {@link #acceptsNewTasks()} is false, in the caller's language. */
+  default String newTasksRefused(String locale) {
+    return locale != null && locale.startsWith("zh")
+        ? "该应用已改为使用「触发」创建，请在触发页面新建"
+        : "This application's schedules moved to Triggers; create one on the Triggers page";
+  }
+
   default JsonNode describe(Actor actor) {
     String reason = null;
     try {

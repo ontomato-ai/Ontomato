@@ -69,6 +69,8 @@ export const platformRoutes = {
   actions: { name: "Actions", path: "/ontology/assets/actions" },
   action: { name: "Action", path: "/ontology/assets/actions/:id" },
   workflows: { name: "Workflows", path: "/ontology/assets/workflows" },
+  /** Triggers: when an execution starts. A capability object, beside the processes it starts. */
+  triggers: { name: "Triggers", path: "/ontology/assets/triggers" },
   capabilityMap: { name: "CapabilityMap", path: "/ontology/assets/capability-map" },
   knowledge: { name: "BusinessKnowledge", path: "/ontology/knowledge" },
   /** The models of the ontology modeling agents, at the foot of the ontology manager's menu. */

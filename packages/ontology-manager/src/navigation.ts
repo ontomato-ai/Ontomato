@@ -1,6 +1,7 @@
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import type { Component } from "vue";
 import {
+  AlarmClock,
   BookOpen,
   Boxes,
   ChartColumn,
@@ -53,6 +54,7 @@ export const managerPaths = {
   dataBrowser: routes.data.path.split("/:")[0]!,
   metrics: routes.metrics.path,
   functions: routes.functions.path,
+  triggers: routes.triggers.path,
   knowledge: routes.knowledge.path,
   products: routes.products.path,
 } as const;
@@ -88,6 +90,7 @@ const pages = [
   page(managerPaths.relations, "nav.relationTypes", Link2, "ontology", MODELING, "relations"),
   page(managerPaths.actions, "nav.actionManagement", MousePointerClick, "ontology", ["action-management"], "actions"),
   page(managerPaths.workflows, "nav.workflowManagement", GitBranch, "ontology", ["action-management"]),
+  page(managerPaths.triggers, "nav.triggerManagement", AlarmClock, "ontology", ["action-management"]),
   page(managerPaths.capabilityMap, "nav.capabilityMap", Share2, "ontology", ["action-management"]),
   page(managerPaths.visualModeling, "nav.visualModeling", WorkflowIcon, "ontology", MODELING),
   // A page of the object browser: the platform draws the application's header above it and the page gutter around it.

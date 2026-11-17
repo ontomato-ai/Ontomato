@@ -48,7 +48,7 @@ envUrl: http://host:3000
 
 When the environment variable `ONTOMATO_URL` is set, it takes precedence over `envUrl`, so one setting serves every installed Ontomato skill.
 
-To write the business database directly with `db-sql` and `db-import`, add two settings:
+To write business **data** directly with `db-sql` and `db-import`, add two settings:
 
 ```yaml
 # Business database for db-sql and db-import: postgresql or mysql
@@ -69,10 +69,10 @@ Start with the authorized deployment/context and the business purpose. Read `lis
 | Maintain an existing ontomap | Save the current `get-ontomap` result, edit that object and carry back unrelated definitions, descriptions and returned fields unchanged. Resolve new or renamed mappings from the source. | The intended difference is present and unrelated meaning remains. A request to rename or adapt a mapping is not an instruction to remove its relationships. |
 | Change the data source | Test and inspect the target first. Prepare a compatible ontomap and resolve each existing relationship and resource binding before switching. Then call `use-datasource` and `set-ontomap`, and read back/test the result. | Definitions match the actual target; cross-object questions and relevant resources work. These are separate writes, not an atomic migration. If one fails, read actual state before retrying or restoring the affected configuration. |
 | Maintain business knowledge | Read current entries, then save the requested additions/edits or delete the identified entry. | Read back IDs, content and review status; metadata changes alone do not prove a business answer is correct. |
-| Load business data | Run DDL with `db-sql`, then `db-import` a CSV per table; `set-ontomap` when the definition must cover new tables. | Row counts and keys in the business database match the files; `ask` finds the imported objects and relationships. |
+| Load business data | When the tables already exist: `db-import` a CSV per table, then `set-ontomap` if the definition must cover new columns. When they do not: `propose-schema` first, stop, and let a human or CI apply it; only then import. | Row counts and keys in the business database match the files; `ask` finds the imported objects and relationships. |
 | Batch-import text resources | Once objects exist and the `vector` attribute is declared, `upload-vectors` a JSONL file; use `upload-vector` for one resource or an original file and `delete-vector` to remove one. | The failure list is empty or handled; spot checks retrieve and download. |
 | Load test data | In a test environment or test domain, `import-test-data` a zip. | Read objects and resources back; it clears the classes it covers and is not for real data. |
-| Deploy a book hand-off package | Apply its `ddl.sql`, `import/<class>.csv`, `ontomap.draft.json` and `upload-manifest.jsonl` with `db-sql`, `db-import`, `set-ontomap` and `upload-vectors`. | Re-check model, records and evidence resources as the package's `import-map.md` lists. |
+| Deploy a book hand-off package | Review its `ddl.sql` against `ontomap.draft.json` and turn it into a `propose-schema` proposal; a human or CI applies it. Then `db-import`, `set-ontomap` and `upload-vectors`. | The proposal was reviewed and applied outside this skill; re-check model, records and evidence resources as the package's `import-map.md` lists. |
 
 If a required relationship, resource or permission reference cannot yet be preserved with the available tools, keep the current connection and ontomap active. Prepare the target definition and explain the missing access or capability. Resolve those dependencies before switching; do not switch first and plan repairs later, or turn a requirement such as keeping photos usable into deferred work.
 
@@ -119,7 +119,8 @@ node ontomato.mjs ask --lang en "How many people are there?"
 | `set-ontomap` | `ontomap saved` | Replaces the complete definition and validates the primary-key contract. It does not create/alter business tables or migrate objects, permissions or resources. Read back the result. |
 | `get-knowledge` | Entry array | Read only; use returned `knowledgeID` values to identify later edits/deletions. |
 | `save-knowledge`, `delete-knowledge` | Per-entry success message or failure | Writes knowledge; array saves stop at the first failure and retain earlier successes. |
-| `db-sql` | `sql executed` or the client's error | Runs the given SQL (tables, columns, data fixes) in one transaction directly in the business database; nothing is committed on error. |
+| `db-sql` | `sql executed` or the client's error | Runs data statements (insert/update/delete fixes) in one transaction directly in the business database; nothing is committed on error. **DDL is refused before a connection is opened**; use `propose-schema` instead. |
+| `propose-schema` | Paths of the written `.json` and `.sql` | Writes a migration proposal as an artifact; it does not connect to the database or change any schema. A human or CI reviews and applies it. |
 | `db-import` | Progress per batch | Reads a CSV (first row: column names) and inserts it in batches (500 rows by default), each in a transaction; stops at a failing batch, earlier batches stay committed, resume with `--from <rows imported>`. |
 | `import-test-data` | `test data imported` | Uploads a test-data zip: clears every class in the file and its vector resources, then writes; test environments or test domains only. |
 | `upload-vector` | The new resource, including `path` | Adds one resource and appends a reference to the object's vector field. Check an uncertain result before appending again. |
@@ -135,14 +136,14 @@ The commands below document their current API paths. Legacy API names containing
 
 ## Write the business database
 
-The ontology maps real tables in the business database. Loading data means writing those tables:
+The ontology maps real tables in the business database. This skill may write **data**; it does not own **structure**. Schema changes are proposed, reviewed, and applied by a human or CI.
 
-1. **Create tables or columns** with `db-sql @ddl.sql`, written in the dialect of `databaseType`; the whole script runs in one transaction. Confirm authorization before changing an existing table.
-2. **Import rows** with `db-import <table> @<file>.csv`. The first row holds column names, which must match the table. An unquoted empty field becomes NULL and `""` an empty string; values are written as string literals that the database converts to the column type. Import only inserts: it never clears or overwrites, and a primary-key conflict fails that batch.
+1. **Propose schema changes** with `propose-schema @proposal.json`. The payload carries `title`, `rationale`, `statements` (the SQL, in the dialect of `databaseType`) and optional `ontomapChanges`. The command writes `<id>.json` and `<id>.sql` under `proposals/` and prints both paths. It does not connect to the database. Stop there and hand the artifact to the reviewer; do not work around the refusal with `db-sql` or a raw client.
+2. **Import rows** with `db-import <table> @<file>.csv`, once the reviewer has applied the proposal. The first row holds column names, which must match the table. An unquoted empty field becomes NULL and `""` an empty string; values are written as string literals that the database converts to the column type. Import only inserts: it never clears or overwrites, and a primary-key conflict fails that batch.
 3. **Align the definition**: for new tables or columns, add the classes or attributes to the `get-ontomap` result and `set-ontomap` it. Each class needs exactly one enabled varchar primary-key attribute, and that column must be non-null and unique in the table.
 4. **Verify** row counts and keys with the database client, then `ask` a question that touches the new data.
 
-Only PostgreSQL and MySQL are supported. For other databases, prepare the same DDL and CSV, let the implementer load them with that database's own tools, then continue with steps 3 and 4.
+Only PostgreSQL and MySQL are supported. For other databases, prepare the same proposal and CSV, let the implementer apply them with that database's own tools, then continue with steps 3 and 4.
 
 ## Text resources and object identity
 
