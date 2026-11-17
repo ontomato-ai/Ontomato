@@ -865,7 +865,13 @@ export default {
     "executionUserHint": "The permissions the agent runs with. A domain governance administrator may run it as one member of this domain; every other reader runs it with their own.",
     "executionOwn": "The reader's own permissions",
     "executionReadOnly": "Only a domain governance administrator may change this. The agent keeps what it holds.",
-    "executionUnavailable": "The member {id} is no longer a usable member of this domain. A domain governance administrator can choose another; until then the agent cannot run as them.",
+    "executionUnavailable": "{name} cannot be used to run this agent: {reason}. The agent keeps the reference; a domain governance administrator can choose another.",
+    "executionReason": {
+      "disabled": "the member is disabled",
+      "deleted": "the member no longer exists",
+      "not-member": "the member is no longer in this domain"
+    },
+    "executionReasonUnknown": "the domain no longer accepts this member",
     "executionDraftUnauthorized": "This draft changes whose permissions the agent runs with. Only a domain governance administrator can save that change, so it is shown here but not saved with the rest.",
     "executionOptionsFailed": "Couldn't read who may execute this agent."
   },

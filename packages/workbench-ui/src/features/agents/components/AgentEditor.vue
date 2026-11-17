@@ -22,6 +22,7 @@ import type { McpServiceOption } from "@ontomato/contracts/agent-runtime-mcp";
 import type { ModelOptions } from "@ontomato/contracts/model-settings";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { agentDefinitionsApi, type ObjectClassOption, type ObjectRelationOption } from "../api";
+import { useAgentSettingsAddress } from "../agent-settings-address";
 import { createAssistantClient } from "../../workbench/assistant-host";
 import AgentBasicInfoFields from "./AgentBasicInfoFields.vue";
 import AgentExecutionField from "./AgentExecutionField.vue";
@@ -144,7 +145,13 @@ const promptPreview = ref(false);
  */
 const router = useRouter();
 const leaving = useLeaveConfirmation();
-const link = pageDraftLink(route.query);
+/**
+ * The page's address and drafts: beside a conversation the settings are a parameter of the agent platform's, so the
+ * mount tells this editor where it is. Without that, it is the address the browser shows.
+ */
+const settingsAddress = useAgentSettingsAddress();
+const link = settingsAddress ? settingsAddress.draft.value : pageDraftLink(route.query);
+const pagePath = settingsAddress ? settingsAddress.address.value.split("?")[0]! : route.path;
 const changed = ref<ReadonlySet<string>>(new Set());
 const draftExecutionChanged = ref(false);
 if (link) {
@@ -257,7 +264,9 @@ async function save() {
     // The draft was this page's own handoff: the saved form is what the address reopens.
     if (link) {
       const { draftSessionId: _session, draftRunId: _run, draftPath: _path, ...query } = route.query;
-      void router.replace({ query });
+      // Beside a conversation the draft lives in the conversation's parameter; at the page's own address in its query.
+      if (settingsAddress) settingsAddress.go(settingsAddress.savedAddress.value);
+      else void router.replace({ query });
     }
     ElMessage.success(props.agent ? t("analysis.agentUpdated") : t("analysis.agentCreated"));
     emit("saved", saved);
@@ -321,8 +330,7 @@ const actions = computed(() =>
 const title = computed(() => form.value.name.trim() || (props.agent ? props.agent.name : t("agents.newAgent")));
 
 // Switching to another agent, a new one or anywhere else leaves this draft: with changes, the platform asks first.
-const path = route.path;
-useUnsavedChanges({ dirty: () => dirty.value, paths: () => [path] });
+useUnsavedChanges({ dirty: () => dirty.value, paths: () => [pagePath] });
 </script>
 
 <template>

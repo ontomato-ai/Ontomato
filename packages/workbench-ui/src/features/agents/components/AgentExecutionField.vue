@@ -7,10 +7,12 @@ import { agentDefinitionsApi } from "../api";
 
 /**
  * Whose permissions the agent runs with: the reader's own (null), or one member of this domain. Only a domain governance
- * administrator may change it; everyone else reads the reference it holds. The options come from the domain's own
- * identity service, which answers `canSetExecutionUser` and, for an administrator, the members to choose from. A
- * reference that is no longer a usable member keeps its value: the page shows it, names why it cannot be used, and lets
- * an administrator correct it rather than silently clearing it.
+ * administrator may change it; everyone else reads the reference it holds.
+ *
+ * The identity service answers in one call: the members an administrator may choose from, and — for whoever may read the
+ * settings — the referenced member itself, by name and whether it is still usable. So a reference is never judged by
+ * whether it fell inside a page of the member list: the server says what it is, and a member who has been disabled,
+ * deleted or removed from the domain keeps its value with the reason it cannot run, instead of being cleared.
  */
 const model = defineModel<string | null>({ required: true });
 const props = defineProps<{
@@ -23,17 +25,18 @@ const { t } = useI18n();
 const options = ref<AgentExecutionOptions>({ canSetExecutionUser: false, users: [] });
 const keyword = ref("");
 const busy = ref(false);
-const failed = ref(false);
+const failure = ref<string | null>(null);
 onMounted(() => void read(""));
 watch(keyword, (value) => void read(value));
 
 async function read(search: string) {
   busy.value = true;
-  failed.value = false;
+  failure.value = null;
   try {
-    options.value = await agentDefinitionsApi.executionOptions(search);
-  } catch {
-    failed.value = true;
+    options.value = await agentDefinitionsApi.executionOptions(search, props.stored);
+  } catch (error) {
+    // The domain's answer, in its own words: "the member is not in this domain" is not the same page as "unreachable".
+    failure.value = error instanceof Error ? error.message : String(error);
   } finally {
     busy.value = false;
   }
@@ -42,15 +45,14 @@ async function read(search: string) {
 /** Whether the reader may change the reference at all; the editor sends the field only then. */
 defineExpose({ canSet: computed(() => options.value.canSetExecutionUser) });
 
-/**
- * The chosen member's name; a reader without the permission is offered no members, so they read the reference by its ID
- * rather than being told it is unavailable. Only an administrator's empty list means the member is no longer usable.
- */
-const chosenName = computed(() => options.value.users.find((user) => user.id === model.value)?.name ?? null);
-const unavailable = computed(
-  () => options.value.canSetExecutionUser && model.value !== null && chosenName.value === null && model.value === props.stored,
-);
+const selected = computed(() => options.value.selected ?? null);
+const chosenName = computed(() => selected.value?.name ?? options.value.users.find((user) => user.id === model.value)?.name ?? null);
 const own = computed(() => t("agents.executionOwn"));
+/** The server's verdict on the stored reference: unavailable, and by which of its codes. */
+const unavailable = computed(() => selected.value !== null && !selected.value.available);
+const reason = computed(() =>
+  selected.value?.reason ? t(`agents.executionReason.${selected.value.reason}`) : t("agents.executionReasonUnknown"),
+);
 </script>
 
 <template>
@@ -70,17 +72,16 @@ const own = computed(() => t("agents.executionOwn"));
     >
       <el-option :label="own" :value="null" />
       <el-option v-for="user in options.users" :key="user.id" :label="user.name" :value="user.id" />
+      <!-- The referenced member stays choosable even when the list's page does not reach it. -->
+      <el-option v-if="selected && !options.users.some((user) => user.id === selected!.id)" :label="selected.name" :value="selected.id" />
     </el-select>
-    <p class="execution-read">
-      <template v-if="options.canSetExecutionUser">{{ chosenName ?? own }}</template>
-      <template v-else>{{ chosenName ?? model ?? own }}</template>
-    </p>
-    <p v-if="failed" class="execution-unavailable" role="alert">
-      {{ t("agents.executionOptionsFailed") }}
+    <p class="execution-read">{{ chosenName ?? model ?? own }}</p>
+    <p v-if="failure" class="execution-unavailable" role="alert">
+      {{ t("agents.executionOptionsFailed") }} {{ failure }}
       <el-button size="small" link type="primary" @click="read(keyword)">{{ t("common.retry") }}</el-button>
     </p>
     <p v-else-if="unavailable" class="execution-unavailable" role="alert">
-      {{ t("agents.executionUnavailable", { id: model }) }}
+      {{ t("agents.executionUnavailable", { name: chosenName ?? model, reason }) }}
     </p>
     <p v-else-if="!options.canSetExecutionUser" class="execution-hint">{{ t("agents.executionReadOnly") }}</p>
     <p v-else class="execution-hint">{{ t("agents.executionHint") }}</p>

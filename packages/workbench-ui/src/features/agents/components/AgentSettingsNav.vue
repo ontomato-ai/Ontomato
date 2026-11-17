@@ -35,7 +35,8 @@ const emit = defineEmits<{
 }>();
 const { t } = useI18n();
 const canOpen = usePageAccess();
-const modelLabels = useAgentModelLabels();
+// The models entry is the agent platform column's own: a settings page that has its own navigation reads no model words.
+const modelLabels = props.standalone ? null : useAgentModelLabels();
 const { agents, loading, loadFailed, ensureLoaded } = useAgentDefinitions();
 /** The agents and a new one are the agents' settings, listed only to an account that may open them. */
 const editsAgents = computed(() => canOpen(platformRoutes.agents.path));
@@ -84,7 +85,7 @@ const heading = computed(() => t("agents.title"));
       </button>
     </template>
 
-    <div v-if="!props.standalone && canOpen(platformRoutes.agentModels.path)" class="nav-foot">
+    <div v-if="modelLabels && canOpen(platformRoutes.agentModels.path)" class="nav-foot">
       <button
         type="button"
         class="foot-row"

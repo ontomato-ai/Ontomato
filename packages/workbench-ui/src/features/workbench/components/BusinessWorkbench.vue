@@ -20,7 +20,7 @@ import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vu
 import DatasetActions from "./DatasetActions.vue";
 import DatasetDrilldown from "./DatasetDrilldown.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
-import { DASHBOARDS_PAGE_ID, dashboardsPageFeature, workbenchFeatures } from "../features";
+import { dashboardsPageFeature, workbenchFeatures } from "../features";
 import FollowUpRenderer from "./FollowUpRenderer.vue";
 import ClarificationRenderer from "./ClarificationRenderer.vue";
 const artifactRenderers = [
@@ -76,7 +76,12 @@ const featureRoutes = {} as Record<string, never>;
  * conversation stays where it is and the page is mounted from the assembly's registry, with the props its address gives
  * it and the way back for its own navigation.
  */
-const pilot = usePilotPage();
+/**
+ * The pages this application carries beside its conversation, from the platform's assembly: the assembly hands over a
+ * resolver whose callback is this application's own address (`?page=`), so a page's own navigation never leaves it.
+ */
+const pilot = usePilotPage()(setPageAddress);
+/** The page's address the conversation carries: one query value, so the page's own query (`?draft...`) travels with it. */
 const pageAddress = computed(() => (typeof route.query.page === "string" ? route.query.page : null));
 const pilotPage = computed(() => (pageAddress.value ? pilot(pageAddress.value) : null));
 const inDashboards = computed(() => pageAddress.value !== null && pilotPage.value !== null);
@@ -86,15 +91,13 @@ const inDashboards = computed(() => pageAddress.value !== null && pilotPage.valu
  * conversation) returns to the conversation.
  */
 const featureId = computed<string | null>({
-  get: () => (inDashboards.value ? DASHBOARDS_PAGE_ID : null),
+  get: () => pilotPage.value?.id ?? null,
   set: (id) => {
     // Closing the page beside the conversation only drops the parameter: the conversation stays.
-    if (inDashboards.value) {
-      const { page: _page, ...query } = route.query;
-      void router.replace({ query });
-      return;
-    }
-    if (id === DASHBOARDS_PAGE_ID) return;
+    if (id !== null) return;
+    if (pageAddress.value === null) return;
+    const { page: _page, ...query } = route.query;
+    void router.replace({ query });
   },
 });
 
@@ -148,11 +151,12 @@ const labels = useShellLabels();
  * The page beside the conversation: a dashboard names itself, for a message sent from its composer. What is selected in
  * it is the dashboard's own to report.
  */
-const pageContext = computed<PageContext | null>(() =>
-  inDashboards.value
+const pageContext = computed<PageContext | null>(() => {
+  if (!pilotPage.value) return null;
+  return pilotPage.value.id === "dashboards"
     ? { pageKey: "dashboard", url: pageAddress.value!, label: t("assistant.featureDashboards"), selection: [] }
-    : null,
-);
+    : { pageKey: "agent-settings", url: pageAddress.value!, label: t("agents.title"), selection: [] };
+});
 
 /**
  * The one navigation state: the platform column lists the agents and conversations from it, and this conversation
@@ -299,13 +303,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
     @open-page="openPageAtItsAddress"
   >
     <template #feature="{ featureId: page }">
-      <component
-        :is="pilotPage!.component"
-        v-if="page === DASHBOARDS_PAGE_ID && pilotPage"
-        :key="pageAddress!"
-        v-bind="pilotPage.props"
-        :navigate="(next: { dashboardId?: string }) => setPageAddress(pilotPage!.navigate?.(next) ?? pageAddress!)"
-      />
+      <component :is="pilotPage!.component" v-if="pilotPage" :key="pageAddress!" v-bind="pilotPage.props" />
       <slot v-else name="feature" :feature-id="page" />
     </template>
     <template #dataset-selection-actions="{ artifact, title, selectedRowIndices }">

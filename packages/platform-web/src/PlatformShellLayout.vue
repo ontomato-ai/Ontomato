@@ -24,11 +24,11 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useApplicationCatalog } from "./catalog";
 import { nodeApiRequest } from "@ontomato/workbench-ui";
 import { appAt } from "./apps";
+import { pilotPageResolver as resolvePilotPages } from "./pilot-pages";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 import { pageCounterKey, type PageCounter } from "@ontomato/agent-shell-ui";
 import { createAssistantClient } from "@ontomato/workbench-ui/features/workbench/assistant-host";
 import { readRememberedAgent } from "@ontomato/workbench-ui";
-import { resolvePilotPage } from "./pilot-pages";
 import { recentDestination } from "./recent-work";
 import { openApplicationKey, platformApplicationsKey, platformBrandKey, type PlatformAppDeclaration } from "./apps";
 import { useApplicationOpening } from "./application-opening";
@@ -146,10 +146,11 @@ const localeNames = computed(() =>
 const pageActions = providePageActions();
 
 /**
- * The pages the platform's assembly mounts beside a conversation: the conversation application asks for an address and
- * draws the page's own component, so it never imports another application's page.
+ * The pages the platform's assembly can mount beside a conversation: the conversation application asks for one by
+ * address and hands over its own navigation, so it never imports another application's page.
  */
-provide(pilotPageKey, resolvePilotPage);
+provide(pilotPageKey, resolvePilotPages);
+
 
 /*
  * The one counter a page at its own address sends to (DESIGN.md "Applications and shells"): its agents, the agent this

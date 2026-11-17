@@ -12,7 +12,7 @@ import { BusinessWorkbench } from "@ontomato/workbench-ui/features/workbench";
 import { useDashboardStore } from "@ontomato/workbench-ui/features/dashboard";
 import elementEn from "element-plus/es/locale/lang/en";
 import DashboardsPage from "../pages/DashboardsRoute.vue";
-import { resolvePilotPage } from "../pilot-pages";
+import { pilotPageResolver } from "../pilot-pages";
 
 /*
  * The board's own store is one per page load, but the page is mounted in two ways: as the dashboards application at its
@@ -107,7 +107,7 @@ async function routerAt(path: string, query: Record<string, string> = {}): Promi
 }
 
 const provide = (router?: Router) => ({
-  [pilotPageKey as symbol]: resolvePilotPage,
+  [pilotPageKey as symbol]: pilotPageResolver,
   [platformPageAccessKey as symbol]: () => true,
   [pageCounterKey as symbol]: {
     agents: async () => [agent],

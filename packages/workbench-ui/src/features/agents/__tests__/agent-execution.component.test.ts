@@ -46,12 +46,16 @@ afterEach(() => {
 });
 
 /** The identity service's answer: an administrator may set the reference, and sees one member to choose. */
-function identity(canSetExecutionUser: boolean, users: { id: string; name: string }[] = []) {
-  return vi.spyOn(agentDefinitionsApi, "executionOptions").mockResolvedValue({ canSetExecutionUser, users });
+function identity(
+  canSetExecutionUser: boolean,
+  users: { id: string; name: string }[] = [],
+  selected?: { id: string; name: string; available: boolean; reason?: "disabled" | "deleted" | "not-member" },
+) {
+  return vi.spyOn(agentDefinitionsApi, "executionOptions").mockResolvedValue({ canSetExecutionUser, users, selected });
 }
 
-async function mountEditor(stored: string | null, canSet: boolean) {
-  identity(canSet, canSet ? [{ id: MEMBER, name: "Mei Chen" }] : []);
+async function mountEditor(stored: string | null, canSet: boolean, selected?: Parameters<typeof identity>[2]) {
+  identity(canSet, canSet ? [{ id: MEMBER, name: "Mei Chen" }] : [], selected);
   vi.spyOn(agentDefinitionsApi, "listMcpServiceOptions").mockResolvedValue([]);
   const update = vi.spyOn(agentDefinitionsApi, "update").mockImplementation(async (id, written) => ({ ...agent(stored), ...written, id }) as AssistantAgentDefinition);
   await router.push(`/ontology/agents/${AGENT}`);
@@ -69,6 +73,28 @@ const saveButton = (wrapper: VueWrapper) =>
   wrapper.findAll(".platform-page-header button").find((button) => button.text() === t("common.save"))!;
 
 describe("an agent's execution permission", () => {
+  it("names the stored member and why it cannot run, even when the list does not reach it", async () => {
+    // The identity service answers for the reference itself: a reader without the permission sees the member's name and
+    // the reason, and no member list is needed to judge it.
+    const { wrapper } = await mountEditor(MEMBER, false, { id: MEMBER, name: "Mei Chen", available: false, reason: "not-member" });
+    expect(wrapper.find(".execution-read").text()).toBe("Mei Chen");
+    expect(wrapper.find(".execution-unavailable").text()).toContain(t("agents.executionReason.not-member"));
+  });
+
+  it("shows the server's own words when the options cannot be read", async () => {
+    identity(false, []);
+    vi.mocked(agentDefinitionsApi.executionOptions).mockRejectedValue(new Error("Domain identity service unavailable"));
+    vi.spyOn(agentDefinitionsApi, "listMcpServiceOptions").mockResolvedValue([]);
+    await router.push(`/ontology/agents/${AGENT}`);
+    const wrapper = mount(AgentEditor, {
+      props: { agent: agent(MEMBER), classes: [], relations: [], outlineLoading: false, modelOptions: options, modelOptionsFailed: false },
+      global, attachTo: document.body,
+    });
+    wrappers.push(wrapper);
+    await flushPromises();
+    expect(wrapper.find(".execution-unavailable").text()).toContain("Domain identity service unavailable");
+  });
+
   it("starts a new agent with the reader's own permissions", async () => {
     identity(true, [{ id: MEMBER, name: "Mei Chen" }]);
     vi.spyOn(agentDefinitionsApi, "listMcpServiceOptions").mockResolvedValue([]);
