@@ -22,11 +22,6 @@ public class KnowledgeGovernanceController {
     access.service(request);
     governance.publishSkill();
   }
-  @GetMapping("/access")
-  public Object permission(HttpServletRequest request) {
-    var context=access.governance(request);
-    return JSONObject.of("ownerId",context.owner().userId(),"domainId",context.owner().domainId(),"expiresAt",context.expiresAt());
-  }
   @PostMapping("/platform-windows")
   public Object register(@RequestBody java.util.Map<String,Object> input,HttpServletRequest request) {
     access.service(request);

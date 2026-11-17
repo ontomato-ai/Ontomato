@@ -76,12 +76,11 @@ if (platform && command === "import-knowledge") {
   process.exit(0);
 }
 let state = null;
-if (!state)
-  try {
-    state = JSON.parse(await readFile(stateFile, "utf8"));
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
-  }
+try {
+  state = JSON.parse(await readFile(stateFile, "utf8"));
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
+}
 if (platform) {
   if (command === "close") throw new Error("Platform write windows close with the real run; close is only for external work");
   if (!state || state.runId !== process.env.ONTOMATO_RUN_ID || command === "begin") {

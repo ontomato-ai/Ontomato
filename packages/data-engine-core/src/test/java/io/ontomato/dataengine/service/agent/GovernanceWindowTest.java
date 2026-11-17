@@ -76,14 +76,16 @@ class GovernanceWindowTest extends PostgresTestDatabase {
   }
   @AfterEach void stopFixture() {if(server!=null)server.stop(0);}
   private JSONObject binding(String id) {
-    return JSONObject.of("recordId",record,"domainId",owner.domainId(),"ownerId",owner.userId(),"runtimeHostId","workbench","sessionId",session,"runId",id,"expiresAt",Instant.now().plusSeconds(600).toString());
+    return JSONObject.of("recordId",record,"domainId",owner.domainId(),"ownerId",owner.userId(),"runtimeHostId","workbench","sessionId",session,"runId",id,"expiresAt",Instant.now().plusSeconds(900).toString());
   }
   private void open() throws Exception {
+    var input=binding(run);
     var response=http.perform(post("/ontology/ai/knowledge-governance/platform-windows")
-      .header("X-Ontomato-Query-Service-Token","service").contentType(MediaType.APPLICATION_JSON).content(binding(run).toJSONString()))
+      .header("X-Ontomato-Query-Service-Token","service").contentType(MediaType.APPLICATION_JSON).content(input.toJSONString()))
       .andExpect(status().isOk()).andReturn().getResponse();
     var result=JSONObject.parseObject(response.getContentAsString());
     assertEquals(session,result.getString("sessionId"));
+    assertEquals(Instant.parse(input.getString("expiresAt")).toEpochMilli(),Instant.parse(result.getString("expiresAt")).toEpochMilli());
     token=result.getString("token");
     assertNotNull(token);
   }

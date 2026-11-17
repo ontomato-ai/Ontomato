@@ -15,26 +15,27 @@ conversational governance definition or model selection.
   requirement. Kind identifies preset data, not a separate execution path.
 - `POST /api/assistant/sessions/:sessionId/governance-window` is a run-scoped callback.
   It accepts only optional `recordId`. Node verifies the authenticated initiator, the
-  persisted current/admitted turn, live runtime status and access to a selected record.
+  persisted current/admitted turn and live runtime status. Java decides record ownership.
   A signed existing callback credential supplies the run identity; headers alone cannot.
 - Java `POST /ontology/ai/knowledge-governance/platform-windows` registers the trusted
   `{recordId,domainId,ownerId,runtimeHostId,sessionId,runId,expiresAt}` binding and returns
   the existing scoped governance grant. Registration requires both workbench service
   authentication and the current initiator credential. Expired credentials fail.
-  Records are created only when the skill requests a window.
+  The platform deadline is turn.created_at + getQueryTimeoutMs(), also used by the callback
+  credential; Java only shortens it to the current credential expiry. External begin keeps
+  its own 600-second window. Records are created only when the skill requests a window.
 - Java `POST .../platform-windows/:runId/close` closes the window using service
   authentication. Node saves only the returned record reference in its accepted turn.
   `POST .../skill-package` publishes the capability-owned skill with the same service boundary.
 - `GET .../:recordId/work`, `GET .../:recordId/sources/:sourceId`, and existing
   `POST .../:recordId/runs/:runId/actions/:action` retain the data-service ownership rules.
-  `GET .../access` projects the authenticated owner/domain/credential expiry for Node.
 - Every platform action checks the bound run via service-authenticated Node
   `GET /internal/assistant/sessions/:sessionId/runs/:runId/status`. Node resolves its own
   persisted ownership, reads the existing runtime lightweight status and returns only
   `{sessionId,runId,status,stopReason}`. Java uses no workbench runtime credential.
   A non-running run or failed status read refuses the action. The existing write
   transaction then locks and checks record ownership, latest window, expiry and closure.
-- Node closes windows on provider settle/cancel and failed admission. Explicit stop
+- Node closes windows on provider settle/cancel. Explicit stop
   closes the Java gate before requesting runtime cancellation. Status checks also
   reject late writes if a close notification has not arrived. No governance poller or
   second running-state store is introduced.
@@ -62,7 +63,7 @@ host sessions/runs and stores no conversation title, platform input message or r
 Node assistant_turns.retrieval_scope_id is nullable and is assigned only after Java opens
 that caller. Its governance_record_id is a nullable reference assigned only after Java
 registers a window. Cleanup/evidence/continuations use these per-turn references; provider
-page links use the session's latest recorded governance reference. No current-kind or
+page links use this run's own recorded governance reference. No current-kind or
 current-skill lookup reconstructs a past round. Existing retrieval_scope_id values remain
 unchanged. For an old caller that never existed, service-only close-scope is a successful
 no-op, and links returns 404 handled by the existing deletion path.

@@ -21,11 +21,8 @@ public class GovernanceRuntimeClient {
   }
 
   public JSONObject status(String domain, String session, String run) {
-    var result = JSONObject.parseObject(http.get()
+    return JSONObject.parseObject(http.get()
         .uri("/internal/assistant/sessions/" + session + "/runs/" + run + "/status")
         .header("X-Domain-Id", domain).retrieve().body(String.class));
-    if (!session.equals(result.getString("sessionId")) || !run.equals(result.getString("runId")))
-      throw new IllegalStateException("Governance runtime identity mismatch");
-    return result;
   }
 }

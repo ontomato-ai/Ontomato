@@ -29,7 +29,6 @@ it("keeps old references and records new retrieval/governance references only wh
   await assistantStore.recordGovernanceWindow(id,owner,record);
   expect((await assistantStore.turn(id,owner)).retrieval_scope_id).toBe(id);
   expect(await assistantStore.governanceWindow(id,owner)).toBe(record);
-  expect(await assistantStore.governanceRecord(session,owner)).toBe(record);
   expect(await assistantStore.governanceWindow(id,{...owner,domainId:"other"})).toBeNull();
 });
 

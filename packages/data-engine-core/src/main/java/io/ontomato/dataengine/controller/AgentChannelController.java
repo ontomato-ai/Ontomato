@@ -110,7 +110,7 @@ public class AgentChannelController {
     if(!"ontology".equals(ref.getString("providerId"))) throw AgentHttpException.missing();
     String agent=ref.getString("agentId"),session=AgentJson.id(body.getString("sessionId")),run=AgentJson.id(body.getString("runId"));
     String kind=OntologyGenerationService.kindForAgent(agent);
-    if(!OntologyAgentStore.RETRIEVER.equals(agent) && !ActionCreationService.AGENT.equals(agent) && kind==null) throw AgentHttpException.missing();
+    if(!OntologyAgentStore.isKnownAgent(agent)) throw AgentHttpException.missing();
     var authority=body.getJSONObject("authority");
     if("build-test".equals(authority.getString("executionKind")) && (body.getJSONObject("requestedBy")!=null || kind==null)) throw new AgentHttpException(422,"BUILD_TEST_UNSUPPORTED","The agent channel is not available in a build-test execution");
     var actor=body.getJSONObject("actor");String language=body.getString("language");
@@ -174,8 +174,7 @@ public class AgentChannelController {
     String id=AgentJson.id(session.getString("sessionId")),run=AgentJson.id(execution.getString("runId"));
     var record=store.session(id,actor.owner());
     String agent=record.getString("agent_id");
-    if(!OntologyAgentStore.RETRIEVER.equals(agent) && !ActionCreationService.AGENT.equals(agent)
-        && OntologyGenerationService.kindForAgent(agent)==null) throw AgentHttpException.missing();
+    if(!OntologyAgentStore.isKnownAgent(agent)) throw AgentHttpException.missing();
     store.run(id,run,actor.owner());
     return new Execution(id,run,record.getString("agent_id"),actor);
   }

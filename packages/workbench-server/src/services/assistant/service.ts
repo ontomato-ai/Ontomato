@@ -1,5 +1,5 @@
-import { closeGovernanceWindow, requireGovernanceAccess } from "./governance";
-import { needsRetrievalScope, hasGovernanceSkill } from "./skills";
+import { closeGovernanceWindow } from "./governance";
+import { needsRetrievalScope } from "./skills";
 import { agentHostSendResultSchema, type AgentHostSendRequest } from "@ontomato/contracts/agent-host";
 import { resolveLocale } from "../../i18n";
 import { assertAppBuilderAccess } from "../app-builder/access";
@@ -222,25 +222,20 @@ export const assistantService = {
   },
   async prepare(body: AgentPrepareRequest, owner: AssistantOwner, credentials: AssistantCredentials): Promise<RuntimeStartRunRequest> {
     const { sessionId, runId: id, input, authority } = body;
-    try {
-      const { agent: a, ontologyContext } = await this.admitAgent(body.agent.agentId,owner,credentials,authority);
-      const context = isAppBuilderKind(a.kind) ? z.object({ workspaceId: z.string().uuid() }).strict().safeParse(body.context) : null;
-      if (context && !context.success) throw new HttpError(400,"App builder requires context.workspaceId containing an owned workspace UUID","CONTEXT_REQUIRED");
-      const workspace = context?.success ? context.data.workspaceId : undefined;
-      if (workspace) await new RuntimeClient(owner.domainId,undefined,owner.userId).request(`/v1/channel/sessions/${sessionId}/workspace`,"POST",{ workspaceId: workspace,ownerId: owner.userId });
-      const { row: session } = await assistantStore.create(sessionId,owner,a.id,"delegated",workspace);
-      const message = input.content;
-      const { row: turn } = await assistantStore.reserve(sessionId,id,message,owner,a.class_names);
-      const request = await withDomainSkills(owner.domainId,async () => {
-        const prepare = isAppBuilderKind(a.kind) ? prepareAppBuilderRun : prepareAnalystRun;
-        return prepare({ a,session,turn,message,input,inputId:body.inputId,ontologyContext,owner,credentials });
-      });
-      await assistantStore.admitted(id,message);
-      return { ...request,input,authority: { classNames: a.class_names,executionKind: isAppBuilderKind(a.kind) ? "build-test" : "live" } };
-    } catch (error) {
-      await closeGovernanceWindow(id,owner);
-      throw error;
-    }
+    const { agent: a, ontologyContext } = await this.admitAgent(body.agent.agentId,owner,credentials,authority);
+    const context = isAppBuilderKind(a.kind) ? z.object({ workspaceId: z.string().uuid() }).strict().safeParse(body.context) : null;
+    if (context && !context.success) throw new HttpError(400,"App builder requires context.workspaceId containing an owned workspace UUID","CONTEXT_REQUIRED");
+    const workspace = context?.success ? context.data.workspaceId : undefined;
+    if (workspace) await new RuntimeClient(owner.domainId,undefined,owner.userId).request(`/v1/channel/sessions/${sessionId}/workspace`,"POST",{ workspaceId: workspace,ownerId: owner.userId });
+    const { row: session } = await assistantStore.create(sessionId,owner,a.id,"delegated",workspace);
+    const message = input.content;
+    const { row: turn } = await assistantStore.reserve(sessionId,id,message,owner,a.class_names);
+    const request = await withDomainSkills(owner.domainId,async () => {
+      const prepare = isAppBuilderKind(a.kind) ? prepareAppBuilderRun : prepareAnalystRun;
+      return prepare({ a,session,turn,message,input,inputId:body.inputId,ontologyContext,owner,credentials });
+    });
+    await assistantStore.admitted(id,message);
+    return { ...request,input,authority: { classNames: a.class_names,executionKind: isAppBuilderKind(a.kind) ? "build-test" : "live" } };
   },
   async admitAgent(id: string, owner: AssistantOwner, credentials: AssistantCredentials, authority?: AgentRunContext["authority"]) {
     const a = await assistantStore.agent(id,owner);
@@ -251,7 +246,6 @@ export const assistantService = {
       if (!a.class_names.length) throw new HttpError(403,"No authorized classes in the delegated scope","FORBIDDEN");
     }
     if (isAppBuilderKind(a.kind)) await assertAppBuilderAccess(credentials);
-    if (hasGovernanceSkill(a.skills)) await requireGovernanceAccess(owner,credentials);
     const {nativeProfileId}=await import('../product-assets/platform-assets');
     const native=await nativeProfileId(owner.domainId,a.id);
     if(native){const {requireProductUse}=await import('../product-assets/grants');await requireProductUse(owner,native);await requireProductUse(owner,a.id);if(!credentials.token?.startsWith('ap2.')){const {userScopedAgentCredentials}=await import('../product-assets/agent-principal');credentials=await userScopedAgentCredentials(owner.domainId,a.id,owner.userId,credentials.locale);}}

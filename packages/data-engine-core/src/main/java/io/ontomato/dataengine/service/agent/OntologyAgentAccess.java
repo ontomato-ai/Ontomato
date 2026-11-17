@@ -56,8 +56,7 @@ public class OntologyAgentAccess {
   public boolean governanceAllowed() { return identity.hasKnowledgeGovernanceAccess(); }
 
   public Context forAgent(HttpServletRequest request, String agent) {
-    if (!OntologyAgentStore.RETRIEVER.equals(agent) && !ActionCreationService.AGENT.equals(agent)
-        && OntologyGenerationService.kindForAgent(agent)==null) throw AgentHttpException.missing();
+    if (!OntologyAgentStore.isKnownAgent(agent)) throw AgentHttpException.missing();
     return current(request);
   }
 
@@ -158,8 +157,7 @@ public class OntologyAgentAccess {
       try {
         var row = store.session(session, owner);
         String agent=row.getString("agent_id");
-        return query && (OntologyAgentStore.RETRIEVER.equals(agent) || ActionCreationService.AGENT.equals(agent)
-          || OntologyGenerationService.kindForAgent(agent)!=null);
+        return query && OntologyAgentStore.isKnownAgent(agent);
       } catch (AgentHttpException error) {
         if (error.status() == 404 || error.status() == 403) return false;
         throw error;

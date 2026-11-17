@@ -272,11 +272,6 @@ export const assistantStore = {
     const row=(await db().query(`SELECT t.governance_record_id FROM ${table("assistant_turns")} t JOIN ${table("assistant_sessions")} s ON s.id=t.session_id WHERE t.id=$1 AND s.domain_id=$2 AND s.owner_id=$3`,[id,owner.domainId,owner.userId])).rows[0];
     return row?.governance_record_id ?? null;
   },
-  async governanceRecord(sessionId: string, owner: AssistantOwner): Promise<string | null> {
-    await this.session(sessionId,owner);
-    const row=(await db().query(`SELECT governance_record_id FROM ${table("assistant_turns")} WHERE session_id=$1 AND governance_record_id IS NOT NULL ORDER BY request_seq DESC LIMIT 1`,[sessionId])).rows[0];
-    return row?.governance_record_id ?? null;
-  },
   async admitted(id: string, message: string) {
     await transaction(async (c) => {
       const r = await c.query(

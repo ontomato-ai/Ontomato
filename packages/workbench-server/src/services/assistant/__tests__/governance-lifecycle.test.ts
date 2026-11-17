@@ -2,9 +2,9 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { HttpError } from "../../../utils/errors";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
-const mocks=vi.hoisted(()=>({query:vi.fn(),agent:vi.fn(),session:vi.fn(),turn:vi.fn(),turns:vi.fn(),create:vi.fn(),reserve:vi.fn(),admitted:vi.fn(),settled:vi.fn(),close:vi.fn(),access:vi.fn(),skills:vi.fn(),request:vi.fn(),run:vi.fn(),open:vi.fn(),links:vi.fn(),scope:vi.fn(),scopeClose:vi.fn(),overview:vi.fn(),record:vi.fn(),recordWindow:vi.fn()}));
-vi.mock("../store",()=>({assistantStore:{agent:mocks.agent,session:mocks.session,turn:mocks.turn,turns:mocks.turns,create:mocks.create,reserve:mocks.reserve,admitted:mocks.admitted,settled:mocks.settled,recordRetrievalScope:mocks.scope,governanceRecord:mocks.record,recordGovernanceWindow:mocks.recordWindow}}));
-vi.mock("../governance",()=>({closeGovernanceWindow:mocks.close,requireGovernanceAccess:mocks.access}));
+const mocks=vi.hoisted(()=>({query:vi.fn(),agent:vi.fn(),session:vi.fn(),turn:vi.fn(),turns:vi.fn(),create:vi.fn(),reserve:vi.fn(),admitted:vi.fn(),settled:vi.fn(),close:vi.fn(),callback:vi.fn(),skills:vi.fn(),request:vi.fn(),run:vi.fn(),open:vi.fn(),links:vi.fn(),scope:vi.fn(),scopeClose:vi.fn(),overview:vi.fn(),record:vi.fn(),recordWindow:vi.fn()}));
+vi.mock("../store",()=>({assistantStore:{agent:mocks.agent,session:mocks.session,turn:mocks.turn,turns:mocks.turns,create:mocks.create,reserve:mocks.reserve,admitted:mocks.admitted,settled:mocks.settled,recordRetrievalScope:mocks.scope,governanceWindow:mocks.record,recordGovernanceWindow:mocks.recordWindow}}));
+vi.mock("../governance",()=>({closeGovernanceWindow:mocks.close}));
 vi.mock("../../../core/skills/registry/manager",()=>({skillRegistryManager:{}}));
 vi.mock("../../skills/skill-manager",()=>({skillManager:{},skillReference:vi.fn()}));
 vi.mock("../skills",async original=>({...await original<typeof import("../skills")>(),prepareAssistantSkills:mocks.skills}));
@@ -14,10 +14,10 @@ vi.mock("../prompts",()=>({effectiveSystemPrompt:()=>"Instructions"}));
 vi.mock("../../skills/operations",()=>({withDomainSkills:async(_domain:string,fn:()=>Promise<unknown>)=>fn()}));
 vi.mock("../../product-assets/platform-assets",()=>({nativeProfileId:async()=>null}));
 vi.mock("../../product-assets/agent-profile",()=>({agentProfileForPrincipal:async()=>null,profileForSession:async()=>null}));
-vi.mock("../../agent-runtime/callback-credential",()=>({callbackCredential:()=>({value:"callback"})}));
+vi.mock("../../agent-runtime/callback-credential",()=>({callbackCredential:mocks.callback}));
 vi.mock("../../agent-host/caller",()=>({restoreAgentCaller:async()=>({owner:{domainId:"domain",userId:"user"},credentials:{}})}));
 vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://ontology"}}}));
-vi.mock("../../../config/query-settings",()=>({getQueryTimeoutMs:()=>600_000}));
+vi.mock("../../../config/query-settings",()=>({getQueryTimeoutMs:()=>900_000}));
 vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({callbackUrl:"http://workbench"})}}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
 vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class {request=mocks.request;run=mocks.run;session=async()=>({messages:[{id:"22222222-2222-4222-8222-222222222222",messageSeq:1,message:{role:"user",content:"Review knowledge",timestamp:1}}]});}}));
@@ -37,6 +37,7 @@ beforeEach(()=>{
   mocks.create.mockResolvedValue({row:session});mocks.reserve.mockResolvedValue({row:turn});
   mocks.query.mockResolvedValue({rows:[{session_id:sessionId}]});mocks.skills.mockResolvedValue([skill]);mocks.overview.mockResolvedValue("overview");
   mocks.open.mockResolvedValue({id:runId});mocks.links.mockResolvedValue([]);mocks.record.mockResolvedValue(null);
+  mocks.callback.mockReturnValue({value:"callback"});
   mocks.close.mockResolvedValue(undefined);mocks.admitted.mockResolvedValue(undefined);mocks.settled.mockResolvedValue(undefined);
 });
 function preparation(): AgentPrepareRequest {return {mode:"run",agent:{providerId:"workbench",agentId},sessionId,runId,inputId:runId,input:{role:"user",content:"Review knowledge",timestamp:1},language:"en",authority:{classNames:[],executionKind:"live"},requestedBy:null,root:{session:{providerId:"workbench",sessionId},runId},actor:{id:runId,domainId:"domain"}};}
@@ -46,6 +47,7 @@ it("a custom definition with governance alone needs no query access and opens no
   expect(prepared.definition).toMatchObject({agentId,modelId:"provider/model",skills:[skill]});
   expect(prepared.environment.values).toMatchObject({ONTOMATO_ASSISTANT_SESSION_ID:sessionId,ONTOMATO_SKILL_SCENARIO:"platform",ONTOMATO_ONTOLOGY_URL:"http://ontology"});
   expect(prepared.environment.values).not.toHaveProperty("ONTOMATO_RETRIEVAL_CALLER_ID");
+  expect(mocks.callback.mock.calls[0][0].expiresAt).toBe(new Date((await mocks.turn()).created_at).getTime()+900_000);
   expect(mocks.overview).not.toHaveBeenCalled();expect(mocks.open).not.toHaveBeenCalled();expect(mocks.recordWindow).not.toHaveBeenCalled();
 });
 it("the selected query skill opens and records its actual scope regardless of preset kind",async()=>{
@@ -75,7 +77,7 @@ it("closes the Java gate before asking the runtime to stop",async()=>{
   expect(mocks.close).toHaveBeenCalledWith(runId,owner);
 });
 it("a custom agent's provider result follows its saved governance record",async()=>{
-  mocks.record.mockResolvedValue(agentId);mocks.run.mockResolvedValue({run:{id:runId,sessionId,status:"running",stopReason:null},messages:[],artifacts:[]});
+  mocks.record.mockImplementation(async id=>id===runId?agentId:null);mocks.run.mockResolvedValue({run:{id:runId,sessionId,status:"running",stopReason:null},messages:[],artifacts:[]});
   const result=await agentChannelService.read({actor:{id:runId,domainId:"domain"},execution:{session:{providerId:"workbench",sessionId},runId}},"domain");
   expect(result).toMatchObject({process:{mode:"page",href:`/governance/reports/${agentId}`},results:[{href:`/governance/reports/${agentId}`} ]});
 });

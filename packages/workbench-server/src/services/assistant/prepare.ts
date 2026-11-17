@@ -63,7 +63,7 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
         ...(retrieval?{ONTOMATO_RETRIEVAL_CALLER_ID:turn.retrieval_scope_id!}:{}),
         ...(governance?{ONTOMATO_GOVERNANCE_WINDOW_URL:environment.agentRuntime().callbackUrl.replace(/\/$/,"")+callbackPath}:{})},
       secrets: {...skillEnvironment.secrets,
-        ...(governance?{ONTOMATO_GOVERNANCE_CALLBACK:callbackCredential({pathPrefix:callbackPath,runId:turn.id,expiresAt:new Date(turn.created_at).getTime()+600_000,token:credentials.token??"",apiKey:credentials.apiKey??""}).value}:{}),
+        ...(governance?{ONTOMATO_GOVERNANCE_CALLBACK:callbackCredential({pathPrefix:callbackPath,runId:turn.id,expiresAt:new Date(turn.created_at).getTime()+getQueryTimeoutMs(),token:credentials.token??"",apiKey:credentials.apiKey??""}).value}:{}),
         ...(profile?{ONTOMATO_PRODUCT_CALLBACK:callbackCredential({pathPrefix:`/api/product-assets/${encodeURIComponent(profile.id)}/releases/${profile.releaseId}/tools/`,runId:id,expiresAt:Date.now()+getQueryTimeoutMs(),token:credentials.token??'',apiKey:credentials.apiKey??''}).value}:{}),
       },
     },

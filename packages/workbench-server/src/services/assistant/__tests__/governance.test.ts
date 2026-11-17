@@ -3,13 +3,14 @@ import express from "express";
 import type { Server } from "node:http";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
-const mocks = vi.hoisted(() => ({ session: vi.fn(), domainSession: vi.fn(), turn: vi.fn(), status: vi.fn(), get: vi.fn(), post: vi.fn(), record:vi.fn(), window:vi.fn() }));
+const mocks = vi.hoisted(() => ({ session: vi.fn(), domainSession: vi.fn(), turn: vi.fn(), status: vi.fn(), post: vi.fn(), record:vi.fn(), window:vi.fn() }));
 vi.mock("../../../identity/installed", () => ({ workbenchIdentity: () => ({ requireDomainId: (input: {domainId:string}) => input.domainId }) }));
 vi.mock("../store", () => ({ assistantStore: { session: mocks.session, domainSession: mocks.domainSession, turn: mocks.turn, recordGovernanceWindow:mocks.record, governanceWindow:mocks.window } }));
 vi.mock("../../../infrastructure/agent-runtime/client", () => ({ RuntimeClient: class { status = mocks.status; } }));
 vi.mock("../../../config/environment", () => ({ environment: { agentRuntime: () => ({ queryServiceToken: "service", token: "runtime-secret" }) } }));
+vi.mock("../../../config/query-settings",()=>({getQueryTimeoutMs:()=>900_000}));
 vi.mock("../../../config/data-query-api", () => ({ getApiConfig: () => ({ baseUrl: "http://ontology" }) }));
-vi.mock("../../../utils/backend-client", () => ({ backendGet: mocks.get, backendPost: mocks.post, buildBackendHeaders: () => ({ tk: "current-user" }) }));
+vi.mock("../../../utils/backend-client", () => ({ backendPost: mocks.post, buildBackendHeaders: () => ({ tk: "current-user" }) }));
 import { governanceRunStatus, openGovernanceWindow, closeGovernanceWindow } from "../governance";
 import { assistantInternalRouter, governanceWindowsRouter } from "../../../api/routes/governance";
 import { callbackCredential, unwrapCallbackCredential } from "../../agent-runtime/callback-credential";
@@ -23,26 +24,23 @@ beforeEach(() => {
   mocks.session.mockResolvedValue(session);mocks.domainSession.mockResolvedValue(session);
   mocks.turn.mockResolvedValue({id:runId,session_id:sessionId,admitted:true,settled:false,created_at:new Date()});
   mocks.status.mockResolvedValue({id:runId,sessionId,status:"running",stopReason:null,messages:["private"]});
-  mocks.get.mockImplementation(async (_name:string,url:string) => ({text:JSON.stringify(url.endsWith("/access")?{ownerId:"user",domainId:"domain",expiresAt:Date.now()+30_000}:{work:{}})}));
   mocks.post.mockImplementation(async (_name:string,_url:string,input:{recordId:string;sessionId:string;runId:string;expiresAt:string}) => ({text:JSON.stringify({id:input.recordId,sessionId:input.sessionId,runId:input.runId,expiresAt:input.expiresAt,token:"governance-grant"})}));
 });
 afterEach(async () => {const closing=server;if(closing) await new Promise<void>((resolve,reject)=>closing.close(error=>error?reject(error):resolve()));});
-it("binds a window to the persisted current run and credential expiry", async () => {
+it("binds a window to the persisted current run and configured run deadline", async () => {
   const result=await openGovernanceWindow(sessionId,runId,recordId,owner,{token:"current-user"});
   expect(result.id).toBe(recordId);
   const binding=mocks.post.mock.calls[0][2];
   expect(binding).toMatchObject({recordId,domainId:"domain",ownerId:"user",sessionId,runId,runtimeHostId:"workbench"});
-  expect(new Date(binding.expiresAt).getTime()).toBeLessThanOrEqual(Date.now()+30_000);
+  expect(new Date(binding.expiresAt).getTime()).toBe(new Date((await mocks.turn()).created_at).getTime()+900_000);
 });
-it("refuses another session's run, a settled run, a non-current run and expired credentials before registration", async () => {
+it("refuses another session's run, a settled run and a non-current run before registration", async () => {
   mocks.turn.mockResolvedValueOnce({id:runId,session_id:recordId,admitted:true,settled:false});
   await expect(openGovernanceWindow(sessionId,runId,undefined,owner,{})).rejects.toMatchObject({status:404});
   mocks.turn.mockResolvedValueOnce({id:runId,session_id:sessionId,admitted:true,settled:true});
   await expect(openGovernanceWindow(sessionId,runId,undefined,owner,{})).rejects.toMatchObject({code:"GOVERNANCE_RUN_CLOSED"});
   mocks.session.mockResolvedValueOnce({id:sessionId,latest_run_id:recordId});
   await expect(openGovernanceWindow(sessionId,runId,undefined,owner,{})).rejects.toMatchObject({code:"GOVERNANCE_RUN_CLOSED"});
-  mocks.get.mockRejectedValueOnce(new Error("credential expired"));
-  await expect(openGovernanceWindow(sessionId,runId,undefined,owner,{token:"expired"})).rejects.toThrow("credential expired");
   expect(mocks.post).not.toHaveBeenCalled();
 });
 it("propagates runtime failures and never registers a stopped run", async () => {
@@ -93,4 +91,11 @@ it("closes only a recorded governance window, independently of the current defin
   mocks.window.mockResolvedValueOnce(recordId);mocks.post.mockResolvedValueOnce({text:""});
   await closeGovernanceWindow(runId,owner);
   expect(mocks.post.mock.calls[0][1]).toBe(`http://ontology/ontology/ai/knowledge-governance/platform-windows/${runId}/close`);
+});
+
+it("propagates Java window admission failures without recording a window",async()=>{
+  const failure=Object.assign(new Error("credential expired"),{status:401});
+  mocks.post.mockRejectedValueOnce(failure);
+  await expect(openGovernanceWindow(sessionId,runId,recordId,owner,{token:"expired"})).rejects.toBe(failure);
+  expect(mocks.record).not.toHaveBeenCalled();
 });

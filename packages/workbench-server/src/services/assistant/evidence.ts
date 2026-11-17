@@ -50,71 +50,69 @@ export async function readAssistantTurnEvidence(
     queries: AssistantQueryEvidence[] = [],
     retrievalRuns: AgentHostRunSnapshot[] = [],
     artifacts = [...run.artifacts];
-  const links = turn.retrieval_scope_id ? await new OntologyRetrievalClient(owner,turn.retrieval_scope_id).links() : [];
-  if (turn.retrieval_scope_id) {
-    const ontology = new OntologyRetrievalClient(owner, turn.retrieval_scope_id);
-    for (const link of links) {
-      const evidence = await ontology.evidence(link.retrievalId, link.runId);
-      const child = evidence.snapshot.runtimeSessionId && evidence.snapshot.runtimeRunId
-        ? await ontology.run(evidence.snapshot.runtimeSessionId, link.runId) : null;
-      if (child) retrievalRuns.push(child);
-      const datasets = [];
-      for (const artifactId of child ? evidence.snapshot.datasetArtifactIds : []) {
-        const data = await ontology.dataset(link.retrievalId, artifactId);
-        artifacts.push(await ontology.artifact(child!.run.sessionId, artifactId));
-        datasets.push(projectDataset(data.id, data.payload, {
-          retrievalId: link.retrievalId,
-          runtimeSessionId: child!.run.sessionId,
-          runtimeRunId: child!.run.id,
-        }));
-      }
-      for (const output of evidence.snapshot.bindings?.datasets ?? []) {
-        const data = await ontology.dataset(link.retrievalId, output.id);
-        datasets.push(projectDataset(data.id, data.payload, { source: "binding", retrievalId: link.retrievalId,
-          bindingOutputId: data.id, runtimeSessionId: null, runtimeRunId: null }));
-      }
-      queries.push({
-        id: link.runId,
-        threadId: sessionId,
-        requestSeq,
-        sourceKind: "retrieval",
-        sourceRef: link.retrievalId,
-        question: evidence.input.question,
-        status: child?.run.status ?? (evidence.snapshot.retrieverPending || evidence.snapshot.bindings?.status === "running" ? "running" : "stopped"),
-        fullContent: child ? answerText(child) : "",
-        backendSessions: [],
-        // Each branch's quality task of this round, with its conclusion once it completed.
-        qcResult: await ontology.quality(link.retrievalId,link.runId),
-        datasetsPayload: datasets.map((d) => ({
-          id: d.id,
-          datasetKey: d.id,
-          title: d.name,
-          rows: d.data,
-          dsl: d.dsl,
-          abcProgram: d.abcProgram,
-          sourceAnalysis: d.sourceAnalysis,
-          ...(d.truncated
-            ? {
-                truncated: d.truncated,
-                rowLimit: d.rowLimit,
-                truncationHint: d.truncationHint,
-              }
-            : {}),
-        })),
-        dataCount: datasets.reduce((n, d) => n + d.data.length, 0),
-        objectClasses: [
-          ...new Set(
-            datasets.flatMap(
-              (d) =>
-                d.sourceAnalysis ? d.sourceAnalysis.nodes.filter((n) => n.kind === "class").map((n) => n.className) :
-                  d.abcProgram?.outKeyRefs?.flatMap((r) => r.className ? [r.className] : []) ?? [],
-            ),
-          ),
-        ],
-        createdAt: new Date(child?.run.createdAt ?? evidence.snapshot.createdAt ?? turn.created_at),
-        updatedAt: new Date(child?.run.finishedAt ?? child?.run.createdAt ?? evidence.snapshot.createdAt ?? turn.created_at),
-      });
+  const ontology = turn.retrieval_scope_id ? new OntologyRetrievalClient(owner,turn.retrieval_scope_id) : null;
+  const links = ontology ? await ontology.links() : [];
+  for (const link of links) {
+    const evidence = await ontology!.evidence(link.retrievalId, link.runId);
+    const child = evidence.snapshot.runtimeSessionId && evidence.snapshot.runtimeRunId
+      ? await ontology!.run(evidence.snapshot.runtimeSessionId, link.runId) : null;
+    if (child) retrievalRuns.push(child);
+    const datasets = [];
+    for (const artifactId of child ? evidence.snapshot.datasetArtifactIds : []) {
+      const data = await ontology!.dataset(link.retrievalId, artifactId);
+      artifacts.push(await ontology!.artifact(child!.run.sessionId, artifactId));
+      datasets.push(projectDataset(data.id, data.payload, {
+        retrievalId: link.retrievalId,
+        runtimeSessionId: child!.run.sessionId,
+        runtimeRunId: child!.run.id,
+      }));
     }
+    for (const output of evidence.snapshot.bindings?.datasets ?? []) {
+      const data = await ontology!.dataset(link.retrievalId, output.id);
+      datasets.push(projectDataset(data.id, data.payload, { source: "binding", retrievalId: link.retrievalId,
+        bindingOutputId: data.id, runtimeSessionId: null, runtimeRunId: null }));
+    }
+    queries.push({
+      id: link.runId,
+      threadId: sessionId,
+      requestSeq,
+      sourceKind: "retrieval",
+      sourceRef: link.retrievalId,
+      question: evidence.input.question,
+      status: child?.run.status ?? (evidence.snapshot.retrieverPending || evidence.snapshot.bindings?.status === "running" ? "running" : "stopped"),
+      fullContent: child ? answerText(child) : "",
+      backendSessions: [],
+      // Each branch's quality task of this round, with its conclusion once it completed.
+      qcResult: await ontology!.quality(link.retrievalId,link.runId),
+      datasetsPayload: datasets.map((d) => ({
+        id: d.id,
+        datasetKey: d.id,
+        title: d.name,
+        rows: d.data,
+        dsl: d.dsl,
+        abcProgram: d.abcProgram,
+        sourceAnalysis: d.sourceAnalysis,
+        ...(d.truncated
+          ? {
+              truncated: d.truncated,
+              rowLimit: d.rowLimit,
+              truncationHint: d.truncationHint,
+            }
+          : {}),
+      })),
+      dataCount: datasets.reduce((n, d) => n + d.data.length, 0),
+      objectClasses: [
+        ...new Set(
+          datasets.flatMap(
+            (d) =>
+              d.sourceAnalysis ? d.sourceAnalysis.nodes.filter((n) => n.kind === "class").map((n) => n.className) :
+                d.abcProgram?.outKeyRefs?.flatMap((r) => r.className ? [r.className] : []) ?? [],
+          ),
+        ),
+      ],
+      createdAt: new Date(child?.run.createdAt ?? evidence.snapshot.createdAt ?? turn.created_at),
+      updatedAt: new Date(child?.run.finishedAt ?? child?.run.createdAt ?? evidence.snapshot.createdAt ?? turn.created_at),
+    });
   }
   const messages = run.messages
     .filter((m) => m.message.role === "user" || m.message.role === "assistant")

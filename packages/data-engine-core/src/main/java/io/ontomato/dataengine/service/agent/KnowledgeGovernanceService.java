@@ -126,9 +126,7 @@ public class KnowledgeGovernanceService {
         || !"workbench".equals(input.getString("runtimeHostId"))) throw AgentHttpException.missing();
     String id=AgentJson.id(input.getString("recordId")),session=AgentJson.id(input.getString("sessionId")),run=AgentJson.id(input.getString("runId"));
     long deadline=Instant.parse(AgentJson.text(input,"expiresAt")).toEpochMilli();
-    deadline=Math.min(deadline,System.currentTimeMillis()+600_000);
     if (context.expiresAt()!=null) deadline=Math.min(deadline,context.expiresAt());
-    requireRunning(owner.domainId(),session,run);
     var result=open(id,run,owner,false,"workbench",session,deadline,null);
     result.put("token",grants.issue(owner.userId(),owner.domainId(),"knowledge-governance",run,
       Instant.parse(result.getString("expiresAt")).toEpochMilli(),List.of(),null));
