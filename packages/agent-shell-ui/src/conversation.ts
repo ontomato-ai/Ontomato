@@ -50,6 +50,12 @@ export interface RunView {
 
 export interface ConversationState {
   sessionId: string | null;
+  /**
+   * The agent the conversation runs on, as the host reports it with the conversation; null until it is read. Opening a
+   * conversation by its address names no agent, and its composer must show the one it runs on rather than the agent this
+   * tab last used.
+   */
+  agentId: string | null;
   messages: Record<string, ConversationMessage>;
   runs: Record<string, RunView>;
   arrivals: number;
@@ -57,7 +63,7 @@ export interface ConversationState {
 }
 
 export function emptyConversation(sessionId: string | null = null): ConversationState {
-  return { sessionId, messages: {}, runs: {}, arrivals: 0, pendingQuestions: [] };
+  return { sessionId, agentId: null, messages: {}, runs: {}, arrivals: 0, pendingQuestions: [] };
 }
 
 function upsertMessage(
@@ -143,6 +149,8 @@ export function applyRunSnapshot(state: ConversationState, snapshot: AgentHostRu
 /** Merge a bounded durable page without replacing newer live state during backward paging. */
 export function applyHistoryPage(state: ConversationState, page: AgentHostSessionHistory, older = false) {
   state.sessionId = page.session.id;
+  // The conversation runs on the agent it was started with: the composer shows that one, whoever it was opened by.
+  state.agentId = page.session.agentId;
   if(!older) state.pendingQuestions=page.pendingQuestions;
   for (const value of page.runs) {
     const run = ensureRun(state, value.id);

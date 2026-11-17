@@ -62,8 +62,11 @@ async function settle() {
   }
 }
 
-/** The shell beside a page, over a host that creates the conversation on its first message and admits every run. */
-function render() {
+/**
+ * The shell beside a page, over a host that creates the conversation on its first message and admits every run. A host
+ * may answer a conversation's history instead, to open one that already exists.
+ */
+function render(history?: { agentId: string; messages: { id: string; content: string }[] }) {
   const sent: string[] = [];
   const client = {
     listAgents: vi.fn().mockResolvedValue([]),
@@ -80,19 +83,27 @@ function render() {
     subscribe: () => () => {},
     sessionRuns: { read: vi.fn().mockResolvedValue({ sessions: [] }), subscribe: () => () => {} },
     readHistory: vi.fn().mockResolvedValue({
-      pendingQuestions: [], session: created, messages: [], runs: [], latestRun: null, page: { messageSeq: 0, olderCursor: null },
+      pendingQuestions: [],
+      session: history ? { ...created, agentId: history.agentId } : created,
+      messages: (history?.messages ?? []).map((message, index) => ({
+        id: message.id, runId, messageSeq: index + 1, contextSeq: index + 1,
+        message: { role: "user", content: message.content, timestamp: index + 1 },
+      })),
+      runs: [], latestRun: null, page: { messageSeq: history?.messages.length ?? 0, olderCursor: null },
     }),
   } as unknown as AgentHostClient;
-  const sessionId = ref<string | null>(null);
+  const sessionId = ref<string | null>(history ? createdSessionId : null);
   const shell = ref<{ send(text: string): Promise<void> } | null>(null);
+  const shownAgent = ref<string | null>(agentId);
   const Host = defineComponent({
     setup() {
       const nav = useAgentNav({
-        client: () => client, agentId: () => agentId, setAgentId: () => {},
+        client: () => client, agentId: () => shownAgent.value, setAgentId: (id) => (shownAgent.value = id),
         sessionId: () => sessionId.value, setSessionId: (id) => (sessionId.value = id),
       });
       return () => h(AgentShell, {
-        ref: shell, workbench, client, labels, nav, agentId,
+        ref: shell, workbench, client, labels, nav, agentId: shownAgent.value,
+        "onUpdate:agentId": (id: string | null) => (shownAgent.value = id),
         featureId: "dashboards", pageContext: page,
         sessionId: sessionId.value, "onUpdate:sessionId": (id: string | null) => (sessionId.value = id),
       });
@@ -102,7 +113,7 @@ function render() {
   document.body.appendChild(root);
   app = createApp(Host);
   app.mount(root);
-  return { sent, sessionId, shell };
+  return { sent, sessionId, shell, shownAgent };
 }
 
 it("names the page on the conversation's first message, and only the selection after it", async () => {
@@ -133,4 +144,37 @@ it("names the page again in a conversation the reader opened instead", async () 
   await shell.value!.send("in a new conversation");
   await settle();
   expect(sent[1]).toBe("in a new conversation\n\nCurrent page: Dashboards；Selected: e2e board card");
+});
+
+it("does not name the page again in a conversation that already named it", async () => {
+  // The conversation was written on this board before; reopening it shows a message that names it, so this board is what
+  // it already carries. The address is the same and appears nowhere again — only what the reader selects now does.
+  const { sent, sessionId, shell } = render({
+    agentId,
+    messages: [
+      { id: "m1", content: "earlier on this board\n\nCurrent page: Dashboards；Selected: e2e board card" },
+      { id: "m2", content: "later on this board\n\nSelected: e2e board card" },
+    ],
+  });
+  await settle();
+
+  expect(sessionId.value).toBe(createdSessionId);
+  await shell.value!.send("again on the same board");
+  await settle();
+  expect(sent[0]).toBe("again on the same board\n\nSelected: e2e board card");
+});
+
+it("shows the agent the opened conversation runs on, and writes in it", async () => {
+  // The address names the conversation and no agent: the composer shows the agent it runs on, not the one this tab used.
+  const governanceAgent = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+  const { sent, sessionId, shell, shownAgent } = render({ agentId: governanceAgent, messages: [] });
+  await settle();
+
+  expect(shownAgent.value).toBe(governanceAgent);
+  expect(sessionId.value).toBe(createdSessionId);
+  await shell.value!.send("into the opened conversation");
+  await settle();
+  // The message goes into the conversation that was opened, as its own agent.
+  expect(sessionId.value).toBe(createdSessionId);
+  expect(sent).toHaveLength(1);
 });
