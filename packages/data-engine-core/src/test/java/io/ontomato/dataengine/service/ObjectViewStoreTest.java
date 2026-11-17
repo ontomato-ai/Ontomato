@@ -87,6 +87,9 @@ class ObjectViewStoreTest {
         widget.getJSONObject("chartFile").getJSONObject("ontomato").put("metric", JSONObject.of("metricId", "metric", "parameters", JSONObject.of()));
         assertThrows(IllegalArgumentException.class, () -> ObjectViewStore.validateDocument("Order", document));
         widget.getJSONObject("chartFile").getJSONObject("ontomato").remove("metric");
+        widget.getJSONObject("chartFile").getJSONObject("ontomato").put("dataset", JSONObject.of("path", "accepted.json"));
+        assertThrows(IllegalArgumentException.class, () -> ObjectViewStore.validateDocument("Order", document));
+        widget.getJSONObject("chartFile").getJSONObject("ontomato").remove("dataset");
         for (String field : new String[]{"skillId", "chartType", "valueField", "resultPath", "resultIndex"}) {
             widget.put(field, "old");
             assertThrows(IllegalArgumentException.class, () -> ObjectViewStore.validateDocument("Order", document));

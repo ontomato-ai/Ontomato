@@ -8,7 +8,6 @@ import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres
 import {productAssetSchema,type ProductAsset} from '@ontomato/contracts/product-assets';
 import {HttpError} from '../../utils/errors';
 import {transaction} from '../../infrastructure/postgres-transaction';
-import {validateProduct} from './validation';
 
 /** The old object editor is a client of product authoring; legacy class storage is read only during import. */
 export async function objectViewAuthoring(owner:ProductOwner,credentials:AssistantCredentials,className:string,operation:'read'|'edit'|'save'|'publish',values:Record<string,unknown>={}):Promise<ObjectViewState>{
@@ -47,15 +46,12 @@ export async function objectViewAuthoring(owner:ProductOwner,credentials:Assista
     if(Number(values.expectedRevision)!==asset.revision)throw new HttpError(409,'ObjectView changed; reload first','PRODUCT_CONFLICT');
     const revision=Number(values.revision);
     if(!Number.isInteger(revision)||revision<1)throw new HttpError(400,'Select an ObjectView revision','INVALID_REQUEST');
-    let publication = asset;
     if(revision!==asset.revision){
       const result=await getPostgresPool().query(`SELECT asset FROM ${t('product_asset_revisions')} WHERE domain_id=$1 AND asset_id=$2 AND revision=$3`,[owner.domainId,id,revision]);
       if(!result.rows[0])throw new HttpError(404,'ObjectView revision unavailable','PRODUCT_RELEASE_UNPINNED');
       const source=productAssetSchema.parse(result.rows[0].asset);
       if(source.document.kind!=='object-projection')throw new HttpError(400,'Expected an ObjectView revision','INVALID_PRODUCT_TYPE');
-      publication = source;
     }
-    if(publication.document.kind==='object-projection'&&publication.document.layout?.tabs.some(tab=>tab.sections.some(section=>section.widgets.some(widget=>widget.kind==='chart'))))await validateProduct(owner,publication,credentials);
     await transaction(async client=>{
       await lockProducts(client,owner);
       const current=await getProduct(owner,id,client);

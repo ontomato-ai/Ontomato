@@ -353,6 +353,9 @@ importers:
       '@codemirror/view':
         specifier: 6.41.0
         version: 6.41.0
+      '@ontomato/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@ontomato/markdown':
         specifier: workspace:*
         version: link:../markdown
@@ -366,9 +369,6 @@ importers:
         specifier: 2.0.19
         version: 2.0.19(katex@0.16.44)(mermaid@11.14.0)(vue-i18n@10.0.8(vue@3.5.30(typescript@5.9.3)))(vue@3.5.30(typescript@5.9.3))
     devDependencies:
-      '@ontomato/contracts':
-        specifier: workspace:*
-        version: link:../contracts
       '@vitejs/plugin-vue':
         specifier: 5.2.4
         version: 5.2.4(vite@5.4.21(@types/node@22.19.15))(vue@3.5.30(typescript@5.9.3))

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { personalWorkspaceSchema } from "./personal-workspace";
 import { viewWidgetSchema, nonChartViewWidgetSchema, type ViewWidget } from "./object-views";
-import {metricProjectionSchema,metricValueProjectionSchema,metricChartProjectionSchema,actionProjectionSchema,collectionProjectionSchema,objectProjectionSchema,navigationSchema,agentProfileSchema,ontologyParameterTypeSchema} from './product-projections';
+import {metricProjectionSchema,actionProjectionSchema,collectionProjectionSchema,objectProjectionSchema,navigationSchema,agentProfileSchema,ontologyParameterTypeSchema} from './product-projections';
 
 const id = z.string().min(1).max(200);
 const title = z.string().trim().min(1).max(200);
@@ -33,7 +33,7 @@ const applicationDocumentSchema=z.object({kind:z.literal('application'),applicat
 export const platformWidgetSchema=z.object({kind:z.literal('platform'),source:z.enum(['assistant','apps','data','tasks','conversations','objects','recent']),placeholder:z.string().max(500).default(''),limit:z.number().int().min(1).max(20).default(4),workspace:personalWorkspaceSchema.optional()}).strict();
 export const productPlatformRuntimeKey=Symbol.for('ontomato.product-platform-runtime');
 export const productAgentRuntimeKey=Symbol.for('ontomato.product-agent-runtime');
-export const productDocumentSchema = z.union([
+export const productDocumentSchema = z.discriminatedUnion("kind", [
   metricProjectionSchema,actionProjectionSchema,collectionProjectionSchema,objectProjectionSchema,
   navigationSchema.innerType(),agentProfileSchema,
   pageDocumentSchema.extend({workspace:personalWorkspaceSchema.optional()}),
@@ -46,10 +46,23 @@ export const productDocumentSchema = z.union([
   applicationDocumentSchema,
 ]);
 export type ProductDocument = z.infer<typeof productDocumentSchema>;
+function refineMetricPresentation(document: ProductDocument, context: z.RefinementCtx) {
+  if (document.kind !== "metric-widget") return;
+  const issue = (field: string, message: string) => context.addIssue({ code: "custom", path: [field], message });
+  if (document.renderer === "chart") {
+    if (!document.chartFile) issue("chartFile", "A chart renderer requires a chart file");
+    if (document.fields.length) issue("fields", "Chart fields belong in the chart file");
+    if (document.valueField) issue("valueField", "Chart value mappings belong in the chart file");
+    if (document.labelField) issue("labelField", "Chart label mappings belong in the chart file");
+    if (document.chartType !== "bar") issue("chartType", "Chart types belong in the chart file");
+    if (document.format !== undefined) issue("format", "Chart formats belong in the chart file");
+    if (document.display !== undefined) issue("display", "Chart display settings belong in the chart file");
+  } else if (document.chartFile !== undefined) issue("chartFile", "Only chart renderers use a chart file");
+}
 export const productAssetInputSchema = z.object({
   name: title, description: z.string().max(2000).default(""),
   visibility: z.enum(["private", "domain"]).default("private"),
-  document: productDocumentSchema,
+  document: productDocumentSchema.superRefine(refineMetricPresentation),
 }).strict().superRefine((asset,context)=>{
   if(asset.document.kind==='navigation'){
     const result=navigationSchema.safeParse(asset.document);
@@ -72,11 +85,11 @@ export const productAssetSchema = productAssetInputSchema.innerType().extend({
 export type ProductAssetInput = z.infer<typeof productAssetInputSchema>;
 export type ProductAsset = z.infer<typeof productAssetSchema>;
 export const productSaveSchema = productAssetInputSchema.innerType().extend({ revision: z.number().int().nonnegative() }).strict();
-export const productAuthoringDocumentSchema=z.union([
-  metricValueProjectionSchema.extend({renderer:z.literal('number').default('number')}),metricChartProjectionSchema,actionProjectionSchema,collectionProjectionSchema,objectProjectionSchema,navigationSchema.innerType(),agentProfileSchema,
+export const productAuthoringDocumentSchema=z.discriminatedUnion("kind",[
+  metricProjectionSchema.extend({renderer:z.enum(['number','chart']).default('number')}),actionProjectionSchema,collectionProjectionSchema,objectProjectionSchema,navigationSchema.innerType(),agentProfileSchema,
   pageDocumentSchema,applicationDocumentSchema,
 ]);
-export const productAuthoringSchema=productSaveSchema.omit({visibility:true}).extend({document:productAuthoringDocumentSchema});
+export const productAuthoringSchema=productSaveSchema.omit({visibility:true}).extend({document:productAuthoringDocumentSchema.superRefine(refineMetricPresentation)});
 export const productReferenceSchema = z.object({
   kind: z.enum(["asset", "metric", "action", "dashboard", "application", "object-view",'definition','object-type']), id,
 }).strict();
@@ -119,7 +132,7 @@ export function productReferences(document: ProductDocument): ProductReference[]
 }
 export function productWidgets(document:ProductDocument):ViewWidget[]{
   if(document.kind==='metric-widget'){
-    if(document.renderer==='chart')return [{id:'projection',kind:'chart',title:'',span:12,resourceId:document.renders.id,chartFile:document.chartFile,parameters:document.parameters,height:document.height}];
+    if(document.renderer==='chart')return [{id:'projection',kind:'chart',title:'',span:12,resourceId:document.renders.id,chartFile:document.chartFile!,parameters:document.parameters,height:document.height}];
     return [viewWidgetSchema.parse({id:'projection',...document.presentation,kind:document.renderer==='number'?'metric':'table',title:'',span:12,resourceId:document.renders.id,parameters:document.parameters,fields:document.fields,valueField:document.valueField,labelField:document.labelField,chartType:document.chartType,height:document.height})];
   }
   if(document.kind==='action-view')return [viewWidgetSchema.parse({id:'projection',...document.presentation,kind:'action',title:'',span:12,resourceId:document.renders.id,parameters:document.parameters,readOnlyParameters:document.readOnlyParameters})];
