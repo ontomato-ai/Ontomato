@@ -12,13 +12,16 @@ import type { ShellFeatureDeclaration } from "@ontomato/agent-shell-ui";
  * declaration, and their composer offers every agent: the settings' skill arrives with the configuration skill, the
  * dashboards' with the dashboard mapping.
  */
-const agentSettingsFeature: ShellFeatureDeclaration = {
-  id: "agents",
-  label: "agents",
+/** The ids are what the conversation's parameter and the host's slots name; the labels are what a reader reads. */
+export const AGENT_SETTINGS_PAGE_ID = "agents";
+const agentSettingsFeature = (label: string): ShellFeatureDeclaration => ({
+  id: AGENT_SETTINGS_PAGE_ID,
+  label,
   icon: "agents",
   availability: "page",
+  listed: false,
   withConversation: true,
-};
+});
 
 /** The dashboards are an application of their own: this application opens one beside its conversation, not a copy. */
 export const DASHBOARDS_PAGE_ID = "dashboards";
@@ -28,12 +31,13 @@ export const DASHBOARDS_PAGE_ID = "dashboards";
  * it opens the dashboard application at that board. Its skill narrows the composer to the agents that can read and draft
  * a board's cards, by the domain membership the dashboards application itself is open to.
  */
-export function dashboardsPageFeature(address: string): ShellFeatureDeclaration {
+export function dashboardsPageFeature(label: string, address: string): ShellFeatureDeclaration {
   return {
     id: DASHBOARDS_PAGE_ID,
-    label: "dashboards",
-    icon: "dashboards",
+    label,
+    icon: "dashboard",
     availability: "page",
+    listed: false,
     withConversation: true,
     address,
     pageSkill: { pageKey: "dashboard", access: "domain-member" },
@@ -42,7 +46,9 @@ export function dashboardsPageFeature(address: string): ShellFeatureDeclaration 
 
 export function workbenchFeatures(
   editionFeatures: readonly ShellFeatureDeclaration[],
-  dashboards = dashboardsPageFeature(""),
+  /** The two pages this application opens beside its conversation, named in the reader's language. */
+  pages: { agents: string; dashboards: string },
+  dashboardsAddress = "",
 ): ShellFeatureDeclaration[] {
-  return [agentSettingsFeature, dashboards, ...editionFeatures];
+  return [agentSettingsFeature(pages.agents), dashboardsPageFeature(pages.dashboards, dashboardsAddress), ...editionFeatures];
 }
