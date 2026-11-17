@@ -249,6 +249,11 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
         if (use.value) void adopt(use.value, record).catch((failure: unknown) => (error.value = failureText(failure)));
       }
     }
+    if (payload.kind === "failed") {
+      // The frame could not run its panel. The reason goes where the panel would have been, and no frame is drawn over it.
+      error.value = payload.message;
+      return;
+    }
     if (payload.kind === "invoked") {
       const waitingCall = answering.get(payload.requestId);
       answering.delete(payload.requestId);
@@ -309,8 +314,39 @@ const MODULES: Readonly<Record<string, string>> = {
 };
 
 /**
+ * Runs before the panel's module, in a script of its own, and tells the host what the frame cannot otherwise say. A
+ * module that cannot be fetched or parsed raises an `error` on its own element; a rejection nothing handled arrives as
+ * `unhandledrejection`. Both are reported once — the first failure is the one worth reading.
+ */
+const FAILURE_LISTENER = `
+(function () {
+  var reported = false;
+  function fail(what) {
+    if (reported || !what) return;
+    reported = true;
+    window.parent.postMessage({ channel: "${PANEL_HOST_CHANNEL}", kind: "failed", message: String(what).slice(0, 1900) }, "*");
+  }
+  window.addEventListener("error", function (event) {
+    var target = event.target;
+    if (target && target !== window && target.tagName) fail("The panel's " + target.tagName.toLowerCase() + " " + (target.src || target.href || "") + " could not be loaded");
+    else fail(event.message || (event.error && event.error.message) || "The panel's module threw while it ran");
+  }, true);
+  window.addEventListener("unhandledrejection", function (event) {
+    var reason = event.reason;
+    fail((reason && reason.message) || reason || "The panel's module rejected");
+  });
+})();`;
+
+/**
  * The document one panel instance runs in: this SDK version's import map and stylesheet, the panel's HTML, its record as
  * the run's facts, and its module. The panel's text is content, so it is inserted as text.
+ *
+ * The panel's HTML is a fragment — what goes inside a body — because this document is the body it goes into: a panel
+ * writes the markup it composes and its own styles, and the host writes the document around it.
+ *
+ * Before the module runs, a listener is installed that reports what would otherwise be silent: a module that cannot be
+ * fetched, one that throws while it loads, and a rejection nothing handled. Without it a panel whose module failed leaves
+ * the frame blank and the reader with no word about it.
  */
 export function panelFrameDocument(record: ProductPanel, sdkBase: string, message: PanelHostMessage): string {
   const imports = Object.fromEntries(
@@ -322,6 +358,9 @@ export function panelFrameDocument(record: ProductPanel, sdkBase: string, messag
     `<link rel="stylesheet" href="${sdkBase}/styles/sdk.css">`,
     '<script type="importmap">',
     escapeForElement(JSON.stringify({ imports })),
+    "</script>",
+    "<script>",
+    escapeForElement(FAILURE_LISTENER),
     "</script></head><body>",
     record.content.html,
     '<script type="application/json" data-panel-host-message>',

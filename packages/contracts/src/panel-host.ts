@@ -49,6 +49,12 @@ export const panelFrameMessageSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("dirty"), dirty: z.boolean() }).strict(),
   /** The frame's answer to a panel definition change: nothing was unsaved, so the host may open it again. */
   z.object({ kind: z.literal("reloaded"), reloaded: z.boolean() }).strict(),
+  /**
+   * The frame could not run its panel: a module the import map does not serve, a syntax error, or a component that threw
+   * while mounting. The host shows it where the panel would have been — a frame that draws nothing and says nothing is
+   * the one failure a reader cannot act on.
+   */
+  z.object({ kind: z.literal("failed"), message: z.string().min(1).max(2000) }).strict(),
 ]);
 export type PanelFrameMessage = z.infer<typeof panelFrameMessageSchema>;
 

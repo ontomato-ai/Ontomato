@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { effectScope } from "vue";
 import type { ApplicationPanelUse, ProductPanel } from "@ontomato/contracts/product-panels";
 import { panelAddress, panelAddressState, PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
@@ -118,6 +121,8 @@ function postedTo(port: { posted(frame: Window): unknown[] }, frame: Window): un
 function fromFrame(frame: Window, message: Record<string, unknown>): void {
   window.dispatchEvent(new MessageEvent("message", { source: frame, data: { channel: PANEL_HOST_CHANNEL, ...message } }));
 }
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 describe("the panel host", () => {
   it("opens one instance per application use, each from its own relation and record", async () => {
@@ -320,6 +325,48 @@ describe("the panel host", () => {
     const restored = panelAddressState(panelAddress("/a/schedules", state));
     expect(restored).toEqual(state);
     expect(panelAddressState(panelAddress("/a/schedules", { selectedTask: null }))).toEqual({ selectedTask: null });
+  });
+
+  it("runs the trial's own panel content in a document of its own making", () => {
+    // The examples as they are registered: three texts, and the record is what carries the manifest.
+    const trial = join(HERE, "..", "..", "..", "apps-sdk", "examples", "panels", "schedules-trial");
+    for (const directory of ["p", "q"]) {
+      const html = readFileSync(join(trial, directory, "panel.html"), "utf8");
+      const module = readFileSync(join(trial, directory, "panel.mjs"), "utf8");
+      const document = panelFrameDocument(
+        { ...record(`panel-${directory}`, `Trial ${directory}`, panelP), content: { html, module } },
+        "/apps-sdk/1.1.0",
+        { kind: "panel-host-message", panel: record(`panel-${directory}`, `Trial ${directory}`, panelP), pageKey: `trial-${directory}`, url: "/applications/app-panels-trial-a/tasks", label: "Scheduled tasks", state: {} },
+      );
+      // The panel's HTML is a fragment the host's document holds: no document of its own, and nothing left for the host
+      // to substitute — a `{{head}}` would be drawn literally, since the host inserts this as content.
+      expect(document).not.toContain("{{");
+      expect(html).not.toMatch(/<!doctype|<html|<head|<body/i);
+      expect(html).toContain("<style>");
+      // The module imports only names the frame's import map serves: a relative path would resolve against the platform's
+      // own document, not beside a file, because the panel's module is text inside this document.
+      const imported = [...module.matchAll(/(?:from|import)\s*["']([^"']+)["']/g)].map((found) => found[1]!);
+      expect(imported.length).toBeGreaterThan(0);
+      for (const specifier of imported) expect(specifier.startsWith("@ontomato/sdk") || ["vue", "element-plus"].includes(specifier)).toBe(true);
+      // And the module is in the document, escaped: it is content, not a template of the host's.
+      expect(document).toContain("mountPanel");
+    }
+  });
+
+  it("reports what the frame could not load or run, instead of drawing nothing", () => {
+    const panel = record("panel-p", "Scheduled tasks", panelP);
+    const document = panelFrameDocument(panel, "/apps-sdk/1.1.0", {
+      kind: "panel-host-message",
+      panel,
+      pageKey: "schedules",
+      url: "/a/schedules",
+      label: "Scheduled tasks",
+      state: {},
+    });
+    // A listener runs before the module, and it reports a module that cannot be fetched and a rejection nothing handled.
+    expect(document.indexOf("unhandledrejection")).toBeGreaterThan(-1);
+    expect(document.indexOf("unhandledrejection")).toBeLessThan(document.indexOf("mountPanel"));
+    expect(document).toContain('kind: "failed"');
   });
 
   it("runs the panel's own text with this SDK version's modules", () => {
