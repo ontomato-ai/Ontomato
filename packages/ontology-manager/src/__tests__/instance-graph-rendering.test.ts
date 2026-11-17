@@ -34,16 +34,30 @@ describe("instance graph incremental drawing", () => {
     }
   });
 
-  it("does not push headings across neighboring rows when both sides are crowded", () => {
+  it("omits headings when both sides are crowded instead of covering instances", () => {
     const bounds = { x: 100, y: 200, width: 80, height: 58 };
-    const [heading] = overviewClassHeadings([
+    const headings = overviewClassHeadings([
       { name: "A", bounds, width: 200, height: 54 },
     ], [
       { x: 20, y: 70, width: 240, height: 114 },
       { x: 20, y: 274, width: 240, height: 114 },
     ]);
-    expect(heading.x + heading.width / 2).toBe(140);
-    expect(heading.y + heading.height).toBe(bounds.y - 16);
+    expect(headings).toEqual([]);
+  });
+
+  it("does not overlap adjacent headings or pin offscreen headings to the viewport", () => {
+    const headings = overviewClassHeadings(Array.from({ length: 20 }, (_, index) => ({
+      name: String(index), bounds: { x: index * 40, y: 100, width: 0, height: 40 }, width: 100, height: 26,
+    })), [], { x: 0, y: 0, width: 400, height: 200 });
+    expect(headings.length).toBeGreaterThan(0);
+    for (const heading of headings) {
+      expect(heading.x).toBeGreaterThanOrEqual(0);
+      expect(heading.x + heading.width).toBeLessThanOrEqual(400);
+      for (const other of headings.filter(item => item !== heading)) {
+        expect(heading.x + heading.width <= other.x || other.x + other.width <= heading.x
+          || heading.y + heading.height <= other.y || other.y + other.height <= heading.y).toBe(true);
+      }
+    }
   });
 
   it("keeps an unobstructed class heading close to its instances", () => {

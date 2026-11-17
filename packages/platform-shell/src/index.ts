@@ -13,6 +13,7 @@ export { default as AgentModelsPage } from "./AgentModelsPage.vue";
 export { appIcon, resolveIcon } from "./icons";
 export {default as ApplicationIconPicker} from './ApplicationIconPicker.vue';
 export { platformPath, platformRoutes } from "./routes";
+export { openApplicationKey } from './application-opening';
 export {
   providePageActions,
   usePageActions,

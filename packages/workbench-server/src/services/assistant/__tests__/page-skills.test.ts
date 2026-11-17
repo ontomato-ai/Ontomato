@@ -90,6 +90,9 @@ it("keeps ordinary native skills and excludes true product Profile skills from p
   expect(directory.agents.map(a => a.id)).toEqual([ids[0], ids[1]]);
   expect(directory.defaultAgentId).toBe(native.id);
   expect((await listAssistantAgents(owner, credentials)).agents.find(a => a.id === ids[2])?.effectiveSkills).toEqual([]);
+  mocks.post.mockResolvedValue({ text: JSON.stringify({ allowed: false }) });
+  expect((await listAssistantAgents(owner, credentials)).agents.some(a => a.id === native.id)).toBe(false);
+  mocks.post.mockResolvedValue({ text: JSON.stringify({ allowed: true }) });
   mocks.grants.delete(native.id);
   expect((await listAssistantAgents(owner, credentials)).agents.some(a => a.id === native.id)).toBe(false);
 });

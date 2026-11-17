@@ -8,11 +8,10 @@ import WorkspaceSkeleton from "./WorkspaceSkeleton.vue";
 export type WorkspaceResource = { kind: "metric"; title: string; dashboardId: string; cardId: string; path: string }
   | { kind: "task"; title: string; taskId: string; runId: string | null; path: string; pauseMessage?: string };
 const props = defineProps<{ resource: WorkspaceResource }>();
-const { locale } = useI18n();
+const { locale, t } = useI18n();
 const result = ref(""), error = ref(""), loading = ref(false);
 const run = ref<PlatformTaskRun | null>(null);
-const zh = computed(() => locale.value.startsWith("zh"));
-const status = computed(() => run.value ? ({ running: zh.value ? "运行中" : "Running", completed: zh.value ? "执行完成" : "Completed", failed: zh.value ? "执行失败" : "Failed", skipped: zh.value ? "已跳过" : "Skipped" })[run.value.status] : "");
+const status = computed(() => run.value ? ({ running: t("ontology.productTaskRunning"), completed: t("ontology.productHomeTaskCompleted"), failed: t("ontology.productHomeTaskFailed"), skipped: t("ontology.productHomeTaskSkipped") })[run.value.status] : "");
 const paragraphs = computed(() => result.value.split(/\n\s*\n/).filter(Boolean));
 function moment(value: string) { return new Date(value).toLocaleString(locale.value, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: run.value?.snapshot.timeZone }); }
 let revision = 0;
@@ -42,19 +41,19 @@ watch(() => props.resource, load, { immediate: true });
 <template>
   <DashboardMetricDetail v-if="resource.kind === 'metric'" :dashboard-id="resource.dashboardId" :card-id="resource.cardId" />
   <div v-else class="task-detail" :aria-busy="loading">
-    <section v-if="resource.pauseMessage" class="task-notice is-warning"><h3>{{ zh ? '任务已暂停' : 'Task paused' }}</h3><p>{{ resource.pauseMessage }}</p></section>
-    <WorkspaceSkeleton v-if="loading" :label="zh ? '正在读取执行结果' : 'Loading execution result'" />
-    <div v-else-if="error"><el-alert :title="error" type="error" :closable="false" /><el-button @click="load">{{ locale.startsWith('zh') ? '重试' : 'Retry' }}</el-button></div>
-    <div v-else-if="!resource.runId" class="task-empty"><h3>{{ zh ? '暂无执行记录' : 'No execution yet' }}</h3><p>{{ zh ? '在完整页面查看任务配置与处理方式' : 'Open the full page for task configuration and next steps' }}</p></div>
+    <section v-if="resource.pauseMessage" class="task-notice is-warning"><h3>{{ t('ontology.productHomeTaskPausedTitle') }}</h3><p>{{ resource.pauseMessage }}</p></section>
+    <WorkspaceSkeleton v-if="loading" :label="t('ontology.productHomeLoadingRun')" />
+    <div v-else-if="error"><el-alert :title="error" type="error" :closable="false" /><el-button @click="load">{{ t('ontology.productRetry') }}</el-button></div>
+    <div v-else-if="!resource.runId" class="task-empty"><h3>{{ t('ontology.productHomeNoRun') }}</h3><p>{{ t('ontology.productHomeNoRunHint') }}</p></div>
     <template v-else-if="run">
       <section class="execution-overview">
-        <div class="execution-status"><span class="status-dot" :class="run.status" aria-hidden="true" /><strong>{{ status }}</strong><span class="execution-trigger">{{ run.trigger === 'manual' ? (zh ? '手动执行' : 'Manual run') : run.trigger === 'schedule' ? (zh ? '定时执行' : 'Scheduled run') : (zh ? '执行记录' : 'Execution') }}</span></div>
-        <dl class="execution-times"><div><dt>{{ zh ? '开始时间' : 'Started' }}</dt><dd>{{ moment(run.startedAt) }}</dd></div><div v-if="run.finishedAt"><dt>{{ zh ? '结束时间' : 'Finished' }}</dt><dd>{{ moment(run.finishedAt) }}</dd></div></dl>
+        <div class="execution-status"><span class="status-dot" :class="run.status" aria-hidden="true" /><strong>{{ status }}</strong><span class="execution-trigger">{{ run.trigger === 'manual' ? (t('ontology.productHomeManualRun')) : run.trigger === 'schedule' ? (t('ontology.productHomeScheduledRun')) : (t('ontology.productHomeExecution')) }}</span></div>
+        <dl class="execution-times"><div><dt>{{ t('ontology.productHomeStartedAt') }}</dt><dd>{{ moment(run.startedAt) }}</dd></div><div v-if="run.finishedAt"><dt>{{ t('ontology.productHomeFinishedAt') }}</dt><dd>{{ moment(run.finishedAt) }}</dd></div></dl>
       </section>
-      <section v-if="run.error" class="task-notice is-danger"><h3>{{ run.status === 'skipped' ? (zh ? '跳过原因' : 'Why it was skipped') : (zh ? '失败原因' : 'Failure reason') }}</h3><p>{{ run.error.message }}</p></section>
-      <section v-if="result" class="task-result"><h3>{{ zh ? '执行结果' : 'Result' }}</h3><p v-for="(paragraph, index) in paragraphs" :key="index">{{ paragraph }}</p></section>
-      <div v-else class="task-empty"><p>{{ run.status === 'running' ? (zh ? '任务仍在执行，稍后刷新查看结果' : 'The task is running. Refresh later for results.') : (zh ? '本次执行未返回结果正文' : 'This execution returned no result text') }}</p></div>
-      <el-button class="result-refresh" :loading="loading" @click="load">{{ zh ? '刷新执行记录' : 'Refresh execution' }}</el-button>
+      <section v-if="run.error" class="task-notice is-danger"><h3>{{ run.status === 'skipped' ? (t('ontology.productHomeSkipReason')) : (t('ontology.productHomeFailureReason')) }}</h3><p>{{ run.error.message }}</p></section>
+      <section v-if="result" class="task-result"><h3>{{ t('ontology.productHomeRunResult') }}</h3><p v-for="(paragraph, index) in paragraphs" :key="index">{{ paragraph }}</p></section>
+      <div v-else class="task-empty"><p>{{ run.status === 'running' ? (t('ontology.productHomeRunInProgress')) : (t('ontology.productHomeRunNoText')) }}</p></div>
+      <el-button class="result-refresh" :loading="loading" @click="load">{{ t('ontology.productHomeRefreshRun') }}</el-button>
     </template>
   </div>
 </template>
