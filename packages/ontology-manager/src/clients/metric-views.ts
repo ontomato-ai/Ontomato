@@ -1,4 +1,5 @@
 import type { InjectionKey } from "vue";
+import type { ChartMetricColumn } from "@ontomato/contracts/chart-data";
 import type { ManagerRequest } from "../api";
 
 /** One read of a published MetricView. */
@@ -28,7 +29,13 @@ export function createMetricViewsClient(request: Pick<ManagerRequest, "post" | "
     return response.data;
   }
 
-  return { read };
+  /** The columns this MetricView outputs, as the data engine declares them; a chart names the columns it draws. */
+  async function describe(id: string): Promise<ChartMetricColumn[]> {
+    const response = await request.post("/ontology/query/metrics/describe", { id });
+    return Array.isArray(response.outputColumns) ? (response.outputColumns as ChartMetricColumn[]) : [];
+  }
+
+  return { read, describe };
 }
 
 export type MetricViewsClient = ReturnType<typeof createMetricViewsClient>;
