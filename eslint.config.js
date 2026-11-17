@@ -79,7 +79,7 @@ export default [
   {
     // Every .mjs here runs on Node (build, packaging and development entries, their tests, and
     // the agent skill CLIs): add only the Node globals.
-    files: ["scripts/**/*.mjs", "apps/*/*.mjs", "agent-skills/**/*.mjs", "packages/agent-runtime/src/**/*.mjs", "packages/workbench-server/resources/runtime-skills/**/*.mjs", "packages/contracts/scripts/**/*.mjs", "packages/workbench-server/report-skill/**/*.mjs", "packages/apps-sdk/*.mjs"],
+    files: ["scripts/**/*.mjs", "apps/*/*.mjs", "agent-skills/**/*.mjs", "packages/agent-runtime/src/**/*.mjs", "packages/workbench-server/resources/runtime-skills/**/*.mjs", "packages/contracts/scripts/**/*.mjs", "packages/workbench-server/report-skill/**/*.mjs", "packages/workbench-server/chart-skill/**/*.mjs", "packages/apps-sdk/*.mjs"],
     languageOptions: { globals: globals.node },
   },
   {
