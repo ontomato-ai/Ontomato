@@ -1,13 +1,17 @@
 import { z } from "zod";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
-import { ontologyParameterTypeSchema } from "./product-projections";
+import { ontologyParameterTypeSchema, panelManifestSchema } from "./panel-manifest";
 
 const id = z.string().min(1).max(200);
 const path = z.string().regex(/^\/(?!\/)/);
 
-/** Platform object IDs and fixed operation IDs are defined by their capability owners. */
+/**
+ * PlatformObjectType refers to a read-only platform type, never a customer-editable ObjectType.
+ * A PlatformOperation ID is the SDK client's registered operation name (for example, schedules.runNow),
+ * identical to the derived operation's handlerRef; there is no second operation namespace.
+ */
 export const ontologyElementRefSchema = z.object({
-  kind: z.enum(["MetricView", "Action", "ObjectType", "Definition", "PlatformOperation"]),
+  kind: z.enum(["MetricView", "Action", "ObjectType", "Definition", "PlatformObjectType", "PlatformOperation"]),
   id,
 }).strict();
 export type OntologyElementRef = z.infer<typeof ontologyElementRefSchema>;
@@ -53,9 +57,7 @@ export type ProductPanelContent = z.infer<typeof productPanelContentSchema>;
 export const productPanelInputSchema = z.object({
   ...editableDefinitionFields,
   content: productPanelContentSchema,
-  // TODO(P2): use panelManifestSchema from "./panel-manifest" after the contract handoff.
-  // This contract-only placeholder defines no manifest format and accepts no registrations.
-  manifest: z.never(),
+  manifest: panelManifestSchema,
 }).strict();
 export type ProductPanelInput = z.infer<typeof productPanelInputSchema>;
 
@@ -81,7 +83,6 @@ export type ApplicationPanelUse = z.infer<typeof applicationPanelUseSchema>;
 export const panelApplicationEntrySchema = z.object({
   path,
   renderer: z.literal("panels"),
-  home: z.string().optional(),
 }).strict();
 export type PanelApplicationEntry = z.infer<typeof panelApplicationEntrySchema>;
 
@@ -109,7 +110,11 @@ export type ProductPanelResponse = z.infer<typeof productPanelResponseSchema>;
 /** Java GET/PUT /platform/applications/:applicationId/panel-uses. */
 export const applicationPanelUsesParamsSchema = z.object({ applicationId: id }).strict();
 
-/** Replace the application's use relations; pageSkills are derived, never supplied alongside them. */
+/**
+ * Create a panels application or replace an existing panels application's use relations.
+ * Java rejects an existing application whose entry renderer is not panels: this API cannot perform a takeover.
+ * Existing application maintainer checks apply; pageSkills are derived, never supplied alongside the relations.
+ */
 export const registerApplicationPanelUsesRequestSchema = z.object({
   entry: panelApplicationEntrySchema,
   panelUses: z.array(applicationPanelUseSchema),
