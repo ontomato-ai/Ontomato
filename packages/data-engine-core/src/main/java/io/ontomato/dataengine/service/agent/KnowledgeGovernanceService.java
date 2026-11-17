@@ -4,6 +4,7 @@ import static io.ontomato.dataengine.service.agent.OntologyAgentStore.*;
 
 import com.alibaba.fastjson2.*;
 import com.alibaba.fastjson2.schema.JSONSchema;
+import io.ontomato.dataengine.schedules.ScheduleIdentity;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.KnowledgeService;
 import io.ontomato.dataengine.service.QueryGrantService;
@@ -27,15 +28,16 @@ public class KnowledgeGovernanceService {
   private final QueryGrantService grants;
   private final KnowledgeService knowledge;
   private final AdminService admin;
+  private final ScheduleIdentity identities;
   @org.springframework.beans.factory.annotation.Autowired
   private io.ontomato.dataengine.service.IdentityService identityService;
   private final Map<String,JSONSchema> schemas = new HashMap<>();
 
   public KnowledgeGovernanceService(OntologyAgentStore store, AgentRuntimeClient runtime,
       GovernanceRuntimeClient platform, OntologyAgentDefinitions definitions, QueryGrantService grants,
-      KnowledgeService knowledge, AdminService admin) {
+      KnowledgeService knowledge, AdminService admin, ScheduleIdentity identities) {
     this.store=store; this.runtime=runtime; this.platform=platform; this.definitions=definitions;
-    this.grants=grants; this.knowledge=knowledge; this.admin=admin;
+    this.grants=grants; this.knowledge=knowledge; this.admin=admin; this.identities=identities;
   }
 
   @PostConstruct
@@ -122,7 +124,7 @@ public class KnowledgeGovernanceService {
   public JSONObject registerPlatform(JSONObject input,OntologyAgentAccess.Context context) {
     AgentJson.fields(input,"recordId","domainId","ownerId","runtimeHostId","sessionId","runId","expiresAt");
     var owner=context.owner();
-    if (!owner.domainId().equals(input.getString("domainId")) || !owner.userId().equals(input.getString("ownerId"))
+    if (!owner.domainId().equals(input.getString("domainId")) || !identities.hostOwner(owner.userId()).equals(input.getString("ownerId"))
         || !"workbench".equals(input.getString("runtimeHostId"))) throw AgentHttpException.missing();
     String id=AgentJson.id(input.getString("recordId")),session=AgentJson.id(input.getString("sessionId")),run=AgentJson.id(input.getString("runId"));
     long deadline=Instant.parse(AgentJson.text(input,"expiresAt")).toEpochMilli();
