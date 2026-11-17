@@ -36,7 +36,8 @@ function agent(): AssistantAgentDefinition {
   return {
     id: AGENT, name: "Sales analyst", description: "", icon: null, enabled: true, systemPrompt: "Be brief.",
     modelSelection: { modelId: null }, skills: [], classNames: [], enabledMcpServiceIds: [], sortOrder: 3,
-  } as AssistantAgentDefinition;
+    executionUserId: null,
+  };
 }
 
 function input(overrides: Partial<AssistantAgentInput> = {}): AssistantAgentInput {

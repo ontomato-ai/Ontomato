@@ -154,6 +154,21 @@ export function createServiceManager(options: {
   });
 }
 
+/**
+ * The agents' settings as a page of the ontology manager's product layer, after its products: the same page the agent
+ * platform's own column opens at its foot, so an agent is configured in one place. It keeps the `analysis-agent` code;
+ * the execution-permission field inside it answers who may change it.
+ */
+const agentSettingsProductPage: PlatformPage = {
+  path: platformRoutes.ontologyAgents.path,
+  titleKey: "agents.title",
+  descriptionKey: "agents.intro",
+  icon: Bot,
+  permissions: [...AGENT_PAGE_PERMISSIONS],
+  group: "assets",
+  ownHeader: true,
+};
+
 /** The ontology manager's pages the agent platform's pages draw: the skills, beside its capabilities. */
 const ontologyWorkspacePages: readonly PlatformPage[] = [
   {path:platformRoutes.systemAgentModels.path,titleKey:'platform.systemAgentModels',descriptionKey:'platform.systemAgentModelsDescription',icon:Bot,permissions:['system-config','app-builder'],group:'platform',ownHeader:true},
@@ -207,6 +222,7 @@ const agentSettingsPage: PlatformPage = {
  * an account without the agents' permission that may open the agent platform's models goes there.
  */
 export const applicationPages: readonly PlatformPage[] = [
+  agentSettingsProductPage,
   ...ontologyWorkspacePages,
   ...systemIntegrationPages,
   agentSettingsPage,

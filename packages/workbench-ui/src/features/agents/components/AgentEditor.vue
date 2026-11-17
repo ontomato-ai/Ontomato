@@ -24,6 +24,7 @@ import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { agentDefinitionsApi, type ObjectClassOption, type ObjectRelationOption } from "../api";
 import { createAssistantClient } from "../../workbench/assistant-host";
 import AgentBasicInfoFields from "./AgentBasicInfoFields.vue";
+import AgentExecutionField from "./AgentExecutionField.vue";
 import DataScopeGraph from "./DataScopeGraph.vue";
 import ModelSelectionSelect from "./ModelSelectionSelect.vue";
 import SkillSelector from "./SkillSelector.vue";
@@ -63,6 +64,8 @@ interface Form {
   skills: RuntimeSkillRef[];
   classNames: string[];
   mcpServiceIds: string[];
+  /** Whose permissions the agent runs with; null is the reader's own. */
+  executionUserId: string | null;
 }
 
 function toForm(agent: AssistantAgentDefinition | null): Form {
@@ -78,6 +81,7 @@ function toForm(agent: AssistantAgentDefinition | null): Form {
     skills: [...(agent?.skills ?? [])],
     classNames: [...(agent?.classNames ?? [])],
     mcpServiceIds: [...(agent?.enabledMcpServiceIds ?? [])],
+    executionUserId: agent?.executionUserId ?? null,
   };
 }
 
@@ -97,6 +101,8 @@ function fromInput(input: AssistantAgentInput): Form {
     skills: [...(input.skills as RuntimeSkillRef[])],
     classNames: [...input.classNames],
     mcpServiceIds: [...input.enabledMcpServiceIds],
+    // An update that omits the field keeps what the owner stores; a draft that names one fills it.
+    executionUserId: input.executionUserId === undefined ? (props.agent?.executionUserId ?? null) : input.executionUserId,
   };
 }
 
@@ -115,6 +121,7 @@ const CHANGED_FIELD_LABELS: Record<string, string> = {
   skills: "agents.skills",
   classNames: "agents.data",
   mcpServiceIds: "admin.externalMcpServices",
+  executionUserId: "agents.executionUser",
 };
 
 const baseline = ref(JSON.stringify(form.value));
@@ -125,6 +132,8 @@ watch(() => props.agent, (agent) => {
   baseline.value = JSON.stringify(form.value);
 });
 const saving = ref(false);
+/** The execution field reports whether this reader may change it; the save sends the field only within that. */
+const execution = ref<{ canSet: boolean } | null>(null);
 const skillsReady = ref(false);
 const promptPreview = ref(false);
 
@@ -137,6 +146,7 @@ const router = useRouter();
 const leaving = useLeaveConfirmation();
 const link = pageDraftLink(route.query);
 const changed = ref<ReadonlySet<string>>(new Set());
+const draftExecutionChanged = ref(false);
 if (link) {
   void readPageDraft(createAssistantClient(), link, {
     pageKey: "agent-settings",
@@ -154,6 +164,9 @@ if (link) {
       changed.value = changedFields(toForm(props.agent), filled);
       baseline.value = JSON.stringify(toForm(props.agent));
       form.value = filled;
+      // A draft that changes whose permissions the agent runs with is the administrator's to save; the field shows what
+      // the draft asked for, and this reader cannot submit it as their own change.
+      draftExecutionChanged.value = changed.value.has("executionUserId");
     })
     .catch((error: unknown) => ElMessage.error(error instanceof Error ? error.message : String(error)));
 }
@@ -173,6 +186,7 @@ const sections = computed(() => [
   { id: "model", label: t("agents.model") },
   { id: "prompt", label: t("agents.prompt") },
   { id: "capabilities", label: t("agents.capabilities") },
+  { id: "execution", label: t("agents.executionUser") },
   { id: "data", label: t("agents.data") },
 ]);
 const sectionElements = new Map<string, Element>();
@@ -209,6 +223,10 @@ function validInput(): AssistantAgentInput | null {
     ElMessage.warning(t("analysis.agentNameRequired"));
     return null;
   }
+  // A reader who may not set the reference never sends it: the stored one stays, and a draft that asked for a change is
+  // not turned into this reader's own save (the notice under the form says so).
+  const maySetExecutionUser = execution.value?.canSet === true;
+  const executionChanged = value.executionUserId !== (props.agent?.executionUserId ?? null);
   return {
     name: value.name.trim(),
     description: value.description,
@@ -220,6 +238,9 @@ function validInput(): AssistantAgentInput | null {
     classNames: value.classNames,
     enabledMcpServiceIds: value.mcpServiceIds,
     sortOrder: props.agent?.sortOrder ?? 0,
+    // The field is sent only when the reader may set it and changed it: an omitted update keeps the stored reference, so
+    // editing anything else never resets a member an administrator chose.
+    ...(maySetExecutionUser && executionChanged ? { executionUserId: value.executionUserId } : {}),
   };
 }
 
@@ -318,6 +339,9 @@ useUnsavedChanges({ dirty: () => dirty.value, paths: () => [path] });
     </PlatformPageHeader>
 
     <div class="editor-body platform-page-gutter">
+      <p v-if="draftExecutionChanged && execution?.canSet !== true" class="draft-changed" role="alert">
+        {{ t("agents.executionDraftUnauthorized") }}
+      </p>
       <p v-if="changedLabels.length" class="draft-changed" role="status">
         {{ changedLine }}
       </p>
@@ -411,6 +435,17 @@ useUnsavedChanges({ dirty: () => dirty.value, paths: () => [path] });
               </el-select>
               <el-alert v-if="mcpFailed" class="mcp-alert" type="warning" :closable="false" :title="t('admin.externalMcpServicesLoadFailed')" />
             </div>
+          </section>
+
+          <section :ref="sectionRef('execution')" class="editor-section" :class="{ changed: sectionChanged(['executionUserId']) }" data-section="execution">
+            <h3>{{ t("agents.executionUser") }}</h3>
+            <p class="section-hint">{{ t("agents.executionUserHint") }}</p>
+            <AgentExecutionField
+              ref="execution"
+              v-model="form.executionUserId"
+              :stored="props.agent?.executionUserId ?? null"
+              :disabled="saving"
+            />
           </section>
 
           <section :ref="sectionRef('data')" class="editor-section" :class="{ changed: sectionChanged(['classNames']) }" data-section="data">

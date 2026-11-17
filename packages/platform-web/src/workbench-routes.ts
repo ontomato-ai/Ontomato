@@ -1,6 +1,9 @@
-import type { LocationQuery, RouteLocationRaw, RouteMeta, RouteRecordRaw, RouteRecordSingleView } from "vue-router";
+import type {
+  LocationQuery, RouteLocationRaw, RouteMeta, RouteParamsGeneric, RouteRecordName, RouteRecordRaw, RouteRecordSingleView,
+} from "vue-router";
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { observeRoutes } from "./observe-routes";
+import AgentSettingsRoute from "./pages/AgentSettingsRoute.vue";
 import DashboardsPage from "./pages/DashboardsRoute.vue";
 import PlatformSchedulesPage from "./pages/PlatformSchedulesRoute.vue";
 
@@ -18,13 +21,27 @@ function capabilityTabLink(to: { query: LocationQuery }): RouteLocationRaw | und
 }
 
 /**
- * The agent platform's pages: the conversation and its settings, the diagnosis app's root, and the pages of its own that
- * the platform assembles.
- *
- * The settings keep one address per screen on purpose: `/agents/settings` (the first agent), `/agents/settings/:agentId`
- * (that agent) and `/agents/settings/new` (a new one). Each is a page of the same component, and the router has to
- * serve every one of them, so they are registered as siblings under the workbench's component rather than as children
- * of the settings address.
+ * The addresses the agents' settings used to live at: `/agents/settings` and `/agents/settings/<id>`. They are not a
+ * second screen any more: each turns to the one settings page, keeping the agent it named.
+ */
+function agentsSettingsRedirect(to: {
+  name?: RouteRecordName | null; params: RouteParamsGeneric; query: LocationQuery;
+}): RouteLocationRaw {
+  // The old capability-library link on these addresses still lands on the skills.
+  const tab = capabilityTabLink(to);
+  if (tab) return tab;
+  const id = to.params.agentId ?? to.params.id;
+  const creating = to.name === routes.agentSettingsNew.name || id === "new";
+  if (creating) return { name: routes.ontologyAgentNew.name, query: to.query };
+  return typeof id === "string" && id
+    ? { name: routes.ontologyAgent.name, params: { agentId: id }, query: to.query }
+    : { name: routes.ontologyAgents.name, query: to.query };
+}
+
+/**
+ * The agent platform's pages: the conversation, the diagnosis app's root, and the pages of its own that the platform
+ * assembles. The agents' settings are one page of the ontology manager's product layer (`AgentSettingsRoute`); the
+ * agent platform's column opens it at its foot.
  */
 export function workbenchPages(
   component: PageComponent,
@@ -54,16 +71,20 @@ export function workbenchPages(
       (location) => ({ ...location, redirect: { name: routes.externalMcp.name } }),
     ),
     { ...routes.chat, component, meta: { workbench: true } },
-    ...[routes.agentBuilder,routes.agentBuilderNew,routes.agentBuilderAgent].map(location=>({...location,component,meta:{workbench:true,page:routes.agents.path}})),
-    // The application's prefix is no page: it opens the conversation, which is where the platform is entered.
+    /*
+     * The agents' settings: one page of the ontology manager's product layer, wrapping the workbench's own editor with
+     * the platform's API, authentication, text and page context. The agent platform's column opens it at its foot; the
+     * addresses it used to live at only turn to it, so no second screen shows the same editor.
+     */
+    { ...routes.ontologyAgents, component: AgentSettingsRoute, meta: { service: true, ownHeader: true, page: routes.ontologyAgents.path } },
+    { ...routes.ontologyAgentNew, component: AgentSettingsRoute, meta: { service: true, ownHeader: true, page: routes.ontologyAgents.path } },
+    { ...routes.ontologyAgent, component: AgentSettingsRoute, meta: { service: true, ownHeader: true, page: routes.ontologyAgents.path } },
+    // The old settings addresses, and the builder's top-level entry: each turns to the one settings page.
+    ...(
+      [routes.agents, routes.agentSettingsNew, routes.agentSettings] as const
+    ).map((location): RouteRecordRaw => ({ ...location, redirect: (to) => agentsSettingsRedirect(to) })),
+    // The application's prefix is no page: the old tab link lands on the skills, and anything else opens the conversation.
     { path: "/agents", redirect: (to) => capabilityTabLink(to) ?? { name: routes.chat.name, query: to.query } },
-    // The first agent's screen is a page, so its old tab link moves on as the screen is entered: from a bookmark, a
-    // reload or another page.
-    // The settings' screens are pages of the agents' settings: they open with its permission.
-    { ...routes.agents, component, meta: { workbench: true, page: routes.agents.path }, beforeEnter: (to) => capabilityTabLink(to) ?? true },
-    ...[routes.agentSettingsNew, routes.agentSettings].map(
-      (location) => ({ ...location, component, meta: { workbench: true, page: routes.agents.path } }),
-    ),
     // The models of the platform's ontology service agents: a page of its navigation, so it opens with its permission.
     { ...routes.agentModels, component, meta: { workbench: true, page: routes.agentModels.path } },
     { ...observeRoutes.root, ...observe, children: observeRoutes.children },

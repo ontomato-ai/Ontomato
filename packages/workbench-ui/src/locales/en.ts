@@ -860,7 +860,14 @@ export default {
     "dataScopeReset": "Reset view",
     "discardConfirm": "Discard the unsaved changes to this agent?",
     "draftChanged": "Filled from the conversation; changed: {fields}. Review and save.",
-    "draftOtherAgent": "This draft was written for another agent; open that agent's page to save it."
+    "draftOtherAgent": "This draft was written for another agent; open that agent's page to save it.",
+    "executionUser": "Execution permission",
+    "executionUserHint": "The permissions the agent runs with. A domain governance administrator may run it as one member of this domain; every other reader runs it with their own.",
+    "executionOwn": "The reader's own permissions",
+    "executionReadOnly": "Only a domain governance administrator may change this. The agent keeps what it holds.",
+    "executionUnavailable": "The member {id} is no longer a usable member of this domain. A domain governance administrator can choose another; until then the agent cannot run as them.",
+    "executionDraftUnauthorized": "This draft changes whose permissions the agent runs with. Only a domain governance administrator can save that change, so it is shown here but not saved with the rest.",
+    "executionOptionsFailed": "Couldn't read who may execute this agent."
   },
   "scheduledTasks": {
     "title": "Scheduled tasks",

@@ -16,6 +16,13 @@ export const platformRoutes = {
   dashboards: { name: "Dashboards", path: "/dashboards" },
   agents: { name: "AgentSettings", path: "/agents/settings" },
   /**
+   * The agents' settings as one page of the ontology manager's product layer: the agents, a new one and one agent's
+   * editor. The agent platform's own entry at the foot of its column points here too, so both entries are one page.
+   */
+  ontologyAgents: { name: "OntologyAgentSettings", path: "/ontology/agents" },
+  ontologyAgentNew: { name: "OntologyAgentNew", path: "/ontology/agents/new" },
+  ontologyAgent: { name: "OntologyAgent", path: "/ontology/agents/:agentId" },
+  /**
    * The settings screens: a new agent and one agent's editor. The fixed addresses come before the parameter, so
    * `/agents/settings/new` is the new agent and never an agent whose id is "new"; the library's old addresses
    * (capabilities, skills, mcp) now forward to the skills and the external MCP services, which are the platform's.
@@ -42,9 +49,6 @@ export const platformRoutes = {
   governance: { name: "KnowledgeGovernance", path: "/governance/chat/:sessionId?" },
   /** 应用构建: the workspace in the address, the open conversation as `?sessionId=`. */
   appBuilder: { name: "AppBuilder", path: "/app-builder/:workspaceId?" },
-  agentBuilder:{name:'AgentBuilder',path:'/agent-builder'},
-  agentBuilderNew:{name:'AgentBuilderNew',path:'/agent-builder/new'},
-  agentBuilderAgent:{name:'AgentBuilderAgent',path:'/agent-builder/:agentId'},
   feedback: { name: "Feedback", path: "/governance/feedback" },
   /** The models of the knowledge governance agents, at the foot of the application's column. */
    governanceModels: { name: "GovernanceModels", path: "/settings/model-config/governance" },
@@ -87,7 +91,6 @@ export const platformRoutes = {
   permissions: { name: "Permissions", path: "/permissions" },
   members: { name: "PermissionMembers", path: "/permissions/members" },
   roles: { name: "PermissionRoles", path: "/permissions/roles" },
-  principals:{name:'PermissionAgentPrincipals',path:'/permissions/agent-principals'},
   policies: { name: "PermissionPolicies", path: "/permissions/policies" },
   organization: { name: "PermissionOrganization", path: "/permissions/organization" },
   /**

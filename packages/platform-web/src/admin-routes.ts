@@ -32,11 +32,12 @@ export const legacyAdminRoutes: RouteRecordRaw[] = [
     path: "/admin/" + key, redirect: routes.metrics.path,
   })),
   { path: "/admin/knowledge", redirect: routes.knowledge.path },
-  ...["analysis", "system-agents"].map((key) => ({ path: "/admin/" + key, redirect: routes.agents.path })),
+  // The agents were configured under the old console's "analysis" pages; they are one page of the ontology manager now.
+  ...["analysis", "system-agents"].map((key) => ({ path: "/admin/" + key, redirect: routes.ontologyAgents.path })),
   ...["skills", "skills/analysis", "skills/visualization"].map((key) => ({
-    path: "/admin/" + key, redirect: routes.agentSettingsSkills.path,
+    path: "/admin/" + key, redirect: routes.ontologySkills.path,
   })),
-  { path: "/admin/mcp-service", redirect: routes.agentSettingsMcp.path },
+  { path: "/admin/mcp-service", redirect: routes.externalMcp.path },
   ...["/observe", "/admin/observe"].map((base) => ({
     path: base + "/:page(.*)?",
     redirect: (to: RouteLocation) => ({

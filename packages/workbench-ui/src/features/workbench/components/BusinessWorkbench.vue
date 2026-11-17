@@ -8,9 +8,7 @@ import {
   AgentShell, useAgentNav, useSessionRunFeed,
   type PageContext, type ShellFeatureDeclaration, type ShellWorkbenchDeclaration,
 } from "@ontomato/agent-shell-ui";
-import {
-  AgentModelsPage, ontologyAgentModelPages, ontologyAgentModelSource, usePageAccess, usePilotPage,
-} from "@ontomato/platform-shell";
+import { usePageAccess, usePilotPage } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { AgentSettingsNav, AgentSettingsPage, dataEngineTransport, useAgentDefinitions } from "../../agents";
@@ -69,30 +67,10 @@ const queryText = (value: unknown) => (typeof value === "string" ? value : null)
 const requestedAgent = () => queryText(route.query.agentId);
 const agentId = ref<string | null>(readRememberedAgent());
 /**
- * The application's own pages, by the name the shell shows for them. The dashboards and the scheduled tasks are
- * applications of their own now, so nothing here leaves this application.
+ * The application's own pages, by the name the shell shows for them. The dashboards, the scheduled tasks and the agents'
+ * settings are pages of their own, so nothing here leaves this application.
  */
-const featureRoutes = { agents: routes.agents };
-/** The settings' addresses: the editor of one agent or a new one. */
-const SETTINGS_PATH = routes.agents.path;
-const inBuilder = computed(() => route.path===routes.agentBuilder.path||route.path.startsWith(`${routes.agentBuilder.path}/`));
-const settingsPath = (suffix = "") => `${inBuilder.value?routes.agentBuilder.path:SETTINGS_PATH}${suffix}`;
-const inSettings = computed(() => inBuilder.value||route.path === SETTINGS_PATH || route.path.startsWith(`${SETTINGS_PATH}/`));
-/**
- * The settings screen the address names. "new" is its own address (`/agents/settings/new`), not a parameter value, so it
- * is recognised by route name and by the path — an agent whose id happened to be "new" would still open its editor.
- */
-const creatingAgent = computed(
-  () => route.name === routes.agentSettingsNew.name || route.name === routes.agentBuilderNew.name || route.path === `${SETTINGS_PATH}/new`,
-);
-/** The models of the ontology service agents the conversations run on: the settings' own entry at their column's foot. */
-const modelsOpen = computed(() => route.path === routes.agentModels.path);
-const modelsPage = ontologyAgentModelPages.find((page) => page.app === "agents")!;
-const modelSource = ontologyAgentModelSource(dataEngineTransport, modelsPage);
-const settingsAgentId = computed(() => {
-  const id = route.params.agentId;
-  return typeof id === "string" && !creatingAgent.value ? id : null;
-});
+const featureRoutes = {} as Record<string, never>;
 /**
  * The page beside the conversation is carried by this application's own address (`?page=<the page's address>`), so the
  * conversation stays where it is and the page is mounted from the assembly's registry, with the props its address gives
@@ -108,13 +86,8 @@ const inDashboards = computed(() => pageAddress.value !== null && pilotPage.valu
  * conversation) returns to the conversation.
  */
 const featureId = computed<string | null>({
-  get: () => {
-    if (inSettings.value) return "agents";
-    if (inDashboards.value) return DASHBOARDS_PAGE_ID;
-    return Object.entries(featureRoutes).find(([, page]) => page.name === route.name)?.[0] ?? null;
-  },
+  get: () => (inDashboards.value ? DASHBOARDS_PAGE_ID : null),
   set: (id) => {
-    if (id === "agents" && inSettings.value) return;
     // Closing the page beside the conversation only drops the parameter: the conversation stays.
     if (inDashboards.value) {
       const { page: _page, ...query } = route.query;
@@ -122,8 +95,6 @@ const featureId = computed<string | null>({
       return;
     }
     if (id === DASHBOARDS_PAGE_ID) return;
-    const target = featureRoutes[id as keyof typeof featureRoutes] ?? routes.chat;
-    if (route.name !== target.name) void router.push({ name: target.name });
   },
 });
 
@@ -138,15 +109,10 @@ function setPageAddress(address: string) {
 const conversationId = ref<string | null>(
   !requestedAgent() && typeof route.query.sessionId === "string" ? route.query.sessionId : null,
 );
-/**
- * The address names the conversation on a page that has one of its own, and only until the platform's own pages (a
- * dashboard beside it) carry it: leaving those returns to the conversation the reader came from.
- */
-const carriesSession = computed(() => !inSettings.value);
 watch(
   () => route.query.sessionId,
   (id) => {
-    if (carriesSession.value && typeof id === "string" && id !== conversationId.value) conversationId.value = id;
+    if (typeof id === "string" && id !== conversationId.value) conversationId.value = id;
   },
 );
 const shell = ref<InstanceType<typeof AgentShell> | null>(null);
@@ -179,21 +145,14 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
 const labels = useShellLabels();
 
 /**
- * The page beside the conversation: the settings name the agent they show, a dashboard names itself, for a message sent
- * from its composer. What is selected in a dashboard is the dashboard's own to report.
+ * The page beside the conversation: a dashboard names itself, for a message sent from its composer. What is selected in
+ * it is the dashboard's own to report.
  */
-const settingsAgents = useAgentDefinitions();
-const pageContext = computed<PageContext | null>(() => {
-  if (inDashboards.value) return { pageKey: "dashboard", url: pageAddress.value!, label: t("assistant.featureDashboards"), selection: [] };
-  if (!inSettings.value) return null;
-  const agent = settingsAgents.find(settingsAgentId.value);
-  return {
-    pageKey: "agent-settings",
-    url: route.fullPath,
-    label: agent ? `${t("agents.title")} · ${agent.name}` : t("agents.title"),
-    selection: settingsAgentId.value && agent ? [{ kind: "agent", id: agent.id, label: agent.name }] : [],
-  };
-});
+const pageContext = computed<PageContext | null>(() =>
+  inDashboards.value
+    ? { pageKey: "dashboard", url: pageAddress.value!, label: t("assistant.featureDashboards"), selection: [] }
+    : null,
+);
 
 /**
  * The one navigation state: the platform column lists the agents and conversations from it, and this conversation
@@ -217,25 +176,22 @@ watch(locale, () => {
   void nav.loadAgents().catch((error) => ElMessage.error(error instanceof Error ? error.message : String(error)));
 });
 
-/** The conversation the reader came from, so leaving the settings returns to it rather than to a new one. */
-const returnTo = ref<string | null>(null);
-watch(inSettings, (open) => {
-  if (!open) returnTo.value = null;
-});
-
 /**
  * The settings the account may open: the agents' (with the agents' permission), and the models of the ontology service
  * agents the conversations run on (with the model permission). Each is a page of the platform's navigation.
  */
 const canOpen = usePageAccess();
-const editsAgents = computed(() => canOpen(SETTINGS_PATH));
+const editsAgents = computed(() => canOpen(routes.ontologyAgents.path));
 const opensModels = computed(() => canOpen(routes.agentModels.path));
 
-/** The agent settings: the agent the conversation runs on (or the first one), or the models when only they are open. */
+/** The agent settings are one page of the platform's own navigation: this entry opens it at the agent in use. */
 function openSettings() {
-  returnTo.value = conversationId.value;
   if (!editsAgents.value) return void router.push(routes.agentModels.path);
-  void router.push(agentId.value ? settingsPath(`/${agentId.value}`) : SETTINGS_PATH);
+  void router.push(
+    agentId.value
+      ? { name: routes.ontologyAgent.name, params: { agentId: agentId.value } }
+      : { name: routes.ontologyAgents.name },
+  );
 }
 
 /**
@@ -246,24 +202,6 @@ function openPageAtItsAddress(_id: string, address: string) {
   if (address) void router.push(address);
 }
 
-function backToChat() {
-  const session = returnTo.value;
-  featureId.value = null;
-  conversationId.value = session;
-  void router.push({ name: routes.chat.name, query: session ? { sessionId: session } : {} });
-}
-
-function selectSettingsAgent(id: string) {
-  void router.push(settingsPath(`/${id}`));
-}
-
-function createSettingsAgent() {
-  void router.push(settingsPath("/new"));
-}
-
-function openModels() {
-  void router.push(routes.agentModels.path);
-}
 
 /** The column's own entry at the foot: the agent settings, which replace the column while they are open. */
 const bottomEntry = computed(() =>
@@ -357,29 +295,10 @@ function appearanceSaved(value: WorkbenchAppearance) {
     @open-bottom="openSettings"
     @open-page="openPageAtItsAddress"
   >
-    <!-- In the settings the application's column is the settings navigation; the editor is the whole main area. -->
-    <template v-if="inSettings" #column>
-      <AgentSettingsNav
-        :agent-id="settingsAgentId"
-        :creating="creatingAgent"
-        :models="modelsOpen"
-        @back="backToChat"
-        @select-agent="selectSettingsAgent"
-        @create-agent="createSettingsAgent"
-        @open-models="openModels"
-      />
-    </template>
     <template #feature="{ featureId: page }">
-      <AgentModelsPage v-if="page === 'agents' && modelsOpen" :source="modelSource" :path="modelsPage.path" />
-      <AgentSettingsPage
-        v-else-if="page === 'agents'"
-        :agent-id="settingsAgentId"
-        :creating="creatingAgent"
-        @changed="shell?.reloadAgents()"
-      />
       <component
         :is="pilotPage!.component"
-        v-else-if="page === DASHBOARDS_PAGE_ID && pilotPage"
+        v-if="page === DASHBOARDS_PAGE_ID && pilotPage"
         :key="pageAddress!"
         v-bind="pilotPage.props"
         :navigate="(next: { dashboardId?: string }) => setPageAddress(pilotPage!.navigate?.(next) ?? pageAddress!)"

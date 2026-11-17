@@ -33,9 +33,15 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
       {
         key: "ontology:governance",
         titleKey: "platform.layers.governance",
-        paths: [platformRoutes.members.path,platformRoutes.principals.path,platformRoutes.roles.path,platformRoutes.policies.path,platformRoutes.organization.path,managerPaths.capabilityMap],
+        // The agent principals page is gone: agents are configured in the product layer's settings page.
+        paths: [platformRoutes.members.path,platformRoutes.roles.path,platformRoutes.policies.path,platformRoutes.organization.path,managerPaths.capabilityMap],
       },
-      { key: "ontology:products", titleKey: "platform.layers.products", paths: [managerPaths.products] },
+      {
+        key: "ontology:products",
+        titleKey: "platform.layers.products",
+        // The products, and after them the agents' settings: what a product page is given to run on.
+        paths: [managerPaths.products, platformRoutes.ontologyAgents.path],
+      },
     ],
     // The models of the modeling agents, at the foot of the menu like every application's own settings.
   },
@@ -96,7 +102,6 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
     // Its column is its own (the workspaces and their conversations), drawn inside the application, like the agents'.
     sections: [],
   },
-  {renderer:'agent-builder',sections:[]},
   {
     renderer: "dashboards",
     sections: [{ key: "dashboards:all", titleKey: "assistant.featureDashboards", paths: [platformRoutes.dashboards.path] }],

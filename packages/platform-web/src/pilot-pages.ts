@@ -1,5 +1,6 @@
 import type { PilotPage, PilotPageResolver } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
+import AgentSettingsRoute from "./pages/AgentSettingsRoute.vue";
 import DashboardsPage from "./pages/DashboardsRoute.vue";
 
 /**
@@ -7,12 +8,19 @@ import DashboardsPage from "./pages/DashboardsRoute.vue";
  * what the conversation beside it carries (`?page=`), and the resolver turns that address into the props the page's own
  * component takes: the page keeps one component and one address, and the page beside the chat is that page.
  *
- * Only the pages whose own line has finished registering are here: the dashboards now, the knowledge report when its
- * migration lands, the agent settings inside the workbench that already mounts them.
+ * The pages here are the dashboards and the agents' settings; the knowledge report joins them when its migration lands.
  */
 export const resolvePilotPage: PilotPageResolver = (address) => {
   const [path, search = ""] = address.split("?");
   const query = new URLSearchParams(search);
+  const agents = /^\/ontology\/agents(?:\/(new|[^/]+))?$/.exec(path);
+  if (agents) {
+    const id = agents[1] ?? null;
+    return {
+      component: AgentSettingsRoute,
+      props: { agentId: id === "new" ? null : id, creating: id === "new" },
+    };
+  }
   if (path !== platformRoutes.dashboards.path) return null;
   return {
     component: DashboardsPage,
