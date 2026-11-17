@@ -1,6 +1,6 @@
 import { computed, nextTick, ref, watch } from "vue";
 import type { AgentHostAgent, AgentHostSession } from "@ontomato/contracts/agent-host";
-import type { AgentHostClient } from "./host";
+import type { AgentHostClient, AgentPageQuery } from "./host";
 
 export interface AgentNavOptions {
   /** The host port; read lazily so the nav follows a replaced client. */
@@ -27,6 +27,10 @@ export type AgentNav = ReturnType<typeof useAgentNav>;
 
 export function useAgentNav(options: AgentNavOptions) {
   const agents = ref<AgentHostAgent[]>([]);
+  /** The open page's agents while a page with its own skill is open; null when it has none or none is open. */
+  const pageAgents = ref<{ agents: AgentHostAgent[]; defaultAgentId?: string } | null>(null);
+  /** The page whose skill the composer is choosing agents for, as the shell reports it opening and closing. */
+  const page = ref<AgentPageQuery | null>(null);
   const sessions = ref<AgentHostSession[]>([]);
   const sessionsState = ref<"loading" | "ready" | "error">("loading");
   const nextCursor = ref<string | null>(null);
@@ -42,13 +46,35 @@ export function useAgentNav(options: AgentNavOptions) {
   const currentSession = computed(() => sessions.value.find((session) => session.id === options.sessionId()));
 
   async function loadAgents() {
+    if (page.value) return loadPageAgents();
     agents.value = await options.client().listAgents();
+    pageAgents.value = null;
     const selected = options.agentId();
     if (!agents.value.some((agent) => agent.id === selected))
       options.setAgentId((agents.value.find((agent) => agent.enabled) ?? agents.value[0])?.id ?? null);
     // Let the selection watcher run once with the flag still down, then treat later changes as the reader's.
     await nextTick();
     initialAgentLoaded = true;
+  }
+
+  /**
+   * A page with its own skill offers only the agents that carry it: the page's default when it registered one, the agent
+   * already in use while it is a candidate, and the first candidate otherwise. The page and its conversation are kept.
+   */
+  async function loadPageAgents() {
+    pageAgents.value = await options.client().listPageAgents(page.value!);
+    agents.value = pageAgents.value.agents;
+    if (!agents.value.some((agent) => agent.id === options.agentId()))
+      options.setAgentId(pageAgents.value.defaultAgentId ?? agents.value.find((agent) => agent.enabled)?.id ?? null);
+    await nextTick();
+    initialAgentLoaded = true;
+  }
+
+  /** A page with its own skill opens or closes: the composer chooses among that page's agents, or among all of them. */
+  async function setPage(next: AgentPageQuery | null) {
+    if (JSON.stringify(next) === JSON.stringify(page.value)) return;
+    page.value = next;
+    await loadAgents();
   }
 
   async function loadSessions(more = false) {
@@ -112,12 +138,14 @@ export function useAgentNav(options: AgentNavOptions) {
 
   return {
     agents,
+    pageAgents,
     sessions,
     sessionsState,
     nextCursor,
     currentAgent,
     currentSession,
     loadAgents,
+    setPage,
     loadSessions,
     startNew,
     selectSession,

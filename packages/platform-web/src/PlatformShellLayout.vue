@@ -7,6 +7,7 @@ import { ElMessageBox } from "element-plus";
 import {
   agentModelLabelsKey,
   platformApplicationNameKey,
+  pilotPageKey,
   platformPageAccessKey,
   providePageActions,
   provideUnsavedChanges,
@@ -23,6 +24,11 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useApplicationCatalog } from "./catalog";
 import { nodeApiRequest } from "@ontomato/workbench-ui";
 import { appAt } from "./apps";
+import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
+import { pageCounterKey, type PageCounter } from "@ontomato/agent-shell-ui";
+import { createAssistantClient } from "@ontomato/workbench-ui/features/workbench/assistant-host";
+import { readRememberedAgent } from "@ontomato/workbench-ui";
+import { resolvePilotPage } from "./pilot-pages";
 import { recentDestination } from "./recent-work";
 import { openApplicationKey, platformApplicationsKey, platformBrandKey, type PlatformAppDeclaration } from "./apps";
 import { useApplicationOpening } from "./application-opening";
@@ -138,6 +144,30 @@ const localeNames = computed(() =>
 
 /** What the shown page hands to its header: the frame reads it, the header presents it. */
 const pageActions = providePageActions();
+
+/**
+ * The pages the platform's assembly mounts beside a conversation: the conversation application asks for an address and
+ * draws the page's own component, so it never imports another application's page.
+ */
+provide(pilotPageKey, resolvePilotPage);
+
+/*
+ * The one counter a page at its own address sends to (DESIGN.md "Applications and shells"): its agents, the agent this
+ * tab last used, and the address that opens the conversation with the page beside it. The pages themselves only show
+ * the platform's composer and hand over the message.
+ */
+/** Read when a page shows its composer, once per page load: the platform's own pages do not read agents at startup. */
+let counterAgents: Promise<readonly AgentHostAgent[]> | null = null;
+provide(pageCounterKey, {
+  agents: () =>
+    (counterAgents ??= createAssistantClient()
+      .listAgents()
+      .then((list) => list.filter((agent) => agent.enabled))),
+  preferredAgentId: ref(readRememberedAgent()),
+  ask(agentId, text, page) {
+    void router.push({ path: platformRoutes.chat.path, query: { agentId, prompt: text, page } });
+  },
+} satisfies PageCounter);
 
 /**
  * Leaving a draft with unsaved changes asks first: before the address leaves every page that edits it, and before the

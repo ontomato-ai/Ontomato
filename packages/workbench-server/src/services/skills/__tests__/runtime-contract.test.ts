@@ -74,7 +74,7 @@ it("publishes only the selected current-domain package and keeps captured versio
   await skillManager.importSkill(domain, zip(), true);
   const provider = { namespace: { kind: "provider" as const, provider: "workbench" }, name: "assistant-report" };
   const analyst = { namespace: { kind: "provider" as const, provider: "ontology" }, name: "ontomato-analyst-assistant" };
-  expect(await prepareAssistantSkills(domain, { kind: "custom", skills: [analyst, provider, reference] }, {})).toEqual([analyst, provider, reference]);
+  expect((await prepareAssistantSkills(domain, { kind: "custom", skills: [analyst, provider, reference] }, {})).skills).toEqual([analyst, provider, reference]);
   const script = (body: { files: { path: string; content: string }[] }) =>
     body.files.find((file) => file.path === "scripts/main.mjs")?.content;
   await skillManager.importSkill(domain, zip({ "scripts/main.mjs": "console.log('next run');\n" }), true);

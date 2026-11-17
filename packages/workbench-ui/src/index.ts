@@ -26,7 +26,7 @@ export {
 } from "./features/agents";
 export type { WorkbenchPermissionData, WorkbenchPermissionGroupData } from "./features/agents";
 export { workbenchFeatures } from "./features/workbench";
-export { readRememberedAgent } from "./features/workbench/remembered-agent";
+export { readRememberedAgent, readRememberedSession } from "./features/workbench/remembered-agent";
 export { relativeTime } from "./utils/relative-time";
 export { ObserveLayout } from "./features/diagnosis";
 export type { ObserveAccount } from "./features/diagnosis/components/layout/types";

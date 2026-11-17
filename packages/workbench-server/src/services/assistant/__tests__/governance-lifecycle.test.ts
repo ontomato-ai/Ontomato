@@ -35,7 +35,7 @@ beforeEach(()=>{
   const turn={id:runId,session_id:sessionId,created_at:new Date(),retrieval_scope_id:null,governance_record_id:null,class_names:[]};
   mocks.session.mockResolvedValue(session);mocks.turn.mockResolvedValue(turn);mocks.turns.mockResolvedValue([]);
   mocks.create.mockResolvedValue({row:session});mocks.reserve.mockResolvedValue({row:turn});
-  mocks.query.mockResolvedValue({rows:[{session_id:sessionId}]});mocks.skills.mockResolvedValue([skill]);mocks.overview.mockResolvedValue("overview");
+  mocks.query.mockResolvedValue({rows:[{session_id:sessionId}]});mocks.skills.mockResolvedValue({skills:[skill],pageDrafts:false});mocks.overview.mockResolvedValue("overview");
   mocks.open.mockResolvedValue({id:runId});mocks.links.mockResolvedValue([]);mocks.record.mockResolvedValue(null);
   mocks.callback.mockReturnValue({value:"callback"});
   mocks.close.mockResolvedValue(undefined);mocks.admitted.mockResolvedValue(undefined);mocks.settled.mockResolvedValue(undefined);
@@ -52,14 +52,14 @@ it("a custom definition with governance alone needs no query access and opens no
 });
 it("the selected query skill opens and records its actual scope regardless of preset kind",async()=>{
   const querySkill={namespace:{kind:"provider",provider:"ontology"},name:"ontomato-analyst-assistant"};
-  const agent=await mocks.agent();mocks.agent.mockResolvedValue({...agent,kind:"knowledge-governance",skills:[querySkill]});mocks.skills.mockResolvedValue([querySkill]);
+  const agent=await mocks.agent();mocks.agent.mockResolvedValue({...agent,kind:"knowledge-governance",skills:[querySkill]});mocks.skills.mockResolvedValue({skills:[querySkill],pageDrafts:false});
   const prepared=await assistantService.prepare(preparation(),owner,{token:"user"});
   expect(mocks.overview).toHaveBeenCalled();expect(mocks.scope).toHaveBeenCalledWith(runId,owner,runId);
   expect(prepared.environment.values.ONTOMATO_RETRIEVAL_CALLER_ID).toBe(runId);
 });
 it("a failed scope opening never records an opened scope",async()=>{
   const querySkill={namespace:{kind:"provider",provider:"ontology"},name:"ontomato-analyst-assistant"};
-  mocks.skills.mockResolvedValue([querySkill]);mocks.open.mockRejectedValue(new Error("admission failed"));
+  mocks.skills.mockResolvedValue({skills:[querySkill],pageDrafts:false});mocks.open.mockRejectedValue(new Error("admission failed"));
   await expect(assistantService.prepare(preparation(),owner,{token:"user"})).rejects.toThrow("admission failed");
   expect(mocks.scope).not.toHaveBeenCalled();
 });

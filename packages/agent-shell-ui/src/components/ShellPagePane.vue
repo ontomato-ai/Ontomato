@@ -26,7 +26,7 @@ const props = defineProps<{
   sending: boolean;
   disabled: boolean;
 }>();
-const emit = defineEmits<{ send: [text: string]; stop: []; expand: []; collapse: []; close: []; menu: [] }>();
+const emit = defineEmits<{ send: [text: string]; stop: []; expand: []; collapse: []; close: []; menu: []; openAddress: [] }>();
 const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value);
 const slots = useSlots();
@@ -75,7 +75,14 @@ const paneStyle = computed(() => ({
       >
         <Minimize2 :size="16" />
       </button>
-      <button v-else type="button" class="pane-button" :title="labels.expand" :aria-label="labels.expand" @click="emit('expand')">
+      <!-- Enlarged, a page that has its own address opens there; a page without one grows inside the shell. -->
+      <button
+        type="button"
+        class="pane-button"
+        :title="labels.expand"
+        :aria-label="labels.expand"
+        @click="feature?.address ? emit('openAddress') : emit('expand')"
+      >
         <Maximize2 :size="16" />
       </button>
       <button type="button" class="pane-button" :title="labels.close" :aria-label="labels.close" @click="emit('close')">
@@ -86,6 +93,7 @@ const paneStyle = computed(() => ({
     <div v-if="paired && view === 'full'" ref="dock" class="pane-dock">
       <ShellQuestions />
       <ShellComposer :busy="busy" :sending="sending" :disabled="disabled" :labels="labels" @send="emit('send', $event)" @stop="emit('stop')">
+        <template v-if="slots['composer-agent']" #agent><slot name="composer-agent" /></template>
         <template v-if="slots['composer-context']" #context><slot name="composer-context" /></template>
       </ShellComposer>
     </div>
@@ -207,12 +215,10 @@ const paneStyle = computed(() => ({
   pointer-events: none;
 }
 /*
- * Full, the composer floats over the page, one compact row with what a message carries inside it, the questions over it;
- * only they take the pointer, the page shows around them.
+ * Full, the composer floats over the page, the platform's one row with what a message carries inside it, the questions
+ * over it; only they take the pointer, the page shows around them.
  */
 .pane-dock {
-  --shell-composer-control: var(--control-height);
-  --shell-composer-height: calc(var(--control-height) + 12px);
   position: absolute;
   z-index: 3;
   left: 50%;

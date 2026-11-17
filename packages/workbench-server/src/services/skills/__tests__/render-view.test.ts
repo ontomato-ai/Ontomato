@@ -9,7 +9,7 @@ import { renderObjectView } from "../render-view";
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.skill.mockReturnValue({ manifest: { type: "executable", category: "visualization" } });
-  mocks.prepare.mockResolvedValue([{ name: "echarts", namespace: { kind: "provider", provider: "workbench" } }]);
+  mocks.prepare.mockResolvedValue({ skills: [{ name: "echarts", namespace: { kind: "provider", provider: "workbench" } }], pageDrafts: false });
 });
 it("executes the selected skill in the runtime sandbox and returns its HTML without a model run", async () => {
   mocks.request.mockResolvedValue({ id: "f7201bbb-f345-45ea-9303-6be34a1db111", status: "stopped", entry: "render.py", sourceSha256: "abc", createdAt: "2026-11-07", finishedAt: "2026-11-07", exitCode: 0, outputs: [], errorMessage: null });

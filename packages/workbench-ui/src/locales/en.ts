@@ -540,6 +540,9 @@ export default {
     "steps": "{n} step | {n} steps",
     "thinking": "Thinking",
     "working": "Working",
+    "switchWhileRunning": "Finish or stop the running reply before switching agents",
+    "pageContext": "Current page: {page}",
+    "selectionContext": "Selected: {selection}",
     "toolInput": "Input",
     "toolOutput": "Output",
     "stopped": "Stopped",
@@ -855,7 +858,9 @@ export default {
     "dataScopeList": "Object types",
     "dataScopeNoClasses": "This domain has no object types yet",
     "dataScopeReset": "Reset view",
-    "discardConfirm": "Discard the unsaved changes to this agent?"
+    "discardConfirm": "Discard the unsaved changes to this agent?",
+    "draftChanged": "Filled from the conversation; changed: {fields}. Review and save.",
+    "draftOtherAgent": "This draft was written for another agent; open that agent's page to save it."
   },
   "scheduledTasks": {
     "title": "Scheduled tasks",

@@ -46,7 +46,7 @@ function ask(question: string) {
     <p class="home-date">{{ today }}</p>
     <div v-if="agents.length > 0" class="home-ask">
       <ShellComposer :busy="false" :labels="labels" @send="ask">
-        <template #tools>
+        <template #agent>
           <AgentPicker variant="pill" :agents="agents" :agent-id="agentId" :label="t('assistant.agent')" @select="agentId = $event" />
         </template>
       </ShellComposer>
