@@ -98,6 +98,10 @@ export const en = {
   // QC result label
   "query.qcResult.label": "QC Result",
   "query.qcProcess.label": "QC Process",
+  "query.qcProcess.readFailed": "Could not read the quality-check result",
+  "query.qcProcess.noResult": "The quality-check stream ended without a final result",
+  "query.qcProcess.timedOut": "Timed out waiting for the quality-check result",
+  "query.qcProcess.cancelled": "Stopped waiting for the quality-check result",
 
   // ABC / query progress
   "query.progress.splitting": "Decomposing question...",

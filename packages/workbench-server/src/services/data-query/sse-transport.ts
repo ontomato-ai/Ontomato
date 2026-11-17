@@ -47,6 +47,15 @@ export async function* streamBackendSSE(
       dispatcher: backendDispatcher,
     } as FetchInit & { dispatcher: typeof backendDispatcher });
     await checkBackendResponse(response);
+    // Legacy backend errors use an HTTP 200 JSON envelope, never an SSE frame.
+    if (response.headers.get("content-type")?.includes("application/json")) {
+      const body = await response.json();
+      throw new BackendResponseError(
+        body?.success === false && typeof body.code === "number" ? body.code : 502,
+        typeof body?.message === "string" ? body.message : "Backend did not return an event stream",
+        response.headers
+      );
+    }
     if (!response.body) throw new Error("Response body is not readable");
     onOpen?.();
     yield* readSSEStream(response);

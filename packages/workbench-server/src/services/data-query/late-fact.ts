@@ -1,6 +1,6 @@
-import { tApp } from "../../i18n";
+import { tApp, tForLocale } from "../../i18n";
 import type { AbcQuestionMode } from "@ontomato/contracts/system-model";
-import type { QcState } from "@ontomato/contracts/query-thinking";
+import type { QcResult, QcState } from "@ontomato/contracts/query-thinking";
 /**
  * Late fact: a fact that becomes ready only after the execution facts have been finalized; the quality check is currently the only one.
  *
@@ -16,6 +16,7 @@ import { buildQcMarkdown } from "./qc-state";
 import { streamSelfCheckSSE } from "./quality-check";
 import type { QueryRunIdentity } from "./query-fact";
 import { updateQueryRunQualityCheck } from "./query-run-store";
+import { BackendResponseError } from "../../utils/backend-client";
 
 const logger = createLogger("data-query:late-fact");
 
@@ -68,7 +69,7 @@ export function startQualityCheckSettlement(input: QualityCheckSettlementInput):
   const publish = () => onState?.(state, buildQcMarkdown(state));
 
   // The bounded time limit is owned by this fact itself: the backend quality-check read has no server-side timeout, so past the limit it is
-  // considered dead — abort the read, finalize as not ready, and skip the write-back. This is a resource boundary, not "how long to wait for a valid result".
+  // considered dead — abort the read and persist its unresolved state and reason.
   const bound = new AbortController();
   const abortOnCaller = () => bound.abort();
   // Cancellation on entry and cancellation received while running reuse the same finalization; attaching only a listener is not enough.
@@ -84,7 +85,7 @@ export function startQualityCheckSettlement(input: QualityCheckSettlementInput):
 
   return (async () => {
     try {
-      const result = await streamSelfCheckSSE({
+      const result: QcResult | null = await streamSelfCheckSSE({
         sessionId,
         abcQuestionMode: input.abcQuestionMode,
         token: input.token,
@@ -119,24 +120,33 @@ export function startQualityCheckSettlement(input: QualityCheckSettlementInput):
           };
           publish();
         },
-        onError: () => {
-          // Cancellation and timeout are not failures: when we abort the read ourselves the state is left unchanged for the finalization branch below.
+        onError: (error) => {
+          // Cancellation and timeout retain their distinct unresolved state below.
           if (bound.signal.aborted) return;
-          state = { ...state, status: "failed" };
+          state = {
+            ...state,
+            status: "failed",
+            steps: [...state.steps, {
+              summary: tForLocale(input.locale, "query.qcProcess.readFailed"),
+              meaning: error instanceof BackendResponseError ? error.detail : error.message,
+              status: "failed",
+              timestamp: Date.now(),
+            }],
+          };
           publish();
         },
       });
-
-      // Past the time limit: finalize as not ready and push, but skip the write-back — there is no result to write.
-      if (timedOut) {
-        state = { ...state, status: "unsettled" };
-        publish();
-        return;
-      }
-      // Cancellation is not a failure, and no write-back — this run no longer cares about this evidence.
-      if (signal?.aborted) return;
-      if (!result) {
-        state = { ...state, status: "failed" };
+      if (state.status === "running" && (timedOut || signal?.aborted)) {
+        state = {
+          ...state,
+          status: "unsettled",
+          steps: [...state.steps, {
+            summary: tForLocale(input.locale, timedOut
+              ? "query.qcProcess.timedOut" : "query.qcProcess.cancelled"),
+            status: "failed",
+            timestamp: Date.now(),
+          }],
+        };
         publish();
       }
 
@@ -152,12 +162,12 @@ export function startQualityCheckSettlement(input: QualityCheckSettlementInput):
         });
       }
     } catch (error) {
-      if (signal?.aborted || timedOut) return;
       logger.warn(tApp("queryFixed.260"), {
         sourceKind: identity.sourceKind,
         sourceRef: identity.sourceRef,
         error: error instanceof Error ? error.message : String(error),
       });
+      throw error;
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener("abort", abortOnCaller);
