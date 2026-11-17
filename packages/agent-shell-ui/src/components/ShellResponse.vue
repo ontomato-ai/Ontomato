@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { copyText } from "@ontomato/foundation-ui/clipboard";
 import { Check, ChevronRight, CircleAlert, Copy, LoaderCircle, Square, ThumbsDown, ThumbsUp, TriangleAlert } from "lucide-vue-next";
 import type { ShellFeedbackPort, ShellFeedbackValue } from "../types";
 import SlotOutlet from "./SlotOutlet.vue";
@@ -87,7 +88,7 @@ watch(target, async (next) => {
 }, { immediate: true });
 
 async function copy() {
-  await navigator.clipboard.writeText(props.item.answerText);
+  if (!(await copyText(props.item.answerText))) return;
   copied.value = true;
   setTimeout(() => (copied.value = false), 1500);
 }
