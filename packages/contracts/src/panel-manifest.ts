@@ -1,15 +1,15 @@
 import { z } from "zod";
-import type { ontologyParameterTypeSchema } from "./product-projections";
 
 /*
- * What a panel's `panel.mjs` exports through `definePanel`: the state the panel keeps for one instance, the projections
- * it composes into slots, the operations it offers, and nothing about how it is drawn (the HTML and the module own
- * layout and interaction). The SDK mounts the panel from this declaration, so a panel author never wires up page
- * context, deep links, draft dispatch or button execution by hand; the registry stores the declaration beside the
- * panel's content, and the graph reads it instead of the HTML.
+ * What a panel's `panel.mjs` exports through `definePanel`: the state the panel keeps for one instance and the
+ * projections it composes into slots, and nothing about how it is drawn (the HTML and the module own layout and
+ * interaction). The SDK mounts the panel from this declaration, so a panel author never wires up page context, deep
+ * links, draft dispatch or button execution by hand; the registry stores the declaration beside the panel's content,
+ * and the graph reads it instead of the HTML.
  *
- * State and values are typed by `ontologyParameterTypeSchema` (overall design 3.3, 3.4): an object reference carries
- * only the ontology class and the primary key, so the panel names one business object and never a copy of its data.
+ * Operations a projection already defines — saving a form, running a task — are not declared here a second time: the
+ * SDK derives them from the slot's projection binding and the component/client metadata, and describes them in this
+ * file's `panelOperationSchema` shape. What the manifest adds is only the panel's own state and navigation operations.
  */
 
 const key = z
@@ -18,42 +18,26 @@ const key = z
   .max(200)
   .refine((value) => !["__proto__", "constructor", "prototype"].includes(value), "Reserved key");
 
-/** A state field's declared type: a reference to one ontology object, or a scalar value. */
-export const panelStateTypeSchema = z.discriminatedUnion("kind", [
+/**
+ * The typed value vocabulary of a panel: a reference to one ontology object (class and primary key, never a copy of its
+ * data) or a scalar. Projections take their parameters in the same vocabulary, so a slot input and a projection's
+ * parameter are compared without a translation table.
+ */
+export const ontologyParameterTypeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("object"), objectType: z.string().min(1).max(200) }).strict(),
   z.object({ kind: z.literal("scalar"), type: z.enum(["string", "number", "boolean", "date"]) }).strict(),
 ]);
-export type PanelStateType = z.infer<typeof panelStateTypeSchema>;
-
-/** The same type vocabulary as a panel's values, so a slot input compares against a projection's parameter. */
-export type PanelValueType = z.infer<typeof ontologyParameterTypeSchema>;
+export type OntologyParameterType = z.infer<typeof ontologyParameterTypeSchema>;
 
 /**
  * One field of a panel's own state. Two instances of the same panel keep separate values, so a selection made in one is
  * never seen by the other; a shared projection receives the state as an input value instead (overall design 3.2, 10.1).
+ * The first object a panel shows comes from opening it (a deep link or an open request), never from the declaration: a
+ * primary key in a shared panel would open every user's instance on the same object.
  */
 export const panelStateFieldSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("object"),
-      objectType: z.string().min(1).max(200),
-      /** An object the panel starts on when its instance is opened without one, by primary key. */
-      defaultValue: z.string().min(1).max(1000).optional(),
-      /**
-       * Whether the value may travel in the address (`?state=`), so a link or an agent's open request restores the same
-       * view. A field that is not deep-linkable stays inside the instance; form content never goes into the address.
-       */
-      deepLink: z.boolean().default(false),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("scalar"),
-      type: z.enum(["string", "number", "boolean", "date"]),
-      defaultValue: z.union([z.string(), z.number().finite(), z.boolean()]).optional(),
-      deepLink: z.boolean().default(false),
-    })
-    .strict(),
+  z.object({ kind: z.literal("object"), objectType: z.string().min(1).max(200), deepLink: z.boolean().default(false) }).strict(),
+  z.object({ kind: z.literal("scalar"), type: z.enum(["string", "number", "boolean", "date"]), deepLink: z.boolean().default(false) }).strict(),
 ]);
 export type PanelStateField = z.infer<typeof panelStateFieldSchema>;
 
@@ -62,14 +46,13 @@ export const panelStateSchema = z.record(key, panelStateFieldSchema);
 export type PanelState = z.infer<typeof panelStateSchema>;
 
 /** A state value as the SDK holds it in an instance: an object reference, a scalar, or nothing yet. */
-export const panelStateValueSchema = z
-  .union([
-    z.object({ className: z.string().min(1).max(200), primaryKey: z.string().min(1).max(1000) }).strict(),
-    z.string(),
-    z.number().finite(),
-    z.boolean(),
-    z.null(),
-  ]);
+export const panelStateValueSchema = z.union([
+  z.object({ className: z.string().min(1).max(200), primaryKey: z.string().min(1).max(1000) }).strict(),
+  z.string(),
+  z.number().finite(),
+  z.boolean(),
+  z.null(),
+]);
 export type PanelStateValue = z.infer<typeof panelStateValueSchema>;
 
 /**
@@ -82,21 +65,15 @@ export type PanelStateRef = z.infer<typeof panelStateRefSchema>;
 /**
  * A projection placed in a slot. The slot carries the projection's ID and the values it is given; the projection's own
  * component, binding and display stay with the projection, and a panel that needs another presentation registers
- * another projection instead of overriding one here (overall design 3.2).
+ * another projection instead of overriding one here (overall design 3.2). Every slot the panel composes is declared,
+ * drawn or not: the graph needs the whole set, and a form behind a collapsed section must reach the agent that fills it
+ * (overall design 3.3). Whether a slot is drawn where is the HTML's and the module's business.
  */
 export const panelSlotSchema = z
   .object({
     projectionId: z.string().min(1).max(200),
     /** Values passed to the projection's declared inputs, by parameter name, each from this panel's state. */
     inputs: z.record(key, panelStateRefSchema).default({}),
-    /**
-     * Whether the slot is shown at all, still declared while it is hidden: the graph needs every composed projection,
-     * and a form behind a collapsed section must reach the agent that fills it (overall design 3.3).
-     */
-    visibleWhen: z
-      .object({ state: key, operator: z.enum(["present", "empty"]), value: z.string().max(1000).optional() })
-      .strict()
-      .optional(),
   })
   .strict();
 export type PanelSlot = z.infer<typeof panelSlotSchema>;
@@ -123,9 +100,10 @@ export const panelOperationTargetSchema = z.discriminatedUnion("source", [
 export type PanelOperationTarget = z.infer<typeof panelOperationTargetSchema>;
 
 /**
- * An operation as the agent and the header both receive it. `handlerRef` names an operation the panel's projections
- * publish (the SDK client call the projection is bound to); it is never a URL, SQL or function source, so a described
- * operation is one somebody registered (overall design 5.1).
+ * An operation as the agent and the header both receive it. `handlerRef` names an operation the SDK publishes; it is
+ * never a URL, SQL or function source, so a described operation is one somebody registered (overall design 5.1). The
+ * SDK derives `form.save` and `action` descriptions from a slot's projection binding plus the client and component
+ * metadata; a `state` operation comes from the panel's own declaration below.
  */
 export const panelOperationSchema = z
   .object({
@@ -133,7 +111,7 @@ export const panelOperationSchema = z
     label: z.string().min(1).max(200),
     kind: panelOperationKindSchema,
     /** The parameters the operation takes, by name; a form save's parameters are the owner's form fields, read live. */
-    inputSchema: z.record(key, panelStateTypeSchema).default({}),
+    inputSchema: z.record(key, ontologyParameterTypeSchema).default({}),
     target: panelOperationTargetSchema,
     /** The slot whose projection publishes this operation. */
     slot: key,
@@ -143,15 +121,38 @@ export const panelOperationSchema = z
 export type PanelOperation = z.infer<typeof panelOperationSchema>;
 
 /**
- * What a panel declares. It is the SDK's whole source of truth about the panel: which projections it contains and in
- * which slot, what its state is, and which operations reach a reader or an agent.
+ * The ID of an operation a projection publishes: the slot it sits in and the operation's own name, so two instances of
+ * one panel and two panels using one projection describe the same operation the same way.
+ */
+export function panelOperationId(slot: string, operation: string) {
+  return `${slot}.${operation}`;
+}
+
+/**
+ * A state or navigation operation the panel declares itself: the effects it has are its own state, and it needs no
+ * projection behind it.
+ */
+export const panelStateOperationSchema = z
+  .object({
+    id: key,
+    label: z.string().min(1).max(200),
+    kind: z.literal("state"),
+    /** The fields it sets, by name, with the value each takes; a state operation writes nothing else. */
+    sets: z.record(key, panelStateValueSchema).default({}),
+  })
+  .strict();
+export type PanelStateOperation = z.infer<typeof panelStateOperationSchema>;
+
+/**
+ * What a panel declares. It is the SDK's whole source of truth about the panel's own state and composition: which
+ * projections it contains and in which slot, what its state is, and which state changes it offers by name. The
+ * operations its projections publish are derived, not repeated here.
  */
 export const panelManifestSchema = z
   .object({
     state: panelStateSchema,
     slots: panelSlotsSchema,
-    /** Every operation the panel offers, including those of projections that are not drawn yet. */
-    operations: z.array(panelOperationSchema).max(100),
+    operations: z.array(panelStateOperationSchema).max(100),
   })
   .strict()
   .superRefine((manifest, ctx) => {
@@ -160,19 +161,15 @@ export const panelManifestSchema = z
         if (!Object.hasOwn(manifest.state, ref.state))
           ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["slots", slot, "inputs", input], message: `Input '${input}' reads undeclared state '${ref.state}'` });
       }
-      if (declaration.visibleWhen && !Object.hasOwn(manifest.state, declaration.visibleWhen.state))
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["slots", slot, "visibleWhen"], message: `Visible-when reads undeclared state '${declaration.visibleWhen.state}'` });
     }
     const ids = new Set<string>();
     for (const operation of manifest.operations) {
       if (ids.has(operation.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["operations"], message: `Duplicate operation '${operation.id}'` });
       ids.add(operation.id);
-      if (!Object.hasOwn(manifest.slots, operation.slot))
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["operations", operation.id, "slot"], message: `Operation '${operation.id}' names undeclared slot '${operation.slot}'` });
-      if (operation.target.source === "state" && !Object.hasOwn(manifest.state, operation.target.state))
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["operations", operation.id, "target"], message: `Operation '${operation.id}' targets undeclared state '${operation.target.state}'` });
-      if (operation.target.source === "draft" && !Object.hasOwn(manifest.slots, operation.target.slot))
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["operations", operation.id, "target"], message: `Operation '${operation.id}' targets undeclared slot '${operation.target.slot}'` });
+      for (const state of Object.keys(operation.sets)) {
+        if (!Object.hasOwn(manifest.state, state))
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["operations", operation.id, "sets", state], message: `Operation '${operation.id}' sets undeclared state '${state}'` });
+      }
     }
   });
 export type PanelManifest = z.infer<typeof panelManifestSchema>;
