@@ -7,6 +7,7 @@ import { randomId } from "@ontomato/contracts/random-id";
 import { ElMessageBox } from "element-plus";
 import { productAssetInputSchema, productWidgets, type ProductAsset, type ProductDocument } from "@ontomato/contracts/product-assets";
 import {isMetricChartProjection} from '@ontomato/contracts/product-projections';
+import type {MetricReferenceChartEntry} from '@ontomato/contracts/dashboard';
 import { defaultPersonalWorkspace } from "@ontomato/contracts/personal-workspace";
 import { createViewWidget, type NonChartViewWidget } from "@ontomato/contracts/object-views";
 import { useManagerClient, useManagerContext, useManagerCounts,useOntologyText } from "../context";
@@ -20,6 +21,7 @@ import {rendererLabel} from './renderer-labels';
 import {useProductText} from './default-texts';
 import {localizedProductTypes,localizedProductCategories} from './catalog-labels';
 import {useIdentityNames} from './identity-names';
+import DashboardChartPicker from '../components/DashboardChartPicker.vue';
 const client = useManagerClient();
 const openApplication=inject(openApplicationKey,null);
 function openReference(event:MouseEvent,reference:import('@ontomato/contracts/product-assets').ProductReference){
@@ -56,6 +58,17 @@ const childId = ref(""), childColumn = ref<"main"|"sidebar">("main");
 const childOptions=ref<{id:string;name:string}[]>([]);
 async function searchChildren(search=''){try{const result=await client.products.query({search,pageSize:50});childOptions.value=result.items.filter(asset=>['page','widget','dashboard','object-view','metric-widget','action-view','collection-view','object-projection','agent-profile'].includes(asset.kind)&&asset.id!==selected.value?.id);}catch(reason){error.value=reason instanceof Error?reason.message:String(reason);}}
 const widgetIndex=ref(0);
+/** A chart MetricWidget enters only by bringing in an existing chart. */
+const chartPicker=ref(false);
+function bringChart(chart:MetricReferenceChartEntry){
+  if(document.value.kind!=='metric-widget')return;
+  document.value.renderer='chart';
+  document.value.renders.id=chart.query.metricId;
+  document.value.chartFile=chart.chartFile.content;
+  document.value.parameters=Object.fromEntries(Object.entries(chart.query.parameters).map(([name,value])=>[name,{source:'literal' as const,value}]));
+  if(!name.value.trim())name.value=chart.name;
+  raw.value=JSON.stringify(document.value,null,2);
+}
 const editorWidgets=computed(()=>productWidgets(document.value));
 const typeIcons=productIcons;
 const rendererOptions=computed(()=>({'metric-widget':['number','chart','table'],'action-view':['form','button','dialog','inline'],'collection-view':['table','list','3d-scene'],'object-projection':['full','summary','card','text','3d']} as Record<string,string[]>)[document.value.kind]??[]);
@@ -147,6 +160,10 @@ watch(()=>widget.value?.kind,async value=>{
   if(!value)return;
   try{capabilities.value=await client.loadSmartAssets(value==='action'?'actions':'metrics');}catch{capabilities.value=[];}
 });
+/** A chart renderer without a chart file cannot be saved, so choosing it asks for the chart first. */
+function rendererChanged(){
+  if(document.value.kind==='metric-widget'&&document.value.renderer==='chart'&&!document.value.chartFile)chartPicker.value=true;
+}
 function select(asset:{id:string}|undefined) { if(!asset)return;editing.value=false;emit('select',asset.id); }
 function more(command:string){if(command==='copy')void copy();else if(command==='template')void saveTemplate();else if(command==='delete')void remove();else showTypes.value=!showTypes.value;}
 async function createPage(){if(!selected.value)return;await run(async()=>{const source=selected.value!;const result=await ElMessageBox.prompt(ot('productPageName'),ot('productCreatePageFromTemplate'),{inputValue:ot('productPageSuffix',{name:source.name})});selected.value=await client.products.createPage(source.id,result.value);await load();emit('select',selected.value!.id);});}
@@ -172,6 +189,8 @@ function edit(asset:ProductAsset|null,newKind="page") {
     application:{kind:"application",applicationId:"",children:[]},
   };
   document.value=JSON.parse(JSON.stringify(asset?.document ?? defaults[newKind]!));
+  // A new chart MetricWidget has nothing to show until a chart is brought in, so it asks for one right away.
+  chartPicker.value=!asset&&newKind==='metric-widget';
   raw.value=JSON.stringify(document.value,null,2);advanced.value=false;
   const widget=productWidgets(document.value)[0];
   metricId.value=widget?.resourceId ?? "";
@@ -269,13 +288,14 @@ async function remove() { if(!selected.value)return;await run(async()=>{await El
             <template v-if="document.kind==='widget'&&document.widget.kind==='platform'"><el-form-item :label="ot('productContentSource')"><el-select v-model="document.widget.source"><el-option v-for="(label,key) in {assistant:ot('productSourceAssistant'),apps:ot('productSourceAppsAndAgents'),data:ot('productSourceData'),tasks:ot('productSourceTasks'),conversations:ot('productSourceConversations'),objects:ot('productSourceObjects'),recent:ot('productSourceRecent')}" :key="key" :value="key" :label="label"/></el-select></el-form-item><el-form-item v-if="document.widget.source==='assistant'" :label="ot('productInputHint')"><el-input v-model="document.widget.placeholder"/></el-form-item><el-form-item :label="ot('productItemLimit')"><el-input-number v-model="document.widget.limit" :min="1" :max="20"/></el-form-item><el-form-item :label="ot('productResourceSelectionJson')"><el-input :model-value="JSON.stringify(document.widget.workspace??{},null,2)" type="textarea" :rows="5" @change="updatePlatformResources"/></el-form-item></template>
            <template v-if="'widgets' in document"><h3>{{ot('productCompositionContent')}}</h3><div class="toolbar"><el-select :model-value="widgetIndex" :aria-label="ot('productEditComposedWidget')" @change="chooseWidget"><el-option v-for="(item,index) in editorWidgets" :key="item.id" :value="index" :label="item.title||ot('productWidgetNumbered',{index:index+1})"/></el-select><el-button @click="addWidget">{{ot('productAddComponent')}}</el-button><el-button :disabled="editorWidgets.length<=1" @click="removeWidget">{{ot('productRemove')}}</el-button></div></template>
            <el-form-item v-if="widget&&document.kind!=='metric-widget'&&document.kind!=='action-view'" :label="ot('productWidgetTitle')"><el-input v-model="widget.title"/></el-form-item>
-            <template v-if="'renders' in document"><el-form-item v-if="!['metric-widget','action-view'].includes(document.kind)" :label="ot('productBoundElement')"><el-input v-model="document.renders.id"/></el-form-item><el-form-item :label="ot('productRenderer')"><el-select v-model="document.renderer"><el-option v-for="renderer in rendererOptions" :key="renderer" :value="renderer" :label="rendererLabel(ot,renderer)"/></el-select></el-form-item><el-checkbox v-model="document.isDefault">{{ot('productDefaultProjection')}}</el-checkbox></template>
+            <template v-if="'renders' in document"><el-form-item v-if="!['metric-widget','action-view'].includes(document.kind)" :label="ot('productBoundElement')"><el-input v-model="document.renders.id"/></el-form-item><el-form-item :label="ot('productRenderer')"><el-select v-model="document.renderer" @change="rendererChanged"><el-option v-for="renderer in rendererOptions" :key="renderer" :value="renderer" :label="rendererLabel(ot,renderer)"/></el-select></el-form-item><el-checkbox v-model="document.isDefault">{{ot('productDefaultProjection')}}</el-checkbox></template>
             <template v-if="document.kind==='page'"><el-form-item :label="ot('productPagePurpose')"><el-checkbox v-model="document.embeddable">{{ot('productEmbeddableDisplayPage')}}</el-checkbox><el-checkbox v-model="document.isTemplate">{{ot('productTemplateForPages')}}</el-checkbox></el-form-item><el-form-item :label="ot('productPageLayout')"><el-button v-if="!document.layout" @click="document.layout={mode:'columns',mainWidth:8,gap:'normal'}">{{ot('productConfigureLayout')}}</el-button><template v-else><el-select v-model="document.layout.mode"><el-option value="columns" :label="ot('productMainAndSidebar')"/><el-option value="grid" :label="ot('productSingleGrid')"/></el-select><el-input-number v-if="document.layout.mode==='columns'" v-model="document.layout.mainWidth" :min="4" :max="12" :aria-label="ot('productMainColumnWidth')"/><el-select v-model="document.layout.gap"><el-option value="compact" :label="ot('productGapCompactSpacing')"/><el-option value="normal" :label="ot('productGapNormalSpacing')"/><el-option value="comfortable" :label="ot('productGapComfortableSpacing')"/></el-select></template></el-form-item><p>{{ot('productPageReferencesHint')}}</p></template>
            <template v-if="document.kind==='agent-profile'"><el-form-item :label="ot('productAgentPrincipal')"><el-input v-model="document.principalId"/></el-form-item><el-form-item :label="ot('productInstructions')"><el-input v-model="document.instructions" type="textarea" :rows="6"/></el-form-item><el-form-item :label="ot('productToolReferences')"><el-input :model-value="document.tools.join('\n')" type="textarea" @update:model-value="updateProfileReferences('tools',$event)"/></el-form-item><el-form-item :label="ot('productContextReferences')"><el-input :model-value="document.contextViews.join('\n')" type="textarea" @update:model-value="updateProfileReferences('contextViews',$event)"/></el-form-item></template>
            <el-form-item v-if="'fields' in document" :label="ot('productDisplayFieldsPerLine')"><el-input :model-value="document.fields.join('\n')" type="textarea" @update:model-value="updateProjectionFields"/></el-form-item>
            <el-form-item v-if="document.kind==='collection-view'" :label="ot('productDefinitionBindings')"><el-input :model-value="JSON.stringify(document.parameters,null,2)" type="textarea" :rows="4" @change="updateCollectionParameters"/></el-form-item>
            <el-form-item v-if="document.kind==='collection-view'" :label="ot('productItemsShownPerPage')"><el-input-number v-model="document.pageSize" :min="1" :max="50"/></el-form-item>
-           <el-form-item v-if="document.kind==='metric-widget'" :label="ot('productDisplayFormatJson')"><el-input :model-value="document.format?JSON.stringify(document.format,null,2):''" type="textarea" :rows="3" placeholder='{"kind":"number","decimals":2,"unit":"人"}' @change="updateMetricFormat"/></el-form-item>
+           <el-form-item v-if="document.kind==='metric-widget'&&document.renderer==='chart'" :label="ot('ovBringChart')"><el-button @click="chartPicker=true">{{ot('ovBringChart')}}</el-button><code v-if="document.chartFile" class="reference-id">{{document.chartFile.dataset[0].dimensions.join(' · ')}}</code></el-form-item>
+           <el-form-item v-if="document.kind==='metric-widget'&&document.renderer!=='chart'" :label="ot('productDisplayFormatJson')"><el-input :model-value="document.format?JSON.stringify(document.format,null,2):''" type="textarea" :rows="3" placeholder='{"kind":"number","decimals":2,"unit":"人"}' @change="updateMetricFormat"/></el-form-item>
            <el-form-item v-if="document.kind==='action-view'" :label="ot('productReadOnlyParamsPerLine')"><el-input :model-value="document.readOnlyParameters.join('\n')" type="textarea" @change="updateReadOnlyParameters"/></el-form-item>
             <el-form-item v-if="document.kind==='object-projection'&&document.renderer==='full'" :label="ot('productObjectLayout')"><el-input :model-value="document.layout?JSON.stringify(document.layout,null,2):''" type="textarea" :rows="8" @change="updateObjectLayout"/><p>{{ot('productObjectLayoutHint')}}</p></el-form-item>
            <el-form-item v-if="document.kind==='page'" :label="ot('productTypedPageParams')"><el-input :model-value="JSON.stringify(document.params??{},null,2)" type="textarea" :rows="4" placeholder='{"selected":{"kind":"object","objectType":"Person"}}' @change="updatePageParameters"/></el-form-item>
@@ -290,6 +310,7 @@ async function remove() { if(!selected.value)return;await run(async()=>{await El
            <template v-if="'children' in document"><h3>{{ot('productComposedComponents')}}</h3><div v-for="(child,index) in children" :key="child.assetId" class="child-row"><span>{{productText(assets.find(asset=>asset.id===child.assetId)?.name ?? child.assetId)}}</span><el-select v-model="child.column"><el-option value="main" :label="ot('productMainColumn')"/><el-option value="sidebar" :label="ot('productSidebar')"/></el-select><el-button :disabled="index===0" @click="children.splice(index-1,0,...children.splice(index,1))">{{ot('productMoveUp')}}</el-button><el-button @click="children.splice(index,1)">{{ot('productRemove')}}</el-button></div><div class="child-row"><el-select v-model="childId" filterable remote :remote-method="searchChildren" :placeholder="ot('productSearchReusable')"><el-option v-for="asset in candidates" :key="asset.id" :label="productText(asset.name)" :value="asset.id"/></el-select><el-select v-model="childColumn"><el-option value="main" :label="ot('productMainColumn')"/><el-option value="sidebar" :label="ot('productSidebar')"/></el-select><el-button @click="addChild">{{ot('productAdd')}}</el-button></div></template>
         </template>
         <el-button text @click="toggleAdvanced">{{advanced?ot('productBackToForm'):ot('productEditFullJson')}}</el-button><el-input v-if="advanced" v-model="raw" type="textarea" :rows="22" spellcheck="false"/>
+        <DashboardChartPicker v-model="chartPicker" @pick="bringChart"/>
          </el-form>
       </main>
       <main v-else-if="selected" :key="selected.id">

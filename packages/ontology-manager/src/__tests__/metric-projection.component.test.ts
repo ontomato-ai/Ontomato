@@ -2,6 +2,7 @@ import {afterEach,describe,expect,it,vi} from 'vitest';
 import {createApp,h,nextTick,ref,type App} from 'vue';
 import {productAssetSchema} from '@ontomato/contracts/product-assets';
 import MetricProjectionRuntime from '../products/MetricProjectionRuntime.vue';
+import ProductAssetCatalog from '../products/ProductAssetCatalog.vue';
 import {installObjectViewHost} from './object-view-host';
 import {chartFile} from './chart-fixture';
 /** The platform chart is the shared component; this stub reports the file and the output it is given. */
@@ -50,5 +51,27 @@ describe('a MetricWidget chart',()=>{
     for(let i=0;i<8;i++){await new Promise(resolve=>setTimeout(resolve,0));await nextTick();}
     expect(reads.at(-1)).toEqual({year:2026});
     expect(actions.some(url=>url.includes('/skills'))).toBe(false);
+  });
+});
+
+describe('a chart MetricWidget',()=>{
+  it('asks for an existing chart when one is created and keeps only what the chart brings',async()=>{
+    const calls:string[]=[];
+    vi.stubGlobal('fetch',async(url:string)=>{
+      calls.push(url);
+      if(url.endsWith('/dashboards'))return Response.json({success:true,data:[{id:'board-1',name:'Sales',createdAt:0,updatedAt:0}]});
+      if(url.includes('/dashboards/board-1'))return Response.json({success:true,data:{id:'board-1',ownerId:'author',name:'Sales',createdAt:0,updatedAt:0,groups:[{id:'g',title:'Sales',metrics:[],charts:[{id:'card-1',name:'Orders by kind',query:{kind:'metric',metricId:'orders',parameters:{year:2026}},chartFile:{name:'orders.chart.json',content:chartFile()}}]}]}});
+      return Response.json({success:true,data:{items:[],total:0}});
+    });
+    const element=document.createElement('div');document.body.append(element);
+    app=createApp({render:()=>h(ProductAssetCatalog,{createKind:'metric-widget'})});installObjectViewHost(app);app.mount(element);
+    for(let i=0;i<10;i++){await new Promise(resolve=>setTimeout(resolve,0));await nextTick();}
+    const choose=Array.from(document.querySelectorAll('.el-overlay-dialog button')).find(button=>button.textContent?.trim()==='Bring in') as HTMLButtonElement;
+    expect(choose).toBeDefined();
+    choose.click();
+    for(let i=0;i<10;i++){await new Promise(resolve=>setTimeout(resolve,0));await nextTick();}
+    // The form now holds the chart the card brought: its file's columns.
+    expect(element.textContent).toContain('kind · amount');
+    expect(calls.some(url=>url.includes('/dashboards'))).toBe(true);
   });
 });

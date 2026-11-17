@@ -4,6 +4,7 @@ import type { DataAdaptersData } from "@ontomato/contracts/data-adapters";
 import type { ObjectViewDocument, ObjectViewState } from "@ontomato/contracts/object-views";
 import { createActionsClient } from "./clients/actions";
 import { createProductsClient } from "./clients/products";
+import type { DashboardDetail, DashboardListItem } from "@ontomato/contracts/dashboard";
 import { createMetricViewsClient } from "./clients/metric-views";
 import type { MessageKey, TextParams } from "./i18n";
 
@@ -694,6 +695,20 @@ export function createManagerClient(
       : [];
   }
 
+  /**
+   * The author's own dashboards and one dashboard's cards: the charts a view or a product chart can be brought in from.
+   * Reading uses the author's own credentials, so no chart grant is involved.
+   */
+  async function loadDashboards() {
+    const response = await send("/dashboards", { method: "GET" }, "");
+    return (response.data ?? []) as DashboardListItem[];
+  }
+
+  async function loadDashboard(id: string) {
+    const response = await send(`/dashboards/${encodeURIComponent(id)}`, { method: "GET" }, "");
+    return response.data as DashboardDetail;
+  }
+
   async function loadViewLinks(className: string, primaryKey: string, relationship: string, direction: "incoming" | "outgoing", offset: number) {
     const ontology = await loadOntology();
     const relation = ontology.relations.find(item => item.relationship === relationship);
@@ -894,6 +909,8 @@ export function createManagerClient(
     /** Action execution: the same client apps get from the SDK. */
     actions: createActionsClient(transport),
     loadViewLinks,
+    loadDashboards,
+    loadDashboard,
     loadSkills,
     request,
     loadInstanceGraphStatistics,

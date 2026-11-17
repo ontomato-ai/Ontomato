@@ -11,6 +11,8 @@ import type { OntologyObject, OntologyRelation, SmartAsset } from "../api";
 import ObjectViewRuntime from "./ObjectViewRuntime.vue";
 import ViewBindingEditor from "./ViewBindingEditor.vue";
 import { instanceName } from "./instance-name";
+import type { MetricReferenceChartEntry } from "@ontomato/contracts/dashboard";
+import DashboardChartPicker from "../components/DashboardChartPicker.vue";
 
 const props = defineProps<{ className: string; initialPrimaryKey?: string }>();
 const emit = defineEmits<{ back: []; open: [reference: ObjectReference] }>();
@@ -50,10 +52,11 @@ const variableValue = ref("");
 const tab = computed(() => document.value.tabs.find(item => item.id === selectedTab.value) || document.value.tabs[0]);
 const section = computed(() => tab.value?.sections.find(item => item.id === selectedSection.value) || tab.value?.sections[0]);
 const widget = computed(() => section.value?.widgets.find(item => item.id === selectedWidget.value));
-/** The selected widget as a component without a chart: its fields, text and interactions. */
 /** The selected widget without a chart: its fields, text and interactions. */
 const detail = computed(() => widget.value as NonChartViewWidget);
-const kinds: NonChartViewWidget["kind"][] = ["text", "properties", "links"];
+/** A chart enters the view only by bringing in an existing one: the palette offers that instead of a blank chart. */
+const kinds: ViewWidget["kind"][] = ["text", "properties", "links", "chart"];
+const picker = ref(false);
 const reference = computed(() => previewReference.value);
 const bindingVariables = computed(() => [...new Set([
   ...Object.keys(document.value.variables),
@@ -140,7 +143,7 @@ async function save(publish = false) {
   busy.value = true;
   error.value = "";
   try {
-    const validated = objectViewDocumentSchema.parse(document.value);
+        const validated = objectViewDocumentSchema.parse(document.value);
     const issues = state.value.assetId?objectProjectionIssues(validated):objectViewProductIssues(validated);
     if (issues.length) throw new Error(issues.join("\n"));
     state.value = await client.saveObjectView(validated, form, state.value.revision, description.value);
@@ -167,13 +170,27 @@ async function restoreVersion() {
   selectedSection.value = document.value.tabs[0].sections[0].id;
   selectedWidget.value = "";
 }
-function addWidget(kind: NonChartViewWidget["kind"]) {
+function addWidget(kind: ViewWidget["kind"]) {
   if (!section.value) return;
+  if (kind === "chart") { picker.value = true; return; }
   const item = createViewWidget(kind);
   item.title = ot(widgetMessageKeys[kind]);
   section.value.widgets.push(item);
   selectedWidget.value = item.id;
   mobilePane.value = "canvas";
+}
+/** The brought-in chart is this version's own copy: its file, its MetricView and the source parameters as fixed values. */
+function bringChart(chart: MetricReferenceChartEntry) {
+  if (!section.value) return;
+  const item = createViewWidget("chart", {
+    resourceId: chart.query.metricId,
+    chartFile: chart.chartFile.content,
+    parameters: Object.fromEntries(Object.entries(chart.query.parameters).map(([name, value]) => [name, { source: "literal" as const, value }])),
+  });
+  item.title = chart.name;
+  section.value.widgets.push(item);
+  selectedWidget.value = item.id;
+  mobilePane.value = "settings";
 }
 function widgetSummary(item: ViewWidget) {
   if (item.kind === "text") return item.text;
@@ -252,7 +269,7 @@ onBeforeUnmount(() => { generation++; sampleRequest++; objectSearchRequest++; wi
     <nav class="pane-navigation" :aria-label="ot('ovEditorPanels')"><el-button v-for="pane in (['components', 'canvas', 'settings'] as const)" :key="pane" :type="mobilePane === pane ? 'primary' : 'default'" :aria-pressed="mobilePane === pane" @click="mobilePane = pane">{{ ot(({ components: 'ovComponents', canvas: 'ovCanvas', settings: 'ovSettings' } as const)[pane]) }}</el-button></nav>
     <div class="builder-body" :data-pane="mobilePane" :inert="busy || !loaded">
       <aside class="palette">
-        <h3>{{ ot('ovComponents') }}</h3><el-button v-for="kind in kinds" :key="kind" :disabled="busy || preview" @click="addWidget(kind)">{{ ot(widgetMessageKeys[kind]) }}</el-button>
+        <h3>{{ ot('ovComponents') }}</h3><el-button v-for="kind in kinds" :key="kind" :disabled="busy || preview" @click="addWidget(kind)">{{ ot(kind === 'chart' ? 'ovBringChart' : widgetMessageKeys[kind]) }}</el-button>
         <h3>{{ ot('ovObjectPreview') }}</h3>
         <el-select v-model="previewKey" class="preview-object-select" filterable remote clearable :remote-method="searchPreviewObjects" :loading="searchingObjects" :placeholder="ot('ovSearchObjects')" :aria-label="ot('ovSearchObjects')" @visible-change="$event && searchPreviewObjects('')" @change="selectPreviewObject">
           <el-option v-for="option in objectOptions" :key="option.value" :value="option.value" :label="option.label" :title="option.label" />
@@ -280,7 +297,7 @@ onBeforeUnmount(() => { generation++; sampleRequest++; objectSearchRequest++; wi
             <div class="layout-controls"><el-input v-model="item.title" :placeholder="ot('ovSectionTitle')" @focus="selectedSection = item.id" /><el-button :disabled="tab.sections.length === 1" @click="tab.sections.splice(tab.sections.indexOf(item), 1)">{{ ot('ovDeleteSection') }}</el-button></div>
             <div class="canvas-grid">
               <article v-for="(itemWidget, index) in item.widgets" :key="itemWidget.id" :class="['canvas-widget', { selected: widget?.id === itemWidget.id }]" :style="{ gridColumn: 'span ' + itemWidget.span }" draggable="true" @dragstart="dragging = itemWidget.id" @dragover.prevent @drop.stop.prevent="drop(item.id, index)" @click="selectedWidget = itemWidget.id; selectedSection = item.id">
-                <div class="widget-tools"><span>{{ ot(widgetMessageKeys[itemWidget.kind]) }}</span><el-button text size="small" :icon="ArrowUp" :title="ot('ovMoveUp')" :aria-label="ot('ovMoveUp')" :disabled="index === 0" @click.stop="moveWidget(itemWidget.id, item.id, index - 1)" /><el-button text size="small" :icon="ArrowDown" :title="ot('ovMoveDown')" :aria-label="ot('ovMoveDown')" :disabled="index === item.widgets.length - 1" @click.stop="moveWidget(itemWidget.id, item.id, index + 1)" /><el-button class="configure-widget" text size="small" @click.stop="selectedWidget = itemWidget.id; selectedSection = item.id; mobilePane = 'settings'">{{ ot('ovEdit') }}</el-button></div>
+                <div class="widget-tools"><span>{{ ot(itemWidget.kind === 'chart' ? 'ovBringChart' : widgetMessageKeys[itemWidget.kind]) }}</span><el-button text size="small" :icon="ArrowUp" :title="ot('ovMoveUp')" :aria-label="ot('ovMoveUp')" :disabled="index === 0" @click.stop="moveWidget(itemWidget.id, item.id, index - 1)" /><el-button text size="small" :icon="ArrowDown" :title="ot('ovMoveDown')" :aria-label="ot('ovMoveDown')" :disabled="index === item.widgets.length - 1" @click.stop="moveWidget(itemWidget.id, item.id, index + 1)" /><el-button class="configure-widget" text size="small" @click.stop="selectedWidget = itemWidget.id; selectedSection = item.id; mobilePane = 'settings'">{{ ot('ovEdit') }}</el-button></div>
                 <strong>{{ itemWidget.title }}</strong><p>{{ widgetSummary(itemWidget) }}</p>
               </article>
             </div><p v-if="!item.widgets.length" @click="selectedSection = item.id">{{ ot('ovEmptySection') }}</p>
@@ -290,11 +307,12 @@ onBeforeUnmount(() => { generation++; sampleRequest++; objectSearchRequest++; wi
       <aside class="inspector">
         <h3>{{ ot('ovViewSettings') }}</h3><label>{{ ot('ovName') }}<el-input v-model="document.title" /></label><label>{{ ot('ovTitleProperty') }}<el-select v-model="document.titleField" clearable><el-option v-for="attr in objectType?.attrs.filter(item => item.enable !== false && item.bizzkeyBool)" :key="attr.name" :value="attr.name" :label="attr.showName" /></el-select></label>
         <template v-if="widget && !preview">
-          <h3>{{ ot('ovWidgetSettings', { kind: ot(widgetMessageKeys[detail.kind]) }) }}</h3><label>{{ ot('ovName') }}<el-input v-model="detail.title" /></label>
+          <h3>{{ ot('ovWidgetSettings', { kind: ot(widget.kind === 'chart' ? 'ovBringChart' : widgetMessageKeys[detail.kind]) }) }}</h3><label>{{ ot('ovName') }}<el-input v-model="detail.title" /></label>
           <div class="widget-dimensions"><label>{{ ot('ovWidth') }}<el-input-number v-model="detail.span" controls-position="right" :min="1" :max="12" :aria-label="ot('ovWidth')" /></label><label v-if="['chart', 'table', 'links'].includes(detail.kind)">{{ ot('ovHeight') }}<el-input-number v-model="detail.height" controls-position="right" :min="80" :max="1200" :step="40" :aria-label="ot('ovHeight')" /></label></div>
           <label v-if="['properties', 'table', 'links'].includes(detail.kind)">{{ ot('ovFields') }}<el-select v-if="detail.kind === 'properties'" v-model="detail.fields" multiple clearable><el-option v-for="attr in objectType?.attrs" :key="attr.name" :value="attr.name" :label="attr.showName" /></el-select><el-input v-else :model-value="detail.fields.join(', ')" :placeholder="ot('ovFieldNames')" @update:model-value="detail.fields = $event.split(',').map(value => value.trim()).filter(Boolean)" /></label>
           <label v-if="['text', 'button', 'action', 'input'].includes(detail.kind)">{{ ot('ovText') }}<el-input v-model="detail.text" type="textarea" :autosize="{ minRows: 3, maxRows: 8 }" /></label>
-          <label v-if="detail.resourceId">{{ ot('ovMetricView') }}<el-input :model-value="detail.resourceId" readonly /><el-button @click="detail.resourceId=''">移除旧能力绑定</el-button></label>
+          <label v-if="widget.kind === 'chart'">{{ ot('ovMetricView') }}<el-input :model-value="widget.resourceId" readonly /><el-button @click="picker = true">{{ ot('ovBringChart') }}</el-button></label>
+          <label v-else-if="detail.resourceId">{{ ot('ovMetricView') }}<el-input :model-value="detail.resourceId" readonly /><el-button @click="detail.resourceId=''">移除旧能力绑定</el-button></label>
           <label v-if="detail.kind === 'action'">{{ ot('ovAction') }}<el-select v-model="detail.resourceId" filterable><el-option v-for="asset in actions" :key="asset.id" :value="asset.id!" :label="asset.name" /></el-select></label>
           <section v-if="detail.resourceId" class="parameter-settings">
             <h4>{{ ot('ovParameterBindings') }}</h4>
@@ -330,6 +348,7 @@ onBeforeUnmount(() => { generation++; sampleRequest++; objectSearchRequest++; wi
         <p v-else-if="!preview" class="inspector-hint">{{ ot('ovInspectorHint') }}</p>
       </aside>
     </div>
+    <DashboardChartPicker v-model="picker" @pick="bringChart" />
   </div>
 </template>
 <style scoped>
