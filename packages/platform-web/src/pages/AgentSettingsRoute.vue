@@ -34,7 +34,6 @@ const route = useRoute();
 const router = useRouter();
 const { ensureLoaded } = useAgentDefinitions();
 
-const paired = computed(() => props.address !== null);
 /** The page's own address: the conversation's parameter, or the browser's. */
 const address = computed(() => (props.address !== null ? props.address : route.fullPath));
 const query = computed(() => Object.fromEntries(new URLSearchParams(address.value.split("?")[1] ?? "")));
@@ -55,13 +54,14 @@ const savedAddress = computed(() =>
 );
 
 /**
- * Where the page moves to: beside a conversation the host's parameter (it turns the address into `?page=`); at the
- * page's own address, the router, which needs the path and its query rather than an address string.
+ * Where the page moves to: beside a conversation the host's parameter (it turns the address into `?page=`); at its own
+ * address the router, which needs the path and its query rather than an address string. A saved draft's handoff is not a
+ * step back, so it replaces the address rather than adding one.
  */
 function openAddress(next: string) {
   if (props.navigate) return props.navigate(next);
   const [path, search] = next.split("?");
-  void router.push({ path: path!, query: Object.fromEntries(new URLSearchParams(search ?? "")) });
+  void router.replace({ path: path!, query: Object.fromEntries(new URLSearchParams(search ?? "")) });
 }
 
 /** A different page of the same settings (one agent, a new one, the list) keeps the rest of the address's query. */

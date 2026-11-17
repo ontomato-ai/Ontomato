@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
 import { PlatformPageHeader, useLeaveConfirmation, useUnsavedChanges } from "@ontomato/platform-shell";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
@@ -50,7 +49,6 @@ const emit = defineEmits<{
   reloadModelOptions: [];
 }>();
 const { t, locale } = useI18n();
-const route = useRoute();
 
 interface Form {
   name: string;
@@ -143,15 +141,14 @@ const promptPreview = ref(false);
  * agent as it was read, the fields it changed are marked, and nothing is written here: until Save the owner holds the
  * old values. A draft that arrives while this form has unsaved changes asks first, and dropping it only empties the form.
  */
-const router = useRouter();
 const leaving = useLeaveConfirmation();
 /**
- * The page's address and drafts: beside a conversation the settings are a parameter of the agent platform's, so the
- * mount tells this editor where it is. Without that, it is the address the browser shows.
+ * The page's address and its draft: the page that mounts this editor provides them, so beside a conversation they are the
+ * agent platform's parameter and at the page's own address the address itself.
  */
 const settingsAddress = useAgentSettingsAddress();
-const link = settingsAddress ? settingsAddress.draft.value : pageDraftLink(route.query);
-const pagePath = settingsAddress ? settingsAddress.address.value.split("?")[0]! : route.path;
+const link = settingsAddress.draft.value;
+const pagePath = settingsAddress.address.value.split("?")[0]!;
 const changed = ref<ReadonlySet<string>>(new Set());
 const draftExecutionChanged = ref(false);
 if (link) {
@@ -262,12 +259,8 @@ async function save() {
     baseline.value = JSON.stringify(form.value);
     changed.value = new Set();
     // The draft was this page's own handoff: the saved form is what the address reopens.
-    if (link) {
-      const { draftSessionId: _session, draftRunId: _run, draftPath: _path, ...query } = route.query;
-      // Beside a conversation the draft lives in the conversation's parameter; at the page's own address in its query.
-      if (settingsAddress) settingsAddress.go(settingsAddress.savedAddress.value);
-      else void router.replace({ query });
-    }
+    // The draft was this page's own handoff: the address without it is what reopens, wherever the page is mounted.
+    if (link) settingsAddress.go(settingsAddress.savedAddress.value);
     ElMessage.success(props.agent ? t("analysis.agentUpdated") : t("analysis.agentCreated"));
     emit("saved", saved);
   } catch (error) {

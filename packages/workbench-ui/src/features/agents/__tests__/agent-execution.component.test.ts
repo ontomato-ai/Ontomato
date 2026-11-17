@@ -9,6 +9,7 @@ import { workbenchI18n } from "../../../i18n";
 import AgentEditor from "../components/AgentEditor.vue";
 import AgentExecutionField from "../components/AgentExecutionField.vue";
 import { agentDefinitionsApi } from "../api";
+import { editorAddress } from "./editor-address";
 
 /*
  * Whose permissions an agent runs with: a domain governance administrator chooses one member, everyone else reads the
@@ -61,7 +62,7 @@ async function mountEditor(stored: string | null, canSet: boolean, selected?: Pa
   await router.push(`/ontology/agents/${AGENT}`);
   const wrapper = mount(AgentEditor, {
     props: { agent: agent(stored), classes: [], relations: [], outlineLoading: false, modelOptions: options, modelOptionsFailed: false },
-    global,
+    global: { ...global, provide: editorAddress(`/ontology/agents/${AGENT}`).provide },
     attachTo: document.body,
   });
   wrappers.push(wrapper);
@@ -88,7 +89,7 @@ describe("an agent's execution permission", () => {
     await router.push(`/ontology/agents/${AGENT}`);
     const wrapper = mount(AgentEditor, {
       props: { agent: agent(MEMBER), classes: [], relations: [], outlineLoading: false, modelOptions: options, modelOptionsFailed: false },
-      global, attachTo: document.body,
+      global: { ...global, provide: editorAddress(`/ontology/agents/${AGENT}`).provide }, attachTo: document.body,
     });
     wrappers.push(wrapper);
     await flushPromises();
@@ -101,7 +102,7 @@ describe("an agent's execution permission", () => {
     const create = vi.spyOn(agentDefinitionsApi, "create").mockImplementation(async (written) => ({ ...agent(null), ...written }) as AssistantAgentDefinition);
     const wrapper = mount(AgentEditor, {
       props: { agent: null, classes: [], relations: [], outlineLoading: false, modelOptions: options, modelOptionsFailed: false },
-      global, attachTo: document.body,
+      global: { ...global, provide: editorAddress("/ontology/agents/new").provide }, attachTo: document.body,
     });
     wrappers.push(wrapper);
     await flushPromises();

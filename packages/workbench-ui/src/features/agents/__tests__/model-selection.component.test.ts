@@ -10,6 +10,7 @@ import { workbenchI18n } from "../../../i18n";
 import AgentEditor from "../components/AgentEditor.vue";
 import ModelSelectionSelect from "../components/ModelSelectionSelect.vue";
 import { agentDefinitionsApi } from "../api";
+import { editorAddress } from "./editor-address";
 
 const i18n = workbenchI18n();
 const t = i18n.global.t as (key: string, params?: Record<string, unknown>) => string;
@@ -67,7 +68,7 @@ async function mountEditor(modelId: string | null) {
   }) as AssistantAgentDefinition);
   const wrapper = mount(AgentEditor, {
     props: { agent: agent(modelId), classes: [], relations: [], outlineLoading: false, modelOptions: options, modelOptionsFailed: false },
-    global,
+    global: { ...global, provide: editorAddress("/agents/settings/agent-1").provide },
     attachTo: document.body,
   });
   wrappers.push(wrapper);

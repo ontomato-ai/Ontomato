@@ -8,6 +8,7 @@ import { workbenchI18n } from "../../../i18n";
 import AgentEditor from "../components/AgentEditor.vue";
 import DataScopeGraph from "../components/DataScopeGraph.vue";
 import { agentDefinitionsApi } from "../api";
+import { editorAddress } from "./editor-address";
 
 /*
  * The data scope is chosen on the ontology graph (chosen / adjacent / not in scope) and saved as the same class-name
@@ -111,7 +112,7 @@ describe("agent editor data scope", () => {
     }) as AssistantAgentDefinition);
     const wrapper = mount(AgentEditor, {
       props: { agent: agent([]), classes, relations, outlineLoading: false, modelOptions: null, modelOptionsFailed: false },
-      global,
+      global: { ...global, provide: editorAddress("/agents/settings/agent-1").provide },
       attachTo: document.body,
     });
     wrappers.push(wrapper);

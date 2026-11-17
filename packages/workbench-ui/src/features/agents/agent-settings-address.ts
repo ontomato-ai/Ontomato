@@ -22,7 +22,12 @@ export interface AgentSettingsAddress {
 
 export const agentSettingsAddressKey: InjectionKey<AgentSettingsAddress> = Symbol("agent-settings-address");
 
-/** The address the settings page is shown at; a page mounted without one falls back to the browser's address. */
-export function useAgentSettingsAddress(): AgentSettingsAddress | null {
-  return inject(agentSettingsAddressKey, null);
+/**
+ * The address the settings page is shown at. Its editor is mounted only by `AgentSettingsRoute`, which provides this, so
+ * a missing one is a mounting mistake rather than a case to fall back from.
+ */
+export function useAgentSettingsAddress(): AgentSettingsAddress {
+  const address = inject(agentSettingsAddressKey, null);
+  if (!address) throw new Error("The agents' settings are read inside the page that mounts them, which provides their address");
+  return address;
 }

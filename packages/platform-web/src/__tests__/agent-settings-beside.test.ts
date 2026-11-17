@@ -11,7 +11,6 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
 import en from "@ontomato/workbench-ui/locales/en";
 import { BusinessWorkbench } from "@ontomato/workbench-ui/features/workbench";
-import { useAgentSettingsAddress } from "@ontomato/workbench-ui/features/agents";
 import elementEn from "element-plus/es/locale/lang/en";
 import { pilotPageResolver } from "../pilot-pages";
 

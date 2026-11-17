@@ -11,7 +11,6 @@ import {
 import { usePageAccess, usePilotPage } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
-import { AgentSettingsNav, AgentSettingsPage, dataEngineTransport, useAgentDefinitions } from "../../agents";
 import { getWorkbenchAppearance } from "../api";
 import { createAssistantClient, createAssistantFeedback } from "../assistant-host";
 import { readRememberedAgent, readRememberedSession, rememberAgent, rememberSession } from "../remembered-agent";
