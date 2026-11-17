@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+import { validateStoredChartFile } from "@ontomato/contracts/chart-data";
 import type { MetricReferenceChartEntry } from "@ontomato/contracts/dashboard";
 import { prepareChartImport } from "../charts/import";
 import { randomUUID } from "node:crypto";
@@ -147,24 +149,30 @@ export async function deleteDashboardChart(
   }
   await saveDashboard(ownerId, domainId, detail);
 }
-export async function replaceDashboardLayout(ownerId: string, domainId: string, input: unknown) {
+export async function replaceDashboardLayout(ownerId: string, domainId: string, input: unknown, credentials: AssistantCredentials) {
   const body=parseDashboardInput(dashboardReplaceLayoutSchema,input);
   const detail=ensureDashboard(ownerId,await getDashboard(ownerId,domainId,body.id));
   const charts=new Map(detail.groups.flatMap(group=>group.charts).map(card=>[card.id,card]));
   const metrics=new Map(detail.groups.flatMap(group=>group.metrics).map(card=>[card.id,card]));
-  detail.groups=body.groups.map(group=>({
+  const client=new DashboardMetricClient(domainId,credentials);
+  detail.groups=await Promise.all(body.groups.map(async group=>({
     id:group.id,title:group.title,
-    charts:group.charts.map(patch=>{
+    charts:await Promise.all(group.charts.map(async patch=>{
       const card=charts.get(patch.id);
       if(!card)throw new HttpError(400,"Layout can only contain saved cards","INVALID_REQUEST");
+      if(patch.chartFile&&!isDeepStrictEqual(patch.chartFile,card.chartFile)){
+        const metric=await client.describe(card.query.metricId);
+        const checked=validateStoredChartFile(patch.chartFile.content,metric.outputColumns);
+        if(!checked.ok)throw new HttpError(422,"Chart file does not match MetricView output","CARD_OUTPUT_MISMATCH",{cardId:card.id,metricId:card.query.metricId,missingColumns:checked.missingColumns,issues:checked.issues});
+      }
       return {...card,...patch};
-    }),
+    })),
     metrics:group.metrics.map(patch=>{
       const card=metrics.get(patch.id);
       if(!card)throw new HttpError(400,"Layout can only contain saved cards","INVALID_REQUEST");
       return {...card,...patch};
     }),
-  }));
+  })));
   await saveDashboard(ownerId,domainId,detail);
 }
 export async function renameDashboardMetric(
@@ -209,7 +217,7 @@ export async function addDashboardChartFile(ownerId:string,domainId:string,body:
     group=findGroup(detail,body.target.groupId);
   }
   const prepared=await prepareChartImport({userId:ownerId,domainId},credentials,body.source);
-  const card:MetricReferenceChartEntry={id:randomUUID(),name:prepared.file.name,query:prepared.query,chartFile:prepared.file,source:prepared.source};
+  const card:MetricReferenceChartEntry={id:randomUUID(),name:prepared.file.name.replace(/\.chart\.json$/,""),query:prepared.query,chartFile:prepared.file,source:prepared.source};
   if(!detail){
     group={id:randomUUID(),title:prepared.metric.name,charts:[card],metrics:[]};
     detail=await createDashboard({ownerId,domainId,name:(body.target as {name:string}).name,groups:[group]});

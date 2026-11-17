@@ -218,7 +218,8 @@ router.post(
     await replaceDashboardLayout(
       (req as AuthenticatedRequest).userId,
       requireDomainId(req as AuthenticatedRequest),
-      req.body || {}
+      req.body || {},
+      {token:(req as AuthenticatedRequest).token,apiKey:(req as AuthenticatedRequest).apiKey,locale:(req as AuthenticatedRequest).locale}
     );
     res.json({ success: true });
   })
