@@ -5,6 +5,7 @@ import { ensurePlatformEventCursorSchema } from "./20261103-platform-events/sche
 import { ensureOpsDiagnosisSchema } from "./20261029-ops-diagnosis/schema";
 import { ensureAssistantSchema } from "./20261028-assistant/schema";
 import { ensureAssistantDefaultPromptSchema } from "./20261105-assistant-default-prompts/schema";
+import { ASSISTANT_CHART_SKILLS_NAME, ASSISTANT_CHART_SKILLS_VERSION, migrateAssistantChartSkills } from "./20261118-assistant-chart-skills/migration";
 import {
   ASSISTANT_DEFAULT_PROMPTS_NAME,
   ASSISTANT_DEFAULT_PROMPTS_VERSION,
@@ -134,6 +135,23 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
           return migrated;
         });
         logger.info("Report presentation skills replaced", { version: migration.version, agents: result.agents });
+      },
+    },
+  },
+  {
+    directory: "20261118-assistant-chart-skills",
+    ensureSchema: () => Promise.resolve(),
+    migration: {
+      version: ASSISTANT_CHART_SKILLS_VERSION,
+      name: ASSISTANT_CHART_SKILLS_NAME,
+      run: async (client, migration) => {
+        if (await isMigrationApplied(client, migration.version)) return;
+        const result = await inMigrationTransaction(client, async () => {
+          const migrated = await migrateAssistantChartSkills(client);
+          await recordMigration(client, migration.version, migration.name);
+          return migrated;
+        });
+        logger.info("Assistant chart defaults migrated", { version: migration.version, ...result });
       },
     },
   },
