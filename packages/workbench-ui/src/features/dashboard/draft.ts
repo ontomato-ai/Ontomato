@@ -1,7 +1,6 @@
 import { z } from "zod";
 import type { PageDraft } from "@ontomato/contracts/page-draft";
 import {
-  dashboardGroupSchema,
   dashboardReplaceLayoutSchema,
   dashboardSaveParametersSchema,
   type DashboardDetail,
@@ -38,25 +37,18 @@ export const dashboardDraftOperations = {
 export type DashboardDraftOperation = keyof typeof dashboardDraftOperations;
 
 /** The board one draft addresses, by the operation's own dashboard field. */
-function dashboardIdOf(operation: DashboardDraftOperation, form: unknown): string {
+function dashboardIdOf(form: unknown): string {
   const body = form as { id?: string; dashboardId?: string };
   return String(body.dashboardId ?? body.id ?? "");
 }
 
-/** The card, group or metric a draft addresses; a layout addresses every card of the board at once. */
-export type DraftAddress = { kind: "chart" | "metric"; id: string } | { kind: "group"; id: string };
-
-function addressOf(operation: DashboardDraftOperation, form: unknown): DraftAddress | null {
-  const body = form as { chartId?: string; metricId?: string; groupId?: string; groups?: { id: string; charts: { id: string }[]; metrics: { id: string }[] }[] };
-  switch (operation) {
-    case "dashboard.chart.rename": return { kind: "chart", id: body.chartId! };
-    case "dashboard.metric.rename": return { kind: "metric", id: body.metricId! };
-    case "dashboard.group.rename": return { kind: "group", id: body.groupId! };
-    case "dashboard.layout": return null;
-    case "dashboard.rename":
-    case "dashboard.card.parameters": return { kind: "chart", id: (body as { cardId?: string }).cardId ?? "" };
-  }
-}
+/**
+ * The object a draft changes inside the board: a group, a card by its own kind, or the board itself. A layout names
+ * the whole board and so addresses no single object.
+ */
+export type DraftAddress =
+  | { kind: "board" }
+  | { kind: "group" | "chart" | "metric"; id: string };
 
 /** The board as the page reads it: every group, chart and number card the draft may name. */
 export type BoardIdentity = {
@@ -84,14 +76,42 @@ export class DraftRejected extends Error {
 }
 
 /**
- * A draft the page accepted: its save action, the board it addresses, and its body once this operation's own schema
- * has read it. The body is the page's save request, so the page posts it as it is.
+ * The object one operation changes, resolved against the board: a rename names one object, a parameter edit names a
+ * card of either kind, and the board's own rename or a layout names no card.
+ */
+function addressOf(operation: DashboardDraftOperation, form: unknown, board: BoardIdentity): DraftAddress {
+  const body = form as { chartId?: string; metricId?: string; groupId?: string; cardId?: string };
+  switch (operation) {
+    case "dashboard.rename":
+      return { kind: "board" };
+    case "dashboard.group.rename":
+      if (!board.groups.has(body.groupId!)) throw new DraftRejected(`This dashboard has no group ${body.groupId}`);
+      return { kind: "group", id: body.groupId! };
+    case "dashboard.chart.rename":
+      if (!board.charts.has(body.chartId!)) throw new DraftRejected(`This dashboard has no chart ${body.chartId}`);
+      return { kind: "chart", id: body.chartId! };
+    case "dashboard.metric.rename":
+      if (!board.metrics.has(body.metricId!)) throw new DraftRejected(`This dashboard has no number card ${body.metricId}`);
+      return { kind: "metric", id: body.metricId! };
+    // A number card carries parameters too, so a card is looked up among both kinds and keeps the kind it is.
+    case "dashboard.card.parameters":
+      if (board.charts.has(body.cardId!)) return { kind: "chart", id: body.cardId! };
+      if (board.metrics.has(body.cardId!)) return { kind: "metric", id: body.cardId! };
+      throw new DraftRejected(`This dashboard has no card ${body.cardId}`);
+    case "dashboard.layout":
+      return { kind: "board" };
+  }
+}
+
+/**
+ * A draft the page accepted: its save action, the board it addresses, the object it changes, and its body once this
+ * operation's own schema has read it. The body is the page's save request, so the page posts it as it is.
  */
 export type AcceptedDraft = {
   operation: DashboardDraftOperation;
   id: string;
   form: unknown;
-  address: DraftAddress | null;
+  address: DraftAddress;
 };
 
 /**
@@ -104,14 +124,10 @@ export function acceptDraft(draft: PageDraft<Record<string, unknown>>, board: Bo
   const operation = draft.operation as DashboardDraftOperation;
   const parsed = dashboardDraftOperations[operation].safeParse(draft.form);
   if (!parsed.success) throw new DraftRejected(`This draft's ${operation} body is invalid: ${parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")}`);
-  const id = dashboardIdOf(operation, parsed.data);
+  const id = dashboardIdOf(parsed.data);
   if (draft.target.id !== undefined && draft.target.id !== id) throw new DraftRejected("This draft names two different dashboards");
   if (id !== board.id) throw new DraftRejected("This draft is for another dashboard");
-  const address = addressOf(operation, parsed.data);
-  if (address) {
-    const known = address.kind === "group" ? board.groups : address.kind === "chart" ? board.charts : board.metrics;
-    if (!known.has(address.id)) throw new DraftRejected(`This dashboard has no ${address.kind} ${address.id}`);
-  }
+  const address = addressOf(operation, parsed.data, board);
   if (operation === "dashboard.layout") {
     // A layout names the whole board: every group, card and number card it lists must be this board's own.
     const layout = parsed.data as { groups: { id: string; charts: { id: string }[]; metrics: { id: string }[] }[] };
@@ -134,11 +150,20 @@ export type CardDraft = {
   layout?: DashboardLayout;
 };
 
+/** A draft's changes to the board as the reader sees them; nothing here is saved. */
+export type DraftBoard = {
+  /** The board's name as the draft has it, when the draft renames the board. */
+  boardName?: string;
+  groups: DashboardDetail["groups"];
+  cards: Map<string, CardDraft>;
+  groupsRenamed: Map<string, string>;
+};
+
 /**
  * The board as the reader sees it while a draft is open: the saved board with the draft's own changes laid over it.
  * Nothing here is saved, and the saved board stays as the server returned it.
  */
-export function applyDraft(detail: DashboardDetail, draft: AcceptedDraft): { groups: DashboardDetail["groups"]; cards: Map<string, CardDraft>; groupsRenamed: Map<string, string> } {
+export function applyDraft(detail: DashboardDetail, draft: AcceptedDraft): DraftBoard {
   const cards = new Map<string, CardDraft>();
   const groupsRenamed = new Map<string, string>();
   const form = draft.form as {
@@ -147,7 +172,7 @@ export function applyDraft(detail: DashboardDetail, draft: AcceptedDraft): { gro
   };
   switch (draft.operation) {
     case "dashboard.rename":
-      return { groups: detail.groups, cards, groupsRenamed };
+      return { boardName: form.name, groups: detail.groups, cards, groupsRenamed };
     case "dashboard.group.rename":
       groupsRenamed.set(form.groupId!, form.dimensionName!);
       return { groups: detail.groups.map((group) => (group.id === form.groupId ? { ...group, title: form.dimensionName! } : group)), cards, groupsRenamed };
@@ -168,7 +193,8 @@ export function applyDraft(detail: DashboardDetail, draft: AcceptedDraft): { gro
         if (!saved) continue;
         const change: CardDraft = {};
         if (saved.name !== undefined && saved.name !== card.name) change.name = saved.name;
-        if (saved.chartFile) change.chartFile = { name: saved.chartFile.name, content: saved.chartFile.content };
+        // A file this board already saved is not a change, however many times a layout names it.
+        if (saved.chartFile && !sameJson(saved.chartFile.content, card.chartFile.content)) change.chartFile = { name: saved.chartFile.name, content: saved.chartFile.content };
         if (saved.layout && (saved.layout.colSpan !== card.layout?.colSpan || saved.layout.rowSpan !== card.layout?.rowSpan)) change.layout = saved.layout;
         if (Object.keys(change).length) cards.set(card.id, change);
       }
@@ -187,7 +213,8 @@ export function applyDraft(detail: DashboardDetail, draft: AcceptedDraft): { gro
           title: entry.title,
           charts: saved.charts.map((card) => {
             const next = entry.charts.find((chart) => chart.id === card.id)!;
-            return { ...card, name: next.name ?? card.name, layout: next.layout ?? card.layout, ...(next.chartFile ? { chartFile: next.chartFile as unknown as typeof card.chartFile } : {}) };
+            const file = next.chartFile && !sameJson(next.chartFile.content, card.chartFile.content) ? next.chartFile : card.chartFile;
+            return { ...card, name: next.name ?? card.name, layout: next.layout ?? card.layout, chartFile: file as typeof card.chartFile };
           }),
           metrics: saved.metrics.map((card) => {
             const next = entry.metrics.find((metric) => metric.id === card.id)!;
@@ -200,15 +227,23 @@ export function applyDraft(detail: DashboardDetail, draft: AcceptedDraft): { gro
   }
 }
 
+/** Two chart files are the same file when they read the same, wherever their keys stand. */
+function sameJson(left: unknown, right: unknown): boolean {
+  return canonical(left) === canonical(right);
+}
+
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value as Record<string, unknown>).sort().map((key) => `${JSON.stringify(key)}:${canonical((value as Record<string, unknown>)[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
 function withCardChanges(groups: DashboardDetail["groups"], cards: Map<string, CardDraft>) {
   const rename = <T extends { id: string; name: string }>(card: T): T => {
     const change = cards.get(card.id);
     return change?.name ? { ...card, name: change.name } : card;
   };
   return groups.map((group) => ({ ...group, charts: group.charts.map(rename), metrics: group.metrics.map(rename) }));
-}
-
-/** The board a layout draft would save, so the reader's own drag can be checked against the same groups. */
-export function layoutGroups(groups: DashboardDetail["groups"]) {
-  return dashboardGroupSchema.array().parse(groups);
 }

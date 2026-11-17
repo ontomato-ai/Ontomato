@@ -147,6 +147,7 @@
       <div class="draft-bar__text">
         <strong>{{ t("dashboard.draft.title") }}</strong>
         <span>{{ draftSummary }}</span>
+        <span v-if="draftBoardName" class="draft-bar__board">{{ t("dashboard.draft.boardWas", { from: boardName, to: draftBoardName }) }}</span>
       </div>
       <div v-if="draftFailure" class="draft-bar__failure" role="alert">
         <strong v-if="draftFailureHeadline">{{ draftFailureHeadline }}</strong>
@@ -250,6 +251,9 @@ const loader = createDashboardLoader();
 
 const draftChanges = ref(new Map());
 const draftGroupsRenamed = ref(new Map());
+const draftBoardName = ref("");
+/** The board's saved name, so a draft's own name stands beside it. */
+const boardName = ref("");
 const savingDraft = ref(false);
 const draftFailure = ref(null);
 const draftFailureHeadline = computed(() => (draftFailure.value ? cardErrorHeadline(draftFailure.value, t) : null));
@@ -268,7 +272,7 @@ const draftSummary = computed(() => {
   if (names) parts.push(t("dashboard.draft.names", { n: names }, names));
   if (files) parts.push(t("dashboard.draft.charts", { n: files }, files));
   if (layouts) parts.push(t("dashboard.draft.layouts", { n: layouts }, layouts));
-  if (props.draft.operation === "dashboard.rename") parts.push(t("dashboard.draft.boardName"));
+  if (draftBoardName.value) parts.push(t("dashboard.draft.boardName", { name: draftBoardName.value }));
   if (groups) parts.push(t("dashboard.draft.groups", { n: groups }, groups));
   if (props.draft.operation === "dashboard.card.parameters") parts.push(t("dashboard.draft.parameters"));
   return parts.join(t("dashboard.draft.separator"));
@@ -287,9 +291,11 @@ const parameterDraft = computed(() => {
 async function applyDraftToBoard() {
   if (!props.draft) return;
   const detail = await fetchDashboardLocalDetail(normalizeId(props.dashboardId));
+  boardName.value = detail.name;
   const applied = applyDraft(detail, props.draft);
   draftChanges.value = applied.cards;
   draftGroupsRenamed.value = applied.groupsRenamed;
+  draftBoardName.value = applied.boardName ?? "";
   chartGroups.value = applied.groups.map((group) => ({
     ...group,
     charts: group.charts.map((card) => ({ ...card, title: card.name, state: "loading" })),

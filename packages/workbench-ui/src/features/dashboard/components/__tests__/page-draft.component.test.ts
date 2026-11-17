@@ -15,6 +15,7 @@ import { workbenchI18n } from "../../../../i18n";
 const api = vi.hoisted(() => ({
   pageDraft: null as unknown,
   renamed: [] as unknown[],
+  boardRenames: [] as unknown[],
   layouts: [] as unknown[],
   parameters: [] as unknown[],
 }));
@@ -71,7 +72,7 @@ vi.mock("../../api", () => ({
   deleteResultSet: async () => true,
   modifyDimensionName: async () => true,
   modifyMetricName: async () => true,
-  renameDashboard: async () => true,
+  renameDashboard: async (...args: unknown[]) => { api.boardRenames.push(args); return true; },
 }));
 vi.mock("@ontomato/foundation-ui/chart", async () => {
   const actual = await import("@ontomato/foundation-ui/chart");
@@ -112,6 +113,7 @@ afterEach(() => {
   document.body.innerHTML = "";
   api.pageDraft = null;
   api.renamed = [];
+  api.boardRenames = [];
   api.layouts = [];
   api.parameters = [];
 });
@@ -169,6 +171,36 @@ describe("a dashboard draft", () => {
     document.querySelector<HTMLButtonElement>(".el-dialog__footer .el-button--primary")!.click();
     await flushPromises();
     expect(api.parameters).toEqual([[{ dashboardId: "d1", cardId: "c1", revision: "r1", values: { year: "2024" } }]]);
+    wrapper.unmount();
+  });
+
+  it("shows a board's own rename with both names, and saves it through the page's own rename", async () => {
+    const wrapper = await openDraft({
+      pageKey: "dashboard",
+      operation: "dashboard.rename",
+      target: { id: "d1" },
+      form: { id: "d1", name: "Revenue board" },
+    });
+    expect(wrapper.find(".draft-bar__board").text()).toBe(t("dashboard.draft.boardWas", { from: "Sales", to: "Revenue board" }));
+    expect(api.boardRenames).toEqual([]);
+
+    await wrapper.find(".draft-bar__actions .el-button--primary").trigger("click");
+    await flushPromises();
+    expect(api.boardRenames).toEqual([["d1", "Revenue board"]]);
+    wrapper.unmount();
+  });
+
+  it("fills a number card's parameters too", async () => {
+    const wrapper = await openDraft({
+      pageKey: "dashboard",
+      operation: "dashboard.card.parameters",
+      target: { id: "d1" },
+      form: { dashboardId: "d1", cardId: "n1", revision: "r1", values: { year: "2024" } },
+    });
+    await flushPromises();
+    document.querySelector<HTMLButtonElement>(".el-dialog__footer .el-button--primary")!.click();
+    await flushPromises();
+    expect(api.parameters).toEqual([[{ dashboardId: "d1", cardId: "n1", revision: "r1", values: { year: "2024" } }]]);
     wrapper.unmount();
   });
 
