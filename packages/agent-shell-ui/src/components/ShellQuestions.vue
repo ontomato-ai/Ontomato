@@ -2,6 +2,7 @@
 import { computed, inject, nextTick, ref, useId, watch } from "vue";
 import { ChevronLeft, ChevronRight, MessageCircleQuestionMark } from "lucide-vue-next";
 import { shellContextKey, type QuestionDraft } from "../context";
+import ShellMarkdown from "./ShellMarkdown.vue";
 
 /**
  * The questions the conversation's agents asked the reader, right over the composer (as Codex shows its asynchronous
@@ -119,7 +120,7 @@ function onKeydown(event: KeyboardEvent) {
     </div>
     <form v-if="view.open" :id="bodyId" class="questions-body" @submit.prevent="submit">
       <div class="question">
-        <p class="question-text">{{ question.message }}</p>
+        <ShellMarkdown class="question-text" :content="question.message" final :run-id="question.source.runId" />
         <div class="question-options">
           <button
             v-for="(option, i) in options"
@@ -274,8 +275,6 @@ function onKeydown(event: KeyboardEvent) {
   color: var(--el-text-color-primary);
   font-size: var(--text-base);
   line-height: var(--leading-base);
-  font-weight: 500;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .question-options {
