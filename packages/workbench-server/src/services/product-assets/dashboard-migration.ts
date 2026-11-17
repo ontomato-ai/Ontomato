@@ -1,3 +1,4 @@
+import {assertLegacyProductWrite} from './panel-boundary';
 import {createHash} from 'node:crypto';
 import {productAssetInputSchema} from '@ontomato/contracts/product-assets';
 import {getOwnedDashboard} from '../dashboard/access';
@@ -8,6 +9,7 @@ import {isDeepStrictEqual} from 'node:util';
 
 /** Migrate only capability-backed cards; never carry a historical calculation into a Page. */
 export async function migrateDashboardPage(owner:ProductOwner,credentials:AssistantCredentials,id:string,revision:number){
+  await assertLegacyProductWrite(owner,credentials,{id});
   const source=await getProduct(owner,id);
   if(!source.editable)throw new HttpError(403,'Product edit Grant required','PRODUCT_FORBIDDEN');
   if(source.revision!==revision)throw new HttpError(409,'Dashboard changed; reload first','PRODUCT_CONFLICT');

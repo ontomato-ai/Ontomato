@@ -17,8 +17,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 class PageSkillsContractTest {
     private static final PageSkills.Skill SKILL = new PageSkills.Skill(new PageSkills.Namespace("provider","ontology",null),"knowledge-governance");
-    private static PageSkills.Mapping menu(String permission) { return new PageSkills.Mapping(permission,null,SKILL,null); }
-    private static PageSkills.Mapping member() { return new PageSkills.Mapping(null,"domain-member",SKILL,null); }
+    private static PageSkills.Mapping menu(String permission) { return new PageSkills.Mapping(permission,null,null,SKILL,null); }
+    private static PageSkills.Mapping member() { return new PageSkills.Mapping(null,"domain-member","dashboard",SKILL,null); }
 
     @Test void jacksonBoundaryKeepsTheSharedWireShapeWithoutNullAlternativeFields() throws Exception {
         var converter = new MappingJackson2HttpMessageConverter();
@@ -47,15 +47,15 @@ class PageSkillsContractTest {
     @Test void rejectsAmbiguousLocatorsAtTheDeclarationBoundary() {
         assertThrows(ResponseStatusException.class,()->PageSkills.validate(List.of(menu("menu"),menu("menu"))));
         assertThrows(ResponseStatusException.class,()->PageSkills.validate(List.of(member(),member())));
-        assertThrows(ResponseStatusException.class,()->PageSkills.validate(List.of(new PageSkills.Mapping("menu","domain-member",SKILL,null))));
+        assertThrows(ResponseStatusException.class,()->PageSkills.validate(List.of(new PageSkills.Mapping("menu","domain-member","dashboard",SKILL,null))));
     }
 
     @Test void projectionRetainsDeniedIdentitiesButNeverTheirMappingsOrDefaults() {
         var access=mock(ApplicationAccess.class); var user=mock(User.class);
         when(user.getDomainId()).thenReturn("domain");
-        var catalog=spy(new ApplicationCatalog(mock(JdbcTemplate.class),mock(TransactionTemplate.class),access,"{}"));
+        var catalog=spy(new ApplicationCatalog(mock(JdbcTemplate.class),mock(TransactionTemplate.class),access,"{}",mock(PanelResources.class),mock(io.ontomato.dataengine.service.ProductGrantService.class)));
         var allowed=menu("allowed");var denied=menu("denied");
-        doReturn(List.of(JSONObject.of("id","example","pageSkills",List.of(allowed,denied)),
+        doReturn(List.of(JSONObject.of("id","example","entry",JSONObject.of("renderer","native"),"pageSkills",List.of(allowed,denied)),
             JSONObject.of("id","other-domain","domainId","other","pageSkills",List.of(member())))).when(catalog).all();
         when(access.pageSkills(List.of(allowed,denied),user)).thenReturn(List.of(allowed));
         var projection=catalog.pageSkills(user);
@@ -67,11 +67,11 @@ class PageSkillsContractTest {
         var db=mock(JdbcTemplate.class);var transactions=mock(TransactionTemplate.class);
         doAnswer(call->{ ((java.util.function.Consumer<org.springframework.transaction.TransactionStatus>)call.getArgument(0)).accept(null);return null; })
             .when(transactions).executeWithoutResult(any());
-        var catalog=spy(new ApplicationCatalog(db,transactions,mock(ApplicationAccess.class),"{}"));
-        doReturn(List.of(JSONObject.of("id","existing","pageSkills",List.of(member())))).when(catalog).all();
-        var declaration=new ApplicationCatalog.Declaration(java.util.Map.of("en","Example"),java.util.Map.of(),"knowledge",List.of(),List.of(),List.of(member()));
+        var catalog=spy(new ApplicationCatalog(db,transactions,mock(ApplicationAccess.class),"{}",mock(PanelResources.class),mock(io.ontomato.dataengine.service.ProductGrantService.class)));
+        doReturn(List.of(JSONObject.of("id","existing","entry",JSONObject.of("renderer","native"),"pageSkills",List.of(member())))).when(catalog).all();
+        var declaration=new ApplicationCatalog.Declaration(java.util.Map.of("en","Example"),java.util.Map.of(),"knowledge",List.of(),List.of(),List.of(member()),List.of());
         var builtin=new ApplicationCatalog.Builtin("new-app","native","apps","build",0,JSONObject.of("path","/example"),List.of("domain-member"),null,declaration);
         assertThrows(ResponseStatusException.class,()->catalog.builtins("workbench",List.of(builtin)));
-        verifyNoInteractions(db);
+        verify(db,never()).update(anyString(),any(Object[].class));
     }
 }

@@ -124,3 +124,4 @@ it('does not run a new active snapshot while its application directory publicati
   await expect(activeProductBundle(owner,'app-example',{})).rejects.toMatchObject({code:'PRODUCT_PUBLICATION_PENDING'});
   expect(mocks.query.mock.calls.some(([sql])=>sql.includes('SELECT snapshot'))).toBe(false);
 });
+vi.mock('../panel-boundary',()=>({assertLegacyProductWrite:vi.fn()}));

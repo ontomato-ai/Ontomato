@@ -1,18 +1,15 @@
 import { z } from "zod";
 import { pageSkillSchema } from "./page-skills";
+import { applicationMetadataSchema } from "./application-metadata";
+import { applicationPanelUseSchema } from "./product-panels";
 
-const names = z.record(z.string().min(1)).refine((value) => Boolean(value.en), "An English name is required");
-const key = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/);
+const names = applicationMetadataSchema.shape.names;
 const sequence = z.string().regex(/^[0-9]+$/).refine((value) => BigInt(value) <= 9223372036854775807n);
 const categories = z.enum(["business", "build", "admin"]);
 
-export const applicationDeclarationSchema = z.object({
-  names,
-  descriptions: z.record(z.string()),
-  icon: z.string().min(1),
-  groups: z.array(z.object({ key, names, sort: z.number().int() }).strict()),
-  permissions: z.array(z.object({ code: key, names, groupKey: key, sort: z.number().int() }).strict()),
+export const applicationDeclarationSchema = applicationMetadataSchema.extend({
   pageSkills: z.array(pageSkillSchema).optional(),
+  panelUses: z.array(applicationPanelUseSchema).optional(),
 }).strict();
 export type ApplicationDeclaration = z.infer<typeof applicationDeclarationSchema>;
 export const builtinApplicationSchema = z.object({
@@ -27,6 +24,7 @@ export const applicationCatalogSchema = z.array(z.object({
   descriptions: z.record(z.string()), icon: z.string(), rail: z.enum(["top", "apps", "bottom"]), category: categories, sort: z.number(),
   entry: z.object({ path: z.string(), renderer: z.string().optional(), home: z.string().optional() }),
   entryAccess: z.array(z.string()).min(1), scheduleAdapter: z.string().nullable(), releaseId: z.string().nullable(),
+  panelUses: z.array(applicationPanelUseSchema).optional(),
 }));
 export type CatalogApplication = z.infer<typeof applicationCatalogSchema>[number];
 

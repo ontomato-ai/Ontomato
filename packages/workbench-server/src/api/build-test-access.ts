@@ -28,6 +28,8 @@ const ALLOWED: readonly Access[] = [
   // app-builder.ts: builder and SDK metadata
   ["GET", /^\/app-builder\/bootstrap$/],
   ["GET", /^\/apps-sdk\/current$/],
+  // product-panels.ts: current product definitions, never business reads or registration writes
+  ["GET", /^\/product-(?:panels|projections)\/[^/]+$/],
   // dashboards.ts /add-chart-file stays unsupported: imports may settle metrics.
   // dashboards.ts: definition reads and metric parameter conversion, not card data execution
   ["GET", /^\/dashboards$/],

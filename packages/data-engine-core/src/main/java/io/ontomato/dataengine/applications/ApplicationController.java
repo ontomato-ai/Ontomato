@@ -29,6 +29,16 @@ public class ApplicationController {
     public record Batch(List<ApplicationCatalog.Builtin> applications) {}
     public record Publication(ApplicationCatalog.Declaration declaration, String releaseId) {}
     public record Connected(String id, ApplicationCatalog.Declaration declaration, String upstream, String upstreamPrefix) {}
+    public record PanelEntry(String path, String renderer) {}
+    public record PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
+                                    ApplicationCatalog.Declaration declaration, List<String> entryAccess) {}
+    @GetMapping("/platform/applications/{id}/panel-uses")
+    @io.ontomato.dataengine.controller.BuildTestAccess(io.ontomato.dataengine.controller.BuildTestAccess.Access.NO_BUSINESS_DATA)
+    public R<JSONObject> panelUses(@PathVariable String id) { return R.of(catalog.panelUses(id, current())); }
+    @PutMapping("/platform/applications/{id}/panel-uses")
+    public R<JSONObject> putPanelUses(@PathVariable String id, @RequestBody PanelRegistration body) {
+        return R.of(catalog.putPanelUses(id, body, current()));
+    }
     @GetMapping("/platform/page-skills")
     @io.ontomato.dataengine.controller.BuildTestAccess(io.ontomato.dataengine.controller.BuildTestAccess.Access.NO_BUSINESS_DATA)
     public R<PageSkills.Projection> pageSkills() { return R.of(catalog.pageSkills(current())); }

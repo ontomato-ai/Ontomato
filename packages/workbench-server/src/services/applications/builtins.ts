@@ -102,7 +102,7 @@ export const workbenchApplications: BuiltinApplication[] = [
       "icon": "dashboards",
       "groups": [],
       "permissions": [],
-      "pageSkills": [{access:"domain-member",skill:{namespace:{kind:"provider",provider:"workbench"},name:"dashboard-pages"}}]
+      "pageSkills": [{access:"domain-member",pageKey:"dashboard",skill:{namespace:{kind:"provider",provider:"workbench"},name:"dashboard-pages"}}]
     }
   },
   {

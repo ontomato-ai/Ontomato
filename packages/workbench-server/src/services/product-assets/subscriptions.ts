@@ -7,12 +7,15 @@ import {executeDefinition} from './definitions';
 import {HttpError} from '../../utils/errors';
 import {readDefinitionTrigger} from './triggers';
 import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres';
+import {productDefinitionChangedEventSchema,type ProductDefinitionChangedEvent} from '@ontomato/contracts/product-panels';
+import {findCurrentProduct} from '../../infrastructure/product-current';
+import {requireProductGrant} from './grants';
 
 type Subscription={id:string;owner:ProductOwner;credentials:AssistantCredentials;target:ProductSubscriptionTarget;expiresAt:number;fingerprint?:string;members?:Set<string>;events:ProductSubscriptionEvent[];busy:boolean;evaluation?:Promise<void>};
 const subscriptions=new Map<string,Subscription>();
 let timer:ReturnType<typeof setInterval>|undefined;
 const intervalMs=10_000;
-const persistedState=z.object({fingerprint:z.string().optional(),members:z.array(z.string()).max(10000),events:z.array(z.object({kind:z.enum(['changed','entered','left']),targetId:z.string(),revision:z.string(),observedAt:z.string(),memberKeys:z.array(z.string()).optional()})).max(20)});
+const persistedState=z.object({fingerprint:z.string().optional(),members:z.array(z.string()).max(10000),events:z.array(z.union([productDefinitionChangedEventSchema,z.object({kind:z.enum(['changed','entered','left']),targetId:z.string(),revision:z.string(),observedAt:z.string(),memberKeys:z.array(z.string()).optional()})])).max(20)});
 const resuming=new Map<string,Promise<unknown>>();
 async function checkpoint(subscription:Subscription){
   if(subscriptions.get(subscription.id)!==subscription)return;
@@ -28,6 +31,13 @@ function evaluate(subscription:Subscription):Promise<void>{
 async function evaluateOnce(subscription:Subscription){
   subscription.busy=true;
   try{
+    if(subscription.target.kind==='product-definition'){
+      const target=subscription.target.target;
+      await requireProductGrant(target.id,'use',subscription.credentials);
+      if(!await findCurrentProduct(subscription.owner.domainId,target.kind,target.id))throw new HttpError(404,'Current product definition not found','PRODUCT_UNAVAILABLE');
+      await checkpoint(subscription);
+      return;
+    }
     const hash=createHash('sha256');
     const trigger=subscription.target.kind==='trigger'?await readDefinitionTrigger(subscription.owner,subscription.target.id):null;
     const definitionId=trigger?.definitionId??subscription.target.id;
@@ -58,7 +68,7 @@ function ensureScheduler(){
   timer=setInterval(()=>{
     for(const [id,subscription] of subscriptions){
       if(subscription.expiresAt<=Date.now()){subscriptions.delete(id);void removeCheckpoint(subscription).catch(()=>{});continue;}
-      void evaluate(subscription).catch(()=>{subscriptions.delete(id);void removeCheckpoint(subscription).catch(()=>{});});
+      if(subscription.target.kind!=='product-definition')void evaluate(subscription).catch(()=>{subscriptions.delete(id);void removeCheckpoint(subscription).catch(()=>{});});
     }
     if(!subscriptions.size&&timer){clearInterval(timer);timer=undefined;}
   },intervalMs);
@@ -83,6 +93,20 @@ export function pollProductSubscription(owner:ProductOwner,id:string,credentials
   return {events:subscription.events.splice(0),expiresAt:new Date(subscription.expiresAt).toISOString()};
 }
 export function unsubscribeProduct(owner:ProductOwner,id:string){owned(owner,id);subscriptions.delete(id);}
+
+/** Use the existing subscription queues; UI definition changes never evaluate business Definitions or Triggers. */
+export async function notifyProductDefinitionChanged(event:ProductDefinitionChangedEvent){
+  const active=[...subscriptions.values()].filter(subscription=>subscription.owner.domainId===event.domainId
+    &&subscription.expiresAt>Date.now()&&subscription.target.kind==='product-definition'
+    &&subscription.target.target.kind===event.target.kind&&subscription.target.target.id===event.target.id);
+  for(const subscription of active){subscription.events.push(event);subscription.events=subscription.events.slice(-20);}
+  await getPostgresPool().query(`UPDATE ${t('product_subscriptions')} SET state=jsonb_set(state,'{events}',
+    (SELECT COALESCE(jsonb_agg(value ORDER BY ordinal),'[]'::jsonb) FROM jsonb_array_elements((state->'events')||$2::jsonb) WITH ORDINALITY AS queued(value,ordinal)
+      WHERE ordinal>jsonb_array_length((state->'events')||$2::jsonb)-20))
+    WHERE domain_id=$1 AND target->>'kind'='product-definition' AND target->'target'->>'kind'=$3 AND target->'target'->>'id'=$4
+      AND expires_at>now() AND NOT(id=ANY($5::text[]))`,[event.domainId,JSON.stringify([event]),event.target.kind,event.target.id,active.map(subscription=>subscription.id)]);
+  await Promise.all(active.map(checkpoint));
+}
 async function removeCheckpoint(subscription:Subscription){await getPostgresPool().query(`DELETE FROM ${t('product_subscriptions')} WHERE domain_id=$1 AND principal_id=$2 AND id=$3`,[subscription.owner.domainId,subscription.owner.userId,subscription.id]);}
 /** Rebind credentials on reconnect; persisted state contains no user tokens. */
 export async function resumeProductSubscription(owner:ProductOwner,id:string,credentials:AssistantCredentials){
