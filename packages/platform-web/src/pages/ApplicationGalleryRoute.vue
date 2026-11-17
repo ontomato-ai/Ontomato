@@ -26,7 +26,7 @@ async function toggle(item:HomeItem){if(saving.value)return;saving.value=true;er
 <template>
   <AppPage :title="labels.title" :description="labels.description" :labels="{save:'',discard:'',unsavedChanges:''}">
     <el-alert v-if="error" :title="error" type="error" :closable="false"><el-button text @click="load">{{labels.retry}}</el-button></el-alert>
-    <div class="gallery-toolbar"><nav aria-label="应用分类"><button v-for="value in homeCategories" :key="value" :class="{active:category===value}" :aria-pressed="category===value" @click="category=value">{{t(`home.categories.${value}`)}}</button></nav><el-input v-model="query" clearable :placeholder="labels.search" :aria-label="labels.search"><template #prefix><Search :size="16"/></template></el-input></div>
+    <div class="gallery-toolbar"><nav :aria-label="t('ontology.productGalleryCategories')"><button v-for="value in homeCategories" :key="value" :class="{active:category===value}" :aria-pressed="category===value" @click="category=value">{{t(`home.categories.${value}`)}}</button></nav><el-input v-model="query" clearable :placeholder="labels.search" :aria-label="labels.search"><template #prefix><Search :size="16"/></template></el-input></div>
     <el-skeleton v-if="loading" :rows="5" animated/>
     <div v-else-if="shown.length" class="gallery-grid" :aria-busy="saving"><HomeTile v-for="item in shown" :key="itemKey(item)" :item="item" :favorite="favoriteKeys.has(itemKey(item))" @open="open(item)" @toggle-favorite="toggle(item)"/></div>
     <el-empty v-else :description="labels.empty" :image-size="64"/>

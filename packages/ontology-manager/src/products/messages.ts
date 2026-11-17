@@ -550,4 +550,7 @@ export const productEn={
   productDefinitionNameUnavailable:'Business definition name unavailable',
   productObjectTypeNameUnavailable:'Object type name unavailable',
   productApplicationNameUnavailable:'Application name unavailable',
+  productGalleryCategories:'Application categories',
+  productObjectViewUnpublished:'This object view is not published yet',
+  productObjectViewMismatch:'The published object view does not match this entry',
 };

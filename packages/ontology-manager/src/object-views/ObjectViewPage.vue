@@ -57,7 +57,7 @@ async function load() {
   try {
     const state = await client.objectViewRequest("read", props.reference.className, "full");
     if (current !== request) return;
-    if(state.assetId){if(!state.publishedAsset)throw new Error('此对象视图尚未发布');const published=productAssetSchema.parse(state.publishedAsset);if(published.id!==state.assetId||published.revision!==state.publishedRevision||published.document.kind!=='object-projection'||published.document.renders.id!==props.reference.className)throw new Error('已发布对象视图与当前入口不一致');projection.value=published;return;}
+    if(state.assetId){if(!state.publishedAsset)throw new Error(ot('productObjectViewUnpublished'));const published=productAssetSchema.parse(state.publishedAsset);if(published.id!==state.assetId||published.revision!==state.publishedRevision||published.document.kind!=='object-projection'||published.document.renders.id!==props.reference.className)throw new Error(ot('productObjectViewMismatch'));projection.value=published;return;}
     document.value = state.versions[0] ? objectViewDocumentSchema.parse(state.versions[0].document) : createObjectView(props.reference.className);
     if (!state.versions[0]) document.value.tabs[0].sections[0].widgets[0].title = ot('ovKindProperties');
     const issues=objectViewProductIssues(document.value);

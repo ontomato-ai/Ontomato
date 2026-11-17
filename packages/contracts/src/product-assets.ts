@@ -171,7 +171,6 @@ export const productDefaultTexts={
   legacyAssistantPlaceholder:'例如：按学院统计在职教职工人数，并比较人员构成',
   legacyConversations:'继续分析',
   legacyObjects:'收藏的对象',
-  platformPageSuffix:' · 页面',
   platformPageDescription:'平台应用的产品组合根；原生交互仍由已注册入口运行。',
   graphDomainMembers:'域内成员',
   graphNameUnavailable:'名称暂不可用',
