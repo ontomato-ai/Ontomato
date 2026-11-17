@@ -38,6 +38,7 @@ let functions: Record<string, unknown>[];
 let metricDetail: Record<string, unknown>;
 let dataAdapter: string;
 let instanceNodeCount: number;
+let largeOverview: boolean;
 let dataAdapters: DataAdapterInfo[];
 let knowledge: Record<string, Record<string, unknown>>;
 /** Knowledge IDs whose delete returns a business failure. */
@@ -100,7 +101,7 @@ function respond(url: string, body?: Record<string, unknown>): Response {
     classes: [{ class: "Order", instanceCount: instanceNodeCount }, { class: "Item", instanceCount: 1 }],
     relationships: [{ source: "Order", target: "Item", count: 1 }],
     relationTypes: ["has"],
-    overviewNodes: [{ id: "Order:1", name: "First order", class: "Order" }, { id: "Item:2", name: "Spare part", class: "Item" }],
+    overviewNodes: largeOverview ? Array.from({length: 1000}, (_, index) => ({ id: `Order:${index + 1}`, name: `Order ${index + 1}`, class: "Order" })) : [{ id: "Order:1", name: "First order", class: "Order" }, { id: "Item:2", name: "Spare part", class: "Item" }],
     overviewEdges: [{ source: "Order:1", target: "Item:2", type: "has" }],
     nodeCount: instanceNodeCount, edgeCount: 1, componentCount: 1, isolatedNodeCount: 0,
     largestComponentSize: instanceNodeCount, version: "v1", generatedAt: "2026-10-10T00:00:00Z",
@@ -139,6 +140,7 @@ beforeEach(() => {
   graphRecord.nodeUpdates = [];
   graphRecord.edgeUpdates = [];
   instanceNodeCount = 2;
+  largeOverview = false;
   requests = [];
   mountedApps = [];
   held = new Map();
@@ -372,6 +374,27 @@ describe("Manager pages in the service router", () => {
     await settle();
     expect(graphRecord.layouts.length).toBe(0);
   });
+
+  it("expands neighbors beyond a full overview and adds an anchor for a newly encountered class", async () => {
+    largeOverview = true;
+    instanceNodeCount = 50000;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
+    const { root } = mountHost({ ...base, view: "/browser/data/Order" });
+    await settle();
+    (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[0] as HTMLElement).click();
+    await vi.waitFor(async () => {
+      await settle();
+      expect(graphRecord.dataBatches.flatMap(batch => batch.nodes || []).filter((node: any) => node.data?.node).length).toBe(1000);
+    }, { timeout: 10000 });
+    graphHandlers["node:click"]({ target: { id: "Order:1" } });
+    await settle();
+    (root().querySelector(".node-actions button") as HTMLButtonElement).click();
+    await settle();
+    expect(requests.some(request => request.url.endsWith("/instanceGraph/neighborhood"))).toBe(true);
+    const graphNodes = graphRecord.dataBatches.flatMap(batch => batch.nodes || []);
+    expect(graphNodes.some((node: any) => node.id === "Item:2")).toBe(true);
+    expect(graphNodes.some((node: any) => node.id === 'overview-class:"Item"')).toBe(true);
+  }, 20000);
 
   it("aggregates overview connections by default and reveals selected instance connections", async () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
