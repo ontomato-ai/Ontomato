@@ -60,7 +60,7 @@ defineExpose({ ...view, operations });
       v-else-if="view.document.value"
       ref="frame"
       class="panel-host-frame"
-      title="{{ title ?? label }}"
+      :title="title ?? label"
       sandbox="allow-scripts"
       :srcdoc="view.document.value"
     />
