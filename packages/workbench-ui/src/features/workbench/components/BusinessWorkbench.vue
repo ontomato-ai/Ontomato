@@ -179,8 +179,11 @@ function pageLinks(href: string): (() => void) | null {
   const pilotPage = pilot(address);
   if (pilotPage) return () => void router.push({ query: { ...route.query, page: address } });
   const resolved = router.resolve(address);
-  // The catch-all route answers any address with the start page; that is no page of its own.
-  if (!resolved.matched.length || resolved.matched.some((record) => "redirect" in record && record.redirect)) return null;
+  // The address is a page when the route it lands on is one: the deepest record it matches. Every page of the platform sits
+  // under the layout, whose own record redirects to the start page, and the catch-all answers any address the same way,
+  // so it is that last record — not the layout above it — that says whether there is a page here.
+  const leaf = resolved.matched.at(-1);
+  if (!leaf || leaf.redirect) return null;
   return () => void router.push({ path: resolved.path, query: resolved.query, hash: resolved.hash });
 }
 
@@ -314,6 +317,20 @@ const bottomEntry = computed(() =>
 );
 
 /**
+ * The link's own parameters, consumed once. A page's composer navigates here with `?agentId=&prompt=&page=`, and this
+ * entry can run more than once on the way in — the mount, the address settling as it leaves the link's parameters, the
+ * column's own reads returning — so the address they arrived on is taken once, before the first await: an entry that finds
+ * the same address again has nothing to do rather than sending the same question a second time.
+ *
+ * `pendingLink` is set before the first await and is what tells a re-entry apart from a new message: the reader writing
+ * in the same page again arrives with the same address, and that is a message, sent after the first one has been placed.
+ */
+let consumedLink: string | null = null;
+let pendingLink: string | null = null;
+const linkAddress = () =>
+  JSON.stringify([requestedAgent(), queryText(route.query.sessionId), queryText(route.query.prompt), queryText(route.query.page)]);
+
+/**
  * Applies `?agentId=` once the agents are known. The link's parameters leave the address first, so a reload neither
  * sends its question again nor reopens what it named; the page then follows its own conversation behaviour. A disabled
  * or missing agent is reported and the page keeps the agent its own rule chose. An enabled one is selected, and then the
@@ -325,12 +342,15 @@ const bottomEntry = computed(() =>
 async function openRequestedAgent() {
   const id = requestedAgent();
   if (!id) return;
+  const address = linkAddress();
+  if (pendingLink === address || consumedLink === address) return;
+  pendingLink = address;
   const session = queryText(route.query.sessionId);
   const prompt = queryText(route.query.prompt);
   const page = queryText(route.query.page);
-  // The link's own parameters go; the page it was written on stays, carried by the address from here on.
+  // The link's own parameters go before anything is awaited; the page it was written on stays, carried by the address.
   const { agentId: _agent, sessionId: _session, prompt: _prompt, ...query } = route.query;
-  void router.replace({ query });
+  await router.replace({ query: page ? { ...query, page } : query });
   if (!nav.agents.value.some((agent) => agent.id === id && agent.enabled)) {
     ElMessage.error(t("assistant.agentUnavailable"));
     return;
@@ -350,14 +370,23 @@ async function openRequestedAgent() {
   const continuing = held !== null && nav.sessions.value.some((row) => row.id === held);
   if (continuing) nav.selectSession(held);
   else nav.startNew();
-  if (page) void router.replace({ query: { ...query, page } });
   if (prompt) {
     await nextTick();
     await shell.value!.send(prompt);
   }
+  // Placed: the address is spent, and the same one arriving again is the reader's next message.
+  pendingLink = null;
+  consumedLink = address;
 }
 // The same address entered while the page is open (another link to an agent) does the same.
-watch(() => route.query.agentId, openRequestedAgent);
+watch(
+  () => route.query.agentId,
+  (id) => {
+    // The address no longer names an agent: the next one that does is a new message, even from the same page.
+    if (!id) consumedLink = null;
+    void openRequestedAgent();
+  },
+);
 
 /** The board a conversation just added a dataset to: the dashboards application, opened on that board. */
 function openDashboardApplication(dashboardId: string) {

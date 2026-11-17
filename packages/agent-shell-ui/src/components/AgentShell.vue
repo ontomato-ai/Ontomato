@@ -5,6 +5,7 @@ import { conversationQuestions, shellContextKey, type ShellContext } from "../co
 import { pageContextLine, pageMoved, samePageAddress, type PageContext } from "../page-context";
 import type { AgentHostClient } from "../host";
 import type { AgentNav } from "../useAgentNav";
+import type { UserItem } from "../view";
 import type {
   ArtifactRendererOverride,
   OpenArtifact,
@@ -182,6 +183,18 @@ watch(sessionId, (id) => {
 }, { immediate: true });
 
 
+/**
+ * A conversation opened by its address names no agent, but it runs on one: the shell shows that agent in the composer and
+ * sends as it, so the conversation the reader opened is the one they write in. Taken over from the host's report of the
+ * conversation, not chosen by the reader, so nothing is rebound and nothing starts anew.
+ */
+watch(
+  () => conversation.state.agentId,
+  (id) => {
+    if (id) nav.adoptAgent(id);
+  },
+);
+
 /** The page beside the conversation, enlarged: its own address, which the host opens in the page's application. */
 function openPageAtItsAddress() {
   emit("openPage", featureId.value!, currentFeature.value?.address ?? "");
@@ -246,6 +259,29 @@ watch(sessionId, (id) => {
   carriedPage.value = null;
   carriedIn = id;
 });
+
+/**
+ * The page a reopened conversation already carries: its history shows the line each message ended with, so the page of
+ * the last message that named one is known, and a message written on that same page does not name it again. A page the
+ * history says nothing about is carried once, explicitly.
+ */
+watch(
+  [() => conversation.loading.value, () => conversation.state.sessionId, () => props.pageContext?.label],
+  ([loading, session, label]) => {
+    if (loading || !session || !label || carriedPage.value !== null) return;
+    const prefix = props.labels.pageContext("");
+    const named = conversation.items.value
+      .filter((item): item is UserItem => item.kind === "user")
+      .map((item) => {
+        const line = item.text.split("\n").find((entry: string) => entry.startsWith(prefix));
+        return line ? line.slice(prefix.length).split("；")[0]! : null;
+      })
+      .filter((entry): entry is string => entry !== null)
+      .at(-1);
+    if (named === label) carriedPage.value = samePageAddress(props.pageContext!.url);
+  },
+  { immediate: true },
+);
 
 async function send(input: string) {
   const agent = agentId.value;
