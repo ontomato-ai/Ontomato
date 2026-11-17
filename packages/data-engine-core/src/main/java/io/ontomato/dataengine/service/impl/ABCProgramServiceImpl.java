@@ -9,8 +9,10 @@ import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.service.*;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.ErrorText;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
@@ -55,18 +57,22 @@ public class ABCProgramServiceImpl implements ABCProgramService {
   public Object[] execute(String id, Function function, String user, UserDataPermission permission,
       String sandbox, String lang, int timeout, String domain, ExecutionContext context) throws Exception {
     ExecutionTarget target = context.target();
-    if(target.testing() && !Function.OPERATION_READ.equals(function.getOperation()))
-      target.requireClasses(function.getReturnDef()==null?null:function.getReturnDef().getClassNames());
+    boolean read = Function.OPERATION_READ.equals(function.getOperation());
+    // The write scope is the same union stored on the function/action rows: the object types bound
+    // to parameters plus the declared write targets. Using only returnDef here made a program fail
+    // with 403 once it wrote to a class that its parameters already declared.
+    List<String> writeScope = read ? List.of() : writeClassScope(function);
+    if(target.testing() && !read)
+      target.requireClasses(writeScope);
     if (!domain.equals(function.getDomainId())) throw new IllegalArgumentException("Function is outside the current domain");
     FunctionDao.requireSupported(function, lang);
     var parameters = MetricViewBindings.values(function);
-    boolean read = Function.OPERATION_READ.equals(function.getOperation());
     if (read && function.getReturnDef() == null) throw new IllegalArgumentException("Stored program has no source declaration");
     var graph = read ? sourceAnalysis(function.getReturnDef().getSourceAnalysis(), function.getReturnDef().getOutKeyRefs()) : null;
     if (read && function.getQueryPackage() != null)
       return executePackage(id, function.getQueryPackage(), parameters, graph, user, permission, lang, timeout, domain, target);
     var authority = read ? PythonAuthority.read(user, domain) : PythonAuthority.write(user, domain, sandbox)
-        .withClasses(function.getReturnDef() == null ? null : function.getReturnDef().getClassNames());
+        .withClasses(writeScope);
     authority = authority.withTarget(target);
     if (context.executionId() != null) authority = authority.forExecution(context.executionId().toString());
     if (context.identity() != null) authority = authority.withIdentity(context.identity());
@@ -79,6 +85,17 @@ public class ABCProgramServiceImpl implements ABCProgramService {
       throw new ProgramExecutionException(ErrorText.programFailure(error), lang, error);
     }
     return new Object[]{read ? authorized(result, graph, permission) : null, result};
+  }
+
+  /** Classes a write program may touch, in declaration order; shared with the stored scope rows. */
+  static List<String> writeClassScope(Function function) {
+    Set<String> names = new LinkedHashSet<>();
+    if (function.getParameters() != null)
+      for (var parameter : function.getParameters())
+        if (parameter.getClassNames() != null) names.addAll(parameter.getClassNames());
+    if (function.getReturnDef() != null && function.getReturnDef().getClassNames() != null)
+      names.addAll(function.getReturnDef().getClassNames());
+    return names.isEmpty() ? List.of() : List.copyOf(names);
   }
 
   private Object[] executePackage(String id, JSONObject bundle, JSONObject values, JSONObject graph, String user,
