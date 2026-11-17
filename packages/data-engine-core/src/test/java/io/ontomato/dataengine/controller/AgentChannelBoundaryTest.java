@@ -26,7 +26,7 @@ class AgentChannelBoundaryTest {
   }
   private String input(String mode,String role) {
     return JSONObject.of("mode",mode,"language","en","agent",JSONObject.of("providerId","ontology","agentId",KnowledgeGovernanceService.AGENT),
-      "actor",JSONObject.of("id",RUN,"domainId","a"),"sessionId",SESSION,"runId",RUN,
+      "actor",JSONObject.of("id",RUN,"domainId","a"),"sessionId",SESSION,"runId",RUN,"inputId",RUN,
       "requestedBy",null,"root",JSONObject.of("session",JSONObject.of("providerId","ontology","sessionId",SESSION),"runId",RUN),"authority",JSONObject.of("classNames",java.util.List.of(),"executionKind","live"),
       "input",JSONObject.of("role",role,"kind","agent-answer","source",JSONObject.of("session",JSONObject.of("providerId","workbench","sessionId",SESSION),"runId",RUN),"replyTo",RUN,"content","Use the confirmed period","timestamp",1)).toJSONString();
   }
@@ -57,7 +57,7 @@ class AgentChannelBoundaryTest {
     var host=new KnowledgeGovernanceService(store,runtime,mock(OntologyAgentDefinitions.class),mock(io.ontomato.dataengine.service.QueryGrantService.class),mock(io.ontomato.dataengine.service.KnowledgeService.class),mock(io.ontomato.dataengine.service.AdminService.class),callers);
     when(callers.open(anyString(),eq(context))).thenAnswer(call -> JSONObject.of("id",call.getArgument(0),"domainId","a"));
     when(store.session(SESSION,context.owner())).thenReturn(JSONObject.of("agent_id",KnowledgeGovernanceService.AGENT));
-    host.start(SESSION,RUN,"Review knowledge",context);
+    host.send(SESSION,RUN,"Review knowledge",null,context);
     verify(callers).open(argThat(id -> !id.equals(RUN)),eq(context));
   }
 

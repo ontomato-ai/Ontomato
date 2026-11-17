@@ -129,7 +129,7 @@ public class OntologyAgentHost {
   public static JSONObject publicSnapshot(JSONObject snapshot) {
     var result = new JSONObject();
     for (String name :
-        List.of("cursor", "messages", "pendingMessages", "toolExecutions", "artifacts"))
+        List.of("cursor", "messages", "pendingMessages", "toolExecutions", "artifacts", "pendingQuestions"))
       result.put(name, snapshot.get(name));
     result.put("run", publicRun(snapshot.getJSONObject("run")));
     return result;
@@ -193,6 +193,7 @@ public class OntologyAgentHost {
     return JSONObject.of(
         "session",
         sessionView(row, latest == null ? null : latest.getJSONObject("run")),
+        "pendingQuestions",session.get("pendingQuestions"),
         "messages",
         session.get("messages"),
         "latestRun",
@@ -204,19 +205,21 @@ public class OntologyAgentHost {
     return publicSnapshot(runtime.run(owner.domainId(), run));
   }
 
-  public JSONObject start(
-      String session, String key, String message, OntologyAgentAccess.Context context)
+  public JSONObject send(
+      String session, String key, String message, String replyTo, OntologyAgentAccess.Context context)
       throws Exception {
     if (message == null || message.isBlank())
       throw AgentHttpException.invalid("Message is required");
     boolean action = ActionCreationService.AGENT.equals(
         store.session(session, context.owner()).getString("agent_id"));
-    boolean replayed = isRetrieval(session, context.owner())
-      ? retrieval.message(session,key,message,context)
+    var accepted = isRetrieval(session, context.owner())
+      ? retrieval.send(session,key,message,replyTo,context)
       : action
-          ? actionCreation.start(session,key,message,context)
-          : governance.start(session,key,message,context);
-    return JSONObject.of("snapshot", run(session, key, context.owner()), "replayed", replayed);
+          ? actionCreation.send(session,key,message,replyTo,context)
+          : governance.send(session,key,message,replyTo,context);
+    var delivery=accepted.getJSONObject("delivery");
+    accepted.put("snapshot","run".equals(delivery.getString("delivery")) && "running".equals(delivery.getString("status")) ? run(session,delivery.getString("runId"),context.owner()) : null);
+    return accepted;
   }
 
   public JSONObject cancel(String session, String run, Owner owner) throws Exception {

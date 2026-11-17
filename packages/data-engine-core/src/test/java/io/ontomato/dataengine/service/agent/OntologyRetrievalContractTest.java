@@ -43,6 +43,7 @@ class OntologyRetrievalContractTest {
   final Map<String, JSONObject> runs = new ConcurrentHashMap<>(),
       requests = new ConcurrentHashMap<>(),
       files = new ConcurrentHashMap<>();
+  final Map<String,JSONArray> inputs=new ConcurrentHashMap<>();
   final Set<String> cancelled = ConcurrentHashMap.newKeySet();
   final String skillDigest = "a".repeat(64);
 
@@ -131,7 +132,7 @@ class OntologyRetrievalContractTest {
                       "session",
                       Map.of("id", session),
                       "messages",
-                      new JSONArray(),
+                      inputs.getOrDefault(session,new JSONArray()),
                       "latestRun",
                       latest);
               if (method.equals("DELETE")) status = 204;
@@ -256,10 +257,11 @@ class OntologyRetrievalContractTest {
     boolean answer=path.endsWith("/answers");
     String session=answer?path.split("/")[3]:key;
     String run=key;
-    var input=answer?JSONObject.of("role","notification","kind","agent-answer","replyTo",id(),"content",value.getString("message"),"timestamp",1):JSONObject.of("role","user","content",value.getString("question"),"timestamp",1);
+    var input=answer?JSONObject.of("role","notification","kind","agent-answer","source",JSONObject.of("kind","user"),"replyTo",id(),"content",value.getString("message"),"timestamp",1):JSONObject.of("role","user","content",value.getString("question"),"timestamp",1);
     var context=new OntologyAgentAccess.Context(owner,new QueryAccessService.Access(new QueryAccessService.GrantUser(owner.userId(),owner.domainId()),permission,null,null,null,List.of()),"fixture-user",null,"en",Instant.now().plusSeconds(60).toEpochMilli(),caller);
     var parameters=new JSONObject(value);parameters.remove("question");
-    var prepared=retrieval.prepareRun(session,run,input,answer?null:parameters,caller==null?run:caller,context);
+    inputs.computeIfAbsent(session,ignored->new JSONArray()).add(JSONObject.of("id",run,"message",input));
+    var prepared=retrieval.prepareRun(session,run,input,run,answer?null:parameters,caller==null?run:caller,context);
     runtime.json(owner.domainId(),run,"/v1/sessions/"+session+"/runs","POST",prepared,run);
     retrieval.recover();
     for(int attempt=0;attempt<200 && !store.run(session,run,owner).getBooleanValue("runtime_admitted");attempt++) Thread.sleep(10);
@@ -433,7 +435,7 @@ class OntologyRetrievalContractTest {
     String session=id();var first=postJson("/ontology/retrievals",session,Map.of("question","Sales?"),null);String run=first.getString("runtimeRunId");
     var context=new OntologyAgentAccess.Context(owner,new QueryAccessService.Access(new QueryAccessService.GrantUser(owner.userId(),owner.domainId()),permission,null,null,null,List.of()),null,null,"en",Instant.now().plusSeconds(60).toEpochMilli(),null);
     int beforeRevision=store.retrieval(session,owner).getIntValue("revision");
-    var input=JSONObject.of("role","notification","kind","agent-answer","replyTo",id(),"content","Current year","timestamp",1);
+    var input=JSONObject.of("role","notification","kind","agent-answer","source",JSONObject.of("kind","user"),"replyTo",id(),"content","Current year","timestamp",1);
     retrieval.prepareSteer(session,run,input,context);
     var record=store.retrieval(session,owner);var decision=record.getJSONArray("decisions").getJSONObject(0);
     assertEquals(beforeRevision+1,record.getIntValue("revision"));assertEquals(1,store.run(session,run,owner).getIntValue("decision_revision"));
@@ -441,7 +443,7 @@ class OntologyRetrievalContractTest {
     assertEquals(run,decision.getString("runId"));assertEquals("Current year",decision.getString("text"));assertEquals("task",decision.getString("scope"));assertEquals("user",decision.getString("source"));assertNull(decision.get("supersedesId"));
     runs.get(run).getJSONObject("run").put("status","stopped");runs.get(run).getJSONObject("run").put("stopReason","stop");
     retrieval.reconcile(session,run,owner,runtime.run(owner.domainId(),run));
-    String next=id();input.put("content","Active employees only");retrieval.prepareRun(session,next,input,null,next,context);
+    String next=id();input.put("content","Active employees only");inputs.get(session).add(JSONObject.of("id",next,"message",input));retrieval.prepareRun(session,next,input,next,null,next,context);
     assertEquals(2,store.run(session,next,owner).getIntValue("decision_revision"));
     assertEquals("Active employees only",store.retrieval(session,owner).getJSONArray("decisions").getJSONObject(1).getString("text"));
   }

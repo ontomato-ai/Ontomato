@@ -140,15 +140,16 @@ public class OntologyAgentController {
 
   @PostMapping("/sessions/{id}/runs")
   @ResponseStatus(HttpStatus.ACCEPTED)
-  public Object start(
+  public Object send(
       @PathVariable String id,
       @RequestHeader("Idempotency-Key") String key,
       @RequestBody JSONObject body,
       HttpServletRequest req)
       throws Exception {
-    AgentJson.fields(body, "message");
-    return host.start(
-        AgentJson.id(id), AgentJson.id(key), AgentJson.text(body, "message"), access.forSession(req,id));
+    AgentJson.fields(body, "message", "replyTo");
+    if(body.containsKey("replyTo")) AgentJson.id(body.getString("replyTo"));
+    return host.send(
+        AgentJson.id(id), AgentJson.id(key), AgentJson.text(body, "message"), body.getString("replyTo"), access.forSession(req,id));
   }
 
   @GetMapping("/sessions/{id}/runs/{run}")

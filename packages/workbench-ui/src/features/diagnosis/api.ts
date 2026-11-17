@@ -21,7 +21,7 @@ import type {
 } from "@ontomato/contracts/autotest";
 import type { HttpResponse } from "@ontomato/contracts/http";
 import type { DiagnosisTarget } from "@ontomato/contracts/ops-diagnosis";
-import { agentHostCreateSessionResponseSchema, agentHostAdmissionSchema } from "@ontomato/contracts/agent-host";
+import { agentHostCreateSessionResponseSchema, agentHostSendResultSchema } from "@ontomato/contracts/agent-host";
 import { api } from "../../api";
 import { t } from "../../i18n";
 import { ApiBusinessError, apiPost, createEventSource } from "../../utils/api";
@@ -92,7 +92,7 @@ export function createDiagnosisApi(request: Pick<typeof api, "get" | "post" | "p
       agentHostCreateSessionResponseSchema.parse(await request.post(
         "/observe/diagnoses", { target }, { headers: { "Idempotency-Key": sessionId } }
       ));
-      return agentHostAdmissionSchema.parse(await request.post(
+      return agentHostSendResultSchema.parse(await request.post(
         `/observe/agent/sessions/${encodeURIComponent(sessionId)}/runs`,
         { message },
         { headers: { "Idempotency-Key": runId } }

@@ -1,3 +1,4 @@
+import { agentInputDeliverySchema, agentPendingQuestionSchema } from "./agent-channel";
 import { z } from "zod";
 import {
   runtimeMessageRecordSchema,
@@ -65,6 +66,7 @@ export const agentHostRunSnapshotSchema = z
     run: agentHostRunSchema,
     cursor: runtimeCursorSchema,
     messages: z.array(agentHostMessageSchema),
+    pendingQuestions: z.array(agentPendingQuestionSchema),
     pendingMessages: runtimeRunSnapshotSchema.shape.pendingMessages,
     toolExecutions: runtimeRunSnapshotSchema.shape.toolExecutions,
     artifacts: z.array(runtimeArtifactSchema),
@@ -87,12 +89,14 @@ export const agentHostSessionSnapshotSchema = z
   .object({
     session: agentHostSessionSchema,
     messages: z.array(agentHostMessageSchema),
+    pendingQuestions: z.array(agentPendingQuestionSchema),
     latestRun: agentHostRunSnapshotSchema.nullable(),
   })
   .strict();
 export const agentHostSessionHistorySchema = z.object({
   session: agentHostSessionSchema,
   messages: z.array(agentHostMessageSchema),
+    pendingQuestions: z.array(agentPendingQuestionSchema),
   runs: z.array(agentHostRunSchema),
   latestRun: agentHostRunSnapshotSchema.nullable(),
   page: sessionHistoryBoundsSchema,
@@ -116,11 +120,11 @@ export const agentHostRenameSessionSchema = z.object({ title: z.string().trim().
 export const agentHostCreateSessionResponseSchema = z
   .object({ session: agentHostSessionSchema, replayed: z.boolean() })
   .strict();
-export const agentHostStartRunSchema = z
-  .object({ message: z.string().refine((v) => v.trim().length > 0) })
+export const agentHostSendRequestSchema = z
+  .object({ message: z.string().refine((v) => v.trim().length > 0), replyTo: runtimeIdSchema.optional() })
   .strict();
-export const agentHostAdmissionSchema = z
-  .object({ snapshot: agentHostRunSnapshotSchema, replayed: z.boolean() })
+export const agentHostSendResultSchema = z
+  .object({ delivery: agentInputDeliverySchema, input: agentHostMessageSchema, snapshot: agentHostRunSnapshotSchema.nullable(), pendingQuestions: z.array(agentPendingQuestionSchema), replayed: z.boolean() })
   .strict();
 export const agentHostCancelResponseSchema = z
   .object({ run: agentHostRunSchema.nullable() })
@@ -162,8 +166,8 @@ export type AgentHostCreateSession = z.infer<
 export type AgentHostCreateSessionResponse = z.infer<
   typeof agentHostCreateSessionResponseSchema
 >;
-export type AgentHostStartRun = z.infer<typeof agentHostStartRunSchema>;
-export type AgentHostAdmission = z.infer<typeof agentHostAdmissionSchema>;
+export type AgentHostSendRequest = z.infer<typeof agentHostSendRequestSchema>;
+export type AgentHostSendResult = z.infer<typeof agentHostSendResultSchema>;
 export type AgentHostCancelResponse = z.infer<
   typeof agentHostCancelResponseSchema
 >;

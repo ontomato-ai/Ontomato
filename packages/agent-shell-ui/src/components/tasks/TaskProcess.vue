@@ -13,7 +13,7 @@ const { response } = useTaskProcess(props.port, props.sessionId, props.taskId, p
   <div v-if="response" class="task-process">
     <template v-for="block in response.process" :key="block.key">
       <ShellProcess v-if="block.kind === 'steps'" :steps="block.steps" :active="block.active" />
-      <div v-else-if="block.kind === 'note'" class="task-note">
+      <div v-else-if="block.kind === 'note' || block.kind === 'input'" class="task-note">
         <TaskMarkdown :content="block.text" :final="block.final" />
       </div>
     </template>

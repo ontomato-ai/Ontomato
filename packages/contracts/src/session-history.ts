@@ -1,3 +1,4 @@
+import { agentPendingQuestionSchema } from "./agent-channel";
 import { z } from "zod";
 import { runtimeIdSchema, runtimeSequenceSchema } from "./agent-runtime-values";
 import { runtimeMessageRecordSchema, runtimeRunSnapshotSchema, runtimeRunViewSchema, runtimeSessionSchema } from "./agent-runtime";
@@ -29,6 +30,7 @@ export const sessionHistoryBoundsSchema = z.object({
 export const runtimeSessionHistorySchema = z.object({
   session: runtimeSessionSchema.extend({ latestRun: runtimeRunViewSchema.nullable() }),
   messages: z.array(runtimeMessageRecordSchema),
+  pendingQuestions: z.array(agentPendingQuestionSchema),
   runs: z.array(runtimeRunViewSchema),
   // Only the first tail/repair page has a live cut. Its settled messages are in the page, once.
   latestRun: runtimeRunSnapshotSchema.extend({ run: runtimeRunViewSchema }).nullable(),

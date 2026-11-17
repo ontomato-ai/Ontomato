@@ -1,9 +1,9 @@
 import { agentQualityProjectionSchema } from "@ontomato/contracts/agent-task-results";
 import { z } from "zod";
 import { agentHostRunSnapshotSchema } from "@ontomato/contracts/agent-host";
-import { datasetPayloadSchema, retrievalEvidenceSchema, retrievalCallerSchema, retrievalCallerAdmissionSchema, type RetrievalCallerInput } from "@ontomato/contracts/data-retrieval";
+import { datasetPayloadSchema, retrievalEvidenceSchema, retrievalCallerSchema, retrievalCallerAdmissionSchema, retrievalCallerUserQuotesSchema, type RetrievalCallerInput } from "@ontomato/contracts/data-retrieval";
 import { runtimeArtifactSchema } from "@ontomato/contracts/agent-runtime-artifacts";
-import { backendGet, backendPost, backendDelete, buildBackendHeaders, BackendResponseError } from "../../utils/backend-client";
+import { backendGet, backendPost, backendDelete, backendPut, buildBackendHeaders, BackendResponseError } from "../../utils/backend-client";
 import { getApiConfig } from "../../config/data-query-api";
 import { environment } from "../../config/environment";
 import { HttpError } from "../../utils/errors";
@@ -17,12 +17,13 @@ function serviceHeaders(owner: AssistantOwner, credentials?: AssistantCredential
     "X-Domain-Id": owner.domainId,
   };
 }
-async function ontologyRequest(path: string, headers: Record<string, string>, method: "GET" | "POST" | "DELETE" = "GET", body?: unknown) {
+async function ontologyRequest(path: string, headers: Record<string, string>, method: "GET" | "POST" | "DELETE" | "PUT" = "GET", body?: unknown) {
   const url = getApiConfig().baseUrl!.replace(/\/$/, "") + path;
   const options = { headers, retries: 1, timeoutMs: 30000, errorDetailLimit: 1000 };
   try {
     const response = method === "GET" ? await backendGet(path, url, options)
       : method === "DELETE" ? await backendDelete(path, url, options)
+      : method === "PUT" ? await backendPut(path, url, body, options)
       : await backendPost(path, url, body, options);
     return response.text ? JSON.parse(response.text) as unknown : null;
   } catch (error) {
@@ -40,11 +41,14 @@ export class OntologyRetrievalClient {
       ...(key ? { "Idempotency-Key": key } : {}),
     };
   }
-  private request(path: string, method: "GET" | "POST" | "DELETE" = "GET", body?: unknown, credentials?: AssistantCredentials, key?: string) {
+  private request(path: string, method: "GET" | "POST" | "DELETE" | "PUT" = "GET", body?: unknown, credentials?: AssistantCredentials, key?: string) {
     return ontologyRequest(path, this.headers(credentials, key), method, body);
   }
   async open(input: RetrievalCallerInput, credentials: AssistantCredentials) {
     return retrievalCallerAdmissionSchema.parse(await this.request("/ontology/retrieval-callers", "POST", input, credentials, this.scopeId));
+  }
+  async updateUserQuotes(recentUserMessages: string[], credentials: AssistantCredentials) {
+    await this.request(`/ontology/retrieval-callers/${this.scopeId}/user-quotes`, "PUT", retrievalCallerUserQuotesSchema.parse({recentUserMessages}), credentials);
   }
   async links() {
     return retrievalCallerSchema.parse(await this.request(`/ontology/retrieval-callers/${this.scopeId}`)).retrievals;

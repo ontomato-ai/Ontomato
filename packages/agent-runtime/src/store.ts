@@ -28,6 +28,7 @@ export interface MessageRow {
   id: string;
   runId: string | null;
   messageSeq: number;
+  contextSeq: number | null;
   message: RuntimeMessage;
 }
 export function canonical(value: unknown): string {
@@ -181,6 +182,14 @@ export class RuntimeStore {
           UPDATE ${this.table("sessions")} SET context_seq=message_seq;
           UPDATE ${this.table("messages")} SET context_seq=seq WHERE run_id IS NOT NULL;
           INSERT INTO ${this.table("schema_migrations")} VALUES(5)`);
+      }
+      if (!versions.some(row => row.version === 6)) {
+        await c.query(`UPDATE ${this.table("events")} SET envelope=jsonb_set(envelope,'{event,type}','"input_received"'::jsonb)
+          WHERE envelope->'event'->>'type'='notification_received';
+          UPDATE ${this.table("events")} e SET envelope=jsonb_set(e.envelope,'{event,contextSeq}',COALESCE(to_jsonb(m.context_seq),'null'::jsonb))
+          FROM ${this.table("messages")} m WHERE e.host_id=m.host_id AND e.domain_id=m.domain_id
+          AND e.envelope->'event'->>'type'='message_end' AND e.envelope->'event'->>'messageId'=m.id::text;
+          INSERT INTO ${this.table("schema_migrations")} VALUES(6)`);
       }
       await c.query(`ALTER TABLE ${this.table("messages")} ADD COLUMN IF NOT EXISTS input_mode text NOT NULL DEFAULT 'followup'`);
       await c.query(`
@@ -469,7 +478,7 @@ export class RuntimeStore {
       const events: RuntimeAgentEvent[] = [
         { type: "agent_start" },
         { type: "message_start", messageId, message: input },
-        { type: "message_end", messageId, messageSeq, message: input },
+        { type: "message_end", messageId, messageSeq, contextSeq, message: input },
       ];
       for (const [index, event] of events.entries())
         await c.query(
@@ -520,22 +529,27 @@ export class RuntimeStore {
   ): Promise<MessageRow[]> {
     return (
       await c.query(
-        `SELECT id,run_id AS "runId",seq,message FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND ($4::uuid IS NULL OR run_id=$4) ORDER BY seq`,
+        `SELECT id,run_id AS "runId",seq,context_seq,message FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND ($4::uuid IS NULL OR run_id=$4) ORDER BY seq`,
         [...values(scope), sessionId, runId ?? null],
       )
     ).rows.map((row) => ({
       id: row.id,
       runId: row.runId,
       messageSeq: Number(row.seq),
+      contextSeq: row.context_seq === null ? null : Number(row.context_seq),
       message: row.message,
     }));
+  }
+  async consumedInputs(scope: Scope, sessionId: string, runId: string): Promise<MessageRow[]> {
+    const {rows}=await this.pool.query(`SELECT id,run_id,seq,context_seq,message FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND run_id=$4 AND context_seq IS NOT NULL AND message->>'role' IN ('user','notification') ORDER BY context_seq`,[...values(scope),sessionId,runId]);
+    return rows.map(row=>({id:row.id,runId:row.run_id,messageSeq:Number(row.seq),contextSeq:Number(row.context_seq),message:row.message}));
   }
   /** Model order follows safe consumption, independently of receipt order in the visible transcript. */
   async contextMessages(scope: Scope, sessionId: string): Promise<MessageRow[]> {
     const { rows } = await this.pool.query(`SELECT id,run_id,context_seq,message FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND context_seq IS NOT NULL ORDER BY context_seq`, [...values(scope),sessionId]);
-    return rows.map(row => ({ id: row.id, runId: row.run_id, messageSeq: Number(row.context_seq), message: row.message }));
+    return rows.map(row => ({ id: row.id, runId: row.run_id, messageSeq: Number(row.context_seq), contextSeq: Number(row.context_seq), message: row.message }));
   }
-  /** Select a bounded message range before loading bodies. A Run is one admitted user turn. */
+  /** Select a bounded receipt range before loading bodies; a run can consume several user inputs. */
   async historyWindow(scope: Scope, sessionId: string, query: SessionHistoryQuery) {
     const head = Number((await this.pool.query(
       `SELECT message_seq FROM ${this.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
@@ -571,11 +585,11 @@ export class RuntimeStore {
       }
     }
     const messages = (await this.pool.query(
-      `SELECT id,run_id AS "runId",seq,message FROM ${this.table("messages")}
+      `SELECT id,run_id AS "runId",seq,context_seq,message FROM ${this.table("messages")}
        WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND seq>$4 AND seq<=$5
          AND message->>'role'<>'system' ORDER BY seq`,
       [...values(scope), sessionId, low, high],
-    )).rows.map(row => ({ id: row.id, runId: row.runId, messageSeq: Number(row.seq), message: row.message })) as MessageRow[];
+    )).rows.map(row => ({ id: row.id, runId: row.runId, messageSeq: Number(row.seq), contextSeq: row.context_seq === null ? null : Number(row.context_seq), message: row.message })) as MessageRow[];
     const first = messages[0]?.messageSeq;
     const older = first !== undefined && (await this.pool.query(
       `SELECT 1 FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3
@@ -763,9 +777,10 @@ export class RuntimeStore {
         throw new RuntimeError(409, "RUN_CLOSED", "Run is no longer active");
       const seq = Number(row.seq) + 1;
       if (event.type === "message_end") {
-        const received = (await c.query(`SELECT seq FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...values(scope), event.messageId])).rows[0];
+        const received = (await c.query(`SELECT seq,context_seq FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...values(scope), event.messageId])).rows[0];
         if (received) {
           event.messageSeq = Number(received.seq);
+          event.contextSeq = received.context_seq === null ? null : Number(received.context_seq);
           await c.query(`UPDATE ${this.table("messages")} SET run_id=$4 WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...values(scope), event.messageId, runId]);
         } else {
         const session = (
@@ -775,6 +790,7 @@ export class RuntimeStore {
           )
         ).rows[0];
         event.messageSeq = Number(session.message_seq);
+        event.contextSeq = Number(session.context_seq);
         await c.query(
           `INSERT INTO ${this.table("messages")} (host_id,domain_id,id,session_id,run_id,seq,message,context_seq) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
           [
@@ -888,7 +904,7 @@ export class RuntimeStore {
       for (const part of message.content) {
         if (part.type !== "toolCall" || answered.has(part.id)) continue;
         await this.append(scope, id, {
-          type: "message_end", messageId: randomUUID(), messageSeq: 0,
+          type: "message_end", messageId: randomUUID(), messageSeq: 0, contextSeq: null,
           message: { role: "toolResult", toolCallId: part.id, toolName: part.name,
             isError: true, timestamp: Date.now(), content: [{ type: "text",
               text: "Execution ended before its result was recorded. Its external outcome is unknown. Do not repeat this action automatically." }] },
@@ -907,7 +923,7 @@ export class RuntimeStore {
       await this.append(scope, id, {
         type: "message_end",
         messageId: randomUUID(),
-        messageSeq: 0,
+        messageSeq: 0, contextSeq: null,
         message: {
           role: "assistant",
           content: [],

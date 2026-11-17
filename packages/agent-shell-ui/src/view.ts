@@ -13,6 +13,7 @@ export type ProcessStep = ProcessStepView;
 export type ProcessBlock =
   | { kind: "note"; key: string; text: string; final: boolean; runId: string }
   | { kind: "steps"; key: string; steps: ProcessStep[]; active: boolean }
+  | { kind: "input"; key: string; messageId: string; text: string; source: "user"; replyTo?: string; runId: string; final: true }
   | { kind: "task"; key: string; task: ChannelAgentTask };
 
 /** Another party's review of the reply's data: one quality check of one retrieval branch. */
@@ -100,6 +101,7 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
     }
   };
   let response: ResponseItem | null = null;
+  const responses=new Map<string,ResponseItem>();
   const toolResults = new Map<string, string>();
   for (const entry of Object.values(state.messages)) {
     const message = entry.message;
@@ -108,7 +110,8 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
   }
 
   const openResponse = (runId: string): ResponseItem => {
-    if (response && response.runId === runId) return response;
+    const known=responses.get(runId);
+    if(known) return response=known;
     response = {
       kind: "response",
       key: runId,
@@ -124,15 +127,20 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
       finishedAt: null,
     };
     items.push(response);
+    responses.set(runId,response);
     return response;
   };
 
   for (const entry of orderedMessages(state)) {
     const message = entry.message;
     if (message.role === "system" || message.role === "toolResult") continue;
-    if (message.role === "user") {
-      response = null;
-      items.push({ kind: "user", key: entry.id, text: userText(message.content) });
+    const userAnswer=message.role === "notification" && message.kind === "agent-answer" && "kind" in message.source && message.source.kind === "user";
+    if (message.role === "user" || userAnswer) {
+      const current=entry.runId ? responses.get(entry.runId) : undefined;
+      if(current && entry.contextSeq !== null) {
+        place(current,message.timestamp);
+        current.process.push({kind:"input",key:entry.id,messageId:entry.id,text:userText(message.content),source:"user",...(message.role === "notification" ? {replyTo:message.replyTo}:{}),runId:current.runId,final:true});
+      } else items.push({ kind: "user", key: entry.id, text: userText(message.content) });
       for (const failure of tasks?.preparationFailures ?? []) if (failure.inputId === entry.id) items.push({ kind: "notification",key: `preparation:${failure.runId}`,text: failure.error,error: true });
       continue;
     }

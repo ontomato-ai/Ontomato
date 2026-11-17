@@ -348,10 +348,20 @@ export class AgentRuntime {
     await this.store.pool.query(`UPDATE ${this.store.table("runs")} SET run=jsonb_set(run,'{definition,context}',$4::jsonb) WHERE host_id=$1 AND domain_id=$2 AND id=$3`,[scope.hostId,scope.domainId,runId,JSON.stringify(context)]);
   }
   seal(scope: Scope, runId: string) { this.active.get(key(scope, runId))!.sealed = true; }
-  async notificationReceived(scope: Scope, runId: string, row: import("./store").MessageRow) {
+  acceptsInput(scope: Scope, runId: string) { const active=this.active.get(key(scope,runId));return !!active && !active.sealed; }
+  async questionsChanged(scope: Scope, sessionId: string) {
+    await this.locked(scope,sessionId,async()=>{
+      const session=await this.store.session(scope,sessionId);
+      if(!session.activeRunId) return;
+      const active=this.active.get(key(scope,session.activeRunId))!;
+      const envelope=await this.store.append(scope,session.activeRunId,{type:"pending_questions_changed",pendingQuestions:await this.channel.facts.pendingQuestions(scope,sessionId)});
+      this.publish(active,envelope);
+    });
+  }
+  async inputReceived(scope: Scope, runId: string, row: import("./store").MessageRow) {
     const active = this.active.get(key(scope, runId));
     if (!active || active.sealed) return;
-    const envelope = await this.store.append(scope, runId, { type: "notification_received", messageId: row.id, messageSeq: row.messageSeq, message: agentNotificationSchema.parse(row.message) });
+    const envelope = await this.store.append(scope, runId, { type: "input_received", messageId: row.id, messageSeq: row.messageSeq, message: row.message as import("@ontomato/contracts/agent-channel").AgentInput });
     this.publish(active, envelope);
   }
   private publish(active: Active, envelope: RuntimeEventEnvelope) {
@@ -473,6 +483,7 @@ export class AgentRuntime {
         type: "message_end",
         messageId: active.currentMessageId!,
         messageSeq: 0,
+        contextSeq: null,
         message: projectMessage(event.message as Message),
       });
     if (event.type === "tool_execution_end") {
@@ -871,8 +882,9 @@ export class AgentRuntime {
         if (tool.status === "running") tool.status = "unknown";
     return {
       run: state.run,
+      pendingQuestions: await this.channel.facts.pendingQuestions(scope,state.run.sessionId),
       cursor: { runId, seq: state.seq, streamId: state.streamId },
-      messages: includeHistory ? await this.store.messages(scope, state.run.sessionId, undefined, runId) : [],
+      messages: includeHistory ? await this.store.messages(scope, state.run.sessionId, undefined, runId) : await this.store.consumedInputs(scope,state.run.sessionId,runId),
       pendingMessages: active
         ? [...active.pending].map(([id, message]) => ({
             id,
@@ -925,6 +937,7 @@ export class AgentRuntime {
       const session = await this.store.session(scope, sessionId);
       return {
         session,
+        pendingQuestions: await this.channel.facts.pendingQuestions(scope,sessionId),
         messages: await this.store.messages(scope, sessionId),
         latestRun: session.latestRunId
           ? await this.snapshotUnlocked(scope, session.latestRunId)
@@ -954,7 +967,7 @@ export class AgentRuntime {
           pendingMessages: snapshot.pendingMessages.filter(entry => entry.message.role !== "system"),
         };
       }
-      return { session: { ...session, latestRun: currentRun }, ...window, runs: runs.filter(run => ids.has(run.id)), latestRun };
+      return { pendingQuestions:await this.channel.facts.pendingQuestions(scope,sessionId), session: { ...session, latestRun: currentRun }, ...window, runs: runs.filter(run => ids.has(run.id)), latestRun };
     });
   }
   /**

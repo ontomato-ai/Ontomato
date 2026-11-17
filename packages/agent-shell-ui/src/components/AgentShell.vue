@@ -87,7 +87,7 @@ const taskFocus = ref<{ taskId: string; at: number } | null>(null);
 const conversation = useAgentConversation(() => props.client, () => agentId.value);
 const notice = inject(sessionRunNotices, null);
 if (notice) watch(notice, frame => {
-  if (frame?.type !== "run_started" || frame.sessionId !== conversation.state.sessionId || conversation.sending.value || frame.runId in conversation.state.runs || frame.runId === conversation.activeRunId.value) return;
+  if (frame?.type !== "run_started" || frame.sessionId !== conversation.state.sessionId || frame.runId in conversation.state.runs || frame.runId === conversation.activeRunId.value) return;
   void conversation.followRun(frame.runId).catch(report);
 });
 const nav = props.nav;
@@ -198,7 +198,7 @@ async function send(input: string) {
   const text = context ? `${input}\n\n${context}` : input;
   const result = await conversation.send(agent, text);
   if (!result) return;
-  if (!result.snapshot) {
+  if (!result.delivery) {
     // The conversation was created but its run refused: the host takes it as listed (still empty), so sending again
     // goes on in the conversation the host knows.
     void nav.loadSessions();
@@ -216,7 +216,7 @@ async function send(input: string) {
   }
   // Sending in a conversation already listed moves it up, and titles it when the host has not yet. Its run state is the
   // feed's to read, from the admission onwards.
-  const { sessionId: runSession } = result.snapshot.run;
+  const runSession = result.delivery.sessionRef.sessionId;
   const entry = nav.sessions.value.find((row) => row.id === runSession);
   if (entry) nav.promoteSession(entry, text);
 }

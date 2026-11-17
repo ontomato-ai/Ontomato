@@ -1,3 +1,4 @@
+import { agentHostSendResultSchema, type AgentHostSendRequest } from "@ontomato/contracts/agent-host";
 import { resolveLocale } from "../../i18n";
 import { assertAppBuilderAccess } from "../app-builder/access";
 import { ChannelProcessClient } from "../agent-host/process";
@@ -190,6 +191,7 @@ export const assistantService = {
       s = await new RuntimeClient(owner.domainId, undefined, owner.userId).session(id);
     return {
       session: sessionView(await assistantStore.session(row.id, owner), s.latestRun?.run ?? null),
+      pendingQuestions: s.pendingQuestions,
       messages: publicMessages(s.messages),
       latestRun: s.latestRun ? publicSnapshot(s.latestRun) : null,
     };
@@ -240,7 +242,7 @@ export const assistantService = {
     const { row: turn } = await assistantStore.reserve(sessionId,id,message,owner,a.class_names);
     const request = await withDomainSkills(owner.domainId,async () => {
       const prepare = isAppBuilderKind(a.kind) ? prepareAppBuilderRun : prepareAnalystRun;
-      return prepare({ a,session,turn,message,input,ontologyContext,owner,credentials });
+      return prepare({ a,session,turn,message,input,inputId:body.inputId,ontologyContext,owner,credentials });
     });
     await assistantStore.admitted(id,message);
     return { ...request,input,authority: { classNames: a.class_names,executionKind: isAppBuilderKind(a.kind) ? "build-test" : "live" } };
@@ -258,14 +260,14 @@ export const assistantService = {
     const ontologyContext = isAppBuilderKind(a.kind) || profile ? null : await assistantOntologyContext(a,credentials);
     return { agent: a,ontologyContext };
   },
-  async start(sessionId: string, id: string, message: string, owner: AssistantOwner, credentials: AssistantCredentials) {
+  async send(sessionId: string, id: string, input: AgentHostSendRequest, owner: AssistantOwner, credentials: AssistantCredentials) {
     const session = await assistantStore.session(sessionId, owner), a = await assistantStore.agent(session.agent_id, owner);
     const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
     const actor = await openAgentCaller(owner, credentials), agent = { providerId: "workbench", agentId: session.agent_id };
     await client.request(`/v1/channel/sessions/${sessionId}/bind`, "POST", { agent, actor });
     const channel: AgentRunContext = { agent, actor, authority: { classNames: a.class_names, executionKind: isAppBuilderKind(a.kind) ? "build-test" : "live" }, requestedBy: null, root: { session: { providerId: "workbench", sessionId }, runId: id } };
-    await client.request(`/v1/channel/sessions/${sessionId}/runs`, "POST", { channel, credential: {token:credentials.token ?? null,apiKey:credentials.apiKey ?? null}, language: resolveLocale(credentials.locale), input: { role: "user", content: message, timestamp: Date.now() }, ...(session.workspace_id ? { context: { workspaceId: session.workspace_id } } : {}) }, id);
-    return { snapshot: publicSnapshot(await client.run(id)), replayed: false };
+    const accepted = agentHostSendResultSchema.omit({snapshot:true}).parse(await client.request(`/v1/channel/sessions/${sessionId}/runs`, "POST", { channel, credential: {token:credentials.token ?? null,apiKey:credentials.apiKey ?? null}, language: resolveLocale(credentials.locale), input: { role: "user", content: input.message, timestamp: Date.now() }, replyTo: input.replyTo, ...(session.workspace_id ? { context: { workspaceId: session.workspace_id } } : {}) }, id));
+    return agentHostSendResultSchema.parse({ ...accepted, snapshot: accepted.delivery.delivery === "run" && accepted.delivery.status === "running" ? publicSnapshot(await client.run(accepted.delivery.runId)) : null });
 
   },
   /**

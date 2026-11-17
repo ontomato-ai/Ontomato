@@ -15,12 +15,16 @@ export type AgentCredential = z.infer<typeof agentCredentialSchema>;
 export const agentSteerPreparationSchema = z.object({ accepted: z.literal(true), context: z.string().optional() }).strict();
 export const agentProviderAcknowledgementSchema = z.object({ accepted: z.literal(true) }).strict();
 export const agentExecutionRefSchema = z.object({ session: agentSessionRefSchema, runId: id }).strict();
-export const agentMessageSourceSchema = z.union([agentExecutionRefSchema,z.object({ kind: z.literal("external") }).strict()]);
+export const agentMessageSourceSchema = z.union([agentExecutionRefSchema,z.object({ kind: z.enum(["external", "user"]) }).strict()]);
+export const agentQuestionOptionSchema = z.object({ label: key, description: z.string().optional(), isDefault: z.boolean() }).strict();
+export const agentQuestionOptionsSchema = z.array(agentQuestionOptionSchema).min(1).refine(options => options.filter(option => option.isDefault).length === 1, "Exactly one option must be the default");
+export const agentPendingQuestionSchema = z.object({ requestId: id, source: agentExecutionRefSchema, message: z.string(), defaultAssumption: z.string(), options: agentQuestionOptionsSchema.optional() }).strict();
+export const agentInputDeliverySchema = z.object({ messageId: id, sessionRef: agentSessionRefSchema, runId: id, delivery: z.enum(["steer", "run"]), status: z.enum(["starting", "running"]) }).strict();
 export const agentNotificationSchema = z.object({
   role: z.literal("notification"),
   kind: z.enum(["agent-message", "agent-result", "agent-question", "agent-answer"]),
   source: agentMessageSourceSchema,
-  replyTo: id.optional(), defaultAssumption: z.string().optional(),
+  replyTo: id.optional(), defaultAssumption: z.string().optional(), options: agentQuestionOptionsSchema.optional(),
   outcome: z.enum(["completed", "failed", "cancelled"]).optional(),
   content: z.string(), timestamp: z.number().int().nonnegative(),
 }).strict();
@@ -43,7 +47,7 @@ export const agentRunContextSchema = z.object({
 export const agentPrepareRequestSchema = z.object({
   mode: z.enum(["run", "steer"]), language: key,
   agent: agentRefSchema, sessionId: id, runId: id, actor: agentActorRefSchema,
-  input: agentInputSchema, authority: agentAuthoritySchema, requestedBy: agentExecutionRefSchema.nullable(), root: agentExecutionRefSchema, context: runtimeJsonObjectSchema.optional(),
+  inputId: id, input: agentInputSchema, authority: agentAuthoritySchema, requestedBy: agentExecutionRefSchema.nullable(), root: agentExecutionRefSchema, context: runtimeJsonObjectSchema.optional(),
 }).strict();
 export const agentProviderExecutionSchema = z.object({ execution: agentExecutionRefSchema, actor: agentActorRefSchema, fileId: id.optional() }).strict();
 export const agentDeliverySchema = z.object({
@@ -61,12 +65,13 @@ export const agentDeliverySchema = z.object({
 export const agentChannelCommandSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("list"), query: z.string().optional() }).strict(),
   z.object({ op: z.literal("start"), agent: agentRefSchema, message: z.string().min(1), title: z.string().optional(), context: runtimeJsonObjectSchema.optional() }).strict(),
-  z.object({ op: z.literal("send"), session: z.union([agentSessionRefSchema,z.literal("parent")]), message: z.string().min(1), steer: z.boolean().optional(), needsInput: z.boolean().optional(), replyTo: id.optional(), defaultAssumption: z.string().min(1).optional() }).strict(),
+  z.object({ op: z.literal("send"), session: z.union([agentSessionRefSchema,z.literal("parent")]), message: z.string().min(1), steer: z.boolean().optional(), needsInput: z.boolean().optional(), replyTo: id.optional(), defaultAssumption: z.string().min(1).optional(), options: agentQuestionOptionsSchema.optional() }).strict(),
   z.object({ op: z.literal("read"), taskId: id, files: z.boolean().optional(), view: z.enum(["result", "messages"]).optional(), cursor: z.number().int().nonnegative().optional(), limit: z.number().int().min(1).max(100).optional() }).strict(),
   z.object({ op: z.literal("cancel"), taskId: id }).strict(),
 ]).superRefine((command,ctx) => {
   if (command.op !== "send") return;
   if (command.needsInput && !command.defaultAssumption) ctx.addIssue({ code: z.ZodIssueCode.custom,path: ["defaultAssumption"],message: "A question requires its default assumption" });
+  if (command.options && !command.needsInput) ctx.addIssue({ code: z.ZodIssueCode.custom,path: ["options"],message: "Options belong to a question" });
   if (command.needsInput && command.replyTo) ctx.addIssue({ code: z.ZodIssueCode.custom,path: ["replyTo"],message: "A question cannot also be an answer" });
 });
 /** A preparing intent occupies the session before a host callback starts. It is not a running run. */
@@ -87,3 +92,6 @@ export type AgentRunIntent = z.infer<typeof agentRunIntentSchema>;
 export type AgentPrepareRequest = z.infer<typeof agentPrepareRequestSchema>;
 export type AgentDelivery = z.infer<typeof agentDeliverySchema>;
 export type AgentChannelCommand = z.infer<typeof agentChannelCommandSchema>;
+
+export type AgentInputDelivery = z.infer<typeof agentInputDeliverySchema>;
+export type AgentPendingQuestion = z.infer<typeof agentPendingQuestionSchema>;

@@ -17,7 +17,7 @@ const runId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const otherSessionId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const other = { id: otherSessionId, agentId, title: "Earlier", origin: "user", createdAt: new Date(0).toISOString(), latestRun: null };
 const created = { id: createdSessionId, agentId, title: "", origin: "user", createdAt: new Date(0).toISOString(), latestRun: null };
-const admitted: AgentHostRunSnapshot = {
+const admitted: AgentHostRunSnapshot = { pendingQuestions: [],
   run: {
     id: runId, sessionId: createdSessionId, status: "running", stopReason: null, errorMessage: null, answerMessageId: null, workspaceCommit: null,
     createdAt: new Date(0).toISOString(), finishedAt: null, resolvedSkills: [],
@@ -26,13 +26,15 @@ const admitted: AgentHostRunSnapshot = {
   messages: [], pendingMessages: [], toolExecutions: [], artifacts: [],
 };
 
+const admission = {delivery:{messageId:runId,sessionRef:{providerId:"workbench",sessionId:createdSessionId},runId,delivery:"run",status:"running"},input:{id:runId,runId,messageSeq:1,contextSeq:1,message:{role:"user",content:"hello",timestamp:1}},snapshot:admitted,pendingQuestions:[],replayed:false};
+
 /** One host context: the app builder makes one of these per workspace. */
-function port(startRun: () => Promise<unknown>) {
+function port(send: () => Promise<unknown>) {
   return {
     listAgents: vi.fn().mockResolvedValue([]),
     listSessions: vi.fn().mockResolvedValue({ sessions: [], nextCursor: null }),
     createSession: vi.fn().mockResolvedValue(created),
-    startRun: vi.fn(startRun),
+    send: vi.fn(send),
     subscribe: () => () => {},
     // No list notice feed here: the shell itself writes no run state into the list.
     sessionRuns: { read: vi.fn().mockResolvedValue({ sessions: [] }), subscribe: () => () => {} },
@@ -112,12 +114,12 @@ it("hands the host a conversation it created even when the run was refused, and 
   // Sent again, and the reader opens another conversation before the run is admitted: the conversation is moved up
   // and takes the message as its title, the open one is left alone, and neither row's run state is written here (the
   // page's notice feed reads it).
-  (host.startRun as ReturnType<typeof vi.fn>).mockImplementation(() => new Promise((resolve) => (admit = resolve)));
+  (host.send as ReturnType<typeof vi.fn>).mockImplementation(() => new Promise((resolve) => (admit = resolve)));
   const sent = shell.value!.send("hello");
   await settle();
   sessionId.value = otherSessionId;
   await settle();
-  admit(admitted);
+  admit(admission);
   await sent;
   await settle();
 
@@ -139,7 +141,7 @@ it("lists a first message's conversation but leaves the reader in the conversati
   await settle();
   sessionId.value = otherSessionId;
   await settle();
-  admit(admitted);
+  admit(admission);
   await sent;
   await settle();
 
@@ -153,7 +155,7 @@ it("lists a first message's conversation but leaves the reader in the conversati
 it("drops a first message on its way as soon as the host moves to another context, and ignores its return", async () => {
   let admit!: (snapshot: unknown) => void;
   const a = port(() => new Promise((resolve) => (admit = resolve)));
-  const b = port(() => Promise.resolve(admitted));
+  const b = port(() => Promise.resolve(admission));
   const { root, client, sessionId, shell } = render(a);
   await settle();
 
@@ -166,7 +168,7 @@ it("drops a first message on its way as soon as the host moves to another contex
   expect(root.querySelector(".unstarted")!.textContent).toBe("true");
   expect(root.textContent).not.toContain("for workspace A");
 
-  admit(admitted);
+  admit(admission);
   await sent;
   await settle();
 
@@ -178,10 +180,10 @@ it("drops a first message on its way as soon as the host moves to another contex
 
 it("attaches an externally started run through the page feed without reopening history", async () => {
   let handlers!: SessionRunHandlers;
-  const host = port(async () => admitted);
+  const host = port(async () => admission);
   host.readRun = vi.fn(async () => admitted) as AgentHostClient["readRun"];
   host.subscribe = vi.fn(() => () => {});
-  (host.readHistory as ReturnType<typeof vi.fn>).mockResolvedValue({ session: created, messages: [], runs: [], latestRun: null, page: { messageSeq: 0, olderCursor: null } });
+  (host.readHistory as ReturnType<typeof vi.fn>).mockResolvedValue({ pendingQuestions: [], session: created, messages: [], runs: [], latestRun: null, page: { messageSeq: 0, olderCursor: null } });
   const feed: SessionRunPort = { read: vi.fn(async () => ({ sessions: [] })), subscribe: vi.fn(value => { handlers = value; return () => {}; }) };
   const view = render(host, feed);
   view.sessionId.value = createdSessionId;
@@ -197,10 +199,10 @@ it("attaches an externally started run through the page feed without reopening h
   expect(feed.subscribe).toHaveBeenCalledTimes(1);
 });
 
-it("does not attach its own start notice before the send response and preserves first-message handoff", async () => {
+it("attaches a start notice during send without losing the first-message handoff or duplicating its subscription", async () => {
   let admit!: (snapshot: unknown) => void, handlers!: SessionRunHandlers;
   const host = port(() => new Promise(resolve => { admit = resolve; }));
-  host.readRun = vi.fn() as AgentHostClient["readRun"];
+  host.readRun = vi.fn(async()=>admitted) as AgentHostClient["readRun"];
   host.subscribe = vi.fn(() => () => {});
   const feed: SessionRunPort = { read: vi.fn(async () => ({ sessions: [] })), subscribe: value => { handlers = value; return () => {}; } };
   const view = render(host, feed);
@@ -209,8 +211,8 @@ it("does not attach its own start notice before the send response and preserves 
   await settle();
   await handlers.frame({ type: "run_started", sessionId: createdSessionId, runId });
   await settle();
-  expect(host.readRun).not.toHaveBeenCalled();
-  admit(admitted);
+  expect(host.readRun).toHaveBeenCalledTimes(1);
+  admit(admission);
   await sent;
   await settle();
   expect(view.sessionId.value).toBe(createdSessionId);
