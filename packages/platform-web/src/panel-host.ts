@@ -16,6 +16,21 @@ import type { DefinitionChanged, DefinitionTarget, PanelHostPort } from "@ontoma
  *   carries identity only, so a reader reads the current definition again by that ID.
  */
 
+/**
+ * The addresses the panel host reads, each at its own owner. Java answers the use relations, under the gateway's
+ * data-query prefix; Node answers panels, subscriptions and the SDK's current version, at `/api` with no such prefix. They
+ * are named here once, and a test asserts them, because an address assembled from the wrong owner's habit is a 403 that
+ * looks like a permission problem.
+ */
+export const panelHostPaths = {
+  appsSdkCurrent: "/api/apps-sdk/current",
+  applicationPanelUses: (applicationId: string) =>
+    `/api/data-query/platform/applications/${encodeURIComponent(applicationId)}/panel-uses`,
+  panel: (panelId: string) => `/api/product-panels/${encodeURIComponent(panelId)}`,
+  subscriptions: "/api/product-assets/subscriptions",
+  subscription: (subscriptionId: string) => `/api/product-assets/subscriptions/${encodeURIComponent(subscriptionId)}`,
+};
+
 async function json(path: string, init: RequestInit = {}) {
   const response = await nodeApiRequest(path, init);
   const body = await response.json();
@@ -31,10 +46,10 @@ export function platformPanelHost(applicationId: string): PanelHostPort {
       return panelUsesOf(id);
     },
     async panel(panelId) {
-      return productPanelSchema.parse((await json(`/api/product-panels/${encodeURIComponent(panelId)}`)).panel) as ProductPanel;
+      return productPanelSchema.parse((await json(panelHostPaths.panel(panelId))).panel) as ProductPanel;
     },
     async sdkBase() {
-      return appsSdkCurrentSchema.parse(await json("/api/data-query/app-builder/apps-sdk/current")).sdkBasePath;
+      return appsSdkCurrentSchema.parse(await json(panelHostPaths.appsSdkCurrent)).sdkBasePath;
     },
     frame: (frame: Window) => registerLiveFrame(frame),
     subscribe: (targets, listener) => subscribeProductDefinitions(targets, listener),
@@ -43,7 +58,7 @@ export function platformPanelHost(applicationId: string): PanelHostPort {
 
 /** One application's use relations, as Java declares them; the app's entry and its page skills belong to them. */
 export async function panelUsesOf(applicationId: string) {
-  const answer = await json(`/api/data-query/platform/applications/${encodeURIComponent(applicationId)}/panel-uses`);
+  const answer = await json(panelHostPaths.applicationPanelUses(applicationId));
   return applicationPanelUsesResponseSchema.parse(answer.data ?? answer).panelUses;
 }
 
@@ -61,7 +76,7 @@ function subscribeProductDefinitions(
   async function watch(target: DefinitionTarget) {
     const key = `${target.kind}:${target.id}`;
     if (stopped || stops.has(key)) return;
-    const answer = await json("/api/product-assets/subscriptions", {
+    const answer = await json(panelHostPaths.subscriptions, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ kind: "product-definition", target }),
@@ -73,7 +88,7 @@ function subscribeProductDefinitions(
     let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = async () => {
       if (stopped) return;
-      const body = await json(`/api/product-assets/subscriptions/${encodeURIComponent(answer.id)}`);
+      const body = await json(panelHostPaths.subscription(answer.id));
       for (const event of body.events as ProductSubscriptionEvent[]) {
         if (event.kind !== "definition-changed") continue;
         listener({ kind: "definition-changed", domainId: event.domainId, target: event.target });
@@ -95,5 +110,5 @@ function subscribeProductDefinitions(
 }
 
 function stopSubscription(id: string) {
-  return nodeApiRequest(`/api/product-assets/subscriptions/${encodeURIComponent(id)}`, { method: "DELETE" });
+  return nodeApiRequest(panelHostPaths.subscription(id), { method: "DELETE" });
 }

@@ -107,6 +107,9 @@ export interface PanelInstanceOptions {
   initial: () => Record<string, unknown>;
 }
 
+/** What a failure is called in the panel's error place: its own message, or what it was, verbatim. */
+const failureText = (failure: unknown) => (failure instanceof Error ? failure.message : String(failure));
+
 /**
  * Loads one panel instance from its use relation and keeps it current. The instance is this composable's alone: two
  * callers of the same panel hold two states, and neither sees the other's selection.
@@ -129,21 +132,32 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   let settle: () => void = () => {};
   const ready = new Promise<void>((resolve) => (settle = resolve));
 
+  /**
+   * Reads what this instance needs: the use relation, the panel's current record and the SDK base its frame runs on.
+   * Whatever fails is reported where the panel would have been — a page that cannot say why it is empty is worse than one
+   * that says what it could not read.
+   */
   async function load() {
     error.value = "";
-    const applicationId = port.applicationId();
-    const relations = await port.uses(applicationId);
-    const relation = relations.find((candidate) => candidate.id === options.useId());
-    if (!relation) throw new Error(`Application ${applicationId} declares no panel use ${options.useId()}`);
-    use.value = relation;
-    await adopt(await port.panel(relation.panelId));
-    loadedPanelId = relation.panelId;
-    stopNotices = port.subscribe(targets(), notice);
+    try {
+      const applicationId = port.applicationId();
+      const relations = await port.uses(applicationId);
+      const relation = relations.find((candidate) => candidate.id === options.useId());
+      if (!relation) throw new Error(`Application ${applicationId} declares no panel use ${options.useId()}`);
+      await adopt(relation, await port.panel(relation.panelId));
+      loadedPanelId = relation.panelId;
+      stopNotices = port.subscribe(targets(), notice);
+    } catch (failure) {
+      error.value = failureText(failure);
+    }
     settle();
   }
 
-  async function adopt(record: ProductPanel) {
+  async function adopt(relation: ApplicationPanelUse, record: ProductPanel) {
+    // The SDK base is read before the record is kept, so a version this platform cannot serve shows as an error rather
+    // than as an empty frame.
     const base = await port.sdkBase();
+    use.value = relation;
     panel.value = record;
     // The state the page was opened at is checked against the panel's own declaration, so a link never sets another
     // field. It is read once, at load: after that the instance is what the address follows, not the other way round.
@@ -154,7 +168,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     const message: PanelHostMessage = {
       kind: "panel-host-message",
       panel: record,
-      pageKey: use.value!.pageKey,
+      pageKey: relation.pageKey,
       url: address.value,
       // What a message calls the page: the panel's own registered name, which its author wrote, with the application's
       // when the page passes one.
@@ -164,7 +178,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     document.value = panelFrameDocument(record, base, message);
     if (frame) {
       disposeFrame?.();
-      disposeFrame = port.frame(frame, use.value!);
+      disposeFrame = port.frame(frame, relation);
     }
   }
 
@@ -185,10 +199,13 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
     // A changed panel: read again by its ID, but never over a form the reader has unsaved.
     if (event.target.id !== loadedPanelId) return;
-    void port.panel(event.target.id).then((record) => {
-      if (dirty()) waiting = record;
-      else void adopt(record);
-    });
+    port.panel(event.target.id).then(
+      (record) => {
+        if (dirty()) waiting = record;
+        else if (use.value) void adopt(use.value, record).catch((failure: unknown) => (error.value = failureText(failure)));
+      },
+      (failure: unknown) => (error.value = failureText(failure)),
+    );
   }
   onBeforeUnmount(() => stopNotices?.());
 
@@ -229,7 +246,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       if (!unsaved && waiting) {
         const record = waiting;
         waiting = null;
-        void adopt(record);
+        if (use.value) void adopt(use.value, record).catch((failure: unknown) => (error.value = failureText(failure)));
       }
     }
     if (payload.kind === "invoked") {
