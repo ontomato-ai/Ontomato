@@ -21,6 +21,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.alibaba.fastjson2.JSONArray;
@@ -395,8 +397,10 @@ public class ActionController {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
-            if (e instanceof org.springframework.web.server.ResponseStatusException denied && denied.getStatusCode().value() == 403)
+            if (e instanceof org.springframework.web.server.ResponseStatusException denied && denied.getStatusCode().value() == 403) {
+                ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes()).getResponse().setStatus(403);
                 ret.put("code", 403);
+            }
             io.ontomato.dataengine.service.ExecutionTarget.failure(ret,e);
 		} finally {
 			for (Path tempFile : tempFiles) {

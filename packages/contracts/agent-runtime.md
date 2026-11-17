@@ -25,11 +25,11 @@ plain JSON; HTTP failures retain `{error:{code,message},correlationId}`.
 | Method and path | Request / response |
 | --- | --- |
 | POST /v1/sessions | `{}`; 201 `{session,replayed}` |
-| GET /v1/sessions/:id | `{session,messages,latestRun}` complete snapshot |
+| GET /v1/sessions/:id | `{session,messages,latestRun,pendingQuestions}` complete snapshot |
 | GET /v1/sessions/:id/history | bounded conversation history page; `before`, `after`, `through`, optional recovery `runId` |
 | POST /v1/sessions/status | `{sessionIds}`; ordered `{sessions:[{session,latestRun}]}` |
 | GET /v1/sessions/run-events | SSE, `ready` then `run_started`/`run_stopped` lifecycle notices for the host + domain; identity only, no replay |
-| POST /v1/sessions/:id/runs | StartRun below; 202 `{run,replayed}` |
+| POST /v1/sessions/:id/runs | StartRun below; 202 `{run,replayed}` (direct execution admission) |
 | GET /v1/runs/:id | `{run,messages,pendingMessages,toolExecutions,artifacts,cursor}` |
 | GET /v1/runs/:id/status | `{run}` lifecycle view only; with `waitFor=stopped` (and `timeoutMs` ≤ 60000, default 30000) held until the run stops or the timeout, which returns it still running |
 | GET /v1/runs/:id/final-reply | The message named by the run's `answerMessageId`, or `null` |
@@ -351,7 +351,20 @@ configuration grants this to ontology alone. Other runtime routes remain host-sc
 ## Agent channel
 
 `agent-channel.ts` owns provider/session/execution references, directory entries, actor references,
-inputs and provider callbacks. Fixed server configuration maps providers to host credentials and
+inputs and provider callbacks.
+
+Host conversation sends return `{delivery,input,pendingQuestions,replayed}`. `delivery` includes
+`messageId/sessionRef/runId`, `delivery: "steer" | "run"` and `status: "starting" | "running"`.
+The actual run ID can differ from the input request ID; a preparing intent has no run snapshot.
+Web user sends steer by default and answers use replyTo with an authenticated user source.
+All host shell clients expose send, including governance, Action creation and diagnosis.
+Session/history/run snapshots include the session-level pendingQuestions, independently of
+the loaded history window; pending_questions_changed carries its complete current projection.
+Questions have optional options with label, description and exactly one isDefault.
+Input receipt uses input_received; consumption retains the same ID and adds contextSeq to
+message records and message_end. Receipt messageSeq remains the history pagination cursor.
+Migration 6 upgrades the existing version 5 schema: persisted event names and message_end
+consumption sequences change together before the runtime opens its service. Fixed server configuration maps providers to host credentials and
 callback URLs. Models cannot supply identity, domain, credentials or callback addresses.
 
 The native `agent` tool is installed by the runtime for provider-prepared runs with an actor reference. Retrieval, Action creation and ontology model generation all enter through provider prepare. `start` creates a child session; `send` is
@@ -389,6 +402,12 @@ its in-memory credentials remain until these attachments finish without delaying
 The ontology-only retriever cancellation command preserves binding; generic cancel covers the
 execution and its delegated descendants. Natural parent completion does not cancel children.
 Action creation and generation prepare retain their existing write and sandbox admission.
+
+Provider prepare also receives inputId, the stable receipt ID used to bound host user quotes.
+A genuine user answer retains source.kind=user; agent and external answers are confirmed
+decisions, not user quotes. Retrieval callers update their current quotes through the host-only
+user-quotes endpoint; each retrieval round freezes its quotes in its existing run request for
+both branches and their quality checks.
 
 A replyTo send automatically steers an active recipient or prepares its next run when idle.
 An ordinary busy send fails with SESSION_BUSY before recording an input unless steer is explicit.

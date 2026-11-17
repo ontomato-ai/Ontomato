@@ -1,4 +1,4 @@
-import { agentRunContextSchema, agentNotificationSchema, agentAuthoritySchema } from "./agent-channel";
+import { agentRunContextSchema, agentNotificationSchema, agentAuthoritySchema, agentPendingQuestionSchema } from "./agent-channel";
 import { workspaceCommitSchema } from "./workspaces";
 import { serviceLogCorrelationSchema } from "./service-logging";
 import { z } from "zod";
@@ -171,6 +171,7 @@ export const runtimeMessageRecordSchema = z
     id: runtimeIdSchema,
     runId: runtimeIdSchema.nullable(),
     messageSeq: runtimeSequenceSchema,
+    contextSeq: runtimeSequenceSchema.nullable(),
     message: runtimeSettledMessageSchema,
   })
   .strict();
@@ -179,6 +180,7 @@ export const runtimeRunSnapshotSchema = z
     run: runtimeRunSchema,
     cursor: runtimeCursorSchema,
     messages: z.array(runtimeMessageRecordSchema),
+    pendingQuestions: z.array(agentPendingQuestionSchema),
     // Latest full live partials through cursor, not deltas to append to settled messages.
     pendingMessages: z.array(
       z.object({ id: runtimeIdSchema, message: runtimeMessageSchema }).strict(),
@@ -192,6 +194,7 @@ export const runtimeSessionSnapshotSchema = z
     session: runtimeSessionSchema,
     // Includes settled messages of the active run; merge using message IDs, never array offsets.
     messages: z.array(runtimeMessageRecordSchema),
+    pendingQuestions: z.array(agentPendingQuestionSchema),
     latestRun: runtimeRunSnapshotSchema.nullable(),
   })
   .strict();
@@ -279,3 +282,5 @@ export type RuntimeSessionStatusesRequest = z.infer<
 export type RuntimeSessionStatusesResponse = z.infer<
   typeof runtimeSessionStatusesResponseSchema
 >;
+
+export type RuntimeMessageRecord = z.infer<typeof runtimeMessageRecordSchema>;

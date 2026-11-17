@@ -26,6 +26,8 @@ const context=useManagerContext();
 const managerCounts=useManagerCounts();
 const graph=ref<ProductGraph|null>(null),graphLoading=ref(false),graphError=ref('');
 const graphOpen=ref(false);
+const synchronizing=ref(false);
+async function synchronize(){synchronizing.value=true;error.value='';try{await client.products.synchronizePlatform();await load();}catch(reason){error.value=reason instanceof Error?reason.message:String(reason);}finally{synchronizing.value=false;}}
 const warnings=ref<{kind:string;id:string;name:string}[]|null>(null);
 const warningsOpen=ref(false),warningsLoading=ref(false),warningsError=ref('');
 const overlay=inject(managerOverlayKey,'body');
@@ -88,7 +90,7 @@ onBeforeUnmount(()=>{clearTimeout(timer);generation++;});
   <section class="product-directory">
     <PlatformPageHeader :title="ot('productDirectoryTitle')" :description="ot('productDirectoryDescription')"><template #actions><el-dropdown placement="bottom-end" :popper-options="dropdownBoundaryOptions" @command="(kind:string)=>emit('create',kind)"><el-button type="primary">{{ot('productCreateAsset')}}</el-button><template #dropdown><el-dropdown-menu><template v-for="(group,index) in creationGroups" :key="group.id"><el-dropdown-item disabled :divided="index>0">{{group.name}}</el-dropdown-item><el-dropdown-item v-for="type in group.types" :key="type.kind" :command="type.kind"><component :is="productIcons[type.kind]" :size="16" class="type-icon"/>{{type.name}}</el-dropdown-item></template></el-dropdown-menu></template></el-dropdown></template></PlatformPageHeader>
     <div class="directory-types"><PlatformTabs :tabs="categoryTabs" :active-id="activeCategory" :label="ot('productAssetLayers')" @select="changeCategory"/><PlatformTabs :tabs="categoryTypeTabs" :active-id="activeKind" :label="ot('productAssetTypes')" @select="changeKind"/></div>
-    <div class="directory-overview"><div class="type-description" :title="categoryDescription"><strong>{{activeType.name}}</strong><span>{{activeType.description}}</span></div><div class="directory-tools"><el-button :loading="graphLoading" @click="showGraph">{{ot('productAssetGraph')}}</el-button><el-button :loading="warningsLoading" :title="ot('productCheckDefaultsHint')" @click="checkDefaults">{{ot('productCheckDefaults')}}</el-button></div></div>
+    <div class="directory-overview"><div class="type-description" :title="categoryDescription"><strong>{{activeType.name}}</strong><span>{{activeType.description}}</span></div><div class="directory-tools"><el-button :loading="synchronizing" @click="synchronize">{{ot('productSyncPlatformAssets')}}</el-button><el-button :loading="graphLoading" @click="showGraph">{{ot('productAssetGraph')}}</el-button><el-button :loading="warningsLoading" :title="ot('productCheckDefaultsHint')" @click="checkDefaults">{{ot('productCheckDefaults')}}</el-button></div></div>
     <ProductGraphDialog v-if="graph" v-model="graphOpen" :graph="graph" @open="open"/>
     <div v-if="graphError" class="directory-graph"><el-alert :title="graphError" type="error" closable @close="graphError=''"/></div>
     <ElDialog v-model="warningsOpen" :title="ot('productDefaultsCheckTitle')" :append-to="overlay" width="800px" destroy-on-close>

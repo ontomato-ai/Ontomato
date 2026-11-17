@@ -7,6 +7,15 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 class AgentPrincipalControllerTest {
+    @Test void userScopedRegistrationRequiresServiceAuthentication(){
+        var service=mock(AgentPrincipalService.class);var authentication=mock(WorkbenchServiceAuthentication.class);
+        var controller=new AgentPrincipalController(service,authentication,mock(ProductGrantService.class));var request=new MockHttpServletRequest();
+        var body=new AgentPrincipalController.UserScopedRegistration("domain","agent","Agent");
+        doThrow(AgentPrincipalService.denied("Service denied")).when(authentication).authenticate(request);
+        assertThrows(Exception.class,()->controller.registerUserScoped(request,body));verifyNoInteractions(service);
+        reset(authentication);controller.registerUserScoped(request,body);
+        verify(service).registerUserScoped("domain","agent","Agent");
+    }
     @Test void issuanceRequiresBothServiceAuthenticationAndInitiatorUseGrant(){
         var service=mock(AgentPrincipalService.class);var authentication=mock(WorkbenchServiceAuthentication.class);var grants=mock(ProductGrantService.class);
         var controller=new AgentPrincipalController(service,authentication,grants);var request=new MockHttpServletRequest();

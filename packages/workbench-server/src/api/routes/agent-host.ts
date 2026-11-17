@@ -1,7 +1,7 @@
 import { sessionHistoryQuerySchema } from "@ontomato/contracts/session-history";
 import { Router } from "express";
 import { z } from "zod";
-import { agentHostSessionPageQuerySchema, agentHostCreateSessionSchema, agentHostStartRunSchema, agentHostRenameSessionSchema, agentHostSessionStatusRequestSchema, agentHostSessionRunSnapshotSchema } from "@ontomato/contracts/agent-host";
+import { agentHostSessionPageQuerySchema, agentHostCreateSessionSchema, agentHostSendRequestSchema, agentHostRenameSessionSchema, agentHostSessionStatusRequestSchema, agentHostSessionRunSnapshotSchema } from "@ontomato/contracts/agent-host";
 import { runtimeRelativePathSchema } from "@ontomato/contracts/agent-runtime-values";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { publicSnapshot, publicFrame, runStatusView } from "../../platform/agent-runtime/projection";
@@ -133,10 +133,10 @@ router.post(
     res
       .status(202)
       .json(
-        await service.start(
+        await service.send(
           id(req, "sessionId"),
           uuid.parse(req.header("Idempotency-Key")),
-          agentHostStartRunSchema.parse(req.body).message,
+          agentHostSendRequestSchema.parse(req.body),
           c.owner,
           c.credentials,
         ),

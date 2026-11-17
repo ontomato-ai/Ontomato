@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   active: vi.fn(), busy: vi.fn(), start: vi.fn(), meta: vi.fn(), source: vi.fn(), cases: vi.fn(),
   access: vi.fn(), actor: vi.fn(), create: vi.fn(), run: vi.fn(), status: vi.fn(),
 }));
-vi.mock("../service", () => ({ diagnosisService: { create: mocks.create, start: mocks.run } }));
+vi.mock("../service", () => ({ diagnosisService: { create: mocks.create, send: mocks.run } }));
 vi.mock("../../scheduling/conversation", () => ({ scheduledConversationStatus: mocks.status }));
 vi.mock("../../../platform/diagnosis/autotest/runner/run-controller", () => ({ getActiveRun: mocks.active, isRunActive: mocks.busy, startRun: mocks.start }));
 vi.mock("../../../platform/diagnosis/autotest/results/store", () => ({ loadRunMeta: mocks.meta, scheduledRunSource: mocks.source }));
@@ -54,6 +54,6 @@ it("starts an inspection in the diagnosis host and applies the same observer aut
   await application.authorize(context);const request={...input(),content:{operation:"inspection",instruction:"Check failures"},formRevision:"inspection-v1"};
   const result=await application.start(request,context);
   expect(result.resultLink?.path).toContain("/ops/diagnosis?sessionId=");
-  expect(mocks.create.mock.calls[0][1]).toEqual(owner);expect(mocks.run.mock.calls[0]).toEqual(expect.arrayContaining([request.runId,"Check failures",owner,context.credentials]));
+  expect(mocks.create.mock.calls[0][1]).toEqual(owner);expect(mocks.run.mock.calls[0]).toEqual(expect.arrayContaining([request.runId,{message:"Check failures"},owner,context.credentials]));
   expect(mocks.access).toHaveBeenCalledWith({domainId:"sales",apiKey:"internal",token:undefined});
 });

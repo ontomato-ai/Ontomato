@@ -19,6 +19,7 @@ import {rendererLabel} from './renderer-labels';
 import {localizedProductTypes,localizedProductCategories} from './catalog-labels';
 import {useIdentityNames} from './identity-names';
 const client = useManagerClient();
+const nativeBinding=ref<{agentId?:string;applicationId?:string}>({});
 const identityName=useIdentityNames();
 const {ot}=useOntologyText();
 const productText=useProductText();
@@ -122,6 +123,7 @@ async function load() {
   const id=selected.value?.id??props.assetId;
   if(!id)return;
   selected.value=await client.products.get(id);
+  nativeBinding.value=await client.products.nativeBinding(id);
   profileReleases.value=['agent-profile','application'].includes(selected.value.document.kind)&&selected.value.editable?(await client.products.releases(id)).releases:[];
   const children='children' in selected.value.document?selected.value.document.children:[];
   assets.value=await Promise.all(children.map(child=>client.products.get(child.assetId)));
@@ -226,7 +228,7 @@ async function remove() { if(!selected.value)return;await run(async()=>{await El
     <PlatformPageHeader :title="headerTitle" :description="ot('productCatalogDescription')" :actions="headerActions">
       <template #leading><el-button text :icon="ArrowLeft" @click="emit('back')">{{ot('productBackToDirectory')}}</el-button><span class="product-title-divider" aria-hidden="true"/></template>
       <template #actions>
-        <el-button v-if="!editing&&selected?.editable&&(selected.document.kind==='agent-profile'||selected.document.kind==='application'&&!selected.document.workspaceId)" :loading="busy" @click="publishProfile">{{ot('productPublish')}}</el-button>
+        <el-button v-if="!editing&&selected?.editable&&!nativeBinding.agentId&&!nativeBinding.applicationId&&(selected.document.kind==='agent-profile'||selected.document.kind==='application'&&!selected.document.workspaceId)" :loading="busy" @click="publishProfile">{{ot('productPublish')}}</el-button>
         <el-button v-if="!editing&&selected?.editable&&selected.document.kind==='application'&&!selected.document.workspaceId" :disabled="busy" @click="retryPublication">{{ot('productRetryCatalogSync')}}</el-button>
         <el-button v-if="!editing&&selected?.editable&&((profileReleases.length&&selected.document.kind==='agent-profile')||selected.document.kind==='application')" :disabled="busy" @click="reviewUpgrade">{{ot('productReviewUpgrade')}}</el-button>
         <el-button v-if="!editing&&selected?.editable&&selected.document.kind==='object-view'" :loading="busy" @click="migrateView">{{ot('productMigrateView')}}</el-button>
@@ -278,6 +280,8 @@ async function remove() { if(!selected.value)return;await run(async()=>{await El
           <div class="toolbar"><el-button v-if="selected.editable" @click="edit(selected)">{{ot('productEdit')}}</el-button><el-button v-if="['page','layout-template'].includes(selected.document.kind)" @click="useHome">{{ot('productUseAsHome')}}</el-button><el-button v-if="selected.document.kind==='page'" type="primary" @click="emit('open',selected.id)">{{ot('productOpenPage')}}</el-button><el-dropdown @command="more"><el-button text :icon="MoreHorizontal" :aria-label="ot('productMoreActions')"/><template #dropdown><el-dropdown-menu><el-dropdown-item command="copy">{{ot('productCopy')}}</el-dropdown-item><el-dropdown-item v-if="selected.document.kind==='page'" command="template">{{ot('productSaveAsTemplate')}}</el-dropdown-item><el-dropdown-item v-if="selected.editable" command="delete" divided>{{ot('productDelete')}}</el-dropdown-item></el-dropdown-menu></template></el-dropdown></div>
         </header>
         <p v-if="selected.description" class="asset-description">{{productText(selected.description)}}</p>
+        <el-alert v-if="nativeBinding.agentId" :title="ot('productNativeAgentNote')" type="info" :closable="false"/>
+        <el-alert v-else-if="nativeBinding.applicationId" :title="ot('productNativeApplicationNote')" type="info" :closable="false"/>
        <section class="asset-preview" :aria-label="previewTitle">
          <section v-if="upgrade"><h3>{{ot('productUpgradeChanges')}}</h3><p v-if="!upgrade.assets.length&&!upgrade.contracts.length">{{ot('productDraftMatchesRelease')}}</p><p v-for="change in upgrade.assets" :key="change.id">{{change.id}} · {{change.change}} · {{change.fromRevision??'—'}} → {{change.toRevision??'—'}}</p><p v-for="change in upgrade.contracts" :key="`${change.kind}:${change.id}`">{{change.kind}} · {{change.id}} · {{change.change}}</p><p>{{selected.document.kind==='application'&&selected.document.workspaceId?ot('productPublishFromWorkspace'):ot('productPublishToFreeze')}}</p></section>
         <header class="preview-heading"><h3>{{previewTitle}}</h3><el-button v-if="selected.document.kind==='layout-template'||(selected.document.kind==='page'&&selected.document.isTemplate)" type="primary" :disabled="busy" @click="createPage">{{ot('productCreatePageFromTemplate')}}</el-button></header>

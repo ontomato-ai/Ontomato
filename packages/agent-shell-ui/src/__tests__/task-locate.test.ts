@@ -51,7 +51,7 @@ it("opens a deeper task's read-only process through the existing proxy and links
   const child: ChannelAgentTask = { ...task, id:"99999999-9999-4999-8999-999999999999", title:"Nested review", parentTaskId:task.id, status:"running",
     process:{mode:"inline",runtimeSessionId:task.sessionRef.sessionId,runtimeRunId:task.runId} };
   const page: ChannelAgentTask = { ...task,id:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",title:"Governance",parentTaskId:child.id,process:{mode:"page",href:"/governance/chat/record"} };
-  const snapshot: AgentHostRunSnapshot = {
+  const snapshot: AgentHostRunSnapshot = { pendingQuestions: [],
     run:{id:child.runId,sessionId:child.sessionRef.sessionId,status:"running",stopReason:null,errorMessage:null,answerMessageId:null,workspaceCommit:null,createdAt:new Date(0).toISOString(),finishedAt:null,resolvedSkills:[]},
     cursor:{runId:child.runId,seq:1,streamId:child.id},messages:[],toolExecutions:[],artifacts:[],
     pendingMessages:[{id:page.id,message:{role:"assistant",content:[{type:"text",text:"Inspecting nested records"}],api:null,provider:null,model:null,usage:null,stopReason:"pending",timestamp:1}}],

@@ -237,3 +237,5 @@ export const retrievalCallerSchema = z.object({ id, closed: z.boolean(), retriev
 
 export const retrievalCallerAdmissionSchema = z.object({ id, expiresAt: z.string().datetime({ offset: true }) }).strict();
 export type RetrievalCallerInput = z.infer<typeof retrievalCallerInputSchema>;
+
+export const retrievalCallerUserQuotesSchema = z.object({ recentUserMessages: z.array(z.string()) }).strict();

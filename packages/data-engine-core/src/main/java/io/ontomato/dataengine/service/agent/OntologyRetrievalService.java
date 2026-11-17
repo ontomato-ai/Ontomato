@@ -113,7 +113,7 @@ public class OntologyRetrievalService {
         input.put("classNames", requested == null || requested.isEmpty() ? allowed : requested);
       }
       // The host owns the user's words; the model-supplied quotes never win in a caller scope.
-      applyCallerUserQuotes(input, callerInput);
+      OntologyAgentStore.applyCallerUserQuotes(input, callerInput);
     }
     var authority=context.access().classNames();
     if(!authority.isEmpty()) {
@@ -125,14 +125,17 @@ public class OntologyRetrievalService {
     return input;
   }
 
-  /** A caller scope's host-supplied messages replace any model-written quotes. */
-  static void applyCallerUserQuotes(JSONObject input, JSONObject callerInput) {
-    if (callerInput == null) return;
-    JSONArray quotes = callerInput.getJSONArray("recentUserMessages");
-    input.put("userQuotes", quotes == null ? new JSONArray() : quotes);
+  static JSONArray userQuotes(JSONArray messages,String inputId) {
+    var quotes=new JSONArray();
+    int through=java.util.stream.IntStream.range(0,messages.size()).filter(index -> inputId.equals(messages.getJSONObject(index).getString("id"))).findFirst().orElseThrow();
+    for(int index=0;index<=through;index++) {
+      var record=messages.getJSONObject(index);var message=record.getJSONObject("message");
+      if("user".equals(message.getString("role")) || ("agent-answer".equals(message.getString("kind")) && "user".equals(message.getJSONObject("source").getString("kind")))) quotes.add(message.getString("content"));
+    }
+    return new JSONArray(quotes.subList(Math.max(0,quotes.size()-10),quotes.size()));
   }
 
-  /** Confirmed user clarifications, in the order they were recorded. */
+  /** Confirmed answers, in the order they were recorded. */
   static List<String> confirmedDecisions(JSONArray decisions) {
     if (decisions == null) return List.of();
     List<String> texts = new ArrayList<>();
@@ -142,7 +145,7 @@ public class OntologyRetrievalService {
       String source = decision.getString("source");
       if (text != null
           && !text.isBlank()
-          && (source == null || "user".equals(source)))
+          && (source == null || List.of("user","agent","external").contains(source)))
         texts.add(text);
     }
     return texts;
@@ -163,13 +166,14 @@ public class OntologyRetrievalService {
     return replayed;
   }
 
-  public boolean message(String session,String run,String message,OntologyAgentAccess.Context context) throws Exception {
-    channel.start(RETRIEVER,session,run,JSONObject.of("role","user","content",message,"timestamp",System.currentTimeMillis()),null,context);
-    return false;
+  public JSONObject send(String session,String run,String message,String replyTo,OntologyAgentAccess.Context context) throws Exception {
+    var input=JSONObject.of("role","user","content",message,"timestamp",System.currentTimeMillis());
+    if(replyTo!=null) input=JSONObject.of("role","notification","kind","agent-answer","source",JSONObject.of("kind","user"),"replyTo",replyTo,"content",message,"timestamp",System.currentTimeMillis());
+    return channel.send(RETRIEVER,session,run,input,null,context);
   }
 
   /** One business admission owns both the model and binding branches. */
-  public JSONObject prepareRun(String session,String run,JSONObject message,JSONObject parameters,String rootRunId,OntologyAgentAccess.Context context) throws Exception {
+  public JSONObject prepareRun(String session,String run,JSONObject message,String inputId,JSONObject parameters,String rootRunId,OntologyAgentAccess.Context context) throws Exception {
     launching.add(run);
     try {
       var records=store.rows("SELECT r.input FROM ontology_retrievals r JOIN ontology_agent_sessions s ON s.id=r.id WHERE r.id=? AND s.user_id=? AND s.domain_id=?",uuid(session),context.owner().userId(),context.owner().domainId());
@@ -179,7 +183,10 @@ public class OntologyRetrievalService {
         AgentJson.fields(parameters,"classNames","previousDatasetIds","timeoutSeconds","interaction");
         inputBody.putAll(parameters);
       }
-      if ("user".equals(message.getString("role")) && !continuation) inputBody.put("userQuotes",JSONArray.of(message.getString("content")));
+      if(context.callerId()==null) {
+        var messages=runtime.json(context.owner().domainId(),session,"/v1/sessions/"+session,"GET",null,null).getJSONArray("messages");
+        inputBody.put("userQuotes",userQuotes(messages,inputId));
+      }
       if (continuation && !context.access().classNames().isEmpty()) {
         var original=inputBody.getList("classNames",String.class);
         if(original==null || original.isEmpty() || !context.access().classNames().containsAll(original)) throw new AgentHttpException(403,"FORBIDDEN","The prior retrieval exceeds this caller scope");
@@ -213,7 +220,7 @@ public class OntologyRetrievalService {
   }
   public JSONObject prepareSteer(String session,String run,JSONObject message,OntologyAgentAccess.Context context) throws Exception {
     store.run(session,run,context.owner());
-    if("agent-answer".equals(message.getString("kind")) && message.containsKey("replyTo")) store.confirmAnswer(session,run,context.owner(),AgentJson.text(message,"content"));
+    if("agent-answer".equals(message.getString("kind")) && message.containsKey("replyTo")) store.confirmAnswer(session,run,context.owner(),message);
     return JSONObject.of("accepted",true,"context",modelContext(session,run,context));
   }
 
@@ -310,7 +317,7 @@ public class OntologyRetrievalService {
               "question",
               input.getString("question"),
               "userQuotes",
-              input.get("userQuotes"),
+              row.getJSONObject("request").get("userQuotes"),
               "overview",
               scopedOverview(context.access(), input.getList("classNames", String.class)),
               "knowledge",
@@ -746,7 +753,7 @@ public class OntologyRetrievalService {
             "question",
             input.getString("question"),
             "userQuotes",
-            input.get("userQuotes"),
+            row.getJSONObject("request").get("userQuotes"),
             "confirmedDecisions",
             confirmedDecisions(retrievalRecord.getJSONArray("decisions")),
             "programs",

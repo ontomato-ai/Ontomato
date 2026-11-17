@@ -22,6 +22,7 @@ async function sidePane() {
         feature: { id: "panel", label: "Workspace", icon: "pages", availability: "page", withConversation: true },
         view: "side",
         busy: false,
+        sending: false,
         disabled: false,
         onExpand,
         onClose,

@@ -89,7 +89,7 @@ export async function startAnalysis(
     });
   }
   const runId = randomUUID();
-  await assistantService.start(sessionId, runId, message, owner, credentials);
-  const task = await analysisTask(runId, owner);
+  const sent = await assistantService.send(sessionId, runId, {message}, owner, credentials);
+  const task = await analysisTask(sent.delivery.runId, owner);
   return { ...task, threadId: threadId ?? sessionId };
 }

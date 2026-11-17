@@ -111,10 +111,11 @@ public class ActionCreationService {
     return replayed;
   }
 
-  public boolean start(String id,String run,String message,OntologyAgentAccess.Context context) throws Exception {
+  public JSONObject send(String id,String run,String message,String replyTo,OntologyAgentAccess.Context context) throws Exception {
     KnowledgeGovernanceService.validateMessage(message);
-    channel.start(AGENT,id,run,JSONObject.of("role","user","content",message,"timestamp",System.currentTimeMillis()),null,context);
-    return false;
+    var input=JSONObject.of("role","user","content",message,"timestamp",System.currentTimeMillis());
+    if(replyTo!=null) input=JSONObject.of("role","notification","kind","agent-answer","source",JSONObject.of("kind","user"),"replyTo",replyTo,"content",message,"timestamp",System.currentTimeMillis());
+    return channel.send(AGENT,id,run,input,null,context);
   }
   public void authorize(Owner owner) { operations.requireWriteAccess(owner); }
   public JSONObject prepare(String id,String run,JSONObject inputMessage,OntologyAgentAccess.Context context) throws Exception {

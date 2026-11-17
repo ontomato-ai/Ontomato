@@ -52,11 +52,12 @@ public class AgentChannelController {
       case "start" -> { AgentJson.fields(command,"op","agent","message","title","context");
         if(!(command.get("agent") instanceof Map)) throw AgentHttpException.invalid("agent must be an object");
         var ref=command.getJSONObject("agent");AgentJson.fields(ref,"providerId","agentId");AgentJson.text(ref,"providerId");AgentJson.text(ref,"agentId");AgentJson.text(command,"message"); }
-      case "send" -> { AgentJson.fields(command,"op","session","message","steer","needsInput","replyTo","defaultAssumption");
+      case "send" -> { AgentJson.fields(command,"op","session","message","steer","needsInput","replyTo","defaultAssumption","options");
         if(!(command.get("session") instanceof Map)) throw AgentHttpException.invalid("An external caller must name a provider/sessionId");
         var ref=command.getJSONObject("session");AgentJson.fields(ref,"providerId","sessionId");AgentJson.text(ref,"providerId");AgentJson.id(ref.getString("sessionId"));AgentJson.text(command,"message");
         if(command.containsKey("replyTo")) AgentJson.id(command.getString("replyTo"));
-        if(command.getBooleanValue("needsInput")) AgentJson.text(command,"defaultAssumption"); }
+        if(command.getBooleanValue("needsInput")) AgentJson.text(command,"defaultAssumption");
+        if(command.containsKey("options")) { if(!command.getBooleanValue("needsInput")) throw AgentHttpException.invalid("Options belong to a question"); validateOptions(command.get("options")); } }
       case "read" -> { AgentJson.fields(command,"op","taskId","view","cursor","limit","files");AgentJson.id(command.getString("taskId")); }
       case "cancel" -> { AgentJson.fields(command,"op","taskId");AgentJson.id(command.getString("taskId")); }
       default -> throw AgentHttpException.invalid("Unknown agent command");
@@ -121,7 +122,7 @@ public class AgentChannelController {
     JSONObject prepared;
     if(OntologyAgentStore.RETRIEVER.equals(agent)) {
       if(steer) return retrieval.prepareSteer(session,run,body.getJSONObject("input"),context);
-      prepared=retrieval.prepareRun(session,run,body.getJSONObject("input"),body.getJSONObject("context"),body.getJSONObject("root").getString("runId"),context);
+      prepared=retrieval.prepareRun(session,run,body.getJSONObject("input"),body.getString("inputId"),body.getJSONObject("context"),body.getJSONObject("root").getString("runId"),context);
     } else if(ActionCreationService.AGENT.equals(agent)) {
       if(steer) {store.run(session,run,context.owner());return JSONObject.of("accepted",true);}
       actions.authorize(context.owner());actions.create(session,context.owner());prepared=actions.prepare(session,run,body.getJSONObject("input"),context);
@@ -140,9 +141,10 @@ public class AgentChannelController {
     prepared.put("authority",narrowed);return prepared;
   }
   private void validatePrepare(JSONObject body) {
-    AgentJson.fields(body,"mode","language","agent","sessionId","runId","actor","input","authority","requestedBy","root","context");
+    AgentJson.fields(body,"mode","language","agent","sessionId","runId","actor","inputId","input","authority","requestedBy","root","context");
     String mode=AgentJson.text(body,"mode");
     AgentJson.text(body,"language");
+    AgentJson.id(body.getString("inputId"));
     if (!List.of("run","steer").contains(mode)) throw AgentHttpException.invalid("Unknown prepare mode");
     for (String field:List.of("agent","actor","input","authority","root")) if (!(body.get(field) instanceof Map)) throw AgentHttpException.invalid(field+" must be an object");
     var input=body.getJSONObject("input");
@@ -151,10 +153,23 @@ public class AgentChannelController {
     String content=AgentJson.text(input,"content");
     String agent=body.getJSONObject("agent").getString("agentId");
     if(KnowledgeGovernanceService.isAgent(agent) || ActionCreationService.AGENT.equals(agent)) KnowledgeGovernanceService.validateMessage(content);
+    if(input.containsKey("options")) validateOptions(input.get("options"));
     if (role.equals("notification")) {
       if (!List.of("agent-message","agent-result","agent-question","agent-answer").contains(input.getString("kind"))) throw AgentHttpException.invalid("Unknown notification kind");
       if (input.containsKey("replyTo")) AgentJson.id(input.getString("replyTo"));
     }
+  }
+  private static void validateOptions(Object value) {
+    if(!(value instanceof List<?> options) || options.isEmpty()) throw AgentHttpException.invalid("options must be a nonempty array");
+    int defaults=0;
+    for(Object option:options) {
+      if(!(option instanceof Map<?,?>)) throw AgentHttpException.invalid("option must be an object");
+      var item=JSONObject.from(option);AgentJson.fields(item,"label","description","isDefault");AgentJson.text(item,"label");
+      if(item.containsKey("isDefault") && !(item.get("isDefault") instanceof Boolean)) throw AgentHttpException.invalid("isDefault must be boolean");
+      if(item.containsKey("description") && !(item.get("description") instanceof String)) throw AgentHttpException.invalid("description must be a string");
+      if(item.getBooleanValue("isDefault")) defaults++;
+    }
+    if(defaults!=1) throw AgentHttpException.invalid("Exactly one option must be the default");
   }
   private record Execution(String session,String run,String agent,AgentCaller.Actor actor) {}
   private Execution execution(JSONObject body,HttpServletRequest request) {

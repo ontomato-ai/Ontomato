@@ -70,14 +70,15 @@ const agentId = ref<string | null>(readRememberedAgent());
 const featureRoutes = { agents: routes.agents };
 /** The settings' addresses: the editor of one agent or a new one. */
 const SETTINGS_PATH = routes.agents.path;
-const settingsPath = (suffix = "") => `${SETTINGS_PATH}${suffix}`;
-const inSettings = computed(() => route.path === SETTINGS_PATH || route.path.startsWith(`${SETTINGS_PATH}/`));
+const inBuilder = computed(() => route.path===routes.agentBuilder.path||route.path.startsWith(`${routes.agentBuilder.path}/`));
+const settingsPath = (suffix = "") => `${inBuilder.value?routes.agentBuilder.path:SETTINGS_PATH}${suffix}`;
+const inSettings = computed(() => inBuilder.value||route.path === SETTINGS_PATH || route.path.startsWith(`${SETTINGS_PATH}/`));
 /**
  * The settings screen the address names. "new" is its own address (`/agents/settings/new`), not a parameter value, so it
  * is recognised by route name and by the path — an agent whose id happened to be "new" would still open its editor.
  */
 const creatingAgent = computed(
-  () => route.name === routes.agentSettingsNew.name || route.path === `${SETTINGS_PATH}/new`,
+  () => route.name === routes.agentSettingsNew.name || route.name === routes.agentBuilderNew.name || route.path === `${SETTINGS_PATH}/new`,
 );
 /** The models of the ontology service agents the conversations run on: the settings' own entry at their column's foot. */
 const modelsOpen = computed(() => route.path === routes.agentModels.path);

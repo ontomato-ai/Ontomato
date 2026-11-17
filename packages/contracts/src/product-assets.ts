@@ -155,7 +155,7 @@ export const productCountsResponseSchema=z.object({counts:z.record(z.number().in
 export const productSummarySchema=productAssetSchema.omit({document:true}).extend({kind:productQuerySchema.shape.kind.unwrap(),details:z.object({isTemplate:z.boolean().optional(),embeddable:z.boolean().optional(),renderer:z.string().optional(),widgetKind:z.string().optional(),chartType:z.string().optional(),section:z.string().optional(),className:z.string().optional(),resourceId:z.string().optional(),childCount:z.number().int().nonnegative().optional(),widgetCount:z.number().int().nonnegative().optional(),widgetKinds:z.array(z.string()).optional()}).default({})});
 export type ProductSummary=z.infer<typeof productSummarySchema>;
 export const productPageSchema=z.object({items:z.array(productSummarySchema),total:z.number().int().nonnegative(),page:z.number(),pageSize:z.number()});
-/** Chinese defaults the server writes into generated home assets; displays translate a name, description or placeholder only while it still equals one of these. */
+/** Chinese defaults the server writes into generated assets and graph names; displays translate a value only while it still equals one of these. */
 export const productDefaultTexts={
   homeName:'我的工作台',
   homeDescription:'常用入口与正在进行的工作',
@@ -171,4 +171,16 @@ export const productDefaultTexts={
   legacyAssistantPlaceholder:'例如：按学院统计在职教职工人数，并比较人员构成',
   legacyConversations:'继续分析',
   legacyObjects:'收藏的对象',
+  platformPageSuffix:' · 页面',
+  platformPageDescription:'平台应用的产品组合根；原生交互仍由已注册入口运行。',
+  graphDomainMembers:'域内成员',
+  graphNameUnavailable:'名称暂不可用',
+  graphAgentPrincipal:'智能体主体',
+  graphRoleUnavailable:'角色名称暂不可用',
+  graphPrincipalUnavailable:'主体名称暂不可用',
+  graphMetricUnavailable:'指标视图名称暂不可用',
+  graphActionUnavailable:'动作名称暂不可用',
+  graphDefinitionUnavailable:'业务定义名称暂不可用',
+  graphObjectTypeUnavailable:'对象类型名称暂不可用',
+  graphApplicationUnavailable:'应用名称暂不可用',
 } as const;

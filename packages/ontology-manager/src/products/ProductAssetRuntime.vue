@@ -19,6 +19,20 @@ const agentRuntime=inject<Component|null>(productAgentRuntimeKey,null);
 const emit=defineEmits<{refresh:[];navigate:[id:string]}>();
 const dataRevision=ref(0);
 const client=useManagerClient();
+const applicationHref=ref('');
+let applicationGeneration=0;
+watch(()=>props.asset,async asset=>{
+ const current=++applicationGeneration;applicationHref.value='';
+ if(asset.document.kind!=='application')return;
+ const document=asset.document;
+ applicationHref.value=!document.workspaceId&&document.navigationId?`#/products/${encodeURIComponent(asset.id)}?applicationId=${encodeURIComponent(asset.id)}`:`#/applications/${encodeURIComponent(document.applicationId)}`;
+ try{
+  const binding=await client.products.nativeBinding(asset.id);if(!binding.applicationId)return;
+  const application=await client.dataEngine.get(`/platform/applications/${encodeURIComponent(binding.applicationId)}`) as {entry?:{home?:string;path?:string}};
+  const path=application.entry?.home??application.entry?.path;
+  if(current===applicationGeneration&&path?.startsWith('/')&&!path.startsWith('//'))applicationHref.value='#'+path;
+ }catch{/* The application entry still enforces its own access policy. */}
+},{immediate:true});
 const sources=ref<{objectTypes:string[];complete:boolean}>();
 let sourceGeneration=0;
 watch(()=>props.asset,async asset=>{const current=++sourceGeneration;sources.value=undefined;if(!asset.editable||!['metric-widget','collection-view','object-projection'].includes(asset.document.kind))return;try{const result=await client.products.sourceTypes(asset.id);if(current===sourceGeneration)sources.value=result;}catch{/* Missing metadata uses conservative invalidation. */}},{immediate:true});
@@ -29,7 +43,7 @@ const stopInvalidation=onProductInvalidation(event=>{
   if(sources.value?.complete&&!sources.value.objectTypes.some(type=>event.objectTypes.includes(type)))return;
   if(event.objectTypes.length)dataRevision.value++;
 });
-onBeforeUnmount(()=>{sourceGeneration++;stopInvalidation();});
+onBeforeUnmount(()=>{sourceGeneration++;applicationGeneration++;stopInvalidation();});
 const objectKey=ref("");
 const activeObject=ref("");
 watch(()=>props.asset,asset=>{objectKey.value=asset.document.kind==='object-view'?asset.document.primaryKey??'':'';activeObject.value=objectKey.value;},{immediate:true});
@@ -50,7 +64,7 @@ const document = computed(() => {
   <nav v-else-if="asset.document.kind==='navigation'" class="product-navigation"><el-button v-for="node in asset.document.nodes" :key="node.id" text @click="emit('navigate',node.pageId)">{{node.label}}</el-button></nav>
   <ObjectViewRuntime v-else-if="['metric-widget','action-view','widget','widget-group','operation-panel'].includes(asset.document.kind)" :key="asset.revision" class="product-widget-runtime" :document="document" :object="{}" :reference="{className:'product',primaryKey:asset.id}" :revision="(revision??0)+dataRevision" :preview="preview" @refresh="emit('refresh')" />
   <a v-else-if="asset.document.kind === 'dashboard'" class="product-entry" :href="`#/dashboards?dashboardId=${encodeURIComponent(asset.document.dashboardId)}`"><strong>{{ asset.name }}</strong><span>{{ ot('productOpenDashboard') }} ↗</span></a>
-  <a v-else-if="asset.document.kind === 'application'" class="product-entry" :href="!asset.document.workspaceId&&asset.document.navigationId?`#/products/${encodeURIComponent(asset.id)}?applicationId=${encodeURIComponent(asset.id)}`:`#/applications/${encodeURIComponent(asset.document.applicationId)}`"><strong>{{ asset.name }}</strong><span>{{ ot('productOpenApplication') }} ↗</span></a>
+   <a v-else-if="asset.document.kind === 'application'" class="product-entry" :href="applicationHref"><strong>{{ asset.name }}</strong><span>{{ ot('productOpenApplication') }} ↗</span></a>
   <section v-else-if="asset.document.kind === 'object-view'" class="product-object-view">
     <header><strong>{{asset.name}}</strong><span>{{asset.document.className}}</span></header>
     <form v-if="!asset.document.primaryKey" class="object-selector" @submit.prevent="activeObject=objectKey.trim()"><el-input v-model="objectKey" :placeholder="ot('productEnterObjectKey')" :aria-label="ot('productObjectPrimaryKey')"/><el-button native-type="submit" :disabled="!objectKey.trim()">{{ ot('productViewObject') }}</el-button></form>

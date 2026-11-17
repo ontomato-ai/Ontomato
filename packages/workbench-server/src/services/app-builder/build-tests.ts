@@ -3,7 +3,7 @@ import { z } from "zod";
 import { buildTestContextSchema, type BuildTestSdkUpgradeDetails, BUILD_TEST_SDK_CAPABILITY, BUILD_TEST_SAMPLE_DIRECTORY } from "@ontomato/contracts/build-tests";
 import { workspacePathSchema } from "@ontomato/contracts/workspaces";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
-import { backendGet, backendPost, backendDelete, BackendResponseError, AuthFailedError } from "../../utils/backend-client";
+import { backendGet, backendPost, backendDelete } from "../../utils/backend-client";
 import { buildUrl, getApiConfig } from "../../config/data-query-api";
 import type { AssistantOwner } from "../assistant/store";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -27,19 +27,10 @@ export class WorkspaceBuildTests {
   async java(method: "GET" | "POST" | "DELETE", suffix: string, body?: FormData) {
     const url = buildUrl(getApiConfig(), "/ontology/build-tests" + suffix);
     const options = { ...this.credentials, retries: 1, errorDetailLimit: 4096 };
-    try {
-      const response = method === "GET" ? await backendGet("build-tests", url, options)
-        : method === "DELETE" ? await backendDelete("build-tests", url, options) : await backendPost("build-tests", url, body, options);
-      const json = JSON.parse(response.text);
-      return json === null ? null : buildTestContextSchema.parse(json);
-    } catch (error) {
-      if (error instanceof BackendResponseError || error instanceof AuthFailedError) {
-        let detail: {message?:string;code?:string};
-        try { detail=JSON.parse(error.detail || "{}"); } catch { detail={message:error.detail}; }
-        throw new HttpError(error.status ?? 401, detail.message ?? error.message, detail.code);
-      }
-      throw error;
-    }
+    const response = method === "GET" ? await backendGet("build-tests", url, options)
+      : method === "DELETE" ? await backendDelete("build-tests", url, options) : await backendPost("build-tests", url, body, options);
+    const json = JSON.parse(response.text);
+    return json === null ? null : buildTestContextSchema.parse(json);
   }
   async current() { await this.authorize(); return this.java("GET", `/current?${new URLSearchParams({ workspaceId: this.workspaceId })}`); }
   async stop() { const current = await this.current(); return current ? this.java("DELETE", `/${current.contextId}`) : null; }

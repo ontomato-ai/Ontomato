@@ -1,3 +1,4 @@
+import { agentHostSendResultSchema, type AgentHostSendRequest } from "@ontomato/contracts/agent-host";
 import { resolveLocale } from "../../i18n";
 import { openAgentCaller } from "../agent-host/caller";
 import type { AgentInput, AgentRunContext } from "@ontomato/contracts/agent-channel";
@@ -104,7 +105,7 @@ export const diagnosisService: AgentHostService = {
       const first = snapshot.messages.find((m) => m.message.role === "user");
       if (first) row.title = messageText(first.message);
     }
-    return { session: view(row, snapshot.latestRun?.run ?? null), messages: publicMessages(snapshot.messages), latestRun: snapshot.latestRun ? publicSnapshot(snapshot.latestRun) : null };
+    return { session: view(row, snapshot.latestRun?.run ?? null), pendingQuestions: snapshot.pendingQuestions, messages: publicMessages(snapshot.messages), latestRun: snapshot.latestRun ? publicSnapshot(snapshot.latestRun) : null };
   },
   async ownRun(session, run, owner) {
     // Ownership comes from this host's own run intent; reading the whole runtime snapshot is not needed.
@@ -118,13 +119,13 @@ export const diagnosisService: AgentHostService = {
     if (snapshot.run.sessionId !== session) throw missing();
     return snapshot;
   },
-  async start(session, run, message, owner, credentials) {
+  async send(session, run, input, owner, credentials) {
     const actor = await openAgentCaller(owner, credentials), agent = { providerId: "observe", agentId: DIAGNOSIS_AGENT_ID };
     const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
     await client.request(`/v1/channel/sessions/${session}/bind`, "POST", { agent, actor });
     const channel: AgentRunContext = { agent, actor, authority: { classNames: [], executionKind: "live" }, requestedBy: null, root: { session: { providerId: "observe", sessionId: session }, runId: run } };
-    await client.request(`/v1/channel/sessions/${session}/runs`, "POST", { channel, credential: {token:credentials.token ?? null,apiKey:credentials.apiKey ?? null}, language: resolveLocale(credentials.locale), input: { role: "user", content: message, timestamp: Date.now() } }, run);
-    return { snapshot: publicSnapshot(await client.run(run)), replayed: false };
+    const accepted = agentHostSendResultSchema.omit({snapshot:true}).parse(await client.request(`/v1/channel/sessions/${session}/runs`, "POST", { channel, credential: {token:credentials.token ?? null,apiKey:credentials.apiKey ?? null}, language: resolveLocale(credentials.locale), input: { role: "user", content: input.message, timestamp: Date.now() }, replyTo: input.replyTo }, run));
+    return agentHostSendResultSchema.parse({ ...accepted, snapshot: accepted.delivery.delivery === "run" && accepted.delivery.status === "running" ? publicSnapshot(await client.run(accepted.delivery.runId)) : null });
   },
   async cancel(session, run, owner) {
     await diagnosisSession(session, owner);

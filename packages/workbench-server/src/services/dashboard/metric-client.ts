@@ -15,7 +15,6 @@ const settledSchema = z.object({
   metricId: z.string(), parameters: runtimeJsonObjectSchema,
   status: z.string(), revision: z.string(), name: z.string(),
 });
-const errorSchema = z.object({ error: z.object({ code: z.string(), message: z.string() }) });
 
 function parseMetricResponse<T>(text: string, schema: z.ZodType<T>): T {
   try {
@@ -44,10 +43,9 @@ export class DashboardMetricClient {
       return parseMetricResponse(response.text, schema);
     } catch (error) {
       if (error instanceof BackendResponseError || error instanceof AuthFailedError) {
-        const parsed = parseMetricResponse(error.detail, errorSchema);
         const code = error.status === 409 ? "METRIC_SPEC_CHANGED"
-          : error.status === 404 ? "METRIC_UNAVAILABLE" : parsed.error.code;
-        throw new HttpError(error.status!, parsed.error.message, code);
+          : error.status === 404 ? "METRIC_UNAVAILABLE" : error.code;
+        throw new HttpError(error.status, error.message, code);
       }
       throw error;
     }

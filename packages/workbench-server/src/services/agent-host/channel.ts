@@ -1,3 +1,7 @@
+import { profileForSession } from "../product-assets/agent-profile";
+import { recentUserMessages } from "../assistant/user-quotes";
+import { OntologyRetrievalClient } from "../assistant/ontology-retrieval";
+import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import path from "node:path";
 import { isAppBuilderKind } from "../app-builder/definition";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -48,6 +52,15 @@ export const agentChannelService = {
     if (body.mode === "steer") {
       const service = body.agent.providerId === "observe" ? diagnosisService : assistantService;
       await service.ownRun(body.sessionId, body.runId, owner);
+      if (body.agent.providerId === "workbench" && !await assistantStore.isBuilderRun(body.runId,owner) &&
+        (body.input.role === "user" || (body.input.kind === "agent-answer" && "kind" in body.input.source && body.input.source.kind === "user"))) {
+        const session=await assistantStore.session(body.sessionId,owner);
+        if(!await profileForSession(owner,credentials,body.sessionId,session.agent_id)) {
+          const turn=await assistantStore.turn(body.runId,owner);
+          const messages=(await new RuntimeClient(owner.domainId,undefined,owner.userId).session(body.sessionId)).messages;
+          await new OntologyRetrievalClient(owner,turn.retrieval_scope_id).updateUserQuotes(recentUserMessages(messages,body.inputId),credentials);
+        }
+      }
       return { accepted: true };
     }
     if (body.agent.providerId === "observe") {

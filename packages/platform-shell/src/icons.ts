@@ -16,10 +16,12 @@ import {
   Table2,
   Waypoints,
   Grid2X2,
+  Bot,
 } from "lucide-vue-next";
 
 /** Applications name icons; the shell resolves a curated set so the rail does not pull in whole icon packs. */
 const appIcons: Record<string, Component> = {
+  'agent-builder':Bot,
   gallery: Grid2X2,
   /** 主页 */
   home: House,

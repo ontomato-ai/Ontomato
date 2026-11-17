@@ -1,7 +1,7 @@
 import { historyCursor } from "@ontomato/contracts/session-history";
 import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from "vue";
 import type { AgentTasksSnapshot } from "@ontomato/contracts/agent-tasks";
-import type { AgentHostRunSnapshot, AgentHostSessionHistory, AgentHostSession } from "@ontomato/contracts/agent-host";
+import type { AgentHostRunSnapshot, AgentHostSendResult, AgentHostSessionHistory, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "./host";
 import type { RuntimeEventEnvelope } from "@ontomato/contracts/agent-runtime-events";
 import { createRunSubscription, type RunSubscription } from "./run-subscription";
@@ -47,6 +47,7 @@ export function useAgentConversation(port: () => AgentHostClient, agent: () => s
   let detachTasks: (() => void) | null = null;
   let taskTimer: ReturnType<typeof setTimeout> | null = null;
 
+  const pendingQuestions=computed(()=>state.pendingQuestions);
   const items = computed(() => conversationItems(state, tasks.value));
   const activeRunId = computed(
     () => Object.values(state.runs).find((run) => run.status === "running")?.id ?? null,
@@ -189,12 +190,13 @@ export function useAgentConversation(port: () => AgentHostClient, agent: () => s
   async function send(
     agentId: string,
     text: string,
+    replyTo?: string,
   ): Promise<
-    | { createdSession: AgentHostSession | null; snapshot: AgentHostRunSnapshot }
-    | { createdSession: AgentHostSession; snapshot: null }
+    | ({ createdSession: AgentHostSession | null } & AgentHostSendResult)
+    | { createdSession: AgentHostSession; snapshot: null; delivery: null }
     | null
   > {
-    if (busy.value) return null;
+    if (sending.value) return null;
     const current = token, client = port();
     /**
      * The host has moved to another client or agent since this send started, which dropped it (the watch below), as
@@ -209,21 +211,31 @@ export function useAgentConversation(port: () => AgentHostClient, agent: () => s
       createdSession = state.sessionId ? null : await client.createSession(agentId);
       if (current !== token) return null;
       if (createdSession) state.sessionId = createdSession.id;
-      const snapshot = await client.startRun(state.sessionId!, text);
-      if (current !== token) return moved() ? null : { createdSession, snapshot };
-      attach(snapshot);
+      const result = await client.send(state.sessionId!, {message:text,replyTo});
+      if (current !== token) return moved() ? null : { createdSession, ...result };
+      applyNotifications(state,[result.input]);
+      state.pendingQuestions=result.pendingQuestions;
+      if(result.snapshot) {
+        if(state.runs[result.snapshot.run.id]) applyRunSnapshot(state,result.snapshot);
+        else attach(result.snapshot);
+      }
       pendingInput.value = null;
-      return { createdSession, snapshot };
+      return { createdSession, ...result };
     } catch (error) {
       if (current === token) {
         sendError.value = errorText(error);
         pendingInput.value = null;
-        if (createdSession) return { createdSession, snapshot: null };
+        if (createdSession) return { createdSession, snapshot: null, delivery: null };
       }
       return null;
     } finally {
       if (current === token) sending.value = false;
     }
+  }
+
+  async function answerQuestion(requestId: string, answer: string) {
+    const id=agent();
+    return id ? send(id,answer,requestId) : null;
   }
 
   function attach(snapshot: AgentHostRunSnapshot) {
@@ -235,9 +247,9 @@ export function useAgentConversation(port: () => AgentHostClient, agent: () => s
   }
   async function followRun(runId: string) {
     const selected = token, session = state.sessionId;
-    if (!session || sending.value || state.runs[runId] || activeRunId.value === runId) return;
+    if (!session || state.runs[runId] || activeRunId.value === runId) return;
     const snapshot = await port().readRun(session, runId);
-    if (selected !== token || sending.value || state.runs[runId]) return;
+    if (selected !== token || state.runs[runId]) return;
     attach(snapshot);
   }
 
@@ -279,6 +291,8 @@ export function useAgentConversation(port: () => AgentHostClient, agent: () => s
     state,
     items,
     tasks,
+    pendingQuestions,
+    answerQuestion,
     loading,
     loadError,
     olderCursor,

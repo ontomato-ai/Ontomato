@@ -61,7 +61,7 @@ function appFor(path: string): PlatformAppDeclaration | null {
 const route = useRoute();
 const router = useRouter();
 // Keep the workspace directly accessible while its navigation entry is temporarily hidden.
-const railApps = computed(() => applicationShortcuts(props.apps??[],props.dynamicAppIds??[],props.pinnedAppIds??[],activeAppId.value).map((app) => railApp(app, () => emit("selectApp", app.id))));
+const railApps = computed(() => applicationShortcuts(props.apps??[],props.dynamicAppIds??[],props.pinnedAppIds??[],activeAppId.value).map(app=>railApp(app,()=>emit('selectApp',app.id))));
 const navigationContext=computed(()=>{
   if(route.query.navigationContext!=='ontology')return null;
   const app=props.apps.find(app=>app.id==='ontology');

@@ -16,14 +16,21 @@ import {profileRuntimeTools} from '../product-assets/runtime-tools';
 import {callbackCredential} from '../agent-runtime/callback-credential';
 import {agentPrincipalCredentials} from '../product-assets/agent-principal';
 import {environment} from '../../config/environment';
+import {nativeProfileId} from '../product-assets/platform-assets';
+import {requireProductUse} from '../product-assets/grants';
+import {backendPost,buildBackendHeaders} from '../../utils/backend-client';
+import {config} from '../../config/application';
+import {HttpError} from '../../utils/errors';
 
 export interface AssistantPreparation {
-  a: AgentRow; session: SessionRow; turn: TurnRow; message: string; input: AgentInput; ontologyContext: string | null;
+  a: AgentRow; session: SessionRow; turn: TurnRow; message: string; input: AgentInput; inputId: string; ontologyContext: string | null;
   owner: AssistantOwner; credentials: AssistantCredentials;
 }
-export async function prepareAnalystRun({ a, session, turn, message, input, ontologyContext, owner, credentials }: AssistantPreparation): Promise<RuntimeStartRunRequest> {
+export async function prepareAnalystRun({ a, session, turn, input, inputId, ontologyContext, owner, credentials }: AssistantPreparation): Promise<RuntimeStartRunRequest> {
   const sessionId = session.id, id = turn.id;
   const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
+  const platformProfile=await nativeProfileId(owner.domainId,a.id);
+  if(platformProfile){await requireProductUse(owner,platformProfile);await requireProductUse(owner,a.id);const checked=await backendPost('platform-agent-identity',config.dataQuery.baseUrl+'/agent-principals/check-user-scoped',{id:a.id},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});if(JSON.parse(checked.text).allowed!==true)throw new HttpError(403,'Platform Agent identity is disabled or unavailable','AGENT_PRINCIPAL_FORBIDDEN');}
   const profile=await profileForSession(owner,credentials,session.id,session.agent_id);
   if(profile)await agentPrincipalCredentials(owner.domainId,profile.principalId,credentials.locale,owner.userId);
   const skills = profile?[]:await prepareAssistantSkills(owner.domainId, a.skills);
@@ -34,15 +41,17 @@ export async function prepareAnalystRun({ a, session, turn, message, input, onto
     if (previous.id === id) continue;
     for (const link of await new OntologyRetrievalClient(owner, previous.retrieval_scope_id).links()) continuationIds.add(link.retrievalId);
   }
-  const userMessages = recentUserMessages(
-    (await client.session(sessionId)).messages, id, input.role === "notification" ? null : message, new Date(turn.created_at).getTime(),
-  );
-  if(!profile)await new OntologyRetrievalClient(owner, turn.retrieval_scope_id).open({
-    classNames: turn.class_names,
-    continuationIds: [...continuationIds].sort(),
-    deadlineAt: new Date(new Date(turn.created_at).getTime() + getQueryTimeoutMs()).toISOString(),
-    recentUserMessages: userMessages,
-  }, credentials);
+  if(!profile) {
+    const userMessages = recentUserMessages(
+      (await client.session(sessionId)).messages, inputId,
+    );
+    await new OntologyRetrievalClient(owner, turn.retrieval_scope_id).open({
+      classNames: turn.class_names,
+      continuationIds: [...continuationIds].sort(),
+      deadlineAt: new Date(new Date(turn.created_at).getTime() + getQueryTimeoutMs()).toISOString(),
+      recentUserMessages: userMessages,
+    }, credentials);
+  }
   return {
     language: resolveLocale(credentials.locale),
     input,
