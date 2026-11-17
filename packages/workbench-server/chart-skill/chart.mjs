@@ -1,7 +1,7 @@
 // One source for the three chart skills: draw a chart file from one chart type, field roles and display settings.
 import fs from "node:fs";
 import path from "node:path";
-import { chartMapResources, legacyChartToFile, validateChartFile } from "@ontomato/contracts/chart-data";
+import { chartMapResources, fillChartFile, legacyChartToFile, validateChartFile } from "@ontomato/contracts/chart-data";
 
 const MAP_RESOURCE = "china-provinces";
 const MAP_TYPES = ["leaflet-map", "map", "admin-choropleth-map"];
@@ -40,6 +40,10 @@ function describeConversion(failure) {
 
 function describeValidation(failure) {
   return `Chart file is invalid: ${failure.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")}`;
+}
+
+function describeRows(failure) {
+  return `Chart rows cannot be drawn (${failure.code}): ${failure.issues.map((issue) => `${issue.path.join(".")} ${issue.reason}: ${issue.message}`).join("; ")}`;
 }
 
 /**
@@ -83,6 +87,11 @@ export function chartFile(input, skill = "echarts") {
   if (input.source !== undefined) file.ontomato = { ...file.ontomato, ...input.source };
   const valid = validateChartFile(file);
   if (!valid.ok) throw new Error(describeValidation(valid));
+  // Filling is the platform's row and shape check; a file whose snapshot cannot be drawn is not written.
+  const drawable = fillChartFile(structuredClone(valid.file), {
+    columns: dimensions.map((key) => ({ key })), rows: valid.file.dataset[0].source,
+  });
+  if (!drawable.ok) throw new Error(describeRows(drawable));
   return valid.file;
 }
 

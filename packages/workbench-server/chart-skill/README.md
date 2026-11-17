@@ -9,4 +9,5 @@ Rebuild all three committed packages after changing the source:
 
 `pnpm --filter @ontomato/workbench-server build:chart-skill`
 
-`scripts/chart-skill.node-test.mjs` fails when a committed package is stale.
+`scripts/chart-skill.node-test.mjs` fails when a committed package is stale. Each package carries the
+licence of the bundled `zod` under `licenses/`.
