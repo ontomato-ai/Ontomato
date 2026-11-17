@@ -11,6 +11,7 @@ import {
   getCircuitStatus,
 } from "../../utils/backend-client";
 import { extractJson, truncateText } from "../../utils/prompt-context";
+import { HttpError } from "../errors";
 configureI18n({ defaultLocale: "en", languageSwitchEnabled: false, appTextLocale: "en", packs: { en: { messages: { ...en, ...appTextEn }, ...enLocaleMeta } } });
 
 vi.mock("../../logging/logger", () => ({ createLogger: () => ({ error() { }, warn() { }, info() { }, debug() { } }) }));
@@ -33,7 +34,7 @@ afterEach(() => {
 });
 
 describe("backend HTTP failures and recovery", () => {
-  it("classifies 401/403 with detail and header preservation", async () => {
+  it("distinguishes authentication from permission refusal and preserves HTTP details", async () => {
     const auth = await checkBackendResponse(fakeResponse(401, "gone")).then(
       () => null,
       (error: unknown) => error
@@ -48,9 +49,11 @@ describe("backend HTTP failures and recovery", () => {
       () => null,
       (error: unknown) => error
     );
-    expect(unreadable).toBeInstanceOf(AuthFailedError);
+    expect(unreadable).toBeInstanceOf(BackendResponseError);
+    expect(unreadable).not.toBeInstanceOf(AuthFailedError);
+    expect(unreadable).toMatchObject({ status: 403, code: "FORBIDDEN" });
 
-    expect((unreadable as AuthFailedError).detail).toBe("");
+    expect((unreadable as BackendResponseError).detail).toBe("");
 
     const http = await checkBackendResponse(fakeResponse(404, "gone")).then(
       () => null,
@@ -61,6 +64,29 @@ describe("backend HTTP failures and recovery", () => {
     expect((http as BackendResponseError).status).toBe(404);
     expect((http as BackendResponseError).detail).toBe("gone");
     expect((http as BackendResponseError).headers?.get("x-trace")).toBe("t5c");
+  });
+
+  it.each([false, true])("preserves a Java permission refusal before buffered/stream consumption (%s)", async (stream) => {
+    const message = "Operation permission is required: /dashboard/getConditionsFromDsls";
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ success: false, code: 403, message }), { status: 403 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const error = await backendGet(`permission-${stream}`, "http://engine/denied", { stream, retries: 3 } as Parameters<typeof backendGet>[2]).catch(error => error);
+    expect(error).toBeInstanceOf(HttpError);
+    expect(error).toBeInstanceOf(BackendResponseError);
+    expect(error).toMatchObject({ status: 403, code: "FORBIDDEN", message });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(getCircuitStatus(`permission-${stream}`).consecutiveFailures).toBe(0);
+  });
+
+  it("parses the complete error envelope before limiting the retained raw detail", async () => {
+    const message = "Permission refused: " + "resource ".repeat(50);
+    const error = await checkBackendResponse(fakeResponse(403, JSON.stringify({ error: { code: "RESOURCE_FORBIDDEN", message } })), 20).catch(error => error);
+    expect(error).toMatchObject({ status: 403, code: "RESOURCE_FORBIDDEN", message });
+    expect(error.detail).toHaveLength(20);
+    const expired = await checkBackendResponse(fakeResponse(401, JSON.stringify({ error: { code: "UNAUTHENTICATED", message: "Credential expired" } }))).catch(error => error);
+    expect(expired).toBeInstanceOf(AuthFailedError);
+    expect(expired).toBeInstanceOf(HttpError);
+    expect(expired).toMatchObject({ status: 401, code: "UNAUTHENTICATED", message: "Credential expired" });
   });
 
   it("reports cancellation before any network use", async () => {
