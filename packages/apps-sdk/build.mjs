@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import vue from "@vitejs/plugin-vue";
 import { build } from "vite";
 import { finalizeSdk, VERSION_PLACEHOLDER } from "./content-version.mjs";
-import { referenceMarkdown } from "./reference.mjs";
+import { catalogueMarkdown, checkCatalogue, componentMetadata, referenceMarkdown } from "./reference.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -26,6 +26,7 @@ const ENTRIES = [
   { specifier: "@ontomato/sdk/code", file: "code.js", source: "src/entries/code.ts" },
   { specifier: "@ontomato/sdk/preview", file: "preview.js", source: "src/entries/preview.ts" },
   { specifier: "@ontomato/sdk/chat", file: "chat.js", source: "src/entries/chat.ts" },
+  { specifier: "@ontomato/sdk/panel", file: "panel.js", source: "src/entries/panel.ts" },
 ];
 const STYLESHEET = "styles/sdk.css";
 /** The third-party libraries apps program against directly; their versions are part of an SDK version's contract. */
@@ -116,6 +117,10 @@ async function main() {
 
   mkdirSync(join(outDir, "docs"), { recursive: true });
   writeFileSync(join(outDir, "docs/index.md"), render(readFileSync(join(HERE, "resources/docs/index.md"), "utf8"), version));
+  const components = componentMetadata({ tsconfig: join(HERE, "tsconfig.json"), source: join(HERE, "src/catalogue.ts") });
+  checkCatalogue(ENTRIES, components, HERE, join(HERE, "tsconfig.json"));
+  writeFileSync(join(outDir, "components.json"), `${JSON.stringify({ version, components: components.map((component) => component.metadata) }, null, 2)}\n`);
+  writeFileSync(join(outDir, "docs/components.md"), render(catalogueMarkdown(version, components), version));
   writeFileSync(join(outDir, "docs/reference.md"), [
     `# @ontomato/sdk ${version}: reference`,
     "",

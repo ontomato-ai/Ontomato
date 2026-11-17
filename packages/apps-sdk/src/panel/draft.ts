@@ -97,3 +97,5 @@ export async function receivePanelDraft<Form extends object>(
     changed: changedFields(base, form),
   };
 }
+
+export type {PageDraftLink};

@@ -183,11 +183,12 @@ export const panelManifestSchema = z
 export type PanelManifest = z.infer<typeof panelManifestSchema>;
 
 /**
- * What a panel module exports: `definePanel` hands back the declaration unchanged, so the module stays plain ES and the
- * registry checks it as external input. `manifest` is read by the SDK host and the registry, not by the HTML.
+ * What a panel module exports: `definePanel` checks the declaration and hands it back with its defaults filled, so the
+ * module stays plain ES and a slot's inputs are there whether or not the author wrote them. The registry reads the
+ * manifest from the module; the host runs with that manifest alone and never the module text.
  */
 export function definePanel(manifest: PanelManifest): PanelManifest {
-  return manifest;
+  return panelManifestSchema.parse(manifest);
 }
 
 /**

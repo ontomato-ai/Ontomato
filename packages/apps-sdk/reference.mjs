@@ -123,3 +123,104 @@ export function referenceMarkdown({ root, tsconfig, entries }) {
   }
   return lines.join("\n");
 }
+
+/**
+ * The semantic metadata of this SDK version's components (overall design 3.1): every `defineComponentMeta` declaration,
+ * read with the TypeScript checker so the declaration is the value the component's own module exports, never a copy.
+ * The build writes the result as `components.json` and describes it in the reference.
+ */
+export function componentMetadata({ tsconfig, source }) {
+  const meta = createChecker(tsconfig, { schema: false, printer: { newLine: ts.NewLineKind.LineFeed } });
+  const program = meta.getProgram();
+  const checker = program.getTypeChecker();
+  const file = program.getSourceFile(source);
+  if (!file) throw new Error(`The component catalogue ${source} is not in the SDK's TypeScript project`);
+  const [declaration] = file.statements.filter(
+    (statement) => ts.isVariableStatement(statement)
+      && statement.declarationList.declarations.some((item) => item.name.getText() === "components"),
+  );
+  if (!declaration) throw new Error(`${source} declares no \`components\` list`);
+  const [variable] = declaration.declarationList.declarations;
+  const declared = ts.isAsExpression(variable.initializer) ? variable.initializer.expression : variable.initializer;
+  if (!ts.isArrayLiteralExpression(declared)) throw new Error(`${source}'s components must be an array literal`);
+  return declared.elements.map((element) => {
+    const call = ts.isAsExpression(element) ? element.expression : element;
+    if (!ts.isCallExpression(call) || call.expression.getText() !== "defineComponentMeta")
+      throw new Error(`${source} declares a component without defineComponentMeta`);
+    const [metadata] = call.arguments;
+    const value = checker.getTypeAtLocation(metadata).getProperties().map((property) => {
+      const type = checker.getTypeOfSymbolAtLocation(property, metadata);
+      return [property.name, literalValue(checker, property, type, metadata)];
+    });
+    return { metadata: Object.fromEntries(value), line: file.getLineAndCharacterOfPosition(element.getStart()).line + 1 };
+  });
+}
+
+/** A metadata field's value as JSON: its literals, and a readonly tuple's items as an array. */
+function literalValue(checker, property, type, at) {
+  const [declaration] = property.declarations ?? [];
+  if (!declaration) return undefined;
+  const initializer = declaration.initializer;
+  if (!initializer) return undefined;
+  if (ts.isStringLiteral(initializer) || ts.isNumericLiteral(initializer)) return initializer.text;
+  if (initializer.kind === ts.SyntaxKind.TrueKeyword) return true;
+  if (initializer.kind === ts.SyntaxKind.FalseKeyword) return false;
+  if (ts.isArrayLiteralExpression(initializer)) return initializer.elements.map((item) => jsonOf(checker, item));
+  if (ts.isObjectLiteralExpression(initializer)) {
+    return Object.fromEntries(initializer.properties.map((member) => [member.name.getText().replace(/^["']|["']$/g, ""), jsonOf(checker, member.initializer)]));
+  }
+  void type;
+  void at;
+  throw new Error(`A component metadata field holds a value the catalogue cannot read: ${initializer.getText()}`);
+}
+
+function jsonOf(checker, node) {
+  if (ts.isStringLiteral(node) || ts.isNumericLiteral(node)) return node.text;
+  if (ts.isArrayLiteralExpression(node)) return node.elements.map((item) => jsonOf(checker, item));
+  if (ts.isObjectLiteralExpression(node)) {
+    return Object.fromEntries(node.properties.map((member) => [member.name.getText().replace(/^["']|["']$/g, ""), jsonOf(checker, member.initializer)]));
+  }
+  if (ts.isAsExpression(node)) return jsonOf(checker, node.expression);
+  throw new Error(`A component metadata value is not a literal: ${node.getText()}`);
+}
+
+/**
+ * Checks the catalogue against the version's own entries: every declared component is an export a page can import from
+ * that module, and every component an entry exports carries a declaration. A component no page can import, or one that
+ * ships undescribed, fails the build here rather than in a panel.
+ */
+export function checkCatalogue(entries, declared, root, tsconfig) {
+  const meta = createChecker(tsconfig, { schema: false, printer: { newLine: ts.NewLineKind.LineFeed } });
+  const program = meta.getProgram();
+  const checker = program.getTypeChecker();
+  const exported = new Map();
+  for (const entry of entries) {
+    const source = program.getSourceFile(join(root, entry.source));
+    for (const symbol of checker.getExportsOfModule(checker.getSymbolAtLocation(source))) {
+      const target = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
+      const declarations = target.declarations ?? symbol.declarations ?? [];
+      exported.set(`${entry.specifier}#${symbol.name}`, declarations.some((declaration) => declaration.getSourceFile().fileName.endsWith(".vue")));
+    }
+  }
+  const described = new Set(declared.map((component) => `${component.metadata.module}#${component.metadata.exportName}`));
+  for (const key of described) if (!exported.has(key)) throw new Error(`The catalogue declares ${key}, which this SDK version does not export`);
+  for (const [key, component] of exported) {
+    if (component && !described.has(key)) throw new Error(`${key} is a public component of this SDK version with no catalogue declaration`);
+  }
+}
+
+/** The catalogue's document section: each component's meaning, what it binds and the operations it publishes. */
+export function catalogueMarkdown(version, entries) {
+  const lines = ["# Components of this SDK version", "", `The components \`${version}\` exports that a projection can bind. Each one names the module a page imports it from, what it means, the ontology elements it may bind, its inputs and the operations it publishes. A projection in the panel product chooses one component, one binding and its display; a panel composes projections in slots.`, ""];
+  for (const { metadata } of entries) {
+    lines.push(`## ${metadata.componentId}`, "", `${metadata.role === "control" ? "Control" : "Presentation"}: \`${metadata.exportName}\` from \`${metadata.module}\`.`, "", metadata.meaning, "");
+    if (metadata.effects) lines.push(`Effects: ${metadata.effects}`, "");
+    if (metadata.bindsElement?.length) lines.push(`Binds: ${metadata.bindsElement.map((element) => `\`${element}\``).join(", ")}`, "");
+    if (metadata.inputs && Object.keys(metadata.inputs).length)
+      lines.push("Inputs:", "", ...Object.entries(metadata.inputs).map(([name, type]) => `- \`${name}\`: ${type.kind === "object" ? type.objectType : type.type}`), "");
+    if (metadata.outputs?.length) lines.push(`Hands over: ${metadata.outputs.map((name) => `\`${name}\``).join(", ")}`, "");
+    for (const operation of metadata.operations ?? [])
+      lines.push(`- \`${operation.client}.${operation.name}\` — ${operation.label} (${operation.kind})`, "");
+  }
+  return lines.join("\n");
+}

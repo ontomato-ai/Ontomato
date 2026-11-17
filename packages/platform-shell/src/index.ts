@@ -6,6 +6,7 @@ export { default as PlatformShell } from "./PlatformShell.vue";
 export { default as PlatformRail } from "./PlatformRail.vue";
 export { default as PlatformAccountMenu } from "./PlatformAccountMenu.vue";
 export { default as AppPanelPages } from "./AppPanelPages.vue";
+export { default as PanelHost } from "./PanelHost.vue";
 export { default as PlatformPageHeader } from "./PlatformPageHeader.vue";
 export { default as PlatformTabs } from "./PlatformTabs.vue";
 export { default as PlatformBrandMark } from "./PlatformBrandMark.vue";
@@ -35,6 +36,16 @@ export {
 } from "./agent-models";
 export { platformApplicationNameKey, platformPageAccessKey, useApplicationName, usePageAccess } from "./page-access";
 export { pilotPageKey, usePilotPage, type PilotPage, type PilotPageResolver } from "./pilot-pages";
+export {
+  panelHostKey,
+  panelFrameDocument,
+  usePanelHostPort,
+  usePanelInstance,
+  type DefinitionChanged,
+  type PanelHostPort,
+  type PanelInstanceOptions,
+  type PanelInstanceView,
+} from "./panel-host";
 export {
   provideUnsavedChanges,
   useLeaveConfirmation,

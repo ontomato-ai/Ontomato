@@ -75,7 +75,7 @@ function projectionTarget(
   inputs: Readonly<Record<string, { state: string }>>,
 ): PanelOperation["target"] {
   const [state] = Object.entries(inputs).find(([input]) => registration.ports.inputs[input]?.kind === "object") ?? [];
-  return state ? { source: "state", state } : { source: "draft", slot: registration.slot };
+  return state ? { source: "state", state: inputs[state]!.state } : { source: "draft", slot: registration.slot };
 }
 
 /**
