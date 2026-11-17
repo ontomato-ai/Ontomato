@@ -6,12 +6,14 @@ import {resolveViewParameters} from '@ontomato/contracts/object-views';
 import {formatProjectionValue,projectionDisplayRows} from '@ontomato/contracts/product-projections';
 import {EChart,useChartTheme} from '@ontomato/foundation-ui/chart';
 import {ElAlert,ElSkeleton,ElTable,ElTableColumn} from 'element-plus';
+import {useOntologyText} from '../context';
+const {ot}=useOntologyText();
 const props=defineProps<{asset:ProductAsset;pageState?:Record<string,unknown>}>();
 const projection=computed(()=>props.asset.document.kind==='metric-widget'?props.asset.document:null);
 const theme=useChartTheme();
 const resolvedParameters=computed(()=>projection.value?resolveViewParameters(Object.fromEntries(Object.entries(projection.value.parameters).filter(([,binding])=>!(binding.source==='literal'&&typeof binding.value==='string'))),{},props.pageState??{}):{});
 const parameterTexts=computed(()=>projection.value?Object.fromEntries(Object.entries(projection.value.parameters).filter((entry):entry is [string,{source:'literal';value:string}]=>entry[1].source==='literal'&&typeof entry[1].value==='string').map(([name,binding])=>[name,binding.value])):{});
-function categoryLabel(value:unknown){return value===null||value===undefined||value===''?'未填写':String(value);}
+function categoryLabel(value:unknown){return value===null||value===undefined||value===''?ot('productBlank'):String(value);}
 function option(data:unknown){
   const document=projection.value!;
   const rows=projectionDisplayRows(Array.isArray(data)?data:[],document.display);
