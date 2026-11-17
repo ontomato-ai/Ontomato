@@ -5,7 +5,6 @@ import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   AgentShell,
-  AgentPicker,
   ShellColumn,
   useAgentNav,
   useSessionRunFeed,
@@ -389,7 +388,7 @@ const columnEvents = {
     @error="ElMessage.error($event)"
   >
     <template #column>
-      <WorkspaceColumn v-bind="column" v-on="columnEvents"><template #agent><AgentPicker v-if="nav.agents.value.length>1" :agents="nav.agents.value" :agent-id="agentId" :label="labels.agent" @select="agentId=$event;sessionId=null"/></template></WorkspaceColumn>
+      <WorkspaceColumn v-bind="column" v-on="columnEvents" />
     </template>
     <template #page-header>
       <PanelHeader
