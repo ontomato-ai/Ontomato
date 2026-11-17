@@ -124,6 +124,12 @@ export function useAgentNav(options: AgentNavOptions) {
     sessions.value = [row, ...sessions.value.filter((item) => item.id !== row.id)];
   }
 
+  /**
+   * The conversation's own agent being taken over is not the reader switching: the open conversation runs on it, and it
+   * stays open and bound to it. Only the reader's own choice starts a new conversation.
+   */
+  let adoptingAgent = false;
+
   // Switching agents drops the previous agent's conversations and starts from a clean conversation.
   const stopAgentWatch = watch(
     () => options.agentId(),
@@ -131,10 +137,21 @@ export function useAgentNav(options: AgentNavOptions) {
       sessions.value = [];
       nextCursor.value = null;
       // Initial selection can replace a removed remembered agent while opening a bookmarked feature.
-      if (previous !== null && initialAgentLoaded) startNew();
+      if (previous !== null && initialAgentLoaded && !adoptingAgent) startNew();
+      adoptingAgent = false;
       void loadSessions();
     },
   );
+
+  /**
+   * Shows the agent an opened conversation runs on. The conversation stays where it is: this is what the host reports
+   * about it, not the reader choosing another agent, so nothing is started and nothing is rebound.
+   */
+  function adoptAgent(id: string) {
+    if (id === options.agentId()) return;
+    adoptingAgent = true;
+    options.setAgentId(id);
+  }
 
   return {
     agents,
@@ -148,6 +165,7 @@ export function useAgentNav(options: AgentNavOptions) {
     setPage,
     loadSessions,
     startNew,
+    adoptAgent,
     selectSession,
     removeSession,
     renameSession,
