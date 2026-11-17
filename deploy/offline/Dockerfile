@@ -8,6 +8,12 @@ COPY downloads/ /downloads/
 RUN case "$TARGETARCH" in amd64|arm64) ;; *) exit 1;; esac \
     && tar -xzf /downloads/oc-mirror-${TARGETARCH}.tar.gz -C /usr/local/bin oc-mirror \
     && chmod 755 /usr/local/bin/oc-mirror && rm -rf /downloads
-FROM ${BASE_IMAGE}
+FROM ${BASE_IMAGE} AS runtime
 COPY --from=unpack /usr/local/bin/oc-mirror /usr/local/bin/oc-mirror
 ENTRYPOINT ["/usr/local/bin/oc-mirror", "--v2"]
+
+FROM runtime AS amd64
+# UBI 8 can derive a zero copy threshold on Hygon; keep SQLite and the CPU baseline.
+ENV GLIBC_TUNABLES=glibc.cpu.x86_non_temporal_threshold=65536
+
+FROM runtime AS arm64

@@ -306,9 +306,10 @@ class DeliveryTests(unittest.TestCase):
         self.assertEqual(mirror.REGISTRY_REPOSITORY, "docker.io/library/registry")
 
     def test_tool_build_runs_no_target_architecture_instruction(self):
-        _, unpack, final = (Path(mirror.HERE) / "Dockerfile").read_text().split("\nFROM ")
+        _, unpack, *targets = (Path(mirror.HERE) / "Dockerfile").read_text().split("\nFROM ")
         self.assertTrue(unpack.startswith("--platform=$BUILDPLATFORM "))
-        self.assertNotIn("RUN ", final)
+        for target in targets:
+            self.assertNotIn("RUN ", target)
 
 
 if __name__ == "__main__":
