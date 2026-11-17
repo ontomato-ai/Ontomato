@@ -211,8 +211,8 @@ public class ObjectViewStore {
                 || !(datasets.get(0) instanceof Map<?, ?> metric) || !"metric".equals(metric.get("id"))
                 || !(metric.get("source") instanceof List<?> source) || !source.isEmpty())
             throw new IllegalArgumentException("Chart files require one empty metric dataset");
-        if (file.get("ontomato") instanceof Map<?, ?> metadata && metadata.containsKey("metric"))
-            throw new IllegalArgumentException("The widget owns the stored MetricView reference");
+        if (file.get("ontomato") instanceof Map<?, ?> metadata && (metadata.containsKey("metric") || metadata.containsKey("dataset")))
+            throw new IllegalArgumentException("The consumer owns stored data source references");
     }
 
     private static void onlyFields(JSONObject object, Set<String> allowed) {

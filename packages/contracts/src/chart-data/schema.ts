@@ -46,6 +46,8 @@ export function chartExecutionIssues(value: RuntimeJsonValue, path: (string | nu
 
 export const chartMetricReferenceSchema = z.object({ metricId: column, parameters: runtimeJsonObjectSchema }).strict();
 export type ChartMetricReference = z.infer<typeof chartMetricReferenceSchema>;
+export const chartDatasetReferenceSchema = z.object({ path: z.string().min(1) }).strict();
+export type ChartDatasetReference = z.infer<typeof chartDatasetReferenceSchema>;
 
 const seriesSchema = z.object({
   id: column, type: column.refine(type => type !== "custom", "Custom renderers are not supported"),
@@ -57,11 +59,12 @@ const fileBaseSchema = z.object({
     id: z.literal("metric"), dimensions: z.array(column), source: z.array(runtimeJsonObjectSchema),
   }).strict()).length(1),
   series: z.array(seriesSchema).min(1),
-  ontomato: z.object({ bindings: z.array(chartBindingSchema).optional(), display: chartDisplaySchema.optional(), metric: chartMetricReferenceSchema.optional() }).strict(),
+  ontomato: z.object({ bindings: z.array(chartBindingSchema).optional(), display: chartDisplaySchema.optional(), metric: chartMetricReferenceSchema.optional(), dataset: chartDatasetReferenceSchema.optional() }).strict(),
 }).catchall(runtimeJsonValueSchema);
 
 export const chartFileSchema = fileBaseSchema.superRefine((file, context) => {
   const issue = (path: (string | number)[], message: string) => context.addIssue({ code: "custom", path, message });
+  if (file.ontomato.metric && file.ontomato.dataset) issue(["ontomato"], "Specify either a MetricView or an accepted dataset reference, not both");
   const ids = file.series.map(series => series.id);
   if (new Set(ids).size !== ids.length) issue(["series"], "Series IDs must be unique");
   const dimensions = file.dataset[0].dimensions;
@@ -135,6 +138,7 @@ function storedChartIssues(file: ChartFile): ChartIssue[] {
   return [
     ...(file.dataset[0].source.length ? [{ path: ["dataset", 0, "source"], reason: "NONEMPTY_SNAPSHOT", message: "Stored chart files must have an empty source" }] : []),
     ...(Object.hasOwn(file.ontomato, "metric") ? [{ path: ["ontomato", "metric"], reason: "EMBEDDED_METRIC_REFERENCE", message: "The consumer owns the stored MetricView reference" }] : []),
+    ...(Object.hasOwn(file.ontomato, "dataset") ? [{ path: ["ontomato", "dataset"], reason: "EMBEDDED_DATASET_REFERENCE", message: "Stored chart files cannot embed workspace dataset references" }] : []),
   ];
 }
 
@@ -151,11 +155,13 @@ export function validateStoredChartFile(input: unknown, columns?: readonly Chart
 }
 
 /** Split a conversation artifact without changing its snapshot or embedded reference in place. */
-export function splitChartFileForStorage(input: unknown): { ok: true; file: ChartFile; metric: ChartMetricReference | undefined } | ChartFailure {
+export function splitChartFileForStorage(input: unknown): { ok: true; file: ChartFile; metric: ChartMetricReference | undefined; dataset: ChartDatasetReference | undefined } | ChartFailure {
   const result = validateChartFile(input);
   if (!result.ok) return result;
   const metric = result.file.ontomato.metric;
+  const dataset = result.file.ontomato.dataset;
   delete result.file.ontomato.metric;
+  delete result.file.ontomato.dataset;
   result.file.dataset[0].source = [];
-  return { ok: true, file: result.file, metric };
+  return { ok: true, file: result.file, metric, dataset };
 }

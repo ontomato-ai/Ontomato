@@ -342,7 +342,7 @@ test("MetricWidget charts reject parallel drawing fields and retain one metric r
   const document={kind:"metric-widget",renderer:"chart",renders:{kind:"MetricView",id:"metric"},parameters:{},chartFile:file};
   const parsed=productAssetInputSchema.parse({name:"Chart",document});
   assert.deepEqual(productReferences(parsed.document),[{kind:"metric",id:"metric"}]);
-  for(const old of [{chartType:"bar"},{valueField:"value"},{fields:["name"]},{format:{kind:"number"}},{display:{limit:1}}])
+  for(const old of [{chartType:"line"},{valueField:"value"},{fields:["name"]},{format:{kind:"number"}},{display:{limit:1}}])
     assert.equal(productAssetInputSchema.safeParse({name:"Chart",document:{...document,...old}}).success,false);
   for(const renderer of ["trend","gauge"])
     assert.equal(productAssetInputSchema.safeParse({name:"Chart",document:{...document,renderer}}).success,false);
@@ -375,5 +375,73 @@ test("stored chart validation rejects either a snapshot or an embedded reference
       assert.equal(result.code,"INVALID_CHART_FILE");
       assert.equal(result.issues[0].reason,kind==="snapshot"?"NONEMPTY_SNAPSHOT":"EMBEDDED_METRIC_REFERENCE");
     }
+  }
+});
+
+test("product document discriminators preserve field-specific type errors", async () => {
+  const {productDocumentSchema,productAuthoringDocumentSchema,productAuthoringSchema} = await import("../product-assets");
+  const document={kind:"metric-widget",renderer:"number",renders:{kind:"MetricView",id:"metric"},parameters:{},height:"tall"};
+  for(const schema of [productDocumentSchema,productAuthoringDocumentSchema]){
+    const result=schema.safeParse(document);
+    assert.equal(result.success,false);
+    if(!result.success){
+      assert.ok(result.error.issues.some(issue=>issue.code==="invalid_type"&&issue.path.join(".")==="height"));
+      assert.equal(result.error.issues.some(issue=>issue.code==="invalid_union"),false);
+    }
+  }
+  const result=productAuthoringSchema.safeParse({name:"Metric",revision:0,document});
+  assert.equal(result.success,false);
+  if(!result.success)assert.ok(result.error.issues.some(issue=>issue.path.join(".")==="document.height"));
+});
+test("metric chart refinement enforces file ownership while allowing neutral defaults", async () => {
+  const {productAssetInputSchema,productAuthoringSchema} = await import("../product-assets");
+  const {isMetricChartProjection} = await import("../product-projections");
+  const chartFile=make({type:"bar",fields:{xAxis:"name",yAxis:"value"}});
+  const base={kind:"metric-widget",renders:{kind:"MetricView",id:"metric"},parameters:{}};
+  const parsed=productAssetInputSchema.parse({name:"Chart",document:{...base,renderer:"chart",chartFile,fields:[],valueField:"",labelField:"",chartType:"bar"}});
+  assert.equal(isMetricChartProjection(parsed.document),true);
+  if(isMetricChartProjection(parsed.document))assert.equal(parsed.document.chartFile.dataset[0].id,"metric");
+  for(const document of [
+    {...base,renderer:"chart"},
+    {...base,renderer:"number",chartFile},
+    {...base,renderer:"chart",chartFile,fields:["name"]},
+    {...base,renderer:"chart",chartFile,display:{}},
+  ]){
+    assert.equal(productAssetInputSchema.safeParse({name:"Invalid",document}).success,false);
+    assert.equal(productAuthoringSchema.safeParse({name:"Invalid",revision:0,document}).success,false);
+  }
+});
+
+test("conversation source references are optional and mutually exclusive", () => {
+  const file=make({type:"bar",fields:{xAxis:"name",yAxis:"value"}});
+  assert.equal(validateChartFile(file).ok,true);
+  const metric={metricId:"metric",parameters:{}};
+  const dataset={path:"datasets/accepted.json"};
+  assert.equal(validateChartFile({...file,ontomato:{...file.ontomato,metric}}).ok,true);
+  assert.equal(validateChartFile({...file,ontomato:{...file.ontomato,dataset}}).ok,true);
+  const both=validateChartFile({...file,ontomato:{...file.ontomato,metric,dataset}});
+  assert.equal(both.ok,false);
+  if(!both.ok)assert.equal(both.code,"INVALID_CHART_FILE");
+});
+test("workspace dataset references split out of storage files and are rejected at storage admission", () => {
+  const file=make({type:"bar",fields:{xAxis:"name",yAxis:"value"}});
+  file.dataset[0].source=[{name:"A",value:1}];
+  file.ontomato.dataset={path:"datasets/accepted.json"};
+  const split=splitChartFileForStorage(file);
+  assert.equal(split.ok,true);
+  if(split.ok){
+    assert.deepEqual(split.dataset,{path:"datasets/accepted.json"});
+    assert.equal(split.metric,undefined);
+    assert.deepEqual(split.file.dataset[0].source,[]);
+    assert.equal(Object.hasOwn(split.file.ontomato,"dataset"),false);
+    assert.equal(validateStoredChartFile(split.file).ok,true);
+  }
+  assert.equal(file.dataset[0].source.length,1);
+  file.dataset[0].source=[];
+  const stored=validateStoredChartFile(file);
+  assert.equal(stored.ok,false);
+  if(!stored.ok){
+    assert.equal(stored.code,"INVALID_CHART_FILE");
+    assert.equal(stored.issues[0].reason,"EMBEDDED_DATASET_REFERENCE");
   }
 });

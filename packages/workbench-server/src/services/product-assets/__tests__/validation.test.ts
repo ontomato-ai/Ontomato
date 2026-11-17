@@ -1,5 +1,6 @@
 import {beforeEach,expect,it,vi} from 'vitest';
 import {createObjectView} from '@ontomato/contracts/object-views';
+import {isMetricChartProjection} from '@ontomato/contracts/product-projections';
 const mocks=vi.hoisted(()=>({post:vi.fn(),describe:vi.fn(),dashboard:vi.fn()}));
 const definitions=vi.hoisted(()=>({read:vi.fn()}));
 vi.mock('../definitions',()=>({readDefinition:definitions.read}));
@@ -49,7 +50,7 @@ it('validates MetricWidget chart columns, empty snapshots and parameter signatur
   mocks.describe.mockResolvedValue({status:'PUBLISHED',outputColumns:[{key:'name'}],parameterDefs:[]});
   await expect(validateProduct(owner,chart,{})).rejects.toMatchObject({code:'CARD_OUTPUT_MISMATCH',details:{missingColumns:['value']}});
   mocks.describe.mockResolvedValue({status:'PUBLISHED',outputColumns:[{key:'name'},{key:'value'}],parameterDefs:[]});
-  if(chart.document.kind!=='metric-widget'||chart.document.renderer!=='chart')throw new Error('Expected chart');
+  if(!isMetricChartProjection(chart.document))throw new Error('Expected chart');
   chart.document.chartFile.dataset[0].source=[{name:'A',value:1}];
   expect(productAssetInputSchema.safeParse(chart).success).toBe(false);
 });
