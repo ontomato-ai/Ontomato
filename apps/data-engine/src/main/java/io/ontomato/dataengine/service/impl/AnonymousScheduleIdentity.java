@@ -14,7 +14,7 @@ public class AnonymousScheduleIdentity implements ScheduleIdentity {
   }
 
   public User creator(String domain, String creator) {
-    return "1".equals(domain) && "admin".equals(creator) ? identities.getCurrentUser() : null;
+    return "1".equals(domain) && ("admin".equals(creator) || hostOwner("admin").equals(creator)) ? identities.getCurrentUser() : null;
   }
 
   public UserDataPermission dataPermission(String domain, String creator) {
