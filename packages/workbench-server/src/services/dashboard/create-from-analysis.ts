@@ -7,6 +7,7 @@ import { createDashboard } from "./store";
 import { DashboardMetricClient } from "./metric-client";
 import { planReferenceDashboard } from "./reference-planning";
 import type { DashboardDatasetInput } from "./types";
+import { validatePersonalDashboardMetrics } from "../product-assets/validation";
 
 export async function resolveDashboardDatasets(
   sessionId: string, artifactIds: string[], owner: AssistantOwner,
@@ -30,7 +31,9 @@ export async function createDashboardFromAnalysis(
 ) {
   const { sessionId, datasetArtifactIds } = body;
   const { datasets } = await resolveDashboardDatasets(sessionId, datasetArtifactIds, { userId: ownerId, domainId });
-  const planned = await planReferenceDashboard(datasets, new DashboardMetricClient(domainId, credentials));
+  const client = new DashboardMetricClient(domainId, credentials);
+  const planned = await planReferenceDashboard(datasets, client);
+  await validatePersonalDashboardMetrics(planned.groups, client);
   const detail = await createDashboard({
     ownerId, domainId, name: planned.name, source: { sessionId }, groups: planned.groups,
   });

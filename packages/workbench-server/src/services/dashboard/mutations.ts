@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import { validateStoredChartFile } from "@ontomato/contracts/chart-data";
 import type { MetricReferenceChartEntry, DashboardAuthoringForm } from "@ontomato/contracts/dashboard";
 import { prepareChartImport } from "../charts/import";
+import { validatePersonalDashboardMetrics } from "../product-assets/validation";
 import { randomUUID } from "node:crypto";
 
 import type { DashboardAddChartFile, DashboardAddArtifact } from "@ontomato/contracts/dashboard-artifacts";
@@ -220,6 +221,7 @@ export async function addDashboardChartFile(ownerId:string,domainId:string,body:
   const card:MetricReferenceChartEntry={id:randomUUID(),name:prepared.file.name.replace(/\.chart\.json$/,""),query:prepared.query,chartFile:prepared.file,source:prepared.source};
   if(!detail){
     group={id:randomUUID(),title:prepared.metric.name,charts:[card],metrics:[]};
+    await validatePersonalDashboardMetrics([group],new DashboardMetricClient(domainId,credentials));
     detail=await createDashboard({ownerId,domainId,name:(body.target as {name:string}).name,groups:[group]});
   }else{
     group!.charts.push(card);
