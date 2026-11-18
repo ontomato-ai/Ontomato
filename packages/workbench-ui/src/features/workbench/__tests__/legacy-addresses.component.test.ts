@@ -49,6 +49,7 @@ vi.mock("../../dashboard", () => ({ DashboardHome: { template: '<div class="dash
 vi.mock("../assistant-host", () => ({
   createAssistantClient: () => ({}),
   createAssistantFeedback: () => ({}),
+  createPanelOperationSettings: () => ({ read: async () => null }),
 }));
 vi.mock("../components/DatasetActions.vue", () => ({ default: { template: "<div />" } }));
 vi.mock("../components/WorkbenchAppearanceDialog.vue", () => ({ default: { template: "<div />" } }));
