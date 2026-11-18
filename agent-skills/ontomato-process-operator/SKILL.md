@@ -383,6 +383,7 @@ node client.mjs temp-clean <workflowId>
 
 - `temporary: true` + `runClassName: "workflow_case"`：不要求业务事实类或 `runContract`。
 - `caseScoped: true`：激活时不写 `role × action` 全局授权；执行时只允许 Case 当前 assignee。
+- 固定 `execute` 步默认由 `requester` 执行；`roleCode` 只决定授权，不决定执行人。要让部门的人办理，需把步骤做成 human/approve，或等平台支持 `step.executor/assignee`。
 - `inputBindings`：Action 参数从 Case payload 取；`locked` 的字段办理人改不了。
 
 ### 运行
