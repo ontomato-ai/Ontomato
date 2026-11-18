@@ -3,6 +3,7 @@ import { createApp, defineComponent, h, nextTick, ref, type App } from "vue";
 import type { AgentHostRunSnapshot } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "../host";
 import AgentShell from "../components/AgentShell.vue";
+import { testDisplay } from "./display";
 import { useAgentNav } from "../useAgentNav";
 import type { PageContext } from "../page-context";
 import type { ShellLabels, ShellWorkbenchDeclaration } from "../types";
@@ -29,6 +30,7 @@ const labels = {
   pageContext: (page: { label: string; url: string }) => `Current page: ${page.label} (${page.url})`,
   pageContextAddress: (url: string) => `Current page: ${url}`,
   selectionContext: (selection: string) => `Selected: ${selection}`,
+  pageContextClosed: "Current page: closed",
 } as unknown as ShellLabels;
 
 const page: PageContext = {
@@ -95,6 +97,11 @@ function render(history?: { agentId: string; messages: { id: string; content: st
   const sessionId = ref<string | null>(history ? createdSessionId : null);
   const shell = ref<{ send(text: string): Promise<void> } | null>(null);
   const shownAgent = ref<string | null>(agentId);
+  // The page the display shows beside the conversation, named and selected as `beside` says.
+  const display = testDisplay(workbench, {
+    initial: { page: { featureId: "dashboards", address: beside.url, instance: "dashboards" }, view: "side" },
+    context: () => beside,
+  });
   const Host = defineComponent({
     setup() {
       const nav = useAgentNav({
@@ -104,7 +111,7 @@ function render(history?: { agentId: string; messages: { id: string; content: st
       return () => h(AgentShell, {
         ref: shell, workbench, client, labels, nav, agentId: shownAgent.value,
         "onUpdate:agentId": (id: string | null) => (shownAgent.value = id),
-        featureId: "dashboards", pageContext: beside,
+        display,
         sessionId: sessionId.value, "onUpdate:sessionId": (id: string | null) => (sessionId.value = id),
       });
     },
@@ -113,7 +120,7 @@ function render(history?: { agentId: string; messages: { id: string; content: st
   document.body.appendChild(root);
   app = createApp(Host);
   app.mount(root);
-  return { sent, sessionId, shell, shownAgent };
+  return { sent, sessionId, shell, shownAgent, display };
 }
 
 it("names the page on the conversation's first message, and only the selection after it", async () => {
@@ -209,4 +216,58 @@ it("shows the agent the opened conversation runs on, and writes in it", async ()
   // The message goes into the conversation that was opened, as its own agent.
   expect(sessionId.value).toBe(createdSessionId);
   expect(sent).toHaveLength(1);
+});
+
+it("says once that the page is closed, and names a page opened again", async () => {
+  const { sent, shell, display } = render();
+  await settle();
+  await shell.value!.send("on this board");
+  await settle();
+
+  await display.close();
+  await shell.value!.send("after closing it");
+  await settle();
+  // The agent last heard of the board: the message says it is no longer shown, and names nothing that was selected in it.
+  expect(sent[1]).toBe("after closing it\n\nCurrent page: closed");
+
+  await shell.value!.send("still nothing beside");
+  await settle();
+  expect(sent[2]).toBe("still nothing beside");
+
+  await display.openFeature("dashboards", "side");
+  await shell.value!.send("back on the board");
+  await settle();
+  expect(sent[3]).toContain("\n\nCurrent page: Dashboards (/dashboards?dashboardId=board-a)");
+});
+
+it("does not carry the page a card replaced", async () => {
+  const { sent, shell, display } = render();
+  await settle();
+  await shell.value!.send("on this board");
+  await settle();
+
+  await display.openArtifact({
+    key: "run:outputs/result.dataset.json",
+    artifact: { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", runId, path: "outputs/result.dataset.json" } as never,
+    title: "Result",
+  });
+  await shell.value!.send("about the card");
+  await settle();
+  expect(sent[1]).toBe("about the card\n\nCurrent page: closed");
+});
+
+it("does not say again that the page is closed in a conversation that already said so", async () => {
+  const { sent, shell, display } = render({
+    agentId,
+    messages: [
+      { id: "m1", content: "on the board\n\nCurrent page: Dashboards (/dashboards?dashboardId=board-a)" },
+      { id: "m2", content: "after closing it\n\nCurrent page: closed" },
+    ],
+  });
+  await display.close();
+  await settle();
+
+  await shell.value!.send("nothing beside");
+  await settle();
+  expect(sent[0]).toBe("nothing beside");
 });

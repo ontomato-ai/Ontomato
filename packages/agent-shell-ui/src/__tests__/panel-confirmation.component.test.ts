@@ -4,6 +4,7 @@ import type { AgentPendingQuestion } from "@ontomato/contracts/agent-channel";
 import type { AgentHostSessionHistory } from "@ontomato/contracts/agent-host";
 import type { AgentTasksFrame } from "@ontomato/contracts/agent-tasks";
 import AgentShell from "../components/AgentShell.vue";
+import { testDisplay } from "./display";
 import { createAgentHostClient } from "../host";
 import { useAgentNav } from "../useAgentNav";
 import type { ShellLabels, ShellPanelOperationsPort, ShellRunChange } from "../types";
@@ -134,7 +135,8 @@ function render(options: { pending?: AgentPendingQuestion[]; streamed?: AgentPen
       void nav.loadAgents();
       void nav.loadSessions();
       return () => h(AgentShell, {
-        workbench: { id: "business", label: "Agents", features: [] }, client, labels, nav,
+        workbench: { id: "business", label: "Agents", features: [] },
+        display: testDisplay({ id: "business", label: "Agents", features: [] }), client, labels, nav,
         panelOperations: options.panelOperations,
         agentId: agentRef.value, sessionId: sessionRef.value,
         "onUpdate:sessionId": (id: string | null) => (sessionRef.value = id),

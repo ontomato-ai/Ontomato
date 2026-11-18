@@ -206,6 +206,8 @@ export interface ShellLabels {
   pageContextAddress: (url: string) => string;
   /** The same line names what was selected in the page. */
   selectionContext: (selection: string) => string;
+  /** The line a message ends with once the page its conversation was last told about is no longer shown. */
+  pageContextClosed: string;
   toolInput: string;
   toolOutput: string;
   stopped: string;

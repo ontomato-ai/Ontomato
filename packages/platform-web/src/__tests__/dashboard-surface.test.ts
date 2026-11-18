@@ -4,7 +4,7 @@ import ElementPlus from "element-plus";
 import { defineComponent, h, nextTick, ref } from "vue";
 import { createPinia, setActivePinia } from "pinia";
 import { createMemoryHistory, createRouter, type Router } from "vue-router";
-import { pageCounterKey } from "@ontomato/agent-shell-ui";
+import { AgentShell, pageCounterKey } from "@ontomato/agent-shell-ui";
 import { pilotPageKey, platformPageAccessKey } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
@@ -14,6 +14,7 @@ import { useDashboardStore } from "@ontomato/workbench-ui/features/dashboard";
 import elementEn from "element-plus/es/locale/lang/en";
 import DashboardsPage from "../pages/DashboardsRoute.vue";
 import { pilotPageResolver } from "../pilot-pages";
+import { openLink } from "../../../workbench-ui/src/features/workbench/__tests__/shell";
 
 /*
  * The board's own store is one per page load, but the page is mounted in two ways: as the dashboards application at its
@@ -31,43 +32,22 @@ vi.mock("@ontomato/workbench-ui/features/dashboard", async (importOriginal) => (
   DashboardPanel: defineComponent({ name: "DashboardPanel", setup: () => () => h("div", { class: "panel" }) }),
 }));
 
-// The workbench's shell is the conversation application; these read the page it draws beside the chat and its links,
-// and the message the host asks it to send.
-const shellProps = ref<Record<string, unknown> | null>(null);
+// The shell is the real one, over a host that lists one agent; the messages it sends land here.
 const sent: string[] = [];
 const agent = { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Assistant", description: "", icon: null, enabled: true };
 vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@ontomato/agent-shell-ui")>()),
-  AgentShell: defineComponent({
-    name: "AgentShell",
-    props: ["featureId", "pageContext", "pageLinks", "workbench"],
-    emits: ["update:featureId"],
-    setup(props, { slots, expose }) {
-      shellProps.value = props as unknown as Record<string, unknown>;
-      expose({ reloadAgents: () => {}, send: async (text: string) => sent.push(text) });
-      return () => h("div", { class: "shell" }, [slots.feature?.({ featureId: props.featureId })]);
-    },
-  }),
-  useAgentNav: () => ({
-    agents: ref([agent]),
-    sessions: ref([]),
-    sessionsState: ref("ready"),
-    nextCursor: ref(null),
-    currentAgent: ref(null),
-    loadAgents: async () => {},
-    loadSessions: async () => {},
-    startNew: () => {},
-    selectSession: () => {},
-    removeSession: async () => {},
-    promoteSession: () => {},
-  }),
   useSessionRunFeed: () => {},
 }));
-vi.mock("../../workbench-ui/src/features/workbench/api", () => ({ getWorkbenchAppearance: async () => null }));
-vi.mock("../../workbench-ui/src/features/workbench/assistant-host", () => ({
-  createAssistantClient: () => ({ listAgents: async () => [] }),
-  createAssistantFeedback: () => ({}),
-}));
+vi.mock("../../../workbench-ui/src/features/workbench/api", () => ({ getWorkbenchAppearance: async () => null }));
+vi.mock("../../../workbench-ui/src/features/workbench/assistant-host", async () => {
+  const { assistantHostDouble } = await import("../../../workbench-ui/src/features/workbench/__tests__/shell");
+  return {
+    createAssistantClient: () => assistantHostDouble({ agents: [agent], sent }),
+    createAssistantFeedback: () => undefined,
+    createPanelOperationSettings: () => undefined,
+  };
+});
 
 installWorkbenchI18n({
   supported: ["en"], defaultLocale: "en", initialLocale: "en", switchEnabled: false, save: null,
@@ -87,7 +67,6 @@ beforeEach(() => {
 afterEach(() => {
   wrappers.splice(0).forEach((wrapper) => wrapper.unmount());
   vi.unstubAllGlobals();
-  shellProps.value = null;
   document.body.innerHTML = "";
 });
 
@@ -133,8 +112,8 @@ describe("the pages beside the conversation are not entries of its column", () =
     wrappers.push(wrapper);
     await flushPromises();
 
-    const features = (shellProps.value as unknown as { workbench: { features: { id: string; label: string; listed?: boolean }[] } })
-      .workbench.features;
+    const features = (wrapper.findComponent(AgentShell).props("workbench") as { features: { id: string; label: string; listed?: boolean }[] })
+      .features;
     // The page's title is what the shell shows for it: the settings and a board are named, not named by their keys.
     expect(features.find((feature) => feature.id === "agents")).toMatchObject({ label: "Agent settings", listed: false });
     expect(features.find((feature) => feature.id === "dashboards")).toMatchObject({ label: "Dashboards", listed: false });
@@ -151,9 +130,7 @@ describe("the board belongs to the page it is mounted on", () => {
     wrappers.push(wrapper);
     await flushPromises();
 
-    (
-      shellProps.value as unknown as { pageLinks?: (href: string) => (() => void) | null }
-    ).pageLinks!("/dashboards?dashboardId=board-a")!();
+    await openLink(wrapper, "/dashboards?dashboardId=board-a");
     await flushPromises();
     expect(router.currentRoute.value.path).toBe(platformRoutes.chat.path);
     expect(boardShown()).toBe("board-a");
@@ -172,9 +149,7 @@ describe("the board belongs to the page it is mounted on", () => {
     });
     wrappers.push(wrapper);
     await flushPromises();
-    (
-      shellProps.value as unknown as { pageLinks?: (href: string) => (() => void) | null }
-    ).pageLinks!("/dashboards?dashboardId=board-a")!();
+    await openLink(wrapper, "/dashboards?dashboardId=board-a");
     await flushPromises();
 
     // Enlarged: the same store, now held by the dashboards page at its own address.
@@ -220,7 +195,9 @@ describe("the board belongs to the page it is mounted on", () => {
     wrappers.push(wrapper);
     await flushPromises();
 
-    expect(sent).toEqual(["Which region grew fastest?"]);
+    // Sent once, as the conversation's first message, with the board it was written on.
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatch(/^Which region grew fastest\?\n\n/);
     expect(router.currentRoute.value.query.page).toBe("/dashboards?dashboardId=board-a");
     expect(boardShown()).toBe("board-a");
   });
@@ -255,9 +232,7 @@ describe("the board belongs to the page it is mounted on", () => {
     });
     wrappers.push(wrapper);
     await flushPromises();
-    (
-      shellProps.value as unknown as { pageLinks?: (href: string) => (() => void) | null }
-    ).pageLinks!("/dashboards?dashboardId=board-a")!();
+    await openLink(wrapper, "/dashboards?dashboardId=board-a");
     await flushPromises();
     expect(boardShown()).toBe("board-a");
 

@@ -31,6 +31,16 @@ export { default as ToolStep } from "./components/ToolStep.vue";
 export { pageDockSpaceKey, useConversationContinuation, usePageDockSpace } from "./context";
 export { pageContextLine, pageLineAddress, pageMoved, samePageAddress, type PageContext, type PageLinePrompts, type PageSelection } from "./page-context";
 export { pageCounterKey, usePageCounter, type PageCounter } from "./page-counter";
+export {
+  displayLink,
+  useConversationDisplay,
+  type ConversationDisplay,
+  type ConversationDisplayHost,
+  type DisplayHistory,
+  type DisplayPage,
+  type DisplayTarget,
+  type DisplayView,
+} from "./conversation-display";
 export { useAgentNav, type AgentNav, type AgentNavOptions } from "./useAgentNav";
 export { useSessionRunFeed, type SessionRunFeedOptions } from "./useSessionRunFeed";
 export {

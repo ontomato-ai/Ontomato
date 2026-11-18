@@ -8,6 +8,7 @@ import { workbenchI18n } from "../../../i18n";
 import { ontologyServiceAccessKey, openOntologyServiceAccess } from "../../../app/ontology-service";
 
 import BusinessWorkbench from "../components/BusinessWorkbench.vue";
+import { displayOf } from "./shell";
 
 /*
  * The board beside a conversation is a page, and what its reader chose in it rides on the message: the page context the
@@ -17,41 +18,20 @@ import BusinessWorkbench from "../components/BusinessWorkbench.vue";
 const i18n = workbenchI18n();
 const agents = vi.hoisted(() => [{ id: "11111111-1111-4111-8111-111111111111", name: "Sales", description: "", icon: null, enabled: true }]);
 
-vi.mock("@ontomato/agent-shell-ui", async () => {
-  const { defineComponent, h } = await import("vue");
+// The shell is the real one; only the list notice stream, which needs a live host, stays out.
+vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@ontomato/agent-shell-ui")>()),
+  useSessionRunFeed: () => {},
+}));
+vi.mock("../api", () => ({ getWorkbenchAppearance: async () => ({ brand: { name: "", logo: "", subtitle: "" } }) }));
+vi.mock("../assistant-host", async () => {
+  const { assistantHostDouble } = await import("./shell");
   return {
-    AgentShell: defineComponent({
-      name: "AgentShell",
-      props: ["agentId", "sessionId", "featureId", "pageContext"],
-      setup(_props, { expose }) {
-        expose({ reloadAgents: async () => {}, send: async () => {} });
-        return () => h("div");
-      },
-    }),
-    ShellNavBody: { name: "ShellNavBody", template: "<div />" },
-    ShellColumn: { name: "ShellColumn", template: "<div><slot /></div>" },
-    useAgentNav: (options: { setSessionId(id: string | null): void; onLeaveConversation(): void }) => ({
-      agents: { value: agents },
-      loadAgents: async () => {},
-      loadSessions: async () => {},
-      startNew: () => {
-        options.setSessionId(null);
-        options.onLeaveConversation();
-      },
-      selectSession: (id: string) => {
-        options.setSessionId(id);
-        options.onLeaveConversation();
-      },
-    }),
-    useSessionRunFeed: () => {},
+    createAssistantClient: () => assistantHostDouble({ agents }),
+    createAssistantFeedback: () => undefined,
+    createPanelOperationSettings: () => undefined,
   };
 });
-vi.mock("../api", () => ({ getWorkbenchAppearance: async () => ({ brand: { name: "", logo: "", subtitle: "" } }) }));
-vi.mock("../assistant-host", () => ({
-  createAssistantClient: () => ({}),
-  createAssistantFeedback: () => ({}),
-  createPanelOperationSettings: () => ({ read: async () => null }),
-}));
 vi.mock("../components/DatasetActions.vue", () => ({ default: { template: "<div />" } }));
 vi.mock("../components/WorkbenchAppearanceDialog.vue", () => ({ default: { template: "<div />" } }));
 vi.mock("../../diagnosis/components/TurnDiagnoseButton.vue", () => ({ default: { template: "<div />" } }));
@@ -89,15 +69,15 @@ async function openBoard(page: string) {
   });
   wrappers.push(wrapper);
   for (let index = 0; index < 3; index += 1) await new Promise((resolve) => setTimeout(resolve, 0));
-  return wrapper.findComponent({ name: "AgentShell" });
+  return displayOf(wrapper);
 }
 
 describe("the board's page context", () => {
   it("carries the board and the card chosen in it, each with the id the page's skill reads", async () => {
     // The address the conversation carries is the page's selection: the board, and the card chosen in it with its name.
     const page = "/dashboards?dashboardId=board-a&dashboardName=Sales&cardId=card-1&cardName=Revenue%20by%20region";
-    const shell = await openBoard(page);
-    expect(shell.props("pageContext")).toMatchObject({
+    const display = await openBoard(page);
+    expect(display.pageContext.value).toMatchObject({
       url: page,
       label: "Dashboards",
       selection: [
@@ -108,7 +88,7 @@ describe("the board's page context", () => {
   });
 
   it("carries the board alone when the address names no card", async () => {
-    const shell = await openBoard("/dashboards?dashboardId=board-a&dashboardName=Sales");
-    expect(shell.props("pageContext")).toMatchObject({ selection: [{ kind: "dashboard", id: "board-a", label: "Sales (board-a)" }] });
+    const display = await openBoard("/dashboards?dashboardId=board-a&dashboardName=Sales");
+    expect(display.pageContext.value).toMatchObject({ selection: [{ kind: "dashboard", id: "board-a", label: "Sales (board-a)" }] });
   });
 });

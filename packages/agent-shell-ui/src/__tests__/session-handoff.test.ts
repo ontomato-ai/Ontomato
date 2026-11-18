@@ -3,6 +3,7 @@ import type { SessionRunPort, SessionRunHandlers } from "../host";
 import { afterEach, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick, ref, shallowRef, type App } from "vue";
 import AgentShell from "../components/AgentShell.vue";
+import { testDisplay } from "./display";
 import type { AgentHostRunSnapshot } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "../host";
 import { useAgentNav, type AgentNav } from "../useAgentNav";
@@ -79,6 +80,7 @@ function render(first: AgentHostClient, feed?: SessionRunPort) {
           {
             ref: shell,
             workbench,
+            display: testDisplay(workbench),
             client: client.value,
             labels,
             nav,

@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick, onMounted, ref, type App } from "vue";
 import AgentShell from "../components/AgentShell.vue";
+import { testDisplay } from "./display";
 import { shellContextKey, type ShellContext } from "../context";
 import type { AgentHostClient } from "../host";
 import { useAgentNav } from "../useAgentNav";
@@ -121,6 +122,7 @@ async function renderEmbedded() {
         ),
         h(AgentShell, {
           workbench,
+          display: testDisplay(workbench),
           client: port,
           labels,
           nav,

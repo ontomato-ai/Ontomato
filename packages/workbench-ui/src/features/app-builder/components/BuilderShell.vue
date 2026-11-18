@@ -7,6 +7,7 @@ import {
   AgentShell,
   ShellColumn,
   useAgentNav,
+  useConversationDisplay,
   useSessionRunFeed,
   type AgentHostAgent,
   type PageContext,
@@ -16,6 +17,7 @@ import {
 } from "@ontomato/agent-shell-ui";
 import "@ontomato/agent-shell-ui/style.css";
 import type { Workspace } from "@ontomato/contracts/workspaces";
+import { useLeaveConfirmation } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useShellLabels } from "../../../composables/useShellLabels";
 import { authHost } from "../../../utils/auth";
@@ -162,9 +164,19 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   // Each view scrolls itself (the preview inside the app's frame), so full, the composer floats over the whole view.
   features: [{ id: PANEL_ID, label: t("appBuilder.panel"), icon: "pages", availability: "page", withConversation: true, scrollsItself: true }],
 }));
-/** The builder opens beside the conversation; closing the page leaves only the conversation, expanding fills it. */
-const featureId = ref<string | null>(PANEL_ID);
-const pageView = ref<"full" | "side">("side");
+/**
+ * What sits beside the conversation: the builder opens its workspace there; closing the page leaves only the
+ * conversation, expanding fills it. The workspace is no address of its own, so nothing here is written to the browser's.
+ */
+const leave = useLeaveConfirmation();
+const panelPage = { featureId: PANEL_ID, address: "", instance: PANEL_ID };
+const display = useConversationDisplay({
+  features: () => workbench.value.features,
+  feature: (id) => (id === PANEL_ID ? panelPage : null),
+  context: () => pageContext.value,
+  leave: { leaves: (address) => leave.leaves(address ?? ""), confirm: () => leave.confirm() },
+  initial: { page: panelPage, view: "side" },
+});
 const tab = ref<PanelTab>("preview");
 const file = ref<string | null>(null);
 const target = ref<ChangeTarget>("latest");
@@ -202,9 +214,7 @@ watch(
 
 function openPage(next: PanelTab) {
   tab.value = next;
-  if (featureId.value !== null) return;
-  featureId.value = PANEL_ID;
-  pageView.value = "side";
+  if (!display.page.value) void display.openFeature(PANEL_ID, "side");
 }
 function showChanges(commit: string) {
   target.value = commit;
@@ -375,15 +385,13 @@ const columnEvents = {
     v-if="client"
     class="builder-shell"
     v-model:agent-id="agentId"
-    v-model:feature-id="featureId"
     v-model:session-id="sessionId"
-    v-model:page-view="pageView"
+    :display="display"
     :workbench="workbench"
     :title="t('appBuilder.title')"
     :client="client"
     :labels="labels"
     :nav="nav"
-    :page-context="pageContext"
     @run="onRun"
     @error="ElMessage.error($event)"
   >

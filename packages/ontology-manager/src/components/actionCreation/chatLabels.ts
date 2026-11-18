@@ -31,6 +31,7 @@ export function actionChatLabels(overrides: Partial<ShellLabels> = {}): ShellLab
     pageContext: (page) => `Current page: ${page.label} (${page.url})`,
     pageContextAddress: (url) => `Current page: ${url}`,
     selectionContext: (selection) => `Selected: ${selection}`,
+    pageContextClosed: "Current page: closed",
     toolInput: "Input",
     toolOutput: "Output",
     stopped: "Stopped",

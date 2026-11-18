@@ -1,3 +1,4 @@
+import type { ConversationDisplay } from "@ontomato/agent-shell-ui";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemoryHistory, createRouter, type Router } from "vue-router";
@@ -22,9 +23,8 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@ontomato/agent-shell-ui")>()),
   AgentShell: {
     name: "AgentShell",
-    props: ["featureId"],
-    emits: ["update:featureId"],
-    template: '<div class="shell"><slot name="feature" :feature-id="featureId" /></div>',
+    props: ["display"],
+    template: '<div class="shell"><slot name="feature" :feature-id="display.page.value?.featureId ?? null" /></div>',
   },
   // The shell draws the column and the conversation; this test only reads the address the platform lands on.
   ShellNavBody: { name: "ShellNavBody", template: "<div />" },
@@ -97,7 +97,7 @@ async function openAddress(
   wrappers.push(wrapper);
   await new Promise((resolve) => setTimeout(resolve, 0));
   const shell = wrapper.findComponent({ name: "AgentShell" });
-  return { router, wrapper, featureId: (shell.props("featureId") as string | null) ?? null };
+  return { router, wrapper, featureId: (shell.props("display") as ConversationDisplay).page.value?.featureId ?? null };
 }
 
 describe("the agent platform's settings addresses", () => {

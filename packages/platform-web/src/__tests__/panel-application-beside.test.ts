@@ -3,7 +3,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import ElementPlus from "element-plus";
 import { defineComponent, h, ref } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
-import { pageCounterKey } from "@ontomato/agent-shell-ui";
+import { AgentShell, pageCounterKey } from "@ontomato/agent-shell-ui";
 import { pilotPageKey, platformPageAccessKey } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { panelAddress, panelAddressState } from "@ontomato/contracts/panel-host";
@@ -12,6 +12,7 @@ import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n
 import { BusinessWorkbench } from "@ontomato/workbench-ui/features/workbench";
 import elementEn from "element-plus/es/locale/lang/en";
 import { pilotPageResolver } from "../pilot-pages";
+import { displayOf } from "../../../workbench-ui/src/features/workbench/__tests__/shell";
 
 /*
  * A panel application's page beside the conversation (overall design 3.4, "the same PanelHost full, beside a
@@ -73,40 +74,21 @@ vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
   }),
 }));
 
-const shellProps = ref<Record<string, unknown> | null>(null);
 const agent = { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Analyst", description: "", icon: null, enabled: true };
+// The shell is the real one, over a host that lists one agent.
 vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@ontomato/agent-shell-ui")>()),
-  AgentShell: defineComponent({
-    name: "AgentShell",
-    props: ["featureId", "pageContext", "pageLinks", "workbench"],
-    emits: ["update:featureId"],
-    setup(props, { slots, expose }) {
-      shellProps.value = props as unknown as Record<string, unknown>;
-      expose({ reloadAgents: () => {}, send: async () => {} });
-      return () => h("div", { class: "shell" }, [slots.feature?.({ featureId: props.featureId })]);
-    },
-  }),
-  useAgentNav: () => ({
-    agents: ref([agent]),
-    sessions: ref([]),
-    sessionsState: ref("ready"),
-    nextCursor: ref(null),
-    currentAgent: ref(null),
-    loadAgents: async () => {},
-    loadSessions: async () => {},
-    startNew: () => {},
-    selectSession: () => {},
-    removeSession: async () => {},
-    promoteSession: () => {},
-  }),
   useSessionRunFeed: () => {},
 }));
-vi.mock("../../workbench-ui/src/features/workbench/api", () => ({ getWorkbenchAppearance: async () => null }));
-vi.mock("../../workbench-ui/src/features/workbench/assistant-host", () => ({
-  createAssistantClient: () => ({ listAgents: async () => [] }),
-  createAssistantFeedback: () => ({}),
-}));
+vi.mock("../../../workbench-ui/src/features/workbench/api", () => ({ getWorkbenchAppearance: async () => null }));
+vi.mock("../../../workbench-ui/src/features/workbench/assistant-host", async () => {
+  const { assistantHostDouble } = await import("../../../workbench-ui/src/features/workbench/__tests__/shell");
+  return {
+    createAssistantClient: () => assistantHostDouble({ agents: [agent] }),
+    createAssistantFeedback: () => undefined,
+    createPanelOperationSettings: () => undefined,
+  };
+});
 
 beforeEach(() => {
   // Every mount starts from a frame that reports: one test holds that report back to see the page before it.
@@ -121,11 +103,6 @@ beforeAll(() => {
   });
 });
 
-interface ShellSeen {
-  featureId: string;
-  pageContext: ReturnType<typeof contextOf> | null;
-  workbench: { features: { id: string; withConversation?: boolean; address?: string; label: string }[] };
-}
 
 describe("a panel application's page beside the conversation", () => {
   it("opens beside the chat at its state, carries what the panel shows, and keeps the panel across a selection", async () => {
@@ -148,11 +125,12 @@ describe("a panel application's page beside the conversation", () => {
       },
     });
     await flushPromises();
-    const shell = () => shellProps.value as unknown as ShellSeen;
+    const display = displayOf(wrapper);
+    const features = () => (wrapper.findComponent(AgentShell).props("workbench") as { features: { id: string }[] }).features;
 
     // The workbench knows the page: it sits beside the conversation, at its own address, named by the panel.
-    expect(shell().featureId).toBe("panel-application");
-    expect(shell().workbench.features.find((feature) => feature.id === "panel-application")).toMatchObject({
+    expect(display.page.value?.featureId).toBe("panel-application");
+    expect(features().find((feature) => feature.id === "panel-application")).toMatchObject({
       withConversation: true,
       scrollsItself: true,
       address: page,
@@ -160,7 +138,7 @@ describe("a panel application's page beside the conversation", () => {
     });
     // The panel opened at the state the page's address names, and what it shows rides on the message.
     expect(instances.map((each) => each.initial)).toEqual([selected("task-1")]);
-    expect(shell().pageContext).toEqual(contextOf(page, "task-1"));
+    expect(display.pageContext.value).toEqual(contextOf(page, "task-1"));
 
     // The reader selects another task: the conversation's page parameter follows, the panel is the same one, and the
     // message carries the new selection.
@@ -169,7 +147,7 @@ describe("a panel application's page beside the conversation", () => {
     expect(router.currentRoute.value.path).toBe(platformRoutes.chat.path);
     expect(panelAddressState(String(router.currentRoute.value.query.page))).toEqual(selected("task-2"));
     expect(instances).toHaveLength(1);
-    expect(shell().pageContext).toEqual(contextOf(String(router.currentRoute.value.query.page), "task-2"));
+    expect(display.pageContext.value).toEqual(contextOf(String(router.currentRoute.value.query.page), "task-2"));
 
     const draft = "/applications/app-a/tasks?draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2Fnext.page-draft.json";
     await router.replace({ query: { ...router.currentRoute.value.query, page: panelAddress(draft, selected("task-3")) } });
@@ -203,11 +181,11 @@ describe("a panel application's page beside the conversation", () => {
     });
     await flushPromises();
 
-    expect((shellProps.value as unknown as ShellSeen).pageContext).toEqual({ url: page, label: "", selection: [] });
+    expect(displayOf(wrapper).pageContext.value).toEqual({ url: page, label: "", selection: [] });
 
     instances[0]!.report();
     await flushPromises();
-    expect((shellProps.value as unknown as ShellSeen).pageContext).toEqual(contextOf(page, null));
+    expect(displayOf(wrapper).pageContext.value).toEqual(contextOf(page, null));
     silent.value = false;
     wrapper.unmount();
   });
@@ -237,11 +215,11 @@ describe("a panel application's page beside the conversation", () => {
     });
     await flushPromises();
 
-    expect((shellProps.value as unknown as ShellSeen).pageContext).toEqual({ url: page, label: "Scheduled tasks", selection: [] });
+    expect(displayOf(wrapper).pageContext.value).toEqual({ url: page, label: "Scheduled tasks", selection: [] });
 
     instances[0]!.report();
     await flushPromises();
-    expect((shellProps.value as unknown as ShellSeen).pageContext).toEqual({ ...contextOf(page, null), label: "Scheduled tasks" });
+    expect(displayOf(wrapper).pageContext.value).toEqual({ ...contextOf(page, null), label: "Scheduled tasks" });
     delete uses[0]!.names;
     silent.value = false;
     wrapper.unmount();

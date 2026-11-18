@@ -1,13 +1,14 @@
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemoryHistory, createRouter, type Router } from "vue-router";
-import { mount } from "@vue/test-utils";
+import { mount, type VueWrapper } from "@vue/test-utils";
 import ElementPlus from "element-plus";
-import { defineComponent, h, ref } from "vue";
+import { defineComponent, h } from "vue";
 import { pilotPageKey, platformPageAccessKey } from "@ontomato/platform-shell";
 import { workbenchI18n } from "../../../i18n";
 import { ontologyServiceAccessKey, openOntologyServiceAccess } from "../../../app/ontology-service";
 import BusinessWorkbench from "../components/BusinessWorkbench.vue";
+import { linkOf, openLink } from "./shell";
 
 /*
  * An answer may link a page of the platform. The pages this assembly mounts beside a conversation open there; any other
@@ -17,37 +18,20 @@ import BusinessWorkbench from "../components/BusinessWorkbench.vue";
  */
 const i18n = workbenchI18n();
 const agents = vi.hoisted(() => [{ id: "11111111-1111-4111-8111-111111111111", name: "Assistant", description: "", icon: null, enabled: true }]);
-const shellProps = ref<Record<string, unknown> | null>(null);
-
-vi.mock("@ontomato/agent-shell-ui", async () => {
-  const { defineComponent, h } = await import("vue");
+// The shell is the real one; only the list notice stream, which needs a live host, stays out.
+vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@ontomato/agent-shell-ui")>()),
+  useSessionRunFeed: () => {},
+}));
+vi.mock("../api", () => ({ getWorkbenchAppearance: async () => ({ brand: { name: "", logo: "", subtitle: "" } }) }));
+vi.mock("../assistant-host", async () => {
+  const { assistantHostDouble } = await import("./shell");
   return {
-    AgentShell: defineComponent({
-      name: "AgentShell",
-      props: ["agentId", "sessionId", "featureId", "pageContext", "pageLinks"],
-      setup(props) {
-        shellProps.value = props as unknown as Record<string, unknown>;
-        return () => h("div");
-      },
-    }),
-    ShellNavBody: { name: "ShellNavBody", template: "<div />" },
-    ShellColumn: { name: "ShellColumn", template: "<div><slot /></div>" },
-    useAgentNav: () => ({
-      agents: { value: agents },
-      loadAgents: async () => {},
-      loadSessions: async () => {},
-      startNew: () => {},
-      selectSession: () => {},
-    }),
-    useSessionRunFeed: () => {},
+    createAssistantClient: () => assistantHostDouble({ agents }),
+    createAssistantFeedback: () => undefined,
+    createPanelOperationSettings: () => undefined,
   };
 });
-vi.mock("../api", () => ({ getWorkbenchAppearance: async () => ({ brand: { name: "", logo: "", subtitle: "" } }) }));
-vi.mock("../assistant-host", () => ({
-  createAssistantClient: () => ({}),
-  createAssistantFeedback: () => ({}),
-  createPanelOperationSettings: () => ({ read: async () => null }),
-}));
 vi.mock("../components/DatasetActions.vue", () => ({ default: { template: "<div />" } }));
 vi.mock("../components/WorkbenchAppearanceDialog.vue", () => ({ default: { template: "<div />" } }));
 vi.mock("../../diagnosis/components/TurnDiagnoseButton.vue", () => ({ default: { template: "<div />" } }));
@@ -55,7 +39,6 @@ vi.mock("../../diagnosis/components/TurnDiagnoseButton.vue", () => ({ default: {
 const wrappers: ReturnType<typeof mount>[] = [];
 afterEach(() => {
   wrappers.splice(0).forEach((wrapper) => wrapper.unmount());
-  shellProps.value = null;
 });
 
 /**
@@ -63,7 +46,7 @@ afterEach(() => {
  * whose own record redirects to the start page, and a catch-all answers any other address the same way. A page is the
  * deepest record an address matches — the layout above it redirecting says nothing about the page below it.
  */
-async function openAt(): Promise<Router> {
+async function openAt(): Promise<{ router: Router; wrapper: VueWrapper }> {
   const start = () => platformRoutes.chat.path;
   const router = createRouter({
     history: createMemoryHistory(),
@@ -101,17 +84,14 @@ async function openAt(): Promise<Router> {
   });
   wrappers.push(wrapper);
   for (let index = 0; index < 4; index += 1) await new Promise((resolve) => setTimeout(resolve, 0));
-  return router;
+  return { router, wrapper };
 }
-
-const pageLinks = () =>
-  (shellProps.value as unknown as { pageLinks: (href: string) => (() => void) | null }).pageLinks;
 
 describe("the pages an answer links", () => {
   it("opens a page of the platform at its own address, with the draft handoff it names", async () => {
-    const router = await openAt();
+    const { router, wrapper } = await openAt();
     const href = "#/ontology/knowledge?draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2Fa.page-draft.json";
-    const open = pageLinks()(href)!;
+    const open = linkOf(wrapper, href)!;
     expect(open).toBeTypeOf("function");
 
     open();
@@ -124,10 +104,8 @@ describe("the pages an answer links", () => {
   });
 
   it("opens the pages beside the conversation there, and leaves the address's page parameter to carry them", async () => {
-    const router = await openAt();
-    const href = "#/governance/reports/record-1?issue=order-rule";
-    pageLinks()(href)!();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    const { router, wrapper } = await openAt();
+    await openLink(wrapper, "#/governance/reports/record-1?issue=order-rule");
 
     expect(router.currentRoute.value.path).toBe(platformRoutes.chat.path);
     expect(router.currentRoute.value.query.page).toBe("/governance/reports/record-1?issue=order-rule");
@@ -139,7 +117,7 @@ describe("the pages an answer links", () => {
     ["a mail address", "mailto:someone@example.com"],
     ["a relative path", "ontology/knowledge"],
   ])("leaves %s as text", async (_case, href) => {
-    await openAt();
-    expect(pageLinks()(href)).toBeNull();
+    const { wrapper } = await openAt();
+    expect(linkOf(wrapper, href)).toBeNull();
   });
 });

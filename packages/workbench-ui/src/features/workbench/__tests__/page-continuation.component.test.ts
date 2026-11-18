@@ -32,12 +32,13 @@ const hosted = vi.hoisted(() => ({ sessions: [] as string[], loads: 0, slowLoads
 /** What choosing a conversation did: the real navigation closes the page beside the conversation it leaves. */
 const left = vi.hoisted(() => [] as string[]);
 
-vi.mock("@ontomato/agent-shell-ui", async () => {
+vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => {
   const { defineComponent, h } = await import("vue");
   return {
+    ...(await importOriginal<typeof import("@ontomato/agent-shell-ui")>()),
     AgentShell: defineComponent({
       name: "AgentShell",
-      props: ["agentId", "sessionId", "featureId"],
+      props: ["agentId", "sessionId"],
       setup(_props, { expose }) {
         expose({ reloadAgents: async () => {}, send: async (text: string) => { sent.push(text); } });
         return () => h("div");

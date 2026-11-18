@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { createApp, defineComponent, h, nextTick, ref, type App } from "vue";
+import { createApp, defineComponent, h, nextTick, type App } from "vue";
 import AgentShell from "../components/AgentShell.vue";
+import { testDisplay } from "./display";
 import type { AgentHostClient } from "../host";
 import { useAgentNav } from "../useAgentNav";
 import type { ShellLabels, ShellWorkbenchDeclaration } from "../types";
@@ -13,6 +14,7 @@ const workbench: ShellWorkbenchDeclaration = {
 const labels = { placeholder: "Message", send: "Send", stop: "Stop", open: "Open in panel", close: "Close" } as unknown as ShellLabels;
 
 let app: App | null = null;
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 afterEach(() => {
   app?.unmount();
   app = null;
@@ -29,8 +31,9 @@ it("reopens the closed page beside the conversation from the conversation's corn
     listAgents: vi.fn().mockResolvedValue([]),
     listSessions: vi.fn().mockResolvedValue({ sessions: [], nextCursor: null }),
   } as unknown as AgentHostClient;
-  const featureId = ref<string | null>("panel");
-  const pageView = ref<"full" | "side">("side");
+  const display = testDisplay(workbench, {
+    initial: { page: { featureId: "panel", address: "/panel", instance: "panel" }, view: "side" },
+  });
   const Host = defineComponent({
     setup() {
       const nav = useAgentNav({
@@ -46,10 +49,7 @@ it("reopens the closed page beside the conversation from the conversation's corn
           client: port,
           labels,
           nav,
-          featureId: featureId.value,
-          "onUpdate:featureId": (id: string | null) => (featureId.value = id),
-          pageView: pageView.value,
-          "onUpdate:pageView": (view: "full" | "side") => (pageView.value = view),
+          display,
         });
     },
   });
@@ -61,11 +61,11 @@ it("reopens the closed page beside the conversation from the conversation's corn
 
   expect(root.querySelector(".reopen-page")).toBeNull();
   root.querySelector<HTMLButtonElement>(".page-pane button[aria-label='Close']")!.click();
-  await nextTick();
-  expect(featureId.value).toBeNull();
+  await settle();
+  expect(display.page.value).toBeNull();
 
   root.querySelector<HTMLButtonElement>(".reopen-page")!.click();
-  await nextTick();
-  expect([featureId.value, pageView.value]).toEqual(["panel", "side"]);
+  await settle();
+  expect([display.page.value?.featureId, display.view.value]).toEqual(["panel", "side"]);
   expect(root.querySelector(".reopen-page")).toBeNull();
 });

@@ -5,8 +5,8 @@ import { useRoute, useRouter, type LocationQueryRaw } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import {
-  AgentShell, useAgentNav, useSessionRunFeed,
-  type PageContext, type PageSelection, type ShellWorkbenchDeclaration,
+  AgentShell, useAgentNav, useConversationDisplay, useSessionRunFeed,
+  type DisplayPage, type PageContext, type PageSelection, type ShellWorkbenchDeclaration,
 } from "@ontomato/agent-shell-ui";
 import { useAgentModelLabels, useLeaveConfirmation } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
@@ -30,7 +30,6 @@ const route = useRoute(), router = useRouter(), { t } = useI18n();
 const client = createDiagnosisClient(), shellLabels = useShellLabels();
 const labels = computed(() => ({ ...shellLabels.value, greeting: t("ops.greeting"), placeholder: t("ops.placeholder") }));
 const agentId = ref<string | null>(DIAGNOSIS_AGENT_ID);
-const pageView = ref<"full" | "side">("full");
 
 const pages = [
   { id: "turn", path: "/ops/turn", label: "ops.turns", icon: "evidence", match: ["/ops/turn"] },
@@ -71,49 +70,60 @@ const conversation = ref<string | null>(typeof route.query.sessionId === "string
 watch(() => route.query.sessionId, (id) => {
   if (typeof id === "string") conversation.value = id;
 });
-const pendingPage = ref<string | null | undefined>(undefined);
-let scheduled = false;
-function navigate() {
-  if (scheduled) return;
-  scheduled = true;
-  queueMicrotask(() => {
-    scheduled = false;
-    const page = pendingPage.value;
-    const changesPage = page !== undefined && page !== pageOf(route.path);
-    const path = !changesPage ? route.path : [...pages, MODEL].find((item) => item.id === page)?.path ?? "/ops/diagnosis";
+let pendingPath: string | null = null;
+let scheduled: Promise<boolean> | null = null;
+function navigate(): Promise<boolean> {
+  scheduled ??= Promise.resolve().then(async () => {
+    scheduled = null;
+    const path = pendingPath ?? route.path;
+    pendingPath = null;
+    const changesPage = path !== route.path;
     const rest = { ...route.query };
     delete rest.sessionId;
     const query: LocationQueryRaw = { ...(changesPage ? {} : rest), ...(conversation.value ? { sessionId: conversation.value } : {}) };
-    const done = changesPage ? router.push({ path, query }) : router.replace({ path, query });
-    void done.catch(() => {}).finally(() => (pendingPage.value = undefined));
+    const failure = await (changesPage ? router.push({ path, query }) : router.replace({ path, query })).catch((error: unknown) => error);
+    return !failure;
   });
+  return scheduled;
 }
-/** A page holding unsaved changes (the model) stays until the reader confirms leaving it. */
-const leave = useLeaveConfirmation();
-function openPage(id: string | null) {
-  pendingPage.value = id;
-  navigate();
-}
-const featureId = computed({
-  get: () => (pendingPage.value !== undefined ? pendingPage.value : pageOf(route.path)),
-  set: (id: string | null) => {
-    const target = [...pages, MODEL].find((item) => item.id === id)?.path ?? "/ops/diagnosis";
-    if (!leave.leaves(target)) return openPage(id);
-    void leave.confirm().then((confirmed) => confirmed && openPage(id));
-  },
-});
 const sessionId = computed({
   get: () => conversation.value,
   set: (id: string | null) => {
     conversation.value = id;
-    navigate();
+    void navigate();
   },
 });
 
+/**
+ * What sits beside the conversation is this application's display: its pages are its own routes, so a page's address is
+ * the route's path, a page's own navigation moves the address, and the address bar is what the display follows. Answers
+ * may link the app's pages under their old prefix too (`/observe/turn/<key>`).
+ */
+function pageAt(path: string): DisplayPage | null {
+  const id = pageOf(path);
+  return id ? { featureId: id, address: path, instance: id } : null;
+}
+/** A page holding unsaved changes (the model) stays until the reader confirms leaving it. */
+const leave = useLeaveConfirmation();
+const display = useConversationDisplay({
+  features: () => workbench.value.features,
+  resolve: (href) => pageAt(href.replace(/^#/, "").replace(/^\/observe(?=\/)/, "/ops").split("?")[0] ?? ""),
+  feature: (id) => pageAt([...pages, MODEL].find((item) => item.id === id)?.path ?? ""),
+  serialize: (page) => {
+    const path = page?.address ?? "/ops/diagnosis";
+    if (path === route.path) return Promise.resolve(true);
+    pendingPath = path;
+    return navigate();
+  },
+  context: (page) => pageContext(page.featureId),
+  leave: { leaves: (address) => leave.leaves(address ?? "/ops/diagnosis"), confirm: () => leave.confirm() },
+});
+watch(() => route.path, (path) => display.follow(path), { immediate: true });
+
 /** Which page "this" refers to, and the item it names: the message carries the item, and the page once. */
-const pageContext = computed<PageContext | null>(() => {
-  const page = pages.find((item) => item.id === featureId.value);
-  if (!page) return null;
+function pageContext(id: string): PageContext {
+  const page = pages.find((item) => item.id === id);
+  if (!page) return { pageKey: `ops.${id}`, url: route.fullPath, label: modelLabels.value.title, selection: [] };
   const params = route.params, query = route.query;
   let selection: PageSelection | null = null;
   if (page.id === "turn" && typeof params.turnKey === "string")
@@ -123,16 +133,6 @@ const pageContext = computed<PageContext | null>(() => {
   else if (page.id === "test" && typeof query.runId === "string")
     selection = { kind: "run", id: query.runId, label: t("ops.contextRun", { run: query.runId }) };
   return { pageKey: `ops.${page.id}`, url: route.fullPath, label: t(page.label), selection: selection ? [selection] : [] };
-});
-
-/** Answers may link the app's own pages (e.g. `/observe/turn/<key>`); they open beside the conversation. */
-function pageLinks(href: string) {
-  const path = href.replace(/^#/, "").replace(/^\/observe(?=\/)/, "/ops").split("?")[0] ?? "";
-  if (!pageOf(path)) return null;
-  return () => {
-    const query = conversation.value ? { sessionId: conversation.value } : {};
-    void router.push({ path, query }).catch(() => {});
-  };
 }
 
 const starting = ref(false);
@@ -145,7 +145,7 @@ async function startDiagnosis(target: DiagnosisTarget, fromRoute = false) {
     if (fromRoute) await router.replace({ path: route.path, query: { ...route.query, diagnosisSessionId: session, diagnosisRunId: run } });
     await diagnosisApi.startDiagnosis(target, session, run, workbenchContent().text.observe.autoTurnDiagnosisMessage);
     // Started from a page, the diagnosis opens beside the evidence it is about.
-    if (pageOf(route.path)) pageView.value = "side";
+    if (pageOf(route.path)) void display.setView("side");
     conversation.value = session;
     await router.replace({ path: route.path, query: { sessionId: session } });
     return true;
@@ -168,7 +168,7 @@ const nav = useAgentNav({
   setAgentId: (id) => (agentId.value = id),
   sessionId: () => sessionId.value,
   setSessionId: (id) => (sessionId.value = id),
-  onLeaveConversation: () => (featureId.value = null),
+  onLeaveConversation: () => void display.close(),
 });
 // The one list notice stream of this page: every diagnosis conversation it lists follows its run, open or not.
 useSessionRunFeed({
@@ -188,18 +188,15 @@ onMounted(async () => {
 <template>
   <AgentShell
     v-model:agent-id="agentId"
-    v-model:feature-id="featureId"
     v-model:session-id="sessionId"
-    v-model:page-view="pageView"
+    :display="display"
     :workbench="workbench"
     :title="t('platform.operations')"
     :bottom="bottomEntry"
     :client="client"
     :labels="labels"
     :nav="nav"
-    :page-context="pageContext"
-    :page-links="pageLinks"
-    @open-bottom="featureId = 'model'"
+    @open-bottom="display.openFeature('model')"
     @error="ElMessage.error($event)"
   >
     <template #feature="{ featureId: page }">

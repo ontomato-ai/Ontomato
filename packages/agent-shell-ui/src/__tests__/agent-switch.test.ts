@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick, ref, type App } from "vue";
 import AgentShell from "../components/AgentShell.vue";
+import { testDisplay } from "./display";
 import { useAgentNav } from "../useAgentNav";
 import type { AgentHostClient } from "../host";
 import type { ShellLabels, ShellWorkbenchDeclaration } from "../types";
@@ -81,7 +82,7 @@ function render(busy = false) {
           AgentShell,
           {
             // The agent platform: an application that runs on several agents, so its column heads with the chooser.
-            workbench, client: client(), labels, nav, agentPicker: true,
+            workbench, display: testDisplay(workbench), client: client(), labels, nav, agentPicker: true,
             agentId: agentId.value,
             "onUpdate:agentId": (id: string | null) => (agentId.value = id),
             sessionId: sessionId.value,

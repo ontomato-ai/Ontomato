@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick, ref, type App } from "vue";
 import AgentShell from "../components/AgentShell.vue";
+import { testDisplay } from "./display";
 import { useAgentNav } from "../useAgentNav";
 import type { AgentHostClient } from "../host";
 import type { ShellFeatureDeclaration, ShellLabels, ShellWorkbenchDeclaration } from "../types";
@@ -53,7 +54,9 @@ function client(): AgentHostClient {
 
 /** The agent platform's shell, opened at an address that may already carry a page beside the conversation. */
 function render(options: { page: string | null; agentPicker?: boolean; title?: string }) {
-  const featureId = ref<string | null>(options.page);
+  const display = testDisplay(workbench, {
+    initial: options.page ? { page: { featureId: options.page, address: `/${options.page}`, instance: options.page }, view: "side" } : undefined,
+  });
   const agentId = ref<string | null>(analyst);
   const host = client();
   const Host = defineComponent({
@@ -72,8 +75,7 @@ function render(options: { page: string | null; agentPicker?: boolean; title?: s
           workbench: { ...workbench, label: options.title ?? workbench.label }, client: host, labels, nav,
           agentPicker: options.agentPicker ?? true, title: options.title ?? workbench.label,
           agentId: agentId.value, "onUpdate:agentId": (id: string | null) => (agentId.value = id),
-          featureId: featureId.value, "onUpdate:featureId": (id: string | null) => (featureId.value = id),
-          pageView: "side",
+          display,
         });
     },
   });
@@ -81,7 +83,7 @@ function render(options: { page: string | null; agentPicker?: boolean; title?: s
   const root = document.createElement("div");
   document.body.append(root);
   app.mount(root);
-  return { root, featureId, agentId };
+  return { root, display, agentId };
 }
 
 /** What the column's head shows, and the agents its chooser lists when opened. */
@@ -109,18 +111,18 @@ it("opened with the page beside the conversation, lists the page's candidates an
 });
 
 it("opening the page later ends the same way, and closing it lists every agent again", async () => {
-  const { root, featureId } = render({ page: null });
+  const { root, display } = render({ page: null });
   await settle();
   expect((await head(root)).listed).toEqual(["Assistant", "Analyst", "Knowledge governance"]);
 
-  featureId.value = "dashboards";
+  await display.openFeature("dashboards", "side");
   await settle();
   const beside = await head(root);
   expect(beside.chooser).toBe(true);
   expect(beside.listed).toEqual(["Assistant"]);
   expect(beside.shown).toBe("Assistant");
 
-  featureId.value = null;
+  await display.close();
   await settle();
   const closed = await head(root);
   expect(closed.chooser).toBe(true);
@@ -143,7 +145,10 @@ it("floats the composer over a page open full beside the conversation, in the pa
     setup() {
       const nav = useAgentNav({ client: () => host, agentId: () => assistant, setAgentId: () => {}, sessionId: () => null, setSessionId: () => {} });
       void nav.loadAgents();
-      return () => h(AgentShell, { workbench, client: host, labels, nav, agentPicker: true, agentId: assistant, featureId: "dashboards", pageView: "full" });
+      const display = testDisplay(workbench, {
+        initial: { page: { featureId: "dashboards", address: "/dashboards", instance: "dashboards" }, view: "full" },
+      });
+      return () => h(AgentShell, { workbench, display, client: host, labels, nav, agentPicker: true, agentId: assistant });
     },
   });
   app = createApp(Host);

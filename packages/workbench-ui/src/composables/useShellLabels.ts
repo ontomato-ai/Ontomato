@@ -44,6 +44,7 @@ return computed<ShellLabels>(() => ({
   pageContext: (page) => t("assistant.pageContext", { page: page.label, url: page.url }),
   pageContextAddress: (url) => t("assistant.pageContextAddress", { url }),
   selectionContext: (selection) => t("assistant.selectionContext", { selection }),
+  pageContextClosed: t("assistant.pageContextClosed"),
   toolInput: t("assistant.toolInput"),
   toolOutput: t("assistant.toolOutput"),
   stopped: t("assistant.stopped"),

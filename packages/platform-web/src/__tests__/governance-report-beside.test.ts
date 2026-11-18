@@ -3,13 +3,14 @@ import { flushPromises, mount } from "@vue/test-utils";
 import ElementPlus from "element-plus";
 import { defineComponent, h, ref } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
-import { pageCounterKey } from "@ontomato/agent-shell-ui";
+import { AgentShell, pageCounterKey } from "@ontomato/agent-shell-ui";
 import { pilotPageKey, platformPageAccessKey } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
 import { BusinessWorkbench } from "@ontomato/workbench-ui/features/workbench";
 import elementEn from "element-plus/es/locale/lang/en";
 import { pilotPageResolver } from "../pilot-pages";
+import { displayOf } from "../../../workbench-ui/src/features/workbench/__tests__/shell";
 
 /*
  * One governance record's report is the platform's page in two places: at its own address, and beside the conversation
@@ -29,40 +30,21 @@ vi.mock("../pages/GovernanceReportRoute.vue", () => ({
   }),
 }));
 
-const shellProps = ref<Record<string, unknown> | null>(null);
 const agent = { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Governance", description: "", icon: null, enabled: true };
+// The shell is the real one, over a host that lists the governance agent.
 vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@ontomato/agent-shell-ui")>()),
-  AgentShell: defineComponent({
-    name: "AgentShell",
-    props: ["featureId", "pageContext", "pageLinks", "workbench"],
-    emits: ["update:featureId"],
-    setup(props, { slots, expose }) {
-      shellProps.value = props as unknown as Record<string, unknown>;
-      expose({ reloadAgents: () => {}, send: async () => {} });
-      return () => h("div", { class: "shell" }, [slots.feature?.({ featureId: props.featureId })]);
-    },
-  }),
-  useAgentNav: () => ({
-    agents: ref([agent]),
-    sessions: ref([]),
-    sessionsState: ref("ready"),
-    nextCursor: ref(null),
-    currentAgent: ref(null),
-    loadAgents: async () => {},
-    loadSessions: async () => {},
-    startNew: () => {},
-    selectSession: () => {},
-    removeSession: async () => {},
-    promoteSession: () => {},
-  }),
   useSessionRunFeed: () => {},
 }));
-vi.mock("../../workbench-ui/src/features/workbench/api", () => ({ getWorkbenchAppearance: async () => null }));
-vi.mock("../../workbench-ui/src/features/workbench/assistant-host", () => ({
-  createAssistantClient: () => ({ listAgents: async () => [] }),
-  createAssistantFeedback: () => ({}),
-}));
+vi.mock("../../../workbench-ui/src/features/workbench/api", () => ({ getWorkbenchAppearance: async () => null }));
+vi.mock("../../../workbench-ui/src/features/workbench/assistant-host", async () => {
+  const { assistantHostDouble } = await import("../../../workbench-ui/src/features/workbench/__tests__/shell");
+  return {
+    createAssistantClient: () => assistantHostDouble({ agents: [agent] }),
+    createAssistantFeedback: () => undefined,
+    createPanelOperationSettings: () => undefined,
+  };
+});
 
 beforeAll(() => {
   installWorkbenchI18n({
@@ -120,15 +102,15 @@ describe("one governance record's report beside the conversation", () => {
     await flushPromises();
 
     expect(wrapper.find(".report-page").text()).toBe("beside record-1 order-rule");
-    const context = (shellProps.value as unknown as { pageContext: { url: string; label: string; selection: { kind: string; id: string }[] } }).pageContext;
+    const context = displayOf(wrapper).pageContext.value!;
     // The page is named by the reader's name for it and by its own address, which tells two reports apart.
     expect(context.url).toBe("/governance/reports/record-1?issue=order-rule");
     // The test installs no messages, so the name is the key the reader's language would answer with.
     expect(context.label).toBe("assistant.featureGovernanceReport");
     expect(context.selection).toEqual([expect.objectContaining({ kind: "issue", id: "order-rule" })]);
     // The page's own skill narrows the composer: an agent is a candidate when its effective skills carry the page's.
-    const feature = (shellProps.value as unknown as { workbench: { features: { id: string; pageSkill?: unknown }[] } })
-      .workbench.features.find((item) => item.id === "governance-report")!;
+    const feature = (wrapper.findComponent(AgentShell).props("workbench") as { features: { id: string; pageSkill?: unknown }[] })
+      .features.find((item) => item.id === "governance-report")!;
     expect(feature.pageSkill).toEqual({ pageKey: "governance-report", permissionCode: "business-knowledge" });
     wrapper.unmount();
   });
@@ -141,7 +123,7 @@ describe("one governance record's report beside the conversation", () => {
     });
     await flushPromises();
 
-    const context = (shellProps.value as unknown as { pageContext: { selection: unknown[] } }).pageContext;
+    const context = displayOf(wrapper).pageContext.value!;
     expect(context.selection).toEqual([]);
     wrapper.unmount();
   });

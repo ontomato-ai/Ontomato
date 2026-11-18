@@ -26,7 +26,7 @@ const props = defineProps<{
   sending: boolean;
   disabled: boolean;
 }>();
-const emit = defineEmits<{ send: [text: string]; stop: []; expand: []; collapse: []; close: []; menu: []; openAddress: [] }>();
+const emit = defineEmits<{ send: [text: string]; stop: []; expand: []; collapse: []; close: []; menu: [] }>();
 const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value);
 const slots = useSlots();
@@ -75,14 +75,8 @@ const paneStyle = computed(() => ({
       >
         <Minimize2 :size="16" />
       </button>
-      <!-- Enlarged, a page that has its own address opens there; a page without one grows inside the shell. -->
-      <button
-        type="button"
-        class="pane-button"
-        :title="labels.expand"
-        :aria-label="labels.expand"
-        @click="feature?.address ? emit('openAddress') : emit('expand')"
-      >
+      <!-- Enlarged, the display decides where: a page with its own address opens there, one without grows in the shell. -->
+      <button type="button" class="pane-button" :title="labels.expand" :aria-label="labels.expand" @click="emit('expand')">
         <Maximize2 :size="16" />
       </button>
       <button type="button" class="pane-button" :title="labels.close" :aria-label="labels.close" @click="emit('close')">

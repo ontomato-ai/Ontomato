@@ -21,12 +21,13 @@ const agents = vi.hoisted(() => [
 const [sales, retired] = agents;
 const sent = vi.hoisted(() => [] as string[]);
 
-vi.mock("@ontomato/agent-shell-ui", async () => {
+vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => {
   const { defineComponent, h } = await import("vue");
   return {
+    ...(await importOriginal<typeof import("@ontomato/agent-shell-ui")>()),
     AgentShell: defineComponent({
       name: "AgentShell",
-      props: ["agentId", "sessionId", "featureId"],
+      props: ["agentId", "sessionId"],
       setup(_props, { expose }) {
         expose({ reloadAgents: async () => {}, send: async (text: string) => { sent.push(text); } });
         return () => h("div");

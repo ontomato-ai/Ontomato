@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, shallowRef, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute, useRouter, type RouteLocationRaw } from "vue-router";
 import {
-  AgentShell, useAgentNav, useSessionRunFeed,
-  type PageContext, type PageSelection, type ShellFeatureDeclaration, type ShellWorkbenchDeclaration,
+  AgentShell, useAgentNav, useConversationDisplay, useSessionRunFeed,
+  type DisplayHistory, type DisplayPage, type DisplayView, type PageContext, type PageSelection,
+  type ShellFeatureDeclaration, type ShellWorkbenchDeclaration,
 } from "@ontomato/agent-shell-ui";
-import { usePageAccess, usePilotPage } from "@ontomato/platform-shell";
+import { useLeaveConfirmation, usePageAccess, usePilotPage } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { getWorkbenchAppearance } from "../api";
@@ -75,90 +76,74 @@ const queryText = (value: unknown) => (typeof value === "string" ? value : null)
 const requestedAgent = () => queryText(route.query.agentId);
 const agentId = ref<string | null>(readRememberedAgent());
 /**
- * The application's own pages, by the name the shell shows for them. The dashboards, the scheduled tasks and the agents'
- * settings are pages of their own, so nothing here leaves this application.
+ * What sits beside the conversation is this application's display (`useConversationDisplay`): the one controller its
+ * pages are mounted from. The address is its input and the reader's navigation is its serialised result, in this
+ * application's own form — `?page=<the page's address>` beside the conversation, so the conversation stays where it is,
+ * and the settings' own address (`/agents/settings`, `/new`, `/:id`) when they are shown full here.
+ *
+ * The pages it opens are the platform assembly's: the resolver mounts each from its own address, and a page's own move
+ * (another board, another agent, a finding) goes to the display as the reader's navigation.
  */
-const featureRoutes = {} as Record<string, never>;
+const pilot = usePilotPage()((address) => void display.navigate(address, { history: "replace" }));
 /**
- * The page beside the conversation is carried by this application's own address (`?page=<the page's address>`), so the
- * conversation stays where it is and the page is mounted from the assembly's registry, with the props its address gives
- * it and the way back for its own navigation.
- */
-/**
- * The pages this application carries beside its conversation, from the platform's assembly: the assembly hands over a
- * resolver whose callback is this application's own address (`?page=`), so a page's own navigation never leaves it.
- */
-const pilot = usePilotPage()(setPageAddress);
-/**
- * The agents' settings at this application's own address (`/agents/settings`, `/new`, `/:id`): the settings page shown
- * full in this shell, beside its column, with the composer at its foot, as any of its pages is when enlarged. The address
- * is the page's, so a reload or a link reopens it here.
+ * The agents' settings at this application's own address: the settings page shown full in this shell, beside its column,
+ * with the composer at its foot, as any of its pages is when enlarged. A reload or a link reopens it here.
  */
 const atSettings = computed(() =>
   [routes.agents, routes.agentSettingsNew, routes.agentSettings].some((page) => page.name === route.name),
 );
-/**
- * The page's address: at the settings' own address that address; otherwise the one the conversation carries, as one
- * query value, so the page's own query (`?draft...`) travels with it.
- */
-const pageAddress = computed(() =>
-  atSettings.value ? route.fullPath : typeof route.query.page === "string" ? route.query.page : null,
-);
-const pilotPage = computed(() => (pageAddress.value ? pilot(pageAddress.value) : null));
-const inDashboards = computed(() => pilotPage.value?.id === DASHBOARDS_PAGE_ID);
-const inAgentSettings = computed(() => pilotPage.value?.id === AGENT_SETTINGS_PAGE_ID);
-const inGovernanceReport = computed(() => pilotPage.value?.id === GOVERNANCE_REPORT_PAGE_ID);
-const inPanelApplication = computed(() => pilotPage.value?.id === PANEL_APPLICATION_PAGE_ID);
-/**
- * The page's instance beside the conversation: its address, unless the page names less than that (a panel, whose own
- * selection is written into its address and does not make it another panel).
- */
-const pageInstance = computed(() => pilotPage.value?.instance ?? pageAddress.value);
-/**
- * What a page that reports it itself says the reader looks at — a panel, whose instance knows its selection. It belongs
- * to that instance: another page, or the same page opened anew, starts without one until it reports.
- */
-const reportedContext = shallowRef<PageContext | null>(null);
-watch(pageInstance, () => (reportedContext.value = null));
-/**
- * The page the shell shows: the settings are the `agents` page, whose addresses are the settings' own screens, the
- * dashboards the `dashboards` page its own address opens, and every other page names its route. Closing the page (a new
- * conversation) returns to the conversation.
- */
-const featureId = computed<string | null>({
-  get: () => pilotPage.value?.id ?? null,
-  set: (id) => {
-    if (id !== null) return;
-    if (pageAddress.value === null) return;
-    // Closing the settings at their own address returns to the conversation this tab holds.
-    if (atSettings.value) return void router.push({ name: routes.chat.name });
-    // Closing the page beside the conversation only drops the parameter: the conversation stays.
-    const { page: _page, ...query } = route.query;
-    void router.replace({ query });
-  },
-});
 
-/**
- * Whether the page is full or beside the conversation. At the settings' own address it is full; collapsing it (or sending
- * from its composer, which brings the conversation back) carries the same address beside the conversation.
- */
-const shownView = ref<"full" | "side">("full");
-const pageView = computed<"full" | "side">({
-  get: () => (atSettings.value ? "full" : shownView.value),
-  set: (view) => {
-    shownView.value = view;
-    if (atSettings.value && view === "side") void router.push({ name: routes.chat.name, query: { page: route.fullPath } });
-  },
-});
-
-/**
- * The page says where it moved: at the settings' own address that address, changed in place; beside the conversation the
- * parameter is its address.
- */
-function setPageAddress(address: string) {
-  if (atSettings.value) return void router.replace(address);
-  void router.replace({ query: { ...route.query, page: address } });
+/** An in-app address that names a page this assembly mounts beside a conversation; a host elsewhere is never one. */
+function resolvePage(href: string): DisplayPage | null {
+  const address = href.replace(/^#/, "");
+  if (!address.startsWith("/") || address.startsWith("//")) return null;
+  const page = pilot(address);
+  return page ? { featureId: page.id, address, instance: page.instance ?? address } : null;
 }
+
+/**
+ * Where the reader's navigation is written. Enlarged, a page opens at its own address: the settings in this application,
+ * any other page in the application that owns it. Otherwise the page rides as `?page=`, and from the settings' own address
+ * that is back in the conversation. A move within the same route replaces the address unless it is a link's.
+ */
+async function serialize(page: DisplayPage | null, view: DisplayView, history: DisplayHistory): Promise<boolean> {
+  const { page: _page, ...rest } = route.query;
+  const to: RouteLocationRaw =
+    page && view === "full" && (atSettings.value || display.view.value === "side")
+      ? page.address
+      : atSettings.value
+        ? { name: routes.chat.name, query: page ? { page: page.address } : {} }
+        : { query: page ? { ...route.query, page: page.address } : rest };
+  const target = router.resolve(to);
+  if (target.fullPath === route.fullPath) return true;
+  const failure = await (history === "push" || target.path !== route.path ? router.push(to) : router.replace(to));
+  return !failure;
+}
+
+/** Leaving a native page's draft asks first, by the platform's own question; a panel answers for itself. */
+const leave = useLeaveConfirmation();
+const display = useConversationDisplay({
+  features: () => workbench.value.features,
+  resolve: resolvePage,
+  serialize,
+  // The shell's name and address for the page from the moment it opens; what is selected is the page's report.
+  context: (page, reported) => ({ url: page.address, label: pageLabel(page.featureId, reported), selection: selectionIn(page, reported) }),
+  leave: { leaves: (address) => leave.leaves(address?.split("?")[0] ?? ""), confirm: () => leave.confirm() },
+});
+// The address bar is the display's input: the settings' own address shows them full, `?page=` carries a page beside.
+watch(
+  () => route.fullPath,
+  () => display.follow(atSettings.value ? route.fullPath : queryText(route.query.page), atSettings.value ? "full" : undefined),
+  { immediate: true },
+);
+/** The page the display shows, mounted from its address by the assembly's registry. */
+const pilotPage = computed(() => (display.page.value ? pilot(display.page.value.address) : null));
+const pageAddress = computed(() => display.page.value?.address ?? null);
+const inDashboards = computed(() => display.page.value?.featureId === DASHBOARDS_PAGE_ID);
+const inAgentSettings = computed(() => display.page.value?.featureId === AGENT_SETTINGS_PAGE_ID);
+const inGovernanceReport = computed(() => display.page.value?.featureId === GOVERNANCE_REPORT_PAGE_ID);
+const inPanelApplication = computed(() => display.page.value?.featureId === PANEL_APPLICATION_PAGE_ID);
+
 /**
  * The open conversation. The address carries it while the settings are shown, so leaving them (or reloading) returns to
  * the conversation the reader came from instead of to a blank one.
@@ -176,18 +161,16 @@ const shell = ref<InstanceType<typeof AgentShell> | null>(null);
 
 /**
  * An answer may link a page of the platform (`/governance/reports/<id>`, `/ontology/knowledge?...`); the shell asks here
- * rather than importing another application's routes.
+ * rather than importing another application's routes. The pages the display opens beside the conversation never reach
+ * here.
  *
- * The pages this assembly mounts beside a conversation open there, and the application's own address does not change. Any
- * other page of the platform that the router can resolve opens at its real address, its query kept as it was written, so
- * a draft handoff's parameters travel with it; an address the router does not resolve is no page and stays text. A host
- * outside the platform (another scheme, another host) is never one of these.
+ * Any other page of the platform that the router can resolve opens at its real address, its query kept as it was
+ * written, so a draft handoff's parameters travel with it; an address the router does not resolve is no page and stays
+ * text. A host outside the platform (another scheme, another host) is never one of these.
  */
 function pageLinks(href: string): (() => void) | null {
   const address = href.replace(/^#/, "");
   if (!address.startsWith("/") || address.startsWith("//")) return null;
-  const pilotPage = pilot(address);
-  if (pilotPage) return () => void router.push({ query: { ...route.query, page: address } });
   const resolved = router.resolve(address);
   // The address is a page when the route it lands on is one: the deepest record it matches. Every page of the platform sits
   // under the layout, whose own record redirects to the start page, and the catch-all answers any address the same way,
@@ -206,38 +189,29 @@ watch(conversationId, (id) => {
 });
 
 /**
- * The page beside the conversation, for a message sent from its composer. The shell wrote the page's address into its own
- * parameter, so it knows both that address and which page it is; the page contributes only what it reports about itself.
- */
-const pageContext = computed<PageContext | null>(() => {
-  if (!pilotPage.value) return null;
-  return { url: pageAddress.value!, label: pageLabel(pilotPage.value.id), selection: selectionIn(pilotPage.value.id) };
-});
-
-/**
  * What the reader calls a page this application opens beside the conversation. A panel application names its page in the
- * platform's catalog, which its frame reports; before that the page has no name here, and the line names the address.
+ * platform's catalog, which its page reports as it opens; before that the page has no name here, and the line names the
+ * address.
  */
-function pageLabel(id: string): string {
+function pageLabel(id: string, reported: PageContext | null): string {
   if (id === DASHBOARDS_PAGE_ID) return t("assistant.featureDashboards");
   if (id === GOVERNANCE_REPORT_PAGE_ID) return t("assistant.featureGovernanceReport");
   if (id === AGENT_SETTINGS_PAGE_ID) return t("agents.title");
-  return reportedContext.value?.label ?? "";
+  return reported?.label ?? "";
 }
 
 /**
  * What the reader has selected in the page. The report page carries the finding its address names; a dashboard's address
  * names the board and the card; a panel reports its own selection once it has one.
  */
-function selectionIn(id: string): readonly PageSelection[] {
-  if (id === GOVERNANCE_REPORT_PAGE_ID) {
-    const issue = new URLSearchParams(pageAddress.value!.split("?")[1] ?? "").get("issue");
+function selectionIn(page: DisplayPage, reported: PageContext | null): readonly PageSelection[] {
+  const query = new URLSearchParams(page.address.split("?")[1] ?? "");
+  if (page.featureId === GOVERNANCE_REPORT_PAGE_ID) {
+    const issue = query.get("issue");
     return issue ? [{ kind: "issue", id: issue, label: `${t("assistant.governanceFinding")} ${issue}` }] : [];
   }
-  if (id === DASHBOARDS_PAGE_ID) {
-    return dashboardSelectionFrom(Object.fromEntries(new URLSearchParams(pageAddress.value!.split("?")[1] ?? "")));
-  }
-  if (id === PANEL_APPLICATION_PAGE_ID) return reportedContext.value?.selection ?? [];
+  if (page.featureId === DASHBOARDS_PAGE_ID) return dashboardSelectionFrom(Object.fromEntries(query));
+  if (page.featureId === PANEL_APPLICATION_PAGE_ID) return reported?.selection ?? [];
   return [];
 }
 
@@ -257,7 +231,7 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
       ? governanceReportPageFeature(t("assistant.featureGovernanceReport"), pageAddress.value!)
       : null,
     inPanelApplication.value
-      ? panelApplicationPageFeature(pageContext.value?.label || pageAddress.value!, pageAddress.value!)
+      ? panelApplicationPageFeature(display.pageContext.value?.label || pageAddress.value!, pageAddress.value!)
       : null,
   ),
 }));
@@ -273,7 +247,7 @@ const nav = useAgentNav({
   setAgentId: (id) => (agentId.value = id),
   sessionId: () => conversationId.value,
   setSessionId: (id) => (conversationId.value = id),
-  onLeaveConversation: () => (featureId.value = null),
+  onLeaveConversation: () => void display.close(),
 });
 // The one list notice stream of this page: every conversation it lists follows its run, whichever one is open.
 useSessionRunFeed({
@@ -306,15 +280,6 @@ function openSettings() {
       : { name: routes.agents.name },
   );
 }
-
-/**
- * The page beside the conversation, enlarged: its own address, in the application that owns it. The conversation stays
- * the one this tab holds, so leaving the page returns to it.
- */
-function openPageAtItsAddress(_id: string, address: string) {
-  if (address) void router.push(address);
-}
-
 
 /** The column's own entry at the foot: the agent settings, shown full beside the column. */
 const bottomEntry = computed(() =>
@@ -375,9 +340,9 @@ async function openRequestedAgent() {
     if (continuing) nav.selectSession(held);
     else nav.startNew();
   }
-  // Choosing a conversation closes whatever page was open beside the old one; the page this message came from stays open
+  // Choosing a conversation closes whatever page was open beside the old one; the page this message came from opens
   // beside the conversation it was written for.
-  if (page) await router.replace({ query: { ...route.query, page } });
+  if (page) await display.navigate(page, { view: "side", history: "replace" });
   if (prompt) {
     await nextTick();
     await shell.value!.send(prompt);
@@ -423,10 +388,8 @@ function appearanceSaved(value: WorkbenchAppearance) {
   <AgentShell
     ref="shell"
     v-model:agent-id="agentId"
-    v-model:feature-id="featureId"
-    v-model:page-view="pageView"
     v-model:session-id="conversationId"
-    :page-context="pageContext"
+    :display="display"
     :page-links="pageLinks"
     :workbench="workbench"
     :title="workbench.label"
@@ -441,15 +404,19 @@ function appearanceSaved(value: WorkbenchAppearance) {
     @error="ElMessage.error($event)"
     @feature-action="emit('featureAction', $event)"
     @open-bottom="openSettings"
-    @open-page="openPageAtItsAddress"
   >
     <template #feature="{ featureId: page }">
+      <!-- What the page hands its display: what the reader looks at, its address moves, what its loader knows, and
+           whether leaving it now would drop unsaved changes. -->
       <component
-        :is="pilotPage!.component"
+        :is="pilotPage.component"
         v-if="pilotPage"
-        :key="pageInstance!"
+        :key="display.page.value!.instance"
         v-bind="pilotPage.props"
-        @context="reportedContext = $event"
+        @context="display.context"
+        @display-address="display.address"
+        @display-loaded="display.loaded"
+        @display-dirty="display.dirty"
       />
       <slot v-else name="feature" :feature-id="page" />
     </template>

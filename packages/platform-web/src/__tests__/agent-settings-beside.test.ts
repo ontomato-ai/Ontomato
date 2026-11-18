@@ -5,7 +5,7 @@ import { defineComponent, h, ref } from "vue";
 import { createPinia, setActivePinia } from "pinia";
 import { createMemoryHistory, createRouter, type Router } from "vue-router";
 import type { AssistantAgentDefinition, AssistantAgentInput } from "@ontomato/contracts/assistant-chat";
-import { pageCounterKey } from "@ontomato/agent-shell-ui";
+import { AgentShell, pageCounterKey } from "@ontomato/agent-shell-ui";
 import { pilotPageKey, platformPageAccessKey } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
@@ -13,6 +13,7 @@ import en from "@ontomato/workbench-ui/locales/en";
 import { BusinessWorkbench } from "@ontomato/workbench-ui/features/workbench";
 import elementEn from "element-plus/es/locale/lang/en";
 import { pilotPageResolver } from "../pilot-pages";
+import { displayOf, openLink, paneButton } from "../../../workbench-ui/src/features/workbench/__tests__/shell";
 
 /*
  * The agents' settings in the agent platform. Beside the conversation their address is the conversation's `?page=`, so
@@ -39,11 +40,15 @@ function input(overrides: Partial<AssistantAgentInput> = {}): AssistantAgentInpu
 }
 
 const draft = vi.hoisted(() => ({ read: vi.fn() }));
-vi.mock("../../workbench-ui/src/features/workbench/assistant-host", () => ({
-  createAssistantClient: () => ({ readPageDraft: draft.read, listAgents: async () => [] }),
-  createAssistantFeedback: () => ({}),
-}));
-vi.mock("../../workbench-ui/src/features/workbench/api", () => ({ getWorkbenchAppearance: async () => null }));
+vi.mock("../../../workbench-ui/src/features/workbench/assistant-host", async () => {
+  const { assistantHostDouble } = await import("../../../workbench-ui/src/features/workbench/__tests__/shell");
+  return {
+    createAssistantClient: () => assistantHostDouble({ readPageDraft: draft.read }),
+    createAssistantFeedback: () => undefined,
+    createPanelOperationSettings: () => undefined,
+  };
+});
+vi.mock("../../../workbench-ui/src/features/workbench/api", () => ({ getWorkbenchAppearance: async () => null }));
 // The editor's own section widgets are heavy; the editor itself is the page under test.
 vi.mock("../../workbench-ui/src/features/agents/components/SkillSelector.vue", () => ({
   default: defineComponent({ name: "SkillSelector", emits: ["ready"], mounted() { this.$emit("ready", true); }, template: "<div />" }),
@@ -84,34 +89,9 @@ vi.mock("../../workbench-ui/src/features/agents/api", () => ({
   loadOntologyOutline: async () => ({ classes: [] }),
 }));
 
-// The shell draws the conversation; these read the parameters it is handed and the page it draws beside it.
-const shellProps = ref<Record<string, unknown> | null>(null);
-const openPageListener = ref<((id: string, address: string) => void) | null>(null);
-/** What the shell's own controls report: the pane collapsed or closed, the column's foot entry. */
-const shellEmits = ref<{ view: (view: string) => void; close: () => void; bottom: () => void } | null>(null);
+// The shell is the real one; only the list notice stream, which needs a live host, stays out.
 vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@ontomato/agent-shell-ui")>()),
-  AgentShell: defineComponent({
-    name: "AgentShell",
-    props: ["featureId", "pageView", "pageContext", "pageLinks", "workbench"],
-    emits: ["update:featureId", "update:pageView", "openPage", "openBottom"],
-    setup(props, { slots, expose, emit }) {
-      shellProps.value = props as unknown as Record<string, unknown>;
-      openPageListener.value = (id: string, address: string) => emit("openPage", id, address);
-      shellEmits.value = {
-        view: (view) => emit("update:pageView", view),
-        close: () => emit("update:featureId", null),
-        bottom: () => emit("openBottom"),
-      };
-      expose({ reloadAgents: () => {}, send: async () => {} });
-      return () => h("div", { class: "shell" }, [slots.feature?.({ featureId: props.featureId })]);
-    },
-  }),
-  useAgentNav: () => ({
-    agents: ref([]), sessions: ref([]), sessionsState: ref("ready"), nextCursor: ref(null), currentAgent: ref(null),
-    loadAgents: async () => {}, loadSessions: async () => {}, startNew: () => {}, selectSession: () => {},
-    removeSession: async () => {}, promoteSession: () => {},
-  }),
   useSessionRunFeed: () => {},
 }));
 
@@ -132,9 +112,6 @@ afterEach(() => {
   wrappers.splice(0).forEach((wrapper) => wrapper.unmount());
   vi.unstubAllGlobals();
   draft.read.mockReset();
-  shellProps.value = null;
-  openPageListener.value = null;
-  shellEmits.value = null;
   document.body.innerHTML = "";
 });
 
@@ -173,9 +150,6 @@ async function workbench(router: Router) {
   return wrapper;
 }
 
-const openLink = (href: string) =>
-  (shellProps.value as unknown as { pageLinks: (href: string) => (() => void) | null }).pageLinks(href)!();
-
 // The settings page's own machinery (the draft, the form, the save) is covered where it lives; what is under test here
 // is the page beside the conversation: which address it is shown at, and which movement it is handed.
 vi.mock("../pages/AgentSettingsRoute.vue", () => ({
@@ -195,11 +169,9 @@ vi.mock("../pages/AgentSettingsRoute.vue", () => ({
   }),
 }));
 
-const shown = (key: string) => shellProps.value![key];
-const settingsFeature = () =>
-  (shown("workbench") as { features: { id: string; address?: string; pageSkill?: unknown }[] }).features.find(
-    (feature) => feature.id === "agents",
-  )!;
+const settingsFeature = (wrapper: VueWrapper) =>
+  (wrapper.findComponent(AgentShell).props("workbench") as { features: { id: string; address?: string; pageSkill?: unknown }[] })
+    .features.find((feature) => feature.id === "agents")!;
 const PAGE_SKILL = { pageKey: "agent-settings", permissionCode: "analysis-agent" };
 
 describe("the agents' settings beside the conversation", () => {
@@ -207,7 +179,7 @@ describe("the agents' settings beside the conversation", () => {
     const router = await routerAt(platformRoutes.chat.path);
     const wrapper = await workbench(router);
 
-    openLink(`/agents/settings/${AGENT}?draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2Fa.page-draft.json`);
+    await openLink(wrapper, `/agents/settings/${AGENT}?draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2Fa.page-draft.json`);
     await flushPromises();
 
     // Still the agent platform, carrying the settings page and its draft as the page's address.
@@ -220,89 +192,104 @@ describe("the agents' settings beside the conversation", () => {
       `/agents/settings/${AGENT}?draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2Fa.page-draft.json`,
     );
     expect(wrapper.find(".page-double .draft").text()).toBe("outputs/drafts/a.page-draft.json");
+    expect(displayOf(wrapper).view.value).toBe("side");
   });
 
   it("switches agent and a new agent by the page parameter alone", async () => {
     const router = await routerAt(platformRoutes.chat.path);
     const wrapper = await workbench(router);
-    openLink(`/agents/settings/${AGENT}`);
+    await openLink(wrapper, `/agents/settings/${AGENT}`);
     await flushPromises();
 
-    (wrapper.find(".page-double .move").element as HTMLButtonElement).click();
+    await wrapper.find(".page-double .move").trigger("click");
     await flushPromises();
     expect(router.currentRoute.value.path).toBe(platformRoutes.chat.path);
     expect(router.currentRoute.value.query.page).toBe(`/agents/settings/${OTHER}`);
+    expect(wrapper.find(".page-double .shown").text()).toBe(`/agents/settings/${OTHER}`);
   });
 
   it("enlarges to the page's own address in this application, showing the same page full", async () => {
     const router = await routerAt(platformRoutes.chat.path);
     const wrapper = await workbench(router);
-    openLink(`/agents/settings/${AGENT}`);
+    await openLink(wrapper, `/agents/settings/${AGENT}`);
     await flushPromises();
 
-    // The pane's enlarge button reports the address the page is open at, which the host opens.
-    expect(settingsFeature().address).toBe(`/agents/settings/${AGENT}`);
-    openPageListener.value!("agents", settingsFeature().address!);
+    expect(settingsFeature(wrapper).address).toBe(`/agents/settings/${AGENT}`);
+    await paneButton(wrapper, "expand").trigger("click");
     await flushPromises();
     expect(router.currentRoute.value.path).toBe(`/agents/settings/${AGENT}`);
-    expect(shown("featureId")).toBe("agents");
-    expect(shown("pageView")).toBe("full");
+    expect(displayOf(wrapper).page.value?.featureId).toBe("agents");
+    expect(displayOf(wrapper).view.value).toBe("full");
     expect(wrapper.find(".page-double .shown").text()).toBe(`/agents/settings/${AGENT}`);
+  });
+
+  it("refreshes beside the conversation at the page the reader navigated to", async () => {
+    const router = await routerAt(platformRoutes.chat.path);
+    const wrapper = await workbench(router);
+    await openLink(wrapper, `/agents/settings/${AGENT}`);
+    await flushPromises();
+    const reloaded = await routerAt(router.currentRoute.value.path, { page: String(router.currentRoute.value.query.page) });
+    wrappers.splice(0).forEach((shown) => shown.unmount());
+
+    const again = await workbench(reloaded);
+    expect(displayOf(again).page.value?.address).toBe(`/agents/settings/${AGENT}`);
+    expect(again.find(".page-double .shown").text()).toBe(`/agents/settings/${AGENT}`);
   });
 });
 
 describe("the agents' settings at the agent platform's own address", () => {
   it("opens from the column's foot at the agent platform's settings, not another application's", async () => {
     const router = await routerAt(platformRoutes.chat.path);
-    await workbench(router);
+    const wrapper = await workbench(router);
 
-    shellEmits.value!.bottom();
+    await wrapper.find(".nav-foot .nav-item").trigger("click");
     await flushPromises();
     expect(router.currentRoute.value.path).toBe(platformRoutes.agents.path);
-    expect(shown("featureId")).toBe("agents");
-    expect(shown("pageView")).toBe("full");
+    expect(displayOf(wrapper).page.value?.featureId).toBe("agents");
+    expect(displayOf(wrapper).view.value).toBe("full");
   });
 
   it("shows the page full with the same page skill and page line as beside the conversation", async () => {
     const router = await routerAt(platformRoutes.chat.path, { page: `/agents/settings/${AGENT}` });
-    await workbench(router);
-    expect(settingsFeature().pageSkill).toEqual(PAGE_SKILL);
+    const wrapper = await workbench(router);
+    expect(settingsFeature(wrapper).pageSkill).toEqual(PAGE_SKILL);
 
     await router.push(`/agents/settings/${AGENT}`);
     await flushPromises();
     // One declaration either way: the composer's candidates and default agent come from the same page skill.
-    expect(settingsFeature().pageSkill).toEqual(PAGE_SKILL);
-    expect(shown("pageContext")).toMatchObject({ url: `/agents/settings/${AGENT}`, label: en.agents.title });
+    expect(settingsFeature(wrapper).pageSkill).toEqual(PAGE_SKILL);
+    expect(displayOf(wrapper).pageContext.value).toMatchObject({ url: `/agents/settings/${AGENT}`, label: en.agents.title });
   });
 
   it("moves its own address when the page moves", async () => {
     const router = await routerAt(`/agents/settings/${AGENT}`);
     const wrapper = await workbench(router);
 
-    (wrapper.find(".page-double .move").element as HTMLButtonElement).click();
+    await wrapper.find(".page-double .move").trigger("click");
     await flushPromises();
     expect(router.currentRoute.value.fullPath).toBe(`/agents/settings/${OTHER}`);
+    expect(displayOf(wrapper).view.value).toBe("full");
   });
 
   it("collapses to the same address beside the conversation", async () => {
     const router = await routerAt(`/agents/settings/${AGENT}`, { draftSessionId: "s" });
-    await workbench(router);
+    const wrapper = await workbench(router);
 
-    shellEmits.value!.view("side");
+    await paneButton(wrapper, "collapse").trigger("click");
     await flushPromises();
     expect(router.currentRoute.value.path).toBe(platformRoutes.chat.path);
     expect(router.currentRoute.value.query.page).toBe(`/agents/settings/${AGENT}?draftSessionId=s`);
-    expect(shown("pageView")).toBe("side");
+    expect(displayOf(wrapper).view.value).toBe("side");
   });
 
   it("closes back to the conversation", async () => {
     const router = await routerAt(`/agents/settings/${AGENT}`);
-    await workbench(router);
+    const wrapper = await workbench(router);
 
-    shellEmits.value!.close();
+    await paneButton(wrapper, "close").trigger("click");
     await flushPromises();
     expect(router.currentRoute.value.path).toBe(platformRoutes.chat.path);
     expect(router.currentRoute.value.query.page).toBeUndefined();
-    expect(shown("featureId")).toBeNull();
+    expect(displayOf(wrapper).page.value).toBeNull();
   });
 });

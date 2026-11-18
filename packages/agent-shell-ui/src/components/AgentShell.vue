@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { computed, inject, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
+import { computed, inject, onMounted, provide, ref, shallowRef, toRef, useSlots, watch } from "vue";
 import { PanelRightOpen } from "lucide-vue-next";
 import { conversationQuestions, shellContextKey, type ShellContext } from "../context";
-import { pageContextLine, pageLineAddress, pageMoved, samePageAddress, type PageContext } from "../page-context";
+import { CLOSED_PAGE, carriedPageIn, pageContextLine, pageMoved, samePageAddress, type CarriedPage } from "../page-context";
+import { displayLink, type ConversationDisplay, type DisplayPage } from "../conversation-display";
 import type { AgentHostClient } from "../host";
 import type { AgentNav } from "../useAgentNav";
 import type { UserItem } from "../view";
 import type {
   ArtifactRendererOverride,
-  OpenArtifact,
   ShellFeedbackPort,
   ShellLabels,
   ShellPanelOperationsPort,
@@ -39,10 +39,13 @@ import TaskDrawer from "./tasks/TaskDrawer.vue";
  * Rendering defaults live here; hosts pass overrides and fill the slots `feature` (feature pages), `artifact-actions` and
  * `message-actions`.
  *
+ * What sits beside the conversation is the host's `display` (`useConversationDisplay`): this shell draws it and hands every
+ * reader gesture on it — a card, a link, the column, closing, enlarging, collapsing — to that one controller.
+ *
  * A feature declared `withConversation` follows the agent-app states (DESIGN "Agent apps"): conversation only, the
  * page beside the conversation, or the page full with a composer. Once such a page is closed, the conversation's top
- * right corner opens it beside the conversation again. Messages sent while such a page is open end with the host's
- * `pageContext` line, so the agent knows what "this" refers to. Such a page may fill `page-header` (its own controls, in
+ * right corner opens it beside the conversation again. Messages sent while such a page is open end with the display's
+ * page context line, so the agent knows what "this" refers to; the first message after it is no longer shown says so. Such a page may fill `page-header` (its own controls, in
  * the row of the shell's expand and close buttons) and `composer-context` (with whichever composer is in view: above
  * the conversation's, `inline` in the full page's single row; `pageOpen` tells whether a message sent now carries the
  * page context; `unstarted` tells that the conversation in view has not started: the shell holds no session for it and
@@ -60,12 +63,12 @@ const props = withDefaults(
     panelOperations?: ShellPanelOperationsPort;
     artifactRenderers?: readonly ArtifactRendererOverride[];
     toolRenderers?: readonly ToolRendererOverride[];
+    /** What is shown beside the conversation: the one controller this shell's gestures and the host's address go through. */
+    display: ConversationDisplay;
     /**
-     * The open page and what was selected in it, appended to messages sent while a paired page is open: its name and
-     * address from the moment it opens, and what it reports as selected.
+     * Recognises an in-app address in an answer that is no page of the display (another application's page) and returns
+     * how to open it; null leaves it as text.
      */
-    pageContext?: PageContext | null;
-    /** Recognises an in-app address in an answer and returns how to open its page; null leaves it as text. */
     pageLinks?: ShellContext["pageLink"];
     /**
      * The navigation state the host shares with its column: one instance, so a conversation created while sending
@@ -93,15 +96,10 @@ const emit = defineEmits<{
   featureAction: [id: string];
   openBottom: [];
   run: [change: ShellRunChange];
-  /** The paired page asks to be enlarged at its own address; the host knows where that is. */
-  openPage: [id: string, address: string];
 }>();
-const featureId = defineModel<string | null>("featureId", { default: null });
 const agentId = defineModel<string | null>("agentId", { default: null });
 const sessionId = defineModel<string | null>("sessionId", { default: null });
-/** Where a paired page sits: filling the workspace, or beside the conversation. Hosts may set it. */
-const pageView = defineModel<"full" | "side">("pageView", { default: "full" });
-const openArtifact = ref<OpenArtifact | null>(null);
+const display = props.display;
 const taskFocus = ref<{ taskId: string; at: number } | null>(null);
 
 const conversation = useAgentConversation(() => props.client, () => agentId.value);
@@ -112,10 +110,11 @@ if (notice) watch(notice, frame => {
 });
 const nav = props.nav;
 const { currentAgent } = nav;
-const currentFeature = computed(() => props.workbench.features.find((feature) => feature.id === featureId.value) ?? null);
+const currentFeature = display.feature;
 /** A page that sits in the agent-app states rather than replacing the conversation. */
 const pairedPage = computed(() => currentFeature.value?.withConversation === true);
-const pageFull = computed(() => pairedPage.value && pageView.value === "full");
+const pageFull = computed(() => pairedPage.value && display.view.value === "full");
+const openArtifact = computed(() => (display.target.value?.kind === "artifact" ? display.target.value.open : null));
 /** The conversation in view has not started: no session yet, and no message on its way to make one. */
 const unstarted = computed(() => !conversation.sending.value && conversation.state.sessionId === null);
 
@@ -143,21 +142,10 @@ provide(shellContextKey, {
     taskRound.value = runId;
     tasksOpen.value = true;
   },
-  openArtifact: (open) => {
-    // The side holds one thing at a time: an expanded card replaces a page beside the conversation.
-    if (pairedPage.value) featureId.value = null;
-    openArtifact.value = open;
-  },
+  // The side holds one thing at a time: an expanded card replaces a page beside the conversation.
+  openArtifact: (open) => void display.openArtifact(open),
   openArtifactKey: computed(() => openArtifact.value?.key ?? null),
-  pageLink: (href) => {
-    const open = props.pageLinks?.(href);
-    if (!open) return null;
-    return () => {
-      openArtifact.value = null;
-      pageView.value = "side";
-      open();
-    };
-  },
+  pageLink: (href) => displayLink(display, props.pageLinks)(href),
   continueConversation: async (message) => {
     if (conversation.sending.value) throw new Error(props.labels.working);
     await send(message);
@@ -213,7 +201,8 @@ function report(error: unknown) {
 // would reset the pending message and the admitted snapshot.
 watch(sessionId, (id) => {
   if (id !== null && id === conversation.state.sessionId) return;
-  openArtifact.value = null;
+  // A card belongs to the conversation it was opened from.
+  if (openArtifact.value) void display.close();
   void conversation.open(id);
 }, { immediate: true });
 
@@ -230,25 +219,12 @@ watch(
   },
 );
 
-/** The page beside the conversation, enlarged: its own address, which the host opens in the page's application. */
-function openPageAtItsAddress() {
-  emit("openPage", featureId.value!, currentFeature.value?.address ?? "");
-}
-
-function closePage() {
-  featureId.value = null;
-  pageView.value = "full";
-}
-
 /** The paired page that left the side last, closed or replaced by a card: the conversation's corner reopens it. */
-const closedPage = ref<string | null>(null);
-watch(featureId, (_, previous) => {
-  if (previous && props.workbench.features.find((feature) => feature.id === previous)?.withConversation) closedPage.value = previous;
+const closedPage = shallowRef<DisplayPage | null>(null);
+watch(display.page, (current, previous) => {
+  if (!previous || current?.featureId === previous.featureId) return;
+  if (props.workbench.features.find((feature) => feature.id === previous.featureId)?.withConversation) closedPage.value = previous;
 });
-function reopenPage() {
-  featureId.value = closedPage.value;
-  pageView.value = "side";
-}
 
 /**
  * The open page's own skill narrows who may take the message: the chooser offers the agents that carry it, and the
@@ -279,19 +255,20 @@ function chooseAgent(id: string) {
 
 /** Sending from a full page brings the conversation back beside it, so the reply is visible. */
 function sendFromPage(text: string) {
-  pageView.value = "side";
+  void display.setView("side");
   void send(text);
 }
 
 /**
- * The page address the conversation's last carried message named, per conversation; null for one the shell has not sent
- * in (just opened, so its first message carries the page again). A draft parameter or a fragment is the same page.
+ * What the conversation's last carried message told about the page, per conversation: its address, `""` once it said the
+ * page was closed, null for one the shell has not sent in (just opened, so its first message carries the page again). A
+ * draft parameter or a fragment is the same page.
  *
  * `carriedIn` is the conversation that message went to. Sending the first message of a new conversation is not the
  * reader moving: the conversation it created is where the page was just carried, so the note stands until another
  * conversation is opened or a new one is started.
  */
-const carriedPage = ref<string | null>(null);
+const carriedPage = ref<CarriedPage>(null);
 let carriedIn: string | null = null;
 watch(sessionId, (id) => {
   if (id === carriedIn) return;
@@ -299,42 +276,32 @@ watch(sessionId, (id) => {
   carriedIn = id;
 });
 
+const linePrompts = () => ({ page: props.labels.pageContext, pageAddress: props.labels.pageContextAddress, selection: props.labels.selectionContext });
 /**
- * The page a reopened conversation already carries: its history shows the line each message ended with, so the address
- * of the last message that named one is known, and a message written on that same page does not name it again. Two
- * pages with one title are two addresses, which is what the line names them by. A page the history says nothing about is
- * carried once, explicitly.
+ * What a reopened conversation already carries, read when the shell first sends in it: its history shows the line each
+ * message ended with, so the address of the last message that named a page is known, and a message written on that same
+ * page does not name it again; a last line that said the page was closed is not said again. Two pages with one title are
+ * two addresses, which is what the line names them by. A conversation whose messages name no page names nothing here:
+ * the page rides on its next message.
  */
-watch(
-  [() => conversation.loading.value, () => conversation.state.sessionId, () => props.pageContext?.url],
-  ([loading, session, url]) => {
-    if (loading || !session || !url || carriedPage.value !== null) return;
-    const prompts = { page: props.labels.pageContext, pageAddress: props.labels.pageContextAddress, selection: props.labels.selectionContext };
-    const named = conversation.items.value
-      .filter((item): item is UserItem => item.kind === "user")
-      .map((item) => pageLineAddress(item.text, prompts))
-      .filter((entry): entry is string => entry !== null)
-      .at(-1);
-    // A conversation whose messages name no page names nothing here: the page rides on this message.
-    if (named && samePageAddress(named) === samePageAddress(url)) carriedPage.value = samePageAddress(url);
-  },
-  { immediate: true },
-);
+function carried(): CarriedPage {
+  if (carriedPage.value !== null || !conversation.state.sessionId) return carriedPage.value;
+  const texts = conversation.items.value.filter((item): item is UserItem => item.kind === "user").map((item) => item.text);
+  return carriedPageIn(texts, linePrompts(), props.labels.pageContextClosed);
+}
 
 async function send(input: string) {
   const agent = agentId.value;
   if (!agent) return;
-  const page = pairedPage.value ? props.pageContext ?? null : null;
+  const page = pairedPage.value ? display.pageContext.value : null;
   // The page rides on the conversation's first message or when the address moved elsewhere: the reader already knows
   // which page it is, and repeating it on every message would spend the agent's context on what changed once.
-  const carriesPage = page !== null && pageMoved(carriedPage.value, page);
-  const line = page
-    ? pageContextLine(
-        page,
-        { page: props.labels.pageContext, pageAddress: props.labels.pageContextAddress, selection: props.labels.selectionContext },
-        carriesPage,
-      )
-    : "";
+  const told = carried();
+  const carriesPage = page !== null && pageMoved(told, page);
+  // A page the agent was told about and that is no longer shown (closed, replaced by a card) is said once to be closed,
+  // so the agent does not take the last page it heard of for the one in view.
+  const closes = page === null && told !== null && told !== CLOSED_PAGE;
+  const line = page ? pageContextLine(page, linePrompts(), carriesPage) : closes ? props.labels.pageContextClosed : "";
   const text = line ? `${input}\n\n${line}` : input;
   const result = await conversation.send(agent, text);
   if (!result) return;
@@ -342,6 +309,7 @@ async function send(input: string) {
   // the conversation this send started, or to the one it was written in.
   carriedIn = result.createdSession?.id ?? conversation.state.sessionId ?? null;
   if (page) carriedPage.value = samePageAddress(page.url);
+  else if (closes) carriedPage.value = CLOSED_PAGE;
   if (!result.delivery) {
     // The conversation was created but its run refused: the host takes it as listed (still empty), so sending again
     // goes on in the conversation the host knows.
@@ -389,7 +357,7 @@ defineExpose({ reloadAgents: () => nav.loadAgents().catch(report), send });
 
 onMounted(() => {
   // An address that names both a conversation and a paired page reopens them side by side.
-  if (sessionId.value && pairedPage.value) pageView.value = "side";
+  if (sessionId.value && pairedPage.value) void display.setView("side");
 });
 </script>
 
@@ -407,14 +375,14 @@ onMounted(() => {
           :sessions-state="nav.sessionsState.value"
           :has-more="nav.nextCursor.value !== null"
           :session-id="sessionId"
-          :feature-id="featureId"
+          :feature-id="display.page.value?.featureId ?? null"
           :bottom="bottom"
           :conversations="conversations"
           :panel-confirmation="panelConfirmation"
           :agent-picker="agentPicker"
           :labels="labels"
           @new-conversation="nav.startNew()"
-          @select-feature="featureId = $event"
+          @select-feature="display.openFeature($event)"
           @feature-action="emit('featureAction', $event)"
           @select-agent="chooseAgent"
           @select-session="nav.selectSession($event)"
@@ -430,25 +398,25 @@ onMounted(() => {
 
     <main v-show="!pageFull" class="shell-main">
       <button
-        v-if="closedPage && !featureId && !openArtifact"
+        v-if="closedPage && !display.target.value"
         type="button"
         class="reopen-page"
         :title="labels.open"
         :aria-label="labels.open"
-        @click="reopenPage"
+        @click="display.reopen(closedPage)"
       >
         <PanelRightOpen :size="16" />
       </button>
       <TaskDrawer
-        v-if="tasksOpen && (!featureId || pairedPage) && conversation.tasks.value && taskRounds.length"
+        v-if="tasksOpen && (!display.page.value || pairedPage) && conversation.tasks.value && taskRounds.length"
         v-model:run-id="shownRound"
         :snapshot="conversation.tasks.value"
         :rounds="taskRounds"
         @locate="taskFocus = { taskId: $event, at: Date.now() }"
         @close="tasksOpen = false"
       />
-      <div v-if="featureId && !pairedPage" class="feature-page">
-        <slot name="feature" :feature-id="featureId" view="full" />
+      <div v-if="display.page.value && !pairedPage" class="feature-page">
+        <slot name="feature" :feature-id="display.page.value.featureId" view="full" />
       </div>
       <ShellConversation
         v-else
@@ -478,29 +446,28 @@ onMounted(() => {
     </main>
 
     <ShellPagePane
-      v-if="featureId && pairedPage"
+      v-if="display.page.value && pairedPage"
       :feature="currentFeature"
-      :view="pageView"
+      :view="display.view.value"
       :busy="conversation.busy.value"
       :sending="conversation.sending.value"
       :disabled="!currentAgent?.enabled"
       @send="sendFromPage"
       @stop="conversation.cancel"
-      @expand="pageView = 'full'"
-      @open-address="openPageAtItsAddress"
-      @collapse="pageView = 'side'"
-      @close="closePage"
+      @expand="display.setView('full')"
+      @collapse="display.setView('side')"
+      @close="display.close()"
     >
       <template v-if="slots['page-header']" #header>
-        <slot name="page-header" :feature-id="featureId" :view="pageView" />
+        <slot name="page-header" :feature-id="display.page.value.featureId" :view="display.view.value" />
       </template>
       <template v-if="slots['composer-context']" #composer-context>
         <slot name="composer-context" :page-open="true" :inline="true" :unstarted="unstarted" />
       </template>
-      <slot name="feature" :feature-id="featureId" :view="pageView" />
+      <slot name="feature" :feature-id="display.page.value.featureId" :view="display.view.value" />
     </ShellPagePane>
 
-    <ShellSidePanel v-if="openArtifact && !featureId" :open="openArtifact" @close="openArtifact = null" />
+    <ShellSidePanel v-if="openArtifact" :open="openArtifact" @close="display.close()" />
   </div>
 </template>
 
