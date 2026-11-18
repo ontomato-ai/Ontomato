@@ -1,3 +1,4 @@
+import { shallowRef } from "vue";
 import type { PageDraft } from "@ontomato/contracts/page-draft";
 import { changedFields, pageDraftLink, withoutPageDraftQuery, type PageDraftLink } from "@ontomato/contracts/page-draft";
 
@@ -66,7 +67,7 @@ type DraftTaken = (draft: ReceivedPanelDraft<Record<string, unknown>>) => void;
 export class PanelFormAdapters {
   readonly #bySlot = new Map<string, PanelFormAdapter<object, { id?: string }>>();
   /** The draft this panel received and no registered form has taken yet. */
-  #held: { draft: PageDraft<Record<string, unknown>>; taken: DraftTaken } | null = null;
+  readonly #held = shallowRef<{ draft: PageDraft<Record<string, unknown>>; taken: DraftTaken } | null>(null);
 
   register<Form extends object>(slot: string, adapter: PanelFormAdapter<Form, { id?: string }>): () => void {
     if (!slot) throw new Error("A form projection registers under the slot whose declaration names it");
@@ -82,15 +83,20 @@ export class PanelFormAdapters {
    * reading.
    */
   hold(draft: PageDraft<Record<string, unknown>>, taken: DraftTaken): void {
-    this.#held = { draft, taken };
+    this.#held.value = { draft, taken };
     this.#handOver();
   }
 
+  /** The operation of the draft held for a form that has not registered yet, or null when none is held. */
+  heldOperation(): string | null {
+    return this.#held.value?.draft.operation ?? null;
+  }
+
   #handOver() {
-    const held = this.#held;
+    const held = this.#held.value;
     const slot = held && this.slotOf(held.draft.operation);
     if (!held || !slot) return;
-    this.#held = null;
+    this.#held.value = null;
     const adapter = this.#bySlot.get(slot)!;
     const { operation, target, form } = held.draft;
     void adapter.read(target).then((base) => {

@@ -1,4 +1,5 @@
 import { createApp, h, provide, ref, watch, type Component, type Ref } from "vue";
+import { useI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import { connectAppContext, contextTransport, type AppContext } from "../context";
 import {
@@ -87,7 +88,17 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     },
   };
   const app = createApp({
-    setup: () => (provide(panelContextKey, context), () => h(component)),
+    setup: () => {
+      provide(panelContextKey, context);
+      // A draft that none of this panel's forms performs is not this panel's: once every slot has registered and none
+      // takes it, the frame fails with that, where the panel would have been, rather than waiting for a form that will
+      // never come.
+      const { t } = useI18n();
+      watch(instance.unclaimedDraft, (unclaimed) => {
+        if (unclaimed) failed(t("platform.panelDraftUnclaimed"));
+      });
+      return () => h(component);
+    },
   });
   // The one global a panel's HTML and module need: `<Projection slot="…"/>`. Its name is the SDK's public API, so it is
   // a single word on purpose.
@@ -120,6 +131,11 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
 
   report({ instance, draft, unsaved, changed: (id) => projectionListeners.forEach((listener) => listener(id)) });
   return { context, appContext };
+}
+
+/** Tells the host this panel cannot run, and why; the host shows it where the panel would have been. */
+function failed(message: string) {
+  window.parent.postMessage({ channel: PANEL_HOST_CHANNEL, kind: "failed", message }, "*");
 }
 
 /** Reads the draft one run wrote, as the reader, through the frame's own request layer. */

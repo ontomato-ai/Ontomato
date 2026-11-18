@@ -40,6 +40,12 @@ export interface PanelInstance {
   readonly forms: PanelFormAdapters;
   /** The draft this instance received, once one arrived. */
   readonly draft: Readonly<Ref<ReceivedPanelDraft<Record<string, unknown>> | null>>;
+  /**
+   * Whether the draft this instance holds is one none of its forms performs: every slot its declaration names has
+   * registered its projection, and none of them publishes a form save of the draft's operation. While a slot is still to
+   * register it is false, since that may be the form that takes the draft.
+   */
+  readonly unclaimedDraft: Readonly<Ref<boolean>>;
   register(registration: PanelProjectionRegistration): () => void;
   /** Runs one described operation here, with the reader's own credential. */
   invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
@@ -76,6 +82,15 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     operations,
     forms,
     draft: readonly(draft) as Readonly<Ref<ReceivedPanelDraft<Record<string, unknown>> | null>>,
+    unclaimedDraft: computed(() => {
+      const operation = forms.heldOperation();
+      if (operation === null) return false;
+      const registered = registrations.value;
+      if (!Object.keys(manifest.slots).every((slot) => registered.some((registration) => registration.slot === slot))) return false;
+      return !registered.some((registration) =>
+        registration.ports.operations.some((published) => published.kind === "form.save" && published.handlerRef === operation),
+      );
+    }),
     projections: readonly(registrations),
     register(registration) {
       registrations.value = [...registrations.value, registration];
