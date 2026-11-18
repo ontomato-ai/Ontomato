@@ -404,10 +404,18 @@
   color: var(--el-text-color-secondary);
 }
 
-/* ---- Tags in table ---- */
+/* ---- Tags in table: a long name wraps inside its own column instead of running past the cell ---- */
 .el-table.admin-table .el-tag {
-  white-space: nowrap;
+  height: auto;
+  min-height: 24px;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
   margin-right: var(--spacing-xs);
+}
+
+.el-table.admin-table .el-tag--small {
+  min-height: 20px;
 }
 
 /* ---- Button groups in table ---- */
