@@ -24,7 +24,7 @@ export const productEn={
   productPublishProfile:'Publish profile',
   productAgentDefinition:'Referenced agent',
   productAgentDefinitionPlaceholder:'Choose an agent of this domain',
-  productAgentChoicesFailed:'The agents of this domain could not be read; retry when the platform is reachable.',
+  productAgentChoicesFailed:'Couldn\'t read this domain\'s agents:',
   productAgentExecution:'Runs with its own execution permission, set with the agent in the Ontology Manager\'s agent settings. This profile never changes it.',
   productInstructions:'Instructions',
   productToolReferences:'Tool projection IDs (one per line)',

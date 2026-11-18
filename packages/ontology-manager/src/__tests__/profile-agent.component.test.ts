@@ -12,9 +12,10 @@ import {installObjectViewHost} from './object-view-host';
  * and authorisation names the members and roles that may use the product. The editor offers the domain's agents by name
  * rather than a text field for an identifier, and the graph calls a granted member a member.
  */
+/** The agent directory's own answer: what the platform's `/assistant/agents` returns, effective skills included. */
 const AGENTS=[
-  {id:'11111111-1111-4111-8111-111111111111',name:'Assistant',description:'Answers business questions'},
-  {id:'22222222-2222-4222-8222-222222222222',name:'Analyst',description:'Investigates the numbers'},
+  {id:'11111111-1111-4111-8111-111111111111',name:'Assistant',description:'Answers business questions',icon:null,enabled:true,effectiveSkills:[]},
+  {id:'22222222-2222-4222-8222-222222222222',name:'Analyst',description:'Investigates the numbers',icon:null,enabled:true,effectiveSkills:[]},
 ];
 let app:App|undefined;
 afterEach(()=>{app?.unmount();app=undefined;document.body.innerHTML='';vi.unstubAllGlobals();});
@@ -62,6 +63,36 @@ describe("a profile's referenced agent",()=>{
     expect(field.querySelector('.el-select__placeholder span')?.textContent).toBe('Assistant');
     expect(field.querySelector('.el-select__suffix svg')).not.toBeNull();
     expect(field.textContent).toContain('Referenced agent');
+  });
+});
+
+describe("reading this domain's agents",()=>{
+  it("shows the server's reason when the list cannot be read, and reads again on retry",async()=>{
+    served();
+    const fetchMock=globalThis.fetch as unknown as (url:string,init?:RequestInit)=>Promise<Response>;
+    // The directory refuses until the reader asks again.
+    let refusing=true;
+    vi.stubGlobal('fetch',async(url:string,init:RequestInit={})=>{
+      if(url.includes('/assistant/agents')&&refusing)return Response.json({error:{message:'The agent directory is unavailable'}},{status:503});
+      return fetchMock(url,init);
+    });
+    const element=document.createElement('div');document.body.append(element);
+    app=createApp({render:()=>h(ProductAssetCatalog,{assetId:'profile-1'})});
+    installElement(app);installObjectViewHost(app);app.mount(element);
+    await settle();
+    findButton(element,'Edit')!.click();
+    await settle();
+
+    const field=Array.from(element.querySelectorAll('.el-form-item')).find(item=>item.textContent?.startsWith('Referenced agent'))!;
+    // The reader is told why, in the service's own words, and can ask again.
+    const alert=field.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toContain("Couldn't read this domain's agents:");
+    expect(alert.textContent).toContain('The agent directory is unavailable');
+    refusing=false;
+    findButton(alert,'Retry')!.click();
+    await settle();
+    // Read again, the list is what the choice offers.
+    expect(Array.from(element.querySelectorAll('.el-select__wrapper')).some(item=>item.textContent?.includes('Assistant'))).toBe(true);
   });
 });
 
