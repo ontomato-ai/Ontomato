@@ -190,35 +190,6 @@ async function get(backendPath) {
 
 const page = { pageNum: 1, pageSize: 200, cdt: '' };
 
-async function executeAction(actionId, param) {
-  await login();
-  const fd = new FormData();
-  fd.append('id', actionId);
-  fd.append('param', JSON.stringify(param || {}));
-  const r = await fetch(`${BASE}/action/execute`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: fd,
-  });
-  const text = await r.text();
-  let json;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    die(`/action/execute 返回非 JSON（HTTP ${r.status}）`, text.slice(0, 500));
-  }
-  if (!r.ok || json.success !== true) return { ok: false, message: json.message || `HTTP ${r.status}` };
-  const data = json.data || {};
-  if (data.error) return { ok: false, message: data.error };
-  let result = data.result;
-  try {
-    result = JSON.parse(result);
-  } catch {
-    /* keep string */
-  }
-  return { ok: true, result };
-}
-
 async function importActions(jsonArg) {
   const list = readJsonArg(jsonArg);
   const arr = Array.isArray(list) ? list : [list];
