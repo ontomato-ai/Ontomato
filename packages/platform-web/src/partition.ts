@@ -27,7 +27,8 @@ export interface AppPartition extends Omit<PlatformAppDeclaration, "groups" | "l
   /** The existing navigation page whose permission also governs this home route. */
   homePage?: string;
   /** The pages this application lists, in display order: one group per entry; a group without a title has no heading. */
-  sections: readonly { key: string; titleKey?: string; paths: readonly string[] }[];
+  sections: readonly ({ key: string; titleKey?: string; paths: readonly string[] }
+    | { key: string; pages: readonly PlatformPanelPage[] })[];
   /** The page at the foot of the application's column (its models), listed apart from the groups. */
   foot?: string;
 }
@@ -59,7 +60,7 @@ export function appDeclarations(
 
   return partition.map((app): PlatformAppDeclaration => {
     const groups: PlatformPanelGroup[] = app.sections
-      .map((section) => ({
+      .map((section) => "pages" in section ? section : ({
         key: section.key,
         label: section.titleKey ? t(section.titleKey) : undefined,
         pages: section.paths
@@ -70,6 +71,8 @@ export function appDeclarations(
       // A group the account may open nothing of is not shown: no empty heading.
       .filter((group) => group.pages.length > 0);
     const footPage = app.foot ? byPath.get(base(app.foot)) : undefined;
+    const firstSection = app.sections[0];
+    const firstPath = firstSection && "paths" in firstSection ? firstSection.paths[0] : undefined;
 
     const home = app.home && (!app.homePage || byPath.has(app.homePage)) ? app.home : undefined;
     return {
@@ -86,7 +89,7 @@ export function appDeclarations(
       // The rail row opens the application's own first page. A declaration that names its entry keeps it (the agent
       // platform is entered at the conversation); otherwise the first page the account may open decides, so a row never
       // opens an address no route serves.
-      home: base(home ?? groups[0]?.pages[0]?.id ?? footPage?.path ?? app.sections[0]?.paths[0] ?? app.prefix),
+      home: base(home ?? groups[0]?.pages[0]?.id ?? footPage?.path ?? firstPath ?? app.prefix),
       groups,
       foot: footPage ? panelPage(footPage) : null,
     };

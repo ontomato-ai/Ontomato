@@ -81,6 +81,7 @@ export const applicationPanelUseSchema = z.object({
     z.object({ kind: z.literal("domain-member") }).strict(),
   ]),
   defaultAgentId: id.optional(),
+  names: applicationMetadataSchema.shape.names.optional(),
 }).strict();
 export type ApplicationPanelUse = z.infer<typeof applicationPanelUseSchema>;
 

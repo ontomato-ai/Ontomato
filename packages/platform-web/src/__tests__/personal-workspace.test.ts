@@ -8,10 +8,15 @@ import { defaultPersonalWorkspace } from "@ontomato/contracts/personal-workspace
 import { randomId } from "@ontomato/contracts/random-id";
 import {productAssetSchema} from '@ontomato/contracts/product-assets';
 import { openApplicationKey } from "../apps";
+import { platformLayoutRoute } from "../layout-route";
 import Workspace from "../pages/PersonalWorkspaceRoute.vue";
 
 const api = vi.hoisted(() => ({ request: vi.fn(), failTasks: false, failSave: false, saved: null as unknown, tasks: [] as unknown[], recent: [] as unknown[], conversations: [] as unknown[] }));
-vi.mock("@ontomato/workbench-ui", () => ({ nodeApiRequest: api.request, readRememberedAgent: () => null }));
+vi.mock("@ontomato/workbench-ui", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@ontomato/workbench-ui")>()),
+  nodeApiRequest: api.request,
+  readRememberedAgent: () => null,
+}));
 vi.mock("@ontomato/agent-shell-ui", () => ({ AgentPicker: { template: '<div />' }, ShellComposer: { name: "ShellComposer", template: '<div><slot name="tools" /></div>' } }));
 vi.mock("@ontomato/workbench-ui/features/dashboard", () => ({ DashboardCardPicker: { template: '<div />' }, DashboardMetricDetail: { template: '<div>Live metric details</div>' }, DashboardMetricPreview: { name: "DashboardMetricPreview", props: ["dashboardId", "revision"], template: '<div class="metric-preview-stub">{{ dashboardId }}<button class="select-metric" @click="$emit(\'select\', {id: \'card-a\', name: \'Revenue\'})">Revenue</button></div>' } }));
 
@@ -56,11 +61,11 @@ beforeEach(() => {
     return Response.json({ data: { ...defaultPersonalWorkspace(), dashboardIds: ["board-a"], applicationIds: ["app-orders"] } });
   });
 });
-async function page(stubs: Record<string, boolean> = {}) {
-  const router = createRouter({ history: createMemoryHistory(), routes: [
+async function page(stubs: Record<string, boolean> = {}, platformRoutes = false) {
+  const router = createRouter({ history: createMemoryHistory(), routes: platformRoutes ? [platformLayoutRoute([])] : [
     { path: "/workspace", component: Workspace }, { path: "/dashboards", component: { template: "<div />" } }, { path: "/agents/chat", component: { template: "<div />" } },
   ] });
-  await router.push("/workspace");
+  await router.push(platformRoutes ? "/home" : "/workspace");
   const open = vi.fn();
   const wrapper = mount(Workspace, { global: {
     stubs,
@@ -71,6 +76,29 @@ async function page(stubs: Record<string, boolean> = {}) {
   return { wrapper, router, open };
 }
 describe("personal workspace", () => {
+  it("links a panel application card to the routed application entry instead of its registration path", async () => {
+    const panelApp = { ...application, id: "app-panels-trial-a", kind: "product",
+      entry: { path: "/panels-trial-a", renderer: "panels" } };
+    const previous = api.request.getMockImplementation()!;
+    api.request.mockImplementation((path: string, init?: RequestInit) => {
+      if (path.includes("platform/applications")) return Promise.resolve(Response.json({ success: true, data: [panelApp] }));
+      if (path === "/api/product-assets/home") {
+        const asset = home();
+        return Promise.resolve(Response.json({ asset: { ...asset, document: {
+          ...asset.document, workspace: { ...workspace(), applicationIds: [panelApp.id] },
+        } } }));
+      }
+      return previous(path, init);
+    });
+    const { wrapper, router, open } = await page({}, true);
+    const card = wrapper.get("a.application-card");
+    expect(card.attributes("href")).toBe(router.resolve("/applications/app-panels-trial-a").href);
+    expect(router.resolve(card.attributes("href")!).params.applicationId).toBe(panelApp.id);
+    await card.trigger("click");
+    expect(open).toHaveBeenCalledWith(panelApp.id);
+    wrapper.unmount();
+  });
+
   it('passes typed object state through nested Pages to their projections',async()=>{
     const state={selected:{className:'Person',primaryKey:'one'}};
     const base={id:'root',name:'Root',ownerId:'alice',visibility:'private',revision:1,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),editable:false};

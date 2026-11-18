@@ -1,5 +1,7 @@
 import { managerPaths } from "@ontomato/ontology-manager";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
+import { panelUsePath } from "@ontomato/contracts/panel-host";
+import { applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
 import type { AppPartition } from "./partition";
 export type NativeLayout = Pick<AppPartition, "sections" | "foot" | "frame" | "home" | "homePage" | "open" | "descriptionKey">;
 const layouts: readonly (NativeLayout & { renderer: string })[] = [
@@ -137,13 +139,21 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
   return applications.filter(app => app.kind === "hosted" || app.kind === "connected"||app.kind==='product'
     || Boolean(nativeLayouts[app.entry.renderer!] || renderers[app.entry.renderer!])).map((app) => {
     const embedded = app.kind === "hosted" || app.kind === "connected";
+    const panels = isPanelApplication(app);
+    const applicationRoute = embedded || panels;
     // Catalog entries may precede their renderer or an edition's asynchronous layout registration.
-    const layout: NativeLayout = embedded||app.kind==='product' ? { sections: [] } : {
+    const panelPages = panels ? app.panelUses?.flatMap(use => use.names ? [{
+      id: panelUsePath(app.id, use.path),
+      label: use.names[locale] ?? use.names.en!,
+    }] : []) ?? [] : [];
+    const layout: NativeLayout = panelPages.length > 1
+      ? { frame: "menu", sections: [{ key: app.id, pages: panelPages }] }
+      : applicationRoute || app.kind === "product" ? { sections: [] } : {
       ...nativeLayouts[app.entry.renderer!], ...renderers[app.entry.renderer!],
       sections: renderers[app.entry.renderer!]?.sections ?? nativeLayouts[app.entry.renderer!]?.sections ?? [],
     };
     return { ...layout, id: app.id, label: app.names[locale] ?? app.names.en!, description: app.descriptions[locale] ?? ("descriptionKey" in layout && layout.descriptionKey ? undefined : app.descriptions.en ?? null), icon: app.icon, rail: app.rail, category: app.category,
-      prefix: embedded ? `/applications/${app.id}` : app.kind==='product'?`/products/${app.id}`:app.entry.path,
-      home: embedded ? `/applications/${app.id}` : app.kind==='product'?app.entry.path:app.entry.home ?? layout.home };
+      prefix: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?`/products/${app.id}`:app.entry.path,
+      home: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?app.entry.path:app.entry.home ?? layout.home };
   });
 }

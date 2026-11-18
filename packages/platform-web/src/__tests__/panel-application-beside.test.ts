@@ -60,6 +60,7 @@ vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
       return () =>
         h("button", {
           class: "panel-double",
+          "data-requested": JSON.stringify(props.initial),
           onClick: () => {
             const next = panelAddress(props.address!, selected("task-2"));
             emit("address", next);
@@ -145,6 +146,7 @@ describe("a panel application's page beside the conversation", () => {
     expect(shell().featureId).toBe("panel-application");
     expect(shell().workbench.features.find((feature) => feature.id === "panel-application")).toMatchObject({
       withConversation: true,
+      scrollsItself: true,
       address: page,
       label: "Scheduled tasks (trial)",
     });
@@ -160,6 +162,12 @@ describe("a panel application's page beside the conversation", () => {
     expect(panelAddressState(String(router.currentRoute.value.query.page))).toEqual(selected("task-2"));
     expect(instances).toHaveLength(1);
     expect(shell().pageContext).toEqual(contextOf(String(router.currentRoute.value.query.page), "task-2"));
+
+    const draft = "/applications/app-a/tasks?draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2Fnext.page-draft.json";
+    await router.replace({ query: { ...router.currentRoute.value.query, page: panelAddress(draft, selected("task-3")) } });
+    await flushPromises();
+    expect(instances).toHaveLength(1);
+    expect(wrapper.get(".panel-double").attributes("data-requested")).toBe(JSON.stringify(selected("task-3")));
     wrapper.unmount();
   });
 });

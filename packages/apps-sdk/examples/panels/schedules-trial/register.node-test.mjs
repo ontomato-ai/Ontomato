@@ -107,6 +107,11 @@ test("registers the trial's projections, panels and applications in that order",
   const { requests } = stand;
   const uses = requests.filter((request) => request.url.includes("/platform/applications/"))
     .flatMap((request) => request.body.panelUses);
+  assert.deepEqual(uses.map(use => [use.path, use.names]), [
+    ["/tasks", { en: "Scheduled tasks", "zh-CN": "定时任务" }],
+    ["/tasks", { en: "Scheduled tasks", "zh-CN": "定时任务" }],
+    ["/summary", { en: "Task summary", "zh-CN": "任务摘要" }],
+  ]);
   assert.ok(uses.length > 0);
   assert.ok(uses.every((use) => !Object.hasOwn(use, "skill")));
 

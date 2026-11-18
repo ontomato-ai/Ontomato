@@ -145,8 +145,10 @@ export async function receivePanelDraft(
   source: PanelDraftSource,
   link: PageDraftLink,
   taken: DraftTaken,
+  current: () => boolean = () => true,
 ): Promise<void> {
   const draft = await source.readPageDraft(link.sessionId, link.runId, link.path);
+  if (!current()) return;
   if (draft.pageKey !== pageKey) throw new Error(`Draft belongs to page ${draft.pageKey}, not ${pageKey}`);
   adapters.hold(draft, taken);
 }

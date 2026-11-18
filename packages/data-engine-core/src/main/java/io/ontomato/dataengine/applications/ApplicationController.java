@@ -68,8 +68,9 @@ public class ApplicationController {
     public R<?> get(@PathVariable String id) {
         var user = current();
         var app = catalog.require(id);
-        if (!catalog.inDomain(app,user)) throw ApplicationCatalog.denied();
-        return R.of(catalog.view(app));
+        if (!catalog.inDomain(app,user) || (ApplicationCatalog.panelManaged(app) && !catalog.canEnter(app, user)))
+            throw ApplicationCatalog.denied();
+        return R.of(catalog.view(app, user));
     }
     @GetMapping("/platform/applications/platform-assets-access")
     public R<?> productAssetsAccess(){return R.of(Map.of("allowed",catalog.canReconcileProducts(current())));}

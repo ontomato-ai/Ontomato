@@ -19,7 +19,7 @@ const props = defineProps<{
   label?: string;
   /** The page's address as the reader sees it; the instance's deep-linkable state is added to it. */
   address: string;
-  /** The state the address named when the page opened; the instance starts from it and never re-reads the address. */
+  /** The deep-linkable state the page address currently requests. */
   initial?: Record<string, unknown>;
   /** The title drawn above the frame; absent when the frame is the whole surface. */
   title?: string;

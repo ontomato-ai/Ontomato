@@ -6,7 +6,9 @@ import { h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import type { PanelFrameMessage } from "@ontomato/contracts/panel-host";
 import { PANEL_HOST_CHANNEL, panelAddress } from "@ontomato/contracts/panel-host";
+import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
+import { platformLayoutRoute } from "../../../../../packages/platform-web/src/layout-route";
 import {
   hostMessageOf, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt,
   panelHostFrame, panelRecord, panelUse, projections, READER, SCHEDULED_TASK, task, taskForm, writeFrameDocument,
@@ -24,8 +26,14 @@ const useP = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", p.id, "/tasks
 const useQ = panelUse("use-trial-b-summary", "panels-trial-b-summary", q.id, "/summary");
 const taskPath = "/api/data-query/platform/scheduled-tasks";
 const deepState = { selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id } };
+const secondTask = { ...task, id: "ac186b00-a3dd-46d2-b404-72065d877a34", title: "Second scheduled task" };
 
 function answer(request: Sent) {
+  if (request.path === "/api/data-query/platform/applications") return Response.json({ success: true, data: [appA, appB].map(id => ({
+    id, kind: "product", names: { en: id }, descriptions: {}, icon: "schedules",
+    rail: "apps", category: "business", sort: 0, entry: { path: `/${id.slice(4)}`, renderer: "panels" },
+    entryAccess: ["domain-member"], scheduleAdapter: null, releaseId: null,
+  })) });
   const applicationId = [appA, appB].find(id => request.path === `/api/data-query/platform/applications/${id}/panel-uses`);
   if (applicationId) return Response.json({ data: {
     applicationId, entry: { path: "/", renderer: "panels" }, panelUses: [applicationId === appA ? useP : useQ],
@@ -42,13 +50,19 @@ function answer(request: Sent) {
   if (request.path === "/api/product-assets/subscriptions/subscription-1") return new Response(null, { status: 204 });
   if (request.path === taskPath) return Response.json({ tasks: [task], timeZone: task.timeZone });
   if (request.path === `${taskPath}/${task.id}`) return Response.json(task);
+  if (request.path === `${taskPath}/${secondTask.id}`) return Response.json(secondTask);
+  if (request.path === "/api/assistant/sessions/session-1/runs/run-1/page-draft") return Response.json({
+    pageKey: useP.pageKey, operation: `${SCHEDULED_TASK}.save`, target: { id: task.id },
+    form: { ...task.content, caseSetId: "set-smoke" },
+  });
   if (request.path === `${taskPath}/applications/${task.appId}/form`) return Response.json(taskForm);
   return nothingAt(request);
 }
 
-async function open(address: string) {
+async function open(address: string, usePlatformRoutes = false) {
   const sent = installPlatform(answer);
-  const router = createRouter({ history: createMemoryHistory(), routes: [{
+  if (usePlatformRoutes) await useApplicationCatalog().refresh();
+  const router = createRouter({ history: createMemoryHistory(), routes: usePlatformRoutes ? [platformLayoutRoute([])] : [{
     path: "/applications/:applicationId/:panelPath",
     component: PanelApplicationRoute,
     props: true,
@@ -72,6 +86,17 @@ afterEach(() => {
   vi.resetModules();
 });
 
+it("opens the first visible use at its own URL when entering a panel application", async () => {
+  const { app, frame, router, sent } = await open(`/applications/${appB}`, true);
+  try {
+    expect(hostMessageOf(frame.srcdoc).pageKey).toBe(useQ.pageKey);
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe(`/applications/${appB}/summary`));
+    expect(sent.some(request => request.path.endsWith("/policy"))).toBe(false);
+  } finally {
+    app.unmount();
+  }
+});
+
 it("updates shared summary X from P's selection and opens the next application's panel in the same route", async () => {
   const { app, element, frame, router, sent } = await open(`/applications/${appA}/tasks`);
   try {
@@ -81,7 +106,7 @@ it("updates shared summary X from P's selection and opens the next application's
     };
     window.addEventListener("message", listener);
     try {
-      await startFrame(frame);
+      const { context } = await startFrame(frame);
       const option = await vi.waitFor(() => {
         const button = document.querySelector<HTMLButtonElement>('#app [role="option"]');
         expect(button?.textContent).toContain(task.title);
@@ -95,6 +120,18 @@ it("updates shared summary X from P's selection and opens the next application's
       expect(sent.filter(request => request.path === `${taskPath}/${task.id}`)).toHaveLength(2);
       expect(operations.some(message => message.kind === "operations" && message.operations.some(operation => operation.kind === "form.save"))).toBe(true);
       expect(router.currentRoute.value.query.state).toBe(JSON.stringify(deepState));
+
+      const samePage = `/applications/${appA}/tasks`;
+      await router.push(panelAddress(samePage, { selectedTask: { className: SCHEDULED_TASK, primaryKey: secondTask.id } }));
+      await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary-title")?.textContent).toBe(secondTask.title));
+      expect(element.querySelector("iframe.panel-host-frame")).toBe(frame);
+      expect(router.currentRoute.value.query.state).toContain(secondTask.id);
+
+      const draftQuery = new URLSearchParams({ draftSessionId: "session-1", draftRunId: "run-1", draftPath: "outputs/drafts/task.page-draft.json" });
+      await router.push(panelAddress(`${samePage}?${draftQuery}`, context.instance.deepLink()));
+      await vi.waitFor(() => expect(context.draft.value?.form.caseSetId).toBe("set-smoke"));
+      expect(element.querySelector("iframe.panel-host-frame")).toBe(frame);
+      expect(sent.some(request => request.method === "PUT")).toBe(false);
 
       await router.push(`/applications/${appB}/summary`);
       await vi.waitFor(() => {

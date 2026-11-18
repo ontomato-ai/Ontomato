@@ -1,6 +1,5 @@
 import type { PilotPage, PilotPageResolver } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { panelAddress } from "@ontomato/contracts/panel-host";
 import AgentSettingsRoute from "./pages/AgentSettingsRoute.vue";
 import DashboardsPage from "./pages/DashboardsRoute.vue";
 import GovernanceReportRoute from "./pages/GovernanceReportRoute.vue";
@@ -62,7 +61,7 @@ export function pilotPageResolver(setPage: (address: string) => void): PilotPage
       return {
         id: "panel-application",
         component: PanelApplicationRoute,
-        instance: panelAddress(address, {}),
+        instance: path,
         props: {
           applicationId: decodeURIComponent(panel[1]!),
           panelPath: (panel[2] ?? "").replace(/^\//, ""),

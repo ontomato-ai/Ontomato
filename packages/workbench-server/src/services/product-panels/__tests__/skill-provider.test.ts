@@ -121,7 +121,12 @@ it("assembles one current package for a shared menu with a section per use and t
     expect(markdown).toContain("POST /platform/scheduled-tasks/applications/:appId/form");
     expect(markdown).toContain("Use these endpoints for `PlatformObjectType:platform:ScheduledTask`.");
     expect(markdown).toContain("POST JSON with `values`, `changedField`, `taskId`, and `timeZone`.");
-    expect(markdown).toContain("ONTOMATO_EXECUTION_CALLBACK");
+    const readSection = markdown.split("### Read current data")[1]!.split("### Open the panel")[0]!;
+    expect(readSection).toContain("`ONTOMATO_TK` is set, send `tk: $ONTOMATO_TK`");
+    expect(readSection).toContain("`ONTOMATO_API_KEY` is set, send `X-API-Key: $ONTOMATO_API_KEY`");
+    expect(readSection).toContain("/api/assistant/executions/<runId>/ontology");
+    expect(readSection).toContain("Never send callback headers to a direct Java URL");
+    expect(readSection).toContain("An anonymous direct Java URL needs no authentication header");
     expect(markdown).toContain('"pageKey": "panels-trial-a-tasks"');
     expect(markdown).toContain('"form": {}');
     expect(markdown).toContain("$ONTOMATO_PANEL_OPERATIONS_URL/operate");

@@ -20,12 +20,9 @@ export function platformLayoutRoute(children: RouteRecordRaw[], component: Route
       { ...platformRoutes.home, component: () => import("./pages/PersonalWorkspaceRoute.vue"), meta: { workbench: true } },
       { ...platformRoutes.applicationGallery, component: () => import("./pages/ApplicationGalleryRoute.vue"), meta: { workbench: true } },
       { path: "/products/:productAssetId", component: () => import("./pages/ProductRoute.vue"), props:route=>({productAssetId:route.params.productAssetId,applicationId:typeof route.query.applicationId==='string'?route.query.applicationId:undefined}), meta: {workbench:true} },
-      { path: "/applications/:applicationId", component: () => import("./pages/ApplicationRoute.vue") },
-      // A panel application's page: the use relation the rest of the address names, shown full. It is the same address
-      // space, so a panel's own deep-linkable state rides in it and a reload opens the same view.
       {
-        path: "/applications/:applicationId/:panelPath(.*)",
-        component: () => import("./pages/PanelApplicationRoute.vue"),
+        path: "/applications/:applicationId/:panelPath(.*)?",
+        component: () => import("./pages/ApplicationEntryRoute.vue"),
         props: (route) => ({ applicationId: String(route.params.applicationId), panelPath: String(route.params.panelPath ?? "") }),
       },
       ...children,

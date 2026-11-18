@@ -91,7 +91,7 @@ const opened = computed(() => props.address ?? route.fullPath);
  */
 const address = computed(() => {
   const search = opened.value.split("?")[1];
-  const path = panelUsePath(props.applicationId, props.panelPath ? `/${props.panelPath}` : "/");
+  const path = use.value ? panelUsePath(props.applicationId, use.value.path) : "";
   return panelAddress(search ? `${path}?${search}` : path, {});
 });
 
@@ -100,28 +100,22 @@ const address = computed(() => {
  * The reader's selection changes only the state, so it keeps the instance; another draft is another instance, which
  * reads it.
  */
-const key = computed(() => `${props.applicationId}:${use.value?.id ?? ""}:${address.value}`);
+const key = computed(() => `${props.applicationId}:${use.value?.id ?? ""}`);
 
 /**
  * A selection the panel reports is the page's address: it is replaced in place, so the address bar and a reload carry
  * the same view, and the instance — which the key keeps — is not rebuilt.
  */
 function writeAddress(next: string) {
+  if (opened.value === next) return;
   if (props.navigate) {
     props.navigate(next);
     return;
   }
-  if (route.fullPath === next) return;
   void router.replace(next);
 }
 
-/**
- * The state the page was opened at. It is read when an instance starts, and kept: a selection the reader makes afterwards
- * is written into the address, and that write must not become the instance's opening state again. Another instance (a
- * new draft) opens at the state the address has then.
- */
-const initial = ref(panelAddressState(opened.value));
-watch(address, () => (initial.value = panelAddressState(opened.value)));
+const requestedState = computed(() => panelAddressState(opened.value));
 </script>
 
 <template>
@@ -134,7 +128,7 @@ watch(address, () => (initial.value = panelAddressState(opened.value)));
     :labels="labels"
     :use-id="use.id"
     :address="address"
-    :initial="initial"
+    :initial="requestedState"
     @address="writeAddress"
     @context="emit('context', $event)"
   />

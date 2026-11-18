@@ -6,7 +6,7 @@ import java.util.*;
 /** Java owns entry facts; panels retain only their shared content and manifest. */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ApplicationPanelUse(String id, String pageKey, String panelId, String path,
-                                  Access access, String defaultAgentId) {
+                                  Access access, String defaultAgentId, Map<String,String> names) {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Access(String permissionCode, String kind) {}
 
@@ -26,6 +26,9 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
                 || use.access().kind() != null && !use.access().kind().equals("domain-member")
                 || use.defaultAgentId() != null && use.defaultAgentId().isBlank())
                 throw ApplicationCatalog.bad("Invalid or duplicate panel use");
+            if (use.names() != null && (use.names().get("en") == null || use.names().get("en").isBlank()
+                || use.names().values().stream().anyMatch(name -> name == null || name.isEmpty())))
+                throw ApplicationCatalog.bad("A panel use's names require a nonblank English name and nonempty translations");
         }
     }
 }

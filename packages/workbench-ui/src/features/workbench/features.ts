@@ -95,6 +95,7 @@ export function panelApplicationPageFeature(label: string, address: string): She
     availability: "page",
     listed: false,
     withConversation: true,
+    scrollsItself: true,
     address,
   };
 }

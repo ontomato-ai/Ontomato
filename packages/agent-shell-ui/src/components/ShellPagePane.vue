@@ -207,6 +207,8 @@ const paneStyle = computed(() => ({
   padding-bottom: var(--pane-dock-space);
 }
 .scrolls-itself .pane-body {
+  display: flex;
+  flex-direction: column;
   padding-bottom: 0;
 }
 /* While the edge is dragged, a frame in the page (an app's preview) must not take the pointer from it. */

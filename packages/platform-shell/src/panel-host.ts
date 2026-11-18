@@ -114,11 +114,7 @@ export interface PanelInstanceOptions {
    * carries beyond the page itself: no credential and no form value ever goes into it.
    */
   address: () => string;
-  /**
-   * The state the page was opened at, as the address named it: the instance starts from this, and never re-reads the
-   * address afterwards. A reader's selection is reported upward, so the page writes it into the address — and reading it
-   * back here would fight that write and rebuild the instance.
-   */
+  /** The current external address's requested state, including updates on the same page. */
   initial: () => Record<string, unknown>;
 }
 
@@ -139,6 +135,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const address = shallowRef("");
   const operations = shallowRef<readonly PanelOperation[]>([]);
   let frame: Window | null = null;
+  let frameReady = false;
+  let frameAddress = "";
   let disposeFrame: (() => void) | undefined;
   let loadedPanelId: string | null = null;
   /** The record read while the frame had unsaved changes: shown as soon as the reader saves or drops them. */
@@ -175,12 +173,10 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     const base = await port.sdkBase();
     use.value = relation;
     panel.value = record;
-    // The state the page was opened at is checked against the panel's own declaration, so a link never sets another
-    // field. It is read once, at load: after that the instance is what the address follows, not the other way round.
-    state.value = Object.fromEntries(
-      Object.entries(options.initial()).filter(([name]) => record.manifest.state[name]?.deepLink),
-    ) as Record<string, PanelStateValue>;
+    state.value = requestedState(record) as Record<string, PanelStateValue>;
     address.value = panelAddress(options.address(), state.value);
+    frameAddress = address.value;
+    frameReady = false;
     const message: PanelHostMessage = {
       kind: "panel-host-message",
       panel: record,
@@ -234,12 +230,32 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     frame?.postMessage({ channel: PANEL_HOST_CHANNEL, ...(message as object) }, "*");
   }
 
+  function requestedState(record: ProductPanel) {
+    return Object.fromEntries(Object.entries(options.initial()).filter(([name]) => record.manifest.state[name]?.deepLink));
+  }
+
+  function syncAddress(): boolean {
+    if (!frameReady || !panel.value) return false;
+    const requested = panelAddress(options.address(), requestedState(panel.value));
+    if (requested === address.value) return false;
+    frameAddress = requested;
+    address.value = requested;
+    post({ kind: "address", address: requested });
+    return true;
+  }
+  watch([options.address, options.initial], syncAddress);
+
   function message(event: MessageEvent) {
     if (event.source !== frame) return;
     const payload = panelMessageOf(panelFrameMessageSchema, event);
     if (!payload) return;
     if (payload.kind === "context") pageContext.value = payload.context;
     if (payload.kind === "state") {
+      if (payload.fromAddress !== frameAddress) return;
+      if (!frameReady) {
+        frameReady = true;
+        if (syncAddress()) return;
+      }
       state.value = payload.state;
       address.value = panelAddress(options.address(), payload.state);
     }

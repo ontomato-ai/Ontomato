@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { pageContextSchema } from "./page-context";
-import { panelOpenRequestSchema, panelOperationSchema, panelStateValueSchema } from "./panel-manifest";
+import { panelOpenRequestSchema, panelOperationSchema, panelStateValueSchema, type PanelStateValue } from "./panel-manifest";
+import { applicationRootPath } from "./platform-identity";
 import { productPanelSchema } from "./product-panels";
 
 /*
@@ -34,7 +35,7 @@ export const panelFrameMessageSchema = z.discriminatedUnion("kind", [
   /** What a message from this instance carries now: the one page context line. */
   z.object({ kind: z.literal("context"), context: pageContextSchema }).strict(),
   /** The instance's deep-linkable state, which the host keeps in the address. */
-  z.object({ kind: z.literal("state"), state: z.record(z.string(), panelStateValueSchema) }).strict(),
+  z.object({ kind: z.literal("state"), fromAddress: z.string().min(1).max(4000), state: z.record(z.string(), panelStateValueSchema) }).strict(),
   /**
    * The operations this instance offers, as the header and an agent list them. They are the panel's projections' and its
    * own declaration's; the frame runs one when the host asks it to.
@@ -60,6 +61,8 @@ export type PanelFrameMessage = z.infer<typeof panelFrameMessageSchema>;
 
 /** What the host tells a running panel frame. */
 export const panelHostFrameMessageSchema = z.discriminatedUnion("kind", [
+  /** A link changed the address of this same instance. */
+  z.object({ kind: z.literal("address"), address: z.string().min(1).max(4000) }).strict(),
   /** The panel's own definition changed; the host has already decided it may be shown. */
   z.object({ kind: z.literal("definition-changed"), panel: productPanelSchema }).strict(),
   /**
@@ -86,7 +89,7 @@ export function panelMessageOf<T>(schema: { safeParse(value: unknown): { success
 
 /** The route owned by the application use. */
 export function panelUsePath(applicationId: string, path: string): string {
-  return `/applications/${encodeURIComponent(applicationId)}${path === "/" ? "" : path}`;
+  return `${applicationRootPath(applicationId)}${path === "/" ? "" : path}`;
 }
 
 /**
@@ -105,7 +108,7 @@ export function panelAddress(path: string, state: Record<string, unknown>): stri
 }
 
 /** The state an address restores, or none. The host checks it against the panel's declaration before using it. */
-export function panelAddressState(address: string): Record<string, unknown> {
+export function panelAddressState(address: string): Record<string, PanelStateValue> {
   const value = new URL(address, "http://page.invalid").searchParams.get("state");
   return value === null ? {} : panelOpenRequestSchema.shape.state.parse(JSON.parse(value));
 }

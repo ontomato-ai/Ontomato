@@ -123,7 +123,7 @@ const landedAt = () => window.location.hash.replace(/^#/, "").split("?")[0]!;
 const pagePaths = [
   ...new Set(
     appPartition()
-      .flatMap((app) => [...app.sections.flatMap((section) => section.paths), ...(app.foot ? [app.foot] : [])])
+      .flatMap((app) => [...app.sections.flatMap((section) => "paths" in section ? section.paths : section.pages.map(page => page.id)), ...(app.foot ? [app.foot] : [])])
       // The addresses are route patterns; the ones with parameters are covered by their own page tests.
       .filter((path) => !path.includes(":"))
       // The licence is the enterprise edition's page: this edition's navigation holds no such page, so no column lists it.

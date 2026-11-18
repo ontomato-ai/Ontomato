@@ -1,9 +1,10 @@
-import { createApp, h, provide, watch, type Component, type Ref } from "vue";
+import { createApp, h, provide, ref, watch, type Component, type Ref } from "vue";
 import { useI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import { connectAppContext, contextTransport, type AppContext } from "../context";
 import {
   PANEL_HOST_CHANNEL,
+  panelAddressState,
   panelFrameMessageSchema,
   panelHostFrameMessageSchema,
   panelHostMessageSchema,
@@ -62,9 +63,10 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   // decides which requests a frame may make.
   const appContext = await connectAppContext();
   const transport = contextTransport(appContext);
+  const address = ref(message.url);
   const instance = createPanelInstance(message.panel.manifest, {
     pageKey: message.pageKey,
-    url: () => message.url,
+    url: () => address.value,
     label: () => message.label,
     initial: message.state,
     readProjection: async (id) => {
@@ -120,22 +122,30 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   app.use(ElementPlus).use(appContext);
   app.mount(element);
 
-  // The draft the address names belongs to this panel, so the SDK reads it and holds it for the form projection that
-  // performs its operation, which takes it once it has read its record and registered. That component puts its values
-  // in the form and marks what it changed; nothing is written until the reader saves.
-  const link = pageDraftLinkOf(message.url);
-  if (link)
-    await receivePanelDraft(
-      message.pageKey,
-      instance.forms,
-      // The draft is read over this frame's own transport, at the agent host's route: the panel needs one read, not the
-      // conversation client, whose module pulls the whole shell in and would defer the panel's first draw by seconds.
-      { readPageDraft: (sessionId, runId, path) => readDraft(transport, sessionId, runId, path) },
-      link,
-      instance.receiveDraft,
-    );
+  let currentDraft = "";
+  async function followDraft() {
+    const link = pageDraftLinkOf(address.value);
+    const key = link ? JSON.stringify(link) : "";
+    if (key === currentDraft) return;
+    currentDraft = key;
+    if (link)
+      await receivePanelDraft(message.pageKey, instance.forms,
+        { readPageDraft: (sessionId, runId, path) => readDraft(transport, sessionId, runId, path) },
+        link, instance.receiveDraft, () => currentDraft === key);
+  }
+  async function followAddress(next: string) {
+    const desired = panelAddressState(next);
+    for (const [name, field] of Object.entries(message.panel.manifest.state)) {
+      if (!field.deepLink) continue;
+      const value = desired[name] ?? null;
+      if (JSON.stringify(instance.state.values.value[name]) !== JSON.stringify(value)) instance.state.set(name, value);
+    }
+    address.value = next;
+    await followDraft();
+  }
 
-  report({ instance, unsaved, changed: (id) => projectionListeners.forEach((listener) => listener(id)) });
+  report({ instance, address, unsaved, followAddress, changed: (id) => projectionListeners.forEach((listener) => listener(id)) });
+  await followDraft();
   return { context, appContext };
 }
 
@@ -166,6 +176,8 @@ function hostMessage(): PanelHostMessage {
 
 interface ReportOptions {
   instance: PanelInstance;
+  address: Ref<string>;
+  followAddress(address: string): Promise<void>;
   unsaved: ReadonlySet<Ref<boolean>>;
   changed: (projectionId: string) => void;
 }
@@ -175,21 +187,15 @@ interface ReportOptions {
  * definition is read again here by its ID — the panel's whole record, or one projection's — but never over an unsaved
  * form.
  */
-function report({ instance, unsaved, changed }: ReportOptions) {
+function report({ instance, address, followAddress, unsaved, changed }: ReportOptions) {
   const send = (value: PanelFrameMessage) =>
     window.parent.postMessage({ channel: PANEL_HOST_CHANNEL, ...panelFrameMessageSchema.parse(value) }, "*");
   const isDirty = () => instance.dirty() || [...unsaved].some((flag) => flag.value);
 
-  send({ kind: "context", context: instance.pageContext.value });
-  send({ kind: "state", state: instance.deepLink() });
-  watch(
-    () => instance.state.values.value,
-    () => {
-      send({ kind: "context", context: instance.pageContext.value });
-      send({ kind: "state", state: instance.deepLink() });
-    },
-    { deep: true },
-  );
+  watch([() => instance.state.values.value, address], () => {
+    send({ kind: "context", context: instance.pageContext.value });
+    send({ kind: "state", fromAddress: address.value, state: instance.deepLink() });
+  }, { deep: true, immediate: true });
   watch([...unsaved], () => send({ kind: "dirty", dirty: isDirty() }), { immediate: true });
   watch(() => instance.dirty(), () => send({ kind: "dirty", dirty: isDirty() }));
   // The operations the header draws and an agent lists; they change as projections register and unregister.
@@ -201,6 +207,10 @@ function report({ instance, unsaved, changed }: ReportOptions) {
   window.addEventListener("message", (event) => {
     const parsed = panelMessageOf(panelHostFrameMessageSchema, event);
     if (!parsed) return;
+    if (parsed.kind === "address") {
+      void followAddress(parsed.address).catch(reason => failed(reason instanceof Error ? reason.message : String(reason)));
+      return;
+    }
     if (parsed.kind === "projection-changed") {
       changed(parsed.projectionId);
       return;

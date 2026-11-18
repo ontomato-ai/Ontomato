@@ -96,11 +96,12 @@ public class ApplicationCatalog {
         return app.getString("domainId") == null || Objects.equals(app.getString("domainId"), user.getDomainId());
     }
     public List<JSONObject> visible(User user) {
-        return all().stream().filter(a -> inDomain(a,user)).filter(a ->
-            access.canEnter(a,user)).map(this::view).toList();
+        return all().stream().filter(app -> canEnter(app, user)).map(app -> view(app, user)).toList();
     }
     public boolean canEnter(String id, User user) {
-        var app = require(id);
+        return canEnter(require(id), user);
+    }
+    public boolean canEnter(JSONObject app, User user) {
         return inDomain(app,user) && access.canEnter(app,user);
     }
     public boolean canReconcileProducts(User user){return access.administrator(user)&&canEnter("app-builder",user);}
@@ -110,11 +111,12 @@ public class ApplicationCatalog {
         if(icon==null||!icon.matches("[a-z][a-z0-9-]{0,63}"))throw bad("Invalid application icon");
         db.update("UPDATE sys_application SET icon=?,updated_at=now() WHERE id=?",icon,id);
     }
-    public JSONObject view(JSONObject app) {
+    public JSONObject view(JSONObject app, User user) {
         var result = new JSONObject(app);
         var entry = new JSONObject(app.getJSONObject("entry"));
         entry.remove("upstream"); entry.remove("upstreamPrefix");
         result.put("entry",entry);
+        if (panelManaged(app)) result.put("panelUses", visiblePanelUses(app, user));
         return result;
     }
     /** Reconcile a service's complete builtin collection; per-file Java declarations remain incremental. */
@@ -264,9 +266,11 @@ public class ApplicationCatalog {
         var app = require(id);
         if (!panelManaged(app)) throw bad("Application is not managed by panels");
         if (!inDomain(app, user) || !access.canEnter(app, user)) throw denied();
-        var uses = access.panelUses(app.getList("panelUses", ApplicationPanelUse.class), user).stream()
+        return JSONObject.of("applicationId", id, "entry", app.getJSONObject("entry"), "panelUses", visiblePanelUses(app, user));
+    }
+    private List<ApplicationPanelUse> visiblePanelUses(JSONObject app, User user) {
+        return access.panelUses(app.getList("panelUses", ApplicationPanelUse.class), user).stream()
             .filter(use -> grants.allowed(use.panelId(), "use")).toList();
-        return JSONObject.of("applicationId", id, "entry", app.getJSONObject("entry"), "panelUses", uses);
     }
     public JSONObject putPanelUses(String id, ApplicationController.PanelRegistration body, User user) {
         validateId(id);

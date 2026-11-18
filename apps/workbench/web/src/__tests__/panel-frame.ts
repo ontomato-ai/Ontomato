@@ -236,6 +236,11 @@ export function inside(frame: Window) {
       },
     },
   );
+  // The fixture runs the frame SDK in this window; deliver the host's messages to it as a browser would.
+  frame.postMessage = (data: unknown) => {
+    const cloned = structuredClone(data);
+    setTimeout(() => window.dispatchEvent(new MessageEvent("message", { data: cloned, source: parent as Window })));
+  };
   Object.defineProperty(window, "parent", { value: parent, configurable: true });
 }
 

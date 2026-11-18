@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { effectScope } from "vue";
+import { effectScope, nextTick, shallowRef } from "vue";
 import type { ApplicationPanelUse, ProductPanel } from "@ontomato/contracts/product-panels";
 import { panelAddress, panelAddressState, PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
@@ -247,8 +247,9 @@ describe("the panel host", () => {
     expect(panelAddress("/a/schedules", {})).toBe("/a/schedules");
   });
 
-  it("starts from the state the address named, and follows its own reports from then on", async () => {
-    let initial = { selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" } };
+  it("applies external state and accepts reader selections without echoing them to the frame", async () => {
+    const selected = (primaryKey: string) => ({ selectedTask: { className: SCHEDULED_TASK, primaryKey } });
+    const initial = shallowRef(selected("task-1"));
     const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
     const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
     const scope = effectScope();
@@ -257,22 +258,30 @@ describe("the panel host", () => {
         useId: () => "use-a",
         label: (panel) => panel.name,
         address: () => "/applications/app-a/a/schedules",
-        initial: () => initial,
+        initial: () => initial.value,
       }),
     )!;
     await a.ready;
     const frame = frameWindow();
     a.frame(frame);
-    // The page opened at the address's state, and the address says so.
-    expect(a.state.value).toEqual(initial);
-    expect(panelAddressState(a.address.value)).toEqual(initial);
+    const bootAddress = a.address.value;
+    fromFrame(frame, { kind: "state", fromAddress: bootAddress, state: selected("task-1") });
+    expect(a.state.value).toEqual(initial.value);
 
-    // The reader selects something: the instance reports it, the address follows it, and the opening state is not read
-    // again — which would overwrite the selection with what the address said before.
-    initial = { selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-0" } };
-    fromFrame(frame, { kind: "state", state: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-2" } } });
-    expect(panelAddressState(a.address.value)).toEqual({ selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-2" } });
-    expect(a.state.value).toEqual({ selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-2" } });
+    fromFrame(frame, { kind: "state", fromAddress: bootAddress, state: selected("task-2") });
+    initial.value = selected("task-2");
+    await nextTick();
+    expect(panelAddressState(a.address.value)).toEqual(initial.value);
+    expect(postedTo(port, frame)).toEqual([]);
+
+    initial.value = selected("task-0");
+    await nextTick();
+    const requested = panelAddress("/applications/app-a/a/schedules", initial.value);
+    expect(postedTo(port, frame)).toEqual([{ channel: PANEL_HOST_CHANNEL, kind: "address", address: requested }]);
+    fromFrame(frame, { kind: "state", fromAddress: bootAddress, state: selected("task-2") });
+    expect(a.address.value).toBe(requested);
+    fromFrame(frame, { kind: "state", fromAddress: requested, state: initial.value });
+    expect(a.state.value).toEqual(initial.value);
     scope.stop();
   });
 

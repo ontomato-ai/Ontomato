@@ -5,6 +5,7 @@ import { catalogPartitionFixture as appPartition } from "./fixtures";
 import { closedAccess, generatedNavigation } from "./fixtures";
 import { catalogFixture } from "./fixtures";
 import { catalogPartition } from "../native-layouts";
+import { appAt } from "../apps";
 
 const t = (key: string) => key;
 const declarations = appDeclarations(generatedNavigation(), closedAccess(["business-knowledge"]), appPartition(), t);
@@ -63,4 +64,42 @@ describe("the platform's applications", () => {
     expect(schedules.home).toBe("/schedules");
   });
 
+});
+
+it("opens and highlights a panel application under its application route", () => {
+  const application = {
+    ...catalogFixture()[0]!, id: "app-panels-trial-a", kind: "product" as const,
+    entry: { renderer: "panels", path: "/panels-trial-a" },
+  };
+  const partition = catalogPartition([application], "en");
+  const rail = appDeclarations(generatedNavigation(), closedAccess([]), partition, t);
+  expect(rail[0]).toMatchObject({
+    home: "/applications/app-panels-trial-a",
+    prefix: "/applications/app-panels-trial-a",
+    groups: [],
+  });
+  expect(appAt(rail, "/applications/app-panels-trial-a/tasks")?.id).toBe(application.id);
+});
+
+it("lists only named panel uses in declared order and gives one named use no menu", () => {
+  const use = (path: string, names?: Record<string, string>) => ({
+    id: path, pageKey: path, panelId: "shared-panel", path, access: { kind: "domain-member" as const }, names,
+  });
+  const application = {
+    ...catalogFixture()[0]!, id: "app-panels-trial-b", kind: "product" as const,
+    entry: { renderer: "panels", path: "/panels-trial-b" },
+    panelUses: [use("/tasks", { en: "Tasks", "zh-CN": "定时任务" }), use("/detail"), use("/summary", { en: "Task summary" })],
+  };
+  const declare = (app: typeof application) => appDeclarations(
+    generatedNavigation(), closedAccess([]), catalogPartition([app], "zh-CN"), t,
+  )[0]!;
+  const both = declare(application);
+  expect(both.frame).toBe("menu");
+  expect(both.groups?.flatMap(group => group.pages)).toEqual([
+    { id: "/applications/app-panels-trial-b/tasks", label: "定时任务" },
+    { id: "/applications/app-panels-trial-b/summary", label: "Task summary" },
+  ]);
+  const single = declare({ ...application, panelUses: application.panelUses.slice(0, 2) });
+  expect(single.frame).toBeUndefined();
+  expect(single.groups).toEqual([]);
 });

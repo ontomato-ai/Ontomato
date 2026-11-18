@@ -37,7 +37,7 @@ class PanelApplicationsTest {
     }
     private static ApplicationPanelUse use(String page, String permission) {
         return new ApplicationPanelUse("use-" + page, page, "panel-p", "/" + page,
-            permission == null ? new ApplicationPanelUse.Access(null, "domain-member") : new ApplicationPanelUse.Access(permission, null), null);
+            permission == null ? new ApplicationPanelUse.Access(null, "domain-member") : new ApplicationPanelUse.Access(permission, null), null, null);
     }
     private static ApplicationCatalog.Declaration metadata() {
         return new ApplicationCatalog.Declaration(Map.of("en", "Example"), Map.of(), "calendar", List.of(), List.of(), List.of(), List.of());
@@ -61,12 +61,13 @@ class PanelApplicationsTest {
             {"entry":{"path":"/panel-example","renderer":"panels"},"entryAccess":["domain-member"],
              "declaration":{"names":{"en":"Example"},"descriptions":{},"icon":"calendar","groups":[],"permissions":[]},
              "panelUses":[{"id":"use-a","pageKey":"schedules-a","panelId":"panel-p","path":"/schedules-a",
-               "access":{"kind":"domain-member"},"defaultAgentId":"preferred-agent"}]}
+               "access":{"kind":"domain-member"},"defaultAgentId":"preferred-agent","names":{"en":"Tasks","zh-CN":"任务"}}]}
             """)).andExpect(status().isOk()).andReturn();
         assertEquals("panels", JSONObject.parseObject(result.getResponse().getContentAsString()).getJSONObject("data").getJSONObject("entry").getString("renderer"));
         var savedUse = JSONObject.parseObject(result.getResponse().getContentAsString()).getJSONObject("data").getJSONArray("panelUses").getJSONObject(0);
         assertFalse(savedUse.containsKey("skill"));
         assertEquals("preferred-agent", savedUse.getString("defaultAgentId"));
+        assertEquals("任务", savedUse.getJSONObject("names").getString("zh-CN"));
         var dashboard = new PageSkills.Mapping(null, "domain-member", "dashboard",
             new PageSkills.Skill(new PageSkills.Namespace("provider", "workbench", null), "dashboard-pages"), null);
         var legacy = app("dashboards", "dashboards", List.of()); legacy.put("pageSkills", List.of(dashboard));
@@ -126,7 +127,7 @@ class PanelApplicationsTest {
 
     @Test void sharesOneDerivedSkillAcrossPanelsWithTheSameMenu() {
         var first = app("app-panel-a", "panels", List.of(use("schedules-a", "menu")));
-        var second = app("app-panel-b", "panels", List.of(new ApplicationPanelUse("use-b", "schedules-b", "panel-q", "/tasks", new ApplicationPanelUse.Access("menu", null), "summary-agent")));
+        var second = app("app-panel-b", "panels", List.of(new ApplicationPanelUse("use-b", "schedules-b", "panel-q", "/tasks", new ApplicationPanelUse.Access("menu", null), "summary-agent", null)));
         doReturn(List.of(first)).when(catalog).all(); doReturn(second).when(catalog).require("app-panel-b");
         catalog.putPanelUses("app-panel-b", body(second.getList("panelUses", ApplicationPanelUse.class), true), user);
         doReturn(List.of(first, second)).when(catalog).all();
@@ -145,7 +146,7 @@ class PanelApplicationsTest {
         var a = app("app-panels-trial-a", "panels", List.of(use("panels-trial-a-tasks", null)));
         var b = app("app-panels-trial-b", "panels", List.of(use("panels-trial-b-tasks", null),
             new ApplicationPanelUse("use-q", "panels-trial-b-summary", "panel-q", "/summary",
-                new ApplicationPanelUse.Access(null, "domain-member"), null)));
+                new ApplicationPanelUse.Access(null, "domain-member"), null, null)));
         var foreign = app("app-foreign", "panels", List.of(use("foreign-page", null)));
         foreign.put("domainId", "foreign");
         doReturn(List.of(a, b, foreign)).when(catalog).all();
@@ -199,6 +200,36 @@ class PanelApplicationsTest {
         doReturn(List.of(app("app-panel-a", "panels", List.of()))).when(catalog).all();
         assertThrows(ResponseStatusException.class, () -> catalog.publishProduct("app-panel-a", metadata(), "release", user));
         verify(db, never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test void navigationCatalogReusesPanelUseAccessAndKeepsItsNamesAndOrder() throws Exception {
+        var named = new ApplicationPanelUse("use-named", "named", "panel-p", "/named",
+            new ApplicationPanelUse.Access(null, "domain-member"), null, Map.of("en", "Tasks", "zh-CN", "任务"));
+        var denied = new ApplicationPanelUse("use-denied", "denied", "panel-q", "/denied",
+            new ApplicationPanelUse.Access("menu", null), null, Map.of("en", "Hidden"));
+        var detail = use("detail", null);
+        var declared = List.of(named, denied, detail);
+        var application = app("app-panel-a", "panels", declared);
+        doReturn(List.of(application)).when(catalog).all();
+        when(access.canEnter(application, user)).thenReturn(true);
+        when(access.panelUses(declared, user)).thenReturn(List.of(named, detail));
+        var identity = mock(IdentityService.class); when(identity.getCurrentUser()).thenReturn(user);
+        var mvc = MockMvcBuilders.standaloneSetup(new ApplicationController(catalog, identity, mock(WorkbenchServiceAuthentication.class))).build();
+
+        mvc.perform(get("/platform/applications").param("purpose", "navigation"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data[0].panelUses.length()").value(2))
+            .andExpect(jsonPath("$.data[0].panelUses[0].names['zh-CN']").value("任务"))
+            .andExpect(jsonPath("$.data[0].panelUses[1].path").value("/detail"))
+            .andExpect(jsonPath("$.data[0].panelUses[1].names").doesNotExist());
+        mvc.perform(get("/platform/applications/app-panel-a/panel-uses"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.panelUses.length()").value(2))
+            .andExpect(jsonPath("$.data.panelUses[0].names.en").value("Tasks"));
+        assertThrows(ResponseStatusException.class, () -> ApplicationPanelUse.validate(List.of(
+            new ApplicationPanelUse("use-invalid", "invalid", "panel-p", "/invalid",
+                new ApplicationPanelUse.Access(null, "domain-member"), null, Map.of("zh-CN", "任务"))
+        )));
     }
 
     @Test void readsPanelUsesThroughTheirOwnMenuAndUseAccessWithoutInventingMappings() {

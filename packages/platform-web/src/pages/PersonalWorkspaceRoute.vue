@@ -16,6 +16,7 @@ import { ManagerFrame, ObjectViewPage, ProductAssetRuntime, useProductText } fro
 import { DashboardCardPicker, DashboardMetricPreview } from "@ontomato/workbench-ui/features/dashboard";
 import type { DashboardListItem } from "@ontomato/contracts/dashboard";
 import { platformSchedulesPath, platformTaskListSchema, type PlatformTask } from "@ontomato/contracts/platform-schedules";
+import { applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import {dropdownBoundaryOptions} from '@ontomato/ontology-manager';
 import { useApplicationCatalog } from "../catalog";
@@ -264,7 +265,7 @@ const selectedApps = computed(() => config.value.applicationIds.map(id => ({ id,
 const selectedAgents=computed(()=>config.value.agentIds.flatMap(id=>enabledAgents.value.find(agent=>agent.id===id)??[]));
 function applicationHref(id: string) {
   const app=catalog.applications.value.find(app=>app.id===id);
-  return router.resolve({ path: app?.kind==='native' ? app.entry.home ?? app.entry.path : `/applications/${encodeURIComponent(id)}` }).href;
+  return router.resolve({ path: app?.kind === "native" && !isPanelApplication(app) ? app.entry.home ?? app.entry.path : applicationRootPath(id) }).href;
 }
 /** Keep data on a wide working surface and activity in a compact supporting column. */
 const columns = computed(() => [[],[]] as WorkspaceSection[][]);

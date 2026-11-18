@@ -52,7 +52,7 @@ export type PlatformIcon = string | import("vue").Component;
 export interface PlatformPanelPage {
   id: string;
   label: string;
-  icon: PlatformIcon;
+  icon?: PlatformIcon;
   /** Count shown at the end of the row; null or absent shows none. */
   count?: number | null;
   /** Shown disabled with this hint (a page the application has not taken over yet). */

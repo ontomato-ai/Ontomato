@@ -93,16 +93,17 @@ export function panelContent(directory) {
  * The two acceptance applications and their use relations. Both are panel applications from creation (Java refuses to
  * turn an existing application into one): A shows P, B shows P and Q. Each relation has its own stable `pageKey`, none of
  * them the dashboard's or the scheduled tasks' own, and every one of them is open to the domain's members, since these
- * are trial applications with no menu of their own. A relation's path is inside its application, so the platform opens
+ * are trial applications open to domain members. Only B has two named menu entries. A relation's path is inside its application, so the platform opens
  * A's panel at `/applications/app-panels-trial-a/tasks` and B's two at `/applications/app-panels-trial-b/tasks` and
  * `/applications/app-panels-trial-b/summary`.
  */
-const use = (id, pageKey, panelId, path) => ({
+const use = (id, pageKey, panelId, path, names) => ({
   id,
   pageKey,
   panelId,
   path,
   access: { kind: "domain-member" },
+  names,
 });
 
 export const applications = [
@@ -117,7 +118,7 @@ export const applications = [
       groups: [],
       permissions: [],
     },
-    panelUses: [use("use-trial-a-tasks", "panels-trial-a-tasks", "panel-schedules-trial", "/tasks")],
+    panelUses: [use("use-trial-a-tasks", "panels-trial-a-tasks", "panel-schedules-trial", "/tasks", { en: "Scheduled tasks", "zh-CN": "定时任务" })],
   },
   {
     applicationId: "app-panels-trial-b",
@@ -131,8 +132,8 @@ export const applications = [
       permissions: [],
     },
     panelUses: [
-      use("use-trial-b-tasks", "panels-trial-b-tasks", "panel-schedules-trial", "/tasks"),
-      use("use-trial-b-summary", "panels-trial-b-summary", "panel-schedules-summary", "/summary"),
+      use("use-trial-b-tasks", "panels-trial-b-tasks", "panel-schedules-trial", "/tasks", { en: "Scheduled tasks", "zh-CN": "定时任务" }),
+      use("use-trial-b-summary", "panels-trial-b-summary", "panel-schedules-summary", "/summary", { en: "Task summary", "zh-CN": "任务摘要" }),
     ],
   },
 ];

@@ -28,6 +28,15 @@ export const applicationCatalogSchema = z.array(z.object({
 }));
 export type CatalogApplication = z.infer<typeof applicationCatalogSchema>[number];
 
+/** The platform entry, which resolves a panel application to its first available use. */
+export function applicationRootPath(applicationId: string): string {
+  return `/applications/${encodeURIComponent(applicationId)}`;
+}
+
+export function isPanelApplication(app: Pick<CatalogApplication, "entry">): boolean {
+  return app.entry.renderer === "panels";
+}
+
 export const accountDeletionPageSchema = z.object({
   events: z.array(z.object({
     sequence, type: z.literal("account.deleted"), userId: z.string().min(1), occurredAt: z.string().datetime(),

@@ -160,7 +160,11 @@ function describeReads(bindings: ReadonlySet<string>): string {
   return [
     "### Read current data",
     ...endpoints,
-    "Append the path to `ONTOMATO_ONTOLOGY_URL`. For a run callback, send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. The host forwards these reads with the run's executor credential. When the runtime directly provides a user credential, use that credential with `tk` or `X-API-Key`.",
+    "Append the endpoint path to `ONTOMATO_ONTOLOGY_URL`. Choose authentication in this order:",
+    "- If `ONTOMATO_TK` is set, send `tk: $ONTOMATO_TK`.",
+    "- Otherwise, if `ONTOMATO_API_KEY` is set, send `X-API-Key: $ONTOMATO_API_KEY`.",
+    "- If neither is set and the base URL ends in `/api/assistant/executions/<runId>/ontology`, send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. The host forwards the read with this run's executor credential.",
+    "- An anonymous direct Java URL needs no authentication header. Never send callback headers to a direct Java URL, even when a callback is present for panel operations.",
   ].join("\n");
 }
 
