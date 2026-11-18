@@ -17,7 +17,6 @@ import type {
 } from "../types";
 import { sessionRunNotices } from "../session-run-notices";
 import { useAgentConversation } from "../useAgentConversation";
-import AgentPicker from "./AgentPicker.vue";
 import ShellColumn from "./ShellColumn.vue";
 import ShellConversation from "./ShellConversation.vue";
 import ShellNavBody from "./ShellNavBody.vue";
@@ -225,9 +224,10 @@ watch(
 );
 
 /**
- * The agent is the composer's choice (DESIGN.md "Applications and shells"): one chooser, on the row the message is
- * written on. The reader chooses only between conversations; a reply still running keeps the agent it started with, so
- * the choice waits until it ends rather than moving the running conversation to another agent.
+ * The agent is chosen at the head of the application's column (the user's place for it, 2026-11-06): one chooser for the
+ * whole conversation, never a second one in its composers. The reader chooses only between conversations; a reply still
+ * running keeps the agent it started with, so the choice waits until it ends rather than moving the running conversation
+ * to another agent.
  */
 function chooseAgent(id: string) {
   if (id === agentId.value) return;
@@ -370,7 +370,7 @@ onMounted(() => {
           @new-conversation="nav.startNew()"
           @select-feature="featureId = $event"
           @feature-action="emit('featureAction', $event)"
-          @select-agent="agentId = $event"
+          @select-agent="chooseAgent"
           @select-session="nav.selectSession($event)"
           @delete-session="(id) => nav.removeSession(id).catch(report)"
           @rename-session="(id, title) => nav.renameSession(id, title).catch(report)"
@@ -424,9 +424,6 @@ onMounted(() => {
         @retry="conversation.open(sessionId)"
         @load-older="conversation.loadOlder"
       >
-        <template #agent>
-          <AgentPicker variant="pill" :agents="nav.agents.value" :agent-id="agentId" :label="labels.agent" @select="chooseAgent" />
-        </template>
         <template v-if="slots['composer-context']" #composer-context>
           <slot name="composer-context" :page-open="pairedPage" :inline="false" :unstarted="unstarted" />
         </template>
@@ -449,9 +446,6 @@ onMounted(() => {
     >
       <template v-if="slots['page-header']" #header>
         <slot name="page-header" :feature-id="featureId" :view="pageView" />
-      </template>
-      <template #composer-agent>
-        <AgentPicker variant="pill" :agents="nav.agents.value" :agent-id="agentId" :label="labels.agent" @select="chooseAgent" />
       </template>
       <template v-if="slots['composer-context']" #composer-context>
         <slot name="composer-context" :page-open="true" :inline="true" :unstarted="unstarted" />

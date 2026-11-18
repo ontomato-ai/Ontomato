@@ -92,8 +92,7 @@ const paneStyle = computed(() => ({
     <div class="pane-body"><slot /></div>
     <div v-if="paired && view === 'full'" ref="dock" class="pane-dock">
       <ShellQuestions />
-      <ShellComposer :busy="busy" :sending="sending" :disabled="disabled" :labels="labels" @send="emit('send', $event)" @stop="emit('stop')">
-        <template v-if="slots['composer-agent']" #agent><slot name="composer-agent" /></template>
+      <ShellComposer expanded :busy="busy" :sending="sending" :disabled="disabled" :labels="labels" @send="emit('send', $event)" @stop="emit('stop')">
         <template v-if="slots['composer-context']" #context><slot name="composer-context" /></template>
       </ShellComposer>
     </div>

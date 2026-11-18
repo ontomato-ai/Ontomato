@@ -9,6 +9,9 @@ import type { ShellLabels, ShellWorkbenchDeclaration } from "../types";
  * Switching the agent is a new conversation: the conversation already open belongs to the agent it was started with and
  * is not handed to another one. A reply still running keeps its agent until it ends, because the run is admitted under
  * that agent; non-run switches start clean, and nothing rebinds a live session.
+ *
+ * The agent is chosen at the head of the application's column, where the user put it (2026-11-06), and only there: the
+ * conversation's composer has no chooser of its own, so nothing else on the screen can change the current agent.
  */
 const labels = { placeholder: "Message", send: "Send", stop: "Stop", working: "Working", switchWhileRunning: "Wait" } as unknown as ShellLabels;
 const workbench: ShellWorkbenchDeclaration = { id: "agents", label: "Agents", features: [] };
@@ -97,21 +100,21 @@ function render(busy = false) {
   return { root, agentId, sessionId, errors, left, busy };
 }
 
-async function choose(root: HTMLElement, id: string) {
-  const picker = root.querySelector(".composer .agent-switch")!;
-  (picker.querySelector(".switch-trigger") as HTMLButtonElement).click();
-  await nextTick();
-  (document.querySelector(`[role="option"] button`) as HTMLButtonElement | null)?.click();
+it("chooses the agent at the column's head, once, and never in the composer", async () => {
+  const { root } = render();
   await settle();
-  return id;
-}
+
+  expect(root.querySelectorAll(".switch-trigger")).toHaveLength(1);
+  expect(root.querySelector(".shell-nav-body .switch-trigger")).not.toBeNull();
+  expect(root.querySelector(".composer .switch-trigger")).toBeNull();
+});
 
 it("switches agent into a new conversation, not by rebinding the open one", async () => {
   const { root, agentId, sessionId, left } = render();
   await settle();
   expect(agentId.value).toBe(assistant);
 
-  const trigger = root.querySelector(".composer .switch-trigger") as HTMLButtonElement;
+  const trigger = root.querySelector(".shell-nav-body .switch-trigger") as HTMLButtonElement;
   trigger.click();
   await new Promise((resolve) => setTimeout(resolve, 20));
   await nextTick();
@@ -135,7 +138,7 @@ it("keeps the running conversation's agent until the reply ends", async () => {
   (root.querySelector(".composer-button") as HTMLButtonElement).click();
   await settle();
 
-  const trigger = root.querySelector(".composer .switch-trigger") as HTMLButtonElement;
+  const trigger = root.querySelector(".shell-nav-body .switch-trigger") as HTMLButtonElement;
   trigger.click();
   await new Promise((resolve) => setTimeout(resolve, 20));
   await nextTick();
