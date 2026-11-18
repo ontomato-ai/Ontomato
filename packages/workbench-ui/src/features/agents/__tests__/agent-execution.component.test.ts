@@ -113,6 +113,14 @@ describe("an agent's execution permission", () => {
     expect(create.mock.calls[0]![0]).not.toHaveProperty("executionUserId");
   });
 
+  it("lets an administrator choose in the list alone, in the reader's words", async () => {
+    // The choice is the list itself: an administrator reads it there once, and every line under it is a sentence.
+    const { field } = await mountEditor(null, true);
+    expect(field.find(".execution-select").exists()).toBe(true);
+    expect(field.find(".execution-read").exists()).toBe(false);
+    expect(field.text()).not.toMatch(/agents\.\w+/);
+  });
+
   it("sends the reference an administrator chose", async () => {
     const { wrapper, update } = await mountEditor(null, true);
     const field = wrapper.findComponent(AgentExecutionField);
