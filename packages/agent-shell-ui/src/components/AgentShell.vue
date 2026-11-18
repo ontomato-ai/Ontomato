@@ -75,8 +75,14 @@ const props = withDefaults(
     bottom?: { label: string; icon: string } | null;
     /** Whether the reader may hold conversations here; without it the column lists only the pages and the foot. */
     conversations?: boolean;
+    /**
+     * The application runs on more than one agent (the agent platform), so its column heads with the agent chooser
+     * whatever the chooser lists at the moment — a page beside the conversation may narrow it to one. An application that
+     * runs on a single agent heads its column with its name.
+     */
+    agentPicker?: boolean;
   }>(),
-  { artifactRenderers: () => [], toolRenderers: () => [], title: "", bottom: null, conversations: true },
+  { artifactRenderers: () => [], toolRenderers: () => [], title: "", bottom: null, conversations: true, agentPicker: false },
 );
 const slots = useSlots();
 const emit = defineEmits<{
@@ -215,12 +221,15 @@ function reopenPage() {
 }
 
 /**
- * The open page's own skill narrows who may take the message: the composer offers the agents that carry it, and the
- * page's registered default when it has one. A page without the declaration leaves the platform's whole agent list.
+ * The open page's own skill narrows who may take the message: the chooser offers the agents that carry it, and the
+ * page's registered default when it has one. A page without the declaration leaves the platform's whole agent list. It
+ * applies from the start too: an address that opens with a page beside the conversation narrows the list the same way as
+ * opening that page later does.
  */
 watch(
   () => currentFeature.value?.pageSkill ?? null,
   (page) => void nav.setPage(page).catch(report),
+  { immediate: true },
 );
 
 /**
@@ -366,6 +375,7 @@ onMounted(() => {
           :feature-id="featureId"
           :bottom="bottom"
           :conversations="conversations"
+          :agent-picker="agentPicker"
           :labels="labels"
           @new-conversation="nav.startNew()"
           @select-feature="featureId = $event"

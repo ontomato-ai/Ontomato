@@ -30,6 +30,11 @@ withDefaults(
     <div class="app-page-body platform-page-gutter">
       <slot />
     </div>
+    <!--
+      What stands at the page's foot under its content (its composer): outside the part that scrolls, so the room under it
+      is its own and not the page body's bottom padding added to it.
+    -->
+    <div v-if="$slots.foot" class="app-page-foot platform-page-gutter"><slot name="foot" /></div>
   </div>
 </template>
 

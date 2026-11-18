@@ -121,6 +121,8 @@
   /* The platform's one composer: a 40px row around 32px controls, in the conversation, a full page and a module. */
   --shell-composer-height: var(--control-height-lg);
   --shell-composer-control: var(--control-height);
+  /* The room under the composer at the foot of what it sits on: the conversation's and a page's own, one value. */
+  --shell-composer-foot: var(--spacing-lg);
   --shell-list-panel: 264px;
   --shell-inspector: 320px;
   --shell-content-max: 960px;

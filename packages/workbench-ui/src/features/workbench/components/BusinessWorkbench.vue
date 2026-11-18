@@ -382,6 +382,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
     :page-links="pageLinks"
     :workbench="workbench"
     :title="workbench.label"
+    agent-picker
     :bottom="bottomEntry"
     :client="client"
     :labels="labels"
