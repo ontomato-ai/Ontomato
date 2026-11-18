@@ -5,9 +5,9 @@ import ShellComposer from "../components/ShellComposer.vue";
 import AgentPicker from "../components/AgentPicker.vue";
 
 /*
- * The platform has one composer, and every host shows it the same way (DESIGN.md "Applications and shells"): on one
- * row, left to right, the agent the message goes to, the input, what the message carries and send. A host that used to
- * put its own controls under the input now puts them on the row, and no host sets a height of its own.
+ * The platform has one composer, and a page without the agent platform's column shows it as one row (DESIGN.md
+ * "Applications and shells"): left to right, the agent the message goes to, the input, what the message carries and send.
+ * No host sets a height of its own; a conversation's composer is the same control opened into two rows.
  */
 const agents: AgentHostAgent[] = [
   { id: "assistant", name: "Assistant", description: "", icon: null, enabled: true },

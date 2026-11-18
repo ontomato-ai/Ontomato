@@ -100,6 +100,16 @@ it("starts from the platform's own agent for a page that registered no default",
   expect(drawn.shown().agentId).toBe("assistant");
 });
 
+it("is the page's one-row composer: the agent on its row, and not opened until the message needs it", async () => {
+  const drawn = draw({ pageAgents: async () => ({ agents: [agent("assistant", "Assistant")], defaultAgentId: "assistant" }) });
+  await new Promise((resolve) => setTimeout(resolve));
+
+  // A page keeps its room: the composer at its foot starts as one row, with the agent chooser on that row.
+  expect(drawn.root.querySelector(".page-ask .composer")).not.toBeNull();
+  expect(drawn.root.querySelector(".page-ask .composer.open")).toBeNull();
+  expect(drawn.root.querySelector(".page-ask .composer .composer-agent .picker")).not.toBeNull();
+});
+
 it("offers every agent to a page without a skill, and keeps the remembered one", async () => {
   const drawn = draw({ agents: async () => [agent("remembered", "Analyst"), agent("other", "Other")], withoutSkill: true });
   await new Promise((resolve) => setTimeout(resolve));
