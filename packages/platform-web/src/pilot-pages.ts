@@ -3,13 +3,15 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import AgentSettingsRoute from "./pages/AgentSettingsRoute.vue";
 import DashboardsPage from "./pages/DashboardsRoute.vue";
 import GovernanceReportRoute from "./pages/GovernanceReportRoute.vue";
+import PanelApplicationRoute from "./pages/PanelApplicationRoute.vue";
 
 /**
  * The pages this assembly mounts beside a conversation (DESIGN.md "Applications and shells"). A page's own address is
  * what the conversation beside it carries (`?page=`), and the resolver turns that address into the props the page's own
  * component takes: the page keeps one component and one address, and the page beside the chat is that page.
  *
- * The pages here are the dashboards, the agents' settings and one governance record's report.
+ * The pages here are the dashboards, the agents' settings, one governance record's report and a panel application's
+ * page, which is shown by the same page the platform shows it with, so one address has one page and one panel instance.
  *
  * A page's own navigation (another board, another agent, the list, a saved draft's handoff) is the callback it is given
  * here. The callback changes the parameter the conversation carries, never the browser's address, so the conversation
@@ -51,6 +53,16 @@ export function pilotPageResolver(setPage: (address: string) => void): PilotPage
             setPage(`/governance/reports/${encodeURIComponent(recordId)}${target.size ? `?${target}` : ""}`);
           },
         },
+      } satisfies PilotPage;
+    }
+    // A panel application's page: `/applications/<application>/<the use relation's path>`, shown by the same component
+    // that shows it full.
+    const panel = /^\/applications\/([^/]+)(\/.*)?$/.exec(path);
+    if (panel) {
+      return {
+        id: "panel-application",
+        component: PanelApplicationRoute,
+        props: { applicationId: decodeURIComponent(panel[1]!), panelPath: (panel[2] ?? "").replace(/^\//, "") },
       } satisfies PilotPage;
     }
     if (path !== platformRoutes.dashboards.path) return null;

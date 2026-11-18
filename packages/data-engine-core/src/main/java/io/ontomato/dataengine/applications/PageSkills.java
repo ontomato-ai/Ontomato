@@ -13,8 +13,8 @@ public final class PageSkills {
     public record Skill(Namespace namespace, String name) {}
     public record Default(String pageKey, String agentKey) {}
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record Mapping(String permissionCode, String access, Skill skill, List<Default> defaults) {
-        public String locator() { return permissionCode != null ? "permission:" + permissionCode : "access:" + access; }
+    public record Mapping(String permissionCode, String access, String pageKey, Skill skill, List<Default> defaults) {
+        public String locator() { return permissionCode != null ? "permission:" + permissionCode : "access:" + access + ":" + pageKey; }
     }
     public record Projection(List<Mapping> pageSkills, List<Skill> registeredSkills) {}
 
@@ -25,6 +25,8 @@ public final class PageSkills {
             if ((mapping.permissionCode() == null) == (mapping.access() == null)
                 || mapping.permissionCode() != null && mapping.permissionCode().isBlank()
                 || mapping.access() != null && !mapping.access().equals("domain-member")
+                || mapping.access() != null && (mapping.pageKey() == null || mapping.pageKey().isBlank())
+                || mapping.permissionCode() != null && mapping.pageKey() != null
                 || !locators.add(mapping.locator())) throw ApplicationCatalog.bad("Invalid or duplicate page skill locator");
             var skill = mapping.skill();
             if (skill == null || skill.namespace() == null || skill.name() == null

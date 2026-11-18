@@ -1,3 +1,4 @@
+import {assertLegacyProductWrite} from './panel-boundary';
 import {productAssetInputSchema} from '@ontomato/contracts/product-assets';
 import {getProduct,listProducts,saveProduct,lockProducts,type ProductOwner} from './store';
 import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres';
@@ -11,6 +12,7 @@ import {createHash} from 'node:crypto';
 
 /** Explicit migration preserves the old placement identity and delegates content to open platform objects. */
 export async function migratePlatformProjection(owner:ProductOwner,credentials:AssistantCredentials,id:string,revision:number,profileId?:string){
+  await assertLegacyProductWrite(owner,credentials,{id});
   const source=await getProduct(owner,id);
   if(!source.editable)throw new HttpError(403,'Product edit permission required','PRODUCT_FORBIDDEN');
   if(source.revision!==revision)throw new HttpError(409,'Asset changed; reload before migrating','PRODUCT_CONFLICT');

@@ -3,10 +3,8 @@ import {storedChartFileSchema} from './chart-data';
 import {viewBindingSchema,objectViewDocumentSchema} from './object-views';
 
 const id=z.string().min(1).max(200);
-export const ontologyParameterTypeSchema=z.discriminatedUnion('kind',[
-  z.object({kind:z.literal('object'),objectType:id}).strict(),
-  z.object({kind:z.literal('scalar'),type:z.enum(['string','number','boolean','date'])}).strict(),
-]);
+/** The typed value vocabulary lives with the panel model; projections and pages take their parameters in it too. */
+export {ontologyParameterTypeSchema} from './panel-manifest';
 const parameters=z.record(id,viewBindingSchema);
 type DisplayFormat='number'|'text'|'date'|'percent'|'currency';
 const format=z.object({kind:z.enum(['number','text','date','percent','currency']),decimals:z.number().int().min(0).max(12).optional(),locale:z.string().max(30).optional(),unit:z.string().max(30).optional()}).strict();

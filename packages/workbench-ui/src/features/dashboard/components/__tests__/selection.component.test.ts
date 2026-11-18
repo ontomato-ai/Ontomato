@@ -5,7 +5,7 @@ import { createMemoryHistory, createRouter, type Router } from "vue-router";
 import ElementPlus from "element-plus";
 import DashboardPanel from "../DashboardPanel.vue";
 import DashboardHome from "../DashboardHome.vue";
-import { clearDashboardSelection, dashboardSelection } from "../../selection";
+import { dashboardSelectionFrom } from "../../selection";
 import { workbenchI18n } from "../../../../i18n";
 
 
@@ -83,34 +83,22 @@ async function open() {
 }
 
 afterEach(() => {
-  clearDashboardSelection();
   api.layouts = [];
   api.renamed = [];
   document.body.innerHTML = "";
 });
 
-describe("what the dashboard reports as selected", () => {
-  it("reports the board alone once it is drawn", async () => {
-    const wrapper = await open();
-    expect(dashboardSelection.value).toEqual([{ kind: "dashboard", id: "d1", label: "Sales" }]);
-    wrapper.unmount();
-  });
+const selectionOf = (query: Record<string, string>) => dashboardSelectionFrom(query);
 
-  it("reports the card the reader chose beside the board, and one card at a time", async () => {
+describe("what the dashboard reports as selected", () => {
+  it("names the board, and the card chosen beside it, each with its id", async () => {
     const wrapper = await open();
     await wrapper.find(".chart-container").trigger("click");
     await flushPromises();
-    expect(dashboardSelection.value).toEqual([
-      { kind: "dashboard", id: "d1", label: "Sales" },
-      { kind: "dashboard-card-chart", id: "c1", label: "Revenue by region" },
-    ]);
-    expect(wrapper.find(".chart-container").classes()).toContain("chart-container--selected");
-
     await wrapper.find(".metric-container").trigger("click");
     await flushPromises();
-    expect(dashboardSelection.value.at(-1)).toEqual({ kind: "dashboard-card-metric", id: "n1", label: "Total revenue" });
     expect(wrapper.find(".chart-container").classes()).not.toContain("chart-container--selected");
-
+    expect(wrapper.find(".metric-container").classes()).toContain("metric-container--selected");
     // Choosing a card is not a change: nothing was saved.
     expect(api.layouts).toEqual([]);
     expect(api.renamed).toEqual([]);
@@ -121,21 +109,25 @@ describe("what the dashboard reports as selected", () => {
     const wrapper = await open();
     await wrapper.find(".chart-container .ai-chart-tool-btn[title='" + workbenchI18n().global.t("dashboard.zoomIn") + "']").trigger("click");
     await flushPromises();
-    expect(dashboardSelection.value.at(-1)).toMatchObject({ kind: "dashboard-card-chart", id: "c1" });
+    expect(wrapper.find(".chart-container").classes()).toContain("chart-container--selected");
     wrapper.unmount();
   });
 
-  it("writes the chosen card into the page's own address, which is the address the footer's composer sends", async () => {
+  it("writes the chosen card and its name into the page's own address, which is the address the composer sends", async () => {
     router = await openRouter({ dashboardId: "d1" });
     const wrapper = mount(DashboardHome, { global: { plugins: [workbenchI18n(), createPinia(), router, ElementPlus], stubs: { EChart: true, transition: false } } });
     await flushPromises();
-    expect(router.currentRoute.value.query).toEqual({ dashboardId: "d1" });
+    // The board names itself as it opens, so the page it is sent from is a page an agent can find.
+    expect(router.currentRoute.value.query).toEqual({ dashboardId: "d1", dashboardName: "Sales" });
 
     await wrapper.find(".chart-container").trigger("click");
     await flushPromises();
-    // The board and the card the question is about: read again beside the conversation, it opens the same card chosen.
-    expect(router.currentRoute.value.query).toEqual({ dashboardId: "d1", cardId: "c1" });
-    expect(dashboardSelection.value.at(-1)).toMatchObject({ kind: "dashboard-card-chart", id: "c1" });
+    expect(router.currentRoute.value.query).toEqual({ dashboardId: "d1", dashboardName: "Sales", cardId: "c1", cardName: "Revenue by region" });
+    // What the message then says: both objects, each with the name a reader sees and the id the skill reads.
+    expect(selectionOf(router.currentRoute.value.query as Record<string, string>)).toEqual([
+      { kind: "dashboard", id: "d1", label: "Sales (d1)" },
+      { kind: "dashboard-card", id: "c1", label: "Revenue by region (c1)" },
+    ]);
     wrapper.unmount();
   });
 
@@ -144,23 +136,26 @@ describe("what the dashboard reports as selected", () => {
     const wrapper = mount(DashboardHome, { global: { plugins: [workbenchI18n(), createPinia(), router, ElementPlus], stubs: { EChart: true, transition: false } } });
     await flushPromises();
     expect(wrapper.find(".chart-container").classes()).toContain("chart-container--selected");
-    expect(dashboardSelection.value.at(-1)).toMatchObject({ kind: "dashboard-card-chart", id: "c1" });
     wrapper.unmount();
   });
 
-  it("restores the chosen card from the page parameter beside a conversation, and keeps the choice there", async () => {
+  it("names the card from the page parameter beside a conversation, and moves it there", async () => {
     const page = (query: Record<string, string>) => `/dashboards?${new URLSearchParams(query)}`;
-    router = await openRouter({ page: page({ dashboardId: "d1", cardId: "n1" }) });
+    router = await openRouter({ page: page({ dashboardId: "d1", dashboardName: "Sales", cardId: "c1", cardName: "Revenue by region" }) });
     const wrapper = mount(DashboardHome, { global: { plugins: [workbenchI18n(), createPinia(), router, ElementPlus], stubs: { EChart: true, transition: false } } });
     await flushPromises();
-    expect(wrapper.find(".metric-container").classes()).toContain("metric-container--selected");
-    expect(dashboardSelection.value.at(-1)).toEqual({ kind: "dashboard-card-metric", id: "n1", label: "Total revenue" });
+    expect(wrapper.find(".chart-container").classes()).toContain("chart-container--selected");
+    const address = Object.fromEntries(new URLSearchParams((router.currentRoute.value.query.page as string).split("?")[1] ?? ""));
+    expect(selectionOf(address)).toEqual([
+      { kind: "dashboard", id: "d1", label: "Sales (d1)" },
+      { kind: "dashboard-card", id: "c1", label: "Revenue by region (c1)" },
+    ]);
 
     // Another card moves the conversation's page parameter, not the browser's address.
-    await wrapper.find(".chart-container").trigger("click");
+    await wrapper.find(".metric-container").trigger("click");
     await flushPromises();
     expect(router.currentRoute.value.path).toBe("/");
-    expect(router.currentRoute.value.query.page).toBe(page({ dashboardId: "d1", cardId: "c1" }));
+    expect(router.currentRoute.value.query.page).toBe(page({ dashboardId: "d1", dashboardName: "Sales", cardId: "n1", cardName: "Total revenue" }));
     wrapper.unmount();
   });
 
@@ -170,15 +165,14 @@ describe("what the dashboard reports as selected", () => {
     await flushPromises();
     expect(wrapper.find(".metric-container").classes()).toContain("metric-container--selected");
     expect(wrapper.find(".chart-container").classes()).not.toContain("chart-container--selected");
-    expect(dashboardSelection.value.at(-1)).toEqual({ kind: "dashboard-card-metric", id: "n1", label: "Total revenue" });
     wrapper.unmount();
   });
 
-  it("reports nothing once the page is gone", async () => {
-    const wrapper = await open();
-    await wrapper.find(".chart-container").trigger("click");
-    await flushPromises();
-    wrapper.unmount();
-    expect(dashboardSelection.value).toEqual([]);
+  it("reads as its id alone when the address names no name", () => {
+    expect(selectionOf({ dashboardId: "d1", cardId: "c1" })).toEqual([
+      { kind: "dashboard", id: "d1", label: "d1" },
+      { kind: "dashboard-card", id: "c1", label: "c1" },
+    ]);
+    expect(selectionOf({})).toEqual([]);
   });
 });

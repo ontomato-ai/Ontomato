@@ -109,11 +109,13 @@ it("uses the registered default only if it remains an enabled and usable page ca
   }
 });
 
-it("uses the pageKey only to select a local default and supports the domain-member locator", async () => {
-  current = { pageSkills: [{ access: "domain-member", skill: dashboard, defaults: [{ pageKey: "dashboard", agentKey: "custom" }] }], registeredSkills: [dashboard] };
+it("locates each domain-member page by pageKey and keeps dashboard's own skill and default", async () => {
+  current = { pageSkills: [{ access: "domain-member", pageKey: "dashboard", skill: dashboard, defaults: [{ pageKey: "dashboard", agentKey: "custom" }] },
+    {access:"domain-member",pageKey:"schedules",skill:page,defaults:[{pageKey:"schedules",agentKey:ids[0]}]}], registeredSkills: [dashboard,page] };
   mocks.agents.mockResolvedValue([definition(0, "regular", [report]), definition(1, "custom", [dashboard])]);
   expect((await listAssistantAgents(owner, credentials, { pageKey: "dashboard", access: "domain-member" })).defaultAgentId).toBe(ids[1]);
-  expect((await listAssistantAgents(owner, credentials, { pageKey: "agent-settings", access: "domain-member" })).defaultAgentId).toBe(ids[0]);
+  expect((await listAssistantAgents(owner, credentials, { pageKey: "schedules", access: "domain-member" })).defaultAgentId).toBe(ids[0]);
+  await expect(listAssistantAgents(owner, credentials, { pageKey: "agent-settings", access: "domain-member" })).rejects.toMatchObject({code:"PAGE_SKILL_FORBIDDEN"});
   expect(assistantAgentsQuerySchema.safeParse({ pageKey: "dashboard" }).success).toBe(false);
   expect(assistantAgentsQuerySchema.safeParse({ ...query, access: "domain-member" }).success).toBe(false);
 });

@@ -1,11 +1,37 @@
 import {afterEach,expect,it,vi} from 'vitest';
-const mocks=vi.hoisted(()=>({execute:vi.fn(),trigger:vi.fn(),query:vi.fn<[string,...unknown[]],Promise<{rows:Record<string,unknown>[]}>>(async()=>({rows:[]}))}));
+const mocks=vi.hoisted(()=>({execute:vi.fn(),trigger:vi.fn(),grant:vi.fn(),query:vi.fn<[string,...unknown[]],Promise<{rows:Record<string,unknown>[]}>>(async()=>({rows:[]}))}));
 vi.mock('../../../infrastructure/postgres',()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
 vi.mock('../definitions',()=>({executeDefinition:mocks.execute}));
 vi.mock('../triggers',()=>({readDefinitionTrigger:mocks.trigger}));
-import {subscribeProduct,pollProductSubscription,unsubscribeProduct,resumeProductSubscription,deleteProductSubscription} from '../subscriptions';
+vi.mock('../grants',()=>({requireProductGrant:mocks.grant}));
+import {subscribeProduct,pollProductSubscription,unsubscribeProduct,resumeProductSubscription,deleteProductSubscription,notifyProductDefinitionChanged} from '../subscriptions';
 const owner={domainId:'domain',userId:'reader'};
 afterEach(()=>{vi.useRealTimers();vi.resetAllMocks();});
+it('delivers identity-only current-definition notifications through product queues without business evaluation',async()=>{
+  vi.useFakeTimers();
+  mocks.query.mockImplementation(async(sql:string)=>({rows:sql.startsWith('SELECT id,domain_id')?[{id:'p'}]:[]}));
+  const subscription=await subscribeProduct(owner,{token:'current'},{kind:'product-definition',target:{kind:'panel',id:'p'}});
+  await notifyProductDefinitionChanged({kind:'definition-changed',domainId:'other',target:{kind:'panel',id:'p'}});
+  expect(pollProductSubscription(owner,subscription.id).events).toEqual([]);
+  const event={kind:'definition-changed',domainId:owner.domainId,target:{kind:'panel',id:'p'}} as const;
+  await notifyProductDefinitionChanged(event);
+  expect((await resumeProductSubscription(owner,subscription.id,{token:'new'})).events).toEqual([event]);
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect(mocks.execute).not.toHaveBeenCalled();expect(mocks.trigger).not.toHaveBeenCalled();
+  mocks.grant.mockRejectedValue(new Error('Product use revoked'));
+  await expect(resumeProductSubscription(owner,subscription.id,{token:'revoked'})).rejects.toThrow('Product use revoked');
+  await vi.advanceTimersByTimeAsync(10_000);
+});
+it('restores persisted product-definition events without interpreting them as business Trigger state',async()=>{
+  vi.useFakeTimers();
+  const event={kind:'definition-changed',domainId:owner.domainId,target:{kind:'projection',id:'x'}} as const;
+  mocks.query.mockImplementation(async(sql:string)=>({rows:sql.startsWith('SELECT target')?
+    [{target:{kind:'product-definition',target:{kind:'projection',id:'x'}},state:{members:[],events:[event]},expires_at:new Date(Date.now()+30_000)}]
+    :sql.startsWith('SELECT id,domain_id')?[{id:'x'}]:[]}));
+  expect((await resumeProductSubscription(owner,'restored-definition',{token:'current'})).events).toEqual([event]);
+  expect(mocks.execute).not.toHaveBeenCalled();expect(mocks.trigger).not.toHaveBeenCalled();
+  unsubscribeProduct(owner,'restored-definition');await vi.advanceTimersByTimeAsync(10_000);
+});
 it('evaluates on the server and delivers only fired changes to the owning principal',async()=>{
   vi.useFakeTimers();
   mocks.execute.mockResolvedValue({revision:1,rows:[{id:'one'}]});

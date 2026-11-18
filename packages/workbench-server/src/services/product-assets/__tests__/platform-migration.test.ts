@@ -62,3 +62,4 @@ it('keeps Agent shortcuts as explicit published Profile references when migratin
   expect(root[1]).toBe('apps');expect(root[2].document).toMatchObject({kind:'page',children:expect.arrayContaining([{assetId:'profile',column:'main'}])});
   expect(mocks.active).toHaveBeenCalledWith(owner,'profile',{});
 });
+vi.mock('../panel-boundary',()=>({assertLegacyProductWrite:vi.fn()}));

@@ -255,6 +255,9 @@ importers:
       '@ontomato/ontology-manager':
         specifier: workspace:*
         version: link:../ontology-manager
+      '@ontomato/platform-schedules':
+        specifier: workspace:*
+        version: link:../platform-schedules
       '@ontomato/workbench-ui':
         specifier: workspace:*
         version: link:../workbench-ui

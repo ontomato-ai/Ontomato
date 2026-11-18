@@ -15,6 +15,9 @@ import {withProductGrants,currentProductGrants,registerProductResource,productGr
 import {assistantStore} from '../assistant/store';
 import {ontologyRegistration,synchronizeProductOntology} from './ontology';
 import {nativeAgentAsset,updateNativeAgent} from './platform-assets';
+import {lockProducts} from '../../infrastructure/product-write-lock';
+import {assertLegacyProductWrite,assertLegacyProductIdentity} from './panel-boundary';
+export {lockProducts} from '../../infrastructure/product-write-lock';
 
 export interface ProductOwner { domainId: string; userId: string }
 const columns = `id, owner_id AS "ownerId", name, description, visibility, document, revision, created_at AS "createdAt", updated_at AS "updatedAt"`;
@@ -100,10 +103,8 @@ async function getAuthorizedProduct(owner:ProductOwner,id:string,client:Pick<Poo
   if (!result.rows[0]) throw new HttpError(404, "Product asset unavailable", "PRODUCT_UNAVAILABLE");
   return asset(result.rows[0], owner);
 }
-export async function lockProducts(client: PoolClient, owner: ProductOwner) {
-  await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [`product-assets:${owner.domainId}`]);
-}
 async function writeProduct(client: PoolClient, owner: ProductOwner, id: string, input: ProductAssetInput, revision: number, migrating=false,_credentials:AssistantCredentials={}) {
+  await assertLegacyProductIdentity(owner,id,client);
   const existing = await client.query(`SELECT owner_id,revision,document,visibility FROM ${t("product_assets")} WHERE domain_id=$1 AND id=$2`, [owner.domainId, id]);
   const row = existing.rows[0];
   if (row && !currentProductGrants(owner).edit.has(id)) throw new HttpError(403, "Product edit Grant required", "PRODUCT_FORBIDDEN");
@@ -144,8 +145,13 @@ async function writeProduct(client: PoolClient, owner: ProductOwner, id: string,
   if(migrating&&saved.document.kind==='object-projection'&&saved.document.layout)await client.query(`INSERT INTO ${t('product_object_view_heads')} (domain_id,asset_id,revision) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`,[owner.domainId,id,saved.revision]);
   return saved;
 }
-export async function saveProduct(owner: ProductOwner, id: string, input: ProductAssetInput, revision: number, credentials:AssistantCredentials,migrating=false) {
-  return withProductGrants(owner,async()=>{const saved=await saveAuthorizedProduct(owner,id,input,revision,credentials,migrating);if(ontologyRegistration(saved))await synchronizeProductOntology(owner);return saved;});
+export async function saveProduct(owner: ProductOwner, id: string, input: Omit<ProductAssetInput,'visibility'> & {visibility?:ProductAssetInput['visibility']}, revision: number, credentials:AssistantCredentials,migrating=false) {
+  await assertLegacyProductWrite(owner,credentials,{id,document:input.document});
+  return withProductGrants(owner,async()=>{
+    const visibility=input.visibility??(revision>0?(await getProduct(owner,id)).visibility:'private');
+    const saved=await saveAuthorizedProduct(owner,id,{...input,visibility},revision,credentials,migrating);
+    if(ontologyRegistration(saved))await synchronizeProductOntology(owner);return saved;
+  });
 }
 async function saveAuthorizedProduct(owner:ProductOwner,id:string,input:ProductAssetInput,revision:number,credentials:AssistantCredentials,migrating=false){
   const parsed=productAssetInputSchema.parse(input);
@@ -204,7 +210,8 @@ export async function validateChildren(owner:ProductOwner,input:ProductAssetInpu
     await validateChildren(owner,child,credentials,client,seen);
   }
 }
-export async function deleteProduct(owner: ProductOwner, id: string, revision: number) {
+export async function deleteProduct(owner: ProductOwner, id: string, revision: number, credentials:AssistantCredentials) {
+  await assertLegacyProductWrite(owner,credentials,{id});
   return withProductGrants(owner,async()=>{await deleteAuthorizedProduct(owner,id,revision);await synchronizeProductOntology(owner);});
 }
 async function deleteAuthorizedProduct(owner:ProductOwner,id:string,revision:number){

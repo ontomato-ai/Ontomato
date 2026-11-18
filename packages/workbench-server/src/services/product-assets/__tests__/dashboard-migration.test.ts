@@ -26,3 +26,4 @@ it('does not silently discard presentation features during migration',async()=>{
   await expect(migrateDashboardPage(owner,{},'board',2)).rejects.toMatchObject({code:'PRODUCT_PRESENTATION_MIGRATION_REQUIRED'});
   expect(mocks.save).not.toHaveBeenCalled();
 });
+vi.mock('../panel-boundary',()=>({assertLegacyProductWrite:vi.fn()}));

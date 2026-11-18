@@ -45,12 +45,13 @@ function position() {
   const below = window.innerHeight - trigger.bottom - 4 - 16;
   const above = trigger.top - 4 - 16;
   const opensUp = below < 160 && above > below;
-  const room = Math.max(80, opensUp ? above : below);
+  // Opened upwards the list hangs from the trigger's top edge: its bottom stays there however few items it has.
   popupStyle.value = {
     left: `${Math.max(16, Math.min(trigger.left, window.innerWidth - width - 16))}px`,
-    top: `${opensUp ? Math.max(16, trigger.top - 4 - room) : trigger.bottom + 4}px`,
+    ...(opensUp
+      ? { bottom: `${window.innerHeight - trigger.top + 4}px`, maxHeight: `${Math.max(80, above)}px` }
+      : { top: `${trigger.bottom + 4}px`, maxHeight: `${Math.max(80, below)}px` }),
     width: `${width}px`,
-    maxHeight: `${room}px`,
   };
 }
 async function show() {
@@ -177,6 +178,8 @@ onBeforeUnmount(close);
 }
 .agent-menu {
   position: fixed;
+  /* `[popover]` arrives with `inset: 0`; cleared, the one edge placed against the trigger decides where the list sits. */
+  inset: auto;
   margin: 0;
   padding: var(--spacing-xs);
   overflow-y: auto;

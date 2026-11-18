@@ -32,24 +32,21 @@ const hasText = computed(() => text.value.trim().length > 0);
 const canSend = computed(() => !props.sending && !props.disabled && hasText.value);
 
 /**
- * The composer is as tall as what it shows: the message, or while it is empty its placeholder, so a long hint is read in
- * full. It is measured again whenever the text, the placeholder or its width changes.
+ * The composer is as tall as the message: one line while it is empty, however long its placeholder, and taller as the
+ * reader writes. It is measured again whenever the text or its width changes. The placeholder itself is a single line,
+ * cut with an ellipsis, so a narrow row keeps the agent choice and send on their row instead of widening them away.
  */
 function resize() {
   const el = input.value!;
   el.style.height = "auto";
   el.style.height = `${Math.min(textHeight(el), 220)}px`;
 }
-/** The height of the textarea's text; an empty one is measured with its placeholder written in. */
+/** The height of the textarea's text: one line while it is empty, however long the placeholder is. */
 function textHeight(el: HTMLTextAreaElement) {
-  if (el.value) return el.scrollHeight;
-  el.value = el.placeholder;
-  const height = el.scrollHeight;
-  el.value = "";
-  return height;
+  return el.scrollHeight;
 }
 // After the textarea shows the change; a composer closed meanwhile (sent from the full page) is not measured.
-watch([text, () => props.labels.placeholder], resize, { flush: "post" });
+watch(text, resize, { flush: "post" });
 const sizer = new ResizeObserver(() => resize());
 onMounted(() => {
   resize();
@@ -122,6 +119,7 @@ defineExpose({ focus: () => input.value?.focus() });
  * embedded chats keep it flat.
  */
 .composer {
+  container: shell-composer / inline-size;
   --composer-control: var(--control-height);
   --composer-height: var(--control-height-lg);
   --composer-inset: calc((var(--composer-height) - var(--composer-control) - 2px) / 2);
@@ -153,6 +151,19 @@ defineExpose({ focus: () => input.value?.focus() });
   gap: var(--spacing-xs);
   min-width: 0;
 }
+/*
+ * Narrow, the agent choice gives way before the input does: the name is cut to an ellipsis and, below that, to the
+ * avatar and chevron, so the row stays one row and the message keeps the width.
+ */
+.composer-agent {
+  flex-shrink: 1;
+  max-width: 40%;
+}
+@container shell-composer (max-width: 300px) {
+  .composer-agent .switch-name {
+    display: none;
+  }
+}
 /* The message takes the rest of the row; the controls beside it keep their size however narrow the width gets. */
 textarea {
   flex: 1;
@@ -172,6 +183,10 @@ textarea {
 }
 textarea::placeholder {
   color: var(--el-text-color-placeholder);
+  /* One line, cut short: a long hint never makes the row taller than a message. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* What the message carries, beside the input on its last line; cut short rather than pushing the input away. */
 .composer-context {

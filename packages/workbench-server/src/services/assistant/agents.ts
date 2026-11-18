@@ -26,11 +26,11 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
     if (!("pageKey" in query)) return assistantAgentListSchema.parse({ agents });
     const mapping = projection.pageSkills.find(mapping => "permissionCode" in query
       ? "permissionCode" in mapping && mapping.permissionCode === query.permissionCode
-      : "access" in mapping && mapping.access === query.access);
+      : "access" in mapping && mapping.access === query.access && mapping.pageKey === query.pageKey);
     if (!mapping) throw new HttpError(403, "Page skill is unavailable", "PAGE_SKILL_FORBIDDEN");
     const candidates = agents.filter(agent => agent.enabled && agent.effectiveSkills.some(skill => runtimeSkillKey(skill) === runtimeSkillKey(mapping.skill)));
     const defaultKey = mapping.defaults?.find(entry => entry.pageKey === query.pageKey)?.agentKey ?? "regular";
-    const selected = definitions.find(agent => agent.kind === defaultKey);
+    const selected = definitions.find(agent => agent.id === defaultKey || agent.kind === defaultKey);
     if (!selected || !candidates.some(agent => agent.id === selected.id))
       throw new HttpError(409, "The page's default agent is unavailable", "PAGE_DEFAULT_AGENT_UNAVAILABLE");
     return assistantAgentListSchema.parse({ agents: candidates, defaultAgentId: selected.id });

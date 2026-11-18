@@ -46,7 +46,11 @@ export interface AppPageSelection {
   name: string;
 }
 
-/** What the reader looks at in an app: the app's own page and the object selected on it. */
+/**
+ * What the reader looks at in an app frame: the app's own name for the page and the object selected on it. This is the
+ * shape a published app sends over the bridge, and the SDK's `setPageContext` takes it as it stands; the shell reads the
+ * frame's address and completes it into the one `PageContext`, at that single boundary.
+ */
 export interface AppPageContext {
   /** The app's own name for the page in view, as the reader sees it, e.g. `Overdue orders`. */
   page: string;
@@ -80,9 +84,12 @@ export interface AppHost {
   onAuthFailure(status: 401 | 402): void;
   /**
    * What the reader of one app frame looks at now. `source` is the calling page's own `window`, the same object as its
-   * frame's `contentWindow` in the shell, so a shell page tells its frames apart by it. A shell page that shows the app
-   * beside its agent (the app builder's preview) puts the context into the messages the reader sends; elsewhere the call
-   * has no effect.
+   * frame's `contentWindow` in the shell, so a shell page tells its frames apart by it. The shape is the app's own (its
+   * name for the page and the object selected on it), unchanged since the first published SDK versions: the shell adds
+   * the frame's address where it turns this into a message's page context.
+   *
+   * A shell page that shows the app beside its agent (the app builder's preview) puts the context into the messages the
+   * reader sends; elsewhere the call has no effect.
    */
   setPageContext(source: object, context: AppPageContext): void;
   /**

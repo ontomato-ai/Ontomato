@@ -196,7 +196,6 @@ import CardParameterDialog from "./CardParameterDialog.vue";
 import MetricSourceDialog from "./MetricSourceDialog.vue";
 import { cardError, cardErrorHeadline } from "./utils/metricCard";
 import { applyDraft } from "../draft";
-import { clearDashboardSelection, setDashboardSelection } from "../selection";
 
 import {
   normalizeId,
@@ -886,13 +885,8 @@ async function handleMetricCommand(cmd, m) {
 
 /*
  * The card the reader points at is what a message sent from beside the page asks about: choosing one card chooses it
- * alone, the board it sits in rides along, and the page reports both to the platform. The board is reported on its own
- * as soon as it is drawn, so a question about the board needs no card chosen first.
- *
- * The choice also belongs to the page's address, because the page is read again somewhere else: the composer at the
- * foot of the board's own application carries the address into the conversation, where the board is mounted beside it
- * and the choice has to be the same one. The page therefore takes the chosen card from its address and reports each
- * choice back to it; this component only follows.
+ * alone. The choice belongs to the page's address — the page is read again somewhere else, and the message travels with
+ * the address — so this component takes the chosen card from its own props and reports each choice back to the page.
  */
 const chosen = ref("");
 
@@ -902,42 +896,29 @@ function isSelected(cardId, kind) {
 
 function selectCard(card) {
   chosen.value = `${card.kind}:${card.id}`;
-  reportSelection();
-  emit("select-card", { id: card.id, kind: card.kind });
+  emit("select-card", { id: card.id, name: shownName(card.id) });
   // A card chosen in a narrow pane is shown, not only marked: the reader asked for this one.
   nextTick(() => document.querySelector(`[data-card-id="${card.id}"]`)?.scrollIntoView?.({ block: "nearest", behavior: "smooth" }));
 }
 
-/** The board and, when one is chosen, that card, as the platform reads them for a message sent from beside the page. */
-function reportSelection() {
-  const id = normalizeId(props.dashboardId);
-  if (!id) return;
-  const kind = chosen.value.startsWith("chart:") ? "chart" : "metric";
-  const cardId = chosen.value.slice(kind.length + 1);
-  // The card's name is the one shown: a draft's name while the draft is open, the saved one otherwise.
+/** The card's name as the board shows it: a draft's name while the draft is open, the saved one otherwise. */
+function shownName(cardId) {
   const card = [...(chartGroups.value || []).flatMap((group) => [...group.charts, ...group.metrics])].find((item) => item.id === cardId);
-  setDashboardSelection({ id, name: boardName.value || id }, card ? { id: card.id, name: (draftChange(card.id) || {}).name || card.name || card.title || card.id, kind } : undefined);
+  return (draftChange(cardId) || {}).name || card?.name || card?.title || String(cardId);
 }
 
 /** A board is a fresh page: the card chosen on the last one is not this one's. */
 watch(() => normalizeId(props.dashboardId), () => {
   chosen.value = "";
-  reportSelection();
 }, { immediate: true });
-watch(chartGroups, () => reportSelection());
 
-/** The address says which card is chosen, and a board read again restores that choice once its cards are drawn. */
+/** The address says which card is chosen; a board read again restores that choice once its cards are drawn. */
 watch([() => props.cardId, chartGroups], ([cardId]) => {
-  const cards = [...(chartGroups.value || []).flatMap((group) => [...group.charts, ...group.metrics])];
-  const card = cards.find((item) => item.id === cardId);
+  const card = [...(chartGroups.value || []).flatMap((group) => [...group.charts, ...group.metrics])].find((item) => item.id === cardId);
   if (!card) return;
   const kind = (chartGroups.value || []).some((group) => group.charts.some((item) => item.id === card.id)) ? "chart" : "metric";
-  if (chosen.value === `${kind}:${card.id}`) return;
   chosen.value = `${kind}:${card.id}`;
-  reportSelection();
 });
-
-onBeforeUnmount(() => clearDashboardSelection());
 
 /* ======================== layout change ======================== */
 

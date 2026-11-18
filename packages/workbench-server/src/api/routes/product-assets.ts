@@ -33,6 +33,7 @@ import {migrateDashboardPage} from '../../services/product-assets/dashboard-migr
 import {synchronizePlatformAssets,ensurePlatformAssets,nativeAgentAsset,nativeApplicationAsset} from '../../services/product-assets/platform-assets';
 import {assertAppBuilderAccess} from '../../services/app-builder/access';
 import {requirePermission} from '../../identity/installed';
+import {assertLegacyProductWrite} from '../../services/product-assets/panel-boundary';
 
 const router: ReturnType<typeof Router> = Router();
 router.post('/synchronize-platform',requirePermission(['system-config']),wrap(async(req,res)=>{const c=context(req);await assertAppBuilderAccess(c.credentials);res.json(await synchronizePlatformAssets(c.owner,c.credentials));}));
@@ -125,12 +126,11 @@ router.get('/:id/upgrade',wrap(async(req,res)=>{
 router.post('/:id/rollback',wrap(async(req,res)=>{const c=context(req);const {releaseId}=z.object({releaseId:z.string().uuid()}).strict().parse(req.body);res.json(await rollbackProductBundle(c.owner,String(req.params.id),releaseId,c.credentials));}));
 router.post('/:id/object-context',wrap(async(req,res)=>{const c=context(req);const selection=z.object({className:z.string().min(1),primaryKey:z.string().min(1)}).strict().parse(req.body);res.json(await renderAgentObjectContext(c.owner,c.credentials,String(req.params.id),selection));}));
 router.post('/:id/state',wrap(async(req,res)=>{const asset=await getProduct(context(req).owner,String(req.params.id));if(asset.document.kind!=='page')throw new HttpError(400,'Expected page','INVALID_REQUEST');const values=z.record(z.unknown()).parse(req.body);try{res.json({state:validatePageState(asset.document.params??{},values)});}catch(error){throw new HttpError(400,error instanceof Error?error.message:'Invalid page state','INVALID_PAGE_STATE');}}));
-router.put('/:id/overlay',wrap(async(req,res)=>{const input=z.object({revision:z.number().int().nonnegative(),workspace:personalWorkspaceSchema}).strict().parse(req.body);res.json(await saveProductOverlay(context(req).owner,String(req.params.id),input.workspace,input.revision));}));
+router.put('/:id/overlay',wrap(async(req,res)=>{const c=context(req);const input=z.object({revision:z.number().int().nonnegative(),workspace:personalWorkspaceSchema}).strict().parse(req.body);await assertLegacyProductWrite(c.owner,c.credentials,{id:String(req.params.id)});res.json(await saveProductOverlay(c.owner,String(req.params.id),input.workspace,input.revision));}));
 router.put("/:id", wrap(async (req,res) => {
   const {owner,credentials} = context(req);
   const {revision,...input} = productAuthoringSchema.parse(req.body);
-  const previous=revision>0?await getProduct(owner,String(req.params.id)):null;
-  res.json({asset:await saveProduct(owner,String(req.params.id),{...input,visibility:previous?.visibility??'private'},revision,credentials)});
+  res.json({asset:await saveProduct(owner,String(req.params.id),input,revision,credentials)});
 }));
 router.post("/:id/copy", wrap(async (req,res) => {
   const {owner,credentials} = context(req);
@@ -150,7 +150,8 @@ router.post("/:id/use-home", wrap(async (req,res) => {
 }));
 router.delete("/:id", wrap(async (req,res) => {
   const {revision} = z.object({revision:z.number().int().positive()}).strict().parse(req.body);
-  await deleteProduct(context(req).owner,String(req.params.id),revision);
+  const c=context(req);
+  await deleteProduct(c.owner,String(req.params.id),revision,c.credentials);
   res.json({success:true});
 }));
 export default router;

@@ -16,12 +16,18 @@ import { createAssistantClient, createAssistantFeedback } from "../assistant-hos
 import { readRememberedAgent, readRememberedSession, rememberAgent, rememberSession } from "../remembered-agent";
 import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
-import { dashboardSelection } from "../../dashboard";
+import { dashboardSelectionFrom } from "../../dashboard";
 import DatasetActions from "./DatasetActions.vue";
 import ChartFileActions from "./ChartFileActions.vue";
 import DatasetDrilldown from "./DatasetDrilldown.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
-import { DASHBOARDS_PAGE_ID, GOVERNANCE_REPORT_PAGE_ID, governanceReportPageFeature, workbenchFeatures } from "../features";
+import {
+  AGENT_SETTINGS_PAGE_ID,
+  DASHBOARDS_PAGE_ID,
+  GOVERNANCE_REPORT_PAGE_ID,
+  governanceReportPageFeature,
+  workbenchFeatures,
+} from "../features";
 import FollowUpRenderer from "./FollowUpRenderer.vue";
 import ClarificationRenderer from "./ClarificationRenderer.vue";
 const artifactRenderers = [
@@ -123,14 +129,26 @@ watch(
 const shell = ref<InstanceType<typeof AgentShell> | null>(null);
 
 /**
- * An answer may link to a dashboard (`/dashboards?dashboardId=...`); the shell asks here rather than importing another
- * application's routes, and the address opens the page beside the conversation.
+ * An answer may link a page of the platform (`/governance/reports/<id>`, `/ontology/knowledge?...`); the shell asks here
+ * rather than importing another application's routes.
+ *
+ * The pages this assembly mounts beside a conversation open there, and the application's own address does not change. Any
+ * other page of the platform that the router can resolve opens at its real address, its query kept as it was written, so
+ * a draft handoff's parameters travel with it; an address the router does not resolve is no page and stays text. A host
+ * outside the platform (another scheme, another host) is never one of these.
  */
 function pageLinks(href: string): (() => void) | null {
   const address = href.replace(/^#/, "");
-  if (!pilot(address)) return null;
-  // The page opens beside the conversation; the application's own address does not change.
-  return () => void router.push({ query: { ...route.query, page: address } });
+  if (!address.startsWith("/") || address.startsWith("//")) return null;
+  const pilotPage = pilot(address);
+  if (pilotPage) return () => void router.push({ query: { ...route.query, page: address } });
+  const resolved = router.resolve(address);
+  // The address is a page when the route it lands on is one: the deepest record it matches. Every page of the platform sits
+  // under the layout, whose own record redirects to the start page, and the catch-all answers any address the same way,
+  // so it is that last record — not the layout above it — that says whether there is a page here.
+  const leaf = resolved.matched.at(-1);
+  if (!leaf || leaf.redirect) return null;
+  return () => void router.push({ path: resolved.path, query: resolved.query, hash: resolved.hash });
 }
 
 watch(agentId, (id) => {
@@ -171,9 +189,14 @@ const pageContext = computed<PageContext | null>(() => {
       selection: issue ? [{ kind: "issue", id: issue, label: `${t("assistant.governanceFinding")} ${issue}` }] : [],
     };
   }
-  return inDashboards.value
-    ? { pageKey: "dashboard", url: pageAddress.value!, label: t("assistant.featureDashboards"), selection: dashboardSelection.value }
-    : { pageKey: "agent-settings", url: pageAddress.value!, label: t("agents.title"), selection: [] };
+  if (inDashboards.value) {
+    // The selection is the page's address: the board, and the card the address names with its own name and id.
+    const address = Object.fromEntries(new URLSearchParams(pageAddress.value!.split("?")[1] ?? ""));
+    return { pageKey: "dashboard", url: pageAddress.value!, label: t("assistant.featureDashboards"), selection: dashboardSelectionFrom(address) };
+  }
+  return pilotPage.value.id === AGENT_SETTINGS_PAGE_ID
+    ? { pageKey: "agent-settings", url: pageAddress.value!, label: t("agents.title"), selection: [] }
+    : null;
 });
 
 /**
@@ -234,6 +257,20 @@ const bottomEntry = computed(() =>
 );
 
 /**
+ * The link's own parameters, consumed once. A page's composer navigates here with `?agentId=&prompt=&page=`, and this
+ * entry can run more than once on the way in — the mount, the address settling as it leaves the link's parameters, the
+ * column's own reads returning — so the address they arrived on is taken once, before the first await: an entry that finds
+ * the same address again has nothing to do rather than sending the same question a second time.
+ *
+ * `pendingLink` is set before the first await and is what tells a re-entry apart from a new message: the reader writing
+ * in the same page again arrives with the same address, and that is a message, sent after the first one has been placed.
+ */
+let consumedLink: string | null = null;
+let pendingLink: string | null = null;
+const linkAddress = () =>
+  JSON.stringify([requestedAgent(), queryText(route.query.sessionId), queryText(route.query.prompt), queryText(route.query.page)]);
+
+/**
  * Applies `?agentId=` once the agents are known. The link's parameters leave the address first, so a reload neither
  * sends its question again nor reopens what it named; the page then follows its own conversation behaviour. A disabled
  * or missing agent is reported and the page keeps the agent its own rule chose. An enabled one is selected, and then the
@@ -245,12 +282,15 @@ const bottomEntry = computed(() =>
 async function openRequestedAgent() {
   const id = requestedAgent();
   if (!id) return;
+  const address = linkAddress();
+  if (pendingLink === address || consumedLink === address) return;
+  pendingLink = address;
   const session = queryText(route.query.sessionId);
   const prompt = queryText(route.query.prompt);
   const page = queryText(route.query.page);
-  // The link's own parameters go; the page it was written on stays, carried by the address from here on.
+  // The link's own parameters go before anything is awaited; the page it was written on stays, carried by the address.
   const { agentId: _agent, sessionId: _session, prompt: _prompt, ...query } = route.query;
-  void router.replace({ query });
+  await router.replace({ query: page ? { ...query, page } : query });
   if (!nav.agents.value.some((agent) => agent.id === id && agent.enabled)) {
     ElMessage.error(t("assistant.agentUnavailable"));
     return;
@@ -260,24 +300,36 @@ async function openRequestedAgent() {
   await nextTick();
   if (session) {
     nav.selectSession(session);
-    return;
+  } else {
+    // The conversation this tab already holds with the agent goes on; a new tab, or another agent, starts a new one.
+    // Coming from a page, this runs on the way in, before the column has read the agent's conversations: the held one is
+    // looked up in the host's list rather than in a list that is still empty, or every page message would start anew.
+    const held = readRememberedSession(id);
+    if (held && !nav.sessions.value.some((row) => row.id === held)) await nav.loadSessions();
+    const continuing = held !== null && nav.sessions.value.some((row) => row.id === held);
+    if (continuing) nav.selectSession(held);
+    else nav.startNew();
   }
-  // The conversation this tab already holds with the agent goes on; a new tab, or another agent, starts a new one.
-  // Coming from a page, this runs on the way in, before the column has read the agent's conversations: the held one is
-  // looked up in the host's list rather than in a list that is still empty, or every page message would start anew.
-  const held = readRememberedSession(id);
-  if (held && !nav.sessions.value.some((row) => row.id === held)) await nav.loadSessions();
-  const continuing = held !== null && nav.sessions.value.some((row) => row.id === held);
-  if (continuing) nav.selectSession(held);
-  else nav.startNew();
-  if (page) void router.replace({ query: { ...query, page } });
+  // Choosing a conversation closes whatever page was open beside the old one; the page this message came from stays open
+  // beside the conversation it was written for.
+  if (page) await router.replace({ query: { ...route.query, page } });
   if (prompt) {
     await nextTick();
     await shell.value!.send(prompt);
   }
+  // Placed: the address is spent, and the same one arriving again is the reader's next message.
+  pendingLink = null;
+  consumedLink = address;
 }
 // The same address entered while the page is open (another link to an agent) does the same.
-watch(() => route.query.agentId, openRequestedAgent);
+watch(
+  () => route.query.agentId,
+  (id) => {
+    // The address no longer names an agent: the next one that does is a new message, even from the same page.
+    if (!id) consumedLink = null;
+    void openRequestedAgent();
+  },
+);
 
 /** The board a conversation just added a dataset to: the dashboards application, opened on that board. */
 function openDashboardApplication(dashboardId: string) {
