@@ -18,7 +18,10 @@ import { z } from "zod";
  * same page.
  *
  * `pageContextLine` writes that line and `pageLineAddress` reads it back, so the shell's own recognition of a page a
- * reopened conversation already named cannot drift from the way it was written.
+ * reopened conversation already named cannot drift from the way it was written. A file open beside the conversation
+ * (an artifact under `outputs/`) takes the page's place with its own line, `fileContextLine`, read back by
+ * `fileLinePath`; `carriedTargetIn` reads a reopened conversation's history for whichever of them it told last, or that
+ * it said the target was closed. Every way the line is written and read back is here.
  */
 export const pageSelectionSchema = z
   .object({
@@ -176,6 +179,64 @@ function addressInLine(text: string, template: string): string | null {
     const atAddress = at + afterName.length;
     const found = ADDRESS.exec(rest.slice(atAddress, after ? rest.indexOf(after, atAddress) : undefined));
     if (found) return found[0];
+  }
+  return null;
+}
+
+/**
+ * What a conversation told its agent last about the target beside it: nothing yet (`null`), that it was closed (`""`), a
+ * page by its address (`/...`) or a file by its workspace path (`outputs/...`). A page and a file never share a key.
+ */
+export type CarriedTarget = string | null;
+export const CLOSED_TARGET = "";
+
+/** The file open beside the conversation, as its line names it: the title the reader sees and its workspace path. */
+export interface FileContext {
+  label: string;
+  path: string;
+}
+/** The file line's prompt, in the reader's language. */
+export type FileLinePrompt = (file: FileContext) => string;
+
+/** The line a message ends with while a file is open beside the conversation: its title and its path. */
+export function fileContextLine(file: FileContext, prompt: FileLinePrompt): string {
+  return prompt(file);
+}
+
+const NAME = "\u0000file-name";
+const PATH = "\u0000file-path";
+
+/**
+ * The path a message's file line names, for a conversation reopened after it was sent; null for a message that names no
+ * file. The prompt is the reader's own, so the line is read back as `fileContextLine` wrote it in the same language. A
+ * title may hold brackets of its own, so the path is the last one the line holds.
+ */
+export function fileLinePath(text: string, prompt: FileLinePrompt): string | null {
+  const template = prompt({ label: NAME, path: PATH });
+  const before = template.slice(0, template.indexOf(NAME));
+  const between = template.slice(template.indexOf(NAME) + NAME.length, template.indexOf(PATH));
+  const after = template.slice(template.indexOf(PATH) + PATH.length);
+  const line = text.split("\n").reverse().find((entry) => entry.startsWith(before) && entry.endsWith(after));
+  if (!line) return null;
+  const rest = line.slice(before.length, line.length - after.length);
+  const at = rest.lastIndexOf(`${between}outputs/`);
+  return at < 0 ? null : rest.slice(at + between.length);
+}
+
+/**
+ * What a reopened conversation already carries, read from its messages' last lines: the last page or file they named, or
+ * `""` when the last such line said it was closed. A conversation whose messages say none of these carries nothing.
+ */
+export function carriedTargetIn(
+  texts: readonly string[],
+  prompts: PageLinePrompts & { file: FileLinePrompt; closed: string },
+): CarriedTarget {
+  for (const text of [...texts].reverse()) {
+    if (text.endsWith(`\n\n${prompts.closed}`)) return CLOSED_TARGET;
+    const file = fileLinePath(text, prompts.file);
+    if (file !== null) return file;
+    const address = pageLineAddress(text, prompts);
+    if (address !== null) return samePageAddress(address);
   }
   return null;
 }

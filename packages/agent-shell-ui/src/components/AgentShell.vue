@@ -2,7 +2,16 @@
 import { computed, inject, onBeforeUnmount, onMounted, provide, ref, shallowRef, toRef, useSlots, watch } from "vue";
 import { PanelRightOpen } from "lucide-vue-next";
 import { conversationQuestions, displayPlacementKey, shellContextKey, type ShellContext } from "../context";
-import { CLOSED_PAGE, carriedPageIn, pageContextLine, pageMoved, samePageAddress, type CarriedPage } from "../page-context";
+import {
+  CLOSED_TARGET,
+  carriedTargetIn,
+  fileContextLine,
+  pageContextLine,
+  pageMoved,
+  samePageAddress,
+  type CarriedTarget,
+} from "../page-context";
+import { fileName } from "../artifacts";
 import { displayLink, type ConversationDisplay, type DisplayPage } from "../conversation-display";
 import type { AgentHostClient } from "../host";
 import type { AgentNav } from "../useAgentNav";
@@ -276,15 +285,15 @@ function sendFromPage(text: string) {
 }
 
 /**
- * What the conversation's last carried message told about the page, per conversation: its address, `""` once it said the
- * page was closed, null for one the shell has not sent in (just opened, so its first message carries the page again). A
- * draft parameter or a fragment is the same page.
+ * What the conversation's last carried message told about the target beside it, per conversation: a page's address or a
+ * file's path, `""` once it said the target was closed, null for one the shell has not sent in (just opened, so its first
+ * message carries the target again). A draft parameter or a fragment is the same page.
  *
  * `carriedIn` is the conversation that message went to. Sending the first message of a new conversation is not the
  * reader moving: the conversation it created is where the page was just carried, so the note stands until another
  * conversation is opened or a new one is started.
  */
-const carriedPage = ref<CarriedPage>(null);
+const carriedPage = ref<CarriedTarget>(null);
 let carriedIn: string | null = null;
 watch(sessionId, (id) => {
   if (id === carriedIn) return;
@@ -295,29 +304,36 @@ watch(sessionId, (id) => {
 const linePrompts = () => ({ page: props.labels.pageContext, pageAddress: props.labels.pageContextAddress, selection: props.labels.selectionContext });
 /**
  * What a reopened conversation already carries, read when the shell first sends in it: its history shows the line each
- * message ended with, so the address of the last message that named a page is known, and a message written on that same
- * page does not name it again; a last line that said the page was closed is not said again. Two pages with one title are
- * two addresses, which is what the line names them by. A conversation whose messages name no page names nothing here:
- * the page rides on its next message.
+ * message ended with, so the page or file the last such line named is known, and a message written beside that same
+ * target does not name it again; a last line that said the target was closed is not said again. Two pages with one title
+ * are two addresses, which is what the line names them by. A conversation whose messages name nothing names nothing here:
+ * the target rides on its next message.
  */
-function carried(): CarriedPage {
+function carried(): CarriedTarget {
   if (carriedPage.value !== null || !conversation.state.sessionId) return carriedPage.value;
   const texts = conversation.items.value.filter((item): item is UserItem => item.kind === "user").map((item) => item.text);
-  return carriedPageIn(texts, linePrompts(), props.labels.pageContextClosed);
+  return carriedTargetIn(texts, { ...linePrompts(), file: props.labels.fileContext, closed: props.labels.pageContextClosed });
 }
 
 async function send(input: string) {
   const agent = agentId.value;
   if (!agent) return;
   const page = pairedPage.value ? display.pageContext.value : null;
-  // The page rides on the conversation's first message or when the address moved elsewhere: the reader already knows
-  // which page it is, and repeating it on every message would spend the agent's context on what changed once.
+  const shown = display.target.value;
+  const file = shown?.kind === "artifact" ? { label: shown.open.title || fileName(shown.open.artifact.path), path: shown.open.artifact.path } : null;
+  // The target rides on the conversation's first message or when it changed: the reader already knows what is beside
+  // them, and repeating it on every message would spend the agent's context on what changed once. A page's selection
+  // rides every time.
   const told = carried();
   const carriesPage = page !== null && pageMoved(told, page);
-  // A page the agent was told about and that is no longer shown (closed, replaced by a card) is said once to be closed,
-  // so the agent does not take the last page it heard of for the one in view.
-  const closes = page === null && told !== null && told !== CLOSED_PAGE;
-  const line = page ? pageContextLine(page, linePrompts(), carriesPage) : closes ? props.labels.pageContextClosed : "";
+  // A target the agent was told about and that is no longer shown is said once to be closed, so the agent does not take
+  // the last one it heard of for the one in view.
+  const closes = page === null && file === null && told !== null && told !== CLOSED_TARGET;
+  const line = page
+    ? pageContextLine(page, linePrompts(), carriesPage)
+    : file
+      ? (told === file.path ? "" : fileContextLine(file, props.labels.fileContext))
+      : closes ? props.labels.pageContextClosed : "";
   const text = line ? `${input}\n\n${line}` : input;
   const result = await conversation.send(agent, text);
   if (!result) return;
@@ -325,7 +341,8 @@ async function send(input: string) {
   // the conversation this send started, or to the one it was written in.
   carriedIn = result.createdSession?.id ?? conversation.state.sessionId ?? null;
   if (page) carriedPage.value = samePageAddress(page.url);
-  else if (closes) carriedPage.value = CLOSED_PAGE;
+  else if (file) carriedPage.value = file.path;
+  else if (closes) carriedPage.value = CLOSED_TARGET;
   if (!result.delivery) {
     // The conversation was created but its run refused: the host takes it as listed (still empty), so sending again
     // goes on in the conversation the host knows.

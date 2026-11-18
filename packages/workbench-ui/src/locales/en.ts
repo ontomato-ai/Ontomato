@@ -558,6 +558,7 @@ export default {
     "pageContext": "Current page: {page} ({url})",
     "pageContextAddress": "Current page: {url}",
     "selectionContext": "Selected: {selection}",
+    "fileContext": "Current file: {file} ({path})",
     "pageContextClosed": "Current page: closed",
     "toolInput": "Input",
     "toolOutput": "Output",

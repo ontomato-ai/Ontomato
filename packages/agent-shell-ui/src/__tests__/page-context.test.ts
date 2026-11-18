@@ -1,5 +1,15 @@
 import { expect, it } from "vitest";
-import { pageContextLine, pageLineAddress, pageMoved, samePageAddress, type PageContext } from "../page-context";
+import {
+  CLOSED_TARGET,
+  carriedTargetIn,
+  fileContextLine,
+  fileLinePath,
+  pageContextLine,
+  pageLineAddress,
+  pageMoved,
+  samePageAddress,
+  type PageContext,
+} from "../page-context";
 
 /*
  * What a message from beside a page carries: the page — the reader's name for it and the address that tells it from a
@@ -80,4 +90,27 @@ it("shows the characters a reader reads in the address and keeps what structures
   // The name is decoded; the space, `&` and `/` inside a value stay escaped, so the address still opens that board.
   expect(written).toBe("Current page: Dashboards (/dashboards?dashboardName=e2e-教职工%20board&next=a%26b%2Fc)");
   expect(samePageAddress(pageLineAddress(written, lines)!)).toBe(samePageAddress(url));
+});
+
+const file = (item: { label: string; path: string }) => `Current file: ${item.label} (${item.path})`;
+const chineseFile = (item: { label: string; path: string }) => `当前文件：${item.label}（${item.path}）`;
+
+it("names a file beside the conversation by its title and its path, and reads the path back in either language", () => {
+  // A title may hold brackets of its own; the path is the line's last one.
+  const shown = { label: "Students (by family name)", path: "outputs/学生姓氏.dataset.json" };
+  expect(fileLinePath(`which is largest\n\n${fileContextLine(shown, file)}`, file)).toBe(shown.path);
+  expect(fileLinePath(`最大的是哪个\n\n${fileContextLine(shown, chineseFile)}`, chineseFile)).toBe(shown.path);
+  // A page line is no file line, and a file line is no page line.
+  expect(fileLinePath(`x\n\n${pageContextLine(page, lines, true)}`, file)).toBeNull();
+  expect(pageLineAddress(`x\n\n${fileContextLine(shown, file)}`, lines)).toBeNull();
+});
+
+it("reads back whichever target a reopened conversation told last, or that it said it closed", () => {
+  const prompts = { ...lines, file, closed: "Current page: closed" };
+  const onPage = `on the page\n\n${pageContextLine(page, lines, true)}`;
+  const onFile = `on the file\n\n${fileContextLine({ label: "Result", path: "outputs/result.dataset.json" }, file)}`;
+  expect(carriedTargetIn([onPage, onFile], prompts)).toBe("outputs/result.dataset.json");
+  expect(carriedTargetIn([onFile, onPage], prompts)).toBe(samePageAddress(page.url));
+  expect(carriedTargetIn([onFile, "after\n\nCurrent page: closed"], prompts)).toBe(CLOSED_TARGET);
+  expect(carriedTargetIn(["nothing beside"], prompts)).toBeNull();
 });

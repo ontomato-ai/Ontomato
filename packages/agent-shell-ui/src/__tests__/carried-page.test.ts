@@ -30,6 +30,7 @@ const labels = {
   pageContext: (page: { label: string; url: string }) => `Current page: ${page.label} (${page.url})`,
   pageContextAddress: (url: string) => `Current page: ${url}`,
   selectionContext: (selection: string) => `Selected: ${selection}`,
+  fileContext: (file: { label: string; path: string }) => `Current file: ${file.label} (${file.path})`,
   pageContextClosed: "Current page: closed",
 } as unknown as ShellLabels;
 
@@ -240,7 +241,7 @@ it("says once that the page is closed, and names a page opened again", async () 
   expect(sent[3]).toContain("\n\nCurrent page: Dashboards (/dashboards?dashboardId=board-a)");
 });
 
-it("does not carry the page a card replaced", async () => {
+it("names the file a card opened in place of the page, once", async () => {
   const { sent, shell, display } = render();
   await settle();
   await shell.value!.send("on this board");
@@ -253,7 +254,54 @@ it("does not carry the page a card replaced", async () => {
   });
   await shell.value!.send("about the card");
   await settle();
-  expect(sent[1]).toBe("about the card\n\nCurrent page: closed");
+  // The page the card replaced is not carried: the line is the file's.
+  expect(sent[1]).toBe("about the card\n\nCurrent file: Result (outputs/result.dataset.json)");
+  await shell.value!.send("still about it");
+  await settle();
+  expect(sent[2]).toBe("still about it");
+});
+
+it("names the file an agent presented, and the page once the reader goes back to one", async () => {
+  const { sent, shell, display } = render();
+  await settle();
+  await shell.value!.send("on this board");
+  await settle();
+
+  const answer = await display.present({
+    type: "presentation", sessionId: createdSessionId, runId, toolCallId: "call-1",
+    target: { kind: "artifact", artifact: { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", sessionId: createdSessionId, runId, path: "outputs/result.dataset.json" } as never },
+  });
+  expect(answer).toMatchObject({ status: "opened", current: { target: { kind: "artifact", path: "outputs/result.dataset.json" } } });
+  await shell.value!.send("what does it show");
+  await settle();
+  // The message names what the presentation answered is shown: the same file.
+  expect(sent[1]).toBe("what does it show\n\nCurrent file: result.dataset.json (outputs/result.dataset.json)");
+
+  await display.openFeature("dashboards", "side");
+  await shell.value!.send("and the board");
+  await settle();
+  expect(sent[2]).toBe("and the board\n\nCurrent page: Dashboards (/dashboards?dashboardId=board-a)；Selected: e2e board card");
+});
+
+it("does not name a file again in a conversation that already named it", async () => {
+  const { sent, shell, display } = render({
+    agentId,
+    messages: [{ id: "m1", content: "earlier on the file\n\nCurrent file: Result (outputs/result.dataset.json)" }],
+  });
+  await settle();
+  await display.openArtifact({
+    key: "run:outputs/result.dataset.json",
+    artifact: { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", runId, path: "outputs/result.dataset.json" } as never,
+    title: "Result",
+  });
+  await shell.value!.send("again on the file");
+  await settle();
+  expect(sent[0]).toBe("again on the file");
+
+  await display.close();
+  await shell.value!.send("nothing beside");
+  await settle();
+  expect(sent[1]).toBe("nothing beside\n\nCurrent page: closed");
 });
 
 it("does not say again that the page is closed in a conversation that already said so", async () => {
