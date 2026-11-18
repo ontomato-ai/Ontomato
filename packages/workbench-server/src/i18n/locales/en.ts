@@ -1,4 +1,8 @@
 export const en = {
+  "panels.confirmation.message": 'Run “{operation}” on “{target}” as {executor}?',
+  "panels.confirmation.default": "This operation will not run unless you choose to execute it.",
+  "panels.confirmation.decline": "Do not execute",
+  "panels.confirmation.approve": "Execute this operation",
   "assistant.governance.report.title": "Governance report",
   "assistant.default.knowledge-governance.name": "Knowledge governance",
   "assistant.default.knowledge-governance.description": "Review business knowledge with traceable evidence",

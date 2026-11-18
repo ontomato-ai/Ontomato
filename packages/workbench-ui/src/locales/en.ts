@@ -541,6 +541,9 @@ export default {
     "deleteConfirm": "Delete?",
     "unavailable": "Unavailable",
     "scheduledSession": "Started by a scheduled task",
+    "panelConfirmation": "Confirm panel operations",
+    "panelAutomatic": "Automatic",
+    "panelAutomaticHint": "Agents run panel operations in this conversation without asking first",
     "placeholder": "Ask anything about your data…",
     "send": "Send",
     "stop": "Stop",
@@ -664,7 +667,6 @@ export default {
     "compareSelection": "Compare selection",
     "clearSelection": "Clear selection",
     "clarificationLoadFailed": "Unable to load clarification",
-    "followUpsLoadFailed": "Unable to load follow-up suggestions",
     "clarificationReload": "Reload",
     "adjustScope": "Adjust scope",
     "adjustScopeTitle": "Adjust scope and run a new query",
@@ -685,8 +687,7 @@ export default {
       "adjustScope": "For {file}, change the query scope: {adjustment}",
       "group": "{label}: {value}",
       "details": "Show the detail records behind row {row} of {file}.",
-      "detailsOfGroups": "Show the detail records behind row {row} ({groups}) of {file}.",
-      "basedOn": "Based on: {files}"
+      "detailsOfGroups": "Show the detail records behind row {row} ({groups}) of {file}."
     }
   },
   "appBuilder": {

@@ -26,10 +26,10 @@ public class AgentChannelRuns {
     else if(context.callerId()!=null)request.put("credentialFrom",context.callerId());
     else request.put("credential",credential(context));
   }
-  public JSONObject send(String agentId,String session,String run,JSONObject input,JSONObject parameters,OntologyAgentAccess.Context context) throws Exception {
-    return send(agentId,session,run,input,parameters,context,null);
+  public JSONObject send(String agentId,String session,String run,JSONObject input,JSONObject parameters,OntologyAgentAccess.Context context,boolean human) throws Exception {
+    return send(agentId,session,run,input,parameters,context,null,human);
   }
-  public JSONObject send(String agentId,String session,String run,JSONObject input,JSONObject parameters,OntologyAgentAccess.Context context,String sourceRun) throws Exception {
+  public JSONObject send(String agentId,String session,String run,JSONObject input,JSONObject parameters,OntologyAgentAccess.Context context,String sourceRun,boolean human) throws Exception {
     var actor=callers.open(UUID.randomUUID().toString(),context);
     var agent=JSONObject.of("providerId","ontology","agentId",agentId);
     String domain=context.owner().domainId();
@@ -38,6 +38,9 @@ public class AgentChannelRuns {
     var request=JSONObject.of("language",context.language(),"input",input,"channel",JSONObject.of("agent",agent,"actor",actor,"authority",authority(context),"requestedBy",null,"root",source));
     if(sourceRun==null) admissionCredential(request,context);
     else request.put("credentialFrom",sourceRun);
+    var channelContext=request.getJSONObject("channel");
+    channelContext.put("userRecipient",human && request.containsKey("credential") ? JSONObject.of("session",source.getJSONObject("session"),"actor",actor) : null);
+    if("agent-answer".equals(input.getString("kind"))) input.put("respondent",actor);
     if (parameters!=null) request.put("context",parameters);
     return runtime.json(domain,run,"/v1/channel/sessions/"+session+"/runs","POST",request,run);
   }

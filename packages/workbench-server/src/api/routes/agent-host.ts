@@ -132,6 +132,7 @@ router.post(
           agentHostSendRequestSchema.parse(req.body),
           c.owner,
           c.credentials,
+          "human",
         ),
       );
   }),

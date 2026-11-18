@@ -1,0 +1,203 @@
+import { z } from "zod";
+import { configureI18n } from "../../../i18n";
+import { en, enLocaleMeta } from "../../../i18n/locales/en";
+import * as serverOperations from "../server-operations";
+import rawExamples from "../../../../../contracts/examples/platform-schedules.json";
+import {platformTaskSchema,platformScheduleFormSchema} from "@ontomato/contracts/platform-schedules";
+import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import type { PanelOperationIntent } from "@ontomato/contracts/panel-agent";
+import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
+const mocks = vi.hoisted(() => ({query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),catalogue:vi.fn(),pages:vi.fn(),restore:vi.fn()}));
+vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
+vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://owner.test"}}}));
+vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class{run=mocks.run;session=mocks.session;request=mocks.request;}}));
+vi.mock("../../assistant/store",()=>({assistantStore:{turn:async()=>({})}}));
+vi.mock("../../assistant/execution-setting",()=>({resolveAgentExecution:mocks.resolve}));
+vi.mock("../../assistant/skills",()=>({readPageSkills:mocks.pages}));
+vi.mock("../../../utils/backend-client",()=>({backendGet:mocks.backend,buildBackendHeaders:(token:string,_x:unknown,_l:unknown,key:string,headers:object)=>({...headers,...(token?{tk:token}:{}),...(key?{"X-API-Key":key}:{})})}));
+vi.mock("../../agent-host/caller",()=>({restoreAgentCaller:mocks.restore}));
+vi.mock("../current",()=>({readCurrentPanel:mocks.panel,readCurrentProjection:mocks.projection}));
+vi.mock("../skill-package",()=>({readComponentCatalogue:mocks.catalogue}));
+import { operatePanel as realOperatePanel, dispatchPanel, ownPanelSettings } from "../operations";
+import { panelOperationStore } from "../operation-store";
+configureI18n({defaultLocale:"en",appTextLocale:"en",languageSwitchEnabled:false,packs:{en:{messages:en,...enLocaleMeta}}});
+const uuid=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,"0")}`;
+const owner={domainId:"d",userId:"U"},credentials={token:"U-token",locale:"en"};
+const operatePanel=(initiator:typeof owner,auth:typeof credentials,runId:string,input:Parameters<typeof realOperatePanel>[3])=>realOperatePanel(initiator,auth,runId,input,"Alice");
+const session={providerId:"workbench",sessionId:uuid(1)},root={providerId:"ontology",sessionId:uuid(2)};
+const skill={namespace:{kind:"domain" as const,domainId:"d"},name:"derived-panel"};
+const use={id:"tasks",pageKey:"tasks",path:"/tasks",panelId:"P",access:{kind:"domain-member"}};
+let intents:Map<string,PanelOperationIntent>, automatic:boolean, current:RuntimeRun, human:Record<string,unknown>|null;
+const action=()=>({intentId:uuid(5),applicationId:"A",useId:"tasks",operationId:"run.runNow",call:{target:{kind:"object" as const,objectType:"platform:ScheduledTask",primaryKey:uuid(9)},input:{}}});
+const save=()=>({...action(),operationId:"form.save",call:{...action().call,input:{revision:4,title:"draft"}}});
+beforeEach(()=>{
+ vi.resetAllMocks();intents=new Map();automatic=false;human=null;
+ current={id:uuid(3),sessionId:session.sessionId,status:"running",executionUserId:"V",channel:{agent:{providerId:"workbench",agentId:"agent"},actor:{id:uuid(4),domainId:"d"},authority:{classNames:[],executionKind:"live"},root:{session:root,runId:uuid(10)},requestedBy:null,userRecipient:{session:root,actor:{id:uuid(4),domainId:"d"}}},resolvedSkills:[{skill}]} as unknown as RuntimeRun;
+ mocks.run.mockImplementation(async()=>({run:current}));
+ mocks.resolve.mockImplementation(async()=>({credentials:{apiKey:"V-key"}}));
+ mocks.backend.mockImplementation(async(_name:string,url:string,options:{headers:object})=>{
+   expect(options.headers).toMatchObject({tk:"U-token"});
+   if (url.includes("/platform/agent-execution/options")) {
+     const id=new URL(url).searchParams.get("selected");
+     return {text:JSON.stringify({canSetExecutionUser:false,users:[],selected:{id,name:id==="U"?"Alice":"Victor",available:true}})};
+   }
+   return {text:JSON.stringify({success:true,data:{applicationId:"A",entry:{path:"/panels/A",renderer:"panels"},panelUses:[use]}})};
+ });
+ mocks.pages.mockResolvedValue({pageSkills:[{access:"domain-member",pageKey:"tasks",skill}]});
+ mocks.panel.mockResolvedValue({id:"P",manifest:{state:{task:{kind:"object",objectType:"platform:ScheduledTask"}},slots:{run:{projectionId:"run",inputs:{task:{state:"task"}}},form:{projectionId:"form",inputs:{task:{state:"task"}}}},operations:[]}});
+ mocks.projection.mockImplementation(async(_o:unknown,c:unknown,id:string)=>{expect(c).toBe(credentials);return {id,name:"Run now",componentId:id,binding:id==="run"?{kind:"PlatformOperation",id:"schedules.runNow"}:{kind:"PlatformObjectType",id:"platform:ScheduledTask"},inputs:{task:{kind:"object",objectType:"platform:ScheduledTask"}}};});
+ mocks.catalogue.mockResolvedValue(new Map([["run",{}],["form",{operations:[{client:"@binding",name:"save",label:"Save",kind:"form.save",inputSchema:{}}]}]]));
+ mocks.restore.mockResolvedValue({owner});
+ mocks.session.mockImplementation(async()=>({messages:human?[{message:human}]:[]}));
+ mocks.request.mockImplementation(async(path:string,_method:string,body:{source:unknown})=>path==="/v1/channel/user-questions"?{questionId:intents.get(uuid(5))!.questionId,source:body.source,recipient:{session:root,actor:{id:uuid(4),domainId:"d"}}}:{questionId:intents.get(uuid(5))!.questionId,answerId:uuid(11),source:{kind:"user"},respondent:{id:uuid(12),domainId:"d"},recipientSession:root,selectedOption:1,text:"Execute"});
+ mocks.query.mockImplementation(async(sql:string,args:unknown[])=>{
+   const id=String(args[sql.startsWith("SELECT intent FROM") && !sql.includes("owner_id")?1:2]);
+   if(sql.startsWith("SELECT confirm_before"))return {rows:automatic?[{confirm_before_execute:false}]:[]};
+   if(sql.startsWith("SELECT intent FROM"))return {rows:intents.has(id)?[{intent:structuredClone(intents.get(id))}]:[]};
+   if(sql.startsWith("INSERT INTO panel_operation_intents")){if(!intents.has(String(args[1])))intents.set(String(args[1]),structuredClone(args[4] as PanelOperationIntent));return {rows:[]};}
+   if(sql.includes("AND intent->>'dispatched'='false'")){const value=intents.get(id)!;if(value.dispatched)return {rowCount:0};intents.set(id,structuredClone(args[3] as PanelOperationIntent));return {rowCount:1};}
+   if(sql.includes("jsonb_set")){intents.get(id)!.outcome=JSON.parse(String(args[3]));return {rowCount:1};}
+   throw new Error(sql);
+ });
+ vi.stubGlobal("fetch",vi.fn(async(_url:unknown,init:NonNullable<Parameters<typeof fetch>[1]>)=>{
+   if ((init.method ?? "GET") === "GET") {
+     expect(new Headers(init.headers).get("tk")).toBe("U-token");
+     expect(new Headers(init.headers).get("X-API-Key")).toBeNull();
+     return Response.json({...task,title:"Inventory summary"});
+   }
+   expect(new Headers(init.headers).get("X-API-Key")).toBe("V-key");
+   expect(new Headers(init.headers).get("tk")).toBeNull();
+   expect(new Headers(init.headers).get("X-Ontomato-Retrieval-Caller-Id")).toBe(current.id);
+   return Response.json({error:{code:"PERMISSION_DENIED",message:"V cannot use U's task"},correlationId:"test"},{status:403});
+ }));
+});
+afterEach(()=>{vi.unstubAllGlobals();vi.restoreAllMocks();});
+const ownerWrites=()=>vi.mocked(fetch).mock.calls.filter(([,init])=>["POST","PUT"].includes(init?.method ?? "GET"));
+function answer(source:object={kind:"user"}) {human={role:"notification",kind:"agent-answer",source,replyTo:intents.get(uuid(5))!.questionId,answerId:uuid(11)};}
+it("returns immediately and ignores the parent's endorsement; a later run uses V once after a genuine U selection",async()=>{
+ const request=action();const response=await operatePanel(owner,credentials,current.id,request);
+ expect(response.kind).toBe("confirmation-required");expect(ownerWrites()).toHaveLength(0);
+ const question=mocks.request.mock.calls[0][2];
+ expect(question.message).toBe('Run “Run now” on “Inventory summary” as Victor?');
+ expect(question.message).not.toContain(request.intentId);
+ expect(question.options).toEqual([{label:"Do not execute",isDefault:true},{label:"Execute this operation"}]);
+ answer({session:root,runId:uuid(10)});
+ expect(await dispatchPanel(owner,credentials,current.id,request.intentId)).toMatchObject({kind:"not-dispatched",code:"CONFIRMATION_REQUIRED"});
+ answer();current={...current,id:uuid(6)};
+ const results=await Promise.all([dispatchPanel(owner,credentials,current.id,request.intentId),dispatchPanel(owner,credentials,current.id,request.intentId)]);
+ expect(results.some(result=>result.kind==="dispatched")).toBe(true);
+ expect(ownerWrites()).toHaveLength(1);
+ expect(intents.get(request.intentId)).toMatchObject({dispatched:true,outcome:{kind:"failure",code:"PERMISSION_DENIED"},source:{runId:uuid(3)}});
+ await operatePanel(owner,credentials,current.id,request);
+ await dispatchPanel(owner,credentials,current.id,request.intentId);
+ expect(ownerWrites()).toHaveLength(1);
+ expect(mocks.resolve.mock.calls.at(-1)?.[0].execution_user_id).toBe("V");
+});
+it("requires a new intent for changed parameters, target, questioning session or executor",async()=>{
+ const input=action();await operatePanel(owner,credentials,current.id,input);
+ await expect(operatePanel(owner,credentials,current.id,{...input,call:{...input.call,input:{forged:true}}})).rejects.toBeDefined();
+ await expect(operatePanel(owner,credentials,current.id,{...input,call:{...input.call,target:{...input.call.target,primaryKey:uuid(8)}}})).rejects.toMatchObject({code:"INTENT_CHANGED"});
+ current={...current,executionUserId:"W"};
+ await expect(dispatchPanel(owner,credentials,current.id,input.intentId)).rejects.toMatchObject({code:"INTENT_CHANGED"});
+ current={...current,sessionId:uuid(7)};
+ await expect(dispatchPanel(owner,credentials,current.id,input.intentId)).rejects.toMatchObject({code:"FORBIDDEN"});
+});
+it.each([undefined,0])("does not approve free text or the default selectedOption %s",async selectedOption=>{
+ await operatePanel(owner,credentials,current.id,action());answer();
+ mocks.request.mockResolvedValue({questionId:intents.get(uuid(5))!.questionId,answerId:uuid(11),source:{kind:"user"},respondent:{id:uuid(12),domainId:"d"},recipientSession:root,selectedOption:selectedOption??null,text:"I approve"});
+ expect(await dispatchPanel(owner,credentials,current.id,uuid(5))).toMatchObject({code:"NOT_APPROVED"});
+ expect(ownerWrites()).toHaveLength(0);
+});
+it("requires the actual initiating user, not another human receipt",async()=>{
+ await operatePanel(owner,credentials,current.id,action());answer();mocks.restore.mockResolvedValue({owner:{...owner,userId:"other"}});
+ expect(await dispatchPanel(owner,credentials,current.id,uuid(5))).toMatchObject({code:"NOT_APPROVED"});expect(ownerWrites()).toHaveLength(0);
+});
+it("default form save is an unsaved draft that dispatch cannot redeem",async()=>{
+ expect(await operatePanel(owner,credentials,current.id,save())).toMatchObject({kind:"draft",draft:{operation:"platform:ScheduledTask.save",form:{title:"draft"}}});
+ expect(await dispatchPanel(owner,credentials,current.id,uuid(5))).toMatchObject({code:"DRAFT_REQUIRES_SAVE"});expect(ownerWrites()).toHaveLength(0);expect(mocks.request).not.toHaveBeenCalled();
+});
+it.each(["save","runNow"])("automatic %s calls the same owner client, preserving the form revision",async operation=>{
+ automatic=true;
+ const writes:NonNullable<Parameters<typeof fetch>[1]>[]=[];
+ vi.stubGlobal("fetch",vi.fn(async(url:string,init:NonNullable<Parameters<typeof fetch>[1]>)=>{
+   expect(new Headers(init.headers).get("X-API-Key")).toBe("V-key");
+   if(init.method==="PUT"){writes.push(init);return Response.json({error:{code:"REVISION_CONFLICT",message:"The task changed"},correlationId:"test"},{status:409});}
+   if(url.endsWith("/runs"))return Response.json({error:{code:"PERMISSION_DENIED",message:"Denied"},correlationId:"test"},{status:403});
+   if(url.endsWith("/form"))return Response.json(platformScheduleFormSchema.parse(rawExamples.forms.find(form=>form.name==="governance-ready")!.response));
+   // The actual service contracts are supplied by the fixture for the read and dynamic form below.
+   return Response.json(task);
+ }));
+ const response=await operatePanel(owner,credentials,current.id,operation==="save"?save():action());
+ expect(response.kind).toBe("dispatched");expect(mocks.request).not.toHaveBeenCalled();
+ if(operation==="save")expect(JSON.parse(String(writes[0]?.body))).toMatchObject({revision:4});
+});
+const task=platformTaskSchema.parse({...rawExamples.creates.find(task=>task.name==="governance-instruction")!.response,id:uuid(9),revision:9});
+it("session settings compare the authenticated owner even when a session is readable",async()=>{
+ mocks.request.mockResolvedValue({actor:{id:uuid(4),domainId:"d"}});mocks.restore.mockResolvedValue({owner:{...owner,userId:"someone-else"}});
+ await expect(ownPanelSettings(owner,root)).rejects.toMatchObject({code:"FORBIDDEN"});
+ expect((await panelOperationStore.settings(owner,root)).confirmBeforeExecute).toBe(true);
+});
+it("declines unsupported business/test authority before an owner write",async()=>{
+ current.channel!.authority.executionKind="build-test";
+ await expect(operatePanel(owner,credentials,current.id,action())).rejects.toMatchObject({code:"BUILD_TEST_UNSUPPORTED"});expect(ownerWrites()).toHaveLength(0);
+});
+
+it.each(["save","runNow"])("automatic %s succeeds through the server owner interface without a human question",async operation=>{
+ automatic=true;
+ vi.stubGlobal("fetch",vi.fn(async(url:string,init:NonNullable<Parameters<typeof fetch>[1]>)=>{
+   expect(new Headers(init.headers).get("X-API-Key")).toBe("V-key");
+   if(init.method==="PUT") {const input=JSON.parse(String(init.body));expect(input.revision).toBe(9);return Response.json({...task,content:input.content,revision:10});}
+   if(url.endsWith("/runs"))return Response.json({...rawExamples.runs.find(run=>run.name==="agents-running")!.response,taskId:task.id});
+   if(url.endsWith("/form"))return Response.json(rawExamples.forms.find(form=>form.name==="governance-ready")!.response);
+   return Response.json(task);
+ }));
+ const input=operation==="save"?{...save(),call:{...save().call,input:{...task.content,revision:9}}}:action();
+ expect(await operatePanel(owner,credentials,current.id,input)).toMatchObject({kind:"dispatched",outcome:{kind:"success"}});
+ expect(mocks.request).not.toHaveBeenCalled();
+});
+it("rejects a declaration whose target type does not match its platform operation",async()=>{
+ const panel=await mocks.panel();panel.manifest.state.task.objectType="customer:Account";
+ await expect(operatePanel(owner,credentials,current.id,action())).rejects.toMatchObject({code:"OPERATION_UNAVAILABLE"});
+ expect(ownerWrites()).toHaveLength(0);
+});
+
+it("uses the initiator's display name in self mode",async()=>{
+ current={...current,executionUserId:null};
+ await operatePanel(owner,credentials,current.id,action());
+ expect(mocks.request.mock.calls[0][2].message).toBe('Run “Run now” on “Inventory summary” as Alice?');
+ expect(mocks.backend.mock.calls.some(([,url])=>url.includes("/platform/agent-execution/options"))).toBe(false);
+});
+it.each([403,404])("identifies an unreadable task by ID after one initiator read (%s), without trying the executor",async status=>{
+ const read=vi.fn(async(_url:string,init:NonNullable<Parameters<typeof fetch>[1]>)=>{
+   expect(init.method ?? "GET").toBe("GET");
+   expect(new Headers(init.headers).get("tk")).toBe("U-token");
+   expect(new Headers(init.headers).get("X-API-Key")).toBeNull();
+   return Response.json({error:{code:status===403?"PERMISSION_DENIED":"TASK_NOT_FOUND",message:"Unavailable"},correlationId:"test"},{status});
+ });vi.stubGlobal("fetch",read);
+ await operatePanel(owner,credentials,current.id,action());
+ expect(read).toHaveBeenCalledTimes(1);
+ expect(mocks.request.mock.calls[0][2].message).toBe(`Run “Run now” on “${uuid(9)}” as Victor?`);
+});
+it("preserves a failed target read instead of hiding an owner outage behind an ID",async()=>{
+ vi.stubGlobal("fetch",vi.fn(async()=>Response.json({error:{code:"DEPENDENCY_UNAVAILABLE",message:"Owner unavailable"},correlationId:"test"},{status:503})));
+ await expect(operatePanel(owner,credentials,current.id,action())).rejects.toMatchObject({status:503});
+ expect(mocks.request).not.toHaveBeenCalled();
+});
+it("rejects an unregistered server handler before any question or dispatch",async()=>{
+ mocks.projection.mockResolvedValue({id:"run",name:"Other",componentId:"run",binding:{kind:"PlatformOperation",id:"not.registered"},inputs:{task:{kind:"object",objectType:"platform:ScheduledTask"}}});
+ await expect(operatePanel(owner,credentials,current.id,{...action(),operationId:"run.registered"})).rejects.toMatchObject({status:422,code:"OPERATION_UNAVAILABLE"});
+ expect(mocks.request).not.toHaveBeenCalled();expect(fetch).not.toHaveBeenCalled();
+});
+it("dispatches through the registered owner without a resource-specific coordinator branch",async()=>{
+ automatic=true;
+ const handler={handlerRef:"test.perform",kind:"action" as const,binding:{kind:"PlatformOperation" as const,id:"test.perform"},targetType:"test:Thing",
+   targetSchema:z.object({kind:z.literal("object"),objectType:z.literal("test:Thing"),primaryKey:z.string()}),inputSchema:z.object({value:z.number()}),
+   targetLabel:vi.fn(),execute:vi.fn(async()=>({kind:"success" as const,data:{done:true}}))};
+ vi.spyOn(serverOperations,"panelServerOperation").mockReturnValue(handler);
+ const panel=await mocks.panel();panel.manifest.state.task.objectType="test:Thing";
+ mocks.projection.mockResolvedValue({id:"run",name:"Perform",componentId:"run",binding:handler.binding,inputs:{task:{kind:"object",objectType:handler.targetType}}});
+ const input={...action(),operationId:"run.perform",call:{target:{kind:"object" as const,objectType:handler.targetType,primaryKey:"opaque-key"},input:{value:7}}};
+ expect(await operatePanel(owner,credentials,current.id,input)).toMatchObject({kind:"dispatched",outcome:{kind:"success",data:{done:true}}});
+ expect(handler.execute).toHaveBeenCalledWith(expect.objectContaining({request:expect.any(Function)}),input.call.target,input.call.input,input.intentId);
+ expect(fetch).not.toHaveBeenCalled();
+});

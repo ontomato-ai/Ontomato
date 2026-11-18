@@ -36,7 +36,7 @@ export const assistantScheduleApplication: ScheduleApplication = {
     await withScheduledUserActivity(context.owner.userId, async () => {
       const created = await assistantService.create(sessionId, context.owner, { agentId: input.content.agentId }, "scheduled");
       try {
-        await assistantService.send(sessionId, input.runId, {message:input.content.instruction}, context.owner, context.credentials);
+        await assistantService.send(sessionId, input.runId, {message:input.content.instruction}, context.owner, context.credentials, "background");
       } catch (error) {
         if (!created.replayed && (await assistantStore.turns(sessionId)).length === 0)
           await assistantService.delete(sessionId, context.owner);

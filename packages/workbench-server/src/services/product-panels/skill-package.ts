@@ -42,7 +42,7 @@ function panelSkillManifest(skill: RuntimeSkillRef, panels: readonly PanelDescri
   return { name: skill.name, description: `${actionText[0]!.toUpperCase()}${actionText.slice(1)} for ${titleText}.` };
 }
 
-async function readComponentCatalogue() {
+export async function readComponentCatalogue() {
   const { version } = await appSdkBuild();
   const file = path.join(runtimeRoot(), "dist/apps-sdk", version, "components.json");
   const parsed = catalogue.parse(JSON.parse(await readFile(file, "utf8")));
@@ -137,7 +137,11 @@ function describeUse(use: Use, { name, description, content, manifest, projectio
       "### Declared operations",
       ...operations.map(operation => `- ${operation.label} (${operation.id}), kind ${operation.kind}, handlerRef ${operation.handlerRef}, input ${operation.kind === "form.save" ? "from the owner's dynamic form" : JSON.stringify(operation.inputSchema)}, target ${JSON.stringify(operation.target ?? null)}.`),
       ...(operations.length ? [] : ["No operations."]),
-      "The platform operation coordinator will provide execution when P3 is connected.",
+      "Call the declared operation with POST `$ONTOMATO_PANEL_OPERATIONS_URL/operate`, JSON `{intentId:<new UUID>,applicationId,useId,operationId,call:{target:{kind:\"object\",objectType,primaryKey},input}}`. Send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. Never call a write owner endpoint directly from a platform panel skill.",
+      `Use applicationId ${JSON.stringify(use.applicationId)} and useId ${JSON.stringify(use.useId)}. The operationId is the declared ID above. Form save input carries the current dynamic form's string fields plus the task revision obtained with those values; runNow input is {}.`,
+      "Default form.save returns an unsaved page-draft envelope: write it to the draft artifact and link the reader to review/save. Session automatic mode allows the same declared save to execute directly. Only the authenticated session owner changes that setting.",
+      "An action can return confirmation-required with intentId. End this tool call immediately; do not wait or poll. Continue independent work or finish the round. A genuine user agent-answer is delivered back to this conversation and can wake a later run. Then POST `{}` to `$ONTOMATO_PANEL_OPERATIONS_URL/intents/<intentId>/dispatch` using THAT RUN's callback and run ID. Node verifies the real selected option and the current executor. Free text, defaults, parent answers, questionId or a different toolCallId never authorize execution. Changed parameters/target/executor require a new intent and confirmation.",
+      "A dispatched result is final for that intent, including failure/unknown; never retry the owner call under another toolCallId. Read the intent at `/api/panel-operation-intents/<intentId>` through ONTOMATO_WORKBENCH_URL when needed; this read does not execute it.",
     ].join("\n"),
     ...(recipes === undefined ? [] : [`### Recipes\n\n${recipes}`]),
   ].filter(Boolean).join("\n\n");

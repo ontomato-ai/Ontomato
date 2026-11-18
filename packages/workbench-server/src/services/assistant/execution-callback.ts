@@ -14,6 +14,7 @@ export function executionSkillEnvironment(_owner: AssistantOwner, initiatorCrede
       ONTOMATO_WORKBENCH_URL: root + pathPrefix + "workbench",
       ONTOMATO_URL: root + pathPrefix + "workbench",
       ONTOMATO_ONTOLOGY_URL: root + pathPrefix + "ontology",
+      ONTOMATO_PANEL_OPERATIONS_URL: root + pathPrefix + "panels",
       ONTOMATO_RETRIEVAL_CALLBACK_URL: root + pathPrefix + "retrieval",
       ONTOMATO_SKILL_SCENARIO: "platform",
     },

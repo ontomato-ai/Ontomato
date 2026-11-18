@@ -194,13 +194,13 @@ public class OntologyAgentHost {
   }
 
   public JSONObject send(
-      String session, String key, String message, String replyTo, OntologyAgentAccess.Context context)
+      String session, String key, String message, String replyTo, Integer selectedOption, OntologyAgentAccess.Context context)
       throws Exception {
     if (message == null || message.isBlank())
       throw AgentHttpException.invalid("Message is required");
     var accepted = isRetrieval(session, context.owner())
-      ? retrieval.send(session,key,message,replyTo,context)
-      : actionCreation.send(session,key,message,replyTo,context);
+      ? retrieval.send(session,key,message,replyTo,selectedOption,context)
+      : actionCreation.send(session,key,message,replyTo,selectedOption,context);
     var delivery=accepted.getJSONObject("delivery");
     accepted.put("snapshot","run".equals(delivery.getString("delivery")) && "running".equals(delivery.getString("status")) ? run(session,delivery.getString("runId"),context.owner()) : null);
     return accepted;

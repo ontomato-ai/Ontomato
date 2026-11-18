@@ -48,7 +48,7 @@ it("governance-only preparation registers caller bounds without query preparatio
   expect(prepared.definition).toMatchObject({agentId,modelId:"provider/model",skills:[skill]});
   expect(prepared.environment.values).toMatchObject({ONTOMATO_ASSISTANT_SESSION_ID:sessionId,ONTOMATO_SKILL_SCENARIO:"platform",ONTOMATO_ONTOLOGY_URL:"http://ontology"});
   expect(prepared.environment.values).not.toHaveProperty("ONTOMATO_RETRIEVAL_CALLER_ID");
-  expect(mocks.callback.mock.calls[0][0].expiresAt).toBe(new Date((await mocks.turn()).created_at).getTime()+900_000);
+  expect(mocks.callback.mock.calls.find(([claim])=>claim.pathPrefix.endsWith("/governance-window"))![0].expiresAt).toBe(new Date((await mocks.turn()).created_at).getTime()+900_000);
   expect(mocks.overview).not.toHaveBeenCalled();expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({continuationIds:[],recentUserMessages:[],executionUserId:null}),{token:"user"});expect(mocks.recordWindow).not.toHaveBeenCalled();
 });
 it("the selected query skill opens and records its actual scope regardless of preset kind",async()=>{

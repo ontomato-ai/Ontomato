@@ -111,11 +111,12 @@ public class ActionCreationService {
     return replayed;
   }
 
-  public JSONObject send(String id,String run,String message,String replyTo,OntologyAgentAccess.Context context) throws Exception {
+  public JSONObject send(String id,String run,String message,String replyTo,Integer selectedOption,OntologyAgentAccess.Context context) throws Exception {
     AgentJson.message(message);
     var input=JSONObject.of("role","user","content",message,"timestamp",System.currentTimeMillis());
     if(replyTo!=null) input=JSONObject.of("role","notification","kind","agent-answer","source",JSONObject.of("kind","user"),"replyTo",replyTo,"content",message,"timestamp",System.currentTimeMillis());
-    return channel.send(AGENT,id,run,input,null,context);
+    if(selectedOption!=null) input.put("selectedOption",selectedOption);
+    return channel.send(AGENT,id,run,input,null,context,true);
   }
   public void authorize(Owner owner) { operations.requireWriteAccess(owner); }
   public JSONObject prepare(String id,String run,JSONObject inputMessage,OntologyAgentAccess.Context context) throws Exception {

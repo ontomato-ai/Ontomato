@@ -34,6 +34,8 @@ it('keeps the initiator identity for caller ownership and native skills in self 
  expect(mocks.skills).toHaveBeenCalledWith('domain',input.a,input.credentials);
  expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({executionUserId:null,classNames:['Person']}),input.credentials);
  expect(run.environment.secrets.ONTOMATO_TK).toBe('human-secret');
+ expect(run.environment.secrets.ONTOMATO_EXECUTION_CALLBACK).toBe('sealed-callback');
+ expect(run.environment.values.ONTOMATO_PANEL_OPERATIONS_URL).toBe('http://workbench.test/api/assistant/executions/run/panels');
 });
 it('uses executor business credentials while page skills and caller ownership stay with the initiator',async()=>{
  const input=request('executor');const run=await prepareAnalystRun(input);

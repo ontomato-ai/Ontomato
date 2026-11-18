@@ -124,7 +124,7 @@ class OntologyGenerationContractTest {
             sessions,
             operations,
             code, permissionLookup,admission.getBeanProvider(AgentCaller.class),admission.getBeanProvider(AgentChannelRuns.class));
-    when(channel.send(anyString(),anyString(),anyString(),any(),any(),any(),nullable(String.class))).thenAnswer(call->{
+    when(channel.send(anyString(),anyString(),anyString(),any(),any(),any(),nullable(String.class),eq(false))).thenAnswer(call->{
       String agent=call.getArgument(0),sid=call.getArgument(1),rid=call.getArgument(2);
       var prepared=generation.prepare(sid,rid,OntologyGenerationService.kindForAgent(agent),call.getArgument(3),call.getArgument(4),call.getArgument(5));
       return runtime.json(owner.domainId(),rid,"/v1/sessions/"+sid+"/runs","POST",prepared,rid);

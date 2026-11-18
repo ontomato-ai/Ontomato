@@ -23,3 +23,18 @@ it("defines the room under the composer once, and both composers read it", () =>
   const unfold = [...style("../components/ShellComposer.vue").matchAll(/\n\.composer-unfold \{([^}]*)\}/g)].map((rule) => rule[1]).join("");
   expect(unfold).toMatch(/bottom: var\(--shell-composer-foot\);/);
 });
+
+/*
+ * Under a conversation the input stands in a column: a flexible basis there would override the height its lines set, and
+ * the box would stay one line however much is written. It does not flex in that column; floating, it shares a line with
+ * send and takes what that line leaves. (The test page has no layout, so this reads the stylesheet; the rendered height
+ * is checked on the deployed page.)
+ */
+it("lets the conversation's input keep the height its lines set", () => {
+  const rules = style("../components/ShellComposer.vue");
+  const input = [...rules.matchAll(/\ntextarea \{([^}]*)\}/g)].map((rule) => rule[1]).join("");
+  expect(input).toMatch(/flex: none;/);
+  expect(input).not.toMatch(/flex: 1;/);
+  const floating = [...rules.matchAll(/\n\.composer\.floating textarea \{([^}]*)\}/g)].map((rule) => rule[1]).join("");
+  expect(floating).toMatch(/flex: 1 1 auto;/);
+});

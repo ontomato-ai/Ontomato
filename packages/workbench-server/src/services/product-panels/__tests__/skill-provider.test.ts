@@ -124,7 +124,9 @@ it("assembles one current package for a shared menu with a section per use and t
     expect(markdown).toContain("ONTOMATO_EXECUTION_CALLBACK");
     expect(markdown).toContain('"pageKey": "panels-trial-a-tasks"');
     expect(markdown).toContain('"form": {}');
-    expect(markdown).toContain("P3");
+    expect(markdown).toContain("$ONTOMATO_PANEL_OPERATIONS_URL/operate");
+    expect(markdown).toContain("/intents/<intentId>/dispatch");
+    expect(markdown).toContain("End this tool call immediately; do not wait or poll.");
     expect(markdown).not.toContain("fixture-platform-service");
     expect(markdown).not.toContain("fixture-owner");
     expect(markdown).not.toContain(panel.content.html);

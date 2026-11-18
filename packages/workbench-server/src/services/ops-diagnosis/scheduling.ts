@@ -95,7 +95,7 @@ export const operationsScheduleApplication: ScheduleApplication = {
       if (input.content.operation === "autotest") return startBatch(input, context);
       const sessionId = scheduledSessionId(input.runId);
       await diagnosisService.create(sessionId, context.owner, { agentId: DIAGNOSIS_AGENT_ID });
-      await diagnosisService.send(sessionId, input.runId, {message:input.content.instruction}, context.owner, context.credentials);
+      await diagnosisService.send(sessionId, input.runId, {message:input.content.instruction}, context.owner, context.credentials, "background");
       return { ...emptyExecution(), handle: { sessionId }, resultLink: { appId: "operations", path: `/ops/diagnosis?sessionId=${sessionId}` } };
     });
   },

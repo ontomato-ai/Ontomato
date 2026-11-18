@@ -166,10 +166,11 @@ public class OntologyRetrievalService {
     return replayed;
   }
 
-  public JSONObject send(String session,String run,String message,String replyTo,OntologyAgentAccess.Context context) throws Exception {
+  public JSONObject send(String session,String run,String message,String replyTo,Integer selectedOption,OntologyAgentAccess.Context context) throws Exception {
     var input=JSONObject.of("role","user","content",message,"timestamp",System.currentTimeMillis());
     if(replyTo!=null) input=JSONObject.of("role","notification","kind","agent-answer","source",JSONObject.of("kind","user"),"replyTo",replyTo,"content",message,"timestamp",System.currentTimeMillis());
-    return channel.send(RETRIEVER,session,run,input,null,context);
+    if(selectedOption!=null) input.put("selectedOption",selectedOption);
+    return channel.send(RETRIEVER,session,run,input,null,context,true);
   }
 
   /** One business admission owns both the model and binding branches. */

@@ -73,10 +73,11 @@ calculations and one-off HTML output, whose HTML embeds bundled library distribu
 assets so the exported package and result do not depend on workbench static routes.
 The canonical ECharts source remains the bundled library used by those HTML skills;
 package-local copies carry it in the standalone distributions.
-The host-owned `assistant-report` writes a report and offers a PPT follow-up. The
-assistant plans slides; its bundled script reads the report's original chart/data
-files and writes `report.pptx` as a normal runtime artifact. The startup migration
-replaces selected legacy PPT provider skills after retiring disabled selections.
+The host-owned `assistant-report` writes a report and says in the reply that the report
+can be turned into a PPT. The assistant plans slides; its bundled script reads the
+report's original chart/data files and writes `report.pptx` as a normal runtime artifact.
+The startup migration replaces selected legacy PPT provider skills after retiring disabled
+selections.
 
 Focused contract/component checks cover standard ZIP bytes, independent package
 validation, domain selection, edit publication, shared host metadata and retained
