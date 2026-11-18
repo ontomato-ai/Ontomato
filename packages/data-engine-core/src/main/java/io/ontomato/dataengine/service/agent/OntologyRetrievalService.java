@@ -4,6 +4,7 @@ import static io.ontomato.dataengine.service.agent.OntologyAgentStore.*;
 
 import com.alibaba.fastjson2.*;
 import io.ontomato.dataengine.service.*;
+import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import jakarta.annotation.PreDestroy;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -101,28 +102,47 @@ public class OntologyRetrievalService {
 
   private JSONObject scopedInput(JSONObject body, OntologyAgentAccess.Context context) {
     var input = input(body);
+    List<String> configured = List.of();
     if (context.callerId() != null) {
       var caller = store.caller(context.callerId(), context.owner(), false);
       if (caller.getBooleanValue("closed")) throw closed();
       var callerInput = caller.getJSONObject("input");
-      var allowed = callerInput.getList("classNames", String.class);
-      if (!allowed.isEmpty()) {
-        var requested = input.getList("classNames", String.class);
-        if (requested != null && !allowed.containsAll(requested))
-          throw new AgentHttpException(403, "FORBIDDEN", "Class scope cannot be widened");
-        input.put("classNames", requested == null || requested.isEmpty() ? allowed : requested);
-      }
+      configured = callerInput.getList("classNames", String.class);
       // The host owns the user's words; the model-supplied quotes never win in a caller scope.
       OntologyAgentStore.applyCallerUserQuotes(input, callerInput);
     }
-    var authority=context.access().classNames();
-    if(!authority.isEmpty()) {
-      var requested=input.getList("classNames",String.class);
-      if(requested!=null && !requested.isEmpty() && !authority.containsAll(requested)) throw new AgentHttpException(403,"FORBIDDEN","Class scope cannot be widened");
-      input.put("classNames",requested==null || requested.isEmpty()?authority:requested);
+
+    var parent = context.access().classNames();
+    var permission = context.access().permission();
+    var requested = input.getList("classNames", String.class);
+    if (requested != null && !requested.isEmpty()) {
+      if ((!configured.isEmpty() && !configured.containsAll(requested))
+          || (!parent.isEmpty() && !parent.containsAll(requested)))
+        throw new AgentHttpException(403, "FORBIDDEN", "Class scope cannot be widened");
+      var unreadable = unreadableClasses(requested, permission);
+      if (!unreadable.isEmpty())
+        throw new AgentHttpException(403, "FORBIDDEN",
+            "Execution user has no read permission for: " + String.join(", ", unreadable));
+      return input;
     }
-    input.put("classNames", QueryAccessService.classScope(context.access().permission(), input.getList("classNames", String.class)));
+
+    List<String> ceiling = configured.isEmpty() ? parent : configured;
+    if (!configured.isEmpty() && !parent.isEmpty()) {
+      ceiling = configured.stream().filter(parent::contains).toList();
+      if (ceiling.isEmpty())
+        throw new AgentHttpException(403, "FORBIDDEN", "No authorized classes in the requested scope");
+    }
+    input.put("classNames", QueryAccessService.classScope(permission, ceiling));
     return input;
+  }
+
+  private static List<String> unreadableClasses(List<String> classes, UserDataPermission permission) {
+    return classes.stream().filter(name -> !QueryPermissions.classAllowed(permission, name)).distinct().toList();
+  }
+
+  private static QueryAccessService.Access withClasses(QueryAccessService.Access access, List<String> classes) {
+    return new QueryAccessService.Access(access.user(), access.permission(), access.grant(),
+        access.credential(), access.expiresAt(), classes, access.target(), access.executionUserId(), access.initiatorUserId());
   }
 
   static JSONArray userQuotes(JSONArray messages,String inputId) {
@@ -176,6 +196,7 @@ public class OntologyRetrievalService {
   /** One business admission owns both the model and binding branches. */
   public JSONObject prepareRun(String session,String run,JSONObject message,String inputId,JSONObject parameters,String rootRunId,OntologyAgentAccess.Context context) throws Exception {
     launching.add(run);
+    boolean admitted = false;
     try {
       var records=store.rows("SELECT r.input FROM ontology_retrievals r JOIN ontology_agent_sessions s ON s.id=r.id WHERE r.id=? AND s.user_id=? AND s.domain_id=?",uuid(session),context.owner().userId(),context.owner().domainId());
       boolean continuation=!records.isEmpty();
@@ -203,12 +224,15 @@ public class OntologyRetrievalService {
         request.put("expectedRunId",old.getString("id"));request.put("expectedDecisionRevision",old.getIntValue("decision_revision"));
       }
       store.createSession(session,context.owner(),RETRIEVER);
-      var admitted=store.admit(session,run,context.owner(),input,request,context.callerId(),false,timeout(input),context.expiresAt(),continuation,context.language());
-      if(!admitted.replayed()) bindings.start(session,run,input,context);
-      return runtimeRequest(session,run,message,context);
+      var admission=store.admit(session,run,context.owner(),input,request,context.callerId(),false,timeout(input),context.expiresAt(),continuation,context.language());
+      admitted = true;
+      var effective = new OntologyAgentAccess.Context(context.owner(),
+          withClasses(context.access(), input.getList("classNames", String.class)), context.token(), context.apiKey(),
+          context.language(), context.expiresAt(), context.callerId(), context.executionUserId());
+      if(!admission.replayed()) bindings.start(session,run,input,effective);
+      return runtimeRequest(session,run,message,effective);
     } catch(Exception error) {
-      var admitted=store.rows("SELECT id FROM ontology_agent_runs WHERE id=? AND session_id=?",uuid(run),uuid(session));
-      if(!admitted.isEmpty()) {
+      if(admitted) {
         store.closeRun(session,run,context.owner());
         var record=store.run(session,run,context.owner());
         boolean modelOnly=record.getJSONObject("request").getBooleanValue("modelCancelled");
@@ -274,6 +298,10 @@ public class OntologyRetrievalService {
     var record=store.retrieval(id,context.owner());
     var input=record.getJSONObject("input");
     var row=store.run(id,runId,context.owner());
+    String callerId = row.getString("caller_id");
+    var unreadable = callerId == null ? List.<String>of() : unreadableClasses(
+        store.caller(callerId, context.owner(), false).getJSONObject("input").getList("classNames", String.class),
+        context.access().permission());
       var prior = new JSONArray();
       var ids = new LinkedHashSet<>(input.getList("previousDatasetIds", String.class));
       for (var old :
@@ -319,6 +347,8 @@ public class OntologyRetrievalService {
               input.getString("question"),
               "userQuotes",
               row.getJSONObject("request").get("userQuotes"),
+              "unreadableClassNames",
+              unreadable,
               "overview",
               scopedOverview(context.access(), input.getList("classNames", String.class)),
               "knowledge",
@@ -340,12 +370,14 @@ public class OntologyRetrievalService {
     var input=record.getJSONObject("input");
     var row=store.run(id,runId,context.owner());
     long deadline=Instant.parse(row.getString("deadline")).toEpochMilli();
-    String grant=access.exploration(context,id,id,runId,deadline,input.getList("classNames",String.class));
+    var classes = input.getList("classNames", String.class);
+    String grant=access.exploration(context,id,id,runId,deadline,classes);
     definitions.publish();
     var definition=definitions.definition(context.owner().domainId(),context.language(),deadline-System.currentTimeMillis());
     definition.put("context",modelContext(id,runId,context));
     store.transaction(() -> store.gate(id,runId,context.owner()));
     return JSONObject.of("language",context.language(),"input",message,"definition",definition,
+      "authority", JSONObject.of("classNames", classes, "executionKind", "live"),
       "environment",JSONObject.of("values",JSONObject.of("ONTOMATO_SKILL_SCENARIO","platform","ONTOMATO_ONTOLOGY_URL",runtime.ontologyUrl(),"ONTOMATO_RETRIEVAL_ID",id),"secrets",JSONObject.of("ONTOMATO_TK",grant)));
   }
 
@@ -603,6 +635,8 @@ public class OntologyRetrievalService {
         () -> {
           store.gate(id, runId, context.owner());
           var accepted = store.retrieval(id, context.owner());
+          // Reauthorize all admitted classes against current permissions before accepting output.
+          var classes = scopedInput(accepted.getJSONObject("input"), context).getList("classNames", String.class);
           var decisions = accepted.getJSONArray("decisions");
           for (String decision : body.getList("decisionIds", String.class))
             if (decisions.stream()
@@ -621,11 +655,7 @@ public class OntologyRetrievalService {
           if (!runId.equals(previous.getString("run_id"))
               || !AgentJson.hash(body).equals(previous.getString("input_hash")))
             throw conflict("Output input changed");
-          // User credentials do not carry the caller's admitted class range.
-          var current = context.access();
-          return new QueryAccessService.Access(current.user(), current.permission(), current.grant(),
-              current.credential(), current.expiresAt(), scopedInput(accepted.getJSONObject("input"),context).getList("classNames", String.class),
-              current.target(),current.executionUserId(),current.initiatorUserId());
+          return withClasses(context.access(), classes);
         });
     var jobInput =
         JSONObject.of("submissionId", key, "recipe", recipe, "sourceAnalysis", body.get("sourceAnalysis"));
