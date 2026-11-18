@@ -2,6 +2,13 @@
 export type SseOpenData = { ok: true };
 export type SseHeartbeatData = { ts: number };
 
+const RECONNECT_DELAYS = [500, 1000, 2000, 5000, 10000] as const;
+
+/** Backoff for SSE consumers that reopen until explicitly stopped. A ready frame resets their attempt to zero. */
+export function sseReconnectDelay(attempt: number): number {
+  return RECONNECT_DELAYS[Math.min(attempt, RECONNECT_DELAYS.length - 1)]!;
+}
+
 /**
  * Reads the `data:` payloads of an SSE stream until `handle` says the stream is done with one. Returns true when it
  * ended that way, false when the body ended first. Malformed payloads throw.

@@ -115,20 +115,44 @@ it.each([403, 404, "bad-frame"] as const)("reports %s and stops instead of reope
   }
 });
 
-it("reopens a failed connection and recovers from the next snapshot", async () => {
+it("backs off consecutive failures, resets on a snapshot, and cancels a pending reconnect", async () => {
   const snapshot = { kind: "snapshot", panel: { id: "panel-a", revision: 1 }, projections: [] };
-  const request = vi.fn().mockRejectedValueOnce(new TypeError("Network unavailable")).mockImplementationOnce(async () =>
-    new Response(new ReadableStream({
-      start(controller) { controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(snapshot)}\n\n`)); },
-    }), { headers: { "Content-Type": "text/event-stream" } }));
+  const headers = { "Content-Type": "text/event-stream" };
+  const request = vi.fn()
+    .mockResolvedValueOnce(new Response(null, { status: 503 }))
+    .mockRejectedValueOnce(new TypeError("Network unavailable"))
+    .mockResolvedValueOnce(new Response(`data: ${JSON.stringify(snapshot)}\n\n`, { headers }))
+    .mockResolvedValueOnce(new Response(null, { status: 429 }))
+    .mockImplementation(async () => new Response(new ReadableStream(), { headers }));
   vi.stubGlobal("fetch", request);
   const { platformPanelHost } = await import("../panel-host");
   const recover = vi.fn(async () => {});
+  vi.useFakeTimers();
   const stop = platformPanelHost("app-a").subscribe("panel-a", () => {}, recover);
   try {
-    await vi.waitFor(() => expect(recover).toHaveBeenCalledWith(snapshot));
+    await vi.advanceTimersByTimeAsync(499);
+    expect(request).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
     expect(request).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(999);
+    expect(request).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(recover).toHaveBeenCalledWith(snapshot);
+
+    await vi.advanceTimersByTimeAsync(499);
+    expect(request).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(request).toHaveBeenCalledTimes(4);
+    expect(vi.getTimerCount()).toBe(1);
+
+    stop();
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(request).toHaveBeenCalledTimes(4);
   } finally {
     stop();
+    vi.useRealTimers();
   }
 });

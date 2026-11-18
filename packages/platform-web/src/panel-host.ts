@@ -2,7 +2,7 @@ import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
 import { applicationPanelUsesResponseSchema, productPanelSchema, type ProductPanel } from "@ontomato/contracts/product-panels";
 import { appsSdkCurrentSchema } from "@ontomato/contracts/apps-sdk";
 import { panelSubscriptionFrameSchema, type PanelSubscriptionEvent, type PanelSubscriptionSnapshot } from "@ontomato/contracts/product-subscriptions";
-import { readSseData } from "@ontomato/contracts/sse";
+import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
 import { ElMessage } from "element-plus";
 import { registerPanelFrame } from "./app-host";
 import type { PanelHostPort } from "@ontomato/platform-shell";
@@ -75,41 +75,53 @@ function subscribePanelDefinition(
   recover: (snapshot: PanelSubscriptionSnapshot) => Promise<void>,
 ): () => void {
   const stream = new AbortController();
-  async function watch() {
-    let reconnecting = false;
-    while (!stream.signal.aborted) {
-      try {
-        const response = await nodeApiRequest(panelHostPaths.subscriptions, {
-          method: "POST",
-          signal: stream.signal,
-          headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-          body: JSON.stringify({ kind: "product-definition", target: { kind: "panel", id: panelId } }),
-        });
-        if (!response.body || response.headers.get("content-type")?.split(";")[0] !== "text/event-stream") {
-          throw new PanelStreamContractError("Panel subscription did not return an event stream");
-        }
-        await readSseData(response, async payload => {
-          const parsed = panelSubscriptionFrameSchema.safeParse(payload);
-          if (!parsed.success) throw new PanelStreamContractError("Panel subscription frame broke the contract", { cause: parsed.error });
-          const frame = parsed.data;
-          if (frame.kind === "snapshot") {
-            if (reconnecting) await recover(frame);
-          } else {
-            listener(frame);
-          }
-          return false;
-        }, () => !stream.signal.aborted);
-      } catch (reason) {
-        if (stream.signal.aborted) return;
-        const refused = reason instanceof ApiRequestError && (reason.status === 403 || reason.status === 404);
-        if (refused || reason instanceof PanelStreamContractError || reason instanceof SyntaxError)
-          throw reason;
+  let reconnecting = false;
+  let attempt = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  async function connect() {
+    try {
+      const response = await nodeApiRequest(panelHostPaths.subscriptions, {
+        method: "POST",
+        signal: stream.signal,
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+        body: JSON.stringify({ kind: "product-definition", target: { kind: "panel", id: panelId } }),
+      });
+      if (!response.body || response.headers.get("content-type")?.split(";")[0] !== "text/event-stream") {
+        throw new PanelStreamContractError("Panel subscription did not return an event stream");
       }
-      reconnecting = true;
+      await readSseData(response, async payload => {
+        const parsed = panelSubscriptionFrameSchema.safeParse(payload);
+        if (!parsed.success) throw new PanelStreamContractError("Panel subscription frame broke the contract", { cause: parsed.error });
+        const frame = parsed.data;
+        if (frame.kind === "snapshot") {
+          attempt = 0;
+          if (reconnecting) await recover(frame);
+        } else {
+          listener(frame);
+        }
+        return false;
+      }, () => !stream.signal.aborted);
+    } catch (reason) {
+      if (stream.signal.aborted) return;
+      const refused = reason instanceof ApiRequestError && (reason.status === 403 || reason.status === 404);
+      if (refused || reason instanceof PanelStreamContractError || reason instanceof SyntaxError) {
+        ElMessage.error(reason.message);
+        return;
+      }
     }
+
+    if (stream.signal.aborted) return;
+    reconnecting = true;
+    timer = setTimeout(() => {
+      timer = undefined;
+      void connect();
+    }, sseReconnectDelay(attempt++));
   }
-  void watch().catch(reason => {
-    if (!stream.signal.aborted) ElMessage.error(reason instanceof Error ? reason.message : String(reason));
-  });
-  return () => stream.abort();
+
+  void connect();
+  return () => {
+    stream.abort();
+    clearTimeout(timer);
+  };
 }

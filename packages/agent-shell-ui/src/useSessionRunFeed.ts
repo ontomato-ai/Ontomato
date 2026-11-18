@@ -6,7 +6,7 @@ import type {
   AgentHostSessionRunSnapshot,
 } from "@ontomato/contracts/agent-host";
 import { SessionRunStreamError, type SessionRunPort } from "./host";
-import { RECONNECT_DELAYS } from "./run-subscription";
+import { sseReconnectDelay } from "@ontomato/contracts/sse";
 
 export interface SessionRunFeedOptions {
   /** The host's passive notice port of the same prefix every list on this page reads from. */
@@ -86,7 +86,7 @@ export function useSessionRunFeed(options: SessionRunFeedOptions) {
         timer = setTimeout(() => {
           timer = null;
           if (!stopped) connect();
-        }, RECONNECT_DELAYS[Math.min(attempt++, RECONNECT_DELAYS.length - 1)]);
+        }, sseReconnectDelay(attempt++));
       },
     });
   }
