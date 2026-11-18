@@ -50,7 +50,7 @@ export const agentTasksSnapshotSchema = z.object({
   /** Authoritative human questions, also while the conversation has no active run. */
   pendingQuestions: z.array(agentPendingQuestionSchema).optional(),
   qualityResults: z.array(qualityResultSchema),
-  notifications: z.array(runtimeMessageRecordSchema.extend({ message: agentNotificationSchema, agentPendingQuestionSchema })).optional(),
+  notifications: z.array(runtimeMessageRecordSchema.extend({ message: agentNotificationSchema })).optional(),
   /** Failed preparations have no run; the intent owns this diagnostic, never a synthetic user message. */
   preparationFailures: z.array(z.object({ runId: id, inputId: id, error: z.string(), createdAt: runtimeTimestampSchema }).strict()).optional(),
 }).strict();

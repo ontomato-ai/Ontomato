@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./panel-operations": "./src/panel-operations.ts",
+    "./panel-server-operations": "./src/panel-server-operations.ts",
     "./locales/*": "./src/locales/*.ts"
   },
   "scripts": {
@@ -19,7 +20,8 @@
     "element-plus": "2.13.6",
     "lucide-vue-next": "1.0.0",
     "vue": "3.5.30",
-    "vue-i18n": "10.0.8"
+    "vue-i18n": "10.0.8",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@types/node": "22.19.15",

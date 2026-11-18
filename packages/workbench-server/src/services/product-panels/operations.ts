@@ -5,12 +5,10 @@ import { pageDraftSchema } from "@ontomato/contracts/page-draft";
 import { agentActorRefSchema, type AgentSessionRef } from "@ontomato/contracts/agent-channel";
 import { agentQuestionAnswerReceiptSchema, agentUserQuestionReceiptSchema } from "@ontomato/contracts/agent-user-questions";
 import { applicationPanelUsesResponseSchema } from "@ontomato/contracts/product-panels";
-import type { CreatePanelOperationIntentRequest, PanelOperationIntent, PanelOperateResponse, PanelUseRef } from "@ontomato/contracts/panel-agent";
+import type { CreatePanelOperationIntentRequest, PanelOperationIntent, PanelOperateResponse, PanelUseRef, PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { projectionOperations, projectionPorts } from "@ontomato/contracts/panel-projection";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
-import { RUN_NOW, SCHEDULED_TASK, DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
-import { scheduledTaskPanelOperations } from "@ontomato/platform-schedules/panel-operations";
-import { ScheduleRequestError } from "@ontomato/platform-schedules/panel-operations";
+import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
 import { config } from "../../config/application";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { HttpError } from "../../utils/errors";
@@ -22,6 +20,8 @@ import type { AssistantOwner } from "../assistant/store";
 import { restoreAgentCaller } from "../agent-host/caller";
 import { readCurrentPanel, readCurrentProjection } from "./current";
 import { readComponentCatalogue } from "./skill-package";
+import { panelServerOperation, type PanelServerOperation, type PanelOperationTarget, type PanelOperationHost } from "./server-operations";
+import { panelConfirmation } from "./confirmation";
 import { panelOperationStore as store } from "./operation-store";
 
 async function admitted(owner: AssistantOwner, credentials: AssistantCredentials, runId: string, ref: PanelUseRef, operationId: string) {
@@ -45,25 +45,26 @@ async function admitted(owner: AssistantOwner, credentials: AssistantCredentials
     if (!metadata) throw new HttpError(422,"Projection component is unavailable","COMPONENT_UNAVAILABLE");
     const operation = projectionOperations(panel.manifest,{slot,ports:projectionPorts(projection,metadata)}).find(op => op.id === operationId);
     if (operation) {
-      const binding = projection.binding;
-      const supported = operation.handlerRef === RUN_NOW
-        ? binding.kind === "PlatformOperation" && binding.id === RUN_NOW
-        : operation.handlerRef === `${SCHEDULED_TASK}.save` && binding.kind === "PlatformObjectType" && binding.id === SCHEDULED_TASK;
+      const handler = panelServerOperation(operation.handlerRef);
       const targetType = operation.target?.source === "state" ? panel.manifest.state[operation.target.state] : null;
-      if (!supported || targetType?.kind !== "object" || targetType.objectType !== SCHEDULED_TASK)
+      if (!isDeepStrictEqual(projection.binding, handler.binding) || operation.kind !== handler.kind ||
+        targetType?.kind !== "object" || targetType.objectType !== handler.targetType)
         throw new HttpError(422,"Operation binding or target type has no server client","OPERATION_UNAVAILABLE");
-      return {run,use,panel,projection,operation};
+      return {run,use,panel,projection,operation,handler};
     }
   }
   throw new HttpError(422,"No supported declared operation has that ID","OPERATION_UNAVAILABLE");
 }
-const saveInput = z.object({ revision:z.number().int().nonnegative() }).catchall(z.string());
-function validateCall(intent: Pick<PanelOperationIntent,"operation"|"call">) {
-  const {operation,call} = intent;
-  z.object({kind:z.literal("object"),objectType:z.literal(SCHEDULED_TASK),primaryKey:z.string().uuid()}).strict().parse(call.target);
-  if (operation.handlerRef === `${SCHEDULED_TASK}.save` && operation.kind === "form.save") saveInput.parse(call.input);
-  else if (operation.handlerRef === RUN_NOW && operation.kind === "action") z.object({}).strict().parse(call.input);
-  else throw new HttpError(422,"This operation has no server owner client","OPERATION_UNAVAILABLE");
+function validateCall(handler: PanelServerOperation, call: PanelOperationIntent["call"]) {
+  handler.targetSchema.parse(call.target);
+  handler.inputSchema.parse(call.input);
+}
+function operationHost(credentials: AssistantCredentials): PanelOperationHost {
+  return { request(path, init) {
+    const headers = new Headers(buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey, credentials.headers));
+    new Headers(init.headers).forEach((value,key) => headers.set(key,value));
+    return fetch(config.dataQuery.baseUrl.replace(/\/$/u,"")+path.slice(DATA_QUERY_GATEWAY.length),{...init,redirect:"error",headers});
+  }};
 }
 const rootOf = (run: Awaited<ReturnType<typeof runForOwner>>) => run.channel!.userRecipient?.session;
 function sourceMatches(intent: PanelOperationIntent, session: AgentSessionRef) {
@@ -72,14 +73,14 @@ function sourceMatches(intent: PanelOperationIntent, session: AgentSessionRef) {
 function result(intent: PanelOperationIntent): PanelOperateResponse {
   return {kind:"dispatched",intentId:intent.intentId,outcome:intent.outcome};
 }
-export async function operatePanel(owner: AssistantOwner, credentials: AssistantCredentials, runId: string, input: CreatePanelOperationIntentRequest): Promise<PanelOperateResponse> {
+export async function operatePanel(owner: AssistantOwner, credentials: AssistantCredentials, runId: string, input: CreatePanelOperationIntentRequest, initiatorName: string): Promise<PanelOperateResponse> {
   const current = await admitted(owner,credentials,runId,input,input.operationId);
   const executor = await credentialsForRun(owner,runId,credentials,current.run.sessionId);
   const source = {session:{providerId:current.run.channel!.agent.providerId,sessionId:current.run.sessionId},runId};
   const root = rootOf(current.run);
   if (!root) throw new HttpError(409,"Execution has no authenticated human session","USER_SESSION_UNAVAILABLE");
   if (current.run.channel!.authority.executionKind !== "live") throw new HttpError(422,"Management operations do not support test data","BUILD_TEST_UNSUPPORTED");
-  validateCall({operation:current.operation,call:input.call});
+  validateCall(current.handler, input.call);
   const settings = await store.settings(owner,root);
   let intent = await store.find(owner,input.intentId);
   if (intent) {
@@ -104,11 +105,15 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
   if (intent.dispatched) return result(intent);
   if (intent.confirmation === "automatic") return dispatchPanel(owner,credentials,runId,intent.intentId);
   if (intent.operation.kind === "form.save") return {kind:"draft",intentId:intent.intentId,
-    draft:pageDraftSchema.parse({pageKey:current.use.pageKey,operation:intent.operation.handlerRef,target:{id:input.call.target!.kind === "object" ? input.call.target!.primaryKey : undefined},form:Object.fromEntries(Object.entries(input.call.input).filter(([key]) => key !== "revision"))})};
+    draft:pageDraftSchema.parse({pageKey:current.use.pageKey,operation:intent.operation.handlerRef,target:{id:input.call.target!.kind === "object" ? input.call.target!.primaryKey : undefined},form:(current.handler as Extract<PanelServerOperation, {kind:"form.save"}>).draftInput(input.call.input)})};
+  const target = intent.call.target as PanelOperationTarget;
+  const confirmation = await panelConfirmation(credentials, {
+    operation: intent.operation.label,
+    target: await current.handler.targetLabel(operationHost(credentials),target),
+    executionUserId: intent.executionUserId, initiatorName,
+  });
   const question = agentUserQuestionReceiptSchema.parse(await new RuntimeClient(owner.domainId,undefined,owner.userId).request("/v1/channel/user-questions","POST",{
-    source:intent.source,
-    message:`${intent.operation.label}\nTarget: ${JSON.stringify(intent.call.target)}\nInput: ${JSON.stringify(intent.call.input)}\nExecutor: ${intent.executionUserId ?? owner.userId}\nIntent: ${intent.intentId}`,
-    defaultAssumption:"Do not execute this operation.",options:[{label:"Do not execute",isDefault:true},{label:"Execute this one operation"}],
+    source:intent.source, ...confirmation,
   },intent.questionId!));
   return {kind:"confirmation-required",intentId:intent.intentId,question};
 }
@@ -139,29 +144,17 @@ export async function dispatchPanel(owner: AssistantOwner, credentials: Assistan
     const {text:_text,...provenance} = answer;
     intent = {...intent,answer:provenance};
   }
-  validateCall(intent);
+  validateCall(current.handler, intent.call);
   if (!await store.claim(owner,intent)) return result(await store.get(owner,id));
-  const host = {request:(path:string,init:NonNullable<Parameters<typeof fetch>[1]>) => {
-    const headers = new Headers(buildBackendHeaders(executor.credentials.token,undefined,executor.credentials.locale,executor.credentials.apiKey,executor.credentials.headers));
-    new Headers(init.headers).forEach((value,key) => headers.set(key,value));
-    return fetch(config.dataQuery.baseUrl.replace(/\/$/u,"")+path.slice(DATA_QUERY_GATEWAY.length),{...init,redirect:"error",headers});
-  }};
-  const api = scheduledTaskPanelOperations(host);
+  let outcome: PanelOperationOutcome;
   try {
-    const target = intent.call.target as {kind:"object";objectType:string;primaryKey:string};
-    const data = intent.operation.handlerRef === RUN_NOW ? await api.runNow(target.primaryKey,id) :
-      await api.save(target.primaryKey,Object.fromEntries(Object.entries(intent.call.input).filter(([key]) => key !== "revision")) as Record<string,string>,intent.call.input.revision as number);
-    const outcome = {kind:"success" as const,data:JSON.parse(JSON.stringify(data))};
-    await store.outcome(owner,id,outcome);
-    return {kind:"dispatched",intentId:id,outcome};
+    outcome = await current.handler.execute(operationHost(executor.credentials),intent.call.target as PanelOperationTarget,intent.call.input,id);
   } catch (error) {
-    // Persist the owner's refusal or uncertainty after the irreversible claim; never release or retry it.
-    const outcome = error instanceof ScheduleRequestError && error.refusal
-      ? {kind:"failure" as const,code:error.refusal.code,message:error.refusal.message,details:JSON.parse(JSON.stringify(error.refusal))}
-      : {kind:"unknown" as const,message:error instanceof Error?error.message:String(error)};
-    await store.outcome(owner,id,outcome);
-    return {kind:"dispatched",intentId:id,outcome};
+    // An uncertain owner call never releases the irreversible claim.
+    outcome = {kind:"unknown",message:error instanceof Error?error.message:String(error)};
   }
+  await store.outcome(owner,id,outcome);
+  return {kind:"dispatched",intentId:id,outcome};
 }
 /** Exact human owner, independent of readable/admin access and of any old run's liveness. */
 export async function ownPanelSettings(owner: AssistantOwner, root: AgentSessionRef) {

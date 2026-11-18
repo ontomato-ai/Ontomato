@@ -83,15 +83,7 @@ export const agentDeliverySchema = z.object({
 export const agentChannelCommandSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("list"), query: z.string().optional() }).strict(),
   z.object({ op: z.literal("start"), agent: agentRefSchema, message: z.string().min(1), title: z.string().optional(), context: runtimeJsonObjectSchema.optional() }).strict(),
-  z.object({ op: z.literal("send"), session: z.union([agentSessionRefSchema,z.literal("parent")]), message: z.string().min(1), steer: z.boolean().optional(), needsInput: z.boolean().optional(), replyTo: id.optional(),
-  /** Explicit human delivery; ordinary agent questions keep their existing route. */
-  recipient: z.literal("user").optional(),
-  selectedOption: z.number().int().nonnegative().optional(),
-  /** Set by the authenticated human host, never by the model or browser body. */
-  respondent: agentActorRefSchema.optional(),
-  /** Original receipt identity when a human answer is forwarded to the questioning session. */
-  answerId: id.optional(),
-  defaultAssumption: z.string().min(1).optional(), options: agentQuestionOptionsSchema.optional() }).strict(),
+  z.object({ op: z.literal("send"), session: z.union([agentSessionRefSchema,z.literal("parent")]), message: z.string().min(1), steer: z.boolean().optional(), needsInput: z.boolean().optional(), replyTo: id.optional(), defaultAssumption: z.string().min(1).optional(), options: agentQuestionOptionsSchema.optional() }).strict(),
   z.object({ op: z.literal("read"), taskId: id, files: z.boolean().optional(), view: z.enum(["result", "messages"]).optional(), cursor: z.number().int().nonnegative().optional(), limit: z.number().int().min(1).max(100).optional() }).strict(),
   z.object({ op: z.literal("cancel"), taskId: id }).strict(),
 ]).superRefine((command,ctx) => {

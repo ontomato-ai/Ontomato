@@ -1,3 +1,4 @@
+import { agentTasksSnapshotSchema } from "@ontomato/contracts/agent-tasks";
 import { afterEach, expect, it, vi } from "vitest";
 import { AgentChannel } from "../channel";
 import { AgentRuntime } from "../runtime";
@@ -378,4 +379,18 @@ it("wakes an idle questioning session for the ordinary user answer with the huma
  const prepare=vi.spyOn(port,"prepare").mockResolvedValue();
  await port.deliver(source.session,fresh,{...notification,source:{kind:"user"},selectedOption:1,answerId:inputId},{steer:true});
  expect(reserve.mock.calls[0][4]).toMatchObject({actor:fresh,root:source});expect(prepare).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+ {recipient:"user"},{selectedOption:1},{respondent:context.actor},{answerId:inputId},
+])("rejects host-only provenance in an agent/CLI send: %j",async fields=>{
+ const {channel:port}=channel();
+ const receive=vi.spyOn(port.facts,"receive");
+ await expect(port.execute(scope,run,{op:"send",session:"parent",message:"Approved",replyTo:inputId,...fields})).rejects.toMatchObject({name:"ZodError"});
+ expect(receive).not.toHaveBeenCalled();
+});
+it("parses a task-stream notification with no invented pending-question property",()=>{
+ expect(agentTasksSnapshotSchema.parse({sessionId,tasks:[],qualityResults:[],pendingQuestions:[],notifications:[{
+   id:inputId,runId,messageSeq:1,contextSeq:null,message:notification,
+ }]}).notifications?.[0].message).toEqual(notification);
 });

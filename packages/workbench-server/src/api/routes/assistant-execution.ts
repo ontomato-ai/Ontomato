@@ -1,3 +1,4 @@
+import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { createPanelOperationIntentRequestSchema, dispatchPanelOperationIntentRequestSchema } from "@ontomato/contracts/panel-agent";
 import { operatePanel, dispatchPanel } from "../../services/product-panels/operations";
 import { Router } from "express";
@@ -25,7 +26,7 @@ assistantExecutionRouter.post("/:runId/panels/operate",wrap(async(req,res)=>{
   const callback=res.locals.runtimeCallback as RuntimeCallback | undefined;
   if(!callback || callback.runId!==runId)throw new HttpError(403,"A run callback is required","FORBIDDEN");
   const {owner,credentials}=context(req);
-  res.json(await operatePanel(owner,credentials,runId,createPanelOperationIntentRequestSchema.parse(req.body)));
+  res.json(await operatePanel(owner,credentials,runId,createPanelOperationIntentRequestSchema.parse(req.body),(req as AuthenticatedRequest).userName));
 }));
 assistantExecutionRouter.post("/:runId/panels/intents/:intentId/dispatch",wrap(async(req,res)=>{
   const runId=z.string().uuid().parse(req.params.runId),intentId=z.string().uuid().parse(req.params.intentId);

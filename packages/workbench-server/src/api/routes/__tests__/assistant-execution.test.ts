@@ -15,7 +15,7 @@ const nativeFetch=globalThis.fetch;
 let server:Server,base:string;
 beforeAll(async()=>{
  const app=express();app.use(express.json());app.use(unwrapCallbackCredential);
- app.use((req,_res,next)=>{Object.assign(req,{userId:'U',domainId:'domain',token:req.header('tk'),locale:'en'});next();});
+ app.use((req,_res,next)=>{Object.assign(req,{userId:'U',userName:'Alice',domainId:'domain',token:req.header('tk'),locale:'en'});next();});
  app.use('/api/assistant/executions',assistantExecutionRouter);
  app.use((error:Error&{status?:number},_req:express.Request,res:express.Response,_next:express.NextFunction)=>{res.status(error.status??500).json({error:error.message});});
  server=app.listen(0,'127.0.0.1');await new Promise<void>(resolve=>server.once('listening',resolve));base=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -135,7 +135,7 @@ it("validates the fixed operation entrance and never accepts an approval or ques
  const headers={'content-type':'application/json','X-Ontomato-Callback-Credential':credential(),'X-Ontomato-Run-Id':run};
  mocks.operate.mockResolvedValue({kind:"confirmation-required",intentId:other});
  const response=await nativeFetch(base+`/api/assistant/executions/${run}/panels/operate`,{method:"POST",headers,body:JSON.stringify(body)});
- expect(response.status).toBe(200);expect(mocks.operate).toHaveBeenCalledWith({userId:"U",domainId:"domain"},expect.objectContaining({token:"initiator-token"}),run,body);
+ expect(response.status).toBe(200);expect(mocks.operate).toHaveBeenCalledWith({userId:"U",domainId:"domain"},expect.objectContaining({token:"initiator-token"}),run,body,"Alice");
  mocks.operate.mockClear();
  for(const forged of [{...body,questionId:other},{...body,approved:true}]) {
    expect((await nativeFetch(base+`/api/assistant/executions/${run}/panels/operate`,{method:"POST",headers,body:JSON.stringify(forged)})).status).toBe(400);
