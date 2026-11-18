@@ -40,7 +40,9 @@ return computed<ShellLabels>(() => ({
   pageAgentUnavailable: t("assistant.pageAgentUnavailable"),
   collapseComposer: t("assistant.collapseComposer"),
   expandComposer: t("assistant.expandComposer"),
-  pageContext: (page) => t("assistant.pageContext", { page }),
+  // A page the shell cannot name yet is named by its address alone: no name is invented for it.
+  pageContext: (page) => t("assistant.pageContext", { page: page.label, url: page.url }),
+  pageContextAddress: (url) => t("assistant.pageContextAddress", { url }),
   selectionContext: (selection) => t("assistant.selectionContext", { selection }),
   toolInput: t("assistant.toolInput"),
   toolOutput: t("assistant.toolOutput"),

@@ -2,7 +2,7 @@
 import { computed, inject, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
 import { PanelRightOpen } from "lucide-vue-next";
 import { conversationQuestions, shellContextKey, type ShellContext } from "../context";
-import { pageContextLine, pageMoved, samePageAddress, type PageContext } from "../page-context";
+import { pageContextLine, pageLineAddress, pageMoved, samePageAddress, type PageContext } from "../page-context";
 import type { AgentHostClient } from "../host";
 import type { AgentNav } from "../useAgentNav";
 import type { UserItem } from "../view";
@@ -61,8 +61,8 @@ const props = withDefaults(
     artifactRenderers?: readonly ArtifactRendererOverride[];
     toolRenderers?: readonly ToolRendererOverride[];
     /**
-     * The open page and what was selected in it, appended to messages sent while a paired page is open: the selection
-     * every time, the page itself on the conversation's first message or once the address moved elsewhere.
+     * The open page and what was selected in it, appended to messages sent while a paired page is open: its name and
+     * address from the moment it opens, and what it reports as selected.
      */
     pageContext?: PageContext | null;
     /** Recognises an in-app address in an answer and returns how to open its page; null leaves it as text. */
@@ -300,24 +300,23 @@ watch(sessionId, (id) => {
 });
 
 /**
- * The page a reopened conversation already carries: its history shows the line each message ended with, so the page of
- * the last message that named one is known, and a message written on that same page does not name it again. A page the
- * history says nothing about is carried once, explicitly.
+ * The page a reopened conversation already carries: its history shows the line each message ended with, so the address
+ * of the last message that named one is known, and a message written on that same page does not name it again. Two
+ * pages with one title are two addresses, which is what the line names them by. A page the history says nothing about is
+ * carried once, explicitly.
  */
 watch(
-  [() => conversation.loading.value, () => conversation.state.sessionId, () => props.pageContext?.label],
-  ([loading, session, label]) => {
-    if (loading || !session || !label || carriedPage.value !== null) return;
-    const prefix = props.labels.pageContext("");
+  [() => conversation.loading.value, () => conversation.state.sessionId, () => props.pageContext?.url],
+  ([loading, session, url]) => {
+    if (loading || !session || !url || carriedPage.value !== null) return;
+    const prompts = { page: props.labels.pageContext, pageAddress: props.labels.pageContextAddress, selection: props.labels.selectionContext };
     const named = conversation.items.value
       .filter((item): item is UserItem => item.kind === "user")
-      .map((item) => {
-        const line = item.text.split("\n").find((entry: string) => entry.startsWith(prefix));
-        return line ? line.slice(prefix.length).split("；")[0]! : null;
-      })
+      .map((item) => pageLineAddress(item.text, prompts))
       .filter((entry): entry is string => entry !== null)
       .at(-1);
-    if (named === label) carriedPage.value = samePageAddress(props.pageContext!.url);
+    // A conversation whose messages name no page names nothing here: the page rides on this message.
+    if (named && samePageAddress(named) === samePageAddress(url)) carriedPage.value = samePageAddress(url);
   },
   { immediate: true },
 );
@@ -326,9 +325,15 @@ async function send(input: string) {
   const agent = agentId.value;
   if (!agent) return;
   const page = pairedPage.value ? props.pageContext ?? null : null;
+  // The page rides on the conversation's first message or when the address moved elsewhere: the reader already knows
+  // which page it is, and repeating it on every message would spend the agent's context on what changed once.
   const carriesPage = page !== null && pageMoved(carriedPage.value, page);
   const line = page
-    ? pageContextLine(page, { page: props.labels.pageContext, selection: props.labels.selectionContext }, carriesPage)
+    ? pageContextLine(
+        page,
+        { page: props.labels.pageContext, pageAddress: props.labels.pageContextAddress, selection: props.labels.selectionContext },
+        carriesPage,
+      )
     : "";
   const text = line ? `${input}\n\n${line}` : input;
   const result = await conversation.send(agent, text);

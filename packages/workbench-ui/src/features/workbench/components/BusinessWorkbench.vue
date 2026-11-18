@@ -6,7 +6,7 @@ import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import {
   AgentShell, useAgentNav, useSessionRunFeed,
-  type PageContext, type ShellFeatureDeclaration, type ShellWorkbenchDeclaration,
+  type PageContext, type PageSelection, type ShellFeatureDeclaration, type ShellWorkbenchDeclaration,
 } from "@ontomato/agent-shell-ui";
 import { usePageAccess, usePilotPage } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
@@ -172,6 +172,44 @@ watch(conversationId, (id) => {
   if (id && agentId.value) rememberSession(agentId.value, id);
 });
 
+/**
+ * The page beside the conversation, for a message sent from its composer. The shell wrote the page's address into its own
+ * parameter, so it knows both that address and which page it is; the page contributes only what it reports about itself.
+ */
+const pageContext = computed<PageContext | null>(() => {
+  if (!pilotPage.value) return null;
+  return { url: pageAddress.value!, label: pageLabel(pilotPage.value.id), selection: selectionIn(pilotPage.value.id) };
+});
+
+/**
+ * What the reader calls a page this application opens beside the conversation. A panel application names its page in the
+ * platform's catalog, which its frame reports; before that the page has no name here, and the line names the address.
+ */
+function pageLabel(id: string): string {
+  if (id === DASHBOARDS_PAGE_ID) return t("assistant.featureDashboards");
+  if (id === GOVERNANCE_REPORT_PAGE_ID) return t("assistant.featureGovernanceReport");
+  if (id === AGENT_SETTINGS_PAGE_ID) return t("agents.title");
+  return reportedContext.value?.label ?? "";
+}
+
+/**
+ * What the reader has selected in the page. The report page carries the finding its address names; a dashboard's address
+ * names the board and the card; a panel reports its own selection once it has one.
+ */
+function selectionIn(id: string): readonly PageSelection[] {
+  if (id === GOVERNANCE_REPORT_PAGE_ID) {
+    const issue = new URLSearchParams(pageAddress.value!.split("?")[1] ?? "").get("issue");
+    return issue ? [{ kind: "issue", id: issue, label: `${t("assistant.governanceFinding")} ${issue}` }] : [];
+  }
+  if (id === DASHBOARDS_PAGE_ID) {
+    return dashboardSelectionFrom(Object.fromEntries(new URLSearchParams(pageAddress.value!.split("?")[1] ?? "")));
+  }
+  if (id === PANEL_APPLICATION_PAGE_ID) return reportedContext.value?.selection ?? [];
+  return [];
+}
+
+const labels = useShellLabels();
+
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: WORKBENCH_ID,
   label: appearance.value?.brand?.name || props.defaultBrandName,
@@ -182,39 +220,12 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
     inGovernanceReport.value
       ? governanceReportPageFeature(t("assistant.featureGovernanceReport"), pageAddress.value!)
       : null,
-    inPanelApplication.value ? panelApplicationPageFeature(reportedContext.value?.label ?? "", pageAddress.value!) : null,
+    inPanelApplication.value
+      ? panelApplicationPageFeature(pageContext.value?.label || pageAddress.value!, pageAddress.value!)
+      : null,
   ),
 }));
 
-const labels = useShellLabels();
-
-/**
- * The page beside the conversation names itself for a message sent from its composer. A governance report carries its
- * selected finding; what is selected in a dashboard is the dashboard's own to report.
- */
-const pageContext = computed<PageContext | null>(() => {
-  if (!pilotPage.value) return null;
-  if (inGovernanceReport.value) {
-    const issue = new URLSearchParams(pageAddress.value!.split("?")[1] ?? "").get("issue");
-    return {
-      pageKey: "governance-report",
-      url: pageAddress.value!,
-      label: t("assistant.featureGovernanceReport"),
-      selection: issue ? [{ kind: "issue", id: issue, label: `${t("assistant.governanceFinding")} ${issue}` }] : [],
-    };
-  }
-  // A panel says what the reader looks at itself: the use relation's page key, its address with the selection, and the
-  // selected objects.
-  if (inPanelApplication.value) return reportedContext.value;
-  if (inDashboards.value) {
-    // The selection is the page's address: the board, and the card the address names with its own name and id.
-    const address = Object.fromEntries(new URLSearchParams(pageAddress.value!.split("?")[1] ?? ""));
-    return { pageKey: "dashboard", url: pageAddress.value!, label: t("assistant.featureDashboards"), selection: dashboardSelectionFrom(address) };
-  }
-  return pilotPage.value.id === AGENT_SETTINGS_PAGE_ID
-    ? { pageKey: "agent-settings", url: pageAddress.value!, label: t("agents.title"), selection: [] }
-    : null;
-});
 
 /**
  * The one navigation state: the platform column lists the agents and conversations from it, and this conversation
