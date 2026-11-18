@@ -489,23 +489,23 @@
   },
   {
     "key": "AgentChannel.retrieval.starting",
-    "value": "Data retrieval is starting: {0} datasets, {1} rows; files: {2}."
+    "value": "Data retrieval is starting: {0} datasets, {1} rows. This notice does not mean any file has been shown in the user interface."
   },
   {
     "key": "AgentChannel.retrieval.running",
-    "value": "Data retrieval is running: {0} datasets, {1} rows; files: {2}."
+    "value": "Data retrieval is running: {0} datasets, {1} rows delivered so far. This notice does not mean any file has been shown in the user interface."
   },
   {
     "key": "AgentChannel.retrieval.completed",
-    "value": "Data retrieval completed: {0} datasets, {1} rows; files: {2}."
+    "value": "Data retrieval completed: {0} datasets, {1} rows. This notice means the results were delivered, not that any file has been shown in the user interface."
   },
   {
     "key": "AgentChannel.retrieval.failed",
-    "value": "Data retrieval failed: {0} datasets, {1} rows; files: {2}."
+    "value": "Data retrieval failed: {0} datasets, {1} rows delivered. This notice does not mean any file has been shown in the user interface."
   },
   {
     "key": "AgentChannel.retrieval.cancelled",
-    "value": "Data retrieval was cancelled: {0} datasets, {1} rows; files: {2}."
+    "value": "Data retrieval was cancelled: {0} datasets, {1} rows delivered. This notice does not mean any file has been shown in the user interface."
   },
   {
     "key": "KnowledgeGovernance.source.currentMessage",

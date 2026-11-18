@@ -118,11 +118,12 @@ class AgentChannelBoundaryTest {
     when(retrieval.deliveries(SESSION,RUN,owner)).thenReturn(java.util.List.of(
       JSONObject.of("source","binding","data",JSONObject.of("answer","","datasets",java.util.List.of(JSONObject.of("id",SESSION,"rowCount",5)))),
       JSONObject.of("source","retriever","data",JSONObject.of("answer","## Full answer\n|学院|人数|","datasets",java.util.List.of(JSONObject.of("id",RUN,"rowCount",5))))));
-    when(labels.get("zh-CN","AgentChannel.retrieval.completed")).thenReturn("取数已完成，交付 {0} 个数据集、{1} 行，文件：{2}。");
+    when(labels.get("zh-CN","AgentChannel.retrieval.completed")).thenReturn("取数已完成：{0} 个数据集、{1} 行。此通知表示结果已交付，不表示文件已在用户界面展示。");
     var input=JSONObject.of("actor",actor,"execution",JSONObject.of("session",JSONObject.of("providerId","ontology","sessionId",SESSION),"runId",RUN));
     var request=new org.springframework.mock.web.MockHttpServletRequest();request.addHeader("X-Domain-Id","a");
     var result=(JSONObject)controller.read(input,request);
-    assertEquals("取数已完成，交付 2 个数据集、10 行，文件："+SESSION+".dataset.json, "+RUN+".dataset.json。",result.getString("summary"));
+    // The requester reads counts, never bare file names it could mistake for something already shown; the files stay in files[].
+    assertEquals("取数已完成：2 个数据集、10 行。此通知表示结果已交付，不表示文件已在用户界面展示。",result.getString("summary"));
     var files=result.getJSONArray("files");assertEquals(SESSION+".dataset.json",files.getJSONObject(0).getString("name"));
     byte[] original="{\"execution\":{\"receiptId\":\"binding-receipt\"},\"rows\":[[0,false,null]]}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
     when(retrieval.datasetContent(SESSION,SESSION,owner)).thenReturn(original);
