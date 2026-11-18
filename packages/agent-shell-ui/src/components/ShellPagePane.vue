@@ -92,7 +92,7 @@ const paneStyle = computed(() => ({
     <div class="pane-body"><slot /></div>
     <div v-if="paired && view === 'full'" ref="dock" class="pane-dock">
       <ShellQuestions />
-      <ShellComposer expanded :busy="busy" :sending="sending" :disabled="disabled" :labels="labels" @send="emit('send', $event)" @stop="emit('stop')">
+      <ShellComposer floating :busy="busy" :sending="sending" :disabled="disabled" :labels="labels" @send="emit('send', $event)" @stop="emit('stop')">
         <template v-if="slots['composer-context']" #context><slot name="composer-context" /></template>
       </ShellComposer>
     </div>
@@ -220,11 +220,12 @@ const paneStyle = computed(() => ({
 .pane-dock {
   position: absolute;
   z-index: 3;
-  left: 50%;
+  left: 0;
+  right: 0;
   bottom: 0;
-  transform: translateX(-50%);
   width: min(760px, 100%);
-  padding: 0 16px 12px;
+  margin-inline: auto;
+  padding: 0 16px var(--shell-composer-foot);
   box-sizing: border-box;
   pointer-events: none;
 }

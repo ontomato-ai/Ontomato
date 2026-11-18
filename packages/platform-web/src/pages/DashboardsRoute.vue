@@ -73,6 +73,8 @@ const labels = computed(() => ({
   stop: t("assistant.stop"),
   agent: t("assistant.agent"),
   pageAgentUnavailable: t("assistant.pageAgentUnavailable"),
+  collapseComposer: t("assistant.collapseComposer"),
+  expandComposer: t("assistant.expandComposer"),
 }));
 /** The page's own address: the counter opens this same board beside the message. */
 const page = computed(

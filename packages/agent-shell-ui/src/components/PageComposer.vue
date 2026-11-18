@@ -19,7 +19,7 @@ import ShellComposer from "./ShellComposer.vue";
 const props = defineProps<{
   /** The page's address, as the counter opens it beside the message. */
   page: string;
-  labels: Pick<ShellLabels, "placeholder" | "send" | "stop" | "agent" | "pageAgentUnavailable">;
+  labels: Pick<ShellLabels, "placeholder" | "send" | "stop" | "agent" | "pageAgentUnavailable" | "collapseComposer" | "expandComposer">;
   /** The page's own skill declaration, when it has one; it is the one the page hands its conversation too. */
   pageSkill?: AgentPageQuery;
 }>();
@@ -72,7 +72,7 @@ function ask(text: string) {
 
 <template>
   <div v-if="agents.length" class="page-ask">
-    <ShellComposer :busy="false" :labels="labels" @send="ask">
+    <ShellComposer floating :busy="false" :labels="labels" @send="ask">
       <template #agent>
         <AgentPicker variant="pill" :agents="agents" :agent-id="agentId" :label="labels.agent" @select="chosen = $event" />
       </template>
@@ -94,5 +94,10 @@ function ask(text: string) {
   margin-inline: auto;
   padding: var(--spacing-sm) 0 var(--shell-composer-foot);
   background: var(--el-bg-color);
+}
+/* Folded into its round button, the foot leaves the page its whole height. */
+.page-ask:has(.composer-unfold) {
+  padding: 0;
+  background: none;
 }
 </style>

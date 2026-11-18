@@ -135,3 +135,30 @@ it("heads an application that runs on one agent with its own name", async () => 
   expect(shown.chooser).toBe(false);
   expect(shown.title).toBe("Operations diagnosis");
 });
+
+it("floats the composer over a page open full beside the conversation, in the page's shape", async () => {
+  // Full, the page fills the workspace and the conversation's composer floats over it: the page's shape, not a third one.
+  const host = client();
+  const Host = defineComponent({
+    setup() {
+      const nav = useAgentNav({ client: () => host, agentId: () => assistant, setAgentId: () => {}, sessionId: () => null, setSessionId: () => {} });
+      void nav.loadAgents();
+      return () => h(AgentShell, { workbench, client: host, labels, nav, agentPicker: true, agentId: assistant, featureId: "dashboards", pageView: "full" });
+    },
+  });
+  app = createApp(Host);
+  const root = document.createElement("div");
+  document.body.append(root);
+  app.mount(root);
+  await settle();
+
+  expect(root.querySelector(".pane-dock .composer.floating")).not.toBeNull();
+  expect(root.querySelector(".pane-dock .composer-fold")).not.toBeNull();
+});
+
+it("keeps the conversation's own composer when only the conversation is open", async () => {
+  const { root } = render({ page: null });
+  await settle();
+  expect(root.querySelector(".shell-main .composer")).not.toBeNull();
+  expect(root.querySelector(".shell-main .composer.floating")).toBeNull();
+});

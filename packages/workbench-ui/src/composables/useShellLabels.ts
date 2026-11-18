@@ -35,6 +35,8 @@ return computed<ShellLabels>(() => ({
   working: t("assistant.working"),
   switchWhileRunning: t("assistant.switchWhileRunning"),
   pageAgentUnavailable: t("assistant.pageAgentUnavailable"),
+  collapseComposer: t("assistant.collapseComposer"),
+  expandComposer: t("assistant.expandComposer"),
   pageContext: (page) => t("assistant.pageContext", { page }),
   selectionContext: (selection) => t("assistant.selectionContext", { selection }),
   toolInput: t("assistant.toolInput"),

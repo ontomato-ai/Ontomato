@@ -228,7 +228,7 @@ async function send(text: string) {
         <p v-if="agent?.description" class="agent-description">{{ agent.description }}</p>
         <ShellQuestions />
         <div v-if="$slots['composer-context']" class="composer-context"><slot name="composer-context" /></div>
-        <ShellComposer expanded :busy="busy" :sending="sending" :disabled="!agent?.enabled" autofocus :labels="labels" @send="send" @stop="emit('stop')" />
+        <ShellComposer :busy="busy" :sending="sending" :disabled="!agent?.enabled" autofocus :labels="labels" @send="send" @stop="emit('stop')" />
         <p v-if="sendError" class="send-error" role="alert"><CircleAlert :size="14" />{{ sendError }}</p>
       </div>
     </div>
@@ -286,7 +286,7 @@ async function send(text: string) {
         <p v-if="sendError" class="send-error" role="alert"><CircleAlert :size="14" />{{ sendError }}</p>
         <ShellQuestions />
         <div v-if="$slots['composer-context']" class="composer-context"><slot name="composer-context" /></div>
-        <ShellComposer expanded :busy="busy" :sending="sending" :disabled="!agent?.enabled" :labels="labels" @send="send" @stop="emit('stop')" />
+        <ShellComposer :busy="busy" :sending="sending" :disabled="!agent?.enabled" :labels="labels" @send="send" @stop="emit('stop')" />
       </div>
     </template>
   </div>
