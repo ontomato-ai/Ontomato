@@ -306,6 +306,10 @@ export function leaveFrame() {
   document.body.innerHTML = "";
 }
 
+export function idlePanelSubscription() {
+  return new Response(new ReadableStream<Uint8Array>(), { headers: { "Content-Type": "text/event-stream" } });
+}
+
 /**
  * Panel application A with a panel that is the task's form alone, and a draft an agent wrote for that page: the page's
  * address with the draft's link, and what the platform answers for the page, the panel and the frame. The draft is the
@@ -352,7 +356,7 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
         docsPath: "/apps-sdk/1.1.0/docs",
         referencePath: "/apps-sdk/1.1.0/reference",
       });
-    if (request.path === "/api/product-assets/subscriptions") return Response.json({ id: "subscription-1", intervalMs: 3_600_000 });
+    if (request.path === "/api/product-assets/subscriptions") return idlePanelSubscription();
     if (request.path === "/api/product-assets/subscriptions/subscription-1") return new Response(null, { status: 204 });
     if (request.path === `/api/product-projections/${formProjection.id}`)
       return served.then(() => Response.json({ projection: formProjection }));

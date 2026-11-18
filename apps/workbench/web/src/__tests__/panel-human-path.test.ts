@@ -10,7 +10,7 @@ import { useApplicationCatalog } from "../../../../../packages/platform-web/src/
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { platformLayoutRoute } from "../../../../../packages/platform-web/src/layout-route";
 import {
-  hostMessageOf, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt,
+  hostMessageOf, idlePanelSubscription, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt,
   panelHostFrame, panelRecord, panelUse, projections, READER, run, SCHEDULED_TASK, task, taskForm, writeFrameDocument,
   type Sent,
 } from "./panel-frame";
@@ -46,7 +46,7 @@ function answer(request: Sent) {
     version: "1.1.1", publicBasePath: "/apps-sdk", sdkBasePath: "/apps-sdk/1.1.1",
     manifestPath: "/apps-sdk/1.1.1/sdk.json", docsPath: "/apps-sdk/1.1.1/docs", referencePath: "/apps-sdk/1.1.1/reference",
   });
-  if (request.path === "/api/product-assets/subscriptions") return Response.json({ id: "subscription-1", intervalMs: 3_600_000 });
+  if (request.path === "/api/product-assets/subscriptions") return idlePanelSubscription();
   if (request.path === "/api/product-assets/subscriptions/subscription-1") return new Response(null, { status: 204 });
   if (request.path === taskPath) return Response.json({ tasks: [task], timeZone: task.timeZone });
   if (request.path === `${taskPath}/${task.id}`) return Response.json(task);
@@ -331,4 +331,73 @@ it("refreshes an open panel from the server stream and preserves a dirty form un
     app.unmount();
     stream.close();
   }
+});
+
+it("reconnects after EOF, reconciles missed changes, and stops on unmount", async () => {
+  let current = task;
+  let panel = p;
+  let summary = projections["projection-schedules-summary"]!;
+  const streams: ReadableStreamDefaultController<Uint8Array>[] = [];
+  const encoder = new TextEncoder();
+  const { app, element, frame, sent } = await open(panelAddress(`/applications/${appA}/tasks`, deepState), false, request => {
+    if (request.path === "/api/product-assets/subscriptions") return new Response(new ReadableStream<Uint8Array>({
+      start(controller) { streams.push(controller); },
+    }), { headers: { "content-type": "text/event-stream" } });
+    if (request.path === `/api/product-panels/${panel.id}`) return Response.json({ panel });
+    if (request.path === `/api/product-projections/${summary.id}`) return Response.json({ projection: summary });
+    if (request.path === `${taskPath}/${task.id}`) return Response.json(current);
+    if (request.path === `${taskPath}/applications/${task.appId}/form`)
+      return taskFormFor((request.body as { values: typeof taskForm.values }).values);
+    return answer(request);
+  });
+  const definitionReads = () => sent.filter(request => /\/api\/product-(panels|projections)\//.test(request.path));
+  const formReads = () => sent.filter(request => request.path.endsWith("/form"));
+  const snapshot = (stream: ReadableStreamDefaultController<Uint8Array>) => stream.enqueue(encoder.encode(`data: ${JSON.stringify({
+    kind: "snapshot", panel: { id: panel.id, revision: panel.revision },
+    projections: Object.values(projections).map(projection => ({
+      id: projection.id, revision: projection.id === summary.id ? summary.revision : projection.revision,
+    })),
+  })}\n\n`));
+  try {
+    snapshot(streams[0]!);
+    await startFrame(frame);
+    await vi.waitFor(() => {
+      expect(document.querySelector(".sdk-object-summary-title")?.textContent).toBe(task.title);
+      expect(document.querySelector(".sdk-owner-form [data-field]")).not.toBeNull();
+    });
+    const initialDefinitions = definitionReads().length;
+    const initialForms = formReads().length;
+    streams[0]!.close();
+    summary = { ...summary, revision: summary.revision + 1, display: { fields: ["settings"] } };
+    current = { ...current, revision: current.revision + 1, content: { ...current.content, caseSetId: "agent-cases" },
+      summary: [{ key: "instruction", label: "Instruction", value: "Changed while disconnected" }] };
+
+    await vi.waitFor(() => expect(streams).toHaveLength(2));
+    snapshot(streams[1]!);
+    await vi.waitFor(() => {
+      expect(document.querySelector(".sdk-object-summary")?.textContent).toContain("Changed while disconnected");
+      expect(document.querySelector(".sdk-object-summary dt")?.textContent).toBe("settings");
+      expect(formReads().at(-1)?.body).toMatchObject({ values: current.content });
+    });
+    expect(formReads()).toHaveLength(initialForms + 1);
+    expect(definitionReads().slice(initialDefinitions).map(request => request.path)).toEqual([
+      `/api/product-projections/${summary.id}`,
+    ]);
+    expect(element.querySelector("iframe.panel-host-frame")).toBe(frame);
+    expect(sent.filter(request => request.path === `${taskPath}/${task.id}`)).toHaveLength(4);
+
+    panel = { ...p, revision: p.revision + 1 };
+    streams[1]!.close();
+    await vi.waitFor(() => expect(streams).toHaveLength(3));
+    snapshot(streams[2]!);
+    await vi.waitFor(() => expect(hostMessageOf(frame.srcdoc).panel.revision).toBe(panel.revision));
+    expect(definitionReads().slice(initialDefinitions).map(request => request.path)).toEqual([
+      `/api/product-projections/${summary.id}`, `/api/product-panels/${panel.id}`,
+    ]);
+  } finally {
+    app.unmount();
+    if (streams.length > 1) streams.at(-1)!.close();
+  }
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(streams).toHaveLength(3);
 });

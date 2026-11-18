@@ -56,7 +56,8 @@ beforeEach(()=>{
       const value=snapshot.assets.find(asset=>asset.id===args[1]);
       return {rows:[{...value,createdAt:new Date(0),updatedAt:new Date(0)}]};
     }
-    if(sql.includes("FROM product_panels"))return {rows:[{id:panelId,definition:{manifest:{state:{},slots:{},operations:[]}}}]};
+    if(sql.includes("FROM product_panels"))return {rows:[{id:panelId,revision:3,definition:{manifest:{state:{},slots:{summary:{projectionId:"projection-live",inputs:{}}},operations:[]}}}]};
+    if(sql.includes("FROM product_projections"))return {rows:[{id:"projection-live",revision:7}]};
     if(sql.includes("product_subscriptions"))return {rows:[]};
     throw new Error(`Unexpected SQL: ${sql}`);
   });
@@ -135,7 +136,7 @@ it("streams definition changes and only the owner’s object events on the produ
     const events: unknown[] = [];
     const reading = readSseData(response, event => {
       events.push(event);
-      return events.length === 2;
+      return events.length === 3;
     }, () => true);
     notifyPanelObjectChanged({ ...owner, userId: "executor" }, target);
     notifyPanelObjectChanged({ ...owner, domainId: "other" }, target);
@@ -144,7 +145,11 @@ it("streams definition changes and only the owner’s object events on the produ
     const definition = { kind: "definition-changed", domainId: owner.domainId, target: { kind: "panel", id: panelId } } as const;
     await notifyProductDefinitionChanged(definition);
     await reading;
-    expect(events).toEqual([{ kind: "object-changed", target }, definition]);
+    expect(events).toEqual([
+      { kind: "snapshot", panel: { id: panelId, revision: 3 }, projections: [{ id: "projection-live", revision: 7 }] },
+      { kind: "object-changed", target },
+      definition,
+    ]);
   } finally {
     controller.abort();
   }

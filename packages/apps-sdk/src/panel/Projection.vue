@@ -70,8 +70,9 @@ watch(
   { immediate: true },
 );
 // A changed definition is read again by the same ID here, so every instance that uses it redraws.
-const stop = panel.projectionsChanged((id) => {
-  if (panel.manifest.slots[props.slot]?.projectionId === id) start();
+const stop = panel.projectionsChanged((id, revision) => {
+  if (panel.manifest.slots[props.slot]?.projectionId !== id) return;
+  if (revision === undefined || (loaded.value && loaded.value.projection.revision !== revision)) start();
 });
 onBeforeUnmount(() => {
   stop();

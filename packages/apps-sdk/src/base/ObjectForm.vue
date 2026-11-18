@@ -122,8 +122,8 @@ function refreshWhenClean() {
   pendingRefresh = null;
   load(requested);
 }
-useProjectionObjectRefresh(id => id === key.value, id => {
-  pendingRefresh = id;
+useProjectionObjectRefresh(id => id === key.value, () => {
+  pendingRefresh = key.value;
   refreshWhenClean();
 });
 watch([canSettle, saving], refreshWhenClean);

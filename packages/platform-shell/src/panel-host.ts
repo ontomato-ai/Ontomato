@@ -1,4 +1,4 @@
-import type { PanelSubscriptionEvent } from "@ontomato/contracts/product-subscriptions";
+import type { PanelSubscriptionEvent, PanelSubscriptionSnapshot } from "@ontomato/contracts/product-subscriptions";
 import { inject, onBeforeUnmount, shallowRef, watch, type InjectionKey, type Ref, type ShallowRef } from "vue";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import {
@@ -46,7 +46,11 @@ export interface PanelHostPort {
    * Hears "definition changed" for the definitions this instance shows: the panel and every projection its declaration
    * names. Events carry identity only. The returned function stops the notices.
    */
-  subscribe(panelId: string, listener: (event: PanelSubscriptionEvent) => void): () => void;
+  subscribe(
+    panelId: string,
+    listener: (event: PanelSubscriptionEvent) => void,
+    recover: (snapshot: PanelSubscriptionSnapshot) => Promise<void>,
+  ): () => void;
 }
 
 /** The platform's notice that a projection's or a panel's current definition changed; it carries identity only. */
@@ -161,7 +165,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       await adopt(relation, await port.panel(relation.panelId));
       loadedPanelId = relation.panelId;
       stopNotices?.();
-      stopNotices = port.subscribe(relation.panelId, notice);
+      stopNotices = port.subscribe(relation.panelId, notice, recover);
     } catch (failure) {
       error.value = failureText(failure);
     }
@@ -216,13 +220,25 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
     // A changed panel: read again by its ID, but never over a form the reader has unsaved.
     if (event.target.id !== loadedPanelId) return;
-    port.panel(event.target.id).then(
-      (record) => {
-        if (dirty()) waiting = record;
-        else if (use.value) void adopt(use.value, record).catch((failure: unknown) => (error.value = failureText(failure)));
-      },
-      (failure: unknown) => (error.value = failureText(failure)),
-    );
+    void refreshPanel(event.target.id).catch(failure => { error.value = failureText(failure); });
+  }
+
+  async function refreshPanel(id: string): Promise<boolean> {
+    const record = await port.panel(id);
+    if (dirty()) {
+      waiting = record;
+      return false;
+    }
+    if (!use.value) return false;
+    await adopt(use.value, record);
+    return true;
+  }
+
+  async function recover(snapshot: PanelSubscriptionSnapshot) {
+    if (snapshot.panel.id !== loadedPanelId) return;
+    // An adopted definition already starts a frame whose projections will read current data.
+    if (snapshot.panel.revision !== panel.value?.revision && await refreshPanel(snapshot.panel.id)) return;
+    if (frameReady) post({ kind: "reconnect", projections: snapshot.projections });
   }
   onBeforeUnmount(() => stopNotices?.());
 

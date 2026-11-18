@@ -1,7 +1,7 @@
-import { nodeApiRequest } from "@ontomato/workbench-ui";
+import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
 import { applicationPanelUsesResponseSchema, productPanelSchema, type ProductPanel } from "@ontomato/contracts/product-panels";
 import { appsSdkCurrentSchema } from "@ontomato/contracts/apps-sdk";
-import { panelSubscriptionEventSchema, type PanelSubscriptionEvent } from "@ontomato/contracts/product-subscriptions";
+import { panelSubscriptionFrameSchema, type PanelSubscriptionEvent, type PanelSubscriptionSnapshot } from "@ontomato/contracts/product-subscriptions";
 import { readSseData } from "@ontomato/contracts/sse";
 import { ElMessage } from "element-plus";
 import { registerPanelFrame } from "./app-host";
@@ -56,7 +56,7 @@ export function platformPanelHost(applicationId: string): PanelHostPort {
     // its `connect`, and what keeps a frame of another application from being mistaken for this one. What it may ask for
     // is what the panel's record declares, for this use relation's page.
     frame: (frame, use, panel) => registerPanelFrame(frame, applicationId, { pageKey: use.pageKey, manifest: panel.manifest }),
-    subscribe: (panelId, listener) => subscribePanelDefinition(panelId, listener),
+    subscribe: subscribePanelDefinition,
   };
 }
 
@@ -66,20 +66,47 @@ export async function panelUsesOf(applicationId: string) {
   return applicationPanelUsesResponseSchema.parse(answer.data ?? answer).panelUses;
 }
 
-/** The one stream for this panel instance; closing the instance releases it. */
-function subscribePanelDefinition(panelId: string, listener: (event: PanelSubscriptionEvent) => void): () => void {
+class PanelStreamContractError extends Error {}
+
+/** Follow the panel stream for as long as the reader keeps the instance open. */
+function subscribePanelDefinition(
+  panelId: string,
+  listener: (event: PanelSubscriptionEvent) => void,
+  recover: (snapshot: PanelSubscriptionSnapshot) => Promise<void>,
+): () => void {
   const stream = new AbortController();
   async function watch() {
-    const response = await nodeApiRequest(panelHostPaths.subscriptions, {
-      method: "POST",
-      signal: stream.signal,
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify({ kind: "product-definition", target: { kind: "panel", id: panelId } }),
-    });
-    await readSseData(response, payload => {
-      listener(panelSubscriptionEventSchema.parse(payload));
-      return false;
-    }, () => !stream.signal.aborted);
+    let reconnecting = false;
+    while (!stream.signal.aborted) {
+      try {
+        const response = await nodeApiRequest(panelHostPaths.subscriptions, {
+          method: "POST",
+          signal: stream.signal,
+          headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+          body: JSON.stringify({ kind: "product-definition", target: { kind: "panel", id: panelId } }),
+        });
+        if (!response.body || response.headers.get("content-type")?.split(";")[0] !== "text/event-stream") {
+          throw new PanelStreamContractError("Panel subscription did not return an event stream");
+        }
+        await readSseData(response, async payload => {
+          const parsed = panelSubscriptionFrameSchema.safeParse(payload);
+          if (!parsed.success) throw new PanelStreamContractError("Panel subscription frame broke the contract", { cause: parsed.error });
+          const frame = parsed.data;
+          if (frame.kind === "snapshot") {
+            if (reconnecting) await recover(frame);
+          } else {
+            listener(frame);
+          }
+          return false;
+        }, () => !stream.signal.aborted);
+      } catch (reason) {
+        if (stream.signal.aborted) return;
+        const refused = reason instanceof ApiRequestError && (reason.status === 403 || reason.status === 404);
+        if (refused || reason instanceof PanelStreamContractError || reason instanceof SyntaxError)
+          throw reason;
+      }
+      reconnecting = true;
+    }
   }
   void watch().catch(reason => {
     if (!stream.signal.aborted) ElMessage.error(reason instanceof Error ? reason.message : String(reason));

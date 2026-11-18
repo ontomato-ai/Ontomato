@@ -49,7 +49,7 @@ function load(primaryKey: string | null) {
 
 onMounted(() => load(key.value));
 watch(key, (next) => load(next));
-useProjectionObjectRefresh(id => id === key.value, load);
+useProjectionObjectRefresh(id => id === key.value, () => load(key.value));
 </script>
 
 <template>

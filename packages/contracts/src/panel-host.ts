@@ -3,7 +3,7 @@ import { pageContextSchema } from "./page-context";
 import { panelOpenRequestSchema, panelOperationSchema, panelStateValueSchema, type PanelStateValue } from "./panel-manifest";
 import { applicationRootPath } from "./platform-identity";
 import { productPanelSchema } from "./product-panels";
-import { panelObjectChangedEventSchema } from "./product-subscriptions";
+import { panelObjectChangedEventSchema, panelSubscriptionSnapshotSchema } from "./product-subscriptions";
 
 /*
  * The port between a panel host and the frame a panel runs in (overall design 3.3, 3.4). A panel's content is text —
@@ -65,6 +65,7 @@ export const panelHostFrameMessageSchema = z.discriminatedUnion("kind", [
   /** A link changed the address of this same instance. */
   z.object({ kind: z.literal("address"), address: z.string().min(1).max(4000) }).strict(),
   panelObjectChangedEventSchema,
+  panelSubscriptionSnapshotSchema.pick({ projections: true }).extend({ kind: z.literal("reconnect") }),
   /** The panel's own definition changed; the host has already decided it may be shown. */
   z.object({ kind: z.literal("definition-changed"), panel: productPanelSchema }).strict(),
   /**

@@ -1,4 +1,4 @@
-import { createApp, h, provide, ref, watch, type Component, type Ref } from "vue";
+import { createApp, h, nextTick, provide, ref, watch, type Component, type Ref } from "vue";
 import { useI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import { connectAppContext, contextTransport, type AppContext } from "../context";
@@ -77,7 +77,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     },
   });
   const unsaved = new Set<Ref<boolean>>();
-  const projectionListeners = new Set<(id: string) => void>();
+  const projectionListeners = new Set<(id: string, revision?: number) => void>();
   const context: PanelContext = {
     panel: message.panel,
     manifest: message.panel.manifest,
@@ -144,7 +144,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     await followDraft();
   }
 
-  report({ instance, address, unsaved, followAddress, changed: (id) => projectionListeners.forEach((listener) => listener(id)) });
+  report({ instance, address, unsaved, followAddress, changed: (id, revision) => projectionListeners.forEach(listener => listener(id, revision)) });
   await followDraft();
   return { context, appContext };
 }
@@ -179,7 +179,7 @@ interface ReportOptions {
   address: Ref<string>;
   followAddress(address: string): Promise<void>;
   unsaved: ReadonlySet<Ref<boolean>>;
-  changed: (projectionId: string) => void;
+  changed: (projectionId: string, revision?: number) => void;
 }
 
 /**
@@ -211,6 +211,12 @@ function report({ instance, address, followAddress, unsaved, changed }: ReportOp
     if (!parsed) return;
     if (parsed.kind === "address") {
       void followAddress(parsed.address).catch(reason => failed(reason instanceof Error ? reason.message : String(reason)));
+      return;
+    }
+    if (parsed.kind === "reconnect") {
+      for (const { id, revision } of parsed.projections) changed(id, revision);
+      // Changed definitions remount their own readers; refresh the other readers once they have been removed.
+      void nextTick(() => instance.refreshObjects());
       return;
     }
     if (parsed.kind === "object-changed") {

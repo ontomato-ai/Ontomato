@@ -16,3 +16,15 @@ export type ProductSubscriptionEvent = ProductDefinitionChangedEvent | {kind:'ch
 export const panelObjectChangedEventSchema = z.object({kind:z.literal('object-changed'),target:panelObjectIdentitySchema}).strict();
 export const panelSubscriptionEventSchema = z.discriminatedUnion('kind', [productDefinitionChangedEventSchema,panelObjectChangedEventSchema]);
 export type PanelSubscriptionEvent = z.infer<typeof panelSubscriptionEventSchema>;
+
+const definitionRevision = z.object({id,revision:z.number().int().positive()}).strict();
+/** Every new connection advertises the definitions it just authorized. */
+export const panelSubscriptionSnapshotSchema = z.object({
+  kind:z.literal('snapshot'),
+  panel:definitionRevision,
+  projections:z.array(definitionRevision),
+}).strict();
+export type PanelSubscriptionSnapshot = z.infer<typeof panelSubscriptionSnapshotSchema>;
+export const panelSubscriptionFrameSchema = z.discriminatedUnion('kind', [
+  panelSubscriptionSnapshotSchema,...panelSubscriptionEventSchema.options,
+]);

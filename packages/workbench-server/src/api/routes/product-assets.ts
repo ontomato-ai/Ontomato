@@ -67,11 +67,12 @@ router.post('/subscriptions',wrap(async(req,res)=>{
     res.json(await subscribeProduct(owner,credentials,target));
     return;
   }
-  const attach=await authorizePanelStream(owner,credentials,target.target.id);
+  const {attach,snapshot}=await authorizePanelStream(owner,credentials,target.target.id);
   if(res.destroyed)return;
   const stop=attach(event=>res.write(`data: ${JSON.stringify(event)}\n\n`));
   res.set({'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','X-Accel-Buffering':'no'});
   res.flushHeaders();
+  res.write(`data: ${JSON.stringify(snapshot)}\n\n`);
   // Keep the HTTP stream open through idle proxy timeouts without reading any product data.
   const heartbeat=setInterval(()=>res.write(': heartbeat\n\n'),15_000);
   heartbeat.unref();

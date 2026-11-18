@@ -1,6 +1,6 @@
 import {createHash,randomUUID} from 'node:crypto';
 import {z} from 'zod';
-import {productSubscriptionTargetSchema,type ProductSubscriptionTarget,type ProductSubscriptionEvent,type PanelSubscriptionEvent} from '@ontomato/contracts/product-subscriptions';
+import {productSubscriptionTargetSchema,type ProductSubscriptionTarget,type ProductSubscriptionEvent,type PanelSubscriptionEvent,type PanelSubscriptionSnapshot} from '@ontomato/contracts/product-subscriptions';
 import type {ProductOwner} from './store';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {executeDefinition} from './definitions';
@@ -23,12 +23,15 @@ function assertSubscriptionCapacity(owner:ProductOwner){
     throw new HttpError(429,'Too many active subscriptions','SUBSCRIPTION_LIMIT');
 }
 export async function authorizePanelStream(owner:ProductOwner,credentials:AssistantCredentials,panelId:string){
-  await requirePanelDefinitions(owner,credentials,panelId);
-  return (send:PanelStream['send'])=>{
-    assertSubscriptionCapacity(owner);
-    const stream={owner,panelId,send};
-    panelStreams.add(stream);
-    return ()=>panelStreams.delete(stream);
+  const snapshot=await requirePanelDefinitions(owner,credentials,panelId);
+  return {
+    snapshot,
+    attach(send:PanelStream['send']){
+      assertSubscriptionCapacity(owner);
+      const stream={owner,panelId,send};
+      panelStreams.add(stream);
+      return ()=>panelStreams.delete(stream);
+    },
   };
 }
 export function notifyPanelObjectChanged(owner:ProductOwner,target:PanelObjectIdentity){
@@ -86,11 +89,16 @@ async function evaluateOnce(subscription:Subscription){
     await checkpoint(subscription);
   }finally{subscription.busy=false;}
 }
-async function requirePanelDefinitions(owner:ProductOwner,credentials:AssistantCredentials,panelId:string){
+async function requirePanelDefinitions(owner:ProductOwner,credentials:AssistantCredentials,panelId:string):Promise<PanelSubscriptionSnapshot>{
   const panel=await requireDefinition(owner,credentials,'panel',panelId);
   const {slots}=panelManifestSchema.parse(panel.definition.manifest);
   const projectionIds=new Set(Object.values(slots).map(slot=>slot.projectionId));
-  for(const id of projectionIds)await requireDefinition(owner,credentials,'projection',id);
+  const projections=[];
+  for(const id of projectionIds){
+    const projection=await requireDefinition(owner,credentials,'projection',id);
+    projections.push({id,revision:projection.revision});
+  }
+  return {kind:'snapshot',panel:{id:panelId,revision:panel.revision},projections};
 }
 async function requireDefinition(owner:ProductOwner,credentials:AssistantCredentials,kind:CurrentProductKind,id:string){
   await requireProductGrant(id,'use',credentials);

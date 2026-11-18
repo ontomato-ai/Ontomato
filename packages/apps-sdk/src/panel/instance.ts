@@ -55,7 +55,8 @@ export interface PanelInstance {
   /** Runs one operation a projection publishes, by its handler reference, with the call it is given. */
   runHandler(handlerRef: string, call: PanelOperationCall): Promise<unknown>;
   objectChanged(object: PanelObjectIdentity): void;
-  onObjectChanged(listener: (object: PanelObjectIdentity) => void): () => void;
+  refreshObjects(): void;
+  onObjectChanged(listener: (object: PanelObjectIdentity | null) => void): () => void;
   /** Reads a projection record by ID, as the reader. */
   projection(id: string): Promise<ProductProjection>;
   /** Whether this instance holds unsaved changes: a received draft, or a form the reader edited. */
@@ -70,8 +71,8 @@ export interface PanelInstance {
  */
 export function createPanelInstance(manifest: PanelManifest, options: PanelInstanceOptions): PanelInstance {
   const state = createPanelState(manifest, options.initial);
-  const objectListeners = new Set<(object: PanelObjectIdentity) => void>();
-  const objectChanged = (object: PanelObjectIdentity) => {
+  const objectListeners = new Set<(object: PanelObjectIdentity | null) => void>();
+  const objectChanged = (object: PanelObjectIdentity | null) => {
     for (const listener of objectListeners) listener(object);
   };
   const registrations = shallowRef<readonly PanelProjectionRegistration[]>([]);
@@ -122,6 +123,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       return result;
     },
     objectChanged,
+    refreshObjects: () => objectChanged(null),
     onObjectChanged(listener) {
       objectListeners.add(listener);
       return () => objectListeners.delete(listener);
