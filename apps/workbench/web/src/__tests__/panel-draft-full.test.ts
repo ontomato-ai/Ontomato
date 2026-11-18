@@ -71,8 +71,9 @@ describe("a draft at a panel application's own address", () => {
     expect(sent.filter((request) => request.method === "POST" && request.path === "/api/product-assets/subscriptions"))
       .toMatchObject([{ body: { kind: "product-definition", target: { kind: "panel", id: scenario.panel.id } } }]);
     const form = document.querySelector<HTMLFormElement>(".sdk-owner-form form")!;
-    const save = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
-    expect(save.textContent?.trim()).toBe("Save");
+    // The frame is sandboxed without allow-forms, so the save is the button's own click, not a form submission.
+    const save = [...form.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Save")!;
+    expect(save.type).toBe("button");
     expect(save.disabled).toBe(false);
     currentRevision++;
     save.click();
