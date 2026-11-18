@@ -29,6 +29,8 @@ A message sent from beside the board ends with a `Selected:` line naming the boa
 
 Read the card and its parameters. Use the returned columns, actual rows and explicit value formats; preserve nulls and real zeros. Account for display sorting/limits when explaining the visible chart, separately from MetricView truncation. Describe only the returned scope when truncation is present. Totals, shares, units and business calculations belong to the MetricView, not to a guessed chart calculation. An unavailable result is not zero. Use IDs read from the page or API rather than guessing them from labels.
 
+The `file.name` returned by `card` is the chart file's name inside the saved card, not a file in this conversation's workspace. Do not embed, reference or link to it in your answer, including by adding `outputs/`. To show the chart, direct the reader to the dashboard beside the conversation, or use the echarts skill to create a new chart file and reference the file it actually writes.
+
 ## Prepare a page edit
 
 Each draft addresses one existing save action. The page receives it, marks changes and provides its save action. Its link carries only the draft session/run/path; the dashboard ID stays in target and form.
