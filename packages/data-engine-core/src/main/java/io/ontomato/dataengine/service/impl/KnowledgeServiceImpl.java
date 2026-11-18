@@ -58,7 +58,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
     }
 
   @Override
-    public void addBussinessKnowledge(String knowledgeID, String knowledgeTitle, String bk,int status,List<String> listknowledgeTags, User user) {
+    public String addBussinessKnowledge(String knowledgeID, String knowledgeTitle, String bk,int status,List<String> listknowledgeTags, User user) {
         KnowledgeEntity knowledgeEntity = new KnowledgeEntity();
         String knowledgeid = knowledgeID == null || "".equals(knowledgeID.trim()) ? ("knowledge_" + UUID.randomUUID().toString()) : knowledgeID.trim();
         knowledgeEntity.setKnowledgeID(knowledgeid);
@@ -95,6 +95,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         auditLog.setParamter(JSONObject.toJSONString(knowledgeEntity));
         auditLog.setOperateTime(System.currentTimeMillis());
         auditLogDao.save(auditLog, user.getDomainId());
+        return knowledgeEntity.getKnowledgeID();
     }
 
   @Override
