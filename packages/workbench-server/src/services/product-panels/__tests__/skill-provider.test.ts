@@ -129,6 +129,11 @@ it("assembles one current package for a shared menu with a section per use and t
     expect(readSection).toContain("An anonymous direct Java URL needs no authentication header");
     expect(markdown).toContain('"pageKey": "panels-trial-a-tasks"');
     expect(markdown).toContain('"form": {}');
+    const draftSection = markdown.split("### Draft a change")[1]!.split("### Declared operations")[0]!;
+    expect(draftSection).toContain("only keys returned in the owner's current form `fields`");
+    expect(draftSection).toContain("Do not put `revision` or any other non-form key in the draft.");
+    expect(draftSection).toContain("The reader's save supplies the revision.");
+    expect(markdown.split("### Declared operations")[1]!).toContain("For POST `/operate` only, put the task `revision` in `call.input`");
     expect(markdown).toContain("$ONTOMATO_PANEL_OPERATIONS_URL/operate");
     expect(markdown).toContain("/intents/<intentId>/dispatch");
     expect(markdown).toContain("End this tool call immediately; do not wait or poll.");

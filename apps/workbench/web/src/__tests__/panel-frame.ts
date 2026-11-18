@@ -49,6 +49,8 @@ export const taskForm: PlatformScheduleForm = platformScheduleFormSchema.parse({
   submittable: true,
 });
 
+export const inspectionTaskForm = platformScheduleFormSchema.parse(example("forms", "operations-switch-to-inspection"));
+
 /** A manual run the service started for the task, as it answers "run now". */
 export const run: PlatformTaskRun = platformTaskRunSchema.parse({
   ...example("runs", "agents-running"),

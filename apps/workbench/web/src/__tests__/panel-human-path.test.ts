@@ -10,7 +10,7 @@ import { useApplicationCatalog } from "../../../../../packages/platform-web/src/
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { platformLayoutRoute } from "../../../../../packages/platform-web/src/layout-route";
 import {
-  hostMessageOf, idlePanelSubscription, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt,
+  hostMessageOf, idlePanelSubscription, inspectionTaskForm, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt,
   panelHostFrame, panelRecord, panelUse, projections, READER, run, SCHEDULED_TASK, task, taskForm, writeFrameDocument,
   type Sent,
 } from "./panel-frame";
@@ -468,6 +468,57 @@ it.each([true, false])("resolves a panel draft through the bridge with created=%
       expect(context.instance.dirty()).toBe(false);
       expect(context.instance.deepLink()).toEqual(selected);
       expect(taskReads()).toHaveLength(initialReads);
+    }
+    expect(sent.filter(request => request.method === "PUT")).toEqual([]);
+  } finally {
+    app.unmount();
+  }
+});
+
+it.each([
+  { name: "revision outside the form", extra: { revision: 7 }, invalid: "revision" },
+  { name: "a removed field", extra: { caseSetId: task.content.caseSetId }, invalid: "caseSetId" },
+  { name: "fields of the refreshed form", extra: {}, invalid: null },
+])("validates draft $name after asking the owner for the dependent form", async ({ extra, invalid }) => {
+  const path = `/applications/${appA}/tasks`;
+  const query = new URLSearchParams({ draftSessionId: "session-1", draftRunId: "run-1", draftPath: "outputs/drafts/inspection.page-draft.json" });
+  const drafted = { operation: "inspection", instruction: "Inspect the latest failures", ...extra };
+  const formPath = `${taskPath}/applications/${task.appId}/form`;
+  const { app, element, frame, router, sent } = await open(panelAddress(path, deepState), false, request => {
+    if (request.path.endsWith("/page-draft")) return Response.json({
+      pageKey: useP.pageKey, operation: `${SCHEDULED_TASK}.save`, target: { id: task.id }, form: drafted,
+    });
+    if (request.path === formPath) {
+      const { values, changedField } = request.body as {
+        values: { operation: string; instruction?: string }; changedField: string | null;
+      };
+      if (changedField === "operation")
+        return Response.json({ ...inspectionTaskForm, values: { operation: values.operation, instruction: values.instruction }, submittable: true });
+    }
+    return answer(request);
+  });
+  try {
+    const { context } = await startFrame(frame);
+    await vi.waitFor(() => expect(document.querySelector('.sdk-owner-form [data-field="caseSetId"]')).not.toBeNull());
+    await router.push(panelAddress(`${path}?${query}`, deepState));
+    await vi.waitFor(() => expect(sent.filter(request => request.path === formPath)
+      .some(request => (request.body as { changedField?: string }).changedField === "operation")).toBe(true));
+    if (invalid) {
+      await vi.waitFor(() => expect(element.querySelector(".panel-host-error")?.textContent ?? "")
+        .toContain(`Draft fields not in the current form: ${invalid}`));
+      expect(context.draft.value).toBeNull();
+      expect(context.instance.dirty()).toBe(false);
+      expect(document.querySelector(".sdk-owner-form-changed")).toBeNull();
+      expect([...document.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")].every(button => button.disabled)).toBe(true);
+    } else {
+      await vi.waitFor(() => {
+        expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain("operation, instruction");
+        expect(document.querySelector<HTMLTextAreaElement>('[data-field="instruction"] textarea')?.value).toBe(drafted.instruction);
+        expect(document.querySelector('.sdk-owner-form [data-field="caseSetId"]')).toBeNull();
+      });
+      const save = [...document.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")]
+        .find(button => button.textContent?.trim() === "Save");
+      expect(save?.disabled).toBe(false);
     }
     expect(sent.filter(request => request.method === "PUT")).toEqual([]);
   } finally {
