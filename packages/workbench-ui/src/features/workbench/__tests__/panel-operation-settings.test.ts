@@ -33,7 +33,9 @@ beforeEach(() => {
     return new Response(JSON.stringify(answer.body), { status: answer.status, headers: { "content-type": "application/json" } });
   });
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 const held = (confirmBeforeExecute: boolean) => ({ rootSession: { providerId: "workbench", sessionId }, confirmBeforeExecute });
 
