@@ -7,7 +7,7 @@ import SkillLibrary from "../components/SkillLibrary.vue";
 import { skillsApi } from "../api";
 
 /** Each card exports its skill and deletes it, greyed for a built-in one; importing first says what a package is. */
-const skill = (id: string, isPublic: boolean) => ({ id, title: id, isPublic, skill: { name: id }, type: "knowledge", category: "analysis", tags: [], path: "", version: "" });
+const skill = (id: string, isPublic: boolean) => ({ id, title: id, description: "", isPublic, skill: { name: id }, writeRestriction: isPublic ? { kind: "public" } : null });
 
 afterEach(() => { vi.restoreAllMocks(); document.body.innerHTML = ""; });
 

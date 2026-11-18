@@ -24,14 +24,12 @@ export function pilotPageResolver(setPage: (address: string) => void): PilotPage
     const query = new URLSearchParams(search);
     const agents = /^\/ontology\/agents(?:\/(new|[^/]+))?$/.exec(path);
     if (agents) {
-      const id = agents[1] ?? null;
       return {
         id: "agents",
         component: AgentSettingsRoute,
         props: {
-          agentId: id === "new" ? null : id,
-          creating: id === "new",
-          // The page keeps its own address beside the conversation, a draft handoff included.
+          // The page keeps its own address beside the conversation, a draft handoff included; which agent it shows, and
+          // whether it is a new one, is what that address says.
           address,
           navigate: setPage,
         },

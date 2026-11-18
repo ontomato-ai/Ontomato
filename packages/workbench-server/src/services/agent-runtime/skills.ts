@@ -2,15 +2,23 @@ import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { runtimeRegisteredSkillSchema } from "@ontomato/contracts/agent-runtime-skills";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { readSkillPackage } from "../../core/skills/package";
+import type { SkillPackage } from "../../core/skills/providers";
 import fs from "node:fs";
 import { exportChartTheme } from "../chart-theme";
 import path from "node:path";
 import { publicSkillsRoot, publicSkillTranslationsRoot } from "../../content/layout";
 
+/** Push one standard package to the runtime, using the caller's verified domain. */
+export async function publishSkillPackage(pkg: SkillPackage, domainId?: string) {
+  if (pkg.skill.namespace.kind === "domain" && pkg.skill.namespace.domainId !== domainId)
+    throw new Error("Verified domain is required for domain skill publication");
+  return runtimeRegisteredSkillSchema.parse(await new RuntimeClient(domainId).request(
+    "/v1/skills", "POST", pkg,
+  ));
+}
+
 /** Publish the portable package with optional host documentation, using the caller's verified domain. */
 export async function publishSkill(root: string, skill: RuntimeSkillRef, domainId?: string) {
-  if (skill.namespace.kind === "domain" && skill.namespace.domainId !== domainId)
-    throw new Error("Verified domain is required for domain skill publication");
   const pkg = await readSkillPackage(root, skill);
   if (skill.namespace.kind === "provider" && skill.namespace.provider === "workbench" && skill.name === "assistant-report")
     pkg.files.push({ path: "resources/chart-theme.json", content: JSON.stringify(exportChartTheme()) });
@@ -25,7 +33,5 @@ export async function publishSkill(root: string, skill: RuntimeSkillRef, domainI
         "\n\nWhen ONTOMATO_LANGUAGE is zh-CN, read references/zh-CN.md for the Chinese instructions and use Chinese for all user-facing output. Keep commands and data keys unchanged.\n";
     }
   }
-  return runtimeRegisteredSkillSchema.parse(await new RuntimeClient(domainId).request(
-    "/v1/skills", "POST", pkg,
-  ));
+  return publishSkillPackage(pkg, domainId);
 }

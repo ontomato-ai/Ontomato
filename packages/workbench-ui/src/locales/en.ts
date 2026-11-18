@@ -833,7 +833,8 @@ export default {
     "importRuleText": "Scripts and references go in the same package; every file must be UTF-8 text, so images and other binary files cannot be included.",
     "importRuleOverwrite": "If a skill with the same name exists, you are asked first; confirming replaces the whole package.",
     "importChoose": "Choose ZIP file",
-    "builtInNoDelete": "Built-in skills come with the product and cannot be deleted"
+    "builtInNoDelete": "Built-in skills come with the product and cannot be deleted",
+    "providerNoDelete": "Provided by {provider} and cannot be deleted here"
   },
   "agents": {
     "title": "Agent settings",
