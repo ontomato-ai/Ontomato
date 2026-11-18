@@ -23,6 +23,7 @@ The rows must already be at the final grain: counts, shares and other business c
 {
   "chartType": "bar",
   "name": "staff-by-department",
+  "title": "Staff by department",
   "dataset": "outputs/staff.dataset.json",
   "fields": { "xAxis": "department", "yAxis": "headcount" },
   "display": { "sort": [{ "field": "headcount", "order": "desc" }], "displayLimit": 10 },
@@ -34,6 +35,7 @@ The rows must already be at the final grain: counts, shares and other business c
 | --- | --- | --- |
 | `chartType` | yes | Type from the table below. |
 | `name` | yes | Output file name without a directory or extension. |
+| `title` | no | Text displayed on the chart. |
 | `data` | one of | Row objects already in the input file. |
 | `dataset` | one of | Data file to read: an accepted `.dataset.json` or a JSON array/`{ "rows": [...] }`. |
 | `fields` | yes | Roles from the table mapped to real column names. |
@@ -91,4 +93,4 @@ Copy the id and parameters from the accepted dataset's metric recipe or from `on
 
 ## Revising
 
-Run the command again with the same `name` after changing `chartType`, `fields`, `display` or the source data. The file is the chart's definition; do not edit it by hand. If the command reports `MISSING_FIELDS`, an invalid mapping or an invalid file, fix the named role or column and rerun.
+Run the command again with the same `name` after changing the input, including `title` for a new chart title. Reference the generated file as written. If the command reports `MISSING_FIELDS`, an invalid mapping or an invalid file, fix the named role or column and rerun.
