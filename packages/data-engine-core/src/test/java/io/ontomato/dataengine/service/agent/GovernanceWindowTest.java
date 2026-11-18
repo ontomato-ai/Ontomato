@@ -38,6 +38,7 @@ class GovernanceWindowTest extends PostgresTestDatabase {
   private MockMvc http;
   private String token;
   private IdentityService identity;
+  private LangService language;
   private AgentExecutionAccess executions;
   private QueryGrantService grants;
   private io.ontomato.dataengine.schedules.ScheduleIdentity identities;
@@ -68,6 +69,8 @@ class GovernanceWindowTest extends PostgresTestDatabase {
     var definitions=mock(OntologyAgentDefinitions.class);
     when(definitions.resource(anyString())).thenCallRealMethod();
     identity=mock(IdentityService.class);
+    language=mock(LangService.class);
+    when(language.get(any(),anyString())).thenAnswer(call->call.getArgument(1));
     executions=mock(AgentExecutionAccess.class);
     identities=mock(io.ontomato.dataengine.schedules.ScheduleIdentity.class,CALLS_REAL_METHODS);
     when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser(owner.userId(),owner.domainId()));
@@ -75,7 +78,7 @@ class GovernanceWindowTest extends PostgresTestDatabase {
     when(identity.hasKnowledgeGovernanceAccess(owner.userId(),owner.domainId())).thenReturn(true);
     when(identity.getCurrentCredentialExpiresAt()).thenReturn(System.currentTimeMillis()+1_200_000);
     governance=new KnowledgeGovernanceService(store,new AgentRuntimeClient(url,"ontology","http://ontology"),
-      new GovernanceRuntimeClient(url,"service"),definitions,grants,mock(KnowledgeService.class),mock(AdminService.class),executions,identities);
+      new GovernanceRuntimeClient(url,"service"),definitions,grants,mock(KnowledgeService.class),mock(AdminService.class),executions,identities,language);
     ReflectionTestUtils.setField(governance,"identityService",identity);
     governance.initialize();
     var access=new OntologyAgentAccess(mock(QueryAccessService.class),identity,grants,store);
@@ -100,7 +103,7 @@ class GovernanceWindowTest extends PostgresTestDatabase {
     assertNotNull(token);
   }
   private Object change(String summary) throws Exception {
-    return governance.action(record,run,"update_work_record",JSONObject.of("summary",summary),owner);
+    return governance.action(record,run,"update_work_record",JSONObject.of("summary",summary),owner,"en");
   }
   private void unchangedAfterRejection() {
     String before=governance.work(record,owner).toJSONString();
@@ -134,22 +137,32 @@ class GovernanceWindowTest extends PostgresTestDatabase {
     unavailable.set(true);
     String external=UUID.randomUUID().toString();
     var window=governance.begin(external,JSONObject.of("message","External original"),context());
-    governance.action(window.getString("id"),external,"update_work_record",JSONObject.of("summary","external saved"),owner);
+    governance.action(window.getString("id"),external,"update_work_record",JSONObject.of("summary","external saved"),owner,"en");
     governance.closeExternal(window.getString("id"),external,owner);
     String before=governance.work(window.getString("id"),owner).toJSONString();
-    assertThrows(AgentHttpException.class,()->governance.action(window.getString("id"),external,"update_work_record",JSONObject.of("summary","late"),owner));
+    assertThrows(AgentHttpException.class,()->governance.action(window.getString("id"),external,"update_work_record",JSONObject.of("summary","late"),owner,"en"));
     assertEquals(before,governance.work(window.getString("id"),owner).toJSONString());
     unavailable.set(false);open();
     assertThrows(AgentHttpException.class,()->governance.closeExternal(record,run,owner));
   }
   @Test void platformInputIsReadFromRuntimeHistoryAndStoredAsAReference() throws Exception {
     open();
-    var input=(JSONObject)governance.action(record,run,"read_input",new JSONObject(),owner);
+    var input=(JSONObject)governance.action(record,run,"read_input",new JSONObject(),owner,"en");
     assertEquals("Original user material",input.getString("text"));
     var work=governance.work(record,owner).getJSONObject("work");
     assertFalse(work.toJSONString().contains("Original user material"));
     assertEquals("history",work.getJSONArray("sources").getJSONObject(0).getString("kind"));
     assertTrue(governance.readSource(record,input.getString("sourceId"),0,owner).toString().contains("Original user material"));
+  }
+  @Test void chineseRequestRegistersTheCurrentMessageWithAChineseSourceTitle() throws Exception {
+    when(language.get("zh-CN","KnowledgeGovernance.source.currentMessage")).thenReturn("当前用户消息");
+    open();
+    http.perform(post("/ontology/ai/knowledge-governance/"+record+"/runs/"+run+"/actions/read_input")
+      .header("X-Ontomato-Run-Id",run).header("Accept-Language","zh-CN")
+      .contentType(MediaType.APPLICATION_JSON).content("{}"))
+      .andExpect(status().isOk());
+    String title=governance.work(record,owner).getJSONObject("work").getJSONArray("sources").getJSONObject(0).getString("title");
+    assertTrue(title.matches(".*\\p{IsHan}.*"));
   }
   @Test void userCannotRegisterAPlatformWindowAndServiceCannotChangeOwnership() throws Exception {
     http.perform(post("/ontology/ai/knowledge-governance/platform-windows").contentType(MediaType.APPLICATION_JSON).content(binding(run).toJSONString())).andExpect(status().isForbidden());

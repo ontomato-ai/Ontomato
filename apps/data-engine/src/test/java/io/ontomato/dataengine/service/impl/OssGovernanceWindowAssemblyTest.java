@@ -52,6 +52,8 @@ class OssGovernanceWindowAssemblyTest {
     beans.registerSingleton("ontologyAgentDefinitions",definitions);
     beans.registerSingleton("knowledgeService",mock(KnowledgeService.class));
     beans.registerSingleton("adminService",mock(AdminService.class));
+    beans.registerSingleton("langService",mock(LangService.class));
+    beans.registerSingleton("agentExecutionAccess",mock(AgentExecutionAccess.class));
     beans.registerSingleton("queryAccessService",mock(QueryAccessService.class));
     context.register(AnonymousIdentityService.class,AnonymousScheduleIdentity.class,KnowledgeGovernanceService.class,
       OntologyAgentAccess.class,KnowledgeGovernanceController.class);
