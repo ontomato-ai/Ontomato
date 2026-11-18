@@ -32,6 +32,7 @@ import io.ontomato.dataengine.bean.action.Action;
 import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.config.ControllerConst;
 import io.ontomato.dataengine.core.bean.User;
+import io.ontomato.dataengine.security.CaseExecutionGuard;
 import io.ontomato.dataengine.service.ActionService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.agent.ActionCreationService;
@@ -58,6 +59,9 @@ public class ActionController {
 	
 	@Autowired
 	private ActionService actionService;
+
+	@Autowired
+	private CaseExecutionGuard caseExecutionGuard;
 
 	@Autowired
 	private LangService langService;
@@ -364,6 +368,7 @@ public class ActionController {
 		try {
 			UserDataPermission curUserDataPermission = identityService.getCurrentUserDataPermission();
 	    	User user = SystemUtils.getCurUser();
+			caseExecutionGuard.verify(executionRequest, id, user);
 			JSONObject p = JSONObject.parseObject(paramJson);
 			if (files != null && !files.isEmpty()) {
 				for (String key : p.keySet()) {
@@ -403,6 +408,7 @@ public class ActionController {
             }
             io.ontomato.dataengine.service.ExecutionTarget.failure(ret,e);
 		} finally {
+			caseExecutionGuard.clear();
 			for (Path tempFile : tempFiles) {
 				try {
 					Files.deleteIfExists(tempFile);

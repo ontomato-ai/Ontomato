@@ -45,7 +45,8 @@ description: 以使用方主体身份在 Ontomato/Praxis 上办事：按需求�
    - `units`：我的组织及所有下级组织；
    - `members`：这些组织里的主体，以及他们的有效角色；
    - `roles[].capabilities`：这些角色能执行的 Action（含 `name`、`classNames`）；
-   - `roles[].canAuthorWorkflow`：该角色是否有保存/激活 Workflow 的平台权限。
+   - `roles[].canAuthorWorkflow`：该角色是否有保存/激活 Workflow 的平台权限；
+   - `caseClass` / `caseApi`：临时流程单的只读本体类（`workflow_case`）与读取入口。
 
 3. 先用 `node client.mjs find "<需求>"` 找已发布的 Action。`denied` 里也会给出 `actionId/name`；**Action 已发布就可以用于临时 Workflow**，不要求当前角色已经持有它。
 4. 再用 `org-graph` 选目标角色和成员：
@@ -399,7 +400,7 @@ node client.mjs case-close <runId>
 
 - `case-submit` 只有 requester 能调；`case-fill` 只有 requester 或当前 assignee；`case-close` 只有 requester 或 assignee。
 - Case closed 后自然失效，不再需要 `temp-clean` 才回收授权（本身也没有角色级授权）。
-- 读 Case：`node client.mjs case <runId>`。
+- 读 Case：`node client.mjs case <runId>`；`workflow_case` 是它在 Ontomato 的只读本体类，可用 DSL 查询。
 
 ---
 
