@@ -33,7 +33,6 @@ const uses: ApplicationPanelUse[] = [
     path: "/tasks",
     pageKey: "panels-trial-a-tasks",
     access: { kind: "domain-member" },
-    skill: { namespace: { kind: "provider", provider: "workbench" }, name: "panels" },
   },
 ];
 vi.mock("../panel-host", () => ({ panelUsesOf: async () => uses, platformPanelHost: () => ({}) }));
