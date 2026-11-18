@@ -29,7 +29,8 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     @BeforeEach void setup() {
         new ApplicationCatalogUpgrade(jdbc).afterPropertiesSet();
         catalog = new ApplicationCatalog(jdbc,
-            new TransactionTemplate(new DataSourceTransactionManager(dataSource)), mock(ApplicationAccess.class), "{}");
+            new TransactionTemplate(new DataSourceTransactionManager(dataSource)), mock(ApplicationAccess.class), "{}",
+            mock(PanelResources.class), mock(io.ontomato.dataengine.service.ProductGrantService.class));
         http = MockMvcBuilders.standaloneSetup(new ApplicationController(catalog, mock(IdentityService.class),
             new WorkbenchServiceAuthentication("test-service")))
             .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
@@ -37,7 +38,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     private ApplicationCatalog.Builtin builtin(String id, String kind) {
         return new ApplicationCatalog.Builtin(id, kind, "apps", "build", 1,
             JSONObject.of("path", "/"+id, "renderer", id), List.of("domain-member"), null,
-            new ApplicationCatalog.Declaration(Map.of("en", id), Map.of(), "pages", List.of(), List.of(), List.of()));
+            new ApplicationCatalog.Declaration(Map.of("en", id), Map.of(), "pages", List.of(), List.of(), List.of(), List.of()));
     }
     private List<Map<String,Object>> records() {
         return jdbc.queryForList("SELECT * FROM sys_application ORDER BY id");
