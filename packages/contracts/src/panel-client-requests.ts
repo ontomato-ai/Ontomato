@@ -34,15 +34,24 @@ export const bindingKey = (binding: { kind: string; id: string }) => `${binding.
 
 const tasks = platformSchedulesPath.slice(DATA_QUERY_GATEWAY.length);
 /** A task's ID is a UUID, so no other segment of the service (`applications`, `credential`) reads as a task. */
-const task = `${tasks}/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`;
+const taskIdPattern = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+const task = `${tasks}/${taskIdPattern}`;
+
+/** The owner reads shared by frames, the execution callback and the generated panel skill. */
+export const scheduledTaskReads = [
+  { method: "GET", service: "/data-query", path: new RegExp(`^${tasks}$`), template: tasks },
+  { method: "GET", service: "/data-query", path: new RegExp(`^${task}$`), template: `${tasks}/:id` },
+  { method: "POST", service: "/data-query", path: new RegExp(`^${tasks}/applications/[^/?]+/form$`), template: `${tasks}/applications/:appId/form` },
+] as const satisfies readonly (ClientRequest & { template: string })[];
+
+export const panelClientReads = (binding: string) =>
+  binding === bindingKey({ kind: "PlatformObjectType", id: SCHEDULED_TASK }) ? scheduledTaskReads : [];
 
 /** Each binding's requests: what its client sends, and nothing more. */
 export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> = {
   [bindingKey({ kind: "PlatformObjectType", id: SCHEDULED_TASK })]: [
     // The reader's tasks, one task, its application's form for given values, and the save at the task's revision.
-    { method: "GET", service: "/data-query", path: new RegExp(`^${tasks}$`) },
-    { method: "GET", service: "/data-query", path: new RegExp(`^${task}$`) },
-    { method: "POST", service: "/data-query", path: new RegExp(`^${tasks}/applications/[^/?]+/form$`) },
+    ...scheduledTaskReads,
     { method: "PUT", service: "/data-query", path: new RegExp(`^${task}$`) },
   ],
   [bindingKey({ kind: "PlatformOperation", id: RUN_NOW })]: [
