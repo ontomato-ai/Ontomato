@@ -191,12 +191,11 @@ describe("a panel instance", () => {
     const adapters = new PanelFormAdapters();
     adapters.register("form", {
       operation: "platform:ScheduledTask.save",
-      read: async () => ({ operation: "autotest", caseSetId: "cases-1" }),
+      prepareDraft: async () => ({ baseline: { operation: "autotest", caseSetId: "cases-1" }, apply: () => {} }),
       save: async () => ({}),
       // Which slot takes the draft and what it changed is this test's subject; the form's own save and showing are the
       // component's, checked where the component is mounted.
       submit: async () => ({}),
-      apply: () => {},
     });
     const received = await new Promise<ReceivedPanelDraft<Record<string, unknown>>>((taken) =>
       void receivePanelDraft(

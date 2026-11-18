@@ -154,15 +154,14 @@ describe("a panel's instance", () => {
 
   it("takes a draft of its own form, comparing it with the owner's reading", async () => {
     const adapters = new PanelFormAdapters();
-    const read = vi.fn(async () => ({ title: "Nightly", application: "reports" }));
+    const prepareDraft = vi.fn(async () => ({ baseline: { title: "Nightly", application: "reports" }, apply: () => {} }));
     adapters.register("taskForm", {
       operation: "schedules.update",
-      read,
+      prepareDraft,
       save: async () => ({ id: "task-1" }),
       // This test only checks which slot takes the draft and which fields it changed; the form's own save and the
       // showing of the draft are the component's, checked in its own test.
       submit: async () => ({}),
-      apply: () => {},
     });
     const received = await new Promise<ReceivedPanelDraft<Record<string, unknown>>>((taken) =>
       void receivePanelDraft(
