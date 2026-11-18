@@ -1,9 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { effectScope } from "vue";
 import type { ApplicationPanelUse, ProductPanel } from "@ontomato/contracts/product-panels";
 import { panelAddress, panelAddressState, PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
-import { panelFrameDocument, usePanelInstance, type DefinitionChanged, type DefinitionTarget, type PanelHostPort } from "../panel-host";
+import {
+  panelFrameDocument,
+  usePanelInstance,
+  type DefinitionChanged,
+  type DefinitionTarget,
+  type PanelHostLabels,
+  type PanelHostPort,
+} from "../panel-host";
 
 /*
  * The host loads one panel per application use, keeps each instance's state to itself, and hands a changed definition to
@@ -14,6 +24,13 @@ import { panelFrameDocument, usePanelInstance, type DefinitionChanged, type Defi
  */
 
 const SCHEDULED_TASK = "platform:ScheduledTask";
+
+/** The host's words, as the platform supplies them in the reader's language. */
+const labels: PanelHostLabels = {
+  useMissing: (useId) => `No panel use ${useId}`,
+  notStarted: "Not started",
+  failures: { fileUnavailable: "Could not load {file}", scriptThrew: "Script failed", scriptRejected: "Script rejected" },
+};
 
 /** Panel P: a task list, the task's form and a button that runs it. Its list and summary are the shared projection X. */
 const panelP = definePanel({
@@ -118,6 +135,8 @@ function fromFrame(frame: Window, message: Record<string, unknown>): void {
   window.dispatchEvent(new MessageEvent("message", { source: frame, data: { channel: PANEL_HOST_CHANNEL, ...message } }));
 }
 
+const HERE = dirname(fileURLToPath(import.meta.url));
+
 describe("the panel host", () => {
   it("opens one instance per application use, each from its own relation and record", async () => {
     const panels = new Map([
@@ -134,7 +153,7 @@ describe("the panel host", () => {
     });
     const scope = effectScope();
     const open = (useId: string) =>
-      scope.run(() => usePanelInstance(port, { useId: () => useId, label: (panel) => panel.name, address: () => `/applications/app-a/${useId}`, initial: () => ({}) }))!;
+      scope.run(() => usePanelInstance(port, { labels, useId: () => useId, label: (panel) => panel.name, address: () => `/applications/app-a/${useId}`, initial: () => ({}) }))!;
     const a = open("use-a");
     const b = open("use-b");
     const q = open("use-q");
@@ -170,7 +189,7 @@ describe("the panel host", () => {
     });
     const scope = effectScope();
     const open = (useId: string) =>
-      scope.run(() => usePanelInstance(port, { useId: () => useId, label: (panel) => panel.name, address: () => `/applications/app-a/${useId}`, initial: () => ({}) }))!;
+      scope.run(() => usePanelInstance(port, { labels, useId: () => useId, label: (panel) => panel.name, address: () => `/applications/app-a/${useId}`, initial: () => ({}) }))!;
     const a = open("use-a");
     const b = open("use-b");
     const q = open("use-q");
@@ -200,8 +219,8 @@ describe("the panel host", () => {
       ],
     });
     const scope = effectScope();
-    const a = scope.run(() => usePanelInstance(port, { useId: () => "use-a", label: (panel) => panel.name, address: () => "/applications/app-a/a/schedules", initial: () => ({}) }))!;
-    const q = scope.run(() => usePanelInstance(port, { useId: () => "use-q", label: (panel) => panel.name, address: () => "/applications/app-a/summary", initial: () => ({}) }))!;
+    const a = scope.run(() => usePanelInstance(port, { labels, useId: () => "use-a", label: (panel) => panel.name, address: () => "/applications/app-a/a/schedules", initial: () => ({}) }))!;
+    const q = scope.run(() => usePanelInstance(port, { labels, useId: () => "use-q", label: (panel) => panel.name, address: () => "/applications/app-a/summary", initial: () => ({}) }))!;
     await Promise.all([a.ready, q.ready]);
     const frameA = frameWindow();
     a.frame(frameA);
@@ -238,7 +257,7 @@ describe("the panel host", () => {
     const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
     const scope = effectScope();
     const a = scope.run(() =>
-      usePanelInstance(port, {
+      usePanelInstance(port, { labels,
         useId: () => "use-a",
         label: (panel) => panel.name,
         address: () => "/applications/app-a/a/schedules",
@@ -267,7 +286,7 @@ describe("the panel host", () => {
     const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
     const scope = effectScope();
     const a = scope.run(() =>
-      usePanelInstance(port, {
+      usePanelInstance(port, { labels,
         useId: () => "use-a",
         label: (shown) => `Trial A · ${shown.name}`,
         address: () => "/applications/app-a/a/schedules",
@@ -291,7 +310,7 @@ describe("the panel host", () => {
     };
     const scope = effectScope();
     const a = scope.run(() =>
-      usePanelInstance(port, { useId: () => "use-a", label: (panel) => panel.name, address: () => "/applications/app-a/a/schedules", initial: () => ({}) }),
+      usePanelInstance(port, { labels, useId: () => "use-a", label: (panel) => panel.name, address: () => "/applications/app-a/a/schedules", initial: () => ({}) }),
     )!;
     await a.ready;
     // The failure is the page's word: no frame is drawn, and the reason is there to read.
@@ -307,7 +326,7 @@ describe("the panel host", () => {
       throw new Error("GET /api/data-query/platform/applications/app-a/panel-uses failed: 403");
     };
     const a = scope.run(() =>
-      usePanelInstance(port, { useId: () => "use-a", label: (panel) => panel.name, address: () => "/applications/app-a/a/schedules", initial: () => ({}) }),
+      usePanelInstance(port, { labels, useId: () => "use-a", label: (panel) => panel.name, address: () => "/applications/app-a/a/schedules", initial: () => ({}) }),
     )!;
     await a.ready;
     expect(a.error.value).toContain("panel-uses failed: 403");
@@ -321,6 +340,52 @@ describe("the panel host", () => {
     expect(panelAddressState(panelAddress("/a/schedules", { selectedTask: null }))).toEqual({ selectedTask: null });
   });
 
+  it("runs the trial's own panel content in a document of its own making", () => {
+    // The examples as they are registered: three texts, and the record is what carries the manifest.
+    const trial = join(HERE, "..", "..", "..", "apps-sdk", "examples", "panels", "schedules-trial");
+    for (const directory of ["p", "q"]) {
+      const html = readFileSync(join(trial, directory, "panel.html"), "utf8");
+      const module = readFileSync(join(trial, directory, "panel.mjs"), "utf8");
+      const document = panelFrameDocument(
+        { ...record(`panel-${directory}`, `Trial ${directory}`, panelP), content: { html, module } },
+        "/apps-sdk/1.1.0",
+        { kind: "panel-host-message", panel: record(`panel-${directory}`, `Trial ${directory}`, panelP), pageKey: `trial-${directory}`, url: "/applications/app-panels-trial-a/tasks", label: "Scheduled tasks", state: {} },
+        labels.failures,
+      );
+      // The panel's HTML is a fragment the host's document holds: no document of its own, and nothing left for the host
+      // to substitute — a `{{head}}` would be drawn literally, since the host inserts this as content.
+      expect(document).not.toContain("{{");
+      expect(html).not.toMatch(/<!doctype|<html|<head|<body/i);
+      expect(html).toContain("<style>");
+      // The module imports only names the frame's import map serves: a relative path would resolve against the platform's
+      // own document, not beside a file, because the panel's module is text inside this document.
+      const imported = [...module.matchAll(/(?:from|import)\s*["']([^"']+)["']/g)].map((found) => found[1]!);
+      expect(imported.length).toBeGreaterThan(0);
+      for (const specifier of imported) expect(specifier.startsWith("@ontomato/sdk") || ["vue", "element-plus"].includes(specifier)).toBe(true);
+      // And the module is in the document, escaped: it is content, not a template of the host's.
+      expect(document).toContain("mountPanel");
+    }
+  });
+
+  it("reports what the frame could not load or run, instead of drawing nothing", () => {
+    const panel = record("panel-p", "Scheduled tasks", panelP);
+    const document = panelFrameDocument(panel, "/apps-sdk/1.1.0", {
+      kind: "panel-host-message",
+      panel,
+      pageKey: "schedules",
+      url: "/a/schedules",
+      label: "Scheduled tasks",
+      state: {},
+    }, labels.failures);
+    // A listener runs before the module, and it reports a module that cannot be fetched and a rejection nothing handled.
+    expect(document.indexOf("unhandledrejection")).toBeGreaterThan(-1);
+    expect(document.indexOf("unhandledrejection")).toBeLessThan(document.indexOf("mountPanel"));
+    expect(document).toContain('kind: "failed"');
+    // In the reader's language: the words are the platform's, and the frame puts the file it could not load in its place.
+    expect(document).toContain(JSON.stringify(labels.failures));
+    expect(document).toContain('words.fileUnavailable.replace("{file}"');
+  });
+
   it("runs the panel's own text with this SDK version's modules", () => {
     const panel = record("panel-p", "Scheduled tasks", panelP);
     const document = panelFrameDocument(panel, "/apps-sdk/1.1.0", {
@@ -330,7 +395,7 @@ describe("the panel host", () => {
       url: "/a/schedules",
       label: "Scheduled tasks",
       state: {},
-    });
+    }, labels.failures);
     expect(document).toContain('"@ontomato/sdk/panel":"/apps-sdk/1.1.0/panel.js"');
     expect(document).toContain("/apps-sdk/1.1.0/styles/sdk.css");
     expect(document).toContain("data-panel-host-message");
@@ -342,7 +407,7 @@ describe("the panel host", () => {
     const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
     const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
     const scope = effectScope();
-    const a = scope.run(() => usePanelInstance(port, { useId: () => "use-a", label: (panel) => panel.name, address: () => "/applications/app-a/a/schedules", initial: () => ({}) }))!;
+    const a = scope.run(() => usePanelInstance(port, { labels, useId: () => "use-a", label: (panel) => panel.name, address: () => "/applications/app-a/a/schedules", initial: () => ({}) }))!;
     await a.ready;
     const frameA = frameWindow();
     a.frame(frameA);

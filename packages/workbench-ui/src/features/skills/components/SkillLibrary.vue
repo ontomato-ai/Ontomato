@@ -11,6 +11,7 @@ import { ApiRequestError } from "../../../utils/api";
 import { skillsApi } from "../api";
 import { updateSkillLibraryCount } from "../count";
 import { deleteSkill, exportSkill } from "../actions";
+import { skillSource } from "../source";
 
 /**
  * The platform's skills, in the ontology manager's capability layer: one card a skill, with its name, where it came
@@ -105,18 +106,18 @@ async function upload(uploaded: UploadFile) {
             <span class="card-head">
               <Puzzle class="card-icon" :size="20" aria-hidden="true" />
               <span class="card-name">{{ skill.title }}</span>
-              <el-tag size="small" :type="skill.isPublic ? 'info' : 'primary'" effect="plain" disable-transitions>
-                {{ skill.isPublic ? t("capabilities.sourcePublic") : t("capabilities.sourceDomain") }}
+              <el-tag size="small" :type="skill.writeRestriction ? 'info' : 'primary'" effect="plain" disable-transitions>
+                {{ skillSource(skill, t).label }}
               </el-tag>
             </span>
             <span v-if="skill.description" class="card-description">{{ skill.description }}</span>
           </button>
           <span class="card-actions">
             <el-button size="small" text :icon="Download" @click="exportSkill(skill.id)">{{ t("common.export") }}</el-button>
-            <!-- A built-in skill comes with the product and stays: its delete is there, greyed, and says why. -->
-            <el-tooltip :disabled="!skill.isPublic" :content="t('capabilities.builtInNoDelete')" placement="top">
+            <!-- A skill the domain does not own (built-in, or a provider's) stays: its delete is there, greyed, and says why. -->
+            <el-tooltip :disabled="!skill.writeRestriction" :content="skillSource(skill, t).noDelete ?? ''" placement="top">
               <span>
-                <el-button size="small" text type="danger" :icon="Trash2" :disabled="skill.isPublic" @click="remove(skill)">
+                <el-button size="small" text type="danger" :icon="Trash2" :disabled="!!skill.writeRestriction" @click="remove(skill)">
                   {{ t("common.delete") }}
                 </el-button>
               </span>

@@ -3,7 +3,7 @@ import { createApp, defineComponent, h, nextTick, ref } from "vue";
 import { definePanel, type PanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { createPanelInstance, applyPanelRequest } from "../../../../../packages/apps-sdk/src/panel/instance";
-import { PanelFormAdapters, receivePanelDraft } from "../../../../../packages/apps-sdk/src/panel/draft";
+import { PanelFormAdapters, receivePanelDraft, type ReceivedPanelDraft } from "../../../../../packages/apps-sdk/src/panel/draft";
 import { portsOf } from "../../../../../packages/apps-sdk/src/panel/ports-of";
 import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import { registerHandler, handlerFor, registeredHandlers } from "../../../../../packages/apps-sdk/src/panel/handlers";
@@ -125,9 +125,11 @@ describe("a panel's instance", () => {
     expect(form.operations.map((operation) => operation.handlerRef)).toEqual(["schedules.update"]);
   });
 
-  it("draws the component the catalogue names, and refuses one this version has not got", () => {
-    expect(componentFor("MarkdownView")).not.toBe(componentFor("FormFields"));
-    expect(() => componentFor("NoSuchComponent")).toThrow(/no component 'NoSuchComponent'/);
+  it("draws the component the catalogue names, and refuses one this version has not got", async () => {
+    // A component is fetched the first time a projection names it, and the same one twice is one fetch.
+    expect(await componentFor("MarkdownView")).not.toBe(await componentFor("FormFields"));
+    expect(await componentFor("MarkdownView")).toBe(await componentFor("MarkdownView"));
+    await expect(componentFor("NoSuchComponent")).rejects.toThrow(/no component 'NoSuchComponent'/);
   });
 
   it("runs an operation through the handler reference the catalogue registered, not one of the panel's own", async () => {
@@ -162,21 +164,24 @@ describe("a panel's instance", () => {
       submit: async () => ({}),
       apply: () => {},
     });
-    const received = await receivePanelDraft(
-      "schedules",
-      adapters,
-      {
-        readPageDraft: async () => ({
-          pageKey: "schedules",
-          operation: "schedules.update",
-          target: { id: "task-1" },
-          form: { title: "Nightly report", application: "reports" },
-        }),
-      },
-      { sessionId: "s", runId: "r", path: "outputs/drafts/a.page-draft.json" },
+    const received = await new Promise<ReceivedPanelDraft<Record<string, unknown>>>((taken) =>
+      void receivePanelDraft(
+        "schedules",
+        adapters,
+        {
+          readPageDraft: async () => ({
+            pageKey: "schedules",
+            operation: "schedules.update",
+            target: { id: "task-1" },
+            form: { title: "Nightly report", application: "reports" },
+          }),
+        },
+        { sessionId: "s", runId: "r", path: "outputs/drafts/a.page-draft.json" },
+        taken,
+      ),
     );
-    expect(received?.slot).toBe("taskForm");
-    expect([...(received?.changed ?? [])]).toEqual(["title"]);
+    expect(received.slot).toBe("taskForm");
+    expect([...received.changed]).toEqual(["title"]);
   });
 
   it("keeps a value the panel does not offer in an address out of one", () => {

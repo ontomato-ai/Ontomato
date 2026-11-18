@@ -518,10 +518,125 @@ class OntologyRetrievalContractTest {
             .contentType("application/json").content(AgentJson.json(preparation)))
         .andExpect(status().isAccepted());
     var operation = org.mockito.ArgumentCaptor.forClass(QueryJobService.Operation.class);
-    verify(jobs).start(eq(output), any(QueryAccessService.Access.class), eq("output"), any(), operation.capture());
+    verify(jobs).start(eq(output), any(io.ontomato.dataengine.core.bean.User.class), eq("output"), any(), operation.capture());
     var rejected = assertThrows(io.ontomato.dataengine.dataAdapter.DslContractViolationException.class, () -> operation.getValue().execute(output));
     assertTrue(rejected.getMessage().contains("Unknown DSL class"));
     verifyNoInteractions(engine);
+  }
+
+  @Test
+  void executorOutputKeepsInitiatorJobsQuotesAndConfirmedDecisions() throws Exception {
+    var source = new DriverManagerDataSource(jdbcUrl + "?currentSchema=" + schema, username, password);
+    var jdbc = new JdbcTemplate(source);
+    var executor = new QueryAccessService.GrantUser("user-v", owner.domainId());
+    var executorOwner = new OntologyAgentStore.Owner(executor.getId(), executor.getDomainId());
+    var executorPermission = new UserDataPermission();
+    var visible = new io.ontomato.dataengine.service.sys.bean.permission.FieldPermission("/sales");
+    visible.getVisibleFields().add("value");
+    executorPermission.addFieldPermission(visible);
+    var lookup = mock(DataPermissionLookup.class);
+    when(lookup.getDataPermission(executor.getId(), owner.domainId())).thenReturn(executorPermission);
+    var identity = mock(IdentityService.class);
+    when(identity.getCurrentUser()).thenReturn(executor);
+    when(identity.getCurrentUserDataPermission()).thenReturn(executorPermission);
+    var queries = new QueryAccessService(identity, lookup, grants);
+    var authorization = new OntologyAgentAccess(queries, identity, grants, store);
+    var executions = mock(AgentExecutionAccess.class);
+    when(executions.require(owner.domainId(), executor.getId())).thenReturn(executor);
+    var filter = new QueryGrantFilter(grants);
+    org.springframework.test.util.ReflectionTestUtils.setField(filter, "executions", executions);
+    http = MockMvcBuilders.standaloneSetup(new OntologyRetrievalController(retrieval, store, authorization, tasks))
+        .setControllerAdvice(new OntologyAgentErrors())
+        .setMessageConverters(new org.springframework.http.converter.json.MappingJackson2HttpMessageConverter())
+        .addFilters(filter).build();
+
+    var sessions = mock(SessionRegistryService.class);
+    when(sessions.getNodeId()).thenReturn("fixture-node");
+    jobs = new QueryJobService(jdbc, sessions, mock(RuntimeCodeClient.class),
+        new DataSourceTransactionManager(source), mock(AgentChannelChanges.class));
+    jobs.initialize();
+    org.springframework.test.util.ReflectionTestUtils.setField(retrieval, "jobs", jobs);
+    var engine = mock(OntologyQueryService.class);
+    when(engine.rule(any())).thenReturn(Map.of("classDef", List.of(JSONObject.of("className", "/sales",
+        "attrs", JSONArray.of(JSONObject.of("name", "value", "enable", true))))));
+    jdbc.execute("CREATE TABLE fixture_sales(user_id text NOT NULL,value integer NOT NULL)");
+    for (int value = 1; value <= 5; value++) {
+      jdbc.update("INSERT INTO fixture_sales VALUES(?,?),(?,?)", owner.userId(), value, executor.getId(), value + 100);
+    }
+    var executed = new java.util.concurrent.atomic.AtomicReference<QueryAccessService.Access>();
+    var inherited = new java.util.concurrent.atomic.AtomicReference<QueryAccessService.Access>();
+    var bridge = mock(OntologyGenerationService.class, CALLS_REAL_METHODS);
+    org.springframework.test.util.ReflectionTestUtils.setField(bridge, "permissions", lookup);
+    // The query adapter reads a per-user fixture; HTTP, output packaging and job persistence remain real.
+    when(engine.execute(any(), any())).thenAnswer(call -> {
+      var access = call.getArgument(1, QueryAccessService.Access.class);
+      executed.set(access);
+      inherited.set(bridge.executionAccess(owner.domainId()));
+      var rows = new JSONArray(jdbc.queryForList("SELECT value FROM fixture_sales WHERE user_id=? ORDER BY value", access.user().getId()));
+      return Map.of("data", List.of(Map.of("answer", rows)));
+    });
+    org.springframework.test.util.ReflectionTestUtils.setField(retrieval, "outputs", new QueryOutputService(null, null, engine, null,
+        new SubjectValueResolver(mock(SubjectAttributeLookup.class))));
+
+    var vContext = new OntologyAgentAccess.Context(executorOwner,
+        new QueryAccessService.Access(executor, executorPermission, null, null, null, List.of("/sales")),
+        null, null, "en", null, null);
+    String vRun = id();
+    var vSession = retrieval.begin(vRun, JSONObject.of("question", "V private question", "userQuotes", JSONArray.of("V private words")), vContext);
+    var vAnswer = JSONObject.of("role", "notification", "kind", "agent-answer", "source", JSONObject.of("kind", "user"),
+        "replyTo", id(), "content", "V private decision", "timestamp", 1);
+    store.confirmAnswer(vSession.getString("id"), vRun, executorOwner, vAnswer);
+    String vDecision = store.retrieval(vSession.getString("id"), executorOwner).getJSONArray("decisions").getJSONObject(0).getString("id");
+
+    String caller = id(), session = id(), run = id(), output = id();
+    long deadline = Instant.now().plusSeconds(300).toEpochMilli();
+    store.openCaller(caller, owner, JSONObject.of("executionUserId", executor.getId(), "classNames", List.of("/sales"),
+        "continuationIds", List.of(), "recentUserMessages", JSONArray.of("U original words"), "deadlineAt", Instant.ofEpochMilli(deadline).toString()));
+    var selected = new QueryAccessService.Access(executor, executorPermission, null, null, deadline, List.of("/sales"),
+        ExecutionTarget.LIVE, executor.getId(), owner.userId());
+    var context = new OntologyAgentAccess.Context(owner, selected, null, null, "en", deadline, caller, executor.getId());
+    var message = JSONObject.of("role", "user", "content", "U delegated question", "timestamp", 1);
+    var prepared = retrieval.prepareRun(session, run, message, id(), null, run, context);
+    var originalContext = JSON.parseObject(prepared.getJSONObject("definition").getString("context"));
+    assertEquals(List.of("U original words"), originalContext.getList("userQuotes", String.class));
+    var answer = JSONObject.of("role", "notification", "kind", "agent-answer", "source", JSONObject.of("kind", "user"),
+        "replyTo", id(), "content", "U confirmed decision", "timestamp", 2);
+    var steered = JSON.parseObject(retrieval.prepareSteer(session, run, answer, context).getString("context"));
+    assertEquals(List.of("U original words"), steered.getList("userQuotes", String.class));
+    assertEquals(List.of("U confirmed decision"), OntologyRetrievalService.confirmedDecisions(steered.getJSONArray("decisions")));
+    String decision = store.retrieval(session, owner).getJSONArray("decisions").getJSONObject(0).getString("id");
+    String grant = prepared.getJSONObject("environment").getJSONObject("secrets").getString("ONTOMATO_TK");
+    String route = "/ontology/retrievals/" + session + "/runs/" + run + "/outputs";
+    var query = JSON.parseObject("{\"answer\":{\"steps\":[{\"graph\":{\"patterns\":[{\"objects\":[{\"idx\":0,\"variable\":\"s\",\"class\":\"/sales\"}]}]},\"output\":{\"to_user\":true,\"fields\":[{\"variable\":\"s\",\"field\":\"value\",\"as\":\"value\"}]}}]}}");
+    var preparation = JSONObject.of("title", "Sales", "question", "V private question", "decisionIds", JSONArray.of(vDecision),
+        "recipe", JSONObject.of("kind", "package", "package", QueryPackage.fromDsl(query.toJSONString()),
+            "parameters", new JSONObject(), "columnLabels", JSONObject.of("value", "Value")),
+        "assumptions", new JSONArray(), "metricUses", new JSONArray(), "selfCheck", JSONObject.of("scope", "", "filters", "", "grain", "", "denominator", "", "nullGroups", "", "comparisons", new JSONArray()));
+    http.perform(post(route).header("tk", grant).header("X-Ontomato-Run-Id", run).header("X-Ontomato-Session-Id", session)
+        .header("Idempotency-Key", output).contentType("application/json").content(AgentJson.json(preparation)))
+        .andExpect(status().isAccepted());
+    org.awaitility.Awaitility.await().atMost(5, TimeUnit.SECONDS).until(() ->
+        !"running".equals(jdbc.queryForObject("SELECT state->>'status' FROM ontology_query_jobs WHERE id=?::uuid", String.class, output)));
+    var delivered = JSON.parseObject(http.perform(get(route + "/" + output).header("tk", grant)
+        .header("X-Ontomato-Run-Id", run).header("X-Ontomato-Session-Id", session))
+        .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+    assertNull(delivered.get("error"), delivered.toJSONString());
+    assertEquals(List.of(101, 102, 103, 104, 105), delivered.getJSONObject("dataset").getJSONArray("rows").stream()
+        .map(JSONObject::from).map(row -> row.getIntValue("value")).toList());
+    assertEquals(owner.userId(), jdbc.queryForObject("SELECT user_id FROM ontology_query_jobs WHERE id=?::uuid", String.class, output));
+    assertEquals(executor.getId(), executed.get().user().getId());
+    assertEquals(executor.getId(), inherited.get().user().getId());
+    assertEquals(List.of("/sales"), executed.get().classNames());
+    assertEquals(executorPermission.getFieldPermissions(), executed.get().permission().getFieldPermissions());
+    var request = store.run(session, run, owner).getJSONObject("request");
+    assertEquals(List.of("U original words"), request.getList("userQuotes", String.class));
+    assertEquals(List.of("U confirmed decision"), OntologyRetrievalService.confirmedDecisions(store.retrieval(session, owner).getJSONArray("decisions")));
+    var accepted = store.one("SELECT request FROM ontology_retrieval_outputs WHERE id=?::uuid", output).getJSONObject("request");
+    assertEquals("U delegated question", accepted.getString("question"));
+    assertEquals(List.of(decision), accepted.getList("decisionIds", String.class));
+    assertEquals(List.of("V private words"), store.run(vSession.getString("id"), vRun, executorOwner).getJSONObject("request").getList("userQuotes", String.class));
+    assertEquals(List.of("V private decision"), OntologyRetrievalService.confirmedDecisions(store.retrieval(vSession.getString("id"), executorOwner).getJSONArray("decisions")));
+    http.perform(get("/ontology/retrievals/" + session).header("tk", "v-login")).andExpect(status().isNotFound());
   }
 
   @Test
@@ -590,6 +705,7 @@ class OntologyRetrievalContractTest {
   @AfterEach
   void cleanup() throws Exception {
     if (retrieval != null) retrieval.shutdown();
+    if (jobs != null) jobs.close();
     if (server != null) server.stop(0);
     if (schema != null)
       try (var c = DriverManager.getConnection(jdbcUrl, username, password);

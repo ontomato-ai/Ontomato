@@ -74,6 +74,16 @@ const saveButton = (wrapper: VueWrapper) =>
   wrapper.findAll(".platform-page-header button").find((button) => button.text() === t("common.save"))!;
 
 describe("an agent's execution permission", () => {
+  it("shows its arrow: a remote choice that looks like a field cannot be told from one that is read only", async () => {
+    const { wrapper } = await mountEditor(MEMBER, true);
+    // The choice is remote and filterable, which Element Plus draws without a suffix unless it is asked for one: what
+    // says "this opens a list" is the caret the other choices on the page have.
+    const suffix = wrapper.find(".execution-select .el-select__suffix");
+    expect(suffix.exists()).toBe(true);
+    // The caret itself, the same mark the page's other choices carry.
+    expect(suffix.find("svg").exists()).toBe(true);
+  });
+
   it("names the stored member and why it cannot run, even when the list does not reach it", async () => {
     // The identity service answers for the reference itself: a reader without the permission sees the member's name and
     // the reason, and no member list is needed to judge it.
@@ -111,6 +121,14 @@ describe("an agent's execution permission", () => {
     await saveButton(wrapper).trigger("click");
     await flushPromises();
     expect(create.mock.calls[0]![0]).not.toHaveProperty("executionUserId");
+  });
+
+  it("lets an administrator choose in the list alone, in the reader's words", async () => {
+    // The choice is the list itself: an administrator reads it there once, and every line under it is a sentence.
+    const { field } = await mountEditor(null, true);
+    expect(field.find(".execution-select").exists()).toBe(true);
+    expect(field.find(".execution-read").exists()).toBe(false);
+    expect(field.text()).not.toMatch(/agents\.\w+/);
   });
 
   it("sends the reference an administrator chose", async () => {

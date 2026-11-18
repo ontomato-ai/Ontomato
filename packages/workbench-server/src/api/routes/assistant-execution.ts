@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { scheduledTaskReads } from "@ontomato/contracts/panel-client-requests";
 import type {AssistantCredentials} from "../../platform/agent-runtime/runtime";
 import { Readable } from "node:stream";
 import { z } from "zod";
@@ -39,8 +40,10 @@ assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
   if (!callback || callback.runId !== runId) throw new HttpError(403, "A run callback is required", "FORBIDDEN");
   const target = z.enum(["ontology", "workbench"]).parse(req.params.target);
   const path = "/" + req.params[0];
+  const scheduleRead = target === "ontology" && !req.path.includes("%") &&
+    scheduledTaskReads.some(request => request.method === req.method && request.path.test(path));
   if (/[\\%?#]/u.test(path) || path.split("/").some(segment => segment === "." || segment === "..") ||
-    !(target === "ontology" ? ontologyPath : workbenchPath).test(path) || path.startsWith("/api/assistant/executions/"))
+    !(target === "ontology" ? scheduleRead || ontologyPath.test(path) : workbenchPath.test(path)) || path.startsWith("/api/assistant/executions/"))
     throw new HttpError(403, "Path is outside the execution callback", "FORBIDDEN");
   const { owner, credentials: initiatorCredentials } = context(req);
   const grantAction=target==="ontology" && callback.businessGrant && /^\/ontology\/ai\/knowledge-governance\/[^/]+\/runs\/[^/]+\/actions\/[^/]+$/u.test(path);
@@ -48,7 +51,7 @@ assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
   const credentials: AssistantCredentials = ownership || grantAction ? initiatorCredentials : (await credentialsForRun(owner, runId, initiatorCredentials)).credentials;
   if(ownership || grantAction)await runForOwner(owner,runId);
   const headers = buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey, credentials.headers);
-  if (callback.businessGrant) { headers.tk = callback.businessGrant; delete headers["X-API-Key"]; }
+  if (callback.businessGrant && !scheduleRead) { headers.tk = callback.businessGrant; delete headers["X-API-Key"]; }
   headers["X-Ontomato-Run-Id"] = runId;
   headers["X-Ontomato-Retrieval-Caller-Id"] = runId;
   const origin = target === "ontology" ? config.dataQuery.baseUrl : environment.agentRuntime().callbackUrl;

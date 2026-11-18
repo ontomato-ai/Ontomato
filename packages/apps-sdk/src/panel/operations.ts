@@ -1,5 +1,6 @@
 import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
-import { operationCall, projectionOperations, type PanelProjectionRegistration } from "./ports";
+import { panelStateOperation, projectionOperations } from "@ontomato/contracts/panel-projection";
+import { operationCall, type PanelProjectionRegistration } from "./ports";
 import type { PanelOperationBinding } from "./types";
 import type { PanelStateStore } from "./state";
 import type { PanelFormAdapters } from "./draft";
@@ -38,11 +39,7 @@ export function panelOperations(
       })),
     ),
     ...manifest.operations.map((operation) => ({
-      id: operation.id,
-      label: operation.label,
-      kind: operation.kind,
-      inputSchema: {},
-      handlerRef: `panel.state.${operation.id}`,
+      ...panelStateOperation(operation),
       invoke: async () => {
         for (const [name, value] of Object.entries(operation.sets)) state.set(name, value);
         return operation.sets;

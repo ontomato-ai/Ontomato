@@ -1,9 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h, ref } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
+import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
+import publicEn from "@ontomato/workbench-ui/locales/en";
+import elementEn from "element-plus/es/locale/lang/en";
 
 /*
  * The page of a panel application (design 10.3, fourth check): a selection the panel reports is written into the page's
@@ -32,7 +35,7 @@ vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@ontomato/platform-shell")>()),
   // Stands in for the frame: it reports an address the way a panel's own state report does.
   PanelHost: defineComponent({
-    props: { useId: { type: String, required: true }, address: { type: String, required: true }, initial: { type: Object, default: () => ({}) }, label: { type: String, default: "" } },
+    props: { useId: { type: String, required: true }, address: { type: String, required: true }, initial: { type: Object, default: () => ({}) }, label: { type: String, default: "" }, labels: Object },
     emits: ["address"],
     setup(props, { emit }) {
       const address = ref(props.address);
@@ -46,6 +49,13 @@ vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
 }));
 
 const PanelApplicationRoute = (await import("../pages/PanelApplicationRoute.vue")).default;
+
+beforeAll(() => {
+  installWorkbenchI18n({
+    supported: ["en"], defaultLocale: "en", initialLocale: "en", switchEnabled: false, save: null,
+    messages: { en: publicEn }, elementLocale: () => elementEn,
+  });
+});
 
 beforeEach(() => {
   mountedInstances.length = 0;
@@ -65,7 +75,7 @@ async function mountAt(path: string, props: Record<string, unknown> = {}) {
   });
   await router.push(path);
   await router.isReady();
-  const wrapper = mount(defineComponent({ render: () => h(RouterView) }), { global: { plugins: [router] } });
+  const wrapper = mount(defineComponent({ render: () => h(RouterView) }), { global: { plugins: [router, workbenchI18n()] } });
   await flushPromises();
   return { router, wrapper };
 }
@@ -105,6 +115,13 @@ describe("a panel application's page", () => {
     await router.replace("/applications/app-a/summary");
     await flushPromises();
     expect(mountedInstances.map((one) => one.useId)).toEqual(["use-tasks", "use-summary"]);
+    wrapper.unmount();
+  });
+
+  it("says, in the platform's language, that an address names no panel of the application", async () => {
+    const { wrapper } = await mountAt("/applications/app-a/reports");
+    expect(wrapper.get("[role=alert]").text()).toBe("/reports is not a panel of this application");
+    expect(mountedInstances).toEqual([]);
     wrapper.unmount();
   });
 

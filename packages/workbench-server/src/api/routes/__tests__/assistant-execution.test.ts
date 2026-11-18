@@ -89,3 +89,42 @@ it("the platform knowledge page read outside the governance Grant uses V",async(
  expect((await call('ontology/admin/getBussinessKnowledge')).status).toBe(200);
  expect((upstream.mock.calls[0] as unknown as [string,NonNullable<Parameters<typeof fetch>[1]>])[1].headers).toMatchObject({'X-API-Key':'selected-user-key'});
 });
+
+it.each([
+  ["GET", "/platform/scheduled-tasks"],
+  ["GET", `/platform/scheduled-tasks/${other}`],
+  ["POST", "/platform/scheduled-tasks/applications/agents/form"],
+])("forwards %s %s with the executor credential", async (method, path) => {
+  const upstream = vi.fn(async (_url: string, _request?: Parameters<typeof fetch>[1]) => Response.json({}));
+  vi.stubGlobal("fetch", upstream);
+  const response = await call("ontology" + path, { tk: "oq.existing.grant" }, method);
+  expect(response.status).toBe(200);
+  expect(mocks.restore).toHaveBeenCalledWith({ userId: "U", domainId: "domain" }, run,
+    expect.objectContaining({ token: "initiator-token" }));
+  const [url, request] = upstream.mock.calls[0]!;
+  expect(url).toBe("http://ontology.test" + path);
+  expect(request).toMatchObject({ method, headers: { "X-API-Key": "selected-user-key" } });
+  expect(request?.headers).not.toHaveProperty("tk");
+});
+
+it.each([
+  ["POST", "/platform/scheduled-tasks"],
+  ["POST", `/platform/scheduled-tasks/${other}`],
+  ["GET", "/platform/scheduled-tasks/applications/agents/form"],
+  ["POST", `/platform/scheduled-tasks/${other}/runs`],
+  ["POST", `/platform/scheduled-tasks/${other}/enabled`],
+  ["POST", "/platform/scheduled-tasks/applications/a%2520b/form"],
+  ["POST", "/platform/scheduled-tasks/applications/%61gents/form"],
+  ["POST", "/platform/scheduled-tasks/applications/%2e%2e%2fform"],
+])("forbids %s %s before resolving the executor", async (method, path) => {
+  const upstream = vi.fn();
+  vi.stubGlobal("fetch", upstream);
+  expect((await call("ontology" + path, {}, method)).status).toBe(403);
+  expect(mocks.restore).not.toHaveBeenCalled();
+  expect(upstream).not.toHaveBeenCalled();
+});
+
+it.each(["PUT", "DELETE"])("rejects %s for a task at the existing callback credential boundary", async method => {
+  expect((await call(`ontology/platform/scheduled-tasks/${other}`, {}, method)).status).toBe(401);
+  expect(mocks.restore).not.toHaveBeenCalled();
+});

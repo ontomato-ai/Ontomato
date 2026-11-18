@@ -1,0 +1,79 @@
+import { platformSchedulesPath } from "./platform-schedules";
+
+/*
+ * The requests the SDK's platform clients send, by the binding that reaches each client (overall design 3.2, 5.1). A
+ * projection binds a platform object type or a platform operation, and the client the SDK registers for that binding
+ * (`apps-sdk/src/panel/schedules.ts`) is what a panel's components read and write through. This is the one place that
+ * says which requests those clients make: the clients send nothing else, and the platform admits a panel frame's request
+ * only when a binding of one of the panel's own projections declares it (`platform-web/src/app-host.ts`).
+ *
+ * It is the wire agreement between the two ends of the bridge — the SDK in the frame and the platform's host — so it is
+ * a contract, which both import.
+ */
+
+/** The platform object type of the scheduled tasks, as a projection binds it. */
+export const SCHEDULED_TASK = "platform:ScheduledTask";
+/** The platform operation that runs one scheduled task now, as a projection binds it. */
+export const RUN_NOW = "schedules.runNow";
+
+/**
+ * The gateway prefix the scheduled tasks' contract spells its paths with. A frame's request names the service and the
+ * path inside it, as the platform's app host takes them, so the prefix becomes the service.
+ */
+export const DATA_QUERY_GATEWAY = "/api/data-query";
+
+/** One request a client sends: its method, the platform service it goes to and the path inside that service. */
+export interface ClientRequest {
+  method: "GET" | "POST" | "PUT" | "DELETE";
+  service: "" | "/data-query";
+  path: RegExp;
+}
+
+/** A binding as a projection record names it, `<kind>:<id>`: `PlatformObjectType:platform:ScheduledTask`. */
+export const bindingKey = (binding: { kind: string; id: string }) => `${binding.kind}:${binding.id}`;
+
+const tasks = platformSchedulesPath.slice(DATA_QUERY_GATEWAY.length);
+/** A task's ID is a UUID, so no other segment of the service (`applications`, `credential`) reads as a task. */
+const taskIdPattern = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+const task = `${tasks}/${taskIdPattern}`;
+
+interface PanelClientRead extends ClientRequest {
+  template: string;
+  instructions?: string;
+}
+
+/** The owner reads shared by frames, the execution callback and the generated panel skill. */
+export const scheduledTaskReads = [
+  { method: "GET", service: "/data-query", path: new RegExp(`^${tasks}$`), template: tasks },
+  { method: "GET", service: "/data-query", path: new RegExp(`^${task}$`), template: `${tasks}/:id` },
+  {
+    method: "POST",
+    service: "/data-query",
+    path: new RegExp(`^${tasks}/applications/[^/?]+/form$`),
+    template: `${tasks}/applications/:appId/form`,
+    instructions: "POST JSON with `values`, `changedField`, `taskId`, and `timeZone`. Read the task first for its appId, content and timeZone. Start with the task's content as values and null as changedField, then use the returned fields and values. Request the form again when an edited field changes it.",
+  },
+] as const satisfies readonly PanelClientRead[];
+
+export const panelClientReads = (binding: string): readonly PanelClientRead[] =>
+  binding === bindingKey({ kind: "PlatformObjectType", id: SCHEDULED_TASK }) ? scheduledTaskReads : [];
+
+/** Each binding's requests: what its client sends, and nothing more. */
+export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> = {
+  [bindingKey({ kind: "PlatformObjectType", id: SCHEDULED_TASK })]: [
+    // The reader's tasks, one task, its application's form for given values, and the save at the task's revision.
+    ...scheduledTaskReads,
+    { method: "PUT", service: "/data-query", path: new RegExp(`^${task}$`) },
+  ],
+  [bindingKey({ kind: "PlatformOperation", id: RUN_NOW })]: [
+    { method: "POST", service: "/data-query", path: new RegExp(`^${task}/runs$`) },
+  ],
+};
+
+/** Whether one of the given bindings' clients sends this request. */
+export function clientSends(bindings: Iterable<string>, method: string, service: string, path: string): boolean {
+  for (const binding of bindings)
+    if (clientRequests[binding]?.some((request) => request.method === method && request.service === service && request.path.test(path)))
+      return true;
+  return false;
+}

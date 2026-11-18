@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { usePanelInstance, type PanelHostPort } from "./panel-host";
+import { usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./panel-host";
 import { usePageActions } from "./page-actions";
 
 /**
@@ -23,6 +23,8 @@ const props = defineProps<{
   initial?: Record<string, unknown>;
   /** The title drawn above the frame; absent when the frame is the whole surface. */
   title?: string;
+  /** What the host says to the reader, in the platform's language. */
+  labels: PanelHostLabels;
 }>();
 const emit = defineEmits<{
   /** What a message from this instance carries now. */
@@ -32,6 +34,7 @@ const emit = defineEmits<{
 }>();
 
 const view = usePanelInstance(props.port, {
+  labels: props.labels,
   useId: () => props.useId,
   label: (panel) => (props.label ? `${props.label} · ${panel.name}` : panel.name),
   address: () => props.address,
@@ -44,7 +47,9 @@ watch(
   { flush: "post" },
 );
 watch(view.pageContext, (context) => context && emit("context", context));
-watch(view.address, (address) => emit("address", address), { immediate: true });
+// The instance's address exists once its record is read; before that there is none to report, and reporting an empty one
+// would replace the page's address — and the draft link in it — before the panel has read it.
+watch(view.address, (address) => emit("address", address));
 
 // The instance's operations reach the header like any page's: one description, one handler, for a person and an agent.
 // A click reaches the frame, which runs it with the person's own credential; the state the operation targets decides

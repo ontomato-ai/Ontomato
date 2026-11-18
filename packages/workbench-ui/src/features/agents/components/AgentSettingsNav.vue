@@ -15,7 +15,7 @@ import { useAgentDefinitions } from "../definitions";
  * platform's, managed in the ontology manager and the system settings; an agent only selects them. The main area holds
  * the editor only — the list is here, never a second time beside it (DESIGN.md "Applications and shells").
  */
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   /** The agent being edited, or null while creating one or while the models are open. */
   agentId: string | null;
   creating: boolean;
@@ -26,7 +26,12 @@ const props = defineProps<{
    * no way back to a conversation and no models entry: those belong to the agent platform's own column.
    */
   standalone?: boolean;
-}>();
+  /**
+   * The list names itself at its head. At the page's own address it does; beside a conversation the pane's header already
+   * names the page, and a second title right under it says the same thing twice.
+   */
+  heading?: boolean;
+}>(), { standalone: false, heading: true });
 const emit = defineEmits<{
   back: [];
   selectAgent: [id: string];
@@ -46,7 +51,8 @@ onMounted(() => {
   if (editsAgents.value) void ensureLoaded();
 });
 
-const heading = computed(() => t("agents.title"));
+/** The page the list belongs to, and whether the list says so: beside a conversation the pane's header already does. */
+const pageTitle = computed(() => t("agents.title"));
 </script>
 
 <template>
@@ -55,7 +61,7 @@ const heading = computed(() => t("agents.title"));
       <ArrowLeft :size="16" aria-hidden="true" />
       <span>{{ t("common.backToChat") }}</span>
     </button>
-    <h2 class="nav-head">{{ heading }}</h2>
+    <h2 v-if="heading" class="nav-head">{{ pageTitle }}</h2>
 
     <template v-if="editsAgents">
       <p class="group-title">{{ t("agents.agentsGroup") }}</p>
@@ -101,11 +107,16 @@ const heading = computed(() => t("agents.title"));
 </template>
 
 <style scoped>
+/*
+ * Its column decides how wide the list is — the settings page gives it the platform's list width — and how much of the
+ * column's height it takes; here it only fills what it is given and scrolls its own rows.
+ */
 .settings-nav {
   display: flex;
   flex-direction: column;
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
   gap: 2px;
   overflow-y: auto;
 }

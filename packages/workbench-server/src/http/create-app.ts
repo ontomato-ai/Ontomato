@@ -28,7 +28,7 @@ import express, {
 import cors from "cors";
 import path from "path";
 import { skillRegistryManager } from "../core/skills/index";
-import { resolveSkillPackageFile } from "../core/skills/discovery/loader";
+import { normalizeSkillPackagePath } from "../core/skills/manifest";
 import { config } from "../config/application";
 import analysisTasksRouter from "../api/routes/analysis-tasks";
 import dashboardsRouter from "../api/routes/dashboards";
@@ -148,17 +148,18 @@ export function createWorkbenchApp(): Express {
             // with them; they no longer say anything about the package.
             const [, , , id, ...segments] = decodeURIComponent(req.path).split("/");
             const skill = registry.getSkillById(id);
-            if (!skill || !segments.length) {
+            const relative = normalizeSkillPackagePath(segments.join("/"));
+            if (!skill || !relative) {
               res.sendStatus(404);
               return;
             }
-            const file = await resolveSkillPackageFile(
-              skill,
-              segments.join("/"),
-            );
-            res.sendFile(file, (error) => {
-              if (error) next(error);
-            });
+            const file = (await skill.provide()).files.find((entry) => entry.path === relative);
+            if (!file) {
+              res.sendStatus(404);
+              return;
+            }
+            res.type(path.extname(relative) || "application/octet-stream");
+            res.send(Buffer.from(file.content, "utf8"));
           },
         );
       } catch (error) {

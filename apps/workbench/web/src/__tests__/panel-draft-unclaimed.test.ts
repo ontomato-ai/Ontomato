@@ -1,0 +1,70 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { h } from "vue";
+import { createMemoryHistory, createRouter, RouterView } from "vue-router";
+import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
+import { mountPanel } from "../../../../../packages/apps-sdk/src/panel/mount";
+import {
+  draftScenario,
+  hostMessageOf,
+  inside,
+  installPlatform,
+  leaveFrame,
+  mountPlatformPage,
+  panelHostFrame,
+  panelOf,
+  writeFrameDocument,
+} from "./panel-frame";
+
+/*
+ * A draft no form of the panel performs (the address of one panel, the draft written for another form): once every slot
+ * the panel declares has registered, none will take it, and the panel says so where it would have been, in the reader's
+ * language — at once, not after a wait. The form's projection is held back until the test lets it through, so the draft
+ * is held first: it is not refused while a slot that might take it is still to register.
+ */
+
+afterEach(leaveFrame);
+
+describe("a draft no form of the panel performs", () => {
+  it("is reported where the panel would have been, once every slot has registered", { timeout: 20000 }, async () => {
+    const scenario = draftScenario("platform:Dashboard.save");
+    let release!: () => void;
+    const projectionHeld = new Promise<void>((resolve) => (release = resolve));
+    const sent = installPlatform((request) =>
+      request.path === "/api/product-projections/projection-schedules-form"
+        ? projectionHeld.then(() => scenario.answer(request))
+        : scenario.answer(request),
+    );
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: "/applications/:applicationId/:panelPath(.*)",
+          component: PanelApplicationRoute,
+          props: (route) => ({ applicationId: String(route.params.applicationId), panelPath: String(route.params.panelPath ?? "") }),
+        },
+      ],
+    });
+    await router.push(scenario.address);
+    await router.isReady();
+    const { app: page, element: host } = mountPlatformPage(() => h(RouterView), router);
+    const element = await panelHostFrame();
+    writeFrameDocument(hostMessageOf(element.getAttribute("srcdoc")!));
+    inside(element.contentWindow!);
+    await mountPanel(panelOf("form"));
+
+    // The draft is held, and the form's slot has not registered: nothing is refused yet.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(host.querySelector(".panel-host-error")).toBeNull();
+
+    // The slot registers, and it performs another operation: the platform's page shows the reason instead of the panel.
+    release();
+    await vi.waitFor(
+      () => expect(host.querySelector(".panel-host-error")?.textContent).toBe("This draft belongs to no form of this panel"),
+      { timeout: 5000 },
+    );
+    expect(host.querySelector("iframe")).toBeNull();
+    // Nothing was written.
+    expect(sent.filter((request) => request.method === "PUT")).toEqual([]);
+    page.unmount();
+  });
+});

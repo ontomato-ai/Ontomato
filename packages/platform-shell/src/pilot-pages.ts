@@ -14,6 +14,12 @@ export interface PilotPage {
    * navigation calls). A move is an address: the frame changes the parameter it carries to that address.
    */
   props?: Record<string, unknown>;
+  /**
+   * What keeps the page the same instance while its address changes, when that is less than the whole address: a panel
+   * writes the reader's selection into its own address and stays the panel it was. Absent, another address is another
+   * instance of the page.
+   */
+  instance?: string;
 }
 
 /** `null` when the address is no page of the assembly's registry. */

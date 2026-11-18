@@ -36,8 +36,11 @@ export interface PanelHostPort {
   panel(panelId: string): Promise<ProductPanel>;
   /** The SDK version's module base this panel runs with, e.g. `/apps-sdk/1.1.0`. */
   sdkBase(): Promise<string>;
-  /** Registers the frame the panel runs in: the platform's execution binding and identity for the page it shows. */
-  frame(frame: Window, use: ApplicationPanelUse): () => void;
+  /**
+   * Registers the frame the panel runs in: the platform's execution binding and identity for the page it shows, and what
+   * the frame may ask the platform for, which the panel's current record declares.
+   */
+  frame(frame: Window, use: ApplicationPanelUse, panel: ProductPanel): () => void;
   /**
    * Hears "definition changed" for the definitions this instance shows: the panel and every projection its declaration
    * names. Events carry identity only. The returned function stops the notices.
@@ -88,7 +91,25 @@ export interface PanelInstanceView {
   frame(window: Window | null): void;
 }
 
+/**
+ * What a panel host says to a reader, in the platform's language: the platform that mounts the host supplies the words,
+ * as it does the shell's.
+ */
+export interface PanelHostLabels {
+  /** The page names a use relation its application does not declare. */
+  useMissing(useId: string): string;
+  /** An operation was asked of the panel before its frame started. */
+  notStarted: string;
+  /**
+   * What the frame reports when the panel's own text fails before it can say so itself: a file it could not load (where
+   * `{file}` stands for that file), and a script that failed while it ran or rejected with nothing to say.
+   */
+  failures: { fileUnavailable: string; scriptThrew: string; scriptRejected: string };
+}
+
 export interface PanelInstanceOptions {
+  /** The words the host shows the reader. */
+  labels: PanelHostLabels;
   /** The application use to open; changing it is another instance. */
   useId: () => string;
   /** What a message calls the page: the panel's own name, and whatever the page adds to it (its application, say). */
@@ -143,7 +164,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       const applicationId = port.applicationId();
       const relations = await port.uses(applicationId);
       const relation = relations.find((candidate) => candidate.id === options.useId());
-      if (!relation) throw new Error(`Application ${applicationId} declares no panel use ${options.useId()}`);
+      if (!relation) throw new Error(options.labels.useMissing(options.useId()));
       await adopt(relation, await port.panel(relation.panelId));
       loadedPanelId = relation.panelId;
       stopNotices = port.subscribe(targets(), notice);
@@ -175,10 +196,10 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       label: options.label(record),
       state: state.value,
     };
-    document.value = panelFrameDocument(record, base, message);
+    document.value = panelFrameDocument(record, base, message, options.labels.failures);
     if (frame) {
       disposeFrame?.();
-      disposeFrame = port.frame(frame, relation);
+      disposeFrame = port.frame(frame, relation, record);
     }
   }
 
@@ -249,6 +270,11 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
         if (use.value) void adopt(use.value, record).catch((failure: unknown) => (error.value = failureText(failure)));
       }
     }
+    if (payload.kind === "failed") {
+      // The frame could not run its panel. The reason goes where the panel would have been, and no frame is drawn over it.
+      error.value = payload.message;
+      return;
+    }
     if (payload.kind === "invoked") {
       const waitingCall = answering.get(payload.requestId);
       answering.delete(payload.requestId);
@@ -274,7 +300,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     error,
     ready,
     invoke(id, input) {
-      if (!frame) return Promise.reject(new Error("The panel has not started yet"));
+      if (!frame) return Promise.reject(new Error(options.labels.notStarted));
       const requestId = randomId();
       return new Promise((resolve, reject) => {
         answering.set(requestId, { resolve, reject });
@@ -284,7 +310,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     frame(window) {
       frame = window;
       disposeFrame?.();
-      disposeFrame = window && use.value ? port.frame(window, use.value) : undefined;
+      disposeFrame = window && use.value && panel.value ? port.frame(window, use.value, panel.value) : undefined;
     },
   };
 }
@@ -309,10 +335,48 @@ const MODULES: Readonly<Record<string, string>> = {
 };
 
 /**
+ * Runs before the panel's module, in a script of its own, and tells the host what the frame cannot otherwise say. A
+ * module that cannot be fetched or parsed raises an `error` on its own element; a rejection nothing handled arrives as
+ * `unhandledrejection`. Both are reported once — the first failure is the one worth reading. The words are the
+ * platform's, in the reader's language; a script's own error message, when it has one, is reported as it is.
+ */
+const failureListener = (words: PanelHostLabels["failures"]) => `
+(function () {
+  var words = ${JSON.stringify(words)};
+  var reported = false;
+  function fail(what) {
+    if (reported || !what) return;
+    reported = true;
+    window.parent.postMessage({ channel: "${PANEL_HOST_CHANNEL}", kind: "failed", message: String(what).slice(0, 1900) }, "*");
+  }
+  window.addEventListener("error", function (event) {
+    var target = event.target;
+    if (target && target !== window && target.tagName) fail(words.fileUnavailable.replace("{file}", target.src || target.href || target.tagName.toLowerCase()));
+    else fail(event.message || (event.error && event.error.message) || words.scriptThrew);
+  }, true);
+  window.addEventListener("unhandledrejection", function (event) {
+    var reason = event.reason;
+    fail((reason && reason.message) || reason || words.scriptRejected);
+  });
+})();`;
+
+/**
  * The document one panel instance runs in: this SDK version's import map and stylesheet, the panel's HTML, its record as
  * the run's facts, and its module. The panel's text is content, so it is inserted as text.
+ *
+ * The panel's HTML is a fragment — what goes inside a body — because this document is the body it goes into: a panel
+ * writes the markup it composes and its own styles, and the host writes the document around it.
+ *
+ * Before the module runs, a listener is installed that reports what would otherwise be silent: a module that cannot be
+ * fetched, one that throws while it loads, and a rejection nothing handled. Without it a panel whose module failed leaves
+ * the frame blank and the reader with no word about it.
  */
-export function panelFrameDocument(record: ProductPanel, sdkBase: string, message: PanelHostMessage): string {
+export function panelFrameDocument(
+  record: ProductPanel,
+  sdkBase: string,
+  message: PanelHostMessage,
+  failures: PanelHostLabels["failures"],
+): string {
   const imports = Object.fromEntries(
     Object.entries(MODULES).map(([specifier, file]) => [specifier, `${sdkBase}/${file}`]),
   );
@@ -322,6 +386,9 @@ export function panelFrameDocument(record: ProductPanel, sdkBase: string, messag
     `<link rel="stylesheet" href="${sdkBase}/styles/sdk.css">`,
     '<script type="importmap">',
     escapeForElement(JSON.stringify({ imports })),
+    "</script>",
+    "<script>",
+    escapeForElement(failureListener(failures)),
     "</script></head><body>",
     record.content.html,
     '<script type="application/json" data-panel-host-message>',

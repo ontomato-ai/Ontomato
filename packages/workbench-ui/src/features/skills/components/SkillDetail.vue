@@ -10,11 +10,12 @@ import { CodeEditor } from "@ontomato/foundation-ui/code";
 import { MarkdownView } from "@ontomato/foundation-ui/markdown";
 import { skillsApi } from "../api";
 import { deleteSkill, exportSkill } from "../actions";
+import { skillSource } from "../source";
 
 /**
  * One skill, read as its package: the package's folders and files as a tree on the left, the chosen file on the right. Markdown is drawn with its
  * frontmatter shown as written above it; every other file is text in the read-only code view (packages are UTF-8
- * throughout). The page only reads: a package changes by importing it again, and a built-in one cannot be deleted.
+ * throughout). The page only reads: a package changes by importing it again, and one the domain does not own cannot be deleted.
  */
 const props = defineProps<{ skillId: string }>();
 const { t, locale } = useI18n();
@@ -33,6 +34,7 @@ const skill = ref<SkillInfo | null>(null);
 const files = ref<SkillFile[]>([]);
 const file = ref<string | null>(null);
 const content = ref<string | null>(null);
+const source = computed(() => (skill.value ? skillSource(skill.value, t) : null));
 const loadFailed = ref(false);
 const readFailed = ref(false);
 
@@ -126,15 +128,15 @@ async function remove() {
       <el-button text :icon="ArrowLeft" @click="back">{{ t("capabilities.backToSkills") }}</el-button>
       <span class="title-divider" aria-hidden="true"></span>
       <h1 class="title-name">{{ skill ? skill.title : skillId }}</h1>
-      <el-tag v-if="skill" size="small" :type="skill.isPublic ? 'info' : 'primary'" effect="plain" disable-transitions>
-        {{ skill.isPublic ? t("capabilities.sourcePublic") : t("capabilities.sourceDomain") }}
+      <el-tag v-if="skill" size="small" :type="skill.writeRestriction ? 'info' : 'primary'" effect="plain" disable-transitions>
+        {{ source!.label }}
       </el-tag>
       <span v-if="skill?.description" class="title-description">{{ skill.description }}</span>
       <span class="title-spacer"></span>
       <el-button :icon="Download" @click="exportSkill(skillId)">{{ t("common.export") }}</el-button>
-      <el-tooltip v-if="skill" :disabled="!skill.isPublic" :content="t('capabilities.builtInNoDelete')" placement="bottom">
+      <el-tooltip v-if="skill" :disabled="!skill.writeRestriction" :content="source!.noDelete ?? ''" placement="bottom">
         <span>
-          <el-button type="danger" plain :icon="Trash2" :disabled="skill.isPublic" @click="remove">
+          <el-button type="danger" plain :icon="Trash2" :disabled="!!skill.writeRestriction" @click="remove">
             {{ t("common.delete") }}
           </el-button>
         </span>

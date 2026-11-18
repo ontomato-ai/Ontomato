@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { credentialsForRun } from "../../services/assistant/execution";
+import { credentialsForDefinition, credentialsForRun } from "../../services/assistant/execution";
 import type { RuntimeCallback } from "../../services/agent-runtime/callback-credential";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -90,12 +90,20 @@ router.get('/:id/grants',wrap(async(req,res)=>{const c=context(req);await getPro
 router.post('/:id/grants',wrap(async(req,res)=>{const c=context(req);await getProduct(c.owner,String(req.params.id));const input=z.object({principalKind:z.enum(['principal','role']),principalId:z.string().min(1).max(200),verb:z.enum(['use','edit']),remove:z.boolean()}).strict().parse(req.body);await changeProductGrant(String(req.params.id),input,c.credentials);res.json({success:true});}));
 router.post('/:id/domain-grant',wrap(async(req,res)=>{const c=context(req);await getProduct(c.owner,String(req.params.id));const {shared}=z.object({shared:z.boolean()}).strict().parse(req.body);await changeProductDomainGrant(String(req.params.id),shared,c.credentials);res.json({success:true});}));
 router.get('/:id/agent-context',wrap(async(req,res)=>{const c=context(req);res.json(await assembleAgentProfile(c.owner,c.credentials,String(req.params.id)));}));
-router.get('/:id/active-profile',wrap(async(req,res)=>{const c=context(req);const {snapshot,releaseId}=await readActiveProductBundle(c.owner,String(req.params.id));res.json({asset:snapshotAsset(snapshot,String(req.params.id)),releaseId,issues:await productReleaseIssues(c.owner,snapshot,c.credentials)});}));
+router.get('/:id/active-profile',wrap(async(req,res)=>{
+  const c=context(req),id=String(req.params.id);
+  const {snapshot,releaseId}=await readActiveProductBundle(c.owner,id);
+  const asset=snapshotAsset(snapshot,id);
+  if(asset.document.kind!=='agent-profile')throw new HttpError(400,'Expected AgentProfile','INVALID_AGENT_PROFILE');
+  const executionCredentials=await credentialsForDefinition(c.owner,asset.document.agentId,c.credentials);
+  res.json({asset,releaseId,issues:await productReleaseIssues(c.owner,snapshot,executionCredentials)});
+}));
 router.post('/:id/sessions',wrap(async(req,res)=>{
   const c=context(req),profileId=String(req.params.id);const {releaseId,contextObjects,pageState}=z.object({releaseId:z.string().uuid(),contextObjects:z.array(z.object({className:z.string().min(1).max(200),primaryKey:z.string().min(1).max(1000)}).strict()).max(20).default([]),pageState:z.record(z.union([z.string(),z.number().finite(),z.boolean(),z.null(),z.object({className:z.string().min(1).max(200),primaryKey:z.string().min(1).max(1000)}).strict()])).default({})}).strict().parse(req.body);
   await requireProductUse(c.owner,profileId);const snapshot=await readProductRelease(c.owner,releaseId,profileId);
-  await productReleaseIssues(c.owner,snapshot,c.credentials);
   const profile=snapshotAsset(snapshot,profileId);if(profile.document.kind!=='agent-profile')throw new HttpError(400,'Expected AgentProfile','INVALID_AGENT_PROFILE');
+  const executionCredentials=await credentialsForDefinition(c.owner,profile.document.agentId,c.credentials);
+  await productReleaseIssues(c.owner,snapshot,executionCredentials);
   for(const value of Object.values(pageState))if(value&&typeof value==='object'&&!contextObjects.some(object=>object.className===value.className&&object.primaryKey===value.primaryKey))throw new HttpError(400,'Object Page state must have a declared Profile context view','OBJECT_CONTEXT_UNAVAILABLE');
    for(const selection of contextObjects)if(!profile.document.contextViews.some(id=>{const view=snapshotAsset(snapshot,id);return view.document.kind==='object-projection'&&['text','3d'].includes(view.document.renderer)&&view.document.fields.length>0&&view.document.renders.id===selection.className;}))throw new HttpError(400,'Profile has no context ObjectView for this selection','OBJECT_CONTEXT_UNAVAILABLE');
   const sessionId=z.string().uuid().parse(req.header('Idempotency-Key'));

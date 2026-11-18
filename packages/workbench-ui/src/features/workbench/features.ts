@@ -80,6 +80,25 @@ export function governanceReportPageFeature(label: string, address: string): She
   };
 }
 
+/** A panel application's page, opened beside the conversation. */
+export const PANEL_APPLICATION_PAGE_ID = "panel-application";
+
+/**
+ * A panel application's page beside the conversation, at the address the conversation's page parameter names. It is
+ * named by the panel itself, as its instance reports what the reader looks at, so its label is that report's.
+ */
+export function panelApplicationPageFeature(label: string, address: string): ShellFeatureDeclaration {
+  return {
+    id: PANEL_APPLICATION_PAGE_ID,
+    label,
+    icon: "dashboard",
+    availability: "page",
+    listed: false,
+    withConversation: true,
+    address,
+  };
+}
+
 export function workbenchFeatures(
   editionFeatures: readonly ShellFeatureDeclaration[],
   /** The two pages this application opens beside its conversation, named in the reader's language. */
@@ -87,11 +106,14 @@ export function workbenchFeatures(
   dashboardsAddress = "",
   /** A governance record's report, declared only while the conversation's page parameter names one. */
   governanceReport: ShellFeatureDeclaration | null = null,
+  /** A panel application's page, declared only while the conversation's page parameter names one. */
+  panelApplication: ShellFeatureDeclaration | null = null,
 ): ShellFeatureDeclaration[] {
   return [
     agentSettingsFeature(pages.agents),
     dashboardsPageFeature(pages.dashboards, dashboardsAddress),
     ...(governanceReport ? [governanceReport] : []),
+    ...(panelApplication ? [panelApplication] : []),
     ...editionFeatures,
   ];
 }

@@ -1,5 +1,8 @@
-import { panelOperationId, type OntologyParameterType, type PanelManifest, type PanelOperation, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import { type PanelManifest, type PanelOperation, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import type { ProjectionPorts } from "@ontomato/contracts/panel-projection";
 import type { PanelFieldValue } from "./state";
+
+export type { ProjectionOperation, ProjectionPorts } from "@ontomato/contracts/panel-projection";
 
 /*
  * What a projection offers the panel it is placed in, and therefore what the panel contains (overall design 3.2, 3.4,
@@ -8,27 +11,6 @@ import type { PanelFieldValue } from "./state";
  * declaration names the projection and never its ports, so nothing is scanned out of the HTML and no renderer is guessed
  * from a name.
  */
-
-/** An operation a projection publishes: its own name, what it takes, and the SDK client operation it is. */
-export interface ProjectionOperation {
-  /** The operation's name within this projection, such as `runNow` or `update`. */
-  name: string;
-  label: string;
-  kind: PanelOperation["kind"];
-  /** Its own business inputs, by name; these are not the panel's state. */
-  inputSchema: Readonly<Record<string, OntologyParameterType>>;
-  /** The SDK client operation this is, such as `schedules.runNow`; a registered handler, never a URL. */
-  handlerRef: string;
-}
-
-/** The endpoints a projection publishes: what it binds, what it accepts and what it can do. */
-export interface ProjectionPorts {
-  /** The ontology element it binds, as `Kind:id`: `Action:<id>`, `PlatformObjectType:platform:ScheduledTask`. */
-  binding: string;
-  /** The parameters it accepts, by name; a slot's inputs fill these. */
-  inputs: Readonly<Record<string, OntologyParameterType>>;
-  operations: readonly ProjectionOperation[];
-}
 
 /**
  * One projection registered in one panel instance: the slot it fills, what its component publishes, and how to run one
@@ -40,38 +22,6 @@ export interface PanelProjectionRegistration {
   ports: ProjectionPorts;
   /** Runs one operation in this frame; the projection's client makes the request with the reader's own credential. */
   invoke(handlerRef: string, call: PanelOperationCall): Promise<unknown>;
-}
-
-/** The operations a registered projection publishes, described for the header and an agent. */
-export function projectionOperations(
-  manifest: PanelManifest,
-  registration: Pick<PanelProjectionRegistration, "slot" | "ports">,
-): PanelOperation[] {
-  const slot = manifest.slots[registration.slot];
-  if (!slot) throw new Error(`The panel declares no slot '${registration.slot}'`);
-  const target = projectionTarget(registration, slot.inputs);
-  return registration.ports.operations.map((operation) => ({
-    id: panelOperationId(registration.slot, operation.name),
-    label: operation.label,
-    kind: operation.kind,
-    inputSchema: { ...operation.inputSchema },
-    target,
-    slot: registration.slot,
-    handlerRef: operation.handlerRef,
-  }));
-}
-
-/**
- * The object a projection's operations act on: the state field its first object-typed input is filled from, so the
- * reader's current selection is the target. A form that creates an object fills no object-typed input from the panel's
- * state, so its operations address the draft's own target.
- */
-function projectionTarget(
-  registration: Pick<PanelProjectionRegistration, "slot" | "ports">,
-  inputs: Readonly<Record<string, { state: string }>>,
-): PanelOperation["target"] {
-  const [state] = Object.entries(inputs).find(([input]) => registration.ports.inputs[input]?.kind === "object") ?? [];
-  return state ? { source: "state", state: inputs[state]!.state } : { source: "draft", slot: registration.slot };
 }
 
 /**

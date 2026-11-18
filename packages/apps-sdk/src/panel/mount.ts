@@ -1,7 +1,7 @@
 import { createApp, h, provide, ref, watch, type Component, type Ref } from "vue";
+import { useI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
-import { createAppContext, type AppContext } from "../context";
-import { createAssistantClient } from "../chat";
+import { connectAppContext, contextTransport, type AppContext } from "../context";
 import {
   PANEL_HOST_CHANNEL,
   panelHostFrameMessageSchema,
@@ -9,7 +9,7 @@ import {
   panelMessageOf,
   type PanelHostMessage,
 } from "@ontomato/contracts/panel-host";
-import type { PageDraft } from "@ontomato/contracts/page-draft";
+import { pageDraftSchema, type PageDraft } from "@ontomato/contracts/page-draft";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { panelContextKey, type PanelContext, type ProjectionSlot } from "./context";
@@ -21,7 +21,6 @@ import ObjectSummary from "../base/ObjectSummary.vue";
 import ObjectForm from "../base/ObjectForm.vue";
 import OperationButton from "../base/OperationButton.vue";
 import { registerSchedulesPlatformObject } from "./schedules";
-import { contextTransport } from "../context";
 
 /*
  * How a panel's module runs (overall design 3.3, 3.4): the platform's panel host opens a frame for one instance and
@@ -52,7 +51,10 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   const element = document.getElementById("app");
   if (!element) throw new Error("A panel's HTML designates the element its component mounts into as #app");
   const message = hostMessage();
-  const appContext = createAppContext();
+  // A panel runs in a sandboxed frame of its own, which cannot read the platform's window: it connects the way a hosted
+  // application does, over the message bridge. The platform sends each request with the reader's own credential and
+  // decides which requests a frame may make.
+  const appContext = await connectAppContext();
   const transport = contextTransport(appContext);
   const instance = createPanelInstance(message.panel.manifest, {
     pageKey: message.pageKey,
@@ -86,7 +88,17 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     },
   };
   const app = createApp({
-    setup: () => (provide(panelContextKey, context), () => h(component)),
+    setup: () => {
+      provide(panelContextKey, context);
+      // A draft that none of this panel's forms performs is not this panel's: once every slot has registered and none
+      // takes it, the frame fails with that, where the panel would have been, rather than waiting for a form that will
+      // never come.
+      const { t } = useI18n();
+      watch(instance.unclaimedDraft, (unclaimed) => {
+        if (unclaimed) failed(t("platform.panelDraftUnclaimed"));
+      });
+      return () => h(component);
+    },
   });
   // The one global a panel's HTML and module need: `<Projection slot="…"/>`. Its name is the SDK's public API, so it is
   // a single word on purpose.
@@ -102,25 +114,41 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   app.use(ElementPlus).use(appContext);
   app.mount(element);
 
-  // The draft the address names belongs to this panel, so the SDK reads it and hands it to the form projection that
-  // performs its operation. That component puts its values in the form and marks what it changed; nothing is written
-  // until the reader saves.
+  // The draft the address names belongs to this panel, so the SDK reads it and holds it for the form projection that
+  // performs its operation, which takes it once it has read its record and registered. That component puts its values
+  // in the form and marks what it changed; nothing is written until the reader saves.
   const link = pageDraftLinkOf(message.url);
-  if (link) {
-    const received = await receivePanelDraft<Record<string, unknown>>(
+  if (link)
+    await receivePanelDraft(
       message.pageKey,
       instance.forms,
-      createAssistantClient(appContext),
+      // The draft is read over this frame's own transport, at the agent host's route: the panel needs one read, not the
+      // conversation client, whose module pulls the whole shell in and would defer the panel's first draw by seconds.
+      { readPageDraft: (sessionId, runId, path) => readDraft(transport, sessionId, runId, path) },
       link,
+      (taken) => (draft.value = taken),
     );
-    if (received) {
-      draft.value = received;
-      instance.forms.apply(received);
-    }
-  }
 
   report({ instance, draft, unsaved, changed: (id) => projectionListeners.forEach((listener) => listener(id)) });
   return { context, appContext };
+}
+
+/** Tells the host this panel cannot run, and why; the host shows it where the panel would have been. */
+function failed(message: string) {
+  window.parent.postMessage({ channel: PANEL_HOST_CHANNEL, kind: "failed", message }, "*");
+}
+
+/** Reads the draft one run wrote, as the reader, through the frame's own request layer. */
+async function readDraft(transport: ReturnType<typeof contextTransport>, sessionId: string, runId: string, path: string) {
+  const query = new URLSearchParams({ path }).toString();
+  const response = await transport.request(
+    `/assistant/sessions/${encodeURIComponent(sessionId)}/runs/${encodeURIComponent(runId)}/page-draft?${query}`,
+    {},
+    "",
+  );
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error?.message ?? `The draft at ${path} could not be read`);
+  return pageDraftSchema.parse(body);
 }
 
 /** The run's facts as the host wrote them into this document, before the module ran. */

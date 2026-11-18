@@ -50,9 +50,25 @@ export interface PlatformObjectClient {
   changed(primaryKey: string, values: Readonly<Record<string, string>>, field: string): Promise<PlatformObjectForm>;
   /**
    * Writes one object through its owner's own interface, with the values its form holds and the revision those values
-   * were read at. An owner that has the object at another revision refuses the write; the reader sees the refusal.
+   * were read at. An owner that has the object at another revision, or that finds a value invalid, refuses the write:
+   * the client throws a `PlatformObjectRefusal` with the owner's reason, and the reader sees it.
    */
   save(primaryKey: string, values: Readonly<Record<string, string>>, revision: number): Promise<PlatformObjectRecord>;
+}
+
+/**
+ * An owner's refusal of a write, as a generic form shows it: the owner's own reason, and the message for each form field
+ * the owner named, by field key. A refusal that names no field (somebody else changed the object first, say) has none.
+ */
+export class PlatformObjectRefusal extends Error {
+  constructor(
+    message: string,
+    readonly fields: Readonly<Record<string, string>>,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = "PlatformObjectRefusal";
+  }
 }
 
 const clients = new Map<string, PlatformObjectClient>();

@@ -3,6 +3,15 @@ import path from "node:path";
 import { runtimeRegisterSkillRequestSchema, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { InvalidSkillPackageError, parseSkillMarkdown } from "./manifest";
 
+/** A standard package is its transport schema plus a SKILL.md that declares the same name, wherever it came from. */
+export function parseSkillPackage(files: { path: string; content: string }[], skill: RuntimeSkillRef) {
+  const request = runtimeRegisterSkillRequestSchema.parse({ skill, files });
+  const parsed = parseSkillMarkdown(files.find((file) => file.path === "SKILL.md")!.content);
+  if (!parsed || parsed.manifest.name !== skill.name)
+    throw new InvalidSkillPackageError("SKILL.md must declare the package name");
+  return request;
+}
+
 /** Read exact UTF-8 source once; never replace undecodable bytes or omit links. */
 export async function readSkillPackage(root: string, skill: RuntimeSkillRef) {
   const files: { path: string; content: string }[] = [];
@@ -21,9 +30,5 @@ export async function readSkillPackage(root: string, skill: RuntimeSkillRef) {
     }
   }
   await walk(root);
-  const request = runtimeRegisterSkillRequestSchema.parse({ skill, files });
-  const parsed = parseSkillMarkdown(files.find((file) => file.path === "SKILL.md")!.content);
-  if (!parsed || parsed.manifest.name !== skill.name)
-    throw new InvalidSkillPackageError("SKILL.md must declare the package name");
-  return request;
+  return parseSkillPackage(files, skill);
 }

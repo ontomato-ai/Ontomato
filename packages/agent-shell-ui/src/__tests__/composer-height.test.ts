@@ -80,3 +80,60 @@ it("keeps the agent choice on the row when the composer is narrow", async () => 
     root.remove();
   }
 });
+
+/*
+ * One composer, two states. On a page it is one row — it must not take the page's room — and it opens into two rows only
+ * while the message takes more than one line; emptied, it is one row again. In a conversation it is two rows from the
+ * start. Open, the input is the first line, from the left edge, and the controls are the line under it.
+ */
+function mountComposer(expanded: boolean) {
+  const root = document.createElement("div");
+  document.body.append(root);
+  const app = createApp({
+    render: () => h(ShellComposer, { busy: false, expanded, labels: { placeholder: "Ask", send: "Send", stop: "Stop" } }, {
+      agent: () => h("button", { class: "switch-trigger" }, "Assistant"),
+    }),
+  });
+  app.mount(root);
+  const composer = () => root.querySelector<HTMLElement>(".composer")!;
+  const input = root.querySelector<HTMLTextAreaElement>("textarea")!;
+  async function type(value: string) {
+    input.value = value;
+    input.dispatchEvent(new Event("input"));
+    await nextTick();
+    await nextTick();
+  }
+  return { root, composer, input, type, done: () => { app.unmount(); root.remove(); } };
+}
+
+it("stays one row on a page, opens while the message takes more lines, and closes again when it is emptied", async () => {
+  const page = mountComposer(false);
+  try {
+    expect(page.composer().classList.contains("open")).toBe(false);
+
+    await page.type("Short question");
+    expect(page.composer().classList.contains("open")).toBe(false);
+
+    await page.type("A question long enough to need a second line on the page's own composer, and more");
+    expect(page.composer().classList.contains("open")).toBe(true);
+
+    await page.type("");
+    expect(page.composer().classList.contains("open")).toBe(false);
+  } finally {
+    page.done();
+  }
+});
+
+it("is two rows in a conversation from the start, with the input first and the controls under it", async () => {
+  const conversation = mountComposer(true);
+  try {
+    expect(conversation.composer().classList.contains("open")).toBe(true);
+    // The input comes first in the open layout's order and the agent and send follow it on the next line. Where those
+    // lines fall on the screen (the input's left edge, send at the right) is the stylesheet's and is checked at 128.
+    expect(conversation.input.style.height).toBe(`${textHeight("")}px`);
+    expect(conversation.root.querySelector(".composer.open textarea")).not.toBeNull();
+    expect(conversation.root.querySelector(".composer.open .composer-actions")).not.toBeNull();
+  } finally {
+    conversation.done();
+  }
+});

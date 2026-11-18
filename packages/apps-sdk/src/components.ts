@@ -1,4 +1,5 @@
 import type { Component } from "vue";
+import type { ComponentOperation } from "@ontomato/contracts/panel-projection";
 import type { OntologyParameterType } from "@ontomato/contracts/panel-manifest";
 
 /*
@@ -16,20 +17,7 @@ import type { OntologyParameterType } from "@ontomato/contracts/panel-manifest";
 /** What a component is for: something drawn, or something the reader operates. */
 export type ComponentRole = "presentation" | "control";
 
-/**
- * The client a component's operations reach: the SDK module and the call in it. A handler reference is a registered
- * operation, never a URL, SQL or function source, so an agent can call exactly what a person's button calls.
- */
-export interface ComponentClient {
-  /** The SDK client, e.g. `schedules` for the scheduled-tasks API of this version. */
-  readonly client: string;
-  /** One operation the client publishes, e.g. `runNow`; its reference is `${client}.${name}`. */
-  readonly name: string;
-  readonly label: string;
-  readonly kind: "form.save" | "action";
-  /** The parameters the operation takes, by name; the owner's own, read from its current form where it has one. */
-  readonly inputSchema: Readonly<Record<string, OntologyParameterType>>;
-}
+export type ComponentClient = ComponentOperation;
 
 export interface ComponentMetadata {
   /** The identity the catalogue and the graph use, e.g. `ScheduledTaskTable`. */

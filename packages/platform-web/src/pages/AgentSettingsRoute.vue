@@ -18,9 +18,6 @@ import { AgentSettingsNav, AgentSettingsPage, agentSettingsAddressKey, useAgentD
  */
 const props = withDefaults(
   defineProps<{
-    /** At its own address the route names the agent; beside a conversation the page's address does. */
-    agentId?: string | null;
-    creating?: boolean;
     /** Beside a conversation: the page's address, as the conversation carries it. */
     address?: string | null;
     /** Beside a conversation: where the page moves to, as the host would carry it. */
@@ -34,19 +31,20 @@ const route = useRoute();
 const router = useRouter();
 const { ensureLoaded } = useAgentDefinitions();
 
-/** The page's own address: the conversation's parameter, or the browser's. */
+/**
+ * The page's own address: the conversation's parameter, or the browser's. It is what the page is — which agent it shows,
+ * whether it is a new one — so the two below are read from it and nowhere else. A prop carrying them again would be a
+ * second source, and Vue hands an absent boolean prop to the component as `false` rather than as nothing.
+ */
 const address = computed(() => (props.address !== null ? props.address : route.fullPath));
 const query = computed(() => Object.fromEntries(new URLSearchParams(address.value.split("?")[1] ?? "")));
 
-const creating = computed(
-  () => props.creating ?? route.name === platformRoutes.ontologyAgentNew.name,
-);
+/** The agent the address names: `/new` is a new one, the bare list no agent at all. */
 const agentId = computed(() => {
-  if (props.agentId !== undefined) return props.agentId;
-  const path = address.value.split("?")[0]!;
-  const match = /^\/ontology\/agents\/([^/?]+)$/.exec(path);
+  const match = /^\/ontology\/agents\/([^/?]+)$/.exec(address.value.split("?")[0]!);
   return match && match[1] !== "new" ? decodeURIComponent(match[1]!) : null;
 });
+const creating = computed(() => address.value.split("?")[0] === platformRoutes.ontologyAgentNew.path);
 
 /** The page's address without its draft handoff: what the address reopens once the reader saved. */
 const savedAddress = computed(() =>
@@ -95,6 +93,7 @@ watch(() => route.name, () => void ensureLoaded());
   <div class="ontology-agent-settings">
     <AgentSettingsNav
       standalone
+      :heading="address === route.fullPath"
       :agent-id="agentId"
       :creating="creating"
       :models="false"
@@ -113,9 +112,10 @@ watch(() => route.name, () => void ensureLoaded());
   min-height: 0;
   height: 100%;
 }
+/* The list beside the editor keeps the platform's list width; the editor takes what is left of the page. */
 .ontology-agent-settings > :deep(.settings-nav) {
+  flex: 0 0 var(--shell-list-panel);
   width: var(--shell-list-panel);
-  flex-shrink: 0;
   padding: 0 var(--spacing-md) var(--spacing-md);
   box-sizing: border-box;
   border-right: 1px solid var(--el-border-color);

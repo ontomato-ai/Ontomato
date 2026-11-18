@@ -5,12 +5,19 @@ import type { ShellLabels } from "../types";
 
 /**
  * The one message box of the platform: the conversation shell's, the platform home's question box and the composer at
- * the foot of a full page. Every one of them is the same control at the same height — a single row of what the message
- * is written as: the agent it goes to (`agent`), the input, what the message carries (`context`) and send.
+ * the foot of a full page. It is one control with one layout in two states.
  *
- * A host may put more controls after the agent (`tools`, the home's own choices); they stay on the row, and the message
- * that follows the input takes what is left. Long input grows the row rather than being cut, and a narrow width gives way
- * in the input, never in the send button.
+ * Collapsed it is a single row — the agent it goes to (`agent`), the input, what the message carries (`context`), send —
+ * at the height of one control, so a page it sits on keeps its room. Expanded it is two rows, the way Codex lays its box
+ * out: the input on top, across the whole width, and under it the controls, the agent and what the message carries on the
+ * left and send or stop on the right.
+ *
+ * A conversation's composer is `expanded` from the start: it is the page's own subject, and one row in the middle of an
+ * empty conversation looks lost. A page's composer starts collapsed and expands once what is written takes more than one
+ * line, then collapses again when it is emptied. That is the one difference between them; the layout is the same.
+ *
+ * A host may put more controls after the agent (`tools`, the home's own choices). A narrow width gives way in the input,
+ * never in the send button.
  *
  * While the agent works (`busy`) the reader still sends: the message goes into the running reply. The stop button stands
  * beside the send button then, which shows once there is something to send. Only a message still on its way (`sending`)
@@ -21,6 +28,8 @@ const props = defineProps<{
   sending?: boolean;
   disabled?: boolean;
   autofocus?: boolean;
+  /** Two rows from the start (a conversation's composer); otherwise one row until the message takes more than one line. */
+  expanded?: boolean;
   labels: Pick<ShellLabels, "placeholder" | "send" | "stop">;
 }>();
 const emit = defineEmits<{ send: [text: string]; stop: [] }>();
@@ -32,19 +41,24 @@ const hasText = computed(() => text.value.trim().length > 0);
 const canSend = computed(() => !props.sending && !props.disabled && hasText.value);
 
 /**
- * The composer is as tall as the message: one line while it is empty, however long its placeholder, and taller as the
- * reader writes. It is measured again whenever the text or its width changes. The placeholder itself is a single line,
- * cut with an ellipsis, so a narrow row keeps the agent choice and send on their row instead of widening them away.
+ * The input is as tall as the message: one line while it is empty, however long its placeholder, and taller as the reader
+ * writes. It is measured again whenever the text or its width changes. The placeholder itself is a single line, cut with
+ * an ellipsis.
  */
+const multiline = ref(false);
+/** The input's height holding one line: what it measures while empty. */
+let oneLine = 0;
 function resize() {
   const el = input.value!;
   el.style.height = "auto";
-  el.style.height = `${Math.min(textHeight(el), 220)}px`;
+  const height = el.scrollHeight;
+  el.style.height = `${Math.min(height, 220)}px`;
+  if (!text.value) oneLine = height;
+  // More than one line of message expands a collapsed composer; once open it stays open until the message is gone, so the
+  // wider input of the expanded layout cannot fold it back to one row while the reader is writing.
+  multiline.value = text.value.length > 0 && (multiline.value || height > oneLine);
 }
-/** The height of the textarea's text: one line while it is empty, however long the placeholder is. */
-function textHeight(el: HTMLTextAreaElement) {
-  return el.scrollHeight;
-}
+const open = computed(() => props.expanded || multiline.value);
 // After the textarea shows the change; a composer closed meanwhile (sent from the full page) is not measured.
 watch(text, resize, { flush: "post" });
 const sizer = new ResizeObserver(() => resize());
@@ -71,7 +85,7 @@ defineExpose({ focus: () => input.value?.focus() });
 </script>
 
 <template>
-  <form class="composer" :class="{ disabled }" @submit.prevent="submit">
+  <form class="composer" :class="{ disabled, open }" @submit.prevent="submit">
     <div v-if="$slots.agent" class="composer-agent"><slot name="agent" /></div>
     <textarea
       ref="input"
@@ -114,9 +128,11 @@ defineExpose({ focus: () => input.value?.focus() });
 
 <style scoped>
 /*
- * One row, one height for every host: a 40px container around 32px controls (the input line, the send button, whatever
- * a host puts on the row), its radius half its height. The conversation shell raises it through --shell-composer-shadow;
- * embedded chats keep it flat.
+ * One control, one layout, two states. Collapsed, its parts stand on one row in the order they are written — agent,
+ * input, tools, what the message carries, send — at the height of one control. Open, the same row wraps: the input moves
+ * to the first line and takes the whole width from the left edge, and the controls take the line under it, the agent and
+ * what the message carries on the left and send on the right. The conversation shell raises it through
+ * --shell-composer-shadow; embedded chats keep it flat.
  */
 .composer {
   container: shell-composer / inline-size;
@@ -136,6 +152,20 @@ defineExpose({ focus: () => input.value?.focus() });
   transition:
     border-color var(--transition-fast),
     box-shadow var(--transition-fast);
+}
+/* Open: the input first, across the whole width; the controls on the line under it; corners for the taller box. */
+.composer.open {
+  flex-wrap: wrap;
+  row-gap: var(--spacing-xs);
+  padding-inline-start: var(--spacing-md);
+  border-radius: var(--radius-2xl);
+}
+.composer.open textarea {
+  order: -1;
+  flex-basis: 100%;
+}
+.composer.open .composer-actions {
+  margin-inline-start: auto;
 }
 .composer:focus-within {
   border-color: var(--el-color-primary);
@@ -164,7 +194,7 @@ defineExpose({ focus: () => input.value?.focus() });
     display: none;
   }
 }
-/* The message takes the rest of the row; the controls beside it keep their size however narrow the width gets. */
+/* The message takes the rest of its row; the controls beside it keep their size however narrow the width gets. */
 textarea {
   flex: 1;
   min-width: 0;
@@ -183,12 +213,12 @@ textarea {
 }
 textarea::placeholder {
   color: var(--el-text-color-placeholder);
-  /* One line, cut short: a long hint never makes the row taller than a message. */
+  /* One line, cut short: a long hint never makes the box taller than a message. */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* What the message carries, beside the input on its last line; cut short rather than pushing the input away. */
+/* What the message carries, after the input on one row and after the agent when open; cut short rather than pushing. */
 .composer-context {
   flex: 0 1 auto;
   max-width: 45%;

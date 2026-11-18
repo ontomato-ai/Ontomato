@@ -1,5 +1,6 @@
 import type { PilotPage, PilotPageResolver } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
+import { panelAddress } from "@ontomato/contracts/panel-host";
 import AgentSettingsRoute from "./pages/AgentSettingsRoute.vue";
 import DashboardsPage from "./pages/DashboardsRoute.vue";
 import GovernanceReportRoute from "./pages/GovernanceReportRoute.vue";
@@ -23,14 +24,12 @@ export function pilotPageResolver(setPage: (address: string) => void): PilotPage
     const query = new URLSearchParams(search);
     const agents = /^\/ontology\/agents(?:\/(new|[^/]+))?$/.exec(path);
     if (agents) {
-      const id = agents[1] ?? null;
       return {
         id: "agents",
         component: AgentSettingsRoute,
         props: {
-          agentId: id === "new" ? null : id,
-          creating: id === "new",
-          // The page keeps its own address beside the conversation, a draft handoff included.
+          // The page keeps its own address beside the conversation, a draft handoff included; which agent it shows, and
+          // whether it is a new one, is what that address says.
           address,
           navigate: setPage,
         },
@@ -56,13 +55,20 @@ export function pilotPageResolver(setPage: (address: string) => void): PilotPage
       } satisfies PilotPage;
     }
     // A panel application's page: `/applications/<application>/<the use relation's path>`, shown by the same component
-    // that shows it full.
+    // that shows it full. It opens at the state its address names, and a selection the reader makes is written back into
+    // that address; the panel stays the same instance while only its state changes.
     const panel = /^\/applications\/([^/]+)(\/.*)?$/.exec(path);
     if (panel) {
       return {
         id: "panel-application",
         component: PanelApplicationRoute,
-        props: { applicationId: decodeURIComponent(panel[1]!), panelPath: (panel[2] ?? "").replace(/^\//, "") },
+        instance: panelAddress(address, {}),
+        props: {
+          applicationId: decodeURIComponent(panel[1]!),
+          panelPath: (panel[2] ?? "").replace(/^\//, ""),
+          address,
+          navigate: setPage,
+        },
       } satisfies PilotPage;
     }
     if (path !== platformRoutes.dashboards.path) return null;
