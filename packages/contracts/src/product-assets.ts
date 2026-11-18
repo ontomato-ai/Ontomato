@@ -184,7 +184,7 @@ export const productDefaultTexts={
   platformPageDescription:'平台应用的产品组合根；原生交互仍由已注册入口运行。',
   graphDomainMembers:'域内成员',
   graphNameUnavailable:'名称暂不可用',
-  graphAgentPrincipal:'智能体主体',
+  graphAgentDefinition:'引用的智能体',
   graphRoleUnavailable:'角色名称暂不可用',
   graphPrincipalUnavailable:'主体名称暂不可用',
   graphMetricUnavailable:'指标视图名称暂不可用',

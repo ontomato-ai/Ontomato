@@ -21,6 +21,7 @@ vi.mock("../../skills/operations",()=>({withDomainSkills:async(_domain:string,wo
 vi.mock("../prepare",()=>({prepareAnalystRun:async({a,input}:{a:{id:string};input:unknown})=>({
   language:"en",definition:{agentId:a.id},input,environment:{values:{},secrets:{}},
 })}));
+import { ensureAgentExecutionSchema } from "../../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
 import { ensureAssistantSchema } from "../../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { ensureWorkspacesSchema } from "../../../infrastructure/postgres-migrations/20261109-workspaces/schema";
 import { ensureOpsDiagnosisSchema } from "../../../infrastructure/postgres-migrations/20261029-ops-diagnosis/schema";
@@ -35,10 +36,10 @@ beforeAll(async()=>{
   state.schema="channel_prepare_"+randomUUID().replaceAll("-","");
   state.pool=new pg.Pool({connectionString:database});
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
-  await ensureAssistantSchema(state.pool);await ensureOpsDiagnosisSchema(state.pool);await ensureWorkspacesSchema(state.pool);
+  await ensureAssistantSchema(state.pool);await ensureAgentExecutionSchema(state.pool);await ensureOpsDiagnosisSchema(state.pool);await ensureWorkspacesSchema(state.pool);
   await state.pool.query(`INSERT INTO "${state.schema}".assistant_agents(id,domain_id,kind,name,system_prompt) VALUES($1,$2,'custom','Agent','')`,[agentId,owner.domainId]);
 });
-beforeEach(async()=>{vi.spyOn(assistantService,"admitAgent").mockResolvedValue({agent:await assistantStore.agent(agentId,owner),ontologyContext:null});});
+beforeEach(async()=>{vi.spyOn(assistantService,"admitAgent").mockResolvedValue({agent:await assistantStore.agent(agentId,owner)});});
 afterEach(()=>{vi.restoreAllMocks();});
 afterAll(async()=>{if(state.pool){await state.pool.query(`DROP SCHEMA "${state.schema}" CASCADE`);await state.pool.end();}});
 function prepared(sessionId:string):AgentPrepareRequest {

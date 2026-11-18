@@ -73,4 +73,22 @@ class OntologyAgentAccessTest {
         .when(identity).requireQueryAccess();
     assertThrows(ResponseStatusException.class, () -> access.sessionReads(request));
   }
+
+  @Test void executorCredentialAndCallerIdCannotRestoreAnotherUsersOwnershipWithoutServiceAuthentication() {
+    var queries=mock(QueryAccessService.class);var store=mock(OntologyAgentStore.class);
+    var user=new QueryAccessService.GrantUser("V","domain");var permission=new UserDataPermission();permission.setFullData(true);
+    var request=new org.springframework.mock.web.MockHttpServletRequest();
+    String caller="6f1f4c43-3c33-4f5d-9a79-3f8d3f6d1a11";request.addHeader("X-Ontomato-Retrieval-Caller-Id",caller);
+    when(queries.access(request)).thenReturn(new QueryAccessService.Access(user,permission,null,null,null));
+    when(store.serviceCaller(caller,"domain")).thenReturn(JSONObject.of("user_id","U","domain_id","domain","closed",false,"deadline",java.time.Instant.now().plusSeconds(60).toString(),"input",JSONObject.of("executionUserId","V","classNames",java.util.List.of("Orders"))));
+    var grants=new QueryGrantService(mock(org.springframework.jdbc.core.JdbcTemplate.class),"signing",new io.ontomato.dataengine.service.WorkbenchServiceAuthentication("host-service"));
+    var access=new OntologyAgentAccess(queries,mock(IdentityService.class),grants,store);
+    var narrowed=access.scopedQuery(queries.access(request),caller);
+    assertEquals("V",narrowed.initiatorUserId());
+    assertThrows(ResponseStatusException.class,()->access.executionContext(request));
+    request.addHeader("X-Ontomato-Query-Service-Token","host-service");
+    var restored=access.executionContext(request);
+    assertEquals("U",restored.owner().userId());assertEquals("V",restored.access().user().getId());
+    assertEquals(java.util.List.of("Orders"),restored.access().classNames());
+  }
 }

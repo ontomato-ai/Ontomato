@@ -11,12 +11,12 @@ import { promisify } from "node:util";
 const execute=promisify(execFile),script=path.resolve("../../agent-skills/knowledge-governance/scripts/governance.mjs");
 const id="11111111-1111-4111-8111-111111111111",run="22222222-2222-4222-8222-222222222222";
 let server:Server,directory:string,url:string;
-let calls:Array<{path:string;token?:string;run?:string}>;
+let calls:Array<{path:string;token?:string;run?:string;callback?:string}>;
 beforeEach(async()=>{
   directory=await mkdtemp(path.join(tmpdir(),"governance-skill-"));calls=[];
   server=createServer(async(req,res)=>{
     for await(const _chunk of req) { /* Consume the request before responding. */ }
-    calls.push({path:req.url!,token:req.headers.tk as string,run:req.headers["x-ontomato-run-id"] as string});
+    calls.push({path:req.url!,token:req.headers.tk as string,run:req.headers["x-ontomato-run-id"] as string,...(req.headers["x-ontomato-callback-credential"]?{callback:req.headers["x-ontomato-callback-credential"] as string}:{})});
     res.setHeader("content-type","application/json");
     if(req.url==="/admin/getBussinessKnowledge")res.end(JSON.stringify({success:true,data:{existing:{knowledgeID:"existing",knowledgeTitle:"Original",knowledgeText:"Old text",knowledgeTags:["retained"],status:1}}}));
     else if(req.url==="/window")res.end(JSON.stringify({id,sessionId:id,runId:run,expiresAt:new Date(Date.now()+60_000).toISOString(),token:"governance-grant"}));
@@ -26,7 +26,7 @@ beforeEach(async()=>{
   });server.listen(0,"127.0.0.1");await once(server,"listening");url=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 afterEach(async()=>{await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));await rm(directory,{recursive:true,force:true});});
-function command(name:string,platform:boolean,input?:unknown){return execute(process.execPath,[script,name,...(input?[JSON.stringify(input)]:[])],{cwd:directory,env:{...process.env,ONTOMATO_ONTOLOGY_URL:url,ONTOMATO_TK:"user",ONTOMATO_SESSION_ID:id,ONTOMATO_SKILL_SCENARIO:platform?"platform":"external",ONTOMATO_RUN_ID:platform?run:"",ONTOMATO_GOVERNANCE_WINDOW_URL:url+"/window",ONTOMATO_GOVERNANCE_CALLBACK:"host-callback"}});}
+function command(name:string,platform:boolean,input?:unknown,selected=false){return execute(process.execPath,[script,name,...(input?[JSON.stringify(input)]:[])],{cwd:directory,env:{...process.env,ONTOMATO_ONTOLOGY_URL:url,ONTOMATO_TK:selected?"":"user",ONTOMATO_EXECUTION_CALLBACK:selected?"executor-callback":"",ONTOMATO_SESSION_ID:id,ONTOMATO_SKILL_SCENARIO:platform?"platform":"external",ONTOMATO_RUN_ID:platform?run:"",ONTOMATO_GOVERNANCE_WINDOW_URL:url+"/window",ONTOMATO_GOVERNANCE_CALLBACK:"host-callback"}});}
 it("platform commands request the bound host window and use its scoped grant, never an external begin",async()=>{
   await mkdir(path.join(directory,"work"));await writeFile(path.join(directory,"work/.governance-run.json"),JSON.stringify({id,sessionId:id,runId:"old-external"}));
   const result=JSON.parse((await command("read-work-record",true)).stdout);
@@ -64,6 +64,13 @@ it("platform knowledge import emits separate original-page forms and never calls
     {pageKey:"business-knowledge",operation:"knowledge.update",target:{id:"existing"},form:{knowledgeID:"existing",knowledgeTitle:"Changed",knowledgeText:"Changed text",knowledgeTags:["retained"],status:1}},
   ]);
   expect(new Set(result.drafts.map((entry:{path:string})=>entry.path)).size).toBe(2);
+});
+
+it("platform import uses the execution callback for its business-page read without a long user key",async()=>{
+ const result=JSON.parse((await command("import-knowledge",true,{items:[{id:"new",title:"Title",text:"Text",sourceIds:[]}]},true)).stdout);
+ expect(calls).toEqual([{path:"/admin/getBussinessKnowledge",token:"",run,callback:"executor-callback"}]);
+ expect(result.drafts).toHaveLength(1);
+ expect(await readFile(path.join(directory,result.drafts[0].path),"utf8")).not.toContain("executor-callback");
 });
 
 it("platform work-record updates return a ready in-app Markdown report link",async()=>{

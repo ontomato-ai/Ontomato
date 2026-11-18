@@ -21,6 +21,11 @@ const props = defineProps<{
   creating: boolean;
   /** The models page is open. */
   models: boolean;
+  /**
+   * The settings are a page of the platform's own navigation (the ontology manager's product layer), so the column has
+   * no way back to a conversation and no models entry: those belong to the agent platform's own column.
+   */
+  standalone?: boolean;
 }>();
 const emit = defineEmits<{
   back: [];
@@ -30,7 +35,8 @@ const emit = defineEmits<{
 }>();
 const { t } = useI18n();
 const canOpen = usePageAccess();
-const modelLabels = useAgentModelLabels();
+// The models entry is the agent platform column's own: a settings page that has its own navigation reads no model words.
+const modelLabels = props.standalone ? null : useAgentModelLabels();
 const { agents, loading, loadFailed, ensureLoaded } = useAgentDefinitions();
 /** The agents and a new one are the agents' settings, listed only to an account that may open them. */
 const editsAgents = computed(() => canOpen(platformRoutes.agents.path));
@@ -45,7 +51,7 @@ const heading = computed(() => t("agents.title"));
 
 <template>
   <div class="settings-nav">
-    <button type="button" class="back" @click="emit('back')">
+    <button v-if="!props.standalone" type="button" class="back" @click="emit('back')">
       <ArrowLeft :size="16" aria-hidden="true" />
       <span>{{ t("common.backToChat") }}</span>
     </button>
@@ -79,7 +85,7 @@ const heading = computed(() => t("agents.title"));
       </button>
     </template>
 
-    <div v-if="canOpen(platformRoutes.agentModels.path)" class="nav-foot">
+    <div v-if="modelLabels && canOpen(platformRoutes.agentModels.path)" class="nav-foot">
       <button
         type="button"
         class="foot-row"

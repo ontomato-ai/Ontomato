@@ -1,7 +1,8 @@
+import type {AssistantRetrievalOperation,AssistantRetrievalCallerInput} from "@ontomato/contracts/assistant-retrieval";
 import { agentQualityProjectionSchema } from "@ontomato/contracts/agent-task-results";
 import { z } from "zod";
 import { agentHostRunSnapshotSchema } from "@ontomato/contracts/agent-host";
-import { datasetPayloadSchema, retrievalEvidenceSchema, retrievalCallerSchema, retrievalCallerAdmissionSchema, retrievalCallerUserQuotesSchema, type RetrievalCallerInput } from "@ontomato/contracts/data-retrieval";
+import { datasetPayloadSchema, retrievalEvidenceSchema, retrievalCallerSchema, retrievalCallerAdmissionSchema, retrievalCallerUserQuotesSchema } from "@ontomato/contracts/data-retrieval";
 import { runtimeArtifactSchema } from "@ontomato/contracts/agent-runtime-artifacts";
 import { backendGet, backendPost, backendDelete, backendPut, buildBackendHeaders } from "../../utils/backend-client";
 import { getApiConfig } from "../../config/data-query-api";
@@ -28,7 +29,19 @@ async function ontologyRequest(path: string, headers: Record<string, string>, me
 
 /** Application-owned parent association and evidence access, never retrieval orchestration. */
 export class OntologyRetrievalClient {
-  constructor(readonly owner: AssistantOwner, readonly scopeId: string) {}
+  constructor(readonly owner: AssistantOwner, readonly scopeId: string, readonly operationCredentials?:AssistantCredentials) {}
+  /** Only these fixed capability entries carry service authentication for split ownership. */
+  async executeOperation(operation:AssistantRetrievalOperation) {
+    if(operation.operation==="begin")return this.request("/ontology/retrievals/skill-runs","POST",operation.input,this.operationCredentials,operation.key);
+    const path=`/ontology/retrievals/${operation.retrievalId}`;
+    if(operation.operation==="cancel")return this.request(`${path}/retriever/cancel`,"POST",{expectedRoundId:operation.retrievalRunId},this.operationCredentials);
+    if(operation.operation==="close")return this.request(`${path}/skill-runs/${operation.retrievalRunId}/close`,"POST",{},this.operationCredentials);
+    const output=`${path}/runs/${operation.retrievalRunId}/outputs`;
+    const headers={...this.headers(this.operationCredentials,operation.key),"X-Ontomato-Run-Id":operation.retrievalRunId};
+    if(operation.operation==="submit")return ontologyRequest(output,headers,"POST",operation.input);
+    return ontologyRequest(`${output}/${operation.key}${operation.operation==="content"?"/content":""}`,headers);
+  }
+
   private headers(credentials?: AssistantCredentials, key?: string) {
     return {
       ...serviceHeaders(this.owner, credentials),
@@ -39,7 +52,7 @@ export class OntologyRetrievalClient {
   private request(path: string, method: "GET" | "POST" | "DELETE" | "PUT" = "GET", body?: unknown, credentials?: AssistantCredentials, key?: string) {
     return ontologyRequest(path, this.headers(credentials, key), method, body);
   }
-  async open(input: RetrievalCallerInput, credentials: AssistantCredentials) {
+  async open(input: AssistantRetrievalCallerInput, credentials: AssistantCredentials) {
     return retrievalCallerAdmissionSchema.parse(await this.request("/ontology/retrieval-callers", "POST", input, credentials, this.scopeId));
   }
   async updateUserQuotes(recentUserMessages: string[], credentials: AssistantCredentials) {

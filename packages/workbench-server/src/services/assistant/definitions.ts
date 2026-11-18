@@ -3,6 +3,7 @@ import { validateModelSelection } from "../../platform/agent-runtime/model-selec
 import {
   assistantAgentDefinitionSchema,
   type AssistantAgentInput,
+  type AssistantAgentValidation,
 } from "@ontomato/contracts/assistant-chat";
 
 import {
@@ -20,9 +21,11 @@ import {isAppBuilderKind} from '../app-builder/definition';
 import {transaction} from '../../infrastructure/postgres-transaction';
 import {lockProducts} from '../product-assets/store';
 import {synchronizeNativeProfile} from '../product-assets/platform-assets';
+import { validateExecutionSetting, prepareExecutionSetting } from "./execution-setting";
 const view = (a: AgentRow, locale?: string) =>
   assistantAgentDefinitionSchema.parse({
     id: a.id,
+    executionUserId: a.execution_user_id,
     name: assistantName(a, locale),
     description: assistantDescription(a, locale),
     icon: a.icon ?? null,
@@ -42,6 +45,28 @@ async function editableAgent(id: string, owner: AssistantOwner) {
 export async function readAgentDefinition(id: string, owner: AssistantOwner, locale?: string) {
   return view(await editableAgent(id, owner), locale);
 }
+/** The checks every save makes before it writes; a draft's validation runs exactly these and changes nothing. */
+async function checkedDefinition(
+  input: AssistantAgentInput,
+  owner: AssistantOwner,
+  credentials: AssistantCredentials,
+  oldExecutionUserId: string | null,
+) {
+  const executionUserId = input.executionUserId === undefined ? oldExecutionUserId : input.executionUserId;
+  await validateExecutionSetting(owner, oldExecutionUserId, executionUserId, credentials);
+  await validateModelSelection(owner.domainId, input.modelSelection);
+  const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
+  await validateAssistantSkills(owner.domainId, skills, credentials);
+  return { skills, executionUserId };
+}
+export async function validateAgentDefinition(
+  draft: AssistantAgentValidation,
+  owner: AssistantOwner,
+  credentials: AssistantCredentials,
+) {
+  const old = draft.target.id ? await editableAgent(draft.target.id, owner) : null;
+  await checkedDefinition(draft.form, owner, credentials, old?.execution_user_id ?? null);
+}
 export async function saveAgentDefinition(
   id: string,
   input: AssistantAgentInput,
@@ -50,14 +75,14 @@ export async function saveAgentDefinition(
 ) {
   const locale = credentials.locale;
   return withDomainSkills(owner.domainId, async () => {
-    await validateModelSelection(owner.domainId, input.modelSelection);
-    const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
-    await validateAssistantSkills(owner.domainId, skills, credentials);
     const agent = await editableAgent(id, owner);
+    const { skills, executionUserId } = await checkedDefinition(input, owner, credentials, agent.execution_user_id);
+    if (input.executionUserId != null)
+      await prepareExecutionSetting(owner, agent.execution_user_id, input.executionUserId, credentials);
     await transaction(async client=>{
     await lockProducts(client,owner);
     await client.query(
-      `UPDATE ${t("assistant_agents")} SET name=$3,description=$4,enabled=$5,system_prompt=$6,model_selection=$7,model_reference_migrated=true,skills=$8,icon=$9,class_names=$10,enabled_mcp_service_ids=$11,sort_order=$12 WHERE id=$1 AND domain_id=$2`,
+      `UPDATE ${t("assistant_agents")} SET name=$3,description=$4,enabled=$5,system_prompt=$6,model_selection=$7,model_reference_migrated=true,skills=$8,icon=$9,class_names=$10,enabled_mcp_service_ids=$11,sort_order=$12,execution_user_id=$13 WHERE id=$1 AND domain_id=$2`,
       [
         id,
         owner.domainId,
@@ -71,6 +96,7 @@ export async function saveAgentDefinition(
         JSON.stringify(input.classNames),
         JSON.stringify(input.enabledMcpServiceIds),
         input.sortOrder,
+        executionUserId,
       ],
     );
     const updated=await client.query(`SELECT * FROM ${t('assistant_agents')} WHERE id=$1 AND domain_id=$2`,[id,owner.domainId]);
@@ -86,9 +112,7 @@ export async function createAgentDefinition(
   credentials: AssistantCredentials,
 ) {
   return withDomainSkills(owner.domainId, async () => {
-    await validateModelSelection(owner.domainId, input.modelSelection);
-    const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
-    await validateAssistantSkills(owner.domainId, skills, credentials);
+    const { skills, executionUserId } = await checkedDefinition(input, owner, credentials, null);
     const pool = getPostgresPool();
     const existing = (
       await pool.query(
@@ -99,8 +123,10 @@ export async function createAgentDefinition(
     // An id is owned by its domain: reusing it elsewhere is a conflict, not a missing agent.
     if (existing && existing.domain_id !== owner.domainId)
       throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
+    if (input.executionUserId != null)
+      await prepareExecutionSetting(owner, null, input.executionUserId, credentials);
     const inserted = await pool.query(
-      `INSERT INTO ${t("assistant_agents")} (id,domain_id,kind,name,description,enabled,system_prompt,model_selection,skills,icon,class_names,enabled_mcp_service_ids,sort_order) VALUES($1::uuid,$2,($1::uuid)::text,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING`,
+      `INSERT INTO ${t("assistant_agents")} (id,domain_id,kind,name,description,enabled,system_prompt,model_selection,skills,icon,class_names,enabled_mcp_service_ids,sort_order,execution_user_id) VALUES($1::uuid,$2,($1::uuid)::text,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT DO NOTHING`,
       [
         id,
         owner.domainId,
@@ -114,6 +140,7 @@ export async function createAgentDefinition(
         JSON.stringify(input.classNames),
         JSON.stringify(input.enabledMcpServiceIds),
         input.sortOrder,
+        executionUserId,
       ],
     );
     const actual = await readAgentDefinition(id, owner);
@@ -122,7 +149,7 @@ export async function createAgentDefinition(
     if (!inserted.rowCount) {
       const expected = assistantAgentDefinitionSchema
         .omit({ id: true })
-        .parse({ ...input, skills, modelSelection: input.modelSelection });
+        .parse({ ...input, executionUserId, skills, modelSelection: input.modelSelection });
       const same = (Object.keys(expected) as (keyof typeof expected)[]).every(
         (key) => JSON.stringify(actual[key]) === JSON.stringify(expected[key]),
       );

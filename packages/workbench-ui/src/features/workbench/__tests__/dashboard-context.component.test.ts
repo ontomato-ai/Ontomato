@@ -78,8 +78,8 @@ async function openBoard(page: string) {
         [ontologyServiceAccessKey as symbol]: openOntologyServiceAccess,
         [platformPageAccessKey as symbol]: () => true,
         // The assembly's registry, as the dashboards application registers itself: one page, at its own address.
-        [pilotPageKey as symbol]: (address: string): PilotPage | null =>
-          address.startsWith("/dashboards") ? { component: { render: () => null } } : null,
+        [pilotPageKey as symbol]: () => (address: string): PilotPage | null =>
+          address.startsWith("/dashboards") ? { id: "dashboards", component: { render: () => null } } : null,
       },
     },
   });

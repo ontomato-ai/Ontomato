@@ -18,7 +18,7 @@ import {
   replaceDashboardLayout,
 } from "../../services/dashboard/mutations";
 import { listDashboards } from "../../services/dashboard/store";
-import { requireDomainId, type AuthenticatedRequest } from "../../utils/request-identity";
+import { requireDomainId, credentialsFromRequest, type AuthenticatedRequest } from "../../utils/request-identity";
 import { asyncHandler } from "../utils/http";
 import { dashboardCardRequestSchema, dashboardAuthoring } from "@ontomato/contracts/dashboard";
 import { dashboardSourceSchema, dashboardAddArtifactSchema, dashboardAddChartFileSchema } from "@ontomato/contracts/dashboard-artifacts";
@@ -30,7 +30,7 @@ function metricContext(req: AuthenticatedRequest) {
   const domainId = requireDomainId(req);
   return {
     owner: { userId: req.userId, domainId },
-    client: new DashboardMetricClient(domainId, { token: req.token, apiKey: req.apiKey, locale: req.locale }),
+    client: new DashboardMetricClient(domainId, credentialsFromRequest(req)),
   };
 }
 router.post("/query-card", asyncHandler(async (req, res) => {

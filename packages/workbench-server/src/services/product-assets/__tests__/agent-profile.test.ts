@@ -1,59 +1,59 @@
 import {beforeEach,expect,it,vi} from 'vitest';
 import {productAssetSchema} from '@ontomato/contracts/product-assets';
 const mocks=vi.hoisted(()=>({get:vi.fn(),validate:vi.fn(),active:vi.fn(),query:vi.fn(),release:vi.fn(),contracts:vi.fn(),post:vi.fn()}));
-vi.mock('../agent-principal',()=>({agentPrincipalCredentials:async()=>({token:'agent-execution'})}));
-vi.mock('../../../utils/backend-client',()=>({backendPost:mocks.post,buildBackendHeaders:(token:string)=>({tk:token})}));
+vi.mock('../../assistant/execution',()=>({credentialsForDefinition:async()=>({token:'agent-execution',executionUserId:'executor'})}));
+vi.mock('../../../utils/backend-client',()=>({backendPost:mocks.post,buildBackendHeaders:(token:string,_user:unknown,_locale:unknown,apiKey:string)=>({...token?{tk:token}:{},...apiKey?{"X-API-Key":apiKey}:{}})}));
 vi.mock('../../dashboard/metric-client',()=>({DashboardMetricClient:class{describe=async()=>({parameterDefs:[],outputColumns:[{key:'count'}]});}}));
 vi.mock('../store',()=>({getProduct:mocks.get}));
 vi.mock('../grants',()=>({withProductGrants:async(_owner:unknown,action:()=>unknown)=>action(),currentProductGrants:()=>({use:new Set(['profile']),edit:new Set()}),requireProductUse:vi.fn()}));
 vi.mock('../validation',()=>({validateProduct:mocks.validate}));
 vi.mock('../releases',()=>({activeProductBundle:mocks.active,readActiveProductBundle:mocks.active,readProductRelease:mocks.release,productReleaseIssues:mocks.contracts,snapshotAsset:(snapshot:{assets:{id:string}[]},id:string)=>snapshot.assets.find(asset=>asset.id===id)}));
 vi.mock('../../../infrastructure/postgres',()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
-import {assembleAgentProfile,agentProfileForPrincipal,executeProfileTool,profileForSession} from '../agent-profile';
+import {assembleAgentProfile,agentProfileForAgent,executeProfileTool,profileForSession} from '../agent-profile';
 const owner={domainId:'domain',userId:'reader'};
 const asset=(id:string,document:unknown)=>productAssetSchema.parse({id,document,name:id,description:'',visibility:'domain',ownerId:'author',revision:1,editable:false,createdAt:'now',updatedAt:'now'});
 beforeEach(()=>{vi.resetAllMocks();mocks.contracts.mockResolvedValue([]);});
 it('assembles the published Profile even when draft instructions and tool bindings changed',async()=>{
-  const profile=asset('profile',{kind:'agent-profile',principalId:'agent',instructions:'published',tools:['metric'],contextViews:[]});
+  const profile=asset('profile',{kind:'agent-profile',agentId:'agent',instructions:'published',tools:['metric'],contextViews:[]});
   const metric=asset('metric',{kind:'metric-widget',renders:{kind:'MetricView',id:'published-metric'},parameters:{},valueField:'count'});
   mocks.get.mockResolvedValue({...metric,revision:2});
   mocks.query.mockResolvedValue({rows:[{id:'profile'}]});
   mocks.active.mockResolvedValue({snapshot:{assets:[profile,metric]}});
-  const result=await agentProfileForPrincipal(owner,{token:'current'},'agent');
+  const result=await agentProfileForAgent(owner,{token:'current'},'agent');
   expect(result).toMatchObject({instructions:'published',tools:[{id:'published-metric'}]});
-   expect(mocks.validate).toHaveBeenCalledWith(owner,metric,{token:'agent-execution'});
+   expect(mocks.validate).toHaveBeenCalledWith(owner,metric,{token:'agent-execution',executionUserId:'executor'});
 });
 it('does not fall back to a live projection absent from the frozen profile tree',async()=>{
-  const profile=asset('profile',{kind:'agent-profile',principalId:'agent',instructions:'published',tools:['missing'],contextViews:[]});
+  const profile=asset('profile',{kind:'agent-profile',agentId:'agent',instructions:'published',tools:['missing'],contextViews:[]});
   mocks.get.mockResolvedValue(profile);
   await expect(assembleAgentProfile(owner,{},'profile',[profile])).rejects.toMatchObject({code:'PRODUCT_UNAVAILABLE'});
 });
 it('rejects a published Profile that embodies a different principal',async()=>{
   mocks.query.mockResolvedValue({rows:[{id:'profile'}]});
-  mocks.active.mockResolvedValue({snapshot:{assets:[asset('profile',{kind:'agent-profile',principalId:'another',instructions:'',tools:[],contextViews:[]})]}});
-  await expect(agentProfileForPrincipal(owner,{},'agent')).rejects.toMatchObject({code:'AGENT_PROFILE_PRINCIPAL_CHANGED'});
+  mocks.active.mockResolvedValue({snapshot:{assets:[asset('profile',{kind:'agent-profile',agentId:'another',instructions:'',tools:[],contextViews:[]})]}});
+  await expect(agentProfileForAgent(owner,{},'agent')).rejects.toMatchObject({code:'AGENT_PROFILE_AGENT_CHANGED'});
 });
 it('rejects tool execution not declared by the frozen Profile before calling a capability',async()=>{
-  const profile=asset('profile',{kind:'agent-profile',principalId:'agent',instructions:'',tools:[],contextViews:[]});
+  const profile=asset('profile',{kind:'agent-profile',agentId:'agent',instructions:'',tools:[],contextViews:[]});
   mocks.active.mockResolvedValue({snapshot:{assets:[profile]}});
   await expect(executeProfileTool(owner,{},'profile','undeclared',{})).rejects.toMatchObject({status:403,code:'PROFILE_TOOL_UNAVAILABLE'});
 });
 it('preserves read-only bindings when executing Action tools',async()=>{
-  const profile=asset('profile',{kind:'agent-profile',principalId:'agent',instructions:'',tools:['action'],contextViews:[]});
+  const profile=asset('profile',{kind:'agent-profile',agentId:'agent',instructions:'',tools:['action'],contextViews:[]});
   const action=asset('action',{kind:'action-view',renders:{kind:'Action',id:'approve'},parameters:{tenant:{source:'literal',value:'one'}},readOnlyParameters:['tenant']});
   mocks.active.mockResolvedValue({snapshot:{assets:[profile,action]}});
   await expect(executeProfileTool(owner,{},'profile','action',{tenant:'another'})).rejects.toMatchObject({code:'INVALID_PRODUCT_PARAMETER'});
 });
 it('resolves run callbacks against their pinned release even after the active Profile changes',async()=>{
-  const profile=asset('profile',{kind:'agent-profile',principalId:'agent',instructions:'old',tools:[],contextViews:[]});
+  const profile=asset('profile',{kind:'agent-profile',agentId:'agent',instructions:'old',tools:[],contextViews:[]});
   mocks.release.mockResolvedValue({assets:[profile]});
   await expect(executeProfileTool(owner,{},'profile','new-tool',{},'old-release')).rejects.toMatchObject({code:'PROFILE_TOOL_UNAVAILABLE'});
   expect(mocks.release).toHaveBeenCalledWith(owner,'old-release','profile');
-  expect(mocks.contracts).toHaveBeenCalled();
+  expect(mocks.post).not.toHaveBeenCalled();
   expect(mocks.active).not.toHaveBeenCalled();
 });
 it('executes the signature parsers typed read-only values instead of restoring presentation text',async()=>{
-  const profile=asset('profile',{kind:'agent-profile',principalId:'agent',instructions:'',tools:['action'],contextViews:[]});
+  const profile=asset('profile',{kind:'agent-profile',agentId:'agent',instructions:'',tools:['action'],contextViews:[]});
   const action=asset('action',{kind:'action-view',renders:{kind:'Action',id:'approve'},parameters:{year:{source:'literal',value:'2026'}},readOnlyParameters:['year']});
   mocks.active.mockResolvedValue({snapshot:{assets:[profile,action]}});
   mocks.post.mockResolvedValueOnce({text:JSON.stringify({success:true,data:{parameters:{year:2026}}})}).mockResolvedValueOnce({text:JSON.stringify({success:true,data:{result:'done'}})});
@@ -62,7 +62,7 @@ it('executes the signature parsers typed read-only values instead of restoring p
   expect(mocks.post.mock.calls[1][3].headers.tk).toBe('agent-execution');
 });
 it('keeps a conversation on its selected Profile release across subsequent turns',async()=>{
-  const profile=asset('profile',{kind:'agent-profile',principalId:'agent',instructions:'session instructions',tools:[],contextViews:[]});
+  const profile=asset('profile',{kind:'agent-profile',agentId:'agent',instructions:'session instructions',tools:[],contextViews:[]});
   mocks.query.mockResolvedValue({rows:[{profile_id:'profile',release_id:'session-release'}]});
   mocks.release.mockResolvedValue({assets:[profile]});mocks.get.mockResolvedValue(profile);
   await expect(profileForSession(owner,{},'conversation','agent')).resolves.toMatchObject({instructions:'session instructions',releaseId:'session-release'});
@@ -70,7 +70,7 @@ it('keeps a conversation on its selected Profile release across subsequent turns
   expect(mocks.release).toHaveBeenCalledWith(owner,'session-release','profile');
 });
 it('assembles selected object context from governed data and only the frozen text view fields',async()=>{
-  const profile=asset('profile',{kind:'agent-profile',principalId:'agent',instructions:'',tools:[],contextViews:['text']});
+  const profile=asset('profile',{kind:'agent-profile',agentId:'agent',instructions:'',tools:[],contextViews:['text']});
   const text=asset('text',{kind:'object-projection',renders:{kind:'ObjectType',id:'Person'},renderer:'text',fields:['name']});
   mocks.query.mockResolvedValue({rows:[{profile_id:'profile',release_id:'session-release',context_objects:[{className:'Person',primaryKey:'alice'}]}]});
   mocks.release.mockResolvedValue({assets:[profile,text]});mocks.get.mockResolvedValue(profile);
@@ -80,7 +80,7 @@ it('assembles selected object context from governed data and only the frozen tex
   expect(JSON.stringify(result)).not.toContain('salary');
 });
 it('resolves Action bindings from the owned frozen session state and preserves read-only object identity',async()=>{
-  const profile=asset('profile',{kind:'agent-profile',principalId:'agent',instructions:'',tools:['action'],contextViews:[]});
+  const profile=asset('profile',{kind:'agent-profile',agentId:'agent',instructions:'',tools:['action'],contextViews:[]});
   const action=asset('action',{kind:'action-view',renders:{kind:'Action',id:'approve'},parameters:{person:{source:'variable',path:'selected.primaryKey'}},readOnlyParameters:['person']});
   mocks.release.mockResolvedValue({assets:[profile,action]});
   mocks.query.mockResolvedValue({rows:[{page_state:{selected:{className:'Person',primaryKey:'one'}}}]});
@@ -91,7 +91,7 @@ it('resolves Action bindings from the owned frozen session state and preserves r
   await expect(executeProfileTool(owner,{},'profile','action',{},'release','another-session')).rejects.toMatchObject({code:'PROFILE_CONTEXT_REQUIRED'});
 });
 it('degrades a changed projection while retaining unaffected tools in the same Profile release',async()=>{
-  const profile=asset('profile',{kind:'agent-profile',principalId:'agent',instructions:'',tools:['changed','working'],contextViews:[]});
+  const profile=asset('profile',{kind:'agent-profile',agentId:'agent',instructions:'',tools:['changed','working'],contextViews:[]});
   const metric=(id:string)=>asset(id,{kind:'metric-widget',renders:{kind:'MetricView',id},parameters:{},valueField:'count'});
   const frozen=[profile,metric('changed'),metric('working')];mocks.get.mockResolvedValue(profile);
   const issues=[{assetId:'changed',code:'PRODUCT_CONTRACT_CHANGED',message:'Upgrade'}];
@@ -99,4 +99,13 @@ it('degrades a changed projection while retaining unaffected tools in the same P
   expect(result.tools.map(tool=>tool.assetId)).toEqual(['working']);expect(result.issues).toEqual(issues);
   mocks.release.mockResolvedValue({assets:frozen});mocks.contracts.mockResolvedValue(issues);
   await expect(executeProfileTool(owner,{},'profile','changed',{},'release')).rejects.toMatchObject({code:'PRODUCT_CONTRACT_CHANGED'});
+});
+it('uses the fixed run credentials without consulting a changed definition during tool execution',async()=>{
+  const profile=asset('profile',{kind:'agent-profile',agentId:'agent',instructions:'',tools:['action'],contextViews:[]});
+  const action=asset('action',{kind:'action-view',renders:{kind:'Action',id:'approve'},parameters:{},readOnlyParameters:[]});
+  mocks.release.mockResolvedValue({assets:[profile,action]});
+  mocks.post.mockResolvedValueOnce({text:JSON.stringify({success:true,data:{parameters:{}}})}).mockResolvedValueOnce({text:JSON.stringify({success:true,data:{completed:true}})});
+  await executeProfileTool(owner,{token:'initiator'},'profile','action',{},'release',undefined,{apiKey:'current-executor-key',executionUserId:'fixed-executor'});
+  expect(mocks.post.mock.calls[1][3].headers).toEqual({'X-API-Key':'current-executor-key'});
+  expect(mocks.contracts).toHaveBeenCalledWith(owner,expect.anything(),{apiKey:'current-executor-key',executionUserId:'fixed-executor'});
 });

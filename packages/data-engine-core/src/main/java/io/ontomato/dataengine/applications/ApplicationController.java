@@ -49,7 +49,7 @@ public class ApplicationController {
     @PostMapping(DECLARATIONS)
     public R<?> declare(HttpServletRequest request, @RequestBody Batch batch) {
         String service = authentication.authenticate(request);
-        catalog.builtins(service, batch.applications());
+        catalog.reconcileBuiltins(service, batch.applications());
         return R.of(Map.of("serviceId", service, "applicationIds", batch.applications().stream().map(ApplicationCatalog.Builtin::id).toList()));
     }
     @GetMapping("/platform/applications")

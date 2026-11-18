@@ -99,3 +99,11 @@ it("propagates Java window admission failures without recording a window",async(
   await expect(openGovernanceWindow(sessionId,runId,recordId,owner,{token:"expired"})).rejects.toBe(failure);
   expect(mocks.record).not.toHaveBeenCalled();
 });
+
+it("registers U with only the fixed V reference and never restores V credentials in Node",async()=>{
+  mocks.status.mockResolvedValue({id:runId,sessionId,status:"running",stopReason:null,executionUserId:"executor"});
+  await openGovernanceWindow(sessionId,runId,recordId,owner,{token:"current-user"});
+  expect(mocks.post.mock.calls[0][2]).toMatchObject({ownerId:"user",executionActor:{userId:"executor",domainId:"domain"}});
+  expect(mocks.post.mock.calls[0][3].headers).toMatchObject({tk:"current-user"});
+  expect(JSON.stringify(mocks.post.mock.calls[0][2])).not.toContain("apiKey");
+});

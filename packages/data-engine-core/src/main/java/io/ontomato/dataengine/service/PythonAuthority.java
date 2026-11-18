@@ -6,7 +6,14 @@ import java.util.List;
 /** Created by trusted Java callers, never deserialized from a model or HTTP body. */
 public record PythonAuthority(String domainId, String userId, String purpose, String sandboxId,
     List<String> classNames, String executionId, ParentGrant parentGrant, JSONObject packageInput,
-    JSONObject identity, ExecutionTarget target) {
+    JSONObject identity, ExecutionTarget target, String executionUserId, String initiatorUserId) {
+  public PythonAuthority(String domainId, String userId, String purpose, String sandboxId, List<String> classNames,
+      String executionId, ParentGrant parentGrant, JSONObject packageInput, JSONObject identity, ExecutionTarget target) {
+    this(domainId,userId,purpose,sandboxId,classNames,executionId,parentGrant,packageInput,identity,target,null,null);
+  }
+  public PythonAuthority withExecution(String executor, String initiator) {
+    return new PythonAuthority(domainId,userId,purpose,sandboxId,classNames,executionId,parentGrant,packageInput,identity,target,executor,initiator);
+  }
   public record ParentGrant(String token, String runId, long expiresAt) {}
 
   /**
@@ -36,29 +43,30 @@ public record PythonAuthority(String domainId, String userId, String purpose, St
    */
   public PythonAuthority withIdentity(JSONObject snapshot) {
     return new PythonAuthority(domainId, userId, purpose, sandboxId, classNames, executionId,
-        parentGrant, packageInput, snapshot, target);
+        parentGrant, packageInput, snapshot, target, executionUserId, initiatorUserId);
   }
 
   public PythonAuthority withTarget(ExecutionTarget value) {
+    if(!classNames.isEmpty())value.requireClasses(classNames);
     return new PythonAuthority(domainId, userId, purpose, value.testing() ? value.sandboxId() : sandboxId,
-        value.testing() && classNames.isEmpty() ? value.classNames() : classNames, executionId,
-        parentGrant, packageInput, identity, value);
+        classNames.isEmpty() ? value.classNames() : classNames, executionId,
+        parentGrant, packageInput, identity, value, value.initiatorUserId()!=null?value.executionUserId():executionUserId, value.initiatorUserId()!=null?value.initiatorUserId():initiatorUserId);
   }
 
   public PythonAuthority forExecution(String id) {
-    return new PythonAuthority(domainId, userId, purpose, sandboxId, classNames, id, parentGrant, packageInput, identity, target);
+    return new PythonAuthority(domainId, userId, purpose, sandboxId, classNames, id, parentGrant, packageInput, identity, target, executionUserId, initiatorUserId);
   }
   public PythonAuthority withParent(ParentGrant grant) {
-    return new PythonAuthority(domainId, userId, purpose, sandboxId, classNames, executionId, grant, packageInput, identity, target);
+    return new PythonAuthority(domainId, userId, purpose, sandboxId, classNames, executionId, grant, packageInput, identity, target, executionUserId, initiatorUserId);
   }
   public PythonAuthority withClasses(List<String> classes) {
     return new PythonAuthority(domainId, userId, purpose, sandboxId,
-        classes == null ? List.of() : List.copyOf(classes), executionId, parentGrant, packageInput, identity, target);
+        classes == null ? List.of() : List.copyOf(classes), executionId, parentGrant, packageInput, identity, target, executionUserId, initiatorUserId);
   }
   public PythonAuthority withPackage(JSONObject bundle, JSONObject parameters) {
     return new PythonAuthority(domainId, userId, "package-read", sandboxId, classNames, executionId,
         parentGrant, JSONObject.of("package", QueryPackage.copy(bundle), "parameters", QueryPackage.copy(parameters)),
-        identity, target);
+        identity, target, executionUserId, initiatorUserId);
   }
   public static PythonAuthority read(String user, String domain) {
     return new PythonAuthority(domain, user, "user-read", null, List.of(), null, null, null);

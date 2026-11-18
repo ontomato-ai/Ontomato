@@ -18,7 +18,7 @@ import io.ontomato.dataengine.bean.trigger.Trigger;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.TriggerDao;
 import io.ontomato.dataengine.schedules.ScheduleIdentity;
-import io.ontomato.dataengine.schedules.TaskCredentials;
+import io.ontomato.dataengine.service.identity.UserCredentials;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -46,7 +46,7 @@ public class TriggerService {
 	private ScheduleIdentity identity;
 
 	@Autowired
-	private TaskCredentials credentials;
+	private UserCredentials credentials;
 
 	private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 
@@ -180,7 +180,7 @@ public class TriggerService {
 			} catch (Exception unreadable) {
 				result.put("body", text.length() > 300 ? text.substring(0, 300) : text);
 			}
-		} catch (TaskCredentials.Invalid invalid) {
+		} catch (UserCredentials.Invalid invalid) {
 			result.put("status", "failed");
 			result.put("error", "The executor's background credential is missing or invalid; the executor must sign in and save the trigger again");
 		} catch (Exception error) {

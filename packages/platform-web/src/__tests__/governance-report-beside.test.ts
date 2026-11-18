@@ -9,7 +9,7 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
 import { BusinessWorkbench } from "@ontomato/workbench-ui/features/workbench";
 import elementEn from "element-plus/es/locale/lang/en";
-import { resolvePilotPage } from "../pilot-pages";
+import { pilotPageResolver } from "../pilot-pages";
 
 /*
  * One governance record's report is the platform's page in two places: at its own address, and beside the conversation
@@ -86,7 +86,7 @@ async function routerAt(query: Record<string, string>) {
 }
 
 const provide = () => ({
-  [pilotPageKey as symbol]: resolvePilotPage,
+  [pilotPageKey as symbol]: pilotPageResolver,
   [platformPageAccessKey as symbol]: () => true,
   [pageCounterKey as symbol]: {
     agents: async () => [agent],
@@ -97,13 +97,17 @@ const provide = () => ({
 
 describe("one governance record's report beside the conversation", () => {
   it("resolves the record's address to the report page with that record and its finding", () => {
+    const setPage = vi.fn();
+    const resolvePilotPage = pilotPageResolver(setPage);
     const page = resolvePilotPage("/governance/reports/record-1?issue=order-rule");
     expect(page?.component).toBeTruthy();
-    expect(page?.props).toEqual({ paired: true, recordId: "record-1", issueId: "order-rule" });
+    expect(page?.props).toEqual({ paired: true, recordId: "record-1", issueId: "order-rule", navigate: expect.any(Function) });
     // Selecting another finding lands on the same page at its new address; the rest of the address stays as it was.
-    expect(page?.navigate?.({ issue: "refund-rule" })).toBe("/governance/reports/record-1?issue=refund-rule");
-    expect(page?.navigate?.({})).toBe("/governance/reports/record-1");
-    expect(resolvePilotPage("/dashboards")?.props).toEqual({ paired: true, dashboardId: undefined });
+    (page!.props!.navigate as (next: { issue?: string }) => void)({ issue: "refund-rule" });
+    expect(setPage).toHaveBeenLastCalledWith("/governance/reports/record-1?issue=refund-rule");
+    (page!.props!.navigate as (next: { issue?: string }) => void)({});
+    expect(setPage).toHaveBeenLastCalledWith("/governance/reports/record-1");
+    expect(resolvePilotPage("/dashboards")?.props).toEqual({ paired: true, dashboardId: undefined, navigate: expect.any(Function) });
     expect(resolvePilotPage("/ontology/knowledge")).toBeNull();
   });
 

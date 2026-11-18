@@ -7,6 +7,8 @@ import type { AssistantAgentDefinition, AssistantAgentInput } from "@ontomato/co
 import type { ModelOptions } from "@ontomato/contracts/model-settings";
 import { workbenchI18n } from "../../../i18n";
 import AgentEditor from "../components/AgentEditor.vue";
+import { agentSettingsAddressKey } from "../agent-settings-address";
+import { editorAddress } from "./editor-address";
 import { agentDefinitionsApi } from "../api";
 
 /*
@@ -36,7 +38,8 @@ function agent(): AssistantAgentDefinition {
   return {
     id: AGENT, name: "Sales analyst", description: "", icon: null, enabled: true, systemPrompt: "Be brief.",
     modelSelection: { modelId: null }, skills: [], classNames: [], enabledMcpServiceIds: [], sortOrder: 3,
-  } as AssistantAgentDefinition;
+    executionUserId: null,
+  };
 }
 
 function input(overrides: Partial<AssistantAgentInput> = {}): AssistantAgentInput {
@@ -61,20 +64,57 @@ async function open(path: string, form: AssistantAgentInput, target: { id?: stri
   vi.spyOn(agentDefinitionsApi, "listMcpServiceOptions").mockResolvedValue([]);
   const update = vi.spyOn(agentDefinitionsApi, "update").mockImplementation(async (id, written) => ({ ...agent(), ...written, id }) as AssistantAgentDefinition);
   const create = vi.spyOn(agentDefinitionsApi, "create").mockImplementation(async (written) => ({ ...agent(), ...written }) as AssistantAgentDefinition);
-  const wrapper = mount(AgentEditor, {
+  const address = editorAddress(path);
+  const mounted = mount(AgentEditor, {
     props: { agent: editing ? agent() : null, classes: [], relations: [], outlineLoading: false, modelOptions: options, modelOptionsFailed: false },
-    global,
+    global: { ...global, provide: address.provide },
     attachTo: document.body,
   });
-  wrappers.push(wrapper);
+  wrappers.push(mounted);
   await flushPromises();
-  return { wrapper, update, create };
+  return { wrapper: mounted, update, create, go: address.go };
 }
 
 const saveButton = (wrapper: VueWrapper) =>
   wrapper.findAll(".platform-page-header button").find((button) => button.text() === t("common.save"))!;
 
 describe("the agent editor's page draft", () => {
+  it("reads the draft and reports the save at the address the page is shown at, not the browser's", async () => {
+    // Beside a conversation the page's address is the conversation's parameter; the editor must read the draft there and
+    // ask the host to change that address once saved.
+    draft.read.mockResolvedValue({ pageKey: "agent-settings", operation: "agent.update", target: { id: AGENT }, form: input({ name: "Renamed analyst" }) });
+    await router.push("/agents/chat");
+    vi.spyOn(agentDefinitionsApi, "listMcpServiceOptions").mockResolvedValue([]);
+    const update = vi.spyOn(agentDefinitionsApi, "update").mockImplementation(async (id, written) => ({ ...agent(), ...written, id }) as AssistantAgentDefinition);
+    const go = vi.fn();
+    const address = `/ontology/agents/${AGENT}?draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2Fa.page-draft.json`;
+    const wrapper = mount(AgentEditor, {
+      props: { agent: agent(), classes: [], relations: [], outlineLoading: false, modelOptions: options, modelOptionsFailed: false },
+      global: {
+        ...global,
+        provide: {
+          [agentSettingsAddressKey as symbol]: {
+            address: { value: address },
+            draft: { value: { sessionId: "s", runId: "r", path: "outputs/drafts/a.page-draft.json" } },
+            savedAddress: { value: `/ontology/agents/${AGENT}` },
+            go,
+          },
+        },
+      },
+      attachTo: document.body,
+    });
+    wrappers.push(wrapper);
+    await flushPromises();
+
+    expect((wrapper.find("input").element as HTMLInputElement).value).toBe("Renamed analyst");
+    await saveButton(wrapper).trigger("click");
+    await flushPromises();
+    expect(update).toHaveBeenCalledTimes(1);
+    // The conversation's address loses the draft handoff; the browser's address is the conversation's and stays.
+    expect(go).toHaveBeenCalledWith(`/ontology/agents/${AGENT}`);
+    expect(router.currentRoute.value.path).toBe("/agents/chat");
+  });
+
   it("fills the form and marks what the draft changed without writing anything", async () => {
     const { wrapper, update } = await open(DRAFT("a"), input({ name: "Renamed analyst", description: "covers EMEA" }));
 
@@ -87,13 +127,14 @@ describe("the agent editor's page draft", () => {
   });
 
   it("saves the filled form once, then drops the draft from the address", async () => {
-    const { wrapper, update } = await open(DRAFT("a"), input({ name: "Renamed analyst" }));
+    const { wrapper, update, go } = await open(DRAFT("a"), input({ name: "Renamed analyst" }));
 
     await saveButton(wrapper).trigger("click");
     await flushPromises();
     expect(update).toHaveBeenCalledTimes(1);
     expect(update.mock.calls[0]![1]).toMatchObject({ name: "Renamed analyst" });
-    expect(router.currentRoute.value.query).toEqual({});
+    // The page is asked for its address without the handoff; the editor never writes the browser's address itself.
+    expect(go).toHaveBeenCalledWith(`/agents/settings/${AGENT}`);
   });
 
   it("fills a new agent's form from a create draft over its defaults", async () => {

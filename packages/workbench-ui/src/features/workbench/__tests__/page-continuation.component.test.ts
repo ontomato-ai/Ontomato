@@ -119,7 +119,7 @@ async function fromPage(agentId: string) {
       [ontologyServiceAccessKey as symbol]: openOntologyServiceAccess,
       [platformPageAccessKey as symbol]: () => true,
       // The assembly's own page beside the conversation: this board, which is what the address carries.
-      [pilotPageKey as symbol]: (address: string) =>
+      [pilotPageKey as symbol]: () => (address: string) =>
         address.startsWith("/dashboards") ? { id: "dashboards", component: { render: () => null }, props: { paired: true } } : null,
     } },
   });

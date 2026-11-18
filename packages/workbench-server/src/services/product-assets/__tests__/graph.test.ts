@@ -16,16 +16,16 @@ it('preserves intermediate composition edges and keeps same-named ontology ident
   expect(new Set(graph.nodes.map(node=>node.id)).size).toBe(graph.nodes.length);
 });
 it('never invents hidden asset nodes',()=>{
-  const profile=asset('profile',{kind:'agent-profile',principalId:'agent',instructions:'',tools:['missing'],contextViews:[]});
+  const profile=asset('profile',{kind:'agent-profile',agentId:'agent',instructions:'',tools:['missing'],contextViews:[]});
   const graph=productGraph([profile]);
   expect(graph.nodes.some(node=>node.id==='asset:missing')).toBe(false);
-  expect(graph.edges).toContainEqual({source:'asset:profile',target:'principal:agent',relation:'embodies',storage:'product-index'});
+  expect(graph.edges).toContainEqual({source:'asset:profile',target:'agent:agent',relation:'embodies',storage:'product-index'});
 });
 it('preserves distinct Navigation, tool and context relationships',()=>{
   const navigation=asset('nav',{kind:'navigation',entry:'home',nodes:[{id:'home',pageId:'home',label:'Home',path:'/'}]});
   const page=asset('home',{kind:'page',children:[]});
   const app=asset('app',{kind:'application',applicationId:'app',navigationId:'nav',children:[]});
-  const profile=asset('profile',{kind:'agent-profile',principalId:'agent',instructions:'',tools:['tool'],contextViews:['context']});
+  const profile=asset('profile',{kind:'agent-profile',agentId:'agent',instructions:'',tools:['tool'],contextViews:['context']});
   const tool=asset('tool',{kind:'metric-widget',renders:{kind:'MetricView',id:'metric'},parameters:{},valueField:'value'});
   const context=asset('context',{kind:'object-projection',renders:{kind:'ObjectType',id:'Person'},renderer:'text',fields:['name']});
   const graph=productGraph([app,navigation,page,profile,tool,context]);

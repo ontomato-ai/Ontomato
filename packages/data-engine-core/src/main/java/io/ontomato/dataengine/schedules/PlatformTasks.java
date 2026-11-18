@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.schedules;
 
+import io.ontomato.dataengine.service.identity.UserCredentials;
 import static io.ontomato.dataengine.schedules.ScheduleJson.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -21,7 +22,7 @@ public class PlatformTasks {
   private final TaskStore store;
   private final IdentityService identities;
   private final ScheduleIdentity identity;
-  private final TaskCredentials credentials;
+  private final UserCredentials credentials;
   private final ScheduleApplications applications;
   private final TransactionTemplate transactions;
 

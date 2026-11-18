@@ -10,7 +10,7 @@ import static org.mockito.Mockito.when;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.trigger.Trigger;
 import io.ontomato.dataengine.schedules.ScheduleIdentity;
-import io.ontomato.dataengine.schedules.TaskCredentials;
+import io.ontomato.dataengine.service.identity.UserCredentials;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -23,7 +23,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 class TriggerServiceCredentialTest {
 
   private final ScheduleIdentity identity = mock(ScheduleIdentity.class);
-  private final TaskCredentials credentials = mock(TaskCredentials.class);
+  private final UserCredentials credentials = mock(UserCredentials.class);
   private final TriggerService service = new TriggerService();
 
   TriggerServiceCredentialTest() {
@@ -53,7 +53,7 @@ class TriggerServiceCredentialTest {
 
   @Test
   void missingCredentialFailsTheFiringWithoutIssuingAKey() {
-    when(credentials.forOwner("d1", "u1")).thenThrow(new TaskCredentials.Invalid());
+    when(credentials.forOwner("d1", "u1")).thenThrow(new UserCredentials.Invalid());
 
     var result = service.fire(workflowTrigger(), Instant.parse("2026-11-17T00:00:00Z"), "zh-CN");
 

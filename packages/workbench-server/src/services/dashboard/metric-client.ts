@@ -34,7 +34,7 @@ export class DashboardMetricClient {
     try {
       const response = await backendPost(path, config.dataQuery.baseUrl.replace(/\/$/, "") + path, body, {
         headers: {
-          ...buildBackendHeaders(this.credentials.token, undefined, this.credentials.locale, this.credentials.apiKey),
+          ...buildBackendHeaders(this.credentials.token, undefined, this.credentials.locale, this.credentials.apiKey, this.credentials.headers),
           "X-Domain-Id": this.domainId,
           ...(adoption ? { "X-Ontomato-Query-Service-Token": environment.agentRuntime().queryServiceToken } : {}),
         },

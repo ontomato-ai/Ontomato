@@ -29,6 +29,7 @@ else if (command !== "close") {
     throw new Error("Metric parameters belong in the metric selector");
 }
 const headers = {
+  ...(process.env.ONTOMATO_EXECUTION_CALLBACK ? { "X-Ontomato-Callback-Credential": process.env.ONTOMATO_EXECUTION_CALLBACK, "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID } : {}),
   "content-type": "application/json", tk: process.env.ONTOMATO_TK ?? "",
   ...(process.env.ONTOMATO_RETRIEVAL_CALLER_ID ? { "X-Ontomato-Retrieval-Caller-Id": process.env.ONTOMATO_RETRIEVAL_CALLER_ID } : {}),
   ...(process.env.ONTOMATO_API_KEY ? { "X-API-Key": process.env.ONTOMATO_API_KEY } : {}),
@@ -38,9 +39,19 @@ const headers = {
   ...(process.env.ONTOMATO_SESSION_ID ? { "X-Ontomato-Session-Id": process.env.ONTOMATO_SESSION_ID } : {}),
 };
 async function call(route, body, extra = {}, raw = false) {
-  const response = await fetch(base + "/ontology/retrievals" + route, {
-    method: body === undefined ? "GET" : "POST", headers: { ...headers, ...extra },
-    body: body === undefined ? undefined : JSON.stringify(body), redirect: "error",
+  const callback=process.env.ONTOMATO_RETRIEVAL_CALLBACK_URL;
+  let operation;
+  if(callback) {
+    const match=route.match(/^\/([^/]+)\/runs\/([^/]+)\/outputs(?:\/([^/]+)(\/content)?)?$/);
+    const close=route.match(/^\/([^/]+)\/skill-runs\/([^/]+)\/close$/);
+    if(route==="/skill-runs")operation={operation:"begin",key:extra["Idempotency-Key"],input:body};
+    else if(close)operation={operation:"close",retrievalId:close[1],retrievalRunId:close[2]};
+    else if(match)operation={operation:body===undefined?(match[4]?"content":"status"):"submit",retrievalId:match[1],retrievalRunId:match[2],key:match[3]??extra["Idempotency-Key"],...(body===undefined?{}:{input:body})};
+    else throw new Error("Unsupported host retrieval operation");
+  }
+  const response = await fetch(callback || base + "/ontology/retrievals" + route, {
+    method: callback ? "POST" : body === undefined ? "GET" : "POST", headers: { ...headers, ...extra, ...(callback ? {"X-Ontomato-Run-Id":process.env.ONTOMATO_RUN_ID}: {}) },
+    body: callback ? JSON.stringify(operation) : body === undefined ? undefined : JSON.stringify(body), redirect: "error",
   });
   const value = response.status === 204 ? null : raw ? await response.text() : await response.json();
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${JSON.stringify(value)}`);

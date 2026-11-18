@@ -90,7 +90,7 @@ public class OntologyGenerationService {
 
   public static <T> T asOwner(QueryAccessService.Access access,Work<T> work) {
     var previous=CURRENT_ACCESS.get();CURRENT_ACCESS.set(access);
-    try { return asOwner(access.user(),work); }
+    try { return asOwner(new QueryAccessService.GrantUser(access.initiatorUserId()==null?access.user().getId():access.initiatorUserId(),access.user().getDomainId()),work); }
     finally { if(previous==null) CURRENT_ACCESS.remove(); else CURRENT_ACCESS.set(previous); }
   }
   public static String sourceRun() { return SOURCE_RUN.get(); }
@@ -114,7 +114,7 @@ public class OntologyGenerationService {
     if(CURRENT_ACCESS.get()!=null) return CURRENT_ACCESS.get();
     var request=org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
     if(request instanceof org.springframework.web.context.request.ServletRequestAttributes servlet && servlet.getRequest().getAttribute(QueryGrantService.ATTRIBUTE) instanceof JSONObject grant)
-      return new QueryAccessService.Access(new QueryAccessService.GrantUser(actor.userId(),domain),permissions.getDataPermission(actor.userId(),domain),grant,null,grant.getLong("expiresAt"));
+      return new QueryAccessService.Access(new QueryAccessService.GrantUser(grant.getString("userId"),domain),permissions.getDataPermission(grant.getString("userId"),domain),grant,null,grant.getLong("expiresAt"));
     return new QueryAccessService.Access(new QueryAccessService.GrantUser(actor.userId(), domain),
         permissions.getDataPermission(actor.userId(), domain), null, null, null);
   }
@@ -304,15 +304,15 @@ public class OntologyGenerationService {
     var row=store.run(session,run,context.owner());
     var owned=store.one("SELECT kind,business_id FROM ontology_generations WHERE run_id=?",uuid(run));
     if(!kind.equals(owned.getString("kind")) || !businessId.equals(owned.getString("business_id"))) throw conflict("Generation target changed");
-    store.update("UPDATE ontology_agent_runs SET request=request || ?::jsonb WHERE id=?",AgentJson.json(JSONObject.of("agentChannel",true,"input",input)),uuid(run));
+    store.update("UPDATE ontology_agent_runs SET request=request || ?::jsonb WHERE id=?",AgentJson.json(JSONObject.of("agentChannel",true,"input",input,"executionUserId",context.executionUserId(),"classNames",context.access().classNames())),uuid(run));
     if(kind.equals("metric")) definitions.publishMetricView(); else definitions.publishGeneration();
     long deadline=Instant.parse(row.getString("deadline")).toEpochMilli();
     if(context.expiresAt()!=null) deadline=Math.min(deadline,context.expiresAt());
     var definition=kind.equals("metric")?definitions.metricView(context.owner().domainId(),prompt,context.language(),deadline-System.currentTimeMillis()):definitions.generation(context.owner().domainId(),kind,prompt,context.language(),deadline-System.currentTimeMillis());
-    String token=grants.issue(context.owner().userId(),context.owner().domainId(),"ontology-generation",run,deadline,context.access().classNames(),null);
+    String token=grants.issue(context.access().user().getId(),context.owner().domainId(),"ontology-generation",run,deadline,context.access().classNames(),null,JSONObject.of("executionUserId",context.executionUserId(),"initiatorUserId",context.owner().userId()));
     store.transaction(() -> store.gate(session,run,context.owner()));
     return JSONObject.of("language",context.language(),"input",input,"definition",definition,
-      "environment",JSONObject.of("values",JSONObject.of("ONTOMATO_ONTOLOGY_URL",runtime.ontologyUrl(),"ONTOMATO_GENERATION_ID",run,"ONTOMATO_GENERATION_KIND",kind),"secrets",JSONObject.of("ONTOMATO_TK",token)));
+      "environment",JSONObject.of("values",JSONObject.of("ONTOMATO_SKILL_SCENARIO","platform","ONTOMATO_ONTOLOGY_URL",runtime.ontologyUrl(),"ONTOMATO_GENERATION_ID",run,"ONTOMATO_GENERATION_KIND",kind),"secrets",JSONObject.of("ONTOMATO_TK",token)));
   }
   public void settleProvider(String session,String run,Owner owner) throws Exception {
     store.run(session,run,owner);

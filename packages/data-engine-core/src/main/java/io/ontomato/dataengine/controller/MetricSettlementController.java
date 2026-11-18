@@ -21,6 +21,8 @@ public class MetricSettlementController {
   private final QueryAccessService authorization;
   private final MetricSettlementService settlement;
   private final BackendSessionEntrance sessions;
+  @org.springframework.beans.factory.annotation.Autowired
+  private io.ontomato.dataengine.service.agent.OntologyAgentAccess callers;
 
   public MetricSettlementController(WorkbenchServiceAuthentication workbench, QueryAccessService authorization,
       MetricSettlementService settlement, BackendSessionEntrance sessions) {
@@ -34,7 +36,9 @@ public class MetricSettlementController {
   public Object settle(@RequestBody JSONObject body,
       @RequestHeader(value = "Accept-Language", defaultValue = "en") String lang, HttpServletRequest request) {
     workbench.authenticate(request);
-    var access = authorization.access(request);
+    var current = authorization.access(request);
+    String caller = request.getHeader("X-Ontomato-Retrieval-Caller-Id");
+    var access = caller == null ? current : callers.scopedQuery(current,caller);
     if (access.grant() != null)
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Settlement requires the end user credential");
     String session = sessions.beginNewSession(body);

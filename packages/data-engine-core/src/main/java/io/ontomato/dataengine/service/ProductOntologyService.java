@@ -23,7 +23,7 @@ public class ProductOntologyService implements InitializingBean {
         """);}
     public record Registration(String id,String kind,String name,long revision,String targetKind,String targetId,boolean isDefault) {}
     static void validate(Registration value){
-        var targets=Map.of("object-projection","ObjectType","collection-view","Definition","metric-widget","MetricView","action-view","Action","agent-profile","AgentPrincipal");
+        var targets=Map.of("object-projection","ObjectType","collection-view","Definition","metric-widget","MetricView","action-view","Action","agent-profile","AgentDefinition");
         if(value==null||value.id()==null||value.id().isBlank()||value.id().length()>200||value.kind()==null||value.name()==null||value.name().isBlank()||value.name().length()>200||value.revision()<1)throw new IllegalArgumentException("Invalid ontology product identity");
         String target=targets.get(value.kind());
         if(target==null&&!"application".equals(value.kind()))throw new IllegalArgumentException("Composition assets do not enter the ontology graph");

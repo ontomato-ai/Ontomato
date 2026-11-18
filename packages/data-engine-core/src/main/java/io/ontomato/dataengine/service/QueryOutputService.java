@@ -90,7 +90,7 @@ public class QueryOutputService {
         }
       }
       var scope = QueryAccessService.classScope(access.permission(), requested);
-      var authority = PythonAuthority.read(access.user().getId(), access.user().getDomainId()).withClasses(scope).forExecution(id);
+      var authority = PythonAuthority.read(access.user().getId(), access.user().getDomainId()).withExecution(access.executionUserId(),access.initiatorUserId()).withClasses(scope).forExecution(id);
       if (access.grant() != null) authority = authority.withParent(new PythonAuthority.ParentGrant(
           access.credential(), access.grant().getString("runId"), access.grant().getLongValue("expiresAt")));
       int minutes = Math.max(1, (int) (config.get(access.user().getDomainId()).getDslCookerTimeout() / 60000));
@@ -114,7 +114,7 @@ public class QueryOutputService {
     if (classes == null || classes.isEmpty()) return access;
     var selected = access.classNames().isEmpty() ? classes : classes.stream().filter(access.classNames()::contains).toList();
     if (selected.isEmpty()) throw new IllegalArgumentException("No classes remain in the task scope");
-    return new QueryAccessService.Access(access.user(), access.permission(), access.grant(), access.credential(), access.expiresAt(), selected, access.target());
+    return new QueryAccessService.Access(access.user(), access.permission(), access.grant(), access.credential(), access.expiresAt(), selected, access.target(),access.executionUserId(),access.initiatorUserId());
   }
 
   private JSONObject executeBundle(String id, JSONObject recipe, JSONObject bundle, JSONObject parameters,

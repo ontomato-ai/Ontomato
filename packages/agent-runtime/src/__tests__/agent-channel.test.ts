@@ -293,3 +293,32 @@ it("web input after sealing reserves one next intent without preparing against t
   expect(await port.nextLocked(scope,{...run,stopReason:"stop",errorMessage:null})).toBe(next);
   expect(reserve).toHaveBeenCalledTimes(1);
 });
+
+it.each(["steer","followup"])("keeps the run's fixed executor for %s while its actor and credential remain the initiator",async mode=>{
+  const {channel:port}=channel();
+  vi.spyOn(port.facts,"pending").mockResolvedValue([{id:inputId,runId:null,messageSeq:8,contextSeq:null,message:notification}]);
+  vi.spyOn(port.facts,"consume").mockResolvedValue();
+  const prepared=vi.fn(async (_url:unknown,init:NonNullable<Parameters<typeof fetch>[1]>)=>{
+    const body=JSON.parse(String(init.body));
+    expect(body.actor).toEqual(context.actor);
+    expect(body.executionActor).toEqual({userId:"executor",domainId:scope.domainId});
+    expect(body.input.source).toEqual(notification.source);
+    expect(body).not.toHaveProperty("executionCredentials");
+    expect(init.headers).toMatchObject({tk:"initiating-token"});
+    return Response.json({accepted:true});
+  });vi.stubGlobal("fetch",prepared);
+  const fixed={...run,executionUserId:"executor"};
+  await (mode==="steer"?port.steering(scope,fixed):port.followUp(scope,fixed));
+  expect(notification).not.toHaveProperty("executionActor");
+});
+
+it("keeps a selected user equal to the initiator distinct from null self mode",async()=>{
+ const {channel:port}=channel();
+ vi.spyOn(port.facts,"pending").mockResolvedValue([{id:inputId,runId:null,messageSeq:8,contextSeq:null,message:notification}]);
+ vi.spyOn(port.facts,"consume").mockResolvedValue();
+ const actors:unknown[]=[];
+ vi.stubGlobal("fetch",vi.fn(async (_url:unknown,init:NonNullable<Parameters<typeof fetch>[1]>)=>{actors.push(JSON.parse(String(init.body)).executionActor);return Response.json({accepted:true});}));
+ await port.steering(scope,{...run,executionUserId:null});
+ await port.steering(scope,{...run,executionUserId:"initiator-user"});
+ expect(actors).toEqual([null,{userId:"initiator-user",domainId:"a"}]);
+});

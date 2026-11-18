@@ -20,7 +20,7 @@ const ready=ref(false),error=ref('');let generation=0;
 const degraded=ref(false);
 onBeforeUnmount(()=>{generation++;});
 watch(()=>JSON.stringify([props.asset,props.pageState,props.preview]),async()=>{const asset=props.asset;const current=++generation;ready.value=false;degraded.value=false;error.value='';nativeAgentId.value='';sessionId.value=null;if(props.preview)return;try{const metadata=await(await nodeApiRequest(`/api/product-assets/${encodeURIComponent(asset.id)}`)).json();if(current!==generation)return;if(metadata.nativeAgentId){nativeAgentId.value=metadata.nativeAgentId;ready.value=true;return;}const response=await nodeApiRequest(`/api/product-assets/${encodeURIComponent(asset.id)}/active-profile`);const result=await response.json();if(!response.ok)throw new Error(result.error?.message??t('ontology.productProfileUnavailable'));if(result.asset?.revision!==asset.revision)throw new Error(t('ontology.productProfileChanged'));if(current===generation){releaseId.value=result.releaseId;degraded.value=!!result.issues?.length;ready.value=true;}}catch(reason){if(current===generation)error.value=reason instanceof Error?reason.message:String(reason);}},{immediate:true});
-const agent=computed(()=>props.asset.document.kind==='agent-profile'?{id:props.asset.document.principalId,name:props.asset.name,description:props.asset.description,enabled:true,icon:null}:null);
+const agent=computed(()=>props.asset.document.kind==='agent-profile'?{id:props.asset.document.agentId,name:props.asset.name,description:props.asset.description,enabled:true,icon:null}:null);
 const nativeClient=createAssistantClient();
 const client=computed(()=>nativeAgentId.value?nativeClient:productClient);
 </script>

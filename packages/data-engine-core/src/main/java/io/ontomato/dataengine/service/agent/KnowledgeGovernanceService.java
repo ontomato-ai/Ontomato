@@ -28,16 +28,19 @@ public class KnowledgeGovernanceService {
   private final QueryGrantService grants;
   private final KnowledgeService knowledge;
   private final AdminService admin;
+  private final AgentExecutionAccess executions;
   private final ScheduleIdentity identities;
+  private static final Set<String> BUSINESS_ACTIONS=Set.of("read_knowledge","read_ontology","import_knowledge");
+  public static boolean businessAction(String action) {return BUSINESS_ACTIONS.contains(action);}
   @org.springframework.beans.factory.annotation.Autowired
   private io.ontomato.dataengine.service.IdentityService identityService;
   private final Map<String,JSONSchema> schemas = new HashMap<>();
 
   public KnowledgeGovernanceService(OntologyAgentStore store, AgentRuntimeClient runtime,
       GovernanceRuntimeClient platform, OntologyAgentDefinitions definitions, QueryGrantService grants,
-      KnowledgeService knowledge, AdminService admin, ScheduleIdentity identities) {
+      KnowledgeService knowledge, AdminService admin, AgentExecutionAccess executions, ScheduleIdentity identities) {
     this.store=store; this.runtime=runtime; this.platform=platform; this.definitions=definitions;
-    this.grants=grants; this.knowledge=knowledge; this.admin=admin; this.identities=identities;
+    this.grants=grants; this.knowledge=knowledge; this.admin=admin;this.executions=executions;this.identities=identities;
   }
 
   @PostConstruct
@@ -122,16 +125,25 @@ public class KnowledgeGovernanceService {
     return open(id,key,context.owner(),true,null,null,deadline,input.getString("message"));
   }
   public JSONObject registerPlatform(JSONObject input,OntologyAgentAccess.Context context) {
-    AgentJson.fields(input,"recordId","domainId","ownerId","runtimeHostId","sessionId","runId","expiresAt");
+    AgentJson.fields(input,"recordId","domainId","ownerId","runtimeHostId","sessionId","runId","expiresAt","executionActor");
     var owner=context.owner();
     if (!owner.domainId().equals(input.getString("domainId")) || !identities.hostOwner(owner.userId()).equals(input.getString("ownerId"))
         || !"workbench".equals(input.getString("runtimeHostId"))) throw AgentHttpException.missing();
     String id=AgentJson.id(input.getString("recordId")),session=AgentJson.id(input.getString("sessionId")),run=AgentJson.id(input.getString("runId"));
     long deadline=Instant.parse(AgentJson.text(input,"expiresAt")).toEpochMilli();
     if (context.expiresAt()!=null) deadline=Math.min(deadline,context.expiresAt());
+    var reference=input.getJSONObject("executionActor");
+    String selected=null;
+    if(reference!=null) {
+      AgentJson.fields(reference,"userId","domainId");
+      if(!owner.domainId().equals(AgentJson.text(reference,"domainId")))throw new AgentHttpException(403,"CROSS_DOMAIN","Execution user belongs to another domain");
+      selected=executions.require(owner.domainId(),AgentJson.text(reference,"userId")).getId();
+    }
+    String executor=selected==null?owner.userId():selected;
     var result=open(id,run,owner,false,"workbench",session,deadline,null);
-    result.put("token",grants.issue(owner.userId(),owner.domainId(),"knowledge-governance",run,
-      Instant.parse(result.getString("expiresAt")).toEpochMilli(),List.of(),null));
+    result.put("token",grants.issue(executor,owner.domainId(),"knowledge-governance",run,
+      Instant.parse(result.getString("expiresAt")).toEpochMilli(),List.of(),null,
+      JSONObject.of("initiatorUserId",owner.userId(),"executionUserId",selected)));
     return result;
   }
   public void closePlatform(String run,String domain) {
@@ -252,8 +264,16 @@ public class KnowledgeGovernanceService {
     return runtime.json(owner.domainId(),input.getString("runId"),historyPath(input),"GET",null,null);
   }
 
+  public void requireAccess(Owner owner) {
+    if(!identityService.hasKnowledgeGovernanceAccess(owner.userId(),owner.domainId()))
+      throw new AgentHttpException(403,"FORBIDDEN","Business knowledge permission is required");
+  }
   public Object action(String id,String run,String action,JSONObject input,Owner owner) throws Exception {
+    return action(id,run,action,input,owner,owner);
+  }
+  public Object action(String id,String run,String action,JSONObject input,Owner owner,Owner executor) throws Exception {
     validate(action,input);
+    requireAccess(owner);
     requireRun(id,run,owner);
     if(action.equals("read_input")) {
       var row=store.one("SELECT * FROM ontology_governance_windows WHERE record_id=? AND run_id=?",uuid(id),uuid(run));
@@ -274,7 +294,7 @@ public class KnowledgeGovernanceService {
     if(action.equals("import_knowledge")) {
       return store.transaction(()->{
         gate(id,run,owner);
-        return importKnowledge(id,run,input,owner);
+        return importKnowledge(id,run,input,owner,executor);
       });
     }
     if (action.equals("search_history")) {
@@ -285,8 +305,9 @@ public class KnowledgeGovernanceService {
     if (action.equals("read_work_record"))
       return page(List.of(material(id,"Work record",work(id,owner).getJSONObject("work"))),input);
     if (action.equals("read_knowledge") || action.equals("read_ontology")) {
+      requireAccess(executor);
       String kind=action.equals("read_knowledge")?"knowledge":"ontology";
-      var values=originals(kind,owner.domainId());var result=page(values,input);var sources=new ArrayList<JSONObject>();
+      var values=originals(kind,executor.domainId());var result=page(values,input);var sources=new ArrayList<JSONObject>();
       for (var raw:result.getJSONArray("items")) {
         var item=(JSONObject)raw;
         var src=source(kind,item.getString("id"),item.getString("title"),item.getString("text"));
@@ -350,14 +371,14 @@ public class KnowledgeGovernanceService {
     var values=kind.equals("history")?List.of(material(target,source.getString("title"),history(JSON.parseObject(target),owner))):originals(kind,owner.domainId());
     return JSONObject.of("source",source,"page",page(values,JSONObject.of("id",target,"offset",offset)));
   }
-  private Object importKnowledge(String id,String run,JSONObject input,Owner owner) {
-    if(!identityService.hasKnowledgeGovernanceAccess(owner.userId(),owner.domainId()))throw new AgentHttpException(403,"FORBIDDEN","Business knowledge permission is required");
+  private Object importKnowledge(String id,String run,JSONObject input,Owner owner,Owner executor) {
+    requireAccess(executor);
     var identity=new io.ontomato.dataengine.core.bean.User(){
-      public String getId(){return owner.userId();}
-      public String getLoginCode(){return owner.userId();}
-      public String getUserName(){return owner.userId();}
+      public String getId(){return executor.userId();}
+      public String getLoginCode(){return executor.userId();}
+      public String getUserName(){return executor.userId();}
       public boolean isEnable(){return true;}
-      public String getDomainId(){return owner.domainId();}
+      public String getDomainId(){return executor.domainId();}
     };
     var work=work(id,owner).getJSONObject("work");
     var existing=knowledge.getBussinessKnowledge(owner.domainId());

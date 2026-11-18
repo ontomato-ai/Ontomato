@@ -49,7 +49,7 @@ class LiveInstanceGraphPermissionsTest {
         when(identity.getCurrentUserDataPermission()).thenReturn(permission);
         var service = new DataServiceImpl();
         ReflectionTestUtils.setField(service, "liveInstanceGraph", fixture.service);
-        var controller = new DataController();
+        var controller = new DataController(new io.ontomato.dataengine.service.agent.AgentExecutionScope(mock(io.ontomato.dataengine.service.agent.OntologyAgentAccess.class)));
         ReflectionTestUtils.setField(controller, "identityService", identity);
         ReflectionTestUtils.setField(controller, "dataService", service);
         var user = mock(User.class); when(user.getDomainId()).thenReturn("test");

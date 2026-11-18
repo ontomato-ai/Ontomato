@@ -7,6 +7,7 @@ const [command, arg] = process.argv.slice(2),
   platform = process.env.ONTOMATO_SKILL_SCENARIO === "platform",
   stateFile = platform ? "work/.governance-platform-window.json" : "work/.governance-run.json";
 const headers = {
+  ...(process.env.ONTOMATO_EXECUTION_CALLBACK ? { "X-Ontomato-Callback-Credential": process.env.ONTOMATO_EXECUTION_CALLBACK, "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID } : {}),
   "content-type": "application/json",
   tk: process.env.ONTOMATO_GOVERNANCE_TK ?? process.env.ONTOMATO_TK ?? "",
   "X-API-Key": process.env.ONTOMATO_API_KEY ?? "",

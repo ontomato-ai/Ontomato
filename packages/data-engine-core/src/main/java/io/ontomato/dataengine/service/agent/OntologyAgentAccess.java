@@ -32,7 +32,13 @@ public class OntologyAgentAccess {
       String apiKey,
       String language,
       Long expiresAt,
-      String callerId) {}
+      String callerId,
+      String executionUserId) {
+    public Context(OntologyAgentStore.Owner owner, QueryAccessService.Access access, String token, String apiKey,
+        String language, Long expiresAt, String callerId) {
+      this(owner, access, token, apiKey, language, expiresAt, callerId, null);
+    }
+  }
 
   public Context governance(HttpServletRequest request) {
     var context = authenticated(request);
@@ -70,23 +76,43 @@ public class OntologyAgentAccess {
     if (access.grant() != null && !"retrieval-exploration".equals(access.grant().getString("purpose")))
       throw new AgentHttpException(403, "FORBIDDEN", "A current user credential is required");
     String caller = request.getHeader("X-Ontomato-Retrieval-Caller-Id");
-    return new Context(
-        new OntologyAgentStore.Owner(access.user().getId(), access.user().getDomainId()),
-        access,
-        request.getHeader("tk"),
-        request.getHeader("X-API-Key"),
+    String initiator = access.initiatorUserId() == null ? access.user().getId() : access.initiatorUserId();
+    return new Context(new OntologyAgentStore.Owner(initiator,access.user().getDomainId()),access,
+        request.getHeader("tk"),request.getHeader("X-API-Key"),
         request.getHeader("Accept-Language") == null ? "en" : request.getHeader("Accept-Language"),
-        access.expiresAt(),
-        caller == null ? null : AgentJson.id(caller));
+        access.expiresAt(),caller==null?null:AgentJson.id(caller),access.executionUserId());
+  }
+
+  /** Retrieval operations consume an existing caller; ordinary authentication only captures its reference. */
+  public Context executionContext(HttpServletRequest request) {
+    var context=current(request);
+    if(context.callerId()==null)return context;
+    var row=executionCaller(context.access(),context.callerId());
+    if(!row.getString("user_id").equals(context.access().user().getId()))service(request);
+    var scoped=scopedQuery(context.access(),row).withExecution(row.getJSONObject("input").getString("executionUserId"),row.getString("user_id"));
+    return new Context(OntologyAgentStore.owner(row),scoped,context.token(),context.apiKey(),context.language(),
+        scoped.expiresAt(),context.callerId(),row.getJSONObject("input").getString("executionUserId"));
+  }
+
+  private JSONObject executionCaller(QueryAccessService.Access access, String callerId) {
+    var row = store.serviceCaller(AgentJson.id(callerId), access.user().getDomainId());
+    String executor = row.getJSONObject("input").getString("executionUserId");
+    if (!access.user().getId().equals(executor == null ? row.getString("user_id") : executor))
+      throw new AgentHttpException(403, "FORBIDDEN", "Caller belongs to another execution user");
+    return row;
   }
 
   /** Reuses the existing caller scope for assistant metadata and direct query commands. */
   public QueryAccessService.Access scopedQuery(QueryAccessService.Access access, String callerId) {
-    var owner = new OntologyAgentStore.Owner(access.user().getId(), access.user().getDomainId());
-    var caller = store.caller(AgentJson.id(callerId), owner, false);
+    return scopedQuery(access,executionCaller(access,callerId));
+  }
+  private QueryAccessService.Access scopedQuery(QueryAccessService.Access access,JSONObject caller) {
     if (caller.getBooleanValue("closed")) throw new AgentHttpException(409, "RETRIEVAL_RUN_CLOSED", "Caller is closed");
+    long deadline=java.time.Instant.parse(caller.getString("deadline")).toEpochMilli();
+    if(deadline<=System.currentTimeMillis())throw new AgentHttpException(403,"CALLER_EXPIRED","Caller has expired");
     return new QueryAccessService.Access(access.user(), access.permission(), access.grant(), access.credential(),
-        access.expiresAt(), caller.getJSONObject("input").getList("classNames", String.class));
+        access.expiresAt()==null?deadline:Math.min(access.expiresAt(),deadline), caller.getJSONObject("input").getList("classNames", String.class), access.target(),
+        caller.getJSONObject("input").getString("executionUserId"), access.initiatorUserId()==null?access.user().getId():access.initiatorUserId());
   }
 
   public String exploration(

@@ -43,9 +43,11 @@ export function callbackCredential(input: z.infer<typeof claimsSchema>) {
       ),
   };
 }
+export interface RuntimeCallback { runId: string; businessGrant?: string }
+
 /** Installed before ordinary authentication, which still verifies the delegated user. */
 export const unwrapCallbackCredential: RequestHandler = (req, res, next) => {
-  const auth = typeof req.headers.tk === "string" ? req.headers.tk : "";
+  const auth = req.header("X-Ontomato-Callback-Credential") ?? (typeof req.headers.tk === "string" ? req.headers.tk : "");
   if (!auth.startsWith("wbc1.")) return next();
   try {
     const bytes = Buffer.from(auth.slice("wbc1.".length), "base64url"),
@@ -66,7 +68,8 @@ export const unwrapCallbackCredential: RequestHandler = (req, res, next) => {
       req.header("X-Ontomato-Run-Id") !== claims.runId
     )
       throw new Error("Wrong callback scope");
-    res.locals.runtimeCallback = { runId: claims.runId };
+    res.locals.runtimeCallback = {runId:claims.runId, ...(req.header("tk")?.startsWith("oq.") ? {businessGrant:req.header("tk")} : {})};
+    delete req.headers["x-ontomato-callback-credential"];
     delete req.headers.authorization;
     delete req.headers.tk;
     delete req.headers["x-api-key"];

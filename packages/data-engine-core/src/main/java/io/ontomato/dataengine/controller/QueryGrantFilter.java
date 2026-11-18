@@ -18,6 +18,8 @@ import org.springframework.web.server.ResponseStatusException;
 @Order(-200)
 public class QueryGrantFilter extends OncePerRequestFilter {
   private final QueryGrantService grants;
+  @org.springframework.beans.factory.annotation.Autowired
+  private io.ontomato.dataengine.service.agent.AgentExecutionAccess executions;
 
   public QueryGrantFilter(QueryGrantService grants) {
     this.grants = grants;
@@ -30,12 +32,14 @@ public class QueryGrantFilter extends OncePerRequestFilter {
     String authorization = request.getHeader("tk");
     if (authorization != null && authorization.startsWith("oq.")) {
       try {
-        request.setAttribute(
-            QueryGrantService.ATTRIBUTE,
-            grants.verify(
-                authorization,
-                request.getHeader("X-Ontomato-Run-Id"),
-                request.getRequestURI()));
+        var claims=grants.verify(authorization,request.getHeader("X-Ontomato-Run-Id"),request.getRequestURI());
+        if(claims.getString("executionUserId")!=null && (!"knowledge-governance".equals(claims.getString("purpose")) || io.ontomato.dataengine.service.agent.KnowledgeGovernanceService.businessAction(request.getRequestURI().substring(request.getRequestURI().lastIndexOf('/')+1))))
+          executions.require(claims.getString("domainId"),claims.getString("userId"));
+        request.setAttribute(QueryGrantService.ATTRIBUTE,claims);
+      } catch (io.ontomato.dataengine.service.agent.AgentHttpException e) {
+        response.setStatus(e.status());response.setContentType("application/json");
+        response.getWriter().write(JSON.toJSONString(Map.of("error",Map.of("code",e.code(),"message",e.getMessage()))));
+        return;
       } catch (ResponseStatusException e) {
         response.setStatus(e.getStatusCode().value());
         response.setContentType("application/json");

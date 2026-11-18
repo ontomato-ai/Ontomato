@@ -70,12 +70,12 @@ describe("old admin addresses in the workbench", () => {
   it("the console's pages redirect into the function area instead of rendering a page", async () => {
     const cases: Array<[string, string]> = [
       ["/admin", "/agents/chat"],
-      ["/admin/analysis", "/agents/settings"],
-      ["/admin/system-agents", "/agents/settings"],
-      ["/admin/skills", "/agents/settings/skills"],
-      ["/admin/skills/analysis", "/agents/settings/skills"],
-      ["/admin/skills/visualization", "/agents/settings/skills"],
-      ["/admin/mcp-service", "/agents/settings/mcp"],
+      ["/admin/analysis", "/ontology/agents"],
+      ["/admin/system-agents", "/ontology/agents"],
+      ["/admin/skills", "/ontology/skills"],
+      ["/admin/skills/analysis", "/ontology/skills"],
+      ["/admin/skills/visualization", "/ontology/skills"],
+      ["/admin/mcp-service", "/settings/external-mcp"],
       ["/admin/system-config", "/agents/chat"],
       ["/admin/feedback-records", "/agents/chat"],
     ];
@@ -91,17 +91,17 @@ describe("old admin addresses in the workbench", () => {
       history: createMemoryHistory(),
       routes: [
         { path: "/chat", component: { render: () => null } },
-        ...["/agents/settings", "/agents/settings/skills", "/agents/settings/mcp", "/agents/settings/:agentId"].map((path) => ({
+        ...["/ontology/agents", "/ontology/skills", "/settings/external-mcp", "/ontology/agents/:agentId"].map((path) => ({
           path, component: { render: () => null },
         })),
         ...Object.values(legacyAdminRoutes),
       ],
     });
-    for (const [path, destination] of [["/admin/skills", "/agents/settings/skills"], ["/admin/mcp-service", "/agents/settings/mcp"]] as const) {
+    for (const [path, destination] of [["/admin/skills", "/ontology/skills"], ["/admin/mcp-service", "/settings/external-mcp"]] as const) {
       await router.push(path);
       expect(router.currentRoute.value.path, path).toBe(destination);
     }
     await router.push("/admin/analysis");
-    expect(router.currentRoute.value.path).toBe("/agents/settings");
+    expect(router.currentRoute.value.path).toBe("/ontology/agents");
   });
 });

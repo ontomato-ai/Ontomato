@@ -1,4 +1,6 @@
-package io.ontomato.dataengine.schedules;
+package io.ontomato.dataengine.service.identity;
+
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import io.ontomato.dataengine.core.bean.User;
 import java.nio.charset.StandardCharsets;
@@ -15,17 +17,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-public class TaskCredentials {
+public class UserCredentials {
   private static final SecureRandom RANDOM = new SecureRandom();
-  private final TaskStore store;
-  private final ScheduleIdentity identity;
+  private final JdbcTemplate db;
+  private final UserCredentialIdentity identity;
   private final String secret;
 
-  public TaskCredentials(
-      TaskStore store,
-      ScheduleIdentity identity,
+  public UserCredentials(
+      JdbcTemplate db,
+      UserCredentialIdentity identity,
       @Value("${AGENT_RUNTIME_ONTOLOGY_TOKEN:}") String secret) {
-    this.store = store;
+    this.db = db;
     this.identity = identity;
     this.secret = secret;
   }
@@ -41,7 +43,7 @@ public class TaskCredentials {
     return cipher;
   }
 
-  static String seal(String key, String secret) {
+  public static String seal(String key, String secret) {
     if (key == null) return null;
     try {
       byte[] nonce = new byte[12];
@@ -68,9 +70,8 @@ public class TaskCredentials {
         StandardCharsets.UTF_8);
   }
 
-  void lockOwner(String domain, String owner) {
-    store
-        .jdbc()
+  public void lockOwner(String domain, String owner) {
+    db
         .query(
             "SELECT pg_advisory_xact_lock(hashtextextended(?,0))", r -> {}, domain + "/" + owner);
   }
@@ -79,8 +80,7 @@ public class TaskCredentials {
   public void prepare(User user, boolean onlyRenew) {
     lockOwner(user.getDomainId(), user.getId());
     var states =
-        store
-            .jdbc()
+        db
             .queryForList(
                 "SELECT valid FROM platform_task_credential WHERE domain_id=? AND creator_id=?",
                 Boolean.class,
@@ -89,10 +89,13 @@ public class TaskCredentials {
     if (states.contains(true) || (onlyRenew && (states.isEmpty() || !identity.interactiveLogin())))
       return;
     if (!identity.interactiveLogin())
-      throw new ScheduleException(403, "INTERACTIVE_LOGIN_REQUIRED", "A login session is required");
+      throw new io.ontomato.dataengine.service.agent.AgentHttpException(403, "INTERACTIVE_LOGIN_REQUIRED", "A login session is required");
+    issueAndStore(user);
+  }
+
+  private void issueAndStore(User user) {
     var sealed = seal(identity.issueKey(user), secret);
-    store
-        .jdbc()
+    db
         .update(
             """
 INSERT INTO platform_task_credential VALUES(?,?,?,true)
@@ -102,7 +105,23 @@ ON CONFLICT(domain_id,creator_id) DO UPDATE SET valid=true,sealed_key=EXCLUDED.s
             sealed);
   }
 
-  public static class Invalid extends RuntimeException {}
+  /** An explicit administrator save may prepare a missing or rejected key; reads never renew one. */
+  @Transactional(noRollbackFor = Invalid.class)
+  public void prepareForExecutionSetting(User user) {
+    lockOwner(user.getDomainId(), user.getId());
+    var rows = db.queryForList(
+        "SELECT sealed_key FROM platform_task_credential WHERE domain_id=? AND creator_id=? AND valid",
+        String.class, user.getDomainId(), user.getId());
+    if (!rows.isEmpty()) {
+      String key = storedKey(user.getDomainId(), user.getId(), rows.getFirst());
+      if (identity.accepts(key, user.getDomainId(), user.getId())) return;
+    }
+    issueAndStore(user);
+  }
+
+  public static class Invalid extends io.ontomato.dataengine.service.agent.AgentHttpException {
+    public Invalid() { super(409, "EXECUTION_CREDENTIAL_INVALID", "The user background credential is missing or invalid"); }
+  }
 
   @Transactional
   public void prepareForSetup(User user) {
@@ -119,8 +138,7 @@ ON CONFLICT(domain_id,creator_id) DO UPDATE SET valid=true,sealed_key=EXCLUDED.s
 
   public void invalidate(String domain, String creator, String rejectedKey) {
     var rows =
-        store
-            .jdbc()
+        db
             .queryForList(
                 "SELECT sealed_key FROM platform_task_credential WHERE domain_id=? AND creator_id=?"
                     + " AND valid",
@@ -134,8 +152,7 @@ ON CONFLICT(domain_id,creator_id) DO UPDATE SET valid=true,sealed_key=EXCLUDED.s
     } catch (GeneralSecurityException | IllegalArgumentException unreadable) {
       return;
     }
-    store
-        .jdbc()
+    db
         .update(
             "UPDATE platform_task_credential SET valid=false WHERE domain_id=? AND creator_id=? AND"
                 + " sealed_key IS NOT DISTINCT FROM ?",
@@ -146,8 +163,7 @@ ON CONFLICT(domain_id,creator_id) DO UPDATE SET valid=true,sealed_key=EXCLUDED.s
 
   public String forOwner(String domain, String owner) {
     var rows =
-        store
-            .jdbc()
+        db
             .queryForList(
                 "SELECT sealed_key FROM platform_task_credential WHERE domain_id=? AND creator_id=?"
                     + " AND valid",
@@ -156,22 +172,25 @@ ON CONFLICT(domain_id,creator_id) DO UPDATE SET valid=true,sealed_key=EXCLUDED.s
                 owner);
     if (rows.isEmpty()) throw new Invalid();
     String sealed = rows.getFirst();
-    String key = null;
-    boolean readable = true;
-    try {
-      key = open(sealed);
-    } catch (GeneralSecurityException | IllegalArgumentException e) {
-      readable = false;
-    }
-    if (readable && identity.accepts(key, domain, owner)) return key;
-    store
-        .jdbc()
-        .update(
-            "UPDATE platform_task_credential SET valid=false WHERE domain_id=? AND creator_id=? AND"
-                + " sealed_key IS NOT DISTINCT FROM ?",
-            domain,
-            owner,
-            sealed);
+    String key = storedKey(domain, owner, sealed);
+    if (identity.accepts(key, domain, owner)) return key;
+    markInvalid(domain, owner, sealed);
     throw new Invalid();
+  }
+
+  private String storedKey(String domain, String owner, String sealed) {
+    try {
+      return open(sealed);
+    } catch (GeneralSecurityException | IllegalArgumentException unreadable) {
+      markInvalid(domain, owner, sealed);
+      throw new Invalid();
+    }
+  }
+
+  private void markInvalid(String domain, String owner, String sealed) {
+    db.update(
+        "UPDATE platform_task_credential SET valid=false WHERE domain_id=? AND creator_id=? AND"
+            + " sealed_key IS NOT DISTINCT FROM ?",
+        domain, owner, sealed);
   }
 }

@@ -1,3 +1,4 @@
+import { ensureAgentExecutionSchema } from "./20261117-agent-execution/schema";
 import { ensureProductAssetsSchema } from "./20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "./20261118-product-panels/schema";
 import { ensureWorkspacesSchema } from "./20261109-workspaces/schema";
@@ -103,6 +104,7 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
   { directory: "20261103-platform-events", ensureSchema: ensurePlatformEventCursorSchema },
   { directory: "20261029-ops-diagnosis", ensureSchema: ensureOpsDiagnosisSchema },
   { directory: "20261028-assistant", ensureSchema: ensureAssistantSchema },
+  { directory: "20261117-agent-execution", ensureSchema: ensureAgentExecutionSchema },
   { directory: "20261109-workspaces", ensureSchema: ensureWorkspacesSchema },
   { directory: "20261111-platform-home", ensureSchema: ensurePlatformHomeSchema },
   {

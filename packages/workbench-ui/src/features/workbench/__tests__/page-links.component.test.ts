@@ -89,7 +89,7 @@ async function openAt(): Promise<Router> {
       [ontologyServiceAccessKey as symbol]: openOntologyServiceAccess,
       [platformPageAccessKey as symbol]: () => true,
       // The assembly's own pages beside the conversation: a board and a governance report, and no others.
-      [pilotPageKey as symbol]: (address: string) =>
+      [pilotPageKey as symbol]: () => (address: string) =>
         address.startsWith("/dashboards") || address.startsWith("/governance/reports/")
           ? { id: "page", component: defineComponent({ render: () => h("div") }), props: {} }
           : null,
