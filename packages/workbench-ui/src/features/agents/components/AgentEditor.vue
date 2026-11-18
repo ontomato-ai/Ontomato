@@ -84,25 +84,38 @@ function toForm(agent: AssistantAgentDefinition | null): Form {
   };
 }
 
-/** A draft's form is the page's own save request, so it fills the same fields a read agent does. */
+/**
+ * A draft's form is the page's own save request, so it fills the same fields a read agent does, as a save would store
+ * them: once saved, the same draft reads as the agent it saved rather than as a change.
+ */
 function fromInput(input: AssistantAgentInput): Form {
   const avatar = agentAvatar(input.icon);
   return {
-    name: input.name,
+    // The save trims the name.
+    name: input.name.trim(),
     description: input.description,
     avatarKey: avatar.key,
     avatarColor: avatarSwatch(avatar.color).light,
     enabled: input.enabled,
     systemPrompt: input.systemPrompt,
     modelId: input.modelSelection.modelId,
-    // A draft may name a domain skill without its id, which the server fills in: the selector compares the reference it
-    // was given either way.
-    skills: [...(input.skills as RuntimeSkillRef[])],
+    skills: input.skills.map(heldSkill),
     classNames: [...input.classNames],
     mcpServiceIds: [...input.enabledMcpServiceIds],
     // An update that omits the field keeps what the owner stores; a draft that names one fills it.
     executionUserId: input.executionUserId === undefined ? (props.agent?.executionUserId ?? null) : input.executionUserId,
   };
+}
+
+/**
+ * A draft may name a domain skill without its id, and the owner stores it under the agent's own domain: a domain skill the
+ * agent already holds by that name is that skill. One the agent does not hold keeps the reference the draft gave, which
+ * the selector shows as it is.
+ */
+function heldSkill(skill: AssistantAgentInput["skills"][number]): RuntimeSkillRef {
+  if (skill.namespace.kind === "domain" && skill.namespace.domainId === undefined)
+    return props.agent?.skills.find((held) => held.namespace.kind === "domain" && held.name === skill.name) ?? (skill as RuntimeSkillRef);
+  return skill as RuntimeSkillRef;
 }
 
 const form = ref<Form>(toForm(props.agent));
@@ -163,9 +176,13 @@ if (link) {
       // The target id is the owner's opaque id; this page's objects are agents, so the page checks its format here.
       if (draft.operation === "agent.update" && (draft.target.id !== props.agent?.id || !z.string().uuid().safeParse(draft.target.id).success))
         throw new Error(t("agents.draftOtherAgent"));
-      if (dirty.value && !(await leaving.confirm())) return;
       const filled = fromInput(assistantAgentInputSchema.parse(draft.form));
-      changed.value = changedFields(toForm(props.agent), filled);
+      const changes = changedFields(toForm(props.agent), filled);
+      // A draft that changes nothing is no draft (the same link after its draft was saved): the page stays as the agent
+      // is, and the reader's own edits are left alone without asking.
+      if (!changes.size) return;
+      if (dirty.value && !(await leaving.confirm())) return;
+      changed.value = changes;
       baseline.value = JSON.stringify(toForm(props.agent));
       form.value = filled;
       // A draft that changes whose permissions the agent runs with is the administrator's to save; the field shows what
