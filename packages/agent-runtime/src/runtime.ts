@@ -94,7 +94,7 @@ function presentationTool(runId: string, callback: RuntimePresentationCallback):
   return {
     name: "present",
     label: "Present",
-    description: "Show an outputs/ artifact or a registered site-relative page in the user's current conversation display. Optional state applies only to a page and must not duplicate the state query. The result reports what the view actually showed at the time of the receipt. An opened target may still be loading or showing an error.",
+    description: "Show an outputs/ artifact or a registered site-relative page in the user's current conversation display. Optional state applies only to a page and must not duplicate the state query. The result reports what the view actually showed at the time of the receipt. An opened target may still be loading or showing an error. This display is temporary and is not saved in the page address or restored on refresh or when reopening the conversation. The user can open it again from a card or link.",
     parameters: Type.Object({
       target: Type.String(),
       state: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
