@@ -3,7 +3,7 @@ import { applicationPanelUsesResponseSchema, productPanelSchema, type ProductPan
 import { appsSdkCurrentSchema } from "@ontomato/contracts/apps-sdk";
 import type { ProductSubscriptionEvent } from "@ontomato/contracts/product-subscriptions";
 import { registerPanelFrame } from "./app-host";
-import type { DefinitionChanged, DefinitionTarget, PanelHostPort } from "@ontomato/platform-shell";
+import type { DefinitionChanged, PanelHostPort } from "@ontomato/platform-shell";
 
 /*
  * The platform's panel host (overall design 3.4): the two reads a panel instance needs and the notices it listens to.
@@ -56,7 +56,7 @@ export function platformPanelHost(applicationId: string): PanelHostPort {
     // its `connect`, and what keeps a frame of another application from being mistaken for this one. What it may ask for
     // is what the panel's record declares, for this use relation's page.
     frame: (frame, use, panel) => registerPanelFrame(frame, applicationId, { pageKey: use.pageKey, manifest: panel.manifest }),
-    subscribe: (targets, listener) => subscribeProductDefinitions(targets, listener),
+    subscribe: (panelId, listener) => subscribePanelDefinition(panelId, listener),
   };
 }
 
@@ -66,50 +66,37 @@ export async function panelUsesOf(applicationId: string) {
   return applicationPanelUsesResponseSchema.parse(answer.data ?? answer).panelUses;
 }
 
-/**
- * Opens one product subscription per definition in view — the panel the page shows and every projection it declares —
- * and hears each event's identity. A target that joins the view later is subscribed then; the returned function stops
- * them all. This reuses the product client's own subscribe/poll protocol rather than a second one.
- */
-function subscribeProductDefinitions(
-  targets: readonly DefinitionTarget[],
-  listener: (event: DefinitionChanged) => void,
-): () => void {
-  const stops = new Map<string, () => void>();
+/** The subscription owner resolves this panel's current projection definitions. */
+function subscribePanelDefinition(panelId: string, listener: (event: DefinitionChanged) => void): () => void {
   let stopped = false;
-  async function watch(target: DefinitionTarget) {
-    const key = `${target.kind}:${target.id}`;
-    if (stopped || stops.has(key)) return;
+  let id: string | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  async function watch() {
     const answer = await json(panelHostPaths.subscriptions, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "product-definition", target }),
+      body: JSON.stringify({ kind: "product-definition", target: { kind: "panel", id: panelId } }),
     });
     if (stopped) {
-      void stopSubscription(answer.id);
+      await stopSubscription(answer.id);
       return;
     }
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    id = answer.id;
     const poll = async () => {
-      if (stopped) return;
       const body = await json(panelHostPaths.subscription(answer.id));
+      if (stopped) return;
       for (const event of body.events as ProductSubscriptionEvent[]) {
-        if (event.kind !== "definition-changed") continue;
-        listener({ kind: "definition-changed", domainId: event.domainId, target: event.target });
+        if (event.kind === "definition-changed") listener(event);
       }
       timer = setTimeout(() => void poll(), answer.intervalMs);
     };
     timer = setTimeout(() => void poll(), answer.intervalMs);
-    stops.set(key, () => {
-      clearTimeout(timer);
-      void stopSubscription(answer.id);
-    });
   }
-  for (const target of targets) void watch(target);
+  void watch();
   return () => {
     stopped = true;
-    for (const stop of stops.values()) stop();
-    stops.clear();
+    clearTimeout(timer);
+    if (id) void stopSubscription(id);
   };
 }
 

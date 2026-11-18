@@ -225,6 +225,18 @@ describe("the board belongs to the page it is mounted on", () => {
     expect(boardShown()).toBe("board-a");
   });
 
+  it("puts its own composer at the page's foot, under the part that scrolls", async () => {
+    const router = await routerAt("/dashboards", { dashboardId: "board-a" });
+    const standalone = mount(DashboardsPage, { global: { plugins: [workbenchI18n(), ElementPlus, router], provide: provide(router) } });
+    wrappers.push(standalone);
+    await flushPromises();
+
+    // The composer is the page's foot, not the scrolled body's last line: the room under it is the one value the
+    // conversation's composer has too, with no page padding added to it.
+    expect(standalone.find(".app-page-foot .page-ask").exists()).toBe(true);
+    expect(standalone.find(".app-page-body .page-ask").exists()).toBe(false);
+  });
+
   it("from its own address back beside the conversation, a board change moves the page parameter again", async () => {
     const router = await routerAt("/dashboards", { dashboardId: "board-a" });
     const standalone = mount(DashboardsPage, { global: { plugins: [workbenchI18n(), ElementPlus, router], provide: provide(router) } });

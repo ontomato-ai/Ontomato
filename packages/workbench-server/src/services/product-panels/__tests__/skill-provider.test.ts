@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { panelManifestSchema } from "@ontomato/contracts/panel-manifest";
 import type { ApplicationPanelUse, PanelSkillSource } from "@ontomato/contracts/product-panels";
 import { components } from "../../../../../apps-sdk/src/catalogue";
 import { installContentLayout } from "../../../content/layout";
@@ -75,12 +76,17 @@ it("uses the three Java member refs and reads only the verified domain and servi
   const offerings = await panelSkillProvider.list({ domainId });
   expect(offerings.map(offering => offering.skill)).toEqual(pageNames.map(skill));
   expect(offerings.map(offering => offering.manifest.description)).toEqual([
-    `Read, open, and draft for ${trial.panels[0]!.name}.`,
-    `Read, open, and draft for ${trial.panels[0]!.name}.`,
-    `Read, open, and draft for ${trial.panels[1]!.name}.`,
+    `Read current data, open the panel, draft changes, and review declared operations for ${trial.panels[0]!.name}.`,
+    `Read current data, open the panel, draft changes, and review declared operations for ${trial.panels[0]!.name}.`,
+    `Read current data and open the panel for ${trial.panels[1]!.name}.`,
   ]);
   expect(await panelSkillProvider.list({ domainId: "another-domain" })).toEqual([]);
-  expect(vi.mocked(findCurrentProduct).mock.calls).toEqual(trial.panels.map(panel => [domainId, "panel", panel.id]));
+  const reads = vi.mocked(findCurrentProduct).mock.calls;
+  expect(reads).toHaveLength(trial.panels.length + trial.projections.length);
+  expect(reads).toEqual(expect.arrayContaining([
+    ...trial.panels.map(panel => [domainId, "panel", panel.id]),
+    ...trial.projections.map(projection => [domainId, "projection", projection.id]),
+  ]));
   expect(backendGet).toHaveBeenNthCalledWith(1, "panel-skill-sources",
     "http://java.test/platform/applications/panel-skill-sources?domainId=trial-domain",
     { headers: { "X-Ontomato-Query-Service-Token": "fixture-platform-service" }, retries: 1 });
@@ -92,7 +98,9 @@ it("assembles one current package for a shared menu with a section per use and t
   const offerings = await panelSkillProvider.list({ domainId });
   expect(offerings.map(offering => offering.skill)).toEqual([ref]);
   const [offering] = offerings;
-  expect(offering!.manifest.description).toBe(`Read, open, and draft for ${trial.panels[0]!.name}, ${trial.panels[1]!.name}.`);
+  expect(offering!.manifest.description).toBe(
+    `Read current data, open the panels, draft changes, and review declared operations for ${trial.panels[0]!.name}, ${trial.panels[1]!.name}.`,
+  );
   const panel = panels.get(uses[0]!.panelId)!;
   const originalName = panel.name;
   panel.name = "Renamed independently of the locator";
@@ -101,7 +109,7 @@ it("assembles one current package for a shared menu with a section per use and t
     expect(pkg.skill).toEqual(ref);
     const markdown = pkg.files[0]!.content;
     expect(parseSkillMarkdown(markdown)?.manifest).toEqual(offering!.manifest);
-    expect(markdown).toContain(panel.name);
+    expect(markdown).toContain(originalName);
     expect(markdown).toContain(trial.panels[1]!.name);
     expect(markdown).toContain(await readFile(new URL("p/recipes.md", example), "utf8"));
     expect(markdown).toContain("/applications/app-panels-trial-a/tasks");
@@ -125,8 +133,43 @@ it("assembles one current package for a shared menu with a section per use and t
     const [renamed] = await panelSkillProvider.list({ domainId });
     expect(renamed!.skill).toEqual(ref);
     expect(renamed!.manifest.description).toContain(panel.name);
+    const updatedMarkdown = (await renamed!.provide()).files[0]!.content;
+    expect(updatedMarkdown).toContain(`## ${panel.name}`);
+    expect(parseSkillMarkdown(updatedMarkdown)?.manifest).toEqual(renamed!.manifest);
     expect(findCurrentProduct).toHaveBeenCalledWith(domainId, "panel", uses[0]!.panelId);
   } finally {
     panel.name = originalName;
+  }
+});
+
+it("advertises only reading and opening for B's summary skill", async () => {
+  javaSources([memberSources[2]!]);
+  const [offering] = await panelSkillProvider.list({ domainId });
+  expect(offering!.manifest.description).toBe(`Read current data and open the panel for ${trial.panels[1]!.name}.`);
+  const { files } = await offering!.provide();
+  const markdown = files[0]!.content;
+  expect(parseSkillMarkdown(markdown)?.manifest).toEqual(offering!.manifest);
+  expect(markdown).toContain("### Read current data");
+  expect(markdown).toContain("### Open the panel");
+  expect(markdown).toContain("No operations.");
+  expect(markdown).not.toContain("### Draft a change");
+  expect(markdown).not.toContain("### Recipes");
+});
+
+it("advertises a declared operation without promising a draft when there is no form", async () => {
+  javaSources([memberSources[0]!]);
+  const panel = panels.get(uses[0]!.panelId)!;
+  const original = panel.manifest;
+  const manifest = panelManifestSchema.parse(original);
+  panel.manifest = { ...manifest, slots: { run: manifest.slots.run! } };
+  try {
+    const [offering] = await panelSkillProvider.list({ domainId });
+    expect(offering!.manifest.description).toBe(`Open the panel and review declared operations for ${panel.name}.`);
+    const markdown = (await offering!.provide()).files[0]!.content;
+    expect(markdown).toContain("handlerRef schedules.runNow");
+    expect(markdown).not.toContain("### Draft a change");
+    expect(markdown).not.toContain("### Read current data");
+  } finally {
+    panel.manifest = original;
   }
 });

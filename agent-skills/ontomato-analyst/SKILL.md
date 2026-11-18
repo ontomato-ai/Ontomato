@@ -130,7 +130,12 @@ follow [the reference entry guide](references/dsl.md) and fetch the rules for th
 actual classes; the Java service owns the grammar. The retriever does this orchestration
 for natural-language questions. It can take several minutes.
 
-An `answer` is data, not permission to claim complete coverage. Preserve `truncated`,
+An `answer` is data, not permission to claim complete coverage. The platform always
+filters data according to current permissions; the retriever cannot see specific
+filter conditions. When describing result scope, use "within the current permission scope"
+(or in the response language, such as "当前权限范围内"); never assert all records
+across the domain or that there are no scope restrictions. Distinguish "all" from
+all visible results within the current permission scope. Preserve `truncated`,
 `rowLimit` and `truncationHint`, including an empty partial result. Null, false and
 zero are distinct values. Missing relationships/fields are ontology gaps; do not
 invent joins or request elevated credentials to force a result. Report the business

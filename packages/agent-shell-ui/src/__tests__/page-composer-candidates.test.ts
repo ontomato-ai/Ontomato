@@ -30,8 +30,8 @@ vi.mock("../components/AgentPicker.vue", () => ({
  */
 const labels = {
   placeholder: "Ask", send: "Send", stop: "Stop", agent: "Agent",
-  pageAgentUnavailable: "This page's agent is unavailable",
-} as Pick<ShellLabels, "placeholder" | "send" | "stop" | "agent" | "pageAgentUnavailable">;
+  pageAgentUnavailable: "This page's agent is unavailable", collapseComposer: "Hide", expandComposer: "Ask about this page",
+} as Pick<ShellLabels, "placeholder" | "send" | "stop" | "agent" | "pageAgentUnavailable" | "collapseComposer" | "expandComposer">;
 
 const agent = (id: string, name: string): AgentHostAgent => ({ id, name, description: "", icon: null, enabled: true });
 const dashboardSkill: AgentPageQuery = { pageKey: "dashboard", access: "domain-member" };
@@ -100,14 +100,13 @@ it("starts from the platform's own agent for a page that registered no default",
   expect(drawn.shown().agentId).toBe("assistant");
 });
 
-it("is the page's one-row composer: the agent on its row, and not opened until the message needs it", async () => {
+it("is the page's floating composer: the agent in its upper layer, beside the fold", async () => {
   const drawn = draw({ pageAgents: async () => ({ agents: [agent("assistant", "Assistant")], defaultAgentId: "assistant" }) });
   await new Promise((resolve) => setTimeout(resolve));
 
-  // A page keeps its room: the composer at its foot starts as one row, with the agent chooser on that row.
-  expect(drawn.root.querySelector(".page-ask .composer")).not.toBeNull();
-  expect(drawn.root.querySelector(".page-ask .composer.open")).toBeNull();
-  expect(drawn.root.querySelector(".page-ask .composer .composer-agent .picker")).not.toBeNull();
+  // A page keeps its room: the composer floats over it, its agent chooser above the one line it is written in.
+  expect(drawn.root.querySelector(".page-ask .composer.floating")).not.toBeNull();
+  expect(drawn.root.querySelector(".page-ask .composer-bar .composer-agent .picker")).not.toBeNull();
 });
 
 it("offers every agent to a page without a skill, and keeps the remembered one", async () => {

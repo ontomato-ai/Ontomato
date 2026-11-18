@@ -38,6 +38,8 @@ const props = withDefaults(defineProps<{
    * so it offers neither.
    */
   panelConfirmation?: { sessionId: string; confirmBeforeExecute: boolean } | null;
+  /** The application runs on more than one agent: the head is the agent chooser, however many it lists right now. */
+  agentPicker?: boolean;
   /** The shell's own words; the column is drawn outside the conversation's provider, so they are passed in. */
   labels: ShellLabels;
 }>(), {
@@ -52,6 +54,7 @@ const props = withDefaults(defineProps<{
   bottom: null,
   conversations: true,
   panelConfirmation: null,
+  agentPicker: false,
 });
 const emit = defineEmits<{
   newConversation: [];
@@ -156,8 +159,12 @@ function togglePanelConfirmation(session: AgentHostSession) {
   emit("setPanelConfirmation", session.id, !panelChoice(session)!.confirmBeforeExecute);
 }
 
-/** More than one agent makes the head a switcher; one agent leaves the application's name there. */
-const hasPicker = computed(() => props.conversations && props.agents.length > 1);
+/**
+ * The head is the chooser in an application that runs on several agents, and stays one when a page beside the
+ * conversation narrows the list to a single candidate: it still says which agent the conversation runs on. An
+ * application that runs on one agent shows its name.
+ */
+const hasPicker = computed(() => props.conversations && props.agentPicker);
 
 function requestDelete(session: AgentHostSession) {
   closeSessionMenu();

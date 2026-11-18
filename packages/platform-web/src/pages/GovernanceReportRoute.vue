@@ -58,6 +58,8 @@ const labels = computed(() => ({
   stop: t("assistant.stop"),
   agent: t("assistant.agent"),
   pageAgentUnavailable: t("assistant.pageAgentUnavailable"),
+  collapseComposer: t("assistant.collapseComposer"),
+  expandComposer: t("assistant.expandComposer"),
 }));
 </script>
 
