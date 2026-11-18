@@ -19,14 +19,32 @@ async function call(endpoint,body){
   if(!response.ok)throw new Error(`HTTP ${response.status}: ${text}`);
   return JSON.parse(text);
 }
+function readDashboard(dashboardId){
+  return call("/"+encodeURIComponent(dashboardCardRequestSchema.shape.dashboardId.parse(dashboardId)));
+}
+function dashboardLink(label,query){
+  return `[${label}](#/dashboards?${query})`;
+}
 async function run(){
   if(command==="list")return call("");
-  if(command==="read")return call("/"+encodeURIComponent(dashboardCardRequestSchema.shape.dashboardId.parse(values["dashboard-id"])));
+  if(command==="read")return readDashboard(values["dashboard-id"]);
+  if(command==="link"){
+    const cardId=dashboardCardRequestSchema.shape.cardId.optional().parse(values["card-id"]);
+    const {data:dashboard}=await readDashboard(values["dashboard-id"]);
+    const query=new URLSearchParams({dashboardId:dashboard.id,dashboardName:dashboard.name});
+    if(cardId!==undefined){
+      const card=dashboard.groups.flatMap(group=>[...group.charts,...group.metrics]).find(item=>item.id===cardId);
+      if(!card)throw new Error(`Card ${cardId} is not on dashboard ${dashboard.id}`);
+      query.set("cardId",card.id);
+      query.set("cardName",card.name);
+    }
+    return {link:dashboardLink("Open dashboard",query)};
+  }
   if(command==="card"||command==="parameters"){
     const body=dashboardCardRequestSchema.parse({dashboardId:values["dashboard-id"],cardId:values["card-id"]});
     return call(command==="card"?"/query-card":"/card-parameter-form",body);
   }
-  if(command!=="draft"&&command!=="save")throw new Error("Use list, read, card, parameters, draft or save; see SKILL.md");
+  if(command!=="draft"&&command!=="save")throw new Error("Use list, read, link, card, parameters, draft or save; see SKILL.md");
   const operation=dashboardOperationSchema.parse(values.operation);
   const input=JSON.parse(await readFile(values.form.replace(/^@/,""),"utf8"));
   const action=dashboardAuthoring[operation],form=action.schema.parse(input);
@@ -37,6 +55,6 @@ async function run(){
   await mkdir(path.dirname(out),{recursive:true});
   await writeFile(out,JSON.stringify(draft,null,2)+"\n");
   const query=new URLSearchParams({draftSessionId:sessionId,draftRunId:runId,draftPath:out});
-  return {path:out,link:`[Review dashboard changes](#/dashboards?${query})`};
+  return {path:out,link:dashboardLink("Review dashboard changes",query)};
 }
 run().then(result=>console.log(JSON.stringify(result,null,2))).catch(error=>{console.error(error.message);process.exitCode=1;});

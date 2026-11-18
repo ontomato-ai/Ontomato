@@ -10,7 +10,7 @@ import { cardError, cardErrorHeadline, type CardError } from "./utils/metricCard
  * Puts a conversation chart file on a dashboard as it is: into a group of an existing one, or as a new one. The file
  * keeps the metric reference its author wrote; the server checks that metric is executable and matches the file.
  */
-const props = defineProps<{ sessionId: string; runId: string; artifactId: string; title: string }>();
+const props = defineProps<{ sessionId: string; runId: string; artifactId: string; title: string; caption?: string }>();
 const visible = defineModel<boolean>({ required: true });
 const emit = defineEmits<{ added: [dashboardId: string] }>();
 const { t } = useI18n();
@@ -52,7 +52,7 @@ async function confirm() {
   failure.value = null;
   try {
     const target = creating.value ? { name: props.title || t("assistant.dashboard") } : { dashboardId: dashboardId.value, groupId: groupId.value };
-    const saved = await addChartFileToDashboard({ source, target });
+    const saved = await addChartFileToDashboard({ source, target, title: props.caption });
     emit("added", saved.id);
     ElMessage.success(t("assistant.addedToDashboard"));
     visible.value = false;

@@ -13,9 +13,9 @@ const skill=path.join(root,"packages/workbench-server/skills/pages/dashboard-pag
 const cli=path.join(skill,"scripts/dashboard-pages.mjs");
 const sessionId="00000000-0000-4000-8000-000000000001",runId="00000000-0000-4000-8000-000000000002";
 async function workspace(t){const dir=await mkdtemp(path.join(tmpdir(),"dashboard-pages-"));t.after(()=>rm(dir,{recursive:true,force:true}));return dir;}
-async function server(t){
+async function server(t,reply={success:true,data:{rows:[{value:0},{value:null}],truncation:{truncated:true,rowLimit:2,truncationHint:"Partial"}}}){
   const calls=[];
-  const http=createServer(async(req,res)=>{let raw="";for await(const part of req)raw+=part;calls.push({path:req.url,method:req.method,headers:req.headers,body:raw?JSON.parse(raw):undefined});res.setHeader("content-type","application/json");res.end(JSON.stringify({success:true,data:{rows:[{value:0},{value:null}],truncation:{truncated:true,rowLimit:2,truncationHint:"Partial"}}}));});
+  const http=createServer(async(req,res)=>{let raw="";for await(const part of req)raw+=part;calls.push({path:req.url,method:req.method,headers:req.headers,body:raw?JSON.parse(raw):undefined});res.setHeader("content-type","application/json");res.end(JSON.stringify(reply));});
   await new Promise(resolve=>http.listen(0,"127.0.0.1",resolve));t.after(()=>new Promise(resolve=>http.close(resolve)));
   return {calls,base:`http://127.0.0.1:${http.address().port}`};
 }
@@ -39,6 +39,26 @@ test("draft validates and writes the page's save form without an API call",async
   assert.deepEqual([...query.keys()].sort(),["draftPath","draftRunId","draftSessionId"]);
   assert.equal(query.get("draftPath"),result.path);
   assert.equal(api.calls.length,0);
+});
+test("link addresses the saved dashboard and optionally its selected card",async t=>{
+  const dir=await workspace(t);
+  const dashboard={id:"board:1",name:"教职工 & 规模"};
+  const card={id:"card:5",name:"Top 5 (staff)"};
+  const api=await server(t,{data:{...dashboard,groups:[{charts:[card],metrics:[]}]}});
+  const boardAddress={dashboardId:dashboard.id,dashboardName:dashboard.name};
+
+  for(const [args,expected] of [
+    [[],boardAddress],
+    [["--card-id",card.id],{...boardAddress,cardId:card.id,cardName:card.name}],
+  ]){
+    const result=JSON.parse((await invoke(dir,api.base,["link","--dashboard-id",dashboard.id,...args])).stdout);
+    const href=result.link.match(/^\[[^\]]+\]\(([^)]+)\)$/)?.[1];
+    assert.ok(href);
+    const [pathname,search]=href.split("?");
+    assert.equal(pathname,"#/dashboards");
+    assert.deepEqual(Object.fromEntries(new URLSearchParams(search)),expected);
+  }
+  assert.ok(api.calls.every(call=>call.method==="GET" && call.path==="/api/dashboards/board%3A1"));
 });
 test("parameter drafts keep text and address the dashboard from dashboardId",async t=>{
   const dir=await workspace(t),api=await server(t);

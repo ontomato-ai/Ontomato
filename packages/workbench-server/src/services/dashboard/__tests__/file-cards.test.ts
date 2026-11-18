@@ -41,6 +41,13 @@ it("checks the target before importing and appends only the prepared drawing",as
   expect(mocks.save.mock.calls[0][2].groups[0].charts[1]).toMatchObject({name:"chart",chartFile:file,query,layout:{colSpan:12,rowSpan:1},source});
   expect(mocks.plan).not.toHaveBeenCalled();
 });
+it.each([
+  [{title:"各教学科研学院在职教职工人数"},"各教学科研学院在职教职工人数"],
+  [{},"chart"],
+])("names imported cards from the supplied caption or file name (%j)",async(input,name)=>{
+  await addDashboardChartFile("reader","domain",{source,target:{dashboardId:"board",groupId:"group"},...input},{});
+  expect(mocks.save.mock.calls[0][2].groups[0].charts[1].name).toBe(name);
+});
 it("does not create a dashboard when file preparation is rejected",async()=>{
   mocks.prepare.mockRejectedValue(new HttpError(422,"Missing source","METRIC_REFERENCE_REQUIRED"));
   await expect(addDashboardChartFile("reader","domain",{source,target:{name:"New"}},{})).rejects.toMatchObject({code:"METRIC_REFERENCE_REQUIRED"});
