@@ -401,3 +401,44 @@ it("reconnects after EOF, reconciles missed changes, and stops on unmount", asyn
   await new Promise(resolve => setTimeout(resolve, 0));
   expect(streams).toHaveLength(3);
 });
+
+it.each([true, false])("resolves a panel draft through the bridge with created=%s", async created => {
+  const path = `/applications/${appA}/tasks`;
+  const selected = { selectedTask: { className: SCHEDULED_TASK, primaryKey: secondTask.id } };
+  const query = new URLSearchParams({ draftSessionId: "session-1", draftRunId: "run-1", draftPath: "outputs/drafts/task.page-draft.json" });
+  const { app, element, frame, router, sent } = await open(panelAddress(path, selected), false, request => {
+    if (request.path.endsWith("/page-draft")) return Response.json({
+      pageKey: useP.pageKey, operation: `${SCHEDULED_TASK}.save`, target: {},
+      form: { ...task.content, caseSetId: "set-smoke" },
+      ...(created ? { created: { id: task.id } } : {}),
+    });
+    return answer(request);
+  });
+  try {
+    const { context } = await startFrame(frame);
+    await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form [data-field]")).not.toBeNull());
+    const taskReads = () => sent.filter(request => request.method === "GET" && request.path.startsWith(`${taskPath}/`));
+    const initialReads = taskReads().length;
+    await router.push(panelAddress(`${path}?${query}`, selected));
+    if (created) {
+      await vi.waitFor(() => {
+        expect(context.draft.value?.target.id).toBe(task.id);
+        expect(context.instance.deepLink()).toEqual(deepState);
+        expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain("caseSetId");
+      });
+      const addressedReads = taskReads().slice(initialReads);
+      expect(addressedReads).not.toHaveLength(0);
+      expect(addressedReads.every(request => request.path === `${taskPath}/${task.id}`)).toBe(true);
+    } else {
+      await vi.waitFor(() => expect(element.querySelector(".panel-host-error")?.textContent)
+        .toBe("This panel's form does not create objects"));
+      expect(context.draft.value).toBeNull();
+      expect(context.instance.dirty()).toBe(false);
+      expect(context.instance.deepLink()).toEqual(selected);
+      expect(taskReads()).toHaveLength(initialReads);
+    }
+    expect(sent.filter(request => request.method === "PUT")).toEqual([]);
+  } finally {
+    app.unmount();
+  }
+});

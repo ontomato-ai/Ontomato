@@ -21,7 +21,7 @@ import {invalidateProductData} from '@ontomato/contracts/product-invalidation';
 import {installAppBridge} from './app-bridge';
 import type {PanelManifest} from '@ontomato/contracts/panel-manifest';
 import {productProjectionResponseSchema} from '@ontomato/contracts/product-panels';
-import {pageDraftSchema} from '@ontomato/contracts/page-draft';
+import {pageDraftReadSchema} from '@ontomato/contracts/page-draft';
 import {bindingKey,clientSends} from '@ontomato/contracts/panel-client-requests';
 
 const executionBindings = new WeakMap<object, AppExecutionContext>();
@@ -152,7 +152,7 @@ async function relayToPanel(panel:PanelFrame,method:string,path:string,service:s
   if(projection){
     const record=productProjectionResponseSchema.parse(await response.clone().json()).projection;
     panel.bindings.set(decodeURIComponent(projection[1]!),bindingKey(record.binding));
-  }else if(DRAFT_READ.test(path)&&pageDraftSchema.parse(await response.clone().json()).pageKey!==panel.pageKey)
+  }else if(DRAFT_READ.test(path)&&pageDraftReadSchema.parse(await response.clone().json()).pageKey!==panel.pageKey)
     throw new Error('This draft was written for another page');
   return response;
 }

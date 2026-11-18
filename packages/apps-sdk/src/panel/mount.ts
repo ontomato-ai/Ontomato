@@ -12,7 +12,7 @@ import {
   type PanelFrameMessage,
   type PanelHostMessage,
 } from "@ontomato/contracts/panel-host";
-import { pageDraftSchema, type PageDraft } from "@ontomato/contracts/page-draft";
+import { pageDraftReadSchema, type PageDraft } from "@ontomato/contracts/page-draft";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { panelContextKey, type PanelContext, type ProjectionSlot } from "./context";
@@ -164,7 +164,7 @@ async function readDraft(transport: ReturnType<typeof contextTransport>, session
   );
   const body = await response.json();
   if (!response.ok) throw new Error(body.error?.message ?? `The draft at ${path} could not be read`);
-  return pageDraftSchema.parse(body);
+  return pageDraftReadSchema.parse(body);
 }
 
 /** The run's facts as the host wrote them into this document, before the module ran. */

@@ -116,6 +116,7 @@ describe("what a panel's frame may ask the platform for", () => {
       ["/product-assets/subscriptions", { method: "POST", body: "{}" }, ""],
       ["/assistant/agents", {}, ""],
       ["/assistant/sessions", { method: "POST", body: "{}" }, ""],
+      ["/assistant/sessions/session-1/runs/run-1/page-draft/created", { method: "POST", body: "{}" }, ""],
       ["/metricView/execute", { method: "POST", body: JSON.stringify({ id: "revenue" }) }, "/data-query"],
       ["/action/execute", { method: "POST", body: JSON.stringify({ id: "delete-customer" }) }, "/data-query"],
       [`/platform/scheduled-tasks/${task.id}`, { method: "DELETE" }, "/data-query"],
