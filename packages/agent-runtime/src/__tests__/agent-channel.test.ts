@@ -77,6 +77,48 @@ it("a later parent run can read work its conversation delegated in an earlier ru
   await expect(port.execute(scope,run,{ op: "read",taskId: inputId })).resolves.toMatchObject({ taskId: inputId,status: "completed" });
 });
 
+it("wakes the idle delegating execution on its original chain after a later run has finished", async () => {
+  const { runtime, channel: port } = channel();
+  const origin = await port.facts.intent(scope, runId);
+  const laterRunId = "44444444-4444-4444-8444-444444444444";
+  const later = {
+    ...origin, id: laterRunId, status: "completed" as const, language: "en",
+    channel: { ...context, actor: { ...context.actor, id: laterRunId }, root: { ...source, runId: laterRunId } },
+  };
+  const delegatingRun = {
+    ...origin, status: "completed" as const, language: "zh-CN",
+    executionUserId: "recipient-executor", context: { workspaceId: sessionId },
+  };
+  const child = {
+    ...origin, id: inputId, session: { ...source.session, sessionId: inputId }, status: "completed" as const,
+    channel: { ...context, requestedBy: source }, executionUserId: "child-executor",
+  };
+  runtime.store.session = vi.fn().mockResolvedValue({ activeRunId: null, latestRunId: laterRunId });
+  vi.mocked(port.facts.intent).mockImplementation(async (_scope, id) => id === child.id ? child : delegatingRun);
+  vi.spyOn(port.facts, "latest").mockResolvedValue(later);
+  vi.spyOn(port.facts, "binding").mockResolvedValue({ agent: context.agent, actor: context.actor, parent: null });
+  vi.spyOn(port.facts, "delivered").mockResolvedValue(undefined);
+  vi.spyOn(port.facts, "receive").mockImplementation(async (_scope, _session, message) =>
+    ({ id: inputId, runId: null, messageSeq: 3, contextSeq: null, message }));
+  vi.spyOn(port.facts, "reserve").mockImplementation(async (_scope, _session, id, inputId, channel, options) =>
+    ({ ...origin, id, inputId, channel, status: "starting", ...options }));
+  vi.spyOn(port, "callback").mockResolvedValue({
+    status: "completed", summary: "Saved", process: { mode: "none" }, results: [], quality: [], files: [], settled: true,
+  });
+  const prepare = vi.spyOn(port, "prepare").mockResolvedValue();
+
+  await port.changed(scope, child.id, "delivery");
+
+  expect(prepare).toHaveBeenCalledTimes(1);
+  const [wake] = prepare.mock.calls[0];
+  expect(wake.id).not.toBe(delegatingRun.id);
+  expect(wake).toMatchObject({
+    channel: delegatingRun.channel, language: delegatingRun.language,
+    executionUserId: delegatingRun.executionUserId, context: delegatingRun.context,
+  });
+  expect(port.credential(wake.channel)).toEqual({ token: "initiating-token", apiKey: null });
+});
+
 it("message reads expose conversation progress without transferring the child's system prompt", async () => {
   const { runtime,channel: port } = channel();
   const child = { id: inputId, session: { providerId: source.session.providerId,sessionId: inputId },channel: { ...context,requestedBy: source },inputId,language: "en",status: "completed" as const,createdAt: new Date(0).toISOString(),error: null,cancelled: false };
