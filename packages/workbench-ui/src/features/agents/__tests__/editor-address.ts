@@ -19,6 +19,7 @@ export function editorAddress(path: string) {
         address: { value: path },
         draft: { value: pageDraftLink(query) },
         savedAddress: { value: `${pathname}${saved}` },
+        agentAddress: (id: string) => `${pathname!.slice(0, pathname!.lastIndexOf("/"))}/${id}${search ? `?${search}` : ""}`,
         go,
       },
     },

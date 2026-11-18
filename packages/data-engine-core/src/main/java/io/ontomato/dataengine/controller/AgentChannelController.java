@@ -122,14 +122,22 @@ public class AgentChannelController {
     var authority=body.getJSONObject("authority");
     if("build-test".equals(authority.getString("executionKind")) && (body.getJSONObject("requestedBy")!=null || kind==null)) throw new AgentHttpException(422,"BUILD_TEST_UNSUPPORTED","The agent channel is not available in a build-test execution");
     var actor=body.getJSONObject("actor");String language=body.getString("language");
-    OntologyAgentAccess.Context context=kind!=null?callers.generation(actor,domain,language,authority,body.getJSONObject("requestedBy"),body.getJSONObject("root"),body.getJSONObject("executionActor")):
-      callers.query(actor,domain,language,authority,body.getJSONObject("requestedBy"),body.getJSONObject("root"),body.getJSONObject("executionActor"));
+    var requestedBy=body.getJSONObject("requestedBy");
+    var root=body.getJSONObject("root");
+    var executionActor=body.getJSONObject("executionActor");
     boolean steer="steer".equals(body.getString("mode"));
-    JSONObject prepared;
     if(OntologyAgentStore.RETRIEVER.equals(agent)) {
+      var context=callers.retrieval(actor,domain,language,authority,requestedBy,root,executionActor);
       if(steer) return retrieval.prepareSteer(session,run,body.getJSONObject("input"),context);
-      prepared=retrieval.prepareRun(session,run,body.getJSONObject("input"),body.getString("inputId"),body.getJSONObject("context"),body.getJSONObject("root").getString("runId"),context);
-    } else if(ActionCreationService.AGENT.equals(agent)) {
+      var prepared=retrieval.prepareRun(session,run,body.getJSONObject("input"),body.getString("inputId"),
+          body.getJSONObject("context"),root.getString("runId"),context);
+      prepared.put("executionActor",executionActor);
+      return prepared;
+    }
+    var context=kind!=null?callers.generation(actor,domain,language,authority,requestedBy,root,executionActor):
+      callers.query(actor,domain,language,authority,requestedBy,root,executionActor);
+    JSONObject prepared;
+    if(ActionCreationService.AGENT.equals(agent)) {
       if(steer) {store.run(session,run,context.owner());return JSONObject.of("accepted",true);}
       actions.authorize(new OntologyAgentStore.Owner(context.access().user().getId(),domain));actions.create(session,context.owner());prepared=actions.prepare(session,run,body.getJSONObject("input"),context);
     } else if(kind!=null) {
@@ -141,7 +149,7 @@ public class AgentChannelController {
       narrowed.put("classNames",context.access().classNames());
       if(context.access().target().testing()) narrowed.put("executionContextId",context.access().target().contextId());
     }
-    prepared.put("authority",narrowed);prepared.put("executionActor",body.get("executionActor"));return prepared;
+    prepared.put("authority",narrowed);prepared.put("executionActor",executionActor);return prepared;
   }
   private void validatePrepare(JSONObject body) {
     AgentJson.fields(body,"mode","language","agent","sessionId","runId","actor","inputId","input","authority","requestedBy","root","context","executionActor","userRecipient");

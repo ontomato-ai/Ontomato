@@ -3,17 +3,20 @@ import type { AgentHostClient } from "./host";
 
 /*
  * A page's draft through the agent host. What a draft *is* — its address keys, reading one out of an address, taking it
- * back out, the envelope a read returns, and comparing it with the object it was written over — belongs to the
- * contracts (`@ontomato/contracts/page-draft`), because a page SDK that is not this one receives drafts too. This module
- * adds the one thing that is the agent host's: reading a draft through an `AgentHostClient`.
+ * back out, the envelope a read returns, the real object it addresses, and comparing it with that object — belongs to
+ * the contracts (`@ontomato/contracts/page-draft`), because a page SDK that is not this one receives drafts too. This
+ * module adds the one thing that is the agent host's: reading a draft through an `AgentHostClient`, whose
+ * `recordPageDraftCreated` also records what a create draft's first save created.
  */
 
 export {
   PAGE_DRAFT_QUERY_KEYS,
   changedFields,
+  draftTarget,
   pageDraftLink,
   withoutPageDraftQuery,
   type PageDraftLink,
+  type PageDraftTarget,
   type ReceivedPageDraft,
 } from "@ontomato/contracts/page-draft";
 

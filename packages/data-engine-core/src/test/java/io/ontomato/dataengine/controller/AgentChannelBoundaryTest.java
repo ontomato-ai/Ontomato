@@ -157,7 +157,7 @@ class AgentChannelBoundaryTest {
     var permission=new io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission();permission.setFullData(true);
     var dataAccess=new io.ontomato.dataengine.service.QueryAccessService.Access(new io.ontomato.dataengine.service.QueryAccessService.GrantUser("V","a"),permission,null,null,null).withExecution("V","U");
     var admitted=new OntologyAgentAccess.Context(owner,dataAccess,null,null,"en",null,null,"V");
-    when(callers.query(any(),eq("a"),eq("en"),any(),isNull(),any(),eq(executorRef))).thenReturn(admitted);
+    when(callers.retrieval(any(),eq("a"),eq("en"),any(),isNull(),any(),eq(executorRef))).thenReturn(admitted);
     var retrieval=mock(OntologyRetrievalService.class);
     when(retrieval.prepareRun(eq(SESSION),eq(RUN),any(),eq(RUN),isNull(),eq(RUN),eq(admitted))).thenReturn(JSONObject.of("input",JSONObject.of("role","user","content","Question")));
     var controller=new AgentChannelController(callers,directory,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class),retrieval,mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),mock(io.ontomato.dataengine.service.LangService.class));

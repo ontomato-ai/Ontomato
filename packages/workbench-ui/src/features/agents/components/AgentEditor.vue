@@ -9,14 +9,14 @@ import {
   agentAvatar,
   avatarSwatch,
   changedFields,
-  pageDraftLink,
+  draftTarget,
   readPageDraft,
   storedAgentAvatar,
+  type PageDraftLink,
 } from "@ontomato/agent-shell-ui";
 import { CodeEditor } from "@ontomato/foundation-ui/code";
 import { MarkdownView } from "@ontomato/foundation-ui/markdown";
 import { assistantAgentInputSchema, type AssistantAgentDefinition, type AssistantAgentInput } from "@ontomato/contracts/assistant-chat";
-import { z } from "zod";
 import type { McpServiceOption } from "@ontomato/contracts/agent-runtime-mcp";
 import type { ModelOptions } from "@ontomato/contracts/model-settings";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
@@ -153,6 +153,7 @@ const promptPreview = ref(false);
  * A page link may carry a draft (an agent wrote this form and the reader saves it). The draft fills the form over the
  * agent as it was read, the fields it changed are marked, and nothing is written here: until Save the owner holds the
  * old values. A draft that arrives while this form has unsaved changes asks first, and dropping it only empties the form.
+ * A create draft's first save records the agent it created, and the draft addresses that agent from then on.
  */
 const leaving = useLeaveConfirmation();
 /**
@@ -164,24 +165,31 @@ const link = settingsAddress.draft.value;
 const pagePath = settingsAddress.address.value.split("?")[0]!;
 const changed = ref<ReadonlySet<string>>(new Set());
 const draftExecutionChanged = ref(false);
+const assistant = createAssistantClient();
+/** The create draft the form holds: its first save records there the agent it created. */
+let createDraft: PageDraftLink | null = null;
 if (link) {
-  void readPageDraft(createAssistantClient(), link, {
+  void readPageDraft(assistant, link, {
     pageKey: "agent-settings",
     operations: ["agent.create", "agent.update"] as const,
   })
     .then(async (draft) => {
-      // The draft's action and the page must name the same thing: a create fills only a new agent, an update only the
-      // agent the address names, by the id its owner gave it.
-      if (draft.operation === "agent.create" && props.agent) throw new Error(t("agents.draftOtherAgent"));
-      // The target id is the owner's opaque id; this page's objects are agents, so the page checks its format here.
-      if (draft.operation === "agent.update" && (draft.target.id !== props.agent?.id || !z.string().uuid().safeParse(draft.target.id).success))
-        throw new Error(t("agents.draftOtherAgent"));
+      // A create names no agent and an update names the agent it changes; a draft saying otherwise is not this page's.
+      if ((draft.operation === "agent.create") !== (draft.target.id === undefined)) throw new Error(t("agents.draftOtherAgent"));
+      // The agent the draft addresses: an update's, or the one a create draft's first save created.
+      const target = draftTarget(draft);
+      // The new-agent page given a draft of an existing agent opens that agent's own page with the same draft, which
+      // compares there as an update. An agent since deleted is that page's missing agent, never a new create.
+      if (target.kind === "update" && !props.agent) return settingsAddress.go(settingsAddress.agentAddress(target.id));
+      // The draft and the page must name the same agent: a create only a new one, an update only the one shown.
+      if (target.kind === "create" ? props.agent !== null : target.id !== props.agent?.id) throw new Error(t("agents.draftOtherAgent"));
       const filled = fromInput(assistantAgentInputSchema.parse(draft.form));
       const changes = changedFields(toForm(props.agent), filled);
       // A draft that changes nothing is no draft (the same link after its draft was saved): the page stays as the agent
       // is, and the reader's own edits are left alone without asking.
       if (!changes.size) return;
       if (dirty.value && !(await leaving.confirm())) return;
+      if (target.kind === "create") createDraft = link;
       changed.value = changes;
       baseline.value = JSON.stringify(toForm(props.agent));
       form.value = filled;
@@ -280,6 +288,9 @@ async function save() {
     if (link) settingsAddress.go(settingsAddress.savedAddress.value);
     ElMessage.success(props.agent ? t("analysis.agentUpdated") : t("analysis.agentCreated"));
     emit("saved", saved);
+    // A create draft's first save records the agent it created, once the save itself is done: its link opens that agent
+    // from now on.
+    if (createDraft) await assistant.recordPageDraftCreated(createDraft.sessionId, createDraft.runId, createDraft.path, saved.id);
   } catch (error) {
     ElMessage.error(
       error instanceof Error && error.message

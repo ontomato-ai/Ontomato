@@ -89,7 +89,7 @@ public class OntologyAgentAccess {
     if(context.callerId()==null)return context;
     var row=executionCaller(context.access(),context.callerId());
     if(!row.getString("user_id").equals(context.access().user().getId()))service(request);
-    var scoped=scopedQuery(context.access(),row).withExecution(row.getJSONObject("input").getString("executionUserId"),row.getString("user_id"));
+    var scoped=scopedQuery(context.access(),row,context.access().classNames()).withExecution(row.getJSONObject("input").getString("executionUserId"),row.getString("user_id"));
     return new Context(OntologyAgentStore.owner(row),scoped,context.token(),context.apiKey(),context.language(),
         scoped.expiresAt(),context.callerId(),row.getJSONObject("input").getString("executionUserId"));
   }
@@ -104,14 +104,15 @@ public class OntologyAgentAccess {
 
   /** Reuses the existing caller scope for assistant metadata and direct query commands. */
   public QueryAccessService.Access scopedQuery(QueryAccessService.Access access, String callerId) {
-    return scopedQuery(access,executionCaller(access,callerId));
+    var caller = executionCaller(access,callerId);
+    return scopedQuery(access,caller,caller.getJSONObject("input").getList("classNames", String.class));
   }
-  private QueryAccessService.Access scopedQuery(QueryAccessService.Access access,JSONObject caller) {
+  private QueryAccessService.Access scopedQuery(QueryAccessService.Access access,JSONObject caller,java.util.List<String> classes) {
     if (caller.getBooleanValue("closed")) throw new AgentHttpException(409, "RETRIEVAL_RUN_CLOSED", "Caller is closed");
     long deadline=java.time.Instant.parse(caller.getString("deadline")).toEpochMilli();
     if(deadline<=System.currentTimeMillis())throw new AgentHttpException(403,"CALLER_EXPIRED","Caller has expired");
     return new QueryAccessService.Access(access.user(), access.permission(), access.grant(), access.credential(),
-        access.expiresAt()==null?deadline:Math.min(access.expiresAt(),deadline), caller.getJSONObject("input").getList("classNames", String.class), access.target(),
+        access.expiresAt()==null?deadline:Math.min(access.expiresAt(),deadline), classes, access.target(),
         caller.getJSONObject("input").getString("executionUserId"), access.initiatorUserId()==null?access.user().getId():access.initiatorUserId());
   }
 
