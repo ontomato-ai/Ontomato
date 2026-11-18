@@ -344,6 +344,7 @@ const negativeEffect = computed(() => definition.value?.businessMeaning?.negativ
   vertical-align: top;
 }
 .param-table th {
+  background: var(--el-fill-color);
   color: var(--el-text-color-secondary);
   font-weight: 500;
 }

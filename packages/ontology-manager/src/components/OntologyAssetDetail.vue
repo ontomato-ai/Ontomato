@@ -1161,7 +1161,7 @@ onMounted(() => void loadDetail());
   font-weight: 500;
   padding: var(--manager-control-gap) var(--manager-content-gap);
   border-bottom: 1px solid var(--el-border-color-lighter);
-  background: var(--el-fill-color-lighter);
+  background: var(--el-fill-color);
 }
 
 .param-table td {

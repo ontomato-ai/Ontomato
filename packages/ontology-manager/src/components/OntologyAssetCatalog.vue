@@ -334,15 +334,16 @@ onMounted(async () => {
 .resource-table-entry {
   display: flex;
   align-items: center;
-  border-bottom: 1px solid var(--el-border-color-light);
 }
 .resource-table-heading {
-  background: var(--el-fill-color-light);
+  border-bottom: 1px solid var(--el-border-color);
+  background: var(--el-fill-color);
 }
 .resource-table-entry:last-child {
   border-bottom: 0;
 }
 .resource-table-entry {
+  border-bottom: 1px solid var(--el-border-color-light);
   transition: background-color var(--transition-fast);
 }
 .resource-table-entry:hover,
@@ -381,9 +382,7 @@ onMounted(async () => {
 .resource-table-head {
   min-height: var(--table-head-height);
   padding: 0 var(--spacing-md);
-  border-bottom: 1px solid var(--el-border-color);
   color: var(--el-text-color-secondary);
-  background: var(--el-fill-color);
   font-size: var(--text-xs);
   font-weight: var(--font-semibold);
   letter-spacing: 0.02em;
