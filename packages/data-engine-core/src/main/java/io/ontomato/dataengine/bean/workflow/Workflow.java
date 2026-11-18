@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.bean.workflow;
 
+import com.alibaba.fastjson2.JSONObject;
+
 import java.util.List;
 
 import lombok.Data;
@@ -56,6 +58,12 @@ public class Workflow {
      * in it against the class definition, so a typo fails there instead of silently matching nothing.</p>
      */
     private RunContract runContract;
+
+    /** True for a temporary process: its runs own a Case, not a domain fact class. */
+    private Boolean temporary;
+
+    /** The form schema frozen into each run's Case. Only used when {@link #temporary} is true. */
+    private JSONObject caseFormSchema;
 
     /**
      * The subject who created this workflow, taken from the authenticated request. Set once.

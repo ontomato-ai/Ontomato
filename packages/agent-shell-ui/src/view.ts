@@ -148,7 +148,8 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
       continue;
     }
     if (message.role === "notification") {
-      items.push({ kind: "notification", key: entry.id, text: message.content,
+      // A delegated agent's result is addressed to the model that started it; the reader sees the task card and the answer instead.
+      if (message.kind !== "agent-result") items.push({ kind: "notification", key: entry.id, text: message.content,
         ...(message.kind === "agent-question" && "session" in message.source ? { markdownRunId: entry.runId ?? message.source.runId } : {}) });
       for (const failure of tasks?.preparationFailures ?? []) if (failure.inputId === entry.id) items.push({ kind: "notification",key: `preparation:${failure.runId}`,text: failure.error,error: true });
       continue;
