@@ -29,6 +29,22 @@ class AgentChannelBoundaryTest {
       "requestedBy",null,"root",JSONObject.of("session",JSONObject.of("providerId","ontology","sessionId",SESSION),"runId",RUN),"authority",JSONObject.of("classNames",java.util.List.of(),"executionKind","live"),
       "input",JSONObject.of("role",role,"kind","agent-answer","source",JSONObject.of("session",JSONObject.of("providerId","workbench","sessionId",SESSION),"runId",RUN),"replyTo",RUN,"content","Use the confirmed period","timestamp",1)).toJSONString();
   }
+  @Test void sessionActorReadRequiresServiceAuthenticationAndUsesTheExistingGateway() throws Exception {
+    var runtime=mock(AgentRuntimeClient.class);
+    var actor=JSONObject.of("id",RUN,"domainId","a");
+    when(runtime.json(eq("a"),eq(SESSION),eq("/v1/channel/providers/workbench/sessions/"+SESSION+"/actor"),eq("GET"),isNull(),isNull())).thenReturn(JSONObject.of("actor",actor));
+    var controller=new AgentChannelController(callers,directory,store,runtime,new WorkbenchServiceAuthentication("service-secret"),mock(OntologyRetrievalService.class),mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),mock(io.ontomato.dataengine.service.LangService.class));
+    var http=MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new OntologyAgentErrors()).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+    String request=JSONObject.of("providerId","workbench","sessionId",SESSION).toJSONString();
+    http.perform(post("/platform/agent-channel/session-actor").header("X-Domain-Id","a").contentType(MediaType.APPLICATION_JSON).content(request)).andExpect(status().isForbidden());
+    verifyNoInteractions(runtime);
+    var result=http.perform(post("/platform/agent-channel/session-actor").header("X-Domain-Id","a").header(WorkbenchServiceAuthentication.HEADER,"service-secret").contentType(MediaType.APPLICATION_JSON).content(request)).andExpect(status().isOk()).andReturn();
+    assertEquals(actor,JSONObject.parseObject(result.getResponse().getContentAsString()));
+    verify(runtime).json(eq("a"),eq(SESSION),eq("/v1/channel/providers/workbench/sessions/"+SESSION+"/actor"),eq("GET"),isNull(),isNull());
+    http.perform(post("/platform/agent-channel/session-actor").header(WorkbenchServiceAuthentication.HEADER,"service-secret").contentType(MediaType.APPLICATION_JSON).content(request)).andExpect(status().isBadRequest());
+    http.perform(post("/platform/agent-channel/session-actor").header("X-Domain-Id","a").header(WorkbenchServiceAuthentication.HEADER,"service-secret").contentType(MediaType.APPLICATION_JSON).content("{\"providerId\":\"workbench\",\"sessionId\":\"invalid\"}")).andExpect(status().isBadRequest());
+    verifyNoMoreInteractions(runtime);
+  }
   @Test void jacksonMapsCarryTypedAnswersToTheSamePrepareEntrance() throws Exception {
     var owner=new OntologyAgentStore.Owner("user","a");
     when(callers.query(any(),eq("a"),eq("en"),any(),any(),any(),isNull())).thenReturn(new OntologyAgentAccess.Context(owner,null,null,null,"en",1000L,RUN));
