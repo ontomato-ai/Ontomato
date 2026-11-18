@@ -15,7 +15,6 @@ import {
 import MetricViewData from "@ontomato/ontology-manager/app-components/MetricViewData.vue";
 import {
   createActionsClient,
-  createProductsClient,
   createManagerRequest,
   createMetricViewsClient,
   metricViewsKey,
@@ -23,6 +22,7 @@ import {
   type ManagerRequest,
   type MetricViewsClient,
 } from "@ontomato/ontology-manager/clients";
+import { contextProducts, type ContextProducts } from "./context-products";
 import type { SdkEdition } from "./edition";
 import type {ProductSubscriptionTarget,ProductSubscriptionEvent} from '@ontomato/contracts/product-subscriptions';
 import type {ProductNavigationTarget} from '@ontomato/contracts/product-page-state';
@@ -55,7 +55,7 @@ export interface AppContext {
    */
   readonly actions: ActionsClient;
   /** Product assets use the same IDs and revision checks as manual authoring. */
-  readonly products: ReturnType<typeof createProductsClient>;
+  readonly products: ContextProducts;
   /** Opens a platform page in the shell, e.g. `navigate("/ontology/objects")`. */
   navigate(path: string): void;
   navigate(target:ProductNavigationTarget):Promise<void>;
@@ -197,7 +197,7 @@ export function createContext(host: AppHost, appearance: ContextAppearance): App
     (status) => host.onAuthFailure(status),
   );
   const metricViews = createMetricViewsClient(transport);
-  const products=createProductsClient(transport);
+  const products = contextProducts(transport);
   const actions=createActionsClient(transport);
   const context: AppContext = {
     mountProductAsset(element,assetId){

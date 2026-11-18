@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import vue from "@vitejs/plugin-vue";
-import { build } from "vite";
+import { build, normalizePath } from "vite";
 import { finalizeSdk, VERSION_PLACEHOLDER } from "./content-version.mjs";
 import { elementComponents } from "./element-components.mjs";
 import { panelAppearance } from "./panel-appearance.mjs";
@@ -113,6 +113,10 @@ async function main() {
         input: Object.fromEntries(ENTRIES.map((entry) => [entry.file.replace(/\.js$/, ""), join(HERE, entry.source)])),
         // These are browser-ready modules. Use Vite's full JS minification and keep the published entry exports.
         preserveEntrySignatures: "strict",
+        treeshake: {
+          // The Manager API also imports this factory for its own pages. The SDK needs its schemas only when it calls the factory.
+          moduleSideEffects: (id) => id !== normalizePath(resolve(HERE, "../ontology-manager/src/clients/products.ts")),
+        },
         output: {
           format: "es",
           entryFileNames: "[name].js",

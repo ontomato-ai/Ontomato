@@ -1,14 +1,7 @@
-import type { ProductQuery, ProductAssetInput } from "@ontomato/contracts/product-assets";
+import { productAssetSchema,productPageSchema,productCountsResponseSchema, type ProductQuery, type ProductAssetInput } from "@ontomato/contracts/product-assets";
 import type { ManagerRequest } from "../api";
 import type {ProductSubscriptionTarget,ProductSubscriptionEvent} from '@ontomato/contracts/product-subscriptions';
-
-const assetContracts = () => import("@ontomato/contracts/product-assets");
-const graphContracts = () => import("@ontomato/contracts/product-graph");
-
-async function readAsset(request: () => Promise<{ asset: unknown }>) {
-  const { productAssetSchema } = await assetContracts();
-  return productAssetSchema.parse((await request()).asset);
-}
+import {productGraphSchema,defaultProjectionWarningsSchema} from '@ontomato/contracts/product-graph';
 
 /** Manual authoring, embedded apps and AI commands share this authenticated asset API. */
 export function createProductsClient(request: Pick<ManagerRequest,"request">) {
@@ -21,18 +14,9 @@ export function createProductsClient(request: Pick<ManagerRequest,"request">) {
   return {
     synchronizePlatform:async()=>send('/synchronize-platform','POST',{}),
     nativeBinding:async(id:string)=>{const result=await send(`/${encodeURIComponent(id)}`);return {agentId:result.nativeAgentId as string|undefined,applicationId:result.nativeApplicationId as string|undefined};},
-    graph:async()=>{
-      const [{ productGraphSchema }, result] = await Promise.all([graphContracts(), send('/graph')]);
-      return productGraphSchema.parse(result.graph);
-    },
-    defaultProjectionWarnings:async()=>{
-      const [{ defaultProjectionWarningsSchema }, result] = await Promise.all([graphContracts(), send('/validation/default-projections')]);
-      return defaultProjectionWarningsSchema.parse(result);
-    },
-    projections:async(kind:'ObjectType'|'Definition'|'MetricView'|'Action',id:string)=>{
-      const [{ productAssetSchema }, result] = await Promise.all([assetContracts(), send('/projections?'+new URLSearchParams({kind,id}))]);
-      return {...result,assets:result.assets.map((asset:unknown)=>productAssetSchema.parse(asset))};
-    },
+    graph:async()=>productGraphSchema.parse((await send('/graph')).graph),
+    defaultProjectionWarnings:async()=>defaultProjectionWarningsSchema.parse(await send('/validation/default-projections')),
+    projections:async(kind:'ObjectType'|'Definition'|'MetricView'|'Action',id:string)=>{const result=await send('/projections?'+new URLSearchParams({kind,id}));return {...result,assets:result.assets.map((asset:unknown)=>productAssetSchema.parse(asset))};},
     subscribe:async(target:ProductSubscriptionTarget,effect:(event:ProductSubscriptionEvent)=>void,onError?:(error:Error)=>void)=>{
       const subscription=await send('/subscriptions','POST',target);
       let disposed=false,timer:ReturnType<typeof setTimeout>|undefined;
@@ -57,46 +41,29 @@ export function createProductsClient(request: Pick<ManagerRequest,"request">) {
     upgrade:async(id:string)=>send(`/${encodeURIComponent(id)}/upgrade`) as Promise<{releaseId:string;revision:number;assets:{id:string;change:string;fromRevision?:number;toRevision?:number}[];contracts:{kind:string;id:string;change:string}[]}>,
     releases:async(id:string)=>send(`/${encodeURIComponent(id)}/releases`) as Promise<{releases:{releaseId:string;createdAt:string;active:boolean}[]}>,
     rollback:async(id:string,releaseId:string)=>send(`/${encodeURIComponent(id)}/rollback`,'POST',{releaseId}),
-    migrate:async(id:string,revision:number)=>readAsset(()=>send(`/${encodeURIComponent(id)}/migrate`,'POST',{revision})),
-    migrateDashboard:async(id:string,revision:number)=>readAsset(()=>send(`/${encodeURIComponent(id)}/migrate-dashboard`,'POST',{revision})),
-    migratePlatform:async(id:string,revision:number,profileId?:string)=>readAsset(()=>send(`/${encodeURIComponent(id)}/migrate-platform`,'POST',{revision,profileId})),
+    migrate:async(id:string,revision:number)=>productAssetSchema.parse((await send(`/${encodeURIComponent(id)}/migrate`,'POST',{revision})).asset),
+    migrateDashboard:async(id:string,revision:number)=>productAssetSchema.parse((await send(`/${encodeURIComponent(id)}/migrate-dashboard`,'POST',{revision})).asset),
+    migratePlatform:async(id:string,revision:number,profileId?:string)=>productAssetSchema.parse((await send(`/${encodeURIComponent(id)}/migrate-platform`,'POST',{revision,profileId})).asset),
     executeProfileTool:async(profileId:string,toolId:string,parameters:Record<string,unknown>)=>send(`/${encodeURIComponent(profileId)}/tools/${encodeURIComponent(toolId)}`,'POST',{parameters}),
     collection:async(id:string,parameters:Record<string,unknown>,fields:string[],offset=0,projectionId?:string)=>send(`/definitions/${encodeURIComponent(id)}/query`,'POST',{parameters,fields,offset,projectionId}),
-    list: async () => {
-      const [{ productAssetSchema }, result] = await Promise.all([assetContracts(), send("")]);
-      return (result.assets as unknown[]).map(asset=>productAssetSchema.parse(asset));
-    },
-    query:async(query:Partial<ProductQuery>={})=>{
-      const search = new URLSearchParams(Object.entries(query).filter(([,value])=>value!==undefined).map(([key,value])=>[key,String(value)]));
-      const [{ productPageSchema }, result] = await Promise.all([assetContracts(), send('/query?' + search)]);
-      return productPageSchema.parse(result);
-    },
-    counts:async()=>{
-      const [{ productCountsResponseSchema }, result] = await Promise.all([assetContracts(), send('/counts')]);
-      return productCountsResponseSchema.parse(result).counts;
-    },
-    get: async (id:string) => {
-      const [{ productAssetSchema }, result] = await Promise.all([assetContracts(), send(`/${encodeURIComponent(id)}`)]);
-      if(result.issues?.some((issue:{assetId:string})=>issue.assetId===id))throw new Error('A referenced capability contract changed; upgrade this product release');
-      return productAssetSchema.parse(result.asset);
-    },
-    dependencies: async(id:string)=>{
-      const [{ productGraphSchema }, result] = await Promise.all([graphContracts(), send(`/${encodeURIComponent(id)}/dependencies`)]);
-      return {graph:productGraphSchema.parse(result.graph),references:result.references as import('@ontomato/contracts/product-assets').ProductReference[],usedBy:result.usedBy as {id:string;name:string}[]};
-    },
-    home: async () => readAsset(() => send("/home")),
+    list: async () => ((await send("")).assets as unknown[]).map(asset=>productAssetSchema.parse(asset)),
+    query:async(query:Partial<ProductQuery>={})=>productPageSchema.parse(await send('/query?'+new URLSearchParams(Object.entries(query).filter(([,value])=>value!==undefined).map(([key,value])=>[key,String(value)])))),
+    counts:async()=> productCountsResponseSchema.parse(await send('/counts')).counts,
+    get: async (id:string) => {const result=await send(`/${encodeURIComponent(id)}`);if(result.issues?.some((issue:{assetId:string})=>issue.assetId===id))throw new Error('A referenced capability contract changed; upgrade this product release');return productAssetSchema.parse(result.asset);},
+    dependencies: async(id:string)=>{const result=await send(`/${encodeURIComponent(id)}/dependencies`);return {graph:productGraphSchema.parse(result.graph),references:result.references as import('@ontomato/contracts/product-assets').ProductReference[],usedBy:result.usedBy as {id:string;name:string}[]};},
+    home: async () => productAssetSchema.parse((await send("/home")).asset),
     overlay:async(id:string)=>send(`/${encodeURIComponent(id)}/overlay`),
     saveOverlay:async(id:string,workspace:import('@ontomato/contracts/personal-workspace').PersonalWorkspace,revision:number)=>send(`/${encodeURIComponent(id)}/overlay`,'PUT',{workspace,revision}),
-    save: async (id:string, input:ProductAssetInput, revision:number) => readAsset(()=>send(`/${encodeURIComponent(id)}`,"PUT",{name:input.name,description:input.description,document:input.document,revision})),
-    copy: async (id:string,name:string) => readAsset(()=>send(`/${encodeURIComponent(id)}/copy`,"POST",{name})),
-    createPage:async(id:string,name:string)=>readAsset(()=>send(`/${encodeURIComponent(id)}/create-page`,'POST',{name})),
-    createDashboard:async(name:string)=>readAsset(async()=>{
+    save: async (id:string, input:ProductAssetInput, revision:number) => productAssetSchema.parse((await send(`/${encodeURIComponent(id)}`,"PUT",{name:input.name,description:input.description,document:input.document,revision})).asset),
+    copy: async (id:string,name:string) => productAssetSchema.parse((await send(`/${encodeURIComponent(id)}/copy`,"POST",{name})).asset),
+    createPage:async(id:string,name:string)=>productAssetSchema.parse((await send(`/${encodeURIComponent(id)}/create-page`,'POST',{name})).asset),
+    createDashboard:async(name:string)=>{
       const response=await request.request('/dashboards/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})},'');
       const result=await response.json();
       if(result.success===false||!result.data?.productAssetId)throw new Error(result.message??'Dashboard creation failed');
-      return send(`/${encodeURIComponent(result.data.productAssetId)}`);
-    }),
-    useHome: async (id:string,revision:number) => readAsset(()=>send(`/${encodeURIComponent(id)}/use-home`,"POST",{revision})),
+      return productAssetSchema.parse((await send(`/${encodeURIComponent(result.data.productAssetId)}`)).asset);
+    },
+    useHome: async (id:string,revision:number) => productAssetSchema.parse((await send(`/${encodeURIComponent(id)}/use-home`,"POST",{revision})).asset),
     delete: async (id:string,revision:number) => { await send(`/${encodeURIComponent(id)}`,"DELETE",{revision}); },
   };
 }
