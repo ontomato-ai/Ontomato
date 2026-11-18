@@ -73,3 +73,11 @@ it("names two pages of one title by their addresses", () => {
   expect(samePageAddress(pageLineAddress(reopened, lines)!)).toBe(samePageAddress(trialA.url));
   expect(samePageAddress(pageLineAddress(reopened, lines)!)).not.toBe(samePageAddress(trialB.url));
 });
+
+it("shows the characters a reader reads in the address and keeps what structures it, still the same page", () => {
+  const url = "/dashboards?dashboardName=e2e-%E6%95%99%E8%81%8C%E5%B7%A5%20board&next=a%26b%2Fc";
+  const written = pageContextLine({ url, label: "Dashboards", selection: [] }, lines, true);
+  // The name is decoded; the space, `&` and `/` inside a value stay escaped, so the address still opens that board.
+  expect(written).toBe("Current page: Dashboards (/dashboards?dashboardName=e2e-教职工%20board&next=a%26b%2Fc)");
+  expect(samePageAddress(pageLineAddress(written, lines)!)).toBe(samePageAddress(url));
+});

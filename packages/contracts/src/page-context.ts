@@ -98,12 +98,31 @@ export interface PageLinePrompts {
   selection: (label: string) => string;
 }
 
+/** A run of escaped bytes beyond ASCII: the UTF-8 of characters a reader reads, such as a board's Chinese name. */
+const ESCAPED_TEXT = /(?:%[89A-F][0-9A-F])+/gi;
+
+/**
+ * An address as the line shows it: the characters a reader reads are decoded, and everything that structures the
+ * address (`/`, `?`, `&`, `=`, `%`, a space) stays as written, so the address in the line still opens the page and reads
+ * back as the same page. A run that is no UTF-8 text is an address's own bytes and stays escaped.
+ */
+function readableAddress(url: string): string {
+  return url.replace(ESCAPED_TEXT, (run) => {
+    try {
+      return decodeURIComponent(run);
+    } catch {
+      return run;
+    }
+  });
+}
+
 /**
  * The page part of the line: its name and its address, or the address alone for a page the shell cannot name yet (a
  * panel's, before its frame reports the name its application declares).
  */
 function pagePart(page: { label: string; url: string }, prompts: PageLinePrompts): string {
-  return page.label ? prompts.page(page) : prompts.pageAddress(page.url);
+  const url = readableAddress(page.url);
+  return page.label ? prompts.page({ label: page.label, url }) : prompts.pageAddress(url);
 }
 
 /**
