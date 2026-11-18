@@ -1,12 +1,14 @@
-import { createApp, h, provide, ref, watch, type Component, type Ref } from "vue";
+import { createApp, h, provide, watch, type Component, type Ref } from "vue";
 import { useI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import { connectAppContext, contextTransport, type AppContext } from "../context";
 import {
   PANEL_HOST_CHANNEL,
+  panelFrameMessageSchema,
   panelHostFrameMessageSchema,
   panelHostMessageSchema,
   panelMessageOf,
+  type PanelFrameMessage,
   type PanelHostMessage,
 } from "@ontomato/contracts/panel-host";
 import { pageDraftSchema, type PageDraft } from "@ontomato/contracts/page-draft";
@@ -14,7 +16,7 @@ import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { panelContextKey, type PanelContext, type ProjectionSlot } from "./context";
 import { applyPanelRequest, createPanelInstance, pageDraftLinkOf, type PanelInstance } from "./instance";
-import { receivePanelDraft, type ReceivedPanelDraft } from "./draft";
+import { receivePanelDraft } from "./draft";
 import PanelProjection from "./Projection.vue";
 import ObjectList from "../base/ObjectList.vue";
 import ObjectSummary from "../base/ObjectSummary.vue";
@@ -72,7 +74,6 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
       return body.projection as ProductProjection;
     },
   });
-  const draft = ref<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
   const unsaved = new Set<Ref<boolean>>();
   const projectionListeners = new Set<(id: string) => void>();
   const context: PanelContext = {
@@ -85,7 +86,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
       projectionListeners.add(listener);
       return () => projectionListeners.delete(listener);
     },
-    draft,
+    draft: instance.draft,
     holdUnsaved(flag) {
       unsaved.add(flag);
       return () => unsaved.delete(flag);
@@ -115,6 +116,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   app.component("OperationButton", OperationButton);
   // The platform objects this version's panels read, and the operations they run.
   registerSchedulesPlatformObject(appContext);
+  app.config.errorHandler = (reason) => failed(reason instanceof Error ? reason.message : String(reason));
   app.use(ElementPlus).use(appContext);
   app.mount(element);
 
@@ -130,10 +132,10 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
       // conversation client, whose module pulls the whole shell in and would defer the panel's first draw by seconds.
       { readPageDraft: (sessionId, runId, path) => readDraft(transport, sessionId, runId, path) },
       link,
-      (taken) => (draft.value = taken),
+      instance.receiveDraft,
     );
 
-  report({ instance, draft, unsaved, changed: (id) => projectionListeners.forEach((listener) => listener(id)) });
+  report({ instance, unsaved, changed: (id) => projectionListeners.forEach((listener) => listener(id)) });
   return { context, appContext };
 }
 
@@ -164,7 +166,6 @@ function hostMessage(): PanelHostMessage {
 
 interface ReportOptions {
   instance: PanelInstance;
-  draft: Ref<ReceivedPanelDraft<Record<string, unknown>> | null>;
   unsaved: ReadonlySet<Ref<boolean>>;
   changed: (projectionId: string) => void;
 }
@@ -174,9 +175,10 @@ interface ReportOptions {
  * definition is read again here by its ID — the panel's whole record, or one projection's — but never over an unsaved
  * form.
  */
-function report({ instance, draft, unsaved, changed }: ReportOptions) {
-  const send = (value: unknown) => window.parent.postMessage({ channel: PANEL_HOST_CHANNEL, ...(value as object) }, "*");
-  const isDirty = () => draft.value !== null || instance.forms.dirty() || [...unsaved].some((flag) => flag.value);
+function report({ instance, unsaved, changed }: ReportOptions) {
+  const send = (value: PanelFrameMessage) =>
+    window.parent.postMessage({ channel: PANEL_HOST_CHANNEL, ...panelFrameMessageSchema.parse(value) }, "*");
+  const isDirty = () => instance.dirty() || [...unsaved].some((flag) => flag.value);
 
   send({ kind: "context", context: instance.pageContext.value });
   send({ kind: "state", state: instance.deepLink() });
@@ -191,9 +193,10 @@ function report({ instance, draft, unsaved, changed }: ReportOptions) {
   watch([...unsaved], () => send({ kind: "dirty", dirty: isDirty() }), { immediate: true });
   watch(() => instance.dirty(), () => send({ kind: "dirty", dirty: isDirty() }));
   // The operations the header draws and an agent lists; they change as projections register and unregister.
-  watch(() => instance.operations.value, () => send({ kind: "operations", operations: instance.operations.value }), {
-    immediate: true,
-  });
+  watch(() => instance.operations.value, (operations) => {
+    // The wire description carries data only. Invocation stays in this frame.
+    send({ kind: "operations", operations: operations.map(({ invoke: _invoke, ...operation }) => operation) });
+  }, { immediate: true });
 
   window.addEventListener("message", (event) => {
     const parsed = panelMessageOf(panelHostFrameMessageSchema, event);

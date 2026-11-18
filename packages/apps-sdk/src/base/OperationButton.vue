@@ -40,7 +40,7 @@ const published = computed(() => {
 
 /** The object it acts on: what the panel has selected in the state this slot's input is filled from. */
 const call = computed<PanelOperationCall>(() => {
-  const primaryKey = selectedKey(panel.instance.state.values.value[slotState(slot.slot, props.input)]);
+  const primaryKey = selectedKey(panel.instance.state.values.value[slotState(panel.manifest, slot.slot, props.input)]);
   return {
     target: primaryKey ? { kind: "object", objectType: slot.projection.binding.id, primaryKey } : null,
     input: {},

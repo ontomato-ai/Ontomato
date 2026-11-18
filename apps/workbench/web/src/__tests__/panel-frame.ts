@@ -227,10 +227,12 @@ export function inside(frame: Window) {
       get(_target, property) {
         if (property !== "postMessage")
           throw new DOMException('Blocked a frame with origin "null" from accessing a cross-origin frame.', "SecurityError");
-        return (data: unknown, _origin: string, transfer: MessagePort[] = []) =>
+        return (data: unknown, _origin: string, transfer: MessagePort[] = []) => {
+          const cloned = structuredClone(data);
           setTimeout(() =>
-            window.dispatchEvent(new MessageEvent("message", { data, origin: "null", source: frame, ports: transfer })),
+            window.dispatchEvent(new MessageEvent("message", { data: cloned, origin: "null", source: frame, ports: transfer })),
           );
+        };
       },
     },
   );

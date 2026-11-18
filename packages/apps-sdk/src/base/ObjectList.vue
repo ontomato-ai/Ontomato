@@ -24,7 +24,7 @@ const loading = ref(true);
 const failure = shallowRef<Error | null>(null);
 
 /** The panel state a choice is written to: the one this slot's input is filled from. */
-const state = computed(() => slotState(slot.slot, props.input));
+const state = computed(() => slotState(panel.manifest, slot.slot, props.input));
 
 const chosen = computed(() => selectedKey(panel.instance.state.values.value[state.value]));
 

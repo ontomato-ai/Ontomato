@@ -45,7 +45,7 @@ describe("a draft at a panel application's page beside the conversation", () => 
 
     writeFrameDocument(message);
     inside(element.contentWindow!);
-    await mountPanel(panelOf("form"));
+    const { context } = await mountPanel(panelOf("form"));
 
     await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")?.textContent).toContain("caseSetId"), {
       timeout: 5000,
@@ -59,6 +59,15 @@ describe("a draft at a panel application's page beside the conversation", () => 
     );
     expect(new URL(pages.at(-1)!, "http://page.invalid").searchParams.get("draftRunId")).toBe("run-1");
     expect(router.currentRoute.value.path).toBe(platformRoutes.chat.path);
+    const discard = document.querySelector<HTMLButtonElement>(".sdk-owner-form-actions button")!;
+    expect(discard.textContent?.trim()).toBe("Discard");
+    discard.click();
+    await vi.waitFor(() => {
+      expect(document.querySelector(".sdk-owner-form-changed")).toBeNull();
+      expect(context.draft.value).toBeNull();
+      expect(context.instance.dirty()).toBe(false);
+    });
+    expect(sent.filter((request) => request.method === "PUT")).toEqual([]);
     page.unmount();
   });
 });

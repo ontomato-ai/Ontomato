@@ -22,7 +22,7 @@ const loading = ref(true);
 const failure = shallowRef<Error | null>(null);
 
 // The object this summary is about: the panel state its slot's input is filled from, so a panel never passes a state name.
-const key = computed(() => selectedKey(panel.instance.state.values.value[slotState(slot.slot, props.input)]));
+const key = computed(() => selectedKey(panel.instance.state.values.value[slotState(panel.manifest, slot.slot, props.input)]));
 const shown = computed(() => {
   const fields = record.value?.fields ?? {};
   return (props.fields ?? Object.keys(fields)).filter((name) => name in fields);

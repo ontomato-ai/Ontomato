@@ -6,7 +6,7 @@ import { PanelHost, type PanelHostLabels } from "@ontomato/platform-shell";
 import { panelAddress, panelAddressState, panelUsePath } from "@ontomato/contracts/panel-host";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { PageContext } from "@ontomato/contracts/page-context";
-import { panelUsesOf, platformPanelHost } from "../panel-host";
+import { platformPanelHost } from "../panel-host";
 
 /**
  * One page of an application whose entry is `renderer:'panels'`: the panel that one of its use relations names, shown
@@ -47,18 +47,20 @@ const { t } = useI18n();
 /** The application's use relations, once Java has answered; until then the page names none and says nothing. */
 const uses = ref<readonly ApplicationPanelUse[] | null>(null);
 const failure = ref("");
-const port = platformPanelHost(props.applicationId);
+const port = computed(() => platformPanelHost(props.applicationId));
 
-async function read() {
+watch(port, async (active, _, onCleanup) => {
+  let current = true;
+  onCleanup(() => { current = false; });
+  uses.value = null;
+  failure.value = "";
   try {
-    uses.value = await panelUsesOf(props.applicationId);
-    failure.value = "";
+    const records = await active.uses(active.applicationId());
+    if (current) uses.value = records;
   } catch (reason) {
-    failure.value = reason instanceof Error ? reason.message : String(reason);
+    if (current) failure.value = reason instanceof Error ? reason.message : String(reason);
   }
-}
-void read();
-watch(() => props.applicationId, () => void read());
+}, { immediate: true });
 
 /** The use relation this address names, or the application's first when the address is the application's own. */
 const use = computed<ApplicationPanelUse | null>(() => {

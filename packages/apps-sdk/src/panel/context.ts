@@ -53,9 +53,8 @@ export interface PanelContext {
  * The panel state one slot's input is filled from: the input a component names, or the slot's first. A component that
  * writes or reads "the object this slot is about" asks this, so it never guesses a state field name.
  */
-export function slotState(slot: string, input?: string): string {
-  const context = usePanelContext();
-  const declaration = context.manifest.slots[slot];
+export function slotState(manifest: PanelManifest, slot: string, input?: string): string {
+  const declaration = manifest.slots[slot];
   if (!declaration) throw new Error(`The panel declares no slot '${slot}'`);
   const [name] = input ? [input] : Object.keys(declaration.inputs);
   const ref = name ? declaration.inputs[name] : undefined;

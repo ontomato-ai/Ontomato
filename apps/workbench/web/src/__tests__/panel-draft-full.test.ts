@@ -11,6 +11,8 @@ import {
   leaveFrame,
   mountPlatformPage,
   panelHostFrame,
+  READER,
+  task,
   writeFrameDocument,
 } from "./panel-frame";
 
@@ -27,10 +29,17 @@ import {
 afterEach(leaveFrame);
 
 describe("a draft at a panel application's own address", () => {
-  it("opens in the panel's form: its values, the field it changed, and nothing saved", { timeout: 20000 }, async () => {
+  it("opens a marked draft and saves it only through the form, using the opened revision", { timeout: 20000 }, async () => {
     const scenario = draftScenario();
     scenario.panel.content.html = '<div id="app" v-cloak><projection slot="form"></projection></div>';
-    const sent = installPlatform(scenario.answer);
+    const taskPath = `/api/data-query/platform/scheduled-tasks/${task.id}`;
+    let currentRevision = task.revision;
+    const sent = installPlatform(request => {
+      if (request.path === taskPath && request.method === "GET") return Response.json({ ...task, revision: currentRevision });
+      if (request.path === taskPath && request.method === "PUT")
+        return Response.json({ ...task, revision: task.revision + 1, content: (request.body as { content: object }).content });
+      return scenario.answer(request);
+    });
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
@@ -52,7 +61,7 @@ describe("a draft at a panel application's own address", () => {
 
     writeFrameDocument(message);
     inside(element.contentWindow!);
-    await mountPanel({ setup: () => ({}) });
+    const { context } = await mountPanel({ setup: () => ({}) });
 
     await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain("caseSetId"), {
       timeout: 5000,
@@ -61,6 +70,20 @@ describe("a draft at a panel application's own address", () => {
     expect(sent.filter((request) => request.method === "PUT")).toEqual([]);
     expect(sent.filter((request) => request.method === "POST" && request.path === "/api/product-assets/subscriptions"))
       .toMatchObject([{ body: { kind: "product-definition", target: { kind: "panel", id: scenario.panel.id } } }]);
+    const form = document.querySelector<HTMLFormElement>(".sdk-owner-form form")!;
+    const save = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    expect(save.textContent?.trim()).toBe("Save");
+    expect(save.disabled).toBe(false);
+    currentRevision++;
+    save.click();
+    await vi.waitFor(() => {
+      expect(sent.filter(request => request.method === "PUT")).toMatchObject([{
+        path: taskPath, credential: READER,
+        body: { revision: task.revision, content: { ...task.content, caseSetId: "set-smoke" } },
+      }]);
+      expect(context.draft.value).toBeNull();
+      expect(context.instance.dirty()).toBe(false);
+    });
     page.unmount();
   });
 });

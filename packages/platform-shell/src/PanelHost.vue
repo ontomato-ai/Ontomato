@@ -61,7 +61,8 @@ const operations = computed(() =>
     invoke: (input?: Readonly<Record<string, unknown>>) => view.invoke(operation.id, input),
   })),
 );
-usePageActions(() => (view.panel.value ? { operations: operations.value } : null));
+// A form presents its own Save and Discard; other panel operations can still be shown by the enclosing page.
+usePageActions(() => (view.panel.value ? { operations: operations.value.filter(operation => operation.kind !== "form.save") } : null));
 
 defineExpose({ ...view, operations });
 </script>

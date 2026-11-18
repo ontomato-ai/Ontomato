@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, shallowRef, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import type { FormField } from "@ontomato/contracts/form-fields";
 import { FormFields as FormFieldsView } from "@ontomato/foundation-ui/form";
 import { slotState, usePanelContext, useProjectionForm, useProjectionSlot } from "../panel/context";
@@ -27,15 +28,14 @@ const props = withDefaults(
   { inputName: undefined, choosePlaceholder: "" },
 );
 
+const { t } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
 const client = platformObjectFor(slot.projection.binding.id);
 const fields = shallowRef<readonly FormField[]>([]);
 const values = ref<Record<string, string>>({});
-/** What the owner answered: the form as it was read, which a draft and the reader's typing both differ from. */
-const baseline = ref<Record<string, string>>({});
-/** The revision the form was read at; the save sends it and the owner refuses a write over a newer one. */
-const revision = ref(0);
+/** The owner's fields, values and revision when this form opened. */
+const opened = shallowRef<PlatformObjectForm | null>(null);
 /** The fields a received draft changed, marked on the form until the reader saves or discards. */
 const changed = ref<ReadonlySet<string>>(new Set());
 const loading = ref(true);
@@ -45,9 +45,10 @@ const failure = shallowRef<Error | null>(null);
 const refusal = shallowRef<Error | null>(null);
 const fieldErrors = ref<Readonly<Record<string, string>>>({});
 
-const state = computed(() => slotState(slot.slot, props.inputName));
+const state = computed(() => slotState(panel.manifest, slot.slot, props.inputName));
 const key = computed(() => selectedKey(panel.instance.state.values.value[state.value]));
-const dirty = computed(() => JSON.stringify(values.value) !== JSON.stringify(baseline.value));
+const dirty = computed(() => JSON.stringify(values.value) !== JSON.stringify(opened.value?.values ?? {}));
+const canSettle = computed(() => dirty.value || panel.instance.draft.value?.slot === slot.slot);
 /**
  * The draft this form shows, by the object it addresses. Whenever the owner's form for that object is read — when the
  * draft arrives, when the selection moves to the object, when the form is first drawn — the draft is laid over it, so a
@@ -55,22 +56,25 @@ const dirty = computed(() => JSON.stringify(values.value) !== JSON.stringify(bas
  */
 let held: { primaryKey: string; filled: Record<string, string>; changed: ReadonlySet<string> } | null = null;
 
-function adopt(form: PlatformObjectForm) {
+function showFields(form: PlatformObjectForm) {
   fields.value = form.fields;
   values.value = { ...form.values };
-  baseline.value = { ...form.values };
-  revision.value = form.revision;
+  loading.value = false;
+}
+
+function adopt(form: PlatformObjectForm) {
+  opened.value = form;
+  showFields(form);
   changed.value = new Set();
   refusal.value = null;
   fieldErrors.value = {};
-  loading.value = false;
 }
 
 function load(primaryKey: string | null) {
   if (!primaryKey) {
     fields.value = [];
     values.value = {};
-    baseline.value = {};
+    opened.value = null;
     loading.value = false;
     return;
   }
@@ -88,15 +92,17 @@ function show(primaryKey: string, form: PlatformObjectForm) {
   // A field the draft changed may be one the form depends on: the owner answers again with the draft's values, and its
   // answer is the field set the draft is shown in.
   const depended = form.fields.find((field) => field.type === "select" && field.refreshOnChange && draft.changed.has(field.key));
-  if (depended)
+  if (depended) {
+    loading.value = true;
     void client.changed(primaryKey, values.value, depended.key).then(
       (next) => {
-        fields.value = next.fields;
+        showFields(next);
         values.value = { ...next.values, ...draft.filled };
         changed.value = draft.changed;
       },
       (reason: unknown) => fail(reason),
     );
+  }
 }
 
 function fail(reason: unknown) {
@@ -119,7 +125,8 @@ function choose(field: Extract<FormField, { type: "select" }>, value: string) {
   loading.value = true;
   const primaryKey = key.value;
   if (!primaryKey) return;
-  void client.changed(primaryKey, values.value, field.key).then(adopt, (reason: unknown) => fail(reason));
+  // The owner changes the fields for these edits; the original revision and discard baseline still belong to the opened form.
+  void client.changed(primaryKey, values.value, field.key).then(showFields, (reason: unknown) => fail(reason));
 }
 
 // The draft this projection receives: the object it addresses becomes the selected one, the form shows its values, and
@@ -139,12 +146,28 @@ useProjectionForm({
     else panel.instance.state.set(state.value, { className: slot.projection.binding.id, primaryKey });
   },
   dirty: () => dirty.value,
-  discard() {
-    held = null;
-    values.value = { ...baseline.value };
-    changed.value = new Set();
-  },
+  discard,
 });
+
+function discard() {
+  held = null;
+  adopt(opened.value!);
+  panel.instance.clearDraft(slot.slot);
+}
+
+async function saveFromForm() {
+  try {
+    await panel.instance.forms.submit(slot.slot);
+  } catch (reason) {
+    // The operation also rejects for programmatic callers. The reader sees the same refusal in the form.
+    showRefusal(reason);
+  }
+}
+
+function showRefusal(reason: unknown) {
+  refusal.value = reason instanceof Error ? reason : new Error(String(reason));
+  fieldErrors.value = reason instanceof PlatformObjectRefusal ? reason.fields : {};
+}
 
 /**
  * Writes the form through its owner, at the revision it was read at. An owner that refuses — somebody else changed the
@@ -156,13 +179,14 @@ async function write(valuesToSave: Record<string, string>, primaryKey: string): 
   refusal.value = null;
   fieldErrors.value = {};
   try {
-    const saved = await client.save(primaryKey, valuesToSave, revision.value);
+    const revision = opened.value!.revision;
+    const saved = await client.save(primaryKey, valuesToSave, revision);
     held = null;
-    adopt({ fields: fields.value, values: valuesToSave, revision: revision.value + 1 });
+    adopt({ fields: fields.value, values: valuesToSave, revision: revision + 1 });
+    panel.instance.clearDraft(slot.slot);
     return saved;
   } catch (reason) {
-    refusal.value = reason instanceof Error ? reason : new Error(String(reason));
-    fieldErrors.value = reason instanceof PlatformObjectRefusal ? reason.fields : {};
+    showRefusal(reason);
     throw reason;
   } finally {
     saving.value = false;
@@ -188,7 +212,7 @@ function asText(form: object): Record<string, string> {
     <p v-if="failure" role="alert">{{ failure.message }}</p>
     <el-skeleton v-else-if="loading" :rows="4" animated></el-skeleton>
     <el-empty v-else-if="!fields.length" :image-size="48"></el-empty>
-    <el-form v-else label-position="top" @submit.prevent>
+    <el-form v-else label-position="top" @submit.prevent="saveFromForm">
       <FormFieldsView
         :fields="fields"
         :values="values"
@@ -202,11 +226,20 @@ function asText(form: object): Record<string, string> {
         Changed: {{ [...changed].join(", ") }}
       </p>
       <p v-if="refusal" class="sdk-owner-form-refusal" role="alert">{{ refusal.message }}</p>
+      <div class="sdk-owner-form-actions">
+        <el-button :disabled="saving || !canSettle" @click="discard">{{ t("platform.discard") }}</el-button>
+        <el-button type="primary" native-type="submit" :disabled="!canSettle" :loading="saving">{{ t("platform.save") }}</el-button>
+      </div>
     </el-form>
   </div>
 </template>
 
 <style scoped>
+.sdk-owner-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-block-start: 12px;
+}
 .sdk-owner-form-changed {
   color: var(--el-color-primary);
   font-size: 12px;

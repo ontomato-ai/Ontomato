@@ -40,6 +40,8 @@ export interface PanelInstance {
   readonly forms: PanelFormAdapters;
   /** The draft this instance received, once one arrived. */
   readonly draft: Readonly<Ref<ReceivedPanelDraft<Record<string, unknown>> | null>>;
+  receiveDraft(value: ReceivedPanelDraft<Record<string, unknown>>): void;
+  clearDraft(slot: string): void;
   /**
    * Whether the draft this instance holds is one none of its forms performs: every slot its declaration names has
    * registered its projection, and none of them publishes a form save of the draft's operation. While a slot is still to
@@ -82,6 +84,10 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     operations,
     forms,
     draft: readonly(draft) as Readonly<Ref<ReceivedPanelDraft<Record<string, unknown>> | null>>,
+    receiveDraft(value) { draft.value = value; },
+    clearDraft(slot) {
+      if (draft.value?.slot === slot) draft.value = null;
+    },
     unclaimedDraft: computed(() => {
       const operation = forms.heldOperation();
       if (operation === null) return false;

@@ -335,7 +335,7 @@ const failureListener = (words: PanelHostLabels["failures"]) => `
   window.addEventListener("error", function (event) {
     var target = event.target;
     if (target && target !== window && target.tagName) fail(words.fileUnavailable.replace("{file}", target.src || target.href || target.tagName.toLowerCase()));
-    else fail(event.message || (event.error && event.error.message) || words.scriptThrew);
+    else fail((event.error && event.error.message) || event.message || words.scriptThrew);
   }, true);
   window.addEventListener("unhandledrejection", function (event) {
     var reason = event.reason;
