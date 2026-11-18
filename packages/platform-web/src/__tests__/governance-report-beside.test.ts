@@ -120,8 +120,11 @@ describe("one governance record's report beside the conversation", () => {
     await flushPromises();
 
     expect(wrapper.find(".report-page").text()).toBe("beside record-1 order-rule");
-    const context = (shellProps.value as unknown as { pageContext: { pageKey: string; selection: { kind: string; id: string }[] } }).pageContext;
-    expect(context.pageKey).toBe("governance-report");
+    const context = (shellProps.value as unknown as { pageContext: { url: string; label: string; selection: { kind: string; id: string }[] } }).pageContext;
+    // The page is named by the reader's name for it and by its own address, which tells two reports apart.
+    expect(context.url).toBe("/governance/reports/record-1?issue=order-rule");
+    // The test installs no messages, so the name is the key the reader's language would answer with.
+    expect(context.label).toBe("assistant.featureGovernanceReport");
     expect(context.selection).toEqual([expect.objectContaining({ kind: "issue", id: "order-rule" })]);
     // The page's own skill narrows the composer: an agent is a candidate when its effective skills carry the page's.
     const feature = (shellProps.value as unknown as { workbench: { features: { id: string; pageSkill?: unknown }[] } })

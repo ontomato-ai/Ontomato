@@ -200,8 +200,10 @@ export interface ShellLabels {
   /** A composer floating over a page folds into a round button, and opens again from it. */
   collapseComposer: string;
   expandComposer: string;
-  /** A message's last line names the page it was written on. */
-  pageContext: (page: string) => string;
+  /** A message's last line names the page it was written beside: what the reader calls it, and its address. */
+  pageContext: (page: { label: string; url: string }) => string;
+  /** The same line for a page the shell cannot name yet (a panel's, before it reports its application's name). */
+  pageContextAddress: (url: string) => string;
   /** The same line names what was selected in the page. */
   selectionContext: (selection: string) => string;
   toolInput: string;

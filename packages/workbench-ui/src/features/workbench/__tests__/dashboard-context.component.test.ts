@@ -98,8 +98,8 @@ describe("the board's page context", () => {
     const page = "/dashboards?dashboardId=board-a&dashboardName=Sales&cardId=card-1&cardName=Revenue%20by%20region";
     const shell = await openBoard(page);
     expect(shell.props("pageContext")).toMatchObject({
-      pageKey: "dashboard",
       url: page,
+      label: "Dashboards",
       selection: [
         { kind: "dashboard", id: "board-a", label: "Sales (board-a)" },
         { kind: "dashboard-card", id: "card-1", label: "Revenue by region (card-1)" },

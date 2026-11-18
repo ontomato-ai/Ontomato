@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import ElementPlus from "element-plus";
 import { defineComponent, h, ref } from "vue";
@@ -38,10 +38,11 @@ const uses: ApplicationPanelUse[] = [
 vi.mock("../panel-host", () => ({ panelUsesOf: async () => uses, platformPanelHost: () => ({}) }));
 
 /** Every panel instance mounted, with the state it opened at. */
-const instances: { initial: Record<string, unknown> }[] = [];
+const instances: { initial: Record<string, unknown>; report: () => void }[] = [];
+/** A frame that has not reported yet: it mounts, and says what it shows only when this is called. */
+const silent = ref(false);
 const selected = (primaryKey: string) => ({ selectedTask: { className: SCHEDULED_TASK, primaryKey } });
 const contextOf = (address: string, primaryKey: string | null) => ({
-  pageKey: "panels-trial-a-tasks",
   url: address,
   label: "Scheduled tasks (trial)",
   selection: primaryKey ? [{ kind: SCHEDULED_TASK, id: primaryKey, label: `Task ${primaryKey}` }] : [],
@@ -54,9 +55,10 @@ vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
     props: { useId: String, address: String, initial: { type: Object, default: () => ({}) }, labels: Object },
     emits: ["address", "context"],
     setup(props, { emit }) {
-      instances.push({ initial: props.initial });
       const opened = (props.initial as { selectedTask?: { primaryKey: string } }).selectedTask?.primaryKey ?? null;
-      emit("context", contextOf(panelAddress(props.address!, props.initial), opened));
+      const report = () => emit("context", contextOf(panelAddress(props.address!, props.initial), opened));
+      instances.push({ initial: props.initial, report });
+      if (!silent.value) report();
       return () =>
         h("button", {
           class: "panel-double",
@@ -106,6 +108,12 @@ vi.mock("../../workbench-ui/src/features/workbench/assistant-host", () => ({
   createAssistantFeedback: () => ({}),
 }));
 
+beforeEach(() => {
+  // Every mount starts from a frame that reports: one test holds that report back to see the page before it.
+  silent.value = false;
+  instances.splice(0);
+});
+
 beforeAll(() => {
   installWorkbenchI18n({
     supported: ["en"], defaultLocale: "en", initialLocale: "en", switchEnabled: false, save: null,
@@ -151,7 +159,7 @@ describe("a panel application's page beside the conversation", () => {
       label: "Scheduled tasks (trial)",
     });
     // The panel opened at the state the page's address names, and what it shows rides on the message.
-    expect(instances).toEqual([{ initial: selected("task-1") }]);
+    expect(instances.map((each) => each.initial)).toEqual([selected("task-1")]);
     expect(shell().pageContext).toEqual(contextOf(page, "task-1"));
 
     // The reader selects another task: the conversation's page parameter follows, the panel is the same one, and the
@@ -168,6 +176,39 @@ describe("a panel application's page beside the conversation", () => {
     await flushPromises();
     expect(instances).toHaveLength(1);
     expect(wrapper.get(".panel-double").attributes("data-requested")).toBe(JSON.stringify(selected("task-3")));
+    wrapper.unmount();
+  });
+
+  it("carries the page's address before the frame has reported anything, and the name once it does", async () => {
+    // Frames take seconds to load. A message written while one is still loading names the page the shell opened — its
+    // address, which is the shell's own fact — and says nothing about a selection it has not been told.
+    silent.value = true;
+    const page = "/applications/app-a/tasks";
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ ...platformRoutes.chat, component: { template: "<div />" } }],
+    });
+    await router.push({ path: platformRoutes.chat.path, query: { page } });
+    await router.isReady();
+    const wrapper = mount(BusinessWorkbench, {
+      props: { defaultLogo: "", defaultBrandName: "Ontomato" },
+      global: {
+        plugins: [workbenchI18n(), ElementPlus, router],
+        provide: {
+          [pilotPageKey as symbol]: pilotPageResolver,
+          [platformPageAccessKey as symbol]: () => true,
+          [pageCounterKey as symbol]: { agents: async () => [agent], preferredAgentId: ref<string | null>(agent.id), ask: () => {} },
+        },
+      },
+    });
+    await flushPromises();
+
+    expect((shellProps.value as unknown as ShellSeen).pageContext).toEqual({ url: page, label: "", selection: [] });
+
+    instances[0]!.report();
+    await flushPromises();
+    expect((shellProps.value as unknown as ShellSeen).pageContext).toEqual(contextOf(page, null));
+    silent.value = false;
     wrapper.unmount();
   });
 });
