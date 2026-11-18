@@ -16,6 +16,7 @@ import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
 
 import com.alibaba.fastjson2.JSON;
@@ -66,6 +67,12 @@ public class BaseControllerAdvice implements ResponseBodyAdvice<Object> {
         int stateCode = HttpStatus.OK.value();
         int realCode = stateCode;
         String message = exception.getMessage();
+        // A refusal owns its HTTP status and reason; other unexpected failures keep the existing envelope.
+        if (exception instanceof ResponseStatusException refusal) {
+            realCode = refusal.getStatusCode().value();
+            stateCode = realCode;
+            message = refusal.getReason() != null ? refusal.getReason() : message;
+        }
         if (exception instanceof HttpMessageNotReadableException) {
             message = "Invalid parameters!";
         }
