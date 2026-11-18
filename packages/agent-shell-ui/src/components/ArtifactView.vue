@@ -12,6 +12,7 @@ const props = defineProps<{
   runId: string;
   path: string;
   title: string;
+  caption?: string;
   presentation: ArtifactPresentation;
   /** Already resolved (side panel); skips resolution. */
   artifact?: RuntimeArtifact;
@@ -59,7 +60,7 @@ const read = () => shell.readArtifact(resolved.value!);
     :title="title"
     :presentation="presentation"
     :read="read"
-    :open-details="() => shell.openArtifact({ key: `${runId}:${path}`, artifact: resolved!, title })"
+    :open-details="() => shell.openArtifact({ key: `${runId}:${path}`, artifact: resolved!, title, caption })"
     :continue-conversation="shell.continueConversation"
     :fallback="renderer.component ? (renderer.fallback ?? FileRenderer) : null"
   />

@@ -319,4 +319,6 @@ export interface OpenArtifact {
   key: string;
   artifact: RuntimeArtifact;
   title: string;
+  /** The caption provided by a Markdown image. */
+  caption?: string;
 }

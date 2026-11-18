@@ -32,6 +32,7 @@ The command writes `outputs/<name>.chart.json` and prints the path; reference th
 | --- | --- | --- |
 | `chartType` | yes | Always `admin-choropleth-map`. |
 | `name` | yes | Output file name without a directory or extension. |
+| `title` | no | Text displayed on the map. |
 | `data` | one of | Row objects already in the input file. |
 | `dataset` | one of | Data file to read: an accepted `.dataset.json` or a JSON array/`{ "rows": [...] }`. |
 | `fields` | yes | `name` and `value` mapped to real column names. |
@@ -61,4 +62,4 @@ Copy the id and parameters from the accepted dataset's metric recipe or from `on
 
 ## Revising
 
-Run the command again with the same `name` after changing `fields`, `featureNameProperty`, `display` or the source data. The file is the map's definition; do not edit it by hand. If the command reports a missing role or an invalid file, fix the named column and rerun.
+Run the command again with the same `name` after changing the input, including `title` for a new map title. The file is the map's definition. Do not edit it by hand. Reference the generated file as written. If the command reports a missing role or an invalid file, fix the named column and rerun.

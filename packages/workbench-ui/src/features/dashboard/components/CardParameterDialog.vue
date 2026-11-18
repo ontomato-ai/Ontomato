@@ -7,6 +7,7 @@ import type { DashboardParameterForm } from "@ontomato/contracts/dashboard";
 import { ApiRequestError } from "../../../utils/api";
 import { fetchCardParameterForm, saveCardParameters } from "../api";
 import { cardError, cardErrorHeadline, type CardError } from "./utils/metricCard";
+import { parameterText } from "../draft";
 
 /**
  * Edits one card's parameters through the metric's own form: the fields, values, read-only keys and validation are
@@ -57,24 +58,14 @@ watch(visible, async (open) => {
   try {
     form.value = await fetchCardParameterForm(props.dashboardId, props.card.id);
     original.value = { ...form.value.values };
-    draftValues.value = { ...form.value.values, ...textValues(form.value.readOnly, props.draft?.values) };
-    edited.value = new Set(Object.keys(textValues(form.value.readOnly, props.draft?.values)));
+    draftValues.value = { ...form.value.values, ...parameterText(form.value.readOnly, props.draft?.values) };
+    edited.value = new Set(Object.keys(parameterText(form.value.readOnly, props.draft?.values)));
   } catch (error) {
     failure.value = cardError(error);
   } finally {
     loading.value = false;
   }
 }, { immediate: true });
-
-/** A draft's values as this form writes text; its read-only keys stay out, the metric owns those. */
-function textValues(readOnly: readonly string[], values: Record<string, unknown> | undefined) {
-  const text: Record<string, string> = {};
-  for (const [key, value] of Object.entries(values ?? {})) {
-    if (readOnly.includes(key)) continue;
-    text[key] = typeof value === "object" ? JSON.stringify(value) : String(value ?? "");
-  }
-  return text;
-}
 
 function edit(key: string, value: string) {
   draftValues.value = { ...draftValues.value, [key]: value };
