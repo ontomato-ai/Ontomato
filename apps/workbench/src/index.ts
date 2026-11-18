@@ -33,6 +33,9 @@ const { createWorkbenchApp, startWorkbench } = await import(
 );
 const { config } = await import("@ontomato/workbench-server/config/application");
 
+const { registerPanelSkillProvider } = await import("@ontomato/workbench-server/services/product-panels/skill-provider");
+registerPanelSkillProvider();
+
 const app = createWorkbenchApp();
 const { registerApplications } = await import("@ontomato/workbench-server/services/applications/register");
 await startWorkbench(app, config.port, async () => { await registerApplications(); return async () => {}; });

@@ -5,6 +5,7 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.*;
@@ -70,11 +71,13 @@ class PanelApplicationsTest {
             new PageSkills.Skill(new PageSkills.Namespace("provider", "workbench", null), "dashboard-pages"), null);
         var legacy = app("dashboards", "dashboards", List.of()); legacy.put("pageSkills", List.of(dashboard));
         doReturn(List.of(application, legacy)).when(catalog).all();
-        when(access.pageSkills(List.of(dashboard), user)).thenReturn(List.of(dashboard));
+        when(access.pageSkills(anyList(), eq(user))).thenAnswer(call -> call.getArgument(0));
         var projected = mvc.perform(get("/platform/page-skills")).andExpect(status().isOk()).andReturn();
         var projection = JSONObject.parseObject(projected.getResponse().getContentAsString()).getJSONObject("data");
-        assertEquals(List.of("dashboard"), projection.getJSONArray("pageSkills").toJavaList(JSONObject.class).stream().map(value -> value.getString("pageKey")).toList());
-        assertEquals(List.of("dashboard-pages"), projection.getJSONArray("registeredSkills").toJavaList(JSONObject.class).stream().map(value -> value.getString("name")).toList());
+        assertEquals(List.of("dashboard", "schedules-a"), projection.getJSONArray("pageSkills").toJavaList(JSONObject.class).stream().map(value -> value.getString("pageKey")).toList());
+        var derived = catalog.panelSkillSources("domain").getFirst().skill();
+        assertEquals(List.of("dashboard-pages", derived.name()), projection.getJSONArray("registeredSkills").toJavaList(JSONObject.class).stream().map(value -> value.getString("name")).toList());
+        assertEquals(derived.name(), projection.getJSONArray("pageSkills").getJSONObject(1).getJSONObject("skill").getString("name"));
         verify(panels).requireCurrent("domain", List.of("panel-p"));
         var write = mockingDetails(db).getInvocations().stream().filter(call -> call.getMethod().getName().equals("update")).findFirst().orElseThrow();
         assertEquals("[]", write.getArgument(18));
@@ -107,7 +110,7 @@ class PanelApplicationsTest {
         verify(access, never()).declare(any(), any(), anyBoolean());
     }
 
-    @Test void validatesUseLocatorsWithoutProducingSkills() {
+    @Test void validatesUseLocators() {
         var first = use("schedules-a", null); var second = use("schedules-b", null);
         assertDoesNotThrow(() -> ApplicationPanelUse.validate(List.of(first, second)));
         assertNotEquals(first.locator(), second.locator());
@@ -115,21 +118,73 @@ class PanelApplicationsTest {
         assertThrows(ResponseStatusException.class, () -> ApplicationPanelUse.validate(List.of(first, first)));
     }
 
-    @Test void keepsMemberLocatorsUniqueAcrossApplicationsWithoutAnyPanelSkill() {
+    @Test void keepsMemberLocatorsUniqueAcrossApplications() {
         doReturn(List.of(app("app-existing", "panels", List.of(use("schedules-a", null))))).when(catalog).all();
         assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a", body(List.of(use("schedules-a", null)), true), user));
         verify(db, never()).update(anyString(), any(Object[].class));
     }
 
-    @Test void sharesAMenuGroupAcrossPanelsWithoutInventingASkill() {
+    @Test void sharesOneDerivedSkillAcrossPanelsWithTheSameMenu() {
         var first = app("app-panel-a", "panels", List.of(use("schedules-a", "menu")));
-        var second = app("app-panel-b", "panels", List.of(new ApplicationPanelUse("use-b", "schedules-b", "panel-q", "/tasks", new ApplicationPanelUse.Access("menu", null), null)));
+        var second = app("app-panel-b", "panels", List.of(new ApplicationPanelUse("use-b", "schedules-b", "panel-q", "/tasks", new ApplicationPanelUse.Access("menu", null), "summary-agent")));
         doReturn(List.of(first)).when(catalog).all(); doReturn(second).when(catalog).require("app-panel-b");
         catalog.putPanelUses("app-panel-b", body(second.getList("panelUses", ApplicationPanelUse.class), true), user);
         doReturn(List.of(first, second)).when(catalog).all();
-        when(access.pageSkills(List.of(), user)).thenReturn(List.of());
-        assertTrue(catalog.pageSkills(user).pageSkills().isEmpty());
-        assertTrue(catalog.pageSkills(user).registeredSkills().isEmpty());
+        var source = catalog.panelSkillSources("domain").getFirst();
+        assertEquals(List.of("panel-p", "panel-q"), source.uses().stream().map(PanelSkills.Use::panelId).toList());
+        assertEquals("panel-menu-menu-c661d73dba966285774f9f15", source.skill().name());
+        var mapping = new PageSkills.Mapping("menu", null, null, source.skill(),
+            List.of(new PageSkills.Default("schedules-b", "summary-agent")));
+        when(access.pageSkills(List.of(mapping), user)).thenReturn(List.of());
+        assertEquals(new PageSkills.Projection(List.of(), List.of(source.skill())), catalog.pageSkills(user));
+        when(access.pageSkills(List.of(mapping), user)).thenReturn(List.of(mapping));
+        assertEquals(new PageSkills.Projection(List.of(mapping), List.of(source.skill())), catalog.pageSkills(user));
+    }
+
+    @Test void serviceCatalogProjectsThreeMemberSkillsFromTwoApplicationsAndIsolatesDomains() throws Exception {
+        var a = app("app-panels-trial-a", "panels", List.of(use("panels-trial-a-tasks", null)));
+        var b = app("app-panels-trial-b", "panels", List.of(use("panels-trial-b-tasks", null),
+            new ApplicationPanelUse("use-q", "panels-trial-b-summary", "panel-q", "/summary",
+                new ApplicationPanelUse.Access(null, "domain-member"), null)));
+        var foreign = app("app-foreign", "panels", List.of(use("foreign-page", null)));
+        foreign.put("domainId", "foreign");
+        doReturn(List.of(a, b, foreign)).when(catalog).all();
+        var identity = mock(IdentityService.class);
+        var mvc = MockMvcBuilders.standaloneSetup(new ApplicationController(catalog, identity, new WorkbenchServiceAuthentication("service-fixture"))).build();
+
+        mvc.perform(get(ApplicationController.PANEL_SKILL_SOURCES).param("domainId", "domain")).andExpect(status().isForbidden());
+        var request = get(ApplicationController.PANEL_SKILL_SOURCES).header(WorkbenchServiceAuthentication.HEADER, "service-fixture");
+        mvc.perform(request.param("domainId", "domain"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(3))
+            .andExpect(jsonPath("$.data[0].skill.namespace.domainId").value("domain"))
+            .andExpect(jsonPath("$.data[0].uses[0].pageKey").value("panels-trial-a-tasks"))
+            .andExpect(jsonPath("$.data[1].uses[0].pageKey").value("panels-trial-b-tasks"))
+            .andExpect(jsonPath("$.data[2].uses[0].panelId").value("panel-q"));
+        mvc.perform(get(ApplicationController.PANEL_SKILL_SOURCES)
+                .header(WorkbenchServiceAuthentication.HEADER, "service-fixture").param("domainId", "foreign"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(1))
+            .andExpect(jsonPath("$.data[0].uses[0].pageKey").value("foreign-page"));
+        verifyNoInteractions(identity, access, grants);
+        when(access.pageSkills(anyList(), eq(user))).thenAnswer(call -> call.getArgument(0));
+        var sources = catalog.panelSkillSources("domain");
+        assertEquals(List.of(
+            "panel-page-panels-trial-a-tasks-5b8e580bfe498f76fd5b2f47",
+            "panel-page-panels-trial-b-tasks-078cb1db044a707c17788b14",
+            "panel-page-panels-trial-b-summary-bbb7128431ec0bc491e589e0"
+        ), sources.stream().map(source -> source.skill().name()).toList());
+        assertEquals(sources.stream().map(PanelSkills.Source::skill).toList(), catalog.pageSkills(user).registeredSkills());
+    }
+
+    @Test void skillNamesStayLegalAndDistinguishSimilarAndLongLocators() {
+        var keys = List.of("Page:A", "page-a", "定时任务", "page-".repeat(39) + "a", "page-".repeat(39) + "b");
+        var refs = keys.stream().map(key -> PanelSkills.identity("domain", use(key, null))).toList();
+        assertEquals(keys.size(), refs.stream().distinct().count());
+        for (var ref : refs) {
+            assertTrue(ref.name().length() <= 64);
+            assertTrue(ref.name().matches("[a-z0-9]+(?:-[a-z0-9]+)*"));
+        }
     }
 
     @Test void refusesMixedLegacyAndPanelsRegistrationForTheSameMenuCode() {

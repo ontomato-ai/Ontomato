@@ -3,7 +3,7 @@ import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { PanelHost, type PanelHostLabels } from "@ontomato/platform-shell";
-import { panelAddress, panelAddressState } from "@ontomato/contracts/panel-host";
+import { panelAddress, panelAddressState, panelUsePath } from "@ontomato/contracts/panel-host";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import { panelUsesOf, platformPanelHost } from "../panel-host";
@@ -89,7 +89,7 @@ const opened = computed(() => props.address ?? route.fullPath);
  */
 const address = computed(() => {
   const search = opened.value.split("?")[1];
-  const path = `/applications/${encodeURIComponent(props.applicationId)}${props.panelPath ? `/${props.panelPath}` : ""}`;
+  const path = panelUsePath(props.applicationId, props.panelPath ? `/${props.panelPath}` : "/");
   return panelAddress(search ? `${path}?${search}` : path, {});
 });
 

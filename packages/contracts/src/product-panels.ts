@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { runtimeSkillRefSchema } from "./agent-runtime-skills";
 import { ontologyParameterTypeSchema, panelManifestSchema } from "./panel-manifest";
 import { applicationMetadataSchema } from "./application-metadata";
 
@@ -82,6 +83,15 @@ export const applicationPanelUseSchema = z.object({
   defaultAgentId: id.optional(),
 }).strict();
 export type ApplicationPanelUse = z.infer<typeof applicationPanelUseSchema>;
+
+export const panelSkillSourceSchema = z.object({
+  skill: runtimeSkillRefSchema,
+  uses: z.array(applicationPanelUseSchema.pick({ pageKey: true, panelId: true, path: true }).extend({
+    applicationId: id,
+    useId: id,
+  })).nonempty(),
+}).strict();
+export type PanelSkillSource = z.infer<typeof panelSkillSourceSchema>;
 
 /** The Java declaration is the sole takeover authority, including for legacy writers. */
 export const panelApplicationEntrySchema = z.object({

@@ -84,6 +84,11 @@ export function panelMessageOf<T>(schema: { safeParse(value: unknown): { success
   return parsed.success ? parsed.data : null;
 }
 
+/** The route owned by the application use. */
+export function panelUsePath(applicationId: string, path: string): string {
+  return `/applications/${encodeURIComponent(applicationId)}${path === "/" ? "" : path}`;
+}
+
 /**
  * The address a panel instance is at: the page's own address with the state it restores — and nothing else. The page's
  * other parameters are kept, its own `state` is replaced, and a page with no state carries none, so an address is the

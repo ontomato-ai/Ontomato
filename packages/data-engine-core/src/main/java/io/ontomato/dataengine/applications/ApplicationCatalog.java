@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
 
 @Service
 public class ApplicationCatalog {
+    private record PanelSkillGroup(PageSkills.Mapping mapping, PanelSkills.Source source) {}
     public record Group(String key, Map<String,String> names, int sort) {}
     public record Permission(String code, Map<String,String> names, String groupKey, int sort) {}
     public record Declaration(Map<String,String> names, Map<String,String> descriptions, String icon,
@@ -50,11 +51,42 @@ public class ApplicationCatalog {
                 "panelUses", JSON.parseArray(row.getString("panel_uses"), ApplicationPanelUse.class)));
     }
     public PageSkills.Projection pageSkills(User user) {
-        var applications = all().stream().filter(app -> inDomain(app,user)).toList();
+        var domainId = user.getDomainId();
+        var applications = applicationsInDomain(domainId);
         validateLocators(applications);
-        var mappings = applications.stream().filter(app -> !panelManaged(app))
-            .flatMap(app -> app.getList("pageSkills", PageSkills.Mapping.class).stream()).toList();
+        var mappings = new ArrayList<>(applications.stream().filter(app -> !panelManaged(app))
+            .flatMap(app -> app.getList("pageSkills", PageSkills.Mapping.class).stream()).toList());
+        if (domainId != null)
+            panelSkillGroups(domainId, applications).stream().map(PanelSkillGroup::mapping).forEach(mappings::add);
         return new PageSkills.Projection(access.pageSkills(mappings,user), mappings.stream().map(PageSkills.Mapping::skill).distinct().toList());
+    }
+    public List<PanelSkills.Source> panelSkillSources(String domainId) {
+        var applications = applicationsInDomain(domainId);
+        return panelSkillGroups(domainId, applications).stream().map(PanelSkillGroup::source).toList();
+    }
+    private List<JSONObject> applicationsInDomain(String domainId) {
+        return all().stream().filter(app -> app.getString("domainId") == null
+            || Objects.equals(app.getString("domainId"), domainId)).toList();
+    }
+    private static List<PanelSkillGroup> panelSkillGroups(String domainId, List<JSONObject> applications) {
+        var groups = new LinkedHashMap<String, List<PanelSkills.LocatedUse>>();
+        for (var app : applications) {
+            if (!panelManaged(app)) continue;
+            for (var use : app.getList("panelUses", ApplicationPanelUse.class)) {
+                groups.computeIfAbsent(use.locator(), key -> new ArrayList<>()).add(new PanelSkills.LocatedUse(app.getString("id"), use));
+            }
+        }
+        return groups.values().stream().map(uses -> {
+            var first = uses.getFirst().use();
+            var skill = PanelSkills.identity(domainId, first);
+            var defaults = uses.stream().map(PanelSkills.LocatedUse::use).filter(use -> use.defaultAgentId() != null)
+                .map(use -> new PageSkills.Default(use.pageKey(), use.defaultAgentId())).toList();
+            var key = first.access().permissionCode() == null ? first.pageKey() : null;
+            var mapping = new PageSkills.Mapping(first.access().permissionCode(), first.access().kind(), key, skill,
+                defaults.isEmpty() ? null : defaults);
+            var source = new PanelSkills.Source(skill, uses.stream().map(PanelSkills.LocatedUse::source).toList());
+            return new PanelSkillGroup(mapping, source);
+        }).toList();
     }
     public JSONObject require(String id) {
         return all().stream().filter(a -> id.equals(a.getString("id"))).findFirst()
@@ -197,7 +229,6 @@ public class ApplicationCatalog {
             if (!declaration.pageSkills().isEmpty()) throw bad("Panel applications cannot declare page skills");
         } else if (!declaration.panelUses().isEmpty()) throw bad("Panel uses require a panels entry");
     }
-    /** Use locators remain reserved even while panel skill providers are unavailable. */
     private static void validateLocators(List<JSONObject> applications) {
         var locators = new HashMap<String, Boolean>();
         var panelPages = new HashSet<String>();
