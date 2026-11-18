@@ -407,11 +407,11 @@ function appearanceSaved(value: WorkbenchAppearance) {
     <template #dataset-selection-actions="{ artifact, title, selectedRowIndices }">
       <DatasetDrilldown :artifact="artifact" :title="title" :selected-row-indices="selectedRowIndices" />
     </template>
-    <template #artifact-actions="{ artifact, title }">
+    <template #artifact-actions="{ artifact, title, caption }">
       <!-- A file added to a board opens the dashboards application, which is where boards live: a dataset is planned
            into cards there, a chart file is put on the board as it is. -->
       <DatasetActions :artifact="artifact" :title="title" @open-dashboard="openDashboardApplication" />
-      <ChartFileActions :artifact="artifact" :title="title" @open-dashboard="openDashboardApplication" />
+      <ChartFileActions :artifact="artifact" :title="title" :caption="caption" @open-dashboard="openDashboardApplication" />
     </template>
     <template #message-actions="{ sessionId, runId }">
       <TurnDiagnoseButton v-if="sessionId && runId" :session-id="sessionId" :run-id="runId" />

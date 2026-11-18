@@ -6,8 +6,7 @@ import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifact
 import { AddChartFileDialog } from "../../dashboard";
 
 /** The conversation's chart file: it can be put on a dashboard as it is, and the dashboard opens on it. */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const props = defineProps<{ artifact: RuntimeArtifact; title: string }>();
+defineProps<{ artifact: RuntimeArtifact; title: string; caption?: string }>();
 const emit = defineEmits<{ openDashboard: [id: string] }>();
 const { t } = useI18n();
 const adding = ref(false);
@@ -30,6 +29,7 @@ const adding = ref(false);
       :run-id="artifact.runId"
       :artifact-id="artifact.id"
       :title="title"
+      :caption="caption"
       @added="emit('openDashboard', $event)"
     />
   </template>

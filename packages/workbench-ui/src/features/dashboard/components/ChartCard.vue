@@ -9,35 +9,38 @@
     @keydown.enter.prevent="select"
   >
     <div class="chart-header">
-      <h3 :title="shownTitle">
-        <span v-if="renamed" class="chart-original-name">{{ title }}</span>
-        {{ shownTitle }}
-      </h3>
-      <span
-        v-if="chartChanged"
-        class="chart-draft-badge"
-        role="note"
-        :title="t('dashboard.draft.chartChanged')"
-        :aria-label="t('dashboard.draft.chartChanged')"
-      >
-        {{ t("dashboard.draft.chartChanged") }}
-      </span>
-      <span
-        v-if="partialNotice && state !== 'empty'"
-        class="chart-partial"
-        role="note"
-        :title="partialNotice"
-        :aria-label="partialNotice"
-      >
-        <TriangleAlert :size="14" />
-      </span>
-      <ChartToolbar
-        :data-open="dataOpen"
-        @edit-parameters="emit('edit-parameters', props.chart)"
-        @open-zoom="openZoom"
-        @toggle-data="toggleData"
-        @command="handleCommand"
-      />
+      <div class="chart-heading">
+        <h3 :title="shownTitle">{{ shownTitle }}</h3>
+        <span
+          v-if="partialNotice && state !== 'empty'"
+          class="chart-partial"
+          role="note"
+          :title="partialNotice"
+          :aria-label="partialNotice"
+        >
+          <TriangleAlert :size="14" />
+        </span>
+        <ChartToolbar
+          :data-open="dataOpen"
+          @edit-parameters="emit('edit-parameters', props.chart)"
+          @open-zoom="openZoom"
+          @toggle-data="toggleData"
+          @command="handleCommand"
+        />
+      </div>
+      <!-- A draft's marks sit under the name it gives, so a narrow card still shows that name and the chart's change. -->
+      <div v-if="renamed || chartChanged" class="chart-draft-marks">
+        <del v-if="renamed" class="chart-original-name" :title="title">{{ title }}</del>
+        <span
+          v-if="chartChanged"
+          class="chart-draft-badge"
+          role="note"
+          :title="t('dashboard.draft.chartChanged')"
+          :aria-label="t('dashboard.draft.chartChanged')"
+        >
+          {{ t("dashboard.draft.chartChanged") }}
+        </span>
+      </div>
     </div>
     <div
       v-loading="loading"
@@ -333,14 +336,17 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 0 1px var(--el-color-primary);
 }
 
-/* The header is as tall as the tools' buttons, so it keeps its height when they appear. */
 .chart-header {
-  display: flex;
-  align-items: center;
-  min-height: 26px;
   padding-bottom: var(--spacing-md);
   margin-bottom: var(--spacing-sm);
   border-bottom: 1px solid var(--el-border-color);
+}
+
+/* The name's row is as tall as the tools' buttons, so it keeps its height when they appear. */
+.chart-heading {
+  display: flex;
+  align-items: center;
+  min-height: 26px;
 }
 
 .chart-header h3 {
@@ -355,17 +361,29 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
-/* A draft's name stands beside the name it replaces, so the reader sees both. */
+/*
+ * A draft's marks, under its name: the name it replaces, struck out and shortened when the card is narrow, then the
+ * chart's own change, which is always whole.
+ */
+.chart-draft-marks {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
 .chart-original-name {
-  margin-right: 6px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   color: var(--el-text-color-tertiary);
-  font-weight: var(--font-normal);
+  font-size: var(--text-xs);
   text-decoration: line-through;
 }
 
 .chart-draft-badge {
   flex-shrink: 0;
-  margin-left: 6px;
   padding: 1px 6px;
   border-radius: var(--radius-sm);
   background: var(--el-color-primary-light-9);

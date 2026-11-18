@@ -30,7 +30,7 @@ async function download() {
       <span class="panel-heading">
         <span class="panel-title">{{ title }}</span>
       </span>
-      <SlotOutlet :content="shell.slots.artifactActions" :scope="{ artifact: open.artifact, title }" />
+      <SlotOutlet :content="shell.slots.artifactActions" :scope="{ artifact: open.artifact, title, caption: open.caption }" />
       <button type="button" class="panel-button" :title="shell.labels.value.download" :aria-label="shell.labels.value.download" @click="download">
         <Download :size="16" />
       </button>
@@ -44,6 +44,7 @@ async function download() {
         :run-id="open.artifact.runId"
         :path="open.artifact.path"
         :title="open.title"
+        :caption="open.caption"
         :artifact="open.artifact"
         presentation="panel"
       />

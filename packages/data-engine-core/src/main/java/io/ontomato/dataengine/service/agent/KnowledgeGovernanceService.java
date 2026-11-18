@@ -7,6 +7,7 @@ import com.alibaba.fastjson2.schema.JSONSchema;
 import io.ontomato.dataengine.schedules.ScheduleIdentity;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.KnowledgeService;
+import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.QueryGrantService;
 import jakarta.annotation.PostConstruct;
 import java.net.URLEncoder;
@@ -30,6 +31,7 @@ public class KnowledgeGovernanceService {
   private final AdminService admin;
   private final AgentExecutionAccess executions;
   private final ScheduleIdentity identities;
+  private final LangService language;
   private static final Set<String> BUSINESS_ACTIONS=Set.of("read_knowledge","read_ontology","import_knowledge");
   public static boolean businessAction(String action) {return BUSINESS_ACTIONS.contains(action);}
   @org.springframework.beans.factory.annotation.Autowired
@@ -38,9 +40,11 @@ public class KnowledgeGovernanceService {
 
   public KnowledgeGovernanceService(OntologyAgentStore store, AgentRuntimeClient runtime,
       GovernanceRuntimeClient platform, OntologyAgentDefinitions definitions, QueryGrantService grants,
-      KnowledgeService knowledge, AdminService admin, AgentExecutionAccess executions, ScheduleIdentity identities) {
+      KnowledgeService knowledge, AdminService admin, AgentExecutionAccess executions, ScheduleIdentity identities,
+      LangService language) {
     this.store=store; this.runtime=runtime; this.platform=platform; this.definitions=definitions;
     this.grants=grants; this.knowledge=knowledge; this.admin=admin;this.executions=executions;this.identities=identities;
+    this.language=language;
   }
 
   @PostConstruct
@@ -268,10 +272,10 @@ public class KnowledgeGovernanceService {
     if(!identityService.hasKnowledgeGovernanceAccess(owner.userId(),owner.domainId()))
       throw new AgentHttpException(403,"FORBIDDEN","Business knowledge permission is required");
   }
-  public Object action(String id,String run,String action,JSONObject input,Owner owner) throws Exception {
-    return action(id,run,action,input,owner,owner);
+  public Object action(String id,String run,String action,JSONObject input,Owner owner,String locale) throws Exception {
+    return action(id,run,action,input,owner,owner,locale);
   }
-  public Object action(String id,String run,String action,JSONObject input,Owner owner,Owner executor) throws Exception {
+  public Object action(String id,String run,String action,JSONObject input,Owner owner,Owner executor,String locale) throws Exception {
     validate(action,input);
     requireAccess(owner);
     requireRun(id,run,owner);
@@ -281,11 +285,11 @@ public class KnowledgeGovernanceService {
       String text;
       if(row.getBooleanValue("external")) {
         text=row.getString("input_message");
-        src=source("input",run,"External governance material",text);
+        src=source("input",run,language.get(locale,"KnowledgeGovernance.source.externalMaterial"),text);
       } else {
         var target=JSONObject.of("hostId",row.getString("runtime_host_id"),"runId",run);
         text=history(target,owner).getString("question");
-        src=source("history",AgentJson.json(target),"Current user message","");
+        src=source("history",AgentJson.json(target),language.get(locale,"KnowledgeGovernance.source.currentMessage"),"");
       }
       if(text==null || text.isBlank()) throw AgentHttpException.invalid("The current run has no source message");
       mutate(id,run,owner,w->remember(w,List.of(src)));
