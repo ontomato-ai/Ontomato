@@ -86,9 +86,11 @@ const page = computed(
     labels: { save: t('common.save'), discard: t('common.cancel'), unsavedChanges: t('admin.unsavedChanges') },
   }">
     <DashboardHome />
-    <!-- The page's own composer offers the agents this page can work with, the same declaration the conversation reads. -->
-    <PageComposer v-if="!props.paired" :page="page" :labels="labels" :page-skill="DASHBOARDS_PAGE_SKILL" @error="problem = $event" />
-    <p v-if="problem" class="page-composer-error" role="alert">{{ problem }}</p>
+    <template v-if="!props.paired" #foot>
+      <!-- The page's own composer offers the agents this page can work with, the same declaration the conversation reads. -->
+      <p v-if="problem" class="page-composer-error" role="alert">{{ problem }}</p>
+      <PageComposer :page="page" :labels="labels" :page-skill="DASHBOARDS_PAGE_SKILL" @error="problem = $event" />
+    </template>
   </component>
 </template>
 

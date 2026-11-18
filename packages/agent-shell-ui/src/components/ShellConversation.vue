@@ -443,7 +443,7 @@ async function send(text: string) {
   position: relative;
   width: min(100% - 48px, var(--shell-content-max));
   margin: 0 auto;
-  padding: 0 0 16px;
+  padding: 0 0 var(--shell-composer-foot);
 }
 /*
  * Content scrolling under the composer fades out instead of being cut, into whatever the conversation sits on: the

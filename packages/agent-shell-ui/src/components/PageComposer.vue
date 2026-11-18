@@ -83,7 +83,8 @@ function ask(text: string) {
 <style scoped>
 /*
  * At the foot of the page, the platform's one composer: what a message asks about is the page above it. It stays one row
- * high until the message needs more, and sits close to the page's bottom edge, so it takes as little of the page as it can.
+ * high until the message needs more, and stands as far above the page's bottom edge as the conversation's composer does
+ * above its own — one value for both, so it takes as little of the page as it can.
  */
 .page-ask {
   position: sticky;
@@ -91,7 +92,7 @@ function ask(text: string) {
   z-index: 1;
   width: min(760px, 100%);
   margin-inline: auto;
-  padding: var(--spacing-sm) 0 var(--spacing-xs);
+  padding: var(--spacing-sm) 0 var(--shell-composer-foot);
   background: var(--el-bg-color);
 }
 </style>

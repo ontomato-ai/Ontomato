@@ -80,7 +80,8 @@ function render(busy = false) {
         h(
           AgentShell,
           {
-            workbench, client: client(), labels, nav,
+            // The agent platform: an application that runs on several agents, so its column heads with the chooser.
+            workbench, client: client(), labels, nav, agentPicker: true,
             agentId: agentId.value,
             "onUpdate:agentId": (id: string | null) => (agentId.value = id),
             sessionId: sessionId.value,
