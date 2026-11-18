@@ -568,6 +568,28 @@ describe("Manager pages in the service router", () => {
     expect(graphRecord.zoomTo).toContainEqual([1, false]);
   });
 
+  it("switches from an overview class filter to the selected instance detail", async () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
+    const { root } = mountHost({ ...base, view: "/browser/data/Order" });
+    await settle();
+    (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[0] as HTMLElement).click();
+    await settle();
+
+    (root().querySelector(".node-search .el-select .el-select__wrapper") as HTMLElement).click();
+    await settle();
+    [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")]
+      .find((item) => item.textContent?.includes("Order-label"))!.click();
+    await settle();
+    expect(root().querySelector(".search-scope")?.textContent).toContain("Order-label");
+    expect(root().querySelector(".detail-content")).toBeNull();
+
+    graphHandlers["node:click"]({ target: { id: "Item:2" } });
+    await settle();
+    expect(root().querySelector(".search-scope")).toBeNull();
+    expect(root().querySelector(".node-search .el-select .el-select__wrapper")?.textContent).toContain("All Object Types");
+    expect(root().querySelector(".detail-title code")?.textContent).toBe("Item:2");
+  });
+
   it("toggles relation names on existing edges without hiding node labels or reloading data", async () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
     const { root } = mountHost({ ...base, view: "/browser/data/Order" });
