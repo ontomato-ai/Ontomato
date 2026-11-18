@@ -9,7 +9,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.alibaba.fastjson2.*;
 import com.sun.net.httpserver.HttpServer;
 import io.ontomato.dataengine.controller.*;
+import io.ontomato.dataengine.schedules.ScheduleIdentity;
 import io.ontomato.dataengine.service.*;
+import io.ontomato.dataengine.service.sys.bean.permission.FieldPermission;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
@@ -21,8 +23,10 @@ import java.util.concurrent.*;
 import org.junit.jupiter.api.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.*;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /** PostgreSQL gates and real Java HTTP transport, without model or product-stack execution. */
 class OntologyRetrievalContractTest {
@@ -34,12 +38,14 @@ class OntologyRetrievalContractTest {
   QueryJobService jobs;
   QueryQualityService quality;
   QueryGrantService grants;
-  UserDataPermission permission;
+  UserDataPermission permission, executorPermission;
+  IdentityService identity;
   MockMvc http;
   HttpServer server;
   AgentRuntimeClient runtime;
   OntologyAgentAccess authorization;
   final OntologyAgentStore.Owner owner = new OntologyAgentStore.Owner("user-a", "domain-a");
+  final QueryAccessService.GrantUser executor = new QueryAccessService.GrantUser("user-v", owner.domainId());
   final Map<String, JSONObject> runs = new ConcurrentHashMap<>(),
       requests = new ConcurrentHashMap<>(),
       files = new ConcurrentHashMap<>();
@@ -153,7 +159,7 @@ class OntologyRetrievalContractTest {
             "http://127.0.0.1:" + server.getAddress().getPort(),
             "fixture-host",
             "http://ontology.fixture");
-    var identity = mock(IdentityService.class);
+    identity = mock(IdentityService.class);
     var user = new QueryAccessService.GrantUser(owner.userId(), owner.domainId());
     when(identity.getCurrentCredentialExpiresAt()).thenReturn(null);
     when(identity.getCurrentUser()).thenReturn(user);
@@ -162,7 +168,9 @@ class OntologyRetrievalContractTest {
     fields.getVisibleFields().addAll(List.of("value", "count"));
     permission.addFieldPermission(fields);
     when(identity.getCurrentUserDataPermission()).thenReturn(permission);
-    var queries = new QueryAccessService(identity, mock(DataPermissionLookup.class), grants);
+    var lookup = mock(DataPermissionLookup.class);
+    when(lookup.getDataPermission(executor.getId(), owner.domainId())).thenAnswer(call -> executorPermission);
+    var queries = new QueryAccessService(identity, lookup, grants);
     authorization = new OntologyAgentAccess(queries, identity, grants, store);
     var ontology = mock(OntologyQueryService.class);
     when(ontology.overview(any())).thenReturn(Map.of("description", "", "classes", List.of()));
@@ -193,12 +201,25 @@ class OntologyRetrievalContractTest {
             retrieval,
             mock(OntologyGenerationService.class),
             mock(ActionCreationService.class),mock(OntologyAgentLabels.class));
+    var scheduleIdentity = mock(ScheduleIdentity.class);
+    when(scheduleIdentity.dataPermission(owner.domainId(), owner.userId())).thenAnswer(call -> permission);
+    when(scheduleIdentity.dataPermission(owner.domainId(), executor.getId())).thenAnswer(call -> executorPermission);
+    var executions = mock(AgentExecutionAccess.class);
+    when(executions.require(owner.domainId(), executor.getId())).thenReturn(executor);
+    var callers = new AgentCaller(jdbc, scheduleIdentity, identity);
+    ReflectionTestUtils.setField(callers, "executions", executions);
+    var grantFilter = new QueryGrantFilter(grants);
+    ReflectionTestUtils.setField(grantFilter, "executions", executions);
+    var channelController = new AgentChannelController(callers, mock(AgentDirectory.class), store, runtime,
+        new WorkbenchServiceAuthentication("fixture-service"), retrieval, tasks, mock(ActionCreationService.class),
+        mock(OntologyGenerationService.class), authorization, mock(LangService.class));
     http =
         MockMvcBuilders.standaloneSetup(
                 new OntologyAgentController(host, authorization, runtime, retrieval),
-                new OntologyRetrievalController(retrieval, store, authorization, tasks))
+                new OntologyRetrievalController(retrieval, store, authorization, tasks), channelController)
             .setControllerAdvice(new OntologyAgentErrors())
-            .addFilters(new QueryGrantFilter(grants))
+            .setMessageConverters(new MappingJackson2HttpMessageConverter())
+            .addFilters(grantFilter)
             .build();
   }
 
@@ -267,6 +288,212 @@ class OntologyRetrievalContractTest {
     assertTrue(store.run(session,run,owner).getBooleanValue("runtime_admitted"));
     retrieval.reconcile(session,run,owner,runtime.run(owner.domainId(),run));
     return retrieval.get(session,owner);
+  }
+
+  private static UserDataPermission visibleClasses(String... classes) {
+    var permission = new UserDataPermission();
+    for (String name : classes) {
+      var fields = new FieldPermission(name);
+      fields.getVisibleFields().add("id");
+      permission.addFieldPermission(fields);
+    }
+    return permission;
+  }
+
+  private String classScopeCaller(List<String> classes, boolean fixedExecutor) {
+    String caller = id();
+    store.openCaller(caller, owner, JSONObject.of("classNames", classes, "continuationIds", List.of(),
+        "recentUserMessages", List.of("Original user words"), "deadlineAt", Instant.now().plusSeconds(60).toString(),
+        "executionUserId", fixedExecutor ? executor.getId() : null));
+    return caller;
+  }
+
+  private JSONObject channelRequest(String caller, String session, String run, List<String> parent,
+      List<String> requested, boolean fixedExecutor) {
+    var root = JSONObject.of("session", JSONObject.of("providerId", "workbench", "sessionId", id()), "runId", caller);
+    return JSONObject.of("mode", "run", "language", "en", "sessionId", session, "runId", run, "inputId", id(),
+        "actor", JSONObject.of("id", caller, "domainId", owner.domainId()), "root", root, "requestedBy", root,
+        "agent", JSONObject.of("providerId", "ontology", "agentId", OntologyAgentStore.RETRIEVER),
+        "authority", JSONObject.of("classNames", parent, "executionKind", "live"),
+        "input", JSONObject.of("role", "notification", "kind", "agent-message", "source", root,
+            "content", "Count organizations", "timestamp", 1),
+        "context", requested == null ? null : JSONObject.of("classNames", requested),
+        "executionActor", fixedExecutor ? JSONObject.of("userId", executor.getId(), "domainId", owner.domainId()) : null);
+  }
+
+  private JSONObject prepareChannel(JSONObject request, int expectedStatus) throws Exception {
+    return JSON.parseObject(http.perform(post("/platform/agent-channel/prepare")
+        .header(WorkbenchServiceAuthentication.HEADER, "fixture-service").header("X-Domain-Id", owner.domainId())
+        .header("tk", "fixture-user").contentType("application/json").content(AgentJson.json(request)))
+        .andExpect(status().is(expectedStatus)).andReturn().getResponse().getContentAsString());
+  }
+
+  private JSONObject explorationClaims(JSONObject prepared, String run) {
+    return grants.verify(prepared.getJSONObject("environment").getJSONObject("secrets").getString("ONTOMATO_TK"),
+        run, "/ontology/query/overview");
+  }
+
+  private void assertNoRetrievalRun(String run) {
+    assertTrue(store.rows("SELECT id FROM ontology_agent_runs WHERE id=?::uuid", run).isEmpty());
+  }
+
+  @Test
+  void delegatedClassScopeIntersectsConfigurationParentAndExecutor() throws Exception {
+    executorPermission = visibleClasses("org", "course", "expense");
+    String caller = classScopeCaller(List.of("org", "person", "course"), true);
+    var parent = List.of("org", "person", "expense", "outside");
+    for (var requested : Arrays.<List<String>>asList(null, List.of(), List.of("org"))) {
+      String session = id(), run = id();
+      var request = channelRequest(caller, session, run, parent, requested, true);
+      var prepared = prepareChannel(request, 200);
+      var input = store.retrieval(session, owner).getJSONObject("input");
+      assertEquals(List.of("org"), input.getList("classNames", String.class));
+      assertEquals(List.of("org"), prepared.getJSONObject("authority").getList("classNames", String.class));
+      assertEquals(List.of("org"), explorationClaims(prepared, run).getList("classNames", String.class));
+      assertEquals(executor.getId(), explorationClaims(prepared, run).getString("userId"));
+      var model = JSON.parseObject(prepared.getJSONObject("definition").getString("context"));
+      assertEquals(List.of("person"), model.getList("unreadableClassNames", String.class));
+      assertEquals(List.of("Original user words"), model.getList("userQuotes", String.class));
+      request.put("mode", "steer");
+      var steered = JSON.parseObject(prepareChannel(request, 200).getString("context"));
+      assertEquals(List.of("person"), steered.getList("unreadableClassNames", String.class));
+      assertEquals(List.of("Original user words"), steered.getList("userQuotes", String.class));
+    }
+  }
+
+  @Test
+  void restrictedClassRequestsFailBeforeAdmissionWithTheRightReason() throws Exception {
+    executorPermission = visibleClasses("org", "course", "expense");
+    String caller = classScopeCaller(List.of("org", "person", "course"), true);
+    for (var requested : List.of(List.of("person"), List.of("org", "person"))) {
+      String run = id();
+      var denied = prepareChannel(channelRequest(caller, id(), run, List.of("org", "person"), requested, true), 403);
+      assertEquals("Execution user has no read permission for: person", denied.getJSONObject("error").getString("message"));
+      assertNoRetrievalRun(run);
+    }
+    String run = id();
+    var denied = prepareChannel(channelRequest(caller, id(), run, List.of("person"), List.of("person"), true), 403);
+    assertEquals("Execution user has no read permission for: person", denied.getJSONObject("error").getString("message"));
+    assertNoRetrievalRun(run);
+    for (String name : List.of("course", "expense", "outside")) {
+      String widenedRun = id();
+      var widened = prepareChannel(channelRequest(caller, id(), widenedRun, List.of("org", "expense", "outside"),
+          List.of(name), true), 403);
+      assertEquals("Class scope cannot be widened", widened.getJSONObject("error").getString("message"));
+      assertNoRetrievalRun(widenedRun);
+    }
+  }
+
+  @Test
+  void aFiniteEmptyClassIntersectionFailsEvenForAnUnrestrictedUser() throws Exception {
+    executorPermission = visibleClasses("org");
+    String caller = classScopeCaller(List.of("person"), true);
+    String noPermission = id();
+    prepareChannel(channelRequest(caller, id(), noPermission, List.of("org", "person"), null, true), 403);
+    assertNoRetrievalRun(noPermission);
+    executorPermission.setFullData(true);
+    String disjoint = id();
+    prepareChannel(channelRequest(caller, id(), disjoint, List.of("org"), List.of(), true), 403);
+    assertNoRetrievalRun(disjoint);
+  }
+
+  @Test
+  void selfModeUsesTheInitiatorAndEmptyBoundsDoNotConstrainTheOtherScope() throws Exception {
+    permission = visibleClasses("org", "person");
+    var classes = List.of("org", "person");
+    for (var configured : List.of(List.<String>of(), classes)) {
+      String caller = classScopeCaller(configured, false);
+      String session = id(), run = id();
+      var prepared = prepareChannel(channelRequest(caller, session, run, configured.isEmpty() ? classes : List.of(),
+          null, false), 200);
+      var claims = explorationClaims(prepared, run);
+      assertEquals(owner.userId(), claims.getString("userId"));
+      assertEquals(Set.copyOf(classes), Set.copyOf(claims.getList("classNames", String.class)));
+      assertEquals(List.of(), JSON.parseObject(prepared.getJSONObject("definition").getString("context"))
+          .getList("unreadableClassNames", String.class));
+    }
+  }
+
+  @Test
+  void aRevokedClassCannotResumeAnAdmittedRound() throws Exception {
+    executorPermission = visibleClasses("org");
+    String caller = classScopeCaller(List.of("org", "person"), true);
+    String session = id(), run = id();
+    var parent = List.of("org", "person");
+    var original = channelRequest(caller, session, run, parent, null, true);
+    prepareChannel(original, 200);
+
+    var narrowedParent = channelRequest(caller, session, id(), List.of("person"), null, true);
+    var parentDenied = prepareChannel(narrowedParent, 403);
+    assertEquals("The prior retrieval exceeds this caller scope", parentDenied.getJSONObject("error").getString("message"));
+
+    executorPermission = visibleClasses("person");
+    String next = id();
+    var denied = prepareChannel(channelRequest(caller, session, next, parent, null, true), 403);
+    assertEquals("Execution user has no read permission for: org", denied.getJSONObject("error").getString("message"));
+    assertNoRetrievalRun(next);
+    prepareChannel(original, 403);
+    assertTrue(store.run(session, run, owner).getBooleanValue("open"));
+    assertEquals(List.of(), store.retrieval(session, owner).getList("decisions", JSONObject.class));
+  }
+
+  @Test
+  void aPartialPermissionRevocationRejectsOutputForTheWholeAdmittedScope() throws Exception {
+    var classes = List.of("org", "person");
+    executorPermission = visibleClasses("org", "person");
+    String caller = classScopeCaller(classes, true);
+    String session = id(), run = id();
+    var prepared = prepareChannel(channelRequest(caller, session, run, classes, classes, true), 200);
+    String grant = prepared.getJSONObject("environment").getJSONObject("secrets").getString("ONTOMATO_TK");
+
+    // Output deliberately reauthorizes the whole admitted scope. Returning a partial result would change its meaning.
+    executorPermission = visibleClasses("person");
+    String output = id();
+    var preparation = JSONObject.of("title", "Organizations", "recipe", JSONObject.of("kind", "package",
+        "package", QueryPackage.fromDsl("{\"answer\":{\"steps\":[{}]}}"), "parameters", new JSONObject(),
+        "columnLabels", JSONObject.of("value", "Value")), "assumptions", List.of(), "metricUses", List.of(),
+        "selfCheck", JSONObject.of("scope", "", "filters", "", "grain", "", "denominator", "", "nullGroups", "",
+            "comparisons", List.of()));
+    var response = http.perform(post("/ontology/retrievals/" + session + "/runs/" + run + "/outputs")
+        .header("tk", grant).header("X-Ontomato-Run-Id", run).header("X-Ontomato-Session-Id", session)
+        .header("Idempotency-Key", output).contentType("application/json").content(AgentJson.json(preparation)))
+        .andExpect(status().isForbidden()).andReturn();
+    assertEquals("Execution user has no read permission for: org",
+        JSON.parseObject(response.getResponse().getContentAsString()).getJSONObject("error").getString("message"));
+    assertTrue(store.rows("SELECT id FROM ontology_retrieval_outputs WHERE id=?::uuid", output).isEmpty());
+    verifyNoInteractions(jobs);
+  }
+
+  @Test
+  void skillRunReusesTheSameClassRulesAndOnlyACallerOverridesQuotes() throws Exception {
+    executorPermission = visibleClasses("org");
+    String caller = classScopeCaller(List.of("org", "person"), true);
+    when(identity.getCurrentUser()).thenReturn(executor);
+    when(identity.getCurrentUserDataPermission()).thenReturn(executorPermission);
+    String route = "/ontology/retrievals/skill-runs";
+    String rejected = id();
+    var denied = http.perform(post(route).header("tk", "fixture-user").header("Idempotency-Key", rejected)
+        .header(WorkbenchServiceAuthentication.HEADER, "fixture-service").header("X-Ontomato-Retrieval-Caller-Id", caller)
+        .contentType("application/json").content(AgentJson.json(JSONObject.of("question", "Count people", "classNames", List.of("person")))))
+        .andExpect(status().isForbidden()).andReturn();
+    assertEquals("Execution user has no read permission for: person",
+        JSON.parseObject(denied.getResponse().getContentAsString()).getJSONObject("error").getString("message"));
+    assertNoRetrievalRun(rejected);
+
+    String delegated = id();
+    var input = JSONObject.of("question", "Count organizations", "userQuotes", List.of("Request supplied words"));
+    http.perform(post(route).header("tk", "fixture-user").header("Idempotency-Key", delegated)
+        .header(WorkbenchServiceAuthentication.HEADER, "fixture-service").header("X-Ontomato-Retrieval-Caller-Id", caller)
+        .contentType("application/json").content(AgentJson.json(input))).andExpect(status().isCreated());
+    var admitted = store.retrieval(delegated, owner).getJSONObject("input");
+    assertEquals(List.of("org"), admitted.getList("classNames", String.class));
+    assertEquals(List.of("Original user words"), admitted.getList("userQuotes", String.class));
+
+    String direct = id();
+    postJson(route, direct, input, null);
+    var executorOwner = new OntologyAgentStore.Owner(executor.getId(), owner.domainId());
+    assertEquals(List.of("Request supplied words"),
+        store.retrieval(direct, executorOwner).getJSONObject("input").getList("userQuotes", String.class));
   }
 
   @Test

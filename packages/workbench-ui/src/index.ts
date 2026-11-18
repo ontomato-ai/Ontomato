@@ -3,6 +3,7 @@ export type { WorkbenchAuthHost } from "./utils/auth";
 export { turnDiagnosisAccessKey, type TurnDiagnosisAccess } from "./features/diagnosis/access";
 export { installWorkbenchContent, type WorkbenchContent } from "./content";
 export {
+  ApiRequestError,
   apiGet,
   apiPost,
   nodeApiDelete,

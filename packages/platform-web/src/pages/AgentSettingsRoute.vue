@@ -82,6 +82,7 @@ provide(agentSettingsAddressKey, {
   address,
   draft: computed(() => pageDraftLink(query.value)),
   savedAddress,
+  agentAddress: (id) => `${platformRoutes.ontologyAgents.path}/${encodeURIComponent(id)}${address.value.slice(address.value.split("?")[0]!.length)}`,
   go: openAddress,
 });
 

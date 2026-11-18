@@ -1,6 +1,6 @@
 import { shallowRef } from "vue";
 import type { PageDraft } from "@ontomato/contracts/page-draft";
-import { changedFields, pageDraftLink, withoutPageDraftQuery, type PageDraftLink } from "@ontomato/contracts/page-draft";
+import { changedFields, draftTarget, pageDraftLink, withoutPageDraftQuery, type PageDraftLink } from "@ontomato/contracts/page-draft";
 
 /*
  * A draft a panel receives (overall design 3.4, "receive drafts"): the envelope stays `@ontomato/contracts/page-draft`'s
@@ -94,13 +94,22 @@ export class PanelFormAdapters {
 
   #handOver() {
     const held = this.#held.value;
-    const slot = held && this.slotOf(held.draft.operation);
-    if (!held || !slot) return;
+    if (!held) return;
+    const addressed = draftTarget(held.draft);
+    if (addressed.kind === "create") {
+      this.#held.value = null;
+      throw new Error("This panel's form does not create objects");
+    }
+    const slot = this.slotOf(held.draft.operation);
+    if (!slot) return;
     this.#held.value = null;
     const adapter = this.#bySlot.get(slot)!;
-    const { operation, target, form } = held.draft;
+    const { operation, form } = held.draft;
+    const target = { id: addressed.id };
     void adapter.read(target).then((base) => {
-      const draft = { slot, operation, target, form, changed: changedFields(base, form) };
+      const changed = changedFields(base, form);
+      if (changed.size === 0) return;
+      const draft = { slot, operation, target, form, changed };
       adapter.apply(draft);
       held.taken(draft);
     });

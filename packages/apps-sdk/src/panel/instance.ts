@@ -1,3 +1,4 @@
+import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import { computed, readonly, shallowRef, type DeepReadonly, type Ref } from "vue";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import { panelOpenRequestSchema, type PanelManifest, type PanelOperationCall, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
@@ -53,6 +54,9 @@ export interface PanelInstance {
   invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
   /** Runs one operation a projection publishes, by its handler reference, with the call it is given. */
   runHandler(handlerRef: string, call: PanelOperationCall): Promise<unknown>;
+  objectChanged(object: PanelObjectIdentity): void;
+  refreshObjects(): void;
+  onObjectChanged(listener: (object: PanelObjectIdentity | null) => void): () => void;
   /** Reads a projection record by ID, as the reader. */
   projection(id: string): Promise<ProductProjection>;
   /** Whether this instance holds unsaved changes: a received draft, or a form the reader edited. */
@@ -67,6 +71,10 @@ export interface PanelInstance {
  */
 export function createPanelInstance(manifest: PanelManifest, options: PanelInstanceOptions): PanelInstance {
   const state = createPanelState(manifest, options.initial);
+  const objectListeners = new Set<(object: PanelObjectIdentity | null) => void>();
+  const objectChanged = (object: PanelObjectIdentity | null) => {
+    for (const listener of objectListeners) listener(object);
+  };
   const registrations = shallowRef<readonly PanelProjectionRegistration[]>([]);
   const operations = computed(() => panelOperations(manifest, registrations.value, state, forms));
   const forms = new PanelFormAdapters();
@@ -109,7 +117,17 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       if (!found) throw new Error(`The panel offers no operation '${id}'`);
       return found.invoke(input);
     },
-    runHandler: (handlerRef, call) => handlerFor(handlerRef).invoke(call),
+    async runHandler(handlerRef, call) {
+      const result = await handlerFor(handlerRef).invoke(call);
+      if (call.target?.kind === "object") objectChanged(call.target);
+      return result;
+    },
+    objectChanged,
+    refreshObjects: () => objectChanged(null),
+    onObjectChanged(listener) {
+      objectListeners.add(listener);
+      return () => objectListeners.delete(listener);
+    },
     projection: (id) => options.readProjection(id),
     dirty: () => draft.value !== null || forms.dirty(),
     deepLink: () => state.deepLinkable(),

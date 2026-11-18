@@ -22,6 +22,7 @@ import { readCurrentPanel, readCurrentProjection } from "./current";
 import { readComponentCatalogue } from "./skill-package";
 import { panelServerOperation, type PanelServerOperation, type PanelOperationTarget, type PanelOperationHost } from "./server-operations";
 import { panelConfirmation } from "./confirmation";
+import { notifyPanelObjectChanged } from "../product-assets/subscriptions";
 import { panelOperationStore as store } from "./operation-store";
 
 async function admitted(owner: AssistantOwner, credentials: AssistantCredentials, runId: string, ref: PanelUseRef, operationId: string) {
@@ -146,14 +147,17 @@ export async function dispatchPanel(owner: AssistantOwner, credentials: Assistan
   }
   validateCall(current.handler, intent.call);
   if (!await store.claim(owner,intent)) return result(await store.get(owner,id));
+  const target = intent.call.target as PanelOperationTarget;
   let outcome: PanelOperationOutcome;
   try {
-    outcome = await current.handler.execute(operationHost(executor.credentials),intent.call.target as PanelOperationTarget,intent.call.input,id);
+    outcome = await current.handler.execute(operationHost(executor.credentials),target,intent.call.input,id);
   } catch (error) {
     // An uncertain owner call never releases the irreversible claim.
     outcome = {kind:"unknown",message:error instanceof Error?error.message:String(error)};
   }
   await store.outcome(owner,id,outcome);
+  if (outcome.kind === "success")
+    notifyPanelObjectChanged(intent.initiator, { objectType: target.objectType, primaryKey: target.primaryKey });
   return {kind:"dispatched",intentId:id,outcome};
 }
 /** Exact human owner, independent of readable/admin access and of any old run's liveness. */

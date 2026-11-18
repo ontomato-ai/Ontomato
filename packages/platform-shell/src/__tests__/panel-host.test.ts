@@ -1,3 +1,4 @@
+import type { PanelSubscriptionEvent } from "@ontomato/contracts/product-subscriptions";
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -83,7 +84,7 @@ function useRelation(id: string, pageKey: string, panelId: string, path: string)
  * windows a host registers, kept so a test can read what the host posted into them.
  */
 function platform(input: { applicationId?: string; panels: Map<string, ProductPanel>; uses: ApplicationPanelUse[] }) {
-  const listeners = new Set<(event: DefinitionChanged) => void>();
+  const listeners = new Set<(event: PanelSubscriptionEvent) => void>();
   const frames = new Map<Window, unknown[]>();
   const sent = new WeakMap<Window, unknown[]>();
   return {
@@ -102,7 +103,7 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
       }) as Window["postMessage"];
       return () => frames.delete(frame);
     },
-    subscribe: (_panelId: string, listener: (event: DefinitionChanged) => void) => {
+    subscribe: (_panelId: string, listener: (event: PanelSubscriptionEvent) => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },

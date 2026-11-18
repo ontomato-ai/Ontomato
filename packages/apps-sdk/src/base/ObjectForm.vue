@@ -3,7 +3,7 @@ import { computed, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { FormField } from "@ontomato/contracts/form-fields";
 import { FormFields as FormFieldsView } from "@ontomato/foundation-ui/form";
-import { slotState, usePanelContext, useProjectionForm, useProjectionSlot } from "../panel/context";
+import { slotState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
 import { platformObjectFor, PlatformObjectRefusal, selectedKey, type PlatformObjectForm } from "../panel/platform-objects";
 import type { ReceivedPanelDraft } from "../panel/draft";
 
@@ -111,7 +111,22 @@ function fail(reason: unknown) {
 }
 
 onMounted(() => load(key.value));
-watch(key, (next) => load(next));
+let pendingRefresh: string | null = null;
+watch(key, next => {
+  pendingRefresh = null;
+  load(next);
+});
+function refreshWhenClean() {
+  if (!pendingRefresh || canSettle.value || saving.value) return;
+  const requested = pendingRefresh;
+  pendingRefresh = null;
+  load(requested);
+}
+useProjectionObjectRefresh(id => id === key.value, () => {
+  pendingRefresh = key.value;
+  refreshWhenClean();
+});
+watch([canSettle, saving], refreshWhenClean);
 
 /** A text changed: the form follows it and the owner is not asked again. */
 function typed(name: string, value: string) {
@@ -184,6 +199,7 @@ async function write(valuesToSave: Record<string, string>, primaryKey: string): 
     held = null;
     adopt({ fields: fields.value, values: valuesToSave, revision: revision + 1 });
     panel.instance.clearDraft(slot.slot);
+    panel.instance.objectChanged({ objectType: slot.projection.binding.id, primaryKey });
     return saved;
   } catch (reason) {
     showRefusal(reason);

@@ -10,7 +10,8 @@ public interface KnowledgeService {
 	
     public String findKnowledge(String question, int pMaxResult, String domainId);
 
-    public void addBussinessKnowledge(String knowledgeID, String knowledgeTitle, String bk,int status,List<String> listknowledgeTags, User user);
+    /** Adds an entry and answers the id it is stored under (one the request named, or the one the store assigned). */
+    public String addBussinessKnowledge(String knowledgeID, String knowledgeTitle, String bk,int status,List<String> listknowledgeTags, User user);
 
     public void editBussinessKnowledge(String knowledgeID, String knowledgeTitle, String bk,int status,List<String> listknowledgeTags, User user);
 

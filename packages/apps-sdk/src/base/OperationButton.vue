@@ -2,7 +2,6 @@
 import { computed, ref, shallowRef } from "vue";
 import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import { slotState, usePanelContext, useProjectionSlot } from "../panel/context";
-import { selectedKey } from "../panel/platform-objects";
 
 /**
  * The button of one operation a projection publishes: it shows the operation's own label and runs that operation on the
@@ -40,9 +39,10 @@ const published = computed(() => {
 
 /** The object it acts on: what the panel has selected in the state this slot's input is filled from. */
 const call = computed<PanelOperationCall>(() => {
-  const primaryKey = selectedKey(panel.instance.state.values.value[slotState(panel.manifest, slot.slot, props.input)]);
+  const selected = panel.instance.state.values.value[slotState(panel.manifest, slot.slot, props.input)];
   return {
-    target: primaryKey ? { kind: "object", objectType: slot.projection.binding.id, primaryKey } : null,
+    target: selected && typeof selected === "object"
+      ? { kind: "object", objectType: selected.className, primaryKey: selected.primaryKey } : null,
     input: {},
   };
 });

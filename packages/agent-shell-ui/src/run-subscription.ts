@@ -1,9 +1,9 @@
 import type { AgentHostRunSnapshot } from "@ontomato/contracts/agent-host";
 import type { RuntimeEventEnvelope, RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
+import { sseReconnectDelay } from "@ontomato/contracts/sse";
 import type { RunView } from "./conversation";
 import type { HostStreamHandlers } from "./host";
 
-export const RECONNECT_DELAYS = [500, 1000, 2000, 5000, 10000];
 const MAX_QUEUED_FRAMES = 2000;
 
 export interface RunSubscription<T = AgentHostRunSnapshot> {
@@ -81,7 +81,7 @@ export function createRunSubscription<T = AgentHostRunSnapshot>() {
 
   function schedule(attempt: number, resume: (attempt: number) => void | Promise<void>) {
     const current = generation;
-    const delay = RECONNECT_DELAYS[Math.min(attempt, RECONNECT_DELAYS.length - 1)];
+    const delay = sseReconnectDelay(attempt);
     reconnectTimer = setTimeout(() => {
       if (current === generation) void resume(attempt);
     }, delay);

@@ -1,4 +1,4 @@
-import { createApp, h, provide, ref, watch, type Component, type Ref } from "vue";
+import { createApp, h, nextTick, provide, ref, watch, type Component, type Ref } from "vue";
 import { useI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import { connectAppContext, contextTransport, type AppContext } from "../context";
@@ -12,7 +12,7 @@ import {
   type PanelFrameMessage,
   type PanelHostMessage,
 } from "@ontomato/contracts/panel-host";
-import { pageDraftSchema, type PageDraft } from "@ontomato/contracts/page-draft";
+import { pageDraftReadSchema, type PageDraft } from "@ontomato/contracts/page-draft";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { panelContextKey, type PanelContext, type ProjectionSlot } from "./context";
@@ -77,7 +77,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     },
   });
   const unsaved = new Set<Ref<boolean>>();
-  const projectionListeners = new Set<(id: string) => void>();
+  const projectionListeners = new Set<(id: string, revision?: number) => void>();
   const context: PanelContext = {
     panel: message.panel,
     manifest: message.panel.manifest,
@@ -144,7 +144,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     await followDraft();
   }
 
-  report({ instance, address, unsaved, followAddress, changed: (id) => projectionListeners.forEach((listener) => listener(id)) });
+  report({ instance, address, unsaved, followAddress, changed: (id, revision) => projectionListeners.forEach(listener => listener(id, revision)) });
   await followDraft();
   return { context, appContext };
 }
@@ -164,7 +164,7 @@ async function readDraft(transport: ReturnType<typeof contextTransport>, session
   );
   const body = await response.json();
   if (!response.ok) throw new Error(body.error?.message ?? `The draft at ${path} could not be read`);
-  return pageDraftSchema.parse(body);
+  return pageDraftReadSchema.parse(body);
 }
 
 /** The run's facts as the host wrote them into this document, before the module ran. */
@@ -179,7 +179,7 @@ interface ReportOptions {
   address: Ref<string>;
   followAddress(address: string): Promise<void>;
   unsaved: ReadonlySet<Ref<boolean>>;
-  changed: (projectionId: string) => void;
+  changed: (projectionId: string, revision?: number) => void;
 }
 
 /**
@@ -188,8 +188,9 @@ interface ReportOptions {
  * form.
  */
 function report({ instance, address, followAddress, unsaved, changed }: ReportOptions) {
+  const host = window.parent;
   const send = (value: PanelFrameMessage) =>
-    window.parent.postMessage({ channel: PANEL_HOST_CHANNEL, ...panelFrameMessageSchema.parse(value) }, "*");
+    host.postMessage({ channel: PANEL_HOST_CHANNEL, ...panelFrameMessageSchema.parse(value) }, "*");
   const isDirty = () => instance.dirty() || [...unsaved].some((flag) => flag.value);
 
   watch([() => instance.state.values.value, address], () => {
@@ -205,10 +206,21 @@ function report({ instance, address, followAddress, unsaved, changed }: ReportOp
   }, { immediate: true });
 
   window.addEventListener("message", (event) => {
+    if (event.source !== host) return;
     const parsed = panelMessageOf(panelHostFrameMessageSchema, event);
     if (!parsed) return;
     if (parsed.kind === "address") {
       void followAddress(parsed.address).catch(reason => failed(reason instanceof Error ? reason.message : String(reason)));
+      return;
+    }
+    if (parsed.kind === "reconnect") {
+      for (const { id, revision } of parsed.projections) changed(id, revision);
+      // Changed definitions remount their own readers; refresh the other readers once they have been removed.
+      void nextTick(() => instance.refreshObjects());
+      return;
+    }
+    if (parsed.kind === "object-changed") {
+      instance.objectChanged(parsed.target);
       return;
     }
     if (parsed.kind === "projection-changed") {

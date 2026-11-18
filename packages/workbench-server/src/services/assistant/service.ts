@@ -26,7 +26,7 @@ import {
 import {
   datasetPayloadSchema,
 } from "@ontomato/contracts/data-retrieval";
-import { pageDraftSchema } from "@ontomato/contracts/page-draft";
+import { pageDraftSchema, type PageDraft } from "@ontomato/contracts/page-draft";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { withDomainSkills } from "../skills/operations";
 import {
@@ -423,18 +423,50 @@ export const assistantService = {
       );
     return { artifact: result.artifacts.at(-1) ?? null };
   },
-  /** The page draft a run wrote: its own artifact read, then the envelope every page receives. */
+  /**
+   * The page draft a run wrote: its own artifact read, then the envelope every page receives. A create draft whose first
+   * save created its object also names that object, as its page recorded it.
+   */
   async pageDraft(
     sessionId: string,
     runId: string,
     path: string,
     owner: AssistantOwner,
-  ) {
+  ): Promise<PageDraft<Record<string, unknown>>> {
     const { artifact } = await this.resolve(sessionId, runId, path, owner);
     if (!artifact) throw new HttpError(404, "Page draft not found");
-    return pageDraftSchema.parse(
+    const draft = pageDraftSchema.parse(
       JSON.parse((await this.content(sessionId, artifact.id, owner)).toString("utf-8")),
     );
+    if (draft.target.id !== undefined) return draft;
+    const created = await db().query(
+      `SELECT created_id FROM ${table("assistant_page_draft_creations")} WHERE session_id=$1 AND run_id=$2 AND path=$3`,
+      [sessionId, runId, path],
+    );
+    return created.rowCount ? { ...draft, created: { id: created.rows[0].created_id } } : draft;
+  },
+  /**
+   * Records the object a create draft's first save created, as the reader who may read the draft. Written once: the
+   * same object again is the same record, another one is a conflict, and a draft that names its object records nothing.
+   */
+  async recordPageDraftCreated(
+    sessionId: string,
+    runId: string,
+    path: string,
+    id: string,
+    owner: AssistantOwner,
+  ) {
+    const draft = await this.pageDraft(sessionId, runId, path, owner);
+    if (draft.target.id !== undefined)
+      throw new HttpError(409, "Only a create draft records the object it created", "PAGE_DRAFT_NOT_CREATE");
+    const recorded = await db().query(
+      `INSERT INTO ${table("assistant_page_draft_creations")} AS c (session_id,run_id,path,created_id) VALUES ($1,$2,$3,$4)
+       ON CONFLICT (session_id,run_id,path) DO UPDATE SET created_id=EXCLUDED.created_id WHERE c.created_id=EXCLUDED.created_id
+       RETURNING created_id`,
+      [sessionId, runId, path, id],
+    );
+    if (!recorded.rowCount)
+      throw new HttpError(409, "This draft already created another object", "PAGE_DRAFT_CREATED_CONFLICT");
   },
   async datasetSource(sessionId: string, id: string, owner: AssistantOwner) {
     const a = await this.artifact(sessionId, id, owner);

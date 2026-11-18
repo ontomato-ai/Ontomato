@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { createAgentHostClient } from "@ontomato/agent-shell-ui";
 import { assistantAgentListSchema } from "@ontomato/contracts/assistant-chat";
+import { changedFields, draftTarget } from "@ontomato/contracts/page-draft";
 import {
   ElButton,
   ElCheckbox,
@@ -73,7 +74,9 @@ function emptyKnowledge(): BusinessKnowledge {
  * fields the draft changed can be marked.
  */
 const draftBase = ref<BusinessKnowledge | null>(null);
-const draftFields = ref<ReadonlySet<keyof BusinessKnowledge>>(new Set());
+const draftFields = ref<ReadonlySet<string>>(new Set());
+/** The create draft this form was filled from, while its entry has not been created yet. */
+let draftCreated: { sessionId: string; runId: string; path: string } | null = null;
 
 // Space-separated terms, case-insensitive; an entry matches when every term occurs in its title, content or tags.
 const terms = computed(() => query.value.trim().toLowerCase().split(/\s+/).filter(Boolean));
@@ -212,38 +215,53 @@ function toggleAllVisible(value: boolean) {
 /** Whether the draft changed this field against the entry the form was filled from. */
 const draftTouched = (field: keyof BusinessKnowledge) => draftFields.value.has(field);
 
-/** The fields of `form` whose value differs from `base`; the form itself is the page's own save input. */
-function changedFields(base: BusinessKnowledge, form: BusinessKnowledge): (keyof BusinessKnowledge)[] {
-  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-  const fields: (keyof BusinessKnowledge)[] = ["knowledgeTitle", "knowledgeText", "knowledgeTags", "status"];
-  return fields.filter((field) => !same(base[field], form[field]));
+/**
+ * The page draft's own routes: the agent platform's host sits under `/assistant` on the Node API, which is the Manager's
+ * request layer with no data-engine prefix (`""`), the same way the page asks the platform for the governance agent.
+ */
+function draftClient() {
+  return createAgentHostClient({ request: (path, init) => client.request(`/assistant${path}`, init, "") });
+}
+
+/** The listed entry a draft addresses, reported when this domain has it not. */
+function listedEntry(id: string): BusinessKnowledge {
+  const entry = list.value.find((item) => item.knowledgeID === id);
+  if (!entry) throw new Error(ot("knowledgeDraftTargetMissing", { id }));
+  return entry;
 }
 
 /**
- * Fills a draft into this page's form. An update reads the entry it names from the list and compares against it; a
- * create compares against the page's own new-entry defaults. A draft whose form is not this page's save input, or whose
- * operation or target is not one this page holds, is reported rather than guessed at.
+ * Fills a draft into this page's form. What it is compared with is the real object it addresses: an update's entry, or
+ * the entry a create draft's first save created (`draftTarget`) — from then on the same link is that entry's update. A
+ * still-unsaved create compares against the page's own new-entry defaults. A draft whose form is not this page's save
+ * input, or which addresses an entry this domain has not, is reported rather than guessed at.
  */
 async function applyDraft(sessionId: string, runId: string, path: string) {
-  // The draft is the agent platform's: its host routes live under `/assistant` on the Node API, which is the Manager's
-  // request layer with no data-engine prefix (`""`), the same way the page asks the platform for the governance agent.
-  const read = createAgentHostClient({ request: (path, init) => client.request(`/assistant${path}`, init, "") });
-  const envelope = await read.readPageDraft(sessionId, runId, path);
+  const envelope = await draftClient().readPageDraft(sessionId, runId, path);
   if (envelope.pageKey !== "business-knowledge")
     throw new Error(ot("knowledgeDraftOtherPage", { page: envelope.pageKey }));
   if (envelope.operation !== "knowledge.create" && envelope.operation !== "knowledge.update")
     throw new Error(ot("knowledgeDraftNoForm", { operation: envelope.operation }));
   const form = formOf(envelope.form);
-  const base = envelope.operation === "knowledge.create"
-    ? emptyKnowledge()
-    : list.value.find((item) => item.knowledgeID === envelope.target.id);
-  if (!base) throw new Error(ot("knowledgeDraftTargetMissing", { id: envelope.target.id ?? "" }));
-  if (envelope.operation === "knowledge.update" && form.knowledgeID !== envelope.target.id)
-    throw new Error(ot("knowledgeDraftTargetMismatch", { form: form.knowledgeID }));
+  const target = draftTarget(envelope);
+  if (target.kind === "update") {
+    // An update's form names the entry it changes; a create draft saved once keeps its empty knowledgeID, and the entry
+    // its save created is the one it now changes.
+    if (envelope.target.id !== undefined && form.knowledgeID !== envelope.target.id)
+      throw new Error(ot("knowledgeDraftTargetMismatch", { form: form.knowledgeID }));
+    form.knowledgeID = target.id;
+  }
+  const base = target.kind === "update" ? listedEntry(target.id) : emptyKnowledge();
+  const changes = changedFields(base, form);
+  // A draft that changes nothing is no draft — the same link opened again after its draft was saved — so the page opens
+  // as the entry is: no note, no marked field, nothing unsaved, and the reader's own edits left alone without asking.
+  if (!changes.size) return false;
   // A manual edit in progress is not overwritten silently: the existing question decides, and a refusal leaves it.
   if (!(await leaveEdit())) return false;
   draftBase.value = base;
-  draftFields.value = new Set(changedFields(base, form));
+  draftFields.value = changes;
+  // A create draft saved here records the entry that save created, so the link addresses it from then on.
+  draftCreated = target.kind === "create" ? { sessionId, runId, path } : null;
   Object.assign(draft, form);
   editing.value = true;
   narrowDetail.value = true;
@@ -297,12 +315,12 @@ async function save() {
     return;
   }
   saving.value = true;
+  let savedID: string | null = null;
   try {
-    await client.saveKnowledge({ ...draft });
+    savedID = await client.saveKnowledge({ ...draft });
     message.success(ot("knowledgeSaved"));
     editing.value = false;
-    // A new entry's ID is assigned by the data engine and not returned, so only an edit keeps its selection.
-    selectedID.value = draft.knowledgeID || null;
+    selectedID.value = savedID;
     const applied = draftBase.value !== null;
     draftBase.value = null;
     draftFields.value = new Set();
@@ -313,6 +331,13 @@ async function save() {
   } finally {
     saving.value = false;
   }
+  // A create draft records the entry its save made, once that save is entirely done, so the same link addresses the entry
+  // from then on. A registration that fails is reported: the entry exists, and saving again would make a second one.
+  const created = draftCreated;
+  draftCreated = null;
+  if (created && savedID !== null)
+    await draftClient().recordPageDraftCreated(created.sessionId, created.runId, created.path, savedID)
+      .catch((error) => message.error(error instanceof Error ? error.message : String(error)));
 }
 
 async function approve(item: BusinessKnowledge) {

@@ -39,7 +39,7 @@ export interface PanelContext {
   /** Runs one operation of this instance here, with the reader's own credential and the call it is given. */
   invoke(handlerRef: string, call: PanelOperationCall): Promise<unknown>;
   /** Hears that a projection's definition changed, by ID; the returned function stops it. */
-  projectionsChanged(listener: (projectionId: string) => void): () => void;
+  projectionsChanged(listener: (projectionId: string, revision?: number) => void): () => void;
   /** The draft this instance received from its address, once it arrived. */
   readonly draft: Readonly<Ref<ReceivedPanelDraft<Record<string, unknown>> | null>>;
   /**
@@ -92,4 +92,13 @@ export function useProjectionForm<Form extends object>(adapter: Omit<PanelFormAd
   if (!operation) throw new Error(`The projection in slot '${drawn.slot}' publishes no form save`);
   const stop = context.instance.forms.register(drawn.slot, { ...adapter, operation: operation.handlerRef });
   onBeforeUnmount(stop);
+}
+
+/** Refresh this projection when a local or server operation changed an object it shows. */
+export function useProjectionObjectRefresh(shows: (id: string) => boolean, refresh: () => void): void {
+  const { instance } = usePanelContext();
+  const slot = useProjectionSlot();
+  onBeforeUnmount(instance.onObjectChanged(object => {
+    if (!object || (slot.projection.binding.id === object.objectType && shows(object.primaryKey))) refresh();
+  }));
 }

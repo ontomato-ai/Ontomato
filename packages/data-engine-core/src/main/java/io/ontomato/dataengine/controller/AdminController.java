@@ -607,8 +607,10 @@ public class AdminController {
 				throw new Exception(langService.get(lang, "Admin.knowledge.textRequired"));
 			}
 			User user = SystemUtils.getCurUser();
-			knowledgeService.addBussinessKnowledge(knowledgeID, knowledgeTitle,bk,status,listknowledgeTags, user);
+			String storedID = knowledgeService.addBussinessKnowledge(knowledgeID, knowledgeTitle,bk,status,listknowledgeTags, user);
 			ret.put("success", true);
+			// A create answers the entry it stored: a page that filled a draft of it records that object for the draft.
+			ret.put("data", new JSONObject().fluentPut("id", storedID));
 		} catch (Exception e) {
 			ret.put("success", false);
 			ret.put("message", e.getMessage());

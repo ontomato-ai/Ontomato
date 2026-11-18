@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, shallowRef } from "vue";
-import { slotState, usePanelContext, useProjectionSlot } from "../panel/context";
+import { slotState, usePanelContext, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
 import { platformObjectFor, selectedKey } from "../panel/platform-objects";
 
 /**
@@ -28,7 +28,7 @@ const state = computed(() => slotState(panel.manifest, slot.slot, props.input));
 
 const chosen = computed(() => selectedKey(panel.instance.state.values.value[state.value]));
 
-onMounted(() => {
+function load() {
   void platformObjectFor(slot.projection.binding.id).list().then(
     (listed) => {
       rows.value = listed.map((item) => ({ primaryKey: item.primaryKey, label: item.label }));
@@ -39,7 +39,9 @@ onMounted(() => {
       loading.value = false;
     },
   );
-});
+}
+onMounted(load);
+useProjectionObjectRefresh(id => rows.value.some(row => row.primaryKey === id), load);
 
 /** A row chosen becomes the panel's selected object; a second click on it lets go. */
 function choose(primaryKey: string) {

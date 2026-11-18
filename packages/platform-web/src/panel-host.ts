@@ -1,9 +1,11 @@
-import { nodeApiRequest } from "@ontomato/workbench-ui";
+import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
 import { applicationPanelUsesResponseSchema, productPanelSchema, type ProductPanel } from "@ontomato/contracts/product-panels";
 import { appsSdkCurrentSchema } from "@ontomato/contracts/apps-sdk";
-import type { ProductSubscriptionEvent } from "@ontomato/contracts/product-subscriptions";
+import { panelSubscriptionFrameSchema, type PanelSubscriptionEvent, type PanelSubscriptionSnapshot } from "@ontomato/contracts/product-subscriptions";
+import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
+import { ElMessage } from "element-plus";
 import { registerPanelFrame } from "./app-host";
-import type { DefinitionChanged, PanelHostPort } from "@ontomato/platform-shell";
+import type { PanelHostPort } from "@ontomato/platform-shell";
 
 /*
  * The platform's panel host (overall design 3.4): the two reads a panel instance needs and the notices it listens to.
@@ -12,8 +14,7 @@ import type { DefinitionChanged, PanelHostPort } from "@ontomato/platform-shell"
  *   permissions stay there.
  * - A panel's current record is Node's (`GET /api/product-panels/:id`), read outside the frame under the reader's own
  *   credential; a projection's record is read inside the frame by the projection itself.
- * - "Definition changed" is Node's product subscription, which the platform's product client already polls; the notice
- *   carries identity only, so a reader reads the current definition again by that ID.
+ * - Node's product subscription streams definition and object identities. The reader reads current data from its owner.
  */
 
 /**
@@ -28,7 +29,6 @@ export const panelHostPaths = {
     `/api/data-query/platform/applications/${encodeURIComponent(applicationId)}/panel-uses`,
   panel: (panelId: string) => `/api/product-panels/${encodeURIComponent(panelId)}`,
   subscriptions: "/api/product-assets/subscriptions",
-  subscription: (subscriptionId: string) => `/api/product-assets/subscriptions/${encodeURIComponent(subscriptionId)}`,
 };
 
 async function json(path: string, init: RequestInit = {}) {
@@ -56,7 +56,7 @@ export function platformPanelHost(applicationId: string): PanelHostPort {
     // its `connect`, and what keeps a frame of another application from being mistaken for this one. What it may ask for
     // is what the panel's record declares, for this use relation's page.
     frame: (frame, use, panel) => registerPanelFrame(frame, applicationId, { pageKey: use.pageKey, manifest: panel.manifest }),
-    subscribe: (panelId, listener) => subscribePanelDefinition(panelId, listener),
+    subscribe: subscribePanelDefinition,
   };
 }
 
@@ -66,40 +66,62 @@ export async function panelUsesOf(applicationId: string) {
   return applicationPanelUsesResponseSchema.parse(answer.data ?? answer).panelUses;
 }
 
-/** The subscription owner resolves this panel's current projection definitions. */
-function subscribePanelDefinition(panelId: string, listener: (event: DefinitionChanged) => void): () => void {
-  let stopped = false;
-  let id: string | undefined;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  async function watch() {
-    const answer = await json(panelHostPaths.subscriptions, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "product-definition", target: { kind: "panel", id: panelId } }),
-    });
-    if (stopped) {
-      await stopSubscription(answer.id);
-      return;
-    }
-    id = answer.id;
-    const poll = async () => {
-      const body = await json(panelHostPaths.subscription(answer.id));
-      if (stopped) return;
-      for (const event of body.events as ProductSubscriptionEvent[]) {
-        if (event.kind === "definition-changed") listener(event);
-      }
-      timer = setTimeout(() => void poll(), answer.intervalMs);
-    };
-    timer = setTimeout(() => void poll(), answer.intervalMs);
-  }
-  void watch();
-  return () => {
-    stopped = true;
-    clearTimeout(timer);
-    if (id) void stopSubscription(id);
-  };
-}
+class PanelStreamContractError extends Error {}
 
-function stopSubscription(id: string) {
-  return nodeApiRequest(panelHostPaths.subscription(id), { method: "DELETE" });
+/** Follow the panel stream for as long as the reader keeps the instance open. */
+function subscribePanelDefinition(
+  panelId: string,
+  listener: (event: PanelSubscriptionEvent) => void,
+  recover: (snapshot: PanelSubscriptionSnapshot) => Promise<void>,
+): () => void {
+  const stream = new AbortController();
+  let reconnecting = false;
+  let attempt = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  async function connect() {
+    try {
+      const response = await nodeApiRequest(panelHostPaths.subscriptions, {
+        method: "POST",
+        signal: stream.signal,
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+        body: JSON.stringify({ kind: "product-definition", target: { kind: "panel", id: panelId } }),
+      });
+      if (!response.body || response.headers.get("content-type")?.split(";")[0] !== "text/event-stream") {
+        throw new PanelStreamContractError("Panel subscription did not return an event stream");
+      }
+      await readSseData(response, async payload => {
+        const parsed = panelSubscriptionFrameSchema.safeParse(payload);
+        if (!parsed.success) throw new PanelStreamContractError("Panel subscription frame broke the contract", { cause: parsed.error });
+        const frame = parsed.data;
+        if (frame.kind === "snapshot") {
+          attempt = 0;
+          if (reconnecting) await recover(frame);
+        } else {
+          listener(frame);
+        }
+        return false;
+      }, () => !stream.signal.aborted);
+    } catch (reason) {
+      if (stream.signal.aborted) return;
+      const refused = reason instanceof ApiRequestError && (reason.status === 403 || reason.status === 404);
+      if (refused || reason instanceof PanelStreamContractError || reason instanceof SyntaxError) {
+        ElMessage.error(reason.message);
+        return;
+      }
+    }
+
+    if (stream.signal.aborted) return;
+    reconnecting = true;
+    timer = setTimeout(() => {
+      timer = undefined;
+      void connect();
+    }, sseReconnectDelay(attempt++));
+  }
+
+  void connect();
+  return () => {
+    stream.abort();
+    clearTimeout(timer);
+  };
 }

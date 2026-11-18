@@ -86,6 +86,11 @@ describe("what a panel's frame may ask the platform for", () => {
     await expect(
       context.instance.invoke(operations.find((operation) => operation.handlerRef === "schedules.runNow")!.id),
     ).resolves.toMatchObject({ runId: run.id });
+    // The initial form, save validation and the two post-operation refreshes must all use the same allowed path.
+    await vi.waitFor(() => {
+      expect(sent.filter(request => request.path === `${tasks}/applications/${task.appId}/form`)).toHaveLength(4);
+      expect(document.querySelector('[data-field="caseSetId"]')).not.toBeNull();
+    });
     // A draft an agent wrote for this page is read the way the SDK reads one.
     const transport = contextTransport(appContext);
     const draft = await transport.request("/assistant/sessions/session-1/runs/run-1/page-draft?path=drafts%2Ftask.json", {}, "");
@@ -111,6 +116,7 @@ describe("what a panel's frame may ask the platform for", () => {
       ["/product-assets/subscriptions", { method: "POST", body: "{}" }, ""],
       ["/assistant/agents", {}, ""],
       ["/assistant/sessions", { method: "POST", body: "{}" }, ""],
+      ["/assistant/sessions/session-1/runs/run-1/page-draft/created", { method: "POST", body: "{}" }, ""],
       ["/metricView/execute", { method: "POST", body: JSON.stringify({ id: "revenue" }) }, "/data-query"],
       ["/action/execute", { method: "POST", body: JSON.stringify({ id: "delete-customer" }) }, "/data-query"],
       [`/platform/scheduled-tasks/${task.id}`, { method: "DELETE" }, "/data-query"],

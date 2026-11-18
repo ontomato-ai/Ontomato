@@ -20,10 +20,14 @@ const t = i18n.global.t as (key: string) => string;
 
 const AGENT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const OTHER = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const CREATED = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const DRAFT = (name: string) => `/agents/settings/${AGENT}?draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2F${name}.page-draft.json`;
+const NEW_DRAFT = "/agents/settings/new?draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2Fb.page-draft.json";
 
-const draft = vi.hoisted(() => ({ read: vi.fn() }));
-vi.mock("../../workbench/assistant-host", () => ({ createAssistantClient: () => ({ readPageDraft: draft.read }) }));
+const draft = vi.hoisted(() => ({ read: vi.fn(), record: vi.fn() }));
+vi.mock("../../workbench/assistant-host", () => ({
+  createAssistantClient: () => ({ readPageDraft: draft.read, recordPageDraftCreated: draft.record }),
+}));
 
 const options: ModelOptions = { models: [{ ref: "gateway/qwen-main", name: "Qwen", type: "chat" }], defaultModelId: "gateway/qwen-main", embeddingModelId: null };
 const SkillSelector = defineComponent({ emits: ["ready"], mounted() { this.$emit("ready", true); }, template: "<div />" });
@@ -56,18 +60,27 @@ afterEach(() => {
   wrappers.splice(0).forEach((wrapper) => wrapper.unmount());
   vi.restoreAllMocks();
   draft.read.mockReset();
+  draft.record.mockReset();
   document.body.innerHTML = "";
 });
 
-async function open(path: string, form: AssistantAgentInput, target: { id?: string } = { id: AGENT }, editing = target !== undefined && target.id !== undefined, stored = agent()) {
-  draft.read.mockResolvedValue({ pageKey: "agent-settings", operation: target.id ? "agent.update" : "agent.create", target, form });
+/**
+ * The editor at `path` with a draft of `form`: an update of the agent shown by default; `target: {}` is a create, and
+ * `created` the agent a create draft's first save created. `stored` is the agent the page shows, or null for a new one.
+ */
+async function open(
+  path: string,
+  form: AssistantAgentInput,
+  { target = { id: AGENT }, stored = target.id === undefined ? null : agent(), created }: { target?: { id?: string }; stored?: AssistantAgentDefinition | null; created?: { id: string } } = {},
+) {
+  draft.read.mockResolvedValue({ pageKey: "agent-settings", operation: target.id ? "agent.update" : "agent.create", target, form, created });
   await router.push(path);
   vi.spyOn(agentDefinitionsApi, "listMcpServiceOptions").mockResolvedValue([]);
   const update = vi.spyOn(agentDefinitionsApi, "update").mockImplementation(async (id, written) => ({ ...agent(), ...written, id }) as AssistantAgentDefinition);
-  const create = vi.spyOn(agentDefinitionsApi, "create").mockImplementation(async (written) => ({ ...agent(), ...written }) as AssistantAgentDefinition);
+  const create = vi.spyOn(agentDefinitionsApi, "create").mockImplementation(async (written) => ({ ...agent(), ...written, id: CREATED }) as AssistantAgentDefinition);
   const address = editorAddress(path);
   const mounted = mount(AgentEditor, {
-    props: { agent: editing ? stored : null, classes: [], relations: [], outlineLoading: false, modelOptions: options, modelOptionsFailed: false },
+    props: { agent: stored, classes: [], relations: [], outlineLoading: false, modelOptions: options, modelOptionsFailed: false },
     global: { ...global, provide: address.provide },
     attachTo: document.body,
   });
@@ -146,15 +159,30 @@ describe("the agent editor's page draft", () => {
     expect(update.mock.calls[0]![1]).toMatchObject({ name: "Renamed analyst" });
     // The page is asked for its address without the handoff; the editor never writes the browser's address itself.
     expect(go).toHaveBeenCalledWith(`/agents/settings/${AGENT}`);
+    // An update draft already names its agent: nothing is recorded.
+    expect(draft.record).not.toHaveBeenCalled();
   });
 
   it("fills a new agent's form from a create draft over its defaults", async () => {
-    const { wrapper, create } = await open("/agents/settings/new?draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2Fb.page-draft.json", input({ name: "New analyst" }), {});
+    const { wrapper, create } = await open(NEW_DRAFT, input({ name: "New analyst" }), { target: {} });
 
     expect((wrapper.find("input").element as HTMLInputElement).value).toBe("New analyst");
     await saveButton(wrapper).trigger("click");
     await flushPromises();
     expect(create.mock.calls[0]![0]).toMatchObject({ name: "New analyst" });
+    // The first save records the agent it created, so the draft's link opens that agent from now on.
+    expect(draft.record.mock.calls).toEqual([["s", "r", "outputs/drafts/b.page-draft.json", CREATED]]);
+  });
+
+  it("opens a saved create draft at the agent it created, not as a new agent again", async () => {
+    const { wrapper, create, go } = await open(NEW_DRAFT, input({ name: "New analyst" }), { target: {}, created: { id: CREATED } });
+
+    // The page moves to the created agent's own page with the same draft; it fills nothing here and creates nothing.
+    expect(go).toHaveBeenCalledWith(`/agents/settings/${CREATED}?draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2Fb.page-draft.json`);
+    expect((wrapper.find("input").element as HTMLInputElement).value).toBe("");
+    expect(draftState(wrapper)).toMatchObject({ line: null, unsaved: false });
+    expect(create).not.toHaveBeenCalled();
+    expect(draft.record).not.toHaveBeenCalled();
   });
 
   it("opens the same link after its draft was saved as the agent is", async () => {
@@ -162,7 +190,7 @@ describe("the agent editor's page draft", () => {
     // under the agent's domain. Filled in again, the draft changes nothing, so it is no draft.
     const saved = agent({ skills: [{ namespace: { kind: "domain", domainId: "domain-1" }, name: "sales-report" }] });
     const form = input({ name: "Sales analyst ", skills: [{ namespace: { kind: "domain" }, name: "sales-report" }] });
-    const { wrapper } = await open(DRAFT("a"), form, { id: AGENT }, true, saved);
+    const { wrapper } = await open(DRAFT("a"), form, { stored: saved });
 
     expect(draftState(wrapper)).toEqual({ line: null, marked: [], unsaved: false, saveEnabled: false });
   });
@@ -170,7 +198,7 @@ describe("the agent editor's page draft", () => {
   it("still shows a draft that changes the saved agent, marking only what it changes", async () => {
     const saved = agent({ skills: [{ namespace: { kind: "domain", domainId: "domain-1" }, name: "sales-report" }] });
     const form = input({ systemPrompt: "Answer in tables.", skills: [{ namespace: { kind: "domain" }, name: "sales-report" }] });
-    const { wrapper } = await open(DRAFT("a"), form, { id: AGENT }, true, saved);
+    const { wrapper } = await open(DRAFT("a"), form, { stored: saved });
 
     const state = draftState(wrapper);
     expect(state.line).toContain(t("agents.prompt"));
@@ -199,7 +227,7 @@ describe("the agent editor's page draft", () => {
   });
 
   it("refuses a create draft on a page that edits an existing agent", async () => {
-    const { wrapper, update } = await open(DRAFT("d"), input({ name: "Another" }), {}, true);
+    const { wrapper, update } = await open(DRAFT("d"), input({ name: "Another" }), { target: {}, stored: agent() });
 
     expect(wrapper.find(".draft-changed").exists()).toBe(false);
     expect((wrapper.find("input").element as HTMLInputElement).value).toBe("Sales analyst");
@@ -207,7 +235,7 @@ describe("the agent editor's page draft", () => {
   });
 
   it("refuses a draft written for another agent", async () => {
-    const { wrapper, update } = await open(DRAFT("c"), input({ name: "Other" }), { id: OTHER });
+    const { wrapper, update } = await open(DRAFT("c"), input({ name: "Other" }), { target: { id: OTHER } });
 
     expect(wrapper.find(".draft-changed").exists()).toBe(false);
     expect((wrapper.find("input").element as HTMLInputElement).value).toBe("Sales analyst");
