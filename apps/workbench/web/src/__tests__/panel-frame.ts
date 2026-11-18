@@ -144,7 +144,6 @@ export function panelUse(id: string, pageKey: string, panelId: string, path: str
     panelId,
     path,
     access: { kind: "domain-member" },
-    skill: { namespace: { kind: "provider", provider: "workbench" }, name: "panels" },
   };
 }
 
