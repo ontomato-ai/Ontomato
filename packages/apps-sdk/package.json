@@ -4,8 +4,7 @@
   "version": "1.1.0",
   "type": "module",
   "exports": {
-    ".": "./src/edition.ts",
-    "./client-requests": "./src/panel/client-requests.ts"
+    ".": "./src/edition.ts"
   },
   "scripts": {
     "typecheck": "vue-tsc --noEmit"

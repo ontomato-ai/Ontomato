@@ -22,7 +22,7 @@ import {installAppBridge} from './app-bridge';
 import type {PanelManifest} from '@ontomato/contracts/panel-manifest';
 import {productProjectionResponseSchema} from '@ontomato/contracts/product-panels';
 import {pageDraftSchema} from '@ontomato/contracts/page-draft';
-import {bindingKey,clientSends} from '@ontomato/apps-sdk/client-requests';
+import {bindingKey,clientSends} from '@ontomato/contracts/panel-client-requests';
 
 const executionBindings = new WeakMap<object, AppExecutionContext>();
 const publishedFrames=new WeakMap<object,string>();
@@ -30,7 +30,7 @@ const publishedFrames=new WeakMap<object,string>();
  * One panel instance's frame, in a panel application (`entry.renderer` is `panels`). Such an application has no published
  * record and no build of its own: its pages are use relations of shared panels. Its frame is narrowed by what the panel
  * declares, as a published application's frame is by its publication: the projections its declaration names, the
- * requests the SDK clients their bindings reach send (`@ontomato/apps-sdk/client-requests`), and the drafts written for
+ * requests the SDK clients their bindings reach send (`@ontomato/contracts/panel-client-requests`), and the drafts written for
  * its use relation's page. Nothing else leaves it.
  */
 interface PanelFrame {

@@ -623,9 +623,6 @@ importers:
       '@ontomato/agent-shell-ui':
         specifier: workspace:*
         version: link:../agent-shell-ui
-      '@ontomato/apps-sdk':
-        specifier: workspace:*
-        version: link:../apps-sdk
       '@ontomato/contracts':
         specifier: workspace:*
         version: link:../contracts

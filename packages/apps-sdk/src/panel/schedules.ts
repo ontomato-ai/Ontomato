@@ -5,7 +5,7 @@ import { randomId } from "@ontomato/contracts/random-id";
 import { contextTransport, type AppContext } from "../context";
 import { registerHandler } from "./handlers";
 import { PlatformObjectRefusal, registerPlatformObject, type PlatformObjectRecord } from "./platform-objects";
-import { DATA_QUERY_GATEWAY, RUN_NOW, SCHEDULED_TASK } from "./client-requests";
+import { DATA_QUERY_GATEWAY, RUN_NOW, SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 
 /*
  * The scheduled tasks as a platform object a projection may bind (overall design 3.2, 10.1): reading one, listing the
@@ -20,8 +20,8 @@ import { DATA_QUERY_GATEWAY, RUN_NOW, SCHEDULED_TASK } from "./client-requests";
  * The one operation this step's panels use — running a task now — is registered here too, as the handler a projection
  * bound to `schedules.runNow` reaches.
  *
- * The requests these send are declared in `client-requests.ts`, by binding: a request this client starts sending must be
- * declared there, or the platform refuses it from a panel's frame.
+ * The requests these send are declared in the contracts' `panel-client-requests.ts`, by binding: a request this client
+ * starts sending must be declared there, or the platform refuses it from a panel's frame.
  */
 
 /** The scheduled tasks' request path inside a panel frame: the SDK's own client, over this frame's credential. */

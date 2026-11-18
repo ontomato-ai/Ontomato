@@ -1,14 +1,14 @@
-import { platformSchedulesPath } from "@ontomato/contracts/platform-schedules";
+import { platformSchedulesPath } from "./platform-schedules";
 
 /*
  * The requests the SDK's platform clients send, by the binding that reaches each client (overall design 3.2, 5.1). A
- * projection binds a platform object type or a platform operation, and the client this version registers for that
- * binding (`schedules.ts`) is what a panel's components read and write through. This is the one place that says which
- * requests those clients make: the clients send nothing else, and the platform admits a panel frame's request only when
- * a binding of one of the panel's own projections declares it (`platform-web/src/app-host.ts`).
+ * projection binds a platform object type or a platform operation, and the client the SDK registers for that binding
+ * (`apps-sdk/src/panel/schedules.ts`) is what a panel's components read and write through. This is the one place that
+ * says which requests those clients make: the clients send nothing else, and the platform admits a panel frame's request
+ * only when a binding of one of the panel's own projections declares it (`platform-web/src/app-host.ts`).
  *
- * It is plain data with no Vue and no edition, so the platform's host imports it from here rather than writing its own
- * list of these paths.
+ * It is the wire agreement between the two ends of the bridge — the SDK in the frame and the platform's host — so it is
+ * a contract, which both import.
  */
 
 /** The platform object type of the scheduled tasks, as a projection binds it. */
