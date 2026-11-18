@@ -21,15 +21,17 @@ export interface PanelDraftSource {
 }
 
 /**
- * One form projection's adapter. `read` is the owner's own read of the object the draft addresses, or of a new object's
- * defaults; `save` is the owner's own write, which the projection's save operation reaches too, so a person's save and
- * an agent's save are one implementation.
+ * One form projection's adapter. The owner prepares the current form before the draft can change the visible form.
+ * The projection's save operation and the reader's save use the same owner's write.
  */
 export interface PanelFormAdapter<Form extends object, Target extends { id?: string }> {
   /** The form action the projection performs, such as `schedules.update`; the draft names it. */
   operation: string;
-  /** Reads the addressed object as its owner holds it now: the baseline the draft is compared with. */
-  read(target: Target): Promise<Form>;
+  /** Validates a draft against the owner's form and prepares its application without editing the visible form. */
+  prepareDraft(target: { id: string }, form: Form): Promise<{
+    baseline: Form;
+    apply(draft: ReceivedPanelDraft<Form>): void;
+  }>;
   /** Writes the filled form through the owner's own interface. */
   save(form: Form, target: Target): Promise<unknown>;
   /**
@@ -38,11 +40,6 @@ export interface PanelFormAdapter<Form extends object, Target extends { id?: str
    * operation, made by the platform with the revision it was given.
    */
   submit(): Promise<unknown>;
-  /**
-   * Shows a draft that names this form: its values in the form, the fields it changed marked, and nothing written until
-   * the reader saves. The object the draft addresses becomes the selected one, so the panel shows what is being edited.
-   */
-  apply(draft: ReceivedPanelDraft<Form>): void;
   /** Whether this form holds unsaved changes of the reader's, as the host must be told. */
   dirty?(): boolean;
   /** Drops the reader's changes — a received draft included — and shows the object as its owner holds it. */
@@ -67,7 +64,13 @@ type DraftTaken = (draft: ReceivedPanelDraft<Record<string, unknown>>) => void;
 export class PanelFormAdapters {
   readonly #bySlot = new Map<string, PanelFormAdapter<object, { id?: string }>>();
   /** The draft this panel received and no registered form has taken yet. */
-  readonly #held = shallowRef<{ draft: PageDraft<Record<string, unknown>>; taken: DraftTaken } | null>(null);
+  readonly #held = shallowRef<{
+    draft: PageDraft<Record<string, unknown>>;
+    taken: DraftTaken;
+    current: () => boolean;
+  } | null>(null);
+
+  constructor(private readonly reportDraftError?: (reason: unknown) => void) {}
 
   register<Form extends object>(slot: string, adapter: PanelFormAdapter<Form, { id?: string }>): () => void {
     if (!slot) throw new Error("A form projection registers under the slot whose declaration names it");
@@ -82,8 +85,8 @@ export class PanelFormAdapters {
    * already has. `taken` hears the draft as the form shows it: its values and the fields it changed from the owner's own
    * reading.
    */
-  hold(draft: PageDraft<Record<string, unknown>>, taken: DraftTaken): void {
-    this.#held.value = { draft, taken };
+  hold(draft: PageDraft<Record<string, unknown>>, taken: DraftTaken, current: () => boolean = () => true): void {
+    this.#held.value = { draft, taken, current };
     this.#handOver();
   }
 
@@ -106,13 +109,17 @@ export class PanelFormAdapters {
     const adapter = this.#bySlot.get(slot)!;
     const { operation, form } = held.draft;
     const target = { id: addressed.id };
-    void adapter.read(target).then((base) => {
-      const changed = changedFields(base, form);
+    const report = this.reportDraftError;
+    void adapter.prepareDraft(target, form).then(({ baseline, apply }) => {
+      if (!held.current()) return;
+      const changed = changedFields(baseline, form);
       if (changed.size === 0) return;
       const draft = { slot, operation, target, form, changed };
-      adapter.apply(draft);
+      apply(draft);
       held.taken(draft);
-    });
+    }, report && (reason => {
+      if (held.current()) report(reason);
+    }));
   }
 
   /** The operations the panel's form projections perform: what a draft of this panel may name. */
@@ -159,5 +166,5 @@ export async function receivePanelDraft(
   const draft = await source.readPageDraft(link.sessionId, link.runId, link.path);
   if (!current()) return;
   if (draft.pageKey !== pageKey) throw new Error(`Draft belongs to page ${draft.pageKey}, not ${pageKey}`);
-  adapters.hold(draft, taken);
+  adapters.hold(draft, taken, current);
 }
