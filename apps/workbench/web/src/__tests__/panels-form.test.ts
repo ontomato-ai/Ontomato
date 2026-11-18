@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick, provide } from "vue";
 import { createI18n } from "vue-i18n";
+import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { FormField } from "@ontomato/contracts/form-fields";
@@ -148,7 +149,8 @@ function mounted(save: (values: Record<string, string>, revision: number) => Pro
     }),
   );
   const element = document.createElement("div");
-  app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } }));
+  // The frame installs Element Plus (apps-sdk panel/mount), so the form draws the same buttons it does there.
+  app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus);
   app.mount(element);
   return { app, element, form, changed, unregister, save, instance, objectType };
 }
@@ -201,9 +203,13 @@ describe("the form a panel shows", () => {
     expect(written).toEqual([]);
     expect(registeredHandlers()).toContain(`${mountedForm.objectType}.save`);
 
-    // The reader saves: one write, at the revision the form was read at.
-    await M.invoke("form.save");
-    expect(written).toHaveLength(1);
+    // The reader saves with the form's own button: one write, at the revision the form was read at. The panel frame is
+    // sandboxed without allow-forms, where the browser drops a native form submission, so the button is not a submit.
+    const saveButton = [...element.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Save")!;
+    expect(saveButton.type).toBe("button");
+    saveButton.click();
+    await vi.waitFor(() => expect(written).toHaveLength(1));
+    expect(written[0]).toEqual([expect.objectContaining({ operation: "inspection", instruction: "look at tonight's failures" }), 7]);
     mountedForm.unregister();
     app.unmount();
   });

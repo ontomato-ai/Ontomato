@@ -212,7 +212,9 @@ function asText(form: object): Record<string, string> {
     <p v-if="failure" role="alert">{{ failure.message }}</p>
     <el-skeleton v-else-if="loading" :rows="4" animated></el-skeleton>
     <el-empty v-else-if="!fields.length" :image-size="48"></el-empty>
-    <el-form v-else label-position="top" @submit.prevent="saveFromForm">
+    <!-- The panel frame is sandboxed without allow-forms, so the browser drops a native form submission before any
+         submit handler runs: the reader's save is the button's own click. -->
+    <el-form v-else label-position="top">
       <FormFieldsView
         :fields="fields"
         :values="values"
@@ -228,7 +230,7 @@ function asText(form: object): Record<string, string> {
       <p v-if="refusal" class="sdk-owner-form-refusal" role="alert">{{ refusal.message }}</p>
       <div class="sdk-owner-form-actions">
         <el-button :disabled="saving || !canSettle" @click="discard">{{ t("platform.discard") }}</el-button>
-        <el-button type="primary" native-type="submit" :disabled="!canSettle" :loading="saving">{{ t("platform.save") }}</el-button>
+        <el-button type="primary" :disabled="!canSettle" :loading="saving" @click="saveFromForm">{{ t("platform.save") }}</el-button>
       </div>
     </el-form>
   </div>
