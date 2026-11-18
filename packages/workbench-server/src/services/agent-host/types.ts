@@ -6,8 +6,10 @@ import type { RuntimeRunSnapshot } from "@ontomato/contracts/agent-runtime";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 
 export interface AgentHostOwner { domainId: string; userId: string }
+export type AgentPresentationHost = "workbench" | "observe";
 /** The common proxy has two workbench consumers; business actions stay outside it. */
 export interface AgentHostService {
+  readonly presentationHost?: AgentPresentationHost;
   create(id: string, owner: AgentHostOwner, input: { agentId: string; workspaceId?: string }): Promise<AgentHostCreateSessionResponse>;
   list(owner: AgentHostOwner, input: { agentId: string; limit: number; cursor?: string }): Promise<AgentHostSessionPage>;
   /** The entry's own session read rule, batched; returned IDs are the subset this caller may read. */

@@ -1,4 +1,5 @@
 import { agentUserQuestionRequestSchema } from "@ontomato/contracts/agent-user-questions";
+import { presentationBindingSchema } from "@ontomato/contracts/agent-presentation";
 import { Readable } from "node:stream";
 import { agentInputSchema, agentRunContextSchema, agentRefSchema, agentActorRefSchema,agentChannelCommandSchema,agentAuthoritySchema,agentCredentialSchema } from "@ontomato/contracts/agent-channel";
 import { workspaceRouter, workspaceOwner } from "./workspace-http";
@@ -425,7 +426,7 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
   }));
   app.post("/v1/channel/sessions/:sessionId/runs", route(async (req, res) => {
     const ctx = scope(req), headers = runtimeAdmissionHeadersSchema.parse(req.headers);
-    const body = z.object({ channel: agentRunContextSchema, language: z.string().min(1), input: agentInputSchema, replyTo: runtimeIdSchema.optional(), selectedOption: z.number().int().nonnegative().optional(), credential: agentCredentialSchema.optional(), credentialFrom: runtimeIdSchema.optional(), context: z.record(z.unknown()).optional() }).strict().parse(req.body);
+    const body = z.object({ channel: agentRunContextSchema, language: z.string().min(1), input: agentInputSchema, replyTo: runtimeIdSchema.optional(), selectedOption: z.number().int().nonnegative().optional(), credential: agentCredentialSchema.optional(), credentialFrom: runtimeIdSchema.optional(), context: z.record(z.unknown()).optional(), presentationBinding: presentationBindingSchema.optional() }).strict().parse(req.body);
     if (Boolean(body.credential) === Boolean(body.credentialFrom)) throw new RuntimeError(400,"INVALID_REQUEST","Provide exactly one initiating credential or source execution");
     const entry = body.credentialFrom ? await runtime.channel.facts.task(ctx.scope.domainId,body.credentialFrom) : null;
     if(body.credentialFrom && !entry)throw new RuntimeError(404,"NOT_FOUND","Source execution not found");
@@ -433,7 +434,7 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     const source=entry?.intent;
     const channel = source ? {...body.channel,root:source.channel.root,userRecipient:source.channel.userRecipient ?? null} : body.channel;
     const credential = body.credential ?? runtime.channel.credential(source!.channel);
-    res.status(202).json(await runtime.channel.request(ctx.scope, runtimeIdSchema.parse(req.params.sessionId), headers["idempotency-key"], channel, body.replyTo ? {role:"notification",kind:"agent-answer",source:{kind:"user"},content:body.input.content,timestamp:body.input.timestamp,replyTo:body.replyTo,selectedOption:body.selectedOption,respondent:channel.actor} : body.input, body.language, body.context as import("@ontomato/contracts/agent-channel").AgentRunIntent["context"], credential, source?.executionUserId));
+    res.status(202).json(await runtime.channel.request(ctx.scope, runtimeIdSchema.parse(req.params.sessionId), headers["idempotency-key"], channel, body.replyTo ? {role:"notification",kind:"agent-answer",source:{kind:"user"},content:body.input.content,timestamp:body.input.timestamp,replyTo:body.replyTo,selectedOption:body.selectedOption,respondent:channel.actor} : body.input, body.language, body.context as import("@ontomato/contracts/agent-channel").AgentRunIntent["context"], credential, source?.executionUserId, source ? undefined : body.presentationBinding));
   }));
   app.get("/v1/channel/sessions/:sessionId/tasks", route(async (req, res) => {
     res.json(await runtime.channel.tasks(scope(req).scope, runtimeIdSchema.parse(req.params.sessionId)));

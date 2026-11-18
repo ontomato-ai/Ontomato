@@ -1,15 +1,20 @@
 import { sessionHistoryQuerySchema } from "@ontomato/contracts/session-history";
 import { Router } from "express";
 import { z } from "zod";
-import { agentHostSessionPageQuerySchema, agentHostCreateSessionSchema, agentHostSendRequestSchema, agentHostRenameSessionSchema, agentHostSessionStatusRequestSchema, agentHostSessionRunSnapshotSchema } from "@ontomato/contracts/agent-host";
+import { agentHostSessionPageQuerySchema, agentHostCreateSessionSchema, agentHostSendRequestSchema, agentHostRenameSessionSchema, agentHostSessionStatusRequestSchema, agentHostSessionRunSnapshotSchema, agentHostSessionRunEventsQuerySchema } from "@ontomato/contracts/agent-host";
+import { presentationCallRequestSchema, presentationReceiptSchema } from "@ontomato/contracts/agent-presentation";
 import { runtimeRelativePathSchema } from "@ontomato/contracts/agent-runtime-values";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { publicSnapshot, publicFrame, runStatusView } from "../../platform/agent-runtime/projection";
 import { buildAttachmentContentDisposition } from "../utils/http";
 import { context, id, wrap } from "../utils/agent-host";
 import type { AgentHostService } from "../../services/agent-host/types";
+import { openPresentationView, PRESENTATION_CALL_PATH, receivePresentation, requestPresentation } from "../../services/agent-host/presentation";
+import type { RuntimeCallback } from "../../services/agent-runtime/callback-credential";
+import { HttpError } from "../../utils/errors";
 export function createAgentHostRouter(service: AgentHostService, workspaces = false) {
 const router: ReturnType<typeof Router> = Router(), uuid = z.string().uuid();
+const host = service.presentationHost;
 router.get(
   "/sessions",
   wrap(async (req, res) => {
@@ -40,6 +45,7 @@ router.get(
   "/sessions/run-events",
   wrap(async (req, res) => {
     const c = context(req),
+      query = agentHostSessionRunEventsQuerySchema.parse(req.query),
       abort = new AbortController();
     res.on("close", () => abort.abort());
     let heartbeat: ReturnType<typeof setInterval> | undefined;
@@ -63,16 +69,39 @@ router.get(
             ]);
             if (!readable.has(frame.sessionId)) return;
           }
-          res.write(`event: session-run\ndata: ${JSON.stringify(frame)}\n\n`);
+          const notice = frame.type === "ready" && host && query.presentation
+            ? { ...frame, presentationBinding: openPresentationView(host, c.owner,
+              request => res.write(`event: presentation\ndata: ${JSON.stringify(request)}\n\n`), abort.signal) }
+            : frame;
+          res.write(`event: session-run\ndata: ${JSON.stringify(notice)}\n\n`);
         },
         abort.signal,
       );
     } finally {
+      abort.abort();
       if (heartbeat) clearInterval(heartbeat);
       if (res.headersSent) res.end();
     }
   }),
 );
+if (host) {
+  router.post(PRESENTATION_CALL_PATH, wrap(async (req, res) => {
+    const runId = id(req, "runId");
+    const callback = res.locals.runtimeCallback as RuntimeCallback | undefined;
+    if (callback?.runId !== runId) throw new HttpError(403, "A presentation callback credential is required", "FORBIDDEN");
+    const { input, toolCallId } = presentationCallRequestSchema.parse(req.body);
+    const abort = new AbortController();
+    res.once("close", () => abort.abort());
+    res.json(await requestPresentation(service, host, context(req).owner, {
+      connectionId: id(req, "connectionId"), sessionId: id(req, "sessionId"), runId, toolCallId, input,
+    }, abort.signal));
+  }));
+  router.post("/sessions/:sessionId/runs/:runId/presentation-result", wrap(async (req, res) => {
+    receivePresentation(host, context(req).owner, id(req, "sessionId"), id(req, "runId"),
+      presentationReceiptSchema.parse(req.body));
+    res.sendStatus(204);
+  }));
+}
 router.post(
   "/sessions/status",
   wrap(async (req, res) => {
