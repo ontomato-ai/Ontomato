@@ -17,6 +17,8 @@ import {
 import type { ApplicationPanelUse, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
+import { installWorkbenchI18n } from "@ontomato/workbench-ui/i18n";
+import elementEn from "element-plus/es/locale/lang/en";
 import { installAppHost, installProductEmbedding } from "../../../../../packages/platform-web/src/app-host";
 
 /*
@@ -157,7 +159,7 @@ export interface Sent {
  * Installs the platform as the shell starts it — the reader's identity, the app host and the message bridge — with the
  * network answering through `answer`. Returns what was sent, in order.
  */
-export function installPlatform(answer: (request: Sent) => Response) {
+export function installPlatform(answer: (request: Sent) => Response | Promise<Response>) {
   const sent: Sent[] = [];
   installAuthHost({
     getToken: () => READER,
@@ -167,6 +169,15 @@ export function installPlatform(answer: (request: Sent) => Response) {
     verifySessionOnce: async () => "valid",
     handleAuthExpired: () => {},
   });
+  installWorkbenchI18n({
+    supported: ["en"],
+    defaultLocale: "en",
+    initialLocale: "en",
+    switchEnabled: false,
+    save: null,
+    messages: { en: {} },
+    elementLocale: () => elementEn,
+  });
   installAppHost({
     credential: { type: "token", token: READER },
     preferences: { locale: ref("en"), theme: ref("light") } as PlatformPreferences,
@@ -175,7 +186,7 @@ export function installPlatform(answer: (request: Sent) => Response) {
   });
   installProductEmbedding(createApp({}));
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-    const url = new URL(String(input));
+    const url = new URL(String(input), window.location.href);
     const request: Sent = {
       method: init?.method ?? "GET",
       path: url.pathname,
@@ -227,13 +238,24 @@ export function inside(frame: Window) {
 
 /** Writes the frame's document as the panel host does: the panel's HTML and the run's facts. */
 export function writePanelDocument(panel: ProductPanel, use: ApplicationPanelUse, url: string, state: PanelHostMessage["state"]) {
-  const message: PanelHostMessage = { kind: "panel-host-message", panel, pageKey: use.pageKey, url, label: panel.name, state };
-  document.body.insertAdjacentHTML("beforeend", panel.content.html);
+  writeFrameDocument({ kind: "panel-host-message", panel, pageKey: use.pageKey, url, label: panel.name, state });
+}
+
+/** Writes the frame's document from the run's facts the platform's panel host wrote for it. */
+export function writeFrameDocument(message: PanelHostMessage) {
+  document.body.insertAdjacentHTML("beforeend", message.panel.content.html);
   const facts = document.createElement("script");
   facts.type = "application/json";
   facts.setAttribute("data-panel-host-message", "");
   facts.textContent = JSON.stringify(message);
   document.body.append(facts);
+}
+
+/** The run's facts in a frame document the platform's panel host wrote (`panelFrameDocument`). */
+export function hostMessageOf(frameDocument: string): PanelHostMessage {
+  const facts = /<script type="application\/json" data-panel-host-message>\n([\s\S]*?)\n<\/script>/.exec(frameDocument);
+  if (!facts) throw new Error("The frame document carries no host message");
+  return JSON.parse(facts[1]!) as PanelHostMessage;
 }
 
 /** A panel component that places the given slots' projections, as a panel's HTML does with `<projection slot>`. */
@@ -250,4 +272,64 @@ export function leaveFrame() {
   if (ownParent) Object.defineProperty(window, "parent", ownParent);
   vi.restoreAllMocks();
   document.body.innerHTML = "";
+}
+
+/**
+ * Panel application A with a panel that is the task's form alone, and a draft an agent wrote for that page: the page's
+ * address with the draft's link, and what the platform answers for the page, the panel and the frame.
+ */
+export function draftScenario() {
+  const formProjection = projections["projection-schedules-form"]!;
+  const panel = panelRecord(
+    "panel-schedules-form",
+    "Task form (trial)",
+    definePanel({ state: selectedTask, slots: { form: slot(formProjection.id, "task") }, operations: [] }),
+  );
+  const use = panelUse("use-trial-a-form", "panels-trial-a-form", panel.id, "/form");
+  // The operations application's form for the task, with a second case set to choose from.
+  const form = platformScheduleFormSchema.parse({
+    ...taskForm,
+    fields: taskForm.fields.map((field) =>
+      field.key === "caseSetId" && field.type === "select"
+        ? { ...field, options: [...field.options, { value: "set-smoke", label: "Smoke (8)", description: null, disabled: false, disabledReason: null }] }
+        : field,
+    ),
+  });
+  // What the agent wrote: the task's own form, with the other case set.
+  const draft = { pageKey: use.pageKey, operation: `${SCHEDULED_TASK}.save`, target: { id: task.id }, form: { ...task.content, caseSetId: "set-smoke" } };
+  const link = new URLSearchParams({ draftSessionId: "session-1", draftRunId: "run-1", draftPath: "outputs/drafts/task.page-draft.json" });
+  const address = `/applications/app-panels-trial-a/form?${link}`;
+  // The form's projection is answered only after the draft: the draft reaches the panel before the form that takes it
+  // exists, which is the order the SDK has to hold the draft for.
+  let draftServed!: () => void;
+  const served = new Promise<void>((resolve) => (draftServed = resolve));
+  const answer = (request: Sent) => {
+    if (request.path === "/api/data-query/platform/applications/app-panels-trial-a/panel-uses")
+      return Response.json({
+        success: true,
+        data: { applicationId: "app-panels-trial-a", entry: { path: "/panels-trial-a", renderer: "panels" }, panelUses: [use] },
+      });
+    if (request.path === `/api/product-panels/${panel.id}`) return Response.json({ panel });
+    if (request.path === "/api/apps-sdk/current")
+      return Response.json({
+        version: "1.1.0",
+        publicBasePath: "/apps-sdk",
+        sdkBasePath: "/apps-sdk/1.1.0",
+        manifestPath: "/apps-sdk/1.1.0/manifest.json",
+        docsPath: "/apps-sdk/1.1.0/docs",
+        referencePath: "/apps-sdk/1.1.0/reference",
+      });
+    if (request.path === "/api/product-assets/subscriptions") return Response.json({ id: "subscription-1", intervalMs: 3_600_000 });
+    if (request.path === "/api/product-assets/subscriptions/subscription-1") return new Response(null, { status: 204 });
+    if (request.path === `/api/product-projections/${formProjection.id}`)
+      return served.then(() => Response.json({ projection: formProjection }));
+    if (request.path === `/api/data-query/platform/scheduled-tasks/${task.id}`) return Response.json(task);
+    if (request.path === `/api/data-query/platform/scheduled-tasks/applications/${task.appId}/form`) return Response.json(form);
+    if (request.path === "/api/assistant/sessions/session-1/runs/run-1/page-draft") {
+      draftServed();
+      return Response.json(draft);
+    }
+    return nothingAt(request);
+  };
+  return { panel, use, address, answer };
 }

@@ -178,13 +178,15 @@ describe("the form a panel shows", () => {
     await vi.waitFor(() => expect(element.textContent).toContain("Run automated tests"));
 
     // The draft an agent wrote for this panel: it switches the operation and gives an instruction.
-    M.forms.apply({
-      slot: "form",
-      operation: `${mountedForm.objectType}.save`,
-      target: { id: "task-1" },
-      form: { operation: "inspection", instruction: "look at tonight's failures" },
-      changed: new Set(["operation", "instruction"]),
-    });
+    M.forms.hold(
+      {
+        pageKey: "panels-trial-a-tasks",
+        operation: `${mountedForm.objectType}.save`,
+        target: { id: "task-1" },
+        form: { operation: "inspection", instruction: "look at tonight's failures" },
+      },
+      () => {},
+    );
     await vi.waitFor(() => expect(shown(element).instruction).toBe("look at tonight's failures"));
     // The form shows the draft's values, and the fields it changed are marked.
     // The field set is the owner's answer for the draft's operation: the instruction the draft switched to.

@@ -2,7 +2,7 @@
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { PanelHost } from "@ontomato/platform-shell";
-import { panelAddressState } from "@ontomato/contracts/panel-host";
+import { panelAddress, panelAddressState } from "@ontomato/contracts/panel-host";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import { panelUsesOf, platformPanelHost } from "../panel-host";
@@ -64,11 +64,26 @@ const use = computed<ApplicationPanelUse | null>(() => {
   return uses.value.find((candidate) => candidate.path.replace(/\/+$/, "") === path) ?? null;
 });
 
-/** The page's address as the reader sees it: the application's, then this relation's own path. */
-const address = computed(() => `/applications/${encodeURIComponent(props.applicationId)}${props.panelPath ? `/${props.panelPath}` : ""}`);
+/** The page's address as the reader is on it: the conversation's page parameter beside a chat, the router's full. */
+const opened = computed(() => props.address ?? route.fullPath);
 
-/** The instance: this page's, for as long as the application and the use relation are the same. */
-const key = computed(() => `${props.applicationId}:${use.value?.id ?? ""}`);
+/**
+ * The page's address without the panel's own state: the application's, this relation's own path, and the rest of the
+ * address's query — a draft an agent wrote for this page names itself there (`draftSessionId`, `draftRunId`,
+ * `draftPath`), and the panel reads it from the address it is given. The state is the instance's to add.
+ */
+const address = computed(() => {
+  const search = opened.value.split("?")[1];
+  const path = `/applications/${encodeURIComponent(props.applicationId)}${props.panelPath ? `/${props.panelPath}` : ""}`;
+  return panelAddress(search ? `${path}?${search}` : path, {});
+});
+
+/**
+ * The instance: this page's, for as long as the application, the use relation and the rest of the address are the same.
+ * The reader's selection changes only the state, so it keeps the instance; another draft is another instance, which
+ * reads it.
+ */
+const key = computed(() => `${props.applicationId}:${use.value?.id ?? ""}:${address.value}`);
 
 /**
  * A selection the panel reports is the page's address: it is replaced in place, so the address bar and a reload carry
@@ -84,10 +99,12 @@ function writeAddress(next: string) {
 }
 
 /**
- * The state the page was opened at. It is read once, when this instance starts, and kept: a selection the reader makes
- * afterwards is written into the address, and that write must not become the next instance's opening state.
+ * The state the page was opened at. It is read when an instance starts, and kept: a selection the reader makes afterwards
+ * is written into the address, and that write must not become the instance's opening state again. Another instance (a
+ * new draft) opens at the state the address has then.
  */
-const initial = ref(panelAddressState(props.address ?? route.fullPath));
+const initial = ref(panelAddressState(opened.value));
+watch(address, () => (initial.value = panelAddressState(opened.value)));
 </script>
 
 <template>

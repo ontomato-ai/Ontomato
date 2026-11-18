@@ -1,11 +1,5 @@
 import type { PageDraft } from "@ontomato/contracts/page-draft";
-import {
-  changedFields,
-  pageDraftLink,
-  readPageDraft,
-  withoutPageDraftQuery,
-  type PageDraftLink,
-} from "@ontomato/contracts/page-draft";
+import { changedFields, pageDraftLink, withoutPageDraftQuery, type PageDraftLink } from "@ontomato/contracts/page-draft";
 
 /*
  * A draft a panel receives (overall design 3.4, "receive drafts"): the envelope stays `@ontomato/contracts/page-draft`'s
@@ -13,6 +7,10 @@ import {
  * already uses. The SDK reads the draft a panel's address names and hands it to the form component whose projection
  * performs its operation, which the component registered itself; the owner keeps its own read, save and discard, and no
  * panel writes a draft bridge.
+ *
+ * The draft is read as the panel starts, and the form that takes it registers only once its projection has read its own
+ * record and drawn it, so the SDK holds the draft until then. The registration is the moment it is handed over: nothing
+ * waits on a timer or asks again.
  */
 export { changedFields, pageDraftLink, withoutPageDraftQuery, type PageDraftLink };
 
@@ -61,15 +59,45 @@ export interface ReceivedPanelDraft<Form extends object> {
   changed: ReadonlySet<string>;
 }
 
+/** What a held draft is handed to once its form takes it: the draft as that form shows it. */
+type DraftTaken = (draft: ReceivedPanelDraft<Record<string, unknown>>) => void;
+
 /** The form adapters one panel instance's projections registered, by slot. */
 export class PanelFormAdapters {
   readonly #bySlot = new Map<string, PanelFormAdapter<object, { id?: string }>>();
+  /** The draft this panel received and no registered form has taken yet. */
+  #held: { draft: PageDraft<Record<string, unknown>>; taken: DraftTaken } | null = null;
 
   register<Form extends object>(slot: string, adapter: PanelFormAdapter<Form, { id?: string }>): () => void {
     if (!slot) throw new Error("A form projection registers under the slot whose declaration names it");
     if (this.#bySlot.has(slot)) throw new Error(`Slot '${slot}' already holds a form`);
     this.#bySlot.set(slot, adapter as unknown as PanelFormAdapter<object, { id?: string }>);
+    this.#handOver();
     return () => this.#bySlot.delete(slot);
+  }
+
+  /**
+   * Holds a draft for the form that performs its operation, and hands it over when that form registers — at once, if it
+   * already has. `taken` hears the draft as the form shows it: its values and the fields it changed from the owner's own
+   * reading.
+   */
+  hold(draft: PageDraft<Record<string, unknown>>, taken: DraftTaken): void {
+    this.#held = { draft, taken };
+    this.#handOver();
+  }
+
+  #handOver() {
+    const held = this.#held;
+    const slot = held && this.slotOf(held.draft.operation);
+    if (!held || !slot) return;
+    this.#held = null;
+    const adapter = this.#bySlot.get(slot)!;
+    const { operation, target, form } = held.draft;
+    void adapter.read(target).then((base) => {
+      const draft = { slot, operation, target, form, changed: changedFields(base, form) };
+      adapter.apply(draft);
+      held.taken(draft);
+    });
   }
 
   /** The operations the panel's form projections perform: what a draft of this panel may name. */
@@ -99,35 +127,20 @@ export class PanelFormAdapters {
     if (!adapter) throw new Error(`Slot '${slot}' holds no form`);
     return adapter.submit();
   }
-
-  /** Hands a draft to the form that takes its operation. */
-  apply(draft: ReceivedPanelDraft<Record<string, unknown>>): void {
-    const slot = this.slotOf(draft.operation);
-    if (!slot) throw new Error(`No form projection performs '${draft.operation}'`);
-    this.#bySlot.get(slot)!.apply(draft);
-  }
 }
 
 /**
- * Reads the draft a panel's address names and dispatches it to the form projection that performs its operation, if the
- * draft is this panel's. An unsaved form is never replaced without the reader's word: `dirty` answers that, and the
- * panel's own confirmation is asked before the draft replaces it.
+ * Reads the draft a panel's address names and, if it was written for this panel's page, holds it for the form projection
+ * that performs its operation, which takes it when it registers. `taken` hears the draft as that form shows it.
  */
-export async function receivePanelDraft<Form extends object>(
+export async function receivePanelDraft(
   pageKey: string,
   adapters: PanelFormAdapters,
   source: PanelDraftSource,
   link: PageDraftLink,
-): Promise<ReceivedPanelDraft<Form> | null> {
-  const draft = await readPageDraft<Form, string>(source, link, { pageKey, operations: adapters.operations() });
-  const owner = adapters.adapter(draft.operation);
-  const base = await owner.read(draft.target);
-  const form = draft.form;
-  return {
-    slot: adapters.slotOf(draft.operation)!,
-    operation: draft.operation,
-    target: draft.target,
-    form,
-    changed: changedFields(base, form),
-  };
+  taken: DraftTaken,
+): Promise<void> {
+  const draft = await source.readPageDraft(link.sessionId, link.runId, link.path);
+  if (draft.pageKey !== pageKey) throw new Error(`Draft belongs to page ${draft.pageKey}, not ${pageKey}`);
+  adapters.hold(draft, taken);
 }

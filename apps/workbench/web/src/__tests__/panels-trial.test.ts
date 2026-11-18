@@ -3,7 +3,7 @@ import { createApp, defineComponent, h, nextTick, ref } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { createPanelInstance } from "../../../../../packages/apps-sdk/src/panel/instance";
-import { PanelFormAdapters, receivePanelDraft } from "../../../../../packages/apps-sdk/src/panel/draft";
+import { PanelFormAdapters, receivePanelDraft, type ReceivedPanelDraft } from "../../../../../packages/apps-sdk/src/panel/draft";
 import { portsOf } from "../../../../../packages/apps-sdk/src/panel/ports-of";
 import { operationCall } from "../../../../../packages/apps-sdk/src/panel/ports";
 import { registerHandler, registeredHandlers } from "../../../../../packages/apps-sdk/src/panel/handlers";
@@ -198,22 +198,25 @@ describe("a panel instance", () => {
       submit: async () => ({}),
       apply: () => {},
     });
-    const received = await receivePanelDraft(
-      "panels-trial-a-tasks",
-      adapters,
-      {
-        readPageDraft: async () => ({
-          pageKey: "panels-trial-a-tasks",
-          operation: "platform:ScheduledTask.save",
-          target: { id: "task-1" },
-          form: { operation: "inspection", instruction: "look at tonight's failures" },
-        }),
-      },
-      { sessionId: "s", runId: "r", path: "outputs/drafts/a.page-draft.json" },
+    const received = await new Promise<ReceivedPanelDraft<Record<string, unknown>>>((taken) =>
+      void receivePanelDraft(
+        "panels-trial-a-tasks",
+        adapters,
+        {
+          readPageDraft: async () => ({
+            pageKey: "panels-trial-a-tasks",
+            operation: "platform:ScheduledTask.save",
+            target: { id: "task-1" },
+            form: { operation: "inspection", instruction: "look at tonight's failures" },
+          }),
+        },
+        { sessionId: "s", runId: "r", path: "outputs/drafts/a.page-draft.json" },
+        taken,
+      ),
     );
     // The draft is unsaved: it is what the form now holds, and the fields it changed are marked.
-    expect(received?.slot).toBe("form");
-    expect([...(received?.changed ?? [])].sort()).toEqual(["instruction", "operation"]);
+    expect(received.slot).toBe("form");
+    expect([...received.changed].sort()).toEqual(["instruction", "operation"]);
   });
 });
 

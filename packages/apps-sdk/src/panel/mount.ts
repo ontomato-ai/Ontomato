@@ -103,24 +103,20 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   app.use(ElementPlus).use(appContext);
   app.mount(element);
 
-  // The draft the address names belongs to this panel, so the SDK reads it and hands it to the form projection that
-  // performs its operation. That component puts its values in the form and marks what it changed; nothing is written
-  // until the reader saves.
+  // The draft the address names belongs to this panel, so the SDK reads it and holds it for the form projection that
+  // performs its operation, which takes it once it has read its record and registered. That component puts its values
+  // in the form and marks what it changed; nothing is written until the reader saves.
   const link = pageDraftLinkOf(message.url);
-  if (link) {
-    const received = await receivePanelDraft<Record<string, unknown>>(
+  if (link)
+    await receivePanelDraft(
       message.pageKey,
       instance.forms,
       // The draft is read over this frame's own transport, at the agent host's route: the panel needs one read, not the
       // conversation client, whose module pulls the whole shell in and would defer the panel's first draw by seconds.
       { readPageDraft: (sessionId, runId, path) => readDraft(transport, sessionId, runId, path) },
       link,
+      (taken) => (draft.value = taken),
     );
-    if (received) {
-      draft.value = received;
-      instance.forms.apply(received);
-    }
-  }
 
   report({ instance, draft, unsaved, changed: (id) => projectionListeners.forEach((listener) => listener(id)) });
   return { context, appContext };

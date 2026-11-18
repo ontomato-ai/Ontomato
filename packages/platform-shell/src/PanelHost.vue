@@ -44,7 +44,9 @@ watch(
   { flush: "post" },
 );
 watch(view.pageContext, (context) => context && emit("context", context));
-watch(view.address, (address) => emit("address", address), { immediate: true });
+// The instance's address exists once its record is read; before that there is none to report, and reporting an empty one
+// would replace the page's address — and the draft link in it — before the panel has read it.
+watch(view.address, (address) => emit("address", address));
 
 // The instance's operations reach the header like any page's: one description, one handler, for a person and an agent.
 // A click reaches the frame, which runs it with the person's own credential; the state the operation targets decides
