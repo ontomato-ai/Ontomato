@@ -60,7 +60,7 @@ function answer(request: Sent) {
   return nothingAt(request);
 }
 
-async function open(address: string, usePlatformRoutes = false, reply = answer, listeners = {}) {
+async function mountPage(address: string, usePlatformRoutes: boolean, reply: typeof answer, listeners: object) {
   const sent = installPlatform(reply);
   if (usePlatformRoutes) await useApplicationCatalog().refresh();
   const router = createRouter({ history: createMemoryHistory(), routes: usePlatformRoutes ? [platformLayoutRoute([])] : [{
@@ -70,8 +70,12 @@ async function open(address: string, usePlatformRoutes = false, reply = answer, 
   }] });
   await router.push(address);
   const { app, element } = mountPlatformPage(() => h(RouterView), router);
-  const frame = await panelHostFrame();
-  return { app, element, frame, router, sent };
+  return { app, element, router, sent };
+}
+
+async function open(address: string, usePlatformRoutes = false, reply = answer, listeners = {}) {
+  const page = await mountPage(address, usePlatformRoutes, reply, listeners);
+  return { ...page, frame: await panelHostFrame() };
 }
 
 async function startFrame(frame: HTMLIFrameElement, setup: () => object = () => ({})) {
@@ -269,7 +273,43 @@ it.each([
   }
 });
 
-it.each([403, 404])("reports HTTP %i when an open panel's record becomes unavailable", async status => {
+it.each([
+  {
+    case: "the use relation is gone",
+    response: () => Response.json({ data: {
+      applicationId: appB, entry: { path: "/", renderer: "panels" }, panelUses: [],
+    } }),
+    message: `This application declares no panel use ${useQ.id}`,
+    status: "",
+  },
+  {
+    case: "reading uses fails",
+    response: () => Response.json({ error: { message: "Application catalog failed" } }, { status: 500 }),
+    message: "Application catalog failed",
+    status: "HTTP 500: ",
+  },
+])("reports a load error when $case after opening the route", async ({ response, message, status }) => {
+  const onDisplayLoaded = vi.fn();
+  let reads = 0;
+  const { app, element } = await mountPage(`/applications/${appB}/summary`, false, request => {
+    // The route knows the use before the host tries to load it.
+    if (request.path === `/api/data-query/platform/applications/${appB}/panel-uses` && ++reads === 2) return response();
+    return answer(request);
+  }, { onDisplayLoaded });
+  try {
+    await vi.waitFor(() => {
+      expect(element.querySelector(".panel-host-error")?.textContent).toBe(message);
+      expect(onDisplayLoaded.mock.calls).toEqual([
+        [{ status: "loading" }],
+        [{ status: "error", error: { code: PANEL_LOAD_ERROR_CODES.panelUnavailable, message: status + message } }],
+      ]);
+    });
+  } finally {
+    app.unmount();
+  }
+});
+
+it.each([403, 404, 500])("reports HTTP %i when an open panel's record becomes unavailable", async status => {
   const onDisplayLoaded = vi.fn();
   let stream!: ReadableStreamDefaultController<Uint8Array>;
   let refused = false;

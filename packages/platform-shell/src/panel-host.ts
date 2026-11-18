@@ -129,6 +129,10 @@ export interface PanelInstanceOptions {
 /** What a failure is called in the panel's error place: its own message, or what it was, verbatim. */
 const failureText = (failure: unknown) => (failure instanceof Error ? failure.message : String(failure));
 
+function httpStatusOf(failure: unknown) {
+  if (failure instanceof Error && "status" in failure && typeof failure.status === "number") return failure.status;
+}
+
 // The bootstrap script can distinguish browser load failures before the SDK starts and sends its own reports.
 const frameLoadFailureSchema = displayLoadSchema.pick({ error: true }).required();
 const loading: DisplayLoad = { status: "loading" };
@@ -159,17 +163,26 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   let settle: () => void = () => {};
   const ready = new Promise<void>((resolve) => (settle = resolve));
 
+  function reportPanelUnavailable(failure: unknown) {
+    const message = failureText(failure);
+    error.value = message;
+    if (displayLoad.value.status === "error") return;
+    const status = httpStatusOf(failure);
+    displayLoad.value = {
+      status: "error",
+      error: {
+        code: PANEL_LOAD_ERROR_CODES.panelUnavailable,
+        message: status === undefined ? message : `HTTP ${status}: ${message}`,
+      },
+    };
+  }
+
   async function readPanel(id: string) {
     try {
       return await port.panel(id);
     } catch (failure) {
-      if (failure instanceof Error && "status" in failure && (failure.status === 403 || failure.status === 404)) {
-        error.value = failure.message;
-        displayLoad.value = { status: "error", error: {
-          code: PANEL_LOAD_ERROR_CODES.panelUnavailable,
-          message: `HTTP ${failure.status}: ${failure.message}`,
-        } };
-      }
+      const status = httpStatusOf(failure);
+      if (status === 403 || status === 404) reportPanelUnavailable(failure);
       throw failure;
     }
   }
@@ -192,7 +205,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       stopNotices?.();
       stopNotices = port.subscribe(relation.panelId, notice, recover);
     } catch (failure) {
-      error.value = failureText(failure);
+      reportPanelUnavailable(failure);
     }
     settle();
   }
@@ -201,6 +214,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     // The SDK base is read before the record is kept, so a version this platform cannot serve shows as an error rather
     // than as an empty frame.
     const base = await port.sdkBase();
+    error.value = "";
     use.value = relation;
     panel.value = record;
     state.value = requestedState(record) as Record<string, PanelStateValue>;
@@ -246,7 +260,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
     // A changed panel: read again by its ID, but never over a form the reader has unsaved.
     if (event.target.id !== loadedPanelId) return;
-    void refreshPanel(event.target.id).catch(failure => { error.value = failureText(failure); });
+    void refreshPanel(event.target.id).catch(reportPanelUnavailable);
   }
 
   async function refreshPanel(id: string): Promise<boolean> {
@@ -263,7 +277,13 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   async function recover(snapshot: PanelSubscriptionSnapshot) {
     if (snapshot.panel.id !== loadedPanelId) return;
     // An adopted definition already starts a frame whose projections will read current data.
-    if (snapshot.panel.revision !== panel.value?.revision && await refreshPanel(snapshot.panel.id)) return;
+    if (snapshot.panel.revision !== panel.value?.revision) {
+      const adopted = await refreshPanel(snapshot.panel.id).catch(failure => {
+        reportPanelUnavailable(failure);
+        throw failure;
+      });
+      if (adopted) return;
+    }
     if (frameReady) post({ kind: "reconnect", projections: snapshot.projections });
   }
   onBeforeUnmount(() => stopNotices?.());
@@ -318,7 +338,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       if (!dirty.value && waiting) {
         const record = waiting;
         waiting = null;
-        if (use.value) void adopt(use.value, record).catch((failure: unknown) => (error.value = failureText(failure)));
+        if (use.value) void adopt(use.value, record).catch(reportPanelUnavailable);
       }
     }
     if (payload.kind === "failed") {
