@@ -40,7 +40,8 @@ assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
   if (!callback || callback.runId !== runId) throw new HttpError(403, "A run callback is required", "FORBIDDEN");
   const target = z.enum(["ontology", "workbench"]).parse(req.params.target);
   const path = "/" + req.params[0];
-  const scheduleRead = target === "ontology" && scheduledTaskReads.some(request => request.method === req.method && request.path.test(path));
+  const scheduleRead = target === "ontology" && !req.path.includes("%") &&
+    scheduledTaskReads.some(request => request.method === req.method && request.path.test(path));
   if (/[\\%?#]/u.test(path) || path.split("/").some(segment => segment === "." || segment === "..") ||
     !(target === "ontology" ? scheduleRead || ontologyPath.test(path) : workbenchPath.test(path)) || path.startsWith("/api/assistant/executions/"))
     throw new HttpError(403, "Path is outside the execution callback", "FORBIDDEN");

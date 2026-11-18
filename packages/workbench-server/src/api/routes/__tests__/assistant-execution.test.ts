@@ -95,7 +95,7 @@ it.each([
   ["GET", `/platform/scheduled-tasks/${other}`],
   ["POST", "/platform/scheduled-tasks/applications/agents/form"],
 ])("forwards %s %s with the executor credential", async (method, path) => {
-  const upstream = vi.fn(async (_url: string, _request?: RequestInit) => Response.json({}));
+  const upstream = vi.fn(async (_url: string, _request?: Parameters<typeof fetch>[1]) => Response.json({}));
   vi.stubGlobal("fetch", upstream);
   const response = await call("ontology" + path, { tk: "oq.existing.grant" }, method);
   expect(response.status).toBe(200);
@@ -114,6 +114,7 @@ it.each([
   ["POST", `/platform/scheduled-tasks/${other}/runs`],
   ["POST", `/platform/scheduled-tasks/${other}/enabled`],
   ["POST", "/platform/scheduled-tasks/applications/a%2520b/form"],
+  ["POST", "/platform/scheduled-tasks/applications/%61gents/form"],
   ["POST", "/platform/scheduled-tasks/applications/%2e%2e%2fform"],
 ])("forbids %s %s before resolving the executor", async (method, path) => {
   const upstream = vi.fn();
