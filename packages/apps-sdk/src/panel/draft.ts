@@ -1,4 +1,4 @@
-import { shallowRef } from "vue";
+import { shallowReactive, shallowRef } from "vue";
 import type { PageDraft } from "@ontomato/contracts/page-draft";
 import { changedFields, draftTarget, pageDraftLink, withoutPageDraftQuery, type PageDraftLink } from "@ontomato/contracts/page-draft";
 
@@ -62,7 +62,7 @@ type DraftTaken = (draft: ReceivedPanelDraft<Record<string, unknown>>) => void;
 
 /** The form adapters one panel instance's projections registered, by slot. */
 export class PanelFormAdapters {
-  readonly #bySlot = new Map<string, PanelFormAdapter<object, { id?: string }>>();
+  readonly #bySlot = shallowReactive(new Map<string, PanelFormAdapter<object, { id?: string }>>());
   /** The draft this panel received and no registered form has taken yet. */
   readonly #held = shallowRef<{
     draft: PageDraft<Record<string, unknown>>;

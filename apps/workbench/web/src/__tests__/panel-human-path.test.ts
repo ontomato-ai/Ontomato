@@ -4,9 +4,10 @@ import { fileURLToPath } from "node:url";
 import { afterEach, expect, it, vi } from "vitest";
 import { h, ref } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
-import { PANEL_LOAD_ERROR_CODES } from "@ontomato/contracts/agent-presentation";
+import { PANEL_LOAD_ERROR_CODES, type PresentationFrame } from "@ontomato/contracts/agent-presentation";
 import type { PanelFrameMessage } from "@ontomato/contracts/panel-host";
 import { PANEL_HOST_CHANNEL, panelAddress } from "@ontomato/contracts/panel-host";
+import { useConversationDisplay } from "../../../../../packages/agent-shell-ui/src/conversation-display";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { platformLayoutRoute } from "../../../../../packages/platform-web/src/layout-route";
@@ -334,6 +335,113 @@ it.each([403, 404, 500])("reports HTTP %i when an open panel's record becomes un
   } finally {
     app.unmount();
     stream.close();
+  }
+});
+
+it("sends an initial clean report from the frame", async () => {
+  const { app, frame } = await open(`/applications/${appB}/summary`);
+  const wireDirty = vi.fn();
+  const listener = (event: MessageEvent) => {
+    if (event.source === frame.contentWindow && event.data?.channel === PANEL_HOST_CHANNEL && event.data.kind === "dirty") {
+      wireDirty(event.data.dirty);
+    }
+  };
+  window.addEventListener("message", listener);
+  try {
+    await startFrame(frame);
+    await vi.waitFor(() => expect(wireDirty).toHaveBeenCalledWith(false));
+  } finally {
+    window.removeEventListener("message", listener);
+    app.unmount();
+  }
+});
+
+it("blocks a presentation while a reader's form edit is unsaved, then clears dirty on discard and save", async () => {
+  const path = `/applications/${appA}/tasks`;
+  const address = panelAddress(path, deepState);
+  const dashboard = "/dashboards";
+  const serialize = vi.fn(async () => true);
+  const display = useConversationDisplay({
+    features: () => [
+      { id: "panel", label: "Tasks", icon: "schedules", availability: "page", withConversation: true },
+      { id: "dashboards", label: "Dashboards", icon: "dashboard", availability: "page", withConversation: true },
+    ],
+    resolve: url => url === dashboard
+      ? { featureId: "dashboards", address: url, instance: dashboard }
+      : { featureId: "panel", address: url, instance: path },
+    serialize,
+    context: (page, reported) => reported ?? { url: page.address, label: "", selection: [] },
+    leave: { leaves: () => false, confirm: async () => true },
+  });
+  display.follow(address, "side");
+  display.placed(() => "side");
+  const presentation: PresentationFrame = {
+    type: "presentation",
+    sessionId: "11111111-1111-4111-8111-111111111111",
+    runId: "22222222-2222-4222-8222-222222222222",
+    toolCallId: "show-dashboards",
+    target: { kind: "page", address: dashboard },
+  };
+  const baseline = { operation: "inspection", instruction: "Inspect the latest failures" };
+  const saved = { ...baseline, instruction: "Inspect the monthly failures" };
+  let current = { ...task, content: baseline, formRevision: inspectionTaskForm.formRevision };
+  const onDisplayDirty = vi.fn(display.dirty);
+  const { app, element, frame, router, sent } = await open(address, false, request => {
+    if (request.path === `${taskPath}/applications/${task.appId}/form`) {
+      return Response.json({ ...inspectionTaskForm, values: current.content, submittable: true });
+    }
+    if (request.path === `${taskPath}/${task.id}`) {
+      if (request.method === "PUT") current = { ...current, revision: current.revision + 1, content: saved };
+      return Response.json(current);
+    }
+    return answer(request);
+  }, {
+    address,
+    navigate: vi.fn(),
+    onContext: display.context,
+    onDisplayAddress: display.address,
+    onDisplayLoaded: display.loaded,
+    onDisplayDirty,
+  });
+  const editInstruction = (value: string) => {
+    const input = document.querySelector<HTMLTextAreaElement>('[data-field="instruction"] textarea')!;
+    input.value = value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  const clickFormButton = (label: string) => {
+    const button = [...document.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")]
+      .find(button => button.textContent?.trim() === label)!;
+    expect(button.disabled).toBe(false);
+    button.click();
+  };
+  try {
+    await startFrame(frame);
+    await vi.waitFor(() => expect(document.querySelector<HTMLTextAreaElement>('[data-field="instruction"] textarea')?.value)
+      .toBe(baseline.instruction));
+    editInstruction("Inspect the weekly failures");
+    await vi.waitFor(() => expect(onDisplayDirty).toHaveBeenLastCalledWith(true));
+
+    expect(await display.present(presentation)).toMatchObject({
+      status: "not_opened", reason: "blocked_unsaved", current: { target: { url: address } },
+    });
+    expect(serialize).not.toHaveBeenCalled();
+    expect(router.currentRoute.value.fullPath).toBe(address);
+    expect(element.querySelector("iframe.panel-host-frame")).toBe(frame);
+
+    clickFormButton("Discard");
+    await vi.waitFor(() => expect(onDisplayDirty).toHaveBeenLastCalledWith(false));
+    expect(sent.filter(request => request.method === "PUT")).toHaveLength(0);
+
+    editInstruction(saved.instruction);
+    await vi.waitFor(() => expect(onDisplayDirty).toHaveBeenLastCalledWith(true));
+    clickFormButton("Save");
+    await vi.waitFor(() => expect(onDisplayDirty).toHaveBeenLastCalledWith(false));
+    expect(sent.find(request => request.method === "PUT")?.body).toMatchObject({ content: saved });
+    expect(await display.present(presentation)).toMatchObject({
+      status: "opened", reason: "target_selected", current: { target: { url: dashboard } },
+    });
+  } finally {
+    app.unmount();
   }
 });
 
