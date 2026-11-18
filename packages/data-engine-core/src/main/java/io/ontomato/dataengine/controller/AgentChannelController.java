@@ -126,13 +126,14 @@ public class AgentChannelController {
     var root=body.getJSONObject("root");
     var executionActor=body.getJSONObject("executionActor");
     boolean steer="steer".equals(body.getString("mode"));
+    var reader=visibilityReader(body,requestedBy,session);
     if(OntologyAgentStore.RETRIEVER.equals(agent)) {
       var context=callers.retrieval(actor,domain,language,authority,requestedBy,root,executionActor);
       if(steer) return retrieval.prepareSteer(session,run,body.getJSONObject("input"),context);
       var prepared=retrieval.prepareRun(session,run,body.getJSONObject("input"),body.getString("inputId"),
           body.getJSONObject("context"),root.getString("runId"),context);
       prepared.put("executionActor",executionActor);
-      return prepared;
+      return OntologyAgentDefinitions.withVisibility(prepared,reader);
     }
     var context=kind!=null?callers.generation(actor,domain,language,authority,requestedBy,root,executionActor):
       callers.query(actor,domain,language,authority,requestedBy,root,executionActor);
@@ -149,7 +150,17 @@ public class AgentChannelController {
       narrowed.put("classNames",context.access().classNames());
       if(context.access().target().testing()) narrowed.put("executionContextId",context.access().target().contextId());
     }
-    prepared.put("authority",narrowed);prepared.put("executionActor",executionActor);return prepared;
+    prepared.put("authority",narrowed);prepared.put("executionActor",executionActor);
+    return OntologyAgentDefinitions.withVisibility(prepared,reader);
+  }
+  private AgentVisibilityPrompt.Reader visibilityReader(JSONObject body, JSONObject requestedBy, String session) {
+    if (requestedBy != null) return AgentVisibilityPrompt.Reader.DELEGATED;
+    var recipient=body.get("userRecipient");
+    if (recipient == null) return null;
+    if (!(recipient instanceof Map<?,?> human) || !(human.get("session") instanceof Map<?,?> addressed))
+      throw AgentHttpException.invalid("userRecipient must address a session");
+    return "ontology".equals(addressed.get("providerId")) && session.equals(addressed.get("sessionId"))
+        ? AgentVisibilityPrompt.Reader.USER : null;
   }
   private void validatePrepare(JSONObject body) {
     AgentJson.fields(body,"mode","language","agent","sessionId","runId","actor","inputId","input","authority","requestedBy","root","context","executionActor","userRecipient");

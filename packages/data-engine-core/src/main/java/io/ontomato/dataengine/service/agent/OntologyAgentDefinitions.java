@@ -25,6 +25,15 @@ public class OntologyAgentDefinitions {
     this.models = models;
   }
 
+  /** Applies the provider entry's reader to the prepared run. Auxiliary callers use the definitions directly. */
+  public static JSONObject withVisibility(JSONObject prepared, AgentVisibilityPrompt.Reader reader) {
+    if (reader != null) {
+      var definition = prepared.getJSONObject("definition");
+      definition.put("systemPrompt", definition.getString("systemPrompt") + "\n\n" + AgentVisibilityPrompt.forReader(reader));
+    }
+    return prepared;
+  }
+
   public String resource(String path) {
     try (var in = getClass().getResourceAsStream("/" + path)) {
       if (in == null) throw new IllegalStateException("Missing ontology resource: " + path);
