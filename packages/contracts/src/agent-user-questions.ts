@@ -5,10 +5,11 @@ import {
   agentMessageSourceSchema,
   agentQuestionOptionsSchema,
   agentSessionRefSchema,
+  agentUserRecipientSchema,
 } from "./agent-channel";
 import { runtimeIdSchema } from "./agent-runtime-values";
 
-/** Proposed private channel transport, pending review by the channel owner. */
+/** Service-only channel transport. The channel does not interpret business approval. */
 export const agentUserQuestionRequestSchema = z.object({
   /** Restored by the host from its authenticated execution, never a model-selected sender. */
   source: agentExecutionRefSchema,
@@ -18,20 +19,7 @@ export const agentUserQuestionRequestSchema = z.object({
 }).strict();
 export type AgentUserQuestionRequest = z.infer<typeof agentUserQuestionRequestSchema>;
 
-/** actor.id is a Java caller reference, NOT a user ID or the business executor. */
-export const agentUserRecipientSchema = z.object({
-  session: agentSessionRefSchema,
-  actor: agentActorRefSchema,
-}).strict();
-export type AgentUserRecipient = z.infer<typeof agentUserRecipientSchema>;
-
-/** Proposed extension of trusted admission/prepare context. Human hosts set it; children inherit it. */
-export const agentUserRecipientContextSchema = z.object({
-  /** Older/non-human admission data has no declared human recipient; never infer one from an actor. */
-  userRecipient: agentUserRecipientSchema.nullable().default(null),
-}).strict();
-export type AgentUserRecipientContext = z.infer<typeof agentUserRecipientContextSchema>;
-
+export { agentUserRecipientSchema, type AgentUserRecipient } from "./agent-channel";
 
 export const agentUserQuestionReceiptSchema = z.object({
   questionId: runtimeIdSchema,
@@ -62,10 +50,3 @@ export const agentQuestionAnswerReceiptSchema = z.object({
   text: z.string(),
 }).strict();
 export type AgentQuestionAnswerReceipt = z.infer<typeof agentQuestionAnswerReceiptSchema>;
-
-/** Proposed generic provider notification. It carries no intent, decision, executor or operation parameters. */
-export const agentUserQuestionAnsweredSchema = z.object({
-  question: agentUserQuestionReceiptSchema,
-  answerId: runtimeIdSchema,
-}).strict();
-export type AgentUserQuestionAnswered = z.infer<typeof agentUserQuestionAnsweredSchema>;

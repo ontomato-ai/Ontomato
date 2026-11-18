@@ -44,6 +44,7 @@ export type PanelOperationOutcome = z.infer<typeof panelOperationOutcomeSchema>;
 /** Node's minimal invocation fact; no revision history, approval workflow or credential snapshot. */
 export const panelOperationIntentSchema = z.object({
   intentId: runtimeIdSchema,
+  /** Original question execution for provenance; later dispatch binds only its session, not this runId. */
   source: agentExecutionRefSchema,
   rootSession: agentSessionRefSchema,
   use: panelUseRefSchema,

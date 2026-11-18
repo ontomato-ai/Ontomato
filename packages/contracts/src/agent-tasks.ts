@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { runtimeMessageRecordSchema } from "./agent-runtime";
-import { agentRefSchema, agentSessionRefSchema, agentExecutionRefSchema, agentNotificationSchema } from "./agent-channel";
+import { agentRefSchema, agentSessionRefSchema, agentExecutionRefSchema, agentNotificationSchema, agentPendingQuestionSchema } from "./agent-channel";
 import { agentTaskStatusSchema,agentTaskErrorSchema,retrievalBranchSchema,retrievalBranchSourceSchema,qualityResultSchema,retrievalExtensionSchema } from "./agent-task-results";
 export { agentTaskStatusSchema,agentTaskErrorSchema,retrievalBranchSchema,retrievalBranchSourceSchema,qualityResultSchema } from "./agent-task-results";
 import { runtimeIdSchema, runtimeTimestampSchema } from "./agent-runtime-values";
@@ -47,14 +47,16 @@ export const agentTaskSchema = z.discriminatedUnion("kind", [qualityTaskSchema,c
 export const agentTasksSnapshotSchema = z.object({
   sessionId: id,
   tasks: z.array(agentTaskSchema),
+  /** Authoritative human questions, also while the conversation has no active run. */
+  pendingQuestions: z.array(agentPendingQuestionSchema).optional(),
   qualityResults: z.array(qualityResultSchema),
-  notifications: z.array(runtimeMessageRecordSchema.extend({ message: agentNotificationSchema })).optional(),
+  notifications: z.array(runtimeMessageRecordSchema.extend({ message: agentNotificationSchema, agentPendingQuestionSchema })).optional(),
   /** Failed preparations have no run; the intent owns this diagnostic, never a synthetic user message. */
   preparationFailures: z.array(z.object({ runId: id, inputId: id, error: z.string(), createdAt: runtimeTimestampSchema }).strict()).optional(),
 }).strict();
 /**
  * One `event: tasks` frame of a session's task stream: always the complete snapshot. `settled` says nothing will change
- * until the conversation's next run, so the stream ends after it.
+ * until the conversation's next input. Keep the stream open while human questions are pending.
  */
 export const agentTasksFrameSchema = agentTasksSnapshotSchema.extend({
   type: z.literal("tasks_snapshot"),

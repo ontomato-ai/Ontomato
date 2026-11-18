@@ -121,7 +121,7 @@ export const agentHostCreateSessionResponseSchema = z
   .object({ session: agentHostSessionSchema, replayed: z.boolean() })
   .strict();
 export const agentHostSendRequestSchema = z
-  .object({ message: z.string().refine((v) => v.trim().length > 0), replyTo: runtimeIdSchema.optional() })
+  .object({ message: z.string().refine((v) => v.trim().length > 0), replyTo: runtimeIdSchema.optional(), selectedOption: z.number().int().nonnegative().optional() })
   .strict();
 export const agentHostSendResultSchema = z
   .object({ delivery: agentInputDeliverySchema, input: agentHostMessageSchema, snapshot: agentHostRunSnapshotSchema.nullable(), pendingQuestions: z.array(agentPendingQuestionSchema), replayed: z.boolean() })

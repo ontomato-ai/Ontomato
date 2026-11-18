@@ -6,6 +6,9 @@ export const agentRefSchema = z.object({ providerId: key, agentId: key }).strict
 export const agentSessionRefSchema = z.object({ providerId: key, sessionId: id }).strict();
 /** Identity is restored by the platform; a model never supplies identity or credentials. */
 export const agentActorRefSchema = z.object({ id, domainId: key }).strict();
+/** Trusted human delivery context; actor.id is an opaque host caller reference, never an executor. */
+export const agentUserRecipientSchema = z.object({ session: agentSessionRefSchema, actor: agentActorRefSchema }).strict();
+export type AgentUserRecipient = z.infer<typeof agentUserRecipientSchema>;
 export const agentExecutionActorRefSchema = z.object({ userId: key, domainId: key }).strict();
 export type AgentExecutionActorRef = z.infer<typeof agentExecutionActorRefSchema>;
 export const agentCallerAdmissionSchema = z.object({ id, deadlineAt: runtimeTimestampSchema }).strict();
@@ -26,7 +29,15 @@ export const agentNotificationSchema = z.object({
   role: z.literal("notification"),
   kind: z.enum(["agent-message", "agent-result", "agent-question", "agent-answer"]),
   source: agentMessageSourceSchema,
-  replyTo: id.optional(), defaultAssumption: z.string().optional(), options: agentQuestionOptionsSchema.optional(),
+  replyTo: id.optional(),
+  /** Explicit human delivery; ordinary agent questions keep their existing route. */
+  recipient: z.literal("user").optional(),
+  selectedOption: z.number().int().nonnegative().optional(),
+  /** Set by the authenticated human host, never by the model or browser body. */
+  respondent: agentActorRefSchema.optional(),
+  /** Original receipt identity when a human answer is forwarded to the questioning session. */
+  answerId: id.optional(),
+  defaultAssumption: z.string().optional(), options: agentQuestionOptionsSchema.optional(),
   outcome: z.enum(["completed", "failed", "cancelled"]).optional(),
   content: z.string(), timestamp: z.number().int().nonnegative(),
 }).strict();
@@ -45,12 +56,16 @@ export const agentRunContextSchema = z.object({
   agent: agentRefSchema, actor: agentActorRefSchema,
   authority: agentAuthoritySchema,
   requestedBy: agentExecutionRefSchema.nullable(), root: agentExecutionRefSchema,
+  /** Human hosts set this; children inherit it. Older/background/external roots have none. */
+  userRecipient: agentUserRecipientSchema.nullable().optional(),
 }).strict();
 export const agentPrepareRequestSchema = z.object({
   mode: z.enum(["run", "steer"]), language: key,
   agent: agentRefSchema, sessionId: id, runId: id, actor: agentActorRefSchema,
   executionActor: agentExecutionActorRefSchema.nullable().optional(),
-  inputId: id, input: agentInputSchema, authority: agentAuthoritySchema, requestedBy: agentExecutionRefSchema.nullable(), root: agentExecutionRefSchema, context: runtimeJsonObjectSchema.optional(),
+  inputId: id, input: agentInputSchema, authority: agentAuthoritySchema, requestedBy: agentExecutionRefSchema.nullable(), root: agentExecutionRefSchema,
+  /** Human hosts set this; children inherit it. Older/background/external roots have none. */
+  userRecipient: agentUserRecipientSchema.nullable().optional(), context: runtimeJsonObjectSchema.optional(),
 }).strict();
 export const agentProviderExecutionSchema = z.object({ execution: agentExecutionRefSchema, actor: agentActorRefSchema, executionActor: agentExecutionActorRefSchema.nullable().optional(), fileId: id.optional() }).strict();
 export const agentDeliverySchema = z.object({
@@ -68,7 +83,15 @@ export const agentDeliverySchema = z.object({
 export const agentChannelCommandSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("list"), query: z.string().optional() }).strict(),
   z.object({ op: z.literal("start"), agent: agentRefSchema, message: z.string().min(1), title: z.string().optional(), context: runtimeJsonObjectSchema.optional() }).strict(),
-  z.object({ op: z.literal("send"), session: z.union([agentSessionRefSchema,z.literal("parent")]), message: z.string().min(1), steer: z.boolean().optional(), needsInput: z.boolean().optional(), replyTo: id.optional(), defaultAssumption: z.string().min(1).optional(), options: agentQuestionOptionsSchema.optional() }).strict(),
+  z.object({ op: z.literal("send"), session: z.union([agentSessionRefSchema,z.literal("parent")]), message: z.string().min(1), steer: z.boolean().optional(), needsInput: z.boolean().optional(), replyTo: id.optional(),
+  /** Explicit human delivery; ordinary agent questions keep their existing route. */
+  recipient: z.literal("user").optional(),
+  selectedOption: z.number().int().nonnegative().optional(),
+  /** Set by the authenticated human host, never by the model or browser body. */
+  respondent: agentActorRefSchema.optional(),
+  /** Original receipt identity when a human answer is forwarded to the questioning session. */
+  answerId: id.optional(),
+  defaultAssumption: z.string().min(1).optional(), options: agentQuestionOptionsSchema.optional() }).strict(),
   z.object({ op: z.literal("read"), taskId: id, files: z.boolean().optional(), view: z.enum(["result", "messages"]).optional(), cursor: z.number().int().nonnegative().optional(), limit: z.number().int().min(1).max(100).optional() }).strict(),
   z.object({ op: z.literal("cancel"), taskId: id }).strict(),
 ]).superRefine((command,ctx) => {
