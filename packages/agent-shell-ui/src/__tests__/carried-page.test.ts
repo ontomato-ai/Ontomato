@@ -26,12 +26,12 @@ const workbench: ShellWorkbenchDeclaration = {
 };
 const labels = {
   placeholder: "Message", send: "Send", stop: "Stop",
-  pageContext: (page: string) => `Current page: ${page}`,
+  pageContext: (page: { label: string; url: string }) => `Current page: ${page.label} (${page.url})`,
+  pageContextAddress: (url: string) => `Current page: ${url}`,
   selectionContext: (selection: string) => `Selected: ${selection}`,
 } as unknown as ShellLabels;
 
 const page: PageContext = {
-  pageKey: "dashboard",
   url: "/dashboards?dashboardId=board-a",
   label: "Dashboards",
   selection: [{ kind: "chart", id: "card-1", label: "e2e board card" }],
@@ -66,7 +66,7 @@ async function settle() {
  * The shell beside a page, over a host that creates the conversation on its first message and admits every run. A host
  * may answer a conversation's history instead, to open one that already exists.
  */
-function render(history?: { agentId: string; messages: { id: string; content: string }[] }) {
+function render(history?: { agentId: string; messages: { id: string; content: string }[] }, beside: PageContext = page) {
   const sent: string[] = [];
   const client = {
     listAgents: vi.fn().mockResolvedValue([]),
@@ -104,7 +104,7 @@ function render(history?: { agentId: string; messages: { id: string; content: st
       return () => h(AgentShell, {
         ref: shell, workbench, client, labels, nav, agentId: shownAgent.value,
         "onUpdate:agentId": (id: string | null) => (shownAgent.value = id),
-        featureId: "dashboards", pageContext: page,
+        featureId: "dashboards", pageContext: beside,
         sessionId: sessionId.value, "onUpdate:sessionId": (id: string | null) => (sessionId.value = id),
       });
     },
@@ -124,11 +124,24 @@ it("names the page on the conversation's first message, and only the selection a
   await settle();
   // The conversation this send created is where the page went; linking it is not the reader moving elsewhere.
   expect(sessionId.value).toBe(createdSessionId);
-  expect(sent[0]).toBe("first on this board\n\nCurrent page: Dashboards；Selected: e2e board card");
+  expect(sent[0]).toBe("first on this board\n\nCurrent page: Dashboards (/dashboards?dashboardId=board-a)；Selected: e2e board card");
 
   await shell.value!.send("second on the same board");
   await settle();
+  // The page is the same one, so it is not named a second time; what the page reports as selected still rides.
   expect(sent[1]).toBe("second on the same board\n\nSelected: e2e board card");
+});
+
+it("names the page at once, before the page reports what is selected in it", async () => {
+  // The page has just opened and has reported nothing: what the shell opened is the dashboard application's page at its
+  // own address, and that is what the first message carries. Nothing is invented for the selection.
+  const quiet: PageContext = { url: page.url, label: page.label, selection: [] };
+  const { sent, shell } = render(undefined, quiet);
+  await settle();
+
+  await shell.value!.send("what is this");
+  await settle();
+  expect(sent[0]).toBe("what is this\n\nCurrent page: Dashboards (/dashboards?dashboardId=board-a)");
 });
 
 it("names the page again in a conversation the reader opened instead", async () => {
@@ -143,7 +156,7 @@ it("names the page again in a conversation the reader opened instead", async () 
 
   await shell.value!.send("in a new conversation");
   await settle();
-  expect(sent[1]).toBe("in a new conversation\n\nCurrent page: Dashboards；Selected: e2e board card");
+  expect(sent[1]).toBe("in a new conversation\n\nCurrent page: Dashboards (/dashboards?dashboardId=board-a)；Selected: e2e board card");
 });
 
 it("does not name the page again in a conversation that already named it", async () => {
@@ -152,7 +165,7 @@ it("does not name the page again in a conversation that already named it", async
   const { sent, sessionId, shell } = render({
     agentId,
     messages: [
-      { id: "m1", content: "earlier on this board\n\nCurrent page: Dashboards；Selected: e2e board card" },
+      { id: "m1", content: "earlier on this board\n\nCurrent page: Dashboards (/dashboards?dashboardId=board-a)；Selected: e2e board card" },
       { id: "m2", content: "later on this board\n\nSelected: e2e board card" },
     ],
   });
@@ -162,6 +175,25 @@ it("does not name the page again in a conversation that already named it", async
   await shell.value!.send("again on the same board");
   await settle();
   expect(sent[0]).toBe("again on the same board\n\nSelected: e2e board card");
+});
+
+it("names the page beside a conversation reopened on a same-titled page at another address", async () => {
+  // Two applications show one panel of the same title at their own addresses. The conversation was written beside the
+  // first; reopened beside the second, the page it carries is another one, so it is named.
+  const { sent, sessionId, shell } = render({
+    agentId,
+    messages: [
+      { id: "m1", content: "earlier beside the first\n\nCurrent page: Dashboards (/applications/app-a/tasks)；Selected: e2e board card" },
+    ],
+  });
+  await settle();
+
+  expect(sessionId.value).toBe(createdSessionId);
+  await shell.value!.send("write about this one");
+  await settle();
+  expect(sent[0]).toBe(
+    "write about this one\n\nCurrent page: Dashboards (/dashboards?dashboardId=board-a)；Selected: e2e board card",
+  );
 });
 
 it("shows the agent the opened conversation runs on, and writes in it", async () => {
