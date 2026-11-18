@@ -52,7 +52,7 @@ vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@ontomato/platform-shell")>()),
   // Stands in for the frame: it reports what the reader looks at, and a selection as the address it is now at.
   PanelHost: defineComponent({
-    props: { useId: String, address: String, initial: { type: Object, default: () => ({}) } },
+    props: { useId: String, address: String, initial: { type: Object, default: () => ({}) }, labels: Object },
     emits: ["address", "context"],
     setup(props, { emit }) {
       instances.push({ initial: props.initial });

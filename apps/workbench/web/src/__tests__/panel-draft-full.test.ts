@@ -1,10 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createApp, h } from "vue";
-import ElementPlus from "element-plus";
+import { h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { mountPanel } from "../../../../../packages/apps-sdk/src/panel/mount";
-import { draftScenario, hostMessageOf, inside, installPlatform, leaveFrame, panelOf, writeFrameDocument } from "./panel-frame";
+import {
+  draftScenario,
+  hostMessageOf,
+  inside,
+  installPlatform,
+  leaveFrame,
+  mountPlatformPage,
+  panelHostFrame,
+  panelOf,
+  writeFrameDocument,
+} from "./panel-frame";
 
 /*
  * A draft an agent wrote for a panel application's page, opened at that page's own address (design 10.3, the draft
@@ -34,20 +43,10 @@ describe("a draft at a panel application's own address", () => {
     });
     await router.push(scenario.address);
     await router.isReady();
-    const page = createApp({ render: () => h(RouterView) }).use(router).use(ElementPlus);
-    const host = document.createElement("div");
-    document.body.append(host);
-    page.mount(host);
+    const { app: page, element: host } = mountPlatformPage(() => h(RouterView), router);
 
     // The platform's page draws the panel's frame, registered, with the document the panel host wrote for it.
-    const element = await vi.waitFor(
-      () => {
-        const found = document.querySelector<HTMLIFrameElement>("iframe.panel-host-frame");
-        expect(found?.getAttribute("srcdoc")).toBeTruthy();
-        return found!;
-      },
-      { timeout: 5000 },
-    );
+    const element = await panelHostFrame();
     const message = hostMessageOf(element.getAttribute("srcdoc")!);
     expect(new URL(message.url, "http://page.invalid").searchParams.get("draftRunId")).toBe("run-1");
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { usePanelInstance, type PanelHostPort } from "./panel-host";
+import { usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./panel-host";
 import { usePageActions } from "./page-actions";
 
 /**
@@ -23,6 +23,8 @@ const props = defineProps<{
   initial?: Record<string, unknown>;
   /** The title drawn above the frame; absent when the frame is the whole surface. */
   title?: string;
+  /** What the host says to the reader, in the platform's language. */
+  labels: PanelHostLabels;
 }>();
 const emit = defineEmits<{
   /** What a message from this instance carries now. */
@@ -32,6 +34,7 @@ const emit = defineEmits<{
 }>();
 
 const view = usePanelInstance(props.port, {
+  labels: props.labels,
   useId: () => props.useId,
   label: (panel) => (props.label ? `${props.label} · ${panel.name}` : panel.name),
   address: () => props.address,

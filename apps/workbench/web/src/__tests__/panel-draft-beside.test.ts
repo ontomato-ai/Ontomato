@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createApp, h } from "vue";
-import ElementPlus from "element-plus";
+import { h } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
@@ -13,6 +12,8 @@ import {
   inside,
   installPlatform,
   leaveFrame,
+  mountPlatformPage,
+  panelHostFrame,
   panelOf,
   task,
   writeFrameDocument,
@@ -37,19 +38,8 @@ describe("a draft at a panel application's page beside the conversation", () => 
     const pages: string[] = [];
     const resolved = pilotPageResolver((address) => pages.push(address))(scenario.address)!;
     expect(resolved.id).toBe("panel-application");
-    const page = createApp({ render: () => h(resolved.component, resolved.props) }).use(router).use(ElementPlus);
-    const host = document.createElement("div");
-    document.body.append(host);
-    page.mount(host);
-
-    const element = await vi.waitFor(
-      () => {
-        const found = document.querySelector<HTMLIFrameElement>("iframe.panel-host-frame");
-        expect(found?.getAttribute("srcdoc")).toBeTruthy();
-        return found!;
-      },
-      { timeout: 5000 },
-    );
+    const { app: page } = mountPlatformPage(() => h(resolved.component, resolved.props), router);
+    const element = await panelHostFrame();
     const message = hostMessageOf(element.getAttribute("srcdoc")!);
     expect(new URL(message.url, "http://page.invalid").searchParams.get("draftRunId")).toBe("run-1");
 

@@ -163,7 +163,14 @@ export default {
     "ontologyManager": "Ontology manager",
     "schedules": "Scheduled tasks",
     "settings": "System settings",
-    "dataGovernance": "Data governance platform"
+    "dataGovernance": "Data governance platform",
+    "panelNotInApplication": "{path} is not a panel of this application",
+    "panelUseMissing": "This application declares no panel use {use}",
+    "panelNotStarted": "The panel has not started yet",
+    "panelFileUnavailable": "The panel could not load {file}",
+    "panelScriptThrew": "The panel's script failed while it ran",
+    "panelScriptRejected": "The panel's script failed",
+    "panelDraftUnclaimed": "This draft belongs to no form of this panel"
   },
   "nav": {
     "agentsAndSkills": "Agents and Skills",

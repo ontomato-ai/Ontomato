@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { PanelHost } from "@ontomato/platform-shell";
+import { useI18n } from "vue-i18n";
+import { PanelHost, type PanelHostLabels } from "@ontomato/platform-shell";
 import { panelAddress, panelAddressState } from "@ontomato/contracts/panel-host";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { PageContext } from "@ontomato/contracts/page-context";
@@ -42,7 +43,9 @@ const emit = defineEmits<{
 
 const route = useRoute();
 const router = useRouter();
-const uses = ref<readonly ApplicationPanelUse[]>([]);
+const { t } = useI18n();
+/** The application's use relations, once Java has answered; until then the page names none and says nothing. */
+const uses = ref<readonly ApplicationPanelUse[] | null>(null);
 const failure = ref("");
 const port = platformPanelHost(props.applicationId);
 
@@ -60,9 +63,21 @@ watch(() => props.applicationId, () => void read());
 /** The use relation this address names, or the application's first when the address is the application's own. */
 const use = computed<ApplicationPanelUse | null>(() => {
   const path = props.panelPath ? `/${props.panelPath}`.replace(/\/+$/, "") : "";
-  if (!path) return uses.value[0] ?? null;
-  return uses.value.find((candidate) => candidate.path.replace(/\/+$/, "") === path) ?? null;
+  if (!path) return uses.value?.[0] ?? null;
+  return uses.value?.find((candidate) => candidate.path.replace(/\/+$/, "") === path) ?? null;
 });
+
+/** What the panel host says to the reader, in the platform's language. */
+const labels = computed<PanelHostLabels>(() => ({
+  useMissing: (useId) => t("platform.panelUseMissing", { use: useId }),
+  notStarted: t("platform.panelNotStarted"),
+  failures: {
+    // The frame puts the file it could not load where `{file}` stands.
+    fileUnavailable: t("platform.panelFileUnavailable", { file: "{file}" }),
+    scriptThrew: t("platform.panelScriptThrew"),
+    scriptRejected: t("platform.panelScriptRejected"),
+  },
+}));
 
 /** The page's address as the reader is on it: the conversation's page parameter beside a chat, the router's full. */
 const opened = computed(() => props.address ?? route.fullPath);
@@ -109,11 +124,12 @@ watch(address, () => (initial.value = panelAddressState(opened.value)));
 
 <template>
   <p v-if="failure" role="alert">{{ failure }}</p>
-  <p v-else-if="!use" role="alert">{{ panelPath ?? "" }} is not a panel of this application</p>
+  <p v-else-if="uses && !use" role="alert">{{ t("platform.panelNotInApplication", { path: `/${panelPath ?? ""}` }) }}</p>
   <PanelHost
-    v-else
+    v-else-if="use"
     :key="key"
     :port="port"
+    :labels="labels"
     :use-id="use.id"
     :address="address"
     :initial="initial"

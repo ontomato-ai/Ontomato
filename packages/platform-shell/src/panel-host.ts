@@ -91,7 +91,25 @@ export interface PanelInstanceView {
   frame(window: Window | null): void;
 }
 
+/**
+ * What a panel host says to a reader, in the platform's language: the platform that mounts the host supplies the words,
+ * as it does the shell's.
+ */
+export interface PanelHostLabels {
+  /** The page names a use relation its application does not declare. */
+  useMissing(useId: string): string;
+  /** An operation was asked of the panel before its frame started. */
+  notStarted: string;
+  /**
+   * What the frame reports when the panel's own text fails before it can say so itself: a file it could not load (where
+   * `{file}` stands for that file), and a script that failed while it ran or rejected with nothing to say.
+   */
+  failures: { fileUnavailable: string; scriptThrew: string; scriptRejected: string };
+}
+
 export interface PanelInstanceOptions {
+  /** The words the host shows the reader. */
+  labels: PanelHostLabels;
   /** The application use to open; changing it is another instance. */
   useId: () => string;
   /** What a message calls the page: the panel's own name, and whatever the page adds to it (its application, say). */
@@ -146,7 +164,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       const applicationId = port.applicationId();
       const relations = await port.uses(applicationId);
       const relation = relations.find((candidate) => candidate.id === options.useId());
-      if (!relation) throw new Error(`Application ${applicationId} declares no panel use ${options.useId()}`);
+      if (!relation) throw new Error(options.labels.useMissing(options.useId()));
       await adopt(relation, await port.panel(relation.panelId));
       loadedPanelId = relation.panelId;
       stopNotices = port.subscribe(targets(), notice);
@@ -178,7 +196,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       label: options.label(record),
       state: state.value,
     };
-    document.value = panelFrameDocument(record, base, message);
+    document.value = panelFrameDocument(record, base, message, options.labels.failures);
     if (frame) {
       disposeFrame?.();
       disposeFrame = port.frame(frame, relation, record);
@@ -282,7 +300,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     error,
     ready,
     invoke(id, input) {
-      if (!frame) return Promise.reject(new Error("The panel has not started yet"));
+      if (!frame) return Promise.reject(new Error(options.labels.notStarted));
       const requestId = randomId();
       return new Promise((resolve, reject) => {
         answering.set(requestId, { resolve, reject });
@@ -319,10 +337,12 @@ const MODULES: Readonly<Record<string, string>> = {
 /**
  * Runs before the panel's module, in a script of its own, and tells the host what the frame cannot otherwise say. A
  * module that cannot be fetched or parsed raises an `error` on its own element; a rejection nothing handled arrives as
- * `unhandledrejection`. Both are reported once — the first failure is the one worth reading.
+ * `unhandledrejection`. Both are reported once — the first failure is the one worth reading. The words are the
+ * platform's, in the reader's language; a script's own error message, when it has one, is reported as it is.
  */
-const FAILURE_LISTENER = `
+const failureListener = (words: PanelHostLabels["failures"]) => `
 (function () {
+  var words = ${JSON.stringify(words)};
   var reported = false;
   function fail(what) {
     if (reported || !what) return;
@@ -331,12 +351,12 @@ const FAILURE_LISTENER = `
   }
   window.addEventListener("error", function (event) {
     var target = event.target;
-    if (target && target !== window && target.tagName) fail("The panel's " + target.tagName.toLowerCase() + " " + (target.src || target.href || "") + " could not be loaded");
-    else fail(event.message || (event.error && event.error.message) || "The panel's module threw while it ran");
+    if (target && target !== window && target.tagName) fail(words.fileUnavailable.replace("{file}", target.src || target.href || target.tagName.toLowerCase()));
+    else fail(event.message || (event.error && event.error.message) || words.scriptThrew);
   }, true);
   window.addEventListener("unhandledrejection", function (event) {
     var reason = event.reason;
-    fail((reason && reason.message) || reason || "The panel's module rejected");
+    fail((reason && reason.message) || reason || words.scriptRejected);
   });
 })();`;
 
@@ -351,7 +371,12 @@ const FAILURE_LISTENER = `
  * fetched, one that throws while it loads, and a rejection nothing handled. Without it a panel whose module failed leaves
  * the frame blank and the reader with no word about it.
  */
-export function panelFrameDocument(record: ProductPanel, sdkBase: string, message: PanelHostMessage): string {
+export function panelFrameDocument(
+  record: ProductPanel,
+  sdkBase: string,
+  message: PanelHostMessage,
+  failures: PanelHostLabels["failures"],
+): string {
   const imports = Object.fromEntries(
     Object.entries(MODULES).map(([specifier, file]) => [specifier, `${sdkBase}/${file}`]),
   );
@@ -363,7 +388,7 @@ export function panelFrameDocument(record: ProductPanel, sdkBase: string, messag
     escapeForElement(JSON.stringify({ imports })),
     "</script>",
     "<script>",
-    escapeForElement(FAILURE_LISTENER),
+    escapeForElement(failureListener(failures)),
     "</script></head><body>",
     record.content.html,
     '<script type="application/json" data-panel-host-message>',

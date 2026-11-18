@@ -17,7 +17,9 @@ import {
 import type { ApplicationPanelUse, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
-import { installWorkbenchI18n } from "@ontomato/workbench-ui/i18n";
+import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
+import ElementPlus from "element-plus";
+import type { Router } from "vue-router";
 import elementEn from "element-plus/es/locale/lang/en";
 import { installAppHost, installProductEmbedding } from "../../../../../packages/platform-web/src/app-host";
 
@@ -258,6 +260,30 @@ export function hostMessageOf(frameDocument: string): PanelHostMessage {
   return JSON.parse(facts[1]!) as PanelHostMessage;
 }
 
+/**
+ * Mounts a page of the platform as the shell does — its router, its language and Element Plus — into the platform's
+ * document, and gives back the element it is drawn in and the app.
+ */
+export function mountPlatformPage(render: () => ReturnType<typeof h>, router: Router) {
+  const app = createApp({ render }).use(router).use(workbenchI18n()).use(ElementPlus);
+  const element = document.createElement("div");
+  document.body.append(element);
+  app.mount(element);
+  return { app, element };
+}
+
+/** The frame the platform's panel host drew, once it has its document. */
+export async function panelHostFrame() {
+  return vi.waitFor(
+    () => {
+      const found = document.querySelector<HTMLIFrameElement>("iframe.panel-host-frame");
+      if (!found?.getAttribute("srcdoc")) throw new Error("The panel host has drawn no frame yet");
+      return found;
+    },
+    { timeout: 5000 },
+  );
+}
+
 /** A panel component that places the given slots' projections, as a panel's HTML does with `<projection slot>`. */
 export function panelOf(...slots: string[]) {
   return defineComponent({
@@ -276,9 +302,10 @@ export function leaveFrame() {
 
 /**
  * Panel application A with a panel that is the task's form alone, and a draft an agent wrote for that page: the page's
- * address with the draft's link, and what the platform answers for the page, the panel and the frame.
+ * address with the draft's link, and what the platform answers for the page, the panel and the frame. The draft is the
+ * form's own save unless `operation` names another.
  */
-export function draftScenario() {
+export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
   const formProjection = projections["projection-schedules-form"]!;
   const panel = panelRecord(
     "panel-schedules-form",
@@ -296,7 +323,7 @@ export function draftScenario() {
     ),
   });
   // What the agent wrote: the task's own form, with the other case set.
-  const draft = { pageKey: use.pageKey, operation: `${SCHEDULED_TASK}.save`, target: { id: task.id }, form: { ...task.content, caseSetId: "set-smoke" } };
+  const draft = { pageKey: use.pageKey, operation, target: { id: task.id }, form: { ...task.content, caseSetId: "set-smoke" } };
   const link = new URLSearchParams({ draftSessionId: "session-1", draftRunId: "run-1", draftPath: "outputs/drafts/task.page-draft.json" });
   const address = `/applications/app-panels-trial-a/form?${link}`;
   // The form's projection is answered only after the draft: the draft reaches the panel before the form that takes it
