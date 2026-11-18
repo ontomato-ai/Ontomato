@@ -149,12 +149,25 @@ describe("a dashboard draft", () => {
     });
     expect(wrapper.find(".chart-draft-badge").text()).toBe(t("dashboard.draft.chartChanged"));
     expect(wrapper.findComponent({ name: "MetricChart" }).props("file")).toEqual(draftFile.content);
+    // The layout names the group it keeps under the same title, so the summary counts the chart alone.
+    expect(wrapper.find(".draft-bar__text span").text()).toBe(t("dashboard.draft.charts", { n: 1 }, 1));
     expect(api.layouts).toEqual([]);
 
     await wrapper.find(".draft-bar__actions .el-button--primary").trigger("click");
     await flushPromises();
     expect(api.layouts).toHaveLength(1);
     expect((api.layouts[0] as unknown[])[1]).toEqual([{ id: "g1", title: "Sales", charts: [{ id: "c1", name: "Revenue by region", chartFile: draftFile }], metrics: [{ id: "n1" }] }]);
+    wrapper.unmount();
+  });
+
+  it("counts a group a layout gives another title", async () => {
+    const wrapper = await openDraft({
+      pageKey: "dashboard",
+      operation: "dashboard.layout",
+      target: { id: "d1" },
+      form: { id: "d1", groups: [{ id: "g1", title: "Revenue", charts: [{ id: "c1" }], metrics: [{ id: "n1" }] }] },
+    });
+    expect(wrapper.find(".draft-bar__text span").text()).toBe(t("dashboard.draft.groups", { n: 1 }, 1));
     wrapper.unmount();
   });
 

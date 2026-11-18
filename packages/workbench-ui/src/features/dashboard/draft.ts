@@ -226,7 +226,11 @@ export function applyDraft(detail: DashboardDetail, draft: AcceptedDraft): Draft
     case "dashboard.layout": {
       // A layout names every group and card of the board it saves; only the cards it changes carry a change.
       const layout = form.groups!;
-      for (const group of detail.groups) groupsRenamed.set(group.id, layout.find((entry) => entry.id === group.id)?.title ?? group.title);
+      // A layout names every group it keeps; only one it gives another title is renamed.
+      for (const entry of layout) {
+        const saved = detail.groups.find((group) => group.id === entry.id)!;
+        if (entry.title !== saved.title) groupsRenamed.set(entry.id, entry.title);
+      }
       for (const card of detail.groups.flatMap((group) => group.charts)) {
         const saved = layout.flatMap((group) => group.charts).find((entry) => entry.id === card.id);
         if (!saved) continue;
