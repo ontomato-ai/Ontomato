@@ -7,7 +7,7 @@ import {platformTaskSchema,platformScheduleFormSchema} from "@ontomato/contracts
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import type { PanelOperationIntent } from "@ontomato/contracts/panel-agent";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
-const mocks = vi.hoisted(() => ({query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),catalogue:vi.fn(),pages:vi.fn(),restore:vi.fn(),sessionActor:vi.fn()}));
+const mocks = vi.hoisted(() => ({query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),catalogue:vi.fn(),pages:vi.fn(),restore:vi.fn(),sessionActor:vi.fn(),notify:vi.fn()}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
 vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://owner.test"}}}));
 vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class{run=mocks.run;session=mocks.session;request=mocks.request;}}));
@@ -16,6 +16,7 @@ vi.mock("../../assistant/execution-setting",()=>({resolveAgentExecution:mocks.re
 vi.mock("../../assistant/skills",()=>({readPageSkills:mocks.pages}));
 vi.mock("../../../utils/backend-client",()=>({backendGet:mocks.backend,buildBackendHeaders:(token:string,_x:unknown,_l:unknown,key:string,headers:object)=>({...headers,...(token?{tk:token}:{}),...(key?{"X-API-Key":key}:{})})}));
 vi.mock("../../agent-host/caller",()=>({restoreAgentCaller:mocks.restore,readAgentSessionActor:mocks.sessionActor}));
+vi.mock("../../product-assets/subscriptions",()=>({notifyPanelObjectChanged:mocks.notify}));
 vi.mock("../current",()=>({readCurrentPanel:mocks.panel,readCurrentProjection:mocks.projection}));
 vi.mock("../skill-package",()=>({readComponentCatalogue:mocks.catalogue}));
 import { operatePanel as realOperatePanel, dispatchPanel, ownPanelSettings } from "../operations";
@@ -88,6 +89,7 @@ it("returns immediately and ignores the parent's endorsement; a later run uses V
  expect(results.some(result=>result.kind==="dispatched")).toBe(true);
  expect(ownerWrites()).toHaveLength(1);
  expect(intents.get(request.intentId)).toMatchObject({dispatched:true,outcome:{kind:"failure",code:"PERMISSION_DENIED"},source:{runId:uuid(3)}});
+ expect(mocks.notify).not.toHaveBeenCalled();
  await operatePanel(owner,credentials,current.id,request);
  await dispatchPanel(owner,credentials,current.id,request.intentId);
  expect(ownerWrites()).toHaveLength(1);
@@ -153,7 +155,19 @@ it.each(["save","runNow"])("automatic %s succeeds through the server owner inter
  }));
  const input=operation==="save"?{...save(),call:{...save().call,input:{...task.content,revision:9}}}:action();
  expect(await operatePanel(owner,credentials,current.id,input)).toMatchObject({kind:"dispatched",outcome:{kind:"success"}});
+ expect(mocks.notify.mock.calls).toEqual([[owner,{objectType:"platform:ScheduledTask",primaryKey:uuid(9)}]]);
  expect(mocks.request).not.toHaveBeenCalled();
+});
+it("notifies the initiator once after the later run dispatches an approved action",async()=>{
+ const input=action();
+ await operatePanel(owner,credentials,current.id,input);
+ expect(mocks.notify).not.toHaveBeenCalled();
+ answer();
+ current={...current,id:uuid(6)};
+ vi.stubGlobal("fetch",vi.fn(async()=>Response.json({...rawExamples.runs.find(run=>run.name==="agents-running")!.response,taskId:task.id})));
+ expect(await dispatchPanel(owner,credentials,current.id,input.intentId)).toMatchObject({kind:"dispatched",outcome:{kind:"success"}});
+ await dispatchPanel(owner,credentials,current.id,input.intentId);
+ expect(mocks.notify.mock.calls).toEqual([[owner,{objectType:"platform:ScheduledTask",primaryKey:uuid(9)}]]);
 });
 it("rejects a declaration whose target type does not match its platform operation",async()=>{
  const panel=await mocks.panel();panel.manifest.state.task.objectType="customer:Account";

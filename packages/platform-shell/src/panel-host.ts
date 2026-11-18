@@ -1,3 +1,4 @@
+import type { PanelSubscriptionEvent } from "@ontomato/contracts/product-subscriptions";
 import { inject, onBeforeUnmount, shallowRef, watch, type InjectionKey, type Ref, type ShallowRef } from "vue";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import {
@@ -45,7 +46,7 @@ export interface PanelHostPort {
    * Hears "definition changed" for the definitions this instance shows: the panel and every projection its declaration
    * names. Events carry identity only. The returned function stops the notices.
    */
-  subscribe(panelId: string, listener: (event: DefinitionChanged) => void): () => void;
+  subscribe(panelId: string, listener: (event: PanelSubscriptionEvent) => void): () => void;
 }
 
 /** The platform's notice that a projection's or a panel's current definition changed; it carries identity only. */
@@ -199,7 +200,11 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   // What this instance watches: its own panel, and every projection its declaration names — the whole of X, not the
   // slots that happen to be drawn.
   let stopNotices: (() => void) | undefined;
-  function notice(event: DefinitionChanged) {
+  function notice(event: PanelSubscriptionEvent) {
+    if (event.kind === "object-changed") {
+      post(event);
+      return;
+    }
     if (!use.value) return;
     // A changed projection is only read by the instances that use it: the panel's own declaration says which.
     if (event.target.kind === "projection") {

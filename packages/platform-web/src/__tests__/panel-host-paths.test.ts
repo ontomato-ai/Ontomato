@@ -35,15 +35,19 @@ installWorkbenchI18n({
 });
 
 const requested: { method: string; url: string }[] = [];
+let subscriptionSignal: AbortSignal | undefined;
 
 beforeEach(() => {
   requested.length = 0;
-  vi.stubGlobal("fetch", async (input: string | URL, init?: { method?: string }) => {
+  subscriptionSignal = undefined;
+  vi.stubGlobal("fetch", async (input: string | URL, init?: { method?: string; signal?: AbortSignal }) => {
     const url = String(input);
     requested.push({ method: init?.method ?? "GET", url: new URL(url, "http://localhost").pathname + new URL(url, "http://localhost").search });
-    const body = url.includes("/subscriptions")
-      ? { id: "subscription-1", intervalMs: 60000, events: [] }
-      : url.endsWith("/apps-sdk/current")
+    if (url.includes("/subscriptions")) {
+      subscriptionSignal = init?.signal;
+      return new Response("", { headers: { "content-type": "text/event-stream" } });
+    }
+    const body = url.endsWith("/apps-sdk/current")
         ? { version: "1.1.0", publicBasePath: "/apps-sdk", sdkBasePath: "/apps-sdk/1.1.0", manifestPath: "", docsPath: "", referencePath: "" }
         : url.includes("/panel-uses")
           ? { data: { applicationId: "app-a", entry: { path: "/tasks", renderer: "panels" }, panelUses: [] } }
@@ -68,7 +72,6 @@ describe("the panel host's addresses", () => {
   it("asks Node for panels, projections and subscriptions under /api", () => {
     expect(panelHostPaths.panel("panel-a")).toBe("/api/product-panels/panel-a");
     expect(panelHostPaths.subscriptions).toBe("/api/product-assets/subscriptions");
-    expect(panelHostPaths.subscription("subscription-1")).toBe("/api/product-assets/subscriptions/subscription-1");
   });
 
   it("sends each read to the address its owner serves", async () => {
@@ -88,9 +91,7 @@ describe("the panel host's addresses", () => {
       "POST /api/product-assets/subscriptions",
     ]);
     stop();
-    await vi.waitFor(() => expect(requested.at(-1)).toEqual({
-      method: "DELETE",
-      url: "/api/product-assets/subscriptions/subscription-1",
-    }));
+    expect(subscriptionSignal?.aborted).toBe(true);
+    expect(requested).toHaveLength(4);
   });
 });

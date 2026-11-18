@@ -1,3 +1,4 @@
+import { readSseData } from "@ontomato/contracts/sse";
 import { agentHostSessionHistorySchema } from "@ontomato/contracts/agent-host";
 import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { randomId } from "@ontomato/contracts/random-id";
@@ -188,7 +189,7 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
           headers: { Accept: "text/event-stream" },
           signal: controller.signal,
         });
-        const ended = await readData(response, (data) => {
+        const ended = await readSseData(response, (data) => {
           const parsed = agentHostStreamFrameSchema.parse(data);
           frame(parsed);
           return parsed.type === "snapshot_required" || parsed.envelope.event.type === "agent_end";
@@ -216,7 +217,7 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
             signal: controller.signal,
           });
           // The stream carries no terminal frame: it ends only when the host or the transport closes it.
-          await readData(response, async (data) => {
+          await readSseData(response, async (data) => {
             let frame: AgentHostSessionRunFrame;
             try {
               frame = agentHostSessionRunFrameSchema.parse(data);
@@ -246,7 +247,7 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
             headers: { Accept: "text/event-stream" },
             signal: controller.signal,
           });
-          const settled = await readData(response, (data) => {
+          const settled = await readSseData(response, (data) => {
             const parsed = agentTasksFrameSchema.parse(data);
             handlers.frame(parsed);
             return parsed.settled;
@@ -320,43 +321,4 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
       return (await call(`${session(artifact.sessionId)}/artifacts/${enc(artifact.id)}/content`)).blob();
     },
   };
-}
-
-/**
- * Reads the `data:` payloads of an SSE stream until `handle` says the stream is done with one. Returns true when it
- * ended that way, false when the body ended first. Malformed payloads throw.
- */
-async function readData(
-  response: Response,
-  handle: (data: unknown) => boolean | Promise<boolean>,
-  current: () => boolean,
-): Promise<boolean> {
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error("The event stream has no body");
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let data: string[] = [];
-  try {
-    while (current()) {
-      const { done, value } = await reader.read();
-      if (done) return false;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const raw of lines) {
-        const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
-        if (line.startsWith("data:")) {
-          data.push(line.slice(line.startsWith("data: ") ? 6 : 5));
-          continue;
-        }
-        if (line !== "" || data.length === 0) continue;
-        const payload = JSON.parse(data.join("\n"));
-        data = [];
-        if (await handle(payload)) return true;
-      }
-    }
-    return false;
-  } finally {
-    void reader.cancel().catch(() => {});
-  }
 }

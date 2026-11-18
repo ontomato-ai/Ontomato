@@ -93,3 +93,12 @@ export function useProjectionForm<Form extends object>(adapter: Omit<PanelFormAd
   const stop = context.instance.forms.register(drawn.slot, { ...adapter, operation: operation.handlerRef });
   onBeforeUnmount(stop);
 }
+
+/** Refresh this projection when a local or server operation changed an object it shows. */
+export function useProjectionObjectRefresh(shows: (id: string) => boolean, refresh: (id: string) => void): void {
+  const { instance } = usePanelContext();
+  const slot = useProjectionSlot();
+  onBeforeUnmount(instance.onObjectChanged(({ objectType, primaryKey }) => {
+    if (slot.projection.binding.id === objectType && shows(primaryKey)) refresh(primaryKey);
+  }));
+}

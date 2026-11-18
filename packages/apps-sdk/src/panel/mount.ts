@@ -188,8 +188,9 @@ interface ReportOptions {
  * form.
  */
 function report({ instance, address, followAddress, unsaved, changed }: ReportOptions) {
+  const host = window.parent;
   const send = (value: PanelFrameMessage) =>
-    window.parent.postMessage({ channel: PANEL_HOST_CHANNEL, ...panelFrameMessageSchema.parse(value) }, "*");
+    host.postMessage({ channel: PANEL_HOST_CHANNEL, ...panelFrameMessageSchema.parse(value) }, "*");
   const isDirty = () => instance.dirty() || [...unsaved].some((flag) => flag.value);
 
   watch([() => instance.state.values.value, address], () => {
@@ -205,10 +206,15 @@ function report({ instance, address, followAddress, unsaved, changed }: ReportOp
   }, { immediate: true });
 
   window.addEventListener("message", (event) => {
+    if (event.source !== host) return;
     const parsed = panelMessageOf(panelHostFrameMessageSchema, event);
     if (!parsed) return;
     if (parsed.kind === "address") {
       void followAddress(parsed.address).catch(reason => failed(reason instanceof Error ? reason.message : String(reason)));
+      return;
+    }
+    if (parsed.kind === "object-changed") {
+      instance.objectChanged(parsed.target);
       return;
     }
     if (parsed.kind === "projection-changed") {

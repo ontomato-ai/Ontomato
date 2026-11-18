@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, shallowRef, watch } from "vue";
-import { slotState, usePanelContext, useProjectionSlot } from "../panel/context";
+import { slotState, usePanelContext, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
 import { platformObjectFor, selectedKey } from "../panel/platform-objects";
 
 /**
@@ -49,6 +49,7 @@ function load(primaryKey: string | null) {
 
 onMounted(() => load(key.value));
 watch(key, (next) => load(next));
+useProjectionObjectRefresh(id => id === key.value, load);
 </script>
 
 <template>

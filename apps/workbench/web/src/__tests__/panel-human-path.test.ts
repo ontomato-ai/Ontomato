@@ -11,7 +11,7 @@ import PanelApplicationRoute from "../../../../../packages/platform-web/src/page
 import { platformLayoutRoute } from "../../../../../packages/platform-web/src/layout-route";
 import {
   hostMessageOf, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt,
-  panelHostFrame, panelRecord, panelUse, projections, READER, SCHEDULED_TASK, task, taskForm, writeFrameDocument,
+  panelHostFrame, panelRecord, panelUse, projections, READER, run, SCHEDULED_TASK, task, taskForm, writeFrameDocument,
   type Sent,
 } from "./panel-frame";
 
@@ -59,8 +59,8 @@ function answer(request: Sent) {
   return nothingAt(request);
 }
 
-async function open(address: string, usePlatformRoutes = false) {
-  const sent = installPlatform(answer);
+async function open(address: string, usePlatformRoutes = false, reply = answer) {
+  const sent = installPlatform(reply);
   if (usePlatformRoutes) await useApplicationCatalog().refresh();
   const router = createRouter({ history: createMemoryHistory(), routes: usePlatformRoutes ? [platformLayoutRoute([])] : [{
     path: "/applications/:applicationId/:panelPath",
@@ -175,5 +175,160 @@ it("shows the script's actual error when the browser reports a generic message",
     await vi.waitFor(() => expect(element.querySelector('[role="alert"]')?.textContent).toBe("The panel's script failed during setup"));
   } finally {
     app.unmount();
+  }
+});
+
+it("refreshes X from the owner after the panel's form saves", async () => {
+  let current = task;
+  const before = panelAddress(`/applications/${appA}/tasks`, deepState);
+  const { app, frame, sent } = await open(before, false, request => {
+    if (request.path === `${taskPath}/${task.id}/runs`) {
+      current = { ...current, summary: [{ key: "run", label: "Run", value: "Run started" }] };
+      return Response.json(run, { status: 202 });
+    }
+    if (request.path === `${taskPath}/${task.id}`) {
+      if (request.method === "PUT") {
+        current = { ...current, revision: current.revision + 1,
+          summary: [{ key: "instruction", label: "Instruction", value: "Saved instruction" }] };
+      }
+      return Response.json(current);
+    }
+    return answer(request);
+  });
+  try {
+    const { context } = await startFrame(frame);
+    await vi.waitFor(() => {
+      expect(document.querySelector(".sdk-object-summary-title")?.textContent).toBe(task.title);
+      expect(document.querySelector(".sdk-owner-form [data-field]")).not.toBeNull();
+    });
+    const definitions = sent.filter(request => request.path.startsWith("/api/product-projections/")).length;
+    await context.instance.invoke("form.save");
+    await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary")?.textContent).toContain("Saved instruction"));
+    document.querySelector<HTMLButtonElement>(".sdk-operation-button button")!.click();
+    await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary")?.textContent).toContain("Run started"));
+    expect(sent.filter(request => request.path.startsWith("/api/product-projections/"))).toHaveLength(definitions);
+  } finally {
+    app.unmount();
+  }
+});
+
+function taskFormFor(values: typeof taskForm.values) {
+  const fields = taskForm.fields.map(field => field.type === "select" && field.key === "caseSetId"
+    ? { ...field, options: [...field.options, ...["set-smoke", "agent-cases", "agent-later"].map(value => ({
+      value, label: value, description: null, disabled: false, disabledReason: null,
+    }))] }
+    : field);
+  return Response.json({ ...taskForm, fields, values });
+}
+
+it("opens the saved draft's old link as an ordinary panel", async () => {
+  let current = task;
+  const path = `/applications/${appA}/tasks`;
+  const draftQuery = new URLSearchParams({ draftSessionId: "session-1", draftRunId: "run-1", draftPath: "outputs/drafts/task.page-draft.json" });
+  const draftAddress = panelAddress(`${path}?${draftQuery}`, deepState);
+  const { app, element, frame, router, sent } = await open(draftAddress, false, request => {
+    if (request.path === `${taskPath}/${task.id}`) {
+      if (request.method === "PUT") {
+        current = { ...current, revision: current.revision + 1, content: (request.body as { content: typeof task.content }).content };
+      }
+      return Response.json(current);
+    }
+    if (request.path === `${taskPath}/applications/${task.appId}/form`) {
+      const body = request.body as { values: typeof taskForm.values };
+      return taskFormFor(body.values);
+    }
+    return answer(request);
+  });
+  try {
+    const { context } = await startFrame(frame);
+    await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain("caseSetId"));
+    await context.instance.invoke("form.save");
+    expect(current.content.caseSetId).toBe("set-smoke");
+    await vi.waitFor(() => expect(context.draft.value).toBeNull());
+
+    await router.push(panelAddress(path, deepState));
+    await vi.waitFor(() => expect(context.instance.pageContext.value.url).not.toContain("draftSessionId"));
+    await router.push(draftAddress);
+    await vi.waitFor(() => {
+      expect(sent.filter(request => request.path.endsWith("/page-draft"))).toHaveLength(2);
+      expect(sent.filter(request => request.path.endsWith("/form")).at(-1)?.body).toMatchObject({ values: current.content });
+    });
+    // Let the adapter consume the reread owner's form before checking that the draft stayed empty.
+    await vi.waitFor(() => {
+      expect(context.draft.value).toBeNull();
+      expect(context.instance.dirty()).toBe(false);
+      expect(document.querySelector(".sdk-owner-form-changed")).toBeNull();
+      expect([...document.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")].map(button => button.disabled))
+        .toEqual([true, true]);
+    });
+    expect(element.querySelector(".panel-host-error")?.textContent).toBeUndefined();
+    expect(element.querySelector("iframe.panel-host-frame")).toBe(frame);
+    expect(sent.filter(request => request.method === "PUT")).toHaveLength(1);
+  } finally {
+    app.unmount();
+  }
+});
+
+it("refreshes an open panel from the server stream and preserves a dirty form until discard", async () => {
+  let current = task;
+  let stream!: ReadableStreamDefaultController<Uint8Array>;
+  const encoder = new TextEncoder();
+  const address = `/applications/${appA}/tasks`;
+  const { app, element, frame, router, sent } = await open(panelAddress(address, deepState), false, request => {
+    if (request.path === "/api/product-assets/subscriptions") return new Response(new ReadableStream<Uint8Array>({
+      start(controller) { stream = controller; },
+    }), { headers: { "content-type": "text/event-stream" } });
+    if (request.path === `${taskPath}/${task.id}`) return Response.json(current);
+    if (request.path === `${taskPath}/applications/${task.appId}/form`) {
+      return taskFormFor((request.body as { values: typeof taskForm.values }).values);
+    }
+    return answer(request);
+  });
+  const formReads = () => sent.filter(request => request.path.endsWith("/form"));
+  const dataReads = () => sent.filter(request => request.path === `${taskPath}/${task.id}`);
+  const notify = (objectType = SCHEDULED_TASK, primaryKey = task.id) =>
+    stream.enqueue(encoder.encode(`data: ${JSON.stringify({ kind: "object-changed", target: { objectType, primaryKey } })}\n\n`));
+  try {
+    const { context } = await startFrame(frame);
+    await vi.waitFor(() => {
+      expect(document.querySelector(".sdk-object-summary-title")?.textContent).toBe(task.title);
+      expect(document.querySelector(".sdk-owner-form [data-field]")).not.toBeNull();
+    });
+    const definitions = sent.filter(request => request.path.startsWith("/api/product-projections/")).length;
+    const before = dataReads().length;
+    current = { ...current, revision: current.revision + 1, content: { ...current.content, caseSetId: "agent-cases" },
+      summary: [{ key: "instruction", label: "Instruction", value: "Agent changed saved data" }] };
+    notify("platform:Other");
+    notify(SCHEDULED_TASK, secondTask.id);
+    notify();
+    await vi.waitFor(() => {
+      expect(document.querySelector(".sdk-object-summary")?.textContent).toContain("Agent changed saved data");
+      expect(formReads().at(-1)?.body).toMatchObject({ values: current.content });
+    });
+    expect(dataReads()).toHaveLength(before + 2);
+
+    const query = new URLSearchParams({ draftSessionId: "session-1", draftRunId: "run-1", draftPath: "outputs/drafts/task.page-draft.json" });
+    await router.push(panelAddress(`${address}?${query}`, deepState));
+    await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")?.textContent).toContain("caseSetId"));
+    const editing = formReads().length;
+    current = { ...current, revision: current.revision + 1, content: { ...current.content, caseSetId: "agent-later" },
+      summary: [{ key: "instruction", label: "Instruction", value: "Agent changed it again" }] };
+    notify();
+    await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary")?.textContent).toContain("Agent changed it again"));
+    expect(formReads()).toHaveLength(editing);
+    expect(context.instance.dirty()).toBe(true);
+    expect(context.draft.value?.form.caseSetId).toBe("set-smoke");
+
+    const discard = [...document.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")]
+      .find(button => button.textContent?.trim() === "Discard")!;
+    discard.click();
+    await vi.waitFor(() => expect(formReads().at(-1)?.body).toMatchObject({ values: current.content }));
+    expect(context.instance.dirty()).toBe(false);
+    expect(sent.filter(request => request.path.startsWith("/api/product-projections/"))).toHaveLength(definitions);
+    expect(sent.filter(request => request.path === "/api/product-assets/subscriptions")).toHaveLength(1);
+    expect(element.querySelector("iframe.panel-host-frame")).toBe(frame);
+  } finally {
+    app.unmount();
+    stream.close();
   }
 });

@@ -100,7 +100,9 @@ export class PanelFormAdapters {
     const adapter = this.#bySlot.get(slot)!;
     const { operation, target, form } = held.draft;
     void adapter.read(target).then((base) => {
-      const draft = { slot, operation, target, form, changed: changedFields(base, form) };
+      const changed = changedFields(base, form);
+      if (changed.size === 0) return;
+      const draft = { slot, operation, target, form, changed };
       adapter.apply(draft);
       held.taken(draft);
     });

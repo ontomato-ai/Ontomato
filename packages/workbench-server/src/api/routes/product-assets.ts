@@ -15,7 +15,7 @@ import {readProductRelease,productReleaseIssues,snapshotAsset,publishProductBund
 import {assembleAgentProfile,renderAgentObjectContext,executeProfileTool} from '../../services/product-assets/agent-profile';
 import {validatePageState} from '@ontomato/contracts/product-page-state';
 import {productSubscriptionTargetSchema} from '@ontomato/contracts/product-subscriptions';
-import {subscribeProduct,resumeProductSubscription,deleteProductSubscription} from '../../services/product-assets/subscriptions';
+import {subscribeProduct,resumeProductSubscription,deleteProductSubscription,authorizePanelStream} from '../../services/product-assets/subscriptions';
 import {discoverProjections,validateDefaultProjections} from '../../services/product-assets/projections';
 import {readDefinitionTrigger,saveDefinitionTrigger} from '../../services/product-assets/triggers';
 import {readProductGrantRecords,changeProductGrant,changeProductDomainGrant,requireProductUse} from '../../services/product-assets/grants';
@@ -60,7 +60,23 @@ router.get('/platform-object-types',wrap(async(_req,res)=>{res.json({objectTypes
 router.get('/triggers/:id',wrap(async(req,res)=>{res.json({trigger:await readDefinitionTrigger(context(req).owner,String(req.params.id))});}));
 router.put('/triggers/:id',wrap(async(req,res)=>{const c=context(req);const input=z.object({trigger:z.unknown(),revision:z.number().int().nonnegative()}).strict().parse(req.body);if((input.trigger as {id?:string})?.id!==req.params.id)throw new HttpError(400,'Trigger ID mismatch','INVALID_REQUEST');res.json({trigger:await saveDefinitionTrigger(c.owner,c.credentials,input.trigger,input.revision)});}));
 router.get('/projections',wrap(async(req,res)=>{const input=z.object({kind:z.enum(['ObjectType','Definition','MetricView','Action']),id:z.string().min(1).max(200)}).parse(req.query);res.json(await discoverProjections(context(req).owner,input.kind,input.id));}));
-router.post('/subscriptions',wrap(async(req,res)=>{const c=context(req);res.json(await subscribeProduct(c.owner,c.credentials,productSubscriptionTargetSchema.parse(req.body)));}));
+router.post('/subscriptions',wrap(async(req,res)=>{
+  const {owner,credentials}=context(req);
+  const target=productSubscriptionTargetSchema.parse(req.body);
+  if(target.kind!=='product-definition'||target.target.kind!=='panel'){
+    res.json(await subscribeProduct(owner,credentials,target));
+    return;
+  }
+  const attach=await authorizePanelStream(owner,credentials,target.target.id);
+  if(res.destroyed)return;
+  const stop=attach(event=>res.write(`data: ${JSON.stringify(event)}\n\n`));
+  res.set({'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','X-Accel-Buffering':'no'});
+  res.flushHeaders();
+  // Keep the HTTP stream open through idle proxy timeouts without reading any product data.
+  const heartbeat=setInterval(()=>res.write(': heartbeat\n\n'),15_000);
+  heartbeat.unref();
+  res.once('close',()=>{clearInterval(heartbeat);stop();});
+}));
 router.get('/subscriptions/:subscriptionId',wrap(async(req,res)=>{const c=context(req);res.json(await resumeProductSubscription(c.owner,String(req.params.subscriptionId),c.credentials));}));
 router.delete('/subscriptions/:subscriptionId',wrap(async(req,res)=>{const c=context(req);await deleteProductSubscription(c.owner,String(req.params.subscriptionId));res.json({success:true});}));
 router.get('/definitions/:id',wrap(async(req,res)=>{res.json({definition:await readDefinition(context(req).owner,String(req.params.id))});}));

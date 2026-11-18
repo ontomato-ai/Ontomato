@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {panelObjectIdentitySchema} from './panel-manifest';
 import {productDefinitionChangedEventSchema,type ProductDefinitionChangedEvent} from './product-panels';
 
 const id=z.string().min(1).max(200);
@@ -10,3 +11,8 @@ export const productSubscriptionTargetSchema=z.discriminatedUnion('kind',[
 export const definitionTriggerSchema=z.object({id,name:id,definitionId:id,revision:z.number().int().positive(),status:z.enum(['DRAFT','PUBLISHED']),event:z.enum(['entered','left','changed']),keyField:id}).strict();
 export type ProductSubscriptionTarget=z.infer<typeof productSubscriptionTargetSchema>;
 export type ProductSubscriptionEvent = ProductDefinitionChangedEvent | {kind:'changed'|'entered'|'left';targetId:string;revision:string;observedAt:string;memberKeys?:string[]};
+
+/** An invalidation identifies the object; the panel reads its current data from the owner. */
+export const panelObjectChangedEventSchema = z.object({kind:z.literal('object-changed'),target:panelObjectIdentitySchema}).strict();
+export const panelSubscriptionEventSchema = z.discriminatedUnion('kind', [productDefinitionChangedEventSchema,panelObjectChangedEventSchema]);
+export type PanelSubscriptionEvent = z.infer<typeof panelSubscriptionEventSchema>;

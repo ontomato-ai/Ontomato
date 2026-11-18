@@ -5,6 +5,8 @@ import type {AddressInfo} from "node:net";
 import {afterAll,beforeAll,beforeEach,expect,it,vi} from "vitest";
 import {productAssetSchema} from "@ontomato/contracts/product-assets";
 import {HttpError} from "../../../utils/errors";
+import {readSseData} from "@ontomato/contracts/sse";
+import {notifyPanelObjectChanged,notifyProductDefinitionChanged} from "../../../services/product-assets/subscriptions";
 
 const state=vi.hoisted(()=>({executor:"V" as string|null,use:true,visible:new Set<string>(),query:vi.fn(),post:vi.fn(),agent:vi.fn(),create:vi.fn(),bind:vi.fn()}));
 vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://ontology.test"}}}));
@@ -24,6 +26,7 @@ import router from "../product-assets";
 import {contractHash,releaseSnapshotSchema} from "../../../services/product-assets/releases";
 
 const owner={domainId:"domain",userId:"U"},profileId="profile",agentId="definition";
+const panelId = "panel-live";
 const releaseId="11111111-1111-4111-8111-111111111111";
 const asset=(id:string,document:unknown)=>productAssetSchema.parse({id,name:id,description:"",document,visibility:"private",ownerId:"author",revision:1,editable:false,createdAt:"now",updatedAt:"now"});
 const profile=asset(profileId,{kind:"agent-profile",agentId,instructions:"",tools:[],contextViews:["org-view"]});
@@ -53,9 +56,12 @@ beforeEach(()=>{
       const value=snapshot.assets.find(asset=>asset.id===args[1]);
       return {rows:[{...value,createdAt:new Date(0),updatedAt:new Date(0)}]};
     }
+    if(sql.includes("FROM product_panels"))return {rows:[{id:panelId,definition:{manifest:{state:{},slots:{},operations:[]}}}]};
+    if(sql.includes("product_subscriptions"))return {rows:[]};
     throw new Error(`Unexpected SQL: ${sql}`);
   });
   state.post.mockImplementation(async(name:string,_url:string,body:{userId?:string;verb?:string;executionUserId?:string},options:{headers:Record<string,string>})=>{
+    if(name==="product-grant-check")return {text:JSON.stringify({allowed:true})};
     if(name==="product-grant-owner-resources")return {text:JSON.stringify({ids:body.verb==="use"&&(body.userId==="V"||state.use)?[profileId,view.id]:[]})};
     if(name==="agent-execution-resolve")return {text:JSON.stringify({executionUserId:body.executionUserId,apiKey:"V-key"})};
     if(name==="projection-object-contract"){
@@ -112,4 +118,34 @@ it.each(endpoints)("preserves %s dependency denial when self-mode U cannot acces
   expect(response.status).toBe(404);
   expect(await response.json()).toMatchObject({error:{code:"ONTOLOGY_QUERY_FAILED"}});
   expect(state.create).not.toHaveBeenCalled();
+});
+
+it("streams definition changes and only the owner’s object events on the product subscription route", async () => {
+  const controller = new AbortController();
+  try {
+    const response = await fetch(new URL("../subscriptions", `${base}/`), {
+      method: "POST", signal: controller.signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "product-definition", target: { kind: "panel", id: panelId } }),
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    const before = state.query.mock.calls.length;
+    const target = { objectType: "platform:ScheduledTask", primaryKey: "task-1" };
+    const events: unknown[] = [];
+    const reading = readSseData(response, event => {
+      events.push(event);
+      return events.length === 2;
+    }, () => true);
+    notifyPanelObjectChanged({ ...owner, userId: "executor" }, target);
+    notifyPanelObjectChanged({ ...owner, domainId: "other" }, target);
+    notifyPanelObjectChanged(owner, target);
+    expect(state.query.mock.calls).toHaveLength(before);
+    const definition = { kind: "definition-changed", domainId: owner.domainId, target: { kind: "panel", id: panelId } } as const;
+    await notifyProductDefinitionChanged(definition);
+    await reading;
+    expect(events).toEqual([{ kind: "object-changed", target }, definition]);
+  } finally {
+    controller.abort();
+  }
 });

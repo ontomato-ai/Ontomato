@@ -134,12 +134,18 @@ export type PanelOperation = z.infer<typeof panelOperationSchema>;
  * platform's coordinator, on an agent's behalf) sends exactly what a person's click sends, and the handler needs nothing
  * from the panel's state to know which object it acts on.
  */
+export const panelObjectIdentitySchema = z.object({
+  objectType: key,
+  primaryKey: z.string().min(1).max(1000),
+}).strict();
+export type PanelObjectIdentity = z.infer<typeof panelObjectIdentitySchema>;
+
 export const panelOperationCallSchema = z
   .object({
     /** The object the call acts on: an ontology reference, or a draft target that may not exist yet. */
     target: z
       .union([
-        z.object({ kind: z.literal("object"), objectType: key, primaryKey: z.string().min(1).max(1000) }).strict(),
+        panelObjectIdentitySchema.extend({ kind: z.literal("object") }),
         z.object({ kind: z.literal("draft"), id: z.string().min(1).max(200).optional() }).strict(),
       ])
       .nullable(),

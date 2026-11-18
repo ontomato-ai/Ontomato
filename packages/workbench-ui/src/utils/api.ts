@@ -314,6 +314,7 @@ export async function nodeApiRequest(path: string, init: any = {}): Promise<Resp
   const relative = path.replace(/^\/api(?=\/)/, "");
   return nodeApiFetch(relative, init.method ?? "GET", init.body ? JSON.parse(String(init.body)) : undefined, {
     headers: init.headers,
+    signal: init.signal,
   });
 }
 
