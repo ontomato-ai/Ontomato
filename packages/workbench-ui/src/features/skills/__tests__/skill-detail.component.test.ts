@@ -10,7 +10,7 @@ import { skillsApi } from "../api";
 vi.mock("@ontomato/foundation-ui/code", () => ({ CodeEditor: { props: ["modelValue"], template: '<pre class="code-double">{{ modelValue }}</pre>' } }));
 vi.mock("@ontomato/foundation-ui/markdown", () => ({ MarkdownView: { props: ["content"], template: '<div class="markdown-double">{{ content }}</div>' } }));
 
-const skill = (isPublic: boolean) => ({ id: "growth", title: "Growth", isPublic, skill: { name: "growth" }, type: "executable", category: "analysis", tags: [], path: "", version: "" });
+const skill = (isPublic: boolean) => ({ id: "growth", title: "Growth", description: "", isPublic, skill: { name: "growth" }, writeRestriction: isPublic ? { kind: "public" } : null });
 
 afterEach(() => { vi.restoreAllMocks(); });
 

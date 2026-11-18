@@ -13,10 +13,13 @@ vi.mock("../../../utils/backend-client", () => ({ backendGet: mocks.get, backend
   buildBackendHeaders: (token: string) => ({ tk: token }) }));
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://ontology.test" } } }));
 vi.mock("../../../content/resources", () => ({ workbenchServerResourceRoot: "/resources" }));
-vi.mock("../../../core/skills/manifest", () => ({ readSkillMarkdown: () => ({ manifest: { description: "Skill" } }) }));
-vi.mock("../../../core/skills/registry/manager", () => ({ skillRegistryManager: { forDomain: async () => ({}) } }));
-vi.mock("../../skills/skill-manager", () => ({ skillManager: { getAllSkills: async () => [] }, skillReference: vi.fn() }));
-vi.mock("../../agent-runtime/skills", () => ({ publishSkill: vi.fn() }));
+vi.mock("../../../core/skills/manifest", () => ({
+  readSkillMarkdown: () => ({ manifest: { description: "Skill" } }),
+  InvalidSkillPackageError: class InvalidSkillPackageError extends Error {},
+}));
+vi.mock("../../../core/skills/registry/manager", () => ({ skillRegistryManager: { forDomain: async () => ({ getSkillByRef: () => null }) } }));
+vi.mock("../../skills/skill-manager", () => ({ skillManager: { getAllSkills: async () => [] } }));
+vi.mock("../../agent-runtime/skills", () => ({ publishSkill: vi.fn(), publishSkillPackage: vi.fn() }));
 vi.mock("../../../i18n", () => ({ tForLocale: (_locale: string, key: string) => key }));
 vi.mock("../governance",()=>({publishGovernanceSkill:vi.fn()}));
 vi.mock("../store", () => ({ assistantStore: { agents: mocks.agents } }));
