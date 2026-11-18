@@ -105,6 +105,10 @@ test("registers the trial's projections, panels and applications in that order",
   const { error } = await register(["--token", "a-credential"], stand);
   assert.equal(error, null, String(error?.stderr ?? ""));
   const { requests } = stand;
+  const uses = requests.filter((request) => request.url.includes("/platform/applications/"))
+    .flatMap((request) => request.body.panelUses);
+  assert.ok(uses.length > 0);
+  assert.ok(uses.every((use) => !Object.hasOwn(use, "skill")));
 
   const writes = requests.filter((request) => request.method === "PUT").map((request) => request.url);
   assert.deepEqual(

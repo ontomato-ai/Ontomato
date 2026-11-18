@@ -103,8 +103,6 @@ const use = (id, pageKey, panelId, path) => ({
   panelId,
   path,
   access: { kind: "domain-member" },
-  // The panels application's one general skill; P3 publishes it, and until then the page's skill is simply not found.
-  skill: { namespace: { kind: "provider", provider: "workbench" }, name: "panels" },
 });
 
 export const applications = [

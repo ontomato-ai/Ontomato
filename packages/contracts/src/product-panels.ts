@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { runtimeSkillRefSchema } from "./agent-runtime-skills";
 import { ontologyParameterTypeSchema, panelManifestSchema } from "./panel-manifest";
 import { applicationMetadataSchema } from "./application-metadata";
 
@@ -80,7 +79,6 @@ export const applicationPanelUseSchema = z.object({
     z.object({ permissionCode: id }).strict(),
     z.object({ kind: z.literal("domain-member") }).strict(),
   ]),
-  skill: runtimeSkillRefSchema,
   defaultAgentId: id.optional(),
 }).strict();
 export type ApplicationPanelUse = z.infer<typeof applicationPanelUseSchema>;

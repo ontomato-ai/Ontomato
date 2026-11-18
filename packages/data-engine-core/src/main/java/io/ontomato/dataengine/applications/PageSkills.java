@@ -14,9 +14,13 @@ public final class PageSkills {
     public record Default(String pageKey, String agentKey) {}
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Mapping(String permissionCode, String access, String pageKey, Skill skill, List<Default> defaults) {
-        public String locator() { return permissionCode != null ? "permission:" + permissionCode : "access:" + access + ":" + pageKey; }
+        public String locator() { return PageSkills.locator(permissionCode, access, pageKey); }
     }
     public record Projection(List<Mapping> pageSkills, List<Skill> registeredSkills) {}
+
+    public static String locator(String permissionCode, String access, String pageKey) {
+        return permissionCode != null ? "permission:" + permissionCode : "access:" + access + ":" + pageKey;
+    }
 
     /** Validate declarations and persisted catalog data at their ingestion boundary. */
     public static void validate(List<Mapping> mappings) {
