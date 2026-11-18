@@ -38,11 +38,19 @@ public class AgentChannelController {
     var ref=runtime.json(context.owner().domainId(),task,"/v1/channel/tasks/"+AgentJson.id(task)+"/actor","GET",null,null).getJSONObject("actor");
     callers.authorize(ref,context.owner());return ref;
   }
-  private JSONObject sessionActor(JSONObject session,OntologyAgentAccess.Context context) throws Exception {
+  private JSONObject sessionActor(JSONObject session,String domain) throws Exception {
     AgentJson.fields(session,"providerId","sessionId");
     String provider=AgentJson.text(session,"providerId"),id=AgentJson.id(session.getString("sessionId"));
-    var ref=runtime.json(context.owner().domainId(),id,"/v1/channel/providers/"+java.net.URLEncoder.encode(provider,java.nio.charset.StandardCharsets.UTF_8)+"/sessions/"+id+"/actor","GET",null,null).getJSONObject("actor");
+    return runtime.json(domain,id,"/v1/channel/providers/"+java.net.URLEncoder.encode(provider,java.nio.charset.StandardCharsets.UTF_8)+"/sessions/"+id+"/actor","GET",null,null).getJSONObject("actor");
+  }
+  private JSONObject sessionActor(JSONObject session,OntologyAgentAccess.Context context) throws Exception {
+    var ref=sessionActor(session,context.owner().domainId());
     callers.authorize(ref,context.owner());return ref;
+  }
+  /** Service-only ownership reference read through this provider's existing gateway capability. */
+  @PostMapping("/session-actor")
+  public JSONObject sessionActor(@RequestBody Map<String,Object> input,HttpServletRequest request) throws Exception {
+    return sessionActor(body(input),domain(request));
   }
   private String validateCommand(JSONObject command) {
     String op=AgentJson.text(command,"op");

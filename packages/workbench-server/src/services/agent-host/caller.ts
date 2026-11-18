@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { agentActorRefSchema, agentCallerIdentitySchema, type AgentActorRef } from "@ontomato/contracts/agent-channel";
+import { agentActorRefSchema, agentCallerIdentitySchema, type AgentActorRef, type AgentSessionRef } from "@ontomato/contracts/agent-channel";
 import { buildBackendHeaders } from "../../utils/backend-client";
 import { getApiConfig } from "../../config/data-query-api";
 import { environment } from "../../config/environment";
@@ -26,4 +26,11 @@ export async function restoreAgentCaller(actor: AgentActorRef, domainId: string,
   if (actor.domainId !== domainId) throw new HttpError(403, "Cross-domain agent calls are forbidden", "CROSS_DOMAIN");
   const restored = agentCallerIdentitySchema.parse(await platform("restore", { actor, readOnly }, { ...buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey), "X-Domain-Id": domainId, "X-Ontomato-Query-Service-Token": environment.agentRuntime().queryServiceToken }));
   return { owner: { userId: restored.userId, domainId: restored.domainId }, credentials, expiresAt: restored.expiresAt };
+}
+
+/** The identity service owns the cross-provider gateway; Node does not receive its runtime credential. */
+export async function readAgentSessionActor(session: AgentSessionRef, domainId: string): Promise<AgentActorRef> {
+  return agentActorRefSchema.parse(await platform("session-actor", session, {
+    "X-Domain-Id": domainId, "X-Ontomato-Query-Service-Token": environment.agentRuntime().queryServiceToken,
+  }));
 }

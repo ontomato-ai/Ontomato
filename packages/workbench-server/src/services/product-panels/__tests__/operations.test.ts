@@ -7,7 +7,7 @@ import {platformTaskSchema,platformScheduleFormSchema} from "@ontomato/contracts
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import type { PanelOperationIntent } from "@ontomato/contracts/panel-agent";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
-const mocks = vi.hoisted(() => ({query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),catalogue:vi.fn(),pages:vi.fn(),restore:vi.fn()}));
+const mocks = vi.hoisted(() => ({query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),catalogue:vi.fn(),pages:vi.fn(),restore:vi.fn(),sessionActor:vi.fn()}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
 vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://owner.test"}}}));
 vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class{run=mocks.run;session=mocks.session;request=mocks.request;}}));
@@ -15,7 +15,7 @@ vi.mock("../../assistant/store",()=>({assistantStore:{turn:async()=>({})}}));
 vi.mock("../../assistant/execution-setting",()=>({resolveAgentExecution:mocks.resolve}));
 vi.mock("../../assistant/skills",()=>({readPageSkills:mocks.pages}));
 vi.mock("../../../utils/backend-client",()=>({backendGet:mocks.backend,buildBackendHeaders:(token:string,_x:unknown,_l:unknown,key:string,headers:object)=>({...headers,...(token?{tk:token}:{}),...(key?{"X-API-Key":key}:{})})}));
-vi.mock("../../agent-host/caller",()=>({restoreAgentCaller:mocks.restore}));
+vi.mock("../../agent-host/caller",()=>({restoreAgentCaller:mocks.restore,readAgentSessionActor:mocks.sessionActor}));
 vi.mock("../current",()=>({readCurrentPanel:mocks.panel,readCurrentProjection:mocks.projection}));
 vi.mock("../skill-package",()=>({readComponentCatalogue:mocks.catalogue}));
 import { operatePanel as realOperatePanel, dispatchPanel, ownPanelSettings } from "../operations";
@@ -133,7 +133,7 @@ it.each(["save","runNow"])("automatic %s calls the same owner client, preserving
 });
 const task=platformTaskSchema.parse({...rawExamples.creates.find(task=>task.name==="governance-instruction")!.response,id:uuid(9),revision:9});
 it("session settings compare the authenticated owner even when a session is readable",async()=>{
- mocks.request.mockResolvedValue({actor:{id:uuid(4),domainId:"d"}});mocks.restore.mockResolvedValue({owner:{...owner,userId:"someone-else"}});
+ mocks.sessionActor.mockResolvedValue({id:uuid(4),domainId:"d"});mocks.restore.mockResolvedValue({owner:{...owner,userId:"someone-else"}});
  await expect(ownPanelSettings(owner,root)).rejects.toMatchObject({code:"FORBIDDEN"});
  expect((await panelOperationStore.settings(owner,root)).confirmBeforeExecute).toBe(true);
 });
