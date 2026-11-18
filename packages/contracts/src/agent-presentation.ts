@@ -38,7 +38,8 @@ export const displayPageAddressInputSchema = z.discriminatedUnion("kind", [
 ]);
 export type DisplayPageAddressInput = z.infer<typeof displayPageAddressInputSchema>;
 
-export const PANEL_FRAME_LOAD_ERROR_CODES = {
+export const PANEL_LOAD_ERROR_CODES = {
+  panelUnavailable: "panel_unavailable",
   fileUnavailable: "panel_file_unavailable",
   scriptThrew: "panel_script_threw",
   scriptRejected: "panel_script_rejected",
