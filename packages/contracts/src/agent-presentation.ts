@@ -2,6 +2,7 @@ import { z } from "zod";
 import { runtimeArtifactSchema } from "./agent-runtime-artifacts";
 import {
   runtimeIdSchema,
+  runtimeHttpUrlSchema,
   runtimeJsonObjectSchema,
   runtimeKeySchema,
   runtimeRelativePathSchema,
@@ -30,6 +31,19 @@ export const presentRequestSchema = z.object({
   { path: ["state"], message: "State requires a page address that provides no state query" },
 );
 export type PresentRequest = z.infer<typeof presentRequestSchema>;
+
+/** Private transport from the runtime tool to the host bound to this call. */
+export const presentationCallRequestSchema = z.object({
+  toolCallId: runtimeKeySchema,
+  input: presentRequestSchema,
+}).strict();
+
+/** Private to admission and the active runtime tool, outside the definition and sandbox environment. */
+export const runtimePresentationCallbackSchema = z.object({
+  url: runtimeHttpUrlSchema,
+  credential: runtimeKeySchema,
+}).strict();
+export type RuntimePresentationCallback = z.infer<typeof runtimePresentationCallbackSchema>;
 
 /** A panel's explicit open request and its current instance's state report have different effects. */
 export const displayPageAddressInputSchema = z.discriminatedUnion("kind", [
