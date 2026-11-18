@@ -186,7 +186,7 @@ it("attaches an externally started run through the page feed without reopening h
   host.readRun = vi.fn(async () => admitted) as AgentHostClient["readRun"];
   host.subscribe = vi.fn(() => () => {});
   (host.readHistory as ReturnType<typeof vi.fn>).mockResolvedValue({ pendingQuestions: [], session: created, messages: [], runs: [], latestRun: null, page: { messageSeq: 0, olderCursor: null } });
-  const feed: SessionRunPort = { read: vi.fn(async () => ({ sessions: [] })), subscribe: vi.fn(value => { handlers = value; return () => {}; }) };
+  const feed: SessionRunPort = { read: vi.fn(async () => ({ sessions: [] })), subscribe: vi.fn(value => { handlers = value; return () => {}; }), presentationResult: vi.fn() };
   const view = render(host, feed);
   view.sessionId.value = createdSessionId;
   await settle();
@@ -206,7 +206,7 @@ it("attaches a start notice during send without losing the first-message handoff
   const host = port(() => new Promise(resolve => { admit = resolve; }));
   host.readRun = vi.fn(async()=>admitted) as AgentHostClient["readRun"];
   host.subscribe = vi.fn(() => () => {});
-  const feed: SessionRunPort = { read: vi.fn(async () => ({ sessions: [] })), subscribe: value => { handlers = value; return () => {}; } };
+  const feed: SessionRunPort = { read: vi.fn(async () => ({ sessions: [] })), subscribe: value => { handlers = value; return () => {}; }, presentationResult: vi.fn() };
   const view = render(host, feed);
   await settle();
   const sent = view.shell.value!.send("hello");

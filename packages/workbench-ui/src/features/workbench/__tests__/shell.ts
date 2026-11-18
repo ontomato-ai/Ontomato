@@ -1,5 +1,7 @@
 import { flushPromises, type VueWrapper } from "@vue/test-utils";
-import { AgentShell, displayLink, type AgentHostAgent, type ConversationDisplay } from "@ontomato/agent-shell-ui";
+import { AgentShell, displayLink, type AgentHostAgent, type ConversationDisplay, type SessionRunHandlers, type SessionRunPort } from "@ontomato/agent-shell-ui";
+import type { AgentHostSendRequest } from "@ontomato/contracts/agent-host";
+import type { PresentationReceipt } from "@ontomato/contracts/agent-presentation";
 import en from "../../../locales/en";
 
 /*
@@ -15,17 +17,29 @@ const RUN = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
  * page's draft, and a conversation each first message creates, whose messages land in `sent` and whose run is admitted
  * and stopped at once.
  */
-export function assistantHostDouble(options: { agents?: AgentHostAgent[]; readPageDraft?: (...args: unknown[]) => unknown; sent?: string[] } = {}) {
+export function assistantHostDouble(
+  options: {
+    agents?: AgentHostAgent[];
+    readPageDraft?: (...args: unknown[]) => unknown;
+    sent?: string[];
+    /** Every send's whole input, binding included. */
+    inputs?: AgentHostSendRequest[];
+    /** The page's notice stream, when a test drives it. */
+    sessionRuns?: SessionRunPort;
+  } = {},
+) {
   const session = (agentId: string) => ({ id: SESSION, agentId, title: "", origin: "user", createdAt: new Date(0).toISOString(), latestRun: null });
   return {
     listAgents: async () => options.agents ?? [],
     listPageAgents: async () => ({ agents: options.agents ?? [], defaultAgentId: options.agents?.[0]?.id ?? null }),
     listSessions: async () => ({ sessions: [], nextCursor: null }),
     readPageDraft: options.readPageDraft ?? (async () => null),
+    ...(options.sessionRuns ? { sessionRuns: options.sessionRuns } : {}),
     createSession: async (agentId: string) => session(agentId),
     subscribe: () => () => {},
-    async send(_sessionId: string, input: { message: string }) {
+    async send(_sessionId: string, input: AgentHostSendRequest) {
       options.sent?.push(input.message);
+      options.inputs?.push(input);
       return {
         delivery: { messageId: RUN, sessionRef: { providerId: "workbench", sessionId: SESSION }, runId: RUN, delivery: "run", status: "stopped" },
         input: { id: RUN, runId: RUN, messageSeq: 1, contextSeq: 1, message: { role: "user", content: input.message, timestamp: 1 } },
@@ -61,4 +75,24 @@ export async function openLink(wrapper: VueWrapper, href: string) {
 /** One of the page pane's own controls. */
 export function paneButton(wrapper: VueWrapper, control: "close" | "expand" | "collapse") {
   return wrapper.find<HTMLButtonElement>(`.page-pane .pane-header button[aria-label="${en.assistant[control]}"]`);
+}
+
+/**
+ * The page's notice stream as the host serves it, driven by the test: what the feed subscribed with, the answers it gave
+ * to presentation requests, and the frames the host sends.
+ */
+export function noticeStreamDouble() {
+  const opened: SessionRunHandlers[] = [];
+  const receipts: { sessionId: string; runId: string; receipt: PresentationReceipt }[] = [];
+  const port: SessionRunPort = {
+    read: async () => ({ sessions: [] }),
+    subscribe(handlers) {
+      opened.push(handlers);
+      return () => {};
+    },
+    async presentationResult(sessionId, runId, receipt) {
+      receipts.push({ sessionId, runId, receipt });
+    },
+  };
+  return { port, opened, receipts, current: () => opened.at(-1)! };
 }

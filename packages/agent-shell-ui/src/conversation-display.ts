@@ -1,10 +1,14 @@
-import { computed, shallowRef } from "vue";
+import { computed, nextTick, shallowRef } from "vue";
 import type {
   DisplayLoad,
   DisplayPageAddressInput,
   DisplaySnapshot,
+  PresentationFrame,
+  PresentationReceipt,
 } from "@ontomato/contracts/agent-presentation";
 import type { PageContext } from "@ontomato/contracts/page-context";
+import { panelAddress } from "@ontomato/contracts/panel-host";
+import { fileName } from "./artifacts";
 import type { OpenArtifact, ShellFeatureDeclaration } from "./types";
 
 /**
@@ -67,6 +71,13 @@ interface Shown {
 
 const READY: DisplayLoad = { status: "ready" };
 
+/** Where the side's own outlet sits now, as the outlet itself sees it: beside the conversation or over it. */
+export type DisplayPlacementProbe = () => "side" | "overlay";
+type Selected = Extract<DisplaySnapshot, { placement: unknown }>;
+/** What the display answers itself: whether it opened the target, and why not. */
+export type DisplayPresentationResult = PresentationReceipt["result"];
+type NotOpenedReason = Extract<DisplayPresentationResult, { status: "not_opened" }>["reason"];
+
 export function useConversationDisplay(host: ConversationDisplayHost) {
   const shown = shallowRef<Shown>({
     target: host.initial ? { kind: "page", ...host.initial.page } : null,
@@ -85,11 +96,13 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
    * it left, the address included, so closing a page and opening another in one gesture cannot interleave their writes.
    */
   let settled: Promise<unknown> = Promise.resolve();
-  function inOrder(operation: () => Promise<boolean>): Promise<boolean> {
+  function inOrder<T>(operation: () => Promise<T>): Promise<T> {
     const next = settled.then(operation);
     settled = next.catch(() => {});
     return next;
   }
+  /** The outlet drawing the side now reports its own form; the breakpoint is its style's, not repeated here. */
+  let placement: DisplayPlacementProbe | null = null;
 
   const target = computed(() => shown.value.target);
   const page = computed<DisplayPage | null>(() => (shown.value.target?.kind === "page" ? shown.value.target : null));
@@ -108,12 +121,56 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     shown.value = next;
   }
 
+  /** Whether going to `next` leaves the shown page instance while it holds unsaved changes. */
+  function dropsUnsaved(next: DisplayTarget | null): boolean {
+    const current = page.value;
+    if (!current || (next?.kind === "page" && next.instance === current.instance)) return false;
+    return unsaved || host.leave.leaves(next?.kind === "page" ? next.address : null);
+  }
+
   /** Leaving the shown page instance with unsaved changes asks the reader first; staying in it never asks. */
   async function mayLeave(next: DisplayTarget | null): Promise<boolean> {
-    const current = page.value;
-    if (!current || (next?.kind === "page" && next.instance === current.instance)) return true;
-    if (!unsaved && !host.leave.leaves(next?.kind === "page" ? next.address : null)) return true;
-    return host.leave.confirm();
+    return !dropsUnsaved(next) || host.leave.confirm();
+  }
+
+  /** One observation of what is shown, for a presentation result. */
+  function snapshot(): DisplaySnapshot {
+    const observedAt = new Date().toISOString();
+    return shown.value.target ? selected(observedAt) : { known: true, observedAt, target: null };
+  }
+  function selected(observedAt = new Date().toISOString()): Selected {
+    const current = shown.value.target!;
+    const full = current.kind === "page" && (shown.value.view === "full" || !feature.value?.withConversation);
+    const where = full ? "full-page" : placement!();
+    if (current.kind === "artifact") {
+      const { runId, path } = current.open.artifact;
+      return { known: true, observedAt, placement: where, target: { kind: "artifact", runId, path, title: current.open.title }, load: load.value };
+    }
+    return { known: true, observedAt, placement: where, target: { kind: "page", ...pageContext.value! }, load: load.value };
+  }
+
+  function notOpened(reason: NotOpenedReason, error?: { code: string; message: string }): DisplayPresentationResult {
+    return { status: "not_opened", reason, current: snapshot(), ...(error ? { error } : {}) };
+  }
+
+  /** What an agent asked to show: an artifact the host resolved, or a page address with the state it opens at. */
+  function presented(frame: PresentationFrame): DisplayTarget | NotOpenedReason | { error: { code: string; message: string } } {
+    if (frame.target.kind === "artifact") {
+      const { artifact } = frame.target;
+      return { kind: "artifact", open: { key: `${artifact.runId}:${artifact.path}`, artifact, title: fileName(artifact.path) } };
+    }
+    let address = frame.target.address;
+    // The state a page opens at rides in its address, as a reader's link carries it; a value no panel state can hold
+    // is refused here, at the edge where it arrives.
+    if (frame.target.state !== undefined) {
+      try {
+        address = panelAddress(address, frame.target.state);
+      } catch (error) {
+        return { error: { code: "invalid_state", message: error instanceof Error ? error.message : String(error) } };
+      }
+    }
+    const next = host.resolve?.(address) ?? null;
+    return next ? { kind: "page", ...next } : "unsupported_target";
   }
 
   async function write(next: DisplayPage | null, view: DisplayView, history: DisplayHistory): Promise<boolean> {
@@ -245,19 +302,43 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
       unsaved = value;
     },
 
-    /** One observation of what is shown, for a presentation result. */
-    snapshot(): DisplaySnapshot {
-      const observedAt = new Date().toISOString();
-      const current = shown.value.target;
-      if (!current) return { known: true, observedAt, target: null };
-      const full = current.kind === "page" && (shown.value.view === "full" || !feature.value?.withConversation);
-      const placement = full ? "full-page" : window.matchMedia("(max-width: 1100px)").matches ? "overlay" : "side";
-      if (current.kind === "artifact") {
-        const { runId, path } = current.open.artifact;
-        return { known: true, observedAt, placement, target: { kind: "artifact", runId, path, title: current.open.title }, load: load.value };
-      }
-      return { known: true, observedAt, placement, target: { kind: "page", ...pageContext.value! }, load: load.value };
+    /** The outlet drawing the side reports where it sits; it takes the report back when it goes. */
+    placed(probe: DisplayPlacementProbe): () => void {
+      placement = probe;
+      return () => {
+        if (placement === probe) placement = null;
+      };
     },
+
+    snapshot,
+
+    /**
+     * An agent's request to show something (design 5): in turn with the reader's own operations, never over unsaved
+     * changes, beside the conversation, and out of the address — a reload does not show it again, and the page the
+     * reader had navigated to leaves the address once it has been replaced. The result is what is shown once the switch
+     * is drawn, with what its loader knows by then.
+     */
+    present: (frame: PresentationFrame) =>
+      inOrder(async (): Promise<DisplayPresentationResult> => {
+        const next = presented(frame);
+        if (typeof next === "string") return notOpened(next);
+        if (!("kind" in next)) return notOpened("unsupported_target", next.error);
+        const current = shown.value;
+        const same =
+          current.target?.kind === next.kind &&
+          (next.kind === "artifact" ? current.target.kind === "artifact" && current.target.open.key === next.open.key
+            : current.target.kind === "page" && current.target.address === next.address);
+        if (!same) {
+          if (dropsUnsaved(next)) return notOpened("blocked_unsaved");
+          commit({ target: next, view: next.kind === "page" ? "side" : current.view, restorable: false });
+          if (current.restorable) await write(null, shown.value.view, "replace");
+        }
+        await nextTick();
+        const shownNow = selected();
+        return shownNow.load.status === "error"
+          ? { status: "opened", reason: "load_error", current: shownNow, ...(shownNow.load.error ? { error: shownNow.load.error } : {}) }
+          : { status: "opened", reason: "target_selected", current: shownNow };
+      }),
   };
 }
 

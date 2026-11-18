@@ -1,4 +1,4 @@
-import { inject, reactive, type InjectionKey, type Ref, type Slot } from "vue";
+import { inject, onBeforeUnmount, onMounted, reactive, type InjectionKey, type Ref, type Slot } from "vue";
 import type { AgentPendingQuestion } from "@ontomato/contracts/agent-channel";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { ShellTaskPort } from "./host";
@@ -107,4 +107,20 @@ export function usePageDockSpace() {
 /** Artifact overrides can use the conversation capability even through a renderer wrapper. */
 export function useConversationContinuation() {
   return inject(shellContextKey, undefined)?.continueConversation;
+}
+
+/**
+ * Where the side's outlet reports its own form (beside the conversation, or over it on a narrow screen): the outlet's
+ * style decides it, and the display reads it from there instead of repeating the breakpoint.
+ */
+export const displayPlacementKey: InjectionKey<(probe: () => "side" | "overlay") => () => void> = Symbol("display-placement");
+
+/** Reports the outlet's own form while `element` is mounted: fixed over the conversation is the overlay. */
+export function useDisplayPlacement(element: Ref<HTMLElement | null>) {
+  const place = inject(displayPlacementKey);
+  let release: (() => void) | undefined;
+  onMounted(() => {
+    release = place?.(() => (getComputedStyle(element.value!).position === "fixed" ? "overlay" : "side"));
+  });
+  onBeforeUnmount(() => release?.());
 }

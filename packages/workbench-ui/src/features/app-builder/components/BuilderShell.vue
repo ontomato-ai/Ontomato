@@ -138,6 +138,8 @@ const columnSessions = useColumnSessions({ nav, workspaceId: () => workspaceId.v
 useSessionRunFeed({
   port: createAssistantClient().sessionRuns,
   sessions: () => columnSessions.runSessions.value,
+  // The conversation's display takes what its runs present; the stream asks for the binding that lets them.
+  presentation: true,
   onNotice: () => void view.refresh(),
   onError: (error) => ElMessage.error(error instanceof Error ? error.message : String(error)),
 });
