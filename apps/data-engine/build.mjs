@@ -59,6 +59,7 @@ export const app = {
         "agent-skills/metricview-generation",
         "agent-skills/knowledge-governance",
         "packages/contracts/src/agent-artifact-markdown-prompt.json",
+        "packages/contracts/src/agent-visibility-prompt.json",
         "packages/contracts/src/query-subgraph.schema.json",
         "packages/contracts/src/query-package.schema.json",
         "packages/contracts/query-subgraph.md",
