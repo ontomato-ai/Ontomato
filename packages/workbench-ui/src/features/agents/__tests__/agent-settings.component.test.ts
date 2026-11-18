@@ -40,7 +40,7 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-type SettingsProps = { agentId: string | null; creating: boolean };
+type SettingsProps = { agentId: string | null; creating: boolean; heading?: boolean };
 
 /** The platform's answers the column reads: which pages the account may open, and the model page's words. */
 function platform(granted: readonly string[]) {
@@ -74,6 +74,15 @@ async function mountPage(props: SettingsProps) {
 const rowNames = (wrapper: ReturnType<typeof mount>) => wrapper.findAll(".agent-row .row-name").map((row) => row.text());
 
 describe("the agent settings column", () => {
+  it("names itself at the page's own address, and stays unnamed beside a conversation", async () => {
+    // Beside a conversation the pane's header already names the page: the list under it does not say it again.
+    const paired = await mountNav({ agentId: "a1", creating: false, heading: false });
+    expect(paired.find(".nav-head").exists()).toBe(false);
+
+    const own = await mountNav({ agentId: "a1", creating: false });
+    expect(own.find(".nav-head").text()).toBe(t("agents.title"));
+  });
+
   it("holds the agents, the new-agent button and the way back", async () => {
     const wrapper = await mountNav({ agentId: "a2", creating: false });
     expect(wrapper.find(".back").text()).toBe(t("common.backToChat"));

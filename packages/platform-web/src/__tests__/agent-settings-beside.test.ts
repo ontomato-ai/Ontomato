@@ -173,11 +173,12 @@ const openLink = (href: string) =>
 vi.mock("../pages/AgentSettingsRoute.vue", () => ({
   default: defineComponent({
     name: "AgentSettingsRouteDouble",
-    props: ["agentId", "creating", "address", "navigate"],
+    props: ["address", "navigate"],
     setup(props) {
       return () =>
         h("div", { class: "page-double" }, [
-          h("span", { class: "shown" }, `${props.creating ? "new" : props.agentId}`),
+          // The page is told its address and nothing else: which agent it shows is what that address says.
+          h("span", { class: "shown" }, props.address ?? ""),
           h("span", { class: "address" }, props.address ?? ""),
           h("span", { class: "draft" }, new URLSearchParams((props.address ?? "").split("?")[1] ?? "").get("draftPath") ?? ""),
           h("button", { class: "move", onClick: () => props.navigate?.("/ontology/agents/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb") }, "Move"),
@@ -200,7 +201,9 @@ describe("the agents' settings beside the conversation", () => {
       `/ontology/agents/${AGENT}?draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2Fa.page-draft.json`,
     );
     // The page is told the address it is shown at, so its editor reads the conversation's draft, not the chat's query.
-    expect(wrapper.find(".page-double .shown").text()).toBe(AGENT);
+    expect(wrapper.find(".page-double .shown").text()).toBe(
+      `/ontology/agents/${AGENT}?draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2Fa.page-draft.json`,
+    );
     expect(wrapper.find(".page-double .draft").text()).toBe("outputs/drafts/a.page-draft.json");
   });
 
