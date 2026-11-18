@@ -88,5 +88,9 @@ describe("the panel host's addresses", () => {
       "POST /api/product-assets/subscriptions",
     ]);
     stop();
+    await vi.waitFor(() => expect(requested.at(-1)).toEqual({
+      method: "DELETE",
+      url: "/api/product-assets/subscriptions/subscription-1",
+    }));
   });
 });
