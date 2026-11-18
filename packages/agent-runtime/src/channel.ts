@@ -276,7 +276,7 @@ export class AgentChannel {
     const {id,runId,messageSeq,contextSeq,message}=accepted.input;
     return {...accepted,input:{id,runId,messageSeq,contextSeq,message},pendingQuestions:await this.facts.pendingQuestions(scope,target.sessionId)};
   }
-  async deliver(target: AgentSessionRef, actor: AgentRunContext["actor"], input: AgentNotification, options:{requestedBy?:AgentExecutionRef;steer?:boolean;external?:ExternalAgentCaller}={}) {
+  async deliver(target: AgentSessionRef, actor: AgentRunContext["actor"], input: AgentNotification, options:{requestedBy?:AgentExecutionRef;resultRecipientRunId?:string;steer?:boolean;external?:ExternalAgentCaller}={}) {
     const accepted=await this.accept(target,actor,input,options);
     return {messageId:accepted.input.id,taskId:accepted.delivery?.delivery==="run"?accepted.delivery.runId:null,sessionRef:target};
   }
@@ -318,7 +318,7 @@ export class AgentChannel {
       : agentDeliverySchema.parse(await this.callback(intent, "read"));
     if (delivery.status === "running" || delivery.status === "starting") return;
     if (parent && !(intent.cancelled && intent.cancelMode!=="model")) {
-      await this.accept(parent.session, intent.channel.actor, {
+      await this.deliver(parent.session, intent.channel.actor, {
         role: "notification", kind: "agent-result", source: { session: intent.session, runId },
         outcome: delivery.status, content: delivery.summary, timestamp: Date.now(),
       }, { resultRecipientRunId: parent.runId });
