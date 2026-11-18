@@ -79,7 +79,7 @@ describe("the panel host's addresses", () => {
     // to. A read that refuses is as good an observation as one that answers.
     await port.panel("panel-a").catch(() => {});
     await port.sdkBase();
-    port.subscribe([{ kind: "panel", id: "panel-a" }], () => {});
+    const stop = port.subscribe("panel-a", () => {});
     await vi.waitFor(() => expect(requested.length).toBe(4));
     expect(requested.map((one) => `${one.method} ${one.url}`)).toEqual([
       "GET /api/data-query/platform/applications/app-a/panel-uses",
@@ -87,5 +87,6 @@ describe("the panel host's addresses", () => {
       "GET /api/apps-sdk/current",
       "POST /api/product-assets/subscriptions",
     ]);
+    stop();
   });
 });

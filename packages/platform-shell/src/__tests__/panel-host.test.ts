@@ -10,7 +10,6 @@ import {
   panelFrameDocument,
   usePanelInstance,
   type DefinitionChanged,
-  type DefinitionTarget,
   type PanelHostLabels,
   type PanelHostPort,
 } from "../panel-host";
@@ -85,7 +84,6 @@ function useRelation(id: string, pageKey: string, panelId: string, path: string)
  */
 function platform(input: { applicationId?: string; panels: Map<string, ProductPanel>; uses: ApplicationPanelUse[] }) {
   const listeners = new Set<(event: DefinitionChanged) => void>();
-  const watched: DefinitionTarget[] = [];
   const frames = new Map<Window, unknown[]>();
   const sent = new WeakMap<Window, unknown[]>();
   return {
@@ -104,12 +102,10 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
       }) as Window["postMessage"];
       return () => frames.delete(frame);
     },
-    subscribe: (targets: readonly DefinitionTarget[], listener: (event: DefinitionChanged) => void) => {
-      watched.push(...targets);
+    subscribe: (_panelId: string, listener: (event: DefinitionChanged) => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    watched,
     changed: (event: DefinitionChanged) => listeners.forEach((listener) => listener(event)),
     posted: (frame: Window) => sent.get(frame) ?? [],
   };

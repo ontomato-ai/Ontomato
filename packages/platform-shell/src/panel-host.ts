@@ -45,13 +45,7 @@ export interface PanelHostPort {
    * Hears "definition changed" for the definitions this instance shows: the panel and every projection its declaration
    * names. Events carry identity only. The returned function stops the notices.
    */
-  subscribe(targets: readonly DefinitionTarget[], listener: (event: DefinitionChanged) => void): () => void;
-}
-
-/** One definition a panel instance shows, by kind and ID. */
-export interface DefinitionTarget {
-  kind: "panel" | "projection";
-  id: string;
+  subscribe(panelId: string, listener: (event: DefinitionChanged) => void): () => void;
 }
 
 /** The platform's notice that a projection's or a panel's current definition changed; it carries identity only. */
@@ -167,7 +161,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       if (!relation) throw new Error(options.labels.useMissing(options.useId()));
       await adopt(relation, await port.panel(relation.panelId));
       loadedPanelId = relation.panelId;
-      stopNotices = port.subscribe(targets(), notice);
+      stopNotices?.();
+      stopNotices = port.subscribe(relation.panelId, notice);
     } catch (failure) {
       error.value = failureText(failure);
     }
@@ -229,18 +224,6 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     );
   }
   onBeforeUnmount(() => stopNotices?.());
-
-  /** The definitions this instance shows, once its record is read. */
-  function targets(): DefinitionTarget[] {
-    const record = panel.value;
-    if (!record) return [];
-    return [
-      { kind: "panel" as const, id: record.id },
-      ...[...new Set(Object.values(record.manifest.slots).map((slot) => slot.projectionId))].map(
-        (id) => ({ kind: "projection" as const, id }),
-      ),
-    ];
-  }
 
   let unsaved = false;
   function dirty() {

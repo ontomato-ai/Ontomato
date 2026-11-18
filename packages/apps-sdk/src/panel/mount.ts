@@ -50,6 +50,10 @@ export interface PanelMount {
 export async function mountPanel(component: PanelComponent): Promise<PanelMount> {
   const element = document.getElementById("app");
   if (!element) throw new Error("A panel's HTML designates the element its component mounts into as #app");
+  // Vue takes the mount element's markup for its root. This panel renders as a child of the context provider.
+  const panelComponent = typeof component !== "function" && !component.render && !component.template
+    ? { ...component, template: element.innerHTML }
+    : component;
   const message = hostMessage();
   // A panel runs in a sandboxed frame of its own, which cannot read the platform's window: it connects the way a hosted
   // application does, over the message bridge. The platform sends each request with the reader's own credential and
@@ -97,7 +101,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
       watch(instance.unclaimedDraft, (unclaimed) => {
         if (unclaimed) failed(t("platform.panelDraftUnclaimed"));
       });
-      return () => h(component);
+      return () => h(panelComponent);
     },
   });
   // The one global a panel's HTML and module need: `<Projection slot="…"/>`. Its name is the SDK's public API, so it is

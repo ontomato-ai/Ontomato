@@ -8,7 +8,8 @@ import {HttpError} from '../../utils/errors';
 import {readDefinitionTrigger} from './triggers';
 import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres';
 import {productDefinitionChangedEventSchema,type ProductDefinitionChangedEvent} from '@ontomato/contracts/product-panels';
-import {findCurrentProduct} from '../../infrastructure/product-current';
+import {currentProductTables,findCurrentProduct,type CurrentProductKind} from '../../infrastructure/product-current';
+import {panelManifestSchema} from '@ontomato/contracts/panel-manifest';
 import {requireProductGrant} from './grants';
 
 type Subscription={id:string;owner:ProductOwner;credentials:AssistantCredentials;target:ProductSubscriptionTarget;expiresAt:number;fingerprint?:string;members?:Set<string>;events:ProductSubscriptionEvent[];busy:boolean;evaluation?:Promise<void>};
@@ -32,9 +33,13 @@ async function evaluateOnce(subscription:Subscription){
   subscription.busy=true;
   try{
     if(subscription.target.kind==='product-definition'){
-      const target=subscription.target.target;
-      await requireProductGrant(target.id,'use',subscription.credentials);
-      if(!await findCurrentProduct(subscription.owner.domainId,target.kind,target.id))throw new HttpError(404,'Current product definition not found','PRODUCT_UNAVAILABLE');
+      const {kind,id}=subscription.target.target;
+      const record=await requireDefinition(subscription,kind,id);
+      if(kind==='panel'){
+        const {slots}=panelManifestSchema.parse(record.definition.manifest);
+        const projectionIds=new Set(Object.values(slots).map(slot=>slot.projectionId));
+        for(const projectionId of projectionIds)await requireDefinition(subscription,'projection',projectionId);
+      }
       await checkpoint(subscription);
       return;
     }
@@ -62,6 +67,12 @@ async function evaluateOnce(subscription:Subscription){
     subscription.members=members;
     await checkpoint(subscription);
   }finally{subscription.busy=false;}
+}
+async function requireDefinition(subscription:Subscription,kind:CurrentProductKind,id:string){
+  await requireProductGrant(id,'use',subscription.credentials);
+  const record=await findCurrentProduct(subscription.owner.domainId,kind,id);
+  if(!record)throw new HttpError(404,'Current product definition not found','PRODUCT_UNAVAILABLE');
+  return record;
 }
 function ensureScheduler(){
   if(timer)return;
@@ -94,17 +105,26 @@ export function pollProductSubscription(owner:ProductOwner,id:string,credentials
 }
 export function unsubscribeProduct(owner:ProductOwner,id:string){owned(owner,id);subscriptions.delete(id);}
 
-/** Use the existing subscription queues; UI definition changes never evaluate business Definitions or Triggers. */
+/** Route projection changes to panels whose current definitions include that projection. */
 export async function notifyProductDefinitionChanged(event:ProductDefinitionChangedEvent){
-  const active=[...subscriptions.values()].filter(subscription=>subscription.owner.domainId===event.domainId
-    &&subscription.expiresAt>Date.now()&&subscription.target.kind==='product-definition'
-    &&subscription.target.target.kind===event.target.kind&&subscription.target.target.id===event.target.id);
+  const db=getPostgresPool();
+  const targets=[event.target];
+  if(event.target.kind==='projection'){
+    const {rows}=await db.query<{id:string}>(`SELECT id FROM ${t(currentProductTables.panel)}
+      WHERE domain_id=$1 AND EXISTS (
+        SELECT 1 FROM jsonb_each(definition->'manifest'->'slots') AS slot(name,declaration)
+        WHERE declaration->>'projectionId'=$2)`,[event.domainId,event.target.id]);
+    targets.push(...rows.map(({id})=>({kind:'panel' as const,id})));
+  }
+  const active=[...subscriptions.values()].filter(({owner,expiresAt,target})=>
+    owner.domainId===event.domainId&&expiresAt>Date.now()&&target.kind==='product-definition'
+    &&targets.some(candidate=>target.target.kind===candidate.kind&&target.target.id===candidate.id));
   for(const subscription of active){subscription.events.push(event);subscription.events=subscription.events.slice(-20);}
-  await getPostgresPool().query(`UPDATE ${t('product_subscriptions')} SET state=jsonb_set(state,'{events}',
+  await db.query(`UPDATE ${t('product_subscriptions')} SET state=jsonb_set(state,'{events}',
     (SELECT COALESCE(jsonb_agg(value ORDER BY ordinal),'[]'::jsonb) FROM jsonb_array_elements((state->'events')||$2::jsonb) WITH ORDINALITY AS queued(value,ordinal)
       WHERE ordinal>jsonb_array_length((state->'events')||$2::jsonb)-20))
-    WHERE domain_id=$1 AND target->>'kind'='product-definition' AND target->'target'->>'kind'=$3 AND target->'target'->>'id'=$4
-      AND expires_at>now() AND NOT(id=ANY($5::text[]))`,[event.domainId,JSON.stringify([event]),event.target.kind,event.target.id,active.map(subscription=>subscription.id)]);
+    WHERE domain_id=$1 AND target->>'kind'='product-definition' AND $3::jsonb @> jsonb_build_array(target->'target')
+      AND expires_at>now() AND NOT(id=ANY($4::text[]))`,[event.domainId,JSON.stringify([event]),JSON.stringify(targets),active.map(subscription=>subscription.id)]);
   await Promise.all(active.map(checkpoint));
 }
 async function removeCheckpoint(subscription:Subscription){await getPostgresPool().query(`DELETE FROM ${t('product_subscriptions')} WHERE domain_id=$1 AND principal_id=$2 AND id=$3`,[subscription.owner.domainId,subscription.owner.userId,subscription.id]);}

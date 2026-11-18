@@ -11,7 +11,6 @@ import {
   leaveFrame,
   mountPlatformPage,
   panelHostFrame,
-  panelOf,
   writeFrameDocument,
 } from "./panel-frame";
 
@@ -30,6 +29,7 @@ afterEach(leaveFrame);
 describe("a draft at a panel application's own address", () => {
   it("opens in the panel's form: its values, the field it changed, and nothing saved", { timeout: 20000 }, async () => {
     const scenario = draftScenario();
+    scenario.panel.content.html = '<div id="app" v-cloak><projection slot="form"></projection></div>';
     const sent = installPlatform(scenario.answer);
     const router = createRouter({
       history: createMemoryHistory(),
@@ -52,13 +52,15 @@ describe("a draft at a panel application's own address", () => {
 
     writeFrameDocument(message);
     inside(element.contentWindow!);
-    await mountPanel(panelOf("form"));
+    await mountPanel({ setup: () => ({}) });
 
-    await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")?.textContent).toContain("caseSetId"), {
+    await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain("caseSetId"), {
       timeout: 5000,
     });
     expect(document.querySelector('[data-field="caseSetId"]')?.textContent).toContain("Smoke (8)");
     expect(sent.filter((request) => request.method === "PUT")).toEqual([]);
+    expect(sent.filter((request) => request.method === "POST" && request.path === "/api/product-assets/subscriptions"))
+      .toMatchObject([{ body: { kind: "product-definition", target: { kind: "panel", id: scenario.panel.id } } }]);
     page.unmount();
   });
 });
