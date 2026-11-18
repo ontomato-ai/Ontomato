@@ -1,6 +1,6 @@
 import { createApp, h, provide, ref, watch, type Component, type Ref } from "vue";
 import ElementPlus from "element-plus";
-import { createAppContext, type AppContext } from "../context";
+import { connectAppContext, contextTransport, type AppContext } from "../context";
 import {
   PANEL_HOST_CHANNEL,
   panelHostFrameMessageSchema,
@@ -20,7 +20,6 @@ import ObjectSummary from "../base/ObjectSummary.vue";
 import ObjectForm from "../base/ObjectForm.vue";
 import OperationButton from "../base/OperationButton.vue";
 import { registerSchedulesPlatformObject } from "./schedules";
-import { contextTransport } from "../context";
 
 /*
  * How a panel's module runs (overall design 3.3, 3.4): the platform's panel host opens a frame for one instance and
@@ -51,7 +50,10 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   const element = document.getElementById("app");
   if (!element) throw new Error("A panel's HTML designates the element its component mounts into as #app");
   const message = hostMessage();
-  const appContext = createAppContext();
+  // A panel runs in a sandboxed frame of its own, which cannot read the platform's window: it connects the way a hosted
+  // application does, over the message bridge. The platform sends each request with the reader's own credential and
+  // decides which requests a frame may make.
+  const appContext = await connectAppContext();
   const transport = contextTransport(appContext);
   const instance = createPanelInstance(message.panel.manifest, {
     pageKey: message.pageKey,

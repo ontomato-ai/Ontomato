@@ -22,6 +22,13 @@ import {installAppBridge} from './app-bridge';
 
 const executionBindings = new WeakMap<object, AppExecutionContext>();
 const publishedFrames=new WeakMap<object,string>();
+/**
+ * The frames a panel application (`entry.renderer` is `panels`) shows its panels in, by that application's ID. Such an
+ * application has no published record and no build of its own: its pages are use relations of shared panels. So its
+ * frames are not published frames, and nothing narrows them by a publication; what they may ask for is the request
+ * whitelist below, the same for every live frame.
+ */
+const panelFrames=new WeakMap<object,string>();
 const executionListeners = new WeakMap<object, Set<(context: AppExecutionContext) => void>>();
 const frameInsets = new WeakMap<object, AppFrameInsets>();
 const insetListeners = new WeakMap<object, Set<(insets: AppFrameInsets) => void>>();
@@ -31,7 +38,10 @@ let bridge:ReturnType<typeof installAppBridge>|undefined;
 export function installProductEmbedding(app:App){
   const host=(window as Window & {[APP_HOST_GLOBAL]?:AppHost})[APP_HOST_GLOBAL];
   if(!host)return;
-  bridge?.dispose();bridge=installAppBridge(app,host,source=>publishedFrames.get(source));
+  // The bridge answers a frame as the application it was registered under: a published application's, or a panel
+  // application's. This is the one place a panel application's frame is told apart; everywhere else it is a live frame
+  // with no publication.
+  bridge?.dispose();bridge=installAppBridge(app,host,source=>publishedFrames.get(source)??panelFrames.get(source));
   host.mountProductAsset=(source,target,assetId)=>{
     const element=target as HTMLElement;
     if(executionContext(source).kind!=='live')throw new Error('Product embedding is unavailable in build-test previews; use product authoring commands');
@@ -92,6 +102,17 @@ export function registerLiveFrame(source: object,applicationId?:string) {
   if(applicationId)publishedFrames.set(source,applicationId);
   const binding=registerFrame(source,{kind:"live"});
   return ()=>{bridge?.disposeFrame(source);publishedFrames.delete(source);binding.dispose();};
+}
+
+/**
+ * The frame one panel instance runs in, as a live frame of the panel application whose page shows it. The panel host
+ * draws it sandboxed with scripts only, so it speaks the message bridge, and registers it as soon as the frame exists,
+ * before the panel's module can ask to connect.
+ */
+export function registerPanelFrame(source: object,applicationId: string) {
+  panelFrames.set(source,applicationId);
+  const binding=registerFrame(source,{kind:"live"});
+  return ()=>{bridge?.disposeFrame(source);panelFrames.delete(source);binding.dispose();};
 }
 function executionContext(source: object) {
   const context=executionBindings.get(source);

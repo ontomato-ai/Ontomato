@@ -19,11 +19,17 @@ import { registerPlatformObject, type PlatformObjectRecord } from "./platform-ob
  * bound to `schedules.runNow` reaches.
  */
 
+/**
+ * The gateway prefix the scheduled tasks' contract spells its paths with (`platformSchedulesPath`). A frame's request
+ * names the service and the path inside it, as the platform's app host takes them, so the prefix becomes the service.
+ */
+const DATA_QUERY = "/api/data-query";
+
 /** The scheduled tasks' request path inside a panel frame: the SDK's own client, over this frame's credential. */
 export function schedulesHost(context: AppContext): PlatformSchedulesHost {
   const transport = contextTransport(context);
   return {
-    request: (path, init) => transport.request(path, init, "/data-query"),
+    request: (path, init) => transport.request(path.slice(DATA_QUERY.length), init, "/data-query"),
     // A panel shows tasks; the platform that mounts it owns the applications it names and where a result opens.
     applications: () => [],
     openResult: () => {},

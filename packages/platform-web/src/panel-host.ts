@@ -2,7 +2,7 @@ import { nodeApiRequest } from "@ontomato/workbench-ui";
 import { applicationPanelUsesResponseSchema, productPanelSchema, type ProductPanel } from "@ontomato/contracts/product-panels";
 import { appsSdkCurrentSchema } from "@ontomato/contracts/apps-sdk";
 import type { ProductSubscriptionEvent } from "@ontomato/contracts/product-subscriptions";
-import { registerLiveFrame } from "./app-host";
+import { registerPanelFrame } from "./app-host";
 import type { DefinitionChanged, DefinitionTarget, PanelHostPort } from "@ontomato/platform-shell";
 
 /*
@@ -51,7 +51,10 @@ export function platformPanelHost(applicationId: string): PanelHostPort {
     async sdkBase() {
       return appsSdkCurrentSchema.parse(await json(panelHostPaths.appsSdkCurrent)).sdkBasePath;
     },
-    frame: (frame: Window) => registerLiveFrame(frame),
+    // The frame is this application's: the address the reader is on names it, and a panel shown beside a conversation is
+    // the same application's page. Registering it under that ID is what lets the bridge recognise the frame and answer
+    // its `connect`, and what keeps a frame of another application from being mistaken for this one.
+    frame: (frame: Window) => registerPanelFrame(frame, applicationId),
     subscribe: (targets, listener) => subscribeProductDefinitions(targets, listener),
   };
 }
