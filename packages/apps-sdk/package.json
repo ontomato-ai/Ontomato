@@ -1,13 +1,14 @@
 {
   "name": "@ontomato/apps-sdk",
   "private": true,
-  "version": "1.1.1",
+  "version": "1.1.2",
   "type": "module",
   "exports": {
     ".": "./src/edition.ts"
   },
   "scripts": {
-    "typecheck": "vue-tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit",
+    "test": "node --test content-version.node-test.mjs"
   },
   "dependencies": {
     "@ontomato/agent-shell-ui": "workspace:*",

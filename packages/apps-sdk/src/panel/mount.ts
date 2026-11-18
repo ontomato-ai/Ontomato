@@ -69,6 +69,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     url: () => address.value,
     label: () => message.label,
     initial: message.state,
+    reportDraftError: failed,
     readProjection: async (id) => {
       const response = await transport.request(`/product-projections/${encodeURIComponent(id)}`, {}, "");
       const body = await response.json();
@@ -118,7 +119,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   app.component("OperationButton", OperationButton);
   // The platform objects this version's panels read, and the operations they run.
   registerSchedulesPlatformObject(appContext);
-  app.config.errorHandler = (reason) => failed(reason instanceof Error ? reason.message : String(reason));
+  app.config.errorHandler = failed;
   app.use(ElementPlus).use(appContext);
   app.mount(element);
 
@@ -150,7 +151,8 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
 }
 
 /** Tells the host this panel cannot run, and why; the host shows it where the panel would have been. */
-function failed(message: string) {
+function failed(reason: unknown) {
+  const message = reason instanceof Error ? reason.message : String(reason);
   window.parent.postMessage({ channel: PANEL_HOST_CHANNEL, kind: "failed", message }, "*");
 }
 
@@ -210,7 +212,7 @@ function report({ instance, address, followAddress, unsaved, changed }: ReportOp
     const parsed = panelMessageOf(panelHostFrameMessageSchema, event);
     if (!parsed) return;
     if (parsed.kind === "address") {
-      void followAddress(parsed.address).catch(reason => failed(reason instanceof Error ? reason.message : String(reason)));
+      void followAddress(parsed.address).catch(failed);
       return;
     }
     if (parsed.kind === "reconnect") {

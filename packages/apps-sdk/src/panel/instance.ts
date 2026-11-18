@@ -29,6 +29,7 @@ export interface PanelInstanceOptions {
   initial?: PanelInitialState;
   /** Reads a current projection by ID, as the reader. */
   readProjection: (id: string) => Promise<ProductProjection>;
+  reportDraftError?: (reason: unknown) => void;
 }
 
 export interface PanelInstance {
@@ -77,7 +78,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   };
   const registrations = shallowRef<readonly PanelProjectionRegistration[]>([]);
   const operations = computed(() => panelOperations(manifest, registrations.value, state, forms));
-  const forms = new PanelFormAdapters();
+  const forms = new PanelFormAdapters(options.reportDraftError);
   const draft = shallowRef<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
   const pageContext = computed<PageContext>(() => ({
     pageKey: options.pageKey,

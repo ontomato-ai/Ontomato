@@ -138,7 +138,8 @@ function describeUse(use: Use, { name, description, content, manifest, projectio
       ...operations.map(operation => `- ${operation.label} (${operation.id}), kind ${operation.kind}, handlerRef ${operation.handlerRef}, input ${operation.kind === "form.save" ? "from the owner's dynamic form" : JSON.stringify(operation.inputSchema)}, target ${JSON.stringify(operation.target ?? null)}.`),
       ...(operations.length ? [] : ["No operations."]),
       "Call the declared operation with POST `$ONTOMATO_PANEL_OPERATIONS_URL/operate`, JSON `{intentId:<new UUID>,applicationId,useId,operationId,call:{target:{kind:\"object\",objectType,primaryKey},input}}`. Send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. Never call a write owner endpoint directly from a platform panel skill.",
-      `Use applicationId ${JSON.stringify(use.applicationId)} and useId ${JSON.stringify(use.useId)}. The operationId is the declared ID above. Form save input carries the current dynamic form's string fields plus the task revision obtained with those values; runNow input is {}.`,
+      `Use applicationId ${JSON.stringify(use.applicationId)} and useId ${JSON.stringify(use.useId)}. The operationId is the declared ID above.`,
+      "For POST `/operate` only, put the task `revision` in `call.input` alongside the current dynamic form's string fields when invoking `form.save`. Use the revision of the task as read. The `runNow` action uses `call.input: {}`.",
       "Default form.save returns an unsaved page-draft envelope: write it to the draft artifact and link the reader to review/save. Session automatic mode allows the same declared save to execute directly. Only the authenticated session owner changes that setting.",
       "An action can return confirmation-required with intentId. End this tool call immediately; do not wait or poll. Continue independent work or finish the round. A genuine user agent-answer is delivered back to this conversation and can wake a later run. Then POST `{}` to `$ONTOMATO_PANEL_OPERATIONS_URL/intents/<intentId>/dispatch` using THAT RUN's callback and run ID. Node verifies the real selected option and the current executor. Free text, defaults, parent answers, questionId or a different toolCallId never authorize execution. Changed parameters/target/executor require a new intent and confirmation.",
       "A dispatched result is final for that intent, including failure/unknown; never retry the owner call under another toolCallId. Read the intent at `/api/panel-operation-intents/<intentId>` through ONTOMATO_WORKBENCH_URL when needed; this read does not execute it.",
@@ -172,11 +173,13 @@ function describeDraft(use: Use, address: string, forms: readonly PanelOperation
   if (!forms.length) return "";
   return [
     "### Draft a change",
-    "Use the owner's current dynamic form to determine valid fields and values. Write `outputs/drafts/<name>.page-draft.json` with this page-draft envelope:",
+    "Ask the owner for the dynamic form with the intended values, including any changed dependencies. Write `outputs/drafts/<name>.page-draft.json` with this page-draft envelope:",
     "```json",
     JSON.stringify({ pageKey: use.pageKey, operation: forms[0]!.handlerRef, target: { id: "<object id>" }, form: {} }, null, 2),
     "```",
-    `Choose the matching form's handlerRef for operation: ${forms.map(form => form.handlerRef).join(", ")}. Put the values to fill in form and the selected object's ID in target.id when editing an existing object.`,
+    `Choose the matching form's handlerRef for operation: ${forms.map(form => form.handlerRef).join(", ")}.`,
+    "Put the selected object's ID in `target.id` when editing an existing object.",
+    "The draft's `form` contains only keys returned in the owner's current form `fields` and their values. Do not put `revision` or any other non-form key in the draft. The reader's save supplies the revision.",
     `Link to \`${address}\` with ${PAGE_DRAFT_QUERY_KEYS.map(key => `\`${key}\``).join(", ")} set to the current session ID, run ID, and encoded draft path. The panel fills the form and the reader reviews and saves it.`,
   ].join("\n");
 }

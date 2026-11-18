@@ -18,6 +18,7 @@ import {getApplicationProduct} from '../../services/product-assets/store';
 import {backendGet,buildBackendHeaders} from '../../utils/backend-client';
 import {config} from '../../config/application';
 import {SOURCE_APPLICATION_CSP} from '../../services/workspaces/product-admission';
+import { mountAppsSdkStatic } from "./apps-sdk";
 import type { AssistantOwner } from "../../services/assistant/store";
 
 const wrap = (fn: (req: Request, res: Response) => Promise<void>) =>
@@ -119,5 +120,5 @@ export function mountHostedStatic(app: express.Express) {
     else if(policy?.hostTransport===1)res.set('Content-Security-Policy',"connect-src 'none'; form-action 'none'; object-src 'none'; base-uri 'none'");
     await new Promise<void>((resolve,reject)=>{res.sendFile(file, { root: runtimeDataDir("hosted-apps", appId, releaseId), dotfiles: "allow", cacheControl: false, lastModified: false, etag: false },error=>error?reject(error):resolve());});
   }));
-  app.use("/apps-sdk",(_req,res,next)=>{res.set('Access-Control-Allow-Origin','*');next();}, express.static(runtimeDataDir("apps-sdk"), { fallthrough: false, redirect: false }));
+  mountAppsSdkStatic(app);
 }

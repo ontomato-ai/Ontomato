@@ -5,7 +5,6 @@ import type { FormField } from "@ontomato/contracts/form-fields";
 import { FormFields as FormFieldsView } from "@ontomato/foundation-ui/form";
 import { slotState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
 import { platformObjectFor, PlatformObjectRefusal, selectedKey, type PlatformObjectForm } from "../panel/platform-objects";
-import type { ReceivedPanelDraft } from "../panel/draft";
 
 /**
  * One object's form, as its owner declares it. It draws the owner's fields and nothing else — a choice is a select whose
@@ -49,12 +48,13 @@ const state = computed(() => slotState(panel.manifest, slot.slot, props.inputNam
 const key = computed(() => selectedKey(panel.instance.state.values.value[state.value]));
 const dirty = computed(() => JSON.stringify(values.value) !== JSON.stringify(opened.value?.values ?? {}));
 const canSettle = computed(() => dirty.value || panel.instance.draft.value?.slot === slot.slot);
-/**
- * The draft this form shows, by the object it addresses. Whenever the owner's form for that object is read — when the
- * draft arrives, when the selection moves to the object, when the form is first drawn — the draft is laid over it, so a
- * read that answers later never replaces it. It goes when the reader saves or discards.
- */
-let held: { primaryKey: string; filled: Record<string, string>; changed: ReadonlySet<string> } | null = null;
+/** The validated form and the original revision the draft opens at. */
+let held: {
+  primaryKey: string;
+  baseline: PlatformObjectForm;
+  draftForm: PlatformObjectForm;
+  changed: ReadonlySet<string>;
+} | null = null;
 
 function showFields(form: PlatformObjectForm) {
   fields.value = form.fields;
@@ -78,31 +78,18 @@ function load(primaryKey: string | null) {
     loading.value = false;
     return;
   }
-  loading.value = true;
-  void client.form(primaryKey).then((form) => show(primaryKey, form), (reason: unknown) => fail(reason));
-}
-
-/** The owner's form for an object, with the draft for that object laid over it and the fields it changed marked. */
-function show(primaryKey: string, form: PlatformObjectForm) {
-  adopt(form);
-  const draft = held?.primaryKey === primaryKey ? held : null;
-  if (!draft) return;
-  values.value = { ...form.values, ...draft.filled };
-  changed.value = draft.changed;
-  // A field the draft changed may be one the form depends on: the owner answers again with the draft's values, and its
-  // answer is the field set the draft is shown in.
-  const depended = form.fields.find((field) => field.type === "select" && field.refreshOnChange && draft.changed.has(field.key));
-  if (depended) {
-    loading.value = true;
-    void client.changed(primaryKey, values.value, depended.key).then(
-      (next) => {
-        showFields(next);
-        values.value = { ...next.values, ...draft.filled };
-        changed.value = draft.changed;
-      },
-      (reason: unknown) => fail(reason),
-    );
+  if (held?.primaryKey === primaryKey) {
+    adopt(held.baseline);
+    showFields(held.draftForm);
+    changed.value = held.changed;
+    return;
   }
+  loading.value = true;
+  const stillLoading = () => key.value === primaryKey && held?.primaryKey !== primaryKey;
+  void client.form(primaryKey).then(
+    (form) => { if (stillLoading()) adopt(form); },
+    (reason: unknown) => { if (stillLoading()) fail(reason); },
+  );
 }
 
 function fail(reason: unknown) {
@@ -147,19 +134,31 @@ function choose(field: Extract<FormField, { type: "select" }>, value: string) {
 // The draft this projection receives: the object it addresses becomes the selected one, the form shows its values, and
 // the fields it changed are marked. Nothing is written here.
 useProjectionForm({
-  read: async (target) => (await client.form(target.id ?? requireKey())).values,
+  async prepareDraft({ id: primaryKey }, form) {
+    const baseline = await client.form(primaryKey);
+    const filled = asText(form);
+    const depended = baseline.fields.find(field => field.type === "select" && field.refreshOnChange
+      && Object.hasOwn(filled, field.key) && filled[field.key] !== baseline.values[field.key]);
+    const effective = depended
+      ? await client.changed(primaryKey, { ...baseline.values, ...filled }, depended.key)
+      : baseline;
+    const allowed = new Set(effective.fields.map(field => field.key));
+    const extra = Object.keys(filled).filter(name => !allowed.has(name));
+    if (extra.length) throw new Error(`Draft fields not in the current form: ${extra.join(", ")}`);
+
+    const draftForm = { ...effective, values: { ...effective.values, ...filled } };
+    return {
+      baseline: baseline.values,
+      apply(draft) {
+        held = { primaryKey, baseline, draftForm, changed: draft.changed };
+        if (key.value === primaryKey) load(primaryKey);
+        else panel.instance.state.set(state.value, { className: slot.projection.binding.id, primaryKey });
+      },
+    };
+  },
   save: (form, target) => write(asText(form), target.id ?? requireKey()),
   // The frame's own save: what the form holds, at the revision it was read at.
   submit: () => write(values.value, requireKey()),
-  apply(draft: ReceivedPanelDraft<Record<string, unknown>>) {
-    const primaryKey = draft.target.id;
-    if (!primaryKey) throw new Error("This form edits one object, and the draft names none");
-    held = { primaryKey, filled: asText(draft.form), changed: draft.changed };
-    // The instance selects what the draft addresses, so the panel shows the object being edited; the form is read for it
-    // then, with the draft laid over.
-    if (key.value === primaryKey) load(primaryKey);
-    else panel.instance.state.set(state.value, { className: slot.projection.binding.id, primaryKey });
-  },
   dirty: () => dirty.value,
   discard,
 });
