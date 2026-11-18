@@ -117,4 +117,13 @@ describe("apps SDK static delivery", () => {
     expect(response.headers["cache-control"]).toBe("public, max-age=0");
     expect(response.body).toEqual(ENTRY);
   });
+
+  it("does not let a browser keep a missing file: only a file that is sent carries the long cache and its type", async () => {
+    // A path asked for before its version is installed, or a mistyped one, must be asked for again next time.
+    const response = await get(`/apps-sdk/${VERSION}/missing.js`, "br, gzip");
+    expect(response.status).toBe(404);
+    expect(response.headers["cache-control"]).toBeUndefined();
+    expect(response.headers["content-encoding"]).toBeUndefined();
+    expect(response.headers["content-type"]).not.toMatch(/javascript/);
+  });
 });

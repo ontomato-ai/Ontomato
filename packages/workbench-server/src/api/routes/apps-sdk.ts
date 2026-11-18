@@ -22,7 +22,7 @@ function accepts(header: string | undefined, encoding: string) {
  */
 export function mountAppsSdkStatic(app: express.Express) {
   const root = runtimeDataDir("apps-sdk");
-  app.get(/^\/apps-sdk\/.+/, (req, res) => {
+  app.get(/^\/apps-sdk\/.+/, (req, res, next) => {
     const name = req.path.slice("/apps-sdk/".length);
     const versioned = name.includes("/");
     // The request path is outside input: only look for a compressed sibling inside the SDK root. `sendFile` below
@@ -39,6 +39,11 @@ export function mountAppsSdkStatic(app: express.Express) {
     res.type(path.extname(name) || "application/octet-stream");
     res.sendFile(chosen ? name + chosen.extension : name, {
       root, cacheControl: false, lastModified: false, etag: false,
+    }, (error) => {
+      if (!error) return;
+      // What describes the file goes out only with the file: a missing path must not be kept by the browser for a year.
+      for (const header of ["Cache-Control", "Content-Encoding", "Content-Type"]) res.removeHeader(header);
+      next(error);
     });
   });
 }
