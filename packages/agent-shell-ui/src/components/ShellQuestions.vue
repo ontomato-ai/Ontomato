@@ -57,12 +57,14 @@ function skip() {
   view.skipped.push(skipped);
 }
 
+/** A picked option goes with its index, the reader's own words without one. */
 async function submit() {
   const current = question.value;
   if (!current || !answer.value || sending.value) return;
   const text = answer.value;
+  const { choice } = draft.value;
   const next = (questions.value[index.value + 1] ?? questions.value[index.value - 1])?.requestId ?? null;
-  if (!(await shell.questions.answer(current.requestId, text))) return;
+  if (!(await shell.questions.answer(current.requestId, text, typeof choice === "number" ? choice : undefined))) return;
   delete view.drafts[current.requestId];
   view.current = next;
 }

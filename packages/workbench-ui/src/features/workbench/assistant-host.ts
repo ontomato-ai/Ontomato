@@ -5,7 +5,9 @@ import {
   type ShellFeedbackPort,
   type ShellFeedbackTarget,
   type ShellFeedbackValue,
+  type ShellPanelOperationsPort,
 } from "@ontomato/agent-shell-ui";
+import { panelOperationSettingsSchema } from "@ontomato/contracts/panel-agent";
 import {
   assistantDatasetSourceSchema,
   assistantFeedbackListSchema,
@@ -82,6 +84,27 @@ export function createAssistantFeedback(): ShellFeedbackPort {
       if (record)
         await nodeApiFetch(`${sessionPath(target.sessionId)}/feedback/${encodeURIComponent(record.id)}`, "DELETE");
       void records(target.sessionId, true);
+    },
+  };
+}
+
+/**
+ * Whether the assistant's agents ask before they run a panel operation, per conversation. The setting belongs to the
+ * conversation's owner: the host refuses anyone else (403), which the shell takes as not offering it.
+ */
+export function createPanelOperationSettings(): ShellPanelOperationsPort {
+  const path = (sessionId: string) => `/panel-operation-settings/workbench/${encodeURIComponent(sessionId)}`;
+  return {
+    async read(sessionId) {
+      try {
+        return panelOperationSettingsSchema.parse(await nodeApiGet(path(sessionId))).confirmBeforeExecute;
+      } catch (error) {
+        if (error instanceof ApiRequestError && error.status === 403) return null;
+        throw error;
+      }
+    },
+    async write(sessionId, confirmBeforeExecute) {
+      return panelOperationSettingsSchema.parse(await nodeApiPut(path(sessionId), { confirmBeforeExecute })).confirmBeforeExecute;
     },
   };
 }

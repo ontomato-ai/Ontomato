@@ -132,7 +132,7 @@ it("answers from the panel without touching the composer, and skipping sends not
   await nextTick();
   root.querySelector("form.questions-body")!.dispatchEvent(new Event("submit"));
   await nextTick();
-  expect(answer).toHaveBeenCalledWith(period.requestId, "The last 12 months");
+  expect(answer).toHaveBeenCalledWith(period.requestId, "The last 12 months", undefined);
   expect(composer.value).toBe("2 more things");
 
   // Nothing waits: the panel is gone, and the next question opens it again even though the reader had folded it.

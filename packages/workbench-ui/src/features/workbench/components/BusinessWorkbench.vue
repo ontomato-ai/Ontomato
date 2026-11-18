@@ -12,7 +12,7 @@ import { usePageAccess, usePilotPage } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { getWorkbenchAppearance } from "../api";
-import { createAssistantClient, createAssistantFeedback } from "../assistant-host";
+import { createAssistantClient, createAssistantFeedback, createPanelOperationSettings } from "../assistant-host";
 import { readRememberedAgent, readRememberedSession, rememberAgent, rememberSession } from "../remembered-agent";
 import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
@@ -64,6 +64,7 @@ const route = useRoute();
 const router = useRouter();
 const client = createAssistantClient();
 const feedback = createAssistantFeedback();
+const panelOperations = createPanelOperationSettings();
 const appearance = ref<WorkbenchAppearance | null>(null);
 const editingBrand = ref(false);
 /**
@@ -387,6 +388,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
     :labels="labels"
     :nav="nav"
     :feedback="feedback"
+    :panel-operations="panelOperations"
     :artifact-renderers="artifactRenderers"
     @error="ElMessage.error($event)"
     @feature-action="emit('featureAction', $event)"

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from "vue";
-import { CalendarClock, ExternalLink, SquarePen, Trash2, MoreHorizontal, Pencil, X } from "lucide-vue-next";
+import { CalendarClock, Check, ExternalLink, SquarePen, Trash2, MoreHorizontal, Pencil, X } from "lucide-vue-next";
 import type { AgentHostAgent, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { ShellLabels, ShellWorkbenchDeclaration } from "../types";
 import { featureIcon } from "../icons";
@@ -32,6 +32,12 @@ const props = withDefaults(defineProps<{
    * foot: no agent switch, no new conversation, no recent conversations.
    */
   conversations?: boolean;
+  /**
+   * The open conversation's choice whether agents ask before they run a panel operation, when the reader owns it. Its
+   * row says so while they do not ask, and its menu changes it. A delegated conversation follows the one that started it,
+   * so it offers neither.
+   */
+  panelConfirmation?: { sessionId: string; confirmBeforeExecute: boolean } | null;
   /** The shell's own words; the column is drawn outside the conversation's provider, so they are passed in. */
   labels: ShellLabels;
 }>(), {
@@ -45,6 +51,7 @@ const props = withDefaults(defineProps<{
   featureId: null,
   bottom: null,
   conversations: true,
+  panelConfirmation: null,
 });
 const emit = defineEmits<{
   newConversation: [];
@@ -54,6 +61,7 @@ const emit = defineEmits<{
   selectSession: [id: string];
   deleteSession: [id: string];
   renameSession: [id: string, title: string];
+  setPanelConfirmation: [id: string, confirmBeforeExecute: boolean];
   openBottom: [];
   loadMore: [];
   retry: [];
@@ -137,6 +145,16 @@ function saveRename(id: string) {
   cancelRename();
 }
 
+
+/** The open conversation's panel-operation choice, on its own row; a delegated conversation has none of its own. */
+function panelChoice(session: AgentHostSession) {
+  const choice = props.panelConfirmation;
+  return choice?.sessionId === session.id && session.origin !== "delegated" ? choice : null;
+}
+function togglePanelConfirmation(session: AgentHostSession) {
+  closeSessionMenu();
+  emit("setPanelConfirmation", session.id, !panelChoice(session)!.confirmBeforeExecute);
+}
 
 /** More than one agent makes the head a switcher; one agent leaves the application's name there. */
 const hasPicker = computed(() => props.conversations && props.agents.length > 1);
@@ -250,10 +268,24 @@ onBeforeUnmount(() => {
               >
                 <CalendarClock :size="13" aria-hidden="true" />
               </span>
+              <span
+                v-if="panelChoice(session)?.confirmBeforeExecute === false"
+                class="badge session-automatic"
+                :title="labels.panelAutomaticHint"
+              >{{ labels.panelAutomatic }}</span>
             </button>
             <button v-if="editingSession !== session.id" type="button" class="session-more" :aria-label="labels.sessionActions || labels.more" aria-haspopup="menu" :aria-expanded="sessionMenu === session.id" @click="toggleSessionMenu(session.id, $event)" @keydown.escape="closeSessionMenu"><MoreHorizontal :size="16" /></button>
             <div v-if="sessionMenu === session.id" :ref="(element) => { sessionPopup = element as HTMLElement }" popover="manual" :style="sessionPopupStyle" class="session-menu" @keydown.escape="closeSessionMenu">
               <button type="button" @click="beginRename(session)"><Pencil :size="14" />{{ labels.renameSession || 'Rename conversation' }}</button>
+              <button
+                v-if="panelChoice(session)"
+                type="button"
+                class="session-panel-confirmation"
+                :aria-pressed="panelChoice(session)!.confirmBeforeExecute"
+                @click="togglePanelConfirmation(session)"
+              >
+                <Check :size="14" :class="{ off: !panelChoice(session)!.confirmBeforeExecute }" aria-hidden="true" />{{ labels.panelConfirmation }}
+              </button>
             <button
               type="button"
               class="session-delete"
@@ -487,6 +519,15 @@ onBeforeUnmount(() => {
   margin-left: auto;
   color: var(--el-text-color-tertiary);
 }
+.session-origin + .session-automatic { margin-left: 0; }
+.session-automatic {
+  margin-left: auto;
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning-dark-2);
+  font-weight: var(--font-medium);
+}
+/* The menu's switch keeps its place for the check mark, ticked or not. */
+.session-menu .off { visibility: hidden; }
 .running {
   width: 6px;
   height: 6px;

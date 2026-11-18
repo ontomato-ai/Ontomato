@@ -11,6 +11,7 @@ import type {
   OpenArtifact,
   ShellFeedbackPort,
   ShellLabels,
+  ShellPanelOperationsPort,
   ShellRunChange,
   ShellWorkbenchDeclaration,
   ToolRendererOverride,
@@ -55,6 +56,8 @@ const props = withDefaults(
     client: AgentHostClient;
     labels: ShellLabels;
     feedback?: ShellFeedbackPort;
+    /** Whether agents ask before they run a panel operation, for a host whose conversations can run them. */
+    panelOperations?: ShellPanelOperationsPort;
     artifactRenderers?: readonly ArtifactRendererOverride[];
     toolRenderers?: readonly ToolRendererOverride[];
     /**
@@ -155,6 +158,32 @@ provide(shellContextKey, {
   },
   questions: conversationQuestions(conversation),
 });
+
+/**
+ * The open conversation's choice whether agents ask before a panel operation, once the host told it; null for a new
+ * conversation, while it is being read, and for a reader who does not own the conversation. Its column shows it on the
+ * conversation's row and changes it from the row's menu.
+ */
+const panelConfirmation = ref<{ sessionId: string; confirmBeforeExecute: boolean } | null>(null);
+watch(sessionId, async (id) => {
+  panelConfirmation.value = null;
+  const port = props.panelOperations;
+  if (!port || id === null) return;
+  try {
+    const confirmBeforeExecute = await port.read(id);
+    if (sessionId.value === id && confirmBeforeExecute !== null) panelConfirmation.value = { sessionId: id, confirmBeforeExecute };
+  } catch (error) {
+    if (sessionId.value === id) report(error);
+  }
+}, { immediate: true });
+async function setPanelConfirmation(id: string, confirm: boolean) {
+  try {
+    const confirmBeforeExecute = await props.panelOperations!.write(id, confirm);
+    if (sessionId.value === id) panelConfirmation.value = { sessionId: id, confirmBeforeExecute };
+  } catch (error) {
+    report(error);
+  }
+}
 
 /** The replies that delegated work, in order; a reply's own entry opens the task list at it. */
 const taskRounds = computed(() => [...new Set(conversation.tasks.value?.tasks.map((task) => task.root.runId) ?? [])]);
@@ -366,6 +395,7 @@ onMounted(() => {
           :feature-id="featureId"
           :bottom="bottom"
           :conversations="conversations"
+          :panel-confirmation="panelConfirmation"
           :labels="labels"
           @new-conversation="nav.startNew()"
           @select-feature="featureId = $event"
@@ -374,6 +404,7 @@ onMounted(() => {
           @select-session="nav.selectSession($event)"
           @delete-session="(id) => nav.removeSession(id).catch(report)"
           @rename-session="(id, title) => nav.renameSession(id, title).catch(report)"
+          @set-panel-confirmation="setPanelConfirmation"
           @open-bottom="emit('openBottom')"
           @load-more="void nav.loadSessions(true)"
           @retry="void nav.loadSessions()"

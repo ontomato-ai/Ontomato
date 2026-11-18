@@ -74,6 +74,9 @@ export function useAgentConversation(port: () => AgentHostClient, agent: () => s
         if (selection === token) {
           tasks.value = { sessionId: frame.sessionId, tasks: frame.tasks, qualityResults: frame.qualityResults, preparationFailures: frame.preparationFailures };
           if (frame.notifications) applyNotifications(state, frame.notifications);
+          // The questions waiting for the reader belong to the conversation, not to a run: one may arrive after the reply
+          // that led to it has ended, so the session's own list replaces what the last run reported.
+          if (frame.pendingQuestions) state.pendingQuestions = frame.pendingQuestions;
         }
       },
       error() {
@@ -186,11 +189,14 @@ export function useAgentConversation(port: () => AgentHostClient, agent: () => s
    * admitted run so the session list can update, unless the host has moved to another client or agent meanwhile; a
    * created session whose run was refused comes back without a run, so the host still takes it. Null when sending
    * failed without creating a session.
+   *
+   * An answer to a question addressed to the reader comes back as a receipt (`delivery: "receipt"`, no snapshot): the
+   * conversation recorded it and started nothing, so no run is attached; the agent that asked is woken on its own side.
    */
   async function send(
     agentId: string,
     text: string,
-    replyTo?: string,
+    reply?: { replyTo: string; selectedOption?: number },
   ): Promise<
     | ({ createdSession: AgentHostSession | null } & AgentHostSendResult)
     | { createdSession: AgentHostSession; snapshot: null; delivery: null }
@@ -211,7 +217,7 @@ export function useAgentConversation(port: () => AgentHostClient, agent: () => s
       createdSession = state.sessionId ? null : await client.createSession(agentId);
       if (current !== token) return null;
       if (createdSession) state.sessionId = createdSession.id;
-      const result = await client.send(state.sessionId!, {message:text,replyTo});
+      const result = await client.send(state.sessionId!, { message: text, ...reply });
       if (current !== token) return moved() ? null : { createdSession, ...result };
       applyNotifications(state,[result.input]);
       state.pendingQuestions=result.pendingQuestions;
@@ -233,9 +239,9 @@ export function useAgentConversation(port: () => AgentHostClient, agent: () => s
     }
   }
 
-  async function answerQuestion(requestId: string, answer: string) {
-    const id=agent();
-    return id ? send(id,answer,requestId) : null;
+  async function answerQuestion(requestId: string, answer: string, selectedOption?: number) {
+    const id = agent();
+    return id ? send(id, answer, { replyTo: requestId, selectedOption }) : null;
   }
 
   function attach(snapshot: AgentHostRunSnapshot) {
