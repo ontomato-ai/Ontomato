@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { PanelHost } from "@ontomato/platform-shell";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
+import type { PageContext } from "@ontomato/contracts/page-context";
 import { panelUsesOf, platformPanelHost } from "../panel-host";
 
 /**
@@ -28,6 +29,15 @@ const props = defineProps<{
    * conversation's own address holds it, and this writes a selection there. Shown full, the router's address is the page.
    */
   navigate?: (address: string) => void;
+  /**
+   * The page's address beside the conversation, as the conversation carries it, with the state the page opens at. Shown
+   * full, the router's address is the page's.
+   */
+  address?: string;
+}>();
+const emit = defineEmits<{
+  /** What the reader looks at in the panel, as its instance reports it: what a message written beside it carries. */
+  context: [context: PageContext];
 }>();
 
 const route = useRoute();
@@ -77,7 +87,7 @@ function writeAddress(next: string) {
  * The state the page was opened at. It is read once, when this instance starts, and kept: a selection the reader makes
  * afterwards is written into the address, and that write must not become the next instance's opening state.
  */
-const initial = ref(panelAddressState(route.fullPath));
+const initial = ref(panelAddressState(props.address ?? route.fullPath));
 </script>
 
 <template>
@@ -91,5 +101,6 @@ const initial = ref(panelAddressState(route.fullPath));
     :address="address"
     :initial="initial"
     @address="writeAddress"
+    @context="emit('context', $event)"
   />
 </template>

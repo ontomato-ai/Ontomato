@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, shallowRef, watch } from "vue";
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
@@ -25,7 +25,9 @@ import {
   AGENT_SETTINGS_PAGE_ID,
   DASHBOARDS_PAGE_ID,
   GOVERNANCE_REPORT_PAGE_ID,
+  PANEL_APPLICATION_PAGE_ID,
   governanceReportPageFeature,
+  panelApplicationPageFeature,
   workbenchFeatures,
 } from "../features";
 import FollowUpRenderer from "./FollowUpRenderer.vue";
@@ -93,6 +95,18 @@ const pageAddress = computed(() => (typeof route.query.page === "string" ? route
 const pilotPage = computed(() => (pageAddress.value ? pilot(pageAddress.value) : null));
 const inDashboards = computed(() => pilotPage.value?.id === DASHBOARDS_PAGE_ID);
 const inGovernanceReport = computed(() => pilotPage.value?.id === GOVERNANCE_REPORT_PAGE_ID);
+const inPanelApplication = computed(() => pilotPage.value?.id === PANEL_APPLICATION_PAGE_ID);
+/**
+ * The page's instance beside the conversation: its address, unless the page names less than that (a panel, whose own
+ * selection is written into its address and does not make it another panel).
+ */
+const pageInstance = computed(() => pilotPage.value?.instance ?? pageAddress.value);
+/**
+ * What a page that reports it itself says the reader looks at — a panel, whose instance knows its selection. It belongs
+ * to that instance: another page, or the same page opened anew, starts without one until it reports.
+ */
+const reportedContext = shallowRef<PageContext | null>(null);
+watch(pageInstance, () => (reportedContext.value = null));
 /**
  * The page the shell shows: the settings are the `agents` page, whose addresses are the settings' own screens, the
  * dashboards the `dashboards` page its own address opens, and every other page names its route. Closing the page (a new
@@ -169,6 +183,7 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
     inGovernanceReport.value
       ? governanceReportPageFeature(t("assistant.featureGovernanceReport"), pageAddress.value!)
       : null,
+    inPanelApplication.value ? panelApplicationPageFeature(reportedContext.value?.label ?? "", pageAddress.value!) : null,
   ),
 }));
 
@@ -189,6 +204,9 @@ const pageContext = computed<PageContext | null>(() => {
       selection: issue ? [{ kind: "issue", id: issue, label: `${t("assistant.governanceFinding")} ${issue}` }] : [],
     };
   }
+  // A panel says what the reader looks at itself: the use relation's page key, its address with the selection, and the
+  // selected objects.
+  if (inPanelApplication.value) return reportedContext.value;
   if (inDashboards.value) {
     // The selection is the page's address: the board, and the card the address names with its own name and id.
     const address = Object.fromEntries(new URLSearchParams(pageAddress.value!.split("?")[1] ?? ""));
@@ -376,7 +394,13 @@ function appearanceSaved(value: WorkbenchAppearance) {
     @open-page="openPageAtItsAddress"
   >
     <template #feature="{ featureId: page }">
-      <component :is="pilotPage!.component" v-if="pilotPage" :key="pageAddress!" v-bind="pilotPage.props" />
+      <component
+        :is="pilotPage!.component"
+        v-if="pilotPage"
+        :key="pageInstance!"
+        v-bind="pilotPage.props"
+        @context="reportedContext = $event"
+      />
       <slot v-else name="feature" :feature-id="page" />
     </template>
     <template #dataset-selection-actions="{ artifact, title, selectedRowIndices }">
