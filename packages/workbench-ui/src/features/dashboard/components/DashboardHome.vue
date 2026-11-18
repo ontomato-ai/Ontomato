@@ -9,9 +9,9 @@ import { pageDraftLink, readPageDraft, withoutPageDraftQuery, type PageDraftLink
 import { createAssistantClient } from "../../workbench/assistant-host";
 import { useDashboardStore } from "../stores/dashboard";
 import DashboardPanel from "./DashboardPanel.vue";
-import { acceptDraft, boardIdentity, DASHBOARD_PAGE_KEY, DraftRejected, type AcceptedDraft } from "../draft";
+import { acceptDraft, boardIdentity, changesNothing, DASHBOARD_PAGE_KEY, DraftRejected, type AcceptedDraft } from "../draft";
 import { dashboardOperationSchema, type DashboardAuthoringForm, type DashboardOperation } from "@ontomato/contracts/dashboard";
-import { fetchDashboardLocalDetail } from "../api";
+import { fetchCardParameterForm, fetchDashboardLocalDetail } from "../api";
 import { cardError, type CardError } from "./utils/metricCard";
 
 /**
@@ -57,32 +57,35 @@ const chosenCardId = computed(() => {
 });
 
 /**
- * Writes the chosen card into the address this page is shown at: its own query at its own address, the conversation's
- * page parameter beside one, which is the address the platform's composer sends. The card travels with its name and the
- * board with its own, because the message names a selection by its name and the page's skill finds it by its id.
+ * Replaces the address this page is shown at: its own query at its own address, the conversation's page parameter
+ * beside one, which is the address the platform's composer sends; that parameter keeps its path, and the conversation
+ * keeps its own parameters.
+ */
+function replaceAddress(query: Record<string, string>) {
+  const paired = typeof route.query.page === "string" ? route.query.page : "";
+  if (!paired) {
+    void router.replace({ query });
+    return;
+  }
+  const search = new URLSearchParams(query);
+  void router.replace({ query: { ...route.query, page: `${paired.split("?")[0]}${search.size ? `?${search}` : ""}` } });
+}
+
+/**
+ * Writes the chosen card into the address this page is shown at. The card travels with its name and the board with its
+ * own, because the message names a selection by its name and the page's skill finds it by its id.
  */
 function writeCard(card: { id: string; name: string } | null) {
   const board = dashboardItems.value.find((item) => item.id === currentDashboardId.value);
   // A board is the page itself, so its name always travels; a card adds its own, and its absence clears the last one.
   const written: Record<string, string> = { dashboardName: board?.name || "", cardId: card?.id ?? "", cardName: card?.name ?? "" };
-  const paired = typeof route.query.page === "string" ? route.query.page : "";
-  if (paired) {
-    const [path, search = ""] = paired.split("?");
-    const target = new URLSearchParams(search);
-    for (const [key, value] of Object.entries(written)) {
-      if (value) target.set(key, value);
-      else target.delete(key);
-    }
-    void router.replace({ query: { ...route.query, page: `${path}${target.size ? `?${target}` : ""}` } });
-    return;
-  }
   const query: Record<string, string> = {};
-  for (const [key, value] of Object.entries(route.query)) if (typeof value === "string" && value) query[key] = value;
+  for (const [key, value] of Object.entries(pageAddress())) if (typeof value === "string" && value) query[key] = value;
   for (const [key, value] of Object.entries(written)) {
     if (value) query[key] = value;
     else delete query[key];
   }
-  void router.replace({ query });
+  replaceAddress(query);
 }
 
 /**
@@ -108,6 +111,9 @@ watch(
  * Reads the draft the link names through the platform's own reader, which checks the page it was written for and one of
  * this page's save actions, then hands it to the board only once the board it names is this reader's: every object a
  * draft addresses has to be that board's own.
+ *
+ * A draft that would save only what is already saved — one the reader saved and opens again — is not handed over: the
+ * board opens as itself and its address stops naming the draft.
  */
 async function readDraft(pageLink: PageDraftLink) {
   const received = await readPageDraft<DashboardAuthoringForm<DashboardOperation>, DashboardOperation>(shell, pageLink, {
@@ -118,8 +124,16 @@ async function readDraft(pageLink: PageDraftLink) {
   const id = String(form.dashboardId ?? form.id ?? "");
   const detail = await fetchDashboardLocalDetail(id);
   if (!detail) throw new DraftRejected(t("dashboard.draft.unavailable"));
-  draft.value = acceptDraft({ ...received, pageKey: DASHBOARD_PAGE_KEY, form: received.form }, boardIdentity(detail));
+  const accepted = acceptDraft({ ...received, pageKey: DASHBOARD_PAGE_KEY, form: received.form }, boardIdentity(detail));
+  // A card's parameters are not part of the board: their draft is compared with that card's own form.
+  const parameters = accepted.operation === "dashboard.card.parameters"
+    ? await fetchCardParameterForm(detail.id, (accepted.form as { cardId: string }).cardId)
+    : null;
+  const unchanged = changesNothing(detail, accepted, parameters);
+  if (!unchanged) draft.value = accepted;
   await store.selectDashboard(detail.id);
+  // Opening the board writes the address first, so the draft is taken out of the address that write leaves.
+  if (unchanged) discardDraft();
 }
 
 /* ======================== the boards list ======================== */
@@ -173,12 +187,14 @@ watch(tabsRef, (element, previous) => {
 });
 onBeforeUnmount(() => resize.disconnect());
 
-/** Dropping the draft only empties this page: the saved board stays as it was, and the address stops naming the draft. */
+/**
+ * Dropping the draft only empties this page: the saved board stays as it was, and the address it is shown at — its own,
+ * or the conversation's page parameter — stops naming the draft and keeps everything else it names.
+ */
 function discardDraft() {
   draft.value = null;
   draftFailure.value = null;
-  if (typeof route.query.page === "string") return;
-  void router.replace({ query: withoutPageDraftQuery(route.query) as Record<string, string> });
+  replaceAddress(withoutPageDraftQuery(pageAddress()) as Record<string, string>);
 }
 
 const failureText = computed(() => draftFailure.value?.message ?? "");

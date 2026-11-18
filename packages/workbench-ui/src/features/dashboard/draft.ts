@@ -1,4 +1,4 @@
-import type { PageDraft } from "@ontomato/contracts/page-draft";
+import { changedFields, type PageDraft } from "@ontomato/contracts/page-draft";
 import {
   dashboardAuthoring,
   dashboardOperationSchema,
@@ -6,6 +6,8 @@ import {
   type DashboardDetail,
   type DashboardLayout,
   type DashboardOperation,
+  type DashboardParameterForm,
+  type DashboardReplaceLayout,
 } from "@ontomato/contracts/dashboard";
 
 /*
@@ -124,6 +126,59 @@ export function acceptDraft(draft: PageDraft<Record<string, unknown>>, board: Bo
   return { operation, id, form, address };
 }
 
+/** A draft's parameter values as the card's form writes them, in text; its read-only keys stay out, the metric owns those. */
+export function parameterText(readOnly: readonly string[], values: Record<string, unknown> | undefined): Record<string, string> {
+  const text: Record<string, string> = {};
+  for (const [key, value] of Object.entries(values ?? {})) {
+    if (readOnly.includes(key)) continue;
+    text[key] = typeof value === "object" ? JSON.stringify(value) : String(value ?? "");
+  }
+  return text;
+}
+
+/**
+ * Whether saving a draft would write only what is already saved, which leaves the reader nothing to see or save: a
+ * draft saved before and opened again is one. A rename gives the name the object already has; a layout keeps every
+ * group and card in its place and writes each field as the board holds it, a chart file being the same file when it
+ * reads the same. A card's parameters are not part of the board, so their draft is compared with that card's form.
+ */
+export function changesNothing(detail: DashboardDetail, draft: AcceptedDraft, parameters: DashboardParameterForm | null): boolean {
+  const board = boardIdentity(detail);
+  const form = draft.form as {
+    name?: string; groupId?: string; dimensionName?: string; chartId?: string; resultSetName?: string; metricId?: string; metricName?: string;
+    values?: Record<string, unknown>; groups?: DashboardReplaceLayout["groups"];
+  };
+  switch (draft.operation) {
+    case "dashboard.rename":
+      return form.name === detail.name;
+    case "dashboard.group.rename":
+      return board.groups.get(form.groupId!) === form.dimensionName;
+    case "dashboard.chart.rename":
+      return board.charts.get(form.chartId!) === form.resultSetName;
+    case "dashboard.metric.rename":
+      return board.metrics.get(form.metricId!) === form.metricName;
+    case "dashboard.card.parameters":
+      return changedFields(parameters!.values, parameterText(parameters!.readOnly, form.values)).size === 0;
+    case "dashboard.layout":
+      return form.groups!.length === detail.groups.length && form.groups!.every((entry, index) => {
+        const group = detail.groups[index]!;
+        return entry.id === group.id && entry.title === group.title && keepsCards(entry.charts, group.charts) && keepsCards(entry.metrics, group.metrics);
+      });
+  }
+}
+
+/** Every card a layout lists is the board's card in that place, holding each field the layout writes. */
+function keepsCards(entries: readonly object[], cards: readonly object[]): boolean {
+  return entries.length === cards.length && entries.every((entry, index) => {
+    const card = cards[index] as Record<string, unknown>;
+    return Object.entries(entry).every(([key, value]) =>
+      key === "chartFile"
+        ? sameJson((value as { content: unknown }).content, (card.chartFile as { content: unknown }).content)
+        : sameJson(value, card[key]),
+    );
+  });
+}
+
 /**
  * The draft's effect on one card: the name it gives, the chart file it draws, the layout it moves the card to. A
  * field the draft leaves out is unchanged.
@@ -171,7 +226,11 @@ export function applyDraft(detail: DashboardDetail, draft: AcceptedDraft): Draft
     case "dashboard.layout": {
       // A layout names every group and card of the board it saves; only the cards it changes carry a change.
       const layout = form.groups!;
-      for (const group of detail.groups) groupsRenamed.set(group.id, layout.find((entry) => entry.id === group.id)?.title ?? group.title);
+      // A layout names every group it keeps; only one it gives another title is renamed.
+      for (const entry of layout) {
+        const saved = detail.groups.find((group) => group.id === entry.id)!;
+        if (entry.title !== saved.title) groupsRenamed.set(entry.id, entry.title);
+      }
       for (const card of detail.groups.flatMap((group) => group.charts)) {
         const saved = layout.flatMap((group) => group.charts).find((entry) => entry.id === card.id);
         if (!saved) continue;

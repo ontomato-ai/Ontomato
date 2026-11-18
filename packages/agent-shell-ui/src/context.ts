@@ -20,7 +20,7 @@ export interface ShellContext {
   openTasks?: (runId: string) => void;
   artifactRenderers: Ref<readonly ArtifactRendererOverride[]>;
   toolRenderers: Ref<readonly ToolRendererOverride[]>;
-  /** Host slots for business actions: `artifact-actions` ({artifact, title}), `dataset-selection-actions` ({artifact, title, selectedRowIndices}) and `message-actions`. */
+  /** Host slots for business actions: `artifact-actions` ({artifact, title, caption?}), `dataset-selection-actions` ({artifact, title, selectedRowIndices}) and `message-actions`. */
   slots: { artifactActions?: Slot; messageActions?: Slot; datasetSelectionActions?: Slot };
   resolveArtifact(runId: string, path: string): Promise<RuntimeArtifact | null>;
   /** Changes whenever a run registers new artifacts, so unresolved references retry. */

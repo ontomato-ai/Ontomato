@@ -74,6 +74,9 @@ export async function chartFile(input, skill = "echarts", regions) {
     throw new Error("Use the leaflet or admin-choropleth-map skill for map charts");
   if (!input.fields || typeof input.fields !== "object" || Array.isArray(input.fields))
     throw new Error("fields must map chart roles to column names");
+  const { title } = input;
+  if (title !== undefined && (typeof title !== "string" || !title.trim()))
+    throw new Error("title must be non-empty text");
   if (input.graphInput !== undefined && !GRAPH_INPUTS.includes(input.graphInput))
     throw new Error('graphInput must be "object" or "edges"');
   if (input.featureNameProperty !== undefined
@@ -95,6 +98,7 @@ export async function chartFile(input, skill = "echarts", regions) {
   if (!converted.ok) throw new Error(describeConversion(converted));
 
   const file = converted.file;
+  if (title !== undefined) file.title = { text: title };
   const dimensions = file.dataset[0].dimensions;
   file.dataset[0].source = rows.map((row) => Object.fromEntries(dimensions.map((column) => [column, row[column]])));
   // A chart that read a dataset without an explicit MetricView records that file; an explicit source wins.

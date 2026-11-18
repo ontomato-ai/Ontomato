@@ -12,6 +12,14 @@ test("chart import identity cannot override domain or owner and targets are excl
   assert.equal(dashboardAddChartFileSchema.safeParse({source,target:{dashboardId:"board",groupId:"group"}}).success,true);
   assert.equal(dashboardAddChartFileSchema.safeParse({source,target:{name:"Board",dashboardId:"board",groupId:"group"}}).success,false);
 });
+test("chart import accepts an optional nonblank caption",()=>{
+  const input={source,target:{name:"Board"}};
+  assert.equal(dashboardAddChartFileSchema.safeParse(input).success,true);
+  assert.equal(dashboardAddChartFileSchema.safeParse({...input,title:"Staff by department"}).success,true);
+  for(const title of ["","  ",12]){
+    assert.equal(dashboardAddChartFileSchema.safeParse({...input,title}).success,false);
+  }
+});
 test("stored cards and imported files reject snapshots or embedded references",()=>{
   const query={kind:"metric",metricId:"metric",parameters:{}};
   assert.equal(metricReferenceChartSchema.safeParse({id:"card",name:"Chart",query,chartFile:file}).success,true);

@@ -74,6 +74,22 @@ test("a chart may reference the accepted dataset it read instead of a MetricView
   assert.equal(file.ontomato.metric, undefined);
 });
 
+test("a titled ranked preview puts its title in the ECharts option", async (t) => {
+  const directory = await workspace(t);
+  const title = "Staff by department";
+  await cli(directory, "echarts", {
+    chartType: "bar", name: "staff-preview", title,
+    data: [{ department: "Computing", headcount: 50 }, { department: "Languages", headcount: 32 }],
+    fields: { xAxis: "department", yAxis: "headcount" },
+    display: { sort: [{ field: "headcount", order: "desc" }], displayLimit: 1 },
+  });
+  const file = await chart(directory, "staff-preview");
+  assert.equal(file.title?.text, title);
+  assert.equal(Object.hasOwn(file.ontomato, "metadata"), false);
+  assert.equal(file.ontomato.display.displayLimit, 1);
+  assert.equal(file.dataset[0].source.length, 2);
+});
+
 test("a read dataset is recorded as the source when no source is given", async (t) => {
   const directory = await workspace(t);
   await writeFile(path.join(directory, "staff.dataset.json"), JSON.stringify({

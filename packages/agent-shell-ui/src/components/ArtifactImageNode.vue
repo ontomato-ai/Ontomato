@@ -15,7 +15,8 @@ const props = defineProps<{
 const shell = inject(shellContextKey)!;
 const message = inject(messageContextKey)!;
 const path = computed(() => (props.node.loading ? null : artifactPath(props.node.src)));
-const title = computed(() => props.node.alt || (path.value ? fileName(path.value) : ""));
+const caption = computed(() => props.node.alt.trim() || undefined);
+const title = computed(() => caption.value ?? (path.value ? fileName(path.value) : ""));
 
 const artifact = ref<RuntimeArtifact | null>(null);
 const resolvedPath = ref<string | null>(null);
@@ -29,7 +30,7 @@ watch([path, shell.artifactRevision], resolve, { immediate: true });
 
 function expand() {
   if (path.value && artifact.value)
-    shell.openArtifact({ key: `${message.value.runId}:${path.value}`, artifact: artifact.value, title: title.value });
+    shell.openArtifact({ key: `${message.value.runId}:${path.value}`, artifact: artifact.value, title: title.value, caption: caption.value });
 }
 </script>
 
@@ -38,7 +39,7 @@ function expand() {
   <figure v-else-if="path" class="inline-artifact">
     <figcaption class="inline-caption">
       <span class="inline-title">{{ title }}</span>
-      <SlotOutlet v-if="artifact" :content="shell.slots.artifactActions" :scope="{ artifact, title }" />
+      <SlotOutlet v-if="artifact" :content="shell.slots.artifactActions" :scope="{ artifact, title, caption }" />
       <button
         type="button"
         class="inline-expand"
@@ -54,6 +55,7 @@ function expand() {
       :run-id="message.runId"
       :path="path"
       :title="title"
+      :caption="caption"
       presentation="inline"
     />
   </figure>
