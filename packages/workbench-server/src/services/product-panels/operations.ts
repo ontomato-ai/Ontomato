@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { pageDraftSchema } from "@ontomato/contracts/page-draft";
-import { agentActorRefSchema, type AgentSessionRef } from "@ontomato/contracts/agent-channel";
+import type { AgentSessionRef } from "@ontomato/contracts/agent-channel";
 import { agentQuestionAnswerReceiptSchema, agentUserQuestionReceiptSchema } from "@ontomato/contracts/agent-user-questions";
 import { applicationPanelUsesResponseSchema } from "@ontomato/contracts/product-panels";
 import type { CreatePanelOperationIntentRequest, PanelOperationIntent, PanelOperateResponse, PanelUseRef, PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
@@ -17,7 +17,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { credentialsForRun, runForOwner } from "../assistant/execution";
 import { readPageSkills } from "../assistant/skills";
 import type { AssistantOwner } from "../assistant/store";
-import { restoreAgentCaller } from "../agent-host/caller";
+import { restoreAgentCaller, readAgentSessionActor } from "../agent-host/caller";
 import { readCurrentPanel, readCurrentProjection } from "./current";
 import { readComponentCatalogue } from "./skill-package";
 import { panelServerOperation, type PanelServerOperation, type PanelOperationTarget, type PanelOperationHost } from "./server-operations";
@@ -158,7 +158,6 @@ export async function dispatchPanel(owner: AssistantOwner, credentials: Assistan
 }
 /** Exact human owner, independent of readable/admin access and of any old run's liveness. */
 export async function ownPanelSettings(owner: AssistantOwner, root: AgentSessionRef) {
-  const actor = z.object({actor:agentActorRefSchema}).parse(await new RuntimeClient(owner.domainId,undefined,owner.userId)
-    .request(`/v1/channel/providers/${encodeURIComponent(root.providerId)}/sessions/${root.sessionId}/actor`)).actor;
+  const actor = await readAgentSessionActor(root, owner.domainId);
   if (!isDeepStrictEqual((await restoreAgentCaller(actor,owner.domainId,true)).owner,owner)) throw new HttpError(403,"Only the session owner may change confirmation","FORBIDDEN");
 }
