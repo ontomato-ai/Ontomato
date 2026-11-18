@@ -68,7 +68,7 @@ describe("a panel's form when the owner refuses a save", () => {
       return nothingAt(request);
     });
     const frame = panelFrame();
-    platformPanelHost("app-panels-trial-a").frame(frame, use);
+    platformPanelHost("app-panels-trial-a").frame(frame, use, panel);
     writePanelDocument(panel, use, "/applications/app-panels-trial-a/tasks", {
       selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id },
     });

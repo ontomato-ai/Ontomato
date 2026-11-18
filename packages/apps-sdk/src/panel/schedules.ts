@@ -5,6 +5,7 @@ import { randomId } from "@ontomato/contracts/random-id";
 import { contextTransport, type AppContext } from "../context";
 import { registerHandler } from "./handlers";
 import { PlatformObjectRefusal, registerPlatformObject, type PlatformObjectRecord } from "./platform-objects";
+import { DATA_QUERY_GATEWAY, RUN_NOW, SCHEDULED_TASK } from "./client-requests";
 
 /*
  * The scheduled tasks as a platform object a projection may bind (overall design 3.2, 10.1): reading one, listing the
@@ -18,19 +19,16 @@ import { PlatformObjectRefusal, registerPlatformObject, type PlatformObjectRecor
  *
  * The one operation this step's panels use — running a task now — is registered here too, as the handler a projection
  * bound to `schedules.runNow` reaches.
+ *
+ * The requests these send are declared in `client-requests.ts`, by binding: a request this client starts sending must be
+ * declared there, or the platform refuses it from a panel's frame.
  */
-
-/**
- * The gateway prefix the scheduled tasks' contract spells its paths with (`platformSchedulesPath`). A frame's request
- * names the service and the path inside it, as the platform's app host takes them, so the prefix becomes the service.
- */
-const DATA_QUERY = "/api/data-query";
 
 /** The scheduled tasks' request path inside a panel frame: the SDK's own client, over this frame's credential. */
 export function schedulesHost(context: AppContext): PlatformSchedulesHost {
   const transport = contextTransport(context);
   return {
-    request: (path, init) => transport.request(path.slice(DATA_QUERY.length), init, "/data-query"),
+    request: (path, init) => transport.request(path.slice(DATA_QUERY_GATEWAY.length), init, "/data-query"),
     // A panel shows tasks; the platform that mounts it owns the applications it names and where a result opens.
     applications: () => [],
     openResult: () => {},
@@ -86,7 +84,7 @@ export function registerSchedulesPlatformObject(context: AppContext): void {
   }
 
   registerPlatformObject({
-    objectType: "platform:ScheduledTask",
+    objectType: SCHEDULED_TASK,
     async list() {
       return (await api.list(null)).tasks.map(record);
     },
@@ -124,7 +122,7 @@ export function registerSchedulesPlatformObject(context: AppContext): void {
   });
 
   registerHandler({
-    handlerRef: "schedules.runNow",
+    handlerRef: RUN_NOW,
     async invoke({ target }) {
       if (target?.kind !== "object") throw new Error("Run now acts on the selected task");
       // The service replays a repeated key with the run it created; this one is new per call.

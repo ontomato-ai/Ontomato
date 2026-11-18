@@ -8,9 +8,11 @@ import { definePanel, type PanelManifest } from "@ontomato/contracts/panel-manif
 import type { PanelHostMessage } from "@ontomato/contracts/panel-host";
 import {
   platformScheduleFormSchema,
+  platformTaskRunSchema,
   platformTaskSchema,
   type PlatformScheduleForm,
   type PlatformTask,
+  type PlatformTaskRun,
 } from "@ontomato/contracts/platform-schedules";
 import type { ApplicationPanelUse, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PlatformPreferences } from "@ontomato/platform-admin";
@@ -30,8 +32,8 @@ export const SCHEDULED_TASK = "platform:ScheduledTask";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const examples = JSON.parse(
   readFileSync(join(HERE, "..", "..", "..", "..", "..", "packages", "contracts", "examples", "platform-schedules.json"), "utf8"),
-) as Record<"creates" | "forms", { name: string; response: Record<string, unknown> }[]>;
-const example = (list: "creates" | "forms", name: string) => examples[list].find((entry) => entry.name === name)!.response;
+) as Record<"creates" | "forms" | "runs", { name: string; response: Record<string, unknown> }[]>;
+const example = (list: "creates" | "forms" | "runs", name: string) => examples[list].find((entry) => entry.name === name)!.response;
 
 /** The reader's scheduled task: the contract's own operations-diagnosis example, as the trial's test task is. */
 export const task: PlatformTask = platformTaskSchema.parse(example("creates", "operations-autotest"));
@@ -41,6 +43,12 @@ export const taskForm: PlatformScheduleForm = platformScheduleFormSchema.parse({
   ...example("forms", "operations-switch-back-to-autotest"),
   values: task.content,
   submittable: true,
+});
+
+/** A manual run the service started for the task, as it answers "run now". */
+export const run: PlatformTaskRun = platformTaskRunSchema.parse({
+  ...example("runs", "agents-running"),
+  taskId: task.id,
 });
 
 const current = {

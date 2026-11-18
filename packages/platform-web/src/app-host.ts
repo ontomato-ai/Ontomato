@@ -19,16 +19,34 @@ import {productReferences} from '@ontomato/contracts/product-assets';
 import {validatePageState,validateProductNavigation,productNavigationTargetSchema} from '@ontomato/contracts/product-page-state';
 import {invalidateProductData} from '@ontomato/contracts/product-invalidation';
 import {installAppBridge} from './app-bridge';
+import type {PanelManifest} from '@ontomato/contracts/panel-manifest';
+import {productProjectionResponseSchema} from '@ontomato/contracts/product-panels';
+import {pageDraftSchema} from '@ontomato/contracts/page-draft';
+import {bindingKey,clientSends} from '@ontomato/apps-sdk/client-requests';
 
 const executionBindings = new WeakMap<object, AppExecutionContext>();
 const publishedFrames=new WeakMap<object,string>();
 /**
- * The frames a panel application (`entry.renderer` is `panels`) shows its panels in, by that application's ID. Such an
- * application has no published record and no build of its own: its pages are use relations of shared panels. So its
- * frames are not published frames, and nothing narrows them by a publication; what they may ask for is the request
- * whitelist below, the same for every live frame.
+ * One panel instance's frame, in a panel application (`entry.renderer` is `panels`). Such an application has no published
+ * record and no build of its own: its pages are use relations of shared panels. Its frame is narrowed by what the panel
+ * declares, as a published application's frame is by its publication: the projections its declaration names, the
+ * requests the SDK clients their bindings reach send (`@ontomato/apps-sdk/client-requests`), and the drafts written for
+ * its use relation's page. Nothing else leaves it.
  */
-const panelFrames=new WeakMap<object,string>();
+interface PanelFrame {
+  applicationId: string;
+  /** The use relation's page key: a draft this frame reads must have been written for it. */
+  pageKey: string;
+  /**
+   * Every projection the panel's declaration names, with the binding of its current record once the frame has read it
+   * through this host. The record is Node's, read with the reader's credential, so the binding is the owner's, not the
+   * frame's word; a projection read again after its definition changed brings its new binding.
+   */
+  bindings: Map<string,string|null>;
+}
+const panelFrames=new WeakMap<object,PanelFrame>();
+const PROJECTION_READ=/^\/product-projections\/([^/?]+)$/;
+const DRAFT_READ=/^\/assistant\/sessions\/[^/?]+\/runs\/[^/?]+\/page-draft\?[^#]*$/;
 const executionListeners = new WeakMap<object, Set<(context: AppExecutionContext) => void>>();
 const frameInsets = new WeakMap<object, AppFrameInsets>();
 const insetListeners = new WeakMap<object, Set<(insets: AppFrameInsets) => void>>();
@@ -39,9 +57,8 @@ export function installProductEmbedding(app:App){
   const host=(window as Window & {[APP_HOST_GLOBAL]?:AppHost})[APP_HOST_GLOBAL];
   if(!host)return;
   // The bridge answers a frame as the application it was registered under: a published application's, or a panel
-  // application's. This is the one place a panel application's frame is told apart; everywhere else it is a live frame
-  // with no publication.
-  bridge?.dispose();bridge=installAppBridge(app,host,source=>publishedFrames.get(source)??panelFrames.get(source));
+  // application's.
+  bridge?.dispose();bridge=installAppBridge(app,host,source=>publishedFrames.get(source)??panelFrames.get(source)?.applicationId);
   host.mountProductAsset=(source,target,assetId)=>{
     const element=target as HTMLElement;
     if(executionContext(source).kind!=='live')throw new Error('Product embedding is unavailable in build-test previews; use product authoring commands');
@@ -105,14 +122,39 @@ export function registerLiveFrame(source: object,applicationId?:string) {
 }
 
 /**
- * The frame one panel instance runs in, as a live frame of the panel application whose page shows it. The panel host
- * draws it sandboxed with scripts only, so it speaks the message bridge, and registers it as soon as the frame exists,
- * before the panel's module can ask to connect.
+ * The frame one panel instance runs in, as a live frame of the panel application whose page shows it, narrowed by the
+ * panel's declaration. The panel host draws it sandboxed with scripts only, so it speaks the message bridge, and
+ * registers it as soon as the frame exists, before the panel's module can ask to connect.
  */
-export function registerPanelFrame(source: object,applicationId: string) {
-  panelFrames.set(source,applicationId);
+export function registerPanelFrame(source: object,applicationId: string,panel:{pageKey:string;manifest:PanelManifest}) {
+  panelFrames.set(source,{applicationId,pageKey:panel.pageKey,bindings:new Map(Object.values(panel.manifest.slots).map(slot=>[slot.projectionId,null]))});
   const binding=registerFrame(source,{kind:"live"});
   return ()=>{bridge?.disposeFrame(source);panelFrames.delete(source);binding.dispose();};
+}
+/** Refuses, before anything is sent, a request of a panel's frame that its declaration does not cover. */
+function admitPanelRequest(panel:PanelFrame,method:string,path:string,service:string){
+  if(service===''&&method==='GET'){
+    const projection=PROJECTION_READ.exec(path);
+    if(projection&&panel.bindings.has(decodeURIComponent(projection[1]!)))return;
+    if(DRAFT_READ.test(path))return;
+  }
+  const bindings=[...panel.bindings.values()].filter((binding):binding is string=>binding!==null);
+  if(!clientSends(bindings,method,service,path))throw new Error("Outside what this panel's projections declare");
+}
+
+/**
+ * What a panel's frame learns from a read it made: a projection's current binding, which admits the requests of the
+ * client it reaches, and a draft, which is handed over only when it was written for this frame's page.
+ */
+async function relayToPanel(panel:PanelFrame,method:string,path:string,service:string,response:Response){
+  if(!response.ok||service!==''||method!=='GET')return response;
+  const projection=PROJECTION_READ.exec(path);
+  if(projection){
+    const record=productProjectionResponseSchema.parse(await response.clone().json()).projection;
+    panel.bindings.set(decodeURIComponent(projection[1]!),bindingKey(record.binding));
+  }else if(DRAFT_READ.test(path)&&pageDraftSchema.parse(await response.clone().json()).pageKey!==panel.pageKey)
+    throw new Error('This draft was written for another page');
+  return response;
 }
 function executionContext(source: object) {
   const context=executionBindings.get(source);
@@ -163,17 +205,16 @@ export function installAppHost(options: {
       if(!path.startsWith('/')||path.startsWith('//')||/[#\\]/.test(path)||!['','/data-query'].includes(service))throw new Error('Invalid SDK request target');
       const decoded=decodeURIComponent(path.split('?')[0]);
       if(decoded.includes('\\')||decoded.split('/').some(segment=>segment==='.'||segment==='..'))throw new Error('Invalid SDK request target');
-      // The scheduled tasks a panel reads and writes: the list, one task, its application's form and one manual run —
-      // the four the platform object client of this step uses, and nothing else of that service.
-      const scheduled=/^\/platform\/scheduled-tasks(?:\/[^/?]+(?:\/runs)?|\/applications\/[^/?]+\/form)?$/.test(path);
-      const allowed=service==='/data-query'?['/metricView/queryById','/metricView/execute','/action/form','/action/execute']:[];
-      if(service==='/data-query'&&!allowed.includes(path)&&!(scheduled&&execution.kind==='live'))throw new Error('Use a declared SDK capability');
-      // A panel's frame reads the current definition of each projection it draws, by ID, under the reader's own
-      // credential. Its own panel's record is read by the host outside the frame, so a frame never reads one.
-      const productRead=service===''&&(init.method??'GET').toUpperCase()==='GET'&&/^\/product-projections\/[^/?]+$/.test(path);
       const method=(init.method??'GET').toUpperCase();
-      const declared=['/product-assets','/assistant'].some(prefix=>path===prefix||path.startsWith(prefix+'/')||path.startsWith(prefix+'?'));
-      if(service===''&&!declared&&!productRead)throw new Error('Use a declared SDK product operation');
+      // A panel's frame asks only for what its own declaration covers; every other frame for the SDK's capabilities.
+      const panel=panelFrames.get(source);
+      if(panel)admitPanelRequest(panel,method,path,service);
+      else{
+        const allowed=service==='/data-query'?['/metricView/queryById','/metricView/execute','/action/form','/action/execute']:[];
+        if(service==='/data-query'&&!allowed.includes(path))throw new Error('Use a declared SDK capability');
+        const declared=['/product-assets','/assistant'].some(prefix=>path===prefix||path.startsWith(prefix+'/')||path.startsWith(prefix+'?'));
+        if(service===''&&!declared)throw new Error('Use a declared SDK product operation');
+      }
       if(!['GET','POST','PUT','DELETE'].includes(method))throw new Error('Unsupported SDK request method');
       if(execution.kind==='build-test'&&service!=='/data-query')throw new Error('Product operations are unavailable in build previews');
       const applicationId=publishedFrames.get(source);
@@ -213,7 +254,8 @@ export function installAppHost(options: {
       if(options.credential.type==='token')headers.set('tk',options.credential.token);
       if(options.credential.type==='apiKey')headers.set('x-api-key',options.credential.apiKey);
       if(execution.kind==='build-test')headers.set(BUILD_TEST_HEADER,JSON.stringify({kind:'build-test',contextId:execution.contextId}));
-      return fetch(`${readRuntimeConfig().apiBase}${service}${target}`,{...init,headers,credentials:'omit'});
+      const response=await fetch(`${readRuntimeConfig().apiBase}${service}${target}`,{...init,headers,credentials:'omit'});
+      return panel?relayToPanel(panel,method,path,service,response):response;
     },
     invalidateProductData(source,event){
       if(executionContext(source).kind!=='live'||!publishedFrames.has(source))throw new Error('Published application identity is required');

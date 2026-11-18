@@ -36,8 +36,11 @@ export interface PanelHostPort {
   panel(panelId: string): Promise<ProductPanel>;
   /** The SDK version's module base this panel runs with, e.g. `/apps-sdk/1.1.0`. */
   sdkBase(): Promise<string>;
-  /** Registers the frame the panel runs in: the platform's execution binding and identity for the page it shows. */
-  frame(frame: Window, use: ApplicationPanelUse): () => void;
+  /**
+   * Registers the frame the panel runs in: the platform's execution binding and identity for the page it shows, and what
+   * the frame may ask the platform for, which the panel's current record declares.
+   */
+  frame(frame: Window, use: ApplicationPanelUse, panel: ProductPanel): () => void;
   /**
    * Hears "definition changed" for the definitions this instance shows: the panel and every projection its declaration
    * names. Events carry identity only. The returned function stops the notices.
@@ -178,7 +181,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     document.value = panelFrameDocument(record, base, message);
     if (frame) {
       disposeFrame?.();
-      disposeFrame = port.frame(frame, relation);
+      disposeFrame = port.frame(frame, relation, record);
     }
   }
 
@@ -289,7 +292,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     frame(window) {
       frame = window;
       disposeFrame?.();
-      disposeFrame = window && use.value ? port.frame(window, use.value) : undefined;
+      disposeFrame = window && use.value && panel.value ? port.frame(window, use.value, panel.value) : undefined;
     },
   };
 }

@@ -59,7 +59,7 @@ describe("a panel frame and the platform's message bridge", () => {
     const sent = installPlatform(answer);
     const frame = panelFrame();
     // B's page shows Q: B's panel host registers the frame it draws, and writes Q opened at one task into it.
-    platformPanelHost("app-panels-trial-b").frame(frame, useOfQ);
+    platformPanelHost("app-panels-trial-b").frame(frame, useOfQ, panelQ);
     writePanelDocument(panelQ, useOfQ, "/applications/app-panels-trial-b/summary", {
       selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id },
     });
@@ -80,10 +80,16 @@ describe("a panel frame and the platform's message bridge", () => {
       { method: "GET", path: `/api/data-query/platform/scheduled-tasks/${task.id}`, credential: READER },
     ]);
 
-    // What a panel frame may ask for is the platform's decision: not a panel record, not a DSL query.
+    // What Q may ask for is what Q declares: P's run-now projection and the run it would start are not Q's, even though
+    // the reader may run the task in P.
     const transport = contextTransport(appContext);
-    await expect(transport.request(`/product-panels/${panelQ.id}`, {}, "")).rejects.toThrow();
-    await expect(transport.request("/dsl/executeV1", { method: "POST", body: "{}" }, "/data-query")).rejects.toThrow();
+    for (const [path, init, service] of [
+      ["/product-projections/projection-schedules-run", {}, ""],
+      [`/platform/scheduled-tasks/${task.id}/runs`, { method: "POST" }, "/data-query"],
+      [`/product-panels/${panelQ.id}`, {}, ""],
+      ["/dsl/executeV1", { method: "POST", body: "{}" }, "/data-query"],
+    ] as const)
+      await expect(transport.request(path, init, service)).rejects.toThrow("Outside what this panel's projections declare");
     expect(sent).toHaveLength(2);
   });
 
@@ -96,20 +102,20 @@ describe("a panel frame and the platform's message bridge", () => {
     expect(sent).toEqual([]);
 
     // The same frame, once A's panel host has drawn it.
-    platformPanelHost("app-panels-trial-a").frame(frame, useOfP);
+    platformPanelHost("app-panels-trial-a").frame(frame, useOfP, panelQ);
     expect(await connectWithin(5000)).toBe("connected");
   });
 
   it("stops answering for one application once the frame is another's", { timeout: 15000 }, async () => {
     const sent = installPlatform(answer);
     const frame = panelFrame();
-    platformPanelHost("app-panels-trial-b").frame(frame, useOfQ);
+    platformPanelHost("app-panels-trial-b").frame(frame, useOfQ, panelQ);
     inside(frame);
     const asB = contextTransport(await connectAppContext());
     expect(await (await asB.request(`/product-projections/${summary.id}`, {}, "")).json()).toEqual({ projection: summary });
 
     // The frame is now A's: the port B's page was given refuses, and nothing more goes out for it.
-    platformPanelHost("app-panels-trial-a").frame(frame, useOfP);
+    platformPanelHost("app-panels-trial-a").frame(frame, useOfP, panelQ);
     await expect(asB.request(`/product-projections/${summary.id}`, {}, "")).rejects.toThrow("no longer registered");
     expect(sent).toHaveLength(1);
 
