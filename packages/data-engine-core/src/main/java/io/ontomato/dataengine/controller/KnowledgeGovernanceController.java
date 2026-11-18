@@ -54,7 +54,8 @@ public class KnowledgeGovernanceController {
   }
   @PostMapping("/{id}/runs/{run}/actions/{action}")
   public Object action(@PathVariable String id,@PathVariable String run,@PathVariable String action,
-      @RequestBody JSONObject input,HttpServletRequest request) throws Exception {
+      @RequestBody JSONObject input,@RequestHeader(value="Accept-Language",defaultValue="en") String language,
+      HttpServletRequest request) throws Exception {
     AgentJson.id(id);AgentJson.id(run);
     if (!run.equals(request.getHeader("X-Ontomato-Run-Id")))
       throw AgentHttpException.invalid("Run identity mismatch");
@@ -67,6 +68,6 @@ public class KnowledgeGovernanceController {
       owner=new Owner(AgentJson.text(grant,"initiatorUserId"),grant.getString("domainId"));
       executor=new Owner(grant.getString("userId"),grant.getString("domainId"));
     }
-    return governance.action(id,run,action,input,owner,executor);
+    return governance.action(id,run,action,input,owner,executor,language);
   }
 }

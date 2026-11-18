@@ -24,8 +24,11 @@ the first ordinary command also begins external work if none exists. Keep the re
 External begin replaces the previous window, creates no runtime agent, and uses your own permissions.
 Run `close` when finished. Expired or closed writes fail with HTTP 409; begin a new round explicitly.
 
-Commands save governance work and source references. In platform runs, `import-knowledge` writes
-one `outputs/drafts/*.page-draft.json` file per item and prints its business-knowledge page link.
+Commands save governance work and source references. When the user asks to draft, add or change
+business knowledge, including a definition not yet recorded, use `import-knowledge`.
+In platform runs it writes one `outputs/drafts/*.page-draft.json` file per item and prints its
+business-knowledge page link; include that link in your reply. A recommendation in the report
+is not a knowledge draft.
 It reads existing knowledge to select create/update; creates use an empty knowledgeID and pending
 status, while updates keep the existing ID and status. Outside the platform it calls Java import
 with your credential. Report imported knowledge only after that interface confirms it.

@@ -506,5 +506,13 @@
   {
     "key": "AgentChannel.retrieval.cancelled",
     "value": "Data retrieval was cancelled: {0} datasets, {1} rows; files: {2}."
+  },
+  {
+    "key": "KnowledgeGovernance.source.currentMessage",
+    "value": "Current user message"
+  },
+  {
+    "key": "KnowledgeGovernance.source.externalMaterial",
+    "value": "External governance material"
   }
 ]
