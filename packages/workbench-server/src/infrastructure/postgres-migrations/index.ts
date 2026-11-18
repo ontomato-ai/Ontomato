@@ -7,6 +7,7 @@ import { ensurePlatformHomeSchema } from "./20261111-platform-home/schema";
 import { ensurePlatformEventCursorSchema } from "./20261103-platform-events/schema";
 import { ensureOpsDiagnosisSchema } from "./20261029-ops-diagnosis/schema";
 import { ensureAssistantSchema } from "./20261028-assistant/schema";
+import { ensureAssistantPageDraftCreationsSchema } from "./20261118-assistant-page-draft-creations/schema";
 import { ensureAssistantDefaultPromptSchema } from "./20261105-assistant-default-prompts/schema";
 import { ASSISTANT_CHART_SKILLS_NAME, ASSISTANT_CHART_SKILLS_VERSION, migrateAssistantChartSkills } from "./20261118-assistant-chart-skills/migration";
 import {
@@ -106,6 +107,7 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
   { directory: "20261103-platform-events", ensureSchema: ensurePlatformEventCursorSchema },
   { directory: "20261029-ops-diagnosis", ensureSchema: ensureOpsDiagnosisSchema },
   { directory: "20261028-assistant", ensureSchema: ensureAssistantSchema },
+  { directory: "20261118-assistant-page-draft-creations", ensureSchema: ensureAssistantPageDraftCreationsSchema },
   { directory: "20261117-agent-execution", ensureSchema: ensureAgentExecutionSchema },
   { directory: "20261109-workspaces", ensureSchema: ensureWorkspacesSchema },
   { directory: "20261111-platform-home", ensureSchema: ensurePlatformHomeSchema },
