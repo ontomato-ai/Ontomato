@@ -7,6 +7,7 @@
     ".": "./src/edition.ts"
   },
   "scripts": {
+    "test": "node --test '*.node-test.mjs' 'examples/**/*.node-test.mjs'",
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {

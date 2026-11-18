@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { connectAppContext, contextTransport } from "../../../../../packages/apps-sdk/src/context";
+import { contextTransport } from "../../../../../packages/apps-sdk/src/context";
+import { connectAppContext } from "../../../../../packages/apps-sdk/src/hosted-context";
 import { mountPanel } from "../../../../../packages/apps-sdk/src/panel/mount";
 import {
   READER,

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { ElCheckbox, ElInput, ElPopover } from "element-plus";
+import { ElCheckbox } from "element-plus/es/components/checkbox/index";
+import { ElInput } from "element-plus/es/components/input/index";
+import { ElPopover } from "element-plus/es/components/popover/index";
 import type { TableArrangeLabels } from "./table-data";
 
 /**

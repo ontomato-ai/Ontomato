@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef } from "vue";
+import { ElButton } from "element-plus/es/components/button/index";
 import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import { slotState, usePanelContext, useProjectionSlot } from "../panel/context";
 

@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { ElButton } from "element-plus/es/components/button/index";
+import { ElEmpty } from "element-plus/es/components/empty/index";
+import { ElForm } from "element-plus/es/components/form/index";
+import { ElSkeleton } from "element-plus/es/components/skeleton/index";
 import type { FormField } from "@ontomato/contracts/form-fields";
 import { FormFields as FormFieldsView } from "@ontomato/foundation-ui/form";
 import { slotState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, it, vi } from "vitest";
-import { h } from "vue";
+import { h, ref } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import type { PanelFrameMessage } from "@ontomato/contracts/panel-host";
 import { PANEL_HOST_CHANNEL, panelAddress } from "@ontomato/contracts/panel-host";
@@ -73,11 +73,11 @@ async function open(address: string, usePlatformRoutes = false, reply = answer) 
   return { app, element, frame, router, sent };
 }
 
-async function startFrame(frame: HTMLIFrameElement) {
+async function startFrame(frame: HTMLIFrameElement, setup: () => object = () => ({})) {
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   writeFrameDocument(hostMessageOf(frame.srcdoc));
   inside(frame.contentWindow!);
-  return mountPanel({ setup: () => ({}) });
+  return mountPanel({ setup });
 }
 
 afterEach(() => {
@@ -115,8 +115,11 @@ it("updates shared summary X from P's selection and opens the next application's
       option.click();
       await vi.waitFor(() => {
         expect(document.querySelector(".sdk-object-summary-title")?.textContent).toBe(task.title);
-        expect(document.querySelector(".sdk-owner-form [data-field]")).not.toBeNull();
+        expect(document.querySelector(".sdk-owner-form form [data-field]")).not.toBeNull();
+        expect(document.querySelector(".sdk-operation-button button")).not.toBeNull();
       });
+      // The header slot is drawn by ElCard, not by an unresolved custom tag.
+      expect(document.querySelector("#app aside")?.textContent).toContain("Scheduled tasks");
       expect(sent.filter(request => request.path === `${taskPath}/${task.id}`)).toHaveLength(2);
       expect(operations.some(message => message.kind === "operations" && message.operations.some(operation => operation.kind === "form.save"))).toBe(true);
       expect(router.currentRoute.value.query.state).toBe(JSON.stringify(deepState));
@@ -154,7 +157,36 @@ it("mounts Q at its deep-linked task and reads X over the real bridge", async ()
     await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary-title")?.textContent).toBe(task.title));
     expect(sent.filter(request => request.path === `${taskPath}/${task.id}`)).toMatchObject([{ method: "GET", credential: READER }]);
     expect(context.instance.deepLink()).toEqual(deepState);
+    expect(document.querySelector("#app")?.textContent).toContain("Task");
     expect(element.querySelector('[role="alert"]')).toBeNull();
+  } finally {
+    app.unmount();
+  }
+});
+
+it("renders and handles a new Element Plus menu in the author's card slot", async () => {
+  const panel = {
+    ...q,
+    content: {
+      ...q.content,
+      html: q.content.html.replace("</el-card>", `
+        <template #footer>
+          <el-menu v-on:select="selected = $event">
+            <el-menu-item index="details">Details</el-menu-item>
+          </el-menu>
+          <output>{{ selected }}</output>
+        </template>
+        </el-card>`),
+    },
+  };
+  const { app, frame } = await open(panelAddress(`/applications/${appB}/summary`, deepState), false, request =>
+    request.path === `/api/product-panels/${q.id}` ? Response.json({ panel }) : answer(request));
+  try {
+    await startFrame(frame, () => ({ selected: ref("") }));
+    const item = document.querySelector<HTMLElement>('#app [role="menuitem"]');
+    expect(item).not.toBeNull();
+    item!.click();
+    await vi.waitFor(() => expect(document.querySelector("#app output")?.textContent).toBe("details"));
   } finally {
     app.unmount();
   }

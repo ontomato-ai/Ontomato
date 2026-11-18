@@ -9,6 +9,8 @@ import { fileURLToPath } from "node:url";
 import vue from "@vitejs/plugin-vue";
 import { build } from "vite";
 import { finalizeSdk, VERSION_PLACEHOLDER } from "./content-version.mjs";
+import { elementComponents } from "./element-components.mjs";
+import { panelAppearance } from "./panel-appearance.mjs";
 import { catalogueMarkdown, checkCatalogue, componentMetadata, referenceMarkdown } from "./reference.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -88,7 +90,7 @@ async function main() {
   await build({
     configFile: false,
     root: HERE,
-    plugins: [vue(), oneVueRuntime()],
+    plugins: [vue(), elementComponents(), await panelAppearance(resolve(editionArg)), oneVueRuntime()],
     define: { "process.env.NODE_ENV": JSON.stringify("production") },
     resolve: {
       alias: [

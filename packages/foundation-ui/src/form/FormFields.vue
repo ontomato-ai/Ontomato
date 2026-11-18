@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { ElFormItem, ElInput, ElOption, ElSelect } from "element-plus";
+import { ElFormItem } from "element-plus/es/components/form/index";
+import { ElInput } from "element-plus/es/components/input/index";
+import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import type { FormField } from "@ontomato/contracts/form-fields";
 
 type SelectField = Extract<FormField, { type: "select" }>;

@@ -1,7 +1,7 @@
-import { createApp, h, nextTick, provide, ref, watch, type Component, type Ref } from "vue";
+import { createApp, defineAsyncComponent, h, nextTick, provide, ref, watch, type Component, type Ref } from "vue";
 import { useI18n } from "vue-i18n";
-import ElementPlus from "element-plus";
-import { connectAppContext, contextTransport, type AppContext } from "../context";
+import { contextTransport, type AppContext } from "../context";
+import { connectPanelContext } from "./app-context";
 import {
   PANEL_HOST_CHANNEL,
   panelAddressState,
@@ -19,10 +19,8 @@ import { panelContextKey, type PanelContext, type ProjectionSlot } from "./conte
 import { applyPanelRequest, createPanelInstance, pageDraftLinkOf, type PanelInstance } from "./instance";
 import { receivePanelDraft } from "./draft";
 import PanelProjection from "./Projection.vue";
-import ObjectList from "../base/ObjectList.vue";
-import ObjectSummary from "../base/ObjectSummary.vue";
-import ObjectForm from "../base/ObjectForm.vue";
-import OperationButton from "../base/OperationButton.vue";
+import { baseComponents } from "../base-components";
+import { prepareElementComponents } from "./element-components";
 import { registerSchedulesPlatformObject } from "./schedules";
 
 /*
@@ -61,7 +59,10 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   // A panel runs in a sandboxed frame of its own, which cannot read the platform's window: it connects the way a hosted
   // application does, over the message bridge. The platform sends each request with the reader's own credential and
   // decides which requests a frame may make.
-  const appContext = await connectAppContext();
+  const [appContext, installElementComponents] = await Promise.all([
+    connectPanelContext(),
+    prepareElementComponents(typeof panelComponent === "function" ? undefined : panelComponent.template),
+  ]);
   const transport = contextTransport(appContext);
   const address = ref(message.url);
   const instance = createPanelInstance(message.panel.manifest, {
@@ -112,15 +113,12 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   // eslint-disable-next-line vue/multi-word-component-names
   app.component("Projection", PanelProjection);
   // The base components a panel's HTML composes. Each carries no business; what a projection's binding names decides it.
-  app.component("ObjectList", ObjectList);
-  app.component("ObjectSummary", ObjectSummary);
-  app.component("ObjectForm", ObjectForm);
-  app.component("OperationButton", OperationButton);
+  for (const [name, load] of Object.entries(baseComponents)) app.component(name, defineAsyncComponent(load));
   // The platform objects this version's panels read, and the operations they run.
   registerSchedulesPlatformObject(appContext);
   app.config.errorHandler = (reason) => failed(reason instanceof Error ? reason.message : String(reason));
-  app.use(ElementPlus).use(appContext);
-  app.mount(element);
+  installElementComponents(app);
+  app.use(appContext).mount(element);
 
   let currentDraft = "";
   async function followDraft() {

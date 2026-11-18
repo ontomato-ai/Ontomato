@@ -1,7 +1,8 @@
 // The platform primitives: the shell's context, the data clients and the component that binds a MetricView.
 import "../styles.css";
 
-export { createAppContext,connectAppContext, type AppContext } from "../context";
+export { createAppContext, connectAppContext } from "../hosted-context";
+export type { AppContext } from "../context";
 export {default as ProductAsset} from '../ProductAsset.vue';
 export { default as MetricViewData } from "@ontomato/ontology-manager/app-components/MetricViewData.vue";
 export type { ActionExecution, ActionsClient, MetricViewRead, MetricViewsClient } from "@ontomato/ontology-manager/clients";
