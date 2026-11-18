@@ -25,8 +25,11 @@ export function mountAppsSdkStatic(app: express.Express) {
   app.get(/^\/apps-sdk\/.+/, (req, res) => {
     const name = req.path.slice("/apps-sdk/".length);
     const versioned = name.includes("/");
-    const chosen = ENCODINGS.find(({ encoding, extension }) =>
-      accepts(req.headers["accept-encoding"], encoding) && existsSync(path.join(root, name + extension)));
+    // The request path is outside input: only look for a compressed sibling inside the SDK root. `sendFile` below
+    // refuses anything that leaves the root on its own.
+    const inside = path.resolve(root, name).startsWith(path.resolve(root) + path.sep);
+    const chosen = inside ? ENCODINGS.find(({ encoding, extension }) =>
+      accepts(req.headers["accept-encoding"], encoding) && existsSync(path.join(root, name + extension))) : undefined;
     res.set({
       "Access-Control-Allow-Origin": "*",
       Vary: "Accept-Encoding",
