@@ -59,6 +59,7 @@ export type {
   ArtifactRendererProps,
   MessageActionContext,
   ProcessStepView,
+  ShellBottomEntry,
   ShellFeatureDeclaration,
   ShellFeedbackPort,
   ShellFeedbackTarget,

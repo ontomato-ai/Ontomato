@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref } from "vue";
 import { CalendarClock, Check, ExternalLink, SquarePen, Trash2, MoreHorizontal, Pencil, X } from "lucide-vue-next";
 import type { AgentHostAgent, AgentHostSession } from "@ontomato/contracts/agent-host";
-import type { ShellLabels, ShellWorkbenchDeclaration } from "../types";
+import type { ShellBottomEntry, ShellLabels, ShellWorkbenchDeclaration } from "../types";
 import { featureIcon } from "../icons";
 import AgentPicker from "./AgentPicker.vue";
 
@@ -26,7 +26,7 @@ const props = withDefaults(defineProps<{
   sessionId: string | null;
   featureId: string | null;
   /** The application's own entry at the foot (its settings, the model the diagnosis runs on). */
-  bottom?: { label: string; icon: string } | null;
+  bottom?: ShellBottomEntry | null;
   /**
    * Whether the reader may hold conversations here. Without it the column lists only the application's pages and its
    * foot: no agent switch, no new conversation, no recent conversations.
@@ -327,7 +327,13 @@ onBeforeUnmount(() => {
       </form>
     </dialog>
     <div v-if="bottom" class="nav-foot">
-      <button type="button" class="nav-item" @click="emit('openBottom')">
+      <button
+        type="button"
+        class="nav-item"
+        :class="{ active: bottom.page !== undefined && featureId === bottom.page }"
+        :aria-current="bottom.page !== undefined && featureId === bottom.page ? 'page' : undefined"
+        @click="emit('openBottom')"
+      >
         <component :is="featureIcon(bottom.icon)" :size="16" aria-hidden="true" />
         <span class="nav-label">{{ bottom.label }}</span>
       </button>

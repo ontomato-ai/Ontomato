@@ -7,7 +7,7 @@ import { useRoute, useRouter, type RouteLocationRaw } from "vue-router";
 import {
   AgentShell, useAgentNav, useConversationDisplay, useSessionRunFeed,
   type DisplayHistory, type DisplayPage, type DisplayView, type PageContext, type PageSelection,
-  type ShellFeatureDeclaration, type ShellWorkbenchDeclaration,
+  type ShellBottomEntry, type ShellFeatureDeclaration, type ShellWorkbenchDeclaration,
 } from "@ontomato/agent-shell-ui";
 import { useLeaveConfirmation, usePageAccess, usePilotPage } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
@@ -283,9 +283,16 @@ function openSettings() {
   );
 }
 
-/** The column's own entry at the foot: the agent settings, shown full beside the column. */
-const bottomEntry = computed(() =>
-  editsAgents.value || opensModels.value ? { label: t("assistant.featureAgents"), icon: "agents" } : null,
+/**
+ * The column's own entry at the foot: the agent settings, shown in this application and its current row while they are;
+ * for an account that only opens the models, their page in the platform's settings.
+ */
+const bottomEntry = computed<ShellBottomEntry | null>(() =>
+  editsAgents.value
+    ? { label: t("assistant.featureAgents"), icon: "agents", page: AGENT_SETTINGS_PAGE_ID }
+    : opensModels.value
+      ? { label: t("assistant.featureAgents"), icon: "agents" }
+      : null,
 );
 
 /**

@@ -247,6 +247,8 @@ describe("the agents' settings at the agent platform's own address", () => {
     expect(router.currentRoute.value.path).toBe(platformRoutes.agents.path);
     expect(displayOf(wrapper).page.value?.featureId).toBe("agents");
     expect(displayOf(wrapper).view.value).toBe("full");
+    // The foot's entry is the column's current row while the page it opened is shown.
+    expect(wrapper.find(".nav-foot .nav-item").classes()).toContain("active");
   });
 
   it("shows the page full with the same page skill and page line as beside the conversation", async () => {
@@ -285,11 +287,13 @@ describe("the agents' settings at the agent platform's own address", () => {
   it("closes back to the conversation", async () => {
     const router = await routerAt(`/agents/settings/${AGENT}`);
     const wrapper = await workbench(router);
+    expect(wrapper.find(".nav-foot .nav-item").classes()).toContain("active");
 
     await paneButton(wrapper, "close").trigger("click");
     await flushPromises();
     expect(router.currentRoute.value.path).toBe(platformRoutes.chat.path);
     expect(router.currentRoute.value.query.page).toBeUndefined();
     expect(displayOf(wrapper).page.value).toBeNull();
+    expect(wrapper.find(".nav-foot .nav-item").classes()).not.toContain("active");
   });
 });

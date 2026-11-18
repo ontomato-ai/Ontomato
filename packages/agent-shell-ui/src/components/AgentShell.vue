@@ -9,6 +9,7 @@ import type { AgentNav } from "../useAgentNav";
 import type { UserItem } from "../view";
 import type {
   ArtifactRendererOverride,
+  ShellBottomEntry,
   ShellFeedbackPort,
   ShellLabels,
   ShellPanelOperationsPort,
@@ -78,7 +79,7 @@ const props = withDefaults(
     /** The application's name, at the top of the column when the application runs on one agent. */
     title?: string;
     /** The application's own entry at the foot of its column (its settings, the model the diagnosis runs on). */
-    bottom?: { label: string; icon: string } | null;
+    bottom?: ShellBottomEntry | null;
     /** Whether the reader may hold conversations here; without it the column lists only the pages and the foot. */
     conversations?: boolean;
     /**

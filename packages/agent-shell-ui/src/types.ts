@@ -95,6 +95,17 @@ export interface ShellFeatureDeclaration {
   pageSkill?: { pageKey: string; permissionCode: string } | { pageKey: string; access: "domain-member" };
 }
 
+/**
+ * The application's own entry at the foot of its column (its settings, the model the diagnosis runs on). `page` is the
+ * feature it shows in this application, when it shows one here: the entry is the column's current row while that page
+ * is the one shown. An entry that leaves for another application names none.
+ */
+export interface ShellBottomEntry {
+  label: string;
+  icon: string;
+  page?: string;
+}
+
 /** A workbench is a code declaration; its agents come from the host. */
 export interface ShellWorkbenchDeclaration {
   id: string;
