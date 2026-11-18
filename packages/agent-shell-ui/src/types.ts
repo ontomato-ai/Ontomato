@@ -123,7 +123,8 @@ export interface ShellFeedbackPort {
 
 /**
  * Whether an agent asks the conversation's owner before it runs a panel operation, kept by the host for each of its
- * conversations (new ones ask). Only the owner reads or changes it: `read` resolves to null for anyone else.
+ * conversations (new ones ask). Only the owner reads or changes it, and only for a conversation that can be the root of a
+ * panel operation: `read` resolves to null where the host says the conversation offers no such choice.
  */
 export interface ShellPanelOperationsPort {
   read(sessionId: string): Promise<boolean | null>;

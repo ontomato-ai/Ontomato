@@ -7,8 +7,9 @@ import { createPanelOperationSettings } from "../assistant-host";
 
 /*
  * The assistant's conversations keep whether agents ask before a panel operation at the owner-only settings route of
- * their provider, `workbench`. Only the owner reads it; the host refuses anyone else, which the shell takes as not
- * offering the choice. Any other failure is the reader's to see.
+ * their provider, `workbench`. Only the owner reads it; the host refuses anyone else, and a conversation bound to no agent
+ * channel cannot be the root of a panel operation. Both answers mean the shell offers no choice; any other failure is the
+ * reader's to see.
  */
 
 const sessionId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -51,11 +52,23 @@ it("reads and writes the owner's choice for the conversation", async () => {
   ]);
 });
 
+/** An error as the host's agent routes write it. */
+const refusal = (status: number, code: string, message: string) => ({ status, body: { error: { code, message }, correlationId: "c1" } });
+
 it("offers nothing to a reader the host refuses, and lets other failures through", async () => {
   const settings = createPanelOperationSettings();
-  answer = { status: 403, body: { error: { code: "FORBIDDEN", message: "Only the session owner may change confirmation" } } };
+  answer = refusal(403, "FORBIDDEN", "Only the session owner may change confirmation");
   expect(await settings.read(sessionId)).toBeNull();
   await expect(settings.write(sessionId, false)).rejects.toMatchObject({ status: 403 });
-  answer = { status: 500, body: { error: { code: "INTERNAL", message: "Broken" } } };
+  answer = refusal(500, "INTERNAL", "Broken");
   await expect(settings.read(sessionId)).rejects.toMatchObject({ status: 500 });
+});
+
+it("offers nothing for a conversation bound to no agent channel, and only for that conflict", async () => {
+  const settings = createPanelOperationSettings();
+  answer = refusal(409, "CHANNEL_UNAVAILABLE", "Session has no registered agent provider");
+  expect(await settings.read(sessionId)).toBeNull();
+  // Another conflict is an error the reader sees.
+  answer = refusal(409, "SESSION_BUSY", "Busy");
+  await expect(settings.read(sessionId)).rejects.toMatchObject({ status: 409, message: "Busy" });
 });

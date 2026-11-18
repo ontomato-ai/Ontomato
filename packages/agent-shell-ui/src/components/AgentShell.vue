@@ -167,7 +167,8 @@ provide(shellContextKey, {
 
 /**
  * The open conversation's choice whether agents ask before a panel operation, once the host told it; null for a new
- * conversation, while it is being read, and for a reader who does not own the conversation. Its column shows it on the
+ * conversation, while it is being read, and where the host offers none (a reader who does not own the conversation, a
+ * conversation that cannot be the root of a panel operation). Its column shows it on the
  * conversation's row and changes it from the row's menu.
  */
 const panelConfirmation = ref<{ sessionId: string; confirmBeforeExecute: boolean } | null>(null);
