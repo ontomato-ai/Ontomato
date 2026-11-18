@@ -1,6 +1,6 @@
 # Extract and import unstructured business knowledge
 
-Use this workflow when the user asks to turn source text into reusable business knowledge.
+Use this workflow when the user asks to turn source text into reusable business knowledge or to draft, add or revise a business definition.
 
 1. Establish the source and intended business use. Read the complete relevant source with the governance source commands; preserve the returned source IDs. Use read-input for the current message, or read-history/read-evidence for conversation history and text artifacts. These source commands read content saved by the host; do not invent source IDs.
 2. Read the ontology and existing knowledge. Extract discrete, source-supported terminology, facts and attributed statements. Preserve scope, dates, uncertainty and original evidence. Do not invent rules, metrics, object types or relationships.
