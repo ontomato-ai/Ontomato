@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.bean.workflow;
 
 import java.util.List;
+import java.util.Map;
 
 import lombok.Data;
 
@@ -35,6 +36,15 @@ public class WorkflowStep {
 
     /** Business description of what this step decides. */
     private String description;
+
+    /** Action parameters taken from the Case payload, keyed by action parameter name. */
+    private Map<String, String> inputBindings;
+
+    /** Case fields this step may not overwrite. */
+    private List<String> locked;
+
+    /** Only the Case's current assignee may execute this step; activation writes no role grant. */
+    private Boolean caseScoped;
 
     public static final String ACTION_TYPE_APPROVE = "approve";
     public static final String ACTION_TYPE_EXECUTE = "execute";

@@ -309,6 +309,8 @@ public class WorkflowController {
         workflow.setName(param.getString("name"));
         workflow.setDescription(param.getString("description"));
         workflow.setRunClassName(param.getString("runClassName"));
+        workflow.setTemporary(param.getBoolean("temporary"));
+        workflow.setCaseFormSchema(param.getJSONObject("caseFormSchema"));
         if (param.getJSONObject("runContract") != null) {
             workflow.setRunContract(param.getJSONObject("runContract").to(RunContract.class));
         }
@@ -329,6 +331,8 @@ public class WorkflowController {
         result.put("status", workflow.getStatus());
         result.put("version", workflow.getVersion());
         result.put("runClassName", workflow.getRunClassName());
+        result.put("temporary", workflow.getTemporary());
+        result.put("caseFormSchema", workflow.getCaseFormSchema());
         result.put("runContract", workflow.getRunContract());
         // Reported so an operator who just activated learns whether the convenient queries were produced.
         result.put("activationNotes", workflow.getActivationNotes());

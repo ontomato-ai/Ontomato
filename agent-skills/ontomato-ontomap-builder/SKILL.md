@@ -269,10 +269,56 @@ Do not put regional JDBC parameters such as `serverTimezone=Asia/Shanghai` in th
 | `enable` | `true` includes the column in the schema text and in SQL. `false` omits it. A missing value counts as enabled. Use `true`. |
 | `primaryKey` | Exactly one `true` per class, with `enable: true` and `type: varchar`; otherwise saving fails. The label does not convert stored data. Resolve a non-text source key with the authorized data tools before assuming a compatible mapping; changing only the label is not proof. |
 | relationship key | Relationship type name: the machine name a join and the DSL look the relationship up by, and the content of the "relationship type" column of the prompt table. Keep it short, stable and identifier-like (letters, digits, `_`). It is what the model copies into the DSL; the meaning it reads is the `desc`, not the key. |
+| relationship `type` | One of `fk`, `n:n`, `graph`. `fk` means one end holds the other's key; `n:n` is realized through a junction table; `graph` is a native edge in a graph source. When omitted, the old inference applies: a `linkTable` means `n:n`, both `fromField`/`toField` mean `fk`, neither means `graph`. Write `type` explicitly for new relationships. |
 | `fromClass`, `toClass` | Class `name` of the two ends. The direction runs from `fromClass` to `toClass` and is part of the meaning; the prompt asks the model to check it. |
-| `fromField` | A real join field on `fromClass`. Required when `list-datasources` returns `requiresJoinFields: true`: the adapter needs an explicit column pair to implement the relationship, not removal of the business relationship. |
-| `toField` | A real join field on `toClass`; the condition is `fromClass.fromField = toClass.toField`. Verify the pair, direction and multiplicity. Graph adapters with `requiresJoinFields: false` use the corresponding stored relationship edges. |
+| `fromField` | A real join field on `fromClass`. For `fk` it is the held foreign key; for `n:n` it is the `fromClass` key column (usually `id`). Required when `list-datasources` returns `requiresJoinFields: true`: the adapter needs an explicit column pair to implement the relationship, not removal of the business relationship. |
+| `toField` | A real join field on `toClass`. For `fk` the condition is `fromClass.fromField = toClass.toField`; for `n:n` it is the `toClass` key column (usually `id`). Verify the pair, direction and multiplicity. Graph adapters with `requiresJoinFields: false` use the corresponding stored relationship edges. |
+| `linkTable` | `n:n` only: the junction table name. Relational adapters paste it unchanged, following the same exact-name rule as a class; the table must exist physically. `set-ontomap` does not create it. |
+| `linkTableFromField` | `n:n` only: the junction column holding the `fromClass` key. |
+| `linkTableToField` | `n:n` only: the junction column holding the `toClass` key. It must differ from `linkTableFromField`. |
 | relationship `desc` | Relationship description, the "relationship description" column of the prompt table. Write it as a predicate, the verb phrase that holds from `fromClass` to `toClass`: `belongs to`, `is located in`, `contains`, `is parent of`. See "Write relationship descriptions as predicates" below. |
+
+## Relationship kinds: fk, n:n, graph
+
+Adapters choose the realization from `type`; an ontomap without `type` keeps its old meaning.
+
+- **`fk`**: one end holds the other's key. `fromField`/`toField` are real columns on the two tables; the join is `fromClass.fromField = toClass.toField`.
+- **`n:n`**: realized through a junction table. `fromField`/`toField` name each class's key column (usually `id`), `linkTable` is the junction table, and `linkTableFromField`/`linkTableToField` name the junction columns holding the two keys. The junction table must be created by the database side first; `set-ontomap` only saves meaning and never creates tables.
+- **`graph`**: a native edge in a graph source; it needs no `fromField`/`toField`. Neo4j and similar adapters realize `n:n` natively and never read the junction table.
+
+Relational adapters (PostgreSQL/MySQL and similar) write one junction row and join through the junction table for `n:n`. If the real data is many-to-many but the ontomap declares `fk`, the adapter refuses and asks for `n:n` with a `linkTable`. Graph adapters realize the same declaration as a native relationship; `linkTable` remains a semantic declaration and is not materialized.
+
+Required for `n:n` (missing parts or equal junction columns are rejected):
+
+```json
+{
+  "relationshipDefs": {
+    "student_has_guardian": {
+      "fromClass": "student",
+      "toClass": "guardian",
+      "type": "n:n",
+      "fromField": "id",
+      "toField": "id",
+      "linkTable": "student_guardian_link",
+      "linkTableFromField": "student_id",
+      "linkTableToField": "guardian_id",
+      "desc": "has guardian"
+    }
+  }
+}
+```
+
+Physical junction table example (PostgreSQL):
+
+```sql
+CREATE TABLE student_guardian_link (
+  student_id varchar NOT NULL,
+  guardian_id varchar NOT NULL,
+  PRIMARY KEY (student_id, guardian_id)
+);
+```
+
+Verify at least one query in each direction (`student -> guardian` and `guardian -> student`), and confirm the junction table has no duplicate pairing. One direction alone does not prove the `n:n` declaration.
 
 ## Write relationship descriptions as predicates
 
