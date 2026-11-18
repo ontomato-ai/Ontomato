@@ -37,7 +37,7 @@ public class WorkflowDao {
 	private static final String EVENT_TABLE = "workflow_event";
 
 	private static final String COLUMNS =
-			"id, name, description, domain_id, status, version, steps, run_class_name, create_timestamp, modify_timestamp, created_by, run_contract";
+			"id, name, description, domain_id, status, version, steps, run_class_name, run_contract, temporary, case_form_schema, create_timestamp, modify_timestamp, created_by";
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
@@ -54,12 +54,16 @@ public class WorkflowDao {
 				+ "steps TEXT, "
 				+ "run_class_name VARCHAR(255), "
 				+ "run_contract TEXT, "
+				+ "temporary BOOLEAN, "
+				+ "case_form_schema TEXT, "
 				+ "create_timestamp BIGINT, "
 				+ "created_by VARCHAR(64), "
 				+ "modify_timestamp BIGINT"
 				+ ")");
 		jdbcTemplate.execute("ALTER TABLE " + TABLE + " ADD COLUMN IF NOT EXISTS created_by VARCHAR(64)");
 		jdbcTemplate.execute("ALTER TABLE " + TABLE + " ADD COLUMN IF NOT EXISTS run_contract TEXT");
+		jdbcTemplate.execute("ALTER TABLE " + TABLE + " ADD COLUMN IF NOT EXISTS temporary BOOLEAN");
+		jdbcTemplate.execute("ALTER TABLE " + TABLE + " ADD COLUMN IF NOT EXISTS case_form_schema TEXT");
 		jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_" + TABLE + "_domain_id ON " + TABLE + "(domain_id)");
 
 		// One row per published revision: the steps are frozen with the version they were published as.
@@ -71,9 +75,13 @@ public class WorkflowDao {
 				+ "steps TEXT, "
 				+ "run_class_name VARCHAR(255), "
 				+ "run_contract TEXT, "
+				+ "temporary BOOLEAN, "
+				+ "case_form_schema TEXT, "
 				+ "create_timestamp BIGINT"
 				+ ")");
 		jdbcTemplate.execute("ALTER TABLE " + VERSION_TABLE + " ADD COLUMN IF NOT EXISTS run_contract TEXT");
+		jdbcTemplate.execute("ALTER TABLE " + VERSION_TABLE + " ADD COLUMN IF NOT EXISTS temporary BOOLEAN");
+		jdbcTemplate.execute("ALTER TABLE " + VERSION_TABLE + " ADD COLUMN IF NOT EXISTS case_form_schema TEXT");
 		jdbcTemplate.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_" + VERSION_TABLE
 				+ "_workflow_version ON " + VERSION_TABLE + "(workflow_id, version)");
 
@@ -103,21 +111,25 @@ public class WorkflowDao {
 		String steps = JSON.toJSONString(workflow.getSteps() == null ? List.of() : workflow.getSteps());
 		String runContract = workflow.getRunContract() == null
 				? null : JSON.toJSONString(workflow.getRunContract());
+		String caseFormSchema = workflow.getCaseFormSchema() == null
+				? null : JSON.toJSONString(workflow.getCaseFormSchema());
 		// version is deliberately absent from the SET list. A draft edit carries no version, and copying
 		// that over the row would erase the number of the newest published revision: activation would then
 		// compute 1 again, publishVersion would collide with the revision already frozen as 1, and the
 		// revision actually in force would no longer be the one on record. The number only moves forward,
 		// through updateVersion below.
 		jdbcTemplate.update(
-				"INSERT INTO " + TABLE + " (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+				"INSERT INTO " + TABLE + " (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
 						+ "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, "
 						+ "status = EXCLUDED.status, steps = EXCLUDED.steps, "
 						// created_by is deliberately absent: it records the first save and must survive later ones.
 						+ "run_class_name = EXCLUDED.run_class_name, run_contract = EXCLUDED.run_contract, "
+						+ "temporary = EXCLUDED.temporary, case_form_schema = EXCLUDED.case_form_schema, "
 						+ "modify_timestamp = EXCLUDED.modify_timestamp",
 				workflow.getId(), workflow.getName(), workflow.getDescription(), workflow.getDomainId(),
 				workflow.getStatus(), workflow.getVersion(), steps, workflow.getRunClassName(),
-				workflow.getCreateTimestamp(), workflow.getModifyTimestamp(), workflow.getCreatedBy(), runContract);
+				runContract, workflow.getTemporary(), caseFormSchema,
+				workflow.getCreateTimestamp(), workflow.getModifyTimestamp(), workflow.getCreatedBy());
 		if (workflow.getVersion() != null && workflow.getVersion() > 0) {
 			updateVersion(workflow.getId(), workflow.getVersion());
 		}
@@ -151,12 +163,14 @@ public class WorkflowDao {
 		int version = nextVersion(workflow.getId());
 		int inserted = jdbcTemplate.update(
 				"INSERT INTO " + VERSION_TABLE
-						+ " (id, workflow_id, domain_id, version, steps, run_class_name, run_contract, create_timestamp) "
-						+ "VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (workflow_id, version) DO NOTHING",
+						+ " (id, workflow_id, domain_id, version, steps, run_class_name, run_contract, temporary, case_form_schema, create_timestamp) "
+						+ "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (workflow_id, version) DO NOTHING",
 				UUID.randomUUID().toString(), workflow.getId(), workflow.getDomainId(), version,
 				JSON.toJSONString(workflow.getSteps() == null ? List.of() : workflow.getSteps()),
 				workflow.getRunClassName(),
 				workflow.getRunContract() == null ? null : JSON.toJSONString(workflow.getRunContract()),
+				workflow.getTemporary(),
+				workflow.getCaseFormSchema() == null ? null : JSON.toJSONString(workflow.getCaseFormSchema()),
 				System.currentTimeMillis());
 		if (inserted == 0) {
 			throw new IllegalStateException("Workflow revision " + version
@@ -270,6 +284,10 @@ public class WorkflowDao {
 		workflow.setRunContract(
 				runContract == null || runContract.isBlank()
 						? null : JSON.parseObject(runContract, io.ontomato.dataengine.bean.workflow.RunContract.class));
+		workflow.setTemporary(rs.getObject("temporary") == null ? null : rs.getBoolean("temporary"));
+		String caseFormSchema = rs.getString("case_form_schema");
+		workflow.setCaseFormSchema(caseFormSchema == null || caseFormSchema.isBlank()
+				? null : JSON.parseObject(caseFormSchema));
 		workflow.setCreateTimestamp(rs.getLong("create_timestamp"));
 		workflow.setModifyTimestamp(rs.getLong("modify_timestamp"));
 		workflow.setCreatedBy(rs.getString("created_by"));
