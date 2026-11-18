@@ -5,7 +5,10 @@ import {
   type ShellFeedbackPort,
   type ShellFeedbackTarget,
   type ShellFeedbackValue,
+  type ShellPanelOperationsPort,
 } from "@ontomato/agent-shell-ui";
+import { agentHostErrorSchema } from "@ontomato/contracts/agent-host";
+import { panelOperationSettingsSchema } from "@ontomato/contracts/panel-agent";
 import {
   assistantDatasetSourceSchema,
   assistantFeedbackListSchema,
@@ -85,6 +88,31 @@ export function createAssistantFeedback(): ShellFeedbackPort {
     },
   };
 }
+
+/**
+ * Whether the assistant's agents ask before they run a panel operation, per conversation. Two answers of the host mean
+ * the conversation offers no such choice, and the shell shows none: 403, the reader does not own it; 409
+ * CHANNEL_UNAVAILABLE, the conversation is bound to no agent channel, so it cannot be the root of a panel operation.
+ */
+export function createPanelOperationSettings(): ShellPanelOperationsPort {
+  const path = (sessionId: string) => `/panel-operation-settings/workbench/${encodeURIComponent(sessionId)}`;
+  return {
+    async read(sessionId) {
+      try {
+        return panelOperationSettingsSchema.parse(await nodeApiGet(path(sessionId))).confirmBeforeExecute;
+      } catch (error) {
+        if (error instanceof ApiRequestError && (error.status === 403 || hostCode(error) === "CHANNEL_UNAVAILABLE")) return null;
+        throw error;
+      }
+    },
+    async write(sessionId, confirmBeforeExecute) {
+      return panelOperationSettingsSchema.parse(await nodeApiPut(path(sessionId), { confirmBeforeExecute })).confirmBeforeExecute;
+    },
+  };
+}
+
+/** The machine code of the host's error body (`agentHostErrorSchema`). */
+const hostCode = (error: ApiRequestError) => agentHostErrorSchema.safeParse(error.payload).data?.error.code;
 
 /** The verified retrieval behind a dataset file; null for any other file. */
 export async function readDatasetSource(sessionId: string, artifactId: string): Promise<AssistantDatasetSource | null> {

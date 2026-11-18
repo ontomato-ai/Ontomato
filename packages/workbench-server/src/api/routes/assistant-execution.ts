@@ -1,3 +1,6 @@
+import type { AuthenticatedRequest } from "../../utils/request-identity";
+import { createPanelOperationIntentRequestSchema, dispatchPanelOperationIntentRequestSchema } from "@ontomato/contracts/panel-agent";
+import { operatePanel, dispatchPanel } from "../../services/product-panels/operations";
 import { Router } from "express";
 import { scheduledTaskReads } from "@ontomato/contracts/panel-client-requests";
 import type {AssistantCredentials} from "../../platform/agent-runtime/runtime";
@@ -16,7 +19,23 @@ import type { RuntimeCallback } from "../../services/agent-runtime/callback-cred
 
 export const assistantExecutionRouter = Router();
 const ontologyPath = /^\/(?:ontology\/(?:query|ai\/(?:generation|knowledge-governance))(?:\/|$)|action(?:\/|$)|metricView(?:\/|$)|data\/queryInfoByNode$|knowledge(?:\/|$)|admin\/(?:getBussinessKnowledge)$)/;
-const workbenchPath = /^\/api\/(?:assistant|product-assets|dashboards|feedback|memories|query-history|preferences|personal-workspace)(?:\/|$)/;
+const workbenchPath = /^\/api\/(?:assistant|panel-operation-intents|product-assets|dashboards|feedback|memories|query-history|preferences|personal-workspace)(?:\/|$)/;
+
+assistantExecutionRouter.post("/:runId/panels/operate",wrap(async(req,res)=>{
+  const runId=z.string().uuid().parse(req.params.runId);
+  const callback=res.locals.runtimeCallback as RuntimeCallback | undefined;
+  if(!callback || callback.runId!==runId)throw new HttpError(403,"A run callback is required","FORBIDDEN");
+  const {owner,credentials}=context(req);
+  res.json(await operatePanel(owner,credentials,runId,createPanelOperationIntentRequestSchema.parse(req.body),(req as AuthenticatedRequest).userName));
+}));
+assistantExecutionRouter.post("/:runId/panels/intents/:intentId/dispatch",wrap(async(req,res)=>{
+  const runId=z.string().uuid().parse(req.params.runId),intentId=z.string().uuid().parse(req.params.intentId);
+  const callback=res.locals.runtimeCallback as RuntimeCallback | undefined;
+  if(!callback || callback.runId!==runId)throw new HttpError(403,"A run callback is required","FORBIDDEN");
+  dispatchPanelOperationIntentRequestSchema.parse(req.body);
+  const {owner,credentials}=context(req);
+  res.json(await dispatchPanel(owner,credentials,runId,intentId));
+}));
 
 assistantExecutionRouter.post("/:runId/retrieval",wrap(async(req,res)=>{
   const runId=z.string().uuid().parse(req.params.runId);
@@ -47,7 +66,7 @@ assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
     throw new HttpError(403, "Path is outside the execution callback", "FORBIDDEN");
   const { owner, credentials: initiatorCredentials } = context(req);
   const grantAction=target==="ontology" && callback.businessGrant && /^\/ontology\/ai\/knowledge-governance\/[^/]+\/runs\/[^/]+\/actions\/[^/]+$/u.test(path);
-  const ownership=target==="workbench" && /^\/api\/(?:assistant|feedback|query-history|product-assets|memories|preferences|personal-workspace)(?:\/|$)/u.test(path);
+  const ownership=target==="workbench" && /^\/api\/(?:assistant|panel-operation-intents|feedback|query-history|product-assets|memories|preferences|personal-workspace)(?:\/|$)/u.test(path);
   const credentials: AssistantCredentials = ownership || grantAction ? initiatorCredentials : (await credentialsForRun(owner, runId, initiatorCredentials)).credentials;
   if(ownership || grantAction)await runForOwner(owner,runId);
   const headers = buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey, credentials.headers);

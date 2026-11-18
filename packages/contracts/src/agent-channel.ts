@@ -6,6 +6,9 @@ export const agentRefSchema = z.object({ providerId: key, agentId: key }).strict
 export const agentSessionRefSchema = z.object({ providerId: key, sessionId: id }).strict();
 /** Identity is restored by the platform; a model never supplies identity or credentials. */
 export const agentActorRefSchema = z.object({ id, domainId: key }).strict();
+/** Trusted human delivery context; actor.id is an opaque host caller reference, never an executor. */
+export const agentUserRecipientSchema = z.object({ session: agentSessionRefSchema, actor: agentActorRefSchema }).strict();
+export type AgentUserRecipient = z.infer<typeof agentUserRecipientSchema>;
 export const agentExecutionActorRefSchema = z.object({ userId: key, domainId: key }).strict();
 export type AgentExecutionActorRef = z.infer<typeof agentExecutionActorRefSchema>;
 export const agentCallerAdmissionSchema = z.object({ id, deadlineAt: runtimeTimestampSchema }).strict();
@@ -21,12 +24,20 @@ export const agentMessageSourceSchema = z.union([agentExecutionRefSchema,z.objec
 export const agentQuestionOptionSchema = z.object({ label: key, description: z.string().optional(), isDefault: z.boolean().optional() }).strict();
 export const agentQuestionOptionsSchema = z.array(agentQuestionOptionSchema).min(1).refine(options => options.filter(option => option.isDefault).length === 1, "Exactly one option must be the default");
 export const agentPendingQuestionSchema = z.object({ requestId: id, source: agentExecutionRefSchema, message: z.string(), defaultAssumption: z.string(), options: agentQuestionOptionsSchema.optional() }).strict();
-export const agentInputDeliverySchema = z.object({ messageId: id, sessionRef: agentSessionRefSchema, runId: id, delivery: z.enum(["steer", "run"]), status: z.enum(["starting", "running"]) }).strict();
+export const agentInputDeliverySchema = z.object({ messageId: id, sessionRef: agentSessionRefSchema, runId: id, delivery: z.enum(["steer", "run", "receipt"]), status: z.enum(["starting", "running", "completed"]) }).strict();
 export const agentNotificationSchema = z.object({
   role: z.literal("notification"),
   kind: z.enum(["agent-message", "agent-result", "agent-question", "agent-answer"]),
   source: agentMessageSourceSchema,
-  replyTo: id.optional(), defaultAssumption: z.string().optional(), options: agentQuestionOptionsSchema.optional(),
+  replyTo: id.optional(),
+  /** Explicit human delivery; ordinary agent questions keep their existing route. */
+  recipient: z.literal("user").optional(),
+  selectedOption: z.number().int().nonnegative().optional(),
+  /** Set by the authenticated human host, never by the model or browser body. */
+  respondent: agentActorRefSchema.optional(),
+  /** Original receipt identity when a human answer is forwarded to the questioning session. */
+  answerId: id.optional(),
+  defaultAssumption: z.string().optional(), options: agentQuestionOptionsSchema.optional(),
   outcome: z.enum(["completed", "failed", "cancelled"]).optional(),
   content: z.string(), timestamp: z.number().int().nonnegative(),
 }).strict();
@@ -45,12 +56,16 @@ export const agentRunContextSchema = z.object({
   agent: agentRefSchema, actor: agentActorRefSchema,
   authority: agentAuthoritySchema,
   requestedBy: agentExecutionRefSchema.nullable(), root: agentExecutionRefSchema,
+  /** Human hosts set this; children inherit it. Older/background/external roots have none. */
+  userRecipient: agentUserRecipientSchema.nullable().optional(),
 }).strict();
 export const agentPrepareRequestSchema = z.object({
   mode: z.enum(["run", "steer"]), language: key,
   agent: agentRefSchema, sessionId: id, runId: id, actor: agentActorRefSchema,
   executionActor: agentExecutionActorRefSchema.nullable().optional(),
-  inputId: id, input: agentInputSchema, authority: agentAuthoritySchema, requestedBy: agentExecutionRefSchema.nullable(), root: agentExecutionRefSchema, context: runtimeJsonObjectSchema.optional(),
+  inputId: id, input: agentInputSchema, authority: agentAuthoritySchema, requestedBy: agentExecutionRefSchema.nullable(), root: agentExecutionRefSchema,
+  /** Human hosts set this; children inherit it. Older/background/external roots have none. */
+  userRecipient: agentUserRecipientSchema.nullable().optional(), context: runtimeJsonObjectSchema.optional(),
 }).strict();
 export const agentProviderExecutionSchema = z.object({ execution: agentExecutionRefSchema, actor: agentActorRefSchema, executionActor: agentExecutionActorRefSchema.nullable().optional(), fileId: id.optional() }).strict();
 export const agentDeliverySchema = z.object({

@@ -122,6 +122,17 @@ export interface ShellFeedbackPort {
 }
 
 /**
+ * Whether an agent asks the conversation's owner before it runs a panel operation, kept by the host for each of its
+ * conversations (new ones ask). Only the owner reads or changes it, and only for a conversation that can be the root of a
+ * panel operation: `read` resolves to null where the host says the conversation offers no such choice.
+ */
+export interface ShellPanelOperationsPort {
+  read(sessionId: string): Promise<boolean | null>;
+  /** Resolves to the value the host now holds. */
+  write(sessionId: string, confirmBeforeExecute: boolean): Promise<boolean>;
+}
+
+/**
  * A run of the open conversation started or stopped, whether the stream, a cancel or a re-read showed it: the host
  * refreshes what the run changes from here rather than from the reply's words.
  */
@@ -166,6 +177,12 @@ export interface ShellLabels {
   unavailable: string;
   /** Marks a session that one of the user's scheduled tasks started. */
   scheduledSession: string;
+  /** The conversation menu's switch: agents ask the owner before they run a panel operation. */
+  panelConfirmation: string;
+  /** Marks the open conversation whose agents run panel operations without asking. */
+  panelAutomatic: string;
+  /** What that mark means, on hover and for assistive technology. */
+  panelAutomaticHint: string;
   placeholder: string;
   send: string;
   stop: string;

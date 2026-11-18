@@ -26,7 +26,7 @@ export interface AssistantCredentials {
 }
 /**
  * The scenario a skill script runs in. Inside the platform a page's own save is the only writer of that page's data;
- * the same skill package run outside the platform (a reader's own key, the Skill suite) writes directly.
+ * declared panel operations instead go through the server coordinator. Outside the platform, skills keep their own caller path.
  */
 const SKILL_SCENARIO = "platform";
 
@@ -37,7 +37,10 @@ const SKILL_SCENARIO = "platform";
  */
 const PLATFORM_DRAFT_RULE = [
   "Page operations:",
-  "A change that a loaded page skill covers goes through that page's draft: write the draft file the skill's draft",
+  "A loaded panel skill offers three entrances: read through the owner's API, draft an unsaved form, or call its declared operation through ONTOMATO_PANEL_OPERATIONS_URL.",
+  "Panel operate returns a draft by default for form.save; an action may return confirmation-required and intentId immediately. Do not wait or poll for a person in a tool call. Continue your work or finish the round.",
+  "A later genuine user agent-answer wakes this session. Call the declared dispatch(intentId) in that current run; text agreement or a parent agent's answer never grants approval. The coordinator owns session automatic mode and permissions.",
+  "For hand-written page skills that do not declare a coordinator operation, a change goes through that page's draft: write the draft file the skill's draft",
   "command asks for, then link the reader to the page with it. The page fills its form, marks what changed and stays",
   "unsaved; the reader reviews and saves there, and saying 'save' in the conversation does not save it for them.",
   "Everything else — reading, retrieval, charts, reports, and data no page skill covers — keeps its own commands.",

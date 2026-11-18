@@ -52,6 +52,7 @@ export type {
   ShellFeedbackTarget,
   ShellFeedbackValue,
   ShellLabels,
+  ShellPanelOperationsPort,
   ShellRunChange,
   ShellWorkbenchDeclaration,
   ToolRendererOverride,

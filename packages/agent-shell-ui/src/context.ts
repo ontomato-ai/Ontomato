@@ -41,8 +41,12 @@ export interface ShellQuestions {
   pending: Readonly<Ref<AgentPendingQuestion[]>>;
   /** A message of the conversation is on its way; an answer waits until it has arrived. */
   sending: Readonly<Ref<boolean>>;
-  /** Sends the reader's answer to one question; resolves to whether it was delivered. */
-  answer(requestId: string, answer: string): Promise<boolean>;
+  /**
+   * Sends the reader's answer to one question; resolves to whether it was delivered. `selectedOption` is the zero-based
+   * index of the option the reader picked, and absent for the reader's own words: only the pick itself says which option
+   * was chosen, never the text, the default or another party's answer.
+   */
+  answer(requestId: string, answer: string, selectedOption?: number): Promise<boolean>;
   view: QuestionView;
 }
 
@@ -71,7 +75,8 @@ export function conversationQuestions(
   return {
     pending: conversation.pendingQuestions,
     sending: conversation.sending,
-    answer: async (requestId, answer) => Boolean((await conversation.answerQuestion(requestId, answer))?.delivery),
+    answer: async (requestId, answer, selectedOption) =>
+      Boolean((await conversation.answerQuestion(requestId, answer, selectedOption))?.delivery),
     view: reactive<QuestionView>({ open: true, current: null, drafts: {}, skipped: [] }),
   };
 }

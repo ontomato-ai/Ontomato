@@ -136,7 +136,7 @@ public class AgentChannelController {
     prepared.put("authority",narrowed);prepared.put("executionActor",body.get("executionActor"));return prepared;
   }
   private void validatePrepare(JSONObject body) {
-    AgentJson.fields(body,"mode","language","agent","sessionId","runId","actor","inputId","input","authority","requestedBy","root","context","executionActor");
+    AgentJson.fields(body,"mode","language","agent","sessionId","runId","actor","inputId","input","authority","requestedBy","root","context","executionActor","userRecipient");
     String mode=AgentJson.text(body,"mode");
     AgentJson.text(body,"language");
     AgentJson.id(body.getString("inputId"));

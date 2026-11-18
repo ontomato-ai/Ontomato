@@ -146,10 +146,11 @@ public class OntologyAgentController {
       @RequestBody JSONObject body,
       HttpServletRequest req)
       throws Exception {
-    AgentJson.fields(body, "message", "replyTo");
+    AgentJson.fields(body, "message", "replyTo", "selectedOption");
+    if(body.containsKey("selectedOption") && (!(body.get("selectedOption") instanceof Integer) || body.getIntValue("selectedOption")<0 || !body.containsKey("replyTo"))) throw AgentHttpException.invalid("selectedOption requires a question and a nonnegative integer");
     if(body.containsKey("replyTo")) AgentJson.id(body.getString("replyTo"));
     return host.send(
-        AgentJson.id(id), AgentJson.id(key), AgentJson.text(body, "message"), body.getString("replyTo"), access.forSession(req,id));
+        AgentJson.id(id), AgentJson.id(key), AgentJson.text(body, "message"), body.getString("replyTo"), body.getInteger("selectedOption"), access.forSession(req,id));
   }
 
   @GetMapping("/sessions/{id}/runs/{run}")

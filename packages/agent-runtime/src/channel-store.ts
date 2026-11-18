@@ -38,8 +38,8 @@ export class ChannelStore {
   async pendingQuestions(scope: Scope, sessionId: string): Promise<AgentPendingQuestion[]> {
     const { rows } = await this.store.pool.query(`SELECT q.id,q.message FROM ${this.store.table("messages")} q
       WHERE q.host_id=$1 AND q.domain_id=$2 AND q.session_id=$3 AND q.message->>'kind'='agent-question'
-      AND q.message->'source'->'session'->>'sessionId'=q.session_id::text
-      AND NOT EXISTS(SELECT 1 FROM ${this.store.table("messages")} a WHERE a.host_id=q.host_id AND a.domain_id=q.domain_id AND a.session_id=q.session_id AND a.message->>'kind'='agent-answer' AND a.message->>'replyTo'=q.id::text)
+      AND (q.message->>'recipient'='user' OR q.message->'source'->'session'->>'sessionId'=q.session_id::text)
+      AND NOT EXISTS(SELECT 1 FROM ${this.store.table("messages")} a WHERE a.host_id=q.host_id AND a.domain_id=q.domain_id AND a.session_id=q.session_id AND a.message->>'kind'='agent-answer' AND a.message->>'replyTo'=q.id::text AND (q.message->>'recipient' IS DISTINCT FROM 'user' OR a.message->'source'->>'kind'='user'))
       ORDER BY q.seq`,[...this.key(scope),sessionId]);
     return rows.map(row=>({requestId:row.id,source:row.message.source,message:row.message.content,defaultAssumption:row.message.defaultAssumption,...(row.message.options ? {options:row.message.options} : {})}));
   }
@@ -47,6 +47,27 @@ export class ChannelStore {
     const row = (await this.store.pool.query(`SELECT message FROM ${this.store.table("messages")} WHERE domain_id=$1 AND id=$2 AND message->>'role'='notification' AND message->>'kind'='agent-question'`,[domainId,id])).rows[0];
     if (!row) throw new RuntimeError(400,"INVALID_REPLY","replyTo must identify a question received by this caller");
     return row.message as AgentNotification;
+  }
+  /** The receiving receipt is the authority, even when a different provider asked the question. */
+  async userQuestion(domainId: string, id: string) {
+    const row = (await this.store.pool.query(`SELECT host_id,session_id,id,run_id,seq,message FROM ${this.store.table("messages")} WHERE domain_id=$1 AND id=$2 AND message->>'kind'='agent-question' AND message->>'recipient'='user'`, [domainId,id])).rows[0];
+    if (!row) throw new RuntimeError(404,"NOT_FOUND","User question not found");
+    return { scope: { hostId: row.host_id as string, domainId }, sessionId: row.session_id as string,
+      record: { id: row.id as string,runId:row.run_id as string,messageSeq:Number(row.seq),contextSeq:null,message:row.message as AgentNotification } };
+  }
+  async userAnswer(scope: Scope, questionId: string, answerId: string) {
+    const question = await this.userQuestion(scope.domainId,questionId);
+    const source = question.record.message.source as AgentExecutionRef;
+    const origin = await this.task(scope.domainId,source.runId);
+    if (scope.hostId !== question.scope.hostId && scope.hostId !== origin!.scope.hostId)
+      throw new RuntimeError(403,"FORBIDDEN","Question belongs to another provider");
+    const answer = await this.receipt(question.scope,answerId);
+    if (!answer || answer.sessionId !== question.sessionId || answer.message.role !== "notification" ||
+      answer.message.kind !== "agent-answer" || answer.message.replyTo !== questionId ||
+      !("kind" in answer.message.source) || answer.message.source.kind !== "user" || !answer.message.respondent)
+      throw new RuntimeError(404,"NOT_FOUND","Human answer receipt not found");
+    return { questionId,answerId,source:answer.message.source,respondent:answer.message.respondent,
+      recipientSession: origin!.intent.channel.userRecipient!.session,selectedOption:answer.message.selectedOption ?? null,text:answer.message.content };
   }
   async delivered(scope: Scope,sessionId: string,source: AgentExecutionRef) {
     const row=(await this.store.pool.query(`SELECT id FROM ${this.store.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND message->>'role'='notification' AND message->>'kind'='agent-result' AND message->'source'=$4::jsonb LIMIT 1`,[...this.key(scope),sessionId,JSON.stringify(source)])).rows[0];
@@ -56,7 +77,13 @@ export class ChannelStore {
     return (await this.store.pool.query(`SELECT id FROM ${this.store.table("runs")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`,[...this.key(scope),runId])).rowCount!==0;
   }
   async questions(scope: Scope,execution: AgentExecutionRef) {
-    const {rows}=await this.store.pool.query(`SELECT q.id,q.message,EXISTS(SELECT 1 FROM ${this.store.table("messages")} answer WHERE answer.host_id=$3 AND answer.domain_id=$1 AND answer.session_id=$4 AND answer.message->>'replyTo'=q.id::text AND answer.message->>'kind'='agent-answer') AS answered FROM ${this.store.table("messages")} q WHERE q.domain_id=$1 AND q.message->>'role'='notification' AND q.message->>'kind'='agent-question' AND q.message->'source'=$2::jsonb ORDER BY q.seq`,[scope.domainId,JSON.stringify(execution),scope.hostId,execution.session.sessionId]);
+    const {rows}=await this.store.pool.query(`SELECT q.id,q.message,EXISTS(SELECT 1 FROM ${this.store.table("messages")} answer
+      WHERE answer.domain_id=$1 AND answer.message->>'replyTo'=q.id::text AND answer.message->>'kind'='agent-answer'
+      AND CASE WHEN q.message->>'recipient'='user'
+        THEN answer.host_id=q.host_id AND answer.session_id=q.session_id AND answer.message->'source'->>'kind'='user'
+        ELSE answer.host_id=$3 AND answer.session_id=$4 END) AS answered
+      FROM ${this.store.table("messages")} q WHERE q.domain_id=$1 AND q.message->>'role'='notification'
+      AND q.message->>'kind'='agent-question' AND q.message->'source'=$2::jsonb ORDER BY q.seq`,[scope.domainId,JSON.stringify(execution),scope.hostId,execution.session.sessionId]);
     return rows.map(row=>({id:row.id,message:row.message.content as string,defaultAssumption:row.message.defaultAssumption as string,answered:row.answered as boolean,...(row.message.options ? {options:row.message.options} : {})}));
   }
   async reserve(scope: Scope, sessionId: string, runId: string, inputId: string, channel: AgentRunContext, options: { language: string; context?: AgentRunIntent["context"]; title?: string; executionUserId?:string|null; afterRunId?: string; create?: { binding: ChannelBinding; input: AgentNotification } }) {

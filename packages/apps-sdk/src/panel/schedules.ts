@@ -1,3 +1,4 @@
+import { scheduledTaskPanelOperations } from "@ontomato/platform-schedules/panel-operations";
 import { createSchedulesApi, scheduleFailure, type PlatformSchedulesHost } from "@ontomato/platform-schedules";
 import type { PlatformTask } from "@ontomato/contracts/platform-schedules";
 import { formFieldKey } from "@ontomato/contracts/form-fields";
@@ -75,7 +76,9 @@ function refused(error: unknown): unknown {
  * `schedules.runNow`, which runs one task now and leaves its schedule as it is.
  */
 export function registerSchedulesPlatformObject(context: AppContext): void {
-  const api = createSchedulesApi(schedulesHost(context));
+  const host = schedulesHost(context);
+  const api = createSchedulesApi(host);
+  const operations = scheduledTaskPanelOperations(host);
 
   /** The task's application's form for the values it holds, with the task's revision. */
   async function form(task: PlatformTask, values: Readonly<Record<string, string>>, changedField: string | null) {
@@ -100,21 +103,7 @@ export function registerSchedulesPlatformObject(context: AppContext): void {
     },
     async save(primaryKey, values, revision) {
       try {
-        const task = await api.task(primaryKey);
-        const asked = await api.form(task.appId, { values, changedField: null, taskId: task.id, timeZone: task.timeZone });
-        return record(
-          await api.update(task.id, {
-            title: task.title,
-            appId: task.appId,
-            content: values,
-            formRevision: asked.formRevision,
-            frequency: task.frequency,
-            timeZone: task.timeZone,
-            notifyEmail: task.notifyEmail,
-            // The revision the form was opened at, not the one the task has now: a save over somebody else's is refused.
-            revision,
-          }),
-        );
+        return record(await operations.save(primaryKey, values, revision));
       } catch (error) {
         throw refused(error);
       }
@@ -126,7 +115,7 @@ export function registerSchedulesPlatformObject(context: AppContext): void {
     async invoke({ target }) {
       if (target?.kind !== "object") throw new Error("Run now acts on the selected task");
       // The service replays a repeated key with the run it created; this one is new per call.
-      const run = await api.runNow(target.primaryKey, randomId());
+      const run = await operations.runNow(target.primaryKey, randomId());
       return { runId: run.id, status: run.status, trigger: run.trigger };
     },
   });
