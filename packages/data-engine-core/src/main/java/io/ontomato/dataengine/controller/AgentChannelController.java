@@ -249,7 +249,9 @@ public class AgentChannelController {
         files.add(JSONObject.of("id",id,"name",id+".dataset.json","mediaType","application/json","href","/platform/agent-channel/tasks/"+execution.run()+"/files/"+id));
       }
       var run=store.run(execution.session(),execution.run(),owner);
-      String summary=java.text.MessageFormat.format(language.get(run.getString("language"),"AgentChannel.retrieval."+projection.getString("status")),files.size(),rows,String.join(", ",files.stream().map(file -> file.getString("name")).toList()));
+      // The summary states what was delivered, never file names: a name is not a path the requester can cite or a sign the
+      // user has seen the file. The files themselves stay in files[] for the requester's own read.
+      String summary=java.text.MessageFormat.format(language.get(run.getString("language"),"AgentChannel.retrieval."+projection.getString("status")),files.size(),rows);
       boolean admitted=run.getBooleanValue("runtime_admitted");
       Object process=admitted?JSONObject.of("mode","inline","runtimeSessionId",execution.session(),"runtimeRunId",execution.run()):JSONObject.of("mode","none");
       return JSONObject.of("settled",projection.getBooleanValue("settled"),"status",projection.getString("status"),"summary",summary,"process",process,"results",List.of(),"retrieval",projection.get("retrieval"),"quality",projection.get("quality"),"files",files);
