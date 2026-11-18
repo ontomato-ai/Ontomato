@@ -213,6 +213,9 @@ defineExpose({ focus: () => input.value?.focus() });
 .composer.floating .composer-controls {
   flex-shrink: 0;
 }
+.composer.floating textarea {
+  flex: 1 1 auto;
+}
 .composer-bar {
   display: flex;
   align-items: center;
@@ -275,9 +278,13 @@ defineExpose({ focus: () => input.value?.focus() });
     display: none;
   }
 }
-/* The message takes the width; its height is set from its lines as it grows. */
+/*
+ * The message takes the width; its height is the one its lines set as it grows. Under a conversation it stands in a
+ * column, where a flexible basis would override that height, so it does not flex there; floating, it shares one line with
+ * send and takes what that line leaves.
+ */
 textarea {
-  flex: 1;
+  flex: none;
   width: 100%;
   min-width: 0;
   padding: calc((var(--composer-control) - var(--leading-base)) / 2) 0;
