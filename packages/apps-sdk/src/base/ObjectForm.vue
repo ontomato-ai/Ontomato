@@ -3,7 +3,7 @@ import { computed, onMounted, ref, shallowRef, watch } from "vue";
 import type { FormField } from "@ontomato/contracts/form-fields";
 import { FormFields as FormFieldsView } from "@ontomato/foundation-ui/form";
 import { slotState, usePanelContext, useProjectionForm, useProjectionSlot } from "../panel/context";
-import { platformObjectFor, selectedKey, type PlatformObjectForm } from "../panel/platform-objects";
+import { platformObjectFor, PlatformObjectRefusal, selectedKey, type PlatformObjectForm } from "../panel/platform-objects";
 import type { ReceivedPanelDraft } from "../panel/draft";
 
 /**
@@ -41,6 +41,9 @@ const changed = ref<ReadonlySet<string>>(new Set());
 const loading = ref(true);
 const saving = ref(false);
 const failure = shallowRef<Error | null>(null);
+/** The owner's refusal of the last save, shown with the form the reader still holds; its fields' messages on the fields. */
+const refusal = shallowRef<Error | null>(null);
+const fieldErrors = ref<Readonly<Record<string, string>>>({});
 
 const state = computed(() => slotState(slot.slot, props.inputName));
 const key = computed(() => selectedKey(panel.instance.state.values.value[state.value]));
@@ -52,6 +55,8 @@ function adopt(form: PlatformObjectForm) {
   baseline.value = { ...form.values };
   revision.value = form.revision;
   changed.value = new Set();
+  refusal.value = null;
+  fieldErrors.value = {};
   loading.value = false;
 }
 
@@ -134,17 +139,20 @@ useProjectionForm({
 
 /**
  * Writes the form through its owner, at the revision it was read at. An owner that refuses — somebody else changed the
- * object, or a value is no longer valid — has its answer shown, and nothing is retried: the reader's form stays as they
- * left it.
+ * object, or a value is no longer valid — has its reason shown beside the form and its field messages on the fields it
+ * named. Nothing is retried or read again: the reader's form stays as they left it.
  */
 async function write(valuesToSave: Record<string, string>, primaryKey: string): Promise<unknown> {
   saving.value = true;
+  refusal.value = null;
+  fieldErrors.value = {};
   try {
     const saved = await client.save(primaryKey, valuesToSave, revision.value);
     adopt({ fields: fields.value, values: valuesToSave, revision: revision.value + 1 });
     return saved;
   } catch (reason) {
-    fail(reason);
+    refusal.value = reason instanceof Error ? reason : new Error(String(reason));
+    fieldErrors.value = reason instanceof PlatformObjectRefusal ? reason.fields : {};
     throw reason;
   } finally {
     saving.value = false;
@@ -174,7 +182,7 @@ function asText(form: object): Record<string, string> {
       <FormFieldsView
         :fields="fields"
         :values="values"
-        :errors="{}"
+        :errors="fieldErrors"
         :disabled="saving"
         :choose-placeholder="choosePlaceholder"
         @input="typed"
@@ -183,6 +191,7 @@ function asText(form: object): Record<string, string> {
       <p v-if="changed.size" class="sdk-owner-form-changed" role="status">
         Changed: {{ [...changed].join(", ") }}
       </p>
+      <p v-if="refusal" class="sdk-owner-form-refusal" role="alert">{{ refusal.message }}</p>
     </el-form>
   </div>
 </template>
@@ -190,6 +199,11 @@ function asText(form: object): Record<string, string> {
 <style scoped>
 .sdk-owner-form-changed {
   color: var(--el-color-primary);
+  font-size: 12px;
+  margin: 4px 0 0;
+}
+.sdk-owner-form-refusal {
+  color: var(--el-color-danger);
   font-size: 12px;
   margin: 4px 0 0;
 }

@@ -1,9 +1,10 @@
-import { createSchedulesApi, type PlatformSchedulesHost } from "@ontomato/platform-schedules";
+import { createSchedulesApi, scheduleFailure, type PlatformSchedulesHost } from "@ontomato/platform-schedules";
 import type { PlatformTask } from "@ontomato/contracts/platform-schedules";
+import { formFieldKey } from "@ontomato/contracts/form-fields";
 import { randomId } from "@ontomato/contracts/random-id";
 import { contextTransport, type AppContext } from "../context";
 import { registerHandler } from "./handlers";
-import { registerPlatformObject, type PlatformObjectRecord } from "./platform-objects";
+import { PlatformObjectRefusal, registerPlatformObject, type PlatformObjectRecord } from "./platform-objects";
 
 /*
  * The scheduled tasks as a platform object a projection may bind (overall design 3.2, 10.1): reading one, listing the
@@ -55,6 +56,22 @@ function record(task: PlatformTask): PlatformObjectRecord {
 }
 
 /**
+ * The service's refusal of a save, as a generic form shows it: the service's own reason, and the message for each of the
+ * task's content fields it names (`/content/<key>`), by key. A failure the service did not answer is passed on as it is.
+ */
+function refused(error: unknown): unknown {
+  const { refusal } = scheduleFailure(error);
+  if (!refusal) return error;
+  const fields = Object.fromEntries(
+    (refusal.fields ?? []).flatMap((field) => {
+      const key = formFieldKey(field.field, "/content/");
+      return key === null ? [] : [[key, field.message]];
+    }),
+  );
+  return new PlatformObjectRefusal(refusal.message, fields, { cause: error });
+}
+
+/**
  * Registers the scheduled tasks this version's panels read and write: the list, one task, its application's form (which
  * the application answers again when a field it depends on changes), and the save at the task's own revision. Then
  * `schedules.runNow`, which runs one task now and leaves its schedule as it is.
@@ -84,21 +101,25 @@ export function registerSchedulesPlatformObject(context: AppContext): void {
       return form(await api.task(primaryKey), values, field);
     },
     async save(primaryKey, values, revision) {
-      const task = await api.task(primaryKey);
-      const asked = await api.form(task.appId, { values, changedField: null, taskId: task.id, timeZone: task.timeZone });
-      return record(
-        await api.update(task.id, {
-          title: task.title,
-          appId: task.appId,
-          content: values,
-          formRevision: asked.formRevision,
-          frequency: task.frequency,
-          timeZone: task.timeZone,
-          notifyEmail: task.notifyEmail,
-          // The revision the form was opened at, not the one the task has now: a save over somebody else's is refused.
-          revision,
-        }),
-      );
+      try {
+        const task = await api.task(primaryKey);
+        const asked = await api.form(task.appId, { values, changedField: null, taskId: task.id, timeZone: task.timeZone });
+        return record(
+          await api.update(task.id, {
+            title: task.title,
+            appId: task.appId,
+            content: values,
+            formRevision: asked.formRevision,
+            frequency: task.frequency,
+            timeZone: task.timeZone,
+            notifyEmail: task.notifyEmail,
+            // The revision the form was opened at, not the one the task has now: a save over somebody else's is refused.
+            revision,
+          }),
+        );
+      } catch (error) {
+        throw refused(error);
+      }
     },
   });
 

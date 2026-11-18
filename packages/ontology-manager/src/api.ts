@@ -365,9 +365,11 @@ export function createManagerRequest(
     if (!response.ok) {
       const body = await response.json().catch(() => null);
       assertCurrent();
+      // The refusal also carries the HTTP status and the owner's parsed body (`status`, `payload`, as the workbench's
+      // request layer throws them), so a client that reads its owner's error contract can tell one refusal from another.
       throw Object.assign(new Error(response.status === 409 && path.startsWith("/objectView/") ? context.text("ovConflict") : body?.error?.message || body?.message ||
         context.text("requestFailedStatus", { status: response.status })),
-        { code: body?.error?.code ?? body?.code });
+        { code: body?.error?.code ?? body?.code, status: response.status, payload: body });
     }
     return response;
   }
