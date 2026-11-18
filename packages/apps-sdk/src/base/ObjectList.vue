@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, shallowRef } from "vue";
+import { ElSkeleton } from "element-plus/es/components/skeleton/index";
 import { slotState, usePanelContext, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
 import { platformObjectFor, selectedKey } from "../panel/platform-objects";
 

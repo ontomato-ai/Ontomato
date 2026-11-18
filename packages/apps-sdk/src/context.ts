@@ -1,7 +1,7 @@
 import type { AppExecutionContext } from "@ontomato/contracts/build-tests";
-import { computed, readonly, ref, shallowRef, watch, type App, type Ref } from "vue";
+import { computed, readonly, ref, shallowReactive, shallowRef, watch, type App, type Ref } from "vue";
 import { createI18n } from "vue-i18n";
-import { provideGlobalConfig } from "element-plus";
+import { provideGlobalConfig } from "element-plus/es/components/config-provider/src/hooks/use-global-config";
 import { chartTheme } from "@ontomato/foundation-ui/chart";
 import { installBrandTheme } from "@ontomato/design-tokens";
 import {
@@ -15,7 +15,6 @@ import {
 import MetricViewData from "@ontomato/ontology-manager/app-components/MetricViewData.vue";
 import {
   createActionsClient,
-  createProductsClient,
   createManagerRequest,
   createMetricViewsClient,
   metricViewsKey,
@@ -23,7 +22,8 @@ import {
   type ManagerRequest,
   type MetricViewsClient,
 } from "@ontomato/ontology-manager/clients";
-import edition from "apps-sdk:edition";
+import { contextProducts, type ContextProducts } from "./context-products";
+import type { SdkEdition } from "./edition";
 import type {ProductSubscriptionTarget,ProductSubscriptionEvent} from '@ontomato/contracts/product-subscriptions';
 import type {ProductNavigationTarget} from '@ontomato/contracts/product-page-state';
 import {connectAppBridge} from './bridge';
@@ -55,7 +55,7 @@ export interface AppContext {
    */
   readonly actions: ActionsClient;
   /** Product assets use the same IDs and revision checks as manual authoring. */
-  readonly products: ReturnType<typeof createProductsClient>;
+  readonly products: ContextProducts;
   /** Opens a platform page in the shell, e.g. `navigate("/ontology/objects")`. */
   navigate(path: string): void;
   navigate(target:ProductNavigationTarget):Promise<void>;
@@ -77,9 +77,24 @@ export interface AppContext {
  */
 const transports = new WeakMap<AppContext, ManagerRequest>();
 let bridgedHost:AppHost|undefined;
-export async function connectAppContext():Promise<AppContext>{
-  try{const host=(window.parent as Window & {[APP_HOST_GLOBAL]?:AppHost})[APP_HOST_GLOBAL];if(host)return createAppContext();}catch{/* Opaque frames connect over a transferred port. */}
-  bridgedHost=await connectAppBridge();return createAppContext();
+
+function parentHost() {
+  try {
+    return (window.parent as Window & { [APP_HOST_GLOBAL]?: AppHost })[APP_HOST_GLOBAL];
+  } catch {
+    // Opaque frames connect over a transferred port.
+    return undefined;
+  }
+}
+
+export async function connectAppHost(): Promise<AppHost> {
+  return parentHost() ?? (bridgedHost = await connectAppBridge());
+}
+
+export function currentAppHost(): AppHost {
+  const host = bridgedHost ?? parentHost();
+  if (!host) throw new Error("No platform shell around this page: Ontomato apps run in the shell's app frame");
+  return host;
 }
 
 /** The request layer of a context, for the SDK's own modules. */
@@ -98,33 +113,49 @@ function checkPageContext({ page, selection }: AppPageContext) {
     throw new TypeError("setPageContext: selection must be null or { className, primaryKey, name }, each a non-empty string");
 }
 
-/**
- * Connects the app to the platform shell around it: identity, language and theme come from the shell's app host, and
- * every request carries the shell's current credential. Call it once per page, inside the shell's app frame.
- */
-export function createAppContext(): AppContext {
-  let host=bridgedHost;
-  if(!host)try{host=(window.parent as Window & { [APP_HOST_GLOBAL]?: AppHost })[APP_HOST_GLOBAL];}catch{/* Sandboxed apps initialize through connectAppContext. */}
-  if (!host) throw new Error("No platform shell around this page: Ontomato apps run in the shell's app frame");
+type ElementLocale = ReturnType<SdkEdition["language"]["elementLocale"]>;
+type Messages = NonNullable<SdkEdition["language"]["messages"][keyof SdkEdition["language"]["messages"]]>;
+
+export interface AppLocale {
+  messages: Messages;
+  elementLocale: ElementLocale;
+}
+
+interface ContextAppearance {
+  brand: SdkEdition["brand"];
+  defaultLocale: string;
+  messages: Record<string, Messages>;
+  elementLocale(locale: string): ElementLocale;
+  loadLocale?(locale: string): Promise<AppLocale> | undefined;
+}
+
+/** One context implementation for the hosted application and the panel frame. */
+export function createContext(host: AppHost, appearance: ContextAppearance): AppContext {
   const snapshot = host.snapshot();
-  const { language, managerMessages } = edition;
+  const { brand, defaultLocale, messages, loadLocale } = appearance;
   const i18n = createI18n({
     legacy: false,
     locale: snapshot.locale,
-    fallbackLocale: language.defaultLocale,
-    messages: Object.fromEntries(
-      language.supported.map((locale) => [locale, { ...language.messages[locale], ontology: managerMessages[locale].ontology }]),
-    ),
+    fallbackLocale: defaultLocale,
+    messages,
   });
+  const elementLocales = shallowReactive<Record<string, ElementLocale>>({});
   const locale = ref(snapshot.locale);
   const theme = ref(snapshot.theme);
   const follow = (preferences: AppHostPreferences) => {
     locale.value = i18n.global.locale.value = preferences.locale;
+    if (!i18n.global.availableLocales.includes(preferences.locale)) {
+      const next = preferences.locale;
+      void loadLocale?.(next)?.then((bundle) => {
+        i18n.global.setLocaleMessage(next, bundle.messages);
+        elementLocales[next] = bundle.elementLocale;
+      });
+    }
     theme.value = preferences.theme;
     document.documentElement.lang = preferences.locale;
     document.documentElement.classList.toggle("dark", preferences.theme === "dark");
   };
-  installBrandTheme(edition.brand);
+  installBrandTheme(brand);
   follow(snapshot);
   // The platform's chart theme, read from the brand stylesheet installed above, which holds both modes: read again once
   // a switch of the platform's theme has switched the `dark` class.
@@ -166,7 +197,7 @@ export function createAppContext(): AppContext {
     (status) => host.onAuthFailure(status),
   );
   const metricViews = createMetricViewsClient(transport);
-  const products=createProductsClient(transport);
+  const products = contextProducts(transport);
   const actions=createActionsClient(transport);
   const context: AppContext = {
     mountProductAsset(element,assetId){
@@ -206,7 +237,7 @@ export function createAppContext(): AppContext {
     },
     install(app) {
       app.use(i18n);
-      provideGlobalConfig(computed(() => ({ locale: language.elementLocale(locale.value) })), app, true);
+      provideGlobalConfig(computed(() => ({ locale: elementLocales[locale.value] ?? appearance.elementLocale(locale.value) })), app, true);
       app.provide(metricViewsKey, metricViews);
       app.component("MetricViewData", MetricViewData);
     },

@@ -10,3 +10,14 @@ declare module "apps-sdk:edition" {
   const edition: SdkEdition;
   export default edition;
 }
+
+declare module "apps-sdk:element-components" {
+  const loaders: Record<string, () => Promise<import("vue").Component>>;
+  export default loaders;
+}
+
+declare module "apps-sdk:panel-appearance" {
+  export const brand: import("@ontomato/apps-sdk").SdkEdition["brand"];
+  export const defaultLocale: string;
+  export const locales: Record<string, () => Promise<import("./context").AppLocale>>;
+}

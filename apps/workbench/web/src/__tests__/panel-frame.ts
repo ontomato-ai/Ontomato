@@ -253,7 +253,8 @@ export function writePanelDocument(panel: ProductPanel, use: ApplicationPanelUse
 
 /** Writes the frame's document from the run's facts the platform's panel host wrote for it. */
 export function writeFrameDocument(message: PanelHostMessage) {
-  document.body.insertAdjacentHTML("beforeend", message.panel.content.html);
+  // Happy DOM drops the # prefix when it serializes a slot attribute back to Vue's runtime template.
+  document.body.insertAdjacentHTML("beforeend", message.panel.content.html.replace(/(<template\s+)#(?=[\w-])/g, "$1v-slot:"));
   const facts = document.createElement("script");
   facts.type = "application/json";
   facts.setAttribute("data-panel-host-message", "");

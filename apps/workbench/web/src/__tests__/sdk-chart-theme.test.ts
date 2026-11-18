@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { APP_HOST_GLOBAL, type AppHost, type AppHostPreferences } from "@ontomato/contracts/app-host";
 import { ossBrand } from "@ontomato/design-tokens/oss";
 import { chartTheme } from "@ontomato/foundation-ui/chart";
-import { createAppContext } from "../../../../../packages/apps-sdk/src/context";
+import { createAppContext } from "../../../../../packages/apps-sdk/src/hosted-context";
 
 const inMode = (mode: "light" | "dark") => ({ color: ossBrand.dataviz[mode], textStyle: { color: ossBrand[mode].ink } });
 

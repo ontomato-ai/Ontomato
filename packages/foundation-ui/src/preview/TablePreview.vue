@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { ElCheckbox, ElPagination, ElTable, ElTableColumn } from "element-plus";
+import { ElCheckbox } from "element-plus/es/components/checkbox/index";
+import { ElPagination } from "element-plus/es/components/pagination/index";
+import { ElTable, ElTableColumn } from "element-plus/es/components/table/index";
 import ColumnFilter from "./ColumnFilter.vue";
 import type { TableArrangeLabels, TableData } from "./table-data";
 
