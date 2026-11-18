@@ -1,4 +1,5 @@
 import type { ThreadListResponse } from "@ontomato/contracts/chat";
+import type { ThreadQualityCheckResponse } from "@ontomato/contracts/query-thinking";
 import {
   createEventSource,
   nodeApiDelete,
@@ -12,6 +13,14 @@ export const chatApi = {
   listThreads: (limit: number, offset: number): Promise<ThreadListResponse> =>
     nodeApiGet(`/threads?limit=${limit}&offset=${offset}&threadType=qa`),
   getThreadMessages: (threadId: string) => nodeApiFetch(`/threads/${threadId}/messages`, "GET"),
+  getQualityCheck: (
+    threadId: string,
+    requestSeq: number,
+    signal: AbortSignal
+  ): Promise<ThreadQualityCheckResponse> =>
+    nodeApiGet(`/threads/${encodeURIComponent(threadId)}/requests/${requestSeq}/quality-check`, {
+      signal,
+    }),
   deleteThread: (threadId: string) => nodeApiDelete(`/threads/${threadId}`),
   renameThread: (threadId: string, title: string) =>
     nodeApiPut(`/threads/${threadId}/title`, { title }),

@@ -1,4 +1,5 @@
 import type { ThreadMessagesPayload } from "@ontomato/contracts/chat";
+import { readTrackedQualityCheck } from "../data-query/late-fact";
 import {
   isWonByRetiredBranch,
   toDisplayFact,
@@ -296,6 +297,16 @@ export async function getThreadMessagesPayload(
     messages,
     ...(activeTurn ? { activeTurn: { requestSeq: activeTurn.requestSeq } } : {}),
   };
+}
+
+export async function getThreadQualityCheck(
+  threadId: string,
+  requestSeq: number,
+  access: { userId: string; domainId: string },
+  locale: string
+) {
+  await requireCheckpointer().verifyThreadAccess(threadId, access.userId, access.domainId);
+  return readTrackedQualityCheck(threadId, requestSeq, locale);
 }
 
 export async function getThreadDataDownload(

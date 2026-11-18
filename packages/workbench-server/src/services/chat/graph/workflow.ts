@@ -2,7 +2,6 @@ import { getDefaultLocale } from "../../../i18n/index";
 import type { ClarificationOption } from "@ontomato/contracts/chat";
 import { buildQualityCheckView } from "../../data-query/query-fact";
 import type { QualityCheckView } from "./utils/task-planner-history";
-import { PendingLateFacts } from "../../data-query/late-fact";
 import type { QueryExecutionFact } from "../../data-query/query-fact";
 import { StateGraph, END, START } from "@langchain/langgraph";
 import {
@@ -54,8 +53,6 @@ export interface DataAgentWorkflowRuntimeArtifacts {
 
 export type DataAgentWorkflowResult = GraphState & {
   runtimeArtifacts?: DataAgentWorkflowRuntimeArtifacts;
-  /** Late facts registered by this run; entries presenting them wait for settlement before finalizing */
-  pendingLateFacts?: PendingLateFacts;
 };
 
 function findPreviousClarificationContext(input: {
@@ -170,7 +167,6 @@ export async function runDataAgentWorkflow(params: {
 
   const checkpointer = getCheckpointer();
   const queryArtifactCache = new QueryArtifactCache();
-  const pendingLateFacts = new PendingLateFacts();
   const tReqSeqStart = Date.now();
   await createThreadPlaceholder(threadId, userQuestion.slice(0, 20), userId, domainId);
   if (
@@ -371,7 +367,6 @@ export async function runDataAgentWorkflow(params: {
       taskPlannerPriorMessages,
       historicalQueryRefsById,
       queryArtifactCache,
-      pendingLateFacts,
     },
   };
 
@@ -528,7 +523,6 @@ export async function runDataAgentWorkflow(params: {
       : undefined,
   };
   finalState.runtimeArtifacts = runtimeArtifacts;
-  finalState.pendingLateFacts = pendingLateFacts;
 
   return finalState;
 }

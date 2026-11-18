@@ -21,6 +21,7 @@ vi.mock("../api", () => ({
   chatApi: {
     listThreads: vi.fn(),
     getThreadMessages: vi.fn(),
+    getQualityCheck: vi.fn(),
     openResumeStream: vi.fn(),
     cancelRun: vi.fn(),
   },
@@ -84,6 +85,44 @@ describe("current question recovery", () => {
     });
     expect(store.isLoading).toBe(false);
     expect(chatApi.openResumeStream).not.toHaveBeenCalled();
+  });
+
+  it("attaches a late quality result to its original reply while a newer question is active", async () => {
+    const stream = new Stream();
+    vi.mocked(chatApi.openResumeStream).mockReturnValue(stream as unknown as EventSource);
+    vi.mocked(chatApi.getThreadMessages).mockResolvedValueOnce(Response.json({
+      messages: [
+        { role: "user", content: "Headcount?", requestSeq: 0 },
+        {
+          role: "assistant",
+          content: "6669",
+          requestSeq: 0,
+          snapshot: {
+            mode: "standard",
+            status: "completed",
+            primaryText: "6669",
+            execution: { qcState: { status: "running", steps: [], deadlineAt: Date.now() + 120_000 } },
+          },
+        },
+        { role: "user", content: "By department?", requestSeq: 1 },
+      ],
+      activeTurn: { requestSeq: 1 },
+    }));
+    let deliver!: (value: Awaited<ReturnType<typeof chatApi.getQualityCheck>>) => void;
+    vi.mocked(chatApi.getQualityCheck).mockReturnValueOnce(new Promise((resolve) => {
+      deliver = resolve;
+    }));
+    const store = useChatStore();
+
+    await store.restoreCurrentThread();
+    expect(store.isLoading).toBe(true);
+    expect(chatApi.getQualityCheck).toHaveBeenCalledWith("thread", 0, expect.any(AbortSignal));
+    deliver({ qcState: { status: "completed", steps: [], result: { score: 95 } } });
+
+    await vi.waitFor(() => expect(store.messages[1].snapshot?.execution?.qcState?.result?.score).toBe(95));
+    expect(store.isLoading).toBe(true);
+    expect(store.messages.at(-1)?.snapshot?.execution?.qcState).toBeUndefined();
+    store.detachCurrentStream();
   });
 
   it.each([true, false])(

@@ -10,6 +10,7 @@ import type {
 import type { RunCancelResponse } from "@ontomato/contracts/chat";
 import { createDeepAnalysisSender } from "../../analysis";
 import { createStandardSender } from "../composables/useStandardStream";
+import { watchQualityChecks } from "../composables/watchQualityChecks";
 import {
   buildAssistantMessage,
   finalizeSnapshotOnStop,
@@ -54,6 +55,7 @@ export const useChatStore = defineStore("chat", () => {
   const fetchingThreads = ref(false);
   const threadTotal = ref(0);
   let threadSelection = 0;
+  const cancelQualityCheckRead = watchQualityChecks(messages, currentThreadId);
 
   const hasMoreThreads = computed(() => threads.value.length < threadTotal.value);
   const threadsLoading = computed(() => fetchingThreads.value || isSelectingThread.value);
@@ -115,6 +117,7 @@ export const useChatStore = defineStore("chat", () => {
 
   const detachCurrentStream = () => {
     threadSelection++;
+    cancelQualityCheckRead();
     isSelectingThread.value = false;
     if (currentEventSource.value) {
       stopRequested.value = true;

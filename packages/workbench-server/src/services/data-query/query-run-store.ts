@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { getPostgresPool, qualifiedTable } from "../../infrastructure/postgres";
 import type { QueryBackendSession } from "@ontomato/contracts/query-execution";
+import type { QcResult, QcState, ThreadQualityCheckResponse } from "@ontomato/contracts/query-thinking";
+
+export const STANDARD_QUERY_SOURCE_KIND = "query_stage";
+export const STANDARD_QUERY_SOURCE_REF = "query";
 
 export interface QueryRun {
   id: string;
@@ -258,7 +262,11 @@ export async function updateQueryRunBackendSessions(
 
 /** Writes back only the two quality-check columns: a late fact must never overwrite a whole row of already finalized execution facts. Returns the number of rows hit. */
 export async function updateQueryRunQualityCheck(
-  input: QueryRunKey & { qcResult?: unknown; qcState?: unknown }
+  input: QueryRunKey & {
+    qcResult?: QcResult;
+    qcState: QcState;
+    previousStatus?: "running" | null;
+  }
 ): Promise<number> {
   const result = await getPostgresPool().query(
     `UPDATE ${qualifiedTable("query_runs")}
@@ -268,7 +276,8 @@ export async function updateQueryRunQualityCheck(
        WHERE thread_id = $1
          AND request_seq = $2
          AND source_kind = $3
-         AND source_ref = $4`,
+         AND source_ref = $4
+         AND ($8::boolean = false OR (qc_state->>'status') IS NOT DISTINCT FROM $9::text)`,
     [
       input.threadId,
       input.requestSeq,
@@ -277,9 +286,24 @@ export async function updateQueryRunQualityCheck(
       jsonParam(input.qcResult),
       jsonParam(input.qcState),
       new Date(),
+      input.previousStatus !== undefined,
+      input.previousStatus ?? null,
     ]
   );
   return result.rowCount ?? 0;
+}
+
+export async function getQueryRunQualityCheck(input: QueryRunKey): Promise<ThreadQualityCheckResponse> {
+  const { rows } = await getPostgresPool().query(
+    `SELECT qc_state, qc_result
+       FROM ${qualifiedTable("query_runs")}
+       WHERE thread_id = $1 AND request_seq = $2 AND source_kind = $3 AND source_ref = $4`,
+    [input.threadId, input.requestSeq, input.sourceKind, input.sourceRef]
+  );
+  const row = rows[0];
+  return row?.qc_state
+    ? { qcState: row.qc_state, qcResult: row.qc_result ?? undefined }
+    : null;
 }
 
 export async function listQueryRuns(threadId: string, requestSeq?: number): Promise<QueryRun[]> {

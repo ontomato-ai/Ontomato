@@ -1,10 +1,11 @@
 import { tApp } from "../../../../i18n";
-import type { PendingLateFacts } from "../../../data-query/late-fact";
 import type { QueryExecutionFact } from "../../../data-query/query-fact";
 import type { AnalysisResult, GraphState, QueryArtifactRef, VisualizationResult } from "../state";
 import {
   buildQueryRunId,
   getQueryRunBySource,
+  STANDARD_QUERY_SOURCE_KIND,
+  STANDARD_QUERY_SOURCE_REF,
   type QueryRun,
 } from "../../../data-query/query-run-store";
 import { createLogger } from "../../../../logging/logger";
@@ -13,9 +14,6 @@ import type { FieldDisplayPlan } from "../../../data-query/adapter";
 import { currentDatasetRule } from "./current-dataset";
 
 const logger = createLogger("query-artifact-cache");
-
-export const STANDARD_QUERY_SOURCE_KIND = "query_stage";
-export const STANDARD_QUERY_SOURCE_REF = "query";
 
 export function createQueryArtifactRef(input: {
   threadId: string;
@@ -110,11 +108,6 @@ export class QueryArtifactCache {
 
 export function getQueryArtifactCache(config?: any): QueryArtifactCache | undefined {
   return config?.configurable?.queryArtifactCache;
-}
-
-/** Where this run registers late facts; like the query artifact cache, a request-scoped runtime carrier. */
-export function resolvePendingLateFacts(config?: any): PendingLateFacts | undefined {
-  return config?.configurable?.pendingLateFacts;
 }
 
 export function hasUsableDataReference(state: GraphState): boolean {

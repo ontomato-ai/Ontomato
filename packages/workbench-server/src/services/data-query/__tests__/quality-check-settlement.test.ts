@@ -2,10 +2,16 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { appTextEn } from "../../../i18n/app-text-en";
-import { LATE_FACT_SETTLE_TIMEOUT_MS, startQualityCheckSettlement } from "../late-fact";
+import { LATE_FACT_SETTLE_TIMEOUT_MS, readTrackedQualityCheck, startQualityCheckSettlement, startTrackedQualityCheck } from "../late-fact";
 
 const saved = vi.hoisted(() => vi.fn(async (_input: any) => 1));
-vi.mock("../query-run-store", () => ({ updateQueryRunQualityCheck: saved }));
+const read = vi.hoisted(() => vi.fn());
+vi.mock("../query-run-store", () => ({
+  updateQueryRunQualityCheck: saved,
+  getQueryRunQualityCheck: read,
+  STANDARD_QUERY_SOURCE_KIND: "query_stage",
+  STANDARD_QUERY_SOURCE_REF: "query",
+}));
 vi.mock("../../../logging/logger", () => ({
   createLogger: () => ({ info() {}, warn() {}, error() {} }),
 }));
@@ -55,11 +61,8 @@ describe("quality-check settlement at the backend response boundary", () => {
     vi.stubGlobal("fetch", async () => Response.json({
       success: false, code: 403, message: `Permission denied: ${permission}`, data: null,
     }));
-    const states: string[] = [];
+    await startQualityCheckSettlement(input);
 
-    await startQualityCheckSettlement({ ...input, onState: (state) => states.push(state.status) });
-
-    expect(states.at(-1)).toBe("failed");
     const record = saved.mock.calls[0]![0];
     expect(record.qcState.status).toBe("failed");
     expect(record.qcState.steps.some((step: any) => step.meaning?.includes(permission))).toBe(true);
@@ -102,5 +105,37 @@ describe("quality-check settlement at the backend response boundary", () => {
     await settlement;
     expect(saved.mock.calls[0]![0].qcState.status).toBe("unsettled");
     expect(saved.mock.calls[0]![0].qcResult).toBeUndefined();
+  });
+
+  it("registers a tracked quality check before its independent reader settles", async () => {
+    vi.useFakeTimers();
+    pendingRequest();
+    const startedAt = Date.now();
+
+    await startTrackedQualityCheck(input);
+
+    expect(saved).toHaveBeenCalledTimes(1);
+    expect(saved.mock.calls[0]![0]).toMatchObject({
+      previousStatus: null,
+      qcState: { status: "running", deadlineAt: startedAt + 120_000 },
+    });
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(saved.mock.calls[1]![0]).toMatchObject({
+      previousStatus: "running",
+      qcState: { status: "unsettled" },
+    });
+  });
+
+  it("returns the persisted result when an expired-status read races with its writer", async () => {
+    const completed = { qcState: { status: "completed", steps: [], result: { score: 95 } } };
+    read.mockResolvedValueOnce({ qcState: { status: "running", deadlineAt: 1, steps: [] } })
+      .mockResolvedValueOnce(completed);
+    saved.mockResolvedValueOnce(0);
+
+    expect(await readTrackedQualityCheck("thread", 0, "en")).toBe(completed);
+    expect(saved.mock.calls[0]![0]).toMatchObject({
+      previousStatus: "running",
+      qcState: { status: "unsettled" },
+    });
   });
 });
