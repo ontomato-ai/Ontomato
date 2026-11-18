@@ -92,6 +92,9 @@ public class WorkflowServiceImpl implements WorkflowService {
         workflows.save(workflow);
 
         for (WorkflowStep step : workflow.getSteps()) {
+            // Case-scoped steps are authorized per Case at execution time; a role-level grant would
+            // widen a temporary process to the whole role and outlive the Case.
+            if (Boolean.TRUE.equals(step.getCaseScoped())) continue;
             grants.grant(domainId, workflow.getId(), step.getRoleCode(), CapabilityGrantLookup.ACTION,
                     step.getActionId(), version, step.getStepNo(), GrantScope.freeze(step.getScope(), workflow.getRunContract()));
         }
@@ -160,6 +163,12 @@ public class WorkflowServiceImpl implements WorkflowService {
         }
     }
 
+    /** A temporary process owns a Case instead of a domain fact class. */
+    private static boolean temporary(Workflow workflow) {
+        return Boolean.TRUE.equals(workflow.getTemporary())
+                || "workflow_case".equals(workflow.getRunClassName());
+    }
+
     /** A step must name a role and an action that exists in this domain, or activation grants nothing. */
     private void validate(Workflow workflow, String domainId) {
         List<String> problems = new ArrayList<>();
@@ -172,7 +181,8 @@ public class WorkflowServiceImpl implements WorkflowService {
                 String where = "step " + step.getStepNo();
                 if (step.getStepNo() == null || step.getStepNo() < 1 || !numbers.add(step.getStepNo()))
                     problems.add(where + " requires a unique positive stepNo");
-                if (step.getScope() == null) problems.add(where + " must declare its scope");
+                if (step.getScope() == null && !Boolean.TRUE.equals(step.getCaseScoped()))
+                    problems.add(where + " must declare its scope");
                 if (step.getRoleCode() == null || step.getRoleCode().isBlank()) {
                     problems.add(where + " names no role");
                 }
@@ -195,6 +205,8 @@ public class WorkflowServiceImpl implements WorkflowService {
     }
 
     private void validateTarget(WorkflowStep step, Action action, Workflow workflow, List<String> problems) {
+        // A temporary process has no fact class to match; its Case owns the run.
+        if (temporary(workflow) || Boolean.TRUE.equals(step.getCaseScoped())) return;
         if (step.getScope() == null) return;
         var target = action.getTarget();
         var contract = workflow.getRunContract();
@@ -225,6 +237,7 @@ public class WorkflowServiceImpl implements WorkflowService {
      * read. A process that declares none is left alone: it simply is not offered those capabilities.</p>
      */
     private void validateRunContract(Workflow workflow, String domainId, List<String> problems) {
+        if (temporary(workflow)) return;
         RunContract contract = workflow.getRunContract();
         if (contract == null) return;
         contract.normalized();
