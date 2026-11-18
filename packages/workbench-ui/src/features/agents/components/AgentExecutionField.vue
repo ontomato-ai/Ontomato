@@ -75,7 +75,7 @@ const reason = computed(() =>
       <!-- The referenced member stays choosable even when the list's page does not reach it. -->
       <el-option v-if="selected && !options.users.some((user) => user.id === selected!.id)" :label="selected.name" :value="selected.id" />
     </el-select>
-    <p class="execution-read">{{ chosenName ?? model ?? own }}</p>
+    <p v-else class="execution-read">{{ chosenName ?? model ?? own }}</p>
     <p v-if="failure" class="execution-unavailable" role="alert">
       {{ t("agents.executionOptionsFailed") }} {{ failure }}
       <el-button size="small" link type="primary" @click="read(keyword)">{{ t("common.retry") }}</el-button>
@@ -84,7 +84,6 @@ const reason = computed(() =>
       {{ t("agents.executionUnavailable", { name: chosenName ?? model, reason }) }}
     </p>
     <p v-else-if="!options.canSetExecutionUser" class="execution-hint">{{ t("agents.executionReadOnly") }}</p>
-    <p v-else class="execution-hint">{{ t("agents.executionHint") }}</p>
   </div>
 </template>
 
