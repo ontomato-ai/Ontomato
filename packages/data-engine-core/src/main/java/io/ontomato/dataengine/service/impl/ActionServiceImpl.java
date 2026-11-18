@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.security.CaseExecutionGuard;
 import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.OntologyQueryService;
 import io.ontomato.dataengine.service.ExecutionTarget;
@@ -622,17 +623,20 @@ public class ActionServiceImpl implements ActionService {
   private Object[] run(Action action, JSONObject param, String lang, User user, UserDataPermission permission,
       int timeoutMinutes, ExecutionTarget target, UUID runId) throws Exception {
     requireExecutable(action, lang, user);
+    boolean caseAuthorized = CaseExecutionGuard.allows(action.getId());
     var admission = capabilityGrants.admission(user.getId(), user.getDomainId(), CapabilityGrantLookup.ACTION, action.getId());
-    if (!admission.admitted()) {
+    if (!admission.admitted() && !caseAuthorized) {
       return new Object[]{null, refused(lang, "Action.notGranted")};
     }
     Function function = io.ontomato.dataengine.service.MetricViewBindings.executionWriteFunction(action.getFunction(), param);
     String key = null;
     if (action.getTarget() != null) {
       key = action.getTarget().key(param);
-      var access = new QueryAccessService.Access(user, permission, null, null, null).withTarget(target);
-      if (!queries.actionTargetExists(action.getTarget(), key, admission, access)) return new Object[]{null, refused(lang, "Action.targetOutsideScope")};
-    } else if (!admission.unrestricted()) return new Object[]{null, refused(lang, "Action.targetOutsideScope")};
+      if (!caseAuthorized) {
+        var access = new QueryAccessService.Access(user, permission, null, null, null).withTarget(target);
+        if (!queries.actionTargetExists(action.getTarget(), key, admission, access)) return new Object[]{null, refused(lang, "Action.targetOutsideScope")};
+      }
+    } else if (!caseAuthorized && !admission.unrestricted()) return new Object[]{null, refused(lang, "Action.targetOutsideScope")};
     ActionPreconditionService.Verdict verdict = preconditions.evaluate(action, param, user, permission, target);
     if (!verdict.satisfied()) {
       PythonExecuteResult refused = new PythonExecuteResult();
