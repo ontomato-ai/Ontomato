@@ -116,8 +116,8 @@ watch(() => route.name, () => void ensureLoaded());
 .ontology-agent-settings > :deep(.settings-nav) {
   flex: 0 0 var(--shell-list-panel);
   width: var(--shell-list-panel);
-  padding: 0 var(--spacing-md) var(--spacing-md);
+  padding: var(--spacing-xs) var(--spacing-sm) var(--spacing-md);
   box-sizing: border-box;
-  border-right: 1px solid var(--el-border-color);
+  border-inline-end: 1px solid var(--el-border-color);
 }
 </style>
