@@ -34,7 +34,8 @@ function port() {
       handlers.value = null;
     };
   });
-  return { port: { read, subscribe } as SessionRunPort, read, subscribe, reads, handlers, snapshot };
+  const presentationResult = vi.fn(async () => {});
+  return { port: { read, subscribe, presentationResult } as SessionRunPort, read, subscribe, presentationResult, reads, handlers, snapshot };
 }
 
 let app: App | null = null;

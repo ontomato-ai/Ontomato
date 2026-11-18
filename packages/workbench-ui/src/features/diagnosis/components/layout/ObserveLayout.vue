@@ -174,6 +174,8 @@ const nav = useAgentNav({
 useSessionRunFeed({
   port: client.sessionRuns,
   sessions: () => nav.sessions.value,
+  // The conversation's display takes what its runs present; the stream asks for the binding that lets them.
+  presentation: true,
   onError: (error) => ElMessage.error(error instanceof Error ? error.message : String(error)),
 });
 

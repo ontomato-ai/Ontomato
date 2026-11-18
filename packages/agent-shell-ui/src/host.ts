@@ -22,6 +22,7 @@ import {
   agentHostStreamFrameSchema,
 } from "@ontomato/contracts/agent-host";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
+import { presentationFrameSchema, type PresentationFrame, type PresentationReceipt } from "@ontomato/contracts/agent-presentation";
 import { assistantAgentListSchema } from "@ontomato/contracts/assistant-chat";
 import { pageDraftReadSchema, type PageDraft } from "@ontomato/contracts/page-draft";
 import type { RuntimeCursor, RuntimeEventEnvelope, RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
@@ -47,6 +48,11 @@ export interface TaskStreamHandlers {
 export interface SessionRunHandlers {
   /** Awaited, so frames are handled in the stream's order and a read finishes before the next frame. */
   frame(frame: AgentHostSessionRunFrame): Promise<void>;
+  /**
+   * A live request to show something beside the conversation. Given, the stream is opened with a display binding (its
+   * `ready` carries it) and these requests ride on it; they are never replayed.
+   */
+  presentation?(frame: PresentationFrame): void;
   /** The stream ended or could not be opened; the page opens it again, unless a frame broke the contract. */
   error(error: unknown): void;
 }
@@ -58,6 +64,8 @@ export interface SessionRunHandlers {
 export interface SessionRunPort {
   read(sessionIds: string[]): Promise<AgentHostSessionRunSnapshot>;
   subscribe(handlers: SessionRunHandlers): () => void;
+  /** The one answer to a live presentation request: what the display did and what it shows now. */
+  presentationResult(sessionId: string, runId: string, receipt: PresentationReceipt): Promise<void>;
 }
 
 /**
@@ -214,19 +222,18 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
       const controller = new AbortController();
       void (async () => {
         try {
-          const response = await call("/sessions/run-events", {
+          const response = await call(`/sessions/run-events${handlers.presentation ? "?presentation=true" : ""}`, {
             headers: { Accept: "text/event-stream" },
             signal: controller.signal,
           });
           // The stream carries no terminal frame: it ends only when the host or the transport closes it.
           await readSseData(response, async (data) => {
-            let frame: AgentHostSessionRunFrame;
-            try {
-              frame = agentHostSessionRunFrameSchema.parse(data);
-            } catch (error) {
-              throw new SessionRunStreamError("run notice frame broke the contract", { cause: error });
-            }
-            await handlers.frame(frame);
+            // A presentation request names itself; everything else on this stream is a lifecycle notice.
+            const presentation = (data as { type?: unknown }).type === "presentation";
+            const parsed = (presentation ? presentationFrameSchema : agentHostSessionRunFrameSchema).safeParse(data);
+            if (!parsed.success) throw new SessionRunStreamError("run notice frame broke the contract", { cause: parsed.error });
+            if (presentation) handlers.presentation!(parsed.data as PresentationFrame);
+            else await handlers.frame(parsed.data as AgentHostSessionRunFrame);
             return false;
           }, () => !controller.signal.aborted);
           if (!controller.signal.aborted) handlers.error(new Error("run notice stream closed"));
@@ -237,6 +244,9 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
         }
       })();
       return () => controller.abort();
+    },
+    async presentationResult(sessionId, runId, receipt) {
+      await call(`${run(sessionId, runId)}/presentation-result`, send("POST", receipt));
     },
   };
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, provide, ref, useSlots, watch } from "vue";
 import { Maximize2, Menu, Minimize2, X } from "lucide-vue-next";
-import { pageDockSpaceKey, shellContextKey } from "../context";
+import { pageDockSpaceKey, shellContextKey, useDisplayPlacement } from "../context";
 import type { ShellFeatureDeclaration } from "../types";
 import { usePanelWidth } from "../usePanelWidth";
 import ShellComposer from "./ShellComposer.vue";
@@ -35,6 +35,8 @@ const { width, resizing, beyond, startResize } = usePanelWidth((edge) => {
   else emit("close");
 });
 const paired = computed(() => props.feature?.withConversation === true);
+const root = ref<HTMLElement | null>(null);
+useDisplayPlacement(root);
 
 const dock = ref<HTMLElement | null>(null);
 const dockSpace = ref(0);
@@ -54,6 +56,7 @@ const paneStyle = computed(() => ({
 
 <template>
   <section
+    ref="root"
     class="page-pane"
     :class="[view, beyond && `beyond-${beyond}`, { paired, resizing, 'scrolls-itself': feature?.scrollsItself }]"
     :style="paneStyle"

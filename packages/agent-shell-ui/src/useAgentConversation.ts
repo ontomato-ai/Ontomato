@@ -1,3 +1,4 @@
+import type { PresentationBinding } from "@ontomato/contracts/agent-presentation";
 import { historyCursor } from "@ontomato/contracts/session-history";
 import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from "vue";
 import type { AgentTasksSnapshot } from "@ontomato/contracts/agent-tasks";
@@ -25,7 +26,15 @@ const TASK_RECONNECT_MS = 2000;
  * selection token, so a late response for a previous session never writes into the current one.
  * Frames are applied in batches once per animation frame.
  */
-export function useAgentConversation(port: () => AgentHostClient, agent: () => string | null) {
+/**
+ * `presentation` is the page's live display binding, when it has one: a run this conversation starts may then show
+ * what it presents beside the conversation the reader is in.
+ */
+export function useAgentConversation(
+  port: () => AgentHostClient,
+  agent: () => string | null,
+  presentation: () => PresentationBinding | null = () => null,
+) {
   const state = reactive<ConversationState>(emptyConversation());
   const loading = ref(false);
   const loadError = ref<string | null>(null);
@@ -217,7 +226,8 @@ export function useAgentConversation(port: () => AgentHostClient, agent: () => s
       createdSession = state.sessionId ? null : await client.createSession(agentId);
       if (current !== token) return null;
       if (createdSession) state.sessionId = createdSession.id;
-      const result = await client.send(state.sessionId!, { message: text, ...reply });
+      const binding = presentation();
+      const result = await client.send(state.sessionId!, { message: text, ...reply, ...(binding ? { presentationBinding: binding } : {}) });
       if (current !== token) return moved() ? null : { createdSession, ...result };
       applyNotifications(state,[result.input]);
       state.pendingQuestions=result.pendingQuestions;

@@ -109,3 +109,49 @@ describe("the notice port", () => {
     });
   });
 });
+
+describe("presentation on the notice stream", () => {
+  const binding = "33333333-3333-4333-8333-333333333333";
+  const presentation = {
+    type: "presentation", sessionId: a, runId: a, toolCallId: "call-1",
+    target: { kind: "page", address: "/dashboards?dashboardId=board-a" },
+  };
+
+  it("asks for a display binding only when it takes presentation requests, and keeps those apart from the notices", async () => {
+    const opened = stream();
+    const request = vi.fn((_path: string, _init: RequestInit) => Promise.resolve(opened.response()));
+    const host = createAgentHostClient({ request });
+    const frames: unknown[] = [];
+    const presented: unknown[] = [];
+    const detach = host.sessionRuns.subscribe({
+      frame: async (frame) => void frames.push(frame),
+      presentation: (frame) => void presented.push(frame),
+      error: () => {},
+    });
+    opened.push(`event: session-run\ndata: {"type":"ready","presentationBinding":{"connectionId":"${binding}"}}\n\n`);
+    opened.push(`event: presentation\ndata: ${JSON.stringify(presentation)}\n\n`);
+    await until(() => presented.length === 1);
+    detach();
+
+    expect(request.mock.calls[0]![0]).toBe("/sessions/run-events?presentation=true");
+    expect(frames).toEqual([{ type: "ready", presentationBinding: { connectionId: binding } }]);
+    expect(presented).toEqual([presentation]);
+  });
+
+  it("opens the plain notice stream for a page without a display", async () => {
+    const opened = stream();
+    const request = vi.fn((_path: string, _init: RequestInit) => Promise.resolve(opened.response()));
+    createAgentHostClient({ request }).sessionRuns.subscribe({ frame: async () => {}, error: () => {} })();
+    expect(request.mock.calls[0]![0]).toBe("/sessions/run-events");
+  });
+
+  it("answers a request once, on the run that asked, with the connection it came on", async () => {
+    const request = vi.fn(async (_path: string, _init: RequestInit) => new Response(null, { status: 204 }));
+    const result = { status: "not_opened", reason: "blocked_unsaved", current: { known: false, reason: "blocked_unsaved" } } as const;
+    await createAgentHostClient({ request }).sessionRuns.presentationResult(a, a, { connectionId: binding, toolCallId: "call-1", result });
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request.mock.calls[0]![0]).toBe(`/sessions/${a}/runs/${a}/presentation-result`);
+    expect(JSON.parse(String(request.mock.calls[0]![1].body))).toEqual({ connectionId: binding, toolCallId: "call-1", result });
+  });
+});

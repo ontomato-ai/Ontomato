@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, inject } from "vue";
+import { computed, inject, ref } from "vue";
+import type { DisplayLoad } from "@ontomato/contracts/agent-presentation";
 import { Download, X } from "lucide-vue-next";
 import { fileName, saveBlob } from "../artifacts";
-import { shellContextKey } from "../context";
+import { shellContextKey, useDisplayPlacement } from "../context";
 import { artifactIcon } from "../icons";
 import type { OpenArtifact } from "../types";
 import { usePanelWidth } from "../usePanelWidth";
@@ -11,7 +12,10 @@ import SlotOutlet from "./SlotOutlet.vue";
 
 /** Right-side outlet. Absent when nothing is open, so it never reserves width. */
 const props = defineProps<{ open: OpenArtifact }>();
-const emit = defineEmits<{ close: [] }>();
+/** `loaded` passes on what the artifact's loader knows. */
+const emit = defineEmits<{ close: []; loaded: [load: DisplayLoad] }>();
+const root = ref<HTMLElement | null>(null);
+useDisplayPlacement(root);
 const shell = inject(shellContextKey)!;
 const { width, resizing, startResize } = usePanelWidth();
 const icon = computed(() => artifactIcon(props.open.artifact.path));
@@ -23,7 +27,7 @@ async function download() {
 </script>
 
 <template>
-  <aside class="side-panel" :class="{ resizing }" :style="{ '--panel-width': `${width}px` }" @keydown.escape="emit('close')">
+  <aside ref="root" class="side-panel" :class="{ resizing }" :style="{ '--panel-width': `${width}px` }" @keydown.escape="emit('close')">
     <div class="panel-resize" role="separator" aria-orientation="vertical" @pointerdown.prevent="startResize" />
     <header class="panel-header">
       <span class="panel-icon"><component :is="icon" :size="17" /></span>
@@ -47,6 +51,7 @@ async function download() {
         :caption="open.caption"
         :artifact="open.artifact"
         presentation="panel"
+        @loaded="emit('loaded', $event)"
       />
     </div>
   </aside>

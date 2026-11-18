@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, inject, onMounted, provide, ref, shallowRef, toRef, useSlots, watch } from "vue";
+import { computed, inject, onBeforeUnmount, onMounted, provide, ref, shallowRef, toRef, useSlots, watch } from "vue";
 import { PanelRightOpen } from "lucide-vue-next";
-import { conversationQuestions, shellContextKey, type ShellContext } from "../context";
+import { conversationQuestions, displayPlacementKey, shellContextKey, type ShellContext } from "../context";
 import { CLOSED_PAGE, carriedPageIn, pageContextLine, pageMoved, samePageAddress, type CarriedPage } from "../page-context";
 import { displayLink, type ConversationDisplay, type DisplayPage } from "../conversation-display";
 import type { AgentHostClient } from "../host";
@@ -16,7 +16,7 @@ import type {
   ShellWorkbenchDeclaration,
   ToolRendererOverride,
 } from "../types";
-import { sessionRunNotices } from "../session-run-notices";
+import { pagePresentation, sessionRunNotices } from "../session-run-notices";
 import { useAgentConversation } from "../useAgentConversation";
 import ShellColumn from "./ShellColumn.vue";
 import ShellConversation from "./ShellConversation.vue";
@@ -102,7 +102,22 @@ const sessionId = defineModel<string | null>("sessionId", { default: null });
 const display = props.display;
 const taskFocus = ref<{ taskId: string; at: number } | null>(null);
 
-const conversation = useAgentConversation(() => props.client, () => agentId.value);
+/**
+ * The page's live display binding, where its feed has one: the runs this conversation starts carry it, and what those
+ * runs present comes back here, to be shown only while this is still the conversation in view.
+ */
+const presentation = inject(pagePresentation, null);
+const conversation = useAgentConversation(() => props.client, () => agentId.value, () => presentation?.binding.value ?? null);
+if (presentation) {
+  onBeforeUnmount(
+    presentation.attach(async (frame) =>
+      frame.sessionId === conversation.state.sessionId
+        ? display.present(frame)
+        : { status: "not_opened", reason: "not_viewing_session", current: display.snapshot() },
+    ),
+  );
+}
+provide(displayPlacementKey, display.placed);
 const notice = inject(sessionRunNotices, null);
 if (notice) watch(notice, frame => {
   if (frame?.type !== "run_started" || frame.sessionId !== conversation.state.sessionId || frame.runId in conversation.state.runs || frame.runId === conversation.activeRunId.value) return;
@@ -467,7 +482,7 @@ onMounted(() => {
       <slot name="feature" :feature-id="display.page.value.featureId" :view="display.view.value" />
     </ShellPagePane>
 
-    <ShellSidePanel v-if="openArtifact" :open="openArtifact" @close="display.close()" />
+    <ShellSidePanel v-if="openArtifact" :open="openArtifact" @close="display.close()" @loaded="display.loaded" />
   </div>
 </template>
 

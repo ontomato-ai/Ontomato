@@ -17,7 +17,15 @@ import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n
 import en from "@ontomato/workbench-ui/locales/en";
 import { BusinessWorkbench } from "@ontomato/workbench-ui/features/workbench";
 import elementEn from "element-plus/es/locale/lang/en";
-import { displayOf, openLink, paneButton } from "../../../workbench-ui/src/features/workbench/__tests__/shell";
+import type { AgentHostSendRequest } from "@ontomato/contracts/agent-host";
+import type { PresentationFrame } from "@ontomato/contracts/agent-presentation";
+import { AgentShell } from "@ontomato/agent-shell-ui";
+import {
+  displayOf,
+  noticeStreamDouble,
+  openLink,
+  paneButton,
+} from "../../../workbench-ui/src/features/workbench/__tests__/shell";
 
 /*
  * What sits beside the agent platform's conversation has one controller. The address is its input and the reader's
@@ -25,16 +33,12 @@ import { displayOf, openLink, paneButton } from "../../../workbench-ui/src/featu
  * unsaved changes keeps the reader — page and address both — until they agree, and a page tells its own state apart
  * from the reader navigating.
  */
-vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@ontomato/agent-shell-ui")>()),
-  useSessionRunFeed: () => {},
-}));
 vi.mock("../../../workbench-ui/src/features/workbench/api", () => ({ getWorkbenchAppearance: async () => null }));
 vi.mock("../../../workbench-ui/src/features/workbench/assistant-host", async (importOriginal) => {
   const { assistantHostDouble } = await import("../../../workbench-ui/src/features/workbench/__tests__/shell");
   return {
     ...(await importOriginal<object>()),
-    createAssistantClient: () => assistantHostDouble(),
+    createAssistantClient: () => assistantHostDouble({ agents: [agent], sessionRuns: host.stream.port, inputs: host.inputs }),
     createAssistantFeedback: () => undefined,
     createPanelOperationSettings: () => undefined,
   };
@@ -46,7 +50,10 @@ installWorkbenchI18n({
 });
 
 /** What the pages report to their display, and what the reader answers when asked to drop unsaved changes. */
-const reports = vi.hoisted(() => ({ dirty: false, nativeDirty: false, leave: false }));
+const reports = vi.hoisted(() => ({ dirty: false, nativeDirty: false, leave: false, asked: 0 }));
+/** The host's notice stream this page's feed reads, and every message the conversation sent. */
+const host = vi.hoisted(() => ({ stream: null as unknown as ReturnType<typeof noticeStreamDouble>, inputs: [] as AgentHostSendRequest[] }));
+const agent = { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Assistant", description: "", icon: null, enabled: true };
 
 /**
  * A page beside the conversation that reports to its display: unsaved changes (as a panel does), its own state, and a
@@ -89,7 +96,10 @@ const registry = () => (address: string): PilotPage | null => {
 /** The platform frame around the application: it asks before a dirty draft is left, here answered as the test says. */
 const Frame = defineComponent({
   setup() {
-    const unsaved = provideUnsavedChanges(async () => reports.leave);
+    const unsaved = provideUnsavedChanges(async () => {
+      reports.asked += 1;
+      return reports.leave;
+    });
     router.beforeEach((to) => unsaved.allows(to.path));
     return () => h(BusinessWorkbench, { defaultLogo: "", defaultBrandName: "Ontomato" });
   },
@@ -99,7 +109,9 @@ let router: Router;
 const wrappers: VueWrapper[] = [];
 beforeEach(async () => {
   setActivePinia(createPinia());
-  Object.assign(reports, { dirty: false, nativeDirty: false, leave: false });
+  Object.assign(reports, { dirty: false, nativeDirty: false, leave: false, asked: 0 });
+  host.stream = noticeStreamDouble();
+  host.inputs = [];
   vi.stubGlobal("fetch", async () => Response.json({ data: null }));
   router = createRouter({
     history: createMemoryHistory(),
@@ -219,5 +231,106 @@ describe("leaving a page with unsaved changes", () => {
     await openLink(wrapper, "/first");
     expect(pageParameter()).toBe("/first");
     expect(wrapper.find(".reporting-page").exists()).toBe(true);
+  });
+});
+
+describe("what an agent presents", () => {
+  const SESSION = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const RUN = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const BINDING = "dddddddd-dddd-4ddd-8ddd-ddddddddddd1";
+  const artifact = { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", sessionId: SESSION, runId: RUN, path: "outputs/result.dataset.json" };
+  const frame = (target: PresentationFrame["target"], sessionId = SESSION): PresentationFrame =>
+    ({ type: "presentation", sessionId, runId: RUN, toolCallId: `call-${Math.random()}`, target });
+
+  /** The platform with its notice stream ready and a conversation started in it, as a run that presents has. */
+  async function started() {
+    const wrapper = await workbench();
+    await host.stream.current().frame({ type: "ready", presentationBinding: { connectionId: BINDING } });
+    await (wrapper.findComponent(AgentShell).vm as unknown as { send(text: string): Promise<void> }).send("show me");
+    await flushPromises();
+    return wrapper;
+  }
+  async function present(target: PresentationFrame["target"], sessionId = SESSION) {
+    const request = frame(target, sessionId);
+    host.stream.current().presentation!(request);
+    await flushPromises();
+    return host.stream.receipts.find((entry) => entry.receipt.toolCallId === request.toolCallId)!;
+  }
+
+  it("asks for a binding and starts the conversation's runs with it", async () => {
+    await started();
+    expect(host.stream.opened).toHaveLength(1);
+    expect(host.stream.current().presentation).toBeTypeOf("function");
+    expect(host.inputs.at(-1)).toMatchObject({ presentationBinding: { connectionId: BINDING } });
+  });
+
+  it("shows an artifact beside the conversation and answers once with what is shown, leaving the address alone", async () => {
+    const wrapper = await started();
+    const answer = await present({ kind: "artifact", artifact: artifact as never });
+
+    expect(displayOf(wrapper).target.value).toMatchObject({ kind: "artifact", open: { artifact: { path: artifact.path } } });
+    expect(answer).toMatchObject({
+      sessionId: SESSION,
+      runId: RUN,
+      receipt: {
+        connectionId: BINDING,
+        result: { status: "opened", reason: "target_selected", current: { known: true, target: { kind: "artifact", path: artifact.path }, load: { status: "ready" } } },
+      },
+    });
+    expect(host.stream.receipts).toHaveLength(1);
+    expect(router.currentRoute.value.query.page).toBeUndefined();
+  });
+
+  it("replaces the reader's page without writing the presented one, so a reload neither shows it nor the page it replaced", async () => {
+    const wrapper = await started();
+    await openLink(wrapper, "/first");
+    expect(router.currentRoute.value.query.page).toBe("/first");
+
+    const answer = await present({ kind: "page", address: "/second" });
+    expect(answer.receipt.result).toMatchObject({ status: "opened", current: { target: { kind: "page", url: "/second" } } });
+    expect(wrapper.find(".reporting-page .shown").text()).toBe("/second");
+    expect(router.currentRoute.value.query.page).toBeUndefined();
+
+    // The presented page's own state moves its display, not the address.
+    await wrapper.find(".reporting-page .state").trigger("click");
+    await flushPromises();
+    expect(displayOf(wrapper).page.value?.address).toBe("/second?selected=row-2");
+    expect(router.currentRoute.value.query.page).toBeUndefined();
+
+    wrappers.splice(0).forEach((shown) => shown.unmount());
+    const reloaded = await workbench();
+    expect(displayOf(reloaded).target.value).toBeNull();
+  });
+
+  it("keeps the page and the address over unsaved changes, without asking the reader", async () => {
+    reports.dirty = true;
+    const wrapper = await started();
+    await openLink(wrapper, "/first");
+
+    const answer = await present({ kind: "artifact", artifact: artifact as never });
+    expect(answer.receipt.result).toMatchObject({
+      status: "not_opened", reason: "blocked_unsaved", current: { target: { kind: "page", url: "/first" } },
+    });
+    expect(reports.asked).toBe(0);
+    expect(router.currentRoute.value.query.page).toBe("/first");
+    expect(wrapper.find(".reporting-page .shown").text()).toBe("/first");
+  });
+
+  it("does not open anything for a conversation the reader has left, or a page no display shows", async () => {
+    const wrapper = await started();
+    const elsewhere = await present({ kind: "artifact", artifact: artifact as never }, "ffffffff-ffff-4fff-8fff-ffffffffffff");
+    expect(elsewhere.receipt.result).toMatchObject({ status: "not_opened", reason: "not_viewing_session" });
+
+    const unknown = await present({ kind: "page", address: "/nowhere" });
+    expect(unknown.receipt.result).toMatchObject({ status: "not_opened", reason: "unsupported_target" });
+    expect(displayOf(wrapper).target.value).toBeNull();
+  });
+
+  it("starts no run with a binding once its connection dropped", async () => {
+    const wrapper = await started();
+    host.stream.current().error(new Error("dropped"));
+    await (wrapper.findComponent(AgentShell).vm as unknown as { send(text: string): Promise<void> }).send("again");
+    await flushPromises();
+    expect(host.inputs.at(-1)).not.toHaveProperty("presentationBinding");
   });
 });

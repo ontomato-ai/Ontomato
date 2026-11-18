@@ -6,6 +6,7 @@ import { shellContextKey } from "../context";
 import { defaultArtifactRenderers } from "../renderers";
 import FileRenderer from "../renderers/FileRenderer.vue";
 import type { ArtifactPresentation } from "../types";
+import type { DisplayLoad } from "@ontomato/contracts/agent-presentation";
 
 /** Resolves an outputs/ reference within its run: host override → shell default → file card. */
 const props = defineProps<{
@@ -18,6 +19,8 @@ const props = defineProps<{
   artifact?: RuntimeArtifact;
 }>();
 
+/** What this view's own loader knows: the file resolving, shown, or missing or unreadable. */
+const emit = defineEmits<{ loaded: [load: DisplayLoad] }>();
 const shell = inject(shellContextKey)!;
 const resolved = ref<RuntimeArtifact | null>(props.artifact ?? null);
 const state = ref<"loading" | "ready" | "missing" | "error">(props.artifact ? "ready" : "loading");
@@ -37,6 +40,17 @@ async function resolve() {
 }
 
 watch(() => [props.runId, props.path], resolve, { immediate: true });
+watch(
+  state,
+  (current) =>
+    emit(
+      "loaded",
+      current === "loading" || current === "ready"
+        ? { status: current }
+        : { status: "error", error: { code: current === "missing" ? "artifact_missing" : "artifact_unavailable", message: props.path } },
+    ),
+  { immediate: true },
+);
 // Each registration can be a new version at the same path, so a shown file re-resolves too.
 watch(shell.artifactRevision, resolve);
 
