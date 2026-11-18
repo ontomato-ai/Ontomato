@@ -77,6 +77,17 @@ class AdminControllerKnowledgeTest {
 	}
 
 	@Test
+	void addAnswersTheIdTheStoreAssignedSoAPageCanAddressTheEntryItCreated() {
+		when(knowledgeService.addBussinessKnowledge("", "Refund rule", "Within 7 days", 1, List.of("Business"), user))
+				.thenReturn("knowledge_0b5d");
+
+		JSONObject ret = controller.addBussinessKnowledge("en", payload("", "Within 7 days"));
+
+		assertTrue(ret.getBooleanValue("success"), ret.toString());
+		assertEquals("knowledge_0b5d", ret.getJSONObject("data").getString("id"));
+	}
+
+	@Test
 	void editAndDeleteRefuseAMissingOrBlankIdInTheRequestLanguageWithoutTouchingTheStore() {
 		assertRefused("Admin.knowledge.idRequired", controller.editBussinessKnowledge("zh-CN", payload(null, "Within 7 days")));
 		assertRefused("Admin.knowledge.idRequired", controller.editBussinessKnowledge("zh-CN", payload(" ", "Within 7 days")));

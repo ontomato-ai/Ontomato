@@ -748,12 +748,16 @@ export function createManagerClient(
     }));
   }
 
-  /** Create (empty knowledgeID) or edit a business knowledge entry. */
-  function saveKnowledge(knowledge: BusinessKnowledge) {
-    return post(
+  /**
+   * Create (empty knowledgeID) or edit a business knowledge entry; answers the entry's id. A create's id is the store's
+   * own — the page that filled a draft of it records that object for the draft — and an edit answers the id it saved.
+   */
+  async function saveKnowledge(knowledge: BusinessKnowledge): Promise<string> {
+    const response = await post(
       knowledge.knowledgeID ? "/admin/editBussinessKnowledge" : "/admin/addBussinessKnowledge",
       { ...knowledge }
     );
+    return knowledge.knowledgeID || (response.data as { id: string }).id;
   }
 
   function deleteKnowledge(knowledgeID: string) {
