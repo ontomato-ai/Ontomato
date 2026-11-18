@@ -71,8 +71,11 @@ function pageAt(path: string) {
 function openList() {
   pageAt(platformRoutes.ontologyAgents.path);
 }
+function agentAddress(id: string) {
+  return `${platformRoutes.ontologyAgents.path}/${encodeURIComponent(id)}`;
+}
 function selectAgent(id: string) {
-  pageAt(`${platformRoutes.ontologyAgents.path}/${encodeURIComponent(id)}`);
+  pageAt(agentAddress(id));
 }
 function createAgent() {
   pageAt(platformRoutes.ontologyAgentNew.path);
@@ -82,7 +85,7 @@ provide(agentSettingsAddressKey, {
   address,
   draft: computed(() => pageDraftLink(query.value)),
   savedAddress,
-  agentAddress: (id) => `${platformRoutes.ontologyAgents.path}/${encodeURIComponent(id)}${address.value.slice(address.value.split("?")[0]!.length)}`,
+  agentAddress: (id) => `${agentAddress(id)}${address.value.slice(address.value.split("?")[0]!.length)}`,
   go: openAddress,
 });
 
@@ -101,7 +104,7 @@ watch(() => route.name, () => void ensureLoaded());
       @select-agent="selectAgent"
       @create-agent="createAgent"
     />
-    <AgentSettingsPage :agent-id="agentId" :creating="creating" @changed="openList" />
+    <AgentSettingsPage :agent-id="agentId" :creating="creating" @created="selectAgent" @changed="openList" />
   </div>
 </template>
 

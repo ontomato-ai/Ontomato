@@ -844,6 +844,7 @@ export default {
     "intro": "Each agent is a set of instructions, skills and a data scope.",
     "newAgent": "New agent",
     "empty": "No agents yet",
+    "notFound": "This agent does not exist or has been deleted",
     "loadFailed": "Couldn't load agents",
     "basic": "Basics",
     "prompt": "Instructions",

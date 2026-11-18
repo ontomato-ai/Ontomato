@@ -283,9 +283,8 @@ async function save() {
       : await agentDefinitionsApi.create(input);
     baseline.value = JSON.stringify(form.value);
     changed.value = new Set();
-    // The draft was this page's own handoff: the saved form is what the address reopens.
-    // The draft was this page's own handoff: the address without it is what reopens, wherever the page is mounted.
-    if (link) settingsAddress.go(settingsAddress.savedAddress.value);
+    // A saved update drops its draft handoff. A create moves straight to the new agent through the page.
+    if (link && props.agent) settingsAddress.go(settingsAddress.savedAddress.value);
     ElMessage.success(props.agent ? t("analysis.agentUpdated") : t("analysis.agentCreated"));
     emit("saved", saved);
     // A create draft's first save records the agent it created, once the save itself is done: its link opens that agent

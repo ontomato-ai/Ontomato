@@ -17,10 +17,11 @@ const props = defineProps<{
   creating: boolean;
 }>();
 const emit = defineEmits<{
+  created: [id: string];
   changed: [];
 }>();
 const { t, locale } = useI18n();
-const { agents, loading, classes, relations, outlineLoading, modelOptions, modelOptionsFailed, ensureLoaded, load, reloadModelOptions, remember, forget } =
+const { agents, loading, loadFailed, classes, relations, outlineLoading, modelOptions, modelOptionsFailed, ensureLoaded, load, reloadModelOptions, remember, forget } =
   useAgentDefinitions();
 
 const shown = computed(() => (props.agentId ? agents.value.find((agent) => agent.id === props.agentId) ?? null : agents.value[0] ?? null));
@@ -28,7 +29,8 @@ const editorKey = computed(() => (props.creating ? "new" : (shown.value?.id ?? "
 
 function saved(agent: Parameters<typeof remember>[0]) {
   remember(agent);
-  emit("changed");
+  if (props.creating) emit("created", agent.id);
+  else emit("changed");
 }
 
 function deleted(id: string) {
@@ -58,8 +60,7 @@ watch(locale, () => { void load(); });
       @deleted="deleted"
       @reload-model-options="reloadModelOptions()"
     />
-    <!-- The list is the column's: an empty main area means the column could not name an agent, not a second list. -->
-    <p v-else-if="!loading" class="empty">{{ t("agents.empty") }}</p>
+    <p v-else-if="!loading && !loadFailed" class="empty">{{ t(agentId ? "agents.notFound" : "agents.empty") }}</p>
   </div>
 </template>
 
