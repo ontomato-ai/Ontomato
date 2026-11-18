@@ -62,6 +62,7 @@ const reason = computed(() =>
       v-model="model"
       filterable
       remote
+      remote-show-suffix
       clearable
       :remote-method="(value: string) => (keyword = value)"
       :loading="busy"

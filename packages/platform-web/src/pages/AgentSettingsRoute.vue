@@ -93,6 +93,7 @@ watch(() => route.name, () => void ensureLoaded());
   <div class="ontology-agent-settings">
     <AgentSettingsNav
       standalone
+      :heading="address === route.fullPath"
       :agent-id="agentId"
       :creating="creating"
       :models="false"
@@ -111,9 +112,10 @@ watch(() => route.name, () => void ensureLoaded());
   min-height: 0;
   height: 100%;
 }
+/* The list beside the editor keeps the platform's list width; the editor takes what is left of the page. */
 .ontology-agent-settings > :deep(.settings-nav) {
+  flex: 0 0 var(--shell-list-panel);
   width: var(--shell-list-panel);
-  flex-shrink: 0;
   padding: 0 var(--spacing-md) var(--spacing-md);
   box-sizing: border-box;
   border-right: 1px solid var(--el-border-color);
