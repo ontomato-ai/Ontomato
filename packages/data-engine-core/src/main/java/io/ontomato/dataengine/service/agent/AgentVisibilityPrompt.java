@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.service.agent;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -7,6 +8,7 @@ import java.io.UncheckedIOException;
 public final class AgentVisibilityPrompt {
   public enum Reader { USER, DELEGATED }
 
+  @JsonIgnoreProperties(ignoreUnknown = true)
   private record Prompts(String user, String delegated) {}
 
   private static final Prompts PROMPTS = read();

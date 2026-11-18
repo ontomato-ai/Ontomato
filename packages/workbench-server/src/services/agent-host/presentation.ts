@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentPrepareRequest } from "@ontomato/contracts/agent-channel";
+import { isDirectUserRun } from "@ontomato/contracts/agent-visibility";
 import type {
   PresentationBinding, PresentationFrame, PresentationReceipt, PresentationResult,
   PresentRequest, RuntimePresentationCallback,
@@ -50,8 +51,7 @@ function boundView(host: AgentPresentationHost, owner: AgentHostOwner, connectio
 
 export function visibilityReader(body: AgentPrepareRequest): AgentVisibilityReader | undefined {
   if (body.requestedBy) return "delegated";
-  if (body.userRecipient?.session.providerId === body.agent.providerId &&
-      body.userRecipient.session.sessionId === body.sessionId) return "user";
+  if (isDirectUserRun(body, body.sessionId)) return "user";
 }
 
 export function presentationCallback(
