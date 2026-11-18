@@ -322,3 +322,60 @@ it("keeps a selected user equal to the initiator distinct from null self mode",a
  await port.steering(scope,{...run,executionUserId:"initiator-user"});
  expect(actors).toEqual([null,{userId:"initiator-user",domainId:"a"}]);
 });
+
+it.each(["running","completed"] as const)("delivers a %s child's service question to its declared human, never its parent agent or model input",async status=>{
+ const {runtime,channel:port}=channel();
+ const recipient={session:source.session,actor:context.actor};
+ const child={id:inputId,session:{...source.session,sessionId:inputId},inputId,language:"en",status,cancelled:false,error:null,createdAt:new Date(0).toISOString(),channel:{...context,requestedBy:source,userRecipient:recipient}};
+ vi.mocked(port.facts.intent).mockResolvedValue(child);
+ vi.spyOn(port.facts,"receipt").mockResolvedValue(null);
+ const receive=vi.spyOn(port.facts,"receive").mockResolvedValue({id:runId,runId,messageSeq:2,contextSeq:null,message:notification});
+ const deliver=vi.spyOn(port,"deliver");
+ const question={source:{session:child.session,runId:inputId},message:"Run this task?",defaultAssumption:"Do not execute",options:[{label:"No",isDefault:true},{label:"Yes"}]};
+ expect(await port.userQuestion(scope,runId,question)).toEqual({questionId:runId,source:question.source,recipient});
+ expect(receive).toHaveBeenCalledWith(scope,sessionId,expect.objectContaining({recipient:"user",source:question.source}),{id:runId,outputRunId:source.runId});
+ expect(deliver).not.toHaveBeenCalled();expect(runtime.questionsChanged).toHaveBeenCalledWith(scope,sessionId);
+ vi.mocked(port.facts.intent).mockResolvedValue({...child,channel:context});
+ await expect(port.userQuestion(scope,runId,question)).rejects.toMatchObject({code:"USER_SESSION_UNAVAILABLE"});
+});
+
+it("records a real option and forwards the ordinary user answer outside the receiving lock without waking the root",async()=>{
+ const {runtime,channel:port,locked}=channel();
+ const question:AgentNotification={role:"notification",kind:"agent-question",recipient:"user",source:{session:{...source.session,sessionId:inputId},runId:inputId},content:"Execute?",defaultAssumption:"No",options:[{label:"No",isDefault:true},{label:"Yes"}],timestamp:1};
+ vi.spyOn(port.facts,"question").mockResolvedValue(question);
+ vi.spyOn(port.facts,"userQuestion").mockResolvedValue({scope,sessionId,record:{id:inputId,runId,messageSeq:2,contextSeq:null,message:question}});
+ vi.spyOn(port.facts,"pendingQuestions").mockResolvedValue([{requestId:inputId,source:question.source as typeof source,message:"Execute?",defaultAssumption:"No",options:question.options}]);
+ vi.spyOn(port.facts,"receipt").mockResolvedValue(null);
+ const receive=vi.spyOn(port.facts,"receive").mockImplementation(async(_scope,_session,message,options)=>({id:options!.id!,runId,messageSeq:3,contextSeq:null,message}));
+ const deliver=vi.spyOn(port,"deliver").mockImplementation(async(ref,_actor,message)=>{
+   expect(locked()).toBe(false);expect(ref).toEqual((question.source as typeof source).session);
+   expect(message).toMatchObject({source:{kind:"user"},selectedOption:1,respondent:context.actor,answerId:runId,replyTo:inputId});
+   return {sessionRef:ref,messageId:inputId,taskId:null};
+ });
+ const prepare=vi.spyOn(port,"prepare");
+ const input:AgentNotification={...notification,source:{kind:"user"},selectedOption:1};
+ expect(await port.request(scope,sessionId,runId,context,input,"en",undefined,{token:"new-human-credential",apiKey:null})).toMatchObject({delivery:{delivery:"receipt",status:"completed"}});
+ expect(deliver).toHaveBeenCalledTimes(1);expect(prepare).not.toHaveBeenCalled();
+ expect(receive).toHaveBeenCalledWith(scope,sessionId,expect.objectContaining({respondent:context.actor}),{id:runId,outputRunId:runId});
+ expect(runtime.questionsChanged).toHaveBeenCalled();
+ const saved=await receive.mock.results[0].value;
+ vi.mocked(port.facts.receipt).mockResolvedValue({...saved,sessionId,intentId:null});
+ const laterActor={...context.actor,id:inputId};
+ const replay=await port.request(scope,sessionId,runId,{...context,actor:laterActor},input,"en",undefined,{token:"new-human-credential",apiKey:null});
+ expect(replay.replayed).toBe(true);expect(replay.input.message).toMatchObject({respondent:context.actor});
+ await expect(port.request(scope,sessionId,runId,{...context,actor:laterActor},{...input,selectedOption:0},"en",undefined,{token:"new-human-credential",apiKey:null})).rejects.toMatchObject({code:"IDEMPOTENCY_CONFLICT"});
+});
+
+it("wakes an idle questioning session for the ordinary user answer with the human's fresh actor",async()=>{
+ const {runtime,channel:port}=channel();
+ runtime.store.session=vi.fn().mockResolvedValue({activeRunId:null});
+ const fresh={id:inputId,domainId:"a"};
+ vi.spyOn(port.facts,"binding").mockResolvedValue({agent:context.agent,actor:context.actor,parent:null});
+ vi.spyOn(port.facts,"receive").mockResolvedValue({id:inputId,runId:null,messageSeq:3,contextSeq:null,message:{...notification,source:{kind:"user"}}});
+ const previous={id:runId,session:source.session,channel:context,inputId,language:"en",status:"completed" as const,createdAt:new Date(0).toISOString(),error:null,cancelled:false};
+ vi.spyOn(port.facts,"latest").mockResolvedValue(previous);
+ const reserve=vi.spyOn(port.facts,"reserve").mockImplementation(async(_scope,_session,id,inputId,channel)=>({...previous,id,inputId,channel,status:"starting"}));
+ const prepare=vi.spyOn(port,"prepare").mockResolvedValue();
+ await port.deliver(source.session,fresh,{...notification,source:{kind:"user"},selectedOption:1,answerId:inputId},{steer:true});
+ expect(reserve.mock.calls[0][4]).toMatchObject({actor:fresh,root:source});expect(prepare).toHaveBeenCalledTimes(1);
+});

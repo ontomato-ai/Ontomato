@@ -16,7 +16,7 @@ export interface AgentHostService {
   snapshot(id: string, owner: AgentHostOwner): Promise<AgentHostSessionSnapshot>;
   delete(id: string, owner: AgentHostOwner): Promise<void>;
   rename(id: string, title: string, owner: AgentHostOwner): Promise<void>;
-  send(session: string, run: string, input: AgentHostSendRequest, owner: AgentHostOwner, credentials: AssistantCredentials): Promise<AgentHostSendResult>;
+  send(session: string, run: string, input: AgentHostSendRequest, owner: AgentHostOwner, credentials: AssistantCredentials, entry: "human" | "background" | "external"): Promise<AgentHostSendResult>;
   /** Rejects with 404 unless the run belongs to the owner's session, by the host's own records only. */
   ownRun(session: string, run: string, owner: AgentHostOwner): Promise<void>;
   readRun(session: string, run: string, owner: AgentHostOwner): Promise<RuntimeRunSnapshot>;

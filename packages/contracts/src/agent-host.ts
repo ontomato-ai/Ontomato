@@ -122,7 +122,7 @@ export const agentHostCreateSessionResponseSchema = z
   .strict();
 export const agentHostSendRequestSchema = z
   .object({ message: z.string().refine((v) => v.trim().length > 0), replyTo: runtimeIdSchema.optional(), selectedOption: z.number().int().nonnegative().optional() })
-  .strict();
+  .strict().refine(value => value.selectedOption === undefined || value.replyTo !== undefined, "A selection requires replyTo");
 export const agentHostSendResultSchema = z
   .object({ delivery: agentInputDeliverySchema, input: agentHostMessageSchema, snapshot: agentHostRunSnapshotSchema.nullable(), pendingQuestions: z.array(agentPendingQuestionSchema), replayed: z.boolean() })
   .strict();

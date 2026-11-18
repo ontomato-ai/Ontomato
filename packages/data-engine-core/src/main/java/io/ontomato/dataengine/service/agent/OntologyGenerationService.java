@@ -231,7 +231,7 @@ public class OntologyGenerationService {
       runtime.json(domain,run,"/v1/sessions","POST",Map.of(),session);
       var context=callers.getObject().ownerContext(owner,executionAccess(domain),lang==null?"en":lang,Instant.parse(store.run(session,run,owner).getString("deadline")).toEpochMilli());
       channel.getObject().send(agentId(kind),session,run,JSONObject.of("role","notification","kind","agent-message","source",JSONObject.of("kind","external"),"content","Complete the ontology "+kind+" task. Read the "+(metricView?"metricview-generation":"ontology-generation")+" skill and write outputs/result.json.","timestamp",System.currentTimeMillis()),
-        JSONObject.of("kind",kind,"businessId",businessId,"prompt",prompt,"source",source),context,sourceRun());
+        JSONObject.of("kind",kind,"businessId",businessId,"prompt",prompt,"source",source),context,sourceRun(),false);
       while (true) {
         checkBusiness(businessId);
         var current = store.run(session, run, owner);

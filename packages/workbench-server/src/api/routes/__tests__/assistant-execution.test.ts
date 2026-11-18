@@ -2,7 +2,8 @@ import express from 'express';
 import type {Server} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {afterAll,afterEach,beforeAll,beforeEach,expect,it,vi} from 'vitest';
-const mocks=vi.hoisted(()=>({restore:vi.fn(),run:vi.fn()}));
+const mocks=vi.hoisted(()=>({restore:vi.fn(),run:vi.fn(),operate:vi.fn(),dispatch:vi.fn()}));
+vi.mock('../../../services/product-panels/operations',()=>({operatePanel:mocks.operate,dispatchPanel:mocks.dispatch}));
 vi.mock('../../../services/assistant/execution',()=>({credentialsForRun:mocks.restore,runForOwner:mocks.run}));
 vi.mock('../../../config/environment',()=>({environment:{agentRuntime:()=>({token:'test-callback-secret',callbackUrl:'http://workbench.test'})}}));
 vi.mock('../../../config/application',()=>({config:{dataQuery:{baseUrl:'http://ontology.test'}}}));
@@ -127,4 +128,17 @@ it.each([
 it.each(["PUT", "DELETE"])("rejects %s for a task at the existing callback credential boundary", async method => {
   expect((await call(`ontology/platform/scheduled-tasks/${other}`, {}, method)).status).toBe(401);
   expect(mocks.restore).not.toHaveBeenCalled();
+});
+
+it("validates the fixed operation entrance and never accepts an approval or question ID from a tool",async()=>{
+ const body={intentId:other,applicationId:"A",useId:"tasks",operationId:"run.runNow",call:{target:{kind:"object",objectType:"platform:ScheduledTask",primaryKey:other},input:{}}};
+ const headers={'content-type':'application/json','X-Ontomato-Callback-Credential':credential(),'X-Ontomato-Run-Id':run};
+ mocks.operate.mockResolvedValue({kind:"confirmation-required",intentId:other});
+ const response=await nativeFetch(base+`/api/assistant/executions/${run}/panels/operate`,{method:"POST",headers,body:JSON.stringify(body)});
+ expect(response.status).toBe(200);expect(mocks.operate).toHaveBeenCalledWith({userId:"U",domainId:"domain"},expect.objectContaining({token:"initiator-token"}),run,body);
+ mocks.operate.mockClear();
+ for(const forged of [{...body,questionId:other},{...body,approved:true}]) {
+   expect((await nativeFetch(base+`/api/assistant/executions/${run}/panels/operate`,{method:"POST",headers,body:JSON.stringify(forged)})).status).toBe(400);
+ }
+ expect(mocks.operate).not.toHaveBeenCalled();
 });

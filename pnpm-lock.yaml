@@ -736,6 +736,9 @@ importers:
       '@ontomato/markdown':
         specifier: workspace:*
         version: link:../markdown
+      '@ontomato/platform-schedules':
+        specifier: workspace:*
+        version: link:../platform-schedules
       '@ontomato/service-logging':
         specifier: workspace:*
         version: link:../service-logging

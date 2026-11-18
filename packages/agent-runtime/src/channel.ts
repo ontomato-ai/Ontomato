@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Type } from "typebox";
 import { z } from "zod";
 import { agentChannelCommandSchema, agentDeliverySchema, agentProviderAcknowledgementSchema, agentSteerPreparationSchema, agentDirectorySchema, type AgentRunIntent, type AgentRunContext, type AgentExecutionRef, type AgentSessionRef, type AgentInput, type AgentNotification, type AgentPrepareRequest, type AgentActorRef, type AgentCredential, type AgentInputDelivery } from "@ontomato/contracts/agent-channel";
+import type { AgentUserQuestionRequest } from "@ontomato/contracts/agent-user-questions";
 import { runtimeStartRunRequestSchema, type RuntimeRun } from "@ontomato/contracts/agent-runtime";
 import type { RuntimeMessage } from "@ontomato/contracts/agent-runtime-messages";
 import type { AgentTask,QualityResult } from "@ontomato/contracts/agent-tasks";
@@ -24,7 +25,7 @@ export class AgentChannel {
   private chains = new Map<string, { credential: AgentCredential; executions: Set<string> }>();
   private chainKey(channel: AgentRunContext) { return JSON.stringify([channel.actor.domainId,channel.root.session.providerId,channel.root.session.sessionId,channel.root.runId]); }
   remember(channel: AgentRunContext, credential: AgentCredential) {
-    this.chains.set(this.chainKey(channel), { credential, executions: new Set() });
+    this.chains.set(this.chainKey(channel), { credential, executions: this.chains.get(this.chainKey(channel))?.executions ?? new Set() });
   }
   credential(channel: AgentRunContext) {
     const chain = this.chains.get(this.chainKey(channel));
@@ -91,8 +92,71 @@ export class AgentChannel {
   async request(scope: Scope, sessionId: string, runId: string, channel: AgentRunContext, input: AgentInput, language: string, context: AgentRunIntent["context"] | undefined, credential: AgentCredential, inheritedExecutionUserId?:string|null) {
     if (scope.domainId !== channel.actor.domainId || this.provider(channel.agent.providerId).hostId !== scope.hostId)
       throw new RuntimeError(403, "CROSS_DOMAIN", "Agent identity and target must belong to the current domain and provider");
+    if (input.role === "notification" && input.kind === "agent-answer" && input.replyTo) {
+      const question = await this.facts.question(scope.domainId,input.replyTo);
+      if (question.recipient === "user") return this.answerUserQuestion(scope,sessionId,runId,channel,input,credential);
+    }
     const accepted=await this.accept({providerId:channel.agent.providerId,sessionId},channel.actor,input,{steer:true,web:{runId,channel,language,context,credential,executionUserId:inheritedExecutionUserId}});
     return {...accepted,delivery:accepted.delivery!};
+  }
+  /** Service-only explicit human route, separate from an agent's ordinary needsInput command. */
+  async userQuestion(scope: Scope, questionId: string, body: AgentUserQuestionRequest) {
+    const sourceScope = this.scope(body.source.session,scope.domainId);
+    if (sourceScope.hostId !== scope.hostId) throw new RuntimeError(403,"FORBIDDEN","Question source belongs to another provider");
+    const intent = await this.facts.intent(sourceScope,body.source.runId);
+    if (intent.session.sessionId !== body.source.session.sessionId) throw new RuntimeError(403,"FORBIDDEN","Question source session differs");
+    const recipient = intent.channel.userRecipient;
+    if (!recipient) throw new RuntimeError(409,"USER_SESSION_UNAVAILABLE","Execution has no authenticated human recipient");
+    const targetScope = this.scope(recipient.session,scope.domainId);
+    if (recipient.actor.domainId !== scope.domainId) throw new RuntimeError(403,"CROSS_DOMAIN","Human recipient belongs to another domain");
+    const question: AgentNotification = {role:"notification",kind:"agent-question",recipient:"user",source:body.source,
+      content:body.message,defaultAssumption:body.defaultAssumption,options:body.options,timestamp:Date.now()};
+    await this.runtime.locked(targetScope,recipient.session.sessionId,async () => {
+      const previous = await this.facts.receipt(targetScope,questionId);
+      if (previous) {
+        const message = previous.message;
+        if (previous.sessionId !== recipient.session.sessionId || message.role !== "notification" || message.recipient !== "user" ||
+          JSON.stringify(message.source) !== JSON.stringify(body.source) || message.content !== question.content ||
+          message.defaultAssumption !== question.defaultAssumption || JSON.stringify(message.options) !== JSON.stringify(question.options))
+          throw new RuntimeError(409,"IDEMPOTENCY_CONFLICT","User question changed");
+        return;
+      }
+      await this.facts.receive(targetScope,recipient.session.sessionId,question,{id:questionId,outputRunId:intent.channel.root.runId});
+    });
+    await this.runtime.questionsChanged(targetScope,recipient.session.sessionId);
+    this.emitChange(targetScope,recipient.session.sessionId);
+    return {questionId,source:body.source,recipient};
+  }
+  /** Store once in the human conversation, then deliver only to the questioning conversation. */
+  private async answerUserQuestion(scope: Scope, sessionId: string, inputId: string, channel: AgentRunContext, input: AgentNotification, credential: AgentCredential) {
+    const question = await this.facts.userQuestion(scope.domainId,input.replyTo!);
+    if (question.scope.hostId !== scope.hostId || question.sessionId !== sessionId)
+      throw new RuntimeError(400,"INVALID_REPLY","Question was addressed to another human conversation");
+    const source = question.record.message.source as AgentExecutionRef;
+    const origin = await this.facts.intent(this.scope(source.session,scope.domainId),source.runId);
+    let replayed = false;
+    const received = await this.runtime.locked(scope,sessionId,async () => {
+      const previous = await this.facts.receipt(scope,inputId);
+      if (previous) {
+        const message = previous.message as AgentNotification;
+        if (previous.sessionId !== sessionId || message.role !== "notification" || message.kind !== "agent-answer" || !("kind" in message.source) || message.source.kind !== "user" || message.replyTo !== input.replyTo || message.content !== input.content || message.selectedOption !== input.selectedOption)
+          throw new RuntimeError(409,"IDEMPOTENCY_CONFLICT","Human answer changed");
+        replayed = true;
+        return previous;
+      }
+      if (!(await this.facts.pendingQuestions(scope,sessionId)).some(q => q.requestId === input.replyTo))
+        throw new RuntimeError(400,"INVALID_REPLY","Question already has a human answer");
+      if (input.selectedOption !== undefined && !question.record.message.options?.[input.selectedOption])
+        throw new RuntimeError(400,"INVALID_REPLY","Selected option is outside the question");
+      return this.facts.receive(scope,sessionId,{...input,source:{kind:"user"},respondent:channel.actor},{id:inputId,outputRunId:question.record.runId});
+    });
+    await this.runtime.questionsChanged(scope,sessionId);
+    this.emitChange(scope,sessionId);
+    // Existing transport credentials are scoped to this live delivery; no executor key or new credential store.
+    this.remember(origin.channel,credential);
+    await this.deliver(source.session,channel.actor,{...received.message as AgentNotification,answerId:received.id},{steer:true});
+    return {input:received,replayed,pendingQuestions:await this.facts.pendingQuestions(scope,sessionId),
+      delivery:{messageId:received.id,sessionRef:{providerId:channel.agent.providerId,sessionId},runId:question.record.runId,delivery:"receipt" as const,status:"completed" as const}};
   }
   async prepare(intent: AgentRunIntent) {
     const scope = this.scope(intent.session, intent.channel.actor.domainId);
@@ -101,7 +165,7 @@ export class AgentChannel {
       const input = (await this.facts.pending(scope, intent.session.sessionId)).find(row => row.id === intent.inputId)!.message as AgentInput;
       const parent = intent.channel.requestedBy;
       const inheritedExecution = intent.executionUserId!==undefined ? this.executionActor(intent) : parent ? this.executionActor(await this.facts.intent(this.scope(parent.session, scope.domainId), parent.runId)) : null;
-      const request: AgentPrepareRequest = { mode: "run", executionActor: inheritedExecution, language: intent.language, agent: intent.channel.agent, sessionId: intent.session.sessionId, runId: intent.id, actor: intent.channel.actor, inputId: intent.inputId, input, authority: intent.channel.authority, requestedBy: intent.channel.requestedBy, root: intent.channel.root, context: intent.context };
+      const request: AgentPrepareRequest = { mode: "run", executionActor: inheritedExecution, language: intent.language, agent: intent.channel.agent, sessionId: intent.session.sessionId, runId: intent.id, actor: intent.channel.actor, inputId: intent.inputId, input, authority: intent.channel.authority, requestedBy: intent.channel.requestedBy, root: intent.channel.root, userRecipient: intent.channel.userRecipient ?? null, context: intent.context };
       const prepared = runtimeStartRunRequestSchema.parse(await this.post(this.provider(intent.session.providerId), "/prepare", request, scope.domainId, this.credential(intent.channel)));
       hostPrepared = true;
       intent.executionUserId = prepared.executionActor?.userId ?? null;
@@ -162,7 +226,7 @@ export class AgentChannel {
         const original=await this.facts.receipt(scope,web.runId);
         if(original) {
           const message=original.message as AgentInput;
-          if(original.sessionId!==target.sessionId || message.role!==input.role || message.content!==input.content || (message.role==="notification" ? message.replyTo : undefined)!==(input.role==="notification" ? input.replyTo : undefined)) throw new RuntimeError(409,"IDEMPOTENCY_CONFLICT","Input changed");
+          if(original.sessionId!==target.sessionId || message.role!==input.role || message.content!==input.content || (message.role==="notification" ? message.replyTo : undefined)!==(input.role==="notification" ? input.replyTo : undefined) || (message.role==="notification" ? message.selectedOption : undefined)!==(input.role==="notification" ? input.selectedOption : undefined)) throw new RuntimeError(409,"IDEMPOTENCY_CONFLICT","Input changed");
           const intent=await this.facts.intent(scope,original.runId ?? original.intentId!);
           if(intent.status === "failed" || intent.cancelled) throw new RuntimeError(409,"RUN_CLOSED",intent.error ?? "Execution intent is closed");
           return {input:original,replayed:true,delivery:{messageId:original.id,sessionRef:target,runId:intent.id,delivery:intent.inputId===original.id?"run":"steer",status:intent.status==="starting"?"starting":"running"}};
@@ -187,8 +251,9 @@ export class AgentChannel {
       const runId=web?.runId ?? randomUUID();
       const requesterRun=requestedBy ? (await this.runtime.store.run(this.scope(requestedBy.session,actor.domainId),requestedBy.runId)).run : null;
       const requester=requesterRun?.channel;
-      const channel:AgentRunContext=web?.channel ?? {agent:binding.agent,actor:requestedBy || external ? actor : previous!.channel.actor,authority:external?.authority ?? requester?.authority ?? previous!.channel.authority,
-        requestedBy:external?null:requestedBy ?? previous!.channel.requestedBy,root:external?{session:target,runId}:requester?.root ?? previous!.channel.root};
+      const channel:AgentRunContext=web?.channel ?? {agent:binding.agent,actor:requestedBy || external || (input.role === "notification" && "kind" in input.source && input.source.kind === "user") ? actor : previous!.channel.actor,authority:external?.authority ?? requester?.authority ?? previous!.channel.authority,
+        requestedBy:external?null:requestedBy ?? previous!.channel.requestedBy,root:external?{session:target,runId}:requester?.root ?? previous!.channel.root,
+        userRecipient:external ? null : requester?.userRecipient ?? previous?.channel.userRecipient ?? null};
       const intent=await this.facts.reserve(scope,target.sessionId,runId,received.id,channel,{language:web?.language ?? external?.language ?? requesterRun?.language ?? previous!.language,context:web?.context ?? binding.context,executionUserId:web?web.executionUserId:external?null:requesterRun?requesterRun.executionUserId:previous?.executionUserId,afterRunId:session.activeRunId ?? undefined});
       if((web || external) && channel.root.runId===runId) this.remember(channel,web?.credential ?? external!.credential);
       this.retain(intent);
@@ -266,7 +331,7 @@ export class AgentChannel {
     let context: string | undefined;
     for (const row of pending) {
       const channel = run.channel!;
-      const prepared = agentSteerPreparationSchema.parse(await this.post(this.provider(channel.agent.providerId), "/prepare", { mode: "steer", executionActor:run.executionUserId ? {userId:run.executionUserId,domainId:scope.domainId} : null, language: run.language, agent: channel.agent, actor: channel.actor, sessionId: run.sessionId, runId: run.id, inputId: row.id, input: row.message, authority: channel.authority, requestedBy: channel.requestedBy, root: channel.root }, scope.domainId, this.credential(channel)));
+      const prepared = agentSteerPreparationSchema.parse(await this.post(this.provider(channel.agent.providerId), "/prepare", { mode: "steer", executionActor:run.executionUserId ? {userId:run.executionUserId,domainId:scope.domainId} : null, language: run.language, agent: channel.agent, actor: channel.actor, sessionId: run.sessionId, runId: run.id, inputId: row.id, input: row.message, authority: channel.authority, requestedBy: channel.requestedBy, root: channel.root, userRecipient: channel.userRecipient ?? null }, scope.domainId, this.credential(channel)));
       if (prepared.context !== undefined) context = prepared.context;
     }
     await this.runtime.locked(scope,run.sessionId,async () => {
@@ -284,7 +349,7 @@ export class AgentChannel {
       content = `Question:\n${question.content}\n${question.defaultAssumption ? `Default assumption:\n${question.defaultAssumption}\n` : ""}Answer:\n${message.content}`;
     }
     return { role:"user", timestamp:message.timestamp,
-      content:`[Agent notification: ${JSON.stringify({kind:message.kind,source:message.source,replyTo:message.replyTo,outcome:message.outcome})}]\n${content}${message.defaultAssumption ? `\nDefault assumption: ${message.defaultAssumption}` : ""}` };
+      content:`[Agent notification: ${JSON.stringify({kind:message.kind,source:message.source,replyTo:message.replyTo,selectedOption:message.selectedOption,answerId:message.answerId,outcome:message.outcome})}]\n${content}${message.defaultAssumption ? `\nDefault assumption: ${message.defaultAssumption}` : ""}` };
   }
   tool(scope: Scope, run: RuntimeRun): AgentTool {
     return {
@@ -313,7 +378,7 @@ export class AgentChannel {
       const target = { providerId: command.agent.providerId, sessionId: randomUUID() }, targetScope = this.scope(target, scope.domainId);
       const runId=randomUUID();
       const intent = await this.runtime.locked(targetScope, target.sessionId, () => this.facts.reserve(targetScope, target.sessionId,runId,randomUUID(),
-        { agent: command.agent, actor: channel.actor, authority: channel.authority, requestedBy: source ?? null, root: channel.root ?? {session:target,runId} },
+        { agent: command.agent, actor: channel.actor, authority: channel.authority, requestedBy: source ?? null, root: channel.root ?? {session:target,runId}, userRecipient: current?.channel?.userRecipient ?? null },
         { language: run.language,context: command.context, title: command.title, create: { binding: { agent: command.agent, actor: channel.actor, parent: source ?? null, context: command.context },
           input: { role: "notification", kind: "agent-message", source: source ?? {kind:"external"}, content: command.message, timestamp: Date.now() } } }));
       if (external) this.remember(intent.channel,external.credential);
@@ -439,6 +504,6 @@ export class AgentChannel {
         if(result) qualityResults.push(result);
       }
     }
-    return { sessionId, tasks, qualityResults, preparationFailures: await this.facts.preparationFailures(scope,sessionId), notifications: (await this.runtime.store.messages(scope, sessionId)).filter(row => row.message.role === "notification") };
+    return { sessionId, tasks, qualityResults, preparationFailures: await this.facts.preparationFailures(scope,sessionId), pendingQuestions: await this.facts.pendingQuestions(scope,sessionId), notifications: (await this.runtime.store.messages(scope, sessionId)).filter(row => row.message.role === "notification") };
   }
 }

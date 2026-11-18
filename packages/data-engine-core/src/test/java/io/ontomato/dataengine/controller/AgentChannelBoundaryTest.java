@@ -35,6 +35,16 @@ class AgentChannelBoundaryTest {
     mvc().perform(post("/platform/agent-channel/prepare").header("X-Domain-Id","a").contentType(MediaType.APPLICATION_JSON).content(input("steer","notification"))).andExpect(status().isOk());
     verify(store).run(SESSION,RUN,owner);
   }
+  @Test void trustedHumanRecipientAndSelectedOptionSurviveTheRealJacksonPrepareBoundary() throws Exception {
+    var owner=new OntologyAgentStore.Owner("user","a");
+    when(callers.query(any(),eq("a"),eq("en"),any(),any(),any(),isNull())).thenReturn(new OntologyAgentAccess.Context(owner,null,null,null,"en",1000L,RUN));
+    var body=JSONObject.parseObject(input("steer","notification"));
+    body.put("userRecipient",JSONObject.of("session",JSONObject.of("providerId","workbench","sessionId",SESSION),"actor",JSONObject.of("id",RUN,"domainId","a")));
+    body.getJSONObject("input").put("selectedOption",1);
+    body.getJSONObject("input").put("respondent",JSONObject.of("id",RUN,"domainId","a"));
+    mvc().perform(post("/platform/agent-channel/prepare").header("X-Domain-Id","a").contentType(MediaType.APPLICATION_JSON).content(body.toJSONString())).andExpect(status().isOk());
+    verify(store).run(SESSION,RUN,owner);
+  }
   @Test void invalidModesAndRolesFailBeforeAnyBusinessAdmission() throws Exception {
     mvc().perform(post("/platform/agent-channel/prepare").header("X-Domain-Id","a").contentType(MediaType.APPLICATION_JSON).content(input("other","notification"))).andExpect(status().isBadRequest());
     mvc().perform(post("/platform/agent-channel/prepare").header("X-Domain-Id","a").contentType(MediaType.APPLICATION_JSON).content(input("run","assistant"))).andExpect(status().isBadRequest());

@@ -24,7 +24,7 @@ export const agentMessageSourceSchema = z.union([agentExecutionRefSchema,z.objec
 export const agentQuestionOptionSchema = z.object({ label: key, description: z.string().optional(), isDefault: z.boolean().optional() }).strict();
 export const agentQuestionOptionsSchema = z.array(agentQuestionOptionSchema).min(1).refine(options => options.filter(option => option.isDefault).length === 1, "Exactly one option must be the default");
 export const agentPendingQuestionSchema = z.object({ requestId: id, source: agentExecutionRefSchema, message: z.string(), defaultAssumption: z.string(), options: agentQuestionOptionsSchema.optional() }).strict();
-export const agentInputDeliverySchema = z.object({ messageId: id, sessionRef: agentSessionRefSchema, runId: id, delivery: z.enum(["steer", "run"]), status: z.enum(["starting", "running"]) }).strict();
+export const agentInputDeliverySchema = z.object({ messageId: id, sessionRef: agentSessionRefSchema, runId: id, delivery: z.enum(["steer", "run", "receipt"]), status: z.enum(["starting", "running", "completed"]) }).strict();
 export const agentNotificationSchema = z.object({
   role: z.literal("notification"),
   kind: z.enum(["agent-message", "agent-result", "agent-question", "agent-answer"]),
