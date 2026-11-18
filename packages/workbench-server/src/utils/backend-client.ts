@@ -139,9 +139,11 @@ export function buildBackendHeaders(
   token?: string,
   userId?: string,
   locale?: string,
-  apiKey?: string
+  apiKey?: string,
+  scopeHeaders: Record<string, string> = {}
 ): Record<string, string> {
   const headers: Record<string, string> = {
+    ...scopeHeaders,
     "Content-Type": "application/json",
     ...(token ? { tk: token } : {}),
   };

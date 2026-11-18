@@ -13,7 +13,6 @@ import {config} from '../../config/application';
 import {objectViewDocumentSchema} from '@ontomato/contracts/object-views';
 import {withProductGrants,currentProductGrants,registerProductResource,productGrantIdsForOwner,refreshProductGrants} from './grants';
 import {assistantStore} from '../assistant/store';
-import {agentPrincipalCredentials} from './agent-principal';
 import {ontologyRegistration,synchronizeProductOntology} from './ontology';
 import {nativeAgentAsset,updateNativeAgent} from './platform-assets';
 import {lockProducts} from '../../infrastructure/product-write-lock';
@@ -157,9 +156,6 @@ export async function saveProduct(owner: ProductOwner, id: string, input: Omit<P
 async function saveAuthorizedProduct(owner:ProductOwner,id:string,input:ProductAssetInput,revision:number,credentials:AssistantCredentials,migrating=false){
   const parsed=productAssetInputSchema.parse(input);
   const normalized=normalizeComposition(id,parsed);
-  if(parsed.document.kind==='agent-profile'){
-    if(parsed.document.principalId===id)throw new HttpError(400,'Profile and Agent principal require distinct identities','INVALID_AGENT_PROFILE');
-  }
   if(parsed.document.kind==='object-view'){
     const response=await backendPost('product-object-view-migration',config.dataQuery.baseUrl+'/objectView/read',{className:parsed.document.className,form:parsed.document.form},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});
     const state=JSON.parse(response.text);
@@ -178,10 +174,9 @@ async function saveAuthorizedProduct(owner:ProductOwner,id:string,input:ProductA
       if(removed.rows.length)throw new HttpError(409,'Deleted asset identities cannot be reused; create a new asset ID','PRODUCT_ID_RETIRED');
     }
     if(parsed.document.kind==='agent-profile'){
-      await assistantStore.agent(parsed.document.principalId,owner);
+      await assistantStore.agent(parsed.document.agentId,owner);
       const native=await nativeAgentAsset(owner.domainId,id);
-      if(native){if(native!==parsed.document.principalId||parsed.document.tools.length||parsed.document.contextViews.length)throw new HttpError(400,'A platform Agent retains its execution identity and Skill tool surface; configure explicit projections in a separate Profile','INVALID_AGENT_PROFILE');}
-      else await agentPrincipalCredentials(owner.domainId,parsed.document.principalId,credentials.locale,owner.userId);
+      if(native){if(native!==parsed.document.agentId||parsed.document.tools.length||parsed.document.contextViews.length)throw new HttpError(400,'A platform Agent retains its definition and Skill tool surface; configure explicit projections in a separate Profile','INVALID_AGENT_PROFILE');}
     }
     await validateProduct(owner,normalized.input,credentials);
     for(const child of normalized.children){

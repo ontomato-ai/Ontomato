@@ -59,13 +59,14 @@ public class KnowledgeGovernanceController {
     if (!run.equals(request.getHeader("X-Ontomato-Run-Id")))
       throw AgentHttpException.invalid("Run identity mismatch");
     var grant=(JSONObject)request.getAttribute(QueryGrantService.ATTRIBUTE);
-    Owner owner;
-    if (grant==null) owner=access.governance(request).owner();
+    Owner owner,executor;
+    if (grant==null) {owner=access.governance(request).owner();executor=owner;}
     else {
       if (!"knowledge-governance".equals(grant.getString("purpose")) || !run.equals(grant.getString("runId")))
         throw AgentHttpException.missing();
-      owner=new Owner(grant.getString("userId"),grant.getString("domainId"));
+      owner=new Owner(AgentJson.text(grant,"initiatorUserId"),grant.getString("domainId"));
+      executor=new Owner(grant.getString("userId"),grant.getString("domainId"));
     }
-    return governance.action(id,run,action,input,owner);
+    return governance.action(id,run,action,input,owner,executor);
   }
 }

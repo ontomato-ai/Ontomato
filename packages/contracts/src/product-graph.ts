@@ -52,8 +52,8 @@ export function productGraph(assets:ProductAsset[]):ProductGraph{
       }
     }
     if(document.kind==='agent-profile'){
-      const target=`principal:${document.principalId}`;
-      nodes.set(target,{id:target,name:document.principalId,kind:'AgentPrincipal',category:'principal'});
+      const target=`agent:${document.agentId}`;
+      nodes.set(target,{id:target,name:document.agentId,kind:'AgentDefinition',category:'ontology'});
       add(source,target,'embodies','product-index');
     }
   }

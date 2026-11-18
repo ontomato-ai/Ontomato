@@ -22,7 +22,7 @@ vi.mock("../../../infrastructure/postgres", () => ({
   qualifiedTable: () => "user_preferences",
   getPostgresPool: () => ({ query: database.query }),
 }));
-vi.mock("../../../utils/request-identity", () => ({ requireDomainId: (req: { domainId: string }) => req.domainId }));
+vi.mock("../../../utils/request-identity", async original => ({...await original<typeof import("../../../utils/request-identity")>(), requireDomainId: (req: { domainId: string }) => req.domainId }));
 import router from "../personal-workspace";
 
 let server: Server;

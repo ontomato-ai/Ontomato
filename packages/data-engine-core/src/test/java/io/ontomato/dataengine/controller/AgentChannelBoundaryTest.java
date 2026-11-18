@@ -31,7 +31,7 @@ class AgentChannelBoundaryTest {
   }
   @Test void jacksonMapsCarryTypedAnswersToTheSamePrepareEntrance() throws Exception {
     var owner=new OntologyAgentStore.Owner("user","a");
-    when(callers.query(any(),eq("a"),eq("en"),any(),any(),any())).thenReturn(new OntologyAgentAccess.Context(owner,null,null,null,"en",1000L,RUN));
+    when(callers.query(any(),eq("a"),eq("en"),any(),any(),any(),isNull())).thenReturn(new OntologyAgentAccess.Context(owner,null,null,null,"en",1000L,RUN));
     mvc().perform(post("/platform/agent-channel/prepare").header("X-Domain-Id","a").contentType(MediaType.APPLICATION_JSON).content(input("steer","notification"))).andExpect(status().isOk());
     verify(store).run(SESSION,RUN,owner);
   }
@@ -51,10 +51,10 @@ class AgentChannelBoundaryTest {
   }
   @Test void listUsesTheOntologyProviderProtocol() throws Exception {
     var actor=JSONObject.of("id",RUN,"domainId","a");
-    when(directory.list(actor,"a","en")).thenReturn(JSONObject.of("agents",java.util.List.of()));
+    when(directory.list(actor,"a","en",null)).thenReturn(JSONObject.of("agents",java.util.List.of()));
     mvc().perform(post("/platform/agent-channel/list").header("X-Domain-Id","a").contentType(MediaType.APPLICATION_JSON)
       .content(JSONObject.of("providerId","ontology","actor",actor,"language","en").toJSONString())).andExpect(status().isOk());
-    verify(directory).list(actor,"a","en");
+    verify(directory).list(actor,"a","en",null);
   }
   @Test void buildTestRequestsCannotReachChannelCommandsStreamsOrProviderCallbacks() throws Exception {
     var mvc=mvc();String header="{\"kind\":\"build-test\",\"contextId\":null}";
@@ -124,4 +124,39 @@ class AgentChannelBoundaryTest {
     verify(identity,never()).getCurrentUser();
   }
 
+
+  @Test void jacksonBoundaryKeepsInitiatorOwnershipAndExecutorDataIdentity() throws Exception {
+    var executorRef=JSONObject.of("userId","V","domainId","a");
+    var owner=new OntologyAgentStore.Owner("U","a");
+    var permission=new io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission();permission.setFullData(true);
+    var dataAccess=new io.ontomato.dataengine.service.QueryAccessService.Access(new io.ontomato.dataengine.service.QueryAccessService.GrantUser("V","a"),permission,null,null,null).withExecution("V","U");
+    var admitted=new OntologyAgentAccess.Context(owner,dataAccess,null,null,"en",null,null,"V");
+    when(callers.query(any(),eq("a"),eq("en"),any(),isNull(),any(),eq(executorRef))).thenReturn(admitted);
+    var retrieval=mock(OntologyRetrievalService.class);
+    when(retrieval.prepareRun(eq(SESSION),eq(RUN),any(),eq(RUN),isNull(),eq(RUN),eq(admitted))).thenReturn(JSONObject.of("input",JSONObject.of("role","user","content","Question")));
+    var controller=new AgentChannelController(callers,directory,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class),retrieval,mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),mock(io.ontomato.dataengine.service.LangService.class));
+    var mvc=MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new OntologyAgentErrors()).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+    var body=JSONObject.parseObject(input("run","user"));body.getJSONObject("agent").put("agentId",OntologyAgentStore.RETRIEVER);body.put("executionActor",executorRef);
+    var response=mvc.perform(post("/platform/agent-channel/prepare").header("X-Domain-Id","a").contentType(MediaType.APPLICATION_JSON).content(body.toJSONString())).andExpect(status().isOk()).andReturn().getResponse();
+    assertEquals("V",JSONObject.parseObject(response.getContentAsString()).getJSONObject("executionActor").getString("userId"));
+    verify(retrieval).prepareRun(eq(SESSION),eq(RUN),any(),eq(RUN),isNull(),eq(RUN),argThat(context->context.owner().userId().equals("U")&&context.access().user().getId().equals("V")));
+  }
+
+  @Test void callerRestorationUsesTheExecutorPermissionWithoutReplacingTheInitiator() {
+    var jdbc=mock(org.springframework.jdbc.core.JdbcTemplate.class);
+    when(jdbc.queryForList(anyString(),any(Object[].class))).thenReturn(java.util.List.of(java.util.Map.of("user_id","U","domain_id","a","deadline",new java.sql.Timestamp(System.currentTimeMillis()+60000))));
+    var identity=mock(io.ontomato.dataengine.service.IdentityService.class);
+    var initiator=new io.ontomato.dataengine.service.QueryAccessService.GrantUser("U","a");
+    var executor=new io.ontomato.dataengine.service.QueryAccessService.GrantUser("V","a");
+    when(identity.getCurrentUser()).thenReturn(initiator);
+    var identities=mock(io.ontomato.dataengine.schedules.ScheduleIdentity.class);
+    var permission=new io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission();permission.setFullData(true);
+    when(identities.dataPermission("a","V")).thenReturn(permission);
+    var execution=mock(AgentExecutionAccess.class);when(execution.require("a","V")).thenReturn(executor);
+    var caller=new AgentCaller(jdbc,identities,identity);org.springframework.test.util.ReflectionTestUtils.setField(caller,"executions",execution);
+    var restored=caller.query(JSONObject.of("id",RUN,"domainId","a"),"a","en",JSONObject.of("classNames",java.util.List.of("Orders"),"executionKind","live"),null,JSONObject.of("runId",RUN),JSONObject.of("userId","V","domainId","a"));
+    assertEquals("U",restored.owner().userId());assertEquals("V",restored.access().user().getId());assertEquals(java.util.List.of("Orders"),restored.access().classNames());
+    verify(identity).requireQueryAccess("V","a");verify(execution).require("a","V");
+    assertThrows(AgentHttpException.class,()->caller.query(JSONObject.of("id",RUN,"domainId","a"),"a","en",JSONObject.of("classNames",java.util.List.of(),"executionKind","live"),null,JSONObject.of("runId",RUN),JSONObject.of("userId","V","domainId","other")));
+  }
 }

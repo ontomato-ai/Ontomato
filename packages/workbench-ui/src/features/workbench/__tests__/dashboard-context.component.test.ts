@@ -6,7 +6,7 @@ import ElementPlus from "element-plus";
 import { pilotPageKey, platformPageAccessKey, type PilotPage } from "@ontomato/platform-shell";
 import { workbenchI18n } from "../../../i18n";
 import { ontologyServiceAccessKey, openOntologyServiceAccess } from "../../../app/ontology-service";
-import { clearDashboardSelection, setDashboardSelection } from "../../dashboard";
+
 import BusinessWorkbench from "../components/BusinessWorkbench.vue";
 
 /*
@@ -60,17 +60,16 @@ vi.mock("../../dashboard", async (importOriginal) => ({
 const wrappers: ReturnType<typeof mount>[] = [];
 afterEach(() => {
   wrappers.splice(0).forEach((wrapper) => wrapper.unmount());
-  clearDashboardSelection();
   vi.restoreAllMocks();
   document.body.innerHTML = "";
 });
 
-async function openBoard() {
+async function openBoard(page: string) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ ...platformRoutes.chat, component: { render: () => null } }, { path: "/dashboards", component: { render: () => null } }],
   });
-  await router.push({ path: platformRoutes.chat.path, query: { page: "/dashboards?dashboardId=board-a" } });
+  await router.push({ path: platformRoutes.chat.path, query: { page } });
   const wrapper = mount(BusinessWorkbench, {
     props: { defaultLogo: "", defaultBrandName: "Ontomato" },
     global: {
@@ -79,8 +78,8 @@ async function openBoard() {
         [ontologyServiceAccessKey as symbol]: openOntologyServiceAccess,
         [platformPageAccessKey as symbol]: () => true,
         // The assembly's registry, as the dashboards application registers itself: one page, at its own address.
-        [pilotPageKey as symbol]: (address: string): PilotPage | null =>
-          address.startsWith("/dashboards") ? { component: { render: () => null } } : null,
+        [pilotPageKey as symbol]: () => (address: string): PilotPage | null =>
+          address.startsWith("/dashboards") ? { id: "dashboards", component: { render: () => null } } : null,
       },
     },
   });
@@ -90,27 +89,22 @@ async function openBoard() {
 }
 
 describe("the board's page context", () => {
-  it("carries the board and the card chosen in it, so the message asks about that card", async () => {
-    const shell = await openBoard();
-    expect(shell.props("pageContext")).toMatchObject({ pageKey: "dashboard", url: "/dashboards?dashboardId=board-a", selection: [] });
-
-    setDashboardSelection({ id: "board-a", name: "Sales" }, { id: "card-1", name: "Revenue by region", kind: "chart" });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+  it("carries the board and the card chosen in it, each with the id the page's skill reads", async () => {
+    // The address the conversation carries is the page's selection: the board, and the card chosen in it with its name.
+    const page = "/dashboards?dashboardId=board-a&dashboardName=Sales&cardId=card-1&cardName=Revenue%20by%20region";
+    const shell = await openBoard(page);
     expect(shell.props("pageContext")).toMatchObject({
+      pageKey: "dashboard",
+      url: page,
       selection: [
-        { kind: "dashboard", id: "board-a", label: "Sales" },
-        { kind: "dashboard-card-chart", id: "card-1", label: "Revenue by region" },
+        { kind: "dashboard", id: "board-a", label: "Sales (board-a)" },
+        { kind: "dashboard-card", id: "card-1", label: "Revenue by region (card-1)" },
       ],
     });
   });
 
-  it("carries the board alone when no card is chosen", async () => {
-    const shell = await openBoard();
-    setDashboardSelection({ id: "board-a", name: "Sales" }, { id: "card-1", name: "Revenue by region", kind: "metric" });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    clearDashboardSelection();
-    setDashboardSelection({ id: "board-a", name: "Sales" });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(shell.props("pageContext")).toMatchObject({ selection: [{ kind: "dashboard", id: "board-a", label: "Sales" }] });
+  it("carries the board alone when the address names no card", async () => {
+    const shell = await openBoard("/dashboards?dashboardId=board-a&dashboardName=Sales");
+    expect(shell.props("pageContext")).toMatchObject({ selection: [{ kind: "dashboard", id: "board-a", label: "Sales (board-a)" }] });
   });
 });

@@ -1,5 +1,6 @@
 import type { PilotPage, PilotPageResolver } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
+import AgentSettingsRoute from "./pages/AgentSettingsRoute.vue";
 import DashboardsPage from "./pages/DashboardsRoute.vue";
 import GovernanceReportRoute from "./pages/GovernanceReportRoute.vue";
 import PanelApplicationRoute from "./pages/PanelApplicationRoute.vue";
@@ -9,52 +10,75 @@ import PanelApplicationRoute from "./pages/PanelApplicationRoute.vue";
  * what the conversation beside it carries (`?page=`), and the resolver turns that address into the props the page's own
  * component takes: the page keeps one component and one address, and the page beside the chat is that page.
  *
- * The pages here: the dashboards, one governance record's report, and the agent settings, which the workbench mounts
- * itself. A panel application's address is here too: it is shown beside the conversation by the same page the platform
- * shows it with, so one address has one page and one panel instance either way.
+ * The pages here are the dashboards, the agents' settings, one governance record's report and a panel application's
+ * page, which is shown by the same page the platform shows it with, so one address has one page and one panel instance.
+ *
+ * A page's own navigation (another board, another agent, the list, a saved draft's handoff) is the callback it is given
+ * here. The callback changes the parameter the conversation carries, never the browser's address, so the conversation
+ * stays where it is and the page keeps its own address and its own state.
  */
-export const resolvePilotPage: PilotPageResolver = (address) => {
-  const [path, search = ""] = address.split("?");
-  const query = new URLSearchParams(search);
-  if (path === platformRoutes.dashboards.path) {
+export function pilotPageResolver(setPage: (address: string) => void): PilotPageResolver {
+  return (address) => {
+    const [path, search = ""] = address.split("?");
+    const query = new URLSearchParams(search);
+    const agents = /^\/ontology\/agents(?:\/(new|[^/]+))?$/.exec(path);
+    if (agents) {
+      const id = agents[1] ?? null;
+      return {
+        id: "agents",
+        component: AgentSettingsRoute,
+        props: {
+          agentId: id === "new" ? null : id,
+          creating: id === "new",
+          // The page keeps its own address beside the conversation, a draft handoff included.
+          address,
+          navigate: setPage,
+        },
+      };
+    }
+    const report = /^\/governance\/reports\/([^/]+)$/.exec(path);
+    if (report) {
+      const recordId = decodeURIComponent(report[1]!);
+      return {
+        id: "governance-report",
+        component: GovernanceReportRoute,
+        props: {
+          paired: true,
+          recordId,
+          issueId: query.get("issue") ?? undefined,
+          navigate: (next: { issue?: string }) => {
+            const target = new URLSearchParams(search);
+            if (next.issue) target.set("issue", next.issue);
+            else target.delete("issue");
+            setPage(`/governance/reports/${encodeURIComponent(recordId)}${target.size ? `?${target}` : ""}`);
+          },
+        },
+      } satisfies PilotPage;
+    }
+    // A panel application's page: `/applications/<application>/<the use relation's path>`, shown by the same component
+    // that shows it full.
+    const panel = /^\/applications\/([^/]+)(\/.*)?$/.exec(path);
+    if (panel) {
+      return {
+        id: "panel-application",
+        component: PanelApplicationRoute,
+        props: { applicationId: decodeURIComponent(panel[1]!), panelPath: (panel[2] ?? "").replace(/^\//, "") },
+      } satisfies PilotPage;
+    }
+    if (path !== platformRoutes.dashboards.path) return null;
     return {
+      id: "dashboards",
       component: DashboardsPage,
-      props: { paired: true, dashboardId: query.get("dashboardId") ?? undefined },
-      // The page's own navigation lands on the address it would be at; the frame changes the parameter it carries.
-      navigate(next) {
-        return addressWith(platformRoutes.dashboards.path, search, "dashboardId", next.dashboardId);
+      props: {
+        paired: true,
+        dashboardId: query.get("dashboardId") ?? undefined,
+        navigate: (next: { dashboardId?: string }) => {
+          const target = new URLSearchParams(search);
+          if (next.dashboardId) target.set("dashboardId", next.dashboardId);
+          else target.delete("dashboardId");
+          setPage(`${platformRoutes.dashboards.path}${target.size ? `?${target}` : ""}`);
+        },
       },
     } satisfies PilotPage;
-  }
-  // One governance record's report. The finding the reader selected is part of its address, so the message written at
-  // its foot carries it and enlarging the page keeps it.
-  const report = /^\/governance\/reports\/([^/]+)$/.exec(path);
-  if (report) {
-    const recordId = decodeURIComponent(report[1]!);
-    return {
-      component: GovernanceReportRoute,
-      props: { paired: true, recordId, issueId: query.get("issue") ?? undefined },
-      navigate(next) {
-        return addressWith(`/governance/reports/${encodeURIComponent(recordId)}`, search, "issue", next.issue);
-      },
-    } satisfies PilotPage;
-  }
-  // A panel application's page: `/applications/<application>/<the use relation's path>`, shown beside the conversation
-  // by the same component that shows it full.
-  const panel = /^\/applications\/([^/]+)(\/.*)?$/.exec(path);
-  if (panel) {
-    return {
-      component: PanelApplicationRoute,
-      props: { applicationId: decodeURIComponent(panel[1]!), panelPath: (panel[2] ?? "").replace(/^\//, "") },
-    } satisfies PilotPage;
-  }
-  return null;
-};
-
-/** `path` with one query parameter set or dropped, the rest of the page's address kept as it is. */
-function addressWith(path: string, search: string, key: string, value: string | undefined) {
-  const target = new URLSearchParams(search);
-  if (value) target.set(key, value);
-  else target.delete(key);
-  return `${path}${target.size ? `?${target}` : ""}`;
+  };
 }

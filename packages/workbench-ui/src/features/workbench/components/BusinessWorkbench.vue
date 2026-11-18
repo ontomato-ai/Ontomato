@@ -8,24 +8,25 @@ import {
   AgentShell, useAgentNav, useSessionRunFeed,
   type PageContext, type ShellFeatureDeclaration, type ShellWorkbenchDeclaration,
 } from "@ontomato/agent-shell-ui";
-import {
-  AgentModelsPage, ontologyAgentModelPages, ontologyAgentModelSource, usePageAccess, usePilotPage,
-} from "@ontomato/platform-shell";
+import { usePageAccess, usePilotPage } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
-import { AgentSettingsNav, AgentSettingsPage, dataEngineTransport, useAgentDefinitions } from "../../agents";
 import { getWorkbenchAppearance } from "../api";
 import { createAssistantClient, createAssistantFeedback } from "../assistant-host";
 import { readRememberedAgent, readRememberedSession, rememberAgent, rememberSession } from "../remembered-agent";
 import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
-import { dashboardSelection } from "../../dashboard";
+import { dashboardSelectionFrom } from "../../dashboard";
 import DatasetActions from "./DatasetActions.vue";
 import ChartFileActions from "./ChartFileActions.vue";
 import DatasetDrilldown from "./DatasetDrilldown.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
 import {
-  AGENT_SETTINGS_PAGE_ID, DASHBOARDS_PAGE_ID, GOVERNANCE_REPORT_PAGE_ID, governanceReportPageFeature, workbenchFeatures,
+  AGENT_SETTINGS_PAGE_ID,
+  DASHBOARDS_PAGE_ID,
+  GOVERNANCE_REPORT_PAGE_ID,
+  governanceReportPageFeature,
+  workbenchFeatures,
 } from "../features";
 import FollowUpRenderer from "./FollowUpRenderer.vue";
 import ClarificationRenderer from "./ClarificationRenderer.vue";
@@ -73,70 +74,38 @@ const queryText = (value: unknown) => (typeof value === "string" ? value : null)
 const requestedAgent = () => queryText(route.query.agentId);
 const agentId = ref<string | null>(readRememberedAgent());
 /**
- * The application's own pages, by the name the shell shows for them. The dashboards and the scheduled tasks are
- * applications of their own now, so nothing here leaves this application.
+ * The application's own pages, by the name the shell shows for them. The dashboards, the scheduled tasks and the agents'
+ * settings are pages of their own, so nothing here leaves this application.
  */
-const featureRoutes = { agents: routes.agents };
-/** The settings' addresses: the editor of one agent or a new one. */
-const SETTINGS_PATH = routes.agents.path;
-const inBuilder = computed(() => route.path===routes.agentBuilder.path||route.path.startsWith(`${routes.agentBuilder.path}/`));
-const settingsPath = (suffix = "") => `${inBuilder.value?routes.agentBuilder.path:SETTINGS_PATH}${suffix}`;
-const inSettings = computed(() => inBuilder.value||route.path === SETTINGS_PATH || route.path.startsWith(`${SETTINGS_PATH}/`));
-/**
- * The settings screen the address names. "new" is its own address (`/agents/settings/new`), not a parameter value, so it
- * is recognised by route name and by the path — an agent whose id happened to be "new" would still open its editor.
- */
-const creatingAgent = computed(
-  () => route.name === routes.agentSettingsNew.name || route.name === routes.agentBuilderNew.name || route.path === `${SETTINGS_PATH}/new`,
-);
-/** The models of the ontology service agents the conversations run on: the settings' own entry at their column's foot. */
-const modelsOpen = computed(() => route.path === routes.agentModels.path);
-const modelsPage = ontologyAgentModelPages.find((page) => page.app === "agents")!;
-const modelSource = ontologyAgentModelSource(dataEngineTransport, modelsPage);
-const settingsAgentId = computed(() => {
-  const id = route.params.agentId;
-  return typeof id === "string" && !creatingAgent.value ? id : null;
-});
+const featureRoutes = {} as Record<string, never>;
 /**
  * The page beside the conversation is carried by this application's own address (`?page=<the page's address>`), so the
  * conversation stays where it is and the page is mounted from the assembly's registry, with the props its address gives
  * it and the way back for its own navigation.
  */
-const pilot = usePilotPage();
+/**
+ * The pages this application carries beside its conversation, from the platform's assembly: the assembly hands over a
+ * resolver whose callback is this application's own address (`?page=`), so a page's own navigation never leaves it.
+ */
+const pilot = usePilotPage()(setPageAddress);
+/** The page's address the conversation carries: one query value, so the page's own query (`?draft...`) travels with it. */
 const pageAddress = computed(() => (typeof route.query.page === "string" ? route.query.page : null));
 const pilotPage = computed(() => (pageAddress.value ? pilot(pageAddress.value) : null));
-/** Which of the platform's pages the parameter names: the dashboards application, or one governance record's report. */
-const pilotFeatureId = computed(() => {
-  const path = pageAddress.value?.split("?")[0];
-  if (!path || !pilotPage.value) return null;
-  if (path === routes.dashboards.path) return DASHBOARDS_PAGE_ID;
-  if (path.startsWith("/governance/reports/")) return GOVERNANCE_REPORT_PAGE_ID;
-  return null;
-});
-const inPilotPage = computed(() => pilotFeatureId.value !== null);
-const inDashboards = computed(() => pilotFeatureId.value === DASHBOARDS_PAGE_ID);
-const inGovernanceReport = computed(() => pilotFeatureId.value === GOVERNANCE_REPORT_PAGE_ID);
+const inDashboards = computed(() => pilotPage.value?.id === DASHBOARDS_PAGE_ID);
+const inGovernanceReport = computed(() => pilotPage.value?.id === GOVERNANCE_REPORT_PAGE_ID);
 /**
  * The page the shell shows: the settings are the `agents` page, whose addresses are the settings' own screens, the
  * dashboards the `dashboards` page its own address opens, and every other page names its route. Closing the page (a new
  * conversation) returns to the conversation.
  */
 const featureId = computed<string | null>({
-  get: () => {
-    if (inSettings.value) return AGENT_SETTINGS_PAGE_ID;
-    if (pilotFeatureId.value) return pilotFeatureId.value;
-    return Object.entries(featureRoutes).find(([, page]) => page.name === route.name)?.[0] ?? null;
-  },
+  get: () => pilotPage.value?.id ?? null,
   set: (id) => {
-    if (id === AGENT_SETTINGS_PAGE_ID && inSettings.value) return;
     // Closing the page beside the conversation only drops the parameter: the conversation stays.
-    if (inPilotPage.value || id === DASHBOARDS_PAGE_ID || id === GOVERNANCE_REPORT_PAGE_ID) {
-      const { page: _page, ...query } = route.query;
-      void router.replace({ query });
-      return;
-    }
-    const target = featureRoutes[id as keyof typeof featureRoutes] ?? routes.chat;
-    if (route.name !== target.name) void router.push({ name: target.name });
+    if (id !== null) return;
+    if (pageAddress.value === null) return;
+    const { page: _page, ...query } = route.query;
+    void router.replace({ query });
   },
 });
 
@@ -151,15 +120,10 @@ function setPageAddress(address: string) {
 const conversationId = ref<string | null>(
   !requestedAgent() && typeof route.query.sessionId === "string" ? route.query.sessionId : null,
 );
-/**
- * The address names the conversation on a page that has one of its own, and only until the platform's own pages (a
- * dashboard beside it) carry it: leaving those returns to the conversation the reader came from.
- */
-const carriesSession = computed(() => !inSettings.value);
 watch(
   () => route.query.sessionId,
   (id) => {
-    if (carriesSession.value && typeof id === "string" && id !== conversationId.value) conversationId.value = id;
+    if (typeof id === "string" && id !== conversationId.value) conversationId.value = id;
   },
 );
 const shell = ref<InstanceType<typeof AgentShell> | null>(null);
@@ -179,8 +143,11 @@ function pageLinks(href: string): (() => void) | null {
   const pilotPage = pilot(address);
   if (pilotPage) return () => void router.push({ query: { ...route.query, page: address } });
   const resolved = router.resolve(address);
-  // The catch-all route answers any address with the start page; that is no page of its own.
-  if (!resolved.matched.length || resolved.matched.some((record) => "redirect" in record && record.redirect)) return null;
+  // The address is a page when the route it lands on is one: the deepest record it matches. Every page of the platform sits
+  // under the layout, whose own record redirects to the start page, and the catch-all answers any address the same way,
+  // so it is that last record — not the layout above it — that says whether there is a page here.
+  const leaf = resolved.matched.at(-1);
+  if (!leaf || leaf.redirect) return null;
   return () => void router.push({ path: resolved.path, query: resolved.query, hash: resolved.hash });
 }
 
@@ -208,14 +175,11 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
 const labels = useShellLabels();
 
 /**
- * The page beside the conversation: the settings name the agent they show, a dashboard names itself, a governance report
- * names the record and the finding selected in it, for a message sent from its composer. What is selected in a
- * dashboard is the dashboard's own to report.
+ * The page beside the conversation names itself for a message sent from its composer. A governance report carries its
+ * selected finding; what is selected in a dashboard is the dashboard's own to report.
  */
-const settingsAgents = useAgentDefinitions();
 const pageContext = computed<PageContext | null>(() => {
-  if (inDashboards.value)
-    return { pageKey: "dashboard", url: pageAddress.value!, label: t("assistant.featureDashboards"), selection: dashboardSelection.value };
+  if (!pilotPage.value) return null;
   if (inGovernanceReport.value) {
     const issue = new URLSearchParams(pageAddress.value!.split("?")[1] ?? "").get("issue");
     return {
@@ -225,14 +189,14 @@ const pageContext = computed<PageContext | null>(() => {
       selection: issue ? [{ kind: "issue", id: issue, label: `${t("assistant.governanceFinding")} ${issue}` }] : [],
     };
   }
-  if (!inSettings.value) return null;
-  const agent = settingsAgents.find(settingsAgentId.value);
-  return {
-    pageKey: "agent-settings",
-    url: route.fullPath,
-    label: agent ? `${t("agents.title")} · ${agent.name}` : t("agents.title"),
-    selection: settingsAgentId.value && agent ? [{ kind: "agent", id: agent.id, label: agent.name }] : [],
-  };
+  if (inDashboards.value) {
+    // The selection is the page's address: the board, and the card the address names with its own name and id.
+    const address = Object.fromEntries(new URLSearchParams(pageAddress.value!.split("?")[1] ?? ""));
+    return { pageKey: "dashboard", url: pageAddress.value!, label: t("assistant.featureDashboards"), selection: dashboardSelectionFrom(address) };
+  }
+  return pilotPage.value.id === AGENT_SETTINGS_PAGE_ID
+    ? { pageKey: "agent-settings", url: pageAddress.value!, label: t("agents.title"), selection: [] }
+    : null;
 });
 
 /**
@@ -257,25 +221,25 @@ watch(locale, () => {
   void nav.loadAgents().catch((error) => ElMessage.error(error instanceof Error ? error.message : String(error)));
 });
 
-/** The conversation the reader came from, so leaving the settings returns to it rather than to a new one. */
-const returnTo = ref<string | null>(null);
-watch(inSettings, (open) => {
-  if (!open) returnTo.value = null;
-});
-
 /**
  * The settings the account may open: the agents' (with the agents' permission), and the models of the ontology service
  * agents the conversations run on (with the model permission). Each is a page of the platform's navigation.
  */
 const canOpen = usePageAccess();
-const editsAgents = computed(() => canOpen(SETTINGS_PATH));
+const editsAgents = computed(() => canOpen(routes.ontologyAgents.path));
 const opensModels = computed(() => canOpen(routes.agentModels.path));
 
-/** The agent settings: the agent the conversation runs on (or the first one), or the models when only they are open. */
+/**
+ * The agent settings are one page of the platform's own navigation: this entry opens it at the agent in use. An account
+ * without the agents' permission goes to the models the conversations run on, which is the platform's own settings page.
+ */
 function openSettings() {
-  returnTo.value = conversationId.value;
-  if (!editsAgents.value) return void router.push(routes.agentModels.path);
-  void router.push(agentId.value ? settingsPath(`/${agentId.value}`) : SETTINGS_PATH);
+  if (!editsAgents.value) return void router.push(routes.systemAgentModels.path);
+  void router.push(
+    agentId.value
+      ? { name: routes.ontologyAgent.name, params: { agentId: agentId.value } }
+      : { name: routes.ontologyAgents.name },
+  );
 }
 
 /**
@@ -286,29 +250,25 @@ function openPageAtItsAddress(_id: string, address: string) {
   if (address) void router.push(address);
 }
 
-function backToChat() {
-  const session = returnTo.value;
-  featureId.value = null;
-  conversationId.value = session;
-  void router.push({ name: routes.chat.name, query: session ? { sessionId: session } : {} });
-}
-
-function selectSettingsAgent(id: string) {
-  void router.push(settingsPath(`/${id}`));
-}
-
-function createSettingsAgent() {
-  void router.push(settingsPath("/new"));
-}
-
-function openModels() {
-  void router.push(routes.agentModels.path);
-}
 
 /** The column's own entry at the foot: the agent settings, which replace the column while they are open. */
 const bottomEntry = computed(() =>
   editsAgents.value || opensModels.value ? { label: t("assistant.featureAgents"), icon: "agents" } : null,
 );
+
+/**
+ * The link's own parameters, consumed once. A page's composer navigates here with `?agentId=&prompt=&page=`, and this
+ * entry can run more than once on the way in — the mount, the address settling as it leaves the link's parameters, the
+ * column's own reads returning — so the address they arrived on is taken once, before the first await: an entry that finds
+ * the same address again has nothing to do rather than sending the same question a second time.
+ *
+ * `pendingLink` is set before the first await and is what tells a re-entry apart from a new message: the reader writing
+ * in the same page again arrives with the same address, and that is a message, sent after the first one has been placed.
+ */
+let consumedLink: string | null = null;
+let pendingLink: string | null = null;
+const linkAddress = () =>
+  JSON.stringify([requestedAgent(), queryText(route.query.sessionId), queryText(route.query.prompt), queryText(route.query.page)]);
 
 /**
  * Applies `?agentId=` once the agents are known. The link's parameters leave the address first, so a reload neither
@@ -322,12 +282,15 @@ const bottomEntry = computed(() =>
 async function openRequestedAgent() {
   const id = requestedAgent();
   if (!id) return;
+  const address = linkAddress();
+  if (pendingLink === address || consumedLink === address) return;
+  pendingLink = address;
   const session = queryText(route.query.sessionId);
   const prompt = queryText(route.query.prompt);
   const page = queryText(route.query.page);
-  // The link's own parameters go; the page it was written on stays, carried by the address from here on.
+  // The link's own parameters go before anything is awaited; the page it was written on stays, carried by the address.
   const { agentId: _agent, sessionId: _session, prompt: _prompt, ...query } = route.query;
-  void router.replace({ query });
+  await router.replace({ query: page ? { ...query, page } : query });
   if (!nav.agents.value.some((agent) => agent.id === id && agent.enabled)) {
     ElMessage.error(t("assistant.agentUnavailable"));
     return;
@@ -337,24 +300,36 @@ async function openRequestedAgent() {
   await nextTick();
   if (session) {
     nav.selectSession(session);
-    return;
+  } else {
+    // The conversation this tab already holds with the agent goes on; a new tab, or another agent, starts a new one.
+    // Coming from a page, this runs on the way in, before the column has read the agent's conversations: the held one is
+    // looked up in the host's list rather than in a list that is still empty, or every page message would start anew.
+    const held = readRememberedSession(id);
+    if (held && !nav.sessions.value.some((row) => row.id === held)) await nav.loadSessions();
+    const continuing = held !== null && nav.sessions.value.some((row) => row.id === held);
+    if (continuing) nav.selectSession(held);
+    else nav.startNew();
   }
-  // The conversation this tab already holds with the agent goes on; a new tab, or another agent, starts a new one.
-  // Coming from a page, this runs on the way in, before the column has read the agent's conversations: the held one is
-  // looked up in the host's list rather than in a list that is still empty, or every page message would start anew.
-  const held = readRememberedSession(id);
-  if (held && !nav.sessions.value.some((row) => row.id === held)) await nav.loadSessions();
-  const continuing = held !== null && nav.sessions.value.some((row) => row.id === held);
-  if (continuing) nav.selectSession(held);
-  else nav.startNew();
-  if (page) void router.replace({ query: { ...query, page } });
+  // Choosing a conversation closes whatever page was open beside the old one; the page this message came from stays open
+  // beside the conversation it was written for.
+  if (page) await router.replace({ query: { ...route.query, page } });
   if (prompt) {
     await nextTick();
     await shell.value!.send(prompt);
   }
+  // Placed: the address is spent, and the same one arriving again is the reader's next message.
+  pendingLink = null;
+  consumedLink = address;
 }
 // The same address entered while the page is open (another link to an agent) does the same.
-watch(() => route.query.agentId, openRequestedAgent);
+watch(
+  () => route.query.agentId,
+  (id) => {
+    // The address no longer names an agent: the next one that does is a new message, even from the same page.
+    if (!id) consumedLink = null;
+    void openRequestedAgent();
+  },
+);
 
 /** The board a conversation just added a dataset to: the dashboards application, opened on that board. */
 function openDashboardApplication(dashboardId: string) {
@@ -400,33 +375,8 @@ function appearanceSaved(value: WorkbenchAppearance) {
     @open-bottom="openSettings"
     @open-page="openPageAtItsAddress"
   >
-    <!-- In the settings the application's column is the settings navigation; the editor is the whole main area. -->
-    <template v-if="inSettings" #column>
-      <AgentSettingsNav
-        :agent-id="settingsAgentId"
-        :creating="creatingAgent"
-        :models="modelsOpen"
-        @back="backToChat"
-        @select-agent="selectSettingsAgent"
-        @create-agent="createSettingsAgent"
-        @open-models="openModels"
-      />
-    </template>
     <template #feature="{ featureId: page }">
-      <AgentModelsPage v-if="page === AGENT_SETTINGS_PAGE_ID && modelsOpen" :source="modelSource" :path="modelsPage.path" />
-      <AgentSettingsPage
-        v-else-if="page === AGENT_SETTINGS_PAGE_ID"
-        :agent-id="settingsAgentId"
-        :creating="creatingAgent"
-        @changed="shell?.reloadAgents()"
-      />
-      <component
-        :is="pilotPage!.component"
-        v-else-if="inPilotPage && page === pilotFeatureId && pilotPage"
-        :key="pageAddress!"
-        v-bind="pilotPage.props"
-        :navigate="(next: Record<string, string | undefined>) => setPageAddress(pilotPage!.navigate?.(next) ?? pageAddress!)"
-      />
+      <component :is="pilotPage!.component" v-if="pilotPage" :key="pageAddress!" v-bind="pilotPage.props" />
       <slot v-else name="feature" :feature-id="page" />
     </template>
     <template #dataset-selection-actions="{ artifact, title, selectedRowIndices }">

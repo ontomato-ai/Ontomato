@@ -194,7 +194,7 @@ public class OntologyRetrievalService {
       var input=scopedInput(inputBody,context);
       for(String previous:input.getList("previousDatasetIds",String.class)) datasetForOwner(previous,context.owner());
       var request=JSONObject.of("message",message.getString("content"),"channelInput",message,"agentChannel",true,"rootRunId",rootRunId,"timeoutSeconds",timeout(input),
-        "confirmAnswer","user".equals(message.getString("role")) || ("agent-answer".equals(message.getString("kind")) && message.containsKey("replyTo")));
+        "executionUserId",context.executionUserId(),"confirmAnswer","user".equals(message.getString("role")) || ("agent-answer".equals(message.getString("kind")) && message.containsKey("replyTo")));
       if(continuation) {
         var prior=store.retrieval(session,context.owner());
         var old=store.run(session,prior.getString("current_run_id"),context.owner());
@@ -238,7 +238,7 @@ public class OntologyRetrievalService {
             context.owner(),
             input,
             input,
-            null,
+            context.callerId(),
             true,
             timeout(input),
             context.expiresAt(),
@@ -345,7 +345,7 @@ public class OntologyRetrievalService {
     definition.put("context",modelContext(id,runId,context));
     store.transaction(() -> store.gate(id,runId,context.owner()));
     return JSONObject.of("language",context.language(),"input",message,"definition",definition,
-      "environment",JSONObject.of("values",JSONObject.of("ONTOMATO_ONTOLOGY_URL",runtime.ontologyUrl(),"ONTOMATO_RETRIEVAL_ID",id),"secrets",JSONObject.of("ONTOMATO_TK",grant)));
+      "environment",JSONObject.of("values",JSONObject.of("ONTOMATO_SKILL_SCENARIO","platform","ONTOMATO_ONTOLOGY_URL",runtime.ontologyUrl(),"ONTOMATO_RETRIEVAL_ID",id),"secrets",JSONObject.of("ONTOMATO_TK",grant)));
   }
 
   private Object scopedOverview(QueryAccessService.Access access, List<String> classNames) {
@@ -623,7 +623,8 @@ public class OntologyRetrievalService {
           // User credentials do not carry the caller's admitted class range.
           var current = context.access();
           return new QueryAccessService.Access(current.user(), current.permission(), current.grant(),
-              current.credential(), current.expiresAt(), accepted.getJSONObject("input").getList("classNames", String.class));
+              current.credential(), current.expiresAt(), scopedInput(accepted.getJSONObject("input"),context).getList("classNames", String.class),
+              current.target(),current.executionUserId(),current.initiatorUserId());
         });
     var jobInput =
         JSONObject.of("submissionId", key, "recipe", recipe, "sourceAnalysis", body.get("sourceAnalysis"));

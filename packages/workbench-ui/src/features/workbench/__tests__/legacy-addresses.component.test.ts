@@ -7,13 +7,13 @@ import { workbenchI18n } from "../../../i18n";
 import { ontologyServiceAccessKey, openOntologyServiceAccess } from "../../../app/ontology-service";
 import { platformPageAccessKey } from "@ontomato/platform-shell";
 import BusinessWorkbench from "../components/BusinessWorkbench.vue";
-import { legacyAdminRoutes } from "@ontomato/platform-web";
+import { legacyAdminRoutes, workbenchPages } from "@ontomato/platform-web";
 
 /*
- * The old console addresses open the place the page moved to: the agents page on its agents or capability-library tab,
- * operations diagnosis for the observation addresses, and the plain workbench for the pages that no longer exist
- * (system configuration, feedback records). This mounts the workbench itself, because the redirect only survives if the
- * shell then opens the named feature.
+ * The old console addresses open the place the page moved to: the agents' settings are one page of the ontology manager
+ * now, the capability library and the external MCP services are the platform's, operations diagnosis is the operations
+ * application's, and the pages that no longer exist open the conversation. This mounts the workbench itself, because a
+ * redirect only survives if the platform's own route table then serves the address it names.
  */
 const i18n = workbenchI18n();
 
@@ -26,7 +26,7 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => ({
     emits: ["update:featureId"],
     template: '<div class="shell"><slot name="feature" :feature-id="featureId" /></div>',
   },
-  // The shell draws the column and the conversation; this test only reads the page the workbench opens.
+  // The shell draws the column and the conversation; this test only reads the address the platform lands on.
   ShellNavBody: { name: "ShellNavBody", template: "<div />" },
   ShellColumn: { name: "ShellColumn", template: "<div><slot /></div>" },
   useAgentNav: () => ({
@@ -53,7 +53,6 @@ vi.mock("../assistant-host", () => ({
 vi.mock("../components/DatasetActions.vue", () => ({ default: { template: "<div />" } }));
 vi.mock("../components/WorkbenchAppearanceDialog.vue", () => ({ default: { template: "<div />" } }));
 vi.mock("../../diagnosis/components/TurnDiagnoseButton.vue", () => ({ default: { template: "<div />" } }));
-vi.mock("../../dashboard/stores/dashboard", () => ({ useDashboardStore: () => ({ selectDashboard: async () => {} }) }));
 
 const wrappers: ReturnType<typeof mount>[] = [];
 afterEach(() => {
@@ -61,27 +60,28 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-async function openAddress(
-  path: string,
-): Promise<{ router: Router; wrapper: ReturnType<typeof mount>; featureId: string | null; html: string }> {
-  const router = createRouter({
+/** The platform's own route table, with the workbench on its own addresses and every page needing no real component. */
+function platformRouter(): Router {
+  const page = { render: () => null };
+  return createRouter({
     history: createMemoryHistory(),
     routes: [
-      /*
-       * Every address the settings have, with their real names: the workbench tells the editor from an agent's page by
-       * the route it is on, so a route with a missing name would open the wrong screen.
-       */
-      ...[
-        platformRoutes.chat,
-        platformRoutes.agents,
-        platformRoutes.agentSettingsNew,
-        platformRoutes.agentSettingsCapabilities,
-        platformRoutes.agentSettings,
-      ].map((route) => ({ ...route, component: { render: () => null } })),
+      ...workbenchPages(page, { component: page, props: { account: null } }),
+      // The settings page and the pages the old addresses name, so a redirect is followed for real.
+      ...["/ontology/agents", "/ontology/agents/new", "/ontology/agents/:agentId", "/ontology/skills"].map((path) => ({
+        path, component: page,
+      })),
       ...Object.values(legacyAdminRoutes),
     ],
   });
+}
+
+async function openAddress(
+  path: string,
+): Promise<{ router: Router; wrapper: ReturnType<typeof mount>; featureId: string | null }> {
+  const router = platformRouter();
   await router.push(path);
+  await router.isReady();
   const wrapper = mount(BusinessWorkbench, {
     props: { defaultLogo: "", defaultBrandName: "Ontomato" },
     global: {
@@ -96,45 +96,56 @@ async function openAddress(
   wrappers.push(wrapper);
   await new Promise((resolve) => setTimeout(resolve, 0));
   const shell = wrapper.findComponent({ name: "AgentShell" });
-  return { router, wrapper, featureId: (shell.props("featureId") as string | null) ?? null, html: wrapper.html() };
+  return { router, wrapper, featureId: (shell.props("featureId") as string | null) ?? null };
 }
 
-describe("the agent settings' addresses", () => {
+describe("the agents' settings' old addresses", () => {
   /*
-   * `/agents/settings/new` is an address of its own, not an agent id: the editor must open the new-agent form. The
-   * check runs through the real route table, because a branch that reads `route.params.agentId === "new"` is always
-   * false here and would silently open the first agent instead.
+   * `/agents/settings/new` was an address of its own, not an agent id: it must land on the new-agent form, not on an
+   * agent whose id happens to be "new". The check runs through the real route table, because a branch that reads
+   * `route.params.agentId === "new"` would silently open the first agent instead.
    */
-  it("opens the new-agent form at /agents/settings/new", async () => {
-    const { router, wrapper } = await openAddress("/agents/settings/new");
-    expect(router.currentRoute.value.path).toBe("/agents/settings/new");
-    const page = wrapper.findComponent({ name: "AgentSettingsPage" });
-    expect(page.props("creating")).toBe(true);
-    expect(page.props("agentId")).toBeNull();
+  it("turns the standalone builder's old addresses to the same settings page and keeps the object id", async () => {
+    for (const [path, target] of [
+      ["/agent-builder", "/ontology/agents"],
+      ["/agent-builder/new", "/ontology/agents/new"],
+      ["/agent-builder/agent-42", "/ontology/agents/agent-42"],
+    ]) {
+      const { router } = await openAddress(`${path}?draftSessionId=session`);
+      expect(router.currentRoute.value.path).toBe(target);
+      expect(router.currentRoute.value.query.draftSessionId).toBe("session");
+      if (path.endsWith("agent-42")) expect(router.currentRoute.value.params.agentId).toBe("agent-42");
+    }
   });
 
-  it("opens one agent's editor at /agents/settings/<id>", async () => {
-    const { wrapper } = await openAddress("/agents/settings/agent-42");
-    const page = wrapper.findComponent({ name: "AgentSettingsPage" });
-    expect(page.props("creating")).toBe(false);
-    expect(page.props("agentId")).toBe("agent-42");
+  it("turns the new-agent address to the one settings page's new agent", async () => {
+    const { router } = await openAddress("/agents/settings/new");
+    expect(router.currentRoute.value.name).toBe(platformRoutes.ontologyAgentNew.name);
+    expect(router.currentRoute.value.path).toBe("/ontology/agents/new");
+  });
+
+  it("keeps the agent an old address named", async () => {
+    const { router } = await openAddress("/agents/settings/agent-42");
+    expect(router.currentRoute.value.name).toBe(platformRoutes.ontologyAgent.name);
+    expect(router.currentRoute.value.params.agentId).toBe("agent-42");
+  });
+
+  it("turns the settings prefix to the settings page", async () => {
+    const { router } = await openAddress("/agents/settings");
+    expect(router.currentRoute.value.path).toBe("/ontology/agents");
   });
 });
 
 describe("old console addresses", () => {
-  it("opens the agents tab for the business agents address", async () => {
-    const { router, featureId } = await openAddress("/admin/analysis");
-    expect(router.currentRoute.value.path).toBe("/agents/settings");
-    expect(featureId).toBe("agents");
+  it.each(["/admin/analysis", "/admin/system-agents"])("opens the agents' settings for %s", async (path) => {
+    const { router } = await openAddress(path);
+    expect(router.currentRoute.value.path).toBe("/ontology/agents");
   });
 
-  it("opens the agents tab for the system agents address", async () => {
-    expect((await openAddress("/admin/system-agents")).featureId).toBe("agents");
-  });
-
-  it.each(["/admin/skills", "/admin/mcp-service"])("opens the capability library for %s", async (path) => {
-    const { featureId } = await openAddress(path);
-    expect(featureId).toBe("agents");
+  it.each(["/admin/skills", "/admin/mcp-service"])("opens the platform's own library for %s", async (path) => {
+    const { router } = await openAddress(path);
+    expect(router.currentRoute.value.path).not.toBe("/agents/settings");
+    expect(router.currentRoute.value.path).not.toBe("/agents/settings/skills");
   });
 
   it.each(["/admin/system-config", "/admin/feedback-records"])(
@@ -145,14 +156,4 @@ describe("old console addresses", () => {
       expect(featureId).toBeNull();
     },
   );
-
-  it("closes an open page when a retired address is opened inside the running workbench", async () => {
-    const { router, wrapper } = await openAddress("/admin/skills");
-    const shell = wrapper.findComponent({ name: "AgentShell" });
-    expect(shell.props("featureId")).toBe("agents");
-    await router.push("/admin/system-config");
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(router.currentRoute.value.path).toBe("/agents/chat");
-    expect(shell.props("featureId") ?? null).toBeNull();
-  });
 });

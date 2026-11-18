@@ -54,17 +54,31 @@ afterEach(() => {
   shellProps.value = null;
 });
 
-/** The platform's routes as a page of it: the chat it opens on, the two pages beside it, and other pages' own addresses. */
+/**
+ * The platform's routes with the shape the assembly gives them (`platformLayoutRoute`): every page sits under the layout,
+ * whose own record redirects to the start page, and a catch-all answers any other address the same way. A page is the
+ * deepest record an address matches — the layout above it redirecting says nothing about the page below it.
+ */
 async function openAt(): Promise<Router> {
+  const start = () => platformRoutes.chat.path;
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { ...platformRoutes.chat, component: { template: "<div />" } },
-      { path: platformRoutes.knowledge.path, component: { template: "<div />" } },
-      { path: platformRoutes.dashboards.path, component: { template: "<div />" } },
-      { path: platformRoutes.governance.path, component: { template: "<div />" } },
+      {
+        path: "/",
+        name: platformRoutes.layout.name,
+        redirect: start,
+        component: { template: "<router-view />" },
+        children: [
+          { path: "", name: "PlatformHome", redirect: start },
+          { ...platformRoutes.chat, component: { template: "<div />" } },
+          { ...platformRoutes.knowledge, component: { template: "<div />" } },
+          { ...platformRoutes.dashboards, component: { template: "<div />" } },
+          { ...platformRoutes.governance, component: { template: "<div />" } },
+        ],
+      },
       // The platform answers any other address with its start page; that is no page of its own.
-      { path: "/:unknown(.*)*", redirect: () => platformRoutes.chat.path },
+      { path: "/:unknown(.*)*", redirect: start },
     ],
   });
   await router.push({ path: platformRoutes.chat.path, query: { sessionId: "44444444-4444-4444-8444-444444444444" } });
@@ -75,7 +89,7 @@ async function openAt(): Promise<Router> {
       [ontologyServiceAccessKey as symbol]: openOntologyServiceAccess,
       [platformPageAccessKey as symbol]: () => true,
       // The assembly's own pages beside the conversation: a board and a governance report, and no others.
-      [pilotPageKey as symbol]: (address: string) =>
+      [pilotPageKey as symbol]: () => (address: string) =>
         address.startsWith("/dashboards") || address.startsWith("/governance/reports/")
           ? { id: "page", component: defineComponent({ render: () => h("div") }), props: {} }
           : null,

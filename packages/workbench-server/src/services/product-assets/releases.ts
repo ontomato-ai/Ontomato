@@ -16,7 +16,6 @@ import {validateComposition} from './composition';
 import {randomUUID} from 'node:crypto';
 import {requireProductUse,withProductGrants} from './grants';
 import {platformObjectProvider} from './platform-objects';
-import {agentPrincipalCredentials} from './agent-principal';
 import {synchronizeProductOntology} from './ontology';
 import {definitionTriggerSchema} from '@ontomato/contracts/product-subscriptions';
 import {readDefinitionTrigger} from './triggers';
@@ -90,7 +89,7 @@ async function readContract(owner:ProductOwner,credentials:AssistantCredentials,
   }
   if(kind==='object-type'){
     if(id.startsWith('platform:'))return {className:id,attributes:Object.entries(platformObjectProvider(id).fields).sort(([a],[b])=>a.localeCompare(b)).map(([name,type])=>({name,type,primaryKey:name==='id'}))};
-    const response=await backendPost('projection-object-contract',config.dataQuery.baseUrl+'/ontology/query/schema',{classNames:[id]}, {headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});
+    const response=await backendPost('projection-object-contract',config.dataQuery.baseUrl+'/ontology/query/schema',{classNames:[id]}, {headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey,credentials.headers),retries:1});
     const result=JSON.parse(response.text);const object=result.classes?.find((item:{className:string})=>item.className===id);
     if(!object)throw new HttpError(409,'Object type no longer available','PRODUCT_CONTRACT_CHANGED');
     if(version===1)return {className:id,attributes:object.attrs.map((attribute:{name:string;type:string;primaryKey?:boolean})=>({name:attribute.name,type:attribute.type,primaryKey:attribute.primaryKey}))};
@@ -103,7 +102,7 @@ async function readContract(owner:ProductOwner,credentials:AssistantCredentials,
     if(metric.status!=='PUBLISHED')throw new HttpError(409,'Metric is no longer published','PRODUCT_CONTRACT_CHANGED');
     return {parameters:metric.parameterDefs,outputs:metric.outputColumns};
   }
-  const response=await backendPost('product-release-action',config.dataQuery.baseUrl+'/action/queryById',{id},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});
+  const response=await backendPost('product-release-action',config.dataQuery.baseUrl+'/action/queryById',{id},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey,credentials.headers),retries:1});
   const result=JSON.parse(response.text);
   if(!result.success||result.data?.status!=='PUBLISHED'||!result.data.function)throw new HttpError(409,'Action is no longer available','PRODUCT_CONTRACT_CHANGED');
   return {parameters:result.data.function.parameters,outputs:result.data.function.returnDef};
@@ -130,8 +129,6 @@ async function captureAuthorizedRelease(owner:ProductOwner,roots:string[],creden
   await synchronizeProductOntology(owner);
   const assets=await transaction(async client=>{await lockProducts(client,owner);return captureProductTree(roots,id=>getProduct(owner,id,client));});
   for(const asset of assets)if(['widget','widget-group','operation-panel','layout-template'].includes(asset.document.kind))throw new HttpError(409,'Migrate legacy presentation assets before creating a V2 release','PRODUCT_UNPINNABLE_DEPENDENCY');
-  const profile=assets.find(asset=>roots.includes(asset.id)&&asset.document.kind==='agent-profile');
-  if(profile?.document.kind==='agent-profile')credentials=await agentPrincipalCredentials(owner.domainId,profile.document.principalId,credentials.locale,owner.userId);
   const contracts:Snapshot['contracts']=[];const seen=new Set<string>();
   const byId=new Map(assets.map(asset=>[asset.id,asset]));
   const readCaptured=async(id:string)=>{const asset=byId.get(id);if(!asset)throw new HttpError(409,'Release dependency is missing','PRODUCT_UNAVAILABLE');return asset;};
@@ -186,10 +183,8 @@ export async function validateReleaseContracts(owner:ProductOwner,snapshot:Snaps
 async function validateAuthorizedContracts(owner:ProductOwner,snapshot:Snapshot,credentials:AssistantCredentials){
   // A frozen presentation never freezes an old permission decision.
   for(const asset of snapshot.assets)await getProduct(owner,asset.id);
-  const profile=snapshot.assets.find(asset=>snapshot.roots.includes(asset.id)&&asset.document.kind==='agent-profile');
-  if(profile?.document.kind==='agent-profile')credentials=await agentPrincipalCredentials(owner.domainId,profile.document.principalId,credentials.locale,owner.userId);
   for(const contract of snapshot.contracts){
-    if(contract.kind==='object-type'&&contract.id.startsWith('platform:')&&profile?.document.kind==='agent-profile')await requireProductUse({...owner,userId:profile.document.principalId},contract.id);
+    if(contract.kind==='object-type'&&contract.id.startsWith('platform:'))await requireProductUse(owner,contract.id);
     if(contract.hash!==contractHash(await readContract(owner,credentials,contract.kind,contract.id,contract.contractVersion??1)))throw new HttpError(409,'A referenced capability contract changed; upgrade this product release explicitly','PRODUCT_CONTRACT_CHANGED');
   }
 }
@@ -200,11 +195,9 @@ export async function productReleaseIssues(owner:ProductOwner,snapshot:Snapshot,
 async function authorizedReleaseIssues(owner:ProductOwner,snapshot:Snapshot,credentials:AssistantCredentials){
   // Access failures still reject the request; only contract drift degrades a projection.
   for(const asset of snapshot.assets)await getProduct(owner,asset.id);
-  const profile=snapshot.assets.find(asset=>snapshot.roots.includes(asset.id)&&asset.document.kind==='agent-profile');
-  if(profile?.document.kind==='agent-profile')credentials=await agentPrincipalCredentials(owner.domainId,profile.document.principalId,credentials.locale,owner.userId);
   const changed=new Set<string>();
   for(const contract of snapshot.contracts){
-    if(contract.kind==='object-type'&&contract.id.startsWith('platform:')&&profile?.document.kind==='agent-profile')await requireProductUse({...owner,userId:profile.document.principalId},contract.id);
+    if(contract.kind==='object-type'&&contract.id.startsWith('platform:'))await requireProductUse(owner,contract.id);
     try{if(contract.hash!==contractHash(await readContract(owner,credentials,contract.kind,contract.id,contract.contractVersion??1)))changed.add(`${contract.kind}:${contract.id}`);}
     catch(error){if(error instanceof HttpError&&error.code==='PRODUCT_CONTRACT_CHANGED')changed.add(`${contract.kind}:${contract.id}`);else throw error;}
   }

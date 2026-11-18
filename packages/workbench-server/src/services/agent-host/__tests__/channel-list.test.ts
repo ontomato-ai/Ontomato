@@ -7,6 +7,7 @@ import { assistantStore } from "../../assistant/store";
 import { diagnosisService } from "../../ops-diagnosis/service";
 import { workbenchIdentity } from "../../../identity/installed";
 import { HttpError } from "../../../utils/errors";
+vi.mock("../../assistant/skills",()=>({needsRetrievalScope:()=>false}));
 vi.mock("../caller",() => ({ restoreAgentCaller: vi.fn() }));
 vi.mock("../../assistant/service",() => ({ assistantService: { admitAgent: vi.fn() } }));
 vi.mock("../../assistant/store",() => ({ assistantStore: { channelAgents: vi.fn() } }));

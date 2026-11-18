@@ -23,6 +23,7 @@ async function json(url, headers, body) {
     method: body === undefined ? "GET" : "POST",
     headers: {
       "content-type": "application/json",
+      ...(process.env.ONTOMATO_EXECUTION_CALLBACK ? { "X-Ontomato-Callback-Credential": process.env.ONTOMATO_EXECUTION_CALLBACK, "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID } : {}),
       "X-Requested-With": "XMLHttpRequest",
       ...headers,
     },
@@ -64,7 +65,7 @@ export async function analystCommand(cfg, argv, headers = {}) {
   if (command === "retriever-cancel") {
     const run=take(args,"--run");
     if(args.length!==1 || !run) throw new Error("retriever-cancel requires sessionId --run runId from the task snapshot");
-    console.log(JSON.stringify(await json(`${ontology}/ontology/retrievals/${encodeURIComponent(args[0])}/retriever/cancel`,await agentHeaders(cfg,headers),{expectedRoundId:run})));
+    console.log(JSON.stringify(await json(process.env.ONTOMATO_RETRIEVAL_CALLBACK_URL || `${ontology}/ontology/retrievals/${encodeURIComponent(args[0])}/retriever/cancel`,await agentHeaders(cfg,headers),process.env.ONTOMATO_RETRIEVAL_CALLBACK_URL ? {operation:"cancel",retrievalId:args[0],retrievalRunId:run} : {expectedRoundId:run})));
     return;
   }
   if (command === "run") return runAction(ontology, args, headers);
@@ -350,6 +351,7 @@ async function followAgentTask(ontology,headers,taskId,files) {
 }
 /** The sole transport for native-channel commands in every standalone skill package. */
 export async function agentChannelCommand(cfg,argv,headers={}) {
+  if(process.env.ONTOMATO_SKILL_SCENARIO === "platform") throw new Error("平台内请用原生 agent 工具（agent），这些命令只用于独立分发包");
   const [op,...args]=argv;
   let command;
   const follow=flag(args,"--follow"),files=flag(args,"--files");

@@ -60,12 +60,20 @@ async function searchChildren(search=''){try{const result=await client.products.
 const widgetIndex=ref(0);
 /** A chart MetricWidget enters only by bringing in an existing chart. */
 const chartPicker=ref(false);
+/**
+ * The brought chart replaces the number's presentation entirely: its file, its MetricView and its parameters. The
+ * form's own fields follow, because saving writes them over the document.
+ */
 function bringChart(chart:MetricReferenceChartEntry){
   const projection=document.value as Extract<ProductDocument,{kind:'metric-widget'}>;
   projection.renderer='chart';
   projection.renders.id=chart.query.metricId;
   projection.chartFile=chart.chartFile.content;
   projection.parameters=Object.fromEntries(Object.entries(chart.query.parameters).map(([name,value])=>[name,{source:'literal' as const,value}]));
+  projection.fields=[];projection.valueField='';projection.labelField='';projection.chartType='bar';
+  delete projection.format;delete projection.display;
+  metricId.value=projection.renders.id;
+  valueField.value='';labelField.value='';parameters.value=JSON.stringify(projection.parameters,null,2);
   if(!name.value.trim())name.value=chart.name;
   raw.value=JSON.stringify(document.value,null,2);
 }
@@ -162,13 +170,20 @@ watch(()=>widget.value?.kind,async value=>{
 });
 /** A chart renderer without a chart file cannot be saved, so choosing it asks for the chart first. */
 function rendererChanged(){
-  if(document.value.kind==='metric-widget'&&document.value.renderer==='chart'&&!document.value.chartFile)chartPicker.value=true;
+  if(document.value.kind!=='metric-widget'||document.value.renderer!=='chart')return;
+  // The number's value mappings do not belong in a chart file, so they go with the old presentation.
+  document.value.fields=[];document.value.valueField='';document.value.labelField='';document.value.chartType='bar';
+  delete document.value.format;delete document.value.display;
+  valueField.value='';labelField.value='';
+  if(!document.value.chartFile)chartPicker.value=true;
 }
 function select(asset:{id:string}|undefined) { if(!asset)return;editing.value=false;emit('select',asset.id); }
 function more(command:string){if(command==='copy')void copy();else if(command==='template')void saveTemplate();else if(command==='delete')void remove();else showTypes.value=!showTypes.value;}
 async function createPage(){if(!selected.value)return;await run(async()=>{const source=selected.value!;const result=await ElMessageBox.prompt(ot('productPageName'),ot('productCreatePageFromTemplate'),{inputValue:ot('productPageSuffix',{name:source.name})});selected.value=await client.products.createPage(source.id,result.value);await load();emit('select',selected.value!.id);});}
 async function createAsset(value:string){if(value!=='dashboard'){edit(null,value);return;}await run(async()=>{const result=await ElMessageBox.prompt(ot('productDashboardName'),ot('productCreateDashboard'));selected.value=await client.products.createDashboard(result.value);await load();emit('select',selected.value!.id);});}
 function edit(asset:ProductAsset|null,newKind="page") {
+  // A new form starts clean: the previous form's failure is not this form's.
+  error.value="";
   if(asset&&productCategory(asset.document.kind)==='legacy'){error.value=ot('productLegacyContract');return;}
   widgetIndex.value=0;
   selected.value=asset;name.value=asset?.name ?? ""; description.value=asset?.description ?? "";visibility.value=asset?.visibility ?? "private";
@@ -178,7 +193,7 @@ function edit(asset:ProductAsset|null,newKind="page") {
     'collection-view':{kind:'collection-view',renders:{kind:'Definition',id:''},renderer:'table',parameters:{},fields:[],isDefault:false,audience:'both'},
     'object-projection':{kind:'object-projection',renders:{kind:'ObjectType',id:''},renderer:'full',fields:[],isDefault:false,audience:'both'},
     navigation:{kind:'navigation',entry:'home',nodes:[]},
-    'agent-profile':{kind:'agent-profile',principalId:'',instructions:'',tools:[],contextViews:[]},
+    'agent-profile':{kind:'agent-profile',agentId:'',instructions:'',tools:[],contextViews:[]},
     page:{kind:"page",children:[]},
     "layout-template":{kind:"layout-template",workspace:defaultPersonalWorkspace(),children:[]},
     widget:{kind:"widget",widget:createViewWidget("metric")},
@@ -290,7 +305,7 @@ async function remove() { if(!selected.value)return;await run(async()=>{await El
            <el-form-item v-if="widget&&document.kind!=='metric-widget'&&document.kind!=='action-view'" :label="ot('productWidgetTitle')"><el-input v-model="widget.title"/></el-form-item>
             <template v-if="'renders' in document"><el-form-item v-if="!['metric-widget','action-view'].includes(document.kind)" :label="ot('productBoundElement')"><el-input v-model="document.renders.id"/></el-form-item><el-form-item :label="ot('productRenderer')"><el-select v-model="document.renderer" @change="rendererChanged"><el-option v-for="renderer in rendererOptions" :key="renderer" :value="renderer" :label="rendererLabel(ot,renderer)"/></el-select></el-form-item><el-checkbox v-model="document.isDefault">{{ot('productDefaultProjection')}}</el-checkbox></template>
             <template v-if="document.kind==='page'"><el-form-item :label="ot('productPagePurpose')"><el-checkbox v-model="document.embeddable">{{ot('productEmbeddableDisplayPage')}}</el-checkbox><el-checkbox v-model="document.isTemplate">{{ot('productTemplateForPages')}}</el-checkbox></el-form-item><el-form-item :label="ot('productPageLayout')"><el-button v-if="!document.layout" @click="document.layout={mode:'columns',mainWidth:8,gap:'normal'}">{{ot('productConfigureLayout')}}</el-button><template v-else><el-select v-model="document.layout.mode"><el-option value="columns" :label="ot('productMainAndSidebar')"/><el-option value="grid" :label="ot('productSingleGrid')"/></el-select><el-input-number v-if="document.layout.mode==='columns'" v-model="document.layout.mainWidth" :min="4" :max="12" :aria-label="ot('productMainColumnWidth')"/><el-select v-model="document.layout.gap"><el-option value="compact" :label="ot('productGapCompactSpacing')"/><el-option value="normal" :label="ot('productGapNormalSpacing')"/><el-option value="comfortable" :label="ot('productGapComfortableSpacing')"/></el-select></template></el-form-item><p>{{ot('productPageReferencesHint')}}</p></template>
-           <template v-if="document.kind==='agent-profile'"><el-form-item :label="ot('productAgentPrincipal')"><el-input v-model="document.principalId"/></el-form-item><el-form-item :label="ot('productInstructions')"><el-input v-model="document.instructions" type="textarea" :rows="6"/></el-form-item><el-form-item :label="ot('productToolReferences')"><el-input :model-value="document.tools.join('\n')" type="textarea" @update:model-value="updateProfileReferences('tools',$event)"/></el-form-item><el-form-item :label="ot('productContextReferences')"><el-input :model-value="document.contextViews.join('\n')" type="textarea" @update:model-value="updateProfileReferences('contextViews',$event)"/></el-form-item></template>
+           <template v-if="document.kind==='agent-profile'"><el-form-item :label="ot('productAgentDefinition')"><el-input v-model="document.agentId"/><p>{{ot('productAgentExecution')}}</p></el-form-item><el-form-item :label="ot('productInstructions')"><el-input v-model="document.instructions" type="textarea" :rows="6"/></el-form-item><el-form-item :label="ot('productToolReferences')"><el-input :model-value="document.tools.join('\n')" type="textarea" @update:model-value="updateProfileReferences('tools',$event)"/></el-form-item><el-form-item :label="ot('productContextReferences')"><el-input :model-value="document.contextViews.join('\n')" type="textarea" @update:model-value="updateProfileReferences('contextViews',$event)"/></el-form-item></template>
            <el-form-item v-if="'fields' in document" :label="ot('productDisplayFieldsPerLine')"><el-input :model-value="document.fields.join('\n')" type="textarea" @update:model-value="updateProjectionFields"/></el-form-item>
            <el-form-item v-if="document.kind==='collection-view'" :label="ot('productDefinitionBindings')"><el-input :model-value="JSON.stringify(document.parameters,null,2)" type="textarea" :rows="4" @change="updateCollectionParameters"/></el-form-item>
            <el-form-item v-if="document.kind==='collection-view'" :label="ot('productItemsShownPerPage')"><el-input-number v-model="document.pageSize" :min="1" :max="50"/></el-form-item>

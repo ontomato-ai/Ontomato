@@ -157,7 +157,7 @@ class MetricViewBindingContractTest {
         JSONObject.of("name", "at", "type", Parameter.TYPE_TIME, "value", null),
         JSONObject.of("name", "options", "type", Parameter.TYPE_ONTOOBJ, "value", null)));
     service.save(metric, "en");
-    var controller = new MetricViewController();
+    var controller = new MetricViewController(new io.ontomato.dataengine.service.agent.AgentExecutionScope(mock(io.ontomato.dataengine.service.agent.OntologyAgentAccess.class)));
     var identity = mock(IdentityService.class);
     when(identity.getCurrentUserDataPermission()).thenReturn(new UserDataPermission());
     var config = new BusinessConfig();

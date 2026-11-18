@@ -1,7 +1,6 @@
 import type { BuiltinApplication } from "@ontomato/contracts/platform-identity";
 
 export const workbenchApplications: BuiltinApplication[] = [
-  {id:'agent-builder',kind:'native',rail:'apps',category:'build',sort:0,entry:{path:'/agent-builder',renderer:'agent-builder',home:'/agent-builder'},entryAccess:['analysis-agent'],scheduleAdapter:null,declaration:{names:{en:'Agent builder','zh-CN':'智能体构建'},descriptions:{en:'Create and configure agents','zh-CN':'创建智能体，配置模型、技能与工具'},icon:'agent-builder',groups:[],permissions:[]}},
   {
     id: "application-gallery", kind: "native", rail: "top", category: "business", sort: 2,
     entry: {path:"/applications",renderer:"application-gallery",home:"/applications"},

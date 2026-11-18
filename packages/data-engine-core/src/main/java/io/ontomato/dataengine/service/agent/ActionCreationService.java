@@ -123,7 +123,7 @@ public class ActionCreationService {
     if (message == null || message.isBlank() || message.length() > 20_000)
       throw AgentHttpException.invalid("A message of 1 to 20000 characters is required");
     Owner owner = context.owner();
-    authorize(owner);
+    authorize(new Owner(context.access().user().getId(),owner.domainId()));
     session(id, owner);
     JSONObject snapshot = runtime.json(owner.domainId(), id, "/v1/sessions/" + id, "GET", null, null);
     JSONObject latest = snapshot.getJSONObject("latestRun");
@@ -135,7 +135,7 @@ public class ActionCreationService {
     long deadline = Math.min(System.currentTimeMillis() + 600_000,
         context.expiresAt() == null ? Long.MAX_VALUE : context.expiresAt());
     if (deadline <= System.currentTimeMillis()) throw closed();
-    JSONObject input = JSONObject.of("message",message,"input",inputMessage,"agentChannel",true);
+    JSONObject input = JSONObject.of("message",message,"input",inputMessage,"agentChannel",true,"executionUserId",context.executionUserId(),"classNames",context.access().classNames());
     boolean replayed =
         store.transaction(
             () -> {
@@ -189,22 +189,22 @@ public class ActionCreationService {
       long remaining = deadline - System.currentTimeMillis();
       String generationToken =
           grants.issue(
-              owner.userId(),
+              context.access().user().getId(),
               owner.domainId(),
               "ontology-generation",
               run,
               deadline,
               context.access().classNames(),
-              null);
+              null, JSONObject.of("executionUserId",context.executionUserId(),"initiatorUserId",owner.userId()));
       String queryToken =
           grants.issue(
-              owner.userId(),
+              context.access().user().getId(),
               owner.domainId(),
               "retrieval-exploration",
               run,
               deadline,
               context.access().classNames(),
-              null);
+              null, JSONObject.of("executionUserId",context.executionUserId(),"initiatorUserId",owner.userId()));
       store.transaction(() -> store.gate(id, run, owner));
       String prompt =
           OntologyGenerationPrompts.getActionMakerUserMessage(
@@ -226,6 +226,7 @@ public class ActionCreationService {
               JSONObject.of(
                   "values",
                   JSONObject.of(
+                      "ONTOMATO_SKILL_SCENARIO", "platform",
                       "ONTOMATO_ONTOLOGY_URL",
                       runtime.ontologyUrl(),
                       "ONTOMATO_GENERATION_ID",

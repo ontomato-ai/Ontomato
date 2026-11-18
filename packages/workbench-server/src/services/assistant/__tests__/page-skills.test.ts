@@ -22,7 +22,7 @@ vi.mock("../governance",()=>({publishGovernanceSkill:vi.fn()}));
 vi.mock("../store", () => ({ assistantStore: { agents: mocks.agents } }));
 vi.mock("../labels", () => ({ assistantName: (a: AgentRow) => a.name, assistantDescription: (a: AgentRow) => a.description }));
 vi.mock("../../product-assets/platform-assets", () => ({ nativeProfileId: mocks.native }));
-vi.mock("../../product-assets/agent-profile", () => ({ profileIdForPrincipal: mocks.profile }));
+vi.mock("../../product-assets/agent-profile", () => ({ profileIdForAgent: mocks.profile }));
 vi.mock("../../product-assets/grants", () => ({
   withProductGrants: (_owner: unknown, action: () => unknown) => action(), currentProductGrants: () => ({ use: mocks.grants }),
 }));
@@ -39,7 +39,7 @@ const query = { pageKey: "governance-report", permissionCode: "business-knowledg
 const ids = ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222", "33333333-3333-4333-8333-333333333333", "44444444-4444-4444-8444-444444444444"];
 function definition(index: number, kind: string, skills: RuntimeSkillRef[] = [report, page]): AgentRow {
   return { id: ids[index], domain_id: "domain", kind, name: kind, description: "", icon: null, enabled: true,
-    system_prompt: "private prompt", model_selection: { modelId: null }, skills, class_names: [], enabled_mcp_service_ids: [], sort_order: index };
+    execution_user_id: null, system_prompt: "private prompt", model_selection: { modelId: null }, skills, class_names: [], enabled_mcp_service_ids: [], sort_order: index };
 }
 function projection(allowed = true): PageSkillsProjection {
   return { pageSkills: allowed ? [{ permissionCode: "business-knowledge", skill: page }] : [], registeredSkills: [page, dashboard] };
@@ -94,10 +94,10 @@ it("keeps ordinary native skills and excludes true product Profile skills from p
   expect(directory.defaultAgentId).toBe(native.id);
   expect((await listAssistantAgents(owner, credentials)).agents.find(a => a.id === ids[2])?.effectiveSkills).toEqual([]);
   mocks.post.mockResolvedValue({ text: JSON.stringify({ allowed: false }) });
-  expect((await listAssistantAgents(owner, credentials)).agents.some(a => a.id === native.id)).toBe(false);
+  expect((await listAssistantAgents(owner, credentials)).agents.some(a => a.id === native.id)).toBe(true);
   mocks.post.mockResolvedValue({ text: JSON.stringify({ allowed: true }) });
   mocks.grants.delete(native.id);
-  expect((await listAssistantAgents(owner, credentials)).agents.some(a => a.id === native.id)).toBe(false);
+  expect((await listAssistantAgents(owner, credentials)).agents.some(a => a.id === native.id)).toBe(true);
 });
 
 it("uses the registered default only if it remains an enabled and usable page candidate", async () => {

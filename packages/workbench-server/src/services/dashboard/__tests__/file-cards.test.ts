@@ -38,7 +38,7 @@ it("checks the target before importing and appends only the prepared drawing",as
   await expect(addDashboardChartFile("reader","domain",{source,target:{dashboardId:"missing",groupId:"group"}},{})).rejects.toMatchObject({status:404});
   expect(mocks.prepare).not.toHaveBeenCalled();
   await addDashboardChartFile("reader","domain",{source,target:{dashboardId:"board",groupId:"group"}},{});
-  expect(mocks.save.mock.calls[0][2].groups[0].charts[1]).toMatchObject({name:"chart",chartFile:file,query,source});
+  expect(mocks.save.mock.calls[0][2].groups[0].charts[1]).toMatchObject({name:"chart",chartFile:file,query,layout:{colSpan:12,rowSpan:1},source});
   expect(mocks.plan).not.toHaveBeenCalled();
 });
 it("does not create a dashboard when file preparation is rejected",async()=>{
@@ -49,7 +49,7 @@ it("does not create a dashboard when file preparation is rejected",async()=>{
 it("creates a personal dashboard from an executable candidate chart",async()=>{
   mocks.create.mockImplementation(async(input)=>({...input,id:"new-board"}));
   await expect(addDashboardChartFile("reader","domain",{source,target:{name:"New"}},{token:"reader"})).resolves.toMatchObject({id:"new-board"});
-  expect(mocks.create.mock.calls[0][0].groups[0].charts[0]).toMatchObject({query,chartFile:file});
+  expect(mocks.create.mock.calls[0][0].groups[0].charts[0]).toMatchObject({query,chartFile:file,layout:{colSpan:12,rowSpan:1}});
 });
 it.each(["unavailable","parameter"])("does not store a new chart dashboard when %s admission fails",async(reason)=>{
   if(reason==="unavailable")mocks.describe.mockRejectedValue(new HttpError(404,"Not executable","METRIC_UNAVAILABLE"));

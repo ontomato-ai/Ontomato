@@ -18,6 +18,7 @@ the complete selectable skill catalogue and per-run package preparation.
 | GET `/agent-definitions` | — | `AssistantAgentDefinitionList` |
 | GET `/agent-definitions/:agentId` | — | `AssistantAgentDefinition` |
 | POST `/agent-definitions` | `AssistantAgentInput`, UUID Idempotency-Key | 201 `AssistantAgentDefinition` |
+| POST `/agent-definitions/validate` | `{target:{id?: UUID},form:AssistantAgentInput}`; omit target.id on creation | 204; no writes or Key preparation |
 | PUT `/agent-definitions/:agentId` | `AssistantAgentInput` | `AssistantAgentDefinition` |
 | DELETE `/agent-definitions/:agentId` | — | 204; existing history remains readable |
 | POST `S/export/ppt` | `{}` | PPTX from runtime history and accepted datasets |
@@ -27,14 +28,27 @@ the complete selectable skill catalogue and per-run package preparation.
 | DELETE `S/feedback/:feedbackId` | — | 204 |
 
 Definitions contain one systemPrompt, one skills list, modelSelection, name, description,
-icon, enabled, classNames, enabledMcpServiceIds and sortOrder. Both presets are ordinary
+icon, enabled, classNames, enabledMcpServiceIds, sortOrder and executionUserId.
+The execution user is a nullable domain user ID: null uses the initiator. Creation
+defaults to null; omitted updates preserve the stored reference. Java authorizes
+changes with the original operator credential and domain administrator permission.
+Validation reads the real old definition and prepares no Key. Saves validate all
+settings before preparing a selected user credential; Node stores only its ID. Both presets are ordinary
 editable definitions. The common `/agents` endpoint exposes only selector metadata,
 never the prompt or these business settings. Deleted definitions do not delete
 history, and cannot admit new runs. Old executor/dimension/report/summary/hot-report
 fields are rejected and are not read from legacy definition rows.
 
+Each run fixes its nullable executionUserId. Self mode keeps the initiator's original credentials;
+a selected user uses their current shared Key through the existing internal resolver. Runtime/provider
+transport contains only executionActor references, never executor credentials. Same-run steer and
+followup keep the selection; an idle wakeup creates a new run and reads the current definition.
+Sessions, files, notifications, feedback and page-skill filtering remain with the initiator.
+AgentProfile.agentId references the same Node definition, including its current execution setting;
+profiles do not store a separate execution user or principal permission.
+
 classNames scopes both the initial ontology context and retrieval, intersected with
-the current user's authorized classes by ontology. graphScope is removed without
+the executor's authorized classes by ontology. graphScope is removed without
 converting its old roots/depth into new query restrictions. External MCP selections are runtime-assigned
 service UUIDs. Workbench forwards them as `definition.externalMcp: {id}[]`;
 [the MCP contract](agent-runtime-mcp.md) owns configuration and scoped resolution.

@@ -1,4 +1,5 @@
 import type { ShellFeatureDeclaration } from "@ontomato/agent-shell-ui";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
 
 /**
  * The agent platform's own entries in its column, before the recent conversations.
@@ -8,12 +9,12 @@ import type { ShellFeatureDeclaration } from "@ontomato/agent-shell-ui";
  * the page's own component from the platform's registry. The scheduled tasks are the platform's one list, so they are not
  * listed here; an edition that later needs an entry of its own passes it in.
  *
- * A page's skill narrows the composer to the agents that carry it. The pages whose skills are not registered yet carry no
- * declaration, and their composer offers every agent: the settings' skill arrives with the configuration skill, the
- * dashboards' with the dashboard mapping.
+ * A page's skill narrows the composer to the agents that carry it: the settings' own page declares `agent-settings` with
+ * the `analysis-agent` code it opens with, and the dashboards' declaration arrives with the dashboard mapping.
  */
 /** The ids are what the conversation's parameter and the host's slots name; the labels are what a reader reads. */
 export const AGENT_SETTINGS_PAGE_ID = "agents";
+const agentSettingsPageSkill = { pageKey: "agent-settings", permissionCode: "analysis-agent" } as const;
 const agentSettingsFeature = (label: string): ShellFeatureDeclaration => ({
   id: AGENT_SETTINGS_PAGE_ID,
   label,
@@ -21,6 +22,8 @@ const agentSettingsFeature = (label: string): ShellFeatureDeclaration => ({
   availability: "page",
   listed: false,
   withConversation: true,
+  address: platformRoutes.ontologyAgents.path,
+  pageSkill: agentSettingsPageSkill,
 });
 
 /** The dashboards are an application of their own: this application opens one beside its conversation, not a copy. */

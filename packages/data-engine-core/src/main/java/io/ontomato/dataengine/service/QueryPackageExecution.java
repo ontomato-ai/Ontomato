@@ -39,7 +39,7 @@ public final class QueryPackageExecution {
       execution.setResult(JSON.toJSONString(JSONObject.of("answer", rows), JSONWriter.Feature.WriteMapNullValue));
       execution.setPartialQuery(OntologyQueryService.partial(datum));
     } else {
-      var authority = PythonAuthority.read(access.user().getId(), access.user().getDomainId())
+      var authority = PythonAuthority.read(access.user().getId(), access.user().getDomainId()).withExecution(access.executionUserId(),access.initiatorUserId())
           .withClasses(QueryAccessService.classScope(access.permission(), access.classNames()))
           .withTarget(access.target()).forExecution(id).withPackage(bundle, values);
       if (access.grant() != null) authority = authority.withParent(new PythonAuthority.ParentGrant(

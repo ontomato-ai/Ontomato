@@ -12,12 +12,14 @@ import {
   deleteAgentDefinition,
   saveAgentDefinition,
   createAgentDefinition,
+  validateAgentDefinition,
 } from "../../services/assistant/definitions";
 import { Router, type RequestHandler } from "express";
 import { agentHostCreateSessionSchema } from "@ontomato/contracts/agent-host";
 import { z } from "zod";
 import {
   assistantAgentInputSchema,
+  assistantAgentValidationSchema,
   assistantFeedbackWriteSchema,
 } from "@ontomato/contracts/assistant-chat";
 import { assistantService } from "../../services/assistant/service";
@@ -161,6 +163,15 @@ router.post(
           context(req).credentials,
         ),
       );
+  }),
+);
+router.post(
+  "/agent-definitions/validate",
+  agentAdmin,
+  wrap(async (req, res) => {
+    const c = context(req);
+    await validateAgentDefinition(assistantAgentValidationSchema.parse(req.body), c.owner, c.credentials);
+    res.sendStatus(204);
   }),
 );
 router.put(

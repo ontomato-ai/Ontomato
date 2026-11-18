@@ -53,8 +53,18 @@ public class GenerationOperations {
     var row = store.one("SELECT * FROM ontology_agent_runs WHERE id=?", uuid(run));
     store.gate(row.getString("session_id"), run, owner);
     var generation = store.one("SELECT * FROM ontology_generations WHERE run_id=?", uuid(run));
-    if ("action".equals(generation.getString("kind"))) requireWriteAccess(owner);
+    String selected=row.getJSONObject("request").getString("executionUserId");
+    if ("action".equals(generation.getString("kind"))) requireWriteAccess(new Owner(selected==null?owner.userId():selected,owner.domainId()));
     return generation;
+  }
+
+  private QueryAccessService.Access executionAccess(String run,Owner owner) {
+    var row=store.one("SELECT request,deadline FROM ontology_agent_runs WHERE id=?",uuid(run));
+    var request=row.getJSONObject("request");
+    String selected=request.getString("executionUserId"),user=selected==null?owner.userId():selected;
+    return new QueryAccessService.Access(new QueryAccessService.GrantUser(user,owner.domainId()),permissions.getDataPermission(user,owner.domainId()),
+      null,null,java.time.Instant.parse(row.getString("deadline")).toEpochMilli(),request.getList("classNames",String.class))
+      .withExecution(selected,owner.userId());
   }
 
   public String source(String run, Owner owner) {
@@ -133,9 +143,10 @@ public class GenerationOperations {
         () -> {
           var row = gate(run, owner);
           try {
-            var permission = permissions.getDataPermission(owner.userId(), owner.domainId());
+            var access=executionAccess(run,owner);
+            var permission = access.permission();
             var rule = schemas.query(owner.domainId());
-            var definitions = (List<Map<String, Object>>) rule.get("classDef");
+            var definitions = ((List<Map<String, Object>>) rule.get("classDef")).stream().filter(definition->access.classNames().isEmpty()||access.classNames().contains(definition.get("className"))).toList();
             var query = body.getJSONObject("dsl");
             QueryPermissions.restrictRelations(query, rule, permission);
             var analysis = QuerySourceAnalysis.fromDsl(query, definitions);
@@ -200,7 +211,8 @@ public class GenerationOperations {
         parameters.put(p.getName(), p.getValue());
     }
     JSONObject analysis = body.getJSONObject("sourceAnalysis");
-    var permission = permissions.getDataPermission(owner.userId(), owner.domainId());
+    var access=executionAccess(run,owner);
+    var permission = access.permission();
     if (!kind.equals("action")) QueryPermissions.authorizeInputs(analysis, permission, classes);
     String digest = testDigest(kind, code, defs), execution = UUID.randomUUID().toString();
     store.transaction(
@@ -216,8 +228,9 @@ public class GenerationOperations {
         });
     PythonAuthority authority =
         kind.equals("action")
-            ? PythonAuthority.write(owner.userId(), owner.domainId(), sandbox(row))
-            : PythonAuthority.read(owner.userId(), owner.domainId());
+            ? PythonAuthority.write(access.user().getId(), owner.domainId(), sandbox(row))
+            : PythonAuthority.read(access.user().getId(), owner.domainId());
+    authority=authority.withClasses(access.classNames()).withExecution(access.executionUserId(),owner.userId());
     long deadline =
         java.time.Instant.parse(
                 store
@@ -226,13 +239,13 @@ public class GenerationOperations {
             .toEpochMilli();
     String grant =
         grants.issue(
-            owner.userId(),
+            access.user().getId(),
             owner.domainId(),
             authority.purpose(),
             run,
             deadline,
-            List.of(),
-            authority.sandboxId());
+            access.classNames(),
+            authority.sandboxId(),JSONObject.of("executionUserId",access.executionUserId(),"initiatorUserId",owner.userId()));
     var result =
         python.execute(
             run,
@@ -280,10 +293,12 @@ public class GenerationOperations {
     var parameters = QueryPackage.parameters(bundle, null);
     String digest = packageTestDigest(kind, bundle), execution = UUID.randomUUID().toString();
     long deadline = java.time.Instant.parse(store.one("SELECT deadline FROM ontology_agent_runs WHERE id=?", uuid(run)).getString("deadline")).toEpochMilli();
-    String token = grants.issue(owner.userId(), owner.domainId(), "user-read", run, deadline, List.of(), null);
+    var executionAccess=executionAccess(run,owner);
+    String token = grants.issue(executionAccess.user().getId(), owner.domainId(), "user-read", run, deadline, executionAccess.classNames(), null,
+      JSONObject.of("executionUserId",executionAccess.executionUserId(),"initiatorUserId",owner.userId()));
     var grant = grants.verify(token, run, "/ontology/query/execute-dsl");
-    var access = new QueryAccessService.Access(new QueryAccessService.GrantUser(owner.userId(), owner.domainId()),
-        permissions.getDataPermission(owner.userId(), owner.domainId()), grant, token, deadline);
+    var access = new QueryAccessService.Access(executionAccess.user(),executionAccess.permission(),grant,token,deadline,executionAccess.classNames())
+      .withExecution(executionAccess.executionUserId(),owner.userId());
     store.transaction(() -> {
       gate(run, owner);
       store.update("INSERT INTO ontology_generation_tests(run_id,digest,execution_id,result) VALUES(?,?,?,NULL)", uuid(run), digest, uuid(execution));

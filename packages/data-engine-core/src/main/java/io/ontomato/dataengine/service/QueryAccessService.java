@@ -44,7 +44,7 @@ public class QueryAccessService {
             "retrievalId",
             body.getString("retrievalId"),
             "sessionId",
-            body.getString("runtimeSessionId")));
+            body.getString("runtimeSessionId"), "executionUserId", access.executionUserId(), "initiatorUserId", access.initiatorUserId()));
   }
 
   public Access access(HttpServletRequest request) {
@@ -57,7 +57,7 @@ public class QueryAccessService {
           permissions.getDataPermission(userId, domain),
           grant,
           request.getHeader("tk"),
-          grant.getLong("expiresAt"));
+          grant.getLong("expiresAt")).withExecution(grant.getString("executionUserId"), grant.getString("initiatorUserId"));
     }
     User user = identity.getCurrentUser();
     if (user == null || !user.isEnable())
@@ -80,12 +80,19 @@ public class QueryAccessService {
   /** Request authority is captured once; neither source beans nor accessor results can mutate it. */
   public record Access(
       User user, UserDataPermission permission, JSONObject grant, String credential, Long expiresAt,
-      java.util.List<String> classNames, ExecutionTarget target) {
+      java.util.List<String> classNames, ExecutionTarget target, String executionUserId, String initiatorUserId) {
+    public Access(User user, UserDataPermission permission, JSONObject grant, String credential, Long expiresAt, java.util.List<String> classNames, ExecutionTarget target) {
+      this(user,permission,grant,credential,expiresAt,classNames,target,grant==null?null:grant.getString("executionUserId"),grant==null?null:grant.getString("initiatorUserId"));
+    }
+    public Access withExecution(String userId, String initiator) {
+      return new Access(user,permission,grant,credential,expiresAt,classNames,target,userId,initiator);
+    }
     public Access(User user, UserDataPermission permission, JSONObject grant, String credential, Long expiresAt, java.util.List<String> classNames) {
       this(user,permission,grant,credential,expiresAt,classNames,ExecutionTarget.LIVE);
     }
     public Access withTarget(ExecutionTarget value) {
-      return new Access(user,permission,grant,credential,expiresAt,value.testing()?value.classNames():classNames,value);
+      return new Access(user,permission,grant,credential,expiresAt,!value.classNames().isEmpty()?value.classNames():classNames,value,
+          value.initiatorUserId()!=null?value.executionUserId():executionUserId,value.initiatorUserId()!=null?value.initiatorUserId():initiatorUserId);
     }
     public Access(User user, UserDataPermission permission, JSONObject grant, String credential, Long expiresAt) {
       this(user, permission, grant, credential, expiresAt,

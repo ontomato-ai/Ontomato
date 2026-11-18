@@ -10,7 +10,7 @@ Product assets have three categories:
 | Compositions | Page, Navigation | Asset IDs; templates are `Page.isTemplate` |
 | Intelligent applications | Application, AgentProfile | Page/Navigation roots or tool/context projections |
 
-The directory and creation menus follow the consumption entry: Delivery bundles (交付单元), Composition assets (组合资产), Projection assets (投影资产). The default Application entry therefore belongs to the first category. Bundles list Application (应用) before AgentProfile (智能体配置); compositions list Page (页面) before Navigation (导航). Within projections, the order is ObjectView (对象视图), CollectionView (集合视图), MetricWidget (指标组件), then ActionView (动作视图). All labels use the Manager locale without appended raw English contract names. AgentProfile retains “智能体配置” to distinguish its tool/context/instruction configuration from the independently governed Agent identity.
+The directory and creation menus follow the consumption entry: Delivery bundles (交付单元), Composition assets (组合资产), Projection assets (投影资产). The default Application entry therefore belongs to the first category. Bundles list Application (应用) before AgentProfile (智能体配置); compositions list Page (页面) before Navigation (导航). Within projections, the order is ObjectView (对象视图), CollectionView (集合视图), MetricWidget (指标组件), then ActionView (动作视图). All labels use the Manager locale without appended raw English contract names. AgentProfile retains “智能体配置” to distinguish its tool/context/instruction configuration from the referenced Node agent definition.
 
 Page forms are discoverable through directory filters: ordinary pages, embeddable pages, and page templates. Templates take precedence in this filter when both flags are set; the embeddable restriction still applies to such a template. These are forms of the same Page contract, not additional asset classes. Directory rows show the form and projection renderer. Default structural sorting follows the type order above, then ordinary pages, embeddable pages and templates, then names and asset IDs for stability. Explicit name and recent-update ordering remain available. All ordering is applied by the server before pagination. Filters and sorting survive opening an asset and returning to the directory.
 
@@ -25,7 +25,7 @@ flowchart LR
   page -->|嵌入对话| profile[智能体配置]
   profile -->|工具与上下文 ID| projection
   projection -->|renders 一对一| ontology[ObjectType / Definition / MetricView / Action]
-  profile -->|embodies| principal[Agent Principal]
+  profile -->|agentId| definition[Node AgentDefinition]
 ```
 
 The template-copy arrow describes an operation, not a persistent dependency. A copied page continues to reference its selected child assets. Page-to-Page references may stay within the composition layer, and embedding a profile crosses back to the bundle layer; the categories describe responsibilities rather than a strictly linear dependency hierarchy. Grant decisions remain in governance and are not inferred from any of these edges.

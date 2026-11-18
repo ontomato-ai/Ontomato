@@ -52,7 +52,7 @@ export async function validatePageBindings(owner:ProductOwner,input:ProductAsset
     if(document.kind==='collection-view')parameters=(await readDefinition(owner,document.renders.id)).parameters;
     if(document.kind==='metric-widget')parameters=(await new DashboardMetricClient(owner.domainId,credentials).describe(document.renders.id)).parameterDefs.map(parameter=>({name:String(parameter.name),type:String(parameter.type),classNames:Array.isArray(parameter.classNames)?parameter.classNames.filter((name):name is string=>typeof name==='string'):undefined}));
     if(document.kind==='action-view'){
-      const response=await backendPost('page-action-signature',config.dataQuery.baseUrl+'/action/queryById',{id:document.renders.id},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});
+      const response=await backendPost('page-action-signature',config.dataQuery.baseUrl+'/action/queryById',{id:document.renders.id},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey,credentials.headers),retries:1});
       const result=JSON.parse(response.text);
       if(!result.success||!Array.isArray(result.data?.function?.parameters))throw new HttpError(400,'Action signature unavailable','PRODUCT_UNAVAILABLE');
       parameters=result.data.function.parameters;
@@ -73,7 +73,7 @@ export async function validateProduct(owner: ProductOwner, input: ProductAssetIn
     for(const type of allTypes.filter(type=>type.startsWith('platform:')))platformObjectProvider(type);
     const objectTypes=allTypes.filter(type=>!type.startsWith('platform:'));
     if(objectTypes.length){
-      const response=await backendPost('page-parameter-schema',config.dataQuery.baseUrl+'/ontology/query/schema',{classNames:objectTypes},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});
+      const response=await backendPost('page-parameter-schema',config.dataQuery.baseUrl+'/ontology/query/schema',{classNames:objectTypes},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey,credentials.headers),retries:1});
       const classes=JSON.parse(response.text).classes;
       if(!Array.isArray(classes)||objectTypes.some(name=>!classes.some((object:{className:string})=>object.className===name)))throw new HttpError(400,'Page parameter references an unavailable ObjectType','INVALID_PAGE_PARAMETER');
     }
@@ -87,7 +87,7 @@ export async function validateProduct(owner: ProductOwner, input: ProductAssetIn
     if(!input.document.fields.length)throw new HttpError(400,'Select collection output fields','INVALID_PRODUCT_FIELD');
     const definition=await readDefinition(owner,input.document.renders.id);
     const objectType=definition.objectType;
-    const available=objectType.startsWith('platform:')?Object.keys(platformObjectProvider(objectType).fields):JSON.parse((await backendPost('collection-output-schema',config.dataQuery.baseUrl+'/ontology/query/schema',{classNames:[objectType]},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1})).text).classes?.find((object:{className:string})=>object.className===objectType)?.attrs?.map((attribute:{name:string})=>attribute.name);
+    const available=objectType.startsWith('platform:')?Object.keys(platformObjectProvider(objectType).fields):JSON.parse((await backendPost('collection-output-schema',config.dataQuery.baseUrl+'/ontology/query/schema',{classNames:[objectType]},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey,credentials.headers),retries:1})).text).classes?.find((object:{className:string})=>object.className===objectType)?.attrs?.map((attribute:{name:string})=>attribute.name);
     if(!Array.isArray(available)||input.document.fields.some(field=>!available.includes(field)))throw new HttpError(400,'Collection references an unavailable output field','INVALID_PRODUCT_FIELD');
     if(Object.keys(input.document.parameters).some(name=>!definition.parameters.some(parameter=>parameter.name===name)))throw new HttpError(400,'Collection parameters exceed the Definition signature','INVALID_PRODUCT_PARAMETER');
     for(const parameter of definition.parameters)if(!Object.hasOwn(input.document.parameters,parameter.name)&&parameter.defaultValue===undefined)throw new HttpError(400,`Bind the Definition parameter: ${parameter.name}`,'MISSING_PRODUCT_PARAMETER');
@@ -113,7 +113,7 @@ export async function validateProduct(owner: ProductOwner, input: ProductAssetIn
         }
       }
     }
-    const result=objectType.startsWith('platform:')?{classes:[{className:objectType,attrs:Object.entries(platformObjectProvider(objectType).fields).map(([name,type])=>({name,type,primaryKey:name==='id'}))}],relationships:[]}:JSON.parse((await backendPost('product-object-type',config.dataQuery.baseUrl+'/ontology/query/schema',{classNames:[objectType]}, {headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1})).text);
+    const result=objectType.startsWith('platform:')?{classes:[{className:objectType,attrs:Object.entries(platformObjectProvider(objectType).fields).map(([name,type])=>({name,type,primaryKey:name==='id'}))}],relationships:[]}:JSON.parse((await backendPost('product-object-type',config.dataQuery.baseUrl+'/ontology/query/schema',{classNames:[objectType]}, {headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey,credentials.headers),retries:1})).text);
     const classes=result.classes;
     if(!Array.isArray(classes)||!classes.some((item:{className:string})=>item.className===objectType))throw new HttpError(400,'Object type unavailable','PRODUCT_UNAVAILABLE');
     const object=classes.find((item:{className:string})=>item.className===objectType);
@@ -128,7 +128,7 @@ export async function validateProduct(owner: ProductOwner, input: ProductAssetIn
   if(input.visibility==='domain'&&platform?.workspace&&(platform.workspace.pinnedObjects.length||platform.workspace.pinnedAnalyses.length||platform.workspace.agentIds.length))throw new HttpError(400,'Shared components cannot contain personal selections','PRIVATE_DEPENDENCY');
   if(input.document.kind === "object-view") {
     if(input.visibility === "domain" && input.document.primaryKey) throw new HttpError(400,"Shared object views must not contain a personal object selection","PRIVATE_DEPENDENCY");
-    const response=await backendPost("product-object-view",config.dataQuery.baseUrl+"/objectView/read",{className:input.document.className,form:input.document.form},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});
+    const response=await backendPost("product-object-view",config.dataQuery.baseUrl+"/objectView/read",{className:input.document.className,form:input.document.form},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey,credentials.headers),retries:1});
     const state=JSON.parse(response.text);
      if(!state.success || !state.data?.publishedRevision || !state.data?.versions?.length) throw new HttpError(400,"Publish the class object view before referencing it","UNPUBLISHED_OBJECT_VIEW");
       const published=state.data.versions.find((version:{revision:number})=>version.revision===state.data.publishedRevision);
@@ -171,11 +171,11 @@ export async function validateProduct(owner: ProductOwner, input: ProductAssetIn
     }
     if (reference.kind === "action") {
       const response = await backendPost("product-action", config.dataQuery.baseUrl + "/action/queryById", {id:reference.id}, {
-        headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1,
+        headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey,credentials.headers),retries:1,
       });
       const result = JSON.parse(response.text);
       if (!result.success || result.data?.status !== "PUBLISHED") throw new HttpError(400,"Action unavailable or unpublished","UNPUBLISHED_CAPABILITY");
-      const formResponse=await backendPost("product-action-form",config.dataQuery.baseUrl+"/action/form",{id:reference.id},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});
+      const formResponse=await backendPost("product-action-form",config.dataQuery.baseUrl+"/action/form",{id:reference.id},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey,credentials.headers),retries:1});
       const form=JSON.parse(formResponse.text);
       if(!form.success || !Array.isArray(form.data?.fields)) throw new HttpError(400,"Action form unavailable","PRODUCT_UNAVAILABLE");
       const fields=new Set(form.data.fields.map((field:{key:string})=>field.key));
@@ -193,7 +193,7 @@ export async function validateProduct(owner: ProductOwner, input: ProductAssetIn
     if (reference.kind === "application") {
       if(input.document.kind==='application'&&!input.document.workspaceId&&input.document.navigationId)continue;
       const response = await backendGet("product-application", config.dataQuery.baseUrl + `/platform/applications/${encodeURIComponent(reference.id)}`, {
-        headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey), retries:1,
+        headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey,credentials.headers), retries:1,
       });
       if (JSON.parse(response.text).success === false) throw new HttpError(400,"Application unavailable","PRODUCT_UNAVAILABLE");
     }

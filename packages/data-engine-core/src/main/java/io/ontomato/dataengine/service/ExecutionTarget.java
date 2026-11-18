@@ -6,7 +6,10 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 
 /** Resolved by Java at the HTTP boundary; never bind this type from request data. */
-public record ExecutionTarget(String contextId, String sandboxId, List<String> classNames, Long expiresAt) {
+public record ExecutionTarget(String contextId, String sandboxId, List<String> classNames, Long expiresAt, String executionUserId, String initiatorUserId) {
+  public ExecutionTarget(String contextId, String sandboxId, List<String> classNames, Long expiresAt) {
+    this(contextId,sandboxId,classNames,expiresAt,null,null);
+  }
   public static final ExecutionTarget LIVE = new ExecutionTarget(null, null, List.of(), null);
   public ExecutionTarget { classNames = List.copyOf(classNames); }
   public static void failure(JSONObject response, Exception error) {
@@ -15,8 +18,9 @@ public record ExecutionTarget(String contextId, String sandboxId, List<String> c
   }
   public boolean testing() { return contextId != null; }
   public void requireClasses(List<String> names) {
-    if (testing() && (names == null || names.isEmpty() || !classNames.containsAll(names)))
-      throw new BuildTestException(
-          HttpStatus.FORBIDDEN, "BUILD_TEST_FORBIDDEN: empty or out-of-context class declaration");
+    if ((testing() || !classNames.isEmpty()) && (names == null || names.isEmpty() || !classNames.containsAll(names))) {
+      if(testing()) throw new BuildTestException(HttpStatus.FORBIDDEN, "BUILD_TEST_FORBIDDEN: empty or out-of-context class declaration");
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Execution exceeds the caller class scope");
+    }
   }
 }

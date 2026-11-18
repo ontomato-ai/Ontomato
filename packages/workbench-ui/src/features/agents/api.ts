@@ -5,6 +5,8 @@ import {
   assistantAgentDefinitionListSchema,
   assistantSkillCatalogSchema,
   assistantAgentDefinitionSchema,
+  agentExecutionOptionsSchema,
+  type AgentExecutionOptions,
   type AssistantAgentDefinition,
   type AssistantAgentInput,
 } from "@ontomato/contracts/assistant-chat";
@@ -36,6 +38,16 @@ export const agentDefinitionsApi = {
   },
   async update(id: string, input: AssistantAgentInput): Promise<AssistantAgentDefinition> {
     return assistantAgentDefinitionSchema.parse(await nodeApiPut(`${base}/${encodeURIComponent(id)}`, input));
+  },
+  /**
+   * Whose permissions an agent may run with: the members the domain's identity service offers this reader, and — for
+   * anyone who may read the settings — the referenced member's name and availability, which is what the page shows even
+   * when the reader may not choose.
+   */
+  async executionOptions(keyword: string, selected: string | null): Promise<AgentExecutionOptions> {
+    const query = new URLSearchParams({ keyword, pageNum: "1", pageSize: "20" });
+    if (selected) query.set("selected", selected);
+    return agentExecutionOptionsSchema.parse(await apiGet(`/platform/agent-execution/options?${query}`));
   },
   async remove(id: string): Promise<void> {
     await nodeApiFetch(`${base}/${encodeURIComponent(id)}`, "DELETE");

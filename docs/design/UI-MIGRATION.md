@@ -45,7 +45,7 @@ long data, keyboard, dropdown/overlay and permission variants.
 | App / page | Route / variant | Source and layout | Implementation | Visual acceptance |
 |---|---|---|---|---|
 | Agent conversation | /agents/chat | BusinessWorkbench / AgentShell; tools, artifacts, composer | Implemented (shared) | Pending real conversation matrix |
-| Agent editor/new | /agents/settings, /new, /:agentId | AgentEditor; form/editor | In progress | Pending |
+| Agent editor/new | /ontology/agents, /new, /:agentId | AgentSettingsRoute / AgentEditor; legacy addresses redirect here | Implemented | Pending 128 acceptance |
 | Skills | /ontology/skills, /ontology/skills/:skillId | SkillLibrary; card grid · SkillDetail; file tree and reader | Implemented | Pending |
 | External MCP services | /settings/external-mcp | ExternalMcpServices; table, service dialog | Implemented | Pending |
 | Ontology graph | /ontology/playground | OntologyPlayground; canvas/inspectors | Implemented | Pending graph matrix |
@@ -67,7 +67,7 @@ long data, keyboard, dropdown/overlay and permission variants.
 | DSL test | /ops/dsl | DslTestPage; editor/result, enterprise MQL | Implemented | Pending execution/result |
 | Operations knowledge | /ops/knowledge | KnowledgePage; tree/editor | In progress | Pending |
 | Operations model | /ops/model | OpsModelPage/AgentModelsPage; settings | In progress | Pending |
-| Application models | /agents/settings/models, /governance/models, /ontology/models | AgentModelsPage; settings rows | In progress | Pending |
+| Application models | /settings/model-config/agents, /settings/model-config/governance, /settings/model-config/ontology | AgentModelsPage; settings rows | In progress | Pending |
 | Governance conversation/report | /governance/chat/:sessionId? | GovernancePage / AgentShell; report/sources | In progress | Pending findings/sources |
 | Feedback records | /governance/feedback | FeedbackRecordsPage; table/detail | In progress | Pending |
 | Model usage | /settings/model-config/usage | ModelConfigPage/ModelUsagePanel; settings | In progress | Pending |

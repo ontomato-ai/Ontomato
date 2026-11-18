@@ -14,6 +14,9 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/ontology/ai/generation")
 public class OntologyGenerationController {
+  @org.springframework.beans.factory.annotation.Autowired
+  private io.ontomato.dataengine.service.agent.AgentExecutionAccess executions;
+
   private final OntologyGenerationService generation;
   private final GenerationOperations operations;
   private final OntologyAgentAccess access;
@@ -59,12 +62,14 @@ public class OntologyGenerationController {
     Owner owner =
         grant == null
             ? access.current(request).owner()
-            : new Owner(grant.getString("userId"), grant.getString("domainId"));
+            : new Owner(grant.getString("initiatorUserId")==null?grant.getString("userId"):grant.getString("initiatorUserId"), grant.getString("domainId"));
     if (grant != null
         && (!"ontology-generation".equals(grant.getString("purpose"))
             || !run.equals(grant.getString("runId")))) throw AgentHttpException.missing();
     var row = store.one("SELECT * FROM ontology_agent_runs WHERE id=?", uuid(run));
     store.run(row.getString("session_id"), run, owner);
+    if(grant==null && row.getJSONObject("request").getString("executionUserId")!=null)
+      executions.require(owner.domainId(),row.getJSONObject("request").getString("executionUserId"));
     // A skill callback writes only while its run is running; the lifecycle view is enough to tell.
     if (!row.getBooleanValue("external")
         && !"running".equals(runtime.status(owner.domainId(), run).getString("status"))) {

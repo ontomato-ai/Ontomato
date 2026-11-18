@@ -47,23 +47,34 @@ async function openAt(bottom: number) {
   return { app, root, menu, style: menu.style };
 }
 
-it.each([
-  ["at the foot of the window", true],
-  ["in the middle of the window", false],
-])("opens the list %s without cutting it off", async (_case, upwards) => {
-  const bottom = upwards ? window.innerHeight - 16 : Math.round(window.innerHeight / 2);
-  const drawn = await openAt(bottom);
+it("hangs the list from the trigger's own edge, up or down, inside the viewport", async () => {
+  // At the foot of the window the list opens upwards and its bottom stays on the trigger's top edge: it does not float
+  // away to wherever the remaining room happens to end.
+  const footTop = window.innerHeight - 16 - 32;
+  const up = await openAt(window.innerHeight - 16);
   try {
-    const top = Number.parseFloat(drawn.style.top);
-    const height = Number.parseFloat(drawn.style.maxHeight);
-    // The list is where the viewport has room for it, and stays inside the viewport.
-    expect(upwards ? top + height <= bottom - 32 : top >= bottom).toBe(true);
-    // A list with room shows more than its first line.
-    expect(height).toBeGreaterThan(100);
-    expect(top).toBeGreaterThanOrEqual(16);
-    expect(top + height).toBeLessThanOrEqual(window.innerHeight - 16);
+    expect(up.style.top).toBe("");
+    // Its bottom edge is just above the trigger: the distance from the viewport's bottom is the trigger's top plus the gap.
+    expect(Number.parseFloat(up.style.bottom)).toBe(window.innerHeight - footTop + 4);
+    // And it has as much height as the room above allows, which is more than its first line.
+    expect(Number.parseFloat(up.style.maxHeight)).toBe(footTop - 4 - 16);
+    expect(Number.parseFloat(up.style.maxHeight)).toBeGreaterThan(100);
   } finally {
-    drawn.app.unmount();
-    drawn.root.remove();
+    up.app.unmount();
+    up.root.remove();
+  }
+});
+
+it("opens the list down from the trigger when the viewport has room below it", async () => {
+  const middle = Math.round(window.innerHeight / 2);
+  const down = await openAt(middle);
+  try {
+    expect(down.style.bottom).toBe("");
+    expect(Number.parseFloat(down.style.top)).toBe(middle + 4);
+    expect(Number.parseFloat(down.style.maxHeight)).toBe(window.innerHeight - middle - 4 - 16);
+    expect(Number.parseFloat(down.style.top) + Number.parseFloat(down.style.maxHeight)).toBeLessThanOrEqual(window.innerHeight - 16);
+  } finally {
+    down.app.unmount();
+    down.root.remove();
   }
 });

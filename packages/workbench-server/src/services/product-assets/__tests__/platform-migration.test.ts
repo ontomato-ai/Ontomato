@@ -20,8 +20,8 @@ it('does not invent an AgentProfile when migrating the legacy question panel',as
   expect(mocks.save).not.toHaveBeenCalled();expect(mocks.query).not.toHaveBeenCalled();
 });
 it('replaces an old question panel with an existing native Profile without requiring a declarative release',async()=>{
- mocks.get.mockImplementation(async(_owner,id)=>id==='ask'?{id:'ask',revision:1,editable:true,name:'Ask',description:'',visibility:'private',document:{kind:'widget',widget:{kind:'platform',source:'assistant'}}}:{id:'profile',document:{kind:'agent-profile',principalId:'agent'}});
- mocks.list.mockResolvedValue([{id:'profile',document:{kind:'agent-profile',principalId:'agent'}}]);
+ mocks.get.mockImplementation(async(_owner,id)=>id==='ask'?{id:'ask',revision:1,editable:true,name:'Ask',description:'',visibility:'private',document:{kind:'widget',widget:{kind:'platform',source:'assistant'}}}:{id:'profile',document:{kind:'agent-profile',agentId:'agent'}});
+ mocks.list.mockResolvedValue([{id:'profile',document:{kind:'agent-profile',agentId:'agent'}}]);
  const native=vi.spyOn(await import('../platform-assets'),'nativeAgentAsset').mockResolvedValue('agent' as never);
  await migratePlatformProjection(owner,{},'ask',1);
  expect(mocks.save).toHaveBeenCalledWith(owner,'ask',expect.objectContaining({document:{kind:'page',children:[{assetId:'profile',column:'main'}]}}),1,{},true);
@@ -55,7 +55,7 @@ it('keeps Agent shortcuts as explicit published Profile references when migratin
   const {defaultPersonalWorkspace}=await import('@ontomato/contracts/personal-workspace');
   const source={id:'apps',ownerId:'author',revision:1,editable:true,name:'Apps',description:'',visibility:'private',document:{kind:'widget',widget:{kind:'platform',source:'apps',workspace:{...defaultPersonalWorkspace(),agentIds:['agent']}}}};
   mocks.get.mockImplementation(async(_owner,id)=>{if(id==='apps')return source;const {HttpError}=await import('../../../utils/errors');throw new HttpError(404,'Missing');});
-  mocks.list.mockResolvedValue([{id:'profile',document:{kind:'agent-profile',principalId:'agent'}}]);
+  mocks.list.mockResolvedValue([{id:'profile',document:{kind:'agent-profile',agentId:'agent'}}]);
   mocks.query.mockImplementation(async(sql:string)=>({rows:sql.includes('SELECT owner_id,revision')?[{owner_id:'author',revision:1}]:[]}));
   await migratePlatformProjection(owner,{},'apps',1);
   const root=mocks.save.mock.calls.at(-1)!;

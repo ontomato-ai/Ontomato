@@ -1,3 +1,4 @@
+import {needsRetrievalScope} from "../assistant/skills";
 import { governanceReportHref } from "../assistant/governance-report";
 import { tForLocale } from "../../i18n";
 import { recentUserMessages } from "../assistant/user-quotes";
@@ -56,8 +57,10 @@ export const agentChannelService = {
       if (body.agent.providerId === "workbench" &&
         (body.input.role === "user" || (body.input.kind === "agent-answer" && "kind" in body.input.source && body.input.source.kind === "user"))) {
         const turn=await assistantStore.turn(body.runId,owner);
-        if (turn.retrieval_scope_id) {
-          const messages=(await new RuntimeClient(owner.domainId,undefined,owner.userId).session(body.sessionId)).messages;
+        const client=new RuntimeClient(owner.domainId,undefined,owner.userId);
+        const current=await client.status(body.runId);
+        if (turn.retrieval_scope_id && needsRetrievalScope(current.resolvedSkills.map(entry=>entry.skill))) {
+          const messages=(await client.session(body.sessionId)).messages;
           await new OntologyRetrievalClient(owner,turn.retrieval_scope_id).updateUserQuotes(recentUserMessages(messages,body.inputId),credentials);
         }
       }

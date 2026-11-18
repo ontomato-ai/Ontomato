@@ -90,6 +90,17 @@ public class ApplicationCatalog {
         result.put("entry",entry);
         return result;
     }
+    /** Reconcile a service's complete builtin collection; per-file Java declarations remain incremental. */
+    public void reconcileBuiltins(String service, List<Builtin> declarations) {
+        transactions.executeWithoutResult(tx -> {
+            db.update("""
+                DELETE FROM sys_application
+                WHERE owner_service=? AND domain_id IS NULL AND kind IN ('native','link')
+                  AND id NOT IN (SELECT jsonb_array_elements_text(?::jsonb))
+                """, service, JSON.toJSONString(declarations.stream().map(Builtin::id).toList()));
+            builtins(service, declarations);
+        });
+    }
     public void builtins(String service, List<Builtin> declarations) {
         transactions.executeWithoutResult(tx -> {
             lockCatalog();
