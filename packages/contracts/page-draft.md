@@ -40,4 +40,6 @@ the same run is not a draft, and the path schema rejects it. Reading a draft is 
 page still reads the object and saves through the owner's own endpoints, which decide whether the reader may write.
 
 Filling, marking the changed fields and saving stay in the page: opening a draft never calls a write endpoint, and the
-saved call is the page's own.
+saved call is the page's own. A draft is a change to the object the page reads: when filling it in changes nothing —
+the same link opened again after its draft was saved — the page opens as the object is, with no draft note, no marked
+field and nothing unsaved.
