@@ -48,7 +48,7 @@ description: 以使用方主体身份在 Ontomato/Praxis 上办事：按需求�
    - `roles[].canAuthorWorkflow`：该角色是否有保存/激活 Workflow 的平台权限；
    - `caseClass` / `caseApi`：临时流程单的只读本体类（`workflow_case`）与读取入口。
 
-3. 先用 `node client.mjs find "<需求>"` 找已发布的 Action。`denied` 里也会给出 `actionId/name`；**Action 已发布就可以用于临时 Workflow**，不要求当前角色已经持有它。
+3. 先用 `node client.mjs find "<需求>"` 找已发布的 Action，再用 `node client.mjs action <actionId>` 看完整参数（类型/枚举/返回）。`denied` 里也会给出 `actionId/name`；**Action 已发布就可以用于临时 Workflow**，不要求当前角色已经持有它。Case 字段类型要与 Action 参数类型一致（例如 `amount` 是 `TYPE_STRING`，`caseFormSchema` 就写 `string`）。
 4. 再用 `org-graph` 选目标角色和成员：
    - `roles[].capabilities` 是**当前已授权**的能力，不是可用 Action 的全集；
    - 即使目标角色当前没有该 capability，只要 Action 已发布，也可以把它写进临时 Workflow 的步骤，激活时会落 `role × action` 授权；
@@ -341,6 +341,7 @@ node client.mjs temp-clean <workflowId>
 
 - 先跑 `org-graph` 确认目标角色确实具备所需 Action，并确认自己的角色 `canAuthorWorkflow=true`。
 - **需要 `/workflow/save` 和 `/workflow/activate` 权限**；普通使用方没有时会失败，明确报缺哪个权限，再让管理员补授权或代建。
+- **临时流程用完必须 `temp-clean`。** 旧版/非 `caseScoped` 的临时流程激活时会留下 `role × action` 授权，`my-actions` 会一直显示 `allowed`，后续会话会误以为可以直接办理，从而绕过 Case。发现 `allowed` 的来源是 `TMP-` 流程时，先确认它是否还该存在；不该存在就 `temp-clean`。
 - 激活会给 `role × action` 落授权；临时流程也会出现在 `workflow/query`、`grants` 里，直到停用/删除。
 - `temp-clean` 先失效（回收该版本授权）再删除；已经创建的 Run 模板是冻结的，账本记录不受影响。
 - 这不是“无痕流程”：`Activated` 事件、版本号、Run 记录都会留下。

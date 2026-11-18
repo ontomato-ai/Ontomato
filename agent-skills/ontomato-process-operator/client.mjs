@@ -333,6 +333,9 @@ if (cmd === 'login') {
 } else if (cmd === 'my-actions') {
   const result = await myActions();
   console.log(JSON.stringify(result, null, 2));
+} else if (cmd === 'action') {
+  const actionId = requireArg(args, 0, 'action <actionId>');
+  console.log(JSON.stringify(await post('/action/queryById', { id: actionId }), null, 2));
 } else if (cmd === 'find') {
   const question = requireArg(args, 0, 'find <需求描述> [className]');
   const className = args[1] || undefined;
@@ -495,6 +498,7 @@ if (cmd === 'login') {
   org-graph                        我的组织子树：下级组织、成员、角色、可执行能力
   subjects / roles                 主体 / 角色
   my-actions                       我的有效角色能执行的动作（含来源流程/手工授权）
+  action <actionId>                看动作完整参数（类型/枚举/返回）
   find <需求> [className]          语义找动作，并标记我是否有权限
   dsl <json|@json>                 直接执行 DSL（用于读自己的数据/验证行权限）
   pending [limit] [--flow <id>]    平台生成的“我的待办”查询
