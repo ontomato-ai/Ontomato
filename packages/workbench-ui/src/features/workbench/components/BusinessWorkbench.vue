@@ -30,10 +30,8 @@ import {
   panelApplicationPageFeature,
   workbenchFeatures,
 } from "../features";
-import FollowUpRenderer from "./FollowUpRenderer.vue";
 import ClarificationRenderer from "./ClarificationRenderer.vue";
 const artifactRenderers = [
-  { path: /\.follow-ups\.json$/i, component: FollowUpRenderer },
   { path: /\.clarification\.json$/i, component: ClarificationRenderer },
 ];
 

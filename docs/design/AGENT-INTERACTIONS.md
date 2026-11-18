@@ -14,7 +14,7 @@ tokens, accessibility and responsive rules. It does not define business permissi
 | Goal | Understand the question, objects and scope | Natural language and contextual task starters |
 | Decisions | Obtain missing time ranges, populations and definitions | Single/multiple choice, dates, searchable objects and notes |
 | Evidence | Explain findings and their limits | Plain answer, datasets, charts and provenance |
-| Next step | Continue analysis | Up to three suggestions and dataset selection |
+| Next step | Continue analysis | Dataset row selection |
 | Confirmation | Review target and intended changes | Before/after preview, missing fields and explicit confirmation |
 | Readback | Establish what actually happened | Recorded outcome, fresh data and a new edit operation |
 
@@ -29,7 +29,6 @@ Simple questions do not need a mandatory stage tracker. Show a stage or blocker 
 | Scope chips | Established filters need adjustment | Show effective conditions; changes trigger a fresh query |
 | Dataset | Structured evidence | Preserve raw values, identifiers, source and truncation |
 | Chart | Comparisons, structure and trends | Include units/scope; title, legend and plot occupy distinct space |
-| Follow-up | Useful read-only continuation | At most three short labels, source references and complete scoped question |
 | Change preview | Multiple fields or records | Unambiguous before/after values and affected scope |
 | Task status | Long work or user intervention | Real states, no invented percentages |
 | Result | Operation ended | Success, failure or unknown with an appropriate recovery action |
@@ -39,11 +38,10 @@ Simple questions do not need a mandatory stage tracker. Show a stage or blocker 
 Simple choices stay inline. Reports, provenance and detailed review use the right side. Large multi-record tasks get a
 dedicated surface. Do not turn every reply into a set of cards.
 
-## Recommendations and context
+## Proposals and context
 
-Read-only suggestions and mutation proposals are distinct. A suggestion click cannot authorize a write. Recommendations
-must relate to actual findings and known capabilities; omit unhelpful suggestions and respect an explicit read-only
-request. Show one primary operation per region.
+Mutation proposals cannot authorize a write. They must relate to actual findings and known capabilities; omit
+unhelpful proposals and respect an explicit read-only request. Show one primary operation per region.
 
 A continuation is one ordinary user message: it names the earlier file by its `outputs/` path and says what to
 change. The model and the user see the same text; no hidden context, instructions or JSON travel with it. The
@@ -109,7 +107,7 @@ independent authorized read. Distinguish component tests, runtime tests and visu
 
 | Capability | Current implementation | Remaining acceptance/boundary |
 | --- | --- | --- |
-| Follow-ups and dataset selection | Ordinary messages with the suggested question and its dataset paths, or the source file's row numbers; component tests | Model recommendations are not server-validated query plans |
+| Dataset selection | Ordinary messages with the source file's row numbers; component tests | — |
 | Questions to the reader | Agents ask through the channel's `needsInput` with a default and options; the panel over every shell composer answers with `send(replyTo)`; earlier clarification cards are read-only; component tests | A real retrieval asking, being answered from the panel and recomputing needs its own end-to-end acceptance |
 | Editable query conditions | Dataset header opens source filters from accepted dataset provenance; the business-language change is sent as one ordinary message naming the file | This is a scoped natural-language requery, not direct editing of an executable query plan; typed field/operator controls and final model result acceptance remain future work |
 | Aggregate → detail records | Single selected aggregate row; server-owned group mapping and typed values; one-click ordinary message without confirmation; shell selection reused for returned datasets | Initial support is one query and one direct aggregate with projected group fields; final model detail population and live data changes need end-to-end acceptance |

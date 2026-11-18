@@ -95,8 +95,8 @@ check, report-required switch or automatic rerun remains. A missing file stays
 unavailable. PDF delivery reads the selected immutable file and its authorized sources.
 PPT is derived by the host-owned assistant-report skill: the assistant plans slides
 from that report, then the bundled script reads its original charts and datasets
-and writes report.pptx in the same report directory. The follow-up card offers
-this as the next conversation message; the host has no PPT generator or export API.
+and writes report.pptx in the same report directory. The assistant says in the reply
+that the report can be turned into a PPT; the host has no PPT generator or export API.
 
 Titles are the exact first user message, truncated only for display. Remove model
 title generation and the legacy follow-up model. Delete `analysis-agent/follow-up.ts`;

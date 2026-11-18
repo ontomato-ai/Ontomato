@@ -12,14 +12,9 @@ put data file paths in inline code or table text. Use the original files and
 workspace-relative outputs/ paths under the host's Markdown rule. Do not invent
 facts or publish a second report body.
 
-After completing a report, include “Make into PPT” in the same .follow-ups.json
-card as the other suggestions, respecting the host's follow-up limits. Use the user's language for
-label and question; the question must name the actual report, e.g. “Please turn
-outputs/reports/sales/report.md into PPT.” Set datasetPaths to [] for this item.
-Reference the card in the final reply body using the host's follow-up format.
-
-Generate PPT only when the user's message requests it. After writing a report,
-offer it in the follow-up suggestions; do not proactively generate a PPT.
+After completing a report, say in one sentence in the final reply, in the user's
+language, that the report can be turned into a PPT. Generate PPT only when the
+user's message requests it; do not generate one proactively.
 When the user requests PPT, read references/presentation.md, read the report and
 write a slide list in work/. Run:
 `node skills/assistant-report/scripts/render.cjs work/slides.json`
