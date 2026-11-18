@@ -587,6 +587,8 @@ export class AgentRuntime {
     try {
       const mcpConfigs = await this.mcp.resolve(scope, request.definition.externalMcp.map((ref) => ref.id));
       const rows = await this.store.contextMessages(scope, run.sessionId);
+      // Admission commits the opening input first in context order, before any safe-boundary consumption.
+      const openingMessageId = rows.find(row => row.runId === run.id)!.id;
       const summaryRow = (
         await this.store.pool.query(
           `SELECT * FROM ${this.store.table("compactions")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 ORDER BY covered_seq DESC LIMIT 1`,
@@ -661,7 +663,7 @@ export class AgentRuntime {
             ).filter(
               (r) => r.messageSeq > covered && r.runId !== null && r.message.role !== "system",
             );
-            const projected = await Promise.all(raw.map(r => this.channel.modelMessage(scope.domainId,r.message)));
+            const projected = await this.channel.modelMessagesForRun(scope, run, openingMessageId, raw);
             let effective = recoverContext(projected);
             if (summary)
               effective.unshift({
@@ -687,7 +689,13 @@ export class AgentRuntime {
               if (cut > 0) {
                 try {
                   const source = raw.slice(0, cut);
-                  const prompt = `<conversation>\n${serializeConversation(projected.slice(0,cut))}\n</conversation>\n${summary ? `<previous-summary>\n${summary}\n</previous-summary>\n` : ""}${summary ? request.definition.compaction.updatePrompt : request.definition.compaction.summarizePrompt}`;
+                  // Summaries survive the round. Use the original delivery text as their source.
+                  const summaryMessages = await Promise.all(source.map((row, index) =>
+                    row.message.role === "notification" && row.message.kind === "agent-result"
+                      ? this.channel.modelMessage(scope.domainId, row.message)
+                      : projected[index]!,
+                  ));
+                  const prompt = `<conversation>\n${serializeConversation(summaryMessages)}\n</conversation>\n${summary ? `<previous-summary>\n${summary}\n</previous-summary>\n` : ""}${summary ? request.definition.compaction.updatePrompt : request.definition.compaction.summarizePrompt}`;
                   const next = await completeSummary(
                     modelStream(
                       config,

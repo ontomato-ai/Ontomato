@@ -1,5 +1,6 @@
 import { agentTasksSnapshotSchema } from "@ontomato/contracts/agent-tasks";
 import { codeLimitsSchema } from "@ontomato/contracts/agent-runtime-code";
+import { MID_ROUND_RESULT_NOTIFICATION_FACT } from "@ontomato/contracts/agent-visibility";
 import { afterEach, expect, it, vi } from "vitest";
 import { AgentChannel } from "../channel";
 import { AgentRuntime } from "../runtime";
@@ -410,6 +411,44 @@ it("projects the original question, default and reply as one context message for
   expect(inserted.content).toContain("Question:\nWhich period?\nDefault assumption:\nCurrent year\nAnswer:\nUse the confirmed period");
   expect(notification.content).toBe("Use the confirmed period");expect(port.inputIds.get(steering)).toBe(inputId);
   expect(port.facts.question).toHaveBeenCalledWith(scope.domainId,inputId);
+});
+
+const deliveredResult = {
+  role: "notification",
+  kind: "agent-result",
+  source: { session: { ...source.session, sessionId: inputId }, runId: inputId },
+  content: "Retrieval completed",
+  timestamp: 2,
+} as const;
+const deliveryRow: MessageRow = {
+  id: inputId, runId, messageSeq: 8, contextSeq: 8, message: deliveredResult,
+};
+const humanRun = { ...run, channel: humanChannel };
+
+it("adds the fact once when rebuilding a direct human round after consuming a delivery", async () => {
+  const { channel: port } = channel();
+  const original = await port.modelMessage(scope.domainId, deliveredResult);
+  const project = () => port.modelMessagesForRun(scope, humanRun, runId, [deliveryRow]);
+  const first = await project();
+  expect(first[0].content).toBe(`${original.content}\n${MID_ROUND_RESULT_NOTIFICATION_FACT}`);
+  expect(await project()).toEqual(first);
+  expect(deliveryRow.message.content).toBe("Retrieval completed");
+});
+
+it("leaves a delivery unchanged when it opens a new round or belongs to an earlier round", async () => {
+  const { channel: port } = channel();
+  const original = await port.modelMessage(scope.domainId, deliveredResult);
+  expect(await port.modelMessagesForRun(scope, humanRun, deliveryRow.id, [deliveryRow])).toEqual([original]);
+  expect(await port.modelMessagesForRun(scope, humanRun, runId, [
+    { ...deliveryRow, runId: inputId },
+  ])).toEqual([original]);
+});
+
+it("leaves deliveries to a delegated round unchanged even with a human recipient", async () => {
+  const { channel: port } = channel();
+  const delegatedRun = { ...humanRun, channel: { ...humanChannel, requestedBy: deliveredResult.source } };
+  const original = await port.modelMessage(scope.domainId, deliveredResult);
+  expect(await port.modelMessagesForRun(scope, delegatedRun, runId, [deliveryRow])).toEqual([original]);
 });
 
 it.each(["native","external"])("forwards %s caller language to each provider without translating its directory",async kind=>{
