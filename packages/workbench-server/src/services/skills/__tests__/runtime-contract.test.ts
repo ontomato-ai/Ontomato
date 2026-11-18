@@ -136,14 +136,20 @@ it("publishes the selected provider's current package and never provides an unse
   expect(published[1]!.files.find((file) => file.path === "scripts/main.mjs")?.content).toBe("console.log('current');\n");
   panelOfferings = [offering("panel-skill", { provideError: new Error("cannot supply the selected package") })];
   await expect(prepareAssistantSkills(domain, { kind: "custom", skills: [panelReference()] }, {}))
-    .rejects.toThrow("cannot supply the selected package");
+    .rejects.toThrow(/panel-test.*cannot supply the selected package/);
 });
 
 it("fails the whole catalogue when a provider cannot list, and all preparation with it", async () => {
   panelListError = new Error("panel source unavailable");
-  await expect(skillManager.getAllSkills(domain)).rejects.toThrow("panel source unavailable");
+  let listFailure: Error | undefined;
+  try { await skillManager.getAllSkills(domain); }
+  catch (error) { listFailure = error as Error; }
+  expect(listFailure?.message).toContain('Skill provider "Test panels" (panel-test) failed to list skills');
+  expect(listFailure?.message).toContain("panel source unavailable");
+  expect((listFailure as Error & { cause?: unknown }).cause).toBe(panelListError);
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ success: true, data: { pageSkills: [], registeredSkills: [] } })));
-  await expect(prepareAssistantSkills(domain, { kind: "custom", skills: [] }, {})).rejects.toThrow("panel source unavailable");
+  await expect(prepareAssistantSkills(domain, { kind: "custom", skills: [] }, {}))
+    .rejects.toThrow(/panel-test.*panel source unavailable/);
 });
 
 it("fails a page-mapped skill that no source supplies instead of reusing its runtime package", async () => {
@@ -202,7 +208,7 @@ it("keeps public packages read-only while leaving their files and export readabl
 
 it("rejects a provided package whose identity differs from the offered skill", async () => {
   panelOfferings = [offering("panel-skill", { packageName: "other-skill" })];
-  await expect(skillManager.listSkillFiles(domain, "panel-skill")).rejects.toThrow(/supplied/);
+  await expect(skillManager.listSkillFiles(domain, "panel-skill")).rejects.toThrow(/panel-test.*supplied/);
 });
 
 it("rejects a provided package whose SKILL.md declares another name", async () => {
@@ -210,7 +216,7 @@ it("rejects a provided package whose SKILL.md declares another name", async () =
   offered.provide = async () => ({ skill: offered.skill,
     files: [{ path: "SKILL.md", content: skillMarkdown("other-skill") }] });
   panelOfferings = [offered];
-  await expect(skillManager.listSkillFiles(domain, "panel-skill")).rejects.toThrow(/SKILL.md must declare the package name/);
+  await expect(skillManager.listSkillFiles(domain, "panel-skill")).rejects.toThrow(/panel-test.*SKILL.md must declare the package name/);
 });
 
 it("publishes only the selected current-domain package and keeps captured versions unchanged across imports", async () => {

@@ -61,7 +61,7 @@ function platformSkills() {
       title: name, description: parsed.manifest.description };
   });
 }
-/** The catalogue's built-in entries are the one fact used both for its options and for admitting their publications. */
+/** The one built-in catalogue construction, shared by the catalogue and by missing-source admission. */
 function builtinSkillOptions(locale?: string): AssistantSkillOption[] {
   return [
     { skill: GOVERNANCE_SKILL, title: tForLocale(locale, "assistant.default.knowledge-governance.name"), description: tForLocale(locale, "assistant.default.knowledge-governance.description") },
@@ -71,9 +71,6 @@ function builtinSkillOptions(locale?: string): AssistantSkillOption[] {
     { skill: ANALYST_SKILL, title: tForLocale(locale, "assistant.skills.analyst.title"),
       description: tForLocale(locale, "assistant.skills.analyst.description") },
   ];
-}
-function builtinSkillKeys() {
-  return new Set([GOVERNANCE_SKILL, ANALYST_SKILL, ...platformSkills().map(entry => entry.skill)].map(runtimeSkillKey));
 }
 function sourceLabel(skill: SkillInfo) {
   const restriction = skill.writeRestriction;
@@ -88,10 +85,10 @@ export async function registerAssistantSkills() {
     await publishSkill(skill.path, { namespace: { kind: "provider", provider: "workbench" }, name: skill.id });
 }
 export async function assistantSkillCatalog(domainId: string, credentials: AssistantCredentials,
-  projection?: PageSkillsProjection, registry?: SkillRegistryManager) {
+  projection?: PageSkillsProjection, registry?: SkillRegistryManager,
+  builtins: readonly AssistantSkillOption[] = builtinSkillOptions(credentials.locale)) {
   const pages = projection ?? await readPageSkills(credentials);
   const locale = credentials.locale;
-  const builtins = builtinSkillOptions(locale);
   const builtinKeys = new Set(builtins.map(option => runtimeSkillKey(option.skill)));
   const options: AssistantSkillOption[] = [...builtins];
   for (const skill of await skillManager.getAllSkills(domainId, locale, registry)) {
@@ -108,8 +105,9 @@ export async function assistantSkillCatalog(domainId: string, credentials: Assis
   return assistantSkillCatalogSchema.parse({ skills: available });
 }
 export async function validateAssistantSkills(domainId: string, refs: readonly RuntimeSkillRef[], credentials: AssistantCredentials,
-  projection?: PageSkillsProjection, registry?: SkillRegistryManager) {
-  const catalogue = await assistantSkillCatalog(domainId, credentials, projection, registry);
+  projection?: PageSkillsProjection, registry?: SkillRegistryManager,
+  builtins?: readonly AssistantSkillOption[]) {
+  const catalogue = await assistantSkillCatalog(domainId, credentials, projection, registry, builtins);
   const known = new Set(catalogue.skills.map((s) => runtimeSkillKey(s.skill)));
   const names = new Set<string>();
   for (const ref of refs) {
@@ -125,9 +123,10 @@ export async function validateAssistantSkills(domainId: string, refs: readonly R
 export async function prepareAssistantSkills(domainId: string, agent: { kind: string; skills: readonly RuntimeSkillRef[] }, initiatorCredentials: AssistantCredentials) {
   const projection = await readPageSkills(initiatorCredentials);
   const effective = effectiveAssistantSkills(agent, projection);
+  const builtins = builtinSkillOptions(initiatorCredentials.locale);
   const registry = await skillRegistryManager.forDomain(domainId);
-  const selected = await validateAssistantSkills(domainId, effective, initiatorCredentials, projection, registry);
-  const builtins = builtinSkillKeys();
+  const selected = await validateAssistantSkills(domainId, effective, initiatorCredentials, projection, registry, builtins);
+  const builtinKeys = new Set(builtins.map(option => runtimeSkillKey(option.skill)));
   for (const ref of selected) {
     if (ref.name === GOVERNANCE_SKILL.name && ref.namespace.kind === "provider" && ref.namespace.provider === GOVERNANCE_SKILL.namespace.provider)
       await publishGovernanceSkill(domainId);
@@ -137,7 +136,7 @@ export async function prepareAssistantSkills(domainId: string, agent: { kind: st
         await publishSkillPackage(await entry.provide(), domainId);
       continue;
     }
-    if (!builtins.has(runtimeSkillKey(ref)))
+    if (!builtinKeys.has(runtimeSkillKey(ref)))
       throw new HttpError(422, `Skill is not available: ${ref.name}`, "SKILL_NOT_FOUND");
   }
   // A change this run may make is covered by a page skill only when the run itself loaded one.
