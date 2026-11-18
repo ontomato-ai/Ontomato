@@ -2,6 +2,7 @@
 import { computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { ArrowLeft, Cpu, Plus } from "lucide-vue-next";
+import { ElButton } from "element-plus";
 import { useAgentModelLabels, usePageAccess } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useAgentDefinitions } from "../definitions";
@@ -45,6 +46,9 @@ const modelLabels = props.standalone ? null : useAgentModelLabels();
 const { agents, loading, loadFailed, ensureLoaded } = useAgentDefinitions();
 /** The agents and a new one are the agents' settings, listed only to an account that may open them. */
 const editsAgents = computed(() => canOpen(platformRoutes.agents.path));
+const currentAgentId = computed(() => props.creating || props.models
+  ? null
+  : props.agentId ?? (props.standalone ? agents.value[0]?.id : null));
 
 // The column and the editor share one read: whichever is mounted first starts it and the other reads the same list.
 onMounted(() => {
@@ -56,15 +60,25 @@ const pageTitle = computed(() => t("agents.title"));
 </script>
 
 <template>
-  <div class="settings-nav">
+  <nav class="settings-nav" :class="{ 'is-standalone': standalone }" :aria-label="pageTitle">
     <button v-if="!props.standalone" type="button" class="back" @click="emit('back')">
       <ArrowLeft :size="16" aria-hidden="true" />
       <span>{{ t("common.backToChat") }}</span>
     </button>
-    <h2 v-if="heading" class="nav-head">{{ pageTitle }}</h2>
+    <h2 v-if="heading && !standalone" class="nav-head">{{ pageTitle }}</h2>
 
     <template v-if="editsAgents">
-      <p class="group-title">{{ t("agents.agentsGroup") }}</p>
+      <div v-if="standalone" class="list-header">
+        <h2>{{ heading ? pageTitle : t("agents.agentsGroup") }}</h2>
+        <el-button
+          :icon="Plus"
+          size="small"
+          :class="{ 'is-active': creating }"
+          :aria-current="creating ? 'page' : undefined"
+          @click="emit('createAgent')"
+        >{{ t("agents.newAgent") }}</el-button>
+      </div>
+      <p v-else class="group-title">{{ t("agents.agentsGroup") }}</p>
       <div v-if="loading" class="skeleton" aria-busy="true"><span /><span /></div>
       <div v-else-if="loadFailed" class="note">
         {{ t("agents.loadFailed") }}
@@ -76,8 +90,8 @@ const pageTitle = computed(() => t("agents.title"));
           <button
             type="button"
             class="agent-row"
-            :class="{ active: !props.creating && agent.id === props.agentId }"
-            :aria-current="!props.creating && agent.id === props.agentId ? 'page' : undefined"
+            :class="{ active: agent.id === currentAgentId }"
+            :aria-current="agent.id === currentAgentId ? 'page' : undefined"
             @click="emit('selectAgent', agent.id)"
           >
             <span class="row-name">{{ agent.name }}</span>
@@ -85,7 +99,7 @@ const pageTitle = computed(() => t("agents.title"));
           </button>
         </li>
       </ul>
-      <button type="button" class="new-agent" :class="{ active: props.creating }" @click="emit('createAgent')">
+      <button v-if="!standalone" type="button" class="new-agent" :class="{ active: props.creating }" @click="emit('createAgent')">
         <Plus :size="16" aria-hidden="true" />
         <span>{{ t("agents.newAgent") }}</span>
       </button>
@@ -103,7 +117,7 @@ const pageTitle = computed(() => t("agents.title"));
         <span>{{ modelLabels.title }}</span>
       </button>
     </div>
-  </div>
+  </nav>
 </template>
 
 <style scoped>
@@ -119,6 +133,45 @@ const pageTitle = computed(() => t("agents.title"));
   min-width: 0;
   gap: 2px;
   overflow-y: auto;
+}
+.is-standalone {
+  --shell-nav-hover: var(--shell-panel-hover, var(--el-fill-color-light));
+  --shell-nav-selected: var(--shell-panel-selected, var(--el-color-primary-light-9));
+  gap: var(--spacing-sm);
+}
+.list-header {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-xs) var(--spacing-sm);
+  min-height: var(--panel-header-height);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-bottom: 1px solid var(--el-border-color-light);
+  box-sizing: border-box;
+}
+.list-header h2 {
+  margin: 0;
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+  font-weight: var(--font-semibold);
+  color: var(--el-text-color-primary);
+  overflow-wrap: anywhere;
+}
+.list-header .el-button.is-active {
+  background: var(--shell-nav-selected);
+  color: var(--brand-link);
+}
+.is-standalone .agent-row {
+  padding: var(--spacing-sm);
+}
+.is-standalone .row-name {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+}
+.is-standalone .agent-row.active .row-name {
+  color: var(--brand-link);
 }
 .back {
   display: flex;
