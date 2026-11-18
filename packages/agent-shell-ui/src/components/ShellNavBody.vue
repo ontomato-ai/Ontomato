@@ -4,6 +4,7 @@ import { CalendarClock, ExternalLink, SquarePen, Trash2, MoreHorizontal, Pencil,
 import type { AgentHostAgent, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { ShellLabels, ShellWorkbenchDeclaration } from "../types";
 import { featureIcon } from "../icons";
+import AgentPicker from "./AgentPicker.vue";
 
 /**
  * The navigation column of a conversation application: its head, a new conversation, the application's own pages, the
@@ -47,6 +48,7 @@ const props = withDefaults(defineProps<{
 });
 const emit = defineEmits<{
   newConversation: [];
+  selectAgent: [id: string];
   selectFeature: [id: string];
   featureAction: [id: string];
   selectSession: [id: string];
@@ -136,6 +138,9 @@ function saveRename(id: string) {
 }
 
 
+/** More than one agent makes the head a switcher; one agent leaves the application's name there. */
+const hasPicker = computed(() => props.conversations && props.agents.length > 1);
+
 function requestDelete(session: AgentHostSession) {
   closeSessionMenu();
   deletingSession.value = session;
@@ -162,8 +167,12 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="navRoot" class="shell-nav-body">
-    <!-- The head: the application's name. The agent the conversation runs on is chosen in its composer. -->
-    <div class="column-head">{{ title }}</div>
+    <!--
+      The head: the agent the conversation runs on, chosen here — the one place in the application that changes it — or,
+      for an application that runs on a single agent, its name.
+    -->
+    <AgentPicker v-if="hasPicker" :agents="agents" :agent-id="agentId" :label="labels.agent" @select="emit('selectAgent', $event)" />
+    <div v-else class="column-head">{{ title }}</div>
 
     <button
       v-if="conversations"
