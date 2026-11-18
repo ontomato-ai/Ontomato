@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { createApp, defineComponent, h, nextTick, provide, ref } from "vue";
+import { createApp, defineComponent, h, nextTick, provide } from "vue";
+import { createI18n } from "vue-i18n";
+import publicEn from "@ontomato/workbench-ui/locales/en";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { FormField } from "@ontomato/contracts/form-fields";
 import { createPanelInstance } from "../../../../../packages/apps-sdk/src/panel/instance";
@@ -137,7 +139,7 @@ function mounted(save: (values: Record<string, string>, revision: number) => Pro
           projection: (id: string) => instance.projection(id),
           invoke: (handlerRef: string, call) => instance.runHandler(handlerRef, call),
           projectionsChanged: () => () => {},
-          draft: ref(null),
+          draft: instance.draft,
           holdUnsaved: () => () => {},
         });
         provide(projectionKey, slot);
@@ -146,6 +148,7 @@ function mounted(save: (values: Record<string, string>, revision: number) => Pro
     }),
   );
   const element = document.createElement("div");
+  app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } }));
   app.mount(element);
   return { app, element, form, changed, unregister, save, instance, objectType };
 }

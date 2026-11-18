@@ -6,7 +6,7 @@ import { PanelHost, type PanelHostLabels } from "@ontomato/platform-shell";
 import { panelAddress, panelAddressState, panelUsePath } from "@ontomato/contracts/panel-host";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { PageContext } from "@ontomato/contracts/page-context";
-import { platformPanelHost } from "../panel-host";
+import { panelUsesOf, platformPanelHost } from "../panel-host";
 
 /**
  * One page of an application whose entry is `renderer:'panels'`: the panel that one of its use relations names, shown
@@ -49,13 +49,13 @@ const uses = ref<readonly ApplicationPanelUse[] | null>(null);
 const failure = ref("");
 const port = computed(() => platformPanelHost(props.applicationId));
 
-watch(port, async (active, _, onCleanup) => {
+watch(() => props.applicationId, async (applicationId, _, onCleanup) => {
   let current = true;
   onCleanup(() => { current = false; });
   uses.value = null;
   failure.value = "";
   try {
-    const records = await active.uses(active.applicationId());
+    const records = await panelUsesOf(applicationId);
     if (current) uses.value = records;
   } catch (reason) {
     if (current) failure.value = reason instanceof Error ? reason.message : String(reason);
