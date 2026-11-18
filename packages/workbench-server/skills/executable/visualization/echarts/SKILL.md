@@ -93,4 +93,4 @@ Copy the id and parameters from the accepted dataset's metric recipe or from `on
 
 ## Revising
 
-Run the command again with the same `name` after changing the input, including `title` for a new chart title. Reference the generated file as written. If the command reports `MISSING_FIELDS`, an invalid mapping or an invalid file, fix the named role or column and rerun.
+Run the command again with the same `name` after changing the input, including `title` for a new chart title. The file is the chart's definition. Do not edit it by hand. Reference the generated file as written. If the command reports `MISSING_FIELDS`, an invalid mapping or an invalid file, fix the named role or column and rerun.

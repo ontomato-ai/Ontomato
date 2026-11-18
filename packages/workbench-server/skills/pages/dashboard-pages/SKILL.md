@@ -30,13 +30,13 @@ A message sent from beside the board ends with a `Selected:` line naming the boa
 
 Read the card and its parameters. Use the returned columns, actual rows and explicit value formats; preserve nulls and real zeros. Account for display sorting/limits when explaining the visible chart, separately from MetricView truncation. Describe only the returned scope when truncation is present. Totals, shares, units and business calculations belong to the MetricView, not to a guessed chart calculation. An unavailable result is not zero. Use IDs read from the page or API rather than guessing them from labels.
 
-The `file.name` returned by `card` names a saved drawing. To show it, link to the saved card or use the chart skill to generate a conversation artifact and reference the path it prints.
+The `file.name` returned by `card` names the drawing inside the saved card, outside this conversation's workspace. Do not embed, reference or link to that name in your answer, including by adding `outputs/`. To show the chart, link to the saved card or use the chart skill to generate a conversation artifact and reference the path it prints.
 
 ## Link to the dashboard
 
 When asked to take the reader to a saved dashboard or card, find its ID with `list` or `read` if needed, then use `link`, even if an earlier reply included a draft. Use `draft` to hand off proposed edits.
 
-Paste the command's `link` as Markdown with its target intact. You may translate the label. The printed link opens the page beside the conversation.
+Paste the `link` from `link` or `draft` as clickable Markdown with its target intact. You may translate the label. Do not put it in a code block, link to the `.page-draft.json` file, or build the address from an `ONTOMATO_*_URL`. The printed link opens the page beside the conversation.
 
 ## Prepare a page edit
 

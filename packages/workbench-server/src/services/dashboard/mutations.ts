@@ -218,7 +218,8 @@ export async function addDashboardChartFile(ownerId:string,domainId:string,body:
     group=findGroup(detail,body.target.groupId);
   }
   const prepared=await prepareChartImport({userId:ownerId,domainId},credentials,body.source);
-  const card:MetricReferenceChartEntry={id:randomUUID(),name:prepared.file.name.replace(/\.chart\.json$/,""),query:prepared.query,chartFile:prepared.file,layout:{colSpan:12,rowSpan:1},source:prepared.source};
+  const name=body.title??prepared.file.name.replace(/\.chart\.json$/,"");
+  const card:MetricReferenceChartEntry={id:randomUUID(),name,query:prepared.query,chartFile:prepared.file,layout:{colSpan:12,rowSpan:1},source:prepared.source};
   if(!detail){
     group={id:randomUUID(),title:prepared.metric.name,charts:[card],metrics:[]};
     await validatePersonalDashboardMetrics([group],new DashboardMetricClient(domainId,credentials));
