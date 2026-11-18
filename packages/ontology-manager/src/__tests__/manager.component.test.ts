@@ -45,6 +45,8 @@ let knowledge: Record<string, Record<string, unknown>>;
 let knowledgeDeleteFails: Set<string>;
 /** The page draft each run wrote, as the agent platform serves it through `page-draft`. */
 let drafts: Map<string, unknown>;
+/** What the page recorded for a create draft after its save: `{ runId, body }`, as the platform's own route takes it. */
+let recordedCreated: { runId: string; body: { path: string; id: string } }[];
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -68,10 +70,22 @@ function respond(url: string, body?: Record<string, unknown>): Response {
   if (status !== 200) return json({ success: false }, status);
   if (path === "/admin/getBussinessKnowledge") return json({ success: true, data: knowledge });
   // Only the platform's own address answers a draft: a page asking the data engine for one gets the empty engine answer.
-  const draft = new URL(url, "http://page.invalid").pathname.match(/\/api\/assistant\/sessions\/[^/]+\/runs\/([^/]+)\/page-draft$/);
+  const platformPath = new URL(url, "http://page.invalid").pathname;
+  const draft = platformPath.match(/\/api\/assistant\/sessions\/[^/]+\/runs\/([^/]+)\/page-draft$/);
   if (draft) return json(drafts.get(draft[1]!) ?? {});
+  const recorded = platformPath.match(/\/api\/assistant\/sessions\/[^/]+\/runs\/([^/]+)\/page-draft\/created$/);
+  if (recorded) {
+    recordedCreated.push({ runId: recorded[1]!, body: body as { path: string; id: string } });
+    return new Response(null, { status: 204 });
+  }
+
   if (path.endsWith("BussinessKnowledge") && body?.knowledgeText === "")
     return json({ success: false, message: "Business knowledge content is required" });
+  // A create answers the entry the store made, as the owner's interface does.
+  if (path === "/admin/addBussinessKnowledge") {
+    knowledge["knowledge_new"] = { ...body, knowledgeID: "knowledge_new" };
+    return json({ success: true, data: { id: "knowledge_new" } });
+  }
   if (path === "/admin/editBussinessKnowledge") {
     knowledge[String(body?.knowledgeID)] = { ...body };
     return json({ success: true });
@@ -167,6 +181,7 @@ beforeEach(() => {
   };
   knowledgeDeleteFails = new Set();
   drafts = new Map();
+  recordedCreated = [];
   vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
     const path = url.replace(/^.*\/data-query/, "");
     const body = init.body === undefined ? undefined : JSON.parse(String(init.body));
@@ -1355,6 +1370,57 @@ describe("Manager business knowledge page", () => {
       expect(root().querySelector(".knowledge-detail-head")?.textContent).toContain("Refund rule");
       expect(writes()).toEqual([]);
       expect([...root().querySelectorAll('[role="alert"]')].map((item) => item.textContent).join(" ")).toBe("");
+    });
+
+    it("records the entry a create draft's first save created, so its link addresses it from then on", async () => {
+      drafts.set(run, {
+        pageKey: "business-knowledge", operation: "knowledge.create", target: {},
+        form: { knowledgeID: "", knowledgeTitle: "New rule", knowledgeText: "Ships in 2 days", knowledgeTags: ["e2e"], status: 0 },
+      });
+      const { root } = mountHost({ ...base, view: link() });
+      await settle();
+      expect(root().querySelector<HTMLInputElement>(".knowledge-form .el-input__inner")?.value).toBe("New rule");
+      // A create draft has no entry yet: it is compared with the page's new-entry defaults, so its own fields are marked.
+      expect([...root().querySelectorAll(".knowledge-form .draft-changed")].length).toBeGreaterThan(0);
+
+      buttonIn(root(), "Save").click();
+      await settle();
+
+      expect(writes().map((request) => [request.url.replace(/^.*\/admin\//, ""), request.body?.knowledgeID]))
+        .toEqual([["addBussinessKnowledge", ""]]);
+      expect(recordedCreated).toEqual([{ runId: run, body: { path: "outputs/drafts/knowledge-1.page-draft.json", id: "knowledge_new" } }]);
+    });
+
+    it("opens a create draft once saved as an update of the entry it created", async () => {
+      // The same link after its first save: the platform answers the object that save made.
+      knowledge["knowledge_new"] = {
+        knowledgeID: "knowledge_new", knowledgeTitle: "New rule", knowledgeText: "Ships in 2 days",
+        knowledgeTags: ["e2e"], status: 0,
+      };
+      drafts.set(run, {
+        pageKey: "business-knowledge", operation: "knowledge.create", target: {}, created: { id: "knowledge_new" },
+        form: { knowledgeID: "", knowledgeTitle: "New rule", knowledgeText: "Ships in 2 days", knowledgeTags: ["e2e"], status: 0 },
+      });
+      const { root } = mountHost({ ...base, view: link() });
+      await settle();
+
+      // It is that entry's update, and it changes nothing: the page opens as the entry is, and nothing is created.
+      expect(root().querySelector(".knowledge-form")).toBeNull();
+      expect(root().querySelector(".knowledge-draft-note")).toBeNull();
+      expect(root().querySelector(".draft-changed")).toBeNull();
+      expect(writes()).toEqual([]);
+      expect(recordedCreated).toEqual([]);
+    });
+
+    it("reports an update whose entry this domain has not, and does not offer a create instead", async () => {
+      drafts.set(run, { pageKey: "business-knowledge", operation: "knowledge.update", target: { id: "gone" }, form: { ...filled(), knowledgeID: "gone" } });
+      const { root } = mountHost({ ...base, view: link() });
+      await settle();
+
+      expect(root().querySelector(".knowledge-form")).toBeNull();
+      const alerts = [...root().querySelectorAll('[role="alert"]')].map((item) => item.textContent).join(" ");
+      expect(alerts).toContain("gone");
+      expect(alerts).toContain("not in this domain");
     });
 
     it("reports a draft of another page instead of filling the form", async () => {
