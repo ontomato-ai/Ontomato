@@ -21,8 +21,8 @@ export function pilotPageResolver(setPage: (address: string) => void): PilotPage
   return (address) => {
     const [path, search = ""] = address.split("?");
     const query = new URLSearchParams(search);
-    const agents = /^\/ontology\/agents(?:\/(new|[^/]+))?$/.exec(path);
-    if (agents) {
+    // The agents' settings at the agent platform's own prefix: the address an answer and a draft link name.
+    if (path === platformRoutes.agents.path || path.startsWith(`${platformRoutes.agents.path}/`)) {
       return {
         id: "agents",
         component: AgentSettingsRoute,

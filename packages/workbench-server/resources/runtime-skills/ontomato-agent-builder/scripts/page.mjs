@@ -104,7 +104,7 @@ async function draftLink(argument) {
   const session = env.ONTOMATO_SESSION_ID, run = env.ONTOMATO_RUN_ID;
   if (!session || !run) throw new Error("A draft link needs the current platform run: ONTOMATO_SESSION_ID and ONTOMATO_RUN_ID are not set");
   const id = value.target.id ?? "new";
-  console.log(`#/ontology/agents/${encodeURIComponent(id)}?draftSessionId=${encodeURIComponent(session)}&draftRunId=${encodeURIComponent(run)}&draftPath=${encodeURIComponent(file)}`);
+  console.log(`#/agents/settings/${encodeURIComponent(id)}?draftSessionId=${encodeURIComponent(session)}&draftRunId=${encodeURIComponent(run)}&draftPath=${encodeURIComponent(file)}`);
 }
 
 async function directWrite(command, args) {

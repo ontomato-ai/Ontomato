@@ -26,7 +26,7 @@ their API owner; the shared envelope carries the page key the page compares befo
 A run writes drafts to `outputs/drafts/<name>.page-draft.json`. The page link carries only the run artifact:
 
 ```text
-#/ontology/agents/<id>?draftSessionId=<session>&draftRunId=<run>&draftPath=outputs%2Fdrafts%2Fagent.page-draft.json
+#/agents/settings/<id>?draftSessionId=<session>&draftRunId=<run>&draftPath=outputs%2Fdrafts%2Fagent.page-draft.json
 ```
 
 It never carries the form itself, a credential or a local path.

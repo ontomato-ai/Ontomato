@@ -7,9 +7,10 @@ import { pageDraftLink, withoutPageDraftQuery } from "@ontomato/agent-shell-ui";
 import { AgentSettingsNav, AgentSettingsPage, agentSettingsAddressKey, useAgentDefinitions } from "@ontomato/workbench-ui/features/agents";
 
 /**
- * The agents' settings as one page of the platform: its own address (`/ontology/agents`, `/new`, `/:id`), the agents at
- * its side and the editor in it. The page is the platform's, not a product page asset: the ontology manager lists it
- * after its products and the agent platform's column opens it at its foot, so both entries are this one page.
+ * The agents' settings as one page of the platform: its own address (`/new`, `/:id` under its prefix), the agents at its
+ * side and the editor in it. The page is the platform's, not a product page asset, and two applications show it: the
+ * ontology manager lists it after its products at `/ontology/agents`, and the agent platform shows it in its own shell at
+ * `/agents/settings`. The page stays under the prefix it was opened at, so each application keeps the reader in it.
  *
  * The editor is the workbench's own (`AgentSettingsPage`), mounted here with the platform's API, authentication, text and
  * page context around it. Beside a conversation the page has no address of its own in the browser — the agent platform's
@@ -18,9 +19,9 @@ import { AgentSettingsNav, AgentSettingsPage, agentSettingsAddressKey, useAgentD
  */
 const props = withDefaults(
   defineProps<{
-    /** Beside a conversation: the page's address, as the conversation carries it. */
+    /** In the agent platform's shell: the page's address, as the shell carries it (beside a conversation, or full). */
     address?: string | null;
-    /** Beside a conversation: where the page moves to, as the host would carry it. */
+    /** In the agent platform's shell: where the page moves to, as the shell would carry it. */
     navigate?: (address: string) => void;
   }>(),
   { address: null, navigate: undefined },
@@ -38,17 +39,25 @@ const { ensureLoaded } = useAgentDefinitions();
  */
 const address = computed(() => (props.address !== null ? props.address : route.fullPath));
 const query = computed(() => Object.fromEntries(new URLSearchParams(address.value.split("?")[1] ?? "")));
+const path = computed(() => address.value.split("?")[0]!);
+
+/** The prefix the page was opened at: the agent platform's or the ontology manager's. Every move stays under it. */
+const base = computed(() =>
+  path.value === platformRoutes.agents.path || path.value.startsWith(`${platformRoutes.agents.path}/`)
+    ? platformRoutes.agents.path
+    : platformRoutes.ontologyAgents.path,
+);
 
 /** The agent the address names: `/new` is a new one, the bare list no agent at all. */
 const agentId = computed(() => {
-  const match = /^\/ontology\/agents\/([^/?]+)$/.exec(address.value.split("?")[0]!);
-  return match && match[1] !== "new" ? decodeURIComponent(match[1]!) : null;
+  const segment = path.value.slice(base.value.length + 1);
+  return segment && segment !== "new" ? decodeURIComponent(segment) : null;
 });
-const creating = computed(() => address.value.split("?")[0] === platformRoutes.ontologyAgentNew.path);
+const creating = computed(() => path.value === `${base.value}/new`);
 
 /** The page's address without its draft handoff: what the address reopens once the reader saved. */
 const savedAddress = computed(() =>
-  `${address.value.split("?")[0]}${Object.keys(withoutPageDraftQuery(query.value)).length ? `?${new URLSearchParams(withoutPageDraftQuery(query.value) as Record<string, string>)}` : ""}`,
+  `${path.value}${Object.keys(withoutPageDraftQuery(query.value)).length ? `?${new URLSearchParams(withoutPageDraftQuery(query.value) as Record<string, string>)}` : ""}`,
 );
 
 /**
@@ -69,23 +78,23 @@ function pageAt(path: string) {
 }
 
 function openList() {
-  pageAt(platformRoutes.ontologyAgents.path);
+  pageAt(base.value);
 }
 function agentAddress(id: string) {
-  return `${platformRoutes.ontologyAgents.path}/${encodeURIComponent(id)}`;
+  return `${base.value}/${encodeURIComponent(id)}`;
 }
 function selectAgent(id: string) {
   pageAt(agentAddress(id));
 }
 function createAgent() {
-  pageAt(platformRoutes.ontologyAgentNew.path);
+  pageAt(`${base.value}/new`);
 }
 
 provide(agentSettingsAddressKey, {
   address,
   draft: computed(() => pageDraftLink(query.value)),
   savedAddress,
-  agentAddress: (id) => `${agentAddress(id)}${address.value.slice(address.value.split("?")[0]!.length)}`,
+  agentAddress: (id) => `${agentAddress(id)}${address.value.slice(path.value.length)}`,
   go: openAddress,
 });
 
@@ -97,7 +106,7 @@ watch(() => route.name, () => void ensureLoaded());
   <div class="ontology-agent-settings">
     <AgentSettingsNav
       standalone
-      :heading="address === route.fullPath"
+      :heading="props.address === null"
       :agent-id="agentId"
       :creating="creating"
       :models="false"

@@ -7,7 +7,7 @@ Read `skills` and `models` first; they are also what a save validates against. U
 1. Read `skills` and `models`. Ask for whatever the user has not decided: the job of the agent, its prompt, which skills it may use and which model.
 2. Write the form in `work/agent.json` with no `id` and `"executionUserId": null` unless the user asked to run it as another user: then read `execution-users` and use the chosen real user.
 3. Inside the platform: `draft create @work/agent.json`, `validate-draft @outputs/drafts/agent.page-draft.json`, then give the user the `draft-link` line. The page opens as a new agent with the form filled; the user saves it.
-4. Outside the platform: `create @work/agent.json`. The reply names the new agent and links `/ontology/agents/<id>`.
+4. Outside the platform: `create @work/agent.json`. The reply names the new agent and links `/agents/settings/<id>`.
 
 ## Change a prompt, skill or model
 
@@ -28,8 +28,8 @@ The agent runs with that user's current permissions from the next run; a user wh
 
 ## Delete an agent
 
-Inside the platform, the page owns deletion: open `/ontology/agents/<id>` and tell the user to delete it there. Outside the platform, `delete <id>` removes the definition.
+Inside the platform, the page owns deletion: open `/agents/settings/<id>` and tell the user to delete it there. Outside the platform, `delete <id>` removes the definition.
 
 ## Check the result
 
-After the user saves, `get <id>` and confirm every field, including `executionUserId`. A saved definition does not show that the agent uses the skills as intended; that needs a real conversation with the agent, opened from `/ontology/agents/<id>`.
+After the user saves, `get <id>` and confirm every field, including `executionUserId`. A saved definition does not show that the agent uses the skills as intended; that needs a real conversation with the agent, opened from `/agents/settings/<id>`.

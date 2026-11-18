@@ -6,7 +6,7 @@ compatibility: Requires Node.js 18 or newer and an Ontomato 5.0 deployment. In t
 
 # Agent settings
 
-The page is the ontology manager's product-layer agent settings page. It manages the agents of the domain: `/ontology/agents` lists them, `/ontology/agents/<id>` is one agent and `/ontology/agents/new` creates one. One definition has these fields:
+The page is the agent platform's agent settings page (the ontology manager shows the same page in its product layer). It manages the agents of the domain: `/agents/settings` lists them, `/agents/settings/<id>` is one agent and `/agents/settings/new` creates one. One definition has these fields:
 
 | Field | Meaning |
 | --- | --- |
@@ -53,8 +53,8 @@ Without `ONTOMATO_SKILL_SCENARIO` (the Skill suite, using the reader's own crede
 
 ## Page context
 
-When a message ends with the current page and the selected item, the selected item on this page is the agent definition ID — the `:id` in `/ontology/agents/<id>` — not the display name. Read it with `get <id>` before changing it. On `/ontology/agents/new` nothing is selected yet.
+When a message ends with the current page and the selected item, the selected item on this page is the agent definition ID — the `:id` in `/agents/settings/<id>` — not the display name. Read it with `get <id>` before changing it. On `/agents/settings/new` nothing is selected yet.
 
 ## Links
 
-Write a page link as the page's path, for example `[Customer assistant](/ontology/agents/<id>)`; the platform opens it beside the conversation. A draft link is the exact line `draft-link` prints, for example `[Open the draft](#/ontology/agents/<id>?draftSessionId=...&draftRunId=...&draftPath=...)`.
+Write a page link as the page's path, for example `[Customer assistant](/agents/settings/<id>)`; the platform opens it beside the conversation. A draft link is the exact line `draft-link` prints, for example `[Open the draft](#/agents/settings/<id>?draftSessionId=...&draftRunId=...&draftPath=...)`.

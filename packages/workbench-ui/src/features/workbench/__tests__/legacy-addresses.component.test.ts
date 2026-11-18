@@ -10,8 +10,8 @@ import BusinessWorkbench from "../components/BusinessWorkbench.vue";
 import { legacyAdminRoutes, workbenchPages } from "@ontomato/platform-web";
 
 /*
- * The old console addresses open the place the page moved to: the agents' settings are one page of the ontology manager
- * now, the capability library and the external MCP services are the platform's, operations diagnosis is the operations
+ * The old console addresses open the place the page moved to: the agents' settings are the agent platform's own page (and
+ * the ontology manager's), the capability library and the external MCP services are the platform's, operations diagnosis is the operations
  * application's, and the pages that no longer exist open the conversation. This mounts the workbench itself, because a
  * redirect only survives if the platform's own route table then serves the address it names.
  */
@@ -68,7 +68,7 @@ function platformRouter(): Router {
     history: createMemoryHistory(),
     routes: [
       ...workbenchPages(page, { component: page, props: { account: null } }),
-      // The settings page and the pages the old addresses name, so a redirect is followed for real.
+      // The ontology manager's settings page and the pages the old addresses name, so a redirect is followed for real.
       ...["/ontology/agents", "/ontology/agents/new", "/ontology/agents/:agentId", "/ontology/skills"].map((path) => ({
         path, component: page,
       })),
@@ -100,17 +100,12 @@ async function openAddress(
   return { router, wrapper, featureId: (shell.props("featureId") as string | null) ?? null };
 }
 
-describe("the agents' settings' old addresses", () => {
-  /*
-   * `/agents/settings/new` was an address of its own, not an agent id: it must land on the new-agent form, not on an
-   * agent whose id happens to be "new". The check runs through the real route table, because a branch that reads
-   * `route.params.agentId === "new"` would silently open the first agent instead.
-   */
-  it("turns the standalone builder's old addresses to the same settings page and keeps the object id", async () => {
+describe("the agent platform's settings addresses", () => {
+  it("turns the standalone builder's old addresses to the agent platform's settings and keeps the object id", async () => {
     for (const [path, target] of [
-      ["/agent-builder", "/ontology/agents"],
-      ["/agent-builder/new", "/ontology/agents/new"],
-      ["/agent-builder/agent-42", "/ontology/agents/agent-42"],
+      ["/agent-builder", "/agents/settings"],
+      ["/agent-builder/new", "/agents/settings/new"],
+      ["/agent-builder/agent-42", "/agents/settings/agent-42"],
     ]) {
       const { router } = await openAddress(`${path}?draftSessionId=session`);
       expect(router.currentRoute.value.path).toBe(target);
@@ -119,21 +114,24 @@ describe("the agents' settings' old addresses", () => {
     }
   });
 
-  it("turns the new-agent address to the one settings page's new agent", async () => {
+  /*
+   * `/agents/settings/new` is an address of its own, not an agent id: it must be the new-agent screen, not an agent whose
+   * id happens to be "new". The check runs through the real route table, because the fixed address must come first.
+   */
+  it("keeps the new-agent address as the new agent", async () => {
     const { router } = await openAddress("/agents/settings/new");
-    expect(router.currentRoute.value.name).toBe(platformRoutes.ontologyAgentNew.name);
-    expect(router.currentRoute.value.path).toBe("/ontology/agents/new");
+    expect(router.currentRoute.value.name).toBe(platformRoutes.agentSettingsNew.name);
   });
 
-  it("keeps the agent an old address named", async () => {
+  it("keeps the agent an address names, in the agent platform", async () => {
     const { router } = await openAddress("/agents/settings/agent-42");
-    expect(router.currentRoute.value.name).toBe(platformRoutes.ontologyAgent.name);
+    expect(router.currentRoute.value.name).toBe(platformRoutes.agentSettings.name);
     expect(router.currentRoute.value.params.agentId).toBe("agent-42");
   });
 
-  it("turns the settings prefix to the settings page", async () => {
+  it("keeps the settings' own prefix", async () => {
     const { router } = await openAddress("/agents/settings");
-    expect(router.currentRoute.value.path).toBe("/ontology/agents");
+    expect(router.currentRoute.value.name).toBe(platformRoutes.agents.name);
   });
 });
 

@@ -14,18 +14,19 @@ export const platformRoutes = {
   chat: { name: "Chat", path: "/agents/chat" },
   /** The dashboards are an application of their own: the charts and datasets conversations add to. */
   dashboards: { name: "Dashboards", path: "/dashboards" },
-  agents: { name: "AgentSettings", path: "/agents/settings" },
   /**
-   * The agents' settings as one page of the ontology manager's product layer: the agents, a new one and one agent's
-   * editor. The agent platform's own entry at the foot of its column points here too, so both entries are one page.
+   * The agents' settings in the agent platform: the agents, a new one and one agent's editor, shown in the platform's own
+   * shell. The same page is the ontology manager's below, at its own prefix; answers and draft links name this one.
    */
+  agents: { name: "AgentSettings", path: "/agents/settings" },
+  /** The agents' settings as one page of the ontology manager's product layer: the same page, at the manager's prefix. */
   ontologyAgents: { name: "OntologyAgentSettings", path: "/ontology/agents" },
   ontologyAgentNew: { name: "OntologyAgentNew", path: "/ontology/agents/new" },
   ontologyAgent: { name: "OntologyAgent", path: "/ontology/agents/:agentId" },
   /**
-   * The settings screens: a new agent and one agent's editor. The fixed addresses come before the parameter, so
-   * `/agents/settings/new` is the new agent and never an agent whose id is "new"; the library's old addresses
-   * (capabilities, skills, mcp) now forward to the skills and the external MCP services, which are the platform's.
+   * The agent platform's settings screens: a new agent and one agent's editor. The fixed addresses come before the
+   * parameter, so `/agents/settings/new` is the new agent and never an agent whose id is "new"; the library's old
+   * addresses (capabilities, skills, mcp) forward to the skills and the external MCP services, which are the platform's.
    */
   agentSettingsNew: { name: "AgentSettingsNew", path: "/agents/settings/new" },
   agentSettingsCapabilities: { name: "AgentSettingsCapabilities", path: "/agents/settings/capabilities" },

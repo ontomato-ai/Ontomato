@@ -89,10 +89,24 @@ const featureRoutes = {} as Record<string, never>;
  * resolver whose callback is this application's own address (`?page=`), so a page's own navigation never leaves it.
  */
 const pilot = usePilotPage()(setPageAddress);
-/** The page's address the conversation carries: one query value, so the page's own query (`?draft...`) travels with it. */
-const pageAddress = computed(() => (typeof route.query.page === "string" ? route.query.page : null));
+/**
+ * The agents' settings at this application's own address (`/agents/settings`, `/new`, `/:id`): the settings page shown
+ * full in this shell, beside its column, with the composer at its foot, as any of its pages is when enlarged. The address
+ * is the page's, so a reload or a link reopens it here.
+ */
+const atSettings = computed(() =>
+  [routes.agents, routes.agentSettingsNew, routes.agentSettings].some((page) => page.name === route.name),
+);
+/**
+ * The page's address: at the settings' own address that address; otherwise the one the conversation carries, as one
+ * query value, so the page's own query (`?draft...`) travels with it.
+ */
+const pageAddress = computed(() =>
+  atSettings.value ? route.fullPath : typeof route.query.page === "string" ? route.query.page : null,
+);
 const pilotPage = computed(() => (pageAddress.value ? pilot(pageAddress.value) : null));
 const inDashboards = computed(() => pilotPage.value?.id === DASHBOARDS_PAGE_ID);
+const inAgentSettings = computed(() => pilotPage.value?.id === AGENT_SETTINGS_PAGE_ID);
 const inGovernanceReport = computed(() => pilotPage.value?.id === GOVERNANCE_REPORT_PAGE_ID);
 const inPanelApplication = computed(() => pilotPage.value?.id === PANEL_APPLICATION_PAGE_ID);
 /**
@@ -114,16 +128,35 @@ watch(pageInstance, () => (reportedContext.value = null));
 const featureId = computed<string | null>({
   get: () => pilotPage.value?.id ?? null,
   set: (id) => {
-    // Closing the page beside the conversation only drops the parameter: the conversation stays.
     if (id !== null) return;
     if (pageAddress.value === null) return;
+    // Closing the settings at their own address returns to the conversation this tab holds.
+    if (atSettings.value) return void router.push({ name: routes.chat.name });
+    // Closing the page beside the conversation only drops the parameter: the conversation stays.
     const { page: _page, ...query } = route.query;
     void router.replace({ query });
   },
 });
 
-/** The page beside the conversation says where it moved: the parameter is its address, changed in place. */
+/**
+ * Whether the page is full or beside the conversation. At the settings' own address it is full; collapsing it (or sending
+ * from its composer, which brings the conversation back) carries the same address beside the conversation.
+ */
+const shownView = ref<"full" | "side">("full");
+const pageView = computed<"full" | "side">({
+  get: () => (atSettings.value ? "full" : shownView.value),
+  set: (view) => {
+    shownView.value = view;
+    if (atSettings.value && view === "side") void router.push({ name: routes.chat.name, query: { page: route.fullPath } });
+  },
+});
+
+/**
+ * The page says where it moved: at the settings' own address that address, changed in place; beside the conversation the
+ * parameter is its address.
+ */
 function setPageAddress(address: string) {
+  if (atSettings.value) return void router.replace(address);
   void router.replace({ query: { ...route.query, page: address } });
 }
 /**
@@ -216,7 +249,10 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   features: workbenchFeatures(
     props.features,
     { agents: t("assistant.featureAgents"), dashboards: t("assistant.featureDashboards") },
-    inDashboards.value ? pageAddress.value! : routes.dashboards.path,
+    {
+      agents: inAgentSettings.value ? pageAddress.value! : routes.agents.path,
+      dashboards: inDashboards.value ? pageAddress.value! : routes.dashboards.path,
+    },
     inGovernanceReport.value
       ? governanceReportPageFeature(t("assistant.featureGovernanceReport"), pageAddress.value!)
       : null,
@@ -254,19 +290,20 @@ watch(locale, () => {
  * agents the conversations run on (with the model permission). Each is a page of the platform's navigation.
  */
 const canOpen = usePageAccess();
-const editsAgents = computed(() => canOpen(routes.ontologyAgents.path));
+const editsAgents = computed(() => canOpen(routes.agents.path));
 const opensModels = computed(() => canOpen(routes.agentModels.path));
 
 /**
- * The agent settings are one page of the platform's own navigation: this entry opens it at the agent in use. An account
- * without the agents' permission goes to the models the conversations run on, which is the platform's own settings page.
+ * The agent settings, at this application's own address: this entry opens them at the agent in use, and the reader stays
+ * in the application. An account without the agents' permission goes to the models the conversations run on, which is
+ * the platform's own settings page.
  */
 function openSettings() {
   if (!editsAgents.value) return void router.push(routes.systemAgentModels.path);
   void router.push(
     agentId.value
-      ? { name: routes.ontologyAgent.name, params: { agentId: agentId.value } }
-      : { name: routes.ontologyAgents.name },
+      ? { name: routes.agentSettings.name, params: { agentId: agentId.value } }
+      : { name: routes.agents.name },
   );
 }
 
@@ -279,7 +316,7 @@ function openPageAtItsAddress(_id: string, address: string) {
 }
 
 
-/** The column's own entry at the foot: the agent settings, which replace the column while they are open. */
+/** The column's own entry at the foot: the agent settings, shown full beside the column. */
 const bottomEntry = computed(() =>
   editsAgents.value || opensModels.value ? { label: t("assistant.featureAgents"), icon: "agents" } : null,
 );
@@ -387,6 +424,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
     ref="shell"
     v-model:agent-id="agentId"
     v-model:feature-id="featureId"
+    v-model:page-view="pageView"
     v-model:session-id="conversationId"
     :page-context="pageContext"
     :page-links="pageLinks"

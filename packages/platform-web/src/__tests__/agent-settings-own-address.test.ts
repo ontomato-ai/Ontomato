@@ -63,6 +63,9 @@ async function at(path: string) {
       { ...platformRoutes.ontologyAgents, component: { template: "<div />" } },
       { ...platformRoutes.ontologyAgentNew, component: { template: "<div />" } },
       { ...platformRoutes.ontologyAgent, component: { template: "<div />" } },
+      { ...platformRoutes.agents, component: { template: "<div />" } },
+      { ...platformRoutes.agentSettingsNew, component: { template: "<div />" } },
+      { ...platformRoutes.agentSettings, component: { template: "<div />" } },
     ],
   });
   await router.push(path);
@@ -79,9 +82,10 @@ async function at(path: string) {
   return wrapper;
 }
 
-describe("the agents' settings at its own address", () => {
+// The agent platform's prefix and the ontology manager's name the same screens.
+describe.each([platformRoutes.agents.path, platformRoutes.ontologyAgents.path])("the agents' settings at %s", (prefix) => {
   it("opens a new agent's form at /new", async () => {
-    const wrapper = await at("/ontology/agents/new");
+    const wrapper = await at(`${prefix}/new`);
 
     // A new agent: the editor is told so, and names no agent — nothing stored is shown, so nothing stored can be deleted.
     expect(wrapper.find(".page-double .creating").text()).toBe("true");
@@ -90,14 +94,14 @@ describe("the agents' settings at its own address", () => {
 
   it("opens one agent's own form at its address", async () => {
     const id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-    const wrapper = await at(`/ontology/agents/${id}`);
+    const wrapper = await at(`${prefix}/${id}`);
 
     expect(wrapper.find(".page-double .creating").text()).toBe("false");
     expect(wrapper.find(".page-double .agent").text()).toBe(id);
   });
 
   it("shows the list itself, with no agent, at the bare address", async () => {
-    const wrapper = await at(platformRoutes.ontologyAgents.path);
+    const wrapper = await at(prefix);
 
     expect(wrapper.find(".page-double .creating").text()).toBe("false");
     expect(wrapper.find(".page-double .agent").text()).toBe("null");

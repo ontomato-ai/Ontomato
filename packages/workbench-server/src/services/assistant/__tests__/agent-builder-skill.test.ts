@@ -66,7 +66,7 @@ it("writes a draft that keeps the execution user and prints the page link", asyn
   const linked = await run(["draft-link", "@outputs/drafts/agent.page-draft.json"], env, cwd);
   expect(linked.code).toBe(0);
   expect(linked.stdout.trim()).toBe(
-    `#/ontology/agents/${agentId}?draftSessionId=session&draftRunId=run&draftPath=outputs%2Fdrafts%2Fagent.page-draft.json`,
+    `#/agents/settings/${agentId}?draftSessionId=session&draftRunId=run&draftPath=outputs%2Fdrafts%2Fagent.page-draft.json`,
   );
 });
 

@@ -156,8 +156,8 @@ export function createServiceManager(options: {
 
 /**
  * The agents' settings as a page of the ontology manager's product layer, after its products: the same page the agent
- * platform's own column opens at its foot, so an agent is configured in one place. It keeps the `analysis-agent` code;
- * the execution-permission field inside it answers who may change it.
+ * platform shows at its own address, so an agent is configured with one page. It keeps the `analysis-agent` code; the
+ * execution-permission field inside it answers who may change it.
  */
 const agentSettingsProductPage: PlatformPage = {
   path: platformRoutes.ontologyAgents.path,
@@ -202,9 +202,9 @@ const agentModelPages: readonly PlatformPage[] = ontologyAgentModelPages.map((pa
 }));
 
 /**
- * The agent platform's agents' settings (the agents, a new one, one agent's editor), open with the agents' permission;
- * the page draws its own frame. The conversation is no page of the navigation: every member of the domain enters the
- * application and holds conversations in it.
+ * The agent platform's agents' settings (the agents, a new one, one agent's editor), open with the agents' permission:
+ * the same page as the ontology manager's, shown in the platform's own shell. The conversation is no page of the
+ * navigation: every member of the domain enters the application and holds conversations in it.
  */
 const agentSettingsPage: PlatformPage = {
   path: platformRoutes.agents.path,

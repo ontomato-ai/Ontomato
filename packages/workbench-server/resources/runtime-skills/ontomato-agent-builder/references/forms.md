@@ -61,7 +61,7 @@ node skills/ontomato-agent-builder/scripts/page.mjs draft-link @outputs/drafts/a
 `draft` writes the file (default `outputs/drafts/agent.page-draft.json`) and prints its path. `validate-draft` sends `{target, form}` to `POST /api/assistant/agent-definitions/validate`: the owner loads the target definition (an empty target on creation), then runs the same form, model, skill and execution-setting checks as a save without writing anything or preparing a key. It prints `ok` or the error. `draft-link` prints the page link for this run:
 
 ```text
-#/ontology/agents/<id or new>?draftSessionId=<session>&draftRunId=<run>&draftPath=outputs%2Fdrafts%2Fagent.page-draft.json
+#/agents/settings/<id or new>?draftSessionId=<session>&draftRunId=<run>&draftPath=outputs%2Fdrafts%2Fagent.page-draft.json
 ```
 
 Give that line to the user as a Markdown link. The page fills the form from it and stays unsaved; the user saves or discards it there.
