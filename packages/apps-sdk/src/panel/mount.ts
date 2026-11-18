@@ -1,4 +1,4 @@
-import { createApp, defineAsyncComponent, h, nextTick, provide, ref, watch, type Component, type Ref } from "vue";
+import { createApp, defineAsyncComponent, h, nextTick, provide, ref, shallowReactive, watch, type Component, type Ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { contextTransport, type AppContext } from "../context";
 import { connectPanelContext } from "./app-context";
@@ -78,7 +78,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
       return body.projection as ProductProjection;
     },
   });
-  const unsaved = new Set<Ref<boolean>>();
+  const unsaved = shallowReactive(new Set<Ref<boolean>>());
   const projectionListeners = new Set<(id: string, revision?: number) => void>();
   const context: PanelContext = {
     panel: message.panel,
@@ -197,8 +197,7 @@ function report({ instance, address, followAddress, unsaved, changed }: ReportOp
     send({ kind: "context", context: instance.pageContext.value });
     send({ kind: "state", fromAddress: address.value, state: instance.deepLink() });
   }, { deep: true, immediate: true });
-  watch([...unsaved], () => send({ kind: "dirty", dirty: isDirty() }), { immediate: true });
-  watch(() => instance.dirty(), () => send({ kind: "dirty", dirty: isDirty() }));
+  watch(isDirty, dirty => send({ kind: "dirty", dirty }), { immediate: true });
   // The operations the header draws and an agent lists; they change as projections register and unregister.
   watch(() => instance.operations.value, (operations) => {
     // The wire description carries data only. Invocation stays in this frame.
