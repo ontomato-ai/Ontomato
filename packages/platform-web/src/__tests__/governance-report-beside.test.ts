@@ -38,7 +38,7 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => ({
 }));
 vi.mock("../../../workbench-ui/src/features/workbench/api", () => ({ getWorkbenchAppearance: async () => null }));
 vi.mock("../../../workbench-ui/src/features/workbench/assistant-host", async () => {
-  const { assistantHostDouble } = await import("../../../workbench-ui/src/features/workbench/__tests__/shell");
+  const { assistantHostDouble } = await import("../../../workbench-ui/src/features/workbench/__tests__/host-double");
   return {
     createAssistantClient: () => assistantHostDouble({ agents: [agent] }),
     createAssistantFeedback: () => undefined,

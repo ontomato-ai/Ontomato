@@ -5,13 +5,7 @@ import { defineComponent, h, ref } from "vue";
 import { createPinia, setActivePinia } from "pinia";
 import { createMemoryHistory, createRouter, type Router } from "vue-router";
 import { pageCounterKey } from "@ontomato/agent-shell-ui";
-import {
-  pilotPageKey,
-  platformPageAccessKey,
-  provideUnsavedChanges,
-  useUnsavedChanges,
-  type PilotPage,
-} from "@ontomato/platform-shell";
+import { pilotPageKey, platformPageAccessKey, provideUnsavedChanges, useUnsavedChanges, type PilotPage } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
 import en from "@ontomato/workbench-ui/locales/en";
@@ -20,12 +14,8 @@ import elementEn from "element-plus/es/locale/lang/en";
 import type { AgentHostSendRequest } from "@ontomato/contracts/agent-host";
 import type { PresentationFrame } from "@ontomato/contracts/agent-presentation";
 import { AgentShell } from "@ontomato/agent-shell-ui";
-import {
-  displayOf,
-  noticeStreamDouble,
-  openLink,
-  paneButton,
-} from "../../../workbench-ui/src/features/workbench/__tests__/shell";
+import { displayOf, openLink, paneButton } from "../../../workbench-ui/src/features/workbench/__tests__/shell";
+import { noticeStreamDouble } from "../../../workbench-ui/src/features/workbench/__tests__/host-double";
 
 /*
  * What sits beside the agent platform's conversation has one controller. The address is its input and the reader's
@@ -35,7 +25,7 @@ import {
  */
 vi.mock("../../../workbench-ui/src/features/workbench/api", () => ({ getWorkbenchAppearance: async () => null }));
 vi.mock("../../../workbench-ui/src/features/workbench/assistant-host", async (importOriginal) => {
-  const { assistantHostDouble } = await import("../../../workbench-ui/src/features/workbench/__tests__/shell");
+  const { assistantHostDouble } = await import("../../../workbench-ui/src/features/workbench/__tests__/host-double");
   return {
     ...(await importOriginal<object>()),
     createAssistantClient: () => assistantHostDouble({ agents: [agent], sessionRuns: host.stream.port, inputs: host.inputs }),

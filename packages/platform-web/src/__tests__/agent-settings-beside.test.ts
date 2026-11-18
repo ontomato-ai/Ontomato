@@ -41,7 +41,7 @@ function input(overrides: Partial<AssistantAgentInput> = {}): AssistantAgentInpu
 
 const draft = vi.hoisted(() => ({ read: vi.fn() }));
 vi.mock("../../../workbench-ui/src/features/workbench/assistant-host", async () => {
-  const { assistantHostDouble } = await import("../../../workbench-ui/src/features/workbench/__tests__/shell");
+  const { assistantHostDouble } = await import("../../../workbench-ui/src/features/workbench/__tests__/host-double");
   return {
     createAssistantClient: () => assistantHostDouble({ readPageDraft: draft.read }),
     createAssistantFeedback: () => undefined,

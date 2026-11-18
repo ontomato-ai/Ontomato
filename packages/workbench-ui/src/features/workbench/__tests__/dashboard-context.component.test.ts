@@ -25,7 +25,7 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => ({
 }));
 vi.mock("../api", () => ({ getWorkbenchAppearance: async () => ({ brand: { name: "", logo: "", subtitle: "" } }) }));
 vi.mock("../assistant-host", async () => {
-  const { assistantHostDouble } = await import("./shell");
+  const { assistantHostDouble } = await import("./host-double");
   return {
     createAssistantClient: () => assistantHostDouble({ agents }),
     createAssistantFeedback: () => undefined,
