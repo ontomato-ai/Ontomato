@@ -164,7 +164,7 @@ const pageTitle = computed(() => t("agents.title"));
   color: var(--brand-link);
 }
 .is-standalone .agent-row {
-  padding: var(--spacing-sm);
+  padding-inline-end: var(--spacing-sm);
 }
 .is-standalone .row-name {
   font-size: var(--text-sm);
@@ -222,7 +222,8 @@ const pageTitle = computed(() => t("agents.title"));
   align-items: flex-start;
   gap: 2px;
   width: 100%;
-  padding: 8px 10px;
+  padding-block: var(--spacing-sm);
+  padding-inline: var(--spacing-md) 10px;
   box-sizing: border-box;
   border: 0;
   border-radius: var(--radius-md);
