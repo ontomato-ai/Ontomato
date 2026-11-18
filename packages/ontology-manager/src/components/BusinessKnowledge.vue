@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { createAgentHostClient } from "@ontomato/agent-shell-ui";
 import { assistantAgentListSchema } from "@ontomato/contracts/assistant-chat";
+import { changedFields } from "@ontomato/contracts/page-draft";
 import {
   ElButton,
   ElCheckbox,
@@ -73,7 +74,7 @@ function emptyKnowledge(): BusinessKnowledge {
  * fields the draft changed can be marked.
  */
 const draftBase = ref<BusinessKnowledge | null>(null);
-const draftFields = ref<ReadonlySet<keyof BusinessKnowledge>>(new Set());
+const draftFields = ref<ReadonlySet<string>>(new Set());
 
 // Space-separated terms, case-insensitive; an entry matches when every term occurs in its title, content or tags.
 const terms = computed(() => query.value.trim().toLowerCase().split(/\s+/).filter(Boolean));
@@ -212,13 +213,6 @@ function toggleAllVisible(value: boolean) {
 /** Whether the draft changed this field against the entry the form was filled from. */
 const draftTouched = (field: keyof BusinessKnowledge) => draftFields.value.has(field);
 
-/** The fields of `form` whose value differs from `base`; the form itself is the page's own save input. */
-function changedFields(base: BusinessKnowledge, form: BusinessKnowledge): (keyof BusinessKnowledge)[] {
-  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-  const fields: (keyof BusinessKnowledge)[] = ["knowledgeTitle", "knowledgeText", "knowledgeTags", "status"];
-  return fields.filter((field) => !same(base[field], form[field]));
-}
-
 /**
  * Fills a draft into this page's form. An update reads the entry it names from the list and compares against it; a
  * create compares against the page's own new-entry defaults. A draft whose form is not this page's save input, or whose
@@ -240,10 +234,14 @@ async function applyDraft(sessionId: string, runId: string, path: string) {
   if (!base) throw new Error(ot("knowledgeDraftTargetMissing", { id: envelope.target.id ?? "" }));
   if (envelope.operation === "knowledge.update" && form.knowledgeID !== envelope.target.id)
     throw new Error(ot("knowledgeDraftTargetMismatch", { form: form.knowledgeID }));
+  const changes = changedFields(base, form);
+  // A draft that changes nothing is no draft — the same link opened again after its draft was saved — so the page opens
+  // as the entry is: no note, no marked field, nothing unsaved, and the reader's own edits left alone without asking.
+  if (!changes.size) return false;
   // A manual edit in progress is not overwritten silently: the existing question decides, and a refusal leaves it.
   if (!(await leaveEdit())) return false;
   draftBase.value = base;
-  draftFields.value = new Set(changedFields(base, form));
+  draftFields.value = changes;
   Object.assign(draft, form);
   editing.value = true;
   narrowDetail.value = true;

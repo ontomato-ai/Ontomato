@@ -65,21 +65,31 @@ public class AgentCaller {
   }
   public void requireQuery(Actor actor) { requireQueryUser(actor.user()); }
   public void requireQueryUser(io.ontomato.dataengine.core.bean.User user) {identity.requireQueryAccess(user.getId(),user.getDomainId());}
-  public OntologyAgentAccess.Context query(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root) { return execution(ref,domain,language,authority,requestedBy,root,null,true); }
-  public OntologyAgentAccess.Context generation(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root) { return execution(ref,domain,language,authority,requestedBy,root,null,false); }
-  public OntologyAgentAccess.Context query(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root,JSONObject executionActor) { return execution(ref,domain,language,authority,requestedBy,root,executionActor,true); }
-  public OntologyAgentAccess.Context generation(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root,JSONObject executionActor) { return execution(ref,domain,language,authority,requestedBy,root,executionActor,false); }
+  public OntologyAgentAccess.Context query(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root) { return query(ref,domain,language,authority,requestedBy,root,null); }
+  public OntologyAgentAccess.Context generation(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root) { return generation(ref,domain,language,authority,requestedBy,root,null); }
+  public OntologyAgentAccess.Context query(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root,JSONObject executionActor) { return execution(ref,domain,language,authority,requestedBy,root,executionActor,Purpose.QUERY); }
+  public OntologyAgentAccess.Context generation(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root,JSONObject executionActor) { return execution(ref,domain,language,authority,requestedBy,root,executionActor,Purpose.GENERATION); }
+  /** Retrieval admission handles the parent class ceiling and the executor's permissions together. */
+  public OntologyAgentAccess.Context retrieval(JSONObject ref,String domain,String language,JSONObject authority,
+      JSONObject requestedBy,JSONObject root,JSONObject executionActor) {
+    return execution(ref,domain,language,authority,requestedBy,root,executionActor,Purpose.RETRIEVAL);
+  }
+
+  private enum Purpose { QUERY, GENERATION, RETRIEVAL }
+
   public io.ontomato.dataengine.core.bean.User executionUser(Actor actor,JSONObject executionActor) {
     if(executionActor==null) return actor.user();
     if(!actor.owner().domainId().equals(executionActor.getString("domainId"))) throw new AgentHttpException(403,"CROSS_DOMAIN","Execution user belongs to another domain");
     return executions.require(actor.owner().domainId(), AgentJson.text(executionActor,"userId"));
   }
-  private OntologyAgentAccess.Context execution(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root,JSONObject executionActor,boolean query) {
+  private OntologyAgentAccess.Context execution(JSONObject ref,String domain,String language,JSONObject authority,JSONObject requestedBy,JSONObject root,JSONObject executionActor,Purpose purpose) {
     var actor=restore(ref,domain);
     var executor=executionUser(actor,executionActor);
-    if(query) identity.requireQueryAccess(executor.getId(),domain);
+    boolean query = purpose != Purpose.GENERATION;
+    if(query) requireQueryUser(executor);
     var permission=identities.dataPermission(domain,executor.getId());
-    var classes=query?io.ontomato.dataengine.service.QueryAccessService.classScope(permission,authority.getList("classNames",String.class)):authority.getList("classNames",String.class);
+    var classes=authority.getList("classNames",String.class);
+    if(purpose == Purpose.QUERY) classes=io.ontomato.dataengine.service.QueryAccessService.classScope(permission,classes);
     var target=io.ontomato.dataengine.service.ExecutionTarget.LIVE;
     if ("build-test".equals(authority.getString("executionKind"))) {
       if (authority.getString("executionContextId")!=null) target=contexts.require(authority.getString("executionContextId"),actor.user().getId(),domain);

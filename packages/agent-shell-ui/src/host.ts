@@ -23,7 +23,7 @@ import {
 } from "@ontomato/contracts/agent-host";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import { assistantAgentListSchema } from "@ontomato/contracts/assistant-chat";
-import { pageDraftSchema, type PageDraft } from "@ontomato/contracts/page-draft";
+import { pageDraftReadSchema, type PageDraft } from "@ontomato/contracts/page-draft";
 import type { RuntimeCursor, RuntimeEventEnvelope, RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
 import { agentTasksFrameSchema, type AgentTasksFrame } from "@ontomato/contracts/agent-tasks";
 
@@ -121,6 +121,8 @@ export interface AgentHostClient {
   resolveArtifact(sessionId: string, runId: string, path: string): Promise<RuntimeArtifact | null>;
   /** The page draft a run wrote, at the path its page link named; the host serves its drafts directory alone. */
   readPageDraft(sessionId: string, runId: string, path: string): Promise<PageDraft<Record<string, unknown>>>;
+  /** Records the object a create draft's first save created, so the draft addresses it from then on. */
+  recordPageDraftCreated(sessionId: string, runId: string, path: string, id: string): Promise<void>;
   readArtifact(artifact: RuntimeArtifact): Promise<Blob>;
   tasks?: ShellTaskPort;
   /** The list's own state source: notices plus a light read, never the conversation being open. */
@@ -313,9 +315,12 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
       ).artifact;
     },
     async readPageDraft(sessionId, runId, path) {
-      return pageDraftSchema.parse(
+      return pageDraftReadSchema.parse(
         await json(`${run(sessionId, runId)}/page-draft?${query({ path })}`),
       );
+    },
+    async recordPageDraftCreated(sessionId, runId, path, id) {
+      await call(`${run(sessionId, runId)}/page-draft/created`, send("POST", { path, id }));
     },
     async readArtifact(artifact) {
       return (await call(`${session(artifact.sessionId)}/artifacts/${enc(artifact.id)}/content`)).blob();
