@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import ElementPlus from "element-plus";
-import { defineComponent } from "vue";
+import { defineComponent, h } from "vue";
 import { createMemoryHistory, createRouter, type Router } from "vue-router";
 import type { AssistantAgentDefinition, AssistantAgentInput } from "@ontomato/contracts/assistant-chat";
 import { platformPageAccessKey } from "@ontomato/platform-shell";
@@ -19,9 +19,13 @@ import AgentSettingsRoute from "../pages/AgentSettingsRoute.vue";
  * missing agent, never a new agent's form filled again.
  */
 const CREATED = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const EXISTING = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const EDITED = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const QUERY = "draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2Fagent.page-draft.json";
 
-const server = vi.hoisted(() => ({ agents: [] as AssistantAgentDefinition[], read: vi.fn(), record: vi.fn(), create: vi.fn() }));
+const server = vi.hoisted(() => ({
+  agents: [] as AssistantAgentDefinition[], read: vi.fn(), record: vi.fn(), create: vi.fn(), update: vi.fn(),
+}));
 vi.mock("../../../workbench-ui/src/features/workbench/assistant-host", () => ({
   createAssistantClient: () => ({ readPageDraft: server.read, recordPageDraftCreated: server.record }),
 }));
@@ -34,8 +38,9 @@ vi.mock("../../../workbench-ui/src/features/agents/api", () => ({
     list: async () => server.agents,
     skills: async () => [],
     listMcpServiceOptions: async () => [],
-    executionOptions: async () => ({ canSetExecutionUser: true, users: [] }),
+    executionOptions: async () => ({ canSetExecutionUser: false, users: [] }),
     create: server.create,
+    update: server.update,
   },
   loadModelOptions: async () => ({ models: [], defaultModelId: null, embeddingModelId: null }),
   loadOntologyScope: async () => ({ classes: [], relations: [] }),
@@ -53,6 +58,8 @@ const form: AssistantAgentInput = {
 };
 /** The agent the draft's first save created, as the owner stores it. */
 const created: AssistantAgentDefinition = { ...form, skills: [], id: CREATED, executionUserId: null };
+const existing = { ...created, id: EXISTING, name: "Existing analyst" };
+const edited = { ...created, id: EDITED, name: "Second analyst" };
 
 const wrappers: VueWrapper[] = [];
 afterEach(() => {
@@ -60,26 +67,29 @@ afterEach(() => {
   server.read.mockReset();
   server.record.mockReset();
   server.create.mockReset();
+  server.update.mockReset();
   document.body.innerHTML = "";
 });
 
-/** The settings page at its own address, the agents the server lists, and the draft the link names. */
-async function openLink(agents: AssistantAgentDefinition[], draft: object): Promise<{ wrapper: VueWrapper; router: Router }> {
+async function openAt(agents: AssistantAgentDefinition[], address: string, beside = false): Promise<{ wrapper: VueWrapper; router: Router }> {
   server.agents = agents;
-  server.read.mockResolvedValue(draft);
   // The agents' list is one per page load; each case reads its own server's.
   await useAgentDefinitions().load();
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      { ...platformRoutes.chat, component: { template: "<div />" } },
       { ...platformRoutes.ontologyAgents, component: { template: "<div />" } },
       { ...platformRoutes.ontologyAgentNew, component: { template: "<div />" } },
       { ...platformRoutes.ontologyAgent, component: { template: "<div />" } },
     ],
   });
-  await router.push(`${platformRoutes.ontologyAgentNew.path}?${QUERY}`);
+  await router.push(beside ? { path: platformRoutes.chat.path, query: { page: address } } : address);
   await router.isReady();
-  const wrapper = mount(AgentSettingsRoute, {
+  const navigate = (page: string) => { void router.replace({ query: { page } }); };
+  const wrapper = mount(defineComponent({
+    setup: () => () => h(AgentSettingsRoute, beside ? { address: router.currentRoute.value.query.page as string, navigate } : {}),
+  }), {
     global: { plugins: [workbenchI18n(), ElementPlus, router], provide: { [platformPageAccessKey as symbol]: () => true } },
     attachTo: document.body,
   });
@@ -89,15 +99,81 @@ async function openLink(agents: AssistantAgentDefinition[], draft: object): Prom
   return { wrapper, router };
 }
 
-describe("a create draft's link after its first save", () => {
-  it("records the agent the first save created", async () => {
-    server.create.mockImplementation(async (written: AssistantAgentInput) => ({ ...written, id: CREATED, executionUserId: null }));
-    const { wrapper } = await openLink([], { pageKey: "agent-settings", operation: "agent.create", target: {}, form });
+function openLink(agents: AssistantAgentDefinition[], draft: object) {
+  server.read.mockResolvedValue(draft);
+  return openAt(agents, `${platformRoutes.ontologyAgentNew.path}?${QUERY}`);
+}
 
-    await wrapper.findAll(".platform-page-header button").find((button) => button.text() === t("common.save"))!.trigger("click");
-    await flushPromises();
+async function save(wrapper: VueWrapper) {
+  await wrapper.findAll(".platform-page-header button").find((button) => button.text() === t("common.save"))!.trigger("click");
+  await flushPromises();
+}
+
+function nameField(wrapper: VueWrapper) {
+  return wrapper.get(".agent-editor input");
+}
+
+describe("the agent settings page", () => {
+  it("shows the missing-agent message at a deleted agent's address while other agents are listed", async () => {
+    const { wrapper } = await openAt([existing], "/ontology/agents/" + CREATED);
+
+    expect(wrapper.get(".agent-settings-page .empty").text()).toBe(t("agents.notFound"));
+    expect(wrapper.find(".agent-editor").exists()).toBe(false);
+    expect(wrapper.get(".agent-row").text()).toBe(existing.name);
+  });
+
+  it("shows the list's empty message when there is no agent and none is named", async () => {
+    const { wrapper } = await openAt([], platformRoutes.ontologyAgents.path);
+
+    expect(wrapper.get(".agent-settings-page .empty").text()).toBe(t("agents.empty"));
+    expect(wrapper.find(".agent-editor").exists()).toBe(false);
+  });
+
+  it.each([false, true])("opens the newly created agent after saving (beside a conversation: %s)", async (beside) => {
+    server.create.mockResolvedValue(created);
+    const { wrapper, router } = await openAt([existing], platformRoutes.ontologyAgentNew.path, beside);
+
+    await nameField(wrapper).setValue(created.name);
+    await save(wrapper);
+
+    const target = "/ontology/agents/" + CREATED;
+    if (beside) {
+      expect(router.currentRoute.value.path).toBe(platformRoutes.chat.path);
+      expect(router.currentRoute.value.query.page).toBe(target);
+    } else {
+      expect(router.currentRoute.value.fullPath).toBe(target);
+    }
+    expect((nameField(wrapper).element as HTMLInputElement).value).toBe(created.name);
+    expect(wrapper.get(".agent-row[aria-current=page]").text()).toBe(created.name);
+  });
+
+  it("returns to the list after saving an existing agent", async () => {
+    const renamed = { ...edited, name: "Renamed analyst" };
+    server.update.mockResolvedValue(renamed);
+    const { wrapper, router } = await openAt([existing, edited], "/ontology/agents/" + EDITED);
+
+    await nameField(wrapper).setValue(renamed.name);
+    await save(wrapper);
+
+    expect(server.update).toHaveBeenCalledWith(EDITED, expect.objectContaining({ name: renamed.name }));
+    expect(router.currentRoute.value.fullPath).toBe(platformRoutes.ontologyAgents.path);
+    expect((nameField(wrapper).element as HTMLInputElement).value).toBe(existing.name);
+  });
+});
+
+describe("a create draft's link after its first save", () => {
+  it("opens the created agent and records it once, after saving", async () => {
+    server.create.mockImplementation(async (written: AssistantAgentInput) => ({ ...written, id: CREATED, executionUserId: null }));
+    let agentWhenRecorded: AssistantAgentDefinition | null = null;
+    server.record.mockImplementation(async () => { agentWhenRecorded = useAgentDefinitions().find(CREATED); });
+    const { wrapper, router } = await openLink([existing], { pageKey: "agent-settings", operation: "agent.create", target: {}, form });
+
+    await save(wrapper);
     expect(server.create).toHaveBeenCalledTimes(1);
     expect(server.record.mock.calls).toEqual([["s", "r", "outputs/drafts/agent.page-draft.json", CREATED]]);
+    expect(agentWhenRecorded).toMatchObject({ id: CREATED, name: created.name });
+    expect(router.currentRoute.value.fullPath).toBe("/ontology/agents/" + CREATED);
+    expect((nameField(wrapper).element as HTMLInputElement).value).toBe(created.name);
   });
 
   it("opens the agent it created, as it is", async () => {
@@ -119,14 +195,14 @@ describe("a create draft's link after its first save", () => {
   });
 
   it("reports an agent since deleted as missing, never a new agent's form again", async () => {
-    const { wrapper, router } = await openLink([], {
+    const { wrapper, router } = await openLink([existing], {
       pageKey: "agent-settings", operation: "agent.create", target: {}, form, created: { id: CREATED },
     });
 
     expect(router.currentRoute.value.path).toBe(`${platformRoutes.ontologyAgents.path}/${CREATED}`);
     expect(router.currentRoute.value.query).toEqual(Object.fromEntries(new URLSearchParams(QUERY)));
     expect(wrapper.find(".agent-editor").exists()).toBe(false);
-    expect(wrapper.find(".agent-settings-page .empty").text()).toBe(t("agents.empty"));
+    expect(wrapper.get(".agent-settings-page .empty").text()).toBe(t("agents.notFound"));
     expect(server.create).not.toHaveBeenCalled();
   });
 });
