@@ -34,11 +34,12 @@ const global = {
   stubs: { SkillSelector, CodeEditor: { template: "<div />" } },
 };
 
-function agent(): AssistantAgentDefinition {
+function agent(overrides: Partial<AssistantAgentDefinition> = {}): AssistantAgentDefinition {
   return {
     id: AGENT, name: "Sales analyst", description: "", icon: null, enabled: true, systemPrompt: "Be brief.",
     modelSelection: { modelId: null }, skills: [], classNames: [], enabledMcpServiceIds: [], sortOrder: 3,
     executionUserId: null,
+    ...overrides,
   };
 }
 
@@ -58,7 +59,7 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-async function open(path: string, form: AssistantAgentInput, target: { id?: string } = { id: AGENT }, editing = target !== undefined && target.id !== undefined) {
+async function open(path: string, form: AssistantAgentInput, target: { id?: string } = { id: AGENT }, editing = target !== undefined && target.id !== undefined, stored = agent()) {
   draft.read.mockResolvedValue({ pageKey: "agent-settings", operation: target.id ? "agent.update" : "agent.create", target, form });
   await router.push(path);
   vi.spyOn(agentDefinitionsApi, "listMcpServiceOptions").mockResolvedValue([]);
@@ -66,13 +67,23 @@ async function open(path: string, form: AssistantAgentInput, target: { id?: stri
   const create = vi.spyOn(agentDefinitionsApi, "create").mockImplementation(async (written) => ({ ...agent(), ...written }) as AssistantAgentDefinition);
   const address = editorAddress(path);
   const mounted = mount(AgentEditor, {
-    props: { agent: editing ? agent() : null, classes: [], relations: [], outlineLoading: false, modelOptions: options, modelOptionsFailed: false },
+    props: { agent: editing ? stored : null, classes: [], relations: [], outlineLoading: false, modelOptions: options, modelOptionsFailed: false },
     global: { ...global, provide: address.provide },
     attachTo: document.body,
   });
   wrappers.push(mounted);
   await flushPromises();
   return { wrapper: mounted, update, create, go: address.go };
+}
+
+/** The page as a draft left it: the line naming the changes, the marked sections, and the header's unsaved state. */
+function draftState(wrapper: VueWrapper) {
+  return {
+    line: wrapper.find(".draft-changed").exists() ? wrapper.find(".draft-changed").text() : null,
+    marked: wrapper.findAll(".editor-section.changed").map((section) => section.attributes("data-section")),
+    unsaved: wrapper.find(".platform-page-header .unsaved").exists(),
+    saveEnabled: !(saveButton(wrapper).element as HTMLButtonElement).disabled,
+  };
 }
 
 const saveButton = (wrapper: VueWrapper) =>
@@ -144,6 +155,47 @@ describe("the agent editor's page draft", () => {
     await saveButton(wrapper).trigger("click");
     await flushPromises();
     expect(create.mock.calls[0]![0]).toMatchObject({ name: "New analyst" });
+  });
+
+  it("opens the same link after its draft was saved as the agent is", async () => {
+    // The owner stores what the draft named in its own terms: the name trimmed, and a domain skill named without its id
+    // under the agent's domain. Filled in again, the draft changes nothing, so it is no draft.
+    const saved = agent({ skills: [{ namespace: { kind: "domain", domainId: "domain-1" }, name: "sales-report" }] });
+    const form = input({ name: "Sales analyst ", skills: [{ namespace: { kind: "domain" }, name: "sales-report" }] });
+    const { wrapper } = await open(DRAFT("a"), form, { id: AGENT }, true, saved);
+
+    expect(draftState(wrapper)).toEqual({ line: null, marked: [], unsaved: false, saveEnabled: false });
+  });
+
+  it("still shows a draft that changes the saved agent, marking only what it changes", async () => {
+    const saved = agent({ skills: [{ namespace: { kind: "domain", domainId: "domain-1" }, name: "sales-report" }] });
+    const form = input({ systemPrompt: "Answer in tables.", skills: [{ namespace: { kind: "domain" }, name: "sales-report" }] });
+    const { wrapper } = await open(DRAFT("a"), form, { id: AGENT }, true, saved);
+
+    const state = draftState(wrapper);
+    expect(state.line).toContain(t("agents.prompt"));
+    expect(state.line).not.toContain(t("agents.skills"));
+    expect(state).toMatchObject({ marked: ["prompt"], unsaved: true, saveEnabled: true });
+  });
+
+  it("leaves the reader's own edits alone when a draft changes nothing", async () => {
+    // The draft is read after the page opens; one that changes nothing neither replaces nor asks about what was typed.
+    let arrive!: (value: unknown) => void;
+    draft.read.mockReturnValue(new Promise((resolve) => { arrive = resolve; }));
+    await router.push(DRAFT("a"));
+    vi.spyOn(agentDefinitionsApi, "listMcpServiceOptions").mockResolvedValue([]);
+    const wrapper = mount(AgentEditor, {
+      props: { agent: agent(), classes: [], relations: [], outlineLoading: false, modelOptions: options, modelOptionsFailed: false },
+      global: { ...global, provide: editorAddress(DRAFT("a")).provide },
+      attachTo: document.body,
+    });
+    wrappers.push(wrapper);
+    await wrapper.find("input").setValue("Edited analyst");
+    arrive({ pageKey: "agent-settings", operation: "agent.update", target: { id: AGENT }, form: input() });
+    await flushPromises();
+
+    expect((wrapper.find("input").element as HTMLInputElement).value).toBe("Edited analyst");
+    expect(draftState(wrapper)).toMatchObject({ line: null, marked: [], unsaved: true });
   });
 
   it("refuses a create draft on a page that edits an existing agent", async () => {

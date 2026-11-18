@@ -37,7 +37,9 @@ export interface PageDraft<Form> {
  * reading one, and comparing a draft with the object it was written over — are the platform's wording, not one page's:
  * the panel SDK and the Manager's own pages both receive drafts this way, and neither should have to depend on the other
  * to say so. Nothing is saved here: the page reads the real object, applies the draft over it, marks the fields the draft
- * changed, and stays unsaved until the reader saves.
+ * changed, and stays unsaved until the reader saves. A draft is a change to the real object, so one that changes nothing
+ * — a link opened again after its draft was saved — is no draft: the page opens as the object is, with no draft note,
+ * nothing marked and nothing unsaved.
  */
 export interface PageDraftLink {
   sessionId: string;
@@ -91,7 +93,8 @@ export async function readPageDraft<Form, Operation extends string>(
 
 /**
  * The form's fields the draft changes: those whose filled value differs from the object as it was read. A field the
- * draft leaves as the object holds it is not marked.
+ * draft leaves as the object holds it is not marked, and an empty set is a draft that changes nothing, which the page
+ * opens as the object is.
  */
 export function changedFields<Form extends object>(base: Form, filled: Form): ReadonlySet<string> {
   return new Set(
