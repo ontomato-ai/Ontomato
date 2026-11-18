@@ -13,7 +13,7 @@ Write the input to a JSON file and run:
 
 `node skills/admin-choropleth-map/scripts/index.mjs work/input.json`
 
-The command writes `outputs/<name>.chart.json` and prints the path; reference that path in Markdown. It runs unchanged in an external harness; use the package's local path when installed elsewhere.
+Reference the printed `outputs/<name>.chart.json` path as a Markdown image. The image description is the title shown in the conversation and becomes the card name when added to a dashboard. Keep the title out of the chart file. Use the package's local path in an external harness.
 
 ## Input
 
@@ -32,7 +32,6 @@ The command writes `outputs/<name>.chart.json` and prints the path; reference th
 | --- | --- | --- |
 | `chartType` | yes | Always `admin-choropleth-map`. |
 | `name` | yes | Output file name without a directory or extension. |
-| `title` | no | Text displayed on the map. |
 | `data` | one of | Row objects already in the input file. |
 | `dataset` | one of | Data file to read: an accepted `.dataset.json` or a JSON array/`{ "rows": [...] }`. |
 | `fields` | yes | `name` and `value` mapped to real column names. |
@@ -62,4 +61,4 @@ Copy the id and parameters from the accepted dataset's metric recipe or from `on
 
 ## Revising
 
-Run the command again with the same `name` after changing the input, including `title` for a new map title. The file is the map's definition. Do not edit it by hand. Reference the generated file as written. If the command reports a missing role or an invalid file, fix the named column and rerun.
+Change the input and run the command again with the same `name`. The file is the map's definition. Reference it as generated and do not edit it by hand. If the command reports a missing role or an invalid file, fix the named column and rerun.

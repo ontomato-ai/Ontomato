@@ -25,19 +25,29 @@ test("the standalone dashboard skill matches its shared schema source",async t=>
   const dir=await workspace(t);await run(process.execPath,[path.join(root,"packages/workbench-server/dashboard-skill/build.mjs"),dir]);
   for(const file of ["scripts/dashboard-pages.mjs","licenses/zod-LICENSE.txt"])assert.equal(Buffer.compare(await readFile(path.join(dir,file)),await readFile(path.join(skill,file))),0);
 });
-test("draft validates and writes the page's save form without an API call",async t=>{
+test("draft returns only the page link for a combined card edit",async t=>{
   const dir=await workspace(t),api=await server(t);
-  await writeFile(path.join(dir,"form.json"),JSON.stringify({id:"board:custom",name:"Renamed"}));
-  const result=JSON.parse((await invoke(dir,api.base,["draft","--operation","dashboard.rename","--form","form.json","--out","outputs/drafts/rename.page-draft.json"])).stdout);
-  const draft=JSON.parse(await readFile(path.join(dir,result.path),"utf8"));
-  assert.deepEqual(draft,{pageKey:"dashboard",operation:"dashboard.rename",target:{id:"board:custom"},form:{id:"board:custom",name:"Renamed"}});
+  const chartFile={name:"staff.chart.json",content:{
+    dataset:[{id:"metric",dimensions:["department","headcount"],source:[]}],
+    series:[{id:"main",type:"bar",datasetId:"metric",encode:{x:"department",y:"headcount"}}],
+    ontomato:{display:{displayLimit:3}},
+  }};
+  const form={id:"board:custom",groups:[{id:"group",title:"Staff",metrics:[],charts:[
+    {id:"card",name:"Top three departments",chartFile,layout:{colSpan:6,rowSpan:1}},
+  ]}]};
+  const out="outputs/drafts/combined.page-draft.json";
+  await writeFile(path.join(dir,"form.json"),JSON.stringify(form));
+  const result=JSON.parse((await invoke(dir,api.base,["draft","--operation","dashboard.layout","--form","form.json","--out",out])).stdout);
+  assert.deepEqual(Object.keys(result),["link"]);
+  const draft=JSON.parse(await readFile(path.join(dir,out),"utf8"));
+  assert.deepEqual(draft,{pageKey:"dashboard",operation:"dashboard.layout",target:{id:form.id},form});
   const href=result.link.match(/^\[[^\]]+\]\(([^)]+)\)$/)?.[1];
   assert.ok(href,"Draft output must include a clickable page link, not a file preview");
   const link=new URL(href,"http://page.test/");
   assert.equal(link.hash.split("?")[0],"#/dashboards");
   const query=new URLSearchParams(link.hash.split("?")[1]);
   assert.deepEqual([...query.keys()].sort(),["draftPath","draftRunId","draftSessionId"]);
-  assert.equal(query.get("draftPath"),result.path);
+  assert.equal(query.get("draftPath"),out);
   assert.equal(api.calls.length,0);
 });
 test("link addresses the saved dashboard and optionally its selected card",async t=>{
