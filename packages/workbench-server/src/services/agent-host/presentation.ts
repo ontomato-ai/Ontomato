@@ -59,7 +59,7 @@ export function presentationCallback(
   credentials: AssistantCredentials, expiresAt: number,
 ): RuntimePresentationCallback | undefined {
   const connectionId = body.presentationBinding?.connectionId;
-  if (!connectionId || visibilityReader(body) !== "user" ||
+  if (!connectionId || body.mode !== "run" || body.input.role !== "user" || visibilityReader(body) !== "user" ||
       body.root.runId !== body.runId || body.root.session.sessionId !== body.sessionId ||
       body.root.session.providerId !== host || body.userRecipient?.actor.id !== body.actor.id ||
       body.userRecipient.actor.domainId !== owner.domainId || !boundView(host, owner, connectionId)) return;

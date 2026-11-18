@@ -1,7 +1,9 @@
 import express from "express";
-import { createServer, type Server } from "node:http";
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { createServer, type Server, type ServerResponse } from "node:http";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { runtimeSessionRunFrameSchema } from "@ontomato/contracts/agent-runtime-events";
+import { agentHostSessionRunFrameSchema } from "@ontomato/contracts/agent-host";
+import { presentationFrameSchema, type PresentationResult } from "@ontomato/contracts/agent-presentation";
 import type {
   AgentHostService,
   AgentHostOwner,
@@ -11,6 +13,7 @@ import { installWorkbenchIdentity } from "../../../identity/installed";
 import type { AuthenticatedRequest } from "../../../utils/request-identity";
 import { HttpError } from "../../../utils/errors";
 import { createAgentHostRouter } from "../agent-host";
+import { callbackCredential, unwrapCallbackCredential } from "../../../services/agent-runtime/callback-credential";
 
 const owner: AgentHostOwner = { domainId: "domain-a", userId: "alice" };
 const sessionId = "11111111-1111-4111-8111-111111111111";
@@ -49,6 +52,11 @@ function fakeService() {
   return {
     seen: () => seen.filter((caller) => caller.userId === owner.userId),
     service: {
+      presentationHost: "workbench",
+      ownRun: async (s: string, r: string, caller: AgentHostOwner) => {
+        own(caller);
+        if (s !== sessionId || r !== runId) throw new HttpError(404, "Run not found", "NOT_FOUND");
+      },
       list: async (caller: AgentHostOwner) => (own(caller), { sessions: [view], nextCursor: null }),
       readableSessions: async (caller: AgentHostOwner, ids: string[]) => {
         readableCalls.push(ids);
@@ -80,6 +88,10 @@ let runtimeServer: Server;
 let runtimeHeaderCalls: Array<Record<string, string | string[] | undefined>> = [];
 let statusCalls: Array<{ sessionIds: string[] }> = [];
 let readableCalls: string[][] = [];
+let liveRunStreams = false;
+const upstreamStreams = new Set<ServerResponse>();
+const writeRuntimeFrame = (response: ServerResponse, frame: unknown) =>
+  response.write(`data: ${JSON.stringify(frame)}\n\n`);
 
 beforeAll(async () => {
   installWorkbenchIdentity(identity);
@@ -115,13 +127,19 @@ beforeAll(async () => {
     if (req.url === "/v1/sessions/run-events") {
       runtimeHeaderCalls.push(req.headers);
       res.writeHead(200, { "Content-Type": "text/event-stream" });
+      if (liveRunStreams) {
+        upstreamStreams.add(res);
+        res.once("close", () => upstreamStreams.delete(res));
+        writeRuntimeFrame(res, { type: "ready" });
+        return;
+      }
       for (const frame of [
         { type: "ready" },
         { type: "run_started", sessionId, runId },
         { type: "run_started", sessionId: foreignSessionId, runId },
         { type: "run_stopped", sessionId, runId },
       ])
-        res.write(`data: ${JSON.stringify(frame)}\n\n`);
+        writeRuntimeFrame(res, frame);
       res.end();
       return;
     }
@@ -133,9 +151,10 @@ beforeAll(async () => {
   process.env.AGENT_RUNTIME_SERVICE_TOKEN = "fixture-runtime-token";
   const app = express();
   app.use(express.json());
+  app.use(unwrapCallbackCredential);
   app.use((req, _res, next) => {
     // The authentication boundary writes identity; the request body never supplies it.
-    const caller = req.header("fixture-auth");
+    const caller = req.header("fixture-auth") ?? (req.header("tk") === "fixture-initiator" ? owner.userId : undefined);
     if (caller) Object.assign(req as AuthenticatedRequest, { ...owner, userId: caller });
     next();
   });
@@ -276,4 +295,98 @@ it("refuses the list stream before opening the runtime stream", async () => {
   const response = await fetch(url + "/sessions/run-events");
   expect(response.status).toBe(401);
   expect(runtimeHeaderCalls).toHaveLength(0);
+});
+
+async function openPresentationStream() {
+  const response = await fetch(url + "/sessions/run-events?presentation=true", { headers: auth });
+  expect(response.status).toBe(200);
+  const reader = response.body!.getReader(), decoder = new TextDecoder();
+  let buffer = "";
+  const nextFrame = async () => {
+    while (!buffer.includes("\n\n")) {
+      const part = await reader.read();
+      if (part.done) throw new Error("Stream ended before the expected frame");
+      buffer += decoder.decode(part.value, { stream: true });
+    }
+    const end = buffer.indexOf("\n\n");
+    const [event, data] = buffer.slice(0, end).split("\n");
+    buffer = buffer.slice(end + 2);
+    return { event: event!.slice("event: ".length), data: JSON.parse(data!.slice("data: ".length)) as unknown };
+  };
+  const ready = await nextFrame();
+  expect(ready.event).toBe("session-run");
+  const frame = agentHostSessionRunFrameSchema.parse(ready.data);
+  if (frame.type !== "ready" || !("presentationBinding" in frame)) throw new Error("Opt-in stream has no binding");
+  return { connectionId: frame.presentationBinding.connectionId, nextFrame };
+}
+
+it("sends a live presentation to its bound stream and accepts only the matching receipt before the deadline", async () => {
+  liveRunStreams = true;
+  try {
+    const origin = await openPresentationStream(), other = await openPresentationStream();
+    expect(origin.connectionId).not.toBe(other.connectionId);
+    const runPath = `/sessions/${sessionId}/runs/${runId}`;
+    const callbackPath = `${runPath}/presentation-call/${origin.connectionId}`;
+    const credential = callbackCredential({
+      pathPrefix: "/api/agent-host" + callbackPath, runId, expiresAt: Date.now() + 60_000,
+      token: "fixture-initiator", apiKey: "",
+    }).value;
+    const callback = (toolCallId: string) => fetch(url + callbackPath, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json", "X-Ontomato-Callback-Credential": credential,
+        "X-Ontomato-Run-Id": runId,
+      },
+      body: JSON.stringify({ toolCallId, input: { target: "/fixture/page" } }),
+    });
+    const result: PresentationResult = {
+      status: "opened", reason: "target_selected", current: {
+        known: true, observedAt: new Date().toISOString(), placement: "side",
+        target: { kind: "page", url: "/fixture/page", label: "Opened page", selection: [] },
+        load: { status: "ready" },
+      },
+    };
+    const receipt = (toolCallId: string, connectionId: string, userId = owner.userId, currentSession = sessionId) =>
+      fetch(url + `/sessions/${currentSession}/runs/${runId}/presentation-result`, {
+        method: "POST", headers: { ...auth, "fixture-auth": userId },
+        body: JSON.stringify({ toolCallId, connectionId, result }),
+      });
+    const expectPresentation = async (toolCallId: string) => {
+      const frame = await origin.nextFrame();
+      expect(frame.event).toBe("presentation");
+      expect(presentationFrameSchema.parse(frame.data)).toMatchObject({ sessionId, runId, toolCallId });
+    };
+
+    const display = callback("call-1");
+    await expectPresentation("call-1");
+    const marker = { type: "run_started", sessionId, runId };
+    for (const stream of upstreamStreams) writeRuntimeFrame(stream, marker);
+    expect(await other.nextFrame()).toEqual({ event: "session-run", data: marker });
+    expect(await origin.nextFrame()).toEqual({ event: "session-run", data: marker });
+    expect((await receipt("call-1", origin.connectionId, "bob")).status).toBe(404);
+    expect((await receipt("call-1", other.connectionId)).status).toBe(404);
+    expect((await receipt("call-1", origin.connectionId, owner.userId, secondSessionId)).status).toBe(404);
+    expect((await receipt("call-1", origin.connectionId)).status).toBe(204);
+    expect(await (await display).json()).toEqual(result);
+
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    // Native AbortSignal.timeout uses Node's internal scheduler, which Vitest does not replace.
+    vi.spyOn(AbortSignal, "timeout").mockImplementation(ms => {
+      const timer = new AbortController();
+      setTimeout(() => timer.abort(), ms);
+      return timer.signal;
+    });
+    const missing = callback("call-2");
+    await expectPresentation("call-2");
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await (await missing).json()).toEqual({
+      status: "unknown", reason: "receipt_missing", current: { known: false, reason: "receipt_missing" },
+    });
+    expect((await receipt("call-2", origin.connectionId)).status).toBe(404);
+  } finally {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+    liveRunStreams = false;
+    for (const stream of upstreamStreams) stream.end();
+  }
 });
