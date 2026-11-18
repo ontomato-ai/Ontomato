@@ -86,21 +86,19 @@ vi.mock("interactjs", () => ({
 
 const t = workbenchI18n().global.t;
 
-async function openDraft(draft: unknown) {
+const draftLink = {
+  draftSessionId: "11111111-1111-4111-8111-111111111111",
+  draftRunId: "22222222-2222-4222-8222-222222222222",
+  draftPath: "outputs/drafts/revenue.page-draft.json",
+};
+
+async function openDraft(draft: unknown, address: Record<string, string> = {}) {
   api.pageDraft = draft;
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: "/", component: DashboardHome }],
   });
-  await router.push({
-    path: "/",
-    query: {
-      dashboardId: "d1",
-      draftSessionId: "11111111-1111-4111-8111-111111111111",
-      draftRunId: "22222222-2222-4222-8222-222222222222",
-      draftPath: "outputs/drafts/revenue.page-draft.json",
-    },
-  });
+  await router.push({ path: "/", query: { dashboardId: "d1", ...address, ...draftLink } });
   await router.isReady();
   const wrapper = mount(DashboardHome, {
     global: { plugins: [workbenchI18n(), createPinia(), router, ElementPlus], stubs: { EChart: true, transition: false } },
@@ -151,12 +149,25 @@ describe("a dashboard draft", () => {
     });
     expect(wrapper.find(".chart-draft-badge").text()).toBe(t("dashboard.draft.chartChanged"));
     expect(wrapper.findComponent({ name: "MetricChart" }).props("file")).toEqual(draftFile.content);
+    // The layout names the group it keeps under the same title, so the summary counts the chart alone.
+    expect(wrapper.find(".draft-bar__text span").text()).toBe(t("dashboard.draft.charts", { n: 1 }, 1));
     expect(api.layouts).toEqual([]);
 
     await wrapper.find(".draft-bar__actions .el-button--primary").trigger("click");
     await flushPromises();
     expect(api.layouts).toHaveLength(1);
     expect((api.layouts[0] as unknown[])[1]).toEqual([{ id: "g1", title: "Sales", charts: [{ id: "c1", name: "Revenue by region", chartFile: draftFile }], metrics: [{ id: "n1" }] }]);
+    wrapper.unmount();
+  });
+
+  it("counts a group a layout gives another title", async () => {
+    const wrapper = await openDraft({
+      pageKey: "dashboard",
+      operation: "dashboard.layout",
+      target: { id: "d1" },
+      form: { id: "d1", groups: [{ id: "g1", title: "Revenue", charts: [{ id: "c1" }], metrics: [{ id: "n1" }] }] },
+    });
+    expect(wrapper.find(".draft-bar__text span").text()).toBe(t("dashboard.draft.groups", { n: 1 }, 1));
     wrapper.unmount();
   });
 
@@ -243,6 +254,54 @@ describe("a dashboard draft", () => {
     expect(wrapper.vm.$route.query).toEqual({ dashboardId: "d1" });
     expect(wrapper.find(".draft-bar").exists()).toBe(false);
     expect(api.renamed).toEqual([]);
+    wrapper.unmount();
+  });
+
+  // Drafts that would save only what the board already holds, as one the reader saved and opens again.
+  const savedDrafts = [
+    { pageKey: "dashboard", operation: "dashboard.layout", target: { id: "d1" }, form: {
+      id: "d1",
+      groups: [{ id: "g1", title: "Sales", charts: [{ id: "c1", name: "Revenue by region", layout: { colSpan: 12, rowSpan: 1 }, chartFile: { name: "province.chart.json", content: { ontomato: {}, series: file.content.series, dataset: file.content.dataset } } }], metrics: [{ id: "n1", name: "Total revenue" }] }],
+    } },
+    { pageKey: "dashboard", operation: "dashboard.chart.rename", target: { id: "d1" }, form: { id: "d1", chartId: "c1", resultSetName: "Revenue by region" } },
+    { pageKey: "dashboard", operation: "dashboard.group.rename", target: { id: "d1" }, form: { id: "d1", groupId: "g1", dimensionName: "Sales" } },
+    { pageKey: "dashboard", operation: "dashboard.rename", target: { id: "d1" }, form: { id: "d1", name: "Sales" } },
+    { pageKey: "dashboard", operation: "dashboard.card.parameters", target: { id: "d1" }, form: { dashboardId: "d1", cardId: "c1", revision: "r1", values: { year: "2026" } } },
+  ];
+
+  it("opens as the board itself when the draft would save what the board already holds", async () => {
+    for (const draft of savedDrafts) {
+      const wrapper = await openDraft(draft, { cardId: "c1", cardName: "Revenue by region" });
+      expect(wrapper.find(".draft-bar").exists()).toBe(false);
+      expect(wrapper.find(".draft-failure").exists()).toBe(false);
+      expect(wrapper.find(".chart-container--draft").exists()).toBe(false);
+      expect(document.querySelector(".el-dialog")).toBeNull();
+      // The address stops naming the draft and keeps the board and the chosen card.
+      const query = wrapper.vm.$route.query;
+      expect(Object.keys(query).filter((key) => key in draftLink)).toEqual([]);
+      expect(query).toMatchObject({ dashboardId: "d1", cardId: "c1" });
+      expect(wrapper.find(".chart-container--selected").exists()).toBe(true);
+      expect([api.renamed, api.boardRenames, api.layouts, api.parameters]).toEqual([[], [], [], []]);
+      wrapper.unmount();
+    }
+  });
+
+  it("opens beside a conversation as the board itself, taking the draft out of the page the conversation carries", async () => {
+    api.pageDraft = savedDrafts[0];
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/", component: DashboardHome }] });
+    await router.push({ path: "/", query: { session: "s1", page: `/dashboards?${new URLSearchParams({ dashboardId: "d1", ...draftLink })}` } });
+    await router.isReady();
+    const wrapper = mount(DashboardHome, {
+      global: { plugins: [workbenchI18n(), createPinia(), router, ElementPlus], stubs: { EChart: true, transition: false } },
+    });
+    await flushPromises();
+    expect(wrapper.find(".draft-bar").exists()).toBe(false);
+    const [path, search] = String(wrapper.vm.$route.query.page).split("?");
+    const page = Object.fromEntries(new URLSearchParams(search));
+    expect(path).toBe("/dashboards");
+    expect(Object.keys(page).filter((key) => key in draftLink)).toEqual([]);
+    expect(page.dashboardId).toBe("d1");
+    expect(wrapper.vm.$route.query.session).toBe("s1");
     wrapper.unmount();
   });
 
