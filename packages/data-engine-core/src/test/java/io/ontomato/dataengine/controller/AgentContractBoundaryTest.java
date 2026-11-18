@@ -4,15 +4,27 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import com.alibaba.fastjson2.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.ontomato.dataengine.dao.JSONRuleDao;
 import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
 import io.ontomato.dataengine.service.EnvService;
+import io.ontomato.dataengine.service.agent.AgentVisibilityPrompt;
 import io.ontomato.dataengine.service.impl.WriteFunctionOperationServiceImpl;
+import java.nio.file.Path;
 import java.util.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class AgentContractBoundaryTest {
+  @Test void packagedVisibilityPromptsMatchTheSharedSourceForBothReaders() throws Exception {
+    var source = Path.of(System.getProperty("basedir"), "..", "contracts", "src", "agent-visibility-prompt.json");
+    var prompts = new ObjectMapper().readTree(source.toFile());
+    assertEquals(prompts.required("user").textValue(),
+        AgentVisibilityPrompt.forReader(AgentVisibilityPrompt.Reader.USER));
+    assertEquals(prompts.required("delegated").textValue(),
+        AgentVisibilityPrompt.forReader(AgentVisibilityPrompt.Reader.DELEGATED));
+  }
+
   @Test void queryArraysAndSerializedObjectsNeverReachEitherQueryService() throws Exception {
     var writes = new WriteFunctionOperationController();
     var production = new ProductionEnvController();
