@@ -1,4 +1,5 @@
 import { agentInputDeliverySchema, agentPendingQuestionSchema } from "./agent-channel";
+import { presentationBindingSchema } from "./agent-presentation";
 import { z } from "zod";
 import {
   runtimeMessageRecordSchema,
@@ -11,7 +12,6 @@ import {
   runtimeCursorSchema,
   runtimeSessionRunFrameSchema,
   runtimeStreamFrameSchema,
-  type RuntimeSessionRunFrame,
 } from "./agent-runtime-events";
 import {
   runtimeIdSchema,
@@ -42,8 +42,15 @@ export const agentHostRunStatusSchema = z
     stopReason: runtimeStopReasonSchema.nullable(),
   })
   .strict();
-/** The user-level list notice: identity only, never the run state itself. */
-export const agentHostSessionRunFrameSchema = runtimeSessionRunFrameSchema;
+/** Only a shell with a display port requests a binding when it opens the stream. */
+export const agentHostSessionRunEventsQuerySchema = z.object({
+  presentation: z.literal("true").optional(),
+}).strict();
+/** The host adds the connection's binding to ready for clients that requested presentation. */
+export const agentHostSessionRunFrameSchema = z.union([
+  z.object({ type: z.literal("ready"), presentationBinding: presentationBindingSchema }).strict(),
+  runtimeSessionRunFrameSchema,
+]);
 export const agentHostSessionStatusRequestSchema = z
   .object({ sessionIds: z.array(runtimeIdSchema) })
   .strict();
@@ -121,7 +128,13 @@ export const agentHostCreateSessionResponseSchema = z
   .object({ session: agentHostSessionSchema, replayed: z.boolean() })
   .strict();
 export const agentHostSendRequestSchema = z
-  .object({ message: z.string().refine((v) => v.trim().length > 0), replyTo: runtimeIdSchema.optional(), selectedOption: z.number().int().nonnegative().optional() })
+  .object({
+    message: z.string().refine((v) => v.trim().length > 0),
+    replyTo: runtimeIdSchema.optional(),
+    selectedOption: z.number().int().nonnegative().optional(),
+    /** Only a new human run can use the binding; steering does not change the running view. */
+    presentationBinding: presentationBindingSchema.optional(),
+  })
   .strict().refine(value => value.selectedOption === undefined || value.replyTo !== undefined, "A selection requires replyTo");
 export const agentHostSendResultSchema = z
   .object({ delivery: agentInputDeliverySchema, input: agentHostMessageSchema, snapshot: agentHostRunSnapshotSchema.nullable(), pendingQuestions: z.array(agentPendingQuestionSchema), replayed: z.boolean() })
@@ -146,7 +159,7 @@ export type AgentHostAgent = z.infer<typeof agentHostAgentSchema>;
 export type AgentHostAgentList = z.infer<typeof agentHostAgentListSchema>;
 export type AgentHostRun = z.infer<typeof agentHostRunSchema>;
 export type AgentHostRunStatus = z.infer<typeof agentHostRunStatusSchema>;
-export type AgentHostSessionRunFrame = RuntimeSessionRunFrame;
+export type AgentHostSessionRunFrame = z.infer<typeof agentHostSessionRunFrameSchema>;
 export type AgentHostSessionStatusRequest = z.infer<
   typeof agentHostSessionStatusRequestSchema
 >;
