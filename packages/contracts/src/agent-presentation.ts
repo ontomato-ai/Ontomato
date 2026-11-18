@@ -2,6 +2,7 @@ import { z } from "zod";
 import { runtimeArtifactSchema } from "./agent-runtime-artifacts";
 import {
   runtimeIdSchema,
+  runtimeHttpUrlSchema,
   runtimeJsonObjectSchema,
   runtimeKeySchema,
   runtimeRelativePathSchema,
@@ -31,6 +32,19 @@ export const presentRequestSchema = z.object({
 );
 export type PresentRequest = z.infer<typeof presentRequestSchema>;
 
+/** Private transport from the runtime tool to the host bound to this call. */
+export const presentationCallRequestSchema = z.object({
+  toolCallId: runtimeKeySchema,
+  input: presentRequestSchema,
+}).strict();
+
+/** Private to admission and the active runtime tool, outside the definition and sandbox environment. */
+export const runtimePresentationCallbackSchema = z.object({
+  url: runtimeHttpUrlSchema,
+  credential: runtimeKeySchema,
+}).strict();
+export type RuntimePresentationCallback = z.infer<typeof runtimePresentationCallbackSchema>;
+
 /** A panel's explicit open request and its current instance's state report have different effects. */
 export const displayPageAddressInputSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("navigate"), address: pageAddressSchema }).strict(),
@@ -38,7 +52,8 @@ export const displayPageAddressInputSchema = z.discriminatedUnion("kind", [
 ]);
 export type DisplayPageAddressInput = z.infer<typeof displayPageAddressInputSchema>;
 
-export const PANEL_FRAME_LOAD_ERROR_CODES = {
+export const PANEL_LOAD_ERROR_CODES = {
+  panelUnavailable: "panel_unavailable",
   fileUnavailable: "panel_file_unavailable",
   scriptThrew: "panel_script_threw",
   scriptRejected: "panel_script_rejected",

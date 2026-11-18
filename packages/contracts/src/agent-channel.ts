@@ -1,6 +1,7 @@
 import { retrievalExtensionSchema,agentQualityProjectionSchema,agentFileSchema } from "./agent-task-results";
 import { z } from "zod";
 import { runtimeIdSchema as id, runtimeKeySchema as key, runtimeJsonObjectSchema, runtimeTimestampSchema } from "./agent-runtime-values";
+import { presentationBindingSchema } from "./agent-presentation";
 
 export const agentRefSchema = z.object({ providerId: key, agentId: key }).strict();
 export const agentSessionRefSchema = z.object({ providerId: key, sessionId: id }).strict();
@@ -66,6 +67,8 @@ export const agentPrepareRequestSchema = z.object({
   inputId: id, input: agentInputSchema, authority: agentAuthoritySchema, requestedBy: agentExecutionRefSchema.nullable(), root: agentExecutionRefSchema,
   /** Human hosts set this; children inherit it. Older/background/external roots have none. */
   userRecipient: agentUserRecipientSchema.nullable().optional(), context: runtimeJsonObjectSchema.optional(),
+  /** Passed only to the prepare call for the directly admitted run, never part of its intent. */
+  presentationBinding: presentationBindingSchema.optional(),
 }).strict();
 export const agentProviderExecutionSchema = z.object({ execution: agentExecutionRefSchema, actor: agentActorRefSchema, executionActor: agentExecutionActorRefSchema.nullable().optional(), fileId: id.optional() }).strict();
 export const agentDeliverySchema = z.object({

@@ -17,6 +17,7 @@ import { restoreAgentCaller } from "./caller";
 import { workbenchIdentity } from "../../identity/installed";
 import { answerText } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
+import { presentationCallback, visibilityReader } from "./presentation";
 
 async function caller(body: { actor: AgentRunContext["actor"] }, domain: string, provider?: string, readOnly = false, credentials: AssistantCredentials = {}) {
   const current = await restoreAgentCaller(body.actor, domain, readOnly, credentials);
@@ -49,7 +50,8 @@ export const agentChannelService = {
   async prepare(raw: unknown, domain: string, supplied: AssistantCredentials = {}) {
     const body = agentPrepareRequestSchema.parse(raw), restored = await caller(body, domain, body.agent.providerId, false, supplied);
     const owner = restored.owner, credentials = { ...restored.credentials,locale: body.language };
-    if (!["workbench", "observe"].includes(body.agent.providerId)) throw new HttpError(404, "Agent provider not found", "NOT_FOUND");
+    const provider = body.agent.providerId;
+    if (provider !== "workbench" && provider !== "observe") throw new HttpError(404, "Agent provider not found", "NOT_FOUND");
     if (body.authority.executionKind === "build-test" && body.requestedBy) throw new HttpError(422,"Agent delegation is not available in a build-test execution","BUILD_TEST_UNSUPPORTED");
     if (body.mode === "steer") {
       const service = body.agent.providerId === "observe" ? diagnosisService : assistantService;
@@ -66,12 +68,17 @@ export const agentChannelService = {
       }
       return { accepted: true };
     }
-    if (body.agent.providerId === "observe") {
+    let prepared;
+    if (provider === "observe") {
       if (body.agent.agentId !== DIAGNOSIS_AGENT_ID || body.authority.executionKind !== "live") throw new HttpError(403, "Diagnosis requires live execution authority", "BUILD_TEST_FORBIDDEN");
       await createDiagnosis(body.sessionId, owner, null, true);
-      return prepareDiagnosis(body.sessionId, body.runId, body.input, owner, credentials);
+      prepared = await prepareDiagnosis(body.sessionId, body.runId, body.input, owner, credentials, visibilityReader(body));
+    } else {
+      prepared = await assistantService.prepare(body,owner,credentials);
     }
-    return assistantService.prepare(body,owner,credentials);
+    const callback = presentationCallback(provider, body, owner, credentials,
+      Math.min(restored.expiresAt, Date.now() + prepared.definition.sandbox.limits.wallTimeMs));
+    return callback ? { ...prepared, presentationCallback: callback } : prepared;
   },
   async execution(raw: unknown, domain: string) {
     const body = agentProviderExecutionSchema.parse(raw), { owner, credentials } = await caller(body, domain, body.execution.session.providerId, true);

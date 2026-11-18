@@ -12,7 +12,7 @@ import {
   presentationReceiptSchema,
   presentationResultSchema,
   presentRequestSchema,
-  PANEL_FRAME_LOAD_ERROR_CODES,
+  PANEL_LOAD_ERROR_CODES,
 } from "./agent-presentation";
 
 const id = "a40cfd44-e82c-40f1-8f07-2c1591622381";
@@ -93,8 +93,9 @@ test("a receipt reports an observed outcome, keeping an empty view distinct from
   assert.deepEqual(presentationResultSchema.parse(missing), missing);
   assert.equal(presentationReceiptSchema.safeParse({ ...binding, result: missing }).success, false);
 
-  for (const code of Object.values(PANEL_FRAME_LOAD_ERROR_CODES)) {
-    const load = { status: "error", error: { code, message: "Frame failed" } };
+  for (const code of Object.values(PANEL_LOAD_ERROR_CODES)) {
+    const message = code === PANEL_LOAD_ERROR_CODES.panelUnavailable ? "403 Forbidden" : "Frame failed";
+    const load = { status: "error", error: { code, message } };
     const result = { ...opened, reason: "load_error", current: { ...selected, load } };
     assert.deepEqual(presentationReceiptSchema.parse({ ...binding, result }).result, result);
   }

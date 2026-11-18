@@ -24,6 +24,7 @@ import { publishSkill } from "../agent-runtime/skills";
 import { callbackCredential } from "../agent-runtime/callback-credential";
 import { HttpError } from "../../utils/errors";
 import type { AgentHostOwner, AgentHostService } from "../agent-host/types";
+import { agentVisibilityPrompt, type AgentVisibilityReader } from "../agent-host/visibility";
 
 type Session = { id: string; domain_id: string; owner_id: string; title: string; target: DiagnosisTarget | null; created_at: Date; updated_at: Date };
 const db = getPostgresPool;
@@ -68,6 +69,7 @@ function canonical(value: unknown): string {
 }
 
 export const diagnosisService: AgentHostService & { agents(owner: AgentHostOwner, locale?: string): Promise<AgentHostAgentList> } = {
+  presentationHost: "observe",
   async agents(_owner, locale) {
     const zh = locale?.startsWith("zh");
     return { agents: [{ id: DIAGNOSIS_AGENT_ID, name: zh ? "运维诊断" : "Operations diagnosis", description: zh ? "只读取证与故障诊断" : "Read evidence and diagnose faults", icon: "wrench", enabled: true }] };
@@ -124,7 +126,7 @@ export const diagnosisService: AgentHostService & { agents(owner: AgentHostOwner
     const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
     await client.request(`/v1/channel/sessions/${session}/bind`, "POST", { agent, actor });
     const channel: AgentRunContext = { agent, actor, authority: { classNames: [], executionKind: "live" }, requestedBy: null, root: { session: { providerId: "observe", sessionId: session }, runId: run }, userRecipient: entry === "human" ? {session: {providerId: "observe",sessionId: session},actor} : null };
-    const accepted = agentHostSendResultSchema.omit({snapshot:true}).parse(await client.request(`/v1/channel/sessions/${session}/runs`, "POST", { channel, credential: {token:credentials.token ?? null,apiKey:credentials.apiKey ?? null}, language: resolveLocale(credentials.locale), input: { role: "user", content: input.message, timestamp: Date.now() }, replyTo: input.replyTo, selectedOption: input.selectedOption }, run));
+    const accepted = agentHostSendResultSchema.omit({snapshot:true}).parse(await client.request(`/v1/channel/sessions/${session}/runs`, "POST", { channel, credential: {token:credentials.token ?? null,apiKey:credentials.apiKey ?? null}, language: resolveLocale(credentials.locale), input: { role: "user", content: input.message, timestamp: Date.now() }, replyTo: input.replyTo, selectedOption: input.selectedOption, presentationBinding: entry === "human" ? input.presentationBinding : undefined }, run));
     return agentHostSendResultSchema.parse({ ...accepted, snapshot: accepted.delivery.delivery === "run" && accepted.delivery.status === "running" ? publicSnapshot(await client.run(accepted.delivery.runId)) : null });
   },
   async cancel(session, run, owner) {
@@ -168,7 +170,7 @@ export const diagnosisService: AgentHostService & { agents(owner: AgentHostOwner
   },
 };
 
-export async function prepareDiagnosis(session: string, run: string, input: AgentInput, owner: AgentHostOwner, credentials: AssistantCredentials): Promise<RuntimeStartRunRequest> {
+export async function prepareDiagnosis(session: string, run: string, input: AgentInput, owner: AgentHostOwner, credentials: AssistantCredentials, reader?: AgentVisibilityReader): Promise<RuntimeStartRunRequest> {
   const message = input.content;
     const row = await diagnosisSession(session, owner);
     const language = credentials.locale ?? "en";
@@ -180,7 +182,13 @@ export async function prepareDiagnosis(session: string, run: string, input: Agen
         if (previous.session_id !== session || previous.fingerprint !== fingerprint) throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
         return { ...previous, replayed: true };
       }
-      const definition = runDefinition(renderPrompt("diagnosis-agent.main.system", {}, language) + "\n\n" + ARTIFACT_MARKDOWN_PROMPT + (row.target ? `\n\nDiagnosis target (resolve before drawing conclusions): ${JSON.stringify(row.target)}` : ""), (await readDiagnosisModel(owner.domainId)).modelSelection.modelId, [skill, ...ARTIFACT_CHART_SKILLS], language);
+      const instructions = [
+        renderPrompt("diagnosis-agent.main.system", {}, language),
+        ARTIFACT_MARKDOWN_PROMPT,
+        ...(reader ? [agentVisibilityPrompt(reader)] : []),
+        ...(row.target ? [`Diagnosis target (resolve before drawing conclusions): ${JSON.stringify(row.target)}`] : []),
+      ].join("\n\n");
+      const definition = runDefinition(instructions, (await readDiagnosisModel(owner.domainId)).modelSelection.modelId, [skill, ...ARTIFACT_CHART_SKILLS], language);
       definition.agentId = DIAGNOSIS_AGENT_ID;
       return { ...(await tx.query(`INSERT INTO ${table("ops_run_intents")} (id,session_id,fingerprint,definition,language) VALUES($1,$2,$3,$4,$5) RETURNING *`, [run, session, fingerprint, JSON.stringify(definition), language])).rows[0], replayed: false };
     });

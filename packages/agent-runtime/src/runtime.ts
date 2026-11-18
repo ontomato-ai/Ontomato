@@ -1,5 +1,7 @@
 import { AgentChannel, type AgentProvider } from "./channel";
 import { agentNotificationSchema, type AgentRunIntent } from "@ontomato/contracts/agent-channel";
+import { presentationResultSchema, type RuntimePresentationCallback } from "@ontomato/contracts/agent-presentation";
+import { Type } from "typebox";
 import { Workspaces } from "./workspaces";
 import type { RuntimeSessionHistory, SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { ServiceLogStore, withServiceLogContext, getServiceLogContext, updateServiceLogContext } from "@ontomato/service-logging";
@@ -38,7 +40,7 @@ import type {
 } from "@ontomato/contracts/agent-runtime-events";
 import type { RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
 import { runAgentLoopContinue } from "./core/pi/agent-loop";
-import type { AgentEvent } from "./core/pi/types";
+import type { AgentEvent, AgentTool } from "./core/pi/types";
 import { RuntimeStore, digest, canonical, type Scope } from "./store";
 import {
   SkillRegistry,
@@ -87,6 +89,36 @@ const stopMessage = (signal: AbortSignal) =>
   signal.reason instanceof RunStop ? signal.reason.message : "Run cancelled";
 /** Digits and whitespace are noise for a command that only drifts a line number or an ID. */
 const shape = (value: string) => value.replace(/\d+/g, "#").replace(/\s+/g, " ").trim();
+
+function presentationTool(runId: string, callback: RuntimePresentationCallback): AgentTool {
+  return {
+    name: "present",
+    label: "Present",
+    description: "Show an outputs/ artifact or a registered site-relative page in the user's current conversation display. Optional state applies only to a page and must not duplicate the state query. The result reports what the view actually showed at the time of the receipt. An opened target may still be loading or showing an error.",
+    parameters: Type.Object({
+      target: Type.String(),
+      state: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+    }, { additionalProperties: false }),
+    replay: "never",
+    async execute(toolCallId, input, signal) {
+      const response = await fetch(callback.url, {
+        method: "POST",
+        redirect: "error",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Ontomato-Callback-Credential": callback.credential,
+          "X-Ontomato-Run-Id": runId,
+        },
+        body: JSON.stringify({ toolCallId, input }),
+        signal,
+      });
+      const body: unknown = await response.json();
+      const result = response.ok ? presentationResultSchema.parse(body) : body;
+      return { content: [{ type: "text", text: JSON.stringify(result) }], details: {}, isError: !response.ok };
+    },
+  };
+}
+
 export interface RuntimeOptions {
   store: RuntimeStore;
   worker?: WorkerPolicy;
@@ -219,7 +251,7 @@ export class AgentRuntime {
     body: unknown,
     reserved = false,
   ) {
-    const request = runtimeStartRunRequestSchema.parse(body);
+    const { presentationCallback, ...request } = runtimeStartRunRequestSchema.parse(body);
     const fingerprint = digest({
       sessionId,
       ...request,
@@ -322,7 +354,8 @@ export class AgentRuntime {
       // The first execution begins after this admission lock is released, never on a read/retry.
       active.done = (async () => {
         await loading;
-        await withServiceLogContext(logContext, () => this.execute(active, config!, request, skills));
+        await withServiceLogContext(logContext, () => this.execute(active, config!, request, skills,
+          reserved ? presentationCallback : undefined));
       })().finally(() => this.active.delete(key(scope, runId)));
       void active.done.catch(() =>
         withServiceLogContext(logContext, () => runtimeLogger.error("Runtime execution finalization failed")),
@@ -539,6 +572,7 @@ export class AgentRuntime {
     config: ResolvedModel,
     request: RuntimeStartRunRequest,
     skills: InstalledSkill[],
+    presentationCallback?: RuntimePresentationCallback,
   ) {
     const { scope, run, controller } = active;
     const signal = controller.signal;
@@ -601,6 +635,7 @@ export class AgentRuntime {
       tools.push(...mcp.tools);
       tools.push(...productTools(request,run.id));
       if (run.channel) tools.push(this.channel.tool(scope, run));
+      if (presentationCallback) tools.push(presentationTool(run.id, presentationCallback));
       if (new Set(tools.map((t) => t.name)).size !== tools.length)
         throw new Error("Exposed tool names must be unique");
       const model = piModel(config);

@@ -1,14 +1,17 @@
 import { agentTasksSnapshotSchema } from "@ontomato/contracts/agent-tasks";
+import { codeLimitsSchema } from "@ontomato/contracts/agent-runtime-code";
 import { afterEach, expect, it, vi } from "vitest";
 import { AgentChannel } from "../channel";
 import { AgentRuntime } from "../runtime";
+import { createRuntimeHttp } from "../http";
 import { ArtifactFiles } from "../files";
-import { canonical } from "../store";
+import { canonical, type MessageRow } from "../store";
 import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
-import type { AgentNotification } from "@ontomato/contracts/agent-channel";
+import type { RuntimeRun, RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
+import type { AgentInput, AgentNotification, AgentPrepareRequest, AgentRunContext, AgentRunIntent } from "@ontomato/contracts/agent-channel";
+import type { AddressInfo } from "node:net";
 const sessionId = "11111111-1111-4111-8111-111111111111", runId = "22222222-2222-4222-8222-222222222222", inputId = "33333333-3333-4333-8333-333333333333";
 const scope = { hostId: "test-host", domainId: "a" };
 const source = { session: { providerId: "registered-custom", sessionId }, runId };
@@ -32,6 +35,141 @@ function channel() {
   vi.spyOn(port.facts,"preparing").mockResolvedValue(null);
   return { runtime, channel: port, locked: () => locked };
 }
+
+const humanChannel = { ...context, userRecipient: { session: source.session, actor: context.actor } };
+const browserBinding = { connectionId: "55555555-5555-4555-8555-555555555555" };
+const initiatingCredential = { token: "initiating-token", apiKey: null };
+const userInput = { role: "user", content: "Show a page", timestamp: 1 } as const;
+
+function presentationAdmission(activeRunId: string | null = null) {
+  const { runtime, channel: port } = channel();
+  const receipts = new Map<string, MessageRow & { sessionId: string; intentId: string | null }>();
+  const intents = new Map<string, AgentRunIntent>();
+  const prepares: AgentPrepareRequest[] = [];
+  runtime.options.hosts = [{ id: scope.hostId, token: "fixture-host-token", providers: [context.agent.providerId] }];
+  Object.assign(runtime, { channel: port });
+  runtime.store.session = vi.fn().mockResolvedValue({ activeRunId });
+  runtime.acceptsInput = vi.fn().mockReturnValue(false);
+  const starts = vi.fn<Parameters<AgentRuntime["start"]>, ReturnType<AgentRuntime["start"]>>();
+  runtime.start = starts;
+  vi.spyOn(port.facts, "receipt").mockImplementation(async (_scope, id) => receipts.get(id) ?? null);
+  vi.spyOn(port.facts, "binding").mockResolvedValue({ agent: context.agent, actor: context.actor, parent: null });
+  vi.spyOn(port.facts, "receive").mockImplementation(async (_scope, sessionId, message, options) => {
+    const id = options?.id ?? inputId;
+    const receipt = { id, sessionId, intentId: options?.intentId ?? null, runId: null, messageSeq: 1, contextSeq: null, message };
+    receipts.set(id, receipt);
+    return receipt;
+  });
+  vi.spyOn(port.facts, "pending").mockImplementation(async () => [...receipts.values()]);
+  vi.spyOn(port.facts, "reserve").mockImplementation(async (_scope, sessionId, id, inputId, channel, options) => {
+    const intent: AgentRunIntent = {
+      id, session: { providerId: channel.agent.providerId, sessionId }, channel, inputId,
+      language: options.language, context: options.context, status: "starting", createdAt: new Date(0).toISOString(),
+      error: null, cancelled: false, executionUserId: options.executionUserId,
+    };
+    intents.set(id, intent);
+    receipts.get(inputId)!.intentId = id;
+    return intent;
+  });
+  vi.mocked(port.facts.intent).mockImplementation(async (_scope, id) => intents.get(id)!);
+  vi.spyOn(port.facts, "update").mockResolvedValue();
+  vi.spyOn(port.facts, "closePending").mockResolvedValue();
+  vi.spyOn(port.facts, "children").mockResolvedValue([]);
+  vi.spyOn(port.facts, "hasRun").mockResolvedValue(false);
+  const callback = { url: "http://provider.test/display", credential: "one-run-callback" };
+  vi.stubGlobal("fetch", async (_url: string, init: NonNullable<Parameters<typeof globalThis.fetch>[1]>) => {
+    const request = JSON.parse(String(init.body)) as AgentPrepareRequest;
+    prepares.push(request);
+    const prepared: RuntimeStartRunRequest = {
+      language: request.language, input: request.input,
+      definition: { systemPrompt: "", modelId: null, skills: [], externalMcp: [],
+        sandbox: { limits: codeLimitsSchema.parse({ memoryBytes: 1_000_000_000, wallTimeMs: 60_000, cpuSeconds: 60 }) },
+        compaction: { systemPrompt: "", summarizePrompt: "", updatePrompt: "" } },
+      environment: { values: {}, secrets: {} }, presentationCallback: callback,
+    };
+    return Response.json(prepared);
+  });
+  const submit = (input: AgentInput = userInput, channel: AgentRunContext = humanChannel) =>
+    port.request(scope, sessionId, runId, channel, input, "en", { workspaceId: sessionId },
+      initiatingCredential, undefined, browserBinding);
+  return { runtime, port, prepares, starts, callback, intents, submit };
+}
+
+it("passes the direct root binding to prepare once and keeps it out of intent context and later preparation", async () => {
+  const { port, prepares, starts, callback, intents, submit } = presentationAdmission();
+  await submit();
+  expect(prepares[0]).toMatchObject({ presentationBinding: browserBinding, context: { workspaceId: sessionId } });
+  expect(intents.get(runId)).not.toHaveProperty("presentationBinding");
+  expect(intents.get(runId)?.context).toEqual({ workspaceId: sessionId });
+  expect(starts.mock.calls[0]?.[5]).toMatchObject({ presentationCallback: callback });
+  expect(await submit()).toMatchObject({ replayed: true });
+  expect(prepares).toHaveLength(1);
+  await port.prepare(intents.get(runId)!);
+  expect(prepares.at(-1)).not.toHaveProperty("presentationBinding");
+  expect((starts.mock.calls.at(-1)?.[5] as RuntimeStartRunRequest).presentationCallback).toBeUndefined();
+});
+
+it.each(["delegated", "notification"] as const)("omits a supplied binding on %s prepare", async (kind) => {
+  const { prepares, starts, intents, submit } = presentationAdmission();
+  const parent = { session: source.session, runId: inputId };
+  intents.set(inputId, { id: inputId, session: source.session, channel: context, language: "en", inputId,
+    status: "running", createdAt: new Date(0).toISOString(), error: null, cancelled: false });
+  if (kind === "delegated") await submit(userInput, { ...humanChannel, requestedBy: parent });
+  else await submit({ role: "notification", kind: "agent-message", source: { kind: "external" }, content: "Continue work", timestamp: 2 });
+  expect(prepares).toHaveLength(1);
+  expect(prepares[0]).not.toHaveProperty("presentationBinding");
+  expect((starts.mock.calls[0]?.[5] as RuntimeStartRunRequest).presentationCallback).toBeUndefined();
+});
+
+it.each(["cancel", "stop"] as const)("drops a queued binding on %s before later preparation", async (action) => {
+  const queued = presentationAdmission(inputId);
+  expect(await queued.submit()).toMatchObject({ delivery: { status: "starting" } });
+  expect(queued.prepares).toHaveLength(0);
+  const pending = queued.intents.get(runId)!;
+  if (action === "cancel") await queued.port.cancel(scope, pending);
+  else await queued.port.stopModel(scope, runId);
+  await queued.port.prepare(pending);
+  expect(queued.prepares).toHaveLength(1);
+  expect(queued.prepares[0]).not.toHaveProperty("presentationBinding");
+});
+
+it("cannot prepare a bound run again after its delivery has settled", async () => {
+  const settled = presentationAdmission();
+  await settled.submit();
+  const finished = settled.intents.get(runId)!;
+  finished.status = "completed";
+  vi.spyOn(settled.port, "callback").mockResolvedValue({
+    status: "completed", settled: true, summary: "", process: { mode: "none" }, results: [], quality: [], files: [],
+  });
+  await settled.port.stopped(scope, { ...run, channel: humanChannel });
+  await expect(settled.port.prepare(finished)).rejects.toMatchObject({ code: "CALLER_CREDENTIAL_INVALID" });
+  expect(settled.prepares).toHaveLength(1);
+});
+
+it("drops a submitted presentation binding at the credentialFrom HTTP entry", async () => {
+  const { runtime, channel: port } = channel();
+  runtime.options.hosts = [{ id: scope.hostId, token: "fixture-host-token", providers: [context.agent.providerId] }];
+  Object.assign(runtime, { channel: port });
+  const original = await port.facts.intent(scope, runId);
+  vi.spyOn(port.facts, "task").mockResolvedValue({ scope, intent: { ...original, channel: humanChannel } });
+  const request = vi.spyOn(port, "request").mockResolvedValue({} as Awaited<ReturnType<AgentChannel["request"]>>);
+  const server = createRuntimeHttp(runtime).listen(0, "127.0.0.1");
+  await new Promise<void>(done => server.once("listening", done));
+  try {
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/channel/sessions/${sessionId}/runs`;
+    const response = await fetch(url, {
+      method: "POST", headers: { authorization: "Bearer fixture-host-token", "Content-Type": "application/json",
+        "x-domain-id": scope.domainId, "x-correlation-id": "fixture", "idempotency-key": inputId },
+      body: JSON.stringify({ channel: humanChannel, input: userInput, language: "en",
+        credentialFrom: runId, presentationBinding: browserBinding }),
+    });
+    expect(response.status).toBe(202);
+    expect(request.mock.calls[0]?.at(-1)).toBeUndefined();
+  } finally {
+    await new Promise<void>(done => server.close(() => done()));
+  }
+});
+
 it("seals under the consumption lock when the queue is empty", async () => {
   const { runtime, channel: port } = channel();
   vi.spyOn(port.facts, "pending").mockResolvedValue([]);

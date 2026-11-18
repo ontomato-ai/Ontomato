@@ -3,6 +3,7 @@ import { Type } from "typebox";
 import { z } from "zod";
 import { agentChannelCommandSchema, agentDeliverySchema, agentProviderAcknowledgementSchema, agentSteerPreparationSchema, agentDirectorySchema, type AgentRunIntent, type AgentRunContext, type AgentExecutionRef, type AgentSessionRef, type AgentInput, type AgentNotification, type AgentPrepareRequest, type AgentActorRef, type AgentCredential, type AgentInputDelivery } from "@ontomato/contracts/agent-channel";
 import type { AgentUserQuestionRequest } from "@ontomato/contracts/agent-user-questions";
+import type { PresentationBinding } from "@ontomato/contracts/agent-presentation";
 import { runtimeStartRunRequestSchema, type RuntimeRun } from "@ontomato/contracts/agent-runtime";
 import type { RuntimeMessage } from "@ontomato/contracts/agent-runtime-messages";
 import type { AgentTask,QualityResult } from "@ontomato/contracts/agent-tasks";
@@ -22,10 +23,18 @@ export class AgentChannel {
   /** PI returns the same queued object; preserve its receipt identity in the event sink. */
   readonly inputIds = new WeakMap<object, string>();
   private listeners = new Map<string, Set<Listener>>();
-  private chains = new Map<string, { credential: AgentCredential; executions: Set<string> }>();
+  private chains = new Map<string, { credential: AgentCredential; executions: Set<string>; presentationBinding?: PresentationBinding }>();
   private chainKey(channel: AgentRunContext) { return JSON.stringify([channel.actor.domainId,channel.root.session.providerId,channel.root.session.sessionId,channel.root.runId]); }
-  remember(channel: AgentRunContext, credential: AgentCredential) {
-    this.chains.set(this.chainKey(channel), { credential, executions: this.chains.get(this.chainKey(channel))?.executions ?? new Set() });
+  remember(channel: AgentRunContext, credential: AgentCredential, presentationBinding?: PresentationBinding) {
+    this.chains.set(this.chainKey(channel), { credential, executions: this.chains.get(this.chainKey(channel))?.executions ?? new Set(), presentationBinding });
+  }
+  /** A direct admission may wait for the previous run to finish sealing. Its binding is consumed once. */
+  private takePresentationBinding(intent: AgentRunIntent) {
+    if (intent.id !== intent.channel.root.runId) return;
+    const chain = this.chains.get(this.chainKey(intent.channel));
+    const binding = chain?.presentationBinding;
+    if (chain) delete chain.presentationBinding;
+    return binding;
   }
   credential(channel: AgentRunContext) {
     const chain = this.chains.get(this.chainKey(channel));
@@ -89,14 +98,15 @@ export class AgentChannel {
     set.add(listener); this.listeners.set(id, set);
     return () => { set.delete(listener); if (!set.size) this.listeners.delete(id); };
   }
-  async request(scope: Scope, sessionId: string, runId: string, channel: AgentRunContext, input: AgentInput, language: string, context: AgentRunIntent["context"] | undefined, credential: AgentCredential, inheritedExecutionUserId?:string|null) {
+  async request(scope: Scope, sessionId: string, runId: string, channel: AgentRunContext, input: AgentInput, language: string, context: AgentRunIntent["context"] | undefined, credential: AgentCredential, inheritedExecutionUserId?:string|null, presentationBinding?: PresentationBinding) {
     if (scope.domainId !== channel.actor.domainId || this.provider(channel.agent.providerId).hostId !== scope.hostId)
       throw new RuntimeError(403, "CROSS_DOMAIN", "Agent identity and target must belong to the current domain and provider");
     if (input.role === "notification" && input.kind === "agent-answer" && input.replyTo) {
       const question = await this.facts.question(scope.domainId,input.replyTo);
       if (question.recipient === "user") return this.answerUserQuestion(scope,sessionId,runId,channel,input,credential);
     }
-    const accepted=await this.accept({providerId:channel.agent.providerId,sessionId},channel.actor,input,{steer:true,web:{runId,channel,language,context,credential,executionUserId:inheritedExecutionUserId}});
+    const accepted=await this.accept({providerId:channel.agent.providerId,sessionId},channel.actor,input,{steer:true,web:{runId,channel,language,context,credential,executionUserId:inheritedExecutionUserId,
+      presentationBinding: input.role === "user" && channel.requestedBy === null && channel.userRecipient ? presentationBinding : undefined}});
     return {...accepted,delivery:accepted.delivery!};
   }
   /** Service-only explicit human route, separate from an agent's ordinary needsInput command. */
@@ -160,13 +170,15 @@ export class AgentChannel {
   }
   async prepare(intent: AgentRunIntent) {
     const scope = this.scope(intent.session, intent.channel.actor.domainId);
+    const presentationBinding = this.takePresentationBinding(intent);
     let hostPrepared = false;
     try {
       const input = (await this.facts.pending(scope, intent.session.sessionId)).find(row => row.id === intent.inputId)!.message as AgentInput;
       const parent = intent.channel.requestedBy;
       const inheritedExecution = intent.executionUserId!==undefined ? this.executionActor(intent) : parent ? this.executionActor(await this.facts.intent(this.scope(parent.session, scope.domainId), parent.runId)) : null;
-      const request: AgentPrepareRequest = { mode: "run", executionActor: inheritedExecution, language: intent.language, agent: intent.channel.agent, sessionId: intent.session.sessionId, runId: intent.id, actor: intent.channel.actor, inputId: intent.inputId, input, authority: intent.channel.authority, requestedBy: intent.channel.requestedBy, root: intent.channel.root, userRecipient: intent.channel.userRecipient ?? null, context: intent.context };
-      const prepared = runtimeStartRunRequestSchema.parse(await this.post(this.provider(intent.session.providerId), "/prepare", request, scope.domainId, this.credential(intent.channel)));
+      const request: AgentPrepareRequest = { mode: "run", executionActor: inheritedExecution, language: intent.language, agent: intent.channel.agent, sessionId: intent.session.sessionId, runId: intent.id, actor: intent.channel.actor, inputId: intent.inputId, input, authority: intent.channel.authority, requestedBy: intent.channel.requestedBy, root: intent.channel.root, userRecipient: intent.channel.userRecipient ?? null, context: intent.context, presentationBinding };
+      const { presentationCallback, ...prepared } = runtimeStartRunRequestSchema.parse(
+        await this.post(this.provider(intent.session.providerId), "/prepare", request, scope.domainId, this.credential(intent.channel)));
       hostPrepared = true;
       intent.executionUserId = prepared.executionActor?.userId ?? null;
       await this.runtime.locked(scope, intent.session.sessionId, async () => {
@@ -181,7 +193,10 @@ export class AgentChannel {
       if (inherited.classNames.length && (!authority.classNames.length || authority.classNames.some(name => !inherited.classNames.includes(name)))) throw new RuntimeError(403,"SCOPE_EXPANDED","A provider cannot expand the delegated class scope");
       const channel = { ...intent.channel, authority };
       const host = this.runtime.options.hosts.find(host => host.id === scope.hostId)!;
-      await this.runtime.start(host, scope, intent.session.sessionId, intent.id, intent.id, { ...prepared, language: intent.language, input, channel }, true);
+      await this.runtime.start(host, scope, intent.session.sessionId, intent.id, intent.id, {
+        ...prepared, language: intent.language, input, channel,
+        presentationCallback: presentationBinding ? presentationCallback : undefined,
+      }, true);
       await this.announce(intent);
     } catch (error) {
       const modelOnly=await this.runtime.locked(scope,intent.session.sessionId,async()=>{
@@ -213,7 +228,7 @@ export class AgentChannel {
   /** All inputs share receipt, admission and safe-boundary consumption. */
   private async accept(target: AgentSessionRef, actor: AgentRunContext["actor"], input: AgentInput, options: {
     requestedBy?: AgentExecutionRef; resultRecipientRunId?: string; steer?: boolean; external?: ExternalAgentCaller;
-    web?: {runId:string;channel:AgentRunContext;language:string;context:AgentRunIntent["context"];credential:AgentCredential;executionUserId?:string|null};
+    web?: {runId:string;channel:AgentRunContext;language:string;context:AgentRunIntent["context"];credential:AgentCredential;executionUserId?:string|null;presentationBinding?:PresentationBinding};
   } = {}) {
     const {requestedBy,resultRecipientRunId,steer=false,external,web}=options, scope=this.scope(target,actor.domainId);
     let launch: AgentRunIntent | undefined;
@@ -262,7 +277,8 @@ export class AgentChannel {
         executionUserId:web ? web.executionUserId : external ? null : requesterRun ? requesterRun.executionUserId : previous?.executionUserId,
         afterRunId:session.activeRunId ?? undefined,
       });
-      if((web || external) && channel.root.runId===runId) this.remember(channel,web?.credential ?? external!.credential);
+      if((web || external) && channel.root.runId===runId)
+        this.remember(channel,web?.credential ?? external!.credential,web?.presentationBinding);
       this.retain(intent);
       if(!session.activeRunId) launch=intent;
       return {input:received,replayed:false,delivery:{messageId:received.id,sessionRef:target,runId,delivery:"run",status:"starting"}};
@@ -455,6 +471,7 @@ export class AgentChannel {
     const intent=await this.facts.intent(scope,runId);
     const children=await this.runtime.locked(scope,intent.session.sessionId,async()=>{
       const current=await this.facts.intent(scope,runId);current.cancelled=true;current.cancelMode="model";
+      this.takePresentationBinding(current);
       if(current.status==="starting") current.status="cancelled";
       await this.facts.closePending(scope,current.session.sessionId,current.id);
       await this.facts.update(scope,current);
@@ -471,6 +488,7 @@ export class AgentChannel {
     const seal = async (scope: Scope, candidate: AgentRunIntent) => {
       const children = await this.runtime.locked(scope,candidate.session.sessionId,async () => {
         const current = await this.facts.intent(scope,candidate.id);
+        this.takePresentationBinding(current);
         const cancelHost=current.cancelMode==="model" || current.status!=="starting" && current.status!=="cancelled";
         current.cancelled = true;current.cancelMode=undefined;
         await this.facts.closePending(scope,current.session.sessionId,current.id);

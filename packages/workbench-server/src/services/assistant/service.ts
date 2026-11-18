@@ -9,6 +9,7 @@ import type { AgentPrepareRequest, AgentRunContext } from "@ontomato/contracts/a
 import type { RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
 import { prepareAnalystRun } from "./prepare";
 import { prepareAppBuilderRun } from "../app-builder/prepare";
+import { visibilityReader } from "../agent-host/presentation";
 import {isAppBuilderKind} from '../app-builder/definition';
 import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { randomUUID } from "node:crypto";
@@ -64,6 +65,7 @@ const sessionView = (s: SessionRow, latestRun: LatestRun | null) =>
   });
 export { sessionView };
 export const assistantService = {
+  presentationHost: "workbench" as const,
   async isAppBuilder(owner: AssistantOwner, input: { agentId: string } | { sessionId: string }) {
     const agentId = "agentId" in input ? input.agentId : (await assistantStore.session(input.sessionId, owner)).agent_id;
     return isAppBuilderKind((await assistantStore.agent(agentId, owner)).kind);
@@ -232,7 +234,7 @@ export const assistantService = {
     const { row: turn } = await assistantStore.reserve(sessionId,id,message,owner,a.class_names);
     const request = await withDomainSkills(owner.domainId,async () => {
       const prepare = isAppBuilderKind(a.kind) ? prepareAppBuilderRun : prepareAnalystRun;
-      return prepare({ a,session,turn,message,input,inputId:body.inputId,ontologyContext:null,owner,credentials,executionUserId,executionCredentials });
+      return prepare({ a,session,turn,message,input,inputId:body.inputId,ontologyContext:null,owner,credentials,executionUserId,executionCredentials,reader:visibilityReader(body) });
     });
     await assistantStore.admitted(id,message);
     return { ...request,input,executionActor:executionActor(executionUserId,owner.domainId),authority: { classNames: a.class_names,executionKind: isAppBuilderKind(a.kind) ? "build-test" : "live" } };
@@ -254,7 +256,7 @@ export const assistantService = {
     const actor = await openAgentCaller(owner, credentials), agent = { providerId: "workbench", agentId: session.agent_id };
     await client.request(`/v1/channel/sessions/${sessionId}/bind`, "POST", { agent, actor });
     const channel: AgentRunContext = { agent, actor, authority: { classNames: a.class_names, executionKind: isAppBuilderKind(a.kind) ? "build-test" : "live" }, requestedBy: null, root: { session: { providerId: "workbench", sessionId }, runId: id }, userRecipient: entry === "human" ? {session: {providerId: "workbench",sessionId: sessionId},actor} : null };
-    const accepted = agentHostSendResultSchema.omit({snapshot:true}).parse(await client.request(`/v1/channel/sessions/${sessionId}/runs`, "POST", { channel, credential: {token:credentials.token ?? null,apiKey:credentials.apiKey ?? null}, language: resolveLocale(credentials.locale), input: { role: "user", content: input.message, timestamp: Date.now() }, replyTo: input.replyTo, selectedOption: input.selectedOption, ...(session.workspace_id ? { context: { workspaceId: session.workspace_id } } : {}) }, id));
+    const accepted = agentHostSendResultSchema.omit({snapshot:true}).parse(await client.request(`/v1/channel/sessions/${sessionId}/runs`, "POST", { channel, credential: {token:credentials.token ?? null,apiKey:credentials.apiKey ?? null}, language: resolveLocale(credentials.locale), input: { role: "user", content: input.message, timestamp: Date.now() }, replyTo: input.replyTo, selectedOption: input.selectedOption, ...(session.workspace_id ? { context: { workspaceId: session.workspace_id } } : {}), presentationBinding: entry === "human" ? input.presentationBinding : undefined }, id));
     return agentHostSendResultSchema.parse({ ...accepted, snapshot: accepted.delivery.delivery === "run" && accepted.delivery.status === "running" ? publicSnapshot(await client.run(accepted.delivery.runId)) : null });
 
   },

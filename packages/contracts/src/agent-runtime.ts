@@ -7,6 +7,7 @@ import { codeLimitsSchema } from "./agent-runtime-code";
 import { runtimeMcpRefSchema } from "./agent-runtime-mcp";
 import {runtimeProductToolSchema} from './agent-runtime-product-tools';
 import { runtimeArtifactSchema } from "./agent-runtime-artifacts";
+import { runtimePresentationCallbackSchema } from "./agent-presentation";
 import {
   runtimeCursorSchema,
   runtimeToolExecutionSchema,
@@ -89,6 +90,7 @@ export const runtimeStartRunRequestSchema = z
     authority: agentAuthoritySchema.optional(),
     executionActor: agentExecutionActorRefSchema.nullable().optional(),
     environment: runtimeEnvironmentSchema,
+    presentationCallback: runtimePresentationCallbackSchema.optional(),
   })
   .strict();
 

@@ -18,13 +18,15 @@ import {profileForSession,profileSourceForSession} from '../product-assets/agent
 import {profileRuntimeTools} from '../product-assets/runtime-tools';
 import {callbackCredential} from '../agent-runtime/callback-credential';
 import {environment} from '../../config/environment';
+import { agentVisibilityPrompt, type AgentVisibilityReader } from "../agent-host/visibility";
 
 export interface AssistantPreparation {
   a: AgentRow; session: SessionRow; turn: TurnRow; message: string; input: AgentInput; inputId: string; ontologyContext: string | null;
   owner: AssistantOwner; credentials: AssistantCredentials;
   executionUserId:string|null; executionCredentials:AssistantCredentials;
+  reader?: AgentVisibilityReader;
 }
-export async function prepareAnalystRun({ a, session, turn, input, inputId, ontologyContext, owner, credentials, executionUserId, executionCredentials }: AssistantPreparation): Promise<RuntimeStartRunRequest> {
+export async function prepareAnalystRun({ a, session, turn, input, inputId, ontologyContext, owner, credentials, executionUserId, executionCredentials, reader }: AssistantPreparation): Promise<RuntimeStartRunRequest> {
   const sessionId = session.id, id = turn.id;
   const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
   const source=await profileSourceForSession(owner,session.id,session.agent_id);
@@ -51,9 +53,10 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
     : effectiveSystemPrompt(a,resolveLocale(credentials.locale)) + (retrieval ? "\n\nInitial ontology context:\n"+ontologyContext : "");
   const panelEnvironment=profile?null:executionUserId===null?executionSkillEnvironment(owner,credentials,id):skillEnvironment;
   const governance=hasGovernanceSkill(skills),callbackPath=`/api/assistant/sessions/${session.id}/governance-window`;
+  const artifactInstructions = [ARTIFACT_MARKDOWN_PROMPT, ...(reader ? [agentVisibilityPrompt(reader)] : [])].join("\n\n");
   return {
     language: resolveLocale(credentials.locale), input,
-    definition: {agentId:session.agent_id,...runDefinition(instructions+"\n\n"+ARTIFACT_MARKDOWN_PROMPT+ASSISTANT_INTERACTION_CONTEXT,
+    definition: {agentId:session.agent_id,...runDefinition(instructions+"\n\n"+artifactInstructions+"\n"+ASSISTANT_INTERACTION_CONTEXT,
       a.model_selection.modelId,skills,credentials.locale,profile?[]:a.enabled_mcp_service_ids.map(id=>({id})),prepared?.pageDrafts??false),
       ...(profile?{productTools:profileRuntimeTools(profile,sessionId),toolSurface:"product" as const}:{})},
     environment: {
