@@ -180,6 +180,9 @@ export interface ShellLabels {
    * default agent is gone. The page shows this rather than choosing another agent.
    */
   pageAgentUnavailable: string;
+  /** A composer floating over a page folds into a round button, and opens again from it. */
+  collapseComposer: string;
+  expandComposer: string;
   /** A message's last line names the page it was written on. */
   pageContext: (page: string) => string;
   /** The same line names what was selected in the page. */

@@ -549,6 +549,8 @@ export default {
     "thinking": "Thinking",
     "working": "Working",
     "switchWhileRunning": "Finish or stop the running reply before switching agents",
+    "collapseComposer": "Hide the message box",
+    "expandComposer": "Ask about this page",
     "pageAgentUnavailable": "This page's agent is unavailable: its page skill has no agent for you, or the agent it names has gone. Ask a domain administrator to check the page's configuration.",
     "pageContext": "Current page: {page}",
     "selectionContext": "Selected: {selection}",

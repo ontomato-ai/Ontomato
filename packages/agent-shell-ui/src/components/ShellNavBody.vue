@@ -32,6 +32,8 @@ const props = withDefaults(defineProps<{
    * foot: no agent switch, no new conversation, no recent conversations.
    */
   conversations?: boolean;
+  /** The application runs on more than one agent: the head is the agent chooser, however many it lists right now. */
+  agentPicker?: boolean;
   /** The shell's own words; the column is drawn outside the conversation's provider, so they are passed in. */
   labels: ShellLabels;
 }>(), {
@@ -45,6 +47,7 @@ const props = withDefaults(defineProps<{
   featureId: null,
   bottom: null,
   conversations: true,
+  agentPicker: false,
 });
 const emit = defineEmits<{
   newConversation: [];
@@ -138,8 +141,12 @@ function saveRename(id: string) {
 }
 
 
-/** More than one agent makes the head a switcher; one agent leaves the application's name there. */
-const hasPicker = computed(() => props.conversations && props.agents.length > 1);
+/**
+ * The head is the chooser in an application that runs on several agents, and stays one when a page beside the
+ * conversation narrows the list to a single candidate: it still says which agent the conversation runs on. An
+ * application that runs on one agent shows its name.
+ */
+const hasPicker = computed(() => props.conversations && props.agentPicker);
 
 function requestDelete(session: AgentHostSession) {
   closeSessionMenu();

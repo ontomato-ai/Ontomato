@@ -23,6 +23,8 @@ export function actionChatLabels(overrides: Partial<ShellLabels> = {}): ShellLab
     working: "Working",
     switchWhileRunning: "Finish or stop the running reply before switching agents",
     pageAgentUnavailable: "This page's agent is unavailable; ask a domain administrator to check its configuration.",
+    collapseComposer: "Hide the message box",
+    expandComposer: "Ask about this page",
     pageContext: (page) => `Current page: ${page}`,
     selectionContext: (selection) => `Selected: ${selection}`,
     toolInput: "Input",
