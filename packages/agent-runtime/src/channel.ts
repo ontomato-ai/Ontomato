@@ -212,10 +212,10 @@ export class AgentChannel {
   }
   /** All inputs share receipt, admission and safe-boundary consumption. */
   private async accept(target: AgentSessionRef, actor: AgentRunContext["actor"], input: AgentInput, options: {
-    requestedBy?: AgentExecutionRef; steer?: boolean; external?: ExternalAgentCaller;
+    requestedBy?: AgentExecutionRef; resultRecipientRunId?: string; steer?: boolean; external?: ExternalAgentCaller;
     web?: {runId:string;channel:AgentRunContext;language:string;context:AgentRunIntent["context"];credential:AgentCredential;executionUserId?:string|null};
   } = {}) {
-    const {requestedBy,steer=false,external,web}=options, scope=this.scope(target,actor.domainId);
+    const {requestedBy,resultRecipientRunId,steer=false,external,web}=options, scope=this.scope(target,actor.domainId);
     let launch: AgentRunIntent | undefined;
     const accepted=await this.runtime.locked(scope,target.sessionId,async (): Promise<{delivery:AgentInputDelivery | null;input:MessageRow;replayed:boolean}> => {
       if(input.role === "notification" && input.kind === "agent-result" && "session" in input.source) {
@@ -245,7 +245,9 @@ export class AgentChannel {
         if(openRun) await this.runtime.inputReceived(scope,openRun,received);
         return {input:received,replayed:false,delivery:{messageId:received.id,sessionRef:target,runId:existingRun,delivery:"steer",status:openRun?"running":"starting"}};
       }
-      const previous=web?null:await this.facts.latest(scope,target.sessionId);
+      const previous = web ? null : resultRecipientRunId
+        ? await this.facts.intent(scope,resultRecipientRunId)
+        : await this.facts.latest(scope,target.sessionId);
       const sender=input.role === "notification" && "session" in input.source ? await this.facts.intent(this.scope(input.source.session,scope.domainId),input.source.runId) : null;
       if(sender?.cancelled || (previous?.cancelled && !requestedBy && !external)) return {input:received,delivery:null,replayed:false};
       const runId=web?.runId ?? randomUUID();
@@ -254,7 +256,12 @@ export class AgentChannel {
       const channel:AgentRunContext=web?.channel ?? {agent:binding.agent,actor:requestedBy || external || (input.role === "notification" && "kind" in input.source && input.source.kind === "user") ? actor : previous!.channel.actor,authority:external?.authority ?? requester?.authority ?? previous!.channel.authority,
         requestedBy:external?null:requestedBy ?? previous!.channel.requestedBy,root:external?{session:target,runId}:requester?.root ?? previous!.channel.root,
         userRecipient:external ? null : requester?.userRecipient ?? previous?.channel.userRecipient ?? null};
-      const intent=await this.facts.reserve(scope,target.sessionId,runId,received.id,channel,{language:web?.language ?? external?.language ?? requesterRun?.language ?? previous!.language,context:web?.context ?? binding.context,executionUserId:web?web.executionUserId:external?null:requesterRun?requesterRun.executionUserId:previous?.executionUserId,afterRunId:session.activeRunId ?? undefined});
+      const intent = await this.facts.reserve(scope,target.sessionId,runId,received.id,channel,{
+        language:web?.language ?? external?.language ?? requesterRun?.language ?? previous!.language,
+        context:resultRecipientRunId ? previous!.context : web?.context ?? binding.context,
+        executionUserId:web ? web.executionUserId : external ? null : requesterRun ? requesterRun.executionUserId : previous?.executionUserId,
+        afterRunId:session.activeRunId ?? undefined,
+      });
       if((web || external) && channel.root.runId===runId) this.remember(channel,web?.credential ?? external!.credential);
       this.retain(intent);
       if(!session.activeRunId) launch=intent;
@@ -310,7 +317,12 @@ export class AgentChannel {
       ? { status: intent.status, summary: intent.error ?? intent.status, settled:true }
       : agentDeliverySchema.parse(await this.callback(intent, "read"));
     if (delivery.status === "running" || delivery.status === "starting") return;
-    if (parent && !(intent.cancelled && intent.cancelMode!=="model")) await this.deliver(parent.session, intent.channel.actor, { role: "notification", kind: "agent-result", source: { session: intent.session, runId }, outcome: delivery.status, content: delivery.summary, timestamp: Date.now() });
+    if (parent && !(intent.cancelled && intent.cancelMode!=="model")) {
+      await this.accept(parent.session, intent.channel.actor, {
+        role: "notification", kind: "agent-result", source: { session: intent.session, runId },
+        outcome: delivery.status, content: delivery.summary, timestamp: Date.now(),
+      }, { resultRecipientRunId: parent.runId });
+    }
     if (delivery.settled) this.release(intent);
   }
   async changed(scope:Scope,runId:string,kind:"delivery"|"quality"|"progress") {
