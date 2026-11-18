@@ -43,7 +43,7 @@ const emit = defineEmits<{
 
 const route = useRoute();
 const router = useRouter();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 /** The application's use relations, once Java has answered; until then the page names none and says nothing. */
 const uses = ref<readonly ApplicationPanelUse[] | null>(null);
 const failure = ref("");
@@ -116,6 +116,24 @@ function writeAddress(next: string) {
 }
 
 const requestedState = computed(() => panelAddressState(opened.value));
+
+/**
+ * The page's name is the application's: its use relation's display name in the reader's language. A relation without
+ * one is named by what its panel reports.
+ */
+const pageName = computed(() => use.value?.names?.[locale.value] ?? use.value?.names?.en ?? "");
+
+/**
+ * The page the reader opened is known before its frame has loaded: its name and address go to the conversation at once,
+ * with no selection, since the panel has not said what it shows yet. What the frame reports later adds that.
+ */
+watch(use, (opened) => {
+  if (opened) emit("context", { url: panelAddress(address.value, requestedState.value), label: pageName.value, selection: [] });
+}, { immediate: true });
+
+function reportContext(context: PageContext) {
+  emit("context", { ...context, label: pageName.value || context.label });
+}
 </script>
 
 <template>
@@ -130,6 +148,6 @@ const requestedState = computed(() => panelAddressState(opened.value));
     :address="address"
     :initial="requestedState"
     @address="writeAddress"
-    @context="emit('context', $event)"
+    @context="reportContext"
   />
 </template>

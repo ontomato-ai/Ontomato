@@ -211,4 +211,39 @@ describe("a panel application's page beside the conversation", () => {
     silent.value = false;
     wrapper.unmount();
   });
+
+  it("names the page by its use relation from the moment it opens, and keeps that name once the frame reports", async () => {
+    // The page's name is the application's navigation, a fact the shell has before the frame loads: a message written at
+    // once carries it with the address. The panel's own title, which the frame reports, does not replace it.
+    silent.value = true;
+    uses[0]!.names = { en: "Scheduled tasks", "zh-CN": "定时任务" };
+    const page = "/applications/app-a/tasks";
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ ...platformRoutes.chat, component: { template: "<div />" } }],
+    });
+    await router.push({ path: platformRoutes.chat.path, query: { page } });
+    await router.isReady();
+    const wrapper = mount(BusinessWorkbench, {
+      props: { defaultLogo: "", defaultBrandName: "Ontomato" },
+      global: {
+        plugins: [workbenchI18n(), ElementPlus, router],
+        provide: {
+          [pilotPageKey as symbol]: pilotPageResolver,
+          [platformPageAccessKey as symbol]: () => true,
+          [pageCounterKey as symbol]: { agents: async () => [agent], preferredAgentId: ref<string | null>(agent.id), ask: () => {} },
+        },
+      },
+    });
+    await flushPromises();
+
+    expect((shellProps.value as unknown as ShellSeen).pageContext).toEqual({ url: page, label: "Scheduled tasks", selection: [] });
+
+    instances[0]!.report();
+    await flushPromises();
+    expect((shellProps.value as unknown as ShellSeen).pageContext).toEqual({ ...contextOf(page, null), label: "Scheduled tasks" });
+    delete uses[0]!.names;
+    silent.value = false;
+    wrapper.unmount();
+  });
 });
