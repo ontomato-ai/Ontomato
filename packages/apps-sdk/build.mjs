@@ -11,6 +11,7 @@ import { build } from "vite";
 import { finalizeSdk, VERSION_PLACEHOLDER } from "./content-version.mjs";
 import { elementComponents } from "./element-components.mjs";
 import { panelAppearance } from "./panel-appearance.mjs";
+import { sdkChunks } from "./sdk-chunks.mjs";
 import { catalogueMarkdown, checkCatalogue, componentMetadata, referenceMarkdown } from "./reference.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -90,6 +91,7 @@ async function main() {
   await build({
     configFile: false,
     root: HERE,
+    base: "./",
     plugins: [vue(), elementComponents(), await panelAppearance(resolve(editionArg)), oneVueRuntime()],
     define: { "process.env.NODE_ENV": JSON.stringify("production") },
     resolve: {
@@ -104,13 +106,18 @@ async function main() {
       outDir,
       emptyOutDir: true,
       reportCompressedSize: false,
-      lib: {
-        entry: Object.fromEntries(ENTRIES.map((entry) => [entry.file.replace(/\.js$/, ""), join(HERE, entry.source)])),
-        formats: ["es"],
-        fileName: (_format, name) => `${name}.js`,
-      },
+      cssCodeSplit: false,
+      // Vite starts a selected chunk and its static dependencies together, which matters in an HTTP/1.1 frame.
+      modulePreload: { polyfill: false },
       rollupOptions: {
+        input: Object.fromEntries(ENTRIES.map((entry) => [entry.file.replace(/\.js$/, ""), join(HERE, entry.source)])),
+        // These are browser-ready modules. Use Vite's full JS minification and keep the published entry exports.
+        preserveEntrySignatures: "strict",
         output: {
+          format: "es",
+          entryFileNames: "[name].js",
+          manualChunks: sdkChunks(HERE),
+          onlyExplicitManualChunks: true,
           chunkFileNames: "chunks/[name]-[hash].js",
           assetFileNames: (asset) => (asset.name === "style.css" ? STYLESHEET : "assets/[name]-[hash][extname]"),
         },
