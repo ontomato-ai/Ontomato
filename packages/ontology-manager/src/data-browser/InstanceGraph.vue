@@ -429,6 +429,14 @@ async function loadNodeInfo(node: InstanceGraphNode) {
 async function selectNode(id: string) {
   const node = nodes.value.find((item) => item.id === id);
   if (!node) return;
+  if (selectedClass.value) {
+    selectedClass.value = "";
+    clearTimeout(searchTimer);
+    searchRequest += 1;
+    searchNodes.value = [];
+    searchMore.value = false;
+    searching.value = false;
+  }
   selectedNode.value = node;
   applySelection(id);
   await updateOverviewRelations();
@@ -1248,7 +1256,7 @@ onBeforeUnmount(() => {
   display: grid;
   min-width: 0;
   gap: var(--spacing-sm);
-  padding: var(--manager-module-padding);
+  padding: var(--manager-content-gap);
   border-bottom: 1px solid var(--el-border-color-light);
   font-size: var(--text-sm);
   line-height: var(--leading-normal);
