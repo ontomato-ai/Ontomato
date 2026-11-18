@@ -14,5 +14,6 @@ public class AnonymousApplicationAccess implements ApplicationAccess {
     public boolean canMaintain(JSONObject application, User user) { return true; }
     public boolean canEnter(JSONObject application, User user) { return true; }
     public java.util.List<PageSkills.Mapping> pageSkills(java.util.List<PageSkills.Mapping> mappings, User user) { return mappings; }
+    public java.util.List<ApplicationPanelUse> panelUses(java.util.List<ApplicationPanelUse> uses, User user) { return uses; }
     public void declare(JSONObject application, ApplicationCatalog.Declaration declaration, boolean created) {}
 }

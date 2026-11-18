@@ -59,7 +59,6 @@ function useRelation(id: string, pageKey: string, panelId: string, path: string)
     panelId,
     path,
     access: { kind: "domain-member" },
-    skill: { namespace: { kind: "provider", provider: "workbench" }, name: "scheduled-tasks" },
   };
 }
 

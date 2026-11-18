@@ -51,15 +51,10 @@ public class ApplicationCatalog {
     }
     public PageSkills.Projection pageSkills(User user) {
         var applications = all().stream().filter(app -> inDomain(app,user)).toList();
-        var mappings = mappings(applications);
-        PageSkills.validate(mappings);
-        var readable = applications.stream().filter(app -> !panelManaged(app) || access.canEnter(app,user)).map(app -> {
-            if (!panelManaged(app)) return app;
-            var projection = new JSONObject(app);
-            projection.put("panelUses", app.getList("panelUses", ApplicationPanelUse.class).stream().filter(use -> grants.allowed(use.panelId(), "use")).toList());
-            return projection;
-        }).toList();
-        return new PageSkills.Projection(access.pageSkills(mappings(readable),user), mappings.stream().map(PageSkills.Mapping::skill).distinct().toList());
+        validateLocators(applications);
+        var mappings = applications.stream().filter(app -> !panelManaged(app))
+            .flatMap(app -> app.getList("pageSkills", PageSkills.Mapping.class).stream()).toList();
+        return new PageSkills.Projection(access.pageSkills(mappings,user), mappings.stream().map(PageSkills.Mapping::skill).distinct().toList());
     }
     public JSONObject require(String id) {
         return all().stream().filter(a -> id.equals(a.getString("id"))).findFirst()
@@ -190,8 +185,8 @@ public class ApplicationCatalog {
                 !groups.contains(permission.groupKey()) || !codes.add(permission.code())) throw bad("Invalid permission declaration");
         }
         PageSkills.validate(d.pageSkills());
-        ApplicationPanelUse.project(d.panelUses());
-        if (!d.pageSkills().isEmpty() && !d.panelUses().isEmpty()) throw bad("Panel uses own page skill mappings");
+        ApplicationPanelUse.validate(d.panelUses());
+        if (!d.pageSkills().isEmpty() && !d.panelUses().isEmpty()) throw bad("Panel applications cannot declare page skills");
     }
 
     public static boolean panelManaged(JSONObject app) {
@@ -199,31 +194,32 @@ public class ApplicationCatalog {
     }
     private static void validateEntry(JSONObject entry, Declaration declaration) {
         if ("panels".equals(entry.getString("renderer"))) {
-            if (!declaration.pageSkills().isEmpty()) throw bad("Panel page skills must be projected from panelUses");
+            if (!declaration.pageSkills().isEmpty()) throw bad("Panel applications cannot declare page skills");
         } else if (!declaration.panelUses().isEmpty()) throw bad("Panel uses require a panels entry");
     }
-    private static List<PageSkills.Mapping> mappings(List<JSONObject> applications) {
-        var result = new LinkedHashMap<String, PageSkills.Mapping>();
-        var sources = new HashMap<String, Boolean>();
-        var pages = new HashSet<String>();
+    /** Use locators remain reserved even while panel skill providers are unavailable. */
+    private static void validateLocators(List<JSONObject> applications) {
+        var locators = new HashMap<String, Boolean>();
+        var panelPages = new HashSet<String>();
         for (var app : applications) {
-            boolean panel = panelManaged(app);
-            if (panel) for (var use : app.getList("panelUses", ApplicationPanelUse.class))
-                if (!pages.add(use.pageKey())) throw bad("Panel use page keys must be unique in the domain");
-            var values = panel ? ApplicationPanelUse.project(app.getList("panelUses", ApplicationPanelUse.class))
-                : app.getList("pageSkills", PageSkills.Mapping.class);
-            for (var mapping : values) {
-                var previous = result.get(mapping.locator());
-                if (previous != null) {
-                    if (!panel || !sources.get(mapping.locator()) || mapping.permissionCode() == null || !previous.skill().equals(mapping.skill()))
-                        throw bad("Duplicate page locator or mixed legacy/panels permission group");
-                    var defaults = new ArrayList<>(previous.defaults()); defaults.addAll(mapping.defaults());
-                    mapping = new PageSkills.Mapping(mapping.permissionCode(), null, null, mapping.skill(), defaults);
+            if (panelManaged(app)) {
+                var uses = app.getList("panelUses", ApplicationPanelUse.class);
+                ApplicationPanelUse.validate(uses);
+                for (var use : uses) {
+                    if (!panelPages.add(use.pageKey())) throw bad("Panel use page keys must be unique in the domain");
+                    reserveLocator(locators, use.locator(), true, use.access().permissionCode() != null);
                 }
-                result.put(mapping.locator(), mapping); sources.put(mapping.locator(), panel);
+            } else {
+                var mappings = app.getList("pageSkills", PageSkills.Mapping.class);
+                PageSkills.validate(mappings);
+                for (var mapping : mappings) reserveLocator(locators, mapping.locator(), false, mapping.permissionCode() != null);
             }
         }
-        return List.copyOf(result.values());
+    }
+    private static void reserveLocator(Map<String, Boolean> locators, String locator, boolean panel, boolean menu) {
+        var previous = locators.putIfAbsent(locator, panel);
+        if (previous != null && (!previous || !panel || !menu))
+            throw bad("Duplicate page locator or mixed legacy/panels permission group");
     }
     private void validateMappings(String id, String domain, JSONObject entry, List<PageSkills.Mapping> pageSkills, List<ApplicationPanelUse> panelUses) {
         var apps = new ArrayList<>(all().stream().filter(app -> !id.equals(app.getString("id"))).toList());
@@ -231,16 +227,14 @@ public class ApplicationCatalog {
             "pageSkills", pageSkills, "panelUses", panelUses));
         var domains = new HashSet<String>(); domains.add(domain);
         for (var app : apps) domains.add(app.getString("domainId"));
-        for (var scope : domains) mappings(apps.stream().filter(app -> app.getString("domainId") == null || Objects.equals(scope, app.getString("domainId"))).toList());
+        for (var scope : domains) validateLocators(apps.stream().filter(app -> app.getString("domainId") == null || Objects.equals(scope, app.getString("domainId"))).toList());
     }
     public JSONObject panelUses(String id, User user) {
         var app = require(id);
         if (!panelManaged(app)) throw bad("Application is not managed by panels");
         if (!inDomain(app, user) || !access.canEnter(app, user)) throw denied();
-        var allowed = access.pageSkills(ApplicationPanelUse.project(app.getList("panelUses", ApplicationPanelUse.class)), user)
-            .stream().map(PageSkills.Mapping::locator).collect(java.util.stream.Collectors.toSet());
-        var uses = app.getList("panelUses", ApplicationPanelUse.class).stream().filter(use ->
-            allowed.contains(ApplicationPanelUse.project(List.of(use)).getFirst().locator()) && grants.allowed(use.panelId(), "use")).toList();
+        var uses = access.panelUses(app.getList("panelUses", ApplicationPanelUse.class), user).stream()
+            .filter(use -> grants.allowed(use.panelId(), "use")).toList();
         return JSONObject.of("applicationId", id, "entry", app.getJSONObject("entry"), "panelUses", uses);
     }
     public JSONObject putPanelUses(String id, ApplicationController.PanelRegistration body, User user) {
@@ -253,7 +247,7 @@ public class ApplicationCatalog {
         var supplied = body.declaration();
         if (existing.isEmpty() && (supplied == null || body.entryAccess() == null)) throw bad("New applications require metadata and entry access");
         if (supplied != null && (!supplied.pageSkills().isEmpty() || !supplied.panelUses().isEmpty())) throw bad("Supply panelUses only once");
-        ApplicationPanelUse.project(body.panelUses());
+        ApplicationPanelUse.validate(body.panelUses());
         if (supplied != null) {
             validate(supplied);
             for (var permission : supplied.permissions()) if (!permission.code().startsWith("app:" + id + ":")) throw bad("Application permission prefix required");

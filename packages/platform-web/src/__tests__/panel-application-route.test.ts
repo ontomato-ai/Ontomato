@@ -15,10 +15,9 @@ import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
  * loop.
  */
 
-const skill = { namespace: { kind: "provider", provider: "workbench" }, name: "panels" } as const;
 const uses: ApplicationPanelUse[] = [
-  { id: "use-tasks", panelId: "panel-tasks", path: "/tasks", pageKey: "panels-trial-a-tasks", access: { kind: "domain-member" }, skill },
-  { id: "use-summary", panelId: "panel-summary", path: "/summary", pageKey: "panels-trial-a-summary", access: { kind: "domain-member" }, skill },
+  { id: "use-tasks", panelId: "panel-tasks", path: "/tasks", pageKey: "panels-trial-a-tasks", access: { kind: "domain-member" } },
+  { id: "use-summary", panelId: "panel-summary", path: "/summary", pageKey: "panels-trial-a-summary", access: { kind: "domain-member" } },
 ];
 
 /** Every panel instance the route mounted, and the address each last reported. */
