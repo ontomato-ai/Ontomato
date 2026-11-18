@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { h } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
+import type { DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { pilotPageResolver } from "../../../../../packages/platform-web/src/pilot-pages";
@@ -23,7 +24,7 @@ import {
  * The same draft opened beside a conversation: the conversation carries the page's address (`?page=`) and the platform's
  * registry gives the page — the one shown at that address full — with that address and the conversation's own way to
  * move. The panel reads the draft the address names, the form shows it unsaved, and the selection the draft makes goes
- * into the conversation's page parameter, not the browser's address.
+ * to the conversation as a state report.
  */
 
 afterEach(leaveFrame);
@@ -35,10 +36,14 @@ describe("a draft at a panel application's page beside the conversation", () => 
     const router = createRouter({ history: createMemoryHistory(), routes: [{ ...platformRoutes.chat, component: { render: () => null } }] });
     await router.push({ path: platformRoutes.chat.path, query: { page: scenario.address } });
     await router.isReady();
-    const pages: string[] = [];
-    const resolved = pilotPageResolver((address) => pages.push(address))(scenario.address)!;
+    const updates: DisplayPageAddressInput[] = [];
+    const navigate = vi.fn();
+    const resolved = pilotPageResolver(navigate)(scenario.address)!;
     expect(resolved.id).toBe("panel-application");
-    const { app: page } = mountPlatformPage(() => h(resolved.component, resolved.props), router);
+    const { app: page } = mountPlatformPage(() => h(resolved.component, {
+      ...resolved.props,
+      onDisplayAddress: (update: DisplayPageAddressInput) => updates.push(update),
+    }), router);
     const element = await panelHostFrame();
     const message = hostMessageOf(element.getAttribute("srcdoc")!);
     expect(new URL(message.url, "http://page.invalid").searchParams.get("draftRunId")).toBe("run-1");
@@ -52,13 +57,16 @@ describe("a draft at a panel application's page beside the conversation", () => 
     });
     expect(document.querySelector('[data-field="caseSetId"]')?.textContent).toContain("Smoke (8)");
     expect(sent.filter((request) => request.method === "PUT")).toEqual([]);
-    // The draft's object is the panel's selection now, written into the conversation's page parameter with the draft's
-    // link kept; the conversation stays where it is.
-    await vi.waitFor(() =>
-      expect(panelAddressState(pages.at(-1) ?? "")).toEqual({ selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id } }),
-    );
-    expect(new URL(pages.at(-1)!, "http://page.invalid").searchParams.get("draftRunId")).toBe("run-1");
-    expect(router.currentRoute.value.path).toBe(platformRoutes.chat.path);
+    // The panel reports the draft's object as its selection and keeps the draft link in the reported address.
+    await vi.waitFor(() => {
+      expect(updates.at(-1)?.kind).toBe("state");
+      expect(panelAddressState(updates.at(-1)!.address)).toEqual({
+        selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id },
+      });
+    });
+    expect(new URL(updates.at(-1)!.address, "http://page.invalid").searchParams.get("draftRunId")).toBe("run-1");
+    expect(navigate).not.toHaveBeenCalled();
+    expect(router.currentRoute.value.query.page).toBe(scenario.address);
     const discard = document.querySelector<HTMLButtonElement>(".sdk-owner-form-actions button")!;
     expect(discard.textContent?.trim()).toBe("Discard");
     discard.click();

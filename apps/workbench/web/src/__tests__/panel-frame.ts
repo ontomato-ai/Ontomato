@@ -18,6 +18,7 @@ import type { ApplicationPanelUse, ProductPanel, ProductProjection } from "@onto
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
+import publicEn from "@ontomato/workbench-ui/locales/en";
 import ElementPlus from "element-plus";
 import type { Router } from "vue-router";
 import elementEn from "element-plus/es/locale/lang/en";
@@ -178,7 +179,7 @@ export function installPlatform(answer: (request: Sent) => Response | Promise<Re
     initialLocale: "en",
     switchEnabled: false,
     save: null,
-    messages: { en: {} },
+    messages: { en: publicEn },
     elementLocale: () => elementEn,
   });
   installAppHost({

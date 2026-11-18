@@ -11,7 +11,7 @@ import elementEn from "element-plus/es/locale/lang/en";
 /*
  * The page of a panel application (design 10.3, fourth check): a selection the panel reports is written into the page's
  * address without rebuilding the panel, a reload restores that view, and the same page beside the conversation writes
- * into the conversation's address instead.
+ * reports the address to the display controller.
  *
  * The mistakes these catch: keying the instance by the whole address, so writing the state replaces the key, rebuilds
  * the frame and drops the selection; and reading the address back into the instance, which turns its own report into a
@@ -36,13 +36,19 @@ vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
   // Stands in for the frame: it reports an address the way a panel's own state report does.
   PanelHost: defineComponent({
     props: { useId: { type: String, required: true }, address: { type: String, required: true }, initial: { type: Object, default: () => ({}) }, label: { type: String, default: "" }, labels: Object },
-    emits: ["address"],
+    emits: ["display-address", "display-loaded", "display-dirty"],
     setup(props, { emit }) {
       const address = ref(props.address);
       mountedInstances.push({ useId: props.useId, address, initial: props.initial });
       return () =>
         h("div", { "data-use": props.useId }, [
-          h("button", { "data-select": "task-2", onClick: () => emit("address", `${props.address}?state=${encodeURIComponent(JSON.stringify({ selectedTask: { className: "platform:ScheduledTask", primaryKey: "task-2" } }))}`) }),
+          h("button", { "data-select": "task-2", onClick: () => {
+            const state = { selectedTask: { className: "platform:ScheduledTask", primaryKey: "task-2" } };
+            const address = `${props.address}?state=${encodeURIComponent(JSON.stringify(state))}`;
+            emit("display-address", { kind: "state", address });
+            emit("display-loaded", { status: "ready" });
+            emit("display-dirty", true);
+          } }),
         ]);
     },
   }),
@@ -125,15 +131,34 @@ describe("a panel application's page", () => {
     wrapper.unmount();
   });
 
-  it("beside the conversation, the selection goes to the conversation's address", async () => {
-    const written: string[] = [];
-    const { router, wrapper } = await mountAt("/applications/app-a/tasks", { navigate: (next: string) => written.push(next) });
+  it("beside the conversation, consumes the three listeners and reports state without navigating", async () => {
+    const navigate = vi.fn();
+    const onDisplayAddress = vi.fn();
+    const onDisplayLoaded = vi.fn();
+    const onDisplayDirty = vi.fn();
+    const page = "/applications/app-a/tasks";
+    const { router, wrapper } = await mountAt(page, { navigate, onDisplayAddress, onDisplayLoaded, onDisplayDirty });
+    const route = wrapper.getComponent(PanelApplicationRoute);
+    for (const listener of ["onDisplayAddress", "onDisplayLoaded", "onDisplayDirty"]) {
+      expect(route.vm.$attrs).not.toHaveProperty(listener);
+    }
     await wrapper.get("[data-select]").trigger("click");
     await flushPromises();
-    // The page's own address (the conversation's) holds it; the router's address is not written.
-    expect(written).toHaveLength(1);
-    expect(panelAddressState(written[0]!)).toEqual({ selectedTask: { className: "platform:ScheduledTask", primaryKey: "task-2" } });
-    expect(router.currentRoute.value.fullPath).toBe("/applications/app-a/tasks");
+    expect(navigate).not.toHaveBeenCalled();
+    expect(onDisplayAddress.mock.calls).toEqual([[{
+      kind: "state",
+      address: expect.stringContaining(`${page}?state=`),
+    }]]);
+    expect(panelAddressState(onDisplayAddress.mock.calls[0]![0].address)).toEqual({
+      selectedTask: { className: "platform:ScheduledTask", primaryKey: "task-2" },
+    });
+    expect(onDisplayLoaded).toHaveBeenLastCalledWith({ status: "ready" });
+    expect(onDisplayDirty.mock.calls).toEqual([[true]]);
+    expect(route.emitted("display-address")).toEqual(onDisplayAddress.mock.calls);
+    expect(route.emitted("display-loaded")).toEqual(onDisplayLoaded.mock.calls);
+    expect(route.emitted("display-dirty")).toEqual(onDisplayDirty.mock.calls);
+    expect(router.currentRoute.value.fullPath).toBe(page);
+    expect(mountedInstances).toHaveLength(1);
     wrapper.unmount();
   });
 });

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./panel-host";
 import { usePageActions } from "./page-actions";
 
@@ -7,8 +8,7 @@ import { usePageActions } from "./page-actions";
  * One panel instance, shown full screen, beside a conversation or inside another application: the same component in all
  * three, because all three only need the use relation, the current record and a place to show it. The panel's own text
  * runs in a frame of its own with this SDK version's modules; what it reports — what the reader looks at and its
- * deep-linkable state — goes up through `context` and `address`, so the page beside it can write the message it already
- * writes and the address restores the same view.
+ * deep-linkable state — goes up through `context` and `display-address`, so the enclosing page can reflect the view.
  */
 const props = defineProps<{
   /** The platform's panel host: reading uses and records, the SDK base and the frame registration. */
@@ -30,7 +30,9 @@ const emit = defineEmits<{
   /** What a message from this instance carries now. */
   context: [context: import("@ontomato/contracts/page-context").PageContext];
   /** The instance's address, with its declared deep-linkable state. */
-  address: [address: string];
+  "display-address": [input: DisplayPageAddressInput];
+  "display-loaded": [load: DisplayLoad];
+  "display-dirty": [dirty: boolean];
 }>();
 
 const view = usePanelInstance(props.port, {
@@ -49,7 +51,9 @@ watch(
 watch(view.pageContext, (context) => context && emit("context", context));
 // The instance's address exists once its record is read; before that there is none to report, and reporting an empty one
 // would replace the page's address — and the draft link in it — before the panel has read it.
-watch(view.address, (address) => emit("address", address));
+watch(view.address, (address) => emit("display-address", { kind: "state", address }));
+watch(view.displayLoad, (load) => emit("display-loaded", load));
+watch(view.dirty, (dirty) => emit("display-dirty", dirty), { flush: "sync", immediate: true });
 
 // The instance's operations reach the header like any page's: one description, one handler, for a person and an agent.
 // A click reaches the frame, which runs it with the person's own credential; the state the operation targets decides

@@ -5,6 +5,7 @@ import { useI18n } from "vue-i18n";
 import { PanelHost, type PanelHostLabels } from "@ontomato/platform-shell";
 import { panelAddress, panelAddressState, panelUsePath } from "@ontomato/contracts/panel-host";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
+import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import { panelUsesOf, platformPanelHost } from "../panel-host";
 
@@ -26,8 +27,8 @@ const props = defineProps<{
   /** The rest of the address: the use relation's own path, without its leading slash. */
   panelPath?: string;
   /**
-   * How the page beside the conversation carries its address. Shown beside a chat, the page is not the router's: the
-   * conversation's own address holds it, and this writes a selection there. Shown full, the router's address is the page.
+   * The conversation's callback for explicit navigation, supplied when the display controller owns this page.
+   * A full-page instance uses the router for its address.
    */
   navigate?: (address: string) => void;
   /**
@@ -39,6 +40,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   /** What the reader looks at in the panel, as its instance reports it: what a message written beside it carries. */
   context: [context: PageContext];
+  "display-address": [input: DisplayPageAddressInput];
+  "display-loaded": [load: DisplayLoad];
+  "display-dirty": [dirty: boolean];
 }>();
 
 const route = useRoute();
@@ -54,6 +58,7 @@ watch(() => props.applicationId, async (applicationId, _, onCleanup) => {
   onCleanup(() => { current = false; });
   uses.value = null;
   failure.value = "";
+  emit("display-loaded", { status: "loading" });
   try {
     const records = await panelUsesOf(applicationId);
     if (current) uses.value = records;
@@ -102,17 +107,13 @@ const address = computed(() => {
  */
 const key = computed(() => `${props.applicationId}:${use.value?.id ?? ""}`);
 
-/**
- * A selection the panel reports is the page's address: it is replaced in place, so the address bar and a reload carry
- * the same view, and the instance — which the key keeps — is not rebuilt.
- */
-function writeAddress(next: string) {
-  if (opened.value === next) return;
+/** The display owns a paired page's address. A standalone route reflects the same state in place. */
+function reportAddress(input: DisplayPageAddressInput) {
   if (props.navigate) {
-    props.navigate(next);
+    emit("display-address", input);
     return;
   }
-  void router.replace(next);
+  if (opened.value !== input.address) void router.replace(input.address);
 }
 
 const requestedState = computed(() => panelAddressState(opened.value));
@@ -147,7 +148,9 @@ function reportContext(context: PageContext) {
     :use-id="use.id"
     :address="address"
     :initial="requestedState"
-    @address="writeAddress"
+    @display-address="reportAddress"
+    @display-loaded="emit('display-loaded', $event)"
+    @display-dirty="emit('display-dirty', $event)"
     @context="reportContext"
   />
 </template>

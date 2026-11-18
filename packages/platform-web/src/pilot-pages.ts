@@ -54,8 +54,8 @@ export function pilotPageResolver(setPage: (address: string) => void): PilotPage
       } satisfies PilotPage;
     }
     // A panel application's page: `/applications/<application>/<the use relation's path>`, shown by the same component
-    // that shows it full. It opens at the state its address names, and a selection the reader makes is written back into
-    // that address; the panel stays the same instance while only its state changes.
+    // that shows it full. It opens at the state its address names and reports selections to the display controller.
+    // The panel stays the same instance while only its state changes.
     const panel = /^\/applications\/([^/]+)(\/.*)?$/.exec(path);
     if (panel) {
       return {

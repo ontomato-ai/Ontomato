@@ -386,7 +386,9 @@ describe("the panel host", () => {
     // A listener runs before the module, and it reports a module that cannot be fetched and a rejection nothing handled.
     expect(document.indexOf("unhandledrejection")).toBeGreaterThan(-1);
     expect(document.indexOf("unhandledrejection")).toBeLessThan(document.indexOf("mountPanel"));
-    expect(document).toContain('kind: "failed"');
+    expect(document).toContain("panel_file_unavailable");
+    expect(document).toContain("panel_script_threw");
+    expect(document).toContain("panel_script_rejected");
     // In the reader's language: the words are the platform's, and the frame puts the file it could not load in its place.
     expect(document).toContain(JSON.stringify(labels.failures));
     expect(document).toContain('words.fileUnavailable.replace("{file}"');

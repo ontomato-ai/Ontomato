@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, expect, it, vi } from "vitest";
 import { h, ref } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
+import { PANEL_LOAD_ERROR_CODES } from "@ontomato/contracts/agent-presentation";
 import type { PanelFrameMessage } from "@ontomato/contracts/panel-host";
 import { PANEL_HOST_CHANNEL, panelAddress } from "@ontomato/contracts/panel-host";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
@@ -59,13 +60,13 @@ function answer(request: Sent) {
   return nothingAt(request);
 }
 
-async function open(address: string, usePlatformRoutes = false, reply = answer) {
+async function open(address: string, usePlatformRoutes = false, reply = answer, listeners = {}) {
   const sent = installPlatform(reply);
   if (usePlatformRoutes) await useApplicationCatalog().refresh();
   const router = createRouter({ history: createMemoryHistory(), routes: usePlatformRoutes ? [platformLayoutRoute([])] : [{
     path: "/applications/:applicationId/:panelPath",
     component: PanelApplicationRoute,
-    props: true,
+    props: route => ({ ...route.params, ...listeners }),
   }] });
   await router.push(address);
   const { app, element } = mountPlatformPage(() => h(RouterView), router);
@@ -192,21 +193,107 @@ it("renders and handles a new Element Plus menu in the author's card slot", asyn
   }
 });
 
-it("shows the script's actual error when the browser reports a generic message", async () => {
-  const { app, element, frame } = await open(`/applications/${appB}/summary`);
+it("reports loading until the connected frame reports, then echoes a selection without navigating", async () => {
+  const onDisplayLoaded = vi.fn();
+  const onDisplayAddress = vi.fn();
+  const navigate = vi.fn();
+  const address = `/applications/${appB}/summary`;
+  const { app, frame, router } = await open(address, false, answer, {
+    address, navigate, onDisplayLoaded, onDisplayAddress,
+  });
+  try {
+    expect(onDisplayLoaded.mock.calls).toEqual([[{ status: "loading" }]]);
+    const { context } = await startFrame(frame);
+    await vi.waitFor(() => expect(onDisplayLoaded.mock.calls).toEqual([
+      [{ status: "loading" }], [{ status: "ready" }],
+    ]));
+    context.instance.state.set("selectedTask", deepState.selectedTask);
+    await vi.waitFor(() => expect(onDisplayAddress).toHaveBeenLastCalledWith({
+      kind: "state", address: panelAddress(address, deepState),
+    }));
+    expect(navigate).not.toHaveBeenCalled();
+    expect(router.currentRoute.value.fullPath).toBe(address);
+  } finally {
+    app.unmount();
+  }
+});
+
+it.each([
+  {
+    code: PANEL_LOAD_ERROR_CODES.fileUnavailable,
+    message: "The panel could not load /apps-sdk/1.1.1/panel.js",
+    trigger: (frameEvents: EventTarget) => {
+      const event = new Event("error");
+      Object.defineProperty(event, "target", { value: { tagName: "SCRIPT", src: "/apps-sdk/1.1.1/panel.js" } });
+      frameEvents.dispatchEvent(event);
+    },
+  },
+  {
+    code: PANEL_LOAD_ERROR_CODES.scriptThrew,
+    message: "The panel's script failed during setup",
+    trigger: (frameEvents: EventTarget) => {
+      frameEvents.dispatchEvent(new ErrorEvent("error", {
+        message: "Uncaught",
+        error: new Error("The panel's script failed during setup"),
+      }));
+    },
+  },
+  {
+    code: PANEL_LOAD_ERROR_CODES.scriptRejected,
+    message: "The panel's initialization was rejected",
+    trigger: (frameEvents: EventTarget) => {
+      frameEvents.dispatchEvent(Object.assign(new Event("unhandledrejection"), {
+        reason: new Error("The panel's initialization was rejected"),
+      }));
+    },
+  },
+])("reports $code with its original message", async ({ code, message, trigger }) => {
+  const onDisplayLoaded = vi.fn();
+  const { app, element, frame } = await open(`/applications/${appB}/summary`, false, answer, { onDisplayLoaded });
   try {
     const bootstrap = frame.srcdoc.match(/<script>\n([\s\S]*?)<\/script>/)![1]!;
     inside(frame.contentWindow!);
     const frameEvents = new EventTarget();
     Object.assign(frameEvents, { parent: window.parent });
     new Function("window", bootstrap)(frameEvents);
-    frameEvents.dispatchEvent(new ErrorEvent("error", {
-      message: "Uncaught",
-      error: new Error("The panel's script failed during setup"),
-    }));
-    await vi.waitFor(() => expect(element.querySelector('[role="alert"]')?.textContent).toBe("The panel's script failed during setup"));
+    trigger(frameEvents);
+    await vi.waitFor(() => {
+      expect(element.querySelector('[role="alert"]')?.textContent).toBe(message);
+      expect(onDisplayLoaded.mock.calls).toEqual([
+        [{ status: "loading" }],
+        [{ status: "error", error: { code, message } }],
+      ]);
+    });
   } finally {
     app.unmount();
+  }
+});
+
+it.each([403, 404])("reports HTTP %i when an open panel's record becomes unavailable", async status => {
+  const onDisplayLoaded = vi.fn();
+  let stream!: ReadableStreamDefaultController<Uint8Array>;
+  let refused = false;
+  const message = "The panel's owner refused this read";
+  const { app, frame } = await open(`/applications/${appB}/summary`, false, request => {
+    if (request.path === "/api/product-assets/subscriptions") return new Response(new ReadableStream<Uint8Array>({
+      start(controller) { stream = controller; },
+    }), { headers: { "content-type": "text/event-stream" } });
+    if (refused && request.path === `/api/product-panels/${q.id}`) return Response.json({ error: { message } }, { status });
+    return answer(request);
+  }, { onDisplayLoaded });
+  try {
+    await startFrame(frame);
+    await vi.waitFor(() => expect(onDisplayLoaded).toHaveBeenLastCalledWith({ status: "ready" }));
+    refused = true;
+    stream.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({
+      kind: "definition-changed", target: { kind: "panel", id: q.id }, domainId: "domain-a",
+    })}\n\n`));
+    await vi.waitFor(() => expect(onDisplayLoaded).toHaveBeenLastCalledWith({
+      status: "error", error: { code: PANEL_LOAD_ERROR_CODES.panelUnavailable, message: `HTTP ${status}: ${message}` },
+    }));
+  } finally {
+    app.unmount();
+    stream.close();
   }
 });
 
@@ -306,6 +393,7 @@ it("refreshes an open panel from the server stream and preserves a dirty form un
   let stream!: ReadableStreamDefaultController<Uint8Array>;
   const encoder = new TextEncoder();
   const address = `/applications/${appA}/tasks`;
+  const onDisplayDirty = vi.fn();
   const { app, element, frame, router, sent } = await open(panelAddress(address, deepState), false, request => {
     if (request.path === "/api/product-assets/subscriptions") return new Response(new ReadableStream<Uint8Array>({
       start(controller) { stream = controller; },
@@ -315,7 +403,7 @@ it("refreshes an open panel from the server stream and preserves a dirty form un
       return taskFormFor((request.body as { values: typeof taskForm.values }).values);
     }
     return answer(request);
-  });
+  }, { onDisplayDirty });
   const formReads = () => sent.filter(request => request.path.endsWith("/form"));
   const dataReads = () => sent.filter(request => request.path === `${taskPath}/${task.id}`);
   const notify = (objectType = SCHEDULED_TASK, primaryKey = task.id) =>
@@ -349,6 +437,7 @@ it("refreshes an open panel from the server stream and preserves a dirty form un
     await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary")?.textContent).toContain("Agent changed it again"));
     expect(formReads()).toHaveLength(editing);
     expect(context.instance.dirty()).toBe(true);
+    await vi.waitFor(() => expect(onDisplayDirty).toHaveBeenLastCalledWith(true));
     expect(context.draft.value?.form.caseSetId).toBe("set-smoke");
 
     const discard = [...document.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")]
@@ -356,6 +445,7 @@ it("refreshes an open panel from the server stream and preserves a dirty form un
     discard.click();
     await vi.waitFor(() => expect(formReads().at(-1)?.body).toMatchObject({ values: current.content }));
     expect(context.instance.dirty()).toBe(false);
+    await vi.waitFor(() => expect(onDisplayDirty).toHaveBeenLastCalledWith(false));
     expect(sent.filter(request => request.path.startsWith("/api/product-projections/"))).toHaveLength(definitions);
     expect(sent.filter(request => request.path === "/api/product-assets/subscriptions")).toHaveLength(1);
     expect(element.querySelector("iframe.panel-host-frame")).toBe(frame);

@@ -1,3 +1,4 @@
+import { displayLoadSchema, PANEL_LOAD_ERROR_CODES, type DisplayLoad } from "@ontomato/contracts/agent-presentation";
 import type { PanelSubscriptionEvent, PanelSubscriptionSnapshot } from "@ontomato/contracts/product-subscriptions";
 import { inject, onBeforeUnmount, shallowRef, watch, type InjectionKey, type Ref, type ShallowRef } from "vue";
 import type { PageContext } from "@ontomato/contracts/page-context";
@@ -82,6 +83,8 @@ export interface PanelInstanceView {
   /** The operations the instance offers, as its frame reported them. */
   readonly operations: Readonly<Ref<readonly PanelOperation[]>>;
   readonly error: Ref<string>;
+  readonly displayLoad: Readonly<ShallowRef<DisplayLoad>>;
+  readonly dirty: Readonly<ShallowRef<boolean>>;
   /** Resolves once the use relation and the record are read. */
   readonly ready: Promise<void>;
   /** A person clicked one of those operations: the frame runs it, and the promise settles with its answer. */
@@ -126,6 +129,10 @@ export interface PanelInstanceOptions {
 /** What a failure is called in the panel's error place: its own message, or what it was, verbatim. */
 const failureText = (failure: unknown) => (failure instanceof Error ? failure.message : String(failure));
 
+// The bootstrap script can distinguish browser load failures before the SDK starts and sends its own reports.
+const frameLoadFailureSchema = displayLoadSchema.pick({ error: true }).required();
+const loading: DisplayLoad = { status: "loading" };
+
 /**
  * Loads one panel instance from its use relation and keeps it current. The instance is this composable's alone: two
  * callers of the same panel hold two states, and neither sees the other's selection.
@@ -136,6 +143,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const pageContext = shallowRef<PageContext | null>(null);
   const document = shallowRef("");
   const error = shallowRef("");
+  const displayLoad = shallowRef(loading);
+  const dirty = shallowRef(false);
   const state = shallowRef<Record<string, PanelStateValue>>({});
   const address = shallowRef("");
   const operations = shallowRef<readonly PanelOperation[]>([]);
@@ -150,6 +159,21 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   let settle: () => void = () => {};
   const ready = new Promise<void>((resolve) => (settle = resolve));
 
+  async function readPanel(id: string) {
+    try {
+      return await port.panel(id);
+    } catch (failure) {
+      if (failure instanceof Error && "status" in failure && (failure.status === 403 || failure.status === 404)) {
+        error.value = failure.message;
+        displayLoad.value = { status: "error", error: {
+          code: PANEL_LOAD_ERROR_CODES.panelUnavailable,
+          message: `HTTP ${failure.status}: ${failure.message}`,
+        } };
+      }
+      throw failure;
+    }
+  }
+
   /**
    * Reads what this instance needs: the use relation, the panel's current record and the SDK base its frame runs on.
    * Whatever fails is reported where the panel would have been — a page that cannot say why it is empty is worse than one
@@ -157,12 +181,13 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
    */
   async function load() {
     error.value = "";
+    displayLoad.value = loading;
     try {
       const applicationId = port.applicationId();
       const relations = await port.uses(applicationId);
       const relation = relations.find((candidate) => candidate.id === options.useId());
       if (!relation) throw new Error(options.labels.useMissing(options.useId()));
-      await adopt(relation, await port.panel(relation.panelId));
+      await adopt(relation, await readPanel(relation.panelId));
       loadedPanelId = relation.panelId;
       stopNotices?.();
       stopNotices = port.subscribe(relation.panelId, notice, recover);
@@ -182,6 +207,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     address.value = panelAddress(options.address(), state.value);
     frameAddress = address.value;
     frameReady = false;
+    displayLoad.value = loading;
     const message: PanelHostMessage = {
       kind: "panel-host-message",
       panel: record,
@@ -224,8 +250,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   }
 
   async function refreshPanel(id: string): Promise<boolean> {
-    const record = await port.panel(id);
-    if (dirty()) {
+    const record = await readPanel(id);
+    if (dirty.value) {
       waiting = record;
       return false;
     }
@@ -241,11 +267,6 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     if (frameReady) post({ kind: "reconnect", projections: snapshot.projections });
   }
   onBeforeUnmount(() => stopNotices?.());
-
-  let unsaved = false;
-  function dirty() {
-    return unsaved;
-  }
 
   function post(message: unknown) {
     frame?.postMessage({ channel: PANEL_HOST_CHANNEL, ...(message as object) }, "*");
@@ -266,15 +287,25 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   }
   watch([options.address, options.initial], syncAddress);
 
+  function reportFrameFailure(failure: NonNullable<DisplayLoad["error"]>) {
+    error.value = failure.message;
+    displayLoad.value = { status: "error", error: failure };
+  }
+
   function message(event: MessageEvent) {
     if (event.source !== frame) return;
     const payload = panelMessageOf(panelFrameMessageSchema, event);
-    if (!payload) return;
+    if (!payload) {
+      const failed = panelMessageOf(frameLoadFailureSchema, event);
+      if (failed) reportFrameFailure(failed.error);
+      return;
+    }
     if (payload.kind === "context") pageContext.value = payload.context;
     if (payload.kind === "state") {
       if (payload.fromAddress !== frameAddress) return;
       if (!frameReady) {
         frameReady = true;
+        displayLoad.value = { status: "ready" };
         if (syncAddress()) return;
       }
       state.value = payload.state;
@@ -282,9 +313,9 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
     if (payload.kind === "operations") operations.value = payload.operations;
     if (payload.kind === "dirty") {
-      unsaved = payload.dirty;
+      dirty.value = payload.dirty;
       // The reader saved or dropped their changes: now the record read while they were editing may be shown.
-      if (!unsaved && waiting) {
+      if (!dirty.value && waiting) {
         const record = waiting;
         waiting = null;
         if (use.value) void adopt(use.value, record).catch((failure: unknown) => (error.value = failureText(failure)));
@@ -292,7 +323,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
     if (payload.kind === "failed") {
       // The frame could not run its panel. The reason goes where the panel would have been, and no frame is drawn over it.
-      error.value = payload.message;
+      reportFrameFailure({ code: PANEL_LOAD_ERROR_CODES.scriptThrew, message: payload.message });
       return;
     }
     if (payload.kind === "invoked") {
@@ -318,6 +349,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     address,
     operations,
     error,
+    displayLoad,
+    dirty,
     ready,
     invoke(id, input) {
       if (!frame) return Promise.reject(new Error(options.labels.notStarted));
@@ -364,19 +397,19 @@ const failureListener = (words: PanelHostLabels["failures"]) => `
 (function () {
   var words = ${JSON.stringify(words)};
   var reported = false;
-  function fail(what) {
+  function fail(code, what) {
     if (reported || !what) return;
     reported = true;
-    window.parent.postMessage({ channel: "${PANEL_HOST_CHANNEL}", kind: "failed", message: String(what).slice(0, 1900) }, "*");
+    window.parent.postMessage({ channel: "${PANEL_HOST_CHANNEL}", error: { code: code, message: String(what) } }, "*");
   }
   window.addEventListener("error", function (event) {
     var target = event.target;
-    if (target && target !== window && target.tagName) fail(words.fileUnavailable.replace("{file}", target.src || target.href || target.tagName.toLowerCase()));
-    else fail((event.error && event.error.message) || event.message || words.scriptThrew);
+    if (target && target !== window && target.tagName) fail("${PANEL_LOAD_ERROR_CODES.fileUnavailable}", words.fileUnavailable.replace("{file}", target.src || target.href || target.tagName.toLowerCase()));
+    else fail("${PANEL_LOAD_ERROR_CODES.scriptThrew}", (event.error && event.error.message) || event.message || words.scriptThrew);
   }, true);
   window.addEventListener("unhandledrejection", function (event) {
     var reason = event.reason;
-    fail((reason && reason.message) || reason || words.scriptRejected);
+    fail("${PANEL_LOAD_ERROR_CODES.scriptRejected}", (reason && reason.message) || reason || words.scriptRejected);
   });
 })();`;
 

@@ -4,7 +4,7 @@ import ElementPlus from "element-plus";
 import { defineComponent, h, ref } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { AgentShell, pageCounterKey } from "@ontomato/agent-shell-ui";
-import { pilotPageKey, platformPageAccessKey } from "@ontomato/platform-shell";
+import { pilotPageKey, platformPageAccessKey, provideUnsavedChanges } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { panelAddress, panelAddressState } from "@ontomato/contracts/panel-host";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
@@ -39,7 +39,7 @@ const uses: ApplicationPanelUse[] = [
 vi.mock("../panel-host", () => ({ panelUsesOf: async () => uses, platformPanelHost: () => ({}) }));
 
 /** Every panel instance mounted, with the state it opened at. */
-const instances: { initial: Record<string, unknown>; report: () => void }[] = [];
+const instances: { initial: Record<string, unknown>; report: () => void; dirty: (value: boolean) => void }[] = [];
 /** A frame that has not reported yet: it mounts, and says what it shows only when this is called. */
 const silent = ref(false);
 const selected = (primaryKey: string) => ({ selectedTask: { className: SCHEDULED_TASK, primaryKey } });
@@ -54,11 +54,11 @@ vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
   // Stands in for the frame: it reports what the reader looks at, and a selection as the address it is now at.
   PanelHost: defineComponent({
     props: { useId: String, address: String, initial: { type: Object, default: () => ({}) }, labels: Object },
-    emits: ["address", "context"],
+    emits: ["display-address", "display-dirty", "context"],
     setup(props, { emit }) {
       const opened = (props.initial as { selectedTask?: { primaryKey: string } }).selectedTask?.primaryKey ?? null;
       const report = () => emit("context", contextOf(panelAddress(props.address!, props.initial), opened));
-      instances.push({ initial: props.initial, report });
+      instances.push({ initial: props.initial, report, dirty: value => emit("display-dirty", value) });
       if (!silent.value) report();
       return () =>
         h("button", {
@@ -66,7 +66,7 @@ vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
           "data-requested": JSON.stringify(props.initial),
           onClick: () => {
             const next = panelAddress(props.address!, selected("task-2"));
-            emit("address", next);
+            emit("display-address", { kind: "state", address: next });
             emit("context", contextOf(next, "task-2"));
           },
         });
@@ -113,8 +113,13 @@ describe("a panel application's page beside the conversation", () => {
     });
     await router.push({ path: platformRoutes.chat.path, query: { page } });
     await router.isReady();
-    const wrapper = mount(BusinessWorkbench, {
-      props: { defaultLogo: "", defaultBrandName: "Ontomato" },
+    const refuseLeave = vi.fn(async () => false);
+    const wrapper = mount(defineComponent({
+      setup() {
+        provideUnsavedChanges(refuseLeave);
+        return () => h(BusinessWorkbench, { defaultLogo: "", defaultBrandName: "Ontomato" });
+      },
+    }), {
       global: {
         plugins: [workbenchI18n(), ElementPlus, router],
         provide: {
@@ -154,6 +159,15 @@ describe("a panel application's page beside the conversation", () => {
     await flushPromises();
     expect(instances).toHaveLength(1);
     expect(wrapper.get(".panel-double").attributes("data-requested")).toBe(JSON.stringify(selected("task-3")));
+
+    instances[0]!.dirty(true);
+    const shown = display.target.value;
+    const address = router.currentRoute.value.fullPath;
+    expect(await display.navigate("/applications/app-b/tasks", { history: "push" })).toBe(false);
+    expect(refuseLeave).toHaveBeenCalledOnce();
+    expect(display.target.value).toBe(shown);
+    expect(router.currentRoute.value.fullPath).toBe(address);
+    expect(instances).toHaveLength(1);
     wrapper.unmount();
   });
 
