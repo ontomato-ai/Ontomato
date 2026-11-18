@@ -630,16 +630,17 @@ public class OntologyRetrievalService {
         JSONObject.of("submissionId", key, "recipe", recipe, "sourceAnalysis", body.get("sourceAnalysis"));
     jobs.start(
         key,
-        context.access(),
+        subject(context.owner()),
         "output",
         jobInput,
         session ->
-            outputs.execute(
-                session,
-                AgentJson.copy(recipe),
-                body.getJSONObject("sourceAnalysis"),
-                executionAccess,
-                context.language()));
+            OntologyGenerationService.asOwner(executionAccess, () ->
+                outputs.execute(
+                    session,
+                    AgentJson.copy(recipe),
+                    body.getJSONObject("sourceAnalysis"),
+                    executionAccess,
+                    context.language())));
     return JSONObject.of("id", key);
   }
 
