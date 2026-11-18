@@ -24,7 +24,7 @@ import {
 } from "@ontomato/contracts/assistant-chat";
 import { assistantService } from "../../services/assistant/service";
 import { agentTasksFrameSchema } from "@ontomato/contracts/agent-tasks";
-import { pageDraftPathSchema } from "@ontomato/contracts/page-draft";
+import { pageDraftCreatedSchema, pageDraftPathSchema } from "@ontomato/contracts/page-draft";
 import { publicFrame, publicSnapshot } from "../../platform/agent-runtime/projection";
 import { RuntimeClient, readSseFrames, readRuntimeFrames } from "../../infrastructure/agent-runtime/client";
 const router: ReturnType<typeof Router> = Router(),
@@ -53,6 +53,12 @@ router.use(createAgentHostRouter(assistantService, true));
 router.get("/sessions/:sessionId/runs/:runId/page-draft", wrap(async (req, res) => {
   const path = pageDraftPathSchema.parse(req.query.path);
   res.json(await assistantService.pageDraft(id(req, "sessionId"), id(req, "runId"), path, context(req).owner));
+}));
+/** What a create draft's first save created, recorded by the page that saved it; the same reader who may read the draft. */
+router.post("/sessions/:sessionId/runs/:runId/page-draft/created", wrap(async (req, res) => {
+  const created = pageDraftCreatedSchema.parse(req.body);
+  await assistantService.recordPageDraftCreated(id(req, "sessionId"), id(req, "runId"), created.path, created.id, context(req).owner);
+  res.sendStatus(204);
 }));
 router.get("/sessions/:sessionId/artifacts/:artifactId/drilldown", wrap(async (req, res) => {
   const rowIndex = z.coerce.number().int().nonnegative().safe().parse(req.query.rowIndex);

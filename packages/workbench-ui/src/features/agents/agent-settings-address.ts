@@ -16,6 +16,8 @@ export interface AgentSettingsAddress {
   draft: Readonly<Ref<PageDraftLink | null>>;
   /** The address to show once the draft has been saved: the same page without its draft handoff. */
   savedAddress: Readonly<Ref<string>>;
+  /** One agent's page with this address's query, its draft handoff included: where a saved create draft opens. */
+  agentAddress(id: string): string;
   /** Moves the page: the host turns this into its own navigation. */
   go(address: string): void;
 }

@@ -4,7 +4,7 @@
 
 A page draft is what an agent wrote for one page to fill in, and the reader saves. It is a run artifact, not a table
 and not a confirmation card: no draft is stored or confirmed anywhere else, and a discarded draft is only a file the
-conversation no longer uses.
+conversation no longer uses. The one fact kept beside it is the object a create draft's first save created (below).
 
 ```ts
 type PageDraft<Form> = {
@@ -12,6 +12,7 @@ type PageDraft<Form> = {
   operation: string;        // the page's own form action, e.g. agent.update
   target: { id?: string };  // the owner's opaque id, 1-200 characters; a create leaves it out
   form: Form;               // the page's save request body
+  created?: { id: string }; // read only: the object a create draft's first save created
 };
 ```
 
@@ -32,12 +33,28 @@ It never carries the form itself, a credential or a local path.
 
 | Method/path | Input | Output |
 | --- | --- | --- |
-| GET `/sessions/:sessionId/runs/:runId/page-draft?path=` | draft path | `PageDraft` |
+| GET `/sessions/:sessionId/runs/:runId/page-draft?path=` | draft path | `PageDraft` (`pageDraftReadSchema`) |
+| POST `/sessions/:sessionId/runs/:runId/page-draft/created` | `{ path, id }` (`pageDraftCreatedSchema`) | 204 |
 
-The route serves the workbench assistant prefix (`/api/assistant`). It reuses the existing session ownership check and
-the run-and-path artifact resolution, and reads drafts from `outputs/drafts/*.page-draft.json` only: another file of
+The routes serve the workbench assistant prefix (`/api/assistant`). They reuse the existing session ownership check and
+the run-and-path artifact resolution, and read drafts from `outputs/drafts/*.page-draft.json` only: another file of
 the same run is not a draft, and the path schema rejects it. Reading a draft is not the target page's permission; the
 page still reads the object and saves through the owner's own endpoints, which decide whether the reader may write.
+
+## A create draft's object
+
+A create draft is one whose `target` names no id. It has no real object until its first save, so the page that saves
+it records the id that save created with `POST .../page-draft/created`, as the reader who may read the draft. The
+record is written once: the same id again is accepted, another id is `409 PAGE_DRAFT_CREATED_CONFLICT`, and a draft
+that names its target is `409 PAGE_DRAFT_NOT_CREATE`. The agent's file is never rewritten, and the file cannot carry
+`created` itself: only the read adds it, from the record. The record lives in `assistant_page_draft_creations`, keyed
+by the conversation, the run and the draft's path, and goes with its conversation.
+
+Every page decides which real object a draft addresses with `draftTarget(draft)`: `{ kind: "update", id }` for a
+draft that names its target or carries `created`, `{ kind: "create" }` otherwise. A create draft saved once is from
+then on an update of the object it created, so its link opens that object and, unchanged, opens it as it is. If that
+object has since been deleted, the page reports it missing as it would any missing object; it never offers the create
+again.
 
 Filling, marking the changed fields and saving stay in the page: opening a draft never calls a write endpoint, and the
 saved call is the page's own. A draft is a change to the object the page reads: when filling it in changes nothing —
