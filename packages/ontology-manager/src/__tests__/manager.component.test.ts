@@ -1339,6 +1339,24 @@ describe("Manager business knowledge page", () => {
       expect(host.view).not.toContain("draftPath");
     });
 
+    it("opens as the entry is when the draft changes nothing, as the same link does after its draft was saved", async () => {
+      // The draft an update saved reads back as the entry it saved: nothing differs.
+      drafts.set(run, {
+        pageKey: "business-knowledge", operation: "knowledge.update", target: { id: "k-1" },
+        form: { knowledgeID: "k-1", knowledgeTitle: "Refund rule", knowledgeText: "Refunds within 7 days", knowledgeTags: ["policy"], status: 1 },
+      });
+      const { root } = mountHost({ ...base, view: link() });
+      await settle();
+
+      // The page is the entry it lists: no form, no draft note, nothing marked, and no write on the way.
+      expect(root().querySelector(".knowledge-form")).toBeNull();
+      expect(root().querySelector(".knowledge-draft-note")).toBeNull();
+      expect(root().querySelector(".draft-changed")).toBeNull();
+      expect(root().querySelector(".knowledge-detail-head")?.textContent).toContain("Refund rule");
+      expect(writes()).toEqual([]);
+      expect([...root().querySelectorAll('[role="alert"]')].map((item) => item.textContent).join(" ")).toBe("");
+    });
+
     it("reports a draft of another page instead of filling the form", async () => {
       drafts.set(run, { pageKey: "agent-settings", operation: "knowledge.update", target: { id: "k-1" }, form: filled() });
       const { root } = mountHost({ ...base, view: link() });
