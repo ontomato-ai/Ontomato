@@ -26,9 +26,10 @@ const catalogue = z.object({
 type ComponentMetadata = z.infer<typeof catalogue>["components"][number];
 type Use = PanelSkillSource["uses"][number];
 
-export function panelSkillManifest(skill: RuntimeSkillRef, uses: readonly Use[]): StandardSkillFrontmatter {
-  const pages = uses.map(use => use.pageKey).join(", ");
-  return { name: skill.name, description: `Read, open, and draft for panel pages ${[...pages].slice(0, 440).join("")}.` };
+export function panelSkillManifest(skill: RuntimeSkillRef, titles: readonly string[]): StandardSkillFrontmatter {
+  const names = [...titles.join(", ")];
+  const description = names.length > 440 ? `${names.slice(0, 439).join("")}…` : names.join("");
+  return { name: skill.name, description: `Read, open, and draft for ${description}.` };
 }
 
 async function readComponentCatalogue() {
@@ -43,6 +44,11 @@ async function currentDefinition(domainId: string, kind: CurrentProductKind, id:
   const row = await findCurrentProduct(domainId, kind, id);
   if (!row) throw new Error(`Panel skill references a missing ${kind}: ${id}`);
   return row.definition;
+}
+
+export async function readPanelTitle(domainId: string, id: string): Promise<string> {
+  const definition = await currentDefinition(domainId, "panel", id);
+  return productPanelInputSchema.shape.name.parse(definition.name);
 }
 
 export async function providePanelSkill(domainId: string, skill: RuntimeSkillRef, manifest: StandardSkillFrontmatter,
@@ -62,13 +68,13 @@ async function describeUse(domainId: string, use: Use, components: ReadonlyMap<s
     const ports = projectionPorts(projection, component);
     return {
       text: `- ${slot} — ${projection.name} (${declaration.projectionId}), ${projection.componentId}, binding ${ports.binding}. ${projection.description} ${component.meaning} Inputs from state: ${JSON.stringify(declaration.inputs)}. Display: ${JSON.stringify(projection.display)}.`,
-      reads: panelClientReads(ports.binding),
+      binding: ports.binding,
       operations: projectionOperations(manifest, { slot, ports }),
     };
   }));
   const address = panelUsePath(use.applicationId, use.path);
   const operations = [...projections.flatMap(projection => projection.operations), ...manifest.operations.map(panelStateOperation)];
-  const reads = new Set(projections.flatMap(projection => projection.reads.map(request => `- \`${request.method} ${request.template}\``)));
+  const bindings = new Set(projections.map(projection => projection.binding));
   return [
     `## ${name} — ${use.pageKey}`,
     description,
@@ -78,7 +84,7 @@ async function describeUse(domainId: string, use: Use, components: ReadonlyMap<s
       `The instance declares ${JSON.stringify(manifest.state)}. Slot inputs above identify the state field they read.`,
       "Use the message's page context to identify the page and its selected object references. Each selection carries its object type and ID. The panel address carries the instance's deep-linkable state.",
     ].join("\n"),
-    describeReads(reads),
+    describeReads(bindings),
     [
       "### Open the panel",
       `Link to \`${panelAddress(address, {})}\` for use \`${use.useId}\`. To restore a selection, set the \`state\` query parameter to URL-encoded JSON containing only fields marked deepLink. An object reference is \`{"className":"<object type>","primaryKey":"<id>"}\`.`,
@@ -94,14 +100,20 @@ async function describeUse(domainId: string, use: Use, components: ReadonlyMap<s
   ].filter(Boolean).join("\n\n");
 }
 
-function describeReads(reads: ReadonlySet<string>): string {
-  if (!reads.size) return "";
+function describeReads(bindings: ReadonlySet<string>): string {
+  const endpoints = [...bindings].flatMap(binding => {
+    const reads = panelClientReads(binding);
+    return reads.length ? [
+      `Use these endpoints for \`${binding}\`. The binding's owner decides access and returns current data.`,
+      ...reads.map(({ method, template, instructions }) =>
+        `- \`${method} ${template}\`${instructions ? ` ${instructions}` : ""}`),
+    ] : [];
+  });
+  if (!endpoints.length) return "";
   return [
     "### Read current data",
-    "Use the scheduled tasks owner's endpoints. The owner decides access and returns the current data and form.",
-    ...reads,
+    ...endpoints,
     "Append the path to `ONTOMATO_ONTOLOGY_URL`. For a run callback, send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. The host forwards these reads with the run's executor credential. When the runtime directly provides a user credential, use that credential with `tk` or `X-API-Key`.",
-    "For the dynamic form, POST JSON with `values`, `changedField`, `taskId`, and `timeZone` from the task and current edits. Read the task first for its appId, content and timeZone. Start with the task's content as values and null as changedField, then use the returned fields and values. Request the form again when an edited field changes it.",
   ].join("\n");
 }
 

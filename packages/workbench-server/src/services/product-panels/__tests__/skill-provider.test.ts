@@ -74,8 +74,13 @@ it("uses the three Java member refs and reads only the verified domain and servi
   javaSources(memberSources);
   const offerings = await panelSkillProvider.list({ domainId });
   expect(offerings.map(offering => offering.skill)).toEqual(pageNames.map(skill));
-  expect(findCurrentProduct).not.toHaveBeenCalled();
+  expect(offerings.map(offering => offering.manifest.description)).toEqual([
+    `Read, open, and draft for ${trial.panels[0]!.name}.`,
+    `Read, open, and draft for ${trial.panels[0]!.name}.`,
+    `Read, open, and draft for ${trial.panels[1]!.name}.`,
+  ]);
   expect(await panelSkillProvider.list({ domainId: "another-domain" })).toEqual([]);
+  expect(vi.mocked(findCurrentProduct).mock.calls).toEqual(trial.panels.map(panel => [domainId, "panel", panel.id]));
   expect(backendGet).toHaveBeenNthCalledWith(1, "panel-skill-sources",
     "http://java.test/platform/applications/panel-skill-sources?domainId=trial-domain",
     { headers: { "X-Ontomato-Query-Service-Token": "fixture-platform-service" }, retries: 1 });
@@ -87,6 +92,7 @@ it("assembles one current package for a shared menu with a section per use and t
   const offerings = await panelSkillProvider.list({ domainId });
   expect(offerings.map(offering => offering.skill)).toEqual([ref]);
   const [offering] = offerings;
+  expect(offering!.manifest.description).toBe(`Read, open, and draft for ${trial.panels[0]!.name}, ${trial.panels[1]!.name}.`);
   const panel = panels.get(uses[0]!.panelId)!;
   const originalName = panel.name;
   panel.name = "Renamed independently of the locator";
@@ -105,6 +111,8 @@ it("assembles one current package for a shared menu with a section per use and t
     expect(markdown).toContain("handlerRef schedules.runNow");
     expect(markdown).toContain('"state":"selectedTask"');
     expect(markdown).toContain("POST /platform/scheduled-tasks/applications/:appId/form");
+    expect(markdown).toContain("Use these endpoints for `PlatformObjectType:platform:ScheduledTask`.");
+    expect(markdown).toContain("POST JSON with `values`, `changedField`, `taskId`, and `timeZone`.");
     expect(markdown).toContain("ONTOMATO_EXECUTION_CALLBACK");
     expect(markdown).toContain('"pageKey": "panels-trial-a-tasks"');
     expect(markdown).toContain('"form": {}');
@@ -112,7 +120,9 @@ it("assembles one current package for a shared menu with a section per use and t
     expect(markdown).not.toContain("fixture-platform-service");
     expect(markdown).not.toContain("fixture-owner");
     expect(markdown).not.toContain(panel.content.html);
-    expect((await panelSkillProvider.list({ domainId }))[0]!.skill).toEqual(ref);
+    const [renamed] = await panelSkillProvider.list({ domainId });
+    expect(renamed!.skill).toEqual(ref);
+    expect(renamed!.manifest.description).toContain(panel.name);
     expect(findCurrentProduct).toHaveBeenCalledWith(domainId, "panel", uses[0]!.panelId);
   } finally {
     panel.name = originalName;

@@ -37,14 +37,25 @@ const tasks = platformSchedulesPath.slice(DATA_QUERY_GATEWAY.length);
 const taskIdPattern = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
 const task = `${tasks}/${taskIdPattern}`;
 
+interface PanelClientRead extends ClientRequest {
+  template: string;
+  instructions?: string;
+}
+
 /** The owner reads shared by frames, the execution callback and the generated panel skill. */
 export const scheduledTaskReads = [
   { method: "GET", service: "/data-query", path: new RegExp(`^${tasks}$`), template: tasks },
   { method: "GET", service: "/data-query", path: new RegExp(`^${task}$`), template: `${tasks}/:id` },
-  { method: "POST", service: "/data-query", path: new RegExp(`^${tasks}/applications/[^/?]+/form$`), template: `${tasks}/applications/:appId/form` },
-] as const satisfies readonly (ClientRequest & { template: string })[];
+  {
+    method: "POST",
+    service: "/data-query",
+    path: new RegExp(`^${tasks}/applications/[^/?]+/form$`),
+    template: `${tasks}/applications/:appId/form`,
+    instructions: "POST JSON with `values`, `changedField`, `taskId`, and `timeZone`. Read the task first for its appId, content and timeZone. Start with the task's content as values and null as changedField, then use the returned fields and values. Request the form again when an edited field changes it.",
+  },
+] as const satisfies readonly PanelClientRead[];
 
-export const panelClientReads = (binding: string) =>
+export const panelClientReads = (binding: string): readonly PanelClientRead[] =>
   binding === bindingKey({ kind: "PlatformObjectType", id: SCHEDULED_TASK }) ? scheduledTaskReads : [];
 
 /** Each binding's requests: what its client sends, and nothing more. */

@@ -4,7 +4,7 @@ import { environment } from "../../config/environment";
 import { config } from "../../config/application";
 import { registerSkillProvider, type SkillProvider } from "../../core/skills";
 import { backendGet } from "../../utils/backend-client";
-import { panelSkillManifest, providePanelSkill } from "./skill-package";
+import { panelSkillManifest, providePanelSkill, readPanelTitle } from "./skill-package";
 
 const sourceResponse = z.object({ success: z.literal(true), data: z.array(panelSkillSourceSchema) });
 
@@ -16,8 +16,12 @@ export const panelSkillProvider: SkillProvider = {
     const response = await backendGet("panel-skill-sources",
       `${config.dataQuery.baseUrl}/platform/applications/panel-skill-sources?${query}`,
       { headers: { "X-Ontomato-Query-Service-Token": environment.agentRuntime().queryServiceToken }, retries: 1 });
-    return sourceResponse.parse(JSON.parse(response.text)).data.map(({ skill, uses }) => {
-      const manifest = panelSkillManifest(skill, uses);
+    const sources = sourceResponse.parse(JSON.parse(response.text)).data;
+    const panelIds = new Set(sources.flatMap(({ uses }) => uses.map(use => use.panelId)));
+    const titles = new Map(await Promise.all([...panelIds].map(async id => [id, await readPanelTitle(domainId, id)] as const)));
+    return sources.map(({ skill, uses }) => {
+      const ids = new Set(uses.map(use => use.panelId));
+      const manifest = panelSkillManifest(skill, [...ids].map(id => titles.get(id)!));
       return { skill, manifest, provide: () => providePanelSkill(domainId, skill, manifest, uses) };
     });
   },
