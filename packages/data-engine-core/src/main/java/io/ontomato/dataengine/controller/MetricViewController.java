@@ -122,8 +122,8 @@ public class MetricViewController {
 			if (metricView.getFunction() != null) {
 				metricView.getFunction().setDomainId(user.getDomainId());
 			}
-			metricViewService.save(metricView, lang);
-            ret.put("data", metricView);
+			MetricView saved = metricViewService.save(metricView, lang);
+            ret.put("data", withDisplay(saved, subjectNames(user.getDomainId()), lang));
 			ret.put("success", true);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
@@ -152,14 +152,16 @@ public class MetricViewController {
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/metricView/queryById")
     @ResponseBody
-    public JSONObject queryById(@RequestBody JSONObject param) {
+    public JSONObject queryById(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, defaultValue = "en") String lang,
+    		@RequestBody JSONObject param) {
 		JSONObject ret = new JSONObject();
 		try {
 			String id = param.getString("id");
-			MetricView metricView = metricViewService.queryById(id, SystemUtils.getCurUser().getDomainId());
+			User user = SystemUtils.getCurUser();
+			MetricView metricView = metricViewService.queryById(id, user.getDomainId());
             if (metricView == null) throw new IllegalArgumentException("MetricView not found");
 			ret.put("success", true);
-			ret.put("data", metricView);
+			ret.put("data", withDisplay(metricView, subjectNames(user.getDomainId()), lang));
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -180,7 +182,7 @@ public class MetricViewController {
 			String className = param.getString("className");
 			List<MetricView> metricViews = metricViewService.queryList(status, null, className, user.getDomainId());
 			ret.put("success", true);
-			ret.put("data", withSubjectNames(metricViews, user.getDomainId(), lang));
+			ret.put("data", withDisplay(metricViews, user.getDomainId(), lang));
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -280,22 +282,29 @@ public class MetricViewController {
 		return ids;
 	}
 
-	/** The list's creator and reviewer ids become the names a reader sees; a missing subject stays null. */
-	private ArrayNode withSubjectNames(List<MetricView> metricViews, String domainId, String lang) {
+	/** The metric's creator and reviewer ids become the names a reader sees; a missing subject stays null. */
+	private ObjectNode withDisplay(MetricView metricView, Map<String, String> names, String lang) {
+		ObjectNode item = objectMapper.valueToTree(metricView);
+		item.put("createdByName", names.get(metricView.getCreatedBy()));
+		item.put("reviewedByName", names.get(metricView.getReviewedBy()));
+		item.put("statusLabel", statusLabel(metricView.getStatus(), lang));
+		item.put("originLabel", originLabel(metricView.getOrigin(), lang));
+		return item;
+	}
+
+	private ArrayNode withDisplay(List<MetricView> metricViews, String domainId, String lang) {
+		Map<String, String> names = subjectNames(domainId);
+		ArrayNode items = objectMapper.createArrayNode();
+		for (MetricView metricView : metricViews) items.add(withDisplay(metricView, names, lang));
+		return items;
+	}
+
+	private Map<String, String> subjectNames(String domainId) {
 		Map<String, String> names = new HashMap<>();
 		for (SubjectDirectory.Subject subject : subjectDirectory.subjectsInDomain(domainId))
 			names.put(subject.id(), subject.displayName() == null || subject.displayName().isBlank()
 					? subject.loginCode() : subject.displayName());
-		ArrayNode items = objectMapper.createArrayNode();
-		for (MetricView metricView : metricViews) {
-			ObjectNode item = objectMapper.valueToTree(metricView);
-			item.put("createdByName", names.get(metricView.getCreatedBy()));
-			item.put("reviewedByName", names.get(metricView.getReviewedBy()));
-			item.put("statusLabel", statusLabel(metricView.getStatus(), lang));
-			item.put("originLabel", originLabel(metricView.getOrigin(), lang));
-			items.add(item);
-		}
-		return items;
+		return names;
 	}
 
 	private String statusLabel(String status, String lang) {

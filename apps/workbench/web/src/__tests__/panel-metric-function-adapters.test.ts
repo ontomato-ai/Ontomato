@@ -69,17 +69,15 @@ describe("metric and function resource adapters", () => {
     expect((await adapter!.query!({ search: "", page: { limit: 1 } })).total).toBe(2);
   });
 
-  it("uses the raw owner value for a single metric read when the list labels are absent", async () => {
+  it("reads a single metric through queryById with the owner's display names", async () => {
     const asset = metric("m1", "Revenue", "Gross revenue", "PUBLISHED", "Published", "USER", "User");
-    const { requests } = fake(path => ({ success: true, data: path === "/metricView/queryList" ? [asset] : {
-      ...asset, statusLabel: undefined, originLabel: undefined, createdByName: undefined, reviewedByName: undefined,
-      createdBy: "u-1", reviewedBy: "u-2",
-    } }));
+    const { requests, sent } = fake(() => ({ success: true, data: asset }));
     const [adapter] = metricViewAdapters(requests);
 
     const record = await adapter!.read!("m1");
 
-    expect(record.fields).toMatchObject({ status: "PUBLISHED", origin: "USER", createdBy: "u-1", reviewedBy: "u-2" });
+    expect(record.fields).toMatchObject({ status: "Published", origin: "User", createdBy: "Alice", reviewedBy: "Bob" });
+    expect(sent[0]).toMatchObject({ path: "/metricView/queryById", body: { id: "m1" } });
   });
 
   it("turns a metric owner refusal into a typed refusal with its field pointers", async () => {
@@ -106,8 +104,24 @@ describe("metric and function resource adapters", () => {
     const saved = await adapter!.forms!.save({ kind: "object", objectType: METRIC_VIEW, primaryKey: "m1" }, { values });
 
     expect(saved.primaryKey).toBe("m1");
-    expect(sent.find(request => request.path === "/metricView/save")?.body).toEqual(values);
+    expect(sent.find(request => request.path === "/metricView/save")?.body).toEqual({ ...values, id: "m1" });
     expect(sent.every(request => request.service === "/data-query")).toBe(true);
+  });
+
+  it("binds a metric save to its target and refuses another id", async () => {
+    const { requests, sent } = fake(() => ({ success: true, data: metric("m1", "Revenue", "", "PUBLISHED", "Published", "USER", "User") }));
+    const [adapter] = metricViewAdapters(requests);
+
+    await expect(adapter!.forms!.save({ kind: "object", objectType: METRIC_VIEW, primaryKey: "m1" }, { values: { id: "m2", name: "Revenue" } }))
+      .rejects.toMatchObject({ name: "PlatformObjectRefusal", fields: { "/id": "The values name another object" } });
+    await expect(adapter!.forms!.save({ kind: "draft" }, { values: { id: "m1", name: "Revenue" } }))
+      .rejects.toMatchObject({ name: "PlatformObjectRefusal", fields: { "/id": "A new object cannot carry an id" } });
+    expect(sent).toHaveLength(0);
+
+    await adapter!.forms!.save({ kind: "object", objectType: METRIC_VIEW, primaryKey: "m1" }, { values: { name: "Revenue" } });
+    expect(sent[0]?.body).toEqual({ name: "Revenue", id: "m1" });
+    await adapter!.forms!.save({ kind: "draft" }, { values: { name: "Revenue" } });
+    expect(sent[1]?.body).toEqual({ name: "Revenue" });
   });
 
   it("maps function records, filters by name and description, and saves function values", async () => {
@@ -129,7 +143,23 @@ describe("metric and function resource adapters", () => {
 
     const saved = await adapter!.forms!.save({ kind: "object", objectType: FUNCTION, primaryKey: "f1" }, { values: { name: "Revenue query v2" } });
     expect(saved.label).toBe("Revenue query v2");
-    expect(sent.find(request => request.path === "/function/save")?.body).toEqual({ name: "Revenue query v2" });
+    expect(sent.find(request => request.path === "/function/save")?.body).toEqual({ name: "Revenue query v2", id: "f1" });
+  });
+
+  it("binds a function save to its target and refuses another id", async () => {
+    const { requests, sent } = fake(() => ({ success: true, data: { id: "f1", name: "Revenue query", operation: "OPERATION_READ", operationLabel: "Read" } }));
+    const [adapter] = functionAdapters(requests);
+
+    await expect(adapter!.forms!.save({ kind: "object", objectType: FUNCTION, primaryKey: "f1" }, { values: { id: "f2", name: "Revenue query" } }))
+      .rejects.toMatchObject({ name: "PlatformObjectRefusal", fields: { "/id": "The values name another object" } });
+    await expect(adapter!.forms!.save({ kind: "draft" }, { values: { id: "f1", name: "Revenue query" } }))
+      .rejects.toMatchObject({ name: "PlatformObjectRefusal", fields: { "/id": "A new object cannot carry an id" } });
+    expect(sent).toHaveLength(0);
+
+    await adapter!.forms!.save({ kind: "object", objectType: FUNCTION, primaryKey: "f1" }, { values: { name: "Revenue query" } });
+    expect(sent[0]?.body).toEqual({ name: "Revenue query", id: "f1" });
+    await adapter!.forms!.save({ kind: "draft" }, { values: { name: "Revenue query" } });
+    expect(sent[1]?.body).toEqual({ name: "Revenue query" });
   });
 
   it("parses the function form description through the function endpoint", async () => {

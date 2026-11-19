@@ -1,6 +1,7 @@
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import { FUNCTION } from "@ontomato/contracts/panel-client-requests";
 import { panelFormDescriptionSchema } from "@ontomato/contracts/panel-projection";
+import { valuesForTarget } from "./target-values";
 import {
   PlatformObjectRefusal,
   type PlatformObjectAdapterFactory,
@@ -71,7 +72,7 @@ function record(fn: FunctionAsset): PlatformObjectRecord {
     primaryKey: fn.id,
     label: fn.name,
     ...(fn.description ? { subtitle: fn.description } : {}),
-    fields: { operation: fn.operationLabel ?? fn.operation ?? "" },
+    fields: { operation: fn.operationLabel ?? "" },
   };
 }
 
@@ -97,8 +98,8 @@ export const functionAdapters: PlatformObjectAdapterFactory = requests => {
       async describe(request) {
         return panelFormDescriptionSchema.parse(await ownerRequest(requests, "/function/form", request));
       },
-      async save(_target, { values }) {
-        return record(assetOf(await ownerRequest(requests, "/function/save", values)));
+      async save(target, { values }) {
+        return record(assetOf(await ownerRequest(requests, "/function/save", valuesForTarget(target, values))));
       },
     },
   }];

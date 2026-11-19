@@ -96,6 +96,36 @@ class MetricViewPanelEndpointTest {
   }
 
   @Test
+  void aSingleReadCarriesTheCreatorsAndReviewersDisplayNames() throws Exception {
+    when(metricViewService.queryById("m1", "domain")).thenReturn(displayMetric());
+    stubSubjects();
+
+    JSONObject body = perform("/metricView/queryById", """
+        {"id":"m1"}""");
+
+    JSONObject data = body.getJSONObject("data");
+    assertEquals("Alice", data.getString("createdByName"));
+    assertEquals("bob", data.getString("reviewedByName"));
+    assertEquals("PanelForm.status.published", data.getString("statusLabel"));
+    assertEquals("PanelForm.origin.user", data.getString("originLabel"));
+  }
+
+  @Test
+  void aSaveReturnsTheCreatorsAndReviewersDisplayNames() throws Exception {
+    when(metricViewService.save(any(), eq("en"))).thenReturn(displayMetric());
+    stubSubjects();
+
+    JSONObject body = perform("/metricView/save", """
+        {"name":"Revenue","function":{"name":"calc","operation":"OPERATION_READ"}}""");
+
+    JSONObject data = body.getJSONObject("data");
+    assertEquals("Alice", data.getString("createdByName"));
+    assertEquals("bob", data.getString("reviewedByName"));
+    assertEquals("PanelForm.status.published", data.getString("statusLabel"));
+    assertEquals("PanelForm.origin.user", data.getString("originLabel"));
+  }
+
+  @Test
   void setStatusReportsEachItemAndRejectsAnEmptyListBeforeTheOwner() throws Exception {
     MetricView saved = new MetricView();
     saved.setId("m1");
@@ -191,6 +221,23 @@ class MetricViewPanelEndpointTest {
         .getJSONObject("control").getJSONObject("defaultItem");
     assertTrue(defaultItem.getJSONObject("parameters").containsKey("amount"));
     assertNull(defaultItem.getJSONObject("parameters").get("amount"));
+  }
+
+  private MetricView displayMetric() {
+    MetricView metric = new MetricView();
+    metric.setId("m1");
+    metric.setName("Revenue");
+    metric.setStatus(MetricView.STATUS_PUBLISHED);
+    metric.setOrigin(MetricView.ORIGIN_USER);
+    metric.setCreatedBy("u1");
+    metric.setReviewedBy("u2");
+    return metric;
+  }
+
+  private void stubSubjects() {
+    when(subjectDirectory.subjectsInDomain("domain")).thenReturn(List.of(
+        new SubjectDirectory.Subject("u1", "alice", "Alice", Set.of()),
+        new SubjectDirectory.Subject("u2", "bob", null, Set.of())));
   }
 
   private static JSONObject field(JSONObject form, String path) {

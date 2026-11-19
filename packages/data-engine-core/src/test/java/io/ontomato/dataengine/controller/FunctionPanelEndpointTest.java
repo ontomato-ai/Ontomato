@@ -67,6 +67,30 @@ class FunctionPanelEndpointTest {
   }
 
   @Test
+  void aSingleReadCarriesTheOperationLabel() throws Exception {
+    when(functionService.queryById("f1")).thenReturn(function("f1", "Revenue query", Function.OPERATION_READ));
+
+    JSONObject body = perform("/function/queryById", """
+        {"id":"f1"}""");
+
+    JSONObject data = body.getJSONObject("data");
+    assertEquals(Function.OPERATION_READ, data.getString("operation"));
+    assertEquals("PanelForm.operation.read", data.getString("operationLabel"));
+  }
+
+  @Test
+  void aSaveReturnsTheOperationLabel() throws Exception {
+    when(functionService.save(any(), eq("en"))).thenReturn(function("f1", "Revenue query", Function.OPERATION_READ));
+
+    JSONObject body = perform("/function/save", """
+        {"name":"Revenue query","operation":"OPERATION_READ"}""");
+
+    JSONObject data = body.getJSONObject("data");
+    assertEquals(Function.OPERATION_READ, data.getString("operation"));
+    assertEquals("PanelForm.operation.read", data.getString("operationLabel"));
+  }
+
+  @Test
   void theFormEndpointReturnsStructuredFieldErrors() throws Exception {
     when(functionService.form(any(), eq("en"), eq("domain")))
         .thenThrow(new PanelFormException("Invalid Function draft",

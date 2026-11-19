@@ -44,7 +44,7 @@ public class FunctionController {
 			User user = SystemUtils.getCurUser();
 			Function function = Function.fromInput(param);
 			function.setDomainId(user.getDomainId());
-			ret.put("data", functionService.save(function, lang));
+			ret.put("data", withDisplay(functionService.save(function, lang), lang));
 			ret.put("success", true);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
@@ -79,7 +79,7 @@ public class FunctionController {
 			String id = param.getString("id");
 			Function function = functionService.queryById(id);
 			ret.put("success", true);
-			ret.put("data", function);
+			ret.put("data", function == null ? null : withDisplay(function, lang));
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -121,7 +121,7 @@ public class FunctionController {
 			String className = param.getString("className");
 			List<Function> functions = functionService.queryList(operation, className, user.getDomainId());
 			ret.put("success", true);
-			ret.put("data", withLabels(functions, lang));
+			ret.put("data", withDisplay(functions, lang));
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -130,13 +130,15 @@ public class FunctionController {
 		return ret;
 	}
 
-	private ArrayNode withLabels(List<Function> functions, String lang) {
+	private ObjectNode withDisplay(Function function, String lang) {
+		ObjectNode item = objectMapper.valueToTree(function);
+		item.put("operationLabel", operationLabel(function.getOperation(), lang));
+		return item;
+	}
+
+	private ArrayNode withDisplay(List<Function> functions, String lang) {
 		ArrayNode items = objectMapper.createArrayNode();
-		for (Function function : functions) {
-			ObjectNode item = objectMapper.valueToTree(function);
-			item.put("operationLabel", operationLabel(function.getOperation(), lang));
-			items.add(item);
-		}
+		for (Function function : functions) items.add(withDisplay(function, lang));
 		return items;
 	}
 

@@ -49,15 +49,31 @@ async function ownerPost(host: Host, path: string, body: unknown) {
   return ownerEnvelopeSchema.parse(await response.json());
 }
 
-async function targetLabel(host: Host, target: PanelRecordTarget, path: string): Promise<string> {
+async function targetLabel(host: Host, target: PanelRecordTarget, path: string, code: string): Promise<string> {
   const response = await host.request(`${DATA_QUERY_GATEWAY}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id: target.primaryKey }),
   });
-  if (!response.ok) return target.primaryKey;
+  if (!response.ok) {
+    const body = await response.json() as { message?: string; error?: { message?: string } } | null;
+    throw new HttpError(response.status, body?.message ?? body?.error?.message ?? "The owner could not read the target", code);
+  }
   const envelope = ownerEnvelopeSchema.parse(await response.json());
-  return envelope.success ? labelSchema.parse(envelope.data).name : target.primaryKey;
+  if (!envelope.success) throw new HttpError(404, envelope.message ?? "The owner could not read the target", code);
+  return labelSchema.parse(envelope.data).name;
+}
+
+/** A save writes the chosen target: an existing id must match, and a new object carries none. */
+function valuesForTarget(target: PanelOperationTarget, values: Record<string, unknown>): Record<string, unknown> {
+  if (target.kind === "draft") {
+    if (Object.hasOwn(values, "id"))
+      throw new HttpError(400, "A new object cannot carry an id", "TARGET_ID_MISMATCH");
+    return values;
+  }
+  if (Object.hasOwn(values, "id") && values.id !== target.primaryKey)
+    throw new HttpError(400, "The values name another object", "TARGET_ID_MISMATCH");
+  return { ...values, id: target.primaryKey };
 }
 
 async function save(host: Host, path: string, values: unknown, refusalCode: string): Promise<PanelOperationOutcome> {
@@ -95,8 +111,8 @@ export const m5ServerOperations = [
         return { objectType: METRIC_VIEW, primaryKey: savedIdSchema.parse(data).id };
       },
     },
-    async execute(host: Host, _target: PanelOperationTarget, input: Record<string, unknown>): Promise<PanelOperationOutcome> {
-      return save(host, "/metricView/save", saveInputSchema.parse(input).values, "METRIC_VIEW_SAVE_REFUSED");
+    async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<PanelOperationOutcome> {
+      return save(host, "/metricView/save", valuesForTarget(target, saveInputSchema.parse(input).values), "METRIC_VIEW_SAVE_REFUSED");
     },
   },
   {
@@ -106,7 +122,7 @@ export const m5ServerOperations = [
     targetType: METRIC_VIEW,
     targetSchema: metricObjectTarget,
     inputSchema: deleteInputSchema,
-    targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/metricView/queryById"),
+    targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/metricView/queryById", "METRIC_VIEW_UNAVAILABLE"),
     async execute(host: Host, target: PanelOperationTarget): Promise<PanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected metric");
       return remove(host, "/metricView/delete", target.primaryKey, "METRIC_VIEW_DELETE_REFUSED");
@@ -130,8 +146,8 @@ export const m5ServerOperations = [
         return { objectType: FUNCTION, primaryKey: savedIdSchema.parse(data).id };
       },
     },
-    async execute(host: Host, _target: PanelOperationTarget, input: Record<string, unknown>): Promise<PanelOperationOutcome> {
-      return save(host, "/function/save", saveInputSchema.parse(input).values, "FUNCTION_SAVE_REFUSED");
+    async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<PanelOperationOutcome> {
+      return save(host, "/function/save", valuesForTarget(target, saveInputSchema.parse(input).values), "FUNCTION_SAVE_REFUSED");
     },
   },
   {
@@ -141,7 +157,7 @@ export const m5ServerOperations = [
     targetType: FUNCTION,
     targetSchema: functionObjectTarget,
     inputSchema: deleteInputSchema,
-    targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/function/queryById"),
+    targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/function/queryById", "FUNCTION_UNAVAILABLE"),
     async execute(host: Host, target: PanelOperationTarget): Promise<PanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected function");
       return remove(host, "/function/delete", target.primaryKey, "FUNCTION_DELETE_REFUSED");

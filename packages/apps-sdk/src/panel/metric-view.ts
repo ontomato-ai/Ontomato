@@ -1,6 +1,7 @@
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import { METRIC_VIEW } from "@ontomato/contracts/panel-client-requests";
 import { panelFormDescriptionSchema } from "@ontomato/contracts/panel-projection";
+import { valuesForTarget } from "./target-values";
 import {
   PlatformObjectRefusal,
   type PlatformObjectAdapterFactory,
@@ -82,10 +83,10 @@ function record(metric: MetricViewAsset): PlatformObjectRecord {
     ...(metric.description ? { subtitle: metric.description } : {}),
     fields: {
       function: metric.function?.name ?? "",
-      origin: metric.originLabel ?? metric.origin ?? "",
-      status: metric.statusLabel ?? metric.status ?? "",
-      createdBy: metric.createdByName ?? metric.createdBy ?? "",
-      reviewedBy: metric.reviewedByName ?? metric.reviewedBy ?? "",
+      origin: metric.originLabel ?? "",
+      status: metric.statusLabel ?? "",
+      createdBy: metric.createdByName ?? "",
+      reviewedBy: metric.reviewedByName ?? "",
       modified: typeof metric.modifyTimestamp === "number" ? new Date(metric.modifyTimestamp).toLocaleString() : "",
     },
     tones: {
@@ -116,8 +117,8 @@ export const metricViewAdapters: PlatformObjectAdapterFactory = requests => {
       async describe(request) {
         return panelFormDescriptionSchema.parse(await ownerRequest(requests, "/metricView/form", request));
       },
-      async save(_target, { values }) {
-        return record(assetOf(await ownerRequest(requests, "/metricView/save", values)));
+      async save(target, { values }) {
+        return record(assetOf(await ownerRequest(requests, "/metricView/save", valuesForTarget(target, values))));
       },
     },
   }];

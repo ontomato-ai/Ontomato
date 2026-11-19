@@ -50,7 +50,25 @@ describe("metric and function panel server operations", () => {
     expect(outcome).toEqual({ kind: "success", data: { id: "m1", name: "Revenue 2" } });
     expect(sent[0]?.path).toBe("/api/data-query/metricView/save");
     expect(sent[0]?.init.method).toBe("POST");
-    expect(JSON.parse(String(sent[0]?.init.body))).toEqual({ name: "Revenue 2", bindings: [] });
+    expect(JSON.parse(String(sent[0]?.init.body))).toEqual({ name: "Revenue 2", bindings: [], id: "m1" });
+  });
+
+  it("binds a metric save to its target and refuses another id", async () => {
+    const operation = m5ServerOperations.find(item => item.handlerRef === `${METRIC_VIEW}.save`)!;
+    const rejected = hostWith(() => Response.json({ success: true, data: { id: "m1", name: "Revenue" } }));
+    await expect(operation.execute(rejected.host, metricTarget, { values: { id: "m2", name: "Revenue" } }))
+      .rejects.toMatchObject({ status: 400, code: "TARGET_ID_MISMATCH" });
+    await expect(operation.execute(rejected.host, { kind: "draft" }, { values: { id: "m1", name: "Revenue" } }))
+      .rejects.toMatchObject({ status: 400, code: "TARGET_ID_MISMATCH" });
+    expect(rejected.sent).toHaveLength(0);
+
+    const updated = hostWith(() => Response.json({ success: true, data: { id: "m1", name: "Revenue" } }));
+    await operation.execute(updated.host, metricTarget, { values: { name: "Revenue" } });
+    expect(JSON.parse(String(updated.sent[0]?.init.body))).toEqual({ name: "Revenue", id: "m1" });
+
+    const created = hostWith(() => Response.json({ success: true, data: { id: "m-new", name: "Revenue" } }));
+    await operation.execute(created.host, { kind: "draft" }, { values: { name: "Revenue" } });
+    expect(JSON.parse(String(created.sent[0]?.init.body))).toEqual({ name: "Revenue" });
   });
 
   it("turns a metric owner refusal into a business failure", async () => {
@@ -82,13 +100,33 @@ describe("metric and function panel server operations", () => {
       .toEqual({ kind: "failure", code: "METRIC_VIEW_DELETE_REFUSED", message: "Cannot delete a system MetricView" });
   });
 
-  it("falls back to the metric id when the label cannot be read", async () => {
+  it("fails the metric label read with the owner's reason", async () => {
     const operation = m5ServerOperations.find(item => item.handlerRef === DELETE_METRIC_VIEW)!;
     if (operation.kind !== "action") throw new Error("not an action");
-    for (const response of [Response.json({ success: false, message: "MetricView not found" }), new Response(null, { status: 404 })]) {
-      const { host } = hostWith(() => response);
-      expect(await operation.targetLabel(host, metricTarget)).toBe("m1");
-    }
+    const missing = hostWith(() => Response.json({ success: false, message: "MetricView not found" }));
+    await expect(operation.targetLabel(missing.host, metricTarget))
+      .rejects.toMatchObject({ status: 404, message: "MetricView not found", code: "METRIC_VIEW_UNAVAILABLE" });
+    const outage = hostWith(() => Response.json({ message: "Owner unavailable" }, { status: 503 }));
+    await expect(operation.targetLabel(outage.host, metricTarget))
+      .rejects.toMatchObject({ status: 503, message: "Owner unavailable", code: "METRIC_VIEW_UNAVAILABLE" });
+  });
+
+  it("binds a function save to its target and refuses another id", async () => {
+    const operation = m5ServerOperations.find(item => item.handlerRef === `${FUNCTION}.save`)!;
+    const rejected = hostWith(() => Response.json({ success: true, data: { id: "f1", name: "Revenue query" } }));
+    await expect(operation.execute(rejected.host, functionTarget, { values: { id: "f2", name: "Revenue query" } }))
+      .rejects.toMatchObject({ status: 400, code: "TARGET_ID_MISMATCH" });
+    await expect(operation.execute(rejected.host, { kind: "draft" }, { values: { id: "f1", name: "Revenue query" } }))
+      .rejects.toMatchObject({ status: 400, code: "TARGET_ID_MISMATCH" });
+    expect(rejected.sent).toHaveLength(0);
+
+    const updated = hostWith(() => Response.json({ success: true, data: { id: "f1", name: "Revenue query" } }));
+    await operation.execute(updated.host, functionTarget, { values: { name: "Revenue query" } });
+    expect(JSON.parse(String(updated.sent[0]?.init.body))).toEqual({ name: "Revenue query", id: "f1" });
+
+    const created = hostWith(() => Response.json({ success: true, data: { id: "f-new", name: "Revenue query" } }));
+    await operation.execute(created.host, { kind: "draft" }, { values: { name: "Revenue query" } });
+    expect(JSON.parse(String(created.sent[0]?.init.body))).toEqual({ name: "Revenue query" });
   });
 
   it("declares and executes the function save and delete", async () => {
@@ -100,6 +138,7 @@ describe("metric and function panel server operations", () => {
     expect(await save.execute(saved.host, functionTarget, { values: { name: "Revenue query" } }))
       .toEqual({ kind: "success", data: { id: "f1", name: "Revenue query" } });
     expect(saved.sent[0]?.path).toBe("/api/data-query/function/save");
+    expect(JSON.parse(String(saved.sent[0]?.init.body))).toEqual({ name: "Revenue query", id: "f1" });
     const saveRefused = hostWith(() => Response.json({ success: false, message: "Function referenced by MetricView cannot be modified or deleted" }));
     expect(await save.execute(saveRefused.host, functionTarget, { values: {} }))
       .toEqual({ kind: "failure", code: "FUNCTION_SAVE_REFUSED", message: "Function referenced by MetricView cannot be modified or deleted" });
