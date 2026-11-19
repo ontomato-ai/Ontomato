@@ -3,6 +3,8 @@ package io.ontomato.dataengine.service;
 import java.util.List;
 import java.util.Map;
 
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
 import io.ontomato.dataengine.core.bean.User;
 
 /**
@@ -52,6 +54,22 @@ public interface OntologyModelService {
 	record ClassDeletion(List<String> relationships) {
 	}
 
+	/** A form's target as the panel contract sends it: an existing object by its primary key, or the create draft. */
+	record FormTarget(String kind, String objectType, String primaryKey) {
+	}
+
+	/** One form request: the target, its current values, and the field that changed (null when checking a draft). */
+	record FormRequest(FormTarget target, Map<String, Object> values, String changedField) {
+	}
+
+	/** The request a form's save sends: the owner's own endpoint, its body schema and the draft's operation. */
+	record FormSave(String method, String path, ObjectNode bodySchema, String draftOperation) {
+	}
+
+	/** The whole form for one target: its fields, its current values and how a save writes them. */
+	record FormDescription(List<ObjectNode> fields, Map<String, Object> values, FormSave save) {
+	}
+
 	List<ObjectTypeView> objectTypes(User user, String lang);
 
 	ObjectTypeView objectType(String className, User user, String lang);
@@ -83,4 +101,10 @@ public interface OntologyModelService {
 	RelationshipView updateRelationship(String relationship, RelationshipUpdate body, User user, String lang);
 
 	void deleteRelationship(String relationship, User user, String lang);
+
+	FormDescription objectTypeForm(FormRequest body, User user, String lang);
+
+	FormDescription attributeForm(FormRequest body, User user, String lang);
+
+	FormDescription relationshipForm(FormRequest body, User user, String lang);
 }

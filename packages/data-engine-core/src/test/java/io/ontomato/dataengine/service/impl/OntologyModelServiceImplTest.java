@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.service.impl;
 
+import static io.ontomato.dataengine.service.OntologyModelService.ATTRIBUTE_TYPES;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -16,6 +17,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -28,6 +30,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import io.ontomato.dataengine.bean.AuditLog;
@@ -43,6 +46,9 @@ import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.OntologyModelException;
 import io.ontomato.dataengine.service.OntologyModelService.AttributeCreate;
 import io.ontomato.dataengine.service.OntologyModelService.AttributeUpdate;
+import io.ontomato.dataengine.service.OntologyModelService.FormDescription;
+import io.ontomato.dataengine.service.OntologyModelService.FormRequest;
+import io.ontomato.dataengine.service.OntologyModelService.FormTarget;
 import io.ontomato.dataengine.service.OntologyModelService.ObjectTypeCreate;
 import io.ontomato.dataengine.service.OntologyModelService.ObjectTypeUpdate;
 import io.ontomato.dataengine.service.OntologyModelService.RelationshipCreate;
@@ -507,6 +513,235 @@ class OntologyModelServiceImplTest {
 		assertCode(404, "RELATIONSHIP_NOT_FOUND", () -> {
 			throw missing;
 		});
+	}
+
+	@Test
+	void theObjectTypeFormOpensAnEditWithItsNameReadOnlyAndTheStoredValues() {
+		var form = service.objectTypeForm(open("object", "platform:ObjectType", "Device"), user, "en");
+
+		assertEquals(List.of("/className", "/showName", "/classDesc"), paths(form));
+		assertTrue(fieldOf(form, "/className").get("readOnly").asBoolean());
+		assertFalse(fieldOf(form, "/showName").get("readOnly").asBoolean());
+		assertEquals(Map.of("className", "Device", "showName", "Device", "classDesc", ""), form.values());
+		assertEquals("Admin.form.className", fieldOf(form, "/className").get("label").asText());
+		assertEquals(List.of("className", "showName"), texts(form.save().bodySchema().get("required")));
+		assertEquals("POST", form.save().method());
+		assertEquals("/ontology/model/object-type/update", form.save().path());
+		assertEquals("objectType.update", form.save().draftOperation());
+	}
+
+	@Test
+	void theObjectTypeFormOpensTheCreateTargetWithDefaultsAndThePrimaryKeyName() {
+		var form = service.objectTypeForm(open("draft", "platform:ObjectType", null), user, "en");
+
+		assertEquals(List.of("/className", "/primaryKeyName", "/showName", "/classDesc"), paths(form));
+		assertTrue(form.fields().stream().noneMatch(field -> field.get("readOnly").asBoolean()));
+		assertEquals(Map.of("className", "", "primaryKeyName", "", "showName", "", "classDesc", ""), form.values());
+		assertEquals(List.of("className", "primaryKeyName", "showName"),
+				texts(form.save().bodySchema().get("required")));
+		assertEquals("/ontology/model/object-type/create", form.save().path());
+		assertEquals("objectType.create", form.save().draftOperation());
+	}
+
+	@Test
+	void theAttributeFormLocksTheNameTypeAndThePrimaryKeyAttributeOnEdit() {
+		var form = service.attributeForm(open("object", "platform:Attribute", "[\"Device\",\"id\"]"), user, "en");
+
+		assertEquals(List.of("/className", "/name", "/type", "/showName", "/attrDesc", "/enable", "/businessKey",
+				"/primaryKey"), paths(form));
+		assertEquals(List.of(true, true, true), List.of(fieldOf(form, "/className").get("readOnly").asBoolean(),
+				fieldOf(form, "/name").get("readOnly").asBoolean(), fieldOf(form, "/type").get("readOnly").asBoolean()));
+		var enable = fieldOf(form, "/enable");
+		assertTrue(enable.get("readOnly").asBoolean());
+		assertEquals("Admin.form.primaryKeyEnableLocked", enable.get("readOnlyReason").asText());
+		var primaryKey = fieldOf(form, "/primaryKey");
+		assertTrue(primaryKey.get("readOnly").asBoolean());
+		assertEquals("Admin.form.primaryKeySwitchHint", primaryKey.get("readOnlyReason").asText());
+		assertEquals(Map.of("className", "Device", "name", "id", "type", "varchar", "showName", "id", "attrDesc", "",
+				"enable", true, "businessKey", false, "primaryKey", true), form.values());
+		assertEquals("attribute.update", form.save().draftOperation());
+	}
+
+	@Test
+	void theAttributeFormOffersEveryTypeAndOwnerAndOpensCreateEnabled() {
+		var form = service.attributeForm(open("draft", "platform:Attribute", null), user, "en");
+
+		assertEquals(List.of("Device", "Site"), optionValues(fieldOf(form, "/className")));
+		assertEquals(ATTRIBUTE_TYPES, optionValues(fieldOf(form, "/type")));
+		assertFalse(fieldOf(form, "/enable").get("readOnly").asBoolean());
+		assertFalse(fieldOf(form, "/primaryKey").get("readOnly").asBoolean());
+		assertEquals(Map.of("className", "", "name", "", "type", "", "showName", "", "attrDesc", "", "enable", true,
+				"businessKey", false, "primaryKey", false), form.values());
+		assertEquals(List.of("className", "name", "showName", "type", "enable", "businessKey"),
+				texts(form.save().bodySchema().get("required")));
+		assertEquals("attribute.create", form.save().draftOperation());
+	}
+
+	@Test
+	void theRelationshipFormReasksTheJoinFieldOptionsWhenAnEndClassChanges() {
+		var form = service.relationshipForm(open("draft", "platform:Relationship", null), user, "en");
+
+		assertEquals(List.of("/relationship", "/fromclass", "/fromField", "/toclass", "/toField", "/desc"), paths(form));
+		assertEquals(List.of(), optionValues(fieldOf(form, "/fromField")));
+		assertTrue(fieldOf(form, "/fromclass").get("refreshOnChange").asBoolean());
+		assertTrue(fieldOf(form, "/fromField").get("required").asBoolean());
+
+		// A field held for the class before is no longer one of the new class's attributes; a matching one stays.
+		var changed = service.relationshipForm(new FormRequest(new FormTarget("draft", "platform:Relationship", null),
+				Map.of("relationship", "", "fromclass", "Site", "fromField", "site_id", "toclass", "Device",
+						"toField", "id", "desc", ""),
+				"/fromclass"), user, "en");
+		assertEquals(List.of("id"), optionValues(fieldOf(changed, "/fromField")));
+		assertEquals("", changed.values().get("fromField"));
+		assertEquals("id", changed.values().get("toField"));
+	}
+
+	@Test
+	void theRelationshipFormDropsItsJoinFieldRulesWhenTheAdapterDoesNotJoinOnThem() {
+		when(provider.requiresJoinFields()).thenReturn(false);
+
+		var form = service.relationshipForm(open("draft", "platform:Relationship", null), user, "en");
+
+		assertFalse(fieldOf(form, "/fromField").get("required").asBoolean());
+		assertFalse(fieldOf(form, "/toField").get("required").asBoolean());
+		assertEquals(List.of("relationship", "fromclass", "toclass", "desc"),
+				texts(form.save().bodySchema().get("required")));
+	}
+
+	@Test
+	void theRelationshipFormOpensAnEditWithItsNameAndEndsReadOnly() {
+		var form = service.relationshipForm(open("object", "platform:Relationship", "owns"), user, "en");
+
+		assertEquals(List.of(true, true, false, true, false, false),
+				paths(form).stream().map(path -> fieldOf(form, path).get("readOnly").asBoolean()).toList());
+		assertEquals(Map.of("relationship", "owns", "fromclass", "Device", "fromField", "site_id", "toclass", "Site",
+				"toField", "id", "desc", "owns"), form.values());
+		assertEquals(List.of("id", "site_id", "size"), optionValues(fieldOf(form, "/fromField")));
+		assertEquals(List.of("id"), optionValues(fieldOf(form, "/toField")));
+		assertEquals("relationship.update", form.save().draftOperation());
+	}
+
+	@Test
+	void aCompleteObjectTypeDraftIsCheckedAsItsSaveWouldCheckItAndNothingIsWritten() {
+		var refused = assertThrows(OntologyModelException.class,
+				() -> service.objectTypeForm(new FormRequest(new FormTarget("draft", "platform:ObjectType", null),
+						Map.of("className", "", "primaryKeyName", "1bad", "showName", " ", "classDesc", ""), null),
+						user, "en"));
+		assertValidation(refused, List.of("/values/className", "/values/showName", "/values/primaryKeyName"),
+				List.of("required", "required", "invalid_format"));
+		verify(jsonRuleDao, never()).save(any(), any());
+
+		var checked = service.objectTypeForm(new FormRequest(new FormTarget("draft", "platform:ObjectType", null),
+				Map.of("className", " Pump ", "primaryKeyName", "pump_no", "showName", "Pump", "classDesc", " A pump "),
+				null), user, "en");
+		assertEquals(Map.of("className", "Pump", "primaryKeyName", "pump_no", "showName", "Pump", "classDesc",
+				"A pump"), checked.values());
+		verify(jsonRuleDao, never()).save(any(), any());
+	}
+
+	@Test
+	void anObjectTypeEditDraftChecksTheUpdateAndNormalizesTheTargetIdentity() {
+		var checked = service.objectTypeForm(new FormRequest(new FormTarget("object", "platform:ObjectType", "Device"),
+				Map.of("className", "Whatever", "showName", " Devices ", "classDesc", "A device"), null), user, "en");
+		assertEquals(Map.of("className", "Device", "showName", "Devices", "classDesc", "A device"),
+				checked.values());
+
+		var refused = assertThrows(OntologyModelException.class,
+				() -> service.objectTypeForm(new FormRequest(new FormTarget("object", "platform:ObjectType", "Device"),
+						Map.of("showName", " ", "classDesc", ""), null), user, "en"));
+		assertValidation(refused, List.of("/values/showName"), List.of("required"));
+		verify(jsonRuleDao, never()).save(any(), any());
+	}
+
+	@Test
+	void anAttributeDraftIsCheckedAsItsSaveWouldCheckItWithoutWriting() {
+		var refused = assertThrows(OntologyModelException.class,
+				() -> service.attributeForm(new FormRequest(new FormTarget("draft", "platform:Attribute", null),
+						Map.of("className", "Device", "name", "id", "showName", " ", "type", "bucket", "attrDesc", "",
+								"enable", true, "businessKey", false, "primaryKey", false),
+						null), user, "en"));
+		assertValidation(refused, List.of("/values/showName", "/values/name", "/values/type"),
+				List.of("required", "already_exists", "invalid_option"));
+		verify(jsonRuleDao, never()).save(any(), any());
+
+		var checked = service.attributeForm(new FormRequest(new FormTarget("object", "platform:Attribute",
+				"[\"Device\",\"site_id\"]"),
+				Map.of("className", "Whatever", "name", "Whatever", "showName", " Site link ", "attrDesc", "d",
+						"enable", false, "businessKey", true, "primaryKey", true),
+				null), user, "en");
+		assertEquals(Map.of("className", "Device", "name", "site_id", "type", "varchar", "showName", "Site link",
+				"attrDesc", "d", "enable", false, "businessKey", true, "primaryKey", false), checked.values());
+		assertEquals(false, checked.values().get("primaryKey"));
+		verify(jsonRuleDao, never()).save(any(), any());
+	}
+
+	@Test
+	void aDraftThatDisablesThePrimaryKeyAttributeIsRefusedAsTheSaveWouldRefuseIt() {
+		var refused = assertThrows(OntologyModelException.class,
+				() -> service.attributeForm(new FormRequest(new FormTarget("object", "platform:Attribute",
+						"[\"Device\",\"id\"]"),
+						Map.of("showName", "ID", "attrDesc", "", "enable", false, "businessKey", false), null), user,
+						"en"));
+		assertCode(409, "PRIMARY_KEY_LOCKED", () -> {
+			throw refused;
+		});
+		verify(jsonRuleDao, never()).save(any(), any());
+	}
+
+	@Test
+	void aRelationshipDraftIsCheckedAsItsSaveWouldCheckItAndEditValuesKeepTheStoredEnds() {
+		var refused = assertThrows(OntologyModelException.class,
+				() -> service.relationshipForm(new FormRequest(new FormTarget("draft", "platform:Relationship", null),
+						Map.of("relationship", "contains", "fromclass", "Device", "toclass", "Site", "desc", "",
+								"fromField", "nope", "toField", ""), null), user, "en"));
+		assertValidation(refused, List.of("/values/desc", "/values/toField", "/values/fromField"),
+				List.of("required", "required", "invalid_option"));
+		verify(jsonRuleDao, never()).save(any(), any());
+
+		var checked = service.relationshipForm(new FormRequest(new FormTarget("object", "platform:Relationship", "owns"),
+				Map.of("relationship", "Whatever", "fromclass", "Whatever", "toclass", "Whatever",
+						"desc", " held by ", "fromField", "id", "toField", "id"),
+				null), user, "en");
+		assertEquals(Map.of("relationship", "owns", "fromclass", "Device", "fromField", "id", "toclass", "Site",
+				"toField", "id", "desc", "held by"), checked.values());
+		verify(jsonRuleDao, never()).save(any(), any());
+	}
+
+	@Test
+	void aDraftWithAValueOfTheWrongTypeOrATargetWithoutOneIsRefusedAsAnInvalidRequest() {
+		assertCode(400, "INVALID_REQUEST", () -> service.objectTypeForm(new FormRequest(
+				new FormTarget("draft", "platform:ObjectType", null),
+				Map.of("className", 5, "primaryKeyName", "", "showName", "", "classDesc", ""), null), user, "en"));
+		assertCode(400, "INVALID_REQUEST", () -> service.attributeForm(new FormRequest(
+				new FormTarget("object", "platform:Attribute", "[\"Device\"]"), Map.of(), null), user, "en"));
+		assertCode(400, "INVALID_REQUEST", () -> service.relationshipForm(new FormRequest(
+				new FormTarget("clone", "platform:Relationship", null), null, null), user, "en"));
+		verify(jsonRuleDao, never()).save(any(), any());
+	}
+
+	private static FormRequest open(String kind, String objectType, String primaryKey) {
+		return new FormRequest(new FormTarget(kind, objectType, primaryKey), null, null);
+	}
+
+	private static List<String> paths(FormDescription form) {
+		return form.fields().stream().map(field -> field.get("path").asText()).toList();
+	}
+
+	private static ObjectNode fieldOf(FormDescription form, String path) {
+		return form.fields().stream()
+				.filter(field -> path.equals(field.get("path").asText())).findFirst().orElseThrow();
+	}
+
+	private static List<String> texts(JsonNode array) {
+		List<String> result = new ArrayList<>();
+		array.forEach(node -> result.add(node.asText()));
+		return result;
+	}
+
+	private static List<String> optionValues(ObjectNode field) {
+		List<String> result = new ArrayList<>();
+		field.get("control").get("options").forEach(node -> result.add(node.get("value").asText()));
+		return result;
 	}
 
 	private Map<String, Object> savedRule() {
