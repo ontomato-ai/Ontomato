@@ -14,8 +14,8 @@ import { pageSkillSchema } from "./page-skills";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  AGENT_DEFINITION, ATTRIBUTE, DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW,
-  OBJECT_TYPE, RELATIONSHIP, SET_METRIC_VIEW_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, USER,
+  ACTION, AGENT_DEFINITION, ATTRIBUTE, DELETE_ACTION, DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW,
+  OBJECT_TYPE, RELATIONSHIP, SET_ACTION_STATUS, SET_METRIC_VIEW_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, USER,
   bindingKey, chartProjectionLookupRead, chartProjectionSourcePath, chartProjectionSourceSends, clientSends, panelClientReads,
 } from "./panel-client-requests";
 import {
@@ -263,6 +263,24 @@ test("bridge and skill agree about the specific semantic reads", () => {
     assert.ok(clientSends([binding(type)], "POST", "/data-query", "/admin/getMetas"));
   assert.ok(!clientSends([binding(OBJECT_TYPE)], "POST", "/data-query", "/admin/getschemamarkdown"));
   assert.ok(clientSends([binding(USER)], "GET", "/data-query", "/platform/agent-execution/options?selected=u"));
+});
+
+test("Action definition reads and writes use distinct exact binding requests", () => {
+  const definitions = binding(ACTION);
+  const deletion = bindingKey({ kind: "PlatformOperation", id: DELETE_ACTION });
+  const status = bindingKey({ kind: "PlatformOperation", id: SET_ACTION_STATUS });
+  for (const path of ["/action/queryList", "/action/queryById", "/action/definitionForm"]) {
+    assert.ok(panelClientReads(definitions).some(read => read.method === "POST" && read.service === "/data-query" && read.path.test(path)));
+    assert.ok(clientSends([definitions], "POST", "/data-query", path));
+  }
+  assert.ok(clientSends([definitions], "POST", "/data-query", "/action/save"));
+  assert.ok(!panelClientReads(definitions).some(read => read.path.test("/action/save")));
+  assert.ok(!clientSends([definitions], "POST", "/data-query", "/action/form"));
+  assert.ok(!clientSends([definitions], "POST", "/data-query", "/action/delete"));
+  assert.ok(clientSends([deletion], "POST", "/data-query", "/action/delete", { id: "example" }));
+  assert.ok(!clientSends([deletion], "DELETE", "/data-query", "/action/delete"));
+  assert.ok(clientSends([status], "POST", "/data-query", "/action/setStatus", { ids: ["example"], status: 1 }));
+  assert.ok(!clientSends([status], "POST", "", "/action/setStatus"));
 });
 
 
