@@ -14,13 +14,14 @@ import {
   type PanelFrameMessage,
   type PanelHostMessage,
 } from "@ontomato/contracts/panel-host";
-import { pageDraftReadSchema, type PageDraft } from "@ontomato/contracts/page-draft";
+import type { PageDraft } from "@ontomato/contracts/page-draft";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import type { PanelDefinitionContent, ProductProjection } from "@ontomato/contracts/product-panels";
 import { panelContextKey, type PanelContext, type ProjectionSlot } from "./context";
 import { applyPanelRequest, createPanelInstance } from "./instance";
 import PanelProjection from "./Projection.vue";
 import { runPanel } from "./lifecycle";
+import { readPageDraft, readProjectionRecord, recordDraftCreated } from "./platform-requests";
 import { baseComponents } from "../base-components";
 import { prepareTemplateComponents } from "./template-components";
 import { platformResourceLoader } from "./platform-objects";
@@ -79,20 +80,8 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     initial: message.state,
     translate: contextTranslate(appContext),
     reportDraftError: failed,
-    recordDraftCreated: async (link, id) => {
-      const response = await transport.request(
-        `/assistant/sessions/${encodeURIComponent(link.sessionId)}/runs/${encodeURIComponent(link.runId)}/page-draft/created`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: link.path, id }) },
-        "",
-      );
-      if (!response.ok) throw new Error(`The draft at ${link.path} could not record the object it created`);
-    },
-    readProjection: async (id) => {
-      const response = await transport.request(`/product-projections/${encodeURIComponent(id)}`, {}, "");
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error?.message ?? `Projection ${id} is unavailable`);
-      return body.projection as ProductProjection;
-    },
+    recordDraftCreated: (link, id) => recordDraftCreated(transport, link, id),
+    readProjection: async (id) => await readProjectionRecord(transport, id) as ProductProjection,
   });
   const unsaved = shallowReactive(new Set<Ref<boolean>>());
   const projectionListeners = new Set<(id: string, revision?: number) => void>();
@@ -147,7 +136,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     pageKey: message.pageKey,
     address,
     isDirty: () => instance.dirty() || [...unsaved].some((flag) => flag.value),
-    readPageDraft: (sessionId, runId, path) => readDraft(transport, sessionId, runId, path),
+    readPageDraft: (sessionId, runId, path) => readPageDraft(transport, sessionId, runId, path),
     projectionChanged: (id, revision) => projectionListeners.forEach((listener) => listener(id, revision)),
     refreshObject: (target) => {
       if (target) instance.objectChanged(target);
@@ -187,19 +176,6 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
 function failed(reason: unknown) {
   const message = reason instanceof Error ? reason.message : String(reason);
   window.parent.postMessage({ channel: PANEL_HOST_CHANNEL, kind: "failed", message }, "*");
-}
-
-/** Reads the draft one run wrote, as the reader, through the frame's own request layer. */
-async function readDraft(transport: ReturnType<typeof contextTransport>, sessionId: string, runId: string, path: string) {
-  const query = new URLSearchParams({ path }).toString();
-  const response = await transport.request(
-    `/assistant/sessions/${encodeURIComponent(sessionId)}/runs/${encodeURIComponent(runId)}/page-draft?${query}`,
-    {},
-    "",
-  );
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.error?.message ?? `The draft at ${path} could not be read`);
-  return pageDraftReadSchema.parse(body);
 }
 
 /** The run's facts as the host wrote them into this document, before the module ran. */
