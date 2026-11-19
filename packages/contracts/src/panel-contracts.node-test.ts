@@ -23,9 +23,15 @@ import {
   panelHostFrameMessageSchema, panelUsePath,
 } from "./panel-host";
 import {
+<<<<<<< HEAD
   matchesObjectType, objectUnionTypes, ontologyObjectUnionTypeSchema, ontologyParameterTypeSchema,
   panelChildCollectionQuerySchema, panelChildObjectIdentitySchema, panelManifestSchema, panelOpenRequestSchema, panelStateFieldSchema,
   panelStateOperationSchema, panelStateValueSchema, singleOntologyParameterTypeSchema,
+=======
+  matchesObjectType, objectUnionTypes, ontologyObjectUnionTypeSchema, ontologyParameterTypeSchema, panelChildObjectIdentitySchema,
+  panelManifestSchema, panelOpenRequestSchema, panelStateFieldSchema, panelStateOperationSchema,
+  panelStateValueSchema, singleOntologyParameterTypeSchema,
+>>>>>>> d89a6bb7
 } from "./panel-manifest";
 import { pageSelectionSchema } from "./page-context";
 import { pageDraftSchema } from "./page-draft";
@@ -552,7 +558,7 @@ test("checked object collections are typed ports and never become deep-link stat
   assert.equal(singleOntologyParameterTypeSchema.safeParse(field).success, false);
   assert.deepEqual(panelStateValueSchema.parse(refs), refs);
   assert.deepEqual(panelStateValueSchema.parse([]), []);
-  assert.deepEqual(panelStateOperationSchema.parse({ id: "clear", labelKey: "clear", kind: "state", sets: { checked: [] } }).sets, { checked: [] });
+  assert.deepEqual(panelStateOperationSchema.parse({ id: "clear", labelKey: "selection.clear", kind: "state", sets: { checked: [] } }).sets, { checked: [] });
   assert.equal(panelOpenRequestSchema.safeParse({ useId: "metrics", state }).success, false);
   assert.equal(panelFrameMessageSchema.safeParse({ kind: "state", fromAddress: "/ontology/metrics", state }).success, false);
 });
