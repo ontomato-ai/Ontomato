@@ -162,7 +162,7 @@ it("admits protected packages only through the initiator's exact entrance and ev
   }];
   let admittedEntrance = { ...entrance, pageKey: "sibling-use" };
   let ids = ["panel-a", "projection-a"];
-  const upstream = vi.fn(async (url: string, init: RequestInit) => {
+  const upstream = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     if (url.endsWith("/platform/page-skills"))
       return Response.json({ success: true, data: {
         pageSkills: [{ permissionCode: entrance.permissionCode }], registeredSkills: [], admittedEntrances: [admittedEntrance],
@@ -312,7 +312,7 @@ it("binds static and current-domain skills to the versions returned by their pub
   const report: RuntimeSkillRef = { namespace: { kind: "provider", provider: "workbench" }, name: "assistant-report" };
   const analyst: RuntimeSkillRef = { namespace: { kind: "provider", provider: "ontology" }, name: "ontomato-analyst-assistant" };
   const published: Array<{ skill: RuntimeSkillRef; files: { path: string; content: string }[] }> = [];
-  vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     if (url.endsWith("/platform/page-skills")) return pageDirectory();
     if (url.endsWith("/platform/agent-channel/assistant-skill"))
       return Response.json({ skill: analyst, digest: "a".repeat(64) });
