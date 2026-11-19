@@ -21,6 +21,9 @@ const key = z
   .max(200)
   .refine((value) => !["__proto__", "constructor", "prototype"].includes(value), "Reserved key");
 
+/** A flat reference into the current panel's content.messages. */
+export const panelMessageKeySchema = z.string().min(1);
+
 const ontologyTypeId = z.string().min(1).max(200);
 const ontologyObjectTypeSchema = z.object({ kind: z.literal("object"), objectType: ontologyTypeId }).strict();
 const ontologyScalarTypeSchema = z.object({
@@ -231,7 +234,7 @@ export function panelOperationId(slot: string, operation: string) {
 export const panelStateOperationSchema = z
   .object({
     id: key,
-    label: z.string().min(1).max(200),
+    labelKey: panelMessageKeySchema.max(200),
     kind: z.literal("state"),
     /** The fields it sets, by name, with the value each takes; a state operation writes nothing else. */
     sets: z.record(key, panelStateValueSchema).default({}),
