@@ -211,6 +211,33 @@ class RuntimePythonClientTest {
   }
 
   @Test
+  void warningsOnStandardErrorDoNotFailSuccessfulExecution() throws Exception {
+    RuntimeCodeClient runtime = mock(RuntimeCodeClient.class);
+    when(runtime.pythonHelper()).thenReturn("# helper");
+    when(runtime.ontologyUrl()).thenReturn("http://ontology");
+    when(runtime.execution(anyString(), anyString()))
+        .thenReturn(JSONObject.parseObject(
+            "{\"status\":\"stopped\",\"exitCode\":0,\"errorMessage\":null,\"outputs\":[{\"name\":\"stderr\"}]}"));
+    when(runtime.output(anyString(), anyString(), eq("stderr")))
+        .thenReturn("program.py:4: DeprecationWarning: datetime.utcnow() is deprecated");
+    QueryGrantService grants = mock(QueryGrantService.class);
+
+    var result =
+        new PythonExecuteServiceImpl(runtime, grants)
+            .execute(
+                "session",
+                "# ontomato-python:2",
+                1,
+                "en",
+                PythonAuthority.read("user", "domain"),
+                new JSONObject(),
+                Map.of());
+
+    assertNull(result.getError(), result.getError());
+    verify(grants, never()).queryError(anyString(), anyString());
+  }
+
+  @Test
   void writeFailureDisclosureDoesNotReplaceCancellationSignals() throws Exception {
     var python = mock(PythonExecuteService.class);
     var programs = new io.ontomato.dataengine.service.impl.ABCProgramServiceImpl();

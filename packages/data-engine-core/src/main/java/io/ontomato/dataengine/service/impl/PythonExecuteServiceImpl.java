@@ -112,9 +112,11 @@ public class PythonExecuteServiceImpl implements PythonExecuteService {
       result.setResult(
           outputs.contains("stdout") ? runtime.output(authority.domainId(), id, "stdout") : null);
       String stderr = outputs.contains("stderr") ? runtime.output(authority.domainId(), id, "stderr") : null;
+      // A successful process may write warnings to stderr (for example Python's own deprecation
+      // notices). The host owns execution failure: status, exit code and its error message.
       if (!"stopped".equals(snapshot.getString("status"))
           || !Integer.valueOf(0).equals(snapshot.getInteger("exitCode"))
-          || snapshot.getString("errorMessage") != null || stderr != null && !stderr.isBlank()) {
+          || snapshot.getString("errorMessage") != null) {
         result.setError(io.ontomato.dataengine.util.ErrorText.pythonError(stderr, grants.queryError(authority.domainId(), id)));
         result.setResult(null);
       }
