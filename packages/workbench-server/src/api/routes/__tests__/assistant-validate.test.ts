@@ -140,14 +140,23 @@ it("rejects the whole unauthorized draft with the owner field and reason", async
   expect(mocks.prepare).not.toHaveBeenCalled();
 });
 
-it("opens a stored definition with typed settings and carries the unedited values", async () => {
-  mocks.options.mockResolvedValue({ canSetExecutionUser: false, users: [] });
-  mocks.agent.mockResolvedValue({
+it("opens a stored definition and checks execution permissions concurrently", async () => {
+  let pendingReads = 0;
+  let concurrentReads = 0;
+  async function read<T>(result: T): Promise<T> {
+    pendingReads++;
+    concurrentReads = Math.max(concurrentReads, pendingReads);
+    await new Promise(resolve => setTimeout(resolve, 80));
+    pendingReads--;
+    return result;
+  }
+  mocks.options.mockImplementation(() => read({ canSetExecutionUser: false, users: [] }));
+  mocks.agent.mockImplementation(() => read({
     id, kind: "custom", name: "Stored assistant", description: "Stored", icon: "old icon", enabled: false,
     class_names: ["Customer"], enabled_mcp_service_ids: [id], sort_order: 13, system_prompt: "Explore",
     skills: [{ name: "report", namespace: { kind: "domain", domainId: "domain" } }],
     model_selection: { modelId: "test/chat" }, execution_user_id: "operator",
-  });
+  }));
   const request = await app();
   const response = await request({ target: { kind: "object", objectType: "platform:AgentDefinition", primaryKey: id },
     changedField: null }, "alice", "/form");
@@ -164,7 +173,11 @@ it("opens a stored definition with typed settings and carries the unedited value
     path: "/classNames", control: { kind: "reference", objectType: "platform:ObjectType", multiple: true,
       relatedObjectTypes: ["platform:Relationship"] },
   }));
-  expect(mocks.options).toHaveBeenCalledWith(expect.objectContaining({ token: "original" }), "operator");
+  expect(concurrentReads).toBe(2);
+  expect(opened.fields).toContainEqual(expect.objectContaining({
+    path: "/executionUserId", readOnly: true, readOnlyReason: en["panels.agentForm.executionReadOnly"],
+  }));
+  expect(mocks.options).toHaveBeenCalledWith(expect.objectContaining({ token: "original" }), null);
   expect(mocks.pool).not.toHaveBeenCalled();
 });
 
