@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { inject, onBeforeUnmount, provide, ref, shallowRef, watch, type Component } from "vue";
-import type { ProductProjection } from "@ontomato/contracts/product-panels";
+import { computed, inject, onBeforeUnmount, provide, ref, shallowRef, watch, type Component } from "vue";
+import type { DirectProjection, ProductProjection } from "@ontomato/contracts/product-panels";
+import { memberRecord, type MemberInputs } from "./direct";
+import { frameMemberData } from "./frame-member";
+import { panelMemberKey, type PanelMemberContext } from "./member";
 import { portsOf } from "./ports-of";
 import { slotInputValues } from "./ports";
 import { panelContextKey, projectionKey, type ProjectionSlot } from "./context";
@@ -29,8 +32,10 @@ if (!panel) throw new Error("<Projection> runs inside a panel, which provides it
 
 const loading = ref(true);
 const failure = shallowRef<Error | null>(null);
-const loaded = shallowRef<{ projection: ProductProjection; component: Component } | null>(null);
+const loaded = shallowRef<{ projection: ProductProjection; component: Component; member: PanelMemberContext | null } | null>(null);
 const inputs = ref<Record<string, unknown>>({});
+/** A member's inputs are JSON as the state holds them. */
+const memberInputs = computed(() => inputs.value as MemberInputs);
 let registered: (() => void) | undefined;
 let readGeneration = 0;
 let requestedRevision = 0;
@@ -43,7 +48,10 @@ function start(revision = 0) {
   loading.value = true;
   failure.value = null;
   void (async () => {
-    const projection = await panel!.projection(declaration.projectionId);
+    const read = await panel!.projection(declaration.projectionId);
+    // A projection that declares named data is a member: its components read them, here through this version's modules.
+    const direct = "data" in read ? read as unknown as DirectProjection : null;
+    const projection = direct ? memberRecord(direct) : read;
     if (generation !== readGeneration) return;
     // The component the record names and the resource clients it binds are fetched together, each the first time a
     // panel names it; every later projection of the same one draws at once.
@@ -58,7 +66,13 @@ function start(revision = 0) {
       ports: portsOf(projection),
     });
     requestedRevision = 0;
-    loaded.value = { projection, component };
+    loaded.value = {
+      projection, component,
+      member: direct && {
+        key: props.slot, projection: direct, inputs: memberInputs,
+        data: frameMemberData(direct, props.slot, panel!.instance, () => memberInputs.value),
+      },
+    };
     loading.value = false;
   })().catch((reason: unknown) => {
     if (generation !== readGeneration) return;
@@ -103,6 +117,7 @@ provide(projectionKey, {
     return inputs.value;
   },
 } as ProjectionSlot);
+provide(panelMemberKey, () => loaded.value?.member ?? null);
 </script>
 
 <template>

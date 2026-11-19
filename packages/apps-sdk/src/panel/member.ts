@@ -15,11 +15,12 @@ export interface PanelMemberContext {
   readonly data: MemberData;
 }
 
-export const panelMemberKey: InjectionKey<PanelMemberContext> = Symbol("panel-member");
+/** The member a projection is drawn as, read once its projection is loaded; null for a projection that is no member. */
+export const panelMemberKey: InjectionKey<() => PanelMemberContext | null> = Symbol("panel-member");
 
-/** The member this component is drawn as, or null in a panel's frame. */
+/** The member this component is drawn as, or null for a projection with no named data (a frame's older records). */
 export function useMember(): PanelMemberContext | null {
-  return inject(panelMemberKey, null);
+  return inject(panelMemberKey, null)?.() ?? null;
 }
 
 function member(): PanelMemberContext {
