@@ -34,8 +34,11 @@ export type PanelServerOperation = ServerOperation & (
   { kind: "action"; targetLabel(host: PanelOperationHost, target: PanelRecordTarget): Promise<string> }
 );
 
-/** Composition only. Each owner supplies its descriptors; the coordinator resolves no resource-specific rule. */
-const registrations: readonly PanelServerOperation[] = [...scheduledTaskServerOperations, ...agentDefinitionOperations];
+/** Each feature branch adds one entry for its owner's descriptor module. The coordinator owns this structure. */
+const registrations: readonly PanelServerOperation[] = [
+  ...scheduledTaskServerOperations,
+  ...agentDefinitionOperations,
+];
 const operations = new Map(registrations.map(operation => [operation.handlerRef, operation]));
 export function panelServerOperation(handlerRef: string): PanelServerOperation {
   const operation = operations.get(handlerRef);

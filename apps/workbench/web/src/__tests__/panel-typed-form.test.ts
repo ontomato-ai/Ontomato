@@ -3,7 +3,7 @@ import { nextTick } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/panel-projection";
-import { AGENT_DEFINITION, OBJECT_TYPE, RELATIONSHIP, SKILL } from "@ontomato/contracts/panel-client-requests";
+import { AGENT_DEFINITION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SKILL } from "@ontomato/contracts/panel-client-requests";
 import { PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
@@ -26,7 +26,7 @@ const sql = { namespace: { kind: "domain", domainId: "domain-1" }, name: "sql" }
 const chart = { namespace: { kind: "domain", domainId: "domain-1" }, name: "chart" };
 const stored: PanelFormValues = {
   name: "Analyst", description: "", icon: null, enabled: false, systemPrompt: "Be brief",
-  modelSelection: { modelId: null }, skills: [sql], classNames: ["Order"],
+  modelSelection: { modelId: "openai/gpt-4o" }, skills: [sql], classNames: ["Order"],
   enabledMcpServiceIds: [], executionUserId: "user-1",
 };
 const defaults: PanelFormValues = {
@@ -40,9 +40,7 @@ const fields: PanelFormDescription["fields"] = [
   field("/name", "Name", { kind: "text" }, { required: true }),
   field("/enabled", "Enabled", { kind: "switch" }),
   field("/systemPrompt", "Instructions", { kind: "markdown" }),
-  field("/modelSelection/modelId", "Model", { kind: "select", options: [
-    { value: "openai/gpt", label: "GPT", description: null, disabled: false, disabledReason: null },
-  ] }),
+  field("/modelSelection/modelId", "Model", reference(MODEL_OPTION, false)),
   field("/skills", "Skills", reference(SKILL, true)),
   field("/classNames", "Data scope", reference(OBJECT_TYPE, true), { help: "Nothing chosen keeps the default scope" }),
   field("/executionUserId", "Runs as", reference("platform:User", false),
@@ -66,6 +64,7 @@ const projections: Record<string, ProductProjection> = {
     inputs: { agent: { kind: "object", objectType: AGENT_DEFINITION } }, display: { creates: true },
   }),
   "agent-skill-choice": projection("agent-skill-choice", "ReferencePicker", SKILL),
+  "agent-model-choice": projection("agent-model-choice", "ReferencePicker", MODEL_OPTION),
   "agent-data-scope": projection("agent-data-scope", "ObjectGraph", OBJECT_TYPE, {
     graph: { edges: { binding: { kind: "PlatformObjectType", id: RELATIONSHIP }, sourcePath: "/fromclass", targetPath: "/toclass" } },
   }),
@@ -75,6 +74,7 @@ const manifest = definePanel({
   slots: {
     definition: { projectionId: "agent-definition-form", inputs: { agent: { state: "selectedAgent" } } },
     skills: { projectionId: "agent-skill-choice", inputs: {}, formField: { slot: "definition", path: "/skills" } },
+    model: { projectionId: "agent-model-choice", inputs: {}, formField: { slot: "definition", path: "/modelSelection/modelId" } },
     scope: { projectionId: "agent-data-scope", inputs: {}, formField: { slot: "definition", path: "/classNames" } },
   },
   operations: [],
@@ -107,6 +107,11 @@ function owner(request: Sent): Response | undefined {
     return Response.json(definition(CREATED, request.body as PanelFormValues));
   if (request.path === "/api/assistant/agent-skills")
     return Response.json({ skills: [{ skill: sql, title: "SQL", description: "" }, { skill: chart, title: "Charts", description: "" }] });
+  if (request.path === "/api/data-query/model-options")
+    return Response.json({ data: {
+      models: [{ ref: "openai/gpt-4o", name: "GPT-4o", type: "chat" }, { ref: "openai/gpt-4o-mini", name: "GPT-4o mini", type: "chat" }],
+      defaultModelId: "openai/gpt-4o-mini", embeddingModelId: null,
+    } });
   if (request.path === "/api/data-query/admin/getMetas")
     return Response.json({ success: true, data: {
       classDef: [{ className: "Order", showName: "Orders" }, { className: "Customer", showName: "Customers" }, { className: "Invoice", showName: "Invoices" }],
@@ -119,14 +124,14 @@ async function open(address: string, state: Record<string, unknown>, override?: 
   const sent = installPlatform((request) => override?.(request) ?? owner(request) ?? nothingAt(request));
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
-  platformPanelHost("ontology", use).frame(frame, registered("ontology", use, panel));
+  platformPanelHost("ontology", use).frame(frame, registered("ontology", use, panel), true);
   writePanelDocument(panel, use, address, state as never);
   inside(frame);
   const failed: string[] = [];
   window.addEventListener("message", (event) => {
     if (event.data?.channel === PANEL_HOST_CHANNEL && event.data.kind === "failed") failed.push(event.data.message);
   });
-  const mounted = await mountPanel(panelOf("definition", "skills", "scope"));
+  const mounted = await mountPanel(panelOf("definition", "skills", "model", "scope"));
   return { ...mounted, sent, failed };
 }
 
@@ -206,7 +211,7 @@ async function openWithDraft(form: PanelFormValues, envelope: { operation: strin
   });
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
-  platformPanelHost("ontology", use).frame(frame, registered("ontology", use, panel));
+  platformPanelHost("ontology", use).frame(frame, registered("ontology", use, panel), true);
   writePanelDocument(panel, use, `/ontology/agents?${query}`, { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } });
   inside(frame);
   const failed: string[] = [];
@@ -216,7 +221,7 @@ async function openWithDraft(form: PanelFormValues, envelope: { operation: strin
     if (event.data.kind === "failed") failed.push(event.data.message);
     if (event.data.kind === "draft-settled") settled.push(event.data.draft);
   });
-  return { ...(await mountPanel(panelOf("definition", "skills", "scope"))), failed, settled, sent, draft };
+  return { ...(await mountPanel(panelOf("definition", "skills", "model", "scope"))), failed, settled, sent, draft };
 }
 
 it("refuses a draft the owner refuses, whole, naming the field and the reason, and marks nothing", async () => {
@@ -314,4 +319,35 @@ it("records what a saved create draft created before it tells the host the draft
   const created = sent.findIndex((request) => request.path === `${draftAt}/created`);
   expect(sent[created]?.body).toEqual({ path: link.path, id: CREATED });
   expect(created).toBeGreaterThan(sent.findIndex((request) => request.method === "POST" && request.path === "/api/assistant/agent-definitions"));
+});
+
+/** Clears a picker as a reader does: hover it, then its clear icon. */
+async function clearPicker(path: string) {
+  const select = fieldItem(path)!.querySelector<HTMLElement>(".el-select")!;
+  select.dispatchEvent(new MouseEvent("mouseenter"));
+  await nextTick();
+  const clear = select.querySelector<HTMLElement>(".el-select__clear");
+  expect(clear).not.toBeNull();
+  clear!.click();
+  await nextTick();
+}
+
+it("clears a single reference to the owner's null and a multiple one to an empty list, and saves them so", async () => {
+  const { context, sent, failed } = await open("/ontology/agents", { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } });
+  await vi.waitFor(() => {
+    expect(fieldItem("/modelSelection/modelId")?.textContent).toContain("GPT-4o");
+    expect(fieldItem("/skills")?.textContent).toContain("SQL");
+  }, { timeout: 5000 });
+
+  // The one explicit model cleared: the agent follows the domain's default again, which the owner writes as null.
+  await clearPicker("/modelSelection/modelId");
+  await clearPicker("/skills");
+  await vi.waitFor(() => expect(context.instance.dirty()).toBe(true));
+
+  await context.instance.invoke("definition.save");
+  const put = sent.find((request) => request.method === "PUT")!;
+  expect(put.body).toEqual({ ...stored, modelSelection: { modelId: null }, skills: [] });
+  // A frame's report reaches the host a task later; none came, and the frame is still there.
+  await new Promise((resolve) => setTimeout(resolve));
+  expect(failed).toEqual([]);
 });

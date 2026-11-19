@@ -69,10 +69,15 @@ const shown = computed(() => {
 });
 const chosen = computed(() => (multiple.value ? held.value.map((option) => option.primaryKey) : held.value[0]?.primaryKey ?? ""));
 
-function choose(keys: string | string[]) {
+/**
+ * Writes the reader's choice in the owner's shape: the chosen values of a multiple reference (an empty list once it is
+ * cleared), the chosen value of a single one, or null once it is cleared — Element Plus clears a single select to
+ * undefined, which is no value of any owner.
+ */
+function choose(keys: string | string[] | undefined) {
   const valueOf = (primaryKey: string) => known.value.get(primaryKey)!.value;
   if (Array.isArray(keys)) field.set(keys.map(valueOf));
-  else field.set(keys === "" ? null : valueOf(keys));
+  else field.set(keys === undefined || keys === "" ? null : valueOf(keys));
 }
 </script>
 

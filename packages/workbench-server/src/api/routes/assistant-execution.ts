@@ -70,6 +70,8 @@ function ontologyAllowed(method: string, path: string) {
 }
 const workbenchPath = /^\/api\/(?:panel-operation-intents|product-assets|dashboards|feedback|memories|query-history|preferences|personal-workspace)(?:\/|$)/;
 
+const skillReadPath = /^\/api\/skills(?:\/[^/]+\/(?:references|files|file))?$/u;
+
 const panelReads = [AGENT_DEFINITION, SKILL, MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE]
   .flatMap(type => panelClientReads(bindingKey({ kind: "PlatformObjectType", id: type })));
 
@@ -129,7 +131,8 @@ assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
   const path = "/" + req.params[0];
   const resourceRead = !req.path.includes("%") && (target === "ontology"
     ? [...scheduledTaskReads, ...panelReads].some(read => read.service === "/data-query" && read.method === req.method && read.path.test(path))
-    : path.startsWith("/api/") && panelReads.some(read => read.service === "" && read.method === req.method && read.path.test(path.slice(4))));
+    : (req.method === "GET" && skillReadPath.test(path)) ||
+      (path.startsWith("/api/") && panelReads.some(read => read.service === "" && read.method === req.method && read.path.test(path.slice(4)))));
   const assistantDirectory = target === "workbench" && req.method === "GET" && path === "/api/assistant/agents";
   if (/[\\%?#]/u.test(path) || path.split("/").some(segment => segment === "." || segment === "..") ||
     !(resourceRead || assistantDirectory || (target === "ontology" ? ontologyAllowed(req.method, path) : workbenchPath.test(path))))
