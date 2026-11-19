@@ -1,4 +1,5 @@
 import { assistantAgentListSchema } from "@ontomato/contracts/assistant-chat";
+import type { DefaultAgent } from "@ontomato/contracts/default-agent";
 import type { AssistantAgentsQuery } from "@ontomato/contracts/page-skills";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -29,10 +30,16 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
       : "access" in mapping && mapping.access === query.access && mapping.pageKey === query.pageKey);
     if (!mapping) throw new HttpError(403, "Page skill is unavailable", "PAGE_SKILL_FORBIDDEN");
     const candidates = agents.filter(agent => agent.enabled && agent.effectiveSkills.some(skill => runtimeSkillKey(skill) === runtimeSkillKey(mapping.skill)));
-    const defaultKey = mapping.defaults?.find(entry => entry.pageKey === query.pageKey)?.agentKey ?? "regular";
-    const selected = definitions.find(agent => agent.id === defaultKey || agent.kind === defaultKey);
-    if (!selected || !candidates.some(agent => agent.id === selected.id))
+    const defaultAgent: DefaultAgent = mapping.defaults?.find(entry => entry.pageKey === query.pageKey)?.defaultAgent
+      ?? { kind: "preset", agentKind: "regular" };
+    const selected = defaultAgent.kind === "id"
+      ? candidates.find(agent => agent.id === defaultAgent.id)
+      : candidates.find(agent => definitions.some(row => row.id === agent.id && row.kind === defaultAgent.agentKind));
+    if (!selected && defaultAgent.kind === "id")
       throw new HttpError(409, "The page's default agent is unavailable", "PAGE_DEFAULT_AGENT_UNAVAILABLE");
-    return assistantAgentListSchema.parse({ agents: candidates, defaultAgentId: selected.id });
+    return assistantAgentListSchema.parse({
+      agents: candidates,
+      ...(selected ? { defaultAgentId: selected.id } : {}),
+    });
   });
 }
