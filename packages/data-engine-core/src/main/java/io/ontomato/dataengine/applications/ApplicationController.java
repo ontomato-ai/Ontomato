@@ -15,6 +15,7 @@ import org.springframework.http.HttpStatus;
 @RestController
 public class ApplicationController {
     public static final String DECLARATIONS = "/platform/applications/self/declarations";
+    public static final String PANEL_USES_BY_PANEL = "/platform/applications/panel-uses/by-panel";
     public static final String PANEL_SKILL_SOURCES = "/platform/applications/panel-skill-sources";
     private final ApplicationCatalog catalog;
     private final IdentityService identity;
@@ -41,6 +42,20 @@ public class ApplicationController {
     public R<JSONObject> putPanelUses(@PathVariable String id, @RequestBody PanelRegistration body) {
         return R.of(catalog.putPanelUses(id, body, current()));
     }
+    @DeleteMapping("/platform/applications/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable String id) {
+        catalog.deleteDomainApplication(id, current());
+    }
+
+    @GetMapping(PANEL_USES_BY_PANEL)
+    public R<List<ApplicationCatalog.PanelUseLocation>> panelUsesByPanel(HttpServletRequest request,
+            @RequestParam String domainId, @RequestParam String panelId) {
+        authentication.authenticate(request);
+        if (domainId.isBlank() || panelId.isBlank()) throw ApplicationCatalog.bad("A domain and panel are required");
+        return R.of(catalog.panelUsesByPanel(domainId, panelId));
+    }
+
     @GetMapping("/platform/page-skills")
     @io.ontomato.dataengine.controller.BuildTestAccess(io.ontomato.dataengine.controller.BuildTestAccess.Access.NO_BUSINESS_DATA)
     public R<PageSkills.Projection> pageSkills() { return R.of(catalog.pageSkills(current())); }

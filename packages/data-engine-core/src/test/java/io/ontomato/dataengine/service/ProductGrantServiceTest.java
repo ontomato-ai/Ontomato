@@ -32,4 +32,12 @@ class ProductGrantServiceTest {
         assertThrows(ResponseStatusException.class,()->service.grant("profile",new ProductGrants.Grant("principal","other","edit"),false));
         verifyNoInteractions(db,principals);
     }
+
+    @Test void unregisterRemovesOnlyTheRequestedResourceAndItsGrants() {
+        var db = mock(JdbcTemplate.class);
+        var service = new ProductGrantService(db, mock(IdentityService.class), mock(ProductPrincipalLookup.class));
+        service.unregister("domain", "projection");
+        verify(db).update("DELETE FROM product_grant WHERE domain_id=? AND resource_id=?", "domain", "projection");
+        verify(db).update("DELETE FROM product_resource WHERE domain_id=? AND id=?", "domain", "projection");
+    }
 }

@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 public class ProductGrantController {
+    public static final String UNREGISTER_PATH="/product-governance/unregister";
     public static final String REGISTER_PATH="/product-governance/register";
     public static final String SERVICE_RESOURCES_PATH="/product-governance/service-resources";
     private final ProductGrantService grants;
@@ -24,6 +25,13 @@ public class ProductGrantController {
         if(!(body.get("shared") instanceof Boolean shared))throw new IllegalArgumentException("Expected sharing intent");
         grants.register(text(body,"domainId"),text(body,"id"),text(body,"ownerId"),shared);return Map.of("success",true);
     }
+    @PostMapping(UNREGISTER_PATH)
+    public Object unregister(HttpServletRequest request, @RequestBody Map<String,Object> body) {
+        authentication.authenticate(request);
+        grants.unregister(text(body, "domainId"), text(body, "id"));
+        return Map.of("success", true);
+    }
+
     @PostMapping("/product-governance/grant") public Object grant(@RequestBody Map<String,Object> body){
         if(!(body.get("remove") instanceof Boolean remove))throw new IllegalArgumentException("Expected removal intent");
         grants.grant(text(body,"id"),new ProductGrants.Grant(text(body,"principalKind"),text(body,"principalId"),text(body,"verb")),remove);return Map.of("success",true);

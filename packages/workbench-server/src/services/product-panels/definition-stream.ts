@@ -13,6 +13,7 @@ type AuthorStream = {
   owner: ProductOwner;
   targets: readonly ProductDefinitionTarget[];
   send: (frame: ProductDefinitionStreamFrame) => void;
+  close: () => void;
 };
 const authorStreams = new Set<AuthorStream>();
 
@@ -28,9 +29,9 @@ export async function authorizeDefinitionStream(
   const targets = [...new Map(requested.map(target => [`${target.kind}:${target.id}`, target])).values()];
   await Promise.all(targets.map(({ kind, id }) => requireDefinition(owner, credentials, kind, id)));
   return {
-    attach(send: AuthorStream['send']) {
+    attach(send: AuthorStream['send'], close: AuthorStream['close']) {
       assertSubscriptionCapacity(owner);
-      const stream = { owner, targets, send };
+      const stream = { owner, targets, send, close };
       authorStreams.add(stream);
       return () => authorStreams.delete(stream);
     },
@@ -62,11 +63,24 @@ async function definitionRevision(domainId:string,target:ProductDefinitionTarget
   return {...target,revision};
 }
 
+function observes(stream: AuthorStream, domainId: string, target: ProductDefinitionTarget) {
+  return stream.owner.domainId === domainId && stream.targets.some(({kind, id}) => kind === target.kind && id === target.id);
+}
+
+/** Reconnecting a closed collection uses the existing unavailable-definition response. */
+export function closeDeletedDefinitionStreams(domainId: string, target: ProductDefinitionTarget) {
+  for (const stream of authorStreams) {
+    if (!observes(stream, domainId, target)) continue;
+    authorStreams.delete(stream);
+    stream.close();
+  }
+}
+
 /** An author's stream follows only the explicitly authorized collection. */
 export async function notifyProductDefinitionChanged(event:ProductDefinitionChangedEvent){
   const {domainId,target}=event;
   const matches=({kind,id}:ProductDefinitionTarget)=>kind===target.kind&&id===target.id;
-  const follows=(stream:AuthorStream)=>stream.owner.domainId===domainId&&stream.targets.some(matches);
+  const follows=(stream:AuthorStream)=>observes(stream,domainId,target);
   if([...authorStreams].some(follows)){
     const definition=await definitionRevision(domainId,target);
     for(const stream of authorStreams)
