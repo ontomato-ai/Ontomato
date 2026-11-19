@@ -62,7 +62,7 @@ export default {
     { id: "showInstanceMode", labelKey: "capMap.modeInstance", kind: "state", sets: { mode: "instance" } },
     {
       id: "resetToCurrentUser",
-      labelKey: "capMap.resetStart",
+      labelKey: "capMap.resetToCurrentUser",
       kind: "state",
       sets: { mode: "instance", start: null, selected: null },
     },

@@ -335,6 +335,13 @@ it("validates every projection and the capability-map panel input against contra
     new Set(Object.values(panel.manifest.slots).map((slot) => slot.projectionId)),
   );
   expect(panel.content).toEqual(candidate().panel.content);
+  const enMessages = panel.content.messages?.en ?? {};
+  const zhMessages = panel.content.messages?.["zh-CN"] ?? {};
+  expect(Object.keys(zhMessages).sort()).toEqual(Object.keys(enMessages).sort());
+  for (const operation of panel.manifest.operations) {
+    expect(enMessages[operation.labelKey]).toBeTruthy();
+    expect(zhMessages[operation.labelKey]).toBeTruthy();
+  }
 });
 
 it("runs instance exploration, relations inspection, user switching, highlight query, and type-to-instance object picking end-to-end", { timeout: 30000 }, async () => {
