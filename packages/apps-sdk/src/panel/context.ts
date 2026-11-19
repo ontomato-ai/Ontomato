@@ -14,7 +14,7 @@ import {
   type PlatformObjectQuery,
   type PlatformObjectQueryResult,
 } from "./platform-objects";
-import { valueAt } from "./form-values";
+import { fieldAt, valueAt } from "./form-values";
 import type { PanelText } from "./text";
 
 /*
@@ -161,7 +161,7 @@ export function useFormField(): ProjectionFormField {
   const field = computed(() => {
     const form = handle.value;
     if (!form || !form.fields.value.length) return undefined;
-    const found = form.fields.value.find((item) => item.path === port.path);
+    const found = fieldAt(form.fields.value, port.path);
     if (!found) throw new Error(`The form in slot '${port.slot}' has no field ${port.path}`);
     return found;
   });

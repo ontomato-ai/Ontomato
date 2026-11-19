@@ -199,7 +199,14 @@ export default {
     "graphFit": "Fit view",
     "graphRelayout": "Relayout",
     "graphExportPng": "Export PNG",
-    "graphExpanding": "Loading neighbors..."
+    "graphExpanding": "Loading neighbors...",
+    "formAdd": "Add",
+    "formRemove": "Remove",
+    "formMoveUp": "Move up",
+    "formMoveDown": "Move down",
+    "formInvalidJson": "Not valid JSON: {message}",
+    "formFixInvalid": "Correct the marked fields before saving",
+    "formControlUnavailable": "This field cannot be edited here yet"
   },
   "nav": {
     "agentsAndSkills": "Agents and Skills",
