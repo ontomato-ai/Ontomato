@@ -69,14 +69,14 @@ it("validates the full creation form without preparing a Key or touching storage
   expect(mocks.prepare).not.toHaveBeenCalled();
 });
 it("loads the actual stored reference and preserves it when the update omits the field", async () => {
-  mocks.agent.mockResolvedValue({ kind: "custom", execution_user_id: "selected" });
+  mocks.agent.mockResolvedValue({ kind: "custom", execution_user_id: "selected", skills: [] });
   const request = await app();
   expect((await request({ target: { id: "8f5df4a4-e30b-48cb-831a-33b759144f76" }, form })).status).toBe(204);
   expect(mocks.setting).toHaveBeenCalledWith(expect.anything(), "selected", "selected", expect.anything());
   expect(mocks.prepare).not.toHaveBeenCalled();
 });
 it("cannot forge the old reference or bypass a setting rejection", async () => {
-  mocks.agent.mockResolvedValue({ kind: "custom", execution_user_id: "selected" });
+  mocks.agent.mockResolvedValue({ kind: "custom", execution_user_id: "selected", skills: [] });
   mocks.setting.mockRejectedValue(new HttpError(403, "Denied", "FORBIDDEN"));
   const request = await app();
   expect((await request({ target: { id: "8f5df4a4-e30b-48cb-831a-33b759144f76" }, form: { ...form, executionUserId: "other" } })).status).toBe(403);
@@ -166,4 +166,27 @@ it("opens a stored definition with typed settings and carries the unedited value
   }));
   expect(mocks.options).toHaveBeenCalledWith(expect.objectContaining({ token: "original" }), "operator");
   expect(mocks.pool).not.toHaveBeenCalled();
+});
+
+it("validates update drafts without filling in an omitted skill selection", async () => {
+  const skill = { name: "stored-page-skill", namespace: { kind: "domain", domainId: "domain" } };
+  mocks.agent.mockResolvedValue({
+    id, kind: "custom", name: "Stored assistant", description: "", icon: null, enabled: true,
+    class_names: [], enabled_mcp_service_ids: [], sort_order: 13, system_prompt: "Before",
+    skills: [skill], model_selection: { modelId: null }, execution_user_id: null,
+  });
+  mocks.options.mockResolvedValue({ canSetExecutionUser: false, users: [] });
+  const { skills: _omitted, ...update } = form;
+  const request = await app();
+  const values = { ...update, enabledMcpServiceIds: [] };
+  const response = await request({
+    target: { kind: "object", objectType: "platform:AgentDefinition", primaryKey: id }, changedField: null, values,
+  }, "alice", "/form");
+  expect(response.status).toBe(200);
+  const described = await response.json();
+  expect(described.values).not.toHaveProperty("skills");
+  expect(described.save.bodySchema.required).not.toContain("skills");
+  expect((await request({ target: { id }, form: update })).status).toBe(204);
+  expect((await request({ target: {}, form: update })).status).toBe(400);
+  expect(mocks.skills).not.toHaveBeenCalled();
 });

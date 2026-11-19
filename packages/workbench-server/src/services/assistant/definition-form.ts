@@ -5,7 +5,7 @@ import { AGENT_DEFINITION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SKILL, USER 
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import { agentDefinitionSave, agentFormJsonSchema, parseAgentDefinitionForm } from "./definition-form-schema";
+import { agentDefinitionSave, agentFormJsonSchema, parseAgentDefinitionForm, parseAgentDefinitionUpdateForm } from "./definition-form-schema";
 import { checkedDefinition, readAgentDefinition } from "./definitions";
 import { readExecutionOptions } from "./execution-setting";
 import type { AssistantOwner } from "./store";
@@ -55,8 +55,10 @@ export async function describeAgentDefinitionForm(
   let values = request.values ?? current;
   let selected = current.executionUserId;
   if (request.values !== undefined && request.changedField === null) {
-    const input = parseAgentDefinitionForm(request.values);
-    const checked = await checkedDefinition(input, owner, credentials, current.executionUserId);
+    const input = target.kind === "draft"
+      ? parseAgentDefinitionForm(request.values)
+      : parseAgentDefinitionUpdateForm(request.values);
+    const checked = await checkedDefinition(input, owner, credentials, current.executionUserId, current.skills);
     values = { ...input, ...checked };
     selected = checked.executionUserId;
   }
@@ -66,7 +68,11 @@ export async function describeAgentDefinitionForm(
     values,
     fields: fieldSchemas.map(({ key, ...field }) => {
       const readOnly = key === "executionUserId" && !canSetExecutionUser;
-      return { ...field, label: text(key), readOnly, ...(readOnly ? { readOnlyReason: text("executionReadOnly") } : {}) };
+      return {
+        ...field,
+        required: key === "skills" ? target.kind === "draft" : field.required,
+        label: text(key), readOnly, ...(readOnly ? { readOnlyReason: text("executionReadOnly") } : {}),
+      };
     }),
     save: agentDefinitionSave(target),
   };
