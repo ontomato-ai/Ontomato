@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { formFieldErrorSchema } from "./form-fields";
 import { pageDraftLinkSchema } from "./page-draft";
-import { platformObjectTypes, platformOntologyLayers } from "./platform-object-types";
+import { platformObjectTypes, platformOntologyLayers, SKILL } from "./platform-object-types";
 
 /*
  * What a panel's `panel.mjs` exports through `definePanel`: the state the panel keeps for one instance and the
@@ -146,6 +146,55 @@ export const panelOperationTargetSchema = z.discriminatedUnion("source", [
 ]);
 export type PanelOperationTarget = z.infer<typeof panelOperationTargetSchema>;
 
+export const EXPORT_SKILL = "skills.export";
+export const EXPORT_FEEDBACK = "feedback.export";
+
+const downloadFields = {
+  operationId: key,
+  labelKey: key,
+  maxBytes: z.number().int().positive().safe(),
+};
+const ownerDownloadFields = {
+  ...downloadFields,
+  source: z.literal("owner"),
+  method: z.literal("GET"),
+};
+const stateDownloadQuery = panelStateRefSchema.extend({ source: z.literal("state"), type: z.literal("string") });
+
+/** The supported owner routes are fixed; an author only binds their inputs to the current instance. */
+export const panelOwnerDownloadSchema = z.discriminatedUnion("operationId", [
+  z.object({
+    ...ownerDownloadFields,
+    operationId: z.literal(EXPORT_SKILL),
+    pathTemplate: z.literal("/skills/{primaryKey}/export"),
+    mime: z.literal("application/zip"),
+    target: panelOperationTargetSchema.options[0].extend({ objectType: z.literal(SKILL) }),
+  }).strict(),
+  z.object({
+    ...ownerDownloadFields,
+    operationId: z.literal(EXPORT_FEEDBACK),
+    pathTemplate: z.literal("/feedback/export"),
+    mime: z.literal("text/csv"),
+    query: z.object({
+      sourceType: stateDownloadQuery,
+      rating: stateDownloadQuery,
+      keyword: stateDownloadQuery,
+      timeZone: z.object({ source: z.literal("host"), value: z.literal("timeZone"), type: z.literal("string") }).strict(),
+    }).strict(),
+  }).strict(),
+]);
+export type PanelOwnerDownload = z.infer<typeof panelOwnerDownloadSchema>;
+
+export const panelFrameDownloadSchema = z.object({
+  ...downloadFields,
+  source: z.literal("frame"),
+  mime: z.literal("image/png"),
+}).strict();
+export type PanelFrameDownload = z.infer<typeof panelFrameDownloadSchema>;
+
+export const panelDownloadActionSchema = z.union([panelOwnerDownloadSchema, panelFrameDownloadSchema]);
+export type PanelDownloadAction = z.infer<typeof panelDownloadActionSchema>;
+
 /**
  * An operation as the agent and the header both receive it. `handlerRef` names an operation the SDK publishes; it is
  * never a URL, SQL or function source, so a described operation is one somebody registered (overall design 5.1). The
@@ -247,6 +296,8 @@ export const panelManifestSchema = z
     state: panelStateSchema,
     slots: panelSlotsSchema,
     operations: z.array(panelStateOperationSchema).max(100),
+    /** Download controls are rendered and invoked by the host from this declaration. */
+    downloads: z.array(panelDownloadActionSchema).optional(),
   })
   .strict()
   .superRefine((manifest, ctx) => {
@@ -270,6 +321,27 @@ export const panelManifestSchema = z
       for (const state of Object.keys(operation.sets)) {
         if (!Object.hasOwn(manifest.state, state))
           ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["operations", operation.id, "sets", state], message: `Operation '${operation.id}' sets undeclared state '${state}'` });
+      }
+    }
+    let frameDownload = false;
+    for (const [index, action] of (manifest.downloads ?? []).entries()) {
+      const path = ["downloads", index];
+      if (ids.has(action.operationId)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...path, "operationId"], message: "Duplicate operation ID" });
+      ids.add(action.operationId);
+      if (action.source === "frame") {
+        if (frameDownload) ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: "A frame has one PNG export producer" });
+        frameDownload = true;
+      } else if (action.operationId === EXPORT_SKILL) {
+        const field = manifest.state[action.target.state];
+        if (field?.kind !== "object" || !field.deepLink || field.objectType !== action.target.objectType)
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...path, "target", "state"], message: "Download target needs deep-link state of the declared object type" });
+      } else {
+        for (const [name, ref] of Object.entries(action.query)) {
+          if (ref.source === "host") continue;
+          const field = manifest.state[ref.state];
+          if (field?.kind !== "scalar" || !field.deepLink || field.type !== ref.type)
+            ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...path, "query", name], message: "Download parameter needs deep-link state of the declared scalar type" });
+        }
       }
     }
   });

@@ -28,8 +28,6 @@ export const APPROVE_KNOWLEDGE = "knowledge.approve";
 export const DELETE_KNOWLEDGE = "knowledge.delete";
 export const DELETE_SKILL = "skills.delete";
 export const IMPORT_SKILL = "skills.import";
-export const EXPORT_SKILL = "skills.export";
-export const EXPORT_FEEDBACK = "feedback.export";
 
 /**
  * The gateway prefix the scheduled tasks' contract spells its paths with. A frame's request names the service and the
@@ -303,12 +301,6 @@ export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> 
   ],
   [bindingKey({ kind: "PlatformOperation", id: IMPORT_SKILL })]: [
     { method: "POST", service: "", path: /^\/skills\/import(?:\?overwrite=true)?$/ },
-  ],
-  [bindingKey({ kind: "PlatformOperation", id: EXPORT_SKILL })]: [
-    { method: "GET", service: "", path: /^\/skills\/[^/?#]+\/export$/ },
-  ],
-  [bindingKey({ kind: "PlatformOperation", id: EXPORT_FEEDBACK })]: [
-    { method: "GET", service: "", path: /^\/feedback\/export(?:\?[^#]+)?$/ },
   ],
 };
 

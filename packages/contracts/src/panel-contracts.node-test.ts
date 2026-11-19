@@ -1,6 +1,6 @@
 import { formOptionSchema } from "./form-fields";
 import {
-  APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL, EXPORT_FEEDBACK, EXPORT_SKILL,
+  APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL,
   FEEDBACK_RECORD, IMPORT_SKILL, KNOWLEDGE_GOVERNANCE_RECORD, SKILL,
 } from "./panel-client-requests";
 import {
@@ -24,7 +24,7 @@ import {
 } from "./panel-host";
 import {
   matchesObjectType, objectUnionTypes, ontologyObjectUnionTypeSchema, panelChildObjectIdentitySchema,
-  panelManifestSchema, panelStateFieldSchema, panelStateValueSchema, singleOntologyParameterTypeSchema,
+  panelManifestSchema, panelStateFieldSchema, panelStateValueSchema, singleOntologyParameterTypeSchema, EXPORT_FEEDBACK, EXPORT_SKILL,
 } from "./panel-manifest";
 import { pageDraftSchema } from "./page-draft";
 import {
@@ -464,8 +464,6 @@ test("knowledge, governance, feedback and skill reads stay at their declared own
     [DELETE_KNOWLEDGE, "POST", "/data-query", "/admin/delBussinessKnowledge"],
     [DELETE_SKILL, "DELETE", "", "/skills/skill"],
     [IMPORT_SKILL, "POST", "", "/skills/import?overwrite=true"],
-    [EXPORT_SKILL, "GET", "", "/skills/skill/export"],
-    [EXPORT_FEEDBACK, "GET", "", "/feedback/export?keyword=sample"],
   ] as const) {
     const key = bindingKey({ kind: "PlatformOperation", id: operation });
     assert.ok(clientSends([key], method, service, path));
@@ -477,6 +475,49 @@ test("knowledge, governance, feedback and skill reads stay at their declared own
   assert.ok(!clientSends([binding(FEEDBACK_RECORD)], "GET", "", "/feedback/state"));
   assert.ok(!clientSends([binding(KNOWLEDGE_GOVERNANCE_RECORD)], "POST", "/data-query",
     "/ontology/ai/knowledge-governance/record/runs/run/actions/approve"));
+});
+
+test("owner downloads are host actions with declared deep-link sources", () => {
+  const scalar = { kind: "scalar", type: "string", deepLink: true };
+  const state = {
+    selectedSkill: { kind: "object", objectType: SKILL, deepLink: true },
+    sourceType: scalar, rating: scalar, keyword: scalar,
+  };
+  const skill = {
+    source: "owner", operationId: EXPORT_SKILL, labelKey: "skills.export", maxBytes: 8192,
+    method: "GET", pathTemplate: "/skills/{primaryKey}/export", mime: "application/zip",
+    target: { source: "state", state: "selectedSkill", objectType: SKILL },
+  };
+  const filter = (state: string) => ({ source: "state", state, type: "string" });
+  const feedback = {
+    source: "owner", operationId: EXPORT_FEEDBACK, labelKey: "feedback.export", maxBytes: 8192,
+    method: "GET", pathTemplate: "/feedback/export", mime: "text/csv",
+    query: {
+      sourceType: filter("sourceType"), rating: filter("rating"), keyword: filter("keyword"),
+      timeZone: { source: "host", value: "timeZone", type: "string" },
+    },
+  };
+  const manifest = { slots: {}, operations: [], state, downloads: [skill, feedback] };
+  assert.deepEqual(panelManifestSchema.parse(manifest).downloads, [skill, feedback]);
+  assert.equal(panelManifestSchema.safeParse({ ...manifest, state: { ...state, rating: { ...scalar, deepLink: false } } }).success, false);
+  assert.equal(panelManifestSchema.safeParse({ ...manifest, downloads: [{ ...skill, pathTemplate: "//other/skills" }] }).success, false);
+  assert.equal(panelManifestSchema.safeParse({ ...manifest, downloads: [{ ...feedback, query: { ...feedback.query, timeZone: filter("keyword") } }] }).success, false);
+  for (const [id, path] of [[EXPORT_SKILL, "/skills/skill/export"], [EXPORT_FEEDBACK, "/feedback/export?timeZone=UTC"]])
+    assert.equal(clientSends([bindingKey({ kind: "PlatformOperation", id })], "GET", "", path), false);
+});
+
+test("a frame returns PNG bytes on a host-correlated export", () => {
+  const png = { source: "frame", operationId: "graph.exportPng", labelKey: "graph.export", maxBytes: 8192, mime: "image/png" };
+  const manifest = { state: {}, slots: {}, operations: [], downloads: [png] };
+  assert.deepEqual(panelManifestSchema.parse(manifest).downloads, [png]);
+  assert.equal(panelManifestSchema.safeParse({ ...manifest, downloads: [png, { ...png, operationId: "another.export" }] }).success, false);
+  const request = { kind: "export-png", requestId: "export-1" };
+  assert.deepEqual(panelHostFrameMessageSchema.parse(request), request);
+  const reply = { kind: "exported-png", requestId: request.requestId, bytes: new ArrayBuffer(4), mime: "image/png", suggestedName: "graph.png" };
+  assert.deepEqual(panelFrameMessageSchema.parse(reply), reply);
+  assert.equal(panelFrameMessageSchema.safeParse({ ...reply, suggestedName: "../graph.png" }).success, false);
+  assert.equal(panelFrameMessageSchema.safeParse({ ...reply, mime: "text/html" }).success, false);
+  assert.equal(panelFrameMessageSchema.safeParse(request).success, false);
 });
 
 test("a child key is meaningful with its parent identity", () => {

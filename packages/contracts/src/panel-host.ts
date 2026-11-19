@@ -15,6 +15,13 @@ import { workspaceDiffSchema, workspaceIdSchema } from "./workspaces";
  */
 
 export const PANEL_HOST_CHANNEL = "ontomato-panel-v1";
+const panelRequestId = z.string().min(1).max(100);
+
+/** A name used by the host for a local download. */
+export const panelDownloadBasenameSchema = z.string().refine(
+  name => name.trim().length > 0 && name !== "." && name !== ".." && !/[/\\\p{Cc}]/u.test(name),
+  "Expected a file basename",
+);
 
 /** The formal host source, after application use and current record have been read under the reader's permissions. */
 export const registeredPanelSourceSchema = z.object({
@@ -74,7 +81,12 @@ export const panelFrameMessageSchema = z.discriminatedUnion("kind", [
    */
   z.object({ kind: z.literal("operations"), operations: z.array(panelOperationSchema).max(100) }).strict(),
   /** The answer to one invocation, or the failure that stopped it: paired with the call by the request ID the host sent. */
-  z.object({ kind: z.literal("invoked"), requestId: z.string().min(1).max(100), result: z.unknown().optional(), error: z.string().optional() }).strict(),
+  z.object({ kind: z.literal("invoked"), requestId: panelRequestId, result: z.unknown().optional(), error: z.string().optional() }).strict(),
+  /** Reply to the host's pending PNG export, bound to this frame and the declared byte limit. */
+  z.object({
+    kind: z.literal("exported-png"), requestId: panelRequestId, bytes: z.instanceof(ArrayBuffer),
+    mime: z.literal("image/png"), suggestedName: panelDownloadBasenameSchema,
+  }).strict(),
   /**
    * Whether the instance holds unsaved changes. The host asks before it replaces the panel's definition, and never
    * reloads over an answer of `true`: the form on screen is the reader's.
@@ -101,7 +113,9 @@ export const panelHostFrameMessageSchema = z.discriminatedUnion("kind", [
    * A person clicked one of the instance's operations in the platform's header. The frame runs it with that person's
    * own credential; an agent's call never comes this way. `requestId` pairs the answer with this call alone.
    */
-  z.object({ kind: z.literal("invoke"), requestId: z.string().min(1).max(100), id: z.string().min(1).max(300), input: z.record(z.string(), z.unknown()).optional() }).strict(),
+  z.object({ kind: z.literal("invoke"), requestId: panelRequestId, id: z.string().min(1).max(300), input: z.record(z.string(), z.unknown()).optional() }).strict(),
+  /** Sent only after a user clicks the panel's declared PNG export in the host. */
+  z.object({ kind: z.literal("export-png"), requestId: panelRequestId }).strict(),
 ]);
 export type PanelHostFrameMessage = z.infer<typeof panelHostFrameMessageSchema>;
 
