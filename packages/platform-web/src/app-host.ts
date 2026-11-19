@@ -23,9 +23,9 @@ import {invalidateProductData} from '@ontomato/contracts/product-invalidation';
 import {installAppBridge} from './app-bridge';
 import type {PanelObjectChange} from './panel-host';
 import type {PanelManifest} from '@ontomato/contracts/panel-manifest';
-import {METRIC_CHART_COMPONENT,directProjectionSchema,productProjectionResponseSchema,type DirectProjection} from '@ontomato/contracts/product-panels';
+import {METRIC_CHART_COMPONENT,productProjectionResponseSchema} from '@ontomato/contracts/product-panels';
 import {pageDraftCreatedSchema,pageDraftReadSchema} from '@ontomato/contracts/page-draft';
-import {bindingKey,chartProjectionSourceSends,clientSends} from '@ontomato/contracts/panel-client-requests';
+import {chartProjectionSourceSends,clientSends} from '@ontomato/contracts/panel-client-requests';
 import {panelHumanOperationDispatchResponseSchema,panelHumanOperationPreparationSchema,type PanelHumanOperationConfirmation,type PanelUseRef} from '@ontomato/contracts/panel-agent';
 import type {PanelOperationImpact} from '@ontomato/contracts/panel-operations';
 import {projectionBindingKeys} from '@ontomato/contracts/panel-projection';
@@ -224,39 +224,17 @@ function admitPanelRequest(panel:PanelFrame,method:string,path:string,service:st
  * What a panel's frame learns from a read it made: a projection's current binding, which admits the requests of the
  * client it reaches, and a draft, which is handed over only when it was written for this frame's page.
  */
-/**
- * The bindings a direct projection's declared data reaches, one per read source: a type, the type of the object it
- * reads (a literal reference, or the object input the projection declares), or an operation. The frame's resource
- * modules read through those bindings' requests.
- */
-function directBindingKeys(projection:DirectProjection){
-  return Object.values(projection.data).map(({source})=>{
-    if('type' in source)return bindingKey({kind:'PlatformObjectType',id:source.type});
-    if('operation' in source)return bindingKey({kind:'PlatformOperation',id:source.operation});
-    const {object}=source;
-    // The projection's schema checked that an object input declares its object type.
-    const type='literal' in object?object.literal.className:(projection.inputs[object.input] as {objectType:string}).objectType;
-    return bindingKey({kind:'PlatformObjectType',id:type});
-  });
-}
 async function relayToPanel(panel:PanelFrame,method:string,path:string,service:string,response:Response){
   if(!response.ok||service!==''||method!=='GET')return response;
   const projection=PROJECTION_READ.exec(path);
   if(projection){
     const id=decodeURIComponent(projection[1]!);
-    const body=await response.clone().json();
-    // A direct projection (one with declared data) has no binding: what it reads is what its read sources reach.
-    if('data' in body.projection){
-      panel.bindings.set(id,directBindingKeys(directProjectionSchema.parse(body.projection)));
-      panel.charts.delete(id);
-      panel.conversationEntries.delete(id);
-      return response;
-    }
-    const record=productProjectionResponseSchema.parse(body).projection;
+    // A direct, code or chart record: a direct one's bindings are what its read sources reach.
+    const record=productProjectionResponseSchema.parse(await response.clone().json()).projection;
     panel.bindings.set(id,projectionBindingKeys(record));
     if(record.componentId===METRIC_CHART_COMPONENT)panel.charts.add(id);
     else panel.charts.delete(id);
-    if(record.conversationEntry)panel.conversationEntries.set(id,record.conversationEntry);
+    if(!('data' in record)&&record.conversationEntry)panel.conversationEntries.set(id,record.conversationEntry);
     else panel.conversationEntries.delete(id);
     return response;
   }
