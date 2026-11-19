@@ -1,24 +1,27 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import declarationP from "./p/declaration.mjs";
 import declarationQ from "./q/declaration.mjs";
 
 /*
  * Everything this trial registers, in the order it is registered: four projections used by two panels, the two panels
  * themselves, and the two applications that use them.
  *
- * A projection is one base component bound to one element, with its own display and its inputs — and nothing about who
- * draws it or where. X is the summary of one scheduled task; P and Q both use it, so changing its display changes both.
- * The other projections are P's alone.
+ * A projection is one SDK component with the data it shows, each item a read its owner registered (the scheduled task's
+ * list, record, form and run-now description), and nothing about who draws it or where. X is the summary of one
+ * scheduled task; P and Q both use it, so changing its display changes both. The other projections are P's alone.
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const text = (path) => readFileSync(join(HERE, path), "utf8");
 
-const projection = (id, name, description, componentId, binding, inputs, display = {}) => ({
+const TASK = "platform:ScheduledTask";
+const task = { kind: "object", objectType: TASK };
+const read = (source, name, params = {}) => ({ source, read: name, params });
+
+const projection = (id, name, description, component, ports) => ({
   id,
-  input: { name, description, visibility: "domain", componentId, binding, inputs, display },
+  input: { name, description, visibility: "domain", componentId: `@ontomato/sdk:${component}`, outputs: {}, config: {}, ...ports },
 });
 
 export const projections = [
@@ -28,27 +31,30 @@ export const projections = [
     "Task summary",
     "One scheduled task as a reader recognises it: its application, its settings, whether it is on, and when it runs next.",
     "ObjectSummary",
-    { kind: "PlatformObjectType", id: "platform:ScheduledTask" },
-    { task: { kind: "object", objectType: "platform:ScheduledTask" } },
-    { fields: ["application", "settings", "state", "nextRun"] },
+    {
+      inputs: { task },
+      data: { record: read({ object: { input: "task" } }, "record") },
+      config: { fields: ["application", "settings", "state", "nextRun"] },
+    },
   ),
-  // P's list: the reader's tasks, the platform's own objects.
+  // P's list: the reader's tasks, the platform's own objects, and the one chosen.
   projection(
     "projection-schedules-tasks",
     "Scheduled tasks",
     "The reader's scheduled tasks, to choose one from.",
     "ObjectList",
-    { kind: "PlatformObjectType", id: "platform:ScheduledTask" },
-    { value: { kind: "object", objectType: "platform:ScheduledTask" } },
+    { inputs: { value: task }, outputs: { selected: task }, data: { rows: read({ type: TASK }, "list") } },
   ),
-  // P's form: one task, through its own application's form.
+  // P's form: one task, through its own application's form, asked again with the values a changed field depends on.
   projection(
     "projection-schedules-form",
     "Task form",
     "One scheduled task's form, as the application it belongs to declares it.",
     "ObjectForm",
-    { kind: "PlatformObjectType", id: "platform:ScheduledTask" },
-    { task: { kind: "object", objectType: "platform:ScheduledTask" } },
+    {
+      inputs: { task, values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
+      data: { form: read({ object: { input: "task" } }, "form", { values: { input: "values" }, changedField: { input: "changedField" } }) },
+    },
   ),
   // P's button: the platform's own operation to run a task now.
   projection(
@@ -56,17 +62,19 @@ export const projections = [
     "Run now",
     "Runs the chosen scheduled task now, leaving its schedule as it is.",
     "OperationButton",
-    { kind: "PlatformOperation", id: "schedules.runNow" },
-    { task: { kind: "object", objectType: "platform:ScheduledTask" } },
+    { inputs: { task }, data: { operation: read({ operation: "schedules.runNow" }, "describe") } },
   ),
 ];
 
-/** The two panels, each with its own text and the declaration its module exports. */
+/**
+ * The two panels. P is written without code — its layout (`p/panel.html`) and its declaration (`p/panel.json`) — and the
+ * platform draws it itself; Q keeps its module and runs in a frame, as a panel written with code does.
+ */
 export const panels = [
   {
     id: "panel-schedules-trial",
     directory: "p",
-    manifest: declarationP,
+    manifest: JSON.parse(text("p/panel.json")),
     name: "Scheduled tasks (trial)",
     description: "Pick one of the reader's scheduled tasks, change it through its application's form, save it, and run it now.",
   },
@@ -79,14 +87,10 @@ export const panels = [
   },
 ];
 
-/** A panel's text: its HTML and its module, with an optional recipes text when the directory has one. */
+/** A panel's text: its HTML, its module when it has code, and its recipes when the directory has them. */
 export function panelContent(directory) {
-  const recipes = join(HERE, directory, "recipes.md");
-  return {
-    html: text(join(directory, "panel.html")),
-    module: text(join(directory, "panel.mjs")),
-    ...(existsSync(recipes) ? { recipes: readFileSync(recipes, "utf8") } : {}),
-  };
+  const optional = (name, file) => existsSync(join(HERE, directory, file)) ? { [name]: text(join(directory, file)) } : {};
+  return { html: text(join(directory, "panel.html")), ...optional("module", "panel.mjs"), ...optional("recipes", "recipes.md") };
 }
 
 /**
