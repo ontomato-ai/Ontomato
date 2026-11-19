@@ -1,6 +1,6 @@
 import { createApp, h, nextTick, provide, ref, shallowReactive, watch, type Component, type Ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { contextTransport, type AppContext } from "../context";
+import { contextTranslate, contextTransport, type AppContext } from "../context";
 import { connectPanelContext } from "./app-context";
 import { defaultLocale } from "apps-sdk:panel-appearance";
 import { createPanelText } from "./text";
@@ -74,6 +74,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     url: () => address.value,
     label: () => message.label,
     initial: message.state,
+    translate: contextTranslate(appContext),
     reportDraftError: failed,
     recordDraftCreated: async (link, id) => {
       const response = await transport.request(
