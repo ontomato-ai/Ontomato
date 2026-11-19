@@ -184,23 +184,50 @@ const showPagination = computed(
   () => props.pageSize !== undefined && props.pageSize > 0 && (total.value > props.pageSize || currentPage.value > 1 || nextCursor.value !== undefined),
 );
 
+function panelText(text: string): string {
+  return panel.t(text);
+}
+
 const resolvedFilters = computed<readonly ObjectListFilter[]>(() => {
   const facetsByKey = new Map(dynamicFacets.value.map((facet) => [facet.key, facet]));
   const declared = (props.filters ?? []).map((filter) => {
     const facet = facetsByKey.get(filter.key);
-    if (!facet) return filter;
+    const label = filter.label ? panelText(filter.label) : (facet?.label ?? filter.key);
+    if (!facet) {
+      return {
+        ...filter,
+        label,
+        options: (filter.options ?? []).map((option) => ({
+          ...option,
+          label: option.label ? panelText(option.label) : option.value,
+        })),
+      };
+    }
     facetsByKey.delete(filter.key);
+    const declaredLabels = new Map(
+      (filter.options ?? [])
+        .filter((option) => Boolean(option.label))
+        .map((option) => [option.value, panelText(option.label!)]),
+    );
+    const mergedOptions = facet.options.map((option) => ({
+      value: option.value,
+      label: declaredLabels.get(option.value) || option.label || option.value,
+      count: option.count,
+    }));
     return {
       ...filter,
-      label: filter.label || facet.label,
-      options: facet.options,
+      label,
+      options: mergedOptions,
     };
   });
   const extra: ObjectListFilter[] = [...facetsByKey.values()].map((facet) => ({
     key: facet.key,
     label: facet.label,
     kind: facet.options.some((option) => option.count !== undefined) ? "tabs" : "select",
-    options: facet.options,
+    options: facet.options.map((option) => ({
+      ...option,
+      label: option.label || option.value,
+    })),
   }));
   return [...declared, ...extra];
 });

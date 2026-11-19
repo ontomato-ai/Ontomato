@@ -76,10 +76,10 @@ export interface PlatformObjectQuery {
   readonly page?: PlatformObjectQueryPage;
 }
 
-/** One option of a filter facet, with an optional count computed under the current search/query. */
+/** One option of a filter facet, with an optional label (when supplied by the owner) and count under the current query. */
 export interface PlatformObjectFacetOption {
   readonly value: string;
-  readonly label: string;
+  readonly label?: string;
   readonly count?: number;
 }
 
