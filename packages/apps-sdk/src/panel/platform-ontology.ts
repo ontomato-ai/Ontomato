@@ -144,7 +144,7 @@ function typeRecord(spec: PlatformGraphTypeSpec): PlatformObjectRecord {
 }
 
 function relationKindRecord(spec: PlatformGraphRelationKindSpec): PlatformObjectRecord {
-  const target = Array.isArray(spec.to) ? spec.to.join(",") : spec.to;
+  const target = typeof spec.to === "string" ? spec.to : spec.to.join(",");
   return {
     primaryKey: spec.id,
     label: spec.label ?? spec.labelKey ?? spec.id,

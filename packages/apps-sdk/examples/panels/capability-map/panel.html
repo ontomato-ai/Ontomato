@@ -1,0 +1,213 @@
+<!--
+  Four-layer platform capability map (M3): mode switcher, in-canvas highlight search, starting-node controls, main
+  four-layer ontology graph and right-hand inspection pane (type object picker in type mode, user start picker and
+  one-hop relations list in instance mode). Every read lives in the bound projections; this template owns layout only.
+-->
+<style>
+  [v-cloak] { display: none; }
+  .cap-map-shell {
+    display: flex;
+    flex-direction: column;
+    gap: var(--page-content-gap, 16px);
+    min-height: 100%;
+  }
+  .cap-map-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 12px;
+    padding: 10px 14px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 10px;
+    background: var(--el-bg-color);
+  }
+  .cap-map-search {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 220px;
+    min-width: 180px;
+    max-width: 340px;
+  }
+  .cap-map-search-input {
+    width: 100%;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--el-border-color);
+    border-radius: 6px;
+    background: var(--el-fill-color-blank);
+    color: var(--el-text-color-primary);
+    font-size: 13px;
+    outline: none;
+  }
+  .cap-map-search-input:focus {
+    border-color: var(--el-color-primary);
+  }
+  .cap-map-actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+  .cap-map-btn {
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--el-border-color);
+    border-radius: 6px;
+    background: var(--el-fill-color-blank);
+    color: var(--el-text-color-regular);
+    font-size: 13px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+  }
+  .cap-map-btn:hover:not(:disabled) {
+    border-color: var(--el-color-primary);
+    color: var(--el-color-primary);
+  }
+  .cap-map-btn.active {
+    border-color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
+    color: var(--el-color-primary);
+  }
+  .cap-map-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .cap-map-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: var(--page-content-gap, 16px);
+    align-items: start;
+    min-height: 540px;
+  }
+  .cap-map-canvas {
+    min-width: 0;
+    min-height: 540px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 10px;
+    background: var(--el-bg-color);
+    overflow: hidden;
+  }
+  .cap-map-aside {
+    display: flex;
+    flex-direction: column;
+    gap: var(--page-content-gap, 16px);
+    min-width: 0;
+    padding: 14px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 10px;
+    background: var(--el-bg-color);
+  }
+  .cap-map-aside-header {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 6px;
+  }
+  @media (max-width: 960px) {
+    .cap-map-body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .cap-map-actions {
+      margin-left: 0;
+    }
+  }
+</style>
+<div id="app" v-cloak>
+  <div class="cap-map-shell">
+    <header class="cap-map-toolbar">
+      <segmented-control
+        state="mode"
+        default-value="instance"
+        :options="modeOptions"
+        :aria-label="t('capMap.modeLabel')"
+      ></segmented-control>
+
+      <div class="cap-map-search">
+        <input
+          type="search"
+          class="cap-map-search-input"
+          :value="query"
+          :placeholder="mode === 'type' ? t('capMap.searchPlaceholderType') : t('capMap.searchPlaceholderInstance')"
+          :aria-label="mode === 'type' ? t('capMap.searchPlaceholderType') : t('capMap.searchPlaceholderInstance')"
+          @input="onQueryInput"
+        />
+        <button
+          v-if="query"
+          type="button"
+          class="cap-map-btn"
+          data-cap-action="clear-query"
+          @click="clearQuery"
+        >{{ t('capMap.clearSearch') }}</button>
+      </div>
+
+      <div v-if="mode === 'instance'" class="cap-map-actions">
+        <button
+          type="button"
+          class="cap-map-btn"
+          :class="{ active: showUserPicker }"
+          :aria-expanded="showUserPicker"
+          data-cap-action="toggle-user-picker"
+          @click="toggleUserPicker"
+        >{{ t('capMap.switchUser') }}</button>
+
+        <button
+          type="button"
+          class="cap-map-btn"
+          :disabled="!canUseSelectedAsStart"
+          data-cap-action="use-selected-as-start"
+          @click="useSelectedAsStart"
+        >{{ t('capMap.useSelectedAsStart') }}</button>
+
+        <button
+          v-if="hasCustomStart"
+          type="button"
+          class="cap-map-btn"
+          data-cap-action="reset-start"
+          @click="resetStart"
+        >{{ t('capMap.resetStart') }}</button>
+      </div>
+    </header>
+
+    <main class="cap-map-body">
+      <div class="cap-map-canvas">
+        <projection slot="graph"></projection>
+      </div>
+
+      <aside class="cap-map-aside">
+        <section-group
+          v-if="mode === 'type'"
+          :title="t('capMap.typePickerTitle')"
+          :description="t('capMap.typePickerHint')"
+        >
+          <projection slot="typeObjects"></projection>
+        </section-group>
+
+        <template v-else>
+          <section-group
+            v-if="showUserPicker"
+            :title="t('capMap.userPickerTitle')"
+            :description="t('capMap.userPickerHint')"
+          >
+            <div class="cap-map-aside-header">
+              <button
+                type="button"
+                class="cap-map-btn"
+                data-cap-action="close-user-picker"
+                @click="showUserPicker = false"
+              >{{ t('capMap.hideUserPicker') }}</button>
+            </div>
+            <projection slot="userPicker"></projection>
+          </section-group>
+
+          <section-group
+            :title="t('capMap.relationsTitle')"
+            :description="t('capMap.relationsHint')"
+          >
+            <projection slot="relations"></projection>
+          </section-group>
+        </template>
+      </aside>
+    </main>
+  </div>
+</div>
