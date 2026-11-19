@@ -222,7 +222,8 @@ describe("platform-ontology composite query", () => {
   it("resolves default start node from subjects, keeps real userId on 403, and aligns OSS hostOwner", async () => {
     const enterpriseStart = await readPlatformOntologyStart(owner, credentials, "Alice Fallback");
     expect(enterpriseStart).toEqual({
-      node: { className: "platform:User", primaryKey: "user-1" },
+      className: "platform:User",
+      primaryKey: "user-1",
       label: "Alice",
       layer: "governance",
     });
@@ -230,7 +231,8 @@ describe("platform-ontology composite query", () => {
     vi.mocked(backendPost).mockRejectedValueOnce(new BackendResponseError(403, JSON.stringify({ message: "Denied" })));
     const refusedStart = await readPlatformOntologyStart(owner, credentials, "Alice Fallback");
     expect(refusedStart).toEqual({
-      node: { className: "platform:User", primaryKey: "user-1" },
+      className: "platform:User",
+      primaryKey: "user-1",
       label: "Alice Fallback",
       layer: "governance",
     });
@@ -245,10 +247,10 @@ describe("platform-ontology composite query", () => {
     });
     const ossOwner = { domainId: "1", userId: "system" };
     const ossStart = await readPlatformOntologyStart(ossOwner, { locale: "en" }, "system");
-    expect(ossStart.node).toEqual({ className: "platform:User", primaryKey: "system" });
+    expect(ossStart).toMatchObject({ className: "platform:User", primaryKey: "system" });
 
     const ossNeighbors = await readPlatformOntologyNeighbors(ossOwner, { locale: "en" }, {
-      node: ossStart.node,
+      node: { className: ossStart.className, primaryKey: ossStart.primaryKey },
       relationKinds: ["user.created-action", "user.published-action"],
     });
     expect(ossNeighbors.edges).toHaveLength(2);

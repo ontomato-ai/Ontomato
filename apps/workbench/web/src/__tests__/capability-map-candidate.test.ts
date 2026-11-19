@@ -140,6 +140,7 @@ function owners(request: Sent): Response {
           to: ROLE,
           labelKey: "platformOntology.relations.user.holds-role",
           derived: false,
+          owner: "java-identity",
         },
         {
           id: "role.can-execute-action",
@@ -147,6 +148,7 @@ function owners(request: Sent): Response {
           to: ACTION,
           labelKey: "platformOntology.relations.role.can-execute-action",
           derived: false,
+          owner: "java-grants",
         },
         {
           id: "action.targets-object-type",
@@ -154,6 +156,7 @@ function owners(request: Sent): Response {
           to: OBJECT_TYPE,
           labelKey: "platformOntology.relations.action.targets-object-type",
           derived: false,
+          owner: "java-action",
         },
       ],
     });
@@ -174,9 +177,7 @@ function owners(request: Sent): Response {
 
   if (request.path === "/api/platform-ontology/start") {
     return Response.json({
-      node: { className: USER, primaryKey: "u-alice" },
-      label: "Alice",
-      layer: "governance",
+      node: { className: USER, primaryKey: "u-alice", label: "Alice", layer: "governance" },
     });
   }
 
