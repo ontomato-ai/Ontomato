@@ -11,25 +11,35 @@ import type { FeedbackPage, FeedbackRating, FeedbackSourceType } from "@ontomato
 const feedbackRecordSchema = z.object({
   id: z.string(),
   sourceType: z.enum(["qa", "analysis_task"]),
+  sourceTypeLabel: z.string(),
   targetId: z.string(),
   threadId: z.string().optional(),
   requestSeq: z.number().int().optional(),
   taskId: z.string().optional(),
   rating: z.enum(["like", "dislike"]),
+  ratingLabel: z.string(),
   userId: z.string(),
   userName: z.string().optional(),
   userInput: z.string().optional(),
   assistantOutput: z.string().optional(),
   feedbackText: z.string().optional(),
   metadata: z.unknown().optional(),
+  turnKey: z.string(),
   createdAt: z.number(),
 });
+
+const feedbackFilterOptionSchema = z.object({ value: z.string(), label: z.string() });
+const feedbackFilterSchema = z.object({ label: z.string(), options: z.array(feedbackFilterOptionSchema) });
 
 export const feedbackPageSchema = z.object({
   records: z.array(feedbackRecordSchema),
   total: z.number().int().nonnegative(),
   limit: z.number().int().positive(),
   offset: z.number().int().nonnegative(),
+  filters: z.object({
+    sourceType: feedbackFilterSchema,
+    rating: feedbackFilterSchema,
+  }),
 });
 
 export interface FeedbackQuery {

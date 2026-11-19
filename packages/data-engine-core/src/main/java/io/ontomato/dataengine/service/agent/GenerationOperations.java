@@ -109,13 +109,20 @@ public class GenerationOperations {
     return store.transaction(() -> gate(run, owner).getString("source"));
   }
 
-  @SuppressWarnings("unchecked")
   public void createSandbox(String sandbox, String domain) throws Exception {
+    createSandbox(sandbox, domain, List.of());
+  }
+
+  @SuppressWarnings("unchecked")
+  void createSandbox(String sandbox, String domain, List<String> classes) throws Exception {
     var schema = schemas.query(domain);
-    var objects=new JSONArray();
-    for(var cls:(List<Map<String,Object>>)schema.get("classDef"))
-      objects.add(JSONObject.of("className",cls.get("className"),"rows",new JSONArray()));
-    sandboxService.createSampleStructure(sandbox,JSONObject.of("objDatas",objects),domain);
+    var objects = new JSONArray();
+    for (var cls : (List<Map<String, Object>>) schema.get("classDef")) {
+      String name = (String) cls.get("className");
+      if (classes.isEmpty() || classes.contains(name))
+        objects.add(JSONObject.of("className", name, "rows", new JSONArray()));
+    }
+    sandboxService.createSampleStructure(sandbox, JSONObject.of("objDatas", objects), domain);
   }
 
   public void dropSandbox(String sandbox, String domain) {

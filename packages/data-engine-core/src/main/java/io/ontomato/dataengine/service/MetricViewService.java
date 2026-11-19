@@ -37,6 +37,15 @@ public interface MetricViewService {
     MetricView appendBinding(String id, MetricViewBinding binding, String domainId);
 	
 	public List<MetricView> queryList(String status, String functionId, String className, String domainId);
+
+    /** The owner's form description for a MetricView, or a field error for an incoming draft. */
+    JSONObject form(JSONObject request, String lang, String domainId);
+
+    /** One item of a batch publication-status change: its saved metric, or why it failed. */
+    record StatusResult(String id, MetricView data, String error) {}
+
+    /** Change only the status of each metric, one transaction per id. */
+    List<StatusResult> setStatus(String domainId, List<String> ids, String status, String lang);
 	
 	public List<MetricView> find(String question, String className, String domainId);
 

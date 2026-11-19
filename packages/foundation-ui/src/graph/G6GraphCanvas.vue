@@ -46,7 +46,7 @@ const props = withDefaults(
     maxHeight?: number;
     /** Categories in a fixed order: the n-th takes the palette's n-th colour; any other category is placed by its name. */
     categories?: readonly string[];
-    /** The widest a node's name is drawn, in graph units; a longer one ends in an ellipsis. Twice the node when absent. */
+    /** The widest a node's name is drawn, in graph units; a longer one ends in an ellipsis. 160 when absent. */
     labelWidth?: number;
     /**
      * Lets a reader ask for a new edge: dragging from a node to a node with Shift held hands back `connect`, while a
@@ -76,6 +76,8 @@ const emit = defineEmits<{
 }>();
 
 const BATCH = 200;
+/** The area the canvas takes; the element G6 draws into sits inside it, because G6 restyles its own container. */
+const frame = ref<HTMLElement | null>(null);
 const host = ref<HTMLElement | null>(null);
 let graph: Graph | null = null;
 let colors: G6Colors;
@@ -201,11 +203,10 @@ function chosen(current: readonly string[], id: string) {
 }
 
 let reported = "";
-function reportViewport() {
-  const target = graph!;
+function reportViewport(target: Graph) {
   const zoom = target.getZoom();
   const [x, y] = target.getCanvasByViewport([0, 0]);
-  const { width, height } = host.value!.getBoundingClientRect();
+  const { width, height } = frame.value!.getBoundingClientRect();
   const viewport = { x, y, width: width / zoom, height: height / zoom, zoom };
   if (JSON.stringify(viewport) === reported) return;
   reported = JSON.stringify(viewport);
@@ -265,10 +266,12 @@ async function create(width: number, height: number) {
     const [x, y] = target.getElementPosition(id);
     emit("move", id, { x, y });
   });
-  target.on("aftertransform", reportViewport);
-  target.on("afterdraw", reportViewport);
   await target.render();
+  // Only now: G6 transforms its viewport while it creates it, before the graph can say what its zoom is.
+  target.on("aftertransform", () => reportViewport(target));
+  target.on("afterdraw", () => reportViewport(target));
   await sync(target);
+  reportViewport(target);
   opened();
 }
 
@@ -306,7 +309,7 @@ watch(
 
 let resized: ResizeObserver | undefined;
 onMounted(() => {
-  const { width, height } = host.value!.getBoundingClientRect();
+  const { width, height } = frame.value!.getBoundingClientRect();
   if (width && height) void create(width, height);
   resized = new ResizeObserver(([entry]) => {
     const { width, height } = entry!.contentRect;
@@ -315,10 +318,13 @@ onMounted(() => {
       void create(width, height);
       return;
     }
-    graph.resize(Math.round(width), Math.round(height));
-    reportViewport();
+    // Through the queue: a resize while G6 is still drawing its first props waits until it can report the view.
+    void enqueue(async (target) => {
+      target.resize(Math.round(width), Math.round(height));
+      reportViewport(target);
+    });
   });
-  resized.observe(host.value!);
+  resized.observe(frame.value!);
 });
 onBeforeUnmount(() => {
   resized?.disconnect();
@@ -384,7 +390,8 @@ defineExpose({
 
 <template>
   <div class="g6-graph-canvas" role="group" :aria-label="label" :style="maxHeight === undefined ? undefined : { maxHeight: `${maxHeight}px` }">
-    <div ref="host" class="g6-graph-host" />
+    <!-- G6 sets its container to position: relative, so it cannot be the element that takes the canvas's size. -->
+    <div ref="frame" class="g6-graph-frame"><div ref="host" class="g6-graph-host" /></div>
     <!--
       Follows the colour roles where the canvas is drawn: when a mode switch changes them, the probe's colours change and
       its transition ends, and the canvas resolves its colours again. No class or attribute of the page is read for it.
@@ -399,9 +406,14 @@ defineExpose({
   height: 100%;
   min-height: 0;
 }
-.g6-graph-host {
+.g6-graph-frame {
   position: absolute;
   inset: 0;
+  overflow: hidden;
+}
+.g6-graph-host {
+  width: 100%;
+  height: 100%;
 }
 .g6-theme-probe {
   position: absolute;
