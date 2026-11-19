@@ -509,7 +509,7 @@ export const productEn={
   productHomeAskAboutObject:'Ask about this object',
   productHomeRelatedObject:'Related object',
   productHomeExplainMetric:'Explain metric definition',
-  productDefaultHomeName:'My workspace',
+  productDefaultHomeName:'Personal workspace',
   productDefaultHomeDescription:'Frequent entries and work in progress',
   productDefaultContinueWork:'Continue working',
   productDefaultFavorites:'My favorites',

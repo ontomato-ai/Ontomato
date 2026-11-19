@@ -1,4 +1,4 @@
-import { inject, onBeforeUnmount, provide, shallowRef, watchEffect, type Component, type InjectionKey, type Ref } from "vue";
+import { inject, onBeforeUnmount, provide, shallowRef, watch, type Component, type InjectionKey, type Ref } from "vue";
 import type { PanelOperation } from "@ontomato/contracts/panel-manifest";
 
 /**
@@ -94,15 +94,23 @@ export function providePageActions(): Readonly<Ref<PlatformPageActions | null>> 
 }
 
 /**
- * Shows a page's actions in its frame's header for as long as the calling component is mounted, and clears them on
- * unmount so the next page starts without them. `actions` is a getter, read reactively, so flags such as `dirty` stay
- * live. A page mounted outside a frame that draws a header has nowhere to show them.
+ * Shows a page's actions in its frame's header for as long as the calling component is mounted and offers them, and
+ * clears them when it stops offering them or unmounts, so the next page starts without them. `actions` is a getter, read
+ * reactively, so flags such as `dirty` stay live. A caller clears only what it showed: a page kept mounted but not shown
+ * offers nothing and leaves the shown page's actions alone. A page mounted outside a frame that draws a header has
+ * nowhere to show them.
  */
 export function usePageActions(actions: () => PlatformPageActions | null) {
   const target = inject(pageActionsKey, null);
   if (!target) return;
-  watchEffect(() => (target.value = actions()));
-  onBeforeUnmount(() => {
-    target.value = null;
-  });
+  let shown: PlatformPageActions | null = null;
+  const clear = () => {
+    if (shown && target.value === shown) target.value = null;
+    shown = null;
+  };
+  watch(actions, (next) => {
+    if (next) target.value = shown = next;
+    else clear();
+  }, { immediate: true });
+  onBeforeUnmount(clear);
 }
