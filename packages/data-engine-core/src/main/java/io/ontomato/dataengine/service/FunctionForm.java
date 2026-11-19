@@ -190,7 +190,7 @@ public final class FunctionForm {
       if (returnDef != null) errors.objectField(returnDef, "columnLabels", "/returnDef/columnLabels");
     } else if (Function.OPERATION_WRITE.equals(operation)) {
       if (returnDef != null) errors.stringArray(returnDef, "classNames", "/returnDef/classNames");
-      checkParameters(values.get("parameters"), errors);
+      checkParameters(values.get("parameters"), errors, "");
     }
     errors.throwIfAny("Invalid Function draft");
     try {
@@ -201,20 +201,20 @@ public final class FunctionForm {
     }
   }
 
-  private static void checkParameters(Object raw, PanelFormErrors errors) {
+  public static void checkParameters(Object raw, PanelFormErrors errors, String prefix) {
     if (raw == null) return;
     if (!(raw instanceof List<?> list)) {
-      errors.invalidArray("/parameters", "expected an array of parameter definitions");
+      errors.invalidArray(prefix + "/parameters", "expected an array of parameter definitions");
       return;
     }
     for (int i = 0; i < list.size(); i++) {
       Object item = list.get(i);
       if (!(item instanceof Map<?, ?>)) {
-        errors.invalidObject("/parameters/" + i, "expected a parameter definition object");
+        errors.invalidObject(prefix + "/parameters/" + i, "expected a parameter definition object");
         continue;
       }
       JSONObject parameter = JSONObject.from(item);
-      String base = "/parameters/" + i;
+      String base = prefix + "/parameters/" + i;
       errors.optionalString(parameter, "name", base + "/name");
       errors.optionalString(parameter, "type", base + "/type");
       errors.optionalString(parameter, "description", base + "/description");
@@ -227,7 +227,7 @@ public final class FunctionForm {
     }
   }
 
-  private static JSONArray parameterFields(String lang, LangService langService, String readOnlyReason) {
+  public static JSONArray parameterFields(String lang, LangService langService, String readOnlyReason) {
     JSONArray fields = new JSONArray();
     fields.add(
         PanelFormFields.field(
@@ -287,7 +287,7 @@ public final class FunctionForm {
     return fields;
   }
 
-  private static JSONObject defaultParameter() {
+  public static JSONObject defaultParameter() {
     return JSONObject.of(
         "name", "",
         "type", Parameter.TYPE_STRING,
