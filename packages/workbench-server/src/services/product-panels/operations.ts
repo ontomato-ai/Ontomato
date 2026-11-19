@@ -1,10 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { z } from "zod";
 import { pageDraftSchema } from "@ontomato/contracts/page-draft";
 import type { AgentSessionRef } from "@ontomato/contracts/agent-channel";
 import { agentQuestionAnswerReceiptSchema, agentUserQuestionReceiptSchema } from "@ontomato/contracts/agent-user-questions";
-import { applicationPanelUsesResponseSchema } from "@ontomato/contracts/product-panels";
 import {
   PANEL_CONFIRMATION_EXPIRED,
   type CreatePanelOperationIntentRequest, type PanelOperationIntent, type PanelOperateResponse,
@@ -19,7 +17,7 @@ import { assistantService } from "../assistant/service";
 import { config } from "../../config/application";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { HttpError } from "../../utils/errors";
-import { backendGet, buildBackendHeaders } from "../../utils/backend-client";
+import { buildBackendHeaders } from "../../utils/backend-client";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { credentialsForRun, runForOwner } from "../assistant/execution";
 import { readPageSkills } from "../assistant/skills";
@@ -27,6 +25,7 @@ import type { AssistantOwner } from "../assistant/store";
 import { restoreAgentCaller, readAgentSessionActor } from "../agent-host/caller";
 import { readCurrentPanel, readCurrentProjection } from "./current";
 import { readComponentCatalogue } from "./skill-package";
+import { requirePanelUse } from "./application-use";
 import { panelServerOperation, snapshotPanelWrite, type PanelServerOperation, type PanelOperationHost, type PanelRecordTarget } from "./server-operations";
 import { panelConfirmation } from "./confirmation";
 import { publishObjectChanged } from "../agent-host/presentation";
@@ -37,11 +36,7 @@ type SingleIntent = Extract<PanelOperationIntent, { call: PanelOperationCall }>;
 type ReadableIntent = Extract<StoredPanelOperationIntent, { intent: unknown }>["intent"];
 
 async function admitted(owner: AssistantOwner, credentials: AssistantCredentials, run: PanelRun, ref: PanelUseRef, operationId: string) {
-  const response = await backendGet("panel-use",`${config.dataQuery.baseUrl}/platform/applications/${encodeURIComponent(ref.applicationId)}/panel-uses`,
-    {headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});
-  const uses = z.object({success:z.literal(true),data:applicationPanelUsesResponseSchema}).parse(JSON.parse(response.text)).data;
-  const use = uses.panelUses.find(use => use.id === ref.useId);
-  if (!use) throw new HttpError(403,"Panel use is not available","FORBIDDEN");
+  const use = await requirePanelUse(credentials, ref);
   const pages = await readPageSkills(credentials);
   const mapping = pages.pageSkills.find(mapping => "permissionCode" in use.access
     ? "permissionCode" in mapping && mapping.permissionCode === use.access.permissionCode
