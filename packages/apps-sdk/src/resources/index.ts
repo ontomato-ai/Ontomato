@@ -1,4 +1,4 @@
-import { RUN_NOW } from "@ontomato/contracts/panel-client-requests";
+import { FUNCTION, METRIC_VIEW, RUN_NOW } from "@ontomato/contracts/panel-client-requests";
 import {
   AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER,
 } from "@ontomato/contracts/platform-object-types";
@@ -24,6 +24,8 @@ export const platformResources: PlatformResources = {
     [ATTRIBUTE]: ontologyMetadata,
     [RELATIONSHIP]: ontologyMetadata,
     [SCHEDULED_TASK]: () => import("../panel/schedules").then((module) => module.scheduledTaskAdapters),
+    [METRIC_VIEW]: () => import("../panel/metric-view").then((module) => module.metricViewAdapters),
+    [FUNCTION]: () => import("../panel/function").then((module) => module.functionAdapters),
   },
   operations: {
     [RUN_NOW]: () => import("../panel/schedules").then((module) => module.scheduledTaskRunNow),
