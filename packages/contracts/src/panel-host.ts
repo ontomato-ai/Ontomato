@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { buildTestContextSchema } from "./build-tests";
 import { pageContextSchema } from "./page-context";
+import { pageDraftLinkSchema } from "./page-draft";
 import { panelObjectIdentitySchema, panelOpenRequestSchema, panelOperationSchema, panelStateValueSchema, type PanelObjectIdentity, type PanelStateValue } from "./panel-manifest";
 import { applicationPanelUseSchema, panelDefinitionContentSchema, productPanelSchema } from "./product-panels";
 import { definitionRevisionSchema, type ProductDefinitionRevision, type ProductDefinitionTarget } from "./product-subscriptions";
@@ -62,6 +63,11 @@ export const panelFrameMessageSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("context"), context: pageContextSchema }).strict(),
   /** The instance's deep-linkable state, which the host keeps in the address. */
   z.object({ kind: z.literal("state"), fromAddress: z.string().min(1).max(4000), state: z.record(z.string(), panelStateValueSchema) }).strict(),
+  /**
+   * The reader saved or discarded this linked draft. The host removes only its draft parameters if its current
+   * address still names that artifact; it reflects the resulting address through the normal address message.
+   */
+  z.object({ kind: z.literal("draft-settled"), draft: pageDraftLinkSchema }).strict(),
   /**
    * The operations this instance offers, as the header and an agent list them. They are the panel's projections' and its
    * own declaration's; the frame runs one when the host asks it to.
