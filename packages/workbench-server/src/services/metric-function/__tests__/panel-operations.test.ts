@@ -1,14 +1,37 @@
 import { describe, expect, it } from "vitest";
 import {
-  DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, METRIC_VIEW,
+  DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, METRIC_VIEW, SET_METRIC_VIEW_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW,
 } from "@ontomato/contracts/panel-client-requests";
+import { configureI18n } from "../../../i18n";
+import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import type { PanelOperationHost } from "../../product-panels/server-operations";
 import { m5ServerOperations } from "../panel-operations";
 
 /*
  * The metric and function server operations: their target shapes, the data-query requests they send, the success
- * data they return with what changed, the owner's business refusals as refusals, and the delete label read.
+ * data they return with what changed, the owner's business refusals as refusals, the delete label read, the deletion
+ * impact the host confirms with, the publication-status change, and the two read-only trials of a metric draft.
  */
+
+// The impact descriptions read their localized summaries through the installed English pack.
+configureI18n({
+  defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
+  packs: { en: { messages: en, ...enLocaleMeta } },
+});
+
+type M5Operation = (typeof m5ServerOperations)[number];
+const write = (handlerRef: string) =>
+  m5ServerOperations.find((item): item is Extract<M5Operation, { effect: "write" }> =>
+    item.effect === "write" && item.handlerRef === handlerRef)!;
+const action = (handlerRef: string) =>
+  m5ServerOperations.find((item): item is Extract<M5Operation, { effect: "write"; kind: "action"; batch: false }> =>
+    item.effect === "write" && item.kind === "action" && item.batch === false && item.handlerRef === handlerRef)!;
+const batchAction = (handlerRef: string) =>
+  m5ServerOperations.find((item): item is Extract<M5Operation, { effect: "write"; kind: "action"; batch: true }> =>
+    item.effect === "write" && item.kind === "action" && item.batch === true && item.handlerRef === handlerRef)!;
+const read = (handlerRef: string) =>
+  m5ServerOperations.find((item): item is Extract<M5Operation, { effect: "read" }> =>
+    item.effect === "read" && item.handlerRef === handlerRef)!;
 
 function hostWith(answer: (path: string, init: NonNullable<Parameters<typeof fetch>[1]>) => Response) {
   const sent: { path: string; init: NonNullable<Parameters<typeof fetch>[1]> }[] = [];
@@ -29,7 +52,7 @@ const functionTarget = { kind: "object" as const, objectType: FUNCTION, primaryK
 
 describe("metric and function panel server operations", () => {
   it("declares the metric save target, draft operation and create identity", () => {
-    const operation = m5ServerOperations.find(item => item.handlerRef === `${METRIC_VIEW}.save`)!;
+    const operation = write(`${METRIC_VIEW}.save`);
     expect(operation.kind).toBe("form.save");
     if (operation.kind !== "form.save") throw new Error("not a form save");
     expect(operation.binding).toEqual({ kind: "PlatformObjectType", id: METRIC_VIEW });
@@ -42,7 +65,7 @@ describe("metric and function panel server operations", () => {
   });
 
   it("sends the complete metric values and returns the saved asset", async () => {
-    const operation = m5ServerOperations.find(item => item.handlerRef === `${METRIC_VIEW}.save`)!;
+    const operation = write(`${METRIC_VIEW}.save`);
     const { host, sent } = hostWith(() => Response.json({ success: true, data: { id: "m1", name: "Revenue 2" } }));
 
     const outcome = await operation.execute(host, metricTarget, { values: { name: "Revenue 2", bindings: [] } });
@@ -57,7 +80,7 @@ describe("metric and function panel server operations", () => {
   });
 
   it("binds a metric save to its target and refuses another id", async () => {
-    const operation = m5ServerOperations.find(item => item.handlerRef === `${METRIC_VIEW}.save`)!;
+    const operation = write(`${METRIC_VIEW}.save`);
     const rejected = hostWith(() => Response.json({ success: true, data: { id: "m1", name: "Revenue" } }));
     await expect(operation.execute(rejected.host, metricTarget, { values: { id: "m2", name: "Revenue" } }))
       .rejects.toMatchObject({ status: 400, code: "TARGET_ID_MISMATCH" });
@@ -75,7 +98,7 @@ describe("metric and function panel server operations", () => {
   });
 
   it("turns a metric owner refusal into a refusal", async () => {
-    const operation = m5ServerOperations.find(item => item.handlerRef === `${METRIC_VIEW}.save`)!;
+    const operation = write(`${METRIC_VIEW}.save`);
     const { host } = hostWith(() => Response.json({ success: false, message: "Cannot modify a system MetricView" }));
 
     expect(await operation.execute(host, metricTarget, { values: {} }))
@@ -83,9 +106,8 @@ describe("metric and function panel server operations", () => {
   });
 
   it("reads the metric label and deletes by id", async () => {
-    const operation = m5ServerOperations.find(item => item.handlerRef === DELETE_METRIC_VIEW)!;
+    const operation = action(DELETE_METRIC_VIEW);
     expect(operation.kind).toBe("action");
-    if (operation.kind !== "action") throw new Error("not an action");
     expect(operation.targetSchema.safeParse({ kind: "draft" }).success).toBe(false);
     const label = hostWith(path => path.endsWith("/metricView/queryById")
       ? Response.json({ success: true, data: { name: "Revenue" } })
@@ -107,8 +129,7 @@ describe("metric and function panel server operations", () => {
   });
 
   it("fails the metric label read with the owner's reason", async () => {
-    const operation = m5ServerOperations.find(item => item.handlerRef === DELETE_METRIC_VIEW)!;
-    if (operation.kind !== "action") throw new Error("not an action");
+    const operation = action(DELETE_METRIC_VIEW);
     const missing = hostWith(() => Response.json({ success: false, message: "MetricView not found" }));
     await expect(operation.targetLabel(missing.host, metricTarget))
       .rejects.toMatchObject({ status: 404, message: "MetricView not found", code: "METRIC_VIEW_UNAVAILABLE" });
@@ -117,8 +138,119 @@ describe("metric and function panel server operations", () => {
       .rejects.toMatchObject({ status: 503, message: "Owner unavailable", code: "METRIC_VIEW_UNAVAILABLE" });
   });
 
+  it("describes the metric delete impact with the bindings it takes along", async () => {
+    const operation = action(DELETE_METRIC_VIEW);
+    const { host, sent } = hostWith(() =>
+      Response.json({ success: true, data: { name: "Revenue", bindings: [{ chartId: "c1" }, { chartId: "c2" }] } }));
+    expect(await operation.inspectImpact!.inspect({ ...host, locale: "en" }, [{ target: metricTarget, input: {} }])).toEqual({
+      summary: "This deletes the selected metric, together with its bindings (2 in total).",
+      objects: [{ target: { objectType: METRIC_VIEW, primaryKey: "m1" }, label: "Revenue" }],
+      total: 1,
+    });
+    expect(sent[0]?.path).toBe("/api/data-query/metricView/queryById");
+    expect(JSON.parse(String(sent[0]?.init.body))).toEqual({ id: "m1" });
+  });
+
+  it("fails the metric delete impact with the owner's reason", async () => {
+    const operation = action(DELETE_METRIC_VIEW);
+    const missing = hostWith(() => Response.json({ success: false, message: "MetricView not found" }));
+    await expect(operation.inspectImpact!.inspect(missing.host, [{ target: metricTarget, input: {} }]))
+      .rejects.toMatchObject({ status: 404, message: "MetricView not found", code: "METRIC_VIEW_UNAVAILABLE" });
+    const outage = hostWith(() => Response.json({ message: "Owner unavailable" }, { status: 503 }));
+    await expect(operation.inspectImpact!.inspect(outage.host, [{ target: metricTarget, input: {} }]))
+      .rejects.toMatchObject({ status: 503, message: "Owner unavailable", code: "METRIC_VIEW_UNAVAILABLE" });
+  });
+
+  it("changes one metric's publication status and returns the saved metric", async () => {
+    const operation = batchAction(SET_METRIC_VIEW_STATUS);
+    const labelled = hostWith(path => path.endsWith("/metricView/queryById")
+      ? Response.json({ success: true, data: { name: "Revenue" } })
+      : Response.json({ success: true, data: { items: [
+        { id: "m1", outcome: "success", data: { id: "m1", name: "Revenue", status: "PUBLISHED" } },
+      ] } }));
+    expect(await operation.targetLabel(labelled.host, metricTarget)).toBe("Revenue");
+
+    const changed = hostWith(() => Response.json({ success: true, data: { items: [
+      { id: "m1", outcome: "success", data: { id: "m1", name: "Revenue", status: "PUBLISHED" } },
+    ] } }));
+    expect(await operation.execute(changed.host, metricTarget, { status: "PUBLISHED" })).toEqual({
+      kind: "success", data: { id: "m1", name: "Revenue", status: "PUBLISHED" },
+      affected: { objects: [{ objectType: METRIC_VIEW, primaryKey: "m1" }], objectTypes: [METRIC_VIEW] },
+    });
+    expect(changed.sent[0]?.path).toBe("/api/data-query/metricView/setStatus");
+    expect(JSON.parse(String(changed.sent[0]?.init.body))).toEqual({ ids: ["m1"], status: "PUBLISHED" });
+  });
+
+  it("keeps the owner's reason when one metric's status change fails", async () => {
+    const operation = batchAction(SET_METRIC_VIEW_STATUS);
+    const refused = hostWith(() => Response.json({ success: true, data: { items: [
+      { id: "m1", outcome: "failure", error: { message: "MetricView not found" } },
+    ] } }));
+    expect(await operation.execute(refused.host, metricTarget, { status: "UNUSED" }))
+      .toEqual({ kind: "refusal", code: "METRIC_VIEW_STATUS_REFUSED", message: "MetricView not found" });
+  });
+
+  it("answers each call of a status batch by its metric, in the calls' order", async () => {
+    const operation = batchAction(SET_METRIC_VIEW_STATUS);
+    const secondMetric = { kind: "object" as const, objectType: METRIC_VIEW, primaryKey: "m2" };
+    const answered = hostWith(() => Response.json({ success: true, data: { items: [
+      { id: "m2", outcome: "success", data: { id: "m2", status: "PENDING_REVIEW" } },
+      { id: "m1", outcome: "failure", error: { message: "Cannot unpublish a system MetricView" } },
+    ] } }));
+    expect(await operation.executeBatch(answered.host, [
+      { target: metricTarget, input: { status: "PENDING_REVIEW" } },
+      { target: secondMetric, input: { status: "PENDING_REVIEW" } },
+    ])).toEqual({
+      kind: "batch",
+      items: [
+        { target: { objectType: METRIC_VIEW, primaryKey: "m1" },
+          outcome: { kind: "refusal", code: "METRIC_VIEW_STATUS_REFUSED", message: "Cannot unpublish a system MetricView" } },
+        { target: { objectType: METRIC_VIEW, primaryKey: "m2" },
+          outcome: { kind: "success", data: { id: "m2", status: "PENDING_REVIEW" },
+            affected: { objects: [{ objectType: METRIC_VIEW, primaryKey: "m2" }], objectTypes: [METRIC_VIEW] } } },
+      ],
+    });
+    expect(JSON.parse(String(answered.sent[0]?.init.body))).toEqual({ ids: ["m1", "m2"], status: "PENDING_REVIEW" });
+  });
+
+  it("sends a status batch whose calls name different statuses as one owner request per status", async () => {
+    const operation = batchAction(SET_METRIC_VIEW_STATUS);
+    const secondMetric = { kind: "object" as const, objectType: METRIC_VIEW, primaryKey: "m2" };
+    const thirdMetric = { kind: "object" as const, objectType: METRIC_VIEW, primaryKey: "m3" };
+    const grouped = hostWith((_path, init) => {
+      const { ids, status } = JSON.parse(String(init.body)) as { ids: string[]; status: string };
+      return Response.json({ success: true, data: { items: ids.map(id => ({ id, outcome: "success", data: { id, status } })) } });
+    });
+    const outcome = await operation.executeBatch(grouped.host, [
+      { target: metricTarget, input: { status: "PUBLISHED" } },
+      { target: secondMetric, input: { status: "UNUSED" } },
+      { target: thirdMetric, input: { status: "PUBLISHED" } },
+    ]);
+    expect(grouped.sent.map(sent => JSON.parse(String(sent.init.body)))).toEqual([
+      { ids: ["m1", "m3"], status: "PUBLISHED" },
+      { ids: ["m2"], status: "UNUSED" },
+    ]);
+    expect(outcome.kind === "batch" && outcome.items.map(item => [item.target.primaryKey, item.outcome.kind === "success" && item.outcome.data.status]))
+      .toEqual([["m1", "PUBLISHED"], ["m2", "UNUSED"], ["m3", "PUBLISHED"]]);
+  });
+
+  it("refuses every call of a status batch the owner refuses wholesale", async () => {
+    const operation = batchAction(SET_METRIC_VIEW_STATUS);
+    const secondMetric = { kind: "object" as const, objectType: METRIC_VIEW, primaryKey: "m2" };
+    const refused = hostWith(() => Response.json({ success: false, message: "No business domain for this account" }));
+    expect(await operation.executeBatch(refused.host, [
+      { target: metricTarget, input: { status: "PUBLISHED" } },
+      { target: secondMetric, input: { status: "PUBLISHED" } },
+    ])).toEqual({ kind: "batch", items: [
+      { target: { objectType: METRIC_VIEW, primaryKey: "m1" },
+        outcome: { kind: "refusal", code: "METRIC_VIEW_STATUS_REFUSED", message: "No business domain for this account" } },
+      { target: { objectType: METRIC_VIEW, primaryKey: "m2" },
+        outcome: { kind: "refusal", code: "METRIC_VIEW_STATUS_REFUSED", message: "No business domain for this account" } },
+    ] });
+  });
+
   it("binds a function save to its target and refuses another id", async () => {
-    const operation = m5ServerOperations.find(item => item.handlerRef === `${FUNCTION}.save`)!;
+    const operation = write(`${FUNCTION}.save`);
     const rejected = hostWith(() => Response.json({ success: true, data: { id: "f1", name: "Revenue query" } }));
     await expect(operation.execute(rejected.host, functionTarget, { values: { id: "f2", name: "Revenue query" } }))
       .rejects.toMatchObject({ status: 400, code: "TARGET_ID_MISMATCH" });
@@ -136,7 +268,7 @@ describe("metric and function panel server operations", () => {
   });
 
   it("declares and executes the function save and delete", async () => {
-    const save = m5ServerOperations.find(item => item.handlerRef === `${FUNCTION}.save`)!;
+    const save = write(`${FUNCTION}.save`);
     if (save.kind !== "form.save") throw new Error("not a form save");
     expect(save.targetSchema.safeParse(functionTarget).success).toBe(true);
     expect(save.draftOperation(functionTarget)).toBe("function.update");
@@ -152,8 +284,7 @@ describe("metric and function panel server operations", () => {
     expect(await save.execute(saveRefused.host, functionTarget, { values: {} }))
       .toEqual({ kind: "refusal", code: "FUNCTION_SAVE_REFUSED", message: "Function referenced by MetricView cannot be modified or deleted" });
 
-    const remove = m5ServerOperations.find(item => item.handlerRef === DELETE_FUNCTION)!;
-    if (remove.kind !== "action") throw new Error("not an action");
+    const remove = action(DELETE_FUNCTION);
     const labelled = hostWith(path => path.endsWith("/function/queryById")
       ? Response.json({ success: true, data: { name: "Revenue query" } })
       : Response.json({ success: true }));
@@ -169,13 +300,78 @@ describe("metric and function panel server operations", () => {
       .toEqual({ kind: "refusal", code: "FUNCTION_DELETE_REFUSED", message: "Function referenced by Action cannot be modified or deleted" });
   });
 
-  it("declares each operation as a single write with its result and target input", () => {
+  it("describes the function delete impact with the owner's reference rule", async () => {
+    const operation = action(DELETE_FUNCTION);
+    const labelled = hostWith(path => path.endsWith("/function/queryById")
+      ? Response.json({ success: true, data: { name: "Revenue query" } })
+      : Response.json({ success: true }));
+    expect(await operation.inspectImpact!.inspect({ ...labelled.host, locale: "en" }, [{ target: functionTarget, input: {} }])).toEqual({
+      summary: "This deletes the selected function; the owner refuses one referenced by a metric, an action or a write task.",
+      objects: [{ target: { objectType: FUNCTION, primaryKey: "f1" }, label: "Revenue query" }],
+      total: 1,
+    });
+    expect(JSON.parse(String(labelled.sent[0]?.init.body))).toEqual({ id: "f1" });
+  });
+
+  it("tests a metric draft with the chosen parameter values written into its parameter definitions", async () => {
+    const operation = read(TEST_METRIC_VIEW);
+    expect(operation.target).toEqual({ source: "draft", slot: "definition" });
+    const draft = { name: "Revenue", function: { queryPackage: { manifest: { parameterDefs: [
+      { name: "year", type: "TYPE_NUMBER", value: 2025 }, { name: "region", type: "TYPE_STRING", value: "east" },
+    ] } } } };
+    const tested = hostWith(() => Response.json({ success: true, data: { md: "| total |\n| 9 |" } }));
+    expect(await operation.execute(tested.host, { target: metricTarget, input: { draft, parameters: { year: 2026 } } }))
+      .toEqual({ kind: "markdown", markdown: "| total |\n| 9 |" });
+    expect(tested.sent[0]?.path).toBe("/api/data-query/metricView/test");
+    expect(JSON.parse(String(tested.sent[0]?.init.body)).function.queryPackage.manifest.parameterDefs).toEqual([
+      { name: "year", type: "TYPE_NUMBER", value: 2026 }, { name: "region", type: "TYPE_STRING", value: "east" },
+    ]);
+    expect(draft.function.queryPackage.manifest.parameterDefs[0]?.value).toBe(2025);
+
+    const refused = hostWith(() => Response.json({ success: false, message: "DSL error at answer.steps", code: "BUILD_TEST_FORBIDDEN" }));
+    await expect(operation.execute(refused.host, { target: { kind: "draft" }, input: { draft, parameters: {} } }))
+      .rejects.toMatchObject({ status: 422, code: "BUILD_TEST_FORBIDDEN", message: "DSL error at answer.steps" });
+    const plainRefusal = hostWith(() => Response.json({ success: false, message: "Read Function not found" }));
+    await expect(operation.execute(plainRefusal.host, { target: metricTarget, input: { draft, parameters: {} } }))
+      .rejects.toMatchObject({ status: 422, code: "METRIC_VIEW_TEST_REFUSED" });
+  });
+
+  it("runs a metric draft for JSON with its parameters and binding, and keeps a truncated run marked", async () => {
+    const operation = read(TEST_EXECUTE_METRIC_VIEW);
+    const draft = { id: "m1", name: "Revenue", function: { queryPackage: { manifest: { parameterDefs: [] } } } };
+    const complete = hostWith(() => Response.json({ success: true, data: [{ total: 9 }] }));
+    expect(await operation.execute(complete.host, { target: metricTarget, input: { draft, parameters: { year: 2026 }, bindingId: "b1" } }))
+      .toEqual({ kind: "json", value: { result: [{ total: 9 }] } });
+    expect(complete.sent[0]?.path).toBe("/api/data-query/metricView/testExecute");
+    expect(JSON.parse(String(complete.sent[0]?.init.body))).toEqual({ metricView: draft, param: { year: 2026 }, bindingId: "b1" });
+
+    const truncated = hostWith(() => Response.json({
+      success: true, data: [{ total: 9 }], truncated: true, rowLimit: 20000, truncationHint: "Narrow the time range",
+    }));
+    expect(await operation.execute(truncated.host, { target: metricTarget, input: { draft, parameters: {} } })).toEqual({
+      kind: "json", value: { result: [{ total: 9 }], truncated: true, rowLimit: 20000, truncationHint: "Narrow the time range" },
+    });
+    expect(JSON.parse(String(truncated.sent[0]?.init.body))).toEqual({ metricView: draft, param: {} });
+
+    const refused = hostWith(() => Response.json({ success: false, message: "Executable read metric not found" }));
+    await expect(operation.execute(refused.host, { target: metricTarget, input: { draft, parameters: {} } }))
+      .rejects.toMatchObject({ status: 422, code: "METRIC_VIEW_TEST_EXECUTE_REFUSED", message: "Executable read metric not found" });
+  });
+
+  it("declares each operation with its effect, result and target", () => {
     expect(m5ServerOperations.map(({ handlerRef, effect, batch, kind, ...rest }) =>
-      ({ handlerRef, effect, batch, kind, targetInput: "targetInput" in rest ? rest.targetInput : undefined }))).toEqual([
-      { handlerRef: `${METRIC_VIEW}.save`, effect: "write", batch: false, kind: "form.save", targetInput: undefined },
-      { handlerRef: DELETE_METRIC_VIEW, effect: "write", batch: false, kind: "action", targetInput: "metric" },
-      { handlerRef: `${FUNCTION}.save`, effect: "write", batch: false, kind: "form.save", targetInput: undefined },
-      { handlerRef: DELETE_FUNCTION, effect: "write", batch: false, kind: "action", targetInput: "function" },
+      ({
+        handlerRef, effect, batch, kind,
+        targetInput: "targetInput" in rest ? rest.targetInput : undefined,
+        inspectImpact: "inspectImpact" in rest && rest.inspectImpact ? rest.inspectImpact.handlerRef : undefined,
+      }))).toEqual([
+      { handlerRef: `${METRIC_VIEW}.save`, effect: "write", batch: false, kind: "form.save", targetInput: undefined, inspectImpact: undefined },
+      { handlerRef: DELETE_METRIC_VIEW, effect: "write", batch: false, kind: "action", targetInput: "metric", inspectImpact: `${DELETE_METRIC_VIEW}.inspect-impact` },
+      { handlerRef: SET_METRIC_VIEW_STATUS, effect: "write", batch: true, kind: "action", targetInput: "metric", inspectImpact: undefined },
+      { handlerRef: `${FUNCTION}.save`, effect: "write", batch: false, kind: "form.save", targetInput: undefined, inspectImpact: undefined },
+      { handlerRef: DELETE_FUNCTION, effect: "write", batch: false, kind: "action", targetInput: "function", inspectImpact: `${DELETE_FUNCTION}.inspect-impact` },
+      { handlerRef: TEST_METRIC_VIEW, effect: "read", batch: false, kind: "action", targetInput: undefined, inspectImpact: undefined },
+      { handlerRef: TEST_EXECUTE_METRIC_VIEW, effect: "read", batch: false, kind: "action", targetInput: undefined, inspectImpact: undefined },
     ]);
   });
 });

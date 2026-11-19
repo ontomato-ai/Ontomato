@@ -34,6 +34,9 @@ const ALLOWED: readonly Access[] = [
   ["GET", /^\/apps-sdk\/current$/],
   // product-panels.ts: current product definitions, never business reads or registration writes
   ["GET", /^\/product-(?:panels|projections)\/[^/]+$/],
+  // product-panels.ts: registered operation metadata and owner-routed trials with the preview context
+  ["GET", /^\/panel-operations\/descriptor$/],
+  ["POST", /^\/panel-operations\/read$/],
   // dashboards.ts /add-chart-file stays unsupported: imports may settle metrics.
   // dashboards.ts: definition reads and metric parameter conversion, not card data execution
   ["GET", /^\/dashboards$/],
