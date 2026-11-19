@@ -127,7 +127,6 @@ function relationshipRecord(view: RelationshipView): PlatformObjectRecord {
 }
 
 /** Case-insensitive substring match over the owner's own texts; an empty search matches everything. */
-/** Case-insensitive substring match over the owner's own texts; an empty search matches everything. */
 const matches = (search: string | undefined, ...texts: readonly string[]) =>
   !search || texts.some(text => text.toLowerCase().includes(search!.toLowerCase()));
 
@@ -225,13 +224,12 @@ export const ontologyMetadataAdapters: PlatformObjectAdapterFactory = requests =
     },
     options: {
       async list() {
-        return { options: (await objectTypes()).map(({ className, showName, classDesc }) => ({
-          primaryKey: className, value: className, label: showName || classDesc || className,
+        return { options: (await objectTypes()).map(({ className, showName }) => ({
+          primaryKey: className, value: className, label: showName || className,
         })) };
       },
       async resolve(values) {
-        const labels = new Map((await objectTypes()).map(({ className, showName, classDesc }) =>
-          [className, showName || classDesc || className]));
+        const labels = await classLabels();
         return values.map(value => {
           const primaryKey = String(value);
           const label = labels.get(primaryKey);
