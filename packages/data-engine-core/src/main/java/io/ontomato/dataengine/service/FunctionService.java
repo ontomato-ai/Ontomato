@@ -25,5 +25,8 @@ public interface FunctionService {
 	public Function queryById(String id);
 	
 	public List<Function> queryList(String operation, String className, String domainId);
+
+	/** The owner's form description for a Function, or a field error for an incoming draft. */
+	public JSONObject form(JSONObject request, String lang, String domainId);
 	
 }
