@@ -86,12 +86,7 @@ const metricViewReads = [
   {
     method: "POST", service: "/data-query", path: /^\/ontology\/query\/metrics\/describe$/,
     template: "/ontology/query/metrics/describe", bodySchema: metricIdBodySchema,
-    instructions: "Use the bound MetricView id in the JSON body.",
-  },
-  {
-    method: "POST", service: "/data-query", path: /^\/metricView\/queryById$/,
-    template: "/metricView/queryById", bodySchema: metricIdBodySchema,
-    instructions: "Use the bound MetricView id in the JSON body.",
+    instructions: "Use the bound MetricView id in the JSON body and read defaults from parameterDefs.",
   },
   {
     method: "POST", service: "/data-query", path: /^\/metricView\/execute$/,

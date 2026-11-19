@@ -185,12 +185,16 @@ export type ProductProjectionResponse = z.infer<typeof productProjectionResponse
 
 /**
  * Source registration accepts only the card identity. The owner authorizes the source and derives the binding,
- * inputs, and stable projection identity in the caller's domain. Re-registering that card returns the same identity.
+ * inputs, and stable projection identity in the caller's domain. The initial projection is private, with the card's
+ * name and an empty description. Subsequent sharing uses existing grants. Re-registering returns the same identity.
  */
 export const registerChartProjectionRequestSchema = chartProjectionSourceSchema;
 export const registerChartProjectionResponseSchema = z.object({ projection: chartProjectionSchema }).strict();
 
-/** Lookup of an accessible source returns its usable projection identity, or null if one is not registered. */
+/**
+ * Lookup first checks source readability with the dashboard owner. An accessible card without a registration returns
+ * null. For a registered projection, the product grant check either authorizes returning its identity or refuses the request.
+ */
 export const chartProjectionLookupResponseSchema = z.object({ projectionId: id.nullable() }).strict();
 
 /** The projection's use grant permits reading the source card's template. */

@@ -214,7 +214,6 @@ test("the chart client is restricted to its chart projection and bound metric", 
   const metric = bindingKey(chartProjection.binding);
   for (const [path, body] of [
     ["/ontology/query/metrics/describe", { id: "department-metric" }],
-    ["/metricView/queryById", { id: "department-metric" }],
     ["/metricView/execute", { id: "department-metric", param: { department: "sales" } }],
   ] as const) {
     assert.ok(panelClientReads(metric).some(read => read.method === "POST" && read.path.test(path)));
@@ -222,6 +221,10 @@ test("the chart client is restricted to its chart projection and bound metric", 
     assert.ok(!clientSends([metric], "POST", "/data-query", path, { ...body, id: "other" }));
     assert.ok(!clientSends([metric], "POST", "/data-query", path));
   }
+  const rawDefinitionPath = "/metricView/queryById";
+  assert.ok(!panelClientReads(metric).some(read => read.path.test(rawDefinitionPath)));
+  assert.ok(!clientSends([metric], "POST", "/data-query", rawDefinitionPath, { id: "department-metric" }));
+
   const lookup = "/product-projections/chart-sources?dashboardId=board-a&cardId=chart-1";
   assert.ok(chartProjectionLookupRead.path.test(lookup));
   assert.ok(!clientSends([metric], "GET", "", lookup));
