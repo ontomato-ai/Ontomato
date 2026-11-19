@@ -1,6 +1,6 @@
 import {z} from 'zod';
 import {panelConversationEntrySchema} from './panel-conversation-entry';
-import {panelOperationImpactSchema} from './panel-operations';
+import {panelHumanOperationPreparationSchema} from './panel-agent';
 
 export const APP_BRIDGE_CHANNEL='ontomato-app-v2';
 
@@ -36,12 +36,8 @@ export const appBridgeExpandPageComposerSchema = panelConversationEntrySchema.ex
 });
 export type AppBridgeExpandPageComposer = z.infer<typeof appBridgeExpandPageComposerSchema>;
 
-/** Ask the host to render the owner impact for this operation. The bridge ID pairs the user's decision with this call. */
-export const appBridgeConfirmPanelOperationSchema = z.object({
-  operationId: z.string().min(1).max(300),
-  label: z.string().min(1).max(200),
-  impact: panelOperationImpactSchema,
-}).strict();
+/** The host rereads the authenticated Node preparation by intentId before showing the confirmation. */
+export const appBridgeConfirmPanelOperationSchema = panelHumanOperationPreparationSchema;
 export type AppBridgeConfirmPanelOperation = z.infer<typeof appBridgeConfirmPanelOperationSchema>;
 
 /** Human confirmation applies to the same inspected calls. Cancel ends the invocation before any write. */
