@@ -49,6 +49,11 @@ export function domainSkillsRoot(): string {
   return runtimeDataDir("domain-skills");
 }
 
+/** Installed SDK versions served after deployment, including versions pinned by older panels. */
+export function installedAppsSdkDir(): string {
+  return runtimeDataDir("apps-sdk");
+}
+
 export function webDistDir(): string {
   return path.join(installedLayout().runtimeRoot, "dist", "web");
 }

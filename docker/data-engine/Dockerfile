@@ -124,6 +124,7 @@ ARG APP_LIB_MODULES
 ARG EXCLUDE_ARTIFACT_IDS
 ARG KEEP_NATIVE=
 ARG LICENSE_PROFILE=
+ARG MVNW_REPOURL
 RUN --mount=type=cache,target=/root/.m2 <<'EOF'
 set -eu
 cat > /tmp/maven-settings.xml <<'SETTINGS'

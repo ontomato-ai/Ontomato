@@ -1,7 +1,8 @@
 import { FUNCTION, METRIC_VIEW } from "@ontomato/contracts/panel-client-requests";
 import { METRIC_CHART_COMPONENT } from "@ontomato/contracts/product-panels";
 import {
-  AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER,
+  ACTION, AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, ONTOLOGY_RELATION_KIND,
+  ONTOLOGY_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER,
 } from "@ontomato/contracts/platform-object-types";
 import type { PlatformResources } from "../panel/platform-objects";
 
@@ -12,6 +13,7 @@ import type { PlatformResources } from "../panel/platform-objects";
  * type not listed here is one no projection of this version can bind.
  */
 const ontologyMetadata = () => import("../panel/ontology-metadata").then((module) => module.ontologyMetadataAdapters);
+const platformOntology = () => import("../panel/platform-ontology").then((module) => module.platformOntologyAdapters);
 
 export const platformResources: PlatformResources = {
   objects: {
@@ -24,9 +26,12 @@ export const platformResources: PlatformResources = {
     [OBJECT_TYPE]: ontologyMetadata,
     [ATTRIBUTE]: ontologyMetadata,
     [RELATIONSHIP]: ontologyMetadata,
+    [ONTOLOGY_TYPE]: platformOntology,
+    [ONTOLOGY_RELATION_KIND]: platformOntology,
     [SCHEDULED_TASK]: () => import("../panel/schedules").then((module) => module.scheduledTaskAdapters),
     [METRIC_VIEW]: () => import("../panel/metric-view").then((module) => module.metricViewAdapters),
     [FUNCTION]: () => import("../panel/function").then((module) => module.functionAdapters),
+    [ACTION]: () => import("../panel/action").then((module) => module.actionAdapters),
   },
   // A person's action runs through the platform's coordinator, as an agent's does; none runs in the frame.
   operations: {},

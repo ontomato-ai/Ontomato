@@ -102,7 +102,9 @@ jobs:
         run: python3 -m pip install requests==2.32.5
 
       - name: Test the Java contract and boundary group
-        run: ./mvnw -B -ntp -Pcontract test
+        run: |
+          maven_repo_url=$(cat .github/maven-wrapper-repo-url)
+          MVNW_REPOURL="$maven_repo_url" ./mvnw -B -ntp -Pcontract test
 
       # Match docker/workbench/Dockerfile and the public branch image build facts.
       - name: Build the apps SDK
