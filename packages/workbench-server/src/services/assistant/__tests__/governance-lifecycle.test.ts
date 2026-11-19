@@ -30,6 +30,7 @@ import type { AgentPrepareRequest } from "@ontomato/contracts/agent-channel";
 configureI18n({defaultLocale:"en",appTextLocale:"en",languageSwitchEnabled:false,packs:{en:{messages:en,...enLocaleMeta}}});
 const owner={domainId:"domain",userId:"user"},sessionId="11111111-1111-4111-8111-111111111111",runId="22222222-2222-4222-8222-222222222222",agentId="33333333-3333-4333-8333-333333333333";
 const skill={namespace:{kind:"provider",provider:"ontology"},name:"knowledge-governance"};
+const digest="a".repeat(64);
 beforeEach(()=>{
   vi.clearAllMocks();
   mocks.agent.mockResolvedValue({id:agentId,kind:"custom",execution_user_id:null,enabled:true,class_names:[],skills:[skill],model_selection:{modelId:"provider/model"},enabled_mcp_service_ids:[]});
@@ -37,7 +38,7 @@ beforeEach(()=>{
   const turn={id:runId,session_id:sessionId,created_at:new Date(),retrieval_scope_id:null,governance_record_id:null,class_names:[]};
   mocks.session.mockResolvedValue(session);mocks.turn.mockResolvedValue(turn);mocks.turns.mockResolvedValue([]);
   mocks.create.mockResolvedValue({row:session});mocks.reserve.mockResolvedValue({row:turn});
-  mocks.query.mockResolvedValue({rows:[{session_id:sessionId}]});mocks.skills.mockResolvedValue({skills:[skill],pageDrafts:false});mocks.overview.mockResolvedValue("overview");
+  mocks.query.mockResolvedValue({rows:[{session_id:sessionId}]});mocks.skills.mockResolvedValue({skills:[{skill,digest}],pageDrafts:false});mocks.overview.mockResolvedValue("overview");
   mocks.status.mockResolvedValue({resolvedSkills:[{skill}]});mocks.open.mockResolvedValue({id:runId});mocks.links.mockResolvedValue([]);mocks.record.mockResolvedValue(null);
   mocks.callback.mockReturnValue({value:"callback"});
   mocks.close.mockResolvedValue(undefined);mocks.admitted.mockResolvedValue(undefined);mocks.settled.mockResolvedValue(undefined);
@@ -46,7 +47,7 @@ function preparation(): AgentPrepareRequest {return {mode:"run",agent:{providerI
 it("governance-only preparation registers caller bounds without query preparation or opening a report",async()=>{
   mocks.overview.mockRejectedValue(new Error("Query permission denied"));
   const prepared=await assistantService.prepare(preparation(),owner,{token:"user"});
-  expect(prepared.definition).toMatchObject({agentId,modelId:"provider/model",skills:[skill]});
+  expect(prepared.definition).toMatchObject({agentId,modelId:"provider/model",skills:[{skill,digest}]});
   expect(prepared.environment.values).toMatchObject({ONTOMATO_ASSISTANT_SESSION_ID:sessionId,ONTOMATO_SKILL_SCENARIO:"platform",ONTOMATO_ONTOLOGY_URL:"http://ontology"});
   expect(prepared.environment.values).not.toHaveProperty("ONTOMATO_RETRIEVAL_CALLER_ID");
   expect(mocks.callback.mock.calls.find(([claim])=>claim.pathPrefix.endsWith("/governance-window"))![0].expiresAt).toBe(new Date((await mocks.turn()).created_at).getTime()+900_000);
@@ -54,14 +55,14 @@ it("governance-only preparation registers caller bounds without query preparatio
 });
 it("the selected query skill opens and records its actual scope regardless of preset kind",async()=>{
   const querySkill={namespace:{kind:"provider",provider:"ontology"},name:"ontomato-analyst-assistant"};
-  const agent=await mocks.agent();mocks.agent.mockResolvedValue({...agent,kind:"knowledge-governance",skills:[querySkill]});mocks.skills.mockResolvedValue({skills:[querySkill],pageDrafts:false});
+  const agent=await mocks.agent();mocks.agent.mockResolvedValue({...agent,kind:"knowledge-governance",skills:[querySkill]});mocks.skills.mockResolvedValue({skills:[{skill:querySkill,digest}],pageDrafts:false});
   const prepared=await assistantService.prepare(preparation(),owner,{token:"user"});
   expect(mocks.overview).toHaveBeenCalled();expect(mocks.scope).toHaveBeenCalledWith(runId,owner,runId);
   expect(prepared.environment.values.ONTOMATO_RETRIEVAL_CALLER_ID).toBe(runId);
 });
 it("a failed scope opening never records an opened scope",async()=>{
   const querySkill={namespace:{kind:"provider",provider:"ontology"},name:"ontomato-analyst-assistant"};
-  mocks.skills.mockResolvedValue({skills:[querySkill],pageDrafts:false});mocks.open.mockRejectedValue(new Error("admission failed"));
+  mocks.skills.mockResolvedValue({skills:[{skill:querySkill,digest}],pageDrafts:false});mocks.open.mockRejectedValue(new Error("admission failed"));
   await expect(assistantService.prepare(preparation(),owner,{token:"user"})).rejects.toThrow("admission failed");
   expect(mocks.scope).not.toHaveBeenCalled();
 });

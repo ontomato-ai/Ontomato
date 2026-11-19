@@ -1,5 +1,6 @@
 import { getQueryTimeoutMs } from "../../config/query-settings";
 import { governancePlatformWindowSchema, governanceRuntimeStatusSchema, governanceWindowSchema } from "@ontomato/contracts/knowledge-governance";
+import { runtimeSkillVersionSchema, type RuntimeSkillVersion } from "@ontomato/contracts/agent-runtime-skills";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { environment } from "../../config/environment";
 import { getApiConfig } from "../../config/data-query-api";
@@ -48,6 +49,6 @@ export async function closeGovernanceWindow(runId: string, owner: AssistantOwner
 }
 
 /** The ontology capability publishes its own skill namespace. */
-export async function publishGovernanceSkill(domain: string) {
-  await request("/skill-package", domain, {}, {});
+export async function publishGovernanceSkill(domain: string): Promise<RuntimeSkillVersion> {
+  return runtimeSkillVersionSchema.parse(await request("/skill-package", domain, {}, {}));
 }

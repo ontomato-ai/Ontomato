@@ -92,7 +92,10 @@ class OntologyRetrievalContractTest {
             String key = exchange.getRequestHeaders().getFirst("Idempotency-Key");
             Object value = new JSONObject();
             int status = 200;
-            if (path.equals("/v1/skills")) status = 201;
+            if (path.equals("/v1/skills")) {
+              status = 201;
+              value = JSONObject.of("skill", body.get("skill"), "digest", skillDigest, "description", "Fixture skill");
+            }
             else if (path.equals("/v1/sessions") && method.equals("POST")) status = 201;
             else if (path.matches("/v1/sessions/[^/]+/runs") && method.equals("POST")) {
               if (cancelled.contains(key)) {
@@ -212,7 +215,7 @@ class OntologyRetrievalContractTest {
     ReflectionTestUtils.setField(grantFilter, "executions", executions);
     var channelController = new AgentChannelController(callers, mock(AgentDirectory.class), store, runtime,
         new WorkbenchServiceAuthentication("fixture-service"), retrieval, tasks, mock(ActionCreationService.class),
-        mock(OntologyGenerationService.class), authorization, mock(LangService.class));
+        mock(OntologyGenerationService.class), authorization, mock(LangService.class), new RuntimeCodeClient(runtime));
     http =
         MockMvcBuilders.standaloneSetup(
                 new OntologyAgentController(host, authorization, runtime, retrieval),
