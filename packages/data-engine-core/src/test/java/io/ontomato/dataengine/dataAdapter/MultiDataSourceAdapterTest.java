@@ -47,6 +47,7 @@ class MultiDataSourceAdapterTest {
 		final String name;
 		final List<String> calls = new ArrayList<>();
 		String lastDsl;
+		String dslResult;
 		/** The ontomap this adapter was last built with: the source's own view. */
 		Map<String, Object> jsonRule;
 		boolean closed = false;
@@ -76,6 +77,7 @@ class MultiDataSourceAdapterTest {
 		public String executeDsl(String queryJson, String sessionId, DslExecutionMode mode, List<String> generatedMqls) {
 			record("executeDsl");
 			lastDsl = queryJson;
+			if (dslResult != null) return dslResult;
 			return "[{\"answer\":[],\"mqls\":[],\"source\":\"" + name + "\"}]";
 		}
 
@@ -405,6 +407,31 @@ class MultiDataSourceAdapterTest {
 		adapter.executeDsl("[" + element + "]", "s", DslExecutionMode.RAW, new ArrayList<>());
 
 		assertEquals("[" + element + "]", adapters[0].lastDsl);
+	}
+
+	@Test
+	void preservesNullColumnsFromDelegateResults() throws Exception {
+		RecordingProvider pg = new RecordingProvider("postgresql");
+		RecordingAdapter source = pg.adapter("jdbc:crm", "crm");
+		source.dslResult = "[{\"answer\":[{\"id\":\"org-1\",\"name\":\"U\",\"up\":null}],\"mqls\":[]}]";
+		providers.add(pg);
+
+		BusinessConfig businessConfig = new BusinessConfig();
+		businessConfig.setDataAdapter("multi");
+		MultiDataSourceDefinition definition = new MultiDataSourceDefinition();
+		definition.getDataSources().add(source("crm", "postgresql"));
+		definition.getClasses().add(classRoute("Person", "crm"));
+		businessConfig.setMultiDataSource(definition);
+
+		DataAdapterRegistry registry = new DataAdapterRegistry(providers, dataRagConfig);
+		multiProvider.registry = registry;
+		MultiDataSourceAdapter adapter = new MultiDataSourceAdapter(registry, businessConfig, dataRagConfig, null);
+
+		String result = adapter.executeDsl(dsl("Person"), "s", DslExecutionMode.RAW, new ArrayList<>());
+		JSONObject row = JSON.parseArray(result).getJSONObject(0).getJSONArray("answer").getJSONObject(0);
+
+		assertTrue(row.containsKey("up"), result);
+		assertNull(row.get("up"));
 	}
 
 	@Test

@@ -15,6 +15,7 @@ import java.util.function.Consumer;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONWriter.Feature;
 
 import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.config.DataRagConfig;
@@ -298,7 +299,9 @@ public class MultiDataSourceAdapter implements DataAdapter {
 				merged.addAll(JSON.parseArray(result));
 			}
 		}
-		return merged.toJSONString();
+		// Projection columns stay observable even when their value is null; the permission mask
+		// compares the complete row shape with the DSL output.
+		return merged.toJSONString(Feature.WriteMapNullValue);
 	}
 
 	@Override
