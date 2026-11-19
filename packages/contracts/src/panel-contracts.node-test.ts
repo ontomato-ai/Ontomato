@@ -5,6 +5,7 @@ import { candidatePanelSourceSchema, panelFrameMessageSchema, panelUsePath } fro
 import { panelManifestSchema } from "./panel-manifest";
 import { panelFormSaveInputSchema, projectionBindingKeys, projectionOperations, projectionPorts } from "./panel-projection";
 import { applicationPanelUsePathSchema, ontologyElementRefSchema, productPanelContentSchema, productPanelReadQuerySchema, productPanelResponseSchema, productProjectionInputSchema } from "./product-panels";
+import { panelDefinitionSnapshotSchema } from "./product-subscriptions";
 
 const binding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
 
@@ -80,6 +81,21 @@ test("current panel reads can carry a page skill member for the verified entranc
   const unavailable = { ...pageSkillContext, member: null };
   assert.deepEqual(productPanelResponseSchema.parse({ panel, pageSkillContext: unavailable }).pageSkillContext, unavailable);
   assert.equal(productPanelResponseSchema.safeParse({ panel, pageSkillContext: { ...pageSkillContext, member: {} } }).success, false);
+});
+
+test("panel reopen snapshots can carry a rechecked page skill context", () => {
+  const snapshot = {
+    panel: { id: "agent-settings", revision: 1 },
+    projections: [{ id: "definition-form", revision: 2 }],
+  };
+  const pageSkillContext = {
+    mode: "member",
+    locator: { permissionCode: "analysis-agent", pageKey: "agents-agent-settings" },
+    member: null,
+  };
+  assert.deepEqual(panelDefinitionSnapshotSchema.parse(snapshot), snapshot);
+  assert.deepEqual(panelDefinitionSnapshotSchema.parse({ ...snapshot, pageSkillContext }).pageSkillContext, pageSkillContext);
+  assert.equal(panelDefinitionSnapshotSchema.safeParse({ ...snapshot, pageSkillContext: { ...pageSkillContext, locator: {} } }).success, false);
 });
 
 test("a graph has two admitted sources and can use either a form field or separate selection outputs", () => {
