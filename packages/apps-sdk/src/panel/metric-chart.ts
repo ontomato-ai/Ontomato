@@ -17,11 +17,8 @@ import type { PlatformRequests } from "./platform-objects";
  * projection's ID, and the MetricView's describe and execute by the bound MetricView's ID.
  */
 
-/**
- * The template read: the card's chart file and its current parameters. The parameters join the contract's template
- * response in A's next commit; until then they are read here by the agreed name, and this line goes with that commit.
- */
-const templateSchema = chartProjectionTemplateSchema.extend({ parameters: runtimeJsonObjectSchema });
+/** A drawing update answers with the source card's chart file as its owner saved it. */
+const savedTemplateSchema = chartProjectionTemplateSchema.pick({ chartFile: true });
 
 export type ChartTemplate = ReturnType<typeof chartProjectionTemplateSchema.parse>["chartFile"];
 
@@ -60,7 +57,7 @@ export function createMetricChartClient(requests: PlatformRequests): MetricChart
   return {
     async read(projectionId, metricId, bound) {
       const [template, description] = await Promise.all([
-        body(requests.request(chartProjectionSourcePath(projectionId), {}, "")).then((answer) => templateSchema.parse(answer)),
+        body(requests.request(chartProjectionSourcePath(projectionId), {}, "")).then((answer) => chartProjectionTemplateSchema.parse(answer)),
         body(requests.request("/ontology/query/metrics/describe", { method: "POST", ...json({ id: metricId }) }, "/data-query"))
           .then((answer) => dashboardMetricDescriptionSchema.parse(answer)),
       ]);
@@ -81,7 +78,7 @@ export function createMetricChartClient(requests: PlatformRequests): MetricChart
     async saveTemplate(projectionId, content) {
       const update = updateChartProjectionSourceRequestSchema.parse({ chartFile: { content } });
       const saved = await body(requests.request(chartProjectionSourcePath(projectionId), { method: "PUT", ...json(update) }, ""));
-      return templateSchema.parse(saved).chartFile;
+      return savedTemplateSchema.parse(saved).chartFile;
     },
   };
 }

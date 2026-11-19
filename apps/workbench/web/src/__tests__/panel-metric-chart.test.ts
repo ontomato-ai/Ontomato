@@ -5,6 +5,7 @@ import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
+import { dashboardChartFileSchema } from "@ontomato/contracts/dashboard";
 import { createPanelInstance } from "../../../../../packages/apps-sdk/src/panel/instance";
 import { panelContextKey } from "../../../../../packages/apps-sdk/src/panel/context";
 import { platformResourceLoader, type PlatformRequests } from "../../../../../packages/apps-sdk/src/panel/platform-objects";
@@ -27,7 +28,7 @@ vi.mock("../../../../../packages/foundation-ui/src/chart/EChart.vue", () => ({
 }));
 
 const METRIC = "revenue-by-region";
-const chartFile = {
+const chartFile = dashboardChartFileSchema.parse({
   name: "revenue.chart.json",
   content: {
     dataset: [{ id: "metric", dimensions: ["region", "amount"], source: [] }],
@@ -36,7 +37,7 @@ const chartFile = {
     series: [{ id: "series-0", type: "bar", datasetId: "metric", encode: { x: "region", y: "amount" } }],
     ontomato: { display: { formats: { amount: { kind: "number" } } } },
   },
-};
+});
 /** The card's saved parameters: the year the dashboard chose and a list the panel cannot bind. */
 const cardParameters = { year: 2025, regions: ["east", "west"], customer: "c-1" };
 const description = {
@@ -156,7 +157,7 @@ it("saves only the drawing of the source card and takes back the owner's saved f
   const { createMetricChartClient } = await import("../../../../../packages/apps-sdk/src/panel/metric-chart");
   const saving: PlatformRequests = {
     request: (path, init, service) => init.method === "PUT"
-      ? (sent.push({ path, service, method: "PUT", body: JSON.parse(String(init.body)) }), Promise.resolve(Response.json({ chartFile, parameters: cardParameters })))
+      ? (sent.push({ path, service, method: "PUT", body: JSON.parse(String(init.body)) }), Promise.resolve(Response.json({ chartFile })))
       : requests.request(path, init, service),
   };
   const saved = await createMetricChartClient(saving).saveTemplate(chart.id, chartFile.content);
