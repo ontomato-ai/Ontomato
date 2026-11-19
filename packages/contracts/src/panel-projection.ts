@@ -141,9 +141,13 @@ export function projectionPorts(projection: Projection, meta: ComponentOperation
     inputSchema: operation.inputSchema,
     handlerRef: `${client(operation.client)}.${operation.name}`,
   }));
-  const outputs = projection.graph && {
+  const edgeBinding = projection.graph?.edges.binding;
+  const outputs = edgeBinding && {
     selectedNode: { kind: "object", objectType: projection.binding.id } as const,
-    selectedEdge: { kind: "object", objectType: projection.graph.edges.binding.id } as const,
+    // Only a platform type binding declares the edge selection's object type.
+    ...(edgeBinding.kind === "PlatformObjectType" && {
+      selectedEdge: { kind: "object", objectType: edgeBinding.id } as const,
+    }),
   };
   return { binding, inputs: projection.inputs, operations: declared, ...(outputs && { outputs }) };
 }

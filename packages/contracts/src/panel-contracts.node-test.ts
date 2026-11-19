@@ -4,7 +4,7 @@ import { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, OBJECT_TYPE, RELATIONS
 import { candidatePanelSourceSchema, panelFrameMessageSchema, panelUsePath } from "./panel-host";
 import { panelManifestSchema } from "./panel-manifest";
 import { panelFormSaveInputSchema, projectionBindingKeys, projectionOperations, projectionPorts } from "./panel-projection";
-import { applicationPanelUsePathSchema, productPanelContentSchema, productProjectionInputSchema } from "./product-panels";
+import { applicationPanelUsePathSchema, ontologyElementRefSchema, productPanelContentSchema, productProjectionInputSchema } from "./product-panels";
 
 const binding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
 
@@ -74,6 +74,19 @@ test("a graph has two admitted sources and can use either a form field or separa
   const graph = { slots: { graph: { projectionId: "ontology-model", outputs } }, operations: [] };
   assert.deepEqual(panelManifestSchema.parse({ ...graph, state }).slots.graph?.outputs, outputs);
   assert.equal(panelManifestSchema.safeParse({ ...graph, state: { node: state.node } }).success, false);
+});
+
+test("a named relationship is a binding identity and supplies no inferred edge selection type", () => {
+  const relationship = { kind: "Relationship", id: "manages" };
+  const projection = productProjectionInputSchema.parse({
+    name: "Relationship graph", description: "", visibility: "domain", componentId: "GraphCanvas",
+    binding: { kind: "PlatformObjectType", id: OBJECT_TYPE },
+    graph: { edges: { binding: relationship, sourcePath: "/from", targetPath: "/to" } },
+    inputs: {}, display: {},
+  });
+  assert.deepEqual(ontologyElementRefSchema.parse(relationship), relationship);
+  assert.deepEqual(projectionBindingKeys(projection), [binding(OBJECT_TYPE), "Relationship:manages"]);
+  assert.equal(projectionPorts(projection, {}).outputs?.selectedEdge, undefined);
 });
 
 test("canonical relation paths are already routable and carry no view state", () => {
