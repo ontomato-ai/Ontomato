@@ -13,7 +13,8 @@ const { parse: parseComponent } = require("vue/compiler-sfc");
 const PRINTED_LIMIT = 160;
 const FULL = ts.TypeFormatFlags.NoTruncation;
 
-const cell = (text) => String(text ?? "").replace(/\s+/g, " ").replace(/\|/g, "\\|").trim();
+const plain = (text) => String(text ?? "").replace(/\s+/g, " ").trim();
+const cell = (text) => plain(text).replace(/\|/g, "\\|");
 /** A name as an HTML template writes it, by Vue's own rule: `EChart` is `<e-chart>`, `choosePlaceholder` `choose-placeholder`. */
 const kebab = (name) => name.replace(/\B([A-Z])/g, "-$1").toLowerCase();
 
@@ -51,22 +52,56 @@ function eventDescriptions(file) {
   return descriptions;
 }
 
-function component(meta, file, lines) {
-  const props = meta.props.filter((prop) => !prop.global);
-  table(lines, ["Prop", "Type", "Required", "Default", "Description"], props.map((prop) => [
-    `\`${kebab(prop.name)}\``, `\`${cell(propType(prop))}\``, prop.required ? "yes" : "no",
-    prop.default === undefined ? "" : `\`${cell(prop.default)}\``, cell(prop.description),
-  ]));
+/**
+ * A component's ports as its source declares them: its props, the events it emits and its slots, each with the comment
+ * written beside it. The reference's tables and the catalogue's `ports` are both read from this, so the two never differ.
+ */
+function portsOf(meta, file) {
   const events = eventDescriptions(file);
-  table(lines, ["Event", "Arguments", "Description"], meta.events.map((event) => [
-    `\`${kebab(event.name)}\``, `\`${cell(event.type)}\``, cell(events.get(event.name)),
+  return {
+    props: meta.props.filter((prop) => !prop.global).map((prop) => ({
+      name: kebab(prop.name),
+      type: plain(propType(prop)),
+      required: prop.required,
+      ...(prop.default === undefined ? {} : { default: plain(prop.default) }),
+      description: plain(prop.description),
+    })),
+    events: meta.events.map((event) => ({ name: kebab(event.name), type: plain(event.type), description: plain(events.get(event.name)) })),
+    slots: meta.slots.map((slot) => ({ name: slot.name, type: plain(slot.type), description: plain(slot.description) })),
+  };
+}
+
+function component(meta, file, lines) {
+  const ports = portsOf(meta, file);
+  table(lines, ["Prop", "Type", "Required", "Default", "Description"], ports.props.map((prop) => [
+    `\`${prop.name}\``, `\`${cell(prop.type)}\``, prop.required ? "yes" : "no", prop.default === undefined ? "" : `\`${cell(prop.default)}\``, cell(prop.description),
   ]));
-  table(lines, ["Slot", "Slot props", "Description"], meta.slots.map((slot) => [
-    `\`${slot.name}\``, `\`${cell(slot.type)}\``, cell(slot.description),
-  ]));
+  table(lines, ["Event", "Arguments", "Description"], ports.events.map((event) => [`\`${event.name}\``, `\`${cell(event.type)}\``, cell(event.description)]));
+  table(lines, ["Slot", "Slot props", "Description"], ports.slots.map((slot) => [`\`${slot.name}\``, `\`${cell(slot.type)}\``, cell(slot.description)]));
+  const props = meta.props.filter((prop) => !prop.global);
   table(lines, ["Exposed through a template ref", "Type"], meta.exposed
     .filter((item) => !item.name.startsWith("$") && !props.some((prop) => prop.name === item.name))
     .map((item) => [`\`${item.name}\``, `\`${cell(item.type)}\``]));
+}
+
+/**
+ * Each public component's ports, by `<module>#<export>` as the catalogue names it: what a component directory shows
+ * beside the component's meaning, read from the same source as the reference.
+ */
+export function componentPorts({ root, tsconfig, entries }) {
+  const meta = createChecker(tsconfig, { schema: false, printer: { newLine: ts.NewLineKind.LineFeed } });
+  const program = meta.getProgram();
+  const checker = program.getTypeChecker();
+  const ports = new Map();
+  for (const entry of entries) {
+    const source = program.getSourceFile(join(root, entry.source));
+    for (const exported of checker.getExportsOfModule(checker.getSymbolAtLocation(source))) {
+      const symbol = exported.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(exported) : exported;
+      const file = symbol.declarations[0].getSourceFile().fileName;
+      if (file.endsWith(".vue")) ports.set(`${entry.specifier}#${exported.name}`, portsOf(meta.getComponentMeta(file, "default"), file));
+    }
+  }
+  return ports;
 }
 
 function code(lines, text) {

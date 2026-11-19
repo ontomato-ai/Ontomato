@@ -376,6 +376,36 @@ it("sends an initial clean report from the frame", async () => {
   }
 });
 
+it("names the selected object by the label its owner gave it, and keeps the name out of the address", async () => {
+  const address = panelAddress(`/applications/${appA}/tasks`, deepState);
+  const { app, frame, router } = await open(address);
+  const selections: unknown[] = [];
+  const listener = (event: MessageEvent) => {
+    if (event.source === frame.contentWindow && event.data?.channel === PANEL_HOST_CHANNEL && event.data.kind === "context")
+      selections.push(event.data.context.selection);
+  };
+  window.addEventListener("message", listener);
+  try {
+    await startFrame(frame);
+    // The selection arrives from the address as a key alone; the name follows once a projection has read the object.
+    await vi.waitFor(() => expect(selections.at(-1)).toEqual([
+      { kind: SCHEDULED_TASK, id: task.id, label: `${task.title} (${SCHEDULED_TASK} ${task.id})` },
+    ]));
+    // An object the list never held is named by the summary's own read of it.
+    await router.push(panelAddress(`/applications/${appA}/tasks`, { selectedTask: { className: SCHEDULED_TASK, primaryKey: secondTask.id } }));
+    await vi.waitFor(() => expect(selections.at(-1)).toEqual([
+      { kind: SCHEDULED_TASK, id: secondTask.id, label: `${secondTask.title} (${SCHEDULED_TASK} ${secondTask.id})` },
+    ]));
+    expect(router.currentRoute.value.fullPath).not.toContain(encodeURIComponent(secondTask.title).slice(0, 12));
+    expect(JSON.parse(String(router.currentRoute.value.query.state))).toEqual({
+      selectedTask: { className: SCHEDULED_TASK, primaryKey: secondTask.id },
+    });
+  } finally {
+    window.removeEventListener("message", listener);
+    app.unmount();
+  }
+});
+
 it("blocks a presentation while a reader's form edit is unsaved, then clears dirty on discard and save", async () => {
   const path = `/applications/${appA}/tasks`;
   const address = panelAddress(path, deepState);
@@ -424,7 +454,7 @@ it("blocks a presentation while a reader's form edit is unsaved, then clears dir
     onDisplayDirty,
   });
   const editInstruction = (value: string) => {
-    const input = document.querySelector<HTMLTextAreaElement>('[data-field="instruction"] textarea')!;
+    const input = document.querySelector<HTMLTextAreaElement>('[data-field="/instruction"] textarea')!;
     input.value = value;
     input.dispatchEvent(new Event("input", { bubbles: true }));
   };
@@ -436,7 +466,7 @@ it("blocks a presentation while a reader's form edit is unsaved, then clears dir
   };
   try {
     await startFrame(frame);
-    await vi.waitFor(() => expect(document.querySelector<HTMLTextAreaElement>('[data-field="instruction"] textarea')?.value)
+    await vi.waitFor(() => expect(document.querySelector<HTMLTextAreaElement>('[data-field="/instruction"] textarea')?.value)
       .toBe(baseline.instruction));
     editInstruction("Inspect the weekly failures");
     await vi.waitFor(() => expect(onDisplayDirty).toHaveBeenLastCalledWith(true));
@@ -841,7 +871,7 @@ it.each([
   });
   try {
     const { context } = await startFrame(frame);
-    await vi.waitFor(() => expect(document.querySelector('.sdk-owner-form [data-field="caseSetId"]')).not.toBeNull());
+    await vi.waitFor(() => expect(document.querySelector('.sdk-owner-form [data-field="/caseSetId"]')).not.toBeNull());
     await router.push(panelAddress(`${path}?${query}`, deepState));
     await vi.waitFor(() => expect(sent.filter(request => request.path === formPath)
       .some(request => (request.body as { changedField?: string }).changedField === "operation")).toBe(true));
@@ -855,8 +885,8 @@ it.each([
     } else {
       await vi.waitFor(() => {
         expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain("operation, instruction");
-        expect(document.querySelector<HTMLTextAreaElement>('[data-field="instruction"] textarea')?.value).toBe(drafted.instruction);
-        expect(document.querySelector('.sdk-owner-form [data-field="caseSetId"]')).toBeNull();
+        expect(document.querySelector<HTMLTextAreaElement>('[data-field="/instruction"] textarea')?.value).toBe(drafted.instruction);
+        expect(document.querySelector('.sdk-owner-form [data-field="/caseSetId"]')).toBeNull();
       });
       const save = [...document.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")]
         .find(button => button.textContent?.trim() === "Save");

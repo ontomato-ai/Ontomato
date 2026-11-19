@@ -224,4 +224,49 @@ export const components: readonly ComponentMetadata[] = [
     effects: "Runs the projection's operation as the reader, with the object the panel has selected.",
     bindsElement: ["PlatformOperation:*"],
   }),
+  defineComponentMeta({
+    componentId: "ReferencePicker",
+    module: "@ontomato/sdk/base",
+    exportName: "ReferencePicker",
+    role: "control",
+    meaning:
+      "Chooses the value of one reference field of a form in the same panel from the catalogue of the type the projection binds, writing the owner's own value (a skill's whole reference, a model's key) into that form, so the choice is saved, discarded and drafted with it. A value the form holds that the catalogue no longer offers stays listed, unavailable, with the owner's reason.",
+    effects: "Reads the bound type's choices as the reader; it writes only the form field its slot's field port names.",
+    bindsElement: ["PlatformObjectType:*"],
+  }),
+  defineComponentMeta({
+    componentId: "ObjectGraph",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectGraph",
+    role: "control",
+    meaning:
+      "Draws the objects of the bound type as a graph joined by the objects of its graph's edge type, and chooses on it the list of node keys one form field of the same panel holds: a choice adds or removes a node, the nodes one edge away from a chosen one are marked, and one action adds them all. It decides nothing about what the nodes stand for or who may read them.",
+    effects: "Reads the node and edge types' lists as the reader; it writes only the form field its slot's field port names.",
+    bindsElement: ["PlatformObjectType:*"],
+  }),
+  defineComponentMeta({
+    componentId: "GraphCanvas",
+    module: "@ontomato/sdk/base",
+    exportName: "GraphCanvas",
+    role: "control",
+    meaning:
+      "Draws the nodes and edges it is given as a light SVG graph, each node in the tone its caller gives it and marked when its ID is among the selected ones, and hands back the selection a reader's choice results in and the part of the graph in view. What the nodes are, which may be chosen and what a choice implies are its caller's: it reads nothing and decides nothing about them.",
+    outputs: ["selected", "viewport"],
+  }),
+  defineComponentMeta({
+    componentId: "TwoPaneLayout",
+    module: "@ontomato/sdk/base",
+    exportName: "TwoPaneLayout",
+    role: "presentation",
+    meaning:
+      "Lays out two panes of one page side by side in one bordered block, the first at the platform's list width and the second taking the rest, stacking them where the panel is too narrow for both. It binds nothing.",
+  }),
+  defineComponentMeta({
+    componentId: "SectionGroup",
+    module: "@ontomato/sdk/base",
+    exportName: "SectionGroup",
+    role: "presentation",
+    meaning:
+      "One titled group of a page's content, with one line of what it is for and the platform's spacing and hairline between groups that follow one another. It binds nothing.",
+  }),
 ];

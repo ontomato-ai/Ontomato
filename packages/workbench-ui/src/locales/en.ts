@@ -170,7 +170,8 @@ export default {
     "panelFileUnavailable": "The panel could not load {file}",
     "panelScriptThrew": "The panel's script failed while it ran",
     "panelScriptRejected": "The panel's script failed",
-    "panelDraftUnclaimed": "This draft belongs to no form of this panel"
+    "panelDraftUnclaimed": "This draft belongs to no form of this panel",
+    "graphIncludeAdjacent": "Include adjacent ({count})"
   },
   "nav": {
     "agentsAndSkills": "Agents and Skills",

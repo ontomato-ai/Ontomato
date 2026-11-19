@@ -5,7 +5,7 @@ const element = "/node_modules/element-plus/es/";
 const componentIndex = /^components\/([^/]+)\/index\.mjs$/;
 const families = [
   ["element-summary", ["card", "empty", "skeleton"]],
-  ["element-form", ["button", "form", "input", "select"]],
+  ["element-form", ["button", "form", "input", "select", "switch"]],
   ["element-layout", ["affix", "anchor", "backtop", "breadcrumb", "collapse", "container", "divider", "menu",
     "page-header", "row", "col", "scrollbar", "space", "splitter", "steps", "tabs"]],
   ["element-data", ["auto-resizer", "descriptions", "pagination", "table", "table-v2", "timeline", "tree",

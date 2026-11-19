@@ -1,9 +1,9 @@
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
-import { computed, readonly, shallowRef, type DeepReadonly, type Ref } from "vue";
+import { computed, readonly, shallowReactive, shallowRef, type DeepReadonly, type Ref } from "vue";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import { panelOpenRequestSchema, type PanelManifest, type PanelOperationCall, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import { createPanelState, panelSelection, type PanelInitialState, type PanelStateStore } from "./state";
+import { createPanelState, objectNameKey, panelSelection, type PanelInitialState, type PanelStateStore } from "./state";
 import { panelOperations } from "./operations";
 import type { PanelProjectionRegistration } from "./ports";
 import { PanelFormAdapters, type PageDraftLink, type ReceivedPanelDraft } from "./draft";
@@ -46,8 +46,9 @@ export interface PanelInstance {
   clearDraft(slot: string): void;
   /**
    * Whether the draft this instance holds is one none of its forms performs: every slot its declaration names has
-   * registered its projection, and none of them publishes a form save of the draft's operation. While a slot is still to
-   * register it is false, since that may be the form that takes the draft.
+   * registered its projection, and every form among them was offered the draft and found that its owner's form for the
+   * draft's target performs another operation. While a slot is still to register it is false, since that may be the form
+   * that takes the draft.
    */
   readonly unclaimedDraft: Readonly<Ref<boolean>>;
   register(registration: PanelProjectionRegistration): () => void;
@@ -60,6 +61,11 @@ export interface PanelInstance {
   onObjectChanged(listener: (object: PanelObjectIdentity | null) => void): () => void;
   /** Reads a projection record by ID, as the reader. */
   projection(id: string): Promise<ProductProjection>;
+  /**
+   * Keeps the names the owner of a type gave the objects this instance read, so the page context names a selected object
+   * by its owner's label. Only reads call it: a name is never typed in, guessed or carried in an address.
+   */
+  nameObjects(objectType: string, objects: readonly { primaryKey: string; label: string }[]): void;
   /** Whether this instance holds unsaved changes: a received draft, or a form the reader edited. */
   dirty(): boolean;
   /** The state an address or an open request may carry, for this instance. */
@@ -80,11 +86,12 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   const operations = computed(() => panelOperations(manifest, registrations.value, state, forms));
   const forms = new PanelFormAdapters(options.reportDraftError);
   const draft = shallowRef<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
+  const names = shallowReactive(new Map<string, string>());
   const pageContext = computed<PageContext>(() => ({
     pageKey: options.pageKey,
     url: options.url(),
     label: options.label(),
-    selection: panelSelection(manifest, state.values.value),
+    selection: panelSelection(manifest, state.values.value, names),
   }));
   return {
     manifest,
@@ -98,17 +105,20 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       if (draft.value?.slot === slot) draft.value = null;
     },
     unclaimedDraft: computed(() => {
-      const operation = forms.heldOperation();
-      if (operation === null) return false;
       const registered = registrations.value;
       if (!Object.keys(manifest.slots).every((slot) => registered.some((registration) => registration.slot === slot))) return false;
-      return !registered.some((registration) =>
-        registration.ports.operations.some((published) => published.kind === "form.save" && published.handlerRef === operation),
-      );
+      const formSlots = registered
+        .filter((registration) => registration.ports.operations.some((operation) => operation.kind === "form.save"))
+        .map((registration) => registration.slot);
+      return forms.unclaimed(formSlots);
     }),
     projections: readonly(registrations),
     register(registration) {
-      registrations.value = [...registrations.value, registration];
+      // In the declaration's slot order, whichever projection finished loading first: the operations an agent lists and
+      // the header draws, and the forms a draft is offered to, keep the panel's own order.
+      const order = Object.keys(manifest.slots);
+      registrations.value = [...registrations.value, registration]
+        .sort((a, b) => order.indexOf(a.slot) - order.indexOf(b.slot));
       return () => {
         registrations.value = registrations.value.filter((item) => item !== registration);
       };
@@ -130,6 +140,9 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       return () => objectListeners.delete(listener);
     },
     projection: (id) => options.readProjection(id),
+    nameObjects(objectType, objects) {
+      for (const { primaryKey, label } of objects) names.set(objectNameKey(objectType, primaryKey), label);
+    },
     dirty: () => draft.value !== null || forms.dirty(),
     deepLink: () => state.deepLinkable(),
   };

@@ -1,4 +1,5 @@
 import { BUILD_TEST_HEADER, BUILD_TEST_UNSUPPORTED } from "@ontomato/contracts/build-tests";
+import { AGENT_DEFINITION, SKILL, bindingKey, panelClientReads } from "@ontomato/contracts/panel-client-requests";
 import type { RequestHandler } from "express";
 import { HttpError } from "../utils/errors";
 
@@ -25,6 +26,9 @@ const ALLOWED: readonly Access[] = [
   // skills.ts, mcp.ts: definitions and parameter forms, not skill or MCP execution
   ["GET", /^\/skills(?:\/.*)?$/],
   ["GET", /^\/mcp(?:\/.*)?$/],
+  // assistant.ts: agent definitions and the skill catalogue, including semantic read-only POSTs
+  ...[AGENT_DEFINITION, SKILL].flatMap(type => panelClientReads(bindingKey({ kind: "PlatformObjectType", id: type }))
+    .map(({ method, path }) => [method, path] as const)),
   // app-builder.ts: builder and SDK metadata
   ["GET", /^\/app-builder\/bootstrap$/],
   ["GET", /^\/apps-sdk\/current$/],

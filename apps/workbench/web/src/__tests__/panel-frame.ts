@@ -136,7 +136,7 @@ export const manifestQ = definePanel({
 
 /** A panel's current record; its HTML has the element the SDK mounts into, and the test supplies the component. */
 export function panelRecord(id: string, name: string, manifest: PanelManifest): ProductPanel {
-  return { ...current, id, name, description: name, content: { html: '<div id="app"></div>', module: "" }, manifest };
+  return { ...current, id, name, description: name, content: { html: '<div id="app"></div>', module: "" }, manifest, sdkVersion: "1.1.1" };
 }
 
 /** A use relation of one of the trial's applications, as Java declares it. */
@@ -249,7 +249,8 @@ export function inside(frame: Window) {
 
 /** Writes the frame's document as the panel host does: the panel's HTML and the run's facts. */
 export function writePanelDocument(panel: ProductPanel, use: ApplicationPanelUse, url: string, state: PanelHostMessage["state"]) {
-  writeFrameDocument({ kind: "panel-host-message", panel, pageKey: use.pageKey, url, label: panel.name, state });
+  const { content, manifest, sdkVersion } = panel;
+  writeFrameDocument({ kind: "panel-host-message", panel: { content, manifest, sdkVersion }, pageKey: use.pageKey, url, label: panel.name, state });
 }
 
 /** Writes the frame's document from the run's facts the platform's panel host wrote for it. */
