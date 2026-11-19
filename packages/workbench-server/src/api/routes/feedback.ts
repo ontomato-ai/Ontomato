@@ -19,6 +19,13 @@ function normalizeRating(value: unknown): FeedbackRating | null {
   return value === "like" || value === "dislike" ? value : null;
 }
 
+/** A feedback record ID the store can cast to a UUID. */
+function feedbackId(value: string): string {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value))
+    throw new HttpError(400, "Invalid feedback ID", "INVALID_REQUEST");
+  return value;
+}
+
 /** The viewer's IANA time zone, required so exported times are the reader's rather than the server's. */
 function viewerTimeZone(value: unknown): string {
   const name = typeof value === "string" ? value.trim() : "";
@@ -43,6 +50,7 @@ router.get(
       keyword:
         typeof req.query.keyword === "string" ? req.query.keyword : undefined,
       all: true,
+      locale: identity.locale,
     });
     const fileName = `feedback_records_${new Date().toISOString().slice(0, 10)}.csv`;
     res
@@ -81,6 +89,7 @@ router.get(
         typeof req.query.keyword === "string" ? req.query.keyword : undefined,
       limit: Number(req.query.limit || 20),
       offset: Number(req.query.offset || 0),
+      locale: (req as AuthenticatedRequest).locale,
     });
     res.json({ success: true, data });
   }),
@@ -109,8 +118,26 @@ router.get(
           : undefined,
       limit: Number(req.query.limit || 500),
       offset: 0,
+      locale: identity.locale,
     });
     res.json({ success: true, data });
+  }),
+);
+
+router.get(
+  "/:id",
+  requirePermission(["user-feedback"]),
+  asyncHandler(async (req: Request, res: Response) => {
+    const identity = req as AuthenticatedRequest;
+    const data = await listFeedback({
+      domainId: identity.domainId,
+      feedbackId: feedbackId(req.params.id),
+      all: true,
+      locale: identity.locale,
+    });
+    const record = data.records[0];
+    if (!record) throw new HttpError(404, "Feedback record not found", "NOT_FOUND");
+    res.json({ success: true, data: record });
   }),
 );
 

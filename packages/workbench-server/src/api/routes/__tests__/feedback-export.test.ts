@@ -23,10 +23,12 @@ import router from "../feedback";
 const record = {
   id: "feedback-1",
   sourceType: "qa" as const,
+  sourceTypeLabel: "Query",
   targetId: "33333333-3333-4333-8333-333333333333",
   threadId: "11111111-1111-4111-8111-111111111111",
   taskId: "22222222-2222-4222-8222-222222222222",
   rating: "like" as const,
+  ratingLabel: "Like",
   userId: "user-1",
   userInput: "What is the refund rule?",
   assistantOutput: "Within 7 days.",
@@ -66,7 +68,7 @@ beforeEach(() => {
 });
 
 it("exports the filtered records as a BOM CSV attachment with the admin page's columns", async () => {
-  records.mockResolvedValue({ records: [record], total: 1, limit: 20, offset: 0 });
+  records.mockResolvedValue({ records: [record], total: 1, limit: 20, offset: 0, filters: { sourceType: [], rating: [] } });
 
   const response = await fetch(`${base}/export?sourceType=qa&rating=like&keyword=refund&timeZone=America%2FNew_York`);
 
@@ -78,6 +80,7 @@ it("exports the filtered records as a BOM CSV attachment with the admin page's c
     rating: "like",
     keyword: "refund",
     all: true,
+    locale: "en",
   });
   expect(response.headers.get("content-type")).toContain("text/csv");
   expect(response.headers.get("content-disposition")).toMatch(
@@ -99,7 +102,7 @@ it("exports the filtered records as a BOM CSV attachment with the admin page's c
 });
 
 it("keeps the list's admission and sends no filter it was not given", async () => {
-  records.mockResolvedValue({ records: [], total: 0, limit: 20, offset: 0 });
+  records.mockResolvedValue({ records: [], total: 0, limit: 20, offset: 0, filters: { sourceType: [], rating: [] } });
 
   const response = await fetch(`${base}/export?timeZone=Asia%2FShanghai`);
 
@@ -111,6 +114,7 @@ it("keeps the list's admission and sends no filter it was not given", async () =
     rating: undefined,
     keyword: undefined,
     all: true,
+    locale: "en",
   });
   expect(new TextDecoder().decode(new Uint8Array(await response.arrayBuffer()))).toBe(
     '"Time","Source","Rating","User","Turn key","Question","Answer","Comment"',

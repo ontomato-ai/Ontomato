@@ -11,11 +11,13 @@ import type { FeedbackPage, FeedbackRating, FeedbackSourceType } from "@ontomato
 const feedbackRecordSchema = z.object({
   id: z.string(),
   sourceType: z.enum(["qa", "analysis_task"]),
+  sourceTypeLabel: z.string(),
   targetId: z.string(),
   threadId: z.string().optional(),
   requestSeq: z.number().int().optional(),
   taskId: z.string().optional(),
   rating: z.enum(["like", "dislike"]),
+  ratingLabel: z.string(),
   userId: z.string(),
   userName: z.string().optional(),
   userInput: z.string().optional(),
@@ -26,11 +28,17 @@ const feedbackRecordSchema = z.object({
   createdAt: z.number(),
 });
 
+const feedbackFilterOptionSchema = z.object({ value: z.string(), label: z.string() });
+
 export const feedbackPageSchema = z.object({
   records: z.array(feedbackRecordSchema),
   total: z.number().int().nonnegative(),
   limit: z.number().int().positive(),
   offset: z.number().int().nonnegative(),
+  filters: z.object({
+    sourceType: z.array(feedbackFilterOptionSchema),
+    rating: z.array(feedbackFilterOptionSchema),
+  }),
 });
 
 export interface FeedbackQuery {
