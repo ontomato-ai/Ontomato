@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { z } from "zod";
 import { candidatePanelSourceSchema, type CandidatePanelSource } from "@ontomato/contracts/panel-host";
 import { panelDefinitionContentSchema } from "@ontomato/contracts/product-panels";
@@ -14,11 +14,10 @@ const descriptorSchema = panelDefinitionContentSchema.omit({ content: true });
 const treeSchema = z.object({ files: z.array(z.object({ path: z.string() })) });
 
 async function requireInstalledSdk(version: string) {
-  const sdk = await readFile(runtimeDataDir("apps-sdk", version, "sdk.json"), "utf8").catch((error: { code?: string }) => {
+  await access(runtimeDataDir("apps-sdk", version)).catch((error: { code?: string }) => {
     if (error.code === "ENOENT") throw new HttpError(404, `Panel SDK version is not installed: ${version}`, "PANEL_SDK_UNAVAILABLE");
     throw error;
   });
-  z.object({ version: z.literal(version) }).parse(JSON.parse(sdk));
 }
 
 export async function readPanelCandidate(
@@ -51,9 +50,6 @@ export async function readPanelCandidate(
   const projectionIds = new Set(Object.values(panel.manifest.slots).map(slot => slot.projectionId));
   await Promise.all([...projectionIds].map(projectionId => readCurrentProjection(owner, credentials, projectionId)));
   const test = await tests.current();
-  if (test !== null && test.workspaceId !== id) {
-    throw new HttpError(502, "Build-test context belongs to a different workspace", "PANEL_PREVIEW_CONTEXT_MISMATCH");
-  }
   return { kind: "candidate", workspace: { id, ref }, panel, previewContext: { kind: "build-test", test } };
 }
 

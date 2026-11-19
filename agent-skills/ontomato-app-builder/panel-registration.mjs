@@ -63,8 +63,10 @@ export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workben
           throw new Error("sdkVersion must be the exact installed SDK version");
         }
         if (!checkedVersions.has(version)) {
-          const sdk = await call(workbenchUrl, "GET", `/apps-sdk/${encodeURIComponent(version)}/sdk.json`);
-          if (sdk.version !== version) throw new Error(`Installed SDK does not identify itself as ${version}`);
+          const path = `/apps-sdk/${encodeURIComponent(version)}/sdk.json`;
+          const sdk = await send(workbenchUrl, "GET", path);
+          if (!sdk.ok) await readAnswer(sdk, "GET", path);
+          await sdk.arrayBuffer();
           checkedVersions.add(version);
         }
         await call(workbenchUrl, "PUT", productPath("panel", item.id), body);

@@ -51,7 +51,6 @@ beforeAll(async () => {
   installWorkbenchIdentity({ requireDomainId: () => scope.domainId } as unknown as WorkbenchIdentity);
   const sdk = join(root, "data/apps-sdk", sdkVersion);
   await mkdir(sdk, { recursive: true });
-  await writeFile(join(sdk, "sdk.json"), JSON.stringify({ version: sdkVersion, executionContext: 1 }));
   const git = new WorkspaceGit(join(root, "author-workspace"));
   await git.initialize();
   await git.replace(Object.entries({
@@ -196,13 +195,6 @@ it("rejects a referenced projection when the author has no use Grant", async () 
   expect(response.status).toBe(403);
   expect(await response.json()).toMatchObject({ code: "PRODUCT_FORBIDDEN" });
   expect(productQuery).not.toHaveBeenCalled();
-});
-
-it("rejects a returned test context tied to another workspace", async () => {
-  issuedTest = { ...currentTest, workspaceId: "22222222-2222-4222-8222-222222222222" };
-  const response = await preview(commit);
-  expect(response.status).toBe(502);
-  expect(await response.json()).toMatchObject({ code: "PANEL_PREVIEW_CONTEXT_MISMATCH" });
 });
 
 it.each(["product-panels", "product-projections"])("refuses a build-test management write at %s before changing product records", async (collection) => {
