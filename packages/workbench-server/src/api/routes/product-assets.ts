@@ -4,6 +4,7 @@ import type { RuntimeCallback } from "../../services/agent-runtime/callback-cred
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { productAuthoringSchema, productTypes,productQuerySchema } from "@ontomato/contracts/product-assets";
+import { changeProductDomainGrantRequestSchema, changeProductGrantRequestSchema } from "@ontomato/contracts/product-governance";
 import { context, wrap } from "../utils/agent-host";
 import { listProducts, getProduct, saveProduct, deleteProduct, personalHome,queryProducts,dependencyProducts,countProductTypes,readProductOverlay,saveProductOverlay } from "../../services/product-assets/store";
 import {personalWorkspaceSchema} from '@ontomato/contracts/personal-workspace';
@@ -84,8 +85,8 @@ router.get('/:id/overlay',wrap(async(req,res)=>{res.json(await readProductOverla
 router.get('/:id/source-types',wrap(async(req,res)=>{const c=context(req);res.json(await projectionSourceTypes(c.owner,String(req.params.id),c.credentials));}));
 router.post('/:id/object',wrap(async(req,res)=>{const c=context(req);const {primaryKey,revision}=z.object({primaryKey:z.string().min(1).max(1000),revision:z.number().int().positive().optional()}).strict().parse(req.body);res.json(await readPlatformProjectionObject(c.owner,c.credentials,String(req.params.id),primaryKey,revision));}));
 router.get('/:id/grants',wrap(async(req,res)=>{const c=context(req);await getProduct(c.owner,String(req.params.id));res.json(await readProductGrantRecords(String(req.params.id),c.credentials));}));
-router.post('/:id/grants',wrap(async(req,res)=>{const c=context(req);await getProduct(c.owner,String(req.params.id));const input=z.object({principalKind:z.enum(['principal','role']),principalId:z.string().min(1).max(200),verb:z.enum(['use','edit']),remove:z.boolean()}).strict().parse(req.body);await changeProductGrant(String(req.params.id),input,c.credentials);res.json({success:true});}));
-router.post('/:id/domain-grant',wrap(async(req,res)=>{const c=context(req);await getProduct(c.owner,String(req.params.id));const {shared}=z.object({shared:z.boolean()}).strict().parse(req.body);await changeProductDomainGrant(String(req.params.id),shared,c.credentials);res.json({success:true});}));
+router.post('/:id/grants',wrap(async(req,res)=>{const c=context(req);await getProduct(c.owner,String(req.params.id));const input=changeProductGrantRequestSchema.parse(req.body);await changeProductGrant(String(req.params.id),input,c.credentials);res.json({success:true});}));
+router.post('/:id/domain-grant',wrap(async(req,res)=>{const c=context(req);await getProduct(c.owner,String(req.params.id));const {shared}=changeProductDomainGrantRequestSchema.parse(req.body);await changeProductDomainGrant(String(req.params.id),shared,c.credentials);res.json({success:true});}));
 router.get('/:id/agent-context',wrap(async(req,res)=>{const c=context(req);res.json(await assembleAgentProfile(c.owner,c.credentials,String(req.params.id)));}));
 router.get('/:id/active-profile',wrap(async(req,res)=>{
   const c=context(req),id=String(req.params.id);

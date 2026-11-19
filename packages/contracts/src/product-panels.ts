@@ -232,6 +232,82 @@ export type RegisterProductPanelRequest = z.infer<typeof registerProductPanelReq
 export const productPanelResponseSchema = z.object({ panel: productPanelSchema }).strict();
 export type ProductPanelResponse = z.infer<typeof productPanelResponseSchema>;
 
+const productCatalogCursorSchema = z.string().min(1);
+/** Query both current product collections. Cursors are opaque to callers. */
+export const productCatalogQuerySchema = z.object({
+  q: z.string().trim().max(200).default(""),
+  scope: z.enum(["all", "mine", "shared"]).default("all"),
+  sort: z.enum(["updated", "name"]).default("updated"),
+  cursor: productCatalogCursorSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+}).strict();
+export type ProductCatalogQuery = z.infer<typeof productCatalogQuerySchema>;
+
+export const productPanelSummarySchema = productPanelSchema.pick({
+  id: true,
+  name: true,
+  description: true,
+  ownerId: true,
+  visibility: true,
+  updatedAt: true,
+  revision: true,
+  editable: true,
+});
+export const productProjectionSummarySchema = productPanelSummarySchema.extend(
+  projectionDefinitionSchema.pick({ componentId: true, binding: true }).shape,
+);
+export type ProductPanelSummary = z.infer<typeof productPanelSummarySchema>;
+export type ProductProjectionSummary = z.infer<typeof productProjectionSummarySchema>;
+
+export const productPanelListResponseSchema = z.object({
+  items: z.array(productPanelSummarySchema),
+  nextCursor: productCatalogCursorSchema.nullable(),
+}).strict();
+export const productProjectionListResponseSchema = productPanelListResponseSchema.extend({
+  items: z.array(productProjectionSummarySchema),
+});
+export type ProductPanelListResponse = z.infer<typeof productPanelListResponseSchema>;
+export type ProductProjectionListResponse = z.infer<typeof productProjectionListResponseSchema>;
+
+export const deleteProductCurrentQuerySchema = z.object({
+  revision: z.coerce.number().pipe(currentRecordFields.revision),
+}).strict();
+export const deleteProductCurrentResponseSchema = z.object({ success: z.literal(true) }).strict();
+
+/** Copy returns the same response shape as reading the new current record. */
+export const copyProductCurrentRequestSchema = productCurrentIdParamsSchema.extend({
+  name: editableDefinitionFields.name,
+});
+
+/** Visible references include names. Hidden panels contribute only to the count. */
+export const productProjectionUsedBySchema = z.object({
+  panels: z.array(productPanelSummarySchema.pick({ id: true, name: true })),
+  hiddenCount: z.number().int().nonnegative(),
+}).strict();
+export const productPanelUsedBySchema = z.object({
+  applicationEntries: z.array(z.object({
+    applicationId: id,
+    applicationName: z.string(),
+    entryId: applicationPanelUseSchema.shape.id,
+    path: applicationPanelUsePathSchema,
+  }).strict()),
+}).strict();
+export type ProductProjectionUsedBy = z.infer<typeof productProjectionUsedBySchema>;
+export type ProductPanelUsedBy = z.infer<typeof productPanelUsedBySchema>;
+
+export const PRODUCT_IN_USE = "PRODUCT_IN_USE";
+const productInUseErrorSchema = z.object({
+  success: z.literal(false),
+  error: z.string(),
+  code: z.literal(PRODUCT_IN_USE),
+}).strict();
+export const productProjectionInUseErrorSchema = productInUseErrorSchema.extend({
+  details: productProjectionUsedBySchema,
+});
+export const productPanelInUseErrorSchema = productInUseErrorSchema.extend({
+  details: productPanelUsedBySchema,
+});
+
 /** Java GET/PUT /platform/applications/:applicationId/panel-uses. */
 export const applicationPanelUsesParamsSchema = z.object({ applicationId: id }).strict();
 

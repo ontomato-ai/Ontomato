@@ -1,4 +1,5 @@
 import { productAssetSchema,productPageSchema,productCountsResponseSchema, type ProductQuery, type ProductAssetInput } from "@ontomato/contracts/product-assets";
+import { productGrantsResponseSchema, type ChangeProductGrantRequest } from "@ontomato/contracts/product-governance";
 import type { ManagerRequest } from "../api";
 import type {ProductSubscriptionTarget,ProductSubscriptionEvent} from '@ontomato/contracts/product-subscriptions';
 import {productGraphSchema,defaultProjectionWarningsSchema} from '@ontomato/contracts/product-graph';
@@ -33,8 +34,8 @@ export function createProductsClient(request: Pick<ManagerRequest,"request">) {
     agentContext:async(id:string)=>send(`/${encodeURIComponent(id)}/agent-context`),
     sourceTypes:async(id:string)=>send(`/${encodeURIComponent(id)}/source-types`) as Promise<{objectTypes:string[];complete:boolean}>,
     object:async(id:string,primaryKey:string,revision?:number)=>send(`/${encodeURIComponent(id)}/object`,'POST',{primaryKey,revision}) as Promise<{object:Record<string,unknown>}>,
-    grants:async(id:string)=>send(`/${encodeURIComponent(id)}/grants`) as Promise<{grants:{principalKind:string;principalId:string;verb:string}[]}>,
-    changeGrant:async(id:string,grant:{principalKind:'principal'|'role';principalId:string;verb:'use'|'edit';remove:boolean})=>send(`/${encodeURIComponent(id)}/grants`,'POST',grant),
+    grants:async(id:string)=>productGrantsResponseSchema.parse(await send(`/${encodeURIComponent(id)}/grants`)),
+    changeGrant:async(id:string,grant:ChangeProductGrantRequest)=>send(`/${encodeURIComponent(id)}/grants`,'POST',grant),
     changeDomainGrant:async(id:string,shared:boolean)=>send(`/${encodeURIComponent(id)}/domain-grant`,'POST',{shared}),
     publish:async(id:string,revision:number)=>send(`/${encodeURIComponent(id)}/publish`,'POST',{revision}),
     retryPublication:async(id:string)=>send(`/${encodeURIComponent(id)}/retry-publication`,'POST',{}),
