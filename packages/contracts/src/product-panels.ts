@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { defaultAgentSchema } from "./default-agent";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
 import { ontologyObjectUnionTypeSchema, ontologyParameterTypeSchema, panelManifestSchema } from "./panel-manifest";
 import { applicationMetadataSchema } from "./application-metadata";
@@ -117,7 +118,7 @@ export const applicationPanelUseSchema = z.object({
     z.object({ permissionCode: id }).strict(),
     z.object({ kind: z.literal("domain-member") }).strict(),
   ]),
-  defaultAgentId: id.optional(),
+  defaultAgent: defaultAgentSchema.optional(),
   names: applicationMetadataSchema.shape.names.optional(),
 }).strict();
 export type ApplicationPanelUse = z.infer<typeof applicationPanelUseSchema>;

@@ -8,6 +8,7 @@ import {
   panelWriteOperationSnapshotSchema, readPanelOperationRequestSchema, readStoredPanelOperationIntent,
 } from "./panel-agent";
 import { panelReadOperationDescriptorSchema, panelReadOperationResultSchema } from "./panel-operations";
+import { pageSkillSchema } from "./page-skills";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -24,7 +25,7 @@ import {
 } from "./panel-projection";
 import { platformTaskFrequencySchema } from "./platform-schedules";
 import { DEFINITION, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, USER as ONTOLOGY_USER, platformObjectTypes, platformRelationKinds } from "./platform-object-types";
-import { applicationPanelUsePathSchema, ontologyElementRefSchema, productPanelContentSchema, productProjectionInputSchema } from "./product-panels";
+import { applicationPanelUseSchema, applicationPanelUsePathSchema, ontologyElementRefSchema, productPanelContentSchema, productProjectionInputSchema } from "./product-panels";
 
 const binding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
 
@@ -463,4 +464,18 @@ test("legacy confirmations expire while dispatched and unknown records preserve 
   ]) {
     assert.deepEqual(readStoredPanelOperationIntent(record), { kind: "historical", intent: record });
   }
+});
+
+test("application uses and page-skill defaults share the explicit agent target", () => {
+  const use = { id: "governance", pageKey: "report", panelId: "reports", path: "/governance/reports", access: { kind: "domain-member" } };
+  const preset = { kind: "preset", agentKind: "knowledge-governance" };
+  const concrete = { kind: "id", id: "saved-agent" };
+  assert.deepEqual(applicationPanelUseSchema.parse({ ...use, defaultAgent: concrete }).defaultAgent, concrete);
+  assert.equal(applicationPanelUseSchema.safeParse({ ...use, defaultAgentId: "saved-agent" }).success, false);
+  const mapping = {
+    permissionCode: "business-knowledge",
+    skill: { namespace: { kind: "provider", provider: "ontology" }, name: "knowledge-governance" },
+    defaults: [{ pageKey: use.pageKey, defaultAgent: preset }],
+  };
+  assert.deepEqual(pageSkillSchema.parse(mapping).defaults, mapping.defaults);
 });

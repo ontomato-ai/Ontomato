@@ -10,7 +10,7 @@ import org.springframework.web.util.UriUtils;
 /** Java owns entry facts; panels retain only their shared content and manifest. */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ApplicationPanelUse(String id, String pageKey, String panelId, String path,
-                                  Access access, String defaultAgentId, Map<String,String> names) {
+                                  Access access, DefaultAgentTarget defaultAgent, Map<String,String> names) {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Access(String permissionCode, String kind) {}
 
@@ -18,7 +18,7 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
 
     static List<ApplicationPanelUse> canonical(List<ApplicationPanelUse> uses) {
         var normalized = uses.stream().map(use -> new ApplicationPanelUse(use.id, use.pageKey, use.panelId,
-            canonicalPath(use.path), use.access, use.defaultAgentId, use.names)).toList();
+            canonicalPath(use.path), use.access, use.defaultAgent, use.names)).toList();
         validate(normalized);
         return normalized;
     }
@@ -55,8 +55,7 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
                 || !paths.add(use.path())
                 || use.access() == null || (use.access().permissionCode() == null) == (use.access().kind() == null)
                 || use.access().permissionCode() != null && use.access().permissionCode().isBlank()
-                || use.access().kind() != null && !use.access().kind().equals("domain-member")
-                || use.defaultAgentId() != null && use.defaultAgentId().isBlank())
+                || use.access().kind() != null && !use.access().kind().equals("domain-member"))
                 throw ApplicationCatalog.bad("Invalid or duplicate panel use");
             if (use.names() != null && (use.names().get("en") == null || use.names().get("en").isBlank()
                 || use.names().values().stream().anyMatch(name -> name == null || name.isEmpty())))
