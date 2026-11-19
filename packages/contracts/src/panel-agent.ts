@@ -2,14 +2,13 @@ import { z } from "zod";
 import { agentExecutionRefSchema, agentSessionRefSchema } from "./agent-channel";
 import { agentQuestionAnswerReceiptSchema, agentUserQuestionReceiptSchema } from "./agent-user-questions";
 import { panelOperationCallSchema, panelOperationSchema } from "./panel-manifest";
-import { ontologyElementRefSchema } from "./product-panels";
+import { ontologyElementRefSchema, panelUseRefSchema } from "./product-panels";
 import { pageDraftSchema } from "./page-draft";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeKeySchema } from "./agent-runtime-values";
 
 const key = z.string().min(1).max(200);
 
-export const panelUseRefSchema = z.object({ applicationId: key, useId: key }).strict();
-export type PanelUseRef = z.infer<typeof panelUseRefSchema>;
+export { panelUseRefSchema, type PanelUseRef } from "./product-panels";
 
 /** Node-owned user identity. Unlike a channel actor, userId is the restored initiator's actual host owner ID. */
 const initiatorSchema = z.object({ domainId: runtimeKeySchema, userId: runtimeKeySchema }).strict();
