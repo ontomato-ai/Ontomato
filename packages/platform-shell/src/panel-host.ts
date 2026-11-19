@@ -47,10 +47,11 @@ export interface PanelHostPort<Source extends PanelHostSource = PanelHostSource>
   /** Where the platform serves its SDK builds, e.g. `/apps-sdk`: a definition's frame loads `<root>/<its sdkVersion>`. */
   sdkRoot(): Promise<string>;
   /**
-   * Registers the frame the panel runs in: the execution context and identity for the page it shows, and what the frame
-   * may ask the platform for, which the source's manifest declares.
+   * Registers the frame the panel runs in: the execution context and identity for the page it shows, what the frame
+   * may ask the platform for, which the source's manifest declares, and whether the reader is on its page now — a frame
+   * kept for a page the reader left asks for nothing new.
    */
-  frame(frame: Window, source: Source): () => void;
+  frame(frame: Window, source: Source, shown: () => boolean): () => void;
   snapshot(panelId: string): Promise<PanelDefinitionSnapshot>;
   mode: PanelDefinitionMode;
 }
@@ -116,6 +117,12 @@ export interface PanelInstanceOptions {
   address: () => string;
   /** The current external address's requested state, including updates on the same page. */
   initial: () => Record<string, unknown>;
+  /**
+   * Whether the reader is on this instance's page. A page kept while the reader is on another of its application's pages
+   * holds no stream and does nothing; shown again, it is reconciled in the background as a page brought back to the
+   * foreground is. Absent means always shown.
+   */
+  shown?: () => boolean;
 }
 
 /** What a failure is called in the panel's error place: its own message, or what it was, verbatim. */
@@ -166,6 +173,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   let pendingObjectRefresh = false;
   /** The draft the reader settled while the page's address still linked it. */
   let settledDraft: PageDraftLink | null = null;
+  const shownToReader = options.shown ?? (() => true);
   /** The page's address, without the link of a draft the reader has settled. */
   const pageAddress = () => {
     const page = options.address();
@@ -193,8 +201,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       if (!active) return;
       sdkRoot = root;
       adopt(read);
-      if (port.mode.kind === "author")
-        author = port.mode.definitions.observe(targetsOf(read), advance, reportPanelUnavailable);
+      if (port.mode.kind === "author") follow(read);
       // A viewer's panel is reconciled with a short read; the frame does not wait for it.
       else if (read.kind === "registered")
         void port.snapshot(read.panel.id).then(snapshot => { if (active) return advance([{ kind: "panel", ...snapshot.panel }]); })
@@ -235,7 +242,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     document.value = written;
     if (frame) {
       disposeFrame?.();
-      disposeFrame = port.frame(frame, next);
+      disposeFrame = port.frame(frame, next, shownToReader);
     }
   }
 
@@ -301,9 +308,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   async function restore(shown: Extract<PanelHostSource, { kind: "registered" }>) {
     try {
       const snapshot = await port.snapshot(shown.panel.id);
-      if (!active) return;
-      await advance(snapshotRevisions(snapshot));
-      if (active) refresh(null);
+      if (active) await advance(snapshotRevisions(snapshot));
     } catch (failure) {
       if (active) reportPanelUnavailable(failure);
     }
@@ -328,14 +333,42 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
   }
 
-  void load();
+  /** An author's instance follows its definitions on the document's stream while it is shown, and only then. */
+  function follow(shown: PanelHostSource) {
+    if (shownToReader()) author = port.mode.kind === "author" ? port.mode.definitions.observe(targetsOf(shown), advance, reportPanelUnavailable) : undefined;
+  }
+
+  /**
+   * The reader is back on this instance — the document came to the foreground, or the page it was kept for was opened
+   * again. The frame is already there. The objects it shows are read again at once, whether or not anything changed,
+   * and a viewer's definition revisions are checked beside that read; a changed definition is adopted as any is, never
+   * over an unsaved form.
+   */
+  function resume(shown: PanelHostSource) {
+    if (shown.kind === "candidate") {
+      void rereadCandidate(shown);
+      return;
+    }
+    refresh(null);
+    if (port.mode.kind === "view") void restore(shown);
+  }
+
+  watch(shownToReader, now => {
+    const shown = source.value;
+    if (!shown) return;
+    if (!now) {
+      author?.close();
+      author = undefined;
+      return;
+    }
+    follow(shown);
+    resume(shown);
+  });
   const stopVisibility = onDocumentVisibility(visible => {
     const shown = source.value;
-    if (!visible || !shown) return;
-    if (shown.kind === "candidate") void rereadCandidate(shown);
-    else if (port.mode.kind === "view") void restore(shown);
-    else refresh(null);
+    if (visible && shown && shownToReader()) resume(shown);
   });
+  void load();
   onScopeDispose(() => {
     active = false;
     stopVisibility();
@@ -457,7 +490,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     frame(window) {
       frame = window;
       disposeFrame?.();
-      disposeFrame = window && source.value ? port.frame(window, source.value) : undefined;
+      disposeFrame = window && source.value ? port.frame(window, source.value, shownToReader) : undefined;
     },
   };
 }

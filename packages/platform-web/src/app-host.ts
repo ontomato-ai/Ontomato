@@ -40,6 +40,11 @@ interface PanelFrame {
    * is never mistaken for a frame of another.
    */
   bridgeIdentity: string;
+  /**
+   * Whether the reader is on the page this frame shows. A frame kept for a page the reader left asks for nothing new:
+   * the bridge refuses its requests, navigations and mounts until the page is shown again.
+   */
+  shown: () => boolean;
   /** The use relation's page key: a draft this frame reads must have been written for it. */
   pageKey: string;
   /**
@@ -71,7 +76,7 @@ export function installProductEmbedding(app:App){
   if(!host)return;
   // The bridge answers a frame as the application it was registered under: a published application's, or a panel
   // application's.
-  bridge?.dispose();bridge=installAppBridge(app,host,source=>publishedFrames.get(source)??panelFrames.get(source)?.bridgeIdentity);
+  bridge?.dispose();bridge=installAppBridge(app,host,source=>publishedFrames.get(source)??panelFrames.get(source)?.bridgeIdentity,source=>panelFrames.get(source)?.shown()??true);
   host.mountProductAsset=(source,target,assetId)=>{
     const element=target as HTMLElement;
     if(executionContext(source).kind!=='live')throw new Error('Product embedding is unavailable in build-test previews; use product authoring commands');
@@ -136,8 +141,8 @@ export function registerLiveFrame(source: object,applicationId?:string) {
 
 type PanelDeclaration = { pageKey: string; manifest: PanelManifest };
 
-function registerDeclaredFrame(source: object, bridgeIdentity: string, panel: PanelDeclaration, context: AppExecutionContext) {
-  panelFrames.set(source,{bridgeIdentity,pageKey:panel.pageKey,bindings:new Map(Object.values(panel.manifest.slots).map(slot=>[slot.projectionId,null])),createDrafts:new Set()});
+function registerDeclaredFrame(source: object, bridgeIdentity: string, panel: PanelDeclaration, context: AppExecutionContext, shown: () => boolean) {
+  panelFrames.set(source,{bridgeIdentity,shown,pageKey:panel.pageKey,bindings:new Map(Object.values(panel.manifest.slots).map(slot=>[slot.projectionId,null])),createDrafts:new Set()});
   const binding=registerFrame(source,context);
   return ()=>{bridge?.disposeFrame(source);panelFrames.delete(source);binding.dispose();};
 }
@@ -147,8 +152,8 @@ function registerDeclaredFrame(source: object, bridgeIdentity: string, panel: Pa
  * panel's declaration. The panel host draws it sandboxed with scripts only, so it speaks the message bridge, and
  * registers it as soon as the frame exists, before the panel's module can ask to connect.
  */
-export function registerPanelFrame(source: object,applicationId: string,panel:PanelDeclaration) {
-  return registerDeclaredFrame(source,applicationId,panel,{kind:"live"});
+export function registerPanelFrame(source: object,applicationId: string,panel:PanelDeclaration,shown: () => boolean) {
+  return registerDeclaredFrame(source,applicationId,panel,{kind:"live"},shown);
 }
 
 /**
@@ -156,8 +161,8 @@ export function registerPanelFrame(source: object,applicationId: string,panel:Pa
  * on its workspace's build-test context — never live. Its requests carry that context to their owners, which accept
  * them only where they declared support for test data or definition-only reads.
  */
-export function registerCandidateFrame(source: object,context: Extract<AppExecutionContext,{kind:"build-test"}>,panel:PanelDeclaration) {
-  return registerDeclaredFrame(source,`workspace:${context.workspaceId}`,panel,context);
+export function registerCandidateFrame(source: object,context: Extract<AppExecutionContext,{kind:"build-test"}>,panel:PanelDeclaration,shown: () => boolean) {
+  return registerDeclaredFrame(source,`workspace:${context.workspaceId}`,panel,context,shown);
 }
 /** Refuses, before anything is sent, a request of a panel's frame that its declaration does not cover. */
 function admitPanelRequest(panel:PanelFrame,method:string,path:string,service:string,body:BodyInit|null|undefined){

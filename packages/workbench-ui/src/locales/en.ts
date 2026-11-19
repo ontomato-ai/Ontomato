@@ -165,6 +165,7 @@ export default {
     "settings": "System settings",
     "dataGovernance": "Data governance platform",
     "panelNotInApplication": "{path} is not a panel of this application",
+    "panelPagesUnsaved": "Save or discard the changes on this application's other pages before opening another one.",
     "panelCandidateLabel": "Panel preview ({ref})",
     "panelNotStarted": "The panel has not started yet",
     "panelFileUnavailable": "The panel could not load {file}",

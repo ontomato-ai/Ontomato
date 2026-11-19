@@ -36,7 +36,7 @@ afterEach(() => {
 it("lays out the panel's HTML and draws its graph from the panel's own values, ready when the panel first draws", async () => {
   installPlatform(nothingAt);
   const frame = panelFrame();
-  platformPanelHost(application, use).frame(frame, registered(application, use, panel));
+  platformPanelHost(application, use).frame(frame, registered(application, use, panel), () => true);
   writePanelDocument(panel, use, `/applications/${application}/layout`, {});
   inside(frame);
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");

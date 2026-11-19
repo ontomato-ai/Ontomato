@@ -4,7 +4,11 @@ import type {AppHost} from '@ontomato/contracts/app-host';
 import ProductRoute from './pages/ProductRoute.vue';
 
 /** Bind one transferred port to the exact registered frame; messages never select an application identity. */
-export function installAppBridge(app:App,host:AppHost,applicationFor:(source:object)=>string|undefined){
+/**
+ * `shown` says whether the reader is on the page a frame shows: a frame kept for a page the reader left may still cancel
+ * or unmount what it started, and gets the answer of a call it made before, but asks for nothing new.
+ */
+export function installAppBridge(app:App,host:AppHost,applicationFor:(source:object)=>string|undefined,shown:(source:object)=>boolean){
   const connections=new Map<object,()=>void>();
   function connect(event:MessageEvent){
     if(event.data?.channel!==APP_BRIDGE_CHANNEL||event.data?.operation!=='connect'||!event.source||event.ports.length!==1)return;
@@ -26,6 +30,7 @@ export function installAppBridge(app:App,host:AppHost,applicationFor:(source:obj
       const {id,operation,payload}=parsed.data;
       try{
         current();let result:unknown=null;
+        if(operation!=='cancel'&&operation!=='unmount'&&!shown(source))throw new Error('This page is not shown');
         if(operation==='initialize')result={snapshot:host.snapshot(),execution:host.executionContext(source)};
         else if(operation==='request'){
           const input=appBridgeHttpSchema.parse(payload);
