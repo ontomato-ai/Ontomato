@@ -241,9 +241,9 @@ class PanelApplicationsTest {
         var mapping = new PageSkills.Mapping("menu", null, null, source.skill(),
             List.of(new PageSkills.Default("schedules-b", new DefaultAgentTarget("id", "summary-agent", null))));
         when(access.pageSkills(List.of(mapping), user)).thenReturn(List.of());
-        assertEquals(new PageSkills.Projection(List.of(), List.of(source.skill())), catalog.pageSkills(user));
+        assertEquals(new PageSkills.Projection(List.of(), List.of(source.skill()), List.of()), catalog.pageSkills(user));
         when(access.pageSkills(List.of(mapping), user)).thenReturn(List.of(mapping));
-        assertEquals(new PageSkills.Projection(List.of(mapping), List.of(source.skill())), catalog.pageSkills(user));
+        assertEquals(new PageSkills.Projection(List.of(mapping), List.of(source.skill()), List.of()), catalog.pageSkills(user));
     }
 
     @Test void serviceCatalogProjectsThreeMemberSkillsFromTwoApplicationsAndIsolatesDomains() throws Exception {

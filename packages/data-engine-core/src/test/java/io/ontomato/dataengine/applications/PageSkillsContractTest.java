@@ -35,12 +35,15 @@ class PageSkillsContractTest {
         PageSkills.validate(mappings);
         assertEquals(SKILL,mappings.getFirst().skill());
         var output = new MockHttpOutputMessage();
-        converter.write(new PageSkills.Projection(mappings,List.of(SKILL)),MediaType.APPLICATION_JSON,output);
+        converter.write(new PageSkills.Projection(mappings,List.of(SKILL),List.of()),MediaType.APPLICATION_JSON,output);
         var body = JSONObject.parseObject(output.getBodyAsString());
         var mapping = body.getJSONArray("pageSkills").getJSONObject(0);
         assertFalse(mapping.containsKey("access"));
         assertFalse(mapping.getJSONObject("skill").getJSONObject("namespace").containsKey("domainId"));
-        assertEquals("governance-report",mapping.getJSONArray("defaults").getJSONObject(0).getString("pageKey"));
+        var pageDefault = mapping.getJSONArray("defaults").getJSONObject(0);
+        assertEquals("governance-report", pageDefault.getString("pageKey"));
+        assertEquals(JSONObject.of("kind", "preset", "agentKind", "knowledge-governance"), pageDefault.getJSONObject("defaultAgent"));
+        assertFalse(pageDefault.containsKey("agentKey"));
         assertEquals(SKILL.name(),body.getJSONArray("registeredSkills").getJSONObject(0).getString("name"));
     }
 
@@ -61,6 +64,40 @@ class PageSkillsContractTest {
         var projection=catalog.pageSkills(user);
         assertEquals(List.of(allowed),projection.pageSkills());
         assertEquals(List.of(SKILL),projection.registeredSkills());
+    }
+
+    @Test void projectsOnlyTheReadersActualPanelEntrancesEvenWhenApplicationsShareAMenu() throws Exception {
+        var access = mock(ApplicationAccess.class);
+        var user = mock(User.class);
+        when(user.getDomainId()).thenReturn("domain");
+        var grants = mock(io.ontomato.dataengine.service.ProductGrantService.class);
+        var catalog = spy(new ApplicationCatalog(mock(JdbcTemplate.class), mock(TransactionTemplate.class), access,
+            "{}", mock(PanelResources.class), grants));
+        var menuAccess = new ApplicationPanelUse.Access("analysis-agent", null);
+        var allowed = new ApplicationPanelUse("use-a", "settings-a", "panel-a", "/applications/app-a/settings", menuAccess, null, null);
+        var sameMenu = new ApplicationPanelUse("use-b", "settings-b", "panel-b", "/applications/app-b/settings", menuAccess, null, null);
+        var deniedUse = new ApplicationPanelUse("use-denied", "restricted", "panel-c", "/applications/app-a/restricted",
+            new ApplicationPanelUse.Access("restricted", null), null, null);
+        var memberUse = new ApplicationPanelUse("use-member", "overview", "panel-d", "/applications/app-a/overview",
+            new ApplicationPanelUse.Access(null, "domain-member"), null, null);
+        var appA = panelApp("app-a", "domain", List.of(allowed, deniedUse, memberUse));
+        var appB = panelApp("app-b", "domain", List.of(sameMenu));
+        var otherDomain = panelApp("app-other", "other-domain", List.of());
+        doReturn(List.of(appA, appB, otherDomain)).when(catalog).all();
+        when(access.canEnter(appA, user)).thenReturn(true);
+        when(access.canEnter(appB, user)).thenReturn(false);
+        when(access.panelUses(List.of(allowed, deniedUse, memberUse), user)).thenReturn(List.of(allowed, memberUse));
+
+        var output = new MockHttpOutputMessage();
+        new MappingJackson2HttpMessageConverter().write(catalog.pageSkills(user), MediaType.APPLICATION_JSON, output);
+        var body = JSONObject.parseObject(output.getBodyAsString());
+        assertEquals(List.of(JSONObject.of("permissionCode", "analysis-agent", "pageKey", "settings-a"),
+            JSONObject.of("access", "domain-member", "pageKey", "overview")), body.getJSONArray("admittedEntrances"));
+    }
+
+    private static JSONObject panelApp(String id, String domain, List<ApplicationPanelUse> uses) {
+        return JSONObject.of("id", id, "domainId", domain, "entry", JSONObject.of("renderer", "panels", "path", "/applications/" + id),
+            "pageSkills", List.of(), "panelUses", uses);
     }
 
     @Test void duplicateLocatorsAcrossApplicationsFailBeforeAnyWrite() {

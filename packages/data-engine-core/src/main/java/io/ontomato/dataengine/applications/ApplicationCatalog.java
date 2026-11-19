@@ -58,7 +58,13 @@ public class ApplicationCatalog {
             .flatMap(app -> app.getList("pageSkills", PageSkills.Mapping.class).stream()).toList());
         if (domainId != null)
             panelSkillGroups(domainId, applications).stream().map(PanelSkillGroup::mapping).forEach(mappings::add);
-        return new PageSkills.Projection(access.pageSkills(mappings,user), mappings.stream().map(PageSkills.Mapping::skill).distinct().toList());
+        List<PageSkills.Entrance> admittedEntrances = domainId == null ? List.of() : applications.stream()
+            .filter(app -> panelManaged(app) && hasAssignedPanelPaths(app) && canEnter(app, user))
+            .flatMap(app -> entryAdmittedPanelUses(app, user).stream())
+            .map(use -> new PageSkills.Entrance(use.access().permissionCode(), use.access().kind(), use.pageKey()))
+            .toList();
+        return new PageSkills.Projection(access.pageSkills(mappings,user), mappings.stream().map(PageSkills.Mapping::skill).distinct().toList(),
+            admittedEntrances);
     }
     public List<PanelSkills.Source> panelSkillSources(String domainId) {
         var applications = applicationsInDomain(domainId);
@@ -308,8 +314,11 @@ public class ApplicationCatalog {
         if (!hasAssignedPanelPaths(app))
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "Panel application " + app.getString("id") + " must be re-registered with complete canonical paths");
-        return access.panelUses(app.getList("panelUses", ApplicationPanelUse.class), user).stream()
+        return entryAdmittedPanelUses(app, user).stream()
             .filter(use -> grants.allowed(use.panelId(), "use")).toList();
+    }
+    private List<ApplicationPanelUse> entryAdmittedPanelUses(JSONObject app, User user) {
+        return access.panelUses(app.getList("panelUses", ApplicationPanelUse.class), user);
     }
     public JSONObject putPanelUses(String id, ApplicationController.PanelRegistration body, User user) {
         validateId(id);
