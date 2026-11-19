@@ -506,7 +506,7 @@ export class PlatformOntologyOwnerReaders {
     const perm = await this.analysisAgentPermission();
     if (!perm.ok) return perm;
     return this.memo("node:agent-definitions", async () => {
-      const { agents } = await listAgentDefinitions(this.owner, this.credentials.locale);
+      const { agents } = await listAgentDefinitions(this.owner, this.credentials);
       return agents.map((agent) => ({
         id: agent.id,
         name: agent.name || agent.id,
