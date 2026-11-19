@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export const SCHEDULED_TASK = "platform:ScheduledTask";
 export const AGENT_DEFINITION = "platform:AgentDefinition";
 export const SKILL = "platform:Skill";
@@ -74,14 +76,16 @@ export function platformHasChildCollection(parentType: string, collection: strin
   return platformObjectTypes[parentType]?.childCollections?.includes(collection) ?? false;
 }
 
-export interface PlatformRelationKindDeclaration {
-  id: string;
-  from: string;
-  to: string | readonly string[];
-  labelKey: string;
-  derived: boolean;
-  owner: string;
-}
+const identifier = z.string().min(1);
+export const platformRelationKindDeclarationSchema = z.object({
+  id: identifier,
+  from: identifier,
+  to: z.union([identifier, z.array(identifier).readonly()]),
+  labelKey: identifier,
+  derived: z.boolean(),
+  owner: identifier,
+}).strict();
+export type PlatformRelationKindDeclaration = z.infer<typeof platformRelationKindDeclarationSchema>;
 
 const relation = (
   id: string, from: string, to: PlatformRelationKindDeclaration["to"], owner: string, derived = false,

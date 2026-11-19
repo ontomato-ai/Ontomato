@@ -8,7 +8,7 @@ afterEach(()=>{dispose?.();document.body.innerHTML='';});
 it('accepts only a registered opaque frame and never returns the platform credential',async()=>{
   const frame=document.createElement('iframe');frame.setAttribute('sandbox','allow-scripts');document.body.append(frame);
   const host={snapshot:()=>({apiBase:'/api',user:null,locale:'en',theme:'light'}),credential:()=>({type:'token',token:'never-expose'}),executionContext:()=>({kind:'live'}),subscribePreferences:()=>()=>{},request:vi.fn(async()=>Response.json({value:1}))} as unknown as AppHost;
-  const bridge=installAppBridge(createApp({}),host,source=>source===frame.contentWindow?'app':undefined,()=>true,vi.fn());dispose=bridge.dispose;
+  const bridge=installAppBridge(createApp({}),host,source=>source===frame.contentWindow?'app':undefined,()=>true,vi.fn(),vi.fn());dispose=bridge.dispose;
   const postMessage=vi.fn(),port={postMessage,start:vi.fn(),close:vi.fn(),onmessage:null as ((event:{data:unknown})=>Promise<void>)|null};
   window.dispatchEvent(new MessageEvent('message',{source:window,data:{channel:APP_BRIDGE_CHANNEL,operation:'connect'},ports:[port as unknown as MessagePort]}));
   expect(port.onmessage).toBeNull();

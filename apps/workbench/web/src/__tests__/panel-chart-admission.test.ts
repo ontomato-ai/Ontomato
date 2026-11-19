@@ -5,7 +5,7 @@ import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import { contextTransport } from "../../../../../packages/apps-sdk/src/context";
 import { mountPanel } from "../../../../../packages/apps-sdk/src/panel/mount";
-import {
+import { ignoreChanges,
   inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, projections, READER, registered,
   writePanelDocument, type Sent,
 } from "./panel-frame";
@@ -52,8 +52,8 @@ function answer(request: Sent) {
 async function open() {
   const sent = installPlatform(answer);
   const frame = panelFrame();
-  platformPanelHost("app-charts", use).frame(frame, registered("app-charts", use, panel), true);
-  writePanelDocument(panel, use, use.path, {});
+  platformPanelHost("app-charts", use, ignoreChanges).frame(frame, registered("app-charts", use, panel), true);
+  writePanelDocument(registered("app-charts", use, panel), use.path, {});
   inside(frame);
   const { appContext } = await mountPanel(panelOf());
   return { sent, transport: contextTransport(appContext) };

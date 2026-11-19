@@ -1,9 +1,10 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { nextTick, ref } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
+import { PANEL_HOST_CHANNEL, panelAddressState } from "@ontomato/contracts/panel-host";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import {
+import { ignoreChanges,
   inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
@@ -57,16 +58,16 @@ it("renders multi-column ObjectList with status tags, text search, count, separa
   const projections = {
     "metric-list": projection("metric-list", "ObjectList", METRIC, {
       columns: [
-        { key: "label", label: "Name", subtitleKey: "description" },
-        { key: "functionName", label: "Function", kind: "reference" },
-        { key: "status", label: "Status", kind: "tag" },
+        { key: "label", labelKey: "cols.name", subtitleKey: "description" },
+        { key: "functionName", labelKey: "cols.function", kind: "reference" },
+        { key: "status", labelKey: "cols.status", kind: "tag" },
       ],
       searchable: true,
       showCount: true,
       selectable: true,
     }),
     "function-list": projection("function-list", "ObjectList", FUNCTION, {
-      columns: [{ key: "label", label: "Function" }],
+      columns: [{ key: "label", labelKey: "cols.function" }],
     }),
   };
   const manifest = definePanel({
@@ -88,6 +89,9 @@ it("renders multi-column ObjectList with status tags, text search, count, separa
     operations: [],
   });
   const panel = panelRecord("panel-metrics", "Metrics", manifest);
+  panel.content.messages = {
+    en: { "cols.name": "Name", "cols.function": "Function", "cols.status": "Status" },
+  };
   panel.content.html = `
     <div id="app">
       <section class="metrics-pane">
@@ -105,8 +109,8 @@ it("renders multi-column ObjectList with status tags, text search, count, separa
 
   installPlatform(hostWith(projections));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, {});
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
   const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
@@ -237,8 +241,8 @@ it("renders faceted count tabs, escaped highlights, fallback-to-first selection,
 
   installPlatform(hostWith(projections));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, {});
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
   const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
@@ -341,9 +345,9 @@ it("supports server-side pagination, submit-mode filters resetting to page 1, re
   const projections = {
     "feedback-list": projection("feedback-list", "ObjectList", FEEDBACK, {
       columns: [
-        { key: "source", label: "Source", kind: "tag" },
-        { key: "rating", label: "Rating", kind: "tag" },
-        { key: "comment", label: "Comment" },
+        { key: "source", labelKey: "cols.source", kind: "tag" },
+        { key: "rating", labelKey: "cols.rating", kind: "tag" },
+        { key: "comment", labelKey: "cols.comment" },
       ],
       searchable: true,
       searchMode: "submit",
@@ -370,13 +374,16 @@ it("supports server-side pagination, submit-mode filters resetting to page 1, re
     operations: [],
   });
   const panel = panelRecord("panel-feedback", "Feedback", manifest);
+  panel.content.messages = {
+    en: { "cols.source": "Source", "cols.rating": "Rating", "cols.comment": "Comment" },
+  };
   panel.content.html = `<div id="app"><Projection slot="list" @query="lastQuery = $event"></Projection></div>`;
   const use = panelUse("use-feedback", "feedback-test", panel.id, "/applications/app-test/feedback");
 
   installPlatform(hostWith(projections));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, {});
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
   const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
@@ -468,8 +475,8 @@ it("fails visibly when query features are enabled on a list-only adapter", async
 
   installPlatform(hostWith(projections));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, {});
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
   const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
@@ -482,4 +489,369 @@ it("fails visibly when query features are enabled on a list-only adapter", async
   await mountPanel({});
 
   await vi.waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toContain("has no query"));
+});
+
+it("resolves column labelKey/emptyKey via panel.t, falls back to owner fieldLabels on ObjectList and ObjectSummary, and resolves state operation labelKey", async () => {
+  const projections = {
+    "labeled-list": projection("labeled-list", "ObjectList", FEEDBACK, {
+      columns: [
+        { key: "source", kind: "tag" },
+        { key: "comment", labelKey: "cols.notes", emptyKey: "cols.noNotes" },
+        { key: "rawCode" },
+      ],
+    }),
+    "labeled-summary": projection("labeled-summary", "ObjectSummary", FEEDBACK, {
+      fields: ["source", "rawCode"],
+    }, { item: { kind: "object", objectType: FEEDBACK } }),
+  };
+  const manifest = definePanel({
+    state: {
+      selectedFeedback: { kind: "object", objectType: FEEDBACK, deepLink: true },
+    },
+    slots: {
+      list: { projectionId: "labeled-list", inputs: {}, outputs: { selected: { state: "selectedFeedback" } } },
+      summary: { projectionId: "labeled-summary", inputs: { item: { state: "selectedFeedback" } } },
+    },
+    operations: [
+      { id: "clearSelection", labelKey: "ops.clear", kind: "state", sets: { selectedFeedback: null } },
+    ],
+  });
+  const panel = panelRecord("panel-labels", "Labels", manifest);
+  panel.content.messages = {
+    en: { "cols.notes": "Reviewer notes", "cols.noNotes": "No notes", "ops.clear": "Clear selection" },
+  };
+  panel.content.html = `
+    <div id="app">
+      <Projection slot="list"></Projection>
+      <Projection slot="summary"></Projection>
+    </div>`;
+  const use = panelUse("use-labels", "labels-test", panel.id, "/applications/app-test/labels");
+
+  installPlatform(hostWith(projections));
+  const frame = panelFrame();
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
+  inside(frame);
+
+  const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
+  const record = {
+    primaryKey: "fb-1",
+    label: "Feedback 1",
+    fields: { source: "Q&A", comment: "", rawCode: "E-100" },
+    fieldLabels: { source: "Feedback source" },
+    tones: { source: "info" as const },
+  };
+  registerPlatformObjectAdapter({
+    objectType: FEEDBACK,
+    query: async () => ({
+      items: [record],
+      total: 1,
+      fieldLabels: { source: "Feedback source", comment: "Owner comment" },
+    }),
+    read: async () => record,
+  });
+
+  const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
+  const mounted = await mountPanel({});
+
+  await vi.waitFor(() => expect(document.querySelectorAll("thead th").length).toBe(3));
+  const headers = [...document.querySelectorAll("thead th")].map((th) => th.textContent?.trim());
+  // source omits labelKey -> uses owner fieldLabels; comment has labelKey -> panel.t wins over owner; rawCode falls back to key.
+  expect(headers).toEqual(["Feedback source", "Reviewer notes", "rawCode"]);
+  // emptyKey resolves through panel.t when cell value is empty.
+  const cells = [...document.querySelectorAll("tbody tr td")].map((td) => td.textContent?.trim());
+  expect(cells).toEqual(["Q&A", "No notes", "E-100"]);
+  // State operation labelKey resolves through panel.t.
+  expect(mounted.context.instance.operations.value.find((op) => op.id === "clearSelection")?.label).toBe("Clear selection");
+
+  // Select row -> ObjectSummary displays owner fieldLabels for "source" and falls back to raw key for "rawCode".
+  document.querySelector<HTMLTableRowElement>("tbody tr")!.click();
+  await vi.waitFor(() => expect(document.querySelectorAll(".sdk-object-summary dt").length).toBe(2));
+  const summaryLabels = [...document.querySelectorAll(".sdk-object-summary dt")].map((dt) => dt.textContent?.trim());
+  expect(summaryLabels).toEqual(["Feedback source", "rawCode"]);
+});
+
+it("two-way binds ObjectList search keyword and filters with scalar deepLink panel state via slot inputs/outputs", async () => {
+  const projections = {
+    "feedback-list": projection("feedback-list", "ObjectList", FEEDBACK, {
+      columns: [
+        { key: "source", labelKey: "cols.source", kind: "tag" },
+        { key: "rating", labelKey: "cols.rating", kind: "tag" },
+        { key: "comment", labelKey: "cols.comment" },
+      ],
+      searchable: true,
+      searchMode: "submit",
+      filters: [
+        {
+          key: "sourceType", label: "filters.sourceType", kind: "select",
+          options: [{ value: "qa", label: "filters.qa" }, { value: "analysis_task", label: "filters.analysis" }],
+        },
+        {
+          key: "rating", label: "filters.rating", kind: "select",
+          options: [{ value: "like", label: "filters.like" }, { value: "dislike", label: "filters.dislike" }],
+        },
+      ],
+    }, {
+      search: { kind: "scalar", type: "string" },
+      sourceType: { kind: "scalar", type: "string" },
+      rating: { kind: "scalar", type: "string" },
+    }),
+  };
+  const manifest = definePanel({
+    state: {
+      selectedFeedback: { kind: "object", objectType: FEEDBACK, deepLink: true },
+      sourceType: { kind: "scalar", type: "string", deepLink: true },
+      rating: { kind: "scalar", type: "string", deepLink: true },
+      keyword: { kind: "scalar", type: "string", deepLink: true },
+    },
+    slots: {
+      list: {
+        projectionId: "feedback-list",
+        inputs: {
+          search: { state: "keyword" },
+          sourceType: { state: "sourceType" },
+          rating: { state: "rating" },
+        },
+        outputs: {
+          selected: { state: "selectedFeedback" },
+          search: { state: "keyword" },
+          sourceType: { state: "sourceType" },
+          rating: { state: "rating" },
+        },
+      },
+    },
+    operations: [],
+  });
+  const panel = panelRecord("panel-feedback-state", "Feedback", manifest);
+  panel.content.messages = {
+    en: {
+      "cols.source": "Source",
+      "cols.rating": "Rating",
+      "cols.comment": "Comment",
+      "filters.sourceType": "Source",
+      "filters.qa": "Q&A",
+      "filters.analysis": "Analysis",
+      "filters.rating": "Rating",
+      "filters.like": "Like",
+      "filters.dislike": "Dislike",
+    },
+  };
+  panel.content.html = `<div id="app"><Projection slot="list"></Projection></div>`;
+  const use = panelUse("use-feedback-state", "feedback-state-test", panel.id, "/applications/app-test/feedback-state");
+
+  installPlatform(hostWith(projections));
+  const frame = panelFrame();
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
+  const initialPath = `${use.path}?state=${encodeURIComponent(JSON.stringify({
+    sourceType: "qa",
+    rating: "dislike",
+    keyword: "timeout",
+  }))}`;
+  writePanelDocument(registered("app-test", use, panel), initialPath, panelAddressState(initialPath));
+  inside(frame);
+
+  const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
+  const queries: unknown[] = [];
+  registerPlatformObjectAdapter({
+    objectType: FEEDBACK,
+    query: async (q) => {
+      queries.push(q);
+      return {
+        items: [{ primaryKey: "f-1", label: "Row 1", fields: { source: q.filters?.sourceType ?? "", rating: q.filters?.rating ?? "", comment: q.search ?? "" } }],
+        total: 1,
+      };
+    },
+  });
+
+  const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
+  const mounted = await mountPanel({});
+
+  // 1. First query immediately carries restored deepLink state; inputs reflect restored values.
+  await vi.waitFor(() => expect(queries).toHaveLength(1));
+  expect(queries[0]).toEqual({ search: "timeout", filters: { sourceType: "qa", rating: "dislike" } });
+  const searchInput = document.querySelector<HTMLInputElement>(".sdk-object-list-search")!;
+  const [sourceSelect, ratingSelect] = [...document.querySelectorAll<HTMLSelectElement>(".sdk-object-list-select")];
+  expect(searchInput.value).toBe("timeout");
+  expect(sourceSelect!.value).toBe("qa");
+  expect(ratingSelect!.value).toBe("dislike");
+
+  // 2. User edits search and filters and clicks Query -> writes back atomically to panel state & deepLink without double query.
+  searchInput.value = "chart";
+  searchInput.dispatchEvent(new Event("input"));
+  sourceSelect!.value = "analysis_task";
+  sourceSelect!.dispatchEvent(new Event("change"));
+  ratingSelect!.value = "like";
+  ratingSelect!.dispatchEvent(new Event("change"));
+  document.querySelector<HTMLButtonElement>(".sdk-object-list-query")!.click();
+
+  await vi.waitFor(() => expect(queries).toHaveLength(2));
+  await nextTick();
+  expect(queries).toHaveLength(2);
+  expect(queries[1]).toEqual({ search: "chart", filters: { sourceType: "analysis_task", rating: "like" } });
+  expect(mounted.context.instance.state.values.value).toEqual({
+    selectedFeedback: null,
+    sourceType: "analysis_task",
+    rating: "like",
+    keyword: "chart",
+  });
+  expect(mounted.context.instance.deepLink()).toEqual({
+    sourceType: "analysis_task",
+    rating: "like",
+    keyword: "chart",
+  });
+
+  // 3. Clearing search & rating writes null so deepLink drops cleared keys.
+  searchInput.value = "";
+  searchInput.dispatchEvent(new Event("input"));
+  ratingSelect!.value = "";
+  ratingSelect!.dispatchEvent(new Event("change"));
+  document.querySelector<HTMLButtonElement>(".sdk-object-list-query")!.click();
+
+  await vi.waitFor(() => expect(queries).toHaveLength(3));
+  expect(queries[2]).toEqual({ filters: { sourceType: "analysis_task" } });
+  expect(mounted.context.instance.state.values.value).toEqual({
+    selectedFeedback: null,
+    sourceType: "analysis_task",
+    rating: null,
+    keyword: null,
+  });
+  expect(mounted.context.instance.deepLink()).toEqual({ sourceType: "analysis_task" });
+
+  // 4. External host address change restores state into UI controls and re-queries once.
+  const nextAddress = `${use.path}?state=${encodeURIComponent(JSON.stringify({ sourceType: "qa", keyword: "export" }))}`;
+  window.dispatchEvent(new MessageEvent("message", {
+    source: window.parent,
+    data: { channel: PANEL_HOST_CHANNEL, kind: "address", address: nextAddress },
+  }));
+  await vi.waitFor(() => expect(queries).toHaveLength(4));
+  expect(queries[3]).toEqual({ search: "export", filters: { sourceType: "qa" } });
+  expect(searchInput.value).toBe("export");
+  expect(sourceSelect!.value).toBe("qa");
+  expect(ratingSelect!.value).toBe("");
+});
+
+it("writes outputs.checked to an instance-local objects collection state, freezes only visible rows on select-all, and stays out of deep links", async () => {
+  const projections = {
+    "metric-list": projection("metric-list", "ObjectList", METRIC, {
+      columns: [{ key: "label", labelKey: "cols.name" }],
+      selectable: true,
+      pageSize: 2,
+    }),
+  };
+  const manifest = definePanel({
+    state: {
+      selectedMetric: { kind: "object", objectType: METRIC, deepLink: true },
+      checkedMetrics: { kind: "objects", objectType: METRIC, deepLink: false },
+    },
+    slots: {
+      metrics: {
+        projectionId: "metric-list",
+        inputs: {},
+        outputs: {
+          selected: { state: "selectedMetric" },
+          checked: { state: "checkedMetrics" },
+        },
+      },
+    },
+    operations: [
+      { id: "clearChecked", labelKey: "ops.clearChecked", kind: "state", sets: { checkedMetrics: [] } },
+    ],
+  });
+  const panel = panelRecord("panel-checked-collection", "Checked metrics", manifest);
+  panel.content.messages = {
+    en: { "cols.name": "Metric", "ops.clearChecked": "Clear checked" },
+  };
+  panel.content.html = `
+    <div id="app">
+      <Projection slot="metrics">
+        <template #batch-actions="{ checked }">
+          <span class="batch-count">{{ checked.length }}</span>
+        </template>
+      </Projection>
+    </div>`;
+  const use = panelUse("use-checked", "checked-test", panel.id, "/applications/app-test/checked");
+
+  installPlatform(hostWith(projections));
+  const frame = panelFrame();
+  const stateMessages: Record<string, unknown>[] = [];
+  const onMessage = (event: MessageEvent) => {
+    if (event.data?.channel === PANEL_HOST_CHANNEL && event.data?.kind === "state") {
+      stateMessages.push(event.data.state as Record<string, unknown>);
+    }
+  };
+  window.addEventListener("message", onMessage);
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
+  inside(frame);
+
+  try {
+    const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
+    const allItems = [
+      { primaryKey: "m-1", label: "Metric 1", fields: {} },
+      { primaryKey: "m-2", label: "Metric 2", fields: {} },
+      { primaryKey: "m-3", label: "Metric 3", fields: {} },
+      { primaryKey: "m-4", label: "Metric 4", fields: {} },
+    ];
+    registerPlatformObjectAdapter({
+      objectType: METRIC,
+      query: async (q) => {
+        const offset = q.page?.offset ?? 0;
+        const limit = q.page?.limit ?? allItems.length;
+        return { items: allItems.slice(offset, offset + limit), total: allItems.length };
+      },
+    });
+
+    const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
+    const mounted = await mountPanel({});
+
+    await vi.waitFor(() => expect(document.querySelectorAll("tbody tr").length).toBe(2));
+
+    // Selecting row 1 sets selectedMetric (deep-linked) without writing checkedMetrics.
+    document.querySelector<HTMLTableRowElement>("tbody tr")!.click();
+    await nextTick();
+    expect(mounted.context.instance.state.values.value.selectedMetric).toEqual({ className: METRIC, primaryKey: "m-1" });
+    expect(mounted.context.instance.state.values.value.checkedMetrics).toBeNull();
+
+    // Select-all on page 1 (2 visible out of 4 total) freezes ONLY the 2 visible objects into checkedMetrics.
+    const selectAll = document.querySelector<HTMLInputElement>('thead input[type="checkbox"]')!;
+    selectAll.click();
+    await nextTick();
+    expect(mounted.context.instance.state.values.value.checkedMetrics).toEqual([
+      { className: METRIC, primaryKey: "m-1" },
+      { className: METRIC, primaryKey: "m-2" },
+    ]);
+    expect(document.querySelector(".batch-count")?.textContent).toBe("2");
+
+    // Collection state is instance-local: excluded from deepLink(), host state frame messages, and pageContext.selection.
+    expect(mounted.context.instance.deepLink()).toEqual({
+      selectedMetric: { className: METRIC, primaryKey: "m-1" },
+    });
+    expect(mounted.context.instance.pageContext.value.selection).toEqual([
+      { kind: METRIC, id: "m-1", label: `Metric 1 (${METRIC} m-1)` },
+    ]);
+    await vi.waitFor(() => expect(stateMessages.length).toBeGreaterThan(0));
+    expect(stateMessages.every((state) => !("checkedMetrics" in state))).toBe(true);
+
+    // State operation clearing checkedMetrics to [] syncs checkboxes back to unchecked.
+    await mounted.context.instance.invoke("clearChecked");
+    await nextTick();
+    expect(mounted.context.instance.state.values.value.checkedMetrics).toEqual([]);
+    expect(document.querySelector(".batch-count")).toBeNull();
+    expect([...document.querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]')].every((box) => !box.checked)).toBe(true);
+
+    // External partial retention (e.g. failed item left in checkedMetrics after batch write) reflects in UI checkboxes.
+    mounted.context.instance.state.set("checkedMetrics", [{ className: METRIC, primaryKey: "m-2" }]);
+    await nextTick();
+    const rowBoxes = [...document.querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]')];
+    expect(rowBoxes.map((box) => box.checked)).toEqual([false, true]);
+    expect(selectAll.indeterminate).toBe(true);
+    expect(document.querySelector(".batch-count")?.textContent).toBe("1");
+
+    // Wrong objectType inside objects collection is refused by checkPanelValue.
+    expect(() =>
+      mounted.context.instance.state.set("checkedMetrics", [{ className: FUNCTION, primaryKey: "fn-1" }]),
+    ).toThrow(TypeError);
+  } finally {
+    window.removeEventListener("message", onMessage);
+  }
 });

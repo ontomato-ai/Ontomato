@@ -1,5 +1,10 @@
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import { panelFormTargetSchema, type PanelFormTarget, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import {
+  panelFormTargetSchema,
+  type PanelFormTarget,
+  type PanelObjectIdentity,
+  type PanelStateValue,
+} from "@ontomato/contracts/panel-manifest";
 import {
   panelFormSaveInputSchema,
   type PanelFormDescription,
@@ -7,6 +12,8 @@ import {
   type PanelFormSaveInput,
 } from "@ontomato/contracts/panel-projection";
 import { registerHandler, type RegisteredHandler } from "./handlers";
+import { stateChildObject, stateObject, type PanelFieldValue } from "./state";
+import type { DeepReadonly } from "vue";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 
 /*
@@ -47,6 +54,8 @@ export interface PlatformObjectRecord {
   subtitle?: string;
   /** What a summary or list column may show: the owner's own fields, by name, as text. */
   fields: Readonly<Record<string, string>>;
+  /** Optional owner-supplied display names by field key (used by ObjectSummary and ObjectList headers without labelKey). */
+  fieldLabels?: Readonly<Record<string, string>>;
   /** Optional semantic tones by field name, used when a field renders as a status tag. */
   tones?: Readonly<Record<string, PlatformFieldTone>>;
   /** Optional tag lists by field name, rendered as tags. */
@@ -70,9 +79,12 @@ export interface PlatformObjectRef {
   readonly primaryKey: string;
 }
 
-/** Search, filter, parent-scope and paging parameters handed to a resource adapter; the adapter owns all query semantics. */
+/** Search, filter, child-collection and paging parameters handed to a resource adapter; the adapter owns all query semantics. */
 export interface PlatformObjectQuery {
-  readonly parent?: PlatformObjectRef;
+  /** Parent object identity when querying a declared child collection (paired with `collection`). */
+  readonly parent?: PanelObjectIdentity;
+  /** Declared child collection name owned by `parent.objectType` (e.g. `"files"`, `"issues"`, `"sources"`). */
+  readonly collection?: string;
   /** Dynamic object type selected at runtime when listing objects across types (e.g. `platform:Action`). */
   readonly objectType?: string;
   readonly search?: string;
@@ -99,6 +111,8 @@ export interface PlatformObjectQueryResult {
   readonly items: readonly PlatformObjectRecord[];
   /** Total matching records from the owner/adapter, never substituted with the current page size. */
   readonly total: number;
+  /** Optional owner-supplied display names by field key (used by ObjectList headers without labelKey, even when items is empty). */
+  readonly fieldLabels?: Readonly<Record<string, string>>;
   readonly facets?: readonly PlatformObjectFacet[];
   readonly nextCursor?: string;
   /** Optional default item key chosen by the owner/adapter when nothing in this result is selected. */
@@ -213,7 +227,8 @@ export interface PlatformObjectOptions {
 
 /** Offset-paged read request for a long-text source through a resource adapter. */
 export interface PlatformObjectSegmentQuery {
-  readonly parent?: PlatformObjectRef;
+  readonly parent?: PanelObjectIdentity;
+  readonly collection?: string;
   readonly sourceId: string;
   readonly offset: number;
 }
@@ -436,6 +451,6 @@ export function adapterPart<Part extends "list" | "query" | "read" | "readSegmen
 }
 
 /** The primary key a projection's input value names, or null when nothing is selected. */
-export function selectedKey(value: PanelStateValue | undefined): string | null {
-  return value && typeof value === "object" ? value.primaryKey : null;
+export function selectedKey(value: DeepReadonly<PanelFieldValue> | undefined): string | null {
+  return stateObject(value)?.primaryKey ?? stateChildObject(value)?.primaryKey ?? null;
 }

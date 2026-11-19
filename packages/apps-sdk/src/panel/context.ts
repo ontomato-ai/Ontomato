@@ -1,5 +1,6 @@
 import { computed, inject, onBeforeUnmount, type ComputedRef, type InjectionKey, type Ref } from "vue";
-import type { PanelManifest, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import type { AppBridgeExpandPageComposer } from "@ontomato/contracts/app-bridge";
+import { panelChildCollectionQuerySchema, type PanelManifest, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelDefinitionContent, ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PanelInstance } from "./instance";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
@@ -73,6 +74,11 @@ export interface PanelContext {
    * type — before the projection registers its ports, so a panel downloads only the clients of what it shows.
    */
   resources(projection: Pick<ProductProjection, "componentId" | "binding" | "graph">): Promise<void>;
+  /**
+   * Asks the host to expand the page's composer with the slot's declared agent target and optional prefill text.
+   * Never sends a message; the host enforces that the request matches the slot's declared projection.
+   */
+  expandPageComposer(request: AppBridgeExpandPageComposer): Promise<void>;
 }
 
 /**
@@ -145,30 +151,40 @@ export interface ProjectionFormField {
 /**
  * The form field this projection's slot edits (`formField: {slot, path}`): the value and the dirty state are the form's
  * in the named slot, so a choice made here is the form's own edit, saved, discarded and drafted with it. A path the
- * owner's current form does not describe fails visibly once that form has read its fields.
+ * owner's current form does not describe fails visibly once that form has read its fields. A port with an `itemPath`
+ * edits that field in every row and is drawn by the form in each row (`formFieldAt`), not here.
  */
 export function useFormField(): ProjectionFormField {
   const { instance, manifest } = usePanelContext();
   const drawn = useProjectionSlot();
   const port = manifest.slots[drawn.slot]?.formField;
   if (!port) throw new Error(`Slot '${drawn.slot}' edits no form field: its declaration names no formField`);
-  const handle = computed<PanelFormHandle | undefined>(() => instance.forms.handle(port.slot));
+  if (port.itemPath) throw new Error(`Slot '${drawn.slot}' edits ${port.itemPath} in each row of ${port.path}, drawn by the form per row`);
+  return formFieldAt(instance, port.slot, () => port.path);
+}
+
+/**
+ * One field of the form in `formSlot` at an absolute pointer, which may follow a row as it moves (`path` is read each
+ * time): its owner description, value, message and mark, and the edit that is the form's own.
+ */
+export function formFieldAt(instance: PanelInstance, formSlot: string, path: () => string): ProjectionFormField {
+  const handle = computed<PanelFormHandle | undefined>(() => instance.forms.handle(formSlot));
   const field = computed(() => {
     const form = handle.value;
     if (!form || !form.fields.value.length) return undefined;
-    const found = fieldAt(form.fields.value, port.path);
-    if (!found) throw new Error(`The form in slot '${port.slot}' has no field ${port.path}`);
+    const found = fieldAt(form.fields.value, path());
+    if (!found) throw new Error(`The form in slot '${formSlot}' has no field ${path()}`);
     return found;
   });
   return {
     field,
-    value: computed(() => (handle.value ? valueAt(handle.value.values.value, port.path) : undefined)),
-    error: computed(() => handle.value?.errors.value[port.path]),
-    changed: computed(() => handle.value?.changed.value.has(port.path) === true),
+    value: computed(() => (handle.value ? valueAt(handle.value.values.value, path()) : undefined)),
+    error: computed(() => handle.value?.errors.value[path()]),
+    changed: computed(() => handle.value?.changed.value.has(path()) === true),
     disabled: computed(() => !field.value || field.value.readOnly || handle.value!.busy.value),
     set(value) {
-      if (!handle.value) throw new Error(`Slot '${port.slot}' holds no form yet`);
-      handle.value.set(port.path, value);
+      if (!handle.value) throw new Error(`Slot '${formSlot}' holds no form yet`);
+      handle.value.set(path(), value);
     },
   };
 }
@@ -189,6 +205,7 @@ export interface ProjectionObjects extends Required<Pick<PlatformObjectAdapter, 
 function hasQueryParams(query: PlatformObjectQuery): boolean {
   return Boolean(
     query.parent
+    || query.collection
     || query.objectType
     || query.search?.trim()
     || query.page
@@ -211,9 +228,16 @@ export function useProjectionObjects(objectType?: string): ProjectionObjects {
       return listed;
     },
     async query(query = {}) {
+      const childQuery = query.parent || query.collection
+        ? panelChildCollectionQuerySchema.parse({ parent: query.parent, collection: query.collection })
+        : null;
       const adapter = platformObjectAdapter(type);
       if (adapter.query) {
-        const result = await adapter.query(query);
+        const result = await adapter.query(childQuery ? { ...query, ...childQuery } : query);
+        if (childQuery) {
+          instance.nameChildObjects(childQuery.parent, childQuery.collection, result.items);
+          return result;
+        }
         const byType = new Map<string, { primaryKey: string; label: string }[]>();
         for (const item of result.items) {
           const itemType = item.className ?? query.objectType ?? type;

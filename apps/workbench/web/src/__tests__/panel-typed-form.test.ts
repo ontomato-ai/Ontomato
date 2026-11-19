@@ -6,7 +6,7 @@ import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/
 import { AGENT_DEFINITION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SKILL } from "@ontomato/contracts/panel-client-requests";
 import { PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import {
+import { ignoreChanges,
   inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
@@ -124,8 +124,8 @@ async function open(address: string, state: Record<string, unknown>, override?: 
   const sent = installPlatform((request) => override?.(request) ?? owner(request) ?? nothingAt(request));
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
-  platformPanelHost("ontology", use).frame(frame, registered("ontology", use, panel), true);
-  writePanelDocument(panel, use, address, state as never);
+  platformPanelHost("ontology", use, ignoreChanges).frame(frame, registered("ontology", use, panel), true);
+  writePanelDocument(registered("ontology", use, panel), address, state as never);
   inside(frame);
   const failed: string[] = [];
   window.addEventListener("message", (event) => {
@@ -212,8 +212,8 @@ async function openWithDraft(form: PanelFormValues, envelope: { operation: strin
   });
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
-  platformPanelHost("ontology", use).frame(frame, registered("ontology", use, panel), true);
-  writePanelDocument(panel, use, `/ontology/agents?${query}`, { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } });
+  platformPanelHost("ontology", use, ignoreChanges).frame(frame, registered("ontology", use, panel), true);
+  writePanelDocument(registered("ontology", use, panel), `/ontology/agents?${query}`, { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } });
   inside(frame);
   const failed: string[] = [];
   const settled: unknown[] = [];

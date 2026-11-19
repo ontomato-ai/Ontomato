@@ -2,11 +2,10 @@ import { scheduledTaskPanelOperations, scheduledTaskPanelSaveSchema, scheduledTa
 import { createSchedulesApi, scheduleFailure, type PlatformSchedulesHost } from "@ontomato/platform-schedules";
 import type { PlatformTask } from "@ontomato/contracts/platform-schedules";
 import { formFieldKey, formFieldPointer, formValuesSchema, type FormField, type FormFieldError } from "@ontomato/contracts/form-fields";
-import { randomId } from "@ontomato/contracts/random-id";
 import type { PanelFormDescription, PanelFormField, PanelFormRequest, PanelFormSaveInput, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
-import { PlatformObjectRefusal, type PlatformObjectAdapterFactory, type PlatformObjectRecord, type PlatformOperationFactory, type PlatformRequests } from "./platform-objects";
-import { DATA_QUERY_GATEWAY, RUN_NOW, SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { PlatformObjectRefusal, type PlatformObjectAdapterFactory, type PlatformObjectRecord, type PlatformRequests } from "./platform-objects";
+import { DATA_QUERY_GATEWAY, SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 
 /*
  * The scheduled tasks as a platform object a projection may bind (overall design 3.2, 10.1): reading one, listing the
@@ -162,17 +161,4 @@ export const scheduledTaskAdapters: PlatformObjectAdapterFactory = requests => {
     },
   };
   return [{ objectType: SCHEDULED_TASK, list: resource.list, read: resource.read, forms }];
-};
-
-/** `schedules.runNow`: runs one task now and leaves its schedule as it is, through the frame's request path. */
-export const scheduledTaskRunNow: PlatformOperationFactory = requests => {
-  const { runNow } = scheduledTaskPanelOperations(dataQueryHost(requests));
-  return {
-    handlerRef: RUN_NOW,
-    async invoke({ target }) {
-      if (target?.kind !== "object") throw new Error("Run now acts on the selected task");
-      const run = await runNow(target.primaryKey, randomId());
-      return { runId: run.id, status: run.status, trigger: run.trigger };
-    },
-  };
 };

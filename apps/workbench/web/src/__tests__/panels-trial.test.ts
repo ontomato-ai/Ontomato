@@ -9,7 +9,7 @@ import { createPanelInstance } from "../../../../../packages/apps-sdk/src/panel/
 import { PanelFormAdapters, receivePanelDraft, type ReceivedPanelDraft } from "../../../../../packages/apps-sdk/src/panel/draft";
 import { portsOf } from "../../../../../packages/apps-sdk/src/panel/ports-of";
 import { operationCall } from "../../../../../packages/apps-sdk/src/panel/ports";
-import { registerHandler, registeredHandlers } from "../../../../../packages/apps-sdk/src/panel/handlers";
+import { registeredHandlers } from "../../../../../packages/apps-sdk/src/panel/handlers";
 import {
   registerPlatformObjectAdapter,
   platformObjectAdapter,
@@ -18,6 +18,7 @@ import {
 import { panelContextKey } from "../../../../../packages/apps-sdk/src/panel/context";
 import Projection from "../../../../../packages/apps-sdk/src/panel/Projection.vue";
 
+import { noOperations } from "./panel-frame";
 /*
  * The trial's panel, as the SDK sees it: a declaration and projections, and nothing written per panel. These are the
  * mistakes the trial exists to rule out — a panel that has to wire its own reads, drafts or buttons; one instance's
@@ -75,6 +76,8 @@ const records = new Map<string, ProductProjection>([
 
 function instance(initial?: Record<string, unknown>) {
   return createPanelInstance(panel, {
+    text: (key) => key,
+    ...noOperations,
     pageKey: "panels-trial-a-tasks",
     url: () => "/applications/app-panels-trial-a/tasks",
     label: () => "panels-trial-a-tasks",
@@ -95,16 +98,24 @@ describe("a panel's projection", () => {
     });
   });
 
-  it("runs the selected task, not some other one, and says which object it acted on", async () => {
-    const run = vi.fn(async (call: { target: { primaryKey: string } | { id?: string } | null }) =>
-      call.target && "primaryKey" in call.target ? call.target.primaryKey : undefined,
-    );
-    registerHandler({ handlerRef: "schedules.runNow", invoke: run });
-    const first = instance({ selectedTask: task("task-1") });
-    expect(operationCall({ id: "run.runNow", label: "Run now", kind: "action", inputSchema: {}, target: { source: "state", state: "selectedTask" }, slot: "run", handlerRef: "schedules.runNow" }, first.state.values.value))
-      .toEqual({ target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-1" }, input: {} });
-    await first.runHandler("schedules.runNow", operationCall({ id: "run.runNow", label: "Run now", kind: "action", inputSchema: {}, target: { source: "state", state: "selectedTask" }, slot: "run", handlerRef: "schedules.runNow" }, first.state.values.value));
-    expect(run).toHaveBeenCalledWith({ target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-1" }, input: {} });
+  it("runs the selected task, not some other one, through the platform's coordinator", async () => {
+    const prepare = vi.fn(async (operationId: string) => ({
+      intentId: "5f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d04", operationId, label: "Run now", confirmation: { kind: "none" as const },
+    }));
+    const first = createPanelInstance(panel, {
+      text: (key) => key,
+      operations: { ...noOperations.operations, prepare },
+      confirmOperation: async ({ intentId }) => ({ decision: "confirm", response: { kind: "dispatched", intentId, outcome: null } }),
+      pageKey: "panels-trial-a-tasks",
+      url: () => "/applications/app-panels-trial-a/tasks",
+      label: () => "panels-trial-a-tasks",
+      initial: { selectedTask: task("task-1") },
+      recordDraftCreated: async () => {},
+      readProjection: async (id) => records.get(id)!,
+    });
+    first.register({ slot: "run", projectionId: "projection-schedules-run", ports: portsOf(records.get("projection-schedules-run")!) });
+    await first.invoke("run.runNow");
+    expect(prepare).toHaveBeenCalledWith("run.runNow", { call: { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-1" }, input: {} } });
   });
 
   it("has no target at all when nothing is selected, so a handler cannot act on the wrong object", () => {
@@ -153,6 +164,8 @@ describe("a panel instance", () => {
   it("keeps two instances' selections apart, and one opened at a link shows the task it names", () => {
     const p = instance({ selectedTask: task("task-1") });
     const q = createPanelInstance(summaryPanel, {
+      text: (key) => key,
+    ...noOperations,
       pageKey: "panels-trial-b-summary",
       url: () => "/applications/app-panels-trial-b/summary",
       label: () => "panels-trial-b-summary",
@@ -244,6 +257,7 @@ describe("a panel's module", () => {
       holdUnsaved: () => () => {},
       t: (key: string) => key,
       resources: async () => {},
+      expandPageComposer: async () => {},
     });
     app.mount(document.createElement("div"));
     await nextTick();

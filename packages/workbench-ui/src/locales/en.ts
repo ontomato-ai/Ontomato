@@ -142,6 +142,7 @@ export default {
   },
   "platform": {
     "serviceName": "Ontomato",
+    "confirmOperationTotal": "{total} affected in total",
     "noPages": "No page is available to this account",
     "apps": "Applications",
     "expandRail": "Show application names",
@@ -193,6 +194,7 @@ export default {
     "uploadConfirmTitle": "Confirm overwrite",
     "uploadInvalidType": "Only {accept} files are supported",
     "uploadUploading": "Uploading…",
+    "conversationEntryOpen": "Open conversation",
     "graphLayers": "Layers",
     "graphMatches": "{count} matches",
     "graphCounts": "{nodes} nodes · {edges} edges",
@@ -221,7 +223,10 @@ export default {
     "formMoveDown": "Move down",
     "formInvalidJson": "Not valid JSON: {message}",
     "formFixInvalid": "Correct the marked fields before saving",
-    "formControlUnavailable": "This field cannot be edited here yet"
+    "formControlUnavailable": "This field cannot be edited here yet",
+    "operationDone": "Done",
+    "operationUnknown": "Whether it was done is not known. {message}",
+    "operationBatchDone": "{done} of {total} done"
   },
   "nav": {
     "agentsAndSkills": "Agents and Skills",

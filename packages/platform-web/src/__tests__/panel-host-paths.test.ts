@@ -81,7 +81,7 @@ describe("the panel host's addresses", () => {
   it("sends each read to the address its owner serves", async () => {
     const { candidatePanelHost, panelAuthorDefinitions, platformPanelHost, panelUsesOf } = await import("../panel-host");
     const use = { id: "use-a", pageKey: "tasks", panelId: "panel-a", path: "/applications/app-a/tasks", access: { kind: "domain-member" as const } };
-    const port = platformPanelHost("app-a", use);
+    const port = platformPanelHost("app-a", use, () => {});
     await panelUsesOf("app-a");
     // The record's contents are the stand-in's business, not this test's: what it asserts is the address each read went
     // to. A read that refuses is as good an observation as one that answers.

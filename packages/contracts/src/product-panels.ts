@@ -2,7 +2,7 @@ import { z } from "zod";
 import { defaultAgentSchema } from "./default-agent";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
-import { ontologyObjectUnionTypeSchema, ontologyParameterTypeSchema, panelManifestSchema } from "./panel-manifest";
+import { ontologyObjectUnionTypeSchema, ontologyParameterTypeSchema, panelManifestSchema, panelMessageKeySchema } from "./panel-manifest";
 import { applicationMetadataSchema } from "./application-metadata";
 import { appsSdkBuildSchema } from "./apps-sdk";
 import { formFieldErrorSchema } from "./form-fields";
@@ -106,9 +106,8 @@ export type ProductProjection = z.infer<typeof productProjectionSchema>;
 const panelContentByteLimit = 256 * 1024;
 const panelText = z.string().refine(value => new TextEncoder().encode(value).byteLength <= panelContentByteLimit,
   "Panel text must not exceed 256 KiB");
-const messageKey = z.string().min(1);
 /** Panel-authored text, by locale and literal flat key, using the platform's named interpolation syntax. */
-export const panelMessagesSchema = z.record(messageKey, z.record(messageKey, z.string()))
+export const panelMessagesSchema = z.record(z.string().min(1), z.record(panelMessageKeySchema, z.string()))
   .refine(messages => new TextEncoder().encode(JSON.stringify(messages)).byteLength <= panelContentByteLimit,
     "Panel messages must not exceed 256 KiB");
 export type PanelMessages = z.infer<typeof panelMessagesSchema>;
