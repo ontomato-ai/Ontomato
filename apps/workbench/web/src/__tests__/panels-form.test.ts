@@ -8,7 +8,9 @@ import type { FormField } from "@ontomato/contracts/form-fields";
 import { createPanelInstance } from "../../../../../packages/apps-sdk/src/panel/instance";
 import { panelContextKey } from "../../../../../packages/apps-sdk/src/panel/context";
 import { projectionKey, type ProjectionSlot } from "../../../../../packages/apps-sdk/src/panel/context";
-import { registerPlatformObject, type PlatformObjectForm } from "../../../../../packages/apps-sdk/src/panel/platform-objects";
+import { registerPlatformObjectAdapter } from "../../../../../packages/apps-sdk/src/panel/platform-objects";
+import { formFieldPointer } from "@ontomato/contracts/form-fields";
+import type { PanelFormDescription } from "@ontomato/contracts/panel-projection";
 import { registeredHandlers } from "../../../../../packages/apps-sdk/src/panel/handlers";
 import ObjectForm from "../../../../../packages/apps-sdk/src/base/ObjectForm.vue";
 
@@ -77,25 +79,36 @@ function mounted(save: (values: Record<string, string>, revision: number) => Pro
       display: {},
     }),
   });
-  const form = vi.fn(async (): Promise<PlatformObjectForm> => ({
-    fields: fields("autotest"),
-    values: { operation: "autotest", caseSetId: "cases-1" },
+  // The owner, as the scheduled tasks' typed adapter answers: the operation decides which other fields exist.
+  const typed = (operation: string, values: Record<string, string>): PanelFormDescription => ({
+    fields: fields(operation).map((field) => ({
+      path: formFieldPointer("/", field.key), label: field.label, required: field.required, readOnly: false, valueSchema: {},
+      ...(field.type === "select"
+        ? { control: { kind: "select" as const, options: field.options }, refreshOnChange: field.refreshOnChange }
+        : { control: { kind: "text" as const, multiline: field.multiline } }),
+    })),
+    values,
     revision: 7,
-  }));
-  const changed = vi.fn(async (): Promise<PlatformObjectForm> => ({
-    fields: fields("inspection"),
-    values: { operation: "inspection", instruction: "" },
-    revision: 7,
-  }));
-  registerPlatformObject({
+    save: { method: "PUT", path: "/platform/scheduled-tasks/:id", bodySchema: {}, draftOperation: `${objectType}.save` },
+  });
+  const form = vi.fn(async (_primaryKey: string) => typed("autotest", { operation: "autotest", caseSetId: "cases-1" }));
+  const changed = vi.fn(async (values: Record<string, string>) =>
+    typed(values.operation!, values.operation === "inspection" ? { operation: "inspection", instruction: values.instruction ?? "" } : values));
+  registerPlatformObjectAdapter({
     objectType,
-    list: async () => [],
     read: async (primaryKey) => ({ primaryKey, label: "Nightly", fields: {} }),
-    form,
-    changed,
-    save: async (primaryKey, values, revision) => {
-      await save(values, revision);
-      return { primaryKey, label: "Nightly", fields: {} };
+    forms: {
+      async describe({ target, values, changedField }) {
+        if (target.kind !== "object") throw new Error("A task form edits a task");
+        if (values === undefined) return form(target.primaryKey);
+        // An incoming draft is checked whole: the form it changes to, with the draft's values.
+        return changed({ ...(values as Record<string, string>) }).then((answer) =>
+          changedField === null ? { ...answer, values: { ...answer.values, ...(values as Record<string, string>) } } : answer);
+      },
+      async save(target, { values, revision }) {
+        await save(values as Record<string, string>, revision!);
+        return { primaryKey: target.kind === "object" ? target.primaryKey : "", label: "Nightly", fields: {} };
+      },
     },
   });
 

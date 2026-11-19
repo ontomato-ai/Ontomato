@@ -23,7 +23,7 @@ import { receivePanelDraft } from "./draft";
 import PanelProjection from "./Projection.vue";
 import { baseComponents } from "../base-components";
 import { prepareTemplateComponents } from "./template-components";
-import { registerSchedulesPlatformObject } from "./schedules";
+import { registerScheduledTaskRunNow } from "./schedules";
 import { registerPlatformObjectAdapter } from "./platform-objects";
 import { platformObjectAdapters } from "../resources";
 
@@ -121,7 +121,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   // The panel's own words, as its HTML reads them: `{{ t("settings.title") }}`. The platform's words stay `$t`.
   app.config.globalProperties.t = context.t;
   // The platform objects this version's panels read, and the operations they run.
-  registerSchedulesPlatformObject(appContext);
+  registerScheduledTaskRunNow(appContext);
   for (const adapt of platformObjectAdapters)
     for (const adapter of adapt({ request: (path, init, service) => transport.request(path, init, service) }))
       registerPlatformObjectAdapter(adapter);

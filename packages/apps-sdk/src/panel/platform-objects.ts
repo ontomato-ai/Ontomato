@@ -1,4 +1,3 @@
-import { formFieldKey, formFieldPointer, formValuesSchema, type FormField } from "@ontomato/contracts/form-fields";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { panelFormTargetSchema, type PanelFormTarget, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import {
@@ -10,7 +9,7 @@ import {
 import { registerHandler } from "./handlers";
 
 /*
- * How the SDK reads and writes one read-only platform object type (overall design 3.2): a projection binds
+ * How the SDK reads and writes one platform object type (overall design 3.2): a projection binds
  * `PlatformObjectType:platform:ScheduledTask`, and this registry says what reading one, listing them, reading the owner's
  * form for one and saving it mean for that type. It sits beside the handler registry and for the same reason: a component
  * is generic, and the type it is bound to decides which client answers.
@@ -30,43 +29,8 @@ export interface PlatformObjectRecord {
 }
 
 /**
- * One object as its owner hands it over to be edited: its fields, what they hold now, and the revision those values
- * belong to. The revision is the owner's own concurrency token, read once when the form opens (or when a draft arrives)
- * and sent back with the save, so a change somebody else made meanwhile is refused rather than overwritten.
- */
-export interface PlatformObjectForm {
-  fields: readonly FormField[];
-  values: Readonly<Record<string, string>>;
-  revision: number;
-}
-
-/** One object type's read side: what a list, a summary and a form need from its owner. */
-export interface PlatformObjectClient {
-  /** The type this client answers for, as a projection's binding names it: `platform:ScheduledTask`. */
-  objectType: string;
-  /** The objects of this type the reader may see, in the owner's own order. */
-  list(): Promise<readonly PlatformObjectRecord[]>;
-  /** One object as its owner holds it now. */
-  read(primaryKey: string): Promise<PlatformObjectRecord>;
-  /** The owner's current form for one object, with the revision its values belong to. */
-  form(primaryKey: string): Promise<PlatformObjectForm>;
-  /**
-   * Asks the owner for a new form after one of its fields changed, as the field declares the form depends on it. The
-   * answer is the complete form: a selection that removed fields removes them with their values.
-   */
-  changed(primaryKey: string, values: Readonly<Record<string, string>>, field: string): Promise<PlatformObjectForm>;
-  /**
-   * Writes one object through its owner's own interface, with the values its form holds and the revision those values
-   * were read at. An owner that has the object at another revision, or that finds a value invalid, refuses the write:
-   * the client throws a `PlatformObjectRefusal` with the owner's reason, and the reader sees it.
-   */
-  save(primaryKey: string, values: Readonly<Record<string, string>>, revision: number): Promise<PlatformObjectRecord>;
-}
-
-/**
  * An owner's refusal of a write or of an incoming draft, as a generic form shows it: the owner's own reason, and the
- * message for each form field the owner named — by the field's JSON Pointer path in a typed form (`/executionUserId`),
- * by its key in the scheduled tasks' string form until that moves. A refusal that names no field (somebody else changed
+ * message for each form field the owner named — by the field's JSON Pointer path (`/executionUserId`). A refusal that names no field (somebody else changed
  * the object first, say) has none.
  */
 export class PlatformObjectRefusal extends Error {
@@ -78,68 +42,6 @@ export class PlatformObjectRefusal extends Error {
     super(message, options);
     this.name = "PlatformObjectRefusal";
   }
-}
-
-/**
- * Registers the scheduled tasks' string client (the pilot's) as a typed adapter, so every component reads one
- * interface. Its fields become typed fields at `/<key>`, a draft is checked against the owner's current form (one the
- * fields changed is asked again, a key the form does not have refuses the whole draft), and the save sends the string
- * values at the revision the form was read at. It goes when the scheduled tasks' adapter is written against
- * `PlatformObjectAdapter`.
- */
-export function registerPlatformObject(client: PlatformObjectClient): void {
-  const type = client.objectType;
-  const keyOf = (target: PanelFormTarget) => {
-    if (target.kind !== "object") throw new Error(`A ${type} form edits an existing object`);
-    return target.primaryKey;
-  };
-  const described = (form: PlatformObjectForm): PanelFormDescription => ({
-    fields: form.fields.map((field) => {
-      const common = { path: formFieldPointer("/", field.key), label: field.label, required: field.required, help: field.help, readOnly: false };
-      return field.type === "select"
-        ? { ...common, control: { kind: "select" as const, options: field.options }, valueSchema: { type: "string" }, refreshOnChange: field.refreshOnChange }
-        : { ...common, control: { kind: "text" as const, multiline: field.multiline, placeholder: field.placeholder, maxLength: field.maxLength }, valueSchema: { type: "string" } };
-    }),
-    values: { ...form.values },
-    revision: form.revision,
-    // Only the draft operation is read in a frame; the scheduled tasks' own skill text describes their request.
-    save: { method: "PUT", path: "/", bodySchema: {}, draftOperation: `${type}.save` },
-  });
-  const byPath = (refusal: unknown) =>
-    refusal instanceof PlatformObjectRefusal
-      ? new PlatformObjectRefusal(refusal.message, Object.fromEntries(Object.entries(refusal.fields).map(([key, message]) => [formFieldPointer("/", key), message])), { cause: refusal })
-      : refusal;
-  registerPlatformObjectAdapter({
-    objectType: type,
-    list: () => client.list(),
-    read: (primaryKey) => client.read(primaryKey),
-    forms: {
-      async describe({ target, values, changedField }) {
-        const primaryKey = keyOf(target);
-        if (values === undefined) return described(await client.form(primaryKey));
-        const filled = formValuesSchema.parse(values);
-        if (changedField !== null) return described(await client.changed(primaryKey, filled, formFieldKey(changedField, "/")!));
-        const baseline = await client.form(primaryKey);
-        const depended = baseline.fields.find((field) => field.type === "select" && field.refreshOnChange
-          && Object.hasOwn(filled, field.key) && filled[field.key] !== baseline.values[field.key]);
-        const effective = depended ? await client.changed(primaryKey, { ...baseline.values, ...filled }, depended.key) : baseline;
-        const allowed = new Set(effective.fields.map((field) => field.key));
-        const extra = Object.keys(filled).filter((key) => !allowed.has(key));
-        if (extra.length)
-          throw new PlatformObjectRefusal(`Draft fields not in the current form: ${extra.join(", ")}`,
-            Object.fromEntries(extra.map((key) => [formFieldPointer("/", key), "Not a field of this form"])));
-        return described({ ...effective, values: { ...effective.values, ...filled } });
-      },
-      async save(target, { values, revision }) {
-        if (revision === undefined) throw new Error(`Saving a ${type} needs the revision it was read at`);
-        try {
-          return await client.save(keyOf(target), formValuesSchema.parse(values), revision);
-        } catch (error) {
-          throw byPath(error);
-        }
-      },
-    },
-  });
 }
 
 /*

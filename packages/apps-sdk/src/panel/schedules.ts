@@ -7,7 +7,7 @@ import type { PanelFormDescription, PanelFormField, PanelFormRequest, PanelFormS
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import { contextTransport, type AppContext } from "../context";
 import { registerHandler } from "./handlers";
-import { PlatformObjectRefusal, registerPlatformObject, type PlatformObjectAdapterFactory, type PlatformObjectRecord } from "./platform-objects";
+import { PlatformObjectRefusal, type PlatformObjectAdapterFactory, type PlatformObjectRecord } from "./platform-objects";
 import { DATA_QUERY_GATEWAY, RUN_NOW, SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 
 /*
@@ -72,7 +72,7 @@ function refused(error: unknown, fieldPath: (key: string) => string): unknown {
   return new PlatformObjectRefusal(refusal.message, fieldErrors(refusal.fields ?? [], fieldPath), { cause: error });
 }
 
-/** Shared owner requests used by the resource and the current panel registration. */
+/** The scheduled tasks' owner requests, as the typed adapter sends them. */
 function schedulesResource(host: PlatformSchedulesHost, fieldPath: (key: string) => string) {
   const api = createSchedulesApi(host);
   const operations = scheduledTaskPanelOperations(host);
@@ -157,20 +157,4 @@ export function registerScheduledTaskRunNow(context: AppContext): void {
       return { runId: run.id, status: run.status, trigger: run.trigger };
     },
   });
-}
-
-/** Entry used by the current SDK registry until it consumes typed resource clients. */
-export function registerSchedulesPlatformObject(context: AppContext): void {
-  const { form, ...resource } = schedulesResource(schedulesHost(context), key => key);
-  async function stringForm(primaryKey: string, values: Record<string, string> | undefined, changedField: string | null) {
-    const { answer, revision } = await form(primaryKey, values, changedField);
-    return { fields: answer.fields, values: answer.values, revision };
-  }
-  registerPlatformObject({
-    ...resource,
-    objectType: SCHEDULED_TASK,
-    form: primaryKey => stringForm(primaryKey, undefined, null),
-    changed: stringForm,
-  });
-  registerScheduledTaskRunNow(context);
 }

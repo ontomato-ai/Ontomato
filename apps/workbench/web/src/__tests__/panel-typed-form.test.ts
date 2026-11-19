@@ -22,9 +22,11 @@ import {
  * not move the panel onto the object the owner created; and a draft accepted before the owner has checked it whole.
  */
 
+const sql = { namespace: { kind: "domain", domainId: "domain-1" }, name: "sql" };
+const chart = { namespace: { kind: "domain", domainId: "domain-1" }, name: "chart" };
 const stored: PanelFormValues = {
   name: "Analyst", description: "", icon: null, enabled: false, systemPrompt: "Be brief",
-  modelSelection: { modelId: null }, skills: [{ name: "sql", source: "domain" }], classNames: ["Order"],
+  modelSelection: { modelId: null }, skills: [sql], classNames: ["Order"],
   enabledMcpServiceIds: [], executionUserId: "user-1",
 };
 const defaults: PanelFormValues = {
@@ -47,6 +49,8 @@ const fields: PanelFormDescription["fields"] = [
     { readOnly: true, readOnlyReason: "Only a domain governance administrator changes it" }),
   field("/icon", "Avatar", { kind: "hidden" }),
 ];
+const AGENT = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a01";
+const CREATED = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a09";
 const save = (operation: string) => ({ method: "PUT" as const, path: "/assistant/agent-definitions/:id", bodySchema: {}, draftOperation: operation });
 
 const current = {
@@ -78,7 +82,10 @@ const manifest = definePanel({
 const panel = panelRecord("panel-agent-settings", "Agent settings", manifest);
 const use = panelUse("use-agent-settings", "agent-settings", panel.id, "/ontology/agents");
 
-/** The owner, as the definitions service answers: a form for a target, a whole-draft check, and the saves. */
+/** A definition as the definitions service returns it. */
+const definition = (id: string, values: PanelFormValues) => ({ id, sortOrder: 0, ...values });
+
+/** The owner, as the definitions service, the skill catalogue and the metadata read answer. */
 function owner(request: Sent): Response | undefined {
   const projected = /^\/api\/product-projections\/(.+)$/.exec(request.path);
   if (projected) return Response.json({ projection: projections[projected[1]!] });
@@ -87,92 +94,29 @@ function owner(request: Sent): Response | undefined {
     const create = target.kind === "draft";
     const base = create ? defaults : stored;
     if (values && changedField === null && values.executionUserId !== base.executionUserId)
-      return Response.json({ error: { message: "You may not change who the agent runs as", fields: [
+      return Response.json({ error: { message: "You may not change who the agent runs as" }, details: { fields: [
         { field: "/executionUserId", code: "target_unavailable", message: "Only a domain governance administrator changes it" },
       ] } }, { status: 422 });
     const shown = values ? { ...values, name: String(values.name).trim() } : base;
     return Response.json({ fields, values: shown, save: save(create ? "agent.create" : "agent.update") });
   }
-  if (request.path === "/api/assistant/agent-definitions/0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a01" && request.method === "GET")
-    return Response.json({ id: "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a01", name: "Analyst" });
-  if (request.path === "/api/assistant/agent-definitions/0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a01" && request.method === "PUT")
-    return Response.json({ id: "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a01", name: (request.body as PanelFormValues).name });
+  if (request.path === `/api/assistant/agent-definitions/${AGENT}` && request.method === "GET") return Response.json(definition(AGENT, stored));
+  if (request.path === `/api/assistant/agent-definitions/${AGENT}` && request.method === "PUT")
+    return Response.json(definition(AGENT, request.body as PanelFormValues));
   if (request.path === "/api/assistant/agent-definitions" && request.method === "POST")
-    return Response.json({ id: "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a09", name: (request.body as PanelFormValues).name });
+    return Response.json(definition(CREATED, request.body as PanelFormValues));
   if (request.path === "/api/assistant/agent-skills")
-    return Response.json({ skills: [{ name: "sql", source: "domain", title: "SQL" }, { name: "chart", source: "domain", title: "Charts" }] });
+    return Response.json({ skills: [{ skill: sql, title: "SQL", description: "" }, { skill: chart, title: "Charts", description: "" }] });
   if (request.path === "/api/data-query/admin/getMetas")
-    return Response.json({ data: {
+    return Response.json({ success: true, data: {
       classDef: [{ className: "Order", showName: "Orders" }, { className: "Customer", showName: "Customers" }, { className: "Invoice", showName: "Invoices" }],
-      relationship_rule: [{ id: "rel-1", fromclass: "Order", toclass: "Customer" }],
+      relationship_rule: { "rel-1": { fromclass: "Order", toclass: "Customer" } },
     } });
   return undefined;
 }
 
-/** The test's resource adapters, written against the SDK's adapter interface as the resource modules are. */
-async function registerAdapters() {
-  const { platformObjectAdapters } = await import("../../../../../packages/apps-sdk/src/resources");
-  const { PlatformObjectRefusal } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
-  type Factory = (typeof platformObjectAdapters)[number];
-  const read = async (response: Promise<Response>) => {
-    const answer = await response;
-    const body = await answer.json();
-    if (!answer.ok)
-      throw new PlatformObjectRefusal(body.error.message,
-        Object.fromEntries((body.error.fields ?? []).map((item: { field: string; message: string }) => [item.field, item.message])));
-    return body;
-  };
-  const post = (body: unknown) => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  const factories: Factory[] = [
-    ({ request }) => [{
-      objectType: AGENT_DEFINITION,
-      read: async (id) => ({ primaryKey: id, label: (await read(request(`/assistant/agent-definitions/${id}`, {}, ""))).name, fields: {} }),
-      forms: {
-        describe: (form) => read(request("/assistant/agent-definitions/form", post(form), "")),
-        async save(target, { values }) {
-          const saved = target.kind === "object"
-            ? await read(request(`/assistant/agent-definitions/${target.primaryKey}`, { ...post(values), method: "PUT" }, ""))
-            : await read(request("/assistant/agent-definitions", post(values), ""));
-          return { primaryKey: saved.id, label: saved.name, fields: {} };
-        },
-      },
-    }],
-    ({ request }) => {
-      const skills = async () => (await read(request("/assistant/agent-skills", {}, ""))).skills as { name: string; source: string; title: string }[];
-      const option = (skill: { name: string; source: string; title: string }) =>
-        ({ primaryKey: skill.name, value: { name: skill.name, source: skill.source }, label: skill.title });
-      return [{
-        objectType: SKILL,
-        options: {
-          list: async () => ({ options: (await skills()).map(option) }),
-          async resolve(values) {
-            const known = await skills();
-            return values.map((value) => {
-              const name = (value as { name: string }).name;
-              const found = known.find((skill) => skill.name === name);
-              return found ? option(found) : { primaryKey: name, value, label: name, unavailable: { reason: "No longer offered" } };
-            });
-          },
-        },
-      }];
-    },
-    ({ request }) => {
-      // Classes and relationships come from one metadata read, shared by both adapters.
-      let metas: Promise<{ classDef: { className: string; showName: string }[]; relationship_rule: { id: string; fromclass: string; toclass: string }[] }> | undefined;
-      const read2 = () => (metas ??= read(request("/admin/getMetas", post({}), "/data-query")).then((body) => body.data));
-      return [
-        { objectType: OBJECT_TYPE, list: async () => (await read2()).classDef.map((item) => ({ primaryKey: item.className, label: item.showName, fields: {} })) },
-        { objectType: RELATIONSHIP, list: async () => (await read2()).relationship_rule.map((item) =>
-          ({ primaryKey: item.id, label: item.id, fields: { fromclass: item.fromclass, toclass: item.toclass } })) },
-      ];
-    },
-  ];
-  (platformObjectAdapters as Factory[]).push(...factories);
-}
-
 async function open(address: string, state: Record<string, unknown>) {
   const sent = installPlatform((request) => owner(request) ?? nothingAt(request));
-  await registerAdapters();
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
   platformPanelHost("ontology").frame(frame, use, panel);
@@ -195,7 +139,7 @@ afterEach(() => {
 });
 
 it("edits the owner's JSON through one form, with the skill picker and the data scope as its fields", async () => {
-  const { context, sent } = await open("/ontology/agents", { selectedAgent: { className: AGENT_DEFINITION, primaryKey: "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a01" } });
+  const { context, sent } = await open("/ontology/agents", { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } });
   await vi.waitFor(() => {
     expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst");
     expect(node("Customer")).toBeTruthy();
@@ -210,6 +154,8 @@ it("edits the owner's JSON through one form, with the skill picker and the data 
   expect(node("Order").classList.contains("selected")).toBe(true);
   expect(node("Customer").classList.contains("accent")).toBe(true);
   expect(context.instance.dirty()).toBe(false);
+  // Classes and relationships came from one metadata read.
+  expect(sent.filter((request) => request.path === "/api/data-query/admin/getMetas")).toHaveLength(1);
 
   node("Invoice").dispatchEvent(new MouseEvent("click", { bubbles: true }));
   await vi.waitFor(() => expect(node("Invoice").classList.contains("selected")).toBe(true));
@@ -221,7 +167,7 @@ it("edits the owner's JSON through one form, with the skill picker and the data 
 
   await context.instance.invoke("definition.save");
   const put = sent.find((request) => request.method === "PUT")!;
-  expect(put.path).toBe("/api/assistant/agent-definitions/0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a01");
+  expect(put.path).toBe(`/api/assistant/agent-definitions/${AGENT}`);
   // The owner's own value shape: the nested model, the skill reference objects, false and null, nothing as text.
   expect(put.body).toEqual({ ...stored, classNames: ["Order", "Invoice", "Customer"] });
   await vi.waitFor(() => expect(context.instance.dirty()).toBe(false));
@@ -242,18 +188,15 @@ it("creates with the owner's defaults, and moves the panel onto the agent the ow
   await context.instance.invoke("definition.save");
   expect(sent.find((request) => request.method === "POST" && request.path === "/api/assistant/agent-definitions")?.body)
     .toEqual({ ...defaults, name: "Planner" });
-  await vi.waitFor(() => expect(context.instance.state.values.value.selectedAgent).toEqual({ className: AGENT_DEFINITION, primaryKey: "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a09" }));
+  await vi.waitFor(() => expect(context.instance.state.values.value.selectedAgent).toEqual({ className: AGENT_DEFINITION, primaryKey: CREATED }));
 });
 
-const AGENT = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a01";
-
 /** The panel opened at a link to a draft the agent wrote for it, the agent selected. */
-async function openWithDraft(form: PanelFormValues) {
+async function openWithDraft(form: PanelFormValues, envelope: { operation: string; target: { id?: string }; created?: { id: string } } = { operation: "agent.update", target: { id: AGENT } }) {
   const query = new URLSearchParams({ draftSessionId: "session-1", draftRunId: "run-1", draftPath: "outputs/drafts/agent.page-draft.json" });
-  const draft = { pageKey: use.pageKey, operation: "agent.update", target: { id: AGENT }, form };
+  const draft = { pageKey: use.pageKey, ...envelope, form };
   const sent = installPlatform((request) =>
     request.path === "/api/assistant/sessions/session-1/runs/run-1/page-draft" ? Response.json(draft) : owner(request) ?? nothingAt(request));
-  await registerAdapters();
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
   platformPanelHost("ontology").frame(frame, use, panel);
@@ -278,7 +221,7 @@ it("refuses a draft the owner refuses, whole, naming the field and the reason, a
 });
 
 it("shows a draft the owner accepts in the form and its field projections, marked and unsaved", async () => {
-  const { context, sent } = await openWithDraft({ ...stored, name: "  Analyst v2 ", skills: [...(stored.skills as object[]), { name: "chart", source: "domain" }] });
+  const { context, sent } = await openWithDraft({ ...stored, name: "  Analyst v2 ", skills: [sql, chart] });
   await vi.waitFor(() => expect(context.draft.value?.changed).toEqual(new Set(["/name", "/skills"])), { timeout: 5000 });
   await vi.waitFor(() => expect(fieldItem("/skills")?.textContent).toContain("Charts"));
   // The owner's normalised value is what the form holds; the picker's field is the same form's, marked with it.
@@ -298,4 +241,16 @@ it("opens a draft that changes nothing as the agent is, with nothing unsaved", a
   expect(context.draft.value).toBeNull();
   expect(context.instance.dirty()).toBe(false);
   expect(failed).toEqual([]);
+});
+
+it("reopens a saved create draft on the agent it created, and creates nothing again", async () => {
+  const { context, sent } = await openWithDraft(stored, { operation: "agent.create", target: {}, created: { id: AGENT } });
+  await vi.waitFor(() => expect(context.instance.state.values.value.selectedAgent).toEqual({ className: AGENT_DEFINITION, primaryKey: AGENT }), { timeout: 5000 });
+  await vi.waitFor(() => expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst"));
+  // The draft was compared with the agent it created, not offered as a new one.
+  expect(sent.filter((request) => (request.body as { values?: unknown } | null)?.values).map((request) => request.body))
+    .toEqual([{ target: { kind: "object", objectType: AGENT_DEFINITION, primaryKey: AGENT }, values: stored, changedField: null }]);
+  expect(context.draft.value).toBeNull();
+  expect(context.instance.dirty()).toBe(false);
+  expect(sent.some((request) => request.method === "POST" && request.path === "/api/assistant/agent-definitions")).toBe(false);
 });

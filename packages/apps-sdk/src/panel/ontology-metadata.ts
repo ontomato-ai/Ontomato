@@ -70,14 +70,7 @@ export const ontologyMetadataAdapters: PlatformObjectAdapterFactory = requests =
     },
   }, {
     objectType: RELATIONSHIP,
+    // A graph reads the two classes a relationship joins from these fields, as its projection's `graph` names them.
     list: relationships,
-    edges: {
-      endpointType: OBJECT_TYPE,
-      async list() {
-        return (await relationships()).map(({ primaryKey, label, fields }) => ({
-          primaryKey, label, source: fields.fromclass, target: fields.toclass,
-        }));
-      },
-    },
   }];
 };
