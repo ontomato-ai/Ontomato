@@ -20,6 +20,8 @@ import io.ontomato.dataengine.service.FunctionForm;
 import io.ontomato.dataengine.service.FunctionService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.OwnerRefusal;
+import io.ontomato.dataengine.service.OwnerFieldRefusal;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.ontomato.dataengine.service.PanelFormFields;
 import io.ontomato.dataengine.service.agent.OntologyGenerationPrompts;
 import io.ontomato.dataengine.service.agent.OntologyGenerationService;
@@ -188,9 +190,15 @@ public class FunctionServiceImpl implements FunctionService {
   @Override
 	@Transactional(rollbackFor = Exception.class)
 	public Function save(Function function, String lang) throws Exception {
-        if (Function.OPERATION_READ.equals(function.getOperation()))
-            QueryPackage.prepareReadFunction(function,
-                (List<Map<String, Object>>) adminService.getJSONRule(function.getDomainId()).get("classDef"));
+        if (Function.OPERATION_READ.equals(function.getOperation())) {
+            try {
+                QueryPackage.prepareReadFunction(function,
+                    (List<Map<String, Object>>) adminService.getJSONRule(function.getDomainId()).get("classDef"));
+            } catch (IllegalArgumentException error) {
+                // The package's own rules refuse it: the reader corrects the query package field.
+                throw new OwnerFieldRefusal("FUNCTION_QUERY_PACKAGE_INVALID", "/queryPackage", "invalid_object", error.getMessage());
+            }
+        }
 		if (function.getId() != null) {
 			functionDao.lock(function.getId());
 			Function existFunction = functionDao.queryById(function.getId());
@@ -278,8 +286,10 @@ public class FunctionServiceImpl implements FunctionService {
       throw new IllegalArgumentException("target.kind: expected object or draft");
     }
     JSONObject values = request.getJSONObject("values");
+    // A stored Function and a refresh carry no verdict; an incoming draft is checked and its errors returned with it.
+    List<ObjectNode> errors = List.of();
     if (values == null) values = PanelFormFields.asset(function);
-    else if (request.get("changedField") == null) FunctionForm.checkDraft(values);
+    else if (request.get("changedField") == null) errors = FunctionForm.fieldErrors(values);
     String readOnlyReason = null;
     if (Function.ORIGIN_SYSTEM.equals(function.getOrigin()))
       readOnlyReason = langService.get(lang, "Function.cannotModifySystem");
@@ -288,6 +298,6 @@ public class FunctionServiceImpl implements FunctionService {
     else if (function.getId() != null)
       readOnlyReason = referenceReason(function.getId(), lang);
     String operationReadOnlyReason = langService.get(lang, "PanelForm.readOnly.operation");
-    return FunctionForm.describe(values, existing, readOnlyReason, operationReadOnlyReason, lang, langService);
+    return FunctionForm.describe(values, errors, existing, readOnlyReason, operationReadOnlyReason, lang, langService);
   }
 }

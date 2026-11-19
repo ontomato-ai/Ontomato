@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
+import { formFieldErrorSchema } from "@ontomato/contracts/form-fields";
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
 import { HttpError } from "../../utils/errors";
 import type { PanelOperationHost, PanelOperationTarget, PanelRecordTarget, SinglePanelOperationOutcome } from "./server-operations";
@@ -13,6 +14,8 @@ export const ownerEnvelopeSchema = z.object({
 export const savedIdSchema = z.object({ id: z.string().min(1) }).passthrough();
 const labelSchema = z.object({ name: z.string() }).passthrough();
 const ownerRefusalCodeSchema = z.string().min(1).max(200).optional();
+/** A refusal of values at form fields names them as a form read does. */
+const ownerFieldErrorsSchema = z.array(formFieldErrorSchema).optional();
 
 export type DataQueryOperationHost = Pick<PanelOperationHost, "request">;
 
@@ -65,13 +68,18 @@ export const affected = (objectType: string, primaryKey: string, objectTypes: st
   objects: [{ objectType, primaryKey }], objectTypes,
 });
 
-/** Only an explicit owner code classifies a negative write receipt as a refusal. */
+/**
+ * Only an explicit owner code classifies a negative write receipt as a refusal; a refusal of values at form fields keeps
+ * the owner's field errors.
+ */
 export function ownerWriteFailure(
   envelope: z.infer<typeof ownerEnvelopeSchema>, failureCode: string, fallbackMessage: string,
 ): Extract<SinglePanelOperationOutcome, { kind: "refusal" | "failure" }> {
   const code = ownerRefusalCodeSchema.parse(envelope.code);
   const message = envelope.message ?? fallbackMessage;
-  return code === undefined ? { kind: "failure", code: failureCode, message } : { kind: "refusal", code, message };
+  if (code === undefined) return { kind: "failure", code: failureCode, message };
+  const errors = ownerFieldErrorsSchema.parse(envelope.errors);
+  return { kind: "refusal", code, message, ...(errors && { errors }) };
 }
 
 export async function save(

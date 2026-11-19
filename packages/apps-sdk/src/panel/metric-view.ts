@@ -12,7 +12,8 @@ import {
 /*
  * The metrics as a platform object: the owner's list and single reads, its typed form for one target, and the save that
  * writes the whole asset back. The owner answers through the data-query service with its usual envelope
- * `{success, data | message, fields?}`; a refusal names the form fields as JSON Pointers.
+ * `{success, data | code, message, errors?}`. A form read carries the owner's field errors in its description; a save
+ * the owner refuses at a field names it by the same JSON Pointer.
  */
 
 interface MetricViewAsset {
@@ -35,7 +36,7 @@ interface OwnerEnvelope {
   success: boolean;
   message?: string | null;
   data?: unknown;
-  fields?: readonly { field: string; code: string; message: string }[];
+  errors?: readonly { field: string; code: string; message: string }[];
 }
 
 function envelopeOf(value: unknown): OwnerEnvelope {
@@ -59,7 +60,7 @@ function assetsOf(value: unknown): MetricViewAsset[] {
 function refusal(envelope: OwnerEnvelope): never {
   throw new PlatformObjectRefusal(
     envelope.message ?? "The metric owner refused the request",
-    Object.fromEntries((envelope.fields ?? []).map(field => [field.field, field.message])),
+    Object.fromEntries((envelope.errors ?? []).map(error => [error.field, error.message])),
   );
 }
 

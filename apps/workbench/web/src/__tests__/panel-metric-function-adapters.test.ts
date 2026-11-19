@@ -81,16 +81,16 @@ describe("metric and function resource adapters", () => {
     expect(sent[0]).toMatchObject({ path: "/metricView/queryById", body: { id: "m1" } });
   });
 
-  it("turns a metric owner refusal into a typed refusal with its field pointers", async () => {
-    const { requests } = fake(() => ({ success: false, message: "Invalid MetricView draft", fields: [
-      { field: "/name", code: "required", message: "name is required" },
-    ] }));
+  it("turns a metric save the owner refuses at a field into a typed refusal with its field pointers", async () => {
+    const message = "Binding 'First': Missing parameter: amount";
+    const { requests } = fake(() => ({
+      success: false, code: "METRIC_VIEW_BINDING_INVALID", message, errors: [{ field: "/bindings", code: "invalid_object", message }],
+    }));
     const [adapter] = metricViewAdapters(requests);
+    const save = () => adapter!.forms!.save({ kind: "draft" }, { values: { name: "Revenue" } });
 
-    await expect(adapter!.forms!.describe({ target: { kind: "draft" }, changedField: null }))
-      .rejects.toMatchObject({ name: "PlatformObjectRefusal", message: "Invalid MetricView draft", fields: { "/name": "name is required" } });
-    await expect(adapter!.forms!.describe({ target: { kind: "draft" }, changedField: null }))
-      .rejects.toBeInstanceOf(PlatformObjectRefusal);
+    await expect(save()).rejects.toMatchObject({ name: "PlatformObjectRefusal", message, fields: { "/bindings": message } });
+    await expect(save()).rejects.toBeInstanceOf(PlatformObjectRefusal);
   });
 
   it("parses the owner's form description and sends the complete values to the save", async () => {
@@ -176,14 +176,15 @@ describe("metric and function resource adapters", () => {
     expect(sent[0]).toMatchObject({ path: "/function/form", body: { target: { kind: "draft" }, changedField: null }, service: "/data-query" });
   });
 
-  it("turns a function owner refusal into a typed refusal with its field pointers", async () => {
-    const { requests } = fake(() => ({ success: false, message: "Invalid Function draft", fields: [
-      { field: "/queryPackage", code: "required", message: "queryPackage is required" },
-    ] }));
+  it("turns a function save the owner refuses at a field into a typed refusal with its field pointers", async () => {
+    const message = "Convert this read Function to a query package before saving";
+    const { requests } = fake(() => ({
+      success: false, code: "FUNCTION_QUERY_PACKAGE_INVALID", message, errors: [{ field: "/queryPackage", code: "invalid_object", message }],
+    }));
     const [adapter] = functionAdapters(requests);
 
-    await expect(adapter!.forms!.describe({ target: { kind: "draft" }, changedField: null }))
-      .rejects.toMatchObject({ name: "PlatformObjectRefusal", message: "Invalid Function draft", fields: { "/queryPackage": "queryPackage is required" } });
+    await expect(adapter!.forms!.save({ kind: "draft" }, { values: { name: "Revenue query" } }))
+      .rejects.toMatchObject({ name: "PlatformObjectRefusal", message, fields: { "/queryPackage": message } });
   });
 
   it("registers both adapters in the SDK's resource map", async () => {

@@ -105,6 +105,11 @@ public final class PanelFormErrors {
     return errors.isEmpty();
   }
 
+  /** The errors so far, in the order found. */
+  public List<ObjectNode> list() {
+    return List.copyOf(errors);
+  }
+
   public void throwIfAny(String message) {
     if (!errors.isEmpty()) throw new PanelFormException(message, errors);
   }

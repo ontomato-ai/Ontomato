@@ -39,7 +39,6 @@ import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.MetricViewService;
 import io.ontomato.dataengine.service.OwnerRefusal;
-import io.ontomato.dataengine.service.PanelFormException;
 import io.ontomato.dataengine.service.SessionCancelledException;
 import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.service.IdentityService;
@@ -237,10 +236,6 @@ public class MetricViewController {
 			User user = SystemUtils.getCurUser();
 			ret.put("data", metricViewService.form(param, lang, user.getDomainId()));
 			ret.put("success", true);
-		} catch (PanelFormException e) {
-			ret.put("success", false);
-			ret.put("message", e.getMessage());
-			ret.put("fields", e.fields());
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
 		} catch (Exception e) {

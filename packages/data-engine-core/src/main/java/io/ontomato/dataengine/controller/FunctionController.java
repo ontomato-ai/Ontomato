@@ -19,7 +19,6 @@ import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.FunctionService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.OwnerRefusal;
-import io.ontomato.dataengine.service.PanelFormException;
 import io.ontomato.dataengine.util.SystemUtils;
 
 import lombok.extern.slf4j.Slf4j;
@@ -104,10 +103,6 @@ public class FunctionController {
 			User user = SystemUtils.getCurUser();
 			ret.put("data", functionService.form(param, lang, user.getDomainId()));
 			ret.put("success", true);
-		} catch (PanelFormException e) {
-			ret.put("success", false);
-			ret.put("message", e.getMessage());
-			ret.put("fields", e.fields());
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
 		} catch (Exception e) {

@@ -117,6 +117,16 @@ class MetricViewBindingContractTest {
     assertEquals(code, refusal.code());
   }
 
+  /** A refusal of the saved metric's own value names the form field it refuses, with the same message. */
+  static void assertFieldRefusal(String code, String field, String fieldCode, Executable action) {
+    OwnerFieldRefusal refusal = assertThrows(OwnerFieldRefusal.class, action);
+    assertEquals(code, refusal.code());
+    assertEquals(1, refusal.errors().size());
+    assertEquals(field, refusal.errors().get(0).get("field").asText());
+    assertEquals(fieldCode, refusal.errors().get(0).get("code").asText());
+    assertEquals(refusal.getMessage(), refusal.errors().get(0).get("message").asText());
+  }
+
   MetricViewBinding binding(String name, int amount) {
     MetricViewBinding b = new MetricViewBinding(); b.setName(name);
     b.setParameters(JSONObject.of("amount", amount, "labels", List.of("north", "west"), "optional", null));
@@ -226,7 +236,7 @@ class MetricViewBindingContractTest {
     String before = JSON.toJSONString(functions);
     m.getFunction().getQueryPackage().getJSONObject("manifest").getJSONArray("parameterDefs").getJSONObject(0).put("type", Parameter.TYPE_STRING);
     m.setBindings(null); // Definition-only clients preserve the saved binding collection.
-    assertRefusal("METRIC_VIEW_BINDING_INVALID", () -> service.save(m, "en"));
+    assertFieldRefusal("METRIC_VIEW_BINDING_INVALID", "/bindings", "invalid_object", () -> service.save(m, "en"));
     assertEquals(before, JSON.toJSONString(functions));
     MetricView renamed = service.queryById(m.getId(), "domain-a");
     renamed.getFunction().getQueryPackage().getJSONObject("manifest").getJSONArray("parameterDefs").getJSONObject(0).put("name", "renamed");
@@ -239,7 +249,7 @@ class MetricViewBindingContractTest {
     MetricView a = service.save(metric("domain-a"), "en");
     MetricView other = service.save(metric("domain-a"), "en");
     a.getBindings().add(copy(other.getBindings().get(0), MetricViewBinding.class));
-    assertRefusal("METRIC_VIEW_BINDING_NOT_FOUND", () -> service.save(a, "en"));
+    assertFieldRefusal("METRIC_VIEW_BINDING_NOT_FOUND", "/bindings/2/id", "target_unavailable", () -> service.save(a, "en"));
     MetricView original = service.queryById(a.getId(), "domain-a");
     String bindingId = original.getBindings().get(0).getId();
     assertThrows(IllegalArgumentException.class, () -> service.execute(a.getId(), bindingId, JSONObject.of("amount", 100), null, "en", user, new UserDataPermission(), 1));
@@ -318,7 +328,18 @@ class MetricViewBindingContractTest {
     var definition = metric("domain-a");
     definition.getBindings().get(0).getParameters().put("optional", "{{acount.id}}");
 
-    assertRefusal("METRIC_VIEW_PARAMETER_INVALID", () -> service.save(definition, "en"));
+    assertFieldRefusal("METRIC_VIEW_PARAMETER_INVALID", "/bindings/0/parameters", "invalid_object",
+        () -> service.save(definition, "en"));
+  }
+
+  @Test
+  void aQueryPackageTheOwnerCannotTakeIsRefusedAtItsField() {
+    var unconverted = metric("domain-a");
+    unconverted.getFunction().setQueryPackage(null);
+
+    assertFieldRefusal("METRIC_VIEW_QUERY_PACKAGE_INVALID", "/function/queryPackage", "invalid_object",
+        () -> service.save(unconverted, "en"));
+    assertTrue(metrics.isEmpty());
   }
 
   @Test

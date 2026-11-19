@@ -18,7 +18,7 @@ import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.MetricViewForm;
 import io.ontomato.dataengine.service.MetricViewService;
 import io.ontomato.dataengine.service.OwnerRefusal;
-import io.ontomato.dataengine.service.PanelFormException;
+import io.ontomato.dataengine.service.OwnerFieldRefusal;
 import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.service.agent.AgentExecutionScope;
 import io.ontomato.dataengine.util.SpringBeanUtil;
@@ -224,21 +224,38 @@ class MetricViewPanelEndpointTest {
   }
 
   @Test
-  void theFormEndpointReturnsStructuredFieldErrors() throws Exception {
-    when(metricViewService.form(any(), eq("en"), eq("domain")))
-        .thenThrow(new PanelFormException("Invalid MetricView draft",
-            List.of(FormFields.error("/name", "required", "name is required"))));
+  void aDraftsFieldErrorsAreASuccessfulFormRead() throws Exception {
+    JSONObject values = MetricViewForm.defaults();
+    JSONObject description = MetricViewForm.describe(values,
+        List.of(FormFields.error("/name", "required", "name is required")), false, null, "en", langService);
+    when(metricViewService.form(any(), eq("en"), eq("domain"))).thenReturn(description);
 
     JSONObject body = perform("/metricView/form", """
-        {"target":{"kind":"draft"},"changedField":null}""");
+        {"target":{"kind":"draft"},"values":{"name":""},"changedField":null}""");
+
+    assertTrue(body.getBooleanValue("success"));
+    JSONArray errors = body.getJSONObject("data").getJSONArray("errors");
+    assertEquals(1, errors.size());
+    assertEquals("/name", errors.getJSONObject(0).getString("field"));
+    assertEquals("required", errors.getJSONObject(0).getString("code"));
+    assertEquals("name is required", errors.getJSONObject(0).getString("message"));
+  }
+
+  @Test
+  void aSaveRefusedAtAFieldCarriesTheFieldError() throws Exception {
+    when(metricViewService.save(any(), eq("en"))).thenThrow(new OwnerFieldRefusal(
+        "METRIC_VIEW_BINDING_INVALID", "/bindings", "invalid_object", "Binding 'First': Missing parameter: amount"));
+
+    JSONObject body = perform("/metricView/save", """
+        {"name":"Revenue","function":{"name":"calc","operation":"OPERATION_READ"}}""");
 
     assertFalse(body.getBooleanValue("success"));
-    assertEquals("Invalid MetricView draft", body.getString("message"));
-    JSONArray fields = body.getJSONArray("fields");
-    assertEquals(1, fields.size());
-    assertEquals("/name", fields.getJSONObject(0).getString("field"));
-    assertEquals("required", fields.getJSONObject(0).getString("code"));
-    assertEquals("name is required", fields.getJSONObject(0).getString("message"));
+    assertEquals("METRIC_VIEW_BINDING_INVALID", body.getString("code"));
+    JSONArray errors = body.getJSONArray("errors");
+    assertEquals(1, errors.size());
+    assertEquals("/bindings", errors.getJSONObject(0).getString("field"));
+    assertEquals("invalid_object", errors.getJSONObject(0).getString("code"));
+    assertEquals("Binding 'First': Missing parameter: amount", errors.getJSONObject(0).getString("message"));
   }
 
   @Test
@@ -272,7 +289,7 @@ class MetricViewPanelEndpointTest {
     JSONObject values = MetricViewForm.defaults();
     values.getJSONObject("function").put("queryPackage", JSONObject.of("manifest", JSONObject.of(
         "parameterDefs", JSONArray.of(JSONObject.of("name", "amount", "type", "TYPE_NUMBER")))));
-    JSONObject description = MetricViewForm.describe(values, false, null, "en", langService);
+    JSONObject description = MetricViewForm.describe(values, List.of(), false, null, "en", langService);
     when(metricViewService.form(any(), eq("en"), eq("domain"))).thenReturn(description);
 
     JSONObject body = perform("/metricView/form", """

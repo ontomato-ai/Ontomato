@@ -2,6 +2,7 @@ package io.ontomato.dataengine.service;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.function.Parameter;
 import java.util.List;
@@ -40,8 +41,10 @@ public final class FunctionForm {
         "logic", "");
   }
 
+  /** The form for {@code values} with the field errors the owner found in them. */
   public static JSONObject describe(
       JSONObject values,
+      List<ObjectNode> errors,
       boolean existing,
       String readOnlyReason,
       String operationReadOnlyReason,
@@ -167,11 +170,11 @@ public final class FunctionForm {
               readOnlyReason,
               null,
               false));
-    return JSONObject.of("fields", fields, "values", values, "save", save(existing));
+    return JSONObject.of("fields", fields, "values", values, "errors", errors, "save", save(existing));
   }
 
-  /** Check an incoming draft without saving it; reject with the field paths that fail. */
-  public static void checkDraft(JSONObject values) {
+  /** The field errors of an incoming draft, empty when the owner accepts it; nothing is saved. */
+  public static List<ObjectNode> fieldErrors(JSONObject values) {
     PanelFormErrors errors = new PanelFormErrors();
     errors.requiredString(values, "name", "/name");
     errors.optionalString(values, "description", "/description");
@@ -192,13 +195,14 @@ public final class FunctionForm {
       if (returnDef != null) errors.stringArray(returnDef, "classNames", "/returnDef/classNames");
       checkParameters(values.get("parameters"), errors, "");
     }
-    errors.throwIfAny("Invalid Function draft");
+    if (!errors.isEmpty()) return errors.list();
     try {
       Function.fromInput(values);
     } catch (RuntimeException error) {
-      errors.invalidObject("/function", error);
-      errors.throwIfAny("Invalid Function draft");
+      // The Function is the whole form here, so a definition it cannot take is an error on the whole value.
+      errors.invalidObject("/", error);
     }
+    return errors.list();
   }
 
   public static void checkParameters(Object raw, PanelFormErrors errors, String prefix) {

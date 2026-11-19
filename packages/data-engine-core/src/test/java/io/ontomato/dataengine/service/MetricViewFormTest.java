@@ -47,6 +47,7 @@ class MetricViewFormTest {
     JSONObject form = form(objectTarget("m1"));
 
     assertEquals("Revenue", form.getJSONObject("values").getString("name"));
+    assertEquals(List.of(), errorsOf(form));
     JSONObject name = field(form, "/name");
     assertEquals("text", name.getJSONObject("control").getString("kind"));
     assertTrue(name.getBooleanValue("required"));
@@ -129,6 +130,7 @@ class MetricViewFormTest {
     JSONObject form = service.form(request, "en", "domain-a");
 
     assertSame(values, form.getJSONObject("values"));
+    assertEquals(List.of(), errorsOf(form));
     JSONObject bindings = field(form, "/bindings").getJSONObject("control");
     JSONObject region = field(bindings.getJSONArray("itemFields"), "/parameters/region");
     assertEquals("Region area", region.getString("help"));
@@ -188,6 +190,32 @@ class MetricViewFormTest {
 
     verify(metricViewDao, never()).save(any());
     assertEquals("New metric", form.getJSONObject("values").getString("name"));
+    assertEquals(List.of(), errorsOf(form));
+  }
+
+  @Test
+  void aMalformedDraftIsStillDescribedWithItsErrors() {
+    JSONObject values = MetricViewForm.defaults();
+    values.put("name", "New metric");
+    values.put("function", "not an object");
+
+    JSONObject form = draft(values);
+
+    assertError(errorsOf(form), "/function", "invalid_object");
+    assertSame(values, form.getJSONObject("values"));
+    assertTrue(field(form, "/bindings").getJSONObject("control").getJSONObject("defaultItem").getJSONObject("parameters").isEmpty());
+
+    values = MetricViewForm.defaults();
+    values.put("name", "New metric");
+    values.getJSONObject("function").put("queryPackage", JSONObject.of("manifest", JSONObject.of("parameterDefs",
+        JSONArray.of("not a definition", JSONObject.of("name", "amount", "type", Parameter.TYPE_NUMBER)))));
+    form = draft(values);
+    JSONObject defaultItem = field(form, "/bindings").getJSONObject("control").getJSONObject("defaultItem");
+    assertEquals(Set.of("amount"), defaultItem.getJSONObject("parameters").keySet());
+
+    values.getJSONObject("function").getJSONObject("queryPackage").getJSONObject("manifest").put("parameterDefs", "not an array");
+    form = draft(values);
+    assertTrue(field(form, "/bindings").getJSONObject("control").getJSONObject("defaultItem").getJSONObject("parameters").isEmpty());
   }
 
   @Test
@@ -254,13 +282,23 @@ class MetricViewFormTest {
     assertTrue(wrongType.get(0).get("message").asText().contains("Parameter 'amount' requires TYPE_NUMBER"));
   }
 
+  /** A draft the owner does not accept is still a form read: its values come back with the errors. */
   private List<ObjectNode> draftErrors(JSONObject values) {
+    JSONObject form = draft(values);
+    assertSame(values, form.getJSONObject("values"));
+    return errorsOf(form);
+  }
+
+  private JSONObject draft(JSONObject values) {
     JSONObject request = JSONObject.of("target", JSONObject.of("kind", "draft"));
     request.put("values", values);
     request.put("changedField", null);
-    PanelFormException error = assertThrows(PanelFormException.class, () -> service.form(request, "en", "domain-a"));
-    assertEquals("Invalid MetricView draft", error.getMessage());
-    return error.fields();
+    return service.form(request, "en", "domain-a");
+  }
+
+  @SuppressWarnings("unchecked")
+  private static List<ObjectNode> errorsOf(JSONObject form) {
+    return (List<ObjectNode>) form.get("errors");
   }
 
   private static void assertError(List<ObjectNode> fields, String field, String code) {

@@ -17,7 +17,7 @@ import io.ontomato.dataengine.service.FunctionService;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.OwnerRefusal;
-import io.ontomato.dataengine.service.PanelFormException;
+import io.ontomato.dataengine.service.OwnerFieldRefusal;
 import io.ontomato.dataengine.util.SpringBeanUtil;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -130,20 +130,39 @@ class FunctionPanelEndpointTest {
   }
 
   @Test
-  void theFormEndpointReturnsStructuredFieldErrors() throws Exception {
-    when(functionService.form(any(), eq("en"), eq("domain")))
-        .thenThrow(new PanelFormException("Invalid Function draft",
-            List.of(FormFields.error("/queryPackage", "required", "queryPackage is required"))));
+  void aDraftsFieldErrorsAreASuccessfulFormRead() throws Exception {
+    when(functionService.form(any(), eq("en"), eq("domain"))).thenReturn(JSONObject.of(
+        "fields", new JSONArray(), "values", JSONObject.of("name", ""),
+        "errors", List.of(FormFields.error("/queryPackage", "required", "queryPackage is required")),
+        "save", JSONObject.of("path", "/function/save")));
 
     JSONObject body = perform("/function/form", """
-        {"target":{"kind":"draft"},"changedField":null}""");
+        {"target":{"kind":"draft"},"values":{"name":""},"changedField":null}""");
+
+    assertTrue(body.getBooleanValue("success"));
+    JSONArray errors = body.getJSONObject("data").getJSONArray("errors");
+    assertEquals(1, errors.size());
+    assertEquals("/queryPackage", errors.getJSONObject(0).getString("field"));
+    assertEquals("required", errors.getJSONObject(0).getString("code"));
+    assertEquals("queryPackage is required", errors.getJSONObject(0).getString("message"));
+  }
+
+  @Test
+  void aSaveRefusedAtAFieldCarriesTheFieldError() throws Exception {
+    when(functionService.save(any(), eq("en"))).thenThrow(new OwnerFieldRefusal(
+        "FUNCTION_QUERY_PACKAGE_INVALID", "/queryPackage", "invalid_object", "manifest.parameterDefs: expected an array"));
+
+    JSONObject body = perform("/function/save", """
+        {"name":"Revenue query","operation":"OPERATION_READ"}""");
 
     assertFalse(body.getBooleanValue("success"));
-    assertEquals("Invalid Function draft", body.getString("message"));
-    JSONArray fields = body.getJSONArray("fields");
-    assertEquals(1, fields.size());
-    assertEquals("/queryPackage", fields.getJSONObject(0).getString("field"));
-    assertEquals("required", fields.getJSONObject(0).getString("code"));
+    assertEquals("FUNCTION_QUERY_PACKAGE_INVALID", body.getString("code"));
+    assertEquals("manifest.parameterDefs: expected an array", body.getString("message"));
+    JSONArray errors = body.getJSONArray("errors");
+    assertEquals(1, errors.size());
+    assertEquals("/queryPackage", errors.getJSONObject(0).getString("field"));
+    assertEquals("invalid_object", errors.getJSONObject(0).getString("code"));
+    assertEquals("manifest.parameterDefs: expected an array", errors.getJSONObject(0).getString("message"));
   }
 
   private Function function(String id, String name, String operation) {

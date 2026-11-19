@@ -107,6 +107,22 @@ describe("metric and function panel server operations", () => {
       .toEqual({ kind: "refusal", code: "METRIC_VIEW_SYSTEM_READONLY", message: "Cannot modify a system MetricView" });
   });
 
+  it("keeps the owner's field errors on a metric or function save it refuses at a field", async () => {
+    const error = { field: "/bindings", code: "invalid_object", message: "Binding 'First': Missing parameter: amount" };
+    const metric = hostWith(() => Response.json({
+      success: false, code: "METRIC_VIEW_BINDING_INVALID", message: error.message, errors: [error],
+    }));
+    expect(await write(`${METRIC_VIEW}.save`).execute(metric.host, metricTarget, { values: {} }))
+      .toEqual({ kind: "refusal", code: "METRIC_VIEW_BINDING_INVALID", message: error.message, errors: [error] });
+
+    const packageError = { field: "/queryPackage", code: "invalid_object", message: "Convert this read Function to a query package before saving" };
+    const fn = hostWith(() => Response.json({
+      success: false, code: "FUNCTION_QUERY_PACKAGE_INVALID", message: packageError.message, errors: [packageError],
+    }));
+    expect(await write(`${FUNCTION}.save`).execute(fn.host, { kind: "draft" }, { values: { name: "Revenue query" } }))
+      .toEqual({ kind: "refusal", code: "FUNCTION_QUERY_PACKAGE_INVALID", message: packageError.message, errors: [packageError] });
+  });
+
   it("keeps an uncoded write error as a known failure", async () => {
     const operation = write(`${METRIC_VIEW}.save`);
     const { host } = hostWith(() => Response.json({ success: false, message: "The definition store could not complete the write" }));
