@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { nextTick, ref } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
+import { PANEL_HOST_CHANNEL, panelAddressState } from "@ontomato/contracts/panel-host";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
@@ -568,4 +569,163 @@ it("resolves column labelKey/emptyKey via panel.t, falls back to owner fieldLabe
   await vi.waitFor(() => expect(document.querySelectorAll(".sdk-object-summary dt").length).toBe(2));
   const summaryLabels = [...document.querySelectorAll(".sdk-object-summary dt")].map((dt) => dt.textContent?.trim());
   expect(summaryLabels).toEqual(["Feedback source", "rawCode"]);
+});
+
+it("two-way binds ObjectList search keyword and filters with scalar deepLink panel state via slot inputs/outputs", async () => {
+  const projections = {
+    "feedback-list": projection("feedback-list", "ObjectList", FEEDBACK, {
+      columns: [
+        { key: "source", labelKey: "cols.source", kind: "tag" },
+        { key: "rating", labelKey: "cols.rating", kind: "tag" },
+        { key: "comment", labelKey: "cols.comment" },
+      ],
+      searchable: true,
+      searchMode: "submit",
+      filters: [
+        {
+          key: "sourceType", label: "filters.sourceType", kind: "select",
+          options: [{ value: "qa", label: "filters.qa" }, { value: "analysis_task", label: "filters.analysis" }],
+        },
+        {
+          key: "rating", label: "filters.rating", kind: "select",
+          options: [{ value: "like", label: "filters.like" }, { value: "dislike", label: "filters.dislike" }],
+        },
+      ],
+    }, {
+      search: { kind: "scalar", type: "string" },
+      sourceType: { kind: "scalar", type: "string" },
+      rating: { kind: "scalar", type: "string" },
+    }),
+  };
+  const manifest = definePanel({
+    state: {
+      selectedFeedback: { kind: "object", objectType: FEEDBACK, deepLink: true },
+      sourceType: { kind: "scalar", type: "string", deepLink: true },
+      rating: { kind: "scalar", type: "string", deepLink: true },
+      keyword: { kind: "scalar", type: "string", deepLink: true },
+    },
+    slots: {
+      list: {
+        projectionId: "feedback-list",
+        inputs: {
+          search: { state: "keyword" },
+          sourceType: { state: "sourceType" },
+          rating: { state: "rating" },
+        },
+        outputs: {
+          selected: { state: "selectedFeedback" },
+          search: { state: "keyword" },
+          sourceType: { state: "sourceType" },
+          rating: { state: "rating" },
+        },
+      },
+    },
+    operations: [],
+  });
+  const panel = panelRecord("panel-feedback-state", "Feedback", manifest);
+  panel.content.messages = {
+    en: {
+      "cols.source": "Source",
+      "cols.rating": "Rating",
+      "cols.comment": "Comment",
+      "filters.sourceType": "Source",
+      "filters.qa": "Q&A",
+      "filters.analysis": "Analysis",
+      "filters.rating": "Rating",
+      "filters.like": "Like",
+      "filters.dislike": "Dislike",
+    },
+  };
+  panel.content.html = `<div id="app"><Projection slot="list"></Projection></div>`;
+  const use = panelUse("use-feedback-state", "feedback-state-test", panel.id, "/applications/app-test/feedback-state");
+
+  installPlatform(hostWith(projections));
+  const frame = panelFrame();
+  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  const initialPath = `${use.path}?state=${encodeURIComponent(JSON.stringify({
+    sourceType: "qa",
+    rating: "dislike",
+    keyword: "timeout",
+  }))}`;
+  writePanelDocument(panel, use, initialPath, panelAddressState(initialPath));
+  inside(frame);
+
+  const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
+  const queries: unknown[] = [];
+  registerPlatformObjectAdapter({
+    objectType: FEEDBACK,
+    query: async (q) => {
+      queries.push(q);
+      return {
+        items: [{ primaryKey: "f-1", label: "Row 1", fields: { source: q.filters?.sourceType ?? "", rating: q.filters?.rating ?? "", comment: q.search ?? "" } }],
+        total: 1,
+      };
+    },
+  });
+
+  const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
+  const mounted = await mountPanel({});
+
+  // 1. First query immediately carries restored deepLink state; inputs reflect restored values.
+  await vi.waitFor(() => expect(queries).toHaveLength(1));
+  expect(queries[0]).toEqual({ search: "timeout", filters: { sourceType: "qa", rating: "dislike" } });
+  const searchInput = document.querySelector<HTMLInputElement>(".sdk-object-list-search")!;
+  const [sourceSelect, ratingSelect] = [...document.querySelectorAll<HTMLSelectElement>(".sdk-object-list-select")];
+  expect(searchInput.value).toBe("timeout");
+  expect(sourceSelect!.value).toBe("qa");
+  expect(ratingSelect!.value).toBe("dislike");
+
+  // 2. User edits search and filters and clicks Query -> writes back atomically to panel state & deepLink without double query.
+  searchInput.value = "chart";
+  searchInput.dispatchEvent(new Event("input"));
+  sourceSelect!.value = "analysis_task";
+  sourceSelect!.dispatchEvent(new Event("change"));
+  ratingSelect!.value = "like";
+  ratingSelect!.dispatchEvent(new Event("change"));
+  document.querySelector<HTMLButtonElement>(".sdk-object-list-query")!.click();
+
+  await vi.waitFor(() => expect(queries).toHaveLength(2));
+  await nextTick();
+  expect(queries).toHaveLength(2);
+  expect(queries[1]).toEqual({ search: "chart", filters: { sourceType: "analysis_task", rating: "like" } });
+  expect(mounted.context.instance.state.values.value).toEqual({
+    selectedFeedback: null,
+    sourceType: "analysis_task",
+    rating: "like",
+    keyword: "chart",
+  });
+  expect(mounted.context.instance.deepLink()).toEqual({
+    sourceType: "analysis_task",
+    rating: "like",
+    keyword: "chart",
+  });
+
+  // 3. Clearing search & rating writes null so deepLink drops cleared keys.
+  searchInput.value = "";
+  searchInput.dispatchEvent(new Event("input"));
+  ratingSelect!.value = "";
+  ratingSelect!.dispatchEvent(new Event("change"));
+  document.querySelector<HTMLButtonElement>(".sdk-object-list-query")!.click();
+
+  await vi.waitFor(() => expect(queries).toHaveLength(3));
+  expect(queries[2]).toEqual({ filters: { sourceType: "analysis_task" } });
+  expect(mounted.context.instance.state.values.value).toEqual({
+    selectedFeedback: null,
+    sourceType: "analysis_task",
+    rating: null,
+    keyword: null,
+  });
+  expect(mounted.context.instance.deepLink()).toEqual({ sourceType: "analysis_task" });
+
+  // 4. External host address change restores state into UI controls and re-queries once.
+  const nextAddress = `${use.path}?state=${encodeURIComponent(JSON.stringify({ sourceType: "qa", keyword: "export" }))}`;
+  window.dispatchEvent(new MessageEvent("message", {
+    source: window.parent,
+    data: { channel: PANEL_HOST_CHANNEL, kind: "address", address: nextAddress },
+  }));
+  await vi.waitFor(() => expect(queries).toHaveLength(4));
+  expect(queries[3]).toEqual({ search: "export", filters: { sourceType: "qa" } });
+  expect(searchInput.value).toBe("export");
+  expect(sourceSelect!.value).toBe("qa");
+  expect(ratingSelect!.value).toBe("");
 });

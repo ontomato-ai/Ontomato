@@ -186,10 +186,10 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectList",
     role: "control",
     meaning:
-      "Lists or tabulates platform objects of the bound type through its resource adapter's query or list port, providing search, faceted filters, safe highlight rendering, paging, single viewing selection, optional explicit multi-selection and clickable reference navigation without embedding business query rules.",
+      "Lists or tabulates platform objects or declared child collections of the bound type through its resource adapter's query or list port, providing search, faceted filters (two-way bindable to scalar panel state via slot inputs/outputs), safe highlight rendering, paging, single viewing selection, optional explicit multi-selection and clickable reference navigation without embedding business query rules.",
     effects: "Reads the bound type's list or query as the reader; it writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*"],
-    outputs: ["selected", "checked", "navigate"],
+    outputs: ["selected", "checked", "navigate", "search"],
   }),
   defineComponentMeta({
     componentId: "ObjectSummary",

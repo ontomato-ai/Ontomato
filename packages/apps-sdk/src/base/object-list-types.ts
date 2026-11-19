@@ -11,6 +11,8 @@ export type ObjectListFilterOption = PlatformObjectFacetOption;
 export interface ObjectListFilter {
   /** Filter key passed to `adapter.query({ filters: { [key]: value } })`. */
   readonly key: string;
+  /** Optional slot input/output port name bound to a scalar panel state; defaults to `key`. */
+  readonly port?: string;
   /** Accessible label or panel message key, and dropdown placeholder. */
   readonly label?: string;
   /** `"tabs"` renders segmented buttons (with optional counts); `"select"` renders a dropdown. */

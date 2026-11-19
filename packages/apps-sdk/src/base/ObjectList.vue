@@ -51,6 +51,8 @@ const props = withDefaults(
     tagsField?: string;
     /** Show a text search input backed by the adapter's `query` port. */
     searchable?: boolean;
+    /** Slot input/output port name for the search keyword bound to a scalar panel state (defaults to `"search"`). */
+    searchPort?: string;
     /** Optional placeholder text for the search input. */
     searchPlaceholder?: string;
     /** `"live"` queries on each input/filter change; `"submit"` queries when the reader clicks Query or presses Enter. */
@@ -88,6 +90,7 @@ const props = withDefaults(
     statusField: undefined,
     tagsField: undefined,
     searchable: false,
+    searchPort: "search",
     searchPlaceholder: undefined,
     searchMode: "live",
     filters: undefined,
@@ -134,18 +137,6 @@ const queryReason = ref<string | undefined>(undefined);
 const currentPage = ref(1);
 const cursorHistory = ref<(string | undefined)[]>([undefined]);
 
-const initialFilters = (): Record<string, string> =>
-  Object.fromEntries(
-    (props.filters ?? [])
-      .filter((filter) => filter.defaultValue !== undefined)
-      .map((filter) => [filter.key, filter.defaultValue!]),
-  );
-
-const draftSearch = ref("");
-const draftFilters = ref<Record<string, string>>(initialFilters());
-const appliedSearch = ref("");
-const appliedFilters = ref<Record<string, string>>(initialFilters());
-
 const typeInputState = computed(() => slotInputState(panel.manifest, slot.slot, "type"));
 const dynamicTypeMode = computed(() => props.type !== undefined || typeInputState.value !== null);
 const activeType = computed<string | null>(() => {
@@ -158,12 +149,112 @@ const activeType = computed<string | null>(() => {
 });
 const hasActiveType = computed(() => !dynamicTypeMode.value || activeType.value !== null);
 
+const searchPortName = computed(() => props.searchPort || "search");
+const searchReadState = computed(
+  () => slotInputState(panel.manifest, slot.slot, searchPortName.value)
+    ?? slotOutputState(panel.manifest, slot.slot, searchPortName.value),
+);
+const searchWriteState = computed(() => slotOutputState(panel.manifest, slot.slot, searchPortName.value));
+
+interface FilterStateBinding {
+  readonly key: string;
+  readonly port: string;
+  readonly defaultValue: string;
+  readonly readState: string | null;
+  readonly writeState: string | null;
+}
+
+const filterStateBindings = computed<readonly FilterStateBinding[]>(() => {
+  const seenKeys = new Set<string>();
+  const seenPorts = new Set<string>();
+  const list: FilterStateBinding[] = [];
+  const add = (key: string, port: string, defaultValue: string) => {
+    if (seenKeys.has(key)) return;
+    seenKeys.add(key);
+    seenPorts.add(port);
+    const readState = slotInputState(panel.manifest, slot.slot, port)
+      ?? slotOutputState(panel.manifest, slot.slot, port);
+    const writeState = slotOutputState(panel.manifest, slot.slot, port);
+    list.push({ key, port, defaultValue, readState, writeState });
+  };
+  for (const filter of props.filters ?? []) {
+    add(filter.key, filter.port ?? filter.key, filter.defaultValue ?? "");
+  }
+  for (const facet of dynamicFacets.value) {
+    add(facet.key, facet.key, "");
+  }
+  const declaration = panel.manifest.slots[slot.slot];
+  if (declaration) {
+    const reserved = new Set<string>([
+      "selected",
+      "checked",
+      "navigate",
+      "type",
+      searchPortName.value,
+      ...(props.input ? [props.input] : []),
+      ...(props.parentInput ? [props.parentInput] : []),
+    ]);
+    const portEntries = [
+      ...Object.entries(declaration.inputs),
+      ...Object.entries(declaration.outputs ?? {}),
+    ];
+    for (const [port, stateRef] of portEntries) {
+      if (reserved.has(port) || seenPorts.has(port)) continue;
+      if (panel.manifest.state[stateRef.state]?.kind !== "scalar") continue;
+      add(port, port, "");
+    }
+  }
+  return list;
+});
+
+const hasQueryStateBinding = computed(
+  () => searchReadState.value !== null || filterStateBindings.value.some((binding) => binding.readState !== null),
+);
+
+function scalarStateToText(stateName: string | null, fallback = ""): string {
+  if (!stateName) return fallback;
+  const value = panel.instance.state.values.value[stateName];
+  if (value === null || value === undefined || typeof value === "object") return fallback;
+  return String(value);
+}
+
+function textToScalarState(stateName: string, text: string): PanelStateValue {
+  const field = panel.manifest.state[stateName];
+  if (!field || field.kind !== "scalar") {
+    throw new TypeError(`ObjectList query state '${stateName}' must be a scalar panel state`);
+  }
+  if (text === "") return null;
+  if (field.type === "number") return Number(text);
+  if (field.type === "boolean") return text === "true";
+  return text;
+}
+
+const initialSearch = (): string => scalarStateToText(searchReadState.value, "");
+
+const initialFilters = (): Record<string, string> => {
+  const next: Record<string, string> = {};
+  for (const binding of filterStateBindings.value) {
+    const value = scalarStateToText(binding.readState, binding.defaultValue);
+    if (value !== "") next[binding.key] = value;
+  }
+  return next;
+};
+
+const draftSearch = ref(initialSearch());
+const draftFilters = ref<Record<string, string>>(initialFilters());
+const appliedSearch = ref(draftSearch.value);
+const appliedFilters = ref<Record<string, string>>({ ...draftFilters.value });
+
 const selectedState = computed(() => {
   const output = slotOutputState(panel.manifest, slot.slot, "selected");
   if (output) return output;
   if (props.input) return slotInputState(panel.manifest, slot.slot, props.input);
-  if (dynamicTypeMode.value || props.parentInput || props.collection) return slotInputState(panel.manifest, slot.slot, "selected");
-  return slotInputState(panel.manifest, slot.slot);
+  if (dynamicTypeMode.value || props.parentInput || props.collection || hasQueryStateBinding.value) {
+    return slotInputState(panel.manifest, slot.slot, "selected");
+  }
+  const fallback = slotInputState(panel.manifest, slot.slot);
+  if (fallback && panel.manifest.state[fallback]?.kind === "scalar") return null;
+  return fallback;
 });
 const selectedField = computed(() => (selectedState.value ? panel.manifest.state[selectedState.value] : undefined));
 const childCollection = computed<string | null>(() => {
@@ -241,7 +332,13 @@ const someVisibleChecked = computed(
 );
 
 const requiresQuery = computed(
-  () => dynamicTypeMode.value || childMode.value || props.searchable || Boolean(props.filters?.length) || (props.pageSize !== undefined && props.pageSize > 0),
+  () =>
+    dynamicTypeMode.value
+    || childMode.value
+    || hasQueryStateBinding.value
+    || props.searchable
+    || Boolean(props.filters?.length)
+    || (props.pageSize !== undefined && props.pageSize > 0),
 );
 const isTable = computed(() => Boolean(props.columns?.length));
 const totalPages = computed(() => (props.pageSize && props.pageSize > 0 ? Math.max(1, Math.ceil(total.value / props.pageSize)) : 1));
@@ -432,6 +529,64 @@ function load() {
   );
 }
 
+function syncQueryToState() {
+  const patch: Record<string, PanelStateValue> = {};
+  if (searchWriteState.value) {
+    const next = textToScalarState(searchWriteState.value, appliedSearch.value.trim());
+    if (panel.instance.state.values.value[searchWriteState.value] !== next) {
+      patch[searchWriteState.value] = next;
+    }
+  }
+  for (const binding of filterStateBindings.value) {
+    if (!binding.writeState) continue;
+    const next = textToScalarState(binding.writeState, appliedFilters.value[binding.key] ?? "");
+    if (panel.instance.state.values.value[binding.writeState] !== next) {
+      patch[binding.writeState] = next;
+    }
+  }
+  if (Object.keys(patch).length > 0) {
+    panel.instance.state.setState(patch);
+  }
+}
+
+const boundQuerySnapshot = computed(() => {
+  const search = searchReadState.value ? scalarStateToText(searchReadState.value, "") : null;
+  const filters: Record<string, string> = {};
+  for (const binding of filterStateBindings.value) {
+    if (!binding.readState) continue;
+    filters[binding.key] = scalarStateToText(binding.readState, binding.defaultValue);
+  }
+  return { search, filters };
+});
+
+watch(
+  boundQuerySnapshot,
+  (snapshot) => {
+    let changed = false;
+    if (snapshot.search !== null && snapshot.search !== appliedSearch.value.trim()) {
+      draftSearch.value = snapshot.search;
+      appliedSearch.value = snapshot.search;
+      changed = true;
+    }
+    const nextDraftFilters = { ...draftFilters.value };
+    const nextAppliedFilters = { ...appliedFilters.value };
+    for (const [key, value] of Object.entries(snapshot.filters)) {
+      if ((appliedFilters.value[key] ?? "") !== value) {
+        nextDraftFilters[key] = value;
+        nextAppliedFilters[key] = value;
+        changed = true;
+      }
+    }
+    if (changed) {
+      draftFilters.value = nextDraftFilters;
+      appliedFilters.value = nextAppliedFilters;
+      resetPaging();
+      load();
+    }
+  },
+  { deep: true },
+);
+
 onMounted(load);
 watch(parentIdentity, () => {
   if (!childMode.value) return;
@@ -442,8 +597,14 @@ watch(activeType, (next, prev) => {
   if (next === prev) return;
   draftSearch.value = "";
   appliedSearch.value = "";
-  draftFilters.value = initialFilters();
-  appliedFilters.value = initialFilters();
+  const defaults = Object.fromEntries(
+    (props.filters ?? [])
+      .filter((filter) => filter.defaultValue !== undefined)
+      .map((filter) => [filter.key, filter.defaultValue!]),
+  );
+  draftFilters.value = defaults;
+  appliedFilters.value = { ...defaults };
+  syncQueryToState();
   dynamicFacets.value = [];
   resultFieldLabels.value = {};
   resetPaging();
@@ -469,6 +630,7 @@ function resetPaging() {
 function submitQuery() {
   appliedSearch.value = draftSearch.value;
   appliedFilters.value = { ...draftFilters.value };
+  syncQueryToState();
   resetPaging();
   load();
 }
