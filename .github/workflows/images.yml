@@ -6,6 +6,9 @@ on:
 permissions:
   contents: read
 
+env:
+  APACHE_RELEASES: https://repository.apache.org/content/repositories/releases
+
 jobs:
   maven-download:
     runs-on: ubuntu-24.04
@@ -23,19 +26,32 @@ jobs:
           distribution: temurin
           java-version: 21
       - name: Cold-download Maven on the Java runner
-        env:
-          MAVEN_USER_HOME: ${{ runner.temp }}/maven-wrapper-probe
-        run: ./mvnw --version
+        run: |
+          if MAVEN_USER_HOME="$RUNNER_TEMP/maven-wrapper-central" ./mvnw --version; then
+            echo 'Maven Central ZIP exit=0'
+          else
+            echo "Maven Central ZIP exit=$?"
+          fi
+          MAVEN_USER_HOME="$RUNNER_TEMP/maven-wrapper-apache" MVNW_REPOURL="$APACHE_RELEASES" ./mvnw --version
       - name: Cold-download Maven in the Data Engine builder
         if: ${{ !cancelled() && steps.builder.outcome == 'success' }}
         run: |
           context=$(mktemp -d)
           cp -R mvnw .mvn "$context/"
           jdk_image=$(sed -n 's/^ARG JDK_IMAGE=//p' docker/data-engine/Dockerfile)
-          docker buildx build --progress=plain --no-cache --build-arg "JDK_IMAGE=$jdk_image" -f - "$context" <<'DOCKERFILE'
+          probe() {
+          docker buildx build --progress=plain --no-cache --build-arg "JDK_IMAGE=$jdk_image" --build-arg "MVNW_REPOURL=$1" -f - "$context" <<'DOCKERFILE'
           ARG JDK_IMAGE
           FROM ${JDK_IMAGE}
+          ARG MVNW_REPOURL
           COPY mvnw ./
           COPY .mvn ./.mvn
           RUN ./mvnw --version
           DOCKERFILE
+          }
+          if probe ''; then
+            echo 'Maven Central TAR.GZ exit=0'
+          else
+            echo "Maven Central TAR.GZ exit=$?"
+          fi
+          probe "$APACHE_RELEASES"
