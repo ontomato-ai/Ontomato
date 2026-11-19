@@ -21,6 +21,7 @@ import {productReferences} from '@ontomato/contracts/product-assets';
 import {validatePageState,validateProductNavigation,productNavigationTargetSchema} from '@ontomato/contracts/product-page-state';
 import {invalidateProductData} from '@ontomato/contracts/product-invalidation';
 import {installAppBridge} from './app-bridge';
+import type {PanelObjectChange} from './panel-host';
 import type {PanelManifest} from '@ontomato/contracts/panel-manifest';
 import {METRIC_CHART_COMPONENT,productProjectionResponseSchema} from '@ontomato/contracts/product-panels';
 import {pageDraftCreatedSchema,pageDraftReadSchema} from '@ontomato/contracts/page-draft';
@@ -55,10 +56,11 @@ interface PanelFrame {
   /** The use relation's page key: a draft this frame reads must have been written for it. */
   pageKey: string;
   /**
-   * The application use the frame shows, for a registered panel; an author's candidate preview has none. An intent the
-   * frame asks the person to confirm is read back from Node only within this use.
+   * For a registered panel, the application use the frame shows and the page's port for what changed; an author's
+   * candidate preview has neither. An intent the frame asks the person to carry out is read back from Node only within
+   * this use, and what its owner reports changed goes to this port.
    */
-  use?: PanelUseRef;
+  registered?: { use: PanelUseRef; changed: (change: PanelObjectChange) => void };
   /** The panel's slots, as its declaration names them: a conversation entry is asked for by its slot. */
   slots: PanelManifest["slots"];
   /**
@@ -169,8 +171,8 @@ export function registerLiveFrame(source: object,applicationId?:string) {
 
 type PanelDeclaration = { pageKey: string; manifest: PanelManifest };
 
-function registerDeclaredFrame(source: object, bridgeIdentity: string, panel: PanelDeclaration, context: AppExecutionContext, open: boolean, use?: PanelFrame["use"]) {
-  const frame:PanelFrame={bridgeIdentity,open,pageKey:panel.pageKey,use,slots:panel.manifest.slots,conversationEntries:new Map(),bindings:new Map(Object.values(panel.manifest.slots).map(slot=>[slot.projectionId,null])),createDrafts:new Set(),charts:new Set()};
+function registerDeclaredFrame(source: object, bridgeIdentity: string, panel: PanelDeclaration, context: AppExecutionContext, open: boolean, registered?: PanelFrame["registered"]) {
+  const frame:PanelFrame={bridgeIdentity,open,pageKey:panel.pageKey,registered,slots:panel.manifest.slots,conversationEntries:new Map(),bindings:new Map(Object.values(panel.manifest.slots).map(slot=>[slot.projectionId,null])),createDrafts:new Set(),charts:new Set()};
   panelFrames.set(source,frame);
   const binding=registerFrame(source,context);
   return {
@@ -188,8 +190,8 @@ function registerDeclaredFrame(source: object, bridgeIdentity: string, panel: Pa
  * panel's declaration. The panel host draws it sandboxed with scripts only, so it speaks the message bridge, and
  * registers it as soon as the frame exists, before the panel's module can ask to connect.
  */
-export function registerPanelFrame(source: object,use: PanelUseRef,panel:PanelDeclaration,open: boolean) {
-  return registerDeclaredFrame(source,use.applicationId,panel,{kind:"live"},open,use);
+export function registerPanelFrame(source: object,use: PanelUseRef,panel:PanelDeclaration,open: boolean,changed:(change:PanelObjectChange)=>void) {
+  return registerDeclaredFrame(source,use.applicationId,panel,{kind:"live"},open,{use,changed});
 }
 
 /**
@@ -274,14 +276,15 @@ function expandPageComposer(source:object,{slot,...asked}:AppBridgeExpandPageCom
  * and its operation must be one the frame's declaration holds — a slot of the panel, `<slot>.<name>`, whose projection
  * the frame read through this host. What Node froze decides whether the person is asked: a single call its owner did not
  * inspect goes ahead at once; an inspected call or a batch is named in the platform's own dialog, as Node froze it. A
- * going-ahead dispatches the intent once with an empty body and hands the frame Node's receipt as it is; a cancel sends
- * nothing anywhere. A candidate preview has no application use and carries out nothing.
+ * going-ahead dispatches the intent once with an empty body, hands what the owner reports changed to the page's change
+ * port, and answers the frame with Node's receipt as it is; a cancel sends nothing anywhere. A candidate preview has no application use and carries out nothing.
  */
 async function confirmPanelOperation(source:object,{intentId}:AppBridgeConfirmPanelOperation):Promise<AppBridgeConfirmPanelOperationResult>{
   const panel=panelFrames.get(source);
   if(!panel)throw new Error('This operation is not declared by the panel');
-  if(!panel.use)throw Object.assign(new Error('This operation is not available for test-data preview'),{code:BUILD_TEST_UNSUPPORTED});
-  const read=await nodeApiRequest(`/api/panel-operation-intents/${encodeURIComponent(intentId)}?${new URLSearchParams(panel.use)}`);
+  const {registered}=panel;
+  if(!registered)throw Object.assign(new Error('This operation is not available for test-data preview'),{code:BUILD_TEST_UNSUPPORTED});
+  const read=await nodeApiRequest(`/api/panel-operation-intents/${encodeURIComponent(intentId)}?${new URLSearchParams(registered.use)}`);
   const intent=await read.json();
   if(!read.ok)throw new Error(intent.error?.message??'Operation request unavailable');
   const {operationId,label,confirmation}=panelHumanOperationPreparationSchema.parse(intent);
@@ -292,7 +295,12 @@ async function confirmPanelOperation(source:object,{intentId}:AppBridgeConfirmPa
   const sent=await nodeApiRequest(`/api/panel-operations/intents/${encodeURIComponent(intentId)}/dispatch`,{method:'POST',body:'{}'});
   const answer=await sent.json();
   if(!sent.ok)throw new Error(answer.error?.message??'Operation request failed');
-  return {decision:'confirm',response:panelHumanOperationDispatchResponseSchema.parse(answer)};
+  const response=panelHumanOperationDispatchResponseSchema.parse(answer);
+  // What the owner reports changed reaches the page the way a conversation's change does: every shown object is read again.
+  const outcome=response.kind==='dispatched'?response.outcome:null;
+  const affected=outcome?.kind==='success'||outcome?.kind==='batch'?outcome.affected:undefined;
+  if(affected)registered.changed({target:null,affected});
+  return {decision:'confirm',response};
 }
 
 /** The platform's dialog naming what an operation acts on and what its owner said goes with it; true when confirmed. */
