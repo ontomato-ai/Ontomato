@@ -157,7 +157,8 @@ export const scheduledTaskAdapters: PlatformObjectAdapterFactory = requests => {
       return { fields: answer.fields.map(typedField), values: answer.values, revision, save: scheduledTaskSaveDescription(id) };
     },
     save(target: PanelFormTarget, input: PanelFormSaveInput) {
-      const { values, revision } = scheduledTaskPanelSaveSchema.parse(input);
+      // The task service saves the whole task, so which fields the reader submitted does not change its request.
+      const { values, revision } = scheduledTaskPanelSaveSchema.parse({ values: input.values, revision: input.revision });
       return resource.save(taskId(target), values, revision);
     },
   };

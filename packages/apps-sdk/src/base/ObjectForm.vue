@@ -79,12 +79,25 @@ const dirty = computed(() => opened.value !== null
   && (JSON.stringify(values.value) !== JSON.stringify(opened.value.values) || Object.keys(invalid.value).length > 0));
 const canSettle = computed(() => dirty.value || panel.instance.draft.value?.slot === slot.slot);
 
+/**
+ * The described fields this edit submits, by path: those the reader set (whatever value they end on) and those a received
+ * draft wrote. The owner keeps a field not named here as it is, so a field nobody touched is never added.
+ */
+let submitted: ReadonlySet<string> = new Set();
 /** A draft this form took, for the target it addresses, shown once the form is on that target. */
-let held: { target: string; baseline: PanelFormDescription; checked: PanelFormDescription; changed: ReadonlySet<string> } | null = null;
+let held: {
+  target: string; baseline: PanelFormDescription; checked: PanelFormDescription; changed: ReadonlySet<string>; submitted: ReadonlySet<string>;
+} | null = null;
 /** The target the form was last read for, so one change of target is one read. */
 let loaded: string | null = null;
 
-function adopt(baseline: PanelFormDescription, shown: PanelFormDescription = baseline, marked: ReadonlySet<string> = new Set()) {
+function adopt(
+  baseline: PanelFormDescription,
+  shown: PanelFormDescription = baseline,
+  marked: ReadonlySet<string> = new Set(),
+  written: ReadonlySet<string> = new Set(),
+) {
+  submitted = written;
   opened.value = baseline;
   description.value = shown;
   values.value = shown.values;
@@ -106,7 +119,7 @@ function load(next: PanelFormTarget | null) {
     return;
   }
   if (held?.target === nextKey) {
-    adopt(held.baseline, held.checked, held.changed);
+    adopt(held.baseline, held.checked, held.changed, held.submitted);
     return;
   }
   loading.value = true;
@@ -165,6 +178,9 @@ watch([canSettle, saving], refreshWhenClean);
 
 /** One field changed: the form holds the value; a field the owner's form depends on has the owner asked again. */
 function set(path: string, value: RuntimeJsonValue) {
+  // The described field the edit is in: a row's or an object's field submits the array or object it belongs to.
+  const described = fields.value.find((item) => path === item.path || path.startsWith(`${item.path}/`));
+  if (described) submitted = new Set([...submitted, described.path]);
   values.value = withValueAt(values.value, path, value);
   const field = fieldAt(fields.value, path);
   if (!field?.refreshOnChange) return;
@@ -228,7 +244,9 @@ useProjectionForm({
     const baseline = targetKey(into) === targetKey(named) ? namedForm : await forms.describe({ target: into, changedField: null });
     const checked = await forms.describe({ target: into, values: draft.form as PanelFormValues, changedField: null });
     const marked = changedPaths(checked.fields, baseline.values, checked.values);
-    held = marked.size ? { target: targetKey(into), baseline, checked, changed: marked } : null;
+    // What the draft wrote, by its presence: a field it left out is not submitted, though the owner's check returns it.
+    const written = new Set(checked.fields.filter((item) => valueAt(draft.form as PanelFormValues, item.path) !== undefined).map((item) => item.path));
+    held = marked.size ? { target: targetKey(into), baseline, checked, changed: marked, submitted: written } : null;
     const selected = into.kind === "object" ? { className: objectType, primaryKey: into.primaryKey } : null;
     if (targetKey(target.value) === targetKey(into)) load(into);
     else panel.instance.state.set(state.value, selected);
@@ -274,7 +292,10 @@ async function write(): Promise<unknown> {
   errors.value = {};
   try {
     const revision = opened.value!.revision;
-    const saved = await forms.save(into, { values: values.value, ...(revision === undefined ? {} : { revision }) });
+    const saved = await forms.save(into, {
+      values: values.value, submittedFields: [...submitted], ...(revision === undefined ? {} : { revision }),
+    });
+    submitted = new Set();
     held = null;
     opened.value = { ...description.value!, values: values.value };
     changed.value = new Set();
