@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, OBJECT_TYPE, RELATIONSHIP, USER, bindingKey, clientSends, panelClientReads } from "./panel-client-requests";
-import { candidatePanelSourceSchema, panelFrameMessageSchema, panelUsePath } from "./panel-host";
+import {
+  candidatePanelSourceSchema, panelCapacityPlanSchema, panelCapacityRequestSchema, panelFrameMessageSchema,
+  panelHostFrameMessageSchema, panelUsePath,
+} from "./panel-host";
 import { panelManifestSchema } from "./panel-manifest";
 import { panelFormSaveInputSchema, projectionBindingKeys, projectionOperations, projectionPorts } from "./panel-projection";
 import { applicationPanelUsePathSchema, ontologyElementRefSchema, productPanelContentSchema, productProjectionInputSchema } from "./product-panels";
@@ -136,4 +139,19 @@ test("bridge and skill agree about the specific semantic reads", () => {
     assert.ok(clientSends([binding(type)], "POST", "/data-query", "/admin/getMetas"));
   assert.ok(!clientSends([binding(OBJECT_TYPE)], "POST", "/data-query", "/admin/getschemamarkdown"));
   assert.ok(clientSends([binding(USER)], "GET", "/data-query", "/platform/agent-execution/options?selected=u"));
+});
+
+
+test("capacity admission separates a confirmed departure from activity in the frame", () => {
+  const current = { instance: "knowledge", address: "/ontology/knowledge?state=old" };
+  const next = { instance: "knowledge", address: "/ontology/knowledge?state=new" };
+  const request = { current, next, departure: "retain-clean" };
+  assert.deepEqual(panelCapacityRequestSchema.parse(request), request);
+  assert.equal(panelCapacityRequestSchema.safeParse({ ...request, departure: "dirty" }).success, false);
+
+  const plan = { kind: "admitted", next: "reuse", reclaim: [] };
+  assert.deepEqual(panelCapacityPlanSchema.parse(plan), plan);
+  assert.equal(panelCapacityPlanSchema.safeParse({ kind: "refused", reclaim: [current.instance] }).success, false);
+  assert.deepEqual(panelHostFrameMessageSchema.parse({ kind: "activity", active: false }), { kind: "activity", active: false });
+  assert.equal(panelFrameMessageSchema.safeParse({ kind: "activity", active: true }).success, false);
 });
