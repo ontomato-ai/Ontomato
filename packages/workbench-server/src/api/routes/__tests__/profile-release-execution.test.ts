@@ -6,7 +6,7 @@ import {afterAll,beforeAll,beforeEach,expect,it,vi} from "vitest";
 import {productAssetSchema} from "@ontomato/contracts/product-assets";
 import {HttpError} from "../../../utils/errors";
 import {readSseData} from "@ontomato/contracts/sse";
-import {notifyProductDefinitionChanged} from "../../../services/product-assets/subscriptions";
+import {notifyProductDefinitionChanged} from "../../../services/product-panels/definition-stream";
 
 const state=vi.hoisted(()=>({executor:"V" as string|null,use:true,visible:new Set<string>(),query:vi.fn(),post:vi.fn(),agent:vi.fn(),create:vi.fn(),bind:vi.fn()}));
 vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://ontology.test"}}}));
@@ -148,7 +148,7 @@ it("delivers live projection-only author notices while its snapshot is still rea
     return { rows: [row] };
   });
   try {
-    const response = await fetch(new URL("../definition-stream", `${base}/`), {
+    const response = await fetch(new URL("/api/product-panels/definition-stream", base), {
       method: "POST", signal: connection.signal, headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ targets: [{ kind: "projection", id }] }),
     });

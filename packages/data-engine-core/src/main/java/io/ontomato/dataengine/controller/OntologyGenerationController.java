@@ -8,7 +8,9 @@ import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.agent.*;
 import io.ontomato.dataengine.service.impl.ActionDraftService;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.Map;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -16,6 +18,9 @@ import org.springframework.web.bind.annotation.*;
 public class OntologyGenerationController {
   @org.springframework.beans.factory.annotation.Autowired
   private io.ontomato.dataengine.service.agent.AgentExecutionAccess executions;
+
+  @org.springframework.beans.factory.annotation.Autowired
+  private PlatformAuthoringService platform;
 
   private final OntologyGenerationService generation;
   private final GenerationOperations operations;
@@ -39,6 +44,49 @@ public class OntologyGenerationController {
     this.drafts = drafts;
   }
 
+  @PostMapping("/platform/{kind}/{operation}")
+  public Object authoring(@PathVariable String kind, @PathVariable String operation,
+      @RequestBody Map<String, Object> requestBody,
+      @RequestHeader(value = "Accept-Language", defaultValue = "en") String language,
+      HttpServletRequest request) throws Exception {
+    access.service(request);
+    var body = JSONObject.from(requestBody);
+    switch (operation) {
+      case "adopt" -> AuthoringContract.validate("adoptionRequest", body);
+      case "read-test" -> AuthoringContract.validate("readTestRequest", body);
+      default -> {
+        AgentJson.fields(body, "run", "input");
+        if (!(body.get("run") instanceof Map<?, ?>) || !(body.get("input") instanceof Map<?, ?>))
+          throw AgentHttpException.invalid("run and input must be objects");
+        AuthoringContract.validate("hostRun", body.getJSONObject("run"));
+        AuthoringContract.validateOperation(kind, operation, body.getJSONObject("input"));
+      }
+    }
+    return platform.operate(kind, operation, PlatformAuthoringService.Run.parse(body.getJSONObject("run")),
+        body.getJSONObject("input"), language);
+  }
+
+  @PostMapping("/platform/{run}/close")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void closeAuthoring(@PathVariable String run, @RequestBody Map<String, Object> requestBody,
+      HttpServletRequest request) throws Exception {
+    access.service(request);
+    var body = JSONObject.from(requestBody);
+    AgentJson.fields(body, "domainId", "ownerId", "sessionId", "outcome");
+    platform.close(AgentJson.id(run), AgentJson.id(body.getString("sessionId")),
+        new Owner(AgentJson.text(body, "ownerId"), AgentJson.text(body, "domainId")), AgentJson.text(body, "outcome"));
+  }
+
+  @PostMapping("/{run}/authoring/{kind}/{operation}")
+  public Object externalAuthoring(@PathVariable String run, @PathVariable String kind,
+      @PathVariable String operation, @RequestBody Map<String, Object> input,
+      HttpServletRequest request) throws Exception {
+    access.authenticated(request);
+    var body = JSONObject.from(input);
+    AuthoringContract.validateOperation(kind, operation, body);
+    return platform.operateExternal(AgentJson.id(run), kind, operation, body, access.current(request));
+  }
+
   @GetMapping("/{run}/helpers")
   public Object helpers(@PathVariable String run, HttpServletRequest request) throws Exception {
     owner(run, request);
@@ -47,6 +95,7 @@ public class OntologyGenerationController {
 
   @PostMapping("/gates")
   public Object open(@RequestBody JSONObject body, HttpServletRequest request) {
+    access.authenticated(request);
     AgentJson.fields(body, "kind", "source");
     return generation.open(
         AgentJson.text(body, "kind"),

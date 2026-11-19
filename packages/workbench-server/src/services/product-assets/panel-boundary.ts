@@ -1,6 +1,6 @@
 import type { PoolClient } from "pg";
 import { productReferences, type ProductDocument } from "@ontomato/contracts/product-assets";
-import type { ProductOwner } from "./store";
+import type { ProductOwner } from "../product-governance/grants";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
 import { backendGet, buildBackendHeaders, BackendResponseError } from "../../utils/backend-client";

@@ -20,9 +20,9 @@ import {validatePageState,validateProductNavigation,productNavigationTargetSchem
 import {invalidateProductData} from '@ontomato/contracts/product-invalidation';
 import {installAppBridge} from './app-bridge';
 import type {PanelManifest} from '@ontomato/contracts/panel-manifest';
-import {productProjectionResponseSchema} from '@ontomato/contracts/product-panels';
+import {METRIC_CHART_COMPONENT,productProjectionResponseSchema} from '@ontomato/contracts/product-panels';
 import {pageDraftCreatedSchema,pageDraftReadSchema} from '@ontomato/contracts/page-draft';
-import {clientSends} from '@ontomato/contracts/panel-client-requests';
+import {chartProjectionSourceSends,clientSends} from '@ontomato/contracts/panel-client-requests';
 import {projectionBindingKeys} from '@ontomato/contracts/panel-projection';
 
 const executionBindings = new WeakMap<object, AppExecutionContext>();
@@ -40,6 +40,11 @@ interface PanelFrame {
    * is never mistaken for a frame of another.
    */
   bridgeIdentity: string;
+  /**
+   * Whether the frame may ask the platform for anything now. A frame kept for a page the reader left may not: the bridge
+   * refuses its requests, navigations and mounts and closes its streams, until its host has checked the page again.
+   */
+  open: boolean;
   /** The use relation's page key: a draft this frame reads must have been written for it. */
   pageKey: string;
   /**
@@ -54,6 +59,11 @@ interface PanelFrame {
    * it may record after the reader's first save.
    */
   createDrafts: Set<string>;
+  /**
+   * The projections this frame has read as MetricCharts, by ID. Only their chart sources are this frame's to read or
+   * redraw; the owner still checks use and edit.
+   */
+  charts: Set<string>;
 }
 const panelFrames=new WeakMap<object,PanelFrame>();
 const PROJECTION_READ=/^\/product-projections\/([^/?]+)$/;
@@ -71,7 +81,7 @@ export function installProductEmbedding(app:App){
   if(!host)return;
   // The bridge answers a frame as the application it was registered under: a published application's, or a panel
   // application's.
-  bridge?.dispose();bridge=installAppBridge(app,host,source=>publishedFrames.get(source)??panelFrames.get(source)?.bridgeIdentity);
+  bridge?.dispose();bridge=installAppBridge(app,host,source=>publishedFrames.get(source)??panelFrames.get(source)?.bridgeIdentity,source=>panelFrames.get(source)?.open??true);
   host.mountProductAsset=(source,target,assetId)=>{
     const element=target as HTMLElement;
     if(executionContext(source).kind!=='live')throw new Error('Product embedding is unavailable in build-test previews; use product authoring commands');
@@ -136,10 +146,18 @@ export function registerLiveFrame(source: object,applicationId?:string) {
 
 type PanelDeclaration = { pageKey: string; manifest: PanelManifest };
 
-function registerDeclaredFrame(source: object, bridgeIdentity: string, panel: PanelDeclaration, context: AppExecutionContext) {
-  panelFrames.set(source,{bridgeIdentity,pageKey:panel.pageKey,bindings:new Map(Object.values(panel.manifest.slots).map(slot=>[slot.projectionId,null])),createDrafts:new Set()});
+function registerDeclaredFrame(source: object, bridgeIdentity: string, panel: PanelDeclaration, context: AppExecutionContext, open: boolean) {
+  const frame:PanelFrame={bridgeIdentity,open,pageKey:panel.pageKey,bindings:new Map(Object.values(panel.manifest.slots).map(slot=>[slot.projectionId,null])),createDrafts:new Set(),charts:new Set()};
+  panelFrames.set(source,frame);
   const binding=registerFrame(source,context);
-  return ()=>{bridge?.disposeFrame(source);panelFrames.delete(source);binding.dispose();};
+  return {
+    dispose(){bridge?.disposeFrame(source);panelFrames.delete(source);binding.dispose();},
+    open(next:boolean){
+      frame.open=next;
+      if(next)bridge?.resumeFrame(source);
+      else bridge?.pauseFrame(source);
+    },
+  };
 }
 
 /**
@@ -147,8 +165,8 @@ function registerDeclaredFrame(source: object, bridgeIdentity: string, panel: Pa
  * panel's declaration. The panel host draws it sandboxed with scripts only, so it speaks the message bridge, and
  * registers it as soon as the frame exists, before the panel's module can ask to connect.
  */
-export function registerPanelFrame(source: object,applicationId: string,panel:PanelDeclaration) {
-  return registerDeclaredFrame(source,applicationId,panel,{kind:"live"});
+export function registerPanelFrame(source: object,applicationId: string,panel:PanelDeclaration,open: boolean) {
+  return registerDeclaredFrame(source,applicationId,panel,{kind:"live"},open);
 }
 
 /**
@@ -156,8 +174,8 @@ export function registerPanelFrame(source: object,applicationId: string,panel:Pa
  * on its workspace's build-test context — never live. Its requests carry that context to their owners, which accept
  * them only where they declared support for test data or definition-only reads.
  */
-export function registerCandidateFrame(source: object,context: Extract<AppExecutionContext,{kind:"build-test"}>,panel:PanelDeclaration) {
-  return registerDeclaredFrame(source,`workspace:${context.workspaceId}`,panel,context);
+export function registerCandidateFrame(source: object,context: Extract<AppExecutionContext,{kind:"build-test"}>,panel:PanelDeclaration,open: boolean) {
+  return registerDeclaredFrame(source,`workspace:${context.workspaceId}`,panel,context,open);
 }
 /** Refuses, before anything is sent, a request of a panel's frame that its declaration does not cover. */
 function admitPanelRequest(panel:PanelFrame,method:string,path:string,service:string,body:BodyInit|null|undefined){
@@ -166,12 +184,15 @@ function admitPanelRequest(panel:PanelFrame,method:string,path:string,service:st
     if(projection&&panel.bindings.has(decodeURIComponent(projection[1]!)))return;
     if(DRAFT_READ.test(path))return;
   }
+  if(chartProjectionSourceSends(panel.charts,method,service,path))return;
+  // A request about one object of a binding (the metric a MetricView binding names) is checked against its JSON body.
+  const decoded:unknown=typeof body==='string'&&body?JSON.parse(body):undefined;
   // The reader's first save of a create draft this frame read for its page records the object it created on that draft.
   const created=service===''&&method==='POST'?DRAFT_CREATED.exec(path):null;
-  const record=created&&typeof body==='string'?pageDraftCreatedSchema.safeParse(JSON.parse(body)):null;
+  const record=created?pageDraftCreatedSchema.safeParse(decoded):null;
   if(record?.success&&panel.createDrafts.has(draftKey(created![1]!,created![2]!,record.data.path)))return;
   const bindings=[...panel.bindings.values()].flatMap(keys=>keys??[]);
-  if(!clientSends(bindings,method,service,path))throw new Error("Outside what this panel's projections declare");
+  if(!clientSends(bindings,method,service,path,decoded))throw new Error("Outside what this panel's projections declare");
 }
 
 /**
@@ -183,7 +204,10 @@ async function relayToPanel(panel:PanelFrame,method:string,path:string,service:s
   const projection=PROJECTION_READ.exec(path);
   if(projection){
     const record=productProjectionResponseSchema.parse(await response.clone().json()).projection;
-    panel.bindings.set(decodeURIComponent(projection[1]!),projectionBindingKeys(record));
+    const id=decodeURIComponent(projection[1]!);
+    panel.bindings.set(id,projectionBindingKeys(record));
+    if(record.componentId===METRIC_CHART_COMPONENT)panel.charts.add(id);
+    else panel.charts.delete(id);
     return response;
   }
   const read=DRAFT_READ.exec(path);

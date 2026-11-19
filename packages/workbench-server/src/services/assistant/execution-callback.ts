@@ -6,20 +6,21 @@ import { callbackCredential } from "../agent-runtime/callback-credential";
 import type { AssistantOwner } from "./store";
 
 /** Skills receive a run-scoped host callback, never the selected user's key. */
-export function executionSkillEnvironment(_owner: AssistantOwner, initiatorCredentials: AssistantCredentials, runId: string): RuntimeEnvironment {
+export function executionSkillEnvironment(_owner: AssistantOwner, initiatorCredentials: AssistantCredentials, runId: string, authoringOnly = false): RuntimeEnvironment {
   const root = environment.agentRuntime().callbackUrl.replace(/\/$/, "");
   const pathPrefix = `/api/assistant/executions/${runId}/`;
   return {
     values: {
-      ONTOMATO_WORKBENCH_URL: root + pathPrefix + "workbench",
+      ONTOMATO_AUTHORING_URL: root + pathPrefix + "authoring",
+      ...(!authoringOnly && { ONTOMATO_WORKBENCH_URL: root + pathPrefix + "workbench",
       ONTOMATO_URL: root + pathPrefix + "workbench",
       ONTOMATO_ONTOLOGY_URL: root + pathPrefix + "ontology",
       ONTOMATO_PANEL_OPERATIONS_URL: root + pathPrefix + "panels",
       ONTOMATO_RETRIEVAL_CALLBACK_URL: root + pathPrefix + "retrieval",
-      ONTOMATO_SKILL_SCENARIO: "platform",
+      ONTOMATO_SKILL_SCENARIO: "platform" }),
     },
     secrets: { ONTOMATO_EXECUTION_CALLBACK: callbackCredential({
-      pathPrefix, runId, expiresAt: Date.now() + getQueryTimeoutMs(),
+      pathPrefix: authoringOnly ? pathPrefix + "authoring/" : pathPrefix, runId, expiresAt: Date.now() + getQueryTimeoutMs(),
       token: initiatorCredentials.token ?? "", apiKey: initiatorCredentials.apiKey ?? "",
     }).value },
   };

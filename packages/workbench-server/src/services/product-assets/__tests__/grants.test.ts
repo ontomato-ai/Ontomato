@@ -4,7 +4,8 @@ vi.mock('../../../infrastructure/postgres',()=>({getPostgresPool:()=>({query:moc
 vi.mock('../../../utils/backend-client',()=>({backendPost:mocks.post,buildBackendHeaders:()=>({tk:'caller'})}));
 vi.mock('../../../config/environment',()=>({environment:{agentRuntime:()=>({queryServiceToken:mocks.token})}}));
 vi.mock('../../../config/application',()=>({config:{dataQuery:{baseUrl:'http://java.test'}}}));
-import {registerProductResource,requireProductGrant,grantedProductIds,migrateProductGrants,withProductGrants,currentProductGrants,requireProductUse} from '../grants';
+import {registerProductResource,requireProductGrant,grantedProductIds} from '../../product-governance/grants';
+import {migrateProductGrants,withProductGrants,currentProductGrants,requireProductUse} from '../grants';
 beforeEach(()=>{vi.resetAllMocks();mocks.token='service-token';});
 it('registers persisted resource ownership through service authentication',async()=>{
   mocks.post.mockResolvedValue({text:'{"success":true}'});

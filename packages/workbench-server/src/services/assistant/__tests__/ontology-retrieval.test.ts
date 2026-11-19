@@ -20,6 +20,7 @@ vi.mock("../../../utils/backend-client", async (importOriginal) => ({
   ),
 }));
 vi.mock("../governance", () => ({ closeGovernanceWindow: vi.fn() }));
+vi.mock("../authoring", () => ({ closeAuthoringRun: vi.fn() }));
 vi.mock("../skills", () => ({ prepareAssistantSkills: vi.fn() }));
 
 configureI18n({
@@ -166,7 +167,7 @@ describe("assistant ontology provenance", () => {
   });
   it("natural completion never closes or cancels delegated work",async()=>{
     const settled=vi.spyOn(assistantStore,"settled").mockResolvedValue();
-    await assistantService.settleTurn("parent-run",owner);
+    await assistantService.settleTurn("parent-run",owner,session);
     expect(settled).toHaveBeenCalledWith("parent-run");
     expect(calls.requests).toEqual([]);
   });

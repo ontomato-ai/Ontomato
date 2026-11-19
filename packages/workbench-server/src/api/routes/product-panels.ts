@@ -4,17 +4,36 @@ import { ownPanelSettings } from "../../services/product-panels/operations";
 import { panelOperationStore } from "../../services/product-panels/operation-store";
 import { Router } from "express";
 import { z } from "zod";
-import { productCurrentIdParamsSchema, registerProductPanelRequestSchema, registerProductProjectionRequestSchema } from "@ontomato/contracts/product-panels";
+import {
+  chartProjectionLookupResponseSchema, chartProjectionTemplateSchema, productCurrentIdParamsSchema,
+  registerChartProjectionRequestSchema, registerChartProjectionResponseSchema, registerProductPanelRequestSchema,
+  registerProductProjectionRequestSchema, updateChartProjectionSourceRequestSchema,
+} from "@ontomato/contracts/product-panels";
+import { CHART_PROJECTION_SOURCES_PATH, chartProjectionSourceRead } from "@ontomato/contracts/panel-client-requests";
 import { context, wrap } from "../utils/agent-host";
 import { platformService } from "../middleware/platform-service";
 import { readCurrentPanel, readCurrentProjection, requireCurrentPanels, saveCurrentPanel, saveCurrentProjection } from "../../services/product-panels/current";
-
-import { requirePanelDefinitions } from "../../services/product-assets/subscriptions";
+import { productDefinitionStreamRequestSchema, type ProductDefinitionStreamFrame } from "@ontomato/contracts/product-subscriptions";
+import { authorizeDefinitionStream, requirePanelDefinitions } from "../../services/product-panels/definition-stream";
+import type { createChartProjectionService } from "../../services/product-panels/chart-sources";
 
 export const productPanelsRouter = Router();
 productPanelsRouter.get("/:id/snapshot", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
   res.json(await requirePanelDefinitions(c.owner, c.credentials, id));
+}));
+productPanelsRouter.post("/definition-stream", wrap(async (req, res) => {
+  const {owner,credentials}=context(req);
+  const {targets}=productDefinitionStreamRequestSchema.parse(req.body);
+  const {attach,snapshot}=await authorizeDefinitionStream(owner,credentials,targets);
+  if(res.destroyed)return;
+  const send=(frame:ProductDefinitionStreamFrame)=>res.write(`data: ${JSON.stringify(frame)}\n\n`);
+  const stop=attach(send);
+  res.once('close',stop);
+  res.set({'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','X-Accel-Buffering':'no'});
+  res.flushHeaders();
+  const definitions=await snapshot();
+  if(!res.destroyed)send({kind:'snapshot',definitions});
 }));
 productPanelsRouter.get("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
@@ -26,6 +45,38 @@ productPanelsRouter.put("/:id", wrap(async (req, res) => {
   res.json({ panel: await saveCurrentPanel(c.owner, c.credentials, id, input, revision) });
 }));
 export const productProjectionsRouter = Router();
+export function createChartProjectionsRouter(service: ReturnType<typeof createChartProjectionService>) {
+  const router = Router();
+  const collection = CHART_PROJECTION_SOURCES_PATH.slice("/product-projections".length);
+  const template = chartProjectionSourceRead.template.slice("/product-projections".length);
+  const projectionParams = z.object({ projectionId: productCurrentIdParamsSchema.shape.id }).strict();
+  const savedTemplateSchema = chartProjectionTemplateSchema.pick({ chartFile: true });
+  router.get(collection, wrap(async (req, res) => {
+    const { owner, credentials } = context(req);
+    const source = registerChartProjectionRequestSchema.parse(req.query);
+    const projectionId = await service.lookup(owner, credentials, source);
+    res.json(chartProjectionLookupResponseSchema.parse({ projectionId }));
+  }));
+  router.post(collection, wrap(async (req, res) => {
+    const { owner, credentials } = context(req);
+    const source = registerChartProjectionRequestSchema.parse(req.body);
+    const projection = await service.register(owner, credentials, source);
+    res.json(registerChartProjectionResponseSchema.parse({ projection }));
+  }));
+  router.get(template, wrap(async (req, res) => {
+    const { owner, credentials } = context(req);
+    const { projectionId } = projectionParams.parse(req.params);
+    res.json(chartProjectionTemplateSchema.parse(await service.read(owner, credentials, projectionId)));
+  }));
+  router.put(template, wrap(async (req, res) => {
+    const { owner, credentials } = context(req);
+    const { projectionId } = projectionParams.parse(req.params);
+    const { chartFile } = updateChartProjectionSourceRequestSchema.parse(req.body);
+    res.json(savedTemplateSchema.parse(await service.edit(owner, credentials, projectionId, chartFile.content)));
+  }));
+  return router;
+}
+
 productProjectionsRouter.get("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
   res.json({ projection: await readCurrentProjection(c.owner, c.credentials, id) });

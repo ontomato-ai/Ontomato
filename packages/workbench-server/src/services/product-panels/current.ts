@@ -1,13 +1,17 @@
-import { productPanelSchema, productProjectionSchema, type ProductPanelInput, type ProductProjectionInput } from "@ontomato/contracts/product-panels";
+import {
+  METRIC_CHART_COMPONENT, chartProjectionSchema, productPanelSchema, productProjectionSchema,
+  type ProductPanelInput, type ProductProjectionInput, type RegisterProductProjectionRequest,
+} from "@ontomato/contracts/product-panels";
+import type { PoolClient } from "pg";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { currentProductColumns, currentProductRecord, currentProductTables, findCurrentProduct, type CurrentProductKind } from "../../infrastructure/product-current";
+import { currentProductColumns, currentProductRecord, currentProductTables, findCurrentProduct, type CurrentProductKind, type CurrentProductRow } from "../../infrastructure/product-current";
 import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { lockProducts } from "../../infrastructure/product-write-lock";
 import { HttpError } from "../../utils/errors";
-import type { ProductOwner } from "../product-assets/store";
-import { grantedProductIds, registerProductResource, requireProductGrant } from "../product-assets/grants";
-import { notifyProductDefinitionChanged } from "../product-assets/subscriptions";
+import type { ProductOwner } from "../product-governance/grants";
+import { grantedProductIds, registerProductResource, requireProductGrant } from "../product-governance/grants";
+import { notifyProductDefinitionChanged } from "./definition-stream";
 
 async function readable(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string) {
   await requireProductGrant(id, "use", credentials);
@@ -38,35 +42,58 @@ async function validatePanelReferences(owner: ProductOwner, credentials: Assista
   }
 }
 
-async function save(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string,
-  input: ProductPanelInput | ProductProjectionInput, revision: number) {
+async function currentForSave(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string, revision: number) {
   const existing = await findCurrentProduct(owner.domainId, kind, id);
   if (existing) await requireProductGrant(id, "edit", credentials);
   if ((existing?.revision ?? 0) !== revision) throw new HttpError(409, "Definition changed; reload before saving", "PRODUCT_CONFLICT");
-  if (kind === "panel") await validatePanelReferences(owner, credentials, input as ProductPanelInput);
+  return existing;
+}
+
+export async function insertCurrentProduct(client: PoolClient, owner: ProductOwner, credentials: AssistantCredentials,
+  kind: CurrentProductKind, id: string, input: ProductPanelInput | ProductProjectionInput): Promise<CurrentProductRow> {
+  const other = t(currentProductTables[kind === "panel" ? "projection" : "panel"]);
+  const collision = await client.query(`SELECT id FROM ${other} WHERE domain_id=$1 AND id=$2 UNION ALL SELECT id FROM ${t("product_assets")} WHERE domain_id=$1 AND id=$2`, [owner.domainId, id]);
+  if (collision.rows.length) throw new HttpError(409, "Product identity already belongs to another collection", "PRODUCT_ID_CONFLICT");
+  await registerProductResource(owner, id, input.visibility === "domain");
+  await requireProductGrant(id, "edit", credentials);
+  const result = await client.query(`INSERT INTO ${t(currentProductTables[kind])} (domain_id,id,owner_id,definition) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT DO NOTHING RETURNING ${currentProductColumns}`, [owner.domainId, id, owner.userId, JSON.stringify(input)]);
+  if (!result.rows.length) throw new HttpError(409, "Definition changed; reload before saving", "PRODUCT_CONFLICT");
+  return result.rows[0];
+}
+
+async function save(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string,
+  input: ProductPanelInput | ProductProjectionInput, revision: number) {
   const row = await transaction(async client => {
     await lockProducts(client, owner);
-    const table = t(currentProductTables[kind]);
-    if (!existing) {
-      const other = t(currentProductTables[kind === "panel" ? "projection" : "panel"]);
-      const collision = await client.query(`SELECT id FROM ${other} WHERE domain_id=$1 AND id=$2 UNION ALL SELECT id FROM ${t("product_assets")} WHERE domain_id=$1 AND id=$2`, [owner.domainId, id]);
-      if (collision.rows.length) throw new HttpError(409, "Product identity already belongs to another collection", "PRODUCT_ID_CONFLICT");
-      await registerProductResource(owner, id, input.visibility === "domain");
-      await requireProductGrant(id, "edit", credentials);
-    }
-    const result = revision === 0
-      ? await client.query(`INSERT INTO ${table} (domain_id,id,owner_id,definition) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT DO NOTHING RETURNING ${currentProductColumns}`, [owner.domainId, id, owner.userId, JSON.stringify(input)])
-      : await client.query(`UPDATE ${table} SET definition=$3::jsonb,revision=revision+1,updated_at=now() WHERE domain_id=$1 AND id=$2 AND revision=$4 RETURNING ${currentProductColumns}`, [owner.domainId, id, JSON.stringify(input), revision]);
+    if (revision === 0) return insertCurrentProduct(client, owner, credentials, kind, id, input);
+    const result = await client.query(`UPDATE ${t(currentProductTables[kind])} SET definition=$3::jsonb,revision=revision+1,updated_at=now() WHERE domain_id=$1 AND id=$2 AND revision=$4 RETURNING ${currentProductColumns}`, [owner.domainId, id, JSON.stringify(input), revision]);
     if (!result.rows.length) throw new HttpError(409, "Definition changed; reload before saving", "PRODUCT_CONFLICT");
     return result.rows[0];
   });
   await notifyProductDefinitionChanged({ kind: "definition-changed", domainId: owner.domainId, target: { kind, id } });
   return currentProductRecord(row, true);
 }
-export async function saveCurrentProjection(owner: ProductOwner, credentials: AssistantCredentials, id: string, input: ProductProjectionInput, revision: number) {
+export async function saveCurrentProjection(owner: ProductOwner, credentials: AssistantCredentials, id: string,
+  input: Omit<RegisterProductProjectionRequest, "revision">, revision: number) {
+  const existing = await currentForSave(owner, credentials, "projection", id, revision);
+  if (existing?.definition.componentId === METRIC_CHART_COMPONENT) {
+    const current = chartProjectionSchema.parse(currentProductRecord(existing, true));
+    if (input.componentId !== current.componentId || input.binding.kind !== current.binding.kind ||
+      input.binding.id !== current.binding.id || Object.keys(input.display).length) {
+      throw new HttpError(400, "A registered chart cannot change its component, metric or source", "CHART_SOURCE_IMMUTABLE");
+    }
+    const { name, description, visibility } = input;
+    const definition = { name, description, visibility, componentId: current.componentId, binding: current.binding,
+      inputs: current.inputs, display: current.display };
+    return productProjectionSchema.parse(await save(owner, credentials, "projection", id, definition, revision));
+  }
+  if (input.componentId === METRIC_CHART_COMPONENT || Object.hasOwn(input.display, "chartSource"))
+    throw new HttpError(400, "Register a chart through its source card", "CHART_SOURCE_REGISTRATION_REQUIRED");
   return productProjectionSchema.parse(await save(owner, credentials, "projection", id, input, revision));
 }
 export async function saveCurrentPanel(owner: ProductOwner, credentials: AssistantCredentials, id: string, input: ProductPanelInput, revision: number) {
+  await currentForSave(owner, credentials, "panel", id, revision);
+  await validatePanelReferences(owner, credentials, input);
   return productPanelSchema.parse(await save(owner, credentials, "panel", id, input, revision));
 }
 

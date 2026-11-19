@@ -1,14 +1,15 @@
-import {getProduct,type ProductOwner} from './store';
+import {getProduct} from './store';
+import type {ProductOwner} from '../product-governance/grants';
 import {validateProduct} from './validation';
 import {backendPost,buildBackendHeaders} from '../../utils/backend-client';
 import {config} from '../../config/application';
 import {HttpError} from '../../utils/errors';
-import {readDefinition} from './definitions';
+import {readDefinition} from '../business-definitions/definitions';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {qualifiedTable as t,getPostgresPool} from '../../infrastructure/postgres';
 import {snapshotAsset,readProductRelease,productReleaseIssues,readActiveProductBundle} from './releases';
 import type {ProductAsset} from '@ontomato/contracts/product-assets';
-import {executeDefinition} from './definitions';
+import {executeDefinition} from '../business-definitions/definitions';
 import {DashboardMetricClient} from '../dashboard/metric-client';
 import {resolveViewParameters} from '@ontomato/contracts/object-views';
 import {runtimeJsonObjectSchema} from '@ontomato/contracts/agent-runtime-values';

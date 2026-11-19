@@ -132,7 +132,8 @@ public class ActionController {
 			if (action.getFunction() != null) action.getFunction().setDomainId(user.getDomainId());
 			action.setCreatedBy(user.getId());
 			if (Action.STATUS_PUBLISHED.equals(action.getStatus())) action.setReviewedBy(user.getId());
-			ret.put("data", actionService.save(action, lang));
+			ret.put("data", actionService.save(action, param.getString("explanationRef"),
+					new io.ontomato.dataengine.service.agent.OntologyAgentStore.Owner(user.getId(), user.getDomainId()), lang));
 			ret.put("success", true);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);

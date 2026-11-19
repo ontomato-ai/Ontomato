@@ -1,55 +1,20 @@
 import {createHash,randomUUID} from 'node:crypto';
 import {z} from 'zod';
-import {productSubscriptionTargetSchema,type ProductSubscriptionTarget,type ProductSubscriptionEvent,type PanelDefinitionSnapshot,type ProductDefinitionTarget,type ProductDefinitionRevision,type ProductDefinitionStreamFrame} from '@ontomato/contracts/product-subscriptions';
-import type {ProductOwner} from './store';
+import {productSubscriptionTargetSchema,type ProductSubscriptionTarget} from '@ontomato/contracts/product-subscriptions';
+import type {ProductOwner} from '../product-governance/grants';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
-import {executeDefinition} from './definitions';
+import {executeDefinition} from '../business-definitions/definitions';
 import {HttpError} from '../../utils/errors';
-import {readDefinitionTrigger} from './triggers';
+import {readDefinitionTrigger} from '../business-definitions/triggers';
 import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres';
-import {productDefinitionChangedEventSchema,type ProductDefinitionChangedEvent} from '@ontomato/contracts/product-panels';
-import {findCurrentProduct,type CurrentProductKind} from '../../infrastructure/product-current';
-import {panelManifestSchema} from '@ontomato/contracts/panel-manifest';
-import {requireProductGrant} from './grants';
+import {productDefinitionChangedEventSchema} from '@ontomato/contracts/product-panels';
+import {assertSubscriptionCapacity,requireDefinition} from '../product-panels/definition-stream';
+import {checkpoint,removeCheckpoint,subscriptions,type Subscription} from '../product-panels/subscription-state';
 
-type Subscription={id:string;owner:ProductOwner;credentials:AssistantCredentials;target:ProductSubscriptionTarget;expiresAt:number;fingerprint?:string;members?:Set<string>;events:ProductSubscriptionEvent[];busy:boolean;evaluation?:Promise<void>};
-const subscriptions=new Map<string,Subscription>();
-type AuthorStream = {
-  owner: ProductOwner;
-  targets: readonly ProductDefinitionTarget[];
-  send: (frame: ProductDefinitionStreamFrame) => void;
-};
-const authorStreams = new Set<AuthorStream>();
-
-function assertSubscriptionCapacity(owner:ProductOwner){
-  const owned=({owner:other}:{owner:ProductOwner})=>other.domainId===owner.domainId&&other.userId===owner.userId;
-  if([...subscriptions.values(),...authorStreams].filter(owned).length>=10)
-    throw new HttpError(429,'Too many active subscriptions','SUBSCRIPTION_LIMIT');
-}
-
-export async function authorizeDefinitionStream(
-  owner: ProductOwner, credentials: AssistantCredentials, requested: readonly ProductDefinitionTarget[],
-) {
-  const targets = [...new Map(requested.map(target => [`${target.kind}:${target.id}`, target])).values()];
-  await Promise.all(targets.map(({ kind, id }) => requireDefinition(owner, credentials, kind, id)));
-  return {
-    attach(send: AuthorStream['send']) {
-      assertSubscriptionCapacity(owner);
-      const stream = { owner, targets, send };
-      authorStreams.add(stream);
-      return () => authorStreams.delete(stream);
-    },
-    snapshot: () => Promise.all(targets.map(target => definitionRevision(owner.domainId, target))),
-  };
-}
 let timer:ReturnType<typeof setInterval>|undefined;
 const intervalMs=10_000;
 const persistedState=z.object({fingerprint:z.string().optional(),members:z.array(z.string()).max(10000),events:z.array(z.union([productDefinitionChangedEventSchema,z.object({kind:z.enum(['changed','entered','left']),targetId:z.string(),revision:z.string(),observedAt:z.string(),memberKeys:z.array(z.string()).optional()})])).max(20)});
 const resuming=new Map<string,Promise<unknown>>();
-async function checkpoint(subscription:Subscription){
-  if(subscriptions.get(subscription.id)!==subscription)return;
-  await getPostgresPool().query(`INSERT INTO ${t('product_subscriptions')} (domain_id,principal_id,id,target,expires_at,state) VALUES($1,$2,$3,$4::jsonb,$5,$6::jsonb) ON CONFLICT(domain_id,principal_id,id) DO UPDATE SET expires_at=EXCLUDED.expires_at,state=EXCLUDED.state`,[subscription.owner.domainId,subscription.owner.userId,subscription.id,JSON.stringify(subscription.target),new Date(subscription.expiresAt),JSON.stringify({fingerprint:subscription.fingerprint,members:[...subscription.members??[]],events:subscription.events})]);
-}
 function evaluate(subscription:Subscription):Promise<void>{
   if(subscription.evaluation)return subscription.evaluation;
   const evaluation=evaluateOnce(subscription);
@@ -91,30 +56,6 @@ async function evaluateOnce(subscription:Subscription){
     await checkpoint(subscription);
   }finally{subscription.busy=false;}
 }
-export async function requirePanelDefinitions(owner:ProductOwner,credentials:AssistantCredentials,panelId:string):Promise<PanelDefinitionSnapshot>{
-  const panel=await requireDefinition(owner,credentials,'panel',panelId);
-  const {slots}=panelManifestSchema.parse(panel.definition.manifest);
-  const projectionIds=new Set(Object.values(slots).map(slot=>slot.projectionId));
-  const projections=[];
-  for(const id of projectionIds){
-    const projection=await requireDefinition(owner,credentials,'projection',id);
-    projections.push({id,revision:projection.revision});
-  }
-  return {panel:{id:panelId,revision:panel.revision},projections};
-}
-async function requireDefinition(owner:ProductOwner,credentials:AssistantCredentials,kind:CurrentProductKind,id:string){
-  await requireProductGrant(id,'use',credentials);
-  return currentDefinition(owner.domainId,kind,id);
-}
-async function currentDefinition(domainId:string,kind:CurrentProductKind,id:string){
-  const record=await findCurrentProduct(domainId,kind,id);
-  if(!record)throw new HttpError(404,'Current product definition not found','PRODUCT_UNAVAILABLE');
-  return record;
-}
-async function definitionRevision(domainId:string,target:ProductDefinitionTarget):Promise<ProductDefinitionRevision>{
-  const {revision}=await currentDefinition(domainId,target.kind,target.id);
-  return {...target,revision};
-}
 function ensureScheduler(){
   if(timer)return;
   timer=setInterval(()=>{
@@ -146,29 +87,6 @@ export function pollProductSubscription(owner:ProductOwner,id:string,credentials
 }
 export function unsubscribeProduct(owner:ProductOwner,id:string){owned(owner,id);subscriptions.delete(id);}
 
-/** An author's stream follows only the explicitly authorized collection. */
-export async function notifyProductDefinitionChanged(event:ProductDefinitionChangedEvent){
-  const {domainId,target}=event;
-  const matches=({kind,id}:ProductDefinitionTarget)=>kind===target.kind&&id===target.id;
-  const follows=(stream:AuthorStream)=>stream.owner.domainId===domainId&&stream.targets.some(matches);
-  if([...authorStreams].some(follows)){
-    const definition=await definitionRevision(domainId,target);
-    for(const stream of authorStreams)
-      if(follows(stream))stream.send({kind:'definition-changed',definition});
-  }
-  if(target.kind!=='projection')return;
-  const db=getPostgresPool();
-  const active=[...subscriptions.values()].filter(({owner,expiresAt,target})=>
-    owner.domainId===domainId&&expiresAt>Date.now()&&target.kind==='product-definition'&&matches(target.target));
-  for(const subscription of active){subscription.events.push(event);subscription.events=subscription.events.slice(-20);}
-  await db.query(`UPDATE ${t('product_subscriptions')} SET state=jsonb_set(state,'{events}',
-    (SELECT COALESCE(jsonb_agg(value ORDER BY ordinal),'[]'::jsonb) FROM jsonb_array_elements((state->'events')||$2::jsonb) WITH ORDINALITY AS queued(value,ordinal)
-      WHERE ordinal>jsonb_array_length((state->'events')||$2::jsonb)-20))
-    WHERE domain_id=$1 AND target->>'kind'='product-definition' AND target->'target'=$3::jsonb
-      AND expires_at>now() AND NOT(id=ANY($4::text[]))`,[event.domainId,JSON.stringify([event]),JSON.stringify(target),active.map(subscription=>subscription.id)]);
-  await Promise.all(active.map(checkpoint));
-}
-async function removeCheckpoint(subscription:Subscription){await getPostgresPool().query(`DELETE FROM ${t('product_subscriptions')} WHERE domain_id=$1 AND principal_id=$2 AND id=$3`,[subscription.owner.domainId,subscription.owner.userId,subscription.id]);}
 /** Rebind credentials on reconnect; persisted state contains no user tokens. */
 export async function resumeProductSubscription(owner:ProductOwner,id:string,credentials:AssistantCredentials){
   const key=JSON.stringify([owner.domainId,owner.userId,id]);

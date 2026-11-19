@@ -41,10 +41,14 @@ workspacePreviewRouter.get("/:id/preview/:token/*", wrap(async (req, res) => {
 export const workspaceRouter = Router();
 workspaceRouter.get('/applications/:appId/policy',wrap(async(req,res)=>{
   const {owner,credentials}=context(req),appId=hostedAppIdSchema.parse(req.params.appId);
-   await getApplicationProduct(owner,appId);
-  const response=await backendGet('application-network-policy',config.dataQuery.baseUrl+'/platform/applications/'+encodeURIComponent(appId),{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});
+  const headers=buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey);
+  const catalog=JSON.parse((await backendGet('application-policy-admission',config.dataQuery.baseUrl+'/platform/applications?purpose=navigation',{headers,retries:1})).text);
+  const listed=catalog.success&&Array.isArray(catalog.data)?catalog.data.find((entry:{id:string;kind?:string})=>entry.id===appId):undefined;
+  if(!listed)throw new HttpError(403,'Application use permission required','PRODUCT_FORBIDDEN');
+  if(listed.kind==='connected'){res.json({messageBridge:0});return;}
+  await getApplicationProduct(owner,appId);
+  const response=await backendGet('application-network-policy',config.dataQuery.baseUrl+'/platform/applications/'+encodeURIComponent(appId),{headers,retries:1});
   const application=JSON.parse(response.text);
-  if(application.success&&application.data?.kind==='connected'){res.json({messageBridge:0});return;}
   if(!application.success||!application.data?.releaseId)throw new HttpError(404,'Application release unavailable','NOT_FOUND');
   let policy;try{policy=JSON.parse(await readFile(runtimeDataDir('hosted-apps',appId,workspaceIdSchema.parse(application.data.releaseId),'.ontomato-network-policy.json'),'utf8'));}catch(error){if((error as {code?:string}).code!=='ENOENT')throw error;}
   if(![undefined,2].includes(policy?.messageBridge))throw new HttpError(409,'Unsupported application message bridge','PRODUCT_SDK_UPGRADE_REQUIRED');

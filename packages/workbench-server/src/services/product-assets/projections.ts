@@ -1,4 +1,5 @@
-import {getProduct,type ProductOwner} from './store';
+import {getProduct} from './store';
+import type {ProductOwner} from '../product-governance/grants';
 import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres';
 import {HttpError} from '../../utils/errors';
 import {withProductGrants} from './grants';

@@ -5,7 +5,8 @@ vi.mock('../../../utils/backend-client',async importOriginal=>({...await importO
 vi.mock('../../../core/skills/registry/manager',()=>({skillRegistryManager:{forDomain:vi.fn()}}));
 vi.mock('../../../identity/installed',()=>({requirePermission:()=> (_req:unknown,_res:unknown,next:()=>void)=>next(),workbenchIdentity:()=>({requireDomainId:(identity:{domainId:string})=>identity.domainId})}));
 const access=vi.hoisted(()=>({use:new Set<string>(),edit:new Set<string>()}));
-vi.mock('../grants',()=>({withProductGrants:async(_owner:unknown,action:()=>unknown)=>action(),currentProductGrants:()=>access,registerProductResource:async(_owner:unknown,id:string)=>{access.use.add(id);access.edit.add(id);},productGrantIdsForOwner:async(_owner:unknown,verb:string)=>[...access[verb==='edit'?'edit':'use']],shareProductResource:vi.fn(),refreshProductGrants:vi.fn()}));
+vi.mock('../grants',()=>({withProductGrants:async(_owner:unknown,action:()=>unknown)=>action(),currentProductGrants:()=>access,refreshProductGrants:vi.fn()}));
+vi.mock('../../product-governance/grants',()=>({registerProductResource:async(_owner:unknown,id:string)=>{access.use.add(id);access.edit.add(id);},productGrantIdsForOwner:async(_owner:unknown,verb:string)=>[...access[verb==='edit'?'edit':'use']],shareProductResource:vi.fn()}));
 vi.mock('../../../infrastructure/postgres',()=>({qualifiedTable:(name:string)=>name,getPostgresPool:()=>({query:mocks.query})}));
 vi.mock('../../../infrastructure/postgres-transaction',()=>({transaction:async(fn:(client:{query:typeof mocks.query})=>unknown)=>fn({query:mocks.query})}));
 vi.mock('../validation',()=>({validateProduct:mocks.validate,validatePageBindings:vi.fn()}));
@@ -108,7 +109,7 @@ describe('product mutation boundary',()=>{
     const document=input().document;
     mocks.query.mockImplementation(async(sql:string)=>({rows:sql.includes('SELECT owner_id,revision')?[{owner_id:'bob',revision:1,document,visibility:'domain'}]:sql.includes('SELECT id, owner_id')?[{id:'shared',ownerId:'bob',name:'Text',description:'',visibility:'private',document,revision:2,createdAt:new Date(),updatedAt:new Date()}]:[]}));
     await saveProduct(owner,'shared',input(),1,credentials);
-    const {shareProductResource}=await import('../grants');
+    const {shareProductResource}=await import('../../product-governance/grants');
     expect(shareProductResource).not.toHaveBeenCalled();
   });
   it('does not retain the authors implicit edit permission after its Grant is revoked',async()=>{

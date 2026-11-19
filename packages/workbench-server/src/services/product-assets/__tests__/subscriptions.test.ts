@@ -1,10 +1,11 @@
 import {afterEach,expect,it,vi} from 'vitest';
 const mocks=vi.hoisted(()=>({execute:vi.fn(),trigger:vi.fn(),grant:vi.fn(),query:vi.fn<[string,...unknown[]],Promise<{rows:Record<string,unknown>[]}>>(async()=>({rows:[]}))}));
 vi.mock('../../../infrastructure/postgres',()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
-vi.mock('../definitions',()=>({executeDefinition:mocks.execute}));
-vi.mock('../triggers',()=>({readDefinitionTrigger:mocks.trigger}));
-vi.mock('../grants',()=>({requireProductGrant:mocks.grant}));
-import {subscribeProduct,pollProductSubscription,unsubscribeProduct,resumeProductSubscription,deleteProductSubscription,notifyProductDefinitionChanged} from '../subscriptions';
+vi.mock('../../business-definitions/definitions',()=>({executeDefinition:mocks.execute}));
+vi.mock('../../business-definitions/triggers',()=>({readDefinitionTrigger:mocks.trigger}));
+vi.mock('../../product-governance/grants',()=>({requireProductGrant:mocks.grant}));
+import {subscribeProduct,pollProductSubscription,unsubscribeProduct,resumeProductSubscription,deleteProductSubscription} from '../subscriptions';
+import {notifyProductDefinitionChanged} from '../../product-panels/definition-stream';
 const owner={domainId:'domain',userId:'reader'};
 afterEach(()=>{vi.useRealTimers();vi.resetAllMocks();});
 it('rechecks the existing short projection subscription grant when polling',async()=>{

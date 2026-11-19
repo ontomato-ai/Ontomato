@@ -1,5 +1,5 @@
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
-import type {ProductOwner} from './store';
+import type {ProductOwner} from '../product-governance/grants';
 import {getApplicationProduct} from './store';
 import {requireProductUse} from './grants';
 import {readActiveProductBundle,readProductRelease,synchronizeBundlePublication} from './releases';

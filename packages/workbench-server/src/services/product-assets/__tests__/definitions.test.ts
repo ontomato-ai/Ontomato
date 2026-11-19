@@ -2,7 +2,7 @@ import {beforeEach,expect,it,vi} from 'vitest';
 const mocks=vi.hoisted(()=>({query:vi.fn(),post:vi.fn()}));
 vi.mock('../../../infrastructure/postgres',()=>({qualifiedTable:(name:string)=>name,getPostgresPool:()=>({query:mocks.query})}));
 vi.mock('../../../utils/backend-client',()=>({backendPost:mocks.post,buildBackendHeaders:()=>({tk:'caller'})}));
-import {executeDefinition} from '../definitions';
+import {executeDefinition} from '../../business-definitions/definitions';
 beforeEach(()=>{vi.resetAllMocks();mocks.query.mockResolvedValue({rows:[{definition:{id:'members',name:'Members',objectType:'Person',revision:1,status:'PUBLISHED',parameters:[]}}]});});
 it('uses the governed schema primary key for stable collection pagination',async()=>{
   mocks.post.mockResolvedValueOnce({text:JSON.stringify({classes:[{className:'Person',attrs:[{name:'personKey',primaryKey:true},{name:'name'}]}]})}).mockResolvedValueOnce({text:JSON.stringify({data:[{answer:[{name:'Alice'}]}]})});

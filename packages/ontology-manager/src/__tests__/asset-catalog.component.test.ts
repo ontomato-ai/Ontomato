@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, h, nextTick, ref, type App } from "vue";
 import CapabilityMap from "../components/CapabilityMap.vue";
 import TriggerCatalog from "../components/TriggerCatalog.vue";
+import { G6_LABEL_SIZE } from "@ontomato/foundation-ui/graph/g6";
 import { buildCapabilityMap } from "../components/capability-map-model";
 import {
-  CAPABILITY_LABEL_SIZE,
   CAPABILITY_LABEL_WIDTH,
   capabilityKinds,
   capabilityMapLayout,
@@ -178,7 +178,7 @@ it("opens the capability map with every name readable and none overlapping, smal
   expect(small.offset.x + small.width * small.zoom).toBeLessThanOrEqual(946);
   expect(small.offset.y + small.height * small.zoom).toBeLessThanOrEqual(627);
   // The large one does not fit at a readable size, so it opens readable at its start and runs on to the right.
-  expect(large.zoom * CAPABILITY_LABEL_SIZE).toBeGreaterThanOrEqual(11);
+  expect(large.zoom * G6_LABEL_SIZE).toBeGreaterThanOrEqual(11);
   expect(large.offset.y + large.height * large.zoom).toBeLessThanOrEqual(734);
 
   for (const layout of [small, large]) {

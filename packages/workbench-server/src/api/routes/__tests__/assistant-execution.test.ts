@@ -2,7 +2,8 @@ import express from 'express';
 import type {Server} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {afterAll,afterEach,beforeAll,beforeEach,expect,it,vi} from 'vitest';
-const mocks=vi.hoisted(()=>({restore:vi.fn(),run:vi.fn(),operate:vi.fn(),dispatch:vi.fn()}));
+const mocks=vi.hoisted(()=>({restore:vi.fn(),run:vi.fn(),operate:vi.fn(),dispatch:vi.fn(),authoring:vi.fn()}));
+vi.mock('../../../services/assistant/authoring',()=>({executeAuthoring:mocks.authoring}));
 vi.mock('../../../services/product-panels/operations',()=>({operatePanel:mocks.operate,dispatchPanel:mocks.dispatch}));
 vi.mock('../../../services/assistant/execution',()=>({credentialsForRun:mocks.restore,runForOwner:mocks.run}));
 vi.mock('../../../config/environment',()=>({environment:{agentRuntime:()=>({token:'test-callback-secret',callbackUrl:'http://workbench.test'})}}));
@@ -37,7 +38,14 @@ it('restores the initiator before resolving the executor and forwards only ordin
  expect(request.headers).toMatchObject({'X-API-Key':'selected-user-key','X-Ontomato-Run-Id':run,'X-Ontomato-Retrieval-Caller-Id':run});
  expect(request.headers).not.toHaveProperty('X-Ontomato-Query-Service-Token');expect(request.redirect).toBe('error');
 });
-it.each(['ontology/ontology/retrievals/skill-runs','ontology/ontology/retrievals/'+run+'/runs/'+run+'/outputs/'+other,'ontology/ontology/retrievals/'+run+'/runs/'+run+'/outputs/'+other+'/content','ontology/ontology/retrievals/'+run+'/skill-runs/'+run+'/close','ontology/ontology/retrievals/'+run+'/retriever/cancel','ontology/ontology/retrievals/'+run+'/runs/'+run+'/outputs','ontology/platform/agent-channel/commands','ontology/internal/agent-execution/resolve','ontology/agent-principals/execution','ontology/https%3A%2F%2Fevil.test','workbench/internal/agent-channel/prepare'])('refuses an out-of-scope path %s before resolving any key',async path=>{
+it.each([
+ 'ontology/ontology/ai/generation/gates',
+ 'ontology/ontology/ai/generation/platform/action/test',
+ 'ontology/action/save',
+ 'ontology/metricView/save',
+ 'ontology/action/generateFromNatureLanguage',
+ 'ontology/metricView/generateFromNatureLanguage',
+ 'ontology/ontology/retrievals/skill-runs','ontology/ontology/retrievals/'+run+'/runs/'+run+'/outputs/'+other,'ontology/ontology/retrievals/'+run+'/runs/'+run+'/outputs/'+other+'/content','ontology/ontology/retrievals/'+run+'/skill-runs/'+run+'/close','ontology/ontology/retrievals/'+run+'/retriever/cancel','ontology/ontology/retrievals/'+run+'/runs/'+run+'/outputs','ontology/platform/agent-channel/commands','ontology/internal/agent-execution/resolve','ontology/agent-principals/execution','ontology/https%3A%2F%2Fevil.test','workbench/internal/agent-channel/prepare'])('refuses an out-of-scope path %s before resolving any key',async path=>{
  const upstream=vi.fn();vi.stubGlobal('fetch',upstream);
  expect((await call(path)).status).toBe(403);expect(upstream).not.toHaveBeenCalled();expect(mocks.restore).not.toHaveBeenCalled();
 });
@@ -99,6 +107,36 @@ it.each([
  expect(upstream).not.toHaveBeenCalled();
 });
 
+it.each([
+  "/api/skills",
+  "/api/skills/reporting/references",
+  "/api/skills/reporting/files",
+  "/api/skills/reporting/file?path=references%2Freadme.md",
+])("forwards the declared skill read %s with the executor credential", async path => {
+ const upstream = vi.fn(async (_url: string, _request: NonNullable<Parameters<typeof fetch>[1]>) => Response.json({}));
+ vi.stubGlobal("fetch", upstream);
+ expect((await call("workbench" + path, { tk: "oq.business.grant" }, "GET")).status).toBe(200);
+ const [url, request] = upstream.mock.calls[0]!;
+ expect(url).toBe("http://workbench.test" + path);
+ expect(request).toMatchObject({ method: "GET", headers: { "X-API-Key": "selected-user-key" } });
+ expect(request.headers).not.toHaveProperty("tk");
+});
+
+it.each([
+  ["GET", "workbench/api/skills/search?q=report"],
+  ["GET", "workbench/api/skills/reporting/export"],
+  ["GET", "workbench/api/skills/reporting/files/extra"],
+  ["GET", "ontology/api/skills"],
+  ["POST", "workbench/api/skills/reporting/files"],
+  ["POST", "workbench/api/skills/import"],
+])("refuses the unlisted skill callback %s %s before resolving the executor", async (method, path) => {
+ const upstream = vi.fn();
+ vi.stubGlobal("fetch", upstream);
+ expect((await call(path, {}, method)).status).toBe(403);
+ expect(mocks.restore).not.toHaveBeenCalled();
+ expect(upstream).not.toHaveBeenCalled();
+});
+
 it("lets Java restore V for governance business Grants without a Node key exchange",async()=>{
  mocks.restore.mockRejectedValue(new Error('V lookup must stay in Java'));
  const upstream=vi.fn(async()=>Response.json({items:[]}));vi.stubGlobal('fetch',upstream);
@@ -116,6 +154,8 @@ it.each([
   ["GET", "/platform/scheduled-tasks"],
   ["GET", `/platform/scheduled-tasks/${other}`],
   ["POST", "/platform/scheduled-tasks/applications/agents/form"],
+  ["POST", "/ontology/query/metrics/describe"],
+  ["POST", "/metricView/execute"],
 ])("forwards %s %s with the executor credential", async (method, path) => {
   const upstream = vi.fn(async (_url: string, _request?: Parameters<typeof fetch>[1]) => Response.json({}));
   vi.stubGlobal("fetch", upstream);
@@ -151,6 +191,19 @@ it.each(["PUT", "DELETE"])("rejects %s for a task at the existing callback crede
   expect(mocks.restore).not.toHaveBeenCalled();
 });
 
+it.each([
+  ["GET", "product-projections/chart-sources?dashboardId=board&cardId=card", 200],
+  ["GET", "product-projections/projection/chart-source", 200],
+  ["POST", "product-projections/chart-sources", 403],
+  ["PUT", "product-projections/projection/chart-source", 401],
+])("only proxies the declared chart read pairs, %s %s", async (method, path, status) => {
+  const upstream = vi.fn(async (_url: string) => Response.json({}));
+  vi.stubGlobal("fetch", upstream);
+  expect((await call("workbench/api/" + path, {}, method)).status).toBe(status);
+  if (status === 200) expect(upstream).toHaveBeenCalledWith("http://workbench.test/api/" + path, expect.anything());
+  else expect(upstream).not.toHaveBeenCalled();
+});
+
 it("validates the fixed operation entrance and never accepts an approval or question ID from a tool",async()=>{
  const body={intentId:other,applicationId:"A",useId:"tasks",operationId:"run.runNow",call:{target:{kind:"object",objectType:"platform:ScheduledTask",primaryKey:other},input:{}}};
  const headers={'content-type':'application/json','X-Ontomato-Callback-Credential':credential(),'X-Ontomato-Run-Id':run};
@@ -162,4 +215,16 @@ it("validates the fixed operation entrance and never accepts an approval or ques
    expect((await nativeFetch(base+`/api/assistant/executions/${run}/panels/operate`,{method:"POST",headers,body:JSON.stringify(forged)})).status).toBe(400);
  }
  expect(mocks.operate).not.toHaveBeenCalled();
+});
+
+it("accepts author parameters only through the registered method and the run's callback", async () => {
+ const context={ontology:[],knowledge:[],helpers:{markdown:""}};
+ mocks.authoring.mockResolvedValue(context);
+ expect((await call("authoring/metric-view/context",{},"GET")).status).toBe(200);
+ expect(mocks.authoring).toHaveBeenCalledWith({userId:"U",domainId:"domain"},expect.objectContaining({token:"initiator-token"}),
+   run,"metric-view","context",{});
+ mocks.authoring.mockClear();
+ expect((await call("authoring/metric-view/context",{},"POST")).status).toBeGreaterThanOrEqual(400);
+ expect((await call("authoring/action/context",{},"GET","")).status).toBe(403);
+ expect(mocks.authoring).not.toHaveBeenCalled();
 });

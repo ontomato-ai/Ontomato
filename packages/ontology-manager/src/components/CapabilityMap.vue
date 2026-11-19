@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
+import { computed, nextTick, onMounted, ref, shallowRef } from "vue";
 import { ElButton, ElEmpty, ElInput, ElTag, vLoading } from "element-plus";
 import { Download, Maximize, RefreshCw, Search } from "lucide-vue-next";
-import { Graph } from "@antv/g6";
+import { G6GraphCanvas, graphCategorySlot, readGraphPalette, type GraphCanvasEdge, type GraphCanvasNode } from "@ontomato/foundation-ui/graph/g6";
 import { PlatformPageHeader } from "@ontomato/platform-shell";
 import type {
   CapabilityGrantRecord,
@@ -13,13 +13,10 @@ import type {
   WorkflowRecord,
 } from "../api";
 import { useManagerClient, useOntologyText } from "../context";
-import { readGraphColors } from "../graph-colors";
 import { useManagerFeedback } from "../feedback";
 import type { MessageKey } from "../i18n";
 import {
-  CAPABILITY_LABEL_SIZE,
   CAPABILITY_LABEL_WIDTH,
-  CAPABILITY_NODE_SIZE,
   capabilityKinds,
   capabilityMapLayout,
   capabilityNodeLabel,
@@ -54,7 +51,6 @@ const {
 } = useManagerClient();
 
 const loading = ref(false);
-const rendering = ref(false);
 const query = ref("");
 const selected = ref<CapabilityNode | null>(null);
 
@@ -156,179 +152,71 @@ const relations = computed(() => {
     });
 });
 
-const graphRef = ref<HTMLDivElement | null>(null);
-let graph: Graph | null = null;
-let graphRequest = 0;
+/**
+ * What the canvas draws: the nodes and edges that matched when the map was last placed, at the places the layout gave
+ * them. A filter or a refresh takes effect when the map is placed again, as the reader confirms the filter.
+ */
+const placed = shallowRef<{ layout: CapabilityMapLayout; nodes: CapabilityNode[]; edges: typeof edges.value } | null>(null);
+const canvasNodes = computed<GraphCanvasNode[]>(() =>
+  (placed.value?.nodes ?? []).map((node) => ({
+    id: node.id,
+    label: capabilityNodeLabel(node.label),
+    category: node.kind,
+    ...placed.value!.layout.positions[node.id]!,
+  })),
+);
+const canvasEdges = computed<GraphCanvasEdge[]>(() =>
+  (placed.value?.edges ?? []).map((edge, index) => ({
+    id: `edge:${index}:${edge.from}:${edge.to}`,
+    source: edge.from,
+    target: edge.to,
+    label: edge.label,
+    line: edge.derived ? "dashed" : "solid",
+  })),
+);
 
-function graphColors() {
-  return readGraphColors(graphRef.value ?? document.body);
-}
+const root = ref<HTMLElement | null>(null);
+const canvas = ref<InstanceType<typeof G6GraphCanvas> | null>(null);
+/** How many colours the edition's categorical palette has, read once the page is drawn; the legend picks the same slots. */
+const paletteSize = ref(0);
 
-const palette = computed(() => [
-  "var(--el-color-primary)",
-  "var(--el-color-success)",
-  "var(--el-color-danger)",
-  "var(--el-color-warning)",
-  "var(--el-color-info)",
-  "#7c3aed",
-  "#0891b2",
-  "#db2777",
-]);
-
-/** Colour names the kind, not the layer: two objects of one layer are not the same thing. */
+/** The legend's colour for a kind: the slot the canvas gives the same category, as a variable that follows the mode. */
 function colorFor(kind: CapabilityKind) {
-  const index = capabilityKinds.indexOf(kind);
-  const value = palette.value[index % palette.value.length]!;
-  // G6 draws on a canvas, so a CSS custom property has to be resolved before it is handed over.
-  const probe = document.createElement("span");
-  probe.style.color = value;
-  document.body.appendChild(probe);
-  const resolved = getComputedStyle(probe).color;
-  probe.remove();
-  return resolved || value;
+  return paletteSize.value ? `var(--chart-${graphCategorySlot(kind, capabilityKinds, paletteSize.value) + 1})` : undefined;
 }
 
-function yieldToBrowser() {
-  return new Promise<void>((resolve) => window.setTimeout(resolve, 0));
-}
-
-async function renderGraph() {
-  if (!graphRef.value) return;
-  await yieldToBrowser();
-  const request = ++graphRequest;
-  // The host may be gone by the time the yield returns: reading it again after the await is the only safe order,
-  // because a page that unmounted while a draw was queued must not touch the graph.
-  const host = graphRef.value;
-  if (!host) return;
-  const { width, height } = host.getBoundingClientRect();
-  if (!width || !height) return;
-  graph?.destroy();
-  const colors = graphColors();
-  const target = new Graph({
-    container: host,
-    width: Math.round(width),
-    height: Math.round(height),
-    autoResize: false,
-    padding: 48,
-    animation: false,
-    data: { nodes: [], edges: [] },
-    behaviors: ["drag-canvas", "zoom-canvas", "drag-element"],
-    node: {
-      type: "circle",
-      style: {
-        size: CAPABILITY_NODE_SIZE,
-        fill: (datum: Record<string, any>) => datum.data.color,
-        stroke: colors.nodeStroke,
-        lineWidth: 4,
-        shadowColor: colors.shadow,
-        labelText: (datum: Record<string, any>) => capabilityNodeLabel(datum.data.node.label),
-        labelFill: colors.text,
-        labelFontSize: CAPABILITY_LABEL_SIZE,
-        labelFontWeight: 600,
-        labelPlacement: "bottom",
-        labelOffsetY: 6,
-        labelMaxWidth: CAPABILITY_LABEL_WIDTH,
-        // Edges cross the columns between their ends; drawn under the nodes, and masked by each name's backing, they
-        // cannot cover a name.
-        labelBackground: true,
-        labelBackgroundFill: colors.surface,
-        labelBackgroundPadding: [1, 4],
-        zIndex: 1,
-        cursor: "pointer",
-      },
-      state: { selected: { stroke: colors.primary, lineWidth: 5 } },
-    },
-    edge: {
-      type: "line",
-      style: {
-        stroke: colors.edge,
-        lineWidth: 1.5,
-        endArrow: true,
-        labelText: (datum: Record<string, any>) => datum.data.label ?? "",
-        labelFill: colors.muted,
-        labelBackground: true,
-        labelBackgroundFill: colors.surface,
-        labelBackgroundPadding: [2, 4],
-      },
-    },
-  });
-  graph = target;
-  target.on("node:click", (event: Record<string, any>) => {
-    const id = String(event.target.id);
-    const node = nodes.value.find((item) => item.id === id) ?? null;
-    selected.value = node;
-    if (graph) void graph.setElementState({ [id]: ["selected"] }, false);
-  });
-  target.on("canvas:click", () => {
-    selected.value = null;
-  });
-
-  rendering.value = true;
-  try {
-    await target.render();
-    const layout = capabilityMapLayout(filtered.value.nodes, { width, height });
-    target.addData({
-      nodes: filtered.value.nodes.map((node) => ({
-        id: node.id,
-        data: { node, color: colorFor(node.kind) },
-        style: layout.positions[node.id],
-      })),
-      edges: filtered.value.edges.map((edge, index) => ({
-        id: `edge:${index}:${edge.from}:${edge.to}`,
-        source: edge.from,
-        target: edge.to,
-        data: { label: edge.label, derived: edge.derived },
-        style: edge.derived ? { lineDash: [5, 4], stroke: colors.muted } : {},
-      })),
-    });
-    if (request !== graphRequest) return;
-    await target.draw();
-    if (request !== graphRequest) return;
-    await openAt(target, layout);
-  } finally {
-    if (request === graphRequest) rendering.value = false;
-  }
+function chooseNode(ids: string[]) {
+  selected.value = nodes.value.find((node) => node.id === ids[0]) ?? null;
 }
 
 /**
- * Open where the layout says the names can be read, instead of fitting every node whatever size that draws them at.
- * The fit button still shows the whole map on request.
+ * Lay the matching nodes out for the canvas's size and open where the layout says the names can be read, instead of
+ * fitting every node whatever size that draws them at. The fit button still shows the whole map on request.
  */
-async function openAt(target: Graph, layout: CapabilityMapLayout) {
-  await target.zoomTo(layout.zoom, false);
-  const [x, y] = target.getViewportByCanvas([0, 0]);
-  await target.translateBy([layout.offset.x - x, layout.offset.y - y], false);
+async function place() {
+  await nextTick();
+  if (!canvas.value) return;
+  const { width, height } = (canvas.value.$el as HTMLElement).getBoundingClientRect();
+  const layout = capabilityMapLayout(filtered.value.nodes, { width, height });
+  placed.value = { layout, nodes: filtered.value.nodes, edges: filtered.value.edges };
+  await canvas.value.relayout();
+  await canvas.value.setViewport({ x: -layout.offset.x / layout.zoom, y: -layout.offset.y / layout.zoom, zoom: layout.zoom });
 }
 
 function fitView() {
-  if (graph) void graph.fitView({ when: "always", direction: "both" });
+  void canvas.value?.fit();
 }
 
-function downloadPng() {
-  const container = graphRef.value;
-  const layers = container ? Array.from(container.querySelectorAll("canvas")) : [];
-  if (!container || !layers.length) return;
-  const width = Math.max(...layers.map((canvas) => canvas.width));
-  const height = Math.max(...layers.map((canvas) => canvas.height));
-  const output = document.createElement("canvas");
-  output.width = width;
-  output.height = height;
-  const context2d = output.getContext("2d");
-  if (!context2d) return;
-  context2d.fillStyle = getComputedStyle(container.parentElement || container).backgroundColor;
-  context2d.fillRect(0, 0, width, height);
-  layers.forEach((canvas) => context2d.drawImage(canvas, 0, 0, width, height));
-  output.toBlob((blob) => {
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `capability-map-${new Date().toISOString().slice(0, 10)}.png`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, "image/png");
+async function downloadPng() {
+  const blob = await canvas.value!.exportImage();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `capability-map-${new Date().toISOString().slice(0, 10)}.png`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 async function refresh() {
@@ -367,35 +255,21 @@ async function refresh() {
 
 async function redraw() {
   await refresh();
-  await renderGraph();
+  await place();
 }
 
-let resizeObserver: ResizeObserver | null = null;
 onMounted(async () => {
+  paletteSize.value = readGraphPalette(root.value!).length;
   await redraw();
-  if (graphRef.value) {
-    resizeObserver = new ResizeObserver(() => {
-      if (!graph || !graphRef.value || rendering.value) return;
-      const { width, height } = graphRef.value.getBoundingClientRect();
-      if (width && height) graph.resize(Math.round(width), Math.round(height));
-    });
-    resizeObserver.observe(graphRef.value);
-  }
-});
-
-onBeforeUnmount(() => {
-  resizeObserver?.disconnect();
-  graph?.destroy();
-  graph = null;
 });
 </script>
 
 <template>
-  <section v-loading="loading" class="capability-map">
+  <section ref="root" v-loading="loading" class="capability-map">
     <PlatformPageHeader compact :title="ot('mapTitle')" :description="ot('mapDesc')">
       <template #actions>
-        <el-input v-model="query" class="map-filter" :prefix-icon="Search" :placeholder="ot('mapFilter')" clearable @change="renderGraph" />
-        <el-button :disabled="rendering" @click="redraw">
+        <el-input v-model="query" class="map-filter" :prefix-icon="Search" :placeholder="ot('mapFilter')" clearable @change="place" />
+        <el-button @click="redraw">
           <RefreshCw :size="16" />
           <span>{{ ot("mapRefresh") }}</span>
         </el-button>
@@ -424,10 +298,22 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-else class="map-frame">
-        <div ref="graphRef" class="map-canvas" />
+        <G6GraphCanvas
+          ref="canvas"
+          class="map-canvas"
+          :label="ot('mapTitle')"
+          :nodes="canvasNodes"
+          :edges="canvasEdges"
+          :selected="selected ? [selected.id] : []"
+          :layout="{ type: 'preset' }"
+          :categories="capabilityKinds"
+          :label-width="CAPABILITY_LABEL_WIDTH"
+          @update:selected="chooseNode"
+          @blank="selected = null"
+        />
         <div class="map-tools">
           <button :title="ot('mapFit')" :aria-label="ot('mapFit')" @click="fitView"><Maximize :size="16" /></button>
-          <button :title="ot('mapRelayout')" :aria-label="ot('mapRelayout')" :disabled="rendering" @click="renderGraph"><RefreshCw :size="16" /></button>
+          <button :title="ot('mapRelayout')" :aria-label="ot('mapRelayout')" @click="place"><RefreshCw :size="16" /></button>
           <button :title="ot('mapDownload')" :aria-label="ot('mapDownload')" @click="downloadPng"><Download :size="16" /></button>
         </div>
         <div class="map-totals">

@@ -62,6 +62,7 @@ export const app = {
         "packages/contracts/src/agent-visibility-prompt.json",
         "packages/contracts/src/query-subgraph.schema.json",
         "packages/contracts/src/query-package.schema.json",
+        "packages/contracts/src/authoring.java.schema.json",
         "packages/contracts/query-subgraph.md",
         "packages/contracts/query-package.md",
         "packages/contracts/examples/query-subgraphs.json",

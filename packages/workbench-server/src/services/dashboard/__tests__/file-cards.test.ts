@@ -2,6 +2,7 @@ import {beforeEach,expect,it,vi} from "vitest";
 vi.mock("../../../i18n",()=>({t:(key:string)=>key,tApp:(key:string)=>key}));
 const mocks=vi.hoisted(()=>({owned:vi.fn(),get:vi.fn(),save:vi.fn(),create:vi.fn(),prepare:vi.fn(),plan:vi.fn(),describe:vi.fn(),metricClient:vi.fn()}));
 vi.mock("../store",()=>({getDashboard:mocks.get,saveDashboard:mocks.save,createDashboard:mocks.create,deleteDashboard:vi.fn()}));
+vi.mock("../../../infrastructure/postgres-transaction",()=>({transaction:(action:(client:object)=>unknown)=>action({})}));
 vi.mock("../access",async()=>({...await vi.importActual<typeof import("../access")>("../access"),getOwnedDashboard:mocks.owned}));
 vi.mock("../../charts/import",()=>({prepareChartImport:mocks.prepare}));
 vi.mock("../reference-planning",()=>({planReferenceDashboard:mocks.plan}));

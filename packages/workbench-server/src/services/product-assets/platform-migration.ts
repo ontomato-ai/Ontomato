@@ -1,6 +1,7 @@
 import {assertLegacyProductWrite} from './panel-boundary';
 import {productAssetInputSchema} from '@ontomato/contracts/product-assets';
-import {getProduct,listProducts,saveProduct,lockProducts,type ProductOwner} from './store';
+import {getProduct,listProducts,saveProduct,lockProducts} from './store';
+import type {ProductOwner} from '../product-governance/grants';
 import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {HttpError} from '../../utils/errors';

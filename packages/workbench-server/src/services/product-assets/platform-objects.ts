@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import type {ProductOwner} from './store';
+import type {ProductOwner} from '../product-governance/grants';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {HttpError} from '../../utils/errors';
 import {AsyncLocalStorage} from 'node:async_hooks';

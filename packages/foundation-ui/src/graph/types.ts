@@ -8,14 +8,19 @@
  * the caller works them out and passes the result as nodes, edges, tones and the selected IDs.
  *
  * Extending it adds optional fields or events; an existing field never changes its meaning.
+ *
+ * Two canvases draw it. `GraphCanvas` is the light SVG one: it lays the graph out at natural size and scrolls, and it
+ * draws ids, labels, tones, selection and positions. `G6GraphCanvas` (`@ontomato/foundation-ui/graph/g6`) draws with G6
+ * for graphs a reader pans, zooms and drags: it also draws everything marked "G6 canvas" below.
  */
 
 /**
  * How a node or an edge stands out, as the caller decides it: `default` is plain, `accent` is marked for the reader's
- * attention without being selected (the data scope marks the object types adjacent to a chosen one with it). Selection
- * is not a tone: it is the `selected` IDs, drawn on top of the tone.
+ * attention without being selected (the data scope marks the object types adjacent to a chosen one with it), `muted` is
+ * faded back so the rest stands out (what lies outside a search hit, a path or a chosen node's relations; G6 canvas).
+ * Selection is not a tone: it is the `selected` IDs, drawn on top of the tone.
  */
-export type GraphCanvasTone = "default" | "accent";
+export type GraphCanvasTone = "default" | "accent" | "muted";
 
 export interface GraphCanvasNode {
   /** The node's stable identity: what `selected` holds and the events name. */
@@ -28,6 +33,18 @@ export interface GraphCanvasNode {
   /** The node's position in graph coordinates, read only under the `preset` layout. */
   x?: number;
   y?: number;
+  /**
+   * What kind of thing the node is, in its caller's words (an object type, a kind of capability). Each category takes
+   * one colour of the edition's categorical palette, the same in light and dark mode; see the canvas's `categories`.
+   * G6 canvas.
+   */
+  category?: string;
+  /**
+   * Draws the node as nothing: an invisible point that edges can end at, such as the middle of a group of nodes that an
+   * aggregated relation joins. It cannot be chosen. `radius` is how far its group reaches around it, so that an edge from
+   * it to itself loops round the group rather than through it. G6 canvas.
+   */
+  anchor?: { radius: number };
 }
 
 export interface GraphCanvasEdge {
@@ -37,6 +54,12 @@ export interface GraphCanvasEdge {
   source: string;
   target: string;
   tone?: GraphCanvasTone;
+  /** The text drawn along the edge, such as the relation's name; none when absent. G6 canvas. */
+  label?: string;
+  /** `dashed` marks an edge its caller wants read apart from the solid ones (a relation derived rather than stored). G6 canvas. */
+  line?: "solid" | "dashed";
+  /** How many relations the edge stands for when it aggregates several (1 when absent); a heavier one is drawn thicker. G6 canvas. */
+  weight?: number;
 }
 
 /**
@@ -58,4 +81,16 @@ export interface GraphCanvasViewport {
   width: number;
   height: number;
   zoom: number;
+}
+
+/** One drawn element a reader acted on: a node or an edge, by its ID. */
+export interface GraphCanvasElement {
+  kind: "node" | "edge";
+  id: string;
+}
+
+/** A point in graph coordinates. */
+export interface GraphCanvasPoint {
+  x: number;
+  y: number;
 }

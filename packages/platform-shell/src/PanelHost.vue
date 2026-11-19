@@ -11,7 +11,7 @@ import { usePageActions } from "./page-actions";
  * runs in a frame of its own with this SDK version's modules; what it reports — what the reader looks at and its
  * deep-linkable state — goes up through `context` and `display-address`, so the enclosing page can reflect the view.
  */
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   /**
    * The platform's panel host for one source: a registered use relation, or an author's workspace candidate. Another
    * source is another instance with its own state.
@@ -30,7 +30,12 @@ const props = defineProps<{
   title?: string;
   /** What the host says to the reader, in the platform's language. */
   labels: PanelHostLabels;
-}>();
+  /**
+   * Whether the reader is on this page. A page kept while the reader is on another holds no stream, offers nothing in the
+   * header, asks the platform for nothing new and is reconciled when shown again. Absent means shown.
+   */
+  shown?: boolean;
+}>(), { shown: true });
 const emit = defineEmits<{
   /** What a message from this instance carries now. */
   context: [context: import("@ontomato/contracts/page-context").PageContext];
@@ -38,6 +43,10 @@ const emit = defineEmits<{
   "display-address": [input: DisplayPageAddressInput];
   "display-loaded": [load: DisplayLoad];
   "display-dirty": [dirty: boolean];
+  /** Shown again, the page passed its checks: its frame may ask again and its objects are being read again. */
+  reopened: [];
+  /** Shown again, the page is no longer its application's: its use relation was withdrawn or bound elsewhere. */
+  withdrawn: [];
 }>();
 
 const view = usePanelInstance(props.port, {
@@ -45,6 +54,9 @@ const view = usePanelInstance(props.port, {
   label: (source) => source.kind === "candidate" ? props.label! : props.label ? `${props.label} · ${source.panel.name}` : source.panel.name,
   address: () => props.address,
   initial: () => props.initial ?? {},
+  shown: () => props.shown,
+  reopened: () => emit("reopened"),
+  withdrawn: () => emit("withdrawn"),
 });
 const frame = ref<HTMLIFrameElement | null>(null);
 watch(
@@ -70,7 +82,7 @@ const operations = computed(() =>
   })),
 );
 // A form presents its own Save and Discard; other panel operations can still be shown by the enclosing page.
-usePageActions(() => (view.source.value ? { operations: operations.value.filter(operation => operation.kind !== "form.save") } : null));
+usePageActions(() => (props.shown && view.source.value ? { operations: operations.value.filter(operation => operation.kind !== "form.save") } : null));
 
 defineExpose({ ...view, operations });
 </script>

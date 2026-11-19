@@ -734,7 +734,7 @@ it("shares one definition stream across author panels, restores a changed collec
   const streams: { targets: ProductDefinitionTarget[]; body: ReadableStreamDefaultController<Uint8Array> }[] = [];
   const openBodies = new Set<ReadableStreamDefaultController<Uint8Array>>();
   installPlatform(request => {
-    if (request.path === "/api/product-assets/definition-stream") {
+    if (request.path === "/api/product-panels/definition-stream") {
       let body!: ReadableStreamDefaultController<Uint8Array>;
       return new Response(new ReadableStream<Uint8Array>({
         start(controller) {

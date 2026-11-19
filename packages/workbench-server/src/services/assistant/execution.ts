@@ -38,7 +38,12 @@ export function executionCallerCredentials(credentials:AssistantCredentials,call
     {...credentials.headers,"X-Ontomato-Retrieval-Caller-Id":callerId})};
 }
 
+export async function ownedRun(owner: AssistantOwner, runId: string) {
+  const turn = await assistantStore.turn(runId, owner);
+  const { run } = await new RuntimeClient(owner.domainId, undefined, owner.userId).run(runId);
+  return { turn, run };
+}
+
 export async function runForOwner(owner:AssistantOwner,runId:string) {
-  await assistantStore.turn(runId,owner);
-  return (await new RuntimeClient(owner.domainId,undefined,owner.userId).run(runId)).run;
+  return (await ownedRun(owner, runId)).run;
 }
