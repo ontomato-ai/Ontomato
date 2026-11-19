@@ -24,6 +24,9 @@ import {METRIC_CHART_COMPONENT,productProjectionResponseSchema} from '@ontomato/
 import {pageDraftCreatedSchema,pageDraftReadSchema} from '@ontomato/contracts/page-draft';
 import {chartProjectionSourceSends,clientSends} from '@ontomato/contracts/panel-client-requests';
 import {projectionBindingKeys} from '@ontomato/contracts/panel-projection';
+import type {AppBridgeExpandPageComposer} from '@ontomato/contracts/app-bridge';
+import type {PanelConversationEntry} from '@ontomato/contracts/panel-conversation-entry';
+import {servePageComposerKey,type PageComposerExpand,type ServePageComposer} from '@ontomato/agent-shell-ui';
 
 const executionBindings = new WeakMap<object, AppExecutionContext>();
 const publishedFrames=new WeakMap<object,string>();
@@ -47,6 +50,8 @@ interface PanelFrame {
   open: boolean;
   /** The use relation's page key: a draft this frame reads must have been written for it. */
   pageKey: string;
+  /** The panel's slots, as its declaration names them: a conversation entry is asked for by its slot. */
+  slots: PanelManifest["slots"];
   /**
    * Every projection the panel's declaration names, with the binding of its current record once the frame has read it
    * through this host. The record is Node's, read with the reader's credential, so the binding is the owner's, not the
@@ -64,6 +69,11 @@ interface PanelFrame {
    * redraw; the owner still checks use and edit.
    */
   charts: Set<string>;
+  /**
+   * The conversation entries of the projections this frame has read, by projection ID: the owner's record declares the
+   * one agent target and sentence its entry may put into the page's composer.
+   */
+  conversationEntries: Map<string,PanelConversationEntry>;
 }
 const panelFrames=new WeakMap<object,PanelFrame>();
 const PROJECTION_READ=/^\/product-projections\/([^/?]+)$/;
@@ -75,13 +85,17 @@ const frameInsets = new WeakMap<object, AppFrameInsets>();
 const insetListeners = new WeakMap<object, Set<(insets: AppFrameInsets) => void>>();
 const NO_INSETS: AppFrameInsets = { bottom: 0 };
 let bridge:ReturnType<typeof installAppBridge>|undefined;
-/** Mounted after the shell installs its context, router and identity providers. */
+/**
+ * Mounted after the shell installs its context, router and identity providers. The composers the shell draws register
+ * here (`servePageComposerKey`), so a panel frame's conversation entry reaches the one on screen.
+ */
 export function installProductEmbedding(app:App){
+  app.provide(servePageComposerKey,servePageComposer);
   const host=(window as Window & {[APP_HOST_GLOBAL]?:AppHost})[APP_HOST_GLOBAL];
   if(!host)return;
   // The bridge answers a frame as the application it was registered under: a published application's, or a panel
   // application's.
-  bridge?.dispose();bridge=installAppBridge(app,host,source=>publishedFrames.get(source)??panelFrames.get(source)?.bridgeIdentity,source=>panelFrames.get(source)?.open??true);
+  bridge?.dispose();bridge=installAppBridge(app,host,source=>publishedFrames.get(source)??panelFrames.get(source)?.bridgeIdentity,source=>panelFrames.get(source)?.open??true,expandPageComposer);
   host.mountProductAsset=(source,target,assetId)=>{
     const element=target as HTMLElement;
     if(executionContext(source).kind!=='live')throw new Error('Product embedding is unavailable in build-test previews; use product authoring commands');
@@ -147,7 +161,7 @@ export function registerLiveFrame(source: object,applicationId?:string) {
 type PanelDeclaration = { pageKey: string; manifest: PanelManifest };
 
 function registerDeclaredFrame(source: object, bridgeIdentity: string, panel: PanelDeclaration, context: AppExecutionContext, open: boolean) {
-  const frame:PanelFrame={bridgeIdentity,open,pageKey:panel.pageKey,bindings:new Map(Object.values(panel.manifest.slots).map(slot=>[slot.projectionId,null])),createDrafts:new Set(),charts:new Set()};
+  const frame:PanelFrame={bridgeIdentity,open,pageKey:panel.pageKey,slots:panel.manifest.slots,conversationEntries:new Map(),bindings:new Map(Object.values(panel.manifest.slots).map(slot=>[slot.projectionId,null])),createDrafts:new Set(),charts:new Set()};
   panelFrames.set(source,frame);
   const binding=registerFrame(source,context);
   return {
@@ -208,6 +222,8 @@ async function relayToPanel(panel:PanelFrame,method:string,path:string,service:s
     panel.bindings.set(id,projectionBindingKeys(record));
     if(record.componentId===METRIC_CHART_COMPONENT)panel.charts.add(id);
     else panel.charts.delete(id);
+    if(record.conversationEntry)panel.conversationEntries.set(id,record.conversationEntry);
+    else panel.conversationEntries.delete(id);
     return response;
   }
   const read=DRAFT_READ.exec(path);
@@ -216,6 +232,32 @@ async function relayToPanel(panel:PanelFrame,method:string,path:string,service:s
   if(draft.pageKey!==panel.pageKey)throw new Error('This draft was written for another page');
   if(draft.target.id===undefined)panel.createDrafts.add(draftKey(read[1]!,read[2]!,new URLSearchParams(read[3]).get('path')!));
   return response;
+}
+/** The composers shown now, in the order they were shown; the last one is the page's. */
+const composers:PageComposerExpand[]=[];
+/**
+ * A composer the reader sees registers how it expands while it is shown, and calls the returned function when it goes.
+ * The one shown last answers; once it goes, the one before it does again. The composer alone expands, selects among its
+ * page's candidates and fills the sentence; it never sends.
+ */
+export const servePageComposer:ServePageComposer=expand=>{
+  composers.push(expand);
+  return ()=>{const index=composers.lastIndexOf(expand);if(index>=0)composers.splice(index,1);};
+};
+/**
+ * A panel frame asks to expand its page's composer for one of its slots. It gets exactly the agent target and sentence
+ * the slot's projection declares in the owner's record, as this host read it; a frame naming anything else is refused
+ * before the composer hears of it.
+ */
+function expandPageComposer(source:object,{slot,...asked}:AppBridgeExpandPageComposer){
+  const panel=panelFrames.get(source);
+  const projectionId=panel&&Object.hasOwn(panel.slots,slot)?panel.slots[slot]!.projectionId:undefined;
+  const declared=projectionId===undefined?undefined:panel!.conversationEntries.get(projectionId);
+  // Both sides are parsed by the same schema, so their keys come in the same order.
+  if(!declared||JSON.stringify(declared)!==JSON.stringify(asked))throw new Error('This conversation entry is not declared by the panel');
+  const expand=composers.at(-1);
+  if(!expand)throw new Error('This page has no composer');
+  expand(declared);
 }
 function executionContext(source: object) {
   const context=executionBindings.get(source);
@@ -313,6 +355,8 @@ export function installAppHost(options: {
       const target=applicationId&&assetRead&&!['counts','types','query','home','projections','graph'].includes(assetRead[1])?`/product-assets/published/${encodeURIComponent(applicationId)}/${assetRead[1]}`:path;
       const headers=new Headers(init.headers);
       headers.delete(BUILD_TEST_HEADER);headers.delete('tk');headers.delete('authorization');headers.delete('x-api-key');
+      // A multipart body's Content-Type carries its boundary: only the browser that writes the body may state it.
+      if(init.body instanceof FormData)headers.delete('content-type');
       if(!options.credential)throw new Error('Platform credential unavailable');
       if(options.credential.type==='token')headers.set('tk',options.credential.token);
       if(options.credential.type==='apiKey')headers.set('x-api-key',options.credential.apiKey);

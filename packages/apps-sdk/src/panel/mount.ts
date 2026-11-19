@@ -16,7 +16,7 @@ import {
 } from "@ontomato/contracts/panel-host";
 import type { DefinitionRevision } from "@ontomato/contracts/product-subscriptions";
 import { pageDraftReadSchema, type PageDraft } from "@ontomato/contracts/page-draft";
-import type { PanelObjectIdentity, PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import { panelOperationSchema, type PanelObjectIdentity, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import type { PanelDefinitionContent, ProductProjection } from "@ontomato/contracts/product-panels";
 import { panelContextKey, type PanelContext, type ProjectionSlot } from "./context";
 import { applyPanelRequest, createPanelInstance, pageDraftLinkOf, type PanelInstance } from "./instance";
@@ -151,11 +151,13 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   }
   async function followAddress(next: string) {
     const desired = panelAddressState(next);
+    const patch: Record<string, PanelStateValue> = {};
     for (const [name, field] of Object.entries(message.panel.manifest.state)) {
       if (!field.deepLink) continue;
       const value = desired[name] ?? null;
-      if (JSON.stringify(instance.state.values.value[name]) !== JSON.stringify(value)) instance.state.set(name, value);
+      if (JSON.stringify(instance.state.values.value[name]) !== JSON.stringify(value)) patch[name] = value;
     }
+    instance.state.setState(patch);
     address.value = next;
     await followDraft();
   }
@@ -256,7 +258,10 @@ function report({ instance, address, followAddress, unsaved, changed }: ReportOp
   // The operations the header draws and an agent lists; they change as projections register and unregister.
   watch(() => instance.operations.value, (operations) => {
     // The wire description carries data only. Invocation stays in this frame.
-    send({ kind: "operations", operations: operations.map(({ invoke: _invoke, ...operation }) => operation) });
+    send({
+      kind: "operations",
+      operations: operations.map(({ invoke: _invoke, ...operation }) => panelOperationSchema.parse(operation)),
+    });
   }, { immediate: true });
 
   window.addEventListener("message", (event) => {

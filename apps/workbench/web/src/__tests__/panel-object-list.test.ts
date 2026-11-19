@@ -206,7 +206,10 @@ it("renders faceted count tabs, escaped highlights, fallback-to-first selection,
       tagsField: "tags",
       fallbackToFirst: true,
       toggleable: false,
-      filters: [{ key: "status", label: "Status", kind: "tabs", defaultValue: "all" }],
+      filters: [{
+        key: "status", label: "knowledge.status", kind: "tabs", defaultValue: "all",
+        options: [{ value: "all", label: "knowledge.filterAll" }],
+      }],
     }),
     "knowledge-summary": projection("knowledge-summary", "ObjectSummary", KNOWLEDGE, {
       fields: ["status", "body", "owner"],
@@ -229,6 +232,7 @@ it("renders faceted count tabs, escaped highlights, fallback-to-first selection,
   });
   const panel = panelRecord("panel-knowledge", "Knowledge", manifest);
   panel.content.html = `<div id="app"><Projection slot="list"></Projection><Projection slot="detail"></Projection></div>`;
+  panel.content.messages = { en: { "knowledge.status": "Status", "knowledge.filterAll": "All" } };
   const use = panelUse("use-knowledge", "knowledge-test", panel.id, "/applications/app-test/knowledge");
 
   installPlatform(hostWith(projections));
@@ -277,7 +281,7 @@ it("renders faceted count tabs, escaped highlights, fallback-to-first selection,
           key: "status",
           label: "Status",
           options: [
-            { value: "all", label: "All", count: matched.length },
+            { value: "all", count: matched.length },
             { value: "pending", label: "Pending", count: matched.filter((e) => e.statusValue === "pending").length },
             { value: "approved", label: "Approved", count: matched.filter((e) => e.statusValue === "approved").length },
           ],

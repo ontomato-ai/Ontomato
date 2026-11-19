@@ -44,7 +44,7 @@ export function panelOperations(
       // A state operation is the panel's own, so its name is one of the panel's words, in the current language.
       ...panelStateOperation(operation, (key) => text(key)),
       invoke: async () => {
-        for (const [name, value] of Object.entries(operation.sets)) state.set(name, value);
+        state.setState(operation.sets);
         return operation.sets;
       },
     })),
