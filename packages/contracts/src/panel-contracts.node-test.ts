@@ -9,7 +9,7 @@ import {
   isPanelHumanOperationIntent, panelHumanOperationDispatchResponseSchema, panelHumanOperationPreparationSchema,
   panelOperationOutcomeSchema,
   panelOperationDescriptorResponseSchema, panelOperationRefSchema,
-  panelWriteOperationSnapshotSchema, readPanelOperationRequestSchema, readStoredPanelOperationIntent,
+  panelWriteOperationSnapshotSchema, readPanelOperationRequestSchema, readPanelOperationResponseSchema, readStoredPanelOperationIntent,
 } from "./panel-agent";
 import { panelOperationImpactSchema, panelReadOperationDescriptorSchema, panelReadOperationResultSchema } from "./panel-operations";
 import {
@@ -27,7 +27,7 @@ import {
 } from "./panel-client-requests";
 import {
   candidatePanelSourceSchema, panelCapacityPlanSchema, panelCapacityRequestSchema, panelFrameMessageSchema,
-  panelHostFrameMessageSchema, panelUsePath,
+  panelHostFrameMessageSchema, panelHostMessageSchema, panelUsePath,
 } from "./panel-host";
 import {
   matchesObjectType, objectUnionTypes, ontologyObjectUnionTypeSchema, panelChildObjectIdentitySchema,
@@ -110,13 +110,50 @@ test("declared delete operations can read a named impact with the total count", 
 
 test("an operation asks the host for a user decision using the owner impact", () => {
   const objects = [{ target: { objectType: AGENT_DEFINITION, primaryKey: "a" }, label: "Assistant A" }];
-  const payload = { intentId: operationIntentId, operationId: "remove.delete", label: "Delete", impact: { summary: "Agent removal", objects, total: 1 } };
+  const confirmation = { kind: "impact", impact: { summary: "Agent removal", objects, total: 1 } };
+  const payload = { intentId: operationIntentId, operationId: "remove.delete", label: "Delete", confirmation };
   const request = { channel: APP_BRIDGE_CHANNEL, id: "confirmation", operation: "confirm-panel-operation", payload };
   assert.deepEqual(appBridgeRequestSchema.parse(request), request);
   assert.deepEqual(appBridgeConfirmPanelOperationSchema.parse(payload), payload);
   assert.equal(appBridgeConfirmPanelOperationSchema.safeParse({ ...payload, call: {} }).success, false);
   assert.deepEqual(appBridgeConfirmPanelOperationResultSchema.parse({ decision: "cancel" }), { decision: "cancel" });
+  const response = { kind: "dispatched", intentId: operationIntentId, outcome: { kind: "success", data: { notes: "Activation completed" } } };
+  assert.deepEqual(appBridgeConfirmPanelOperationResultSchema.parse({ decision: "confirm", response }), { decision: "confirm", response });
+  assert.equal(appBridgeConfirmPanelOperationResultSchema.safeParse({ decision: "confirm" }).success, false);
   assert.equal(appBridgeConfirmPanelOperationResultSchema.safeParse({ decision: "dispatch" }).success, false);
+});
+
+test("prepared single writes can proceed while batch confirmation still names its targets", () => {
+  const base = { intentId: operationIntentId, operationId: "list.setStatus", label: "Set status" };
+  const none = { ...base, confirmation: { kind: "none" } };
+  assert.deepEqual(panelHumanOperationPreparationSchema.parse(none), none);
+  const objects = [{ target: operationTarget, label: "Example" }];
+  const batch = { ...base, confirmation: { kind: "batch", targets: { objects, total: 2 } } };
+  assert.deepEqual(panelHumanOperationPreparationSchema.parse(batch), batch);
+  assert.equal(panelHumanOperationPreparationSchema.safeParse({ ...base, confirmation: { kind: "batch" } }).success, false);
+});
+
+test("metric trials use the Node read operation route", () => {
+  const read = "/panel-operations/read";
+  for (const [operation, javaPath] of [[TEST_METRIC_VIEW, "/metricView/test"], [TEST_EXECUTE_METRIC_VIEW, "/metricView/testExecute"]]) {
+    const binding = [bindingKey({ kind: "PlatformOperation", id: operation })];
+    assert.equal(clientSends(binding, "POST", "", read), true);
+    assert.equal(clientSends(binding, "GET", "", read), false);
+    assert.equal(clientSends(binding, "POST", "/data-query", javaPath), false);
+  }
+  assert.equal(clientSends([binding(METRIC_VIEW)], "POST", "", read), false);
+  const result = { kind: "markdown", markdown: "Trial output" };
+  assert.deepEqual(readPanelOperationResponseSchema.parse(result), result);
+});
+
+test("a frame boots with the exact use identity or an explicit candidate null", () => {
+  const panel = { content: { html: "", module: "" }, sdkVersion: "1.0.0", manifest: { state: {}, slots: {}, operations: [] } };
+  const message = { kind: "panel-host-message", panel, pageKey: "tasks", url: "/tasks", label: "Tasks", state: {} };
+  const use = { applicationId: "workbench", useId: "tasks" };
+  assert.deepEqual(panelHostMessageSchema.parse({ ...message, use }).use, use);
+  assert.equal(panelHostMessageSchema.parse({ ...message, use: null }).use, null);
+  assert.equal(panelHostMessageSchema.safeParse(message).success, false);
+  assert.equal(panelHostMessageSchema.safeParse({ ...message, use: { applicationId: use.applicationId } }).success, false);
 });
 
 test("form save preserves nested JSON and the owner's revision when present", () => {
@@ -459,8 +496,6 @@ test("MetricView and Function management reads do not grant operation or concret
   for (const [operation, path] of [
     [DELETE_METRIC_VIEW, "/metricView/delete"],
     [SET_METRIC_VIEW_STATUS, "/metricView/setStatus"],
-    [TEST_METRIC_VIEW, "/metricView/test"],
-    [TEST_EXECUTE_METRIC_VIEW, "/metricView/testExecute"],
     [DELETE_FUNCTION, "/function/delete"],
   ] as const) {
     const operationKey = bindingKey({ kind: "PlatformOperation", id: operation });
@@ -695,7 +730,7 @@ test("an authenticated human intent retains its frozen calls without agent quest
     intentId: operationIntentId, source: { kind: "human" }, use: { applicationId: "ontology", useId: "knowledge" },
     panelId: "panel", projectionId: "projection", binding: { kind: "PlatformOperation", id: "knowledge.delete" },
     initiator: { domainId: "domain", userId: "reader" }, dispatched: false, outcome: null,
-    impact: { summary: "Knowledge removal", objects: [{ target: operationTarget, label: "Example" }], total: 1 },
+    confirmation: { kind: "impact", impact: { summary: "Knowledge removal", objects: [{ target: operationTarget, label: "Example" }], total: 1 } },
     operation: { id: "list.delete", label: "Delete", kind: "action", slot: "list", handlerRef: "knowledge.delete",
       effect: "write", target: { source: "input", input: "selection" }, inputSchema: {}, resultSchema: {}, batch: true },
     calls: [{ target: { ...operationTarget, kind: "object" }, input: {} }],
@@ -716,8 +751,7 @@ test("a frame can prepare a human intent and only the host can dispatch it", () 
   assert.equal(createPanelHumanOperationIntentRequestSchema.safeParse({ ...ref, call, intentId: operationIntentId }).success, false);
   assert.equal(createPanelHumanOperationIntentRequestSchema.safeParse({ ...ref, call: { ...call, draft: {} } }).success, false);
   assert.equal(createPanelHumanOperationIntentRequestSchema.safeParse({ ...ref, call, executionUserId: "other" }).success, false);
-  const impact = { summary: "", objects: [{ target: operationTarget, label: "Example" }], total: 1 };
-  const prepared = { intentId: operationIntentId, operationId: ref.operationId, label: "Delete", impact };
+  const prepared = { intentId: operationIntentId, operationId: ref.operationId, label: "Delete", confirmation: { kind: "none" } };
   assert.deepEqual(panelHumanOperationPreparationSchema.parse(prepared), prepared);
 
   const bindings = [bindingKey({ kind: "PlatformOperation", id: "knowledge.delete" })];
