@@ -2,7 +2,7 @@ import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { createPanelOperationIntentRequestSchema, dispatchPanelOperationIntentRequestSchema } from "@ontomato/contracts/panel-agent";
 import { operatePanel, dispatchPanel } from "../../services/product-panels/operations";
 import { Router, type Request } from "express";
-import { AGENT_DEFINITION, SKILL, MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE, bindingKey, panelClientReads, scheduledTaskReads } from "@ontomato/contracts/panel-client-requests";
+import { AGENT_DEFINITION, SKILL, MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE, ONTOLOGY_TYPE, bindingKey, panelClientReads, scheduledTaskReads } from "@ontomato/contracts/panel-client-requests";
 import type {AssistantCredentials} from "../../platform/agent-runtime/runtime";
 import { Readable } from "node:stream";
 import { z } from "zod";
@@ -72,7 +72,7 @@ const workbenchPath = /^\/api\/(?:panel-operation-intents|product-assets|dashboa
 
 const skillReadPath = /^\/api\/skills(?:\/[^/]+\/(?:references|files|file))?$/u;
 
-const panelReads = [AGENT_DEFINITION, SKILL, MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE]
+const panelReads = [AGENT_DEFINITION, SKILL, MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE, ONTOLOGY_TYPE]
   .flatMap(type => panelClientReads(bindingKey({ kind: "PlatformObjectType", id: type })));
 
 assistantExecutionRouter.post("/:runId/panels/operate",wrap(async(req,res)=>{
