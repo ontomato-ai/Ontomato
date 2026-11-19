@@ -12,6 +12,7 @@ import { componentOperationSchema, panelStateOperation, projectionBindingKeys, p
 import { productPanelContentSchema, productPanelInputSchema, productProjectionInputSchema, type PanelSkillSource, type ProductProjectionInput } from "@ontomato/contracts/product-panels";
 import { installedAppsSdkDir } from "../../content/layout";
 import type { SkillOffering } from "../../core/skills";
+import { getDefaultLocale } from "../../i18n";
 import { findCurrentProduct, type CurrentProductKind } from "../../infrastructure/product-current";
 import { panelServerOperation, panelServerOperationSupportsBatch } from "./server-operations";
 
@@ -35,7 +36,7 @@ function panelSkillManifest(skill: RuntimeSkillRef, panels: readonly PanelDescri
     ...(panels.some(panel => panel.reads) ? ["read current data"] : []),
     panels.length === 1 ? "open the panel" : "open the panels",
     ...(panels.some(panel => panel.forms.length) ? ["draft changes"] : []),
-    ...(panels.some(panel => panel.operations.length) ? ["review declared operations"] : []),
+    ...(panels.some(panel => panel.operations.length || panel.manifest.operations.length) ? ["review declared operations"] : []),
   ];
   const actionText = verbs.format(actions);
   const names = [...panels.map(panel => panel.name).join(", ")];
@@ -111,7 +112,7 @@ function describePanel(panel: z.infer<typeof panelMetadata> & { content: unknown
       operations: projectionOperations(manifest, { slot, ports }),
     };
   });
-  const operations = [...projections.flatMap(projection => projection.operations), ...manifest.operations.map(panelStateOperation)];
+  const operations = projections.flatMap(projection => projection.operations);
   return {
     ...panel,
     projections,
@@ -121,9 +122,11 @@ function describePanel(panel: z.infer<typeof panelMetadata> & { content: unknown
   };
 }
 
-function describeUse(use: Use, { name, description, content, manifest, projections, operations, forms, reads }: PanelDescription): string {
+function describeUse(use: Use, { name, description, content, manifest, projections, operations: projectionOperations, forms, reads }: PanelDescription): string {
   const address = panelUsePath(use.path);
-  const { recipes } = productPanelContentSchema.parse(content);
+  const { recipes, messages } = productPanelContentSchema.parse(content);
+  const resolveLabel = (key: string) => messages?.[getDefaultLocale()]?.[key] ?? key;
+  const operations = [...projectionOperations, ...manifest.operations.map(operation => panelStateOperation(operation, resolveLabel))];
   return [
     `## ${name} — ${use.pageKey}`,
     description,
