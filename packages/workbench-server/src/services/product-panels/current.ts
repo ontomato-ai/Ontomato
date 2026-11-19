@@ -7,7 +7,7 @@ import { lockProducts } from "../../infrastructure/product-write-lock";
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
 import { grantedProductIds, registerProductResource, requireProductGrant } from "../product-governance/grants";
-import { notifyProductDefinitionChanged } from "../product-assets/subscriptions";
+import { notifyProductDefinitionChanged } from "./definition-stream";
 
 async function readable(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string) {
   await requireProductGrant(id, "use", credentials);

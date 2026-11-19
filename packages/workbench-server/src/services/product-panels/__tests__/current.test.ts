@@ -6,7 +6,7 @@ vi.mock("../../../infrastructure/postgres", () => ({ getPostgresPool: () => ({ q
 vi.mock("../../../infrastructure/postgres-transaction", () => ({ transaction: (action: (client: { query: typeof mocks.query }) => unknown) => action({ query: mocks.query }) }));
 vi.mock("../../product-governance/grants", () => ({ requireProductGrant: mocks.grant, registerProductResource: mocks.register,
   shareProductResource: mocks.share, grantedProductIds: async () => mocks.edits }));
-vi.mock("../../product-assets/subscriptions", () => ({ notifyProductDefinitionChanged: mocks.notify }));
+vi.mock("../definition-stream", () => ({ notifyProductDefinitionChanged: mocks.notify }));
 import { readCurrentPanel, readCurrentProjection, requireCurrentPanels, saveCurrentPanel, saveCurrentProjection } from "../current";
 import type { CurrentProductRow } from "../../../infrastructure/product-current";
 

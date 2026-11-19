@@ -75,7 +75,7 @@ describe("the panel host's addresses", () => {
 
   it("asks Node for panels, projections and subscriptions under /api", () => {
     expect(panelHostPaths.panel("panel-a")).toBe("/api/product-panels/panel-a");
-    expect(panelHostPaths.definitionStream).toBe("/api/product-assets/definition-stream");
+    expect(panelHostPaths.definitionStream).toBe("/api/product-panels/definition-stream");
   });
 
   it("sends each read to the address its owner serves", async () => {
@@ -97,7 +97,7 @@ describe("the panel host's addresses", () => {
       "GET /api/product-panels/panel-a",
       "GET /api/apps-sdk/current",
       "GET /api/product-panels/panel-a/snapshot",
-      "POST /api/product-assets/definition-stream",
+      "POST /api/product-panels/definition-stream",
       "GET /api/workspaces/7c9e6679-7425-40de-944b-e07fc1f90ae7/panel-candidate?ref=working",
     ]);
     observer.close();

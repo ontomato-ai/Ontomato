@@ -13,8 +13,8 @@ import {expandedProductDependencies} from '../../services/product-assets/depende
 import {readProductRelease,productReleaseIssues,snapshotAsset,publishProductBundle,rollbackProductBundle,listProductBundleReleases,synchronizeBundlePublication} from '../../services/product-assets/releases';
 import {assembleAgentProfile,renderAgentObjectContext,executeProfileTool} from '../../services/product-assets/agent-profile';
 import {validatePageState} from '@ontomato/contracts/product-page-state';
-import {productDefinitionStreamRequestSchema,productSubscriptionTargetSchema,type ProductDefinitionStreamFrame} from '@ontomato/contracts/product-subscriptions';
-import {subscribeProduct,resumeProductSubscription,deleteProductSubscription,authorizeDefinitionStream} from '../../services/product-assets/subscriptions';
+import {productSubscriptionTargetSchema} from '@ontomato/contracts/product-subscriptions';
+import {subscribeProduct,resumeProductSubscription,deleteProductSubscription} from '../../services/product-assets/subscriptions';
 import {discoverProjections,validateDefaultProjections} from '../../services/product-assets/projections';
 import {readProductGrantRecords,changeProductGrant,changeProductDomainGrant} from '../../services/product-governance/grants';
 import {requireProductUse} from '../../services/product-assets/grants';
@@ -60,19 +60,6 @@ router.get('/projections',wrap(async(req,res)=>{const input=z.object({kind:z.enu
 router.post('/subscriptions',wrap(async(req,res)=>{
   const {owner,credentials}=context(req);
   res.json(await subscribeProduct(owner,credentials,productSubscriptionTargetSchema.parse(req.body)));
-}));
-router.post('/definition-stream',wrap(async(req,res)=>{
-  const {owner,credentials}=context(req);
-  const {targets}=productDefinitionStreamRequestSchema.parse(req.body);
-  const {attach,snapshot}=await authorizeDefinitionStream(owner,credentials,targets);
-  if(res.destroyed)return;
-  const send=(frame:ProductDefinitionStreamFrame)=>res.write(`data: ${JSON.stringify(frame)}\n\n`);
-  const stop=attach(send);
-  res.once('close',stop);
-  res.set({'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','X-Accel-Buffering':'no'});
-  res.flushHeaders();
-  const definitions=await snapshot();
-  if(!res.destroyed)send({kind:'snapshot',definitions});
 }));
 router.get('/subscriptions/:subscriptionId',wrap(async(req,res)=>{const c=context(req);res.json(await resumeProductSubscription(c.owner,String(req.params.subscriptionId),c.credentials));}));
 router.delete('/subscriptions/:subscriptionId',wrap(async(req,res)=>{const c=context(req);await deleteProductSubscription(c.owner,String(req.params.subscriptionId));res.json({success:true});}));

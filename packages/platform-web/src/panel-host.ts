@@ -37,7 +37,7 @@ export const panelHostPaths = {
     `/api/data-query/platform/applications/${encodeURIComponent(applicationId)}/panel-uses`,
   panel: (panelId: string) => `/api/product-panels/${encodeURIComponent(panelId)}`,
   snapshot: (panelId: string) => `/api/product-panels/${encodeURIComponent(panelId)}/snapshot`,
-  definitionStream: "/api/product-assets/definition-stream",
+  definitionStream: "/api/product-panels/definition-stream",
   candidate: (workspaceId: string, ref: string) =>
     `/api/workspaces/${encodeURIComponent(workspaceId)}/panel-candidate?${new URLSearchParams({ ref })}`,
 };
