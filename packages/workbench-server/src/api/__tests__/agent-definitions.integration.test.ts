@@ -37,6 +37,7 @@ import type { WorkbenchIdentity } from "../../identity/types";
 import assistantRouter from "../routes/assistant";
 import { HttpError } from "../../utils/errors";
 import { createAgentDefinition, filterReadableAgentDefinitions, saveAgentDefinition, saveAgentDefinitionSnapshot, validateAgentDefinition, type AgentDefinitionSkillSelection } from "../../services/assistant/definitions";
+import { readAssistantSkillView } from "../../services/assistant/skills";
 import { agentDefinitionOperations } from "../../services/assistant/definition-operations";
 import { readDiagnosisModel, saveDiagnosisModel } from "../../services/ops-diagnosis/model-settings";
 
@@ -161,7 +162,10 @@ describe("agent definitions on PostgreSQL", () => {
     expect(panelFormDescriptionSchema.parse(await draft.json())).toMatchObject({ values, errors });
     expect(panelFormDescriptionSchema.parse(await (await describeForm()).json()).errors).toEqual([]);
 
+    const credentials = { token: "editor", locale: "en" };
+    const actor = { owner, credentials };
     const host = {
+      initiator: actor, executor: actor, skillView: await readAssistantSkillView(owner.domainId, credentials),
       requestWorkbench: (path: string, init: NonNullable<Parameters<typeof fetch>[1]>) =>
         fetch(new URL(`/api${path}`, base), { ...init, headers: { "Content-Type": "application/json" } }),
       request: async () => { throw new Error("The definition owner is the Workbench Server"); },
@@ -169,6 +173,37 @@ describe("agent definitions on PostgreSQL", () => {
     const receipt = await agentDefinitionOperations[0].execute(host, target, { values }, id);
     expect(receipt).toMatchObject({ kind: "refusal", code: "INVALID_REQUEST", errors });
     expect((await stored(id)).name).toBe(form.name);
+  });
+
+  it("keeps visible skills in the display of an update draft that omits skills", async () => {
+    const id = randomUUID();
+    const hiddenSkill = { ...savedSkill, name: "hidden-page-skill" };
+    expect((await write("POST", id, { ...form, skills: [savedSkill, hiddenSkill] })).status).toBe(201);
+    state.validateSkills.mockClear();
+    state.hiddenSkills.mockClear();
+
+    const target = { kind: "object", objectType: AGENT_DEFINITION, primaryKey: id };
+    const values = { ...form, name: "Draft name", modelSelection: { modelId: null },
+      classNames: [], enabledMcpServiceIds: [], executionUserId: null };
+    const describeForm = async (draft?: typeof values) => {
+      state.skillView.mockResolvedValueOnce({ hidden: true });
+      state.visibleSkills.mockImplementationOnce((refs: typeof savedSkill[]) => refs.filter(ref => ref.name !== hiddenSkill.name));
+      const response = await fetch(base + "/form", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target, values: draft, changedField: null }),
+      });
+      expect(response.status).toBe(200);
+      return panelFormDescriptionSchema.parse(await response.json());
+    };
+    const baseline = await describeForm();
+    const draft = await describeForm(values);
+    expect(draft.values.name).toBe(values.name);
+    expect(baseline.values.skills).toEqual([savedSkill]);
+    expect(draft.values.skills).toEqual(baseline.values.skills);
+    expect(state.validateSkills).not.toHaveBeenCalled();
+    expect(state.hiddenSkills).not.toHaveBeenCalled();
+    expect((await stored(id)).skills).toEqual([savedSkill, hiddenSkill]);
+    expect(await skillWrites(id)).toBe(0);
   });
   it("clears an explicitly submitted empty skill array through the existing validator", async () => {
     const id = randomUUID();

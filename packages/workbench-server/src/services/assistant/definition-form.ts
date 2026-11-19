@@ -79,6 +79,9 @@ export async function describeAgentDefinitionForm(
       const checked = await checkedDefinition(input, owner, credentials, current.executionUserId, current.skills,
         skillView && { credentials, view: skillView });
       values = { ...input, ...checked };
+      if (definition && input.skills === undefined) {
+        values.skills = projectAgentDefinitionSkills(definition, skillView!).skills;
+      }
     } catch (error) {
       if (!(error instanceof AgentDefinitionFieldError)) throw error;
       errors = error.errors;
