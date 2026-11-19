@@ -8,7 +8,7 @@ import { APP_BUILDER_SKILL } from "../app-builder/definition";
 import { restoreAgentCaller } from "../agent-host/caller";
 import { WorkspaceBuildTests } from "../app-builder/build-tests";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
-import { authoringAdoptionResponseSchema, type AuthoringKind, type AuthoringHostRun, type authoringOperations } from "@ontomato/contracts/authoring";
+import { authoringAdoptionResponseSchema, type AuthoringKind, type AuthoringHostRun, type AuthoringHistoricalRun, type authoringOperations } from "@ontomato/contracts/authoring";
 import { readPageSkills } from "./skills";
 import { agentExecutionCredentials, ownedRun } from "./execution";
 import { assistantStore, type AssistantOwner } from "./store";
@@ -50,6 +50,7 @@ async function authoringRun(
   runId: string,
   kind: AuthoringKind,
   sessionId?: string,
+  appBuilderOnly = false,
 ) {
   const { run, turn } = await ownedRun(owner, runId);
   const channel = run.channel;
@@ -59,6 +60,7 @@ async function authoringRun(
   }
   const loaded = new Set(run.resolvedSkills.map(({ skill }) => runtimeSkillKey(skill)));
   if (!loaded.has(runtimeSkillKey(APP_BUILDER_SKILL))) {
+    if (appBuilderOnly) throw new HttpError(403, "The App Builder skill is required", "FORBIDDEN");
     const { pageSkills } = await readPageSkills(credentials);
     const mapping = pageSkills.find(entry => "permissionCode" in entry && entry.permissionCode === pagePermission[kind]);
     if (!mapping || !loaded.has(runtimeSkillKey(mapping.skill))) {
@@ -84,6 +86,12 @@ async function authoringRun(
   };
 }
 
+function requireActiveAuthoring({ run, turn, binding }: Awaited<ReturnType<typeof authoringRun>>) {
+  if (run.status !== "running" || turn.settled || binding.expiresAt <= Date.now()) {
+    throw new HttpError(409, "Authoring run is closed", "RUN_CLOSED");
+  }
+}
+
 export async function executeAuthoring(
   owner: AssistantOwner,
   credentials: AssistantCredentials,
@@ -93,14 +101,13 @@ export async function executeAuthoring(
   input: unknown,
   sessionId?: string,
 ) {
-  const { run, turn, binding, authority, actor, agentId } = await authoringRun(owner, credentials, runId, kind, sessionId);
+  const authoring = await authoringRun(owner, credentials, runId, kind, sessionId);
+  const { run, binding, authority, actor, agentId } = authoring;
   if (operation === "read-test") {
     const result = await java(`/${kind}/read-test`, owner.domainId, { run: binding, input }, { locale: credentials.locale });
     return JSON.parse(result.text);
   }
-  if (run.status !== "running" || turn.settled || binding.expiresAt <= Date.now()) {
-    throw new HttpError(409, "Authoring run is closed", "RUN_CLOSED");
-  }
+  requireActiveAuthoring(authoring);
   const caller = await restoreAgentCaller(actor, owner.domainId, false, credentials);
   const expiresAt = Math.min(binding.expiresAt, caller.expiresAt);
   const executor = await agentExecutionCredentials(agentId, run.executionUserId ?? null, owner, credentials);
@@ -126,10 +133,32 @@ export async function adoptAuthoringDefinition(
   if (run.status === "stopped" && (run.stopReason !== "stop" || run.errorMessage)) {
     throw new HttpError(409, "Authoring run did not complete", "RUN_CLOSED");
   }
-  const result = await java(`/${input.kind}/adopt`, owner.domainId, {
+  return adoptDefinition(binding, input.kind, input.definition, credentials.locale);
+}
+
+/** App Builder submits the exact definition it is about to deliver from its current callback. */
+export async function adoptAppBuilderDefinition(
+  owner: AssistantOwner,
+  credentials: AssistantCredentials,
+  runId: string,
+  kind: AuthoringKind,
+  definition: Record<string, unknown>,
+) {
+  const authoring = await authoringRun(owner, credentials, runId, kind, undefined, true);
+  requireActiveAuthoring(authoring);
+  return adoptDefinition(authoring.binding, kind, definition, credentials.locale);
+}
+
+async function adoptDefinition(
+  binding: AuthoringHistoricalRun,
+  kind: AuthoringKind,
+  definition: Record<string, unknown>,
+  locale?: string,
+) {
+  const result = await java(`/${kind}/adopt`, binding.domainId, {
     run: binding,
-    input: { definition: input.definition },
-  }, { locale: credentials.locale });
+    input: { definition },
+  }, { locale });
   return authoringAdoptionResponseSchema.parse(JSON.parse(result.text));
 }
 

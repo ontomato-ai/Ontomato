@@ -182,7 +182,46 @@ export default {
     "listClearSelection": "Clear",
     "listPagination": "Page {page} of {pages}",
     "listPrevPage": "Previous",
-    "listNextPage": "Next"
+    "listNextPage": "Next",
+    "readerMore": "More",
+    "readerClose": "Close",
+    "readerEmpty": "No content available",
+    "readerLoading": "Loading…",
+    "uploadChooseFile": "Choose file",
+    "uploadCancel": "Cancel",
+    "uploadOverwrite": "Overwrite",
+    "uploadConfirmTitle": "Confirm overwrite",
+    "uploadInvalidType": "Only {accept} files are supported",
+    "uploadUploading": "Uploading…",
+    "graphLayers": "Layers",
+    "graphMatches": "{count} matches",
+    "graphCounts": "{nodes} nodes · {edges} edges",
+    "graphEdgeStored": "Stored",
+    "graphEdgeDerived": "Derived",
+    "graphStatusRefused": "No permission",
+    "graphStatusFailed": "Read failed",
+    "graphStatusUnavailable": "Pending",
+    "graphNoNeighbors": "No neighbors for {name}",
+    "graphRelationsRefused": "Owner refused ({count}): {relations}",
+    "graphRelationsFailed": "Failed to read ({count}): {relations}",
+    "graphRelationsUnavailable": "Not connected yet ({count}): {relations}",
+    "graphEmpty": "No graph nodes to display",
+    "graphFit": "Fit view",
+    "graphRelayout": "Relayout",
+    "graphExpanding": "Loading neighbors...",
+    "listSelectTypePrompt": "Select a type to list its objects",
+    "relationsEmptySelection": "Select a node to inspect its relations",
+    "relationsNoNeighbors": "No neighbors",
+    "relationsOutgoing": "Outgoing",
+    "relationsIncoming": "Incoming",
+    "relationsLoading": "Loading relations...",
+    "formAdd": "Add",
+    "formRemove": "Remove",
+    "formMoveUp": "Move up",
+    "formMoveDown": "Move down",
+    "formInvalidJson": "Not valid JSON: {message}",
+    "formFixInvalid": "Correct the marked fields before saving",
+    "formControlUnavailable": "This field cannot be edited here yet"
   },
   "nav": {
     "agentsAndSkills": "Agents and Skills",
@@ -1032,4 +1071,97 @@ export default {
   // The scheduled tasks page's own text: one page, shown by the platform and by the agent application, so its words
   // belong to the message tree every host already loads rather than to a merge at startup.
   platformSchedules: platformSchedules.platformSchedules,
+
+  "platformOntology": {
+    "layers": {
+      "fact": "Fact",
+      "capability": "Capability",
+      "governance": "Governance",
+      "product": "Product"
+    },
+    "types": {
+      "scheduledTask": "Scheduled task",
+      "modelOption": "Model",
+      "mcpServiceOption": "MCP service",
+      "objectType": "Object type",
+      "attribute": "Attribute",
+      "relationship": "Relationship",
+      "metricView": "Metric view",
+      "function": "Function",
+      "action": "Action",
+      "workflow": "Workflow",
+      "trigger": "Trigger",
+      "skill": "Skill",
+      "businessKnowledge": "Business knowledge",
+      "definition": "Definition",
+      "user": "User",
+      "role": "Role",
+      "sdkComponent": "SDK component",
+      "productProjection": "Projection",
+      "productPanel": "Panel",
+      "application": "Application",
+      "agentDefinition": "Agent",
+      "ontologyType": "Ontology type",
+      "ontologyRelationKind": "Relation kind",
+      "knowledgeGovernanceRecord": "Governance record",
+      "feedbackRecord": "Feedback"
+    },
+    "relations": {
+      "object-type": {
+        "has-attribute": "Has attribute"
+      },
+      "relationship": {
+        "from-object-type": "From object type",
+        "to-object-type": "To object type"
+      },
+      "metric-view": {
+        "uses-function": "Uses function"
+      },
+      "action": {
+        "uses-function": "Uses function",
+        "targets-object-type": "Targets object type"
+      },
+      "function": {
+        "reads-object-type": "Reads object type"
+      },
+      "definition": {
+        "based-on-object-type": "Based on object type"
+      },
+      "workflow": {
+        "step-references-action": "Step references action"
+      },
+      "trigger": {
+        "targets-workflow": "Targets workflow",
+        "targets-action": "Targets action"
+      },
+      "user": {
+        "holds-role": "Holds role",
+        "created-action": "Created action",
+        "created-workflow": "Created workflow",
+        "created-metric-view": "Created metric view",
+        "published-action": "Published action",
+        "published-workflow": "Published workflow",
+        "published-metric-view": "Published metric view"
+      },
+      "role": {
+        "can-execute-action": "Can execute action",
+        "can-author-workflow": "Can author workflow",
+        "owns-workflow-step": "Owns workflow step"
+      },
+      "projection": {
+        "uses-component": "Uses component",
+        "binds-target": "Binds target"
+      },
+      "panel": {
+        "contains-projection": "Contains projection"
+      },
+      "application": {
+        "uses-panel": "Uses panel"
+      },
+      "agent": {
+        "uses-skill": "Uses skill",
+        "executes-as-user": "Executes as user"
+      }
+    }
+  },
 };

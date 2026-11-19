@@ -3,18 +3,18 @@ import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-value
 import {
   DATA_QUERY_GATEWAY, DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, METRIC_VIEW,
 } from "@ontomato/contracts/panel-client-requests";
-import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import { HttpError } from "../../utils/errors";
 import type {
-  PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelServerOperation,
+  PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelServerOperation, SinglePanelOperationOutcome,
 } from "../product-panels/server-operations";
 
 /*
  * The metric and function owners as panel server operations: the form save the coordinator dispatches for a person's
  * or an agent's call, and the two delete actions. The owners answer through the data-query service with their usual
- * envelope; a `success:false` answer is a business failure, while an HTTP failure is an uncertain transport result.
+ * envelope; a `success:false` answer is the owner's refusal, while an HTTP failure is an uncertain transport result. A
+ * successful write names what changed: saving a metric may also change the function its definition embeds.
  */
 
 const ownerEnvelopeSchema = z.object({
@@ -24,6 +24,7 @@ const ownerEnvelopeSchema = z.object({
 }).passthrough();
 
 const savedIdSchema = z.object({ id: z.string().min(1) }).passthrough();
+const deletedSchema = z.object({}).strict();
 const labelSchema = z.object({ name: z.string() }).passthrough();
 
 const metricObjectTarget = z.object({
@@ -76,18 +77,27 @@ function valuesForTarget(target: PanelOperationTarget, values: Record<string, un
   return { ...values, id: target.primaryKey };
 }
 
-async function save(host: Host, path: string, values: unknown, refusalCode: string): Promise<PanelOperationOutcome> {
+/** The objects a write changed and the types whose lists and counts follow it. */
+const affected = (objectType: string, primaryKey: string, objectTypes: string[]) => ({
+  objects: [{ objectType, primaryKey }], objectTypes,
+});
+
+async function save(
+  host: Host, path: string, values: unknown, refusalCode: string, objectType: string, objectTypes: string[],
+): Promise<SinglePanelOperationOutcome> {
   const envelope = await ownerPost(host, path, values);
-  return envelope.success
-    ? { kind: "success", data: runtimeJsonObjectSchema.parse(envelope.data) }
-    : { kind: "failure", code: refusalCode, message: envelope.message ?? "The owner refused the save" };
+  if (!envelope.success) return { kind: "refusal", code: refusalCode, message: envelope.message ?? "The owner refused the save" };
+  const data = runtimeJsonObjectSchema.parse(envelope.data);
+  return { kind: "success", data, affected: affected(objectType, savedIdSchema.parse(data).id, objectTypes) };
 }
 
-async function remove(host: Host, path: string, id: string, refusalCode: string): Promise<PanelOperationOutcome> {
-  const envelope = await ownerPost(host, path, { id });
+async function remove(
+  host: Host, path: string, target: PanelRecordTarget, refusalCode: string,
+): Promise<SinglePanelOperationOutcome> {
+  const envelope = await ownerPost(host, path, { id: target.primaryKey });
   return envelope.success
-    ? { kind: "success", data: {} }
-    : { kind: "failure", code: refusalCode, message: envelope.message ?? "The owner refused the delete" };
+    ? { kind: "success", data: {}, affected: affected(target.objectType, target.primaryKey, [target.objectType]) }
+    : { kind: "refusal", code: refusalCode, message: envelope.message ?? "The owner refused the delete" };
 }
 
 const formInstructions = "Read the form for the intended target. Use its fields, values and save.bodySchema for the values, and save.draftOperation for the draft. Carry the complete form values in call.input.";
@@ -97,9 +107,12 @@ export const m5ServerOperations = [
     handlerRef: `${METRIC_VIEW}.save`,
     kind: "form.save",
     binding: { kind: "PlatformObjectType", id: METRIC_VIEW },
+    effect: "write",
+    batch: false,
     targetType: METRIC_VIEW,
     targetSchema: metricSaveTarget,
     inputSchema: saveInputSchema,
+    resultSchema: savedIdSchema,
     draftOperation: (target: PanelOperationTarget) => target.kind === "draft" ? "metric-view.create" : "metric-view.update",
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
     formInstructions,
@@ -111,30 +124,38 @@ export const m5ServerOperations = [
         return { objectType: METRIC_VIEW, primaryKey: savedIdSchema.parse(data).id };
       },
     },
-    async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<PanelOperationOutcome> {
-      return save(host, "/metricView/save", valuesForTarget(target, saveInputSchema.parse(input).values), "METRIC_VIEW_SAVE_REFUSED");
+    async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
+      return save(host, "/metricView/save", valuesForTarget(target, saveInputSchema.parse(input).values),
+        "METRIC_VIEW_SAVE_REFUSED", METRIC_VIEW, [METRIC_VIEW, FUNCTION]);
     },
   },
   {
     handlerRef: DELETE_METRIC_VIEW,
     kind: "action",
     binding: { kind: "PlatformOperation", id: DELETE_METRIC_VIEW },
+    effect: "write",
+    batch: false,
     targetType: METRIC_VIEW,
     targetSchema: metricObjectTarget,
     inputSchema: deleteInputSchema,
+    resultSchema: deletedSchema,
+    targetInput: "metric",
     targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/metricView/queryById", "METRIC_VIEW_UNAVAILABLE"),
-    async execute(host: Host, target: PanelOperationTarget): Promise<PanelOperationOutcome> {
+    async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected metric");
-      return remove(host, "/metricView/delete", target.primaryKey, "METRIC_VIEW_DELETE_REFUSED");
+      return remove(host, "/metricView/delete", target, "METRIC_VIEW_DELETE_REFUSED");
     },
   },
   {
     handlerRef: `${FUNCTION}.save`,
     kind: "form.save",
     binding: { kind: "PlatformObjectType", id: FUNCTION },
+    effect: "write",
+    batch: false,
     targetType: FUNCTION,
     targetSchema: functionSaveTarget,
     inputSchema: saveInputSchema,
+    resultSchema: savedIdSchema,
     draftOperation: (target: PanelOperationTarget) => target.kind === "draft" ? "function.create" : "function.update",
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
     formInstructions,
@@ -146,21 +167,26 @@ export const m5ServerOperations = [
         return { objectType: FUNCTION, primaryKey: savedIdSchema.parse(data).id };
       },
     },
-    async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<PanelOperationOutcome> {
-      return save(host, "/function/save", valuesForTarget(target, saveInputSchema.parse(input).values), "FUNCTION_SAVE_REFUSED");
+    async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
+      return save(host, "/function/save", valuesForTarget(target, saveInputSchema.parse(input).values),
+        "FUNCTION_SAVE_REFUSED", FUNCTION, [FUNCTION]);
     },
   },
   {
     handlerRef: DELETE_FUNCTION,
     kind: "action",
     binding: { kind: "PlatformOperation", id: DELETE_FUNCTION },
+    effect: "write",
+    batch: false,
     targetType: FUNCTION,
     targetSchema: functionObjectTarget,
     inputSchema: deleteInputSchema,
+    resultSchema: deletedSchema,
+    targetInput: "function",
     targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/function/queryById", "FUNCTION_UNAVAILABLE"),
-    async execute(host: Host, target: PanelOperationTarget): Promise<PanelOperationOutcome> {
+    async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected function");
-      return remove(host, "/function/delete", target.primaryKey, "FUNCTION_DELETE_REFUSED");
+      return remove(host, "/function/delete", target, "FUNCTION_DELETE_REFUSED");
     },
   },
 ] satisfies readonly PanelServerOperation[];

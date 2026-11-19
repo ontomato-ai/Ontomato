@@ -1,5 +1,7 @@
 # Ontomato apps SDK {{version}}
 
+Follow the [Product Layer and Application Composition Standard](https://infohub.eloyzh.de/o/standard-66842053) when composing a panel application. Use this installed SDK version's component catalogue and contracts. The hosted ProductAsset and frozen release examples below apply to maintenance of existing hosted applications.
+
 Panel applications compose registered projections in a panel host. The panel supplies a layout, state and optional recipes. The platform supplies the sandboxed frame, the SDK and the identity for its reads. Existing hosted source applications use the static HTML and ES module setup in [Page skeleton](#page-skeleton).
 
 This directory is one exact version. It never changes, and it stays installed when the platform is upgraded, so an app
@@ -34,6 +36,7 @@ keeps the behaviour of the version it names.
 | `@ontomato/sdk/preview` | `TablePreview`, `<table-preview>`: a table of text cells, with `parseCsv` for CSV and TSV; `HtmlPreview`, `<html-preview>`: an HTML document in a sandboxed frame |
 | `@ontomato/sdk/chat` | The platform's conversation components, `createAssistantClient` and `useShellLabels` |
 | `@ontomato/sdk/panel` | `definePanel`, `mountPanel` and `Projection` for the panel host |
+| `@ontomato/sdk/graph` | `G6GraphCanvas` and `OntologyGraph`: interactive G6 graphs; large, so import only where a page draws one |
 
 The chart, Markdown, form, code and preview components are the ones the platform's own pages use, so an app looks and
 behaves like them. Import each module where the page needs it; a page loads only the modules it imports.

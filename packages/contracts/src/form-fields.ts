@@ -8,16 +8,22 @@ import { z } from "zod";
 const nonempty = z.string().min(1);
 
 /** One choice of a select field; an unavailable one stays listed, with why. */
-export const formOptionSchema = z.object({
+const formOptionShape = z.object({
   value: nonempty,
   label: nonempty,
   description: z.string().nullable(),
   disabled: z.boolean(),
   disabledReason: nonempty.nullable(),
-}).strict().refine(
-  (option) => option.disabled === (option.disabledReason !== null),
-  "A disabled option must explain why it is unavailable",
-);
+}).strict();
+
+const optionAvailabilityMatches = (option: { disabled: boolean; disabledReason: string | null }) =>
+  option.disabled === (option.disabledReason !== null);
+const optionAvailabilityMessage = "A disabled option must explain why it is unavailable";
+
+export const formOptionSchema = formOptionShape.refine(optionAvailabilityMatches, optionAvailabilityMessage);
+export const panelFormOptionSchema = formOptionShape.extend({
+  value: z.union([nonempty, z.number().finite()]),
+}).refine(optionAvailabilityMatches, optionAvailabilityMessage);
 
 const fieldBase = {
   key: nonempty,

@@ -7,7 +7,7 @@ import { m5ServerOperations } from "../panel-operations";
 
 /*
  * The metric and function server operations: their target shapes, the data-query requests they send, the success
- * data they return, the owner's business refusals as failures, and the delete label read.
+ * data they return with what changed, the owner's business refusals as refusals, and the delete label read.
  */
 
 function hostWith(answer: (path: string, init: NonNullable<Parameters<typeof fetch>[1]>) => Response) {
@@ -47,7 +47,10 @@ describe("metric and function panel server operations", () => {
 
     const outcome = await operation.execute(host, metricTarget, { values: { name: "Revenue 2", bindings: [] } });
 
-    expect(outcome).toEqual({ kind: "success", data: { id: "m1", name: "Revenue 2" } });
+    expect(outcome).toEqual({
+      kind: "success", data: { id: "m1", name: "Revenue 2" },
+      affected: { objects: [{ objectType: METRIC_VIEW, primaryKey: "m1" }], objectTypes: [METRIC_VIEW, FUNCTION] },
+    });
     expect(sent[0]?.path).toBe("/api/data-query/metricView/save");
     expect(sent[0]?.init.method).toBe("POST");
     expect(JSON.parse(String(sent[0]?.init.body))).toEqual({ name: "Revenue 2", bindings: [], id: "m1" });
@@ -71,12 +74,12 @@ describe("metric and function panel server operations", () => {
     expect(JSON.parse(String(created.sent[0]?.init.body))).toEqual({ name: "Revenue" });
   });
 
-  it("turns a metric owner refusal into a business failure", async () => {
+  it("turns a metric owner refusal into a refusal", async () => {
     const operation = m5ServerOperations.find(item => item.handlerRef === `${METRIC_VIEW}.save`)!;
     const { host } = hostWith(() => Response.json({ success: false, message: "Cannot modify a system MetricView" }));
 
     expect(await operation.execute(host, metricTarget, { values: {} }))
-      .toEqual({ kind: "failure", code: "METRIC_VIEW_SAVE_REFUSED", message: "Cannot modify a system MetricView" });
+      .toEqual({ kind: "refusal", code: "METRIC_VIEW_SAVE_REFUSED", message: "Cannot modify a system MetricView" });
   });
 
   it("reads the metric label and deletes by id", async () => {
@@ -91,13 +94,16 @@ describe("metric and function panel server operations", () => {
     expect(JSON.parse(String(label.sent[0]?.init.body))).toEqual({ id: "m1" });
 
     const remove = hostWith(() => Response.json({ success: true }));
-    expect(await operation.execute(remove.host, metricTarget)).toEqual({ kind: "success", data: {} });
+    expect(await operation.execute(remove.host, metricTarget)).toEqual({
+      kind: "success", data: {},
+      affected: { objects: [{ objectType: METRIC_VIEW, primaryKey: metricTarget.primaryKey }], objectTypes: [METRIC_VIEW] },
+    });
     expect(remove.sent[0]?.path).toBe("/api/data-query/metricView/delete");
     expect(JSON.parse(String(remove.sent[0]?.init.body))).toEqual({ id: "m1" });
 
     const refused = hostWith(() => Response.json({ success: false, message: "Cannot delete a system MetricView" }));
     expect(await operation.execute(refused.host, metricTarget))
-      .toEqual({ kind: "failure", code: "METRIC_VIEW_DELETE_REFUSED", message: "Cannot delete a system MetricView" });
+      .toEqual({ kind: "refusal", code: "METRIC_VIEW_DELETE_REFUSED", message: "Cannot delete a system MetricView" });
   });
 
   it("fails the metric label read with the owner's reason", async () => {
@@ -136,12 +142,15 @@ describe("metric and function panel server operations", () => {
     expect(save.draftOperation(functionTarget)).toBe("function.update");
     const saved = hostWith(() => Response.json({ success: true, data: { id: "f1", name: "Revenue query" } }));
     expect(await save.execute(saved.host, functionTarget, { values: { name: "Revenue query" } }))
-      .toEqual({ kind: "success", data: { id: "f1", name: "Revenue query" } });
+      .toEqual({
+        kind: "success", data: { id: "f1", name: "Revenue query" },
+        affected: { objects: [{ objectType: FUNCTION, primaryKey: "f1" }], objectTypes: [FUNCTION] },
+      });
     expect(saved.sent[0]?.path).toBe("/api/data-query/function/save");
     expect(JSON.parse(String(saved.sent[0]?.init.body))).toEqual({ name: "Revenue query", id: "f1" });
     const saveRefused = hostWith(() => Response.json({ success: false, message: "Function referenced by MetricView cannot be modified or deleted" }));
     expect(await save.execute(saveRefused.host, functionTarget, { values: {} }))
-      .toEqual({ kind: "failure", code: "FUNCTION_SAVE_REFUSED", message: "Function referenced by MetricView cannot be modified or deleted" });
+      .toEqual({ kind: "refusal", code: "FUNCTION_SAVE_REFUSED", message: "Function referenced by MetricView cannot be modified or deleted" });
 
     const remove = m5ServerOperations.find(item => item.handlerRef === DELETE_FUNCTION)!;
     if (remove.kind !== "action") throw new Error("not an action");
@@ -150,10 +159,23 @@ describe("metric and function panel server operations", () => {
       : Response.json({ success: true }));
     expect(await remove.targetLabel(labelled.host, functionTarget)).toBe("Revenue query");
     const deleted = hostWith(() => Response.json({ success: true }));
-    expect(await remove.execute(deleted.host, functionTarget)).toEqual({ kind: "success", data: {} });
+    expect(await remove.execute(deleted.host, functionTarget)).toEqual({
+      kind: "success", data: {},
+      affected: { objects: [{ objectType: FUNCTION, primaryKey: functionTarget.primaryKey }], objectTypes: [FUNCTION] },
+    });
     expect(deleted.sent[0]?.path).toBe("/api/data-query/function/delete");
     const deleteRefused = hostWith(() => Response.json({ success: false, message: "Function referenced by Action cannot be modified or deleted" }));
     expect(await remove.execute(deleteRefused.host, functionTarget))
-      .toEqual({ kind: "failure", code: "FUNCTION_DELETE_REFUSED", message: "Function referenced by Action cannot be modified or deleted" });
+      .toEqual({ kind: "refusal", code: "FUNCTION_DELETE_REFUSED", message: "Function referenced by Action cannot be modified or deleted" });
+  });
+
+  it("declares each operation as a single write with its result and target input", () => {
+    expect(m5ServerOperations.map(({ handlerRef, effect, batch, kind, ...rest }) =>
+      ({ handlerRef, effect, batch, kind, targetInput: "targetInput" in rest ? rest.targetInput : undefined }))).toEqual([
+      { handlerRef: `${METRIC_VIEW}.save`, effect: "write", batch: false, kind: "form.save", targetInput: undefined },
+      { handlerRef: DELETE_METRIC_VIEW, effect: "write", batch: false, kind: "action", targetInput: "metric" },
+      { handlerRef: `${FUNCTION}.save`, effect: "write", batch: false, kind: "form.save", targetInput: undefined },
+      { handlerRef: DELETE_FUNCTION, effect: "write", batch: false, kind: "action", targetInput: "function" },
+    ]);
   });
 });

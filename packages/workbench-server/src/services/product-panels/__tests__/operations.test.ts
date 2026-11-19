@@ -54,9 +54,9 @@ beforeEach(()=>{
  mocks.session.mockImplementation(async()=>({messages:human?[{message:human}]:[]}));
  mocks.request.mockImplementation(async(path:string,_method:string,body:{source:unknown})=>path==="/v1/channel/user-questions"?{questionId:intents.get(uuid(5))!.questionId,source:body.source,recipient:{session:root,actor:{id:uuid(4),domainId:"d"}}}:{questionId:intents.get(uuid(5))!.questionId,answerId:uuid(11),source:{kind:"user"},respondent:{id:uuid(12),domainId:"d"},recipientSession:root,selectedOption:1,text:"Execute"});
  mocks.query.mockImplementation(async(sql:string,args:unknown[])=>{
-   const id=String(args[sql.startsWith("SELECT intent FROM") && !sql.includes("owner_id")?1:2]);
+   const id=String(args[sql.startsWith("SELECT intent,owner_id")?1:2]);
    if(sql.startsWith("SELECT confirm_before"))return {rows:automatic?[{confirm_before_execute:false}]:[]};
-   if(sql.startsWith("SELECT intent FROM"))return {rows:intents.has(id)?[{intent:structuredClone(intents.get(id))}]:[]};
+   if(sql.startsWith("SELECT intent"))return {rows:intents.has(id)?[{intent:structuredClone(intents.get(id)),owner_id:owner.userId}]:[]};
    if(sql.startsWith("INSERT INTO panel_operation_intents")){if(!intents.has(String(args[1])))intents.set(String(args[1]),structuredClone(args[4] as PanelOperationIntent));return {rows:[]};}
    if(sql.includes("AND intent->>'dispatched'='false'")){const value=intents.get(id)!;if(value.dispatched)return {rowCount:0};intents.set(id,structuredClone(args[3] as PanelOperationIntent));return {rowCount:1};}
    if(sql.includes("jsonb_set")){intents.get(id)!.outcome=JSON.parse(String(args[3]));return {rowCount:1};}
@@ -206,8 +206,8 @@ it("rejects an unregistered server handler before any question or dispatch",asyn
 });
 it("dispatches through the registered owner without a resource-specific coordinator branch",async()=>{
  automatic=true;
- const handler={handlerRef:"test.perform",kind:"action" as const,binding:{kind:"PlatformOperation" as const,id:"test.perform"},targetType:"test:Thing",
-   targetSchema:z.object({kind:z.literal("object"),objectType:z.literal("test:Thing"),primaryKey:z.string()}),inputSchema:z.object({value:z.number()}),
+ const handler={handlerRef:"test.perform",kind:"action" as const,binding:{kind:"PlatformOperation" as const,id:"test.perform"},effect:"write" as const,batch:false as const,targetInput:"task",targetType:"test:Thing",
+   targetSchema:z.object({kind:z.literal("object"),objectType:z.literal("test:Thing"),primaryKey:z.string()}),inputSchema:z.object({value:z.number()}),resultSchema:z.object({done:z.boolean()}),
    targetLabel:vi.fn(),execute:vi.fn(async()=>({kind:"success" as const,data:{done:true}}))};
  vi.spyOn(serverOperations,"panelServerOperation").mockReturnValue(handler);
  const panel=await mocks.panel();panel.manifest.state.task.objectType="test:Thing";
@@ -216,6 +216,7 @@ it("dispatches through the registered owner without a resource-specific coordina
  expect(await operatePanel(owner,credentials,current.id,input)).toMatchObject({kind:"dispatched",outcome:{kind:"success",data:{done:true}}});
  expect(handler.execute).toHaveBeenCalledWith(expect.objectContaining({request:expect.any(Function)}),input.call.target,input.call.input,input.intentId);
  expect(fetch).not.toHaveBeenCalled();
+ expect(mocks.notify).not.toHaveBeenCalled();
 });
 
 it("reuses the original creation artifact as the initiator and saves as the executor", async () => {
@@ -252,4 +253,49 @@ it("reuses the original creation artifact as the initiator and saves as the exec
   await expect(operatePanel(owner, credentials, current.id, { ...input, intentId: uuid(22) }))
     .rejects.toMatchObject({ code: "PAGE_DRAFT_MISMATCH" });
   expect(write).toHaveBeenCalledTimes(1);
+});
+
+it("freezes the owner write description with a named target and a result schema", async () => {
+  const input = action();
+  await operatePanel(owner, credentials, current.id, input);
+  expect(intents.get(input.intentId)).toMatchObject({
+    call: input.call,
+    operation: { effect: "write", target: { source: "input", input: "task" }, resultSchema: { type: "object" }, batch: false },
+  });
+});
+
+it("expires an old pending confirmation without reading the owner or claiming its write", async () => {
+  const input = action();
+  await operatePanel(owner, credentials, current.id, input);
+  const legacyOperation = {
+    id: input.operationId, slot: "run", label: "Run now", kind: "action", handlerRef: "schedules.runNow",
+    inputSchema: {}, target: { source: "state", state: "task" },
+  };
+  Object.assign(intents.get(input.intentId)!, { operation: legacyOperation });
+  answer();
+  expect(await dispatchPanel(owner, credentials, current.id, input.intentId)).toMatchObject({
+    kind: "not-dispatched", code: "PANEL_CONFIRMATION_EXPIRED",
+  });
+  expect(intents.get(input.intentId)?.dispatched).toBe(false);
+  expect(ownerWrites()).toHaveLength(0);
+});
+
+it("returns an old unknown outcome without making its intent claimable again", async () => {
+  const input = action();
+  await operatePanel(owner, credentials, current.id, input);
+  const outcome = { kind: "unknown", message: "The owner did not return a result" };
+  Object.assign(intents.get(input.intentId)!, { dispatched: true, outcome, operation: {
+    id: input.operationId, slot: "run", label: "Run now", kind: "action", handlerRef: "schedules.runNow",
+    inputSchema: {}, target: { source: "state", state: "task" },
+  } });
+  expect(await dispatchPanel(owner, credentials, current.id, input.intentId)).toMatchObject({ kind: "dispatched", outcome });
+  expect(ownerWrites()).toHaveLength(0);
+});
+
+it("rejects a batch when the registered owner does not declare batch support", async () => {
+  const { call, ...intent } = action();
+  await expect(operatePanel(owner, credentials, current.id, { ...intent, calls: [call] }))
+    .rejects.toMatchObject({ code: "OPERATION_BATCH_UNSUPPORTED" });
+  expect(intents.size).toBe(0);
+  expect(ownerWrites()).toHaveLength(0);
 });

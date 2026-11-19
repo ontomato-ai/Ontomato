@@ -97,7 +97,8 @@ productPanelsInternalRouter.post("/validate-references", wrap(async (req, res) =
 export const panelOperationsRouter = Router();
 panelOperationsRouter.get("/panel-operation-intents/:intentId",wrap(async(req,res)=>{
   const c=context(req);
-  res.json(await panelOperationStore.get(c.owner,z.string().uuid().parse(req.params.intentId)));
+  const record = await panelOperationStore.get(c.owner,z.string().uuid().parse(req.params.intentId));
+  res.json(record.kind === "confirmation-expired" ? record : record.intent);
 }));
 panelOperationsRouter.get("/panel-operation-settings/:providerId/:sessionId",wrap(async(req,res)=>{
   const c=context(req),root=agentSessionRefSchema.parse(req.params);

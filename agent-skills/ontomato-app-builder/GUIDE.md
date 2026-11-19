@@ -1,6 +1,6 @@
 # Build a panel application
 
-Use the exact platform SDK version and the current product records. Business logic belongs in Functions owned by Java. Use the deployment, domain and authorized business scope already established with the user; obtain technical names, IDs, parameters and relationships from the platform. Do not invent them or write directly to the database.
+Follow the [Product Layer and Application Composition Standard](https://infohub.eloyzh.de/o/standard-66842053) and the exact installed SDK guide. Use the current product records. Business logic belongs in Functions owned by Java. Use the deployment, domain and authorized business scope already established with the user; obtain technical names, IDs, parameters and relationships from the platform. Do not invent them or write directly to the database.
 
 ## Connection and workspace
 
@@ -30,7 +30,7 @@ Registration material has up to three arrays, `projections`, `panels` and `appli
 - For projections, `input` is the current definition's editable fields. New definitions include `componentId`, `binding`, `inputs` and `display` alongside `name`, `description` and `visibility`.
 - For panels, `input` adds `name`, `description` and `visibility` to the candidate response's `panel` object. That object includes the content, manifest and exact installed SDK version. Keep `content.messages` from the candidate when registering it.
 - Projection and panel updates carry the owner-returned current `revision` on the item alongside `mode`. Creation omits it. Only the chosen records should appear in the material. Updating a shared definition affects every use of that record.
-- Application `input` contains `entry: {path, renderer: "panels"}` and `panelUses`. Creation includes `declaration` and `entryAccess`. An update replaces the use set, so preserve the uses required by the app. Each use has `id`, `pageKey`, `panelId`, `path` and `access`, with optional localized `names` and `defaultAgentId`. Domain app paths use `/applications/<applicationId>/…` and `access: {kind: "domain-member"}` or the real `{permissionCode}` for the use. The platform owns built-in paths and derives skills from use access.
+- Application `input` contains `entry: {path, renderer: "panels"}` and `panelUses`. Creation includes `declaration` and `entryAccess`. An update replaces the use set, so preserve the uses required by the app. Each use has `id`, `pageKey`, `panelId`, `path` and `access`, with optional localized `names` and `defaultAgentId`. Domain app paths use `/applications/<applicationId>/…` and `access: {kind: "domain-member"}` or the real `{permissionCode}` for the use. The platform owns built-in paths and derives skills from use access. Supply the actual existing agent definition ID for `defaultAgentId` when the use needs a default.
 
 The command submits projections, panels and uses in that order. It prints each completed item and exits nonzero at the first failure. On a stale revision, compare the owner's current definition with the requested change before preparing a new update.
 
@@ -46,20 +46,24 @@ The command submits projections, panels and uses in that order. It prints each c
 | `function get <id>`, `function save <definition>`, `function delete <id>` | Read, save or delete a Function; save returns its definition including ID |
 | `metric-view find <class> [<question>]`, `action find <class> [<question>]` | Published interfaces related to the object |
 | `metric-view get <id>`, `action get <id>` | Full definition with the Function and its parameters |
-| `metric-view generate [--save] <description>`, `action generate [--save] <description>` | Server-generated definition; `--save` persists it |
+| `metric-view context`, `action context` | Authorized ontology, knowledge and the owner's current authoring guide |
+| `metric-view generate [--save] <definition JSON or @file>` | Test the complete query package and its bindings, then return the owner-accepted definition |
+| `action generate [--save] --sample <JSON or @file> <definition JSON or @file>` | Prepare and reset an isolated sample, execute the Action, get the owner's explanation reference and return the accepted definition |
 | `metric-view save <definition>`, `action save <definition>` | Save once and return the saved definition, including new IDs |
 | `metric-view publish <id>`, `action publish <id>` | Read the full definition, set `status` to `PUBLISHED`, save and read it back |
 | `metric-view delete <id>`, `action delete <id>` | Delete the interface |
 
-Prefer an existing interface. For new read logic, use an `OPERATION_READ` Function with the existing `queryPackage` structure and expose it through a MetricView. Prefer `metric-view generate --save` or saving the embedded Function together through `metric-view save`; an existing shared Function may be referenced by ID. Read back full definitions when editing so parameters and existing bindings are preserved. Function itself has no publication status and no publish endpoint. Pages never execute a read Function directly.
+Prefer an existing interface. To create one, read `context` for its kind and write the definition yourself. For a MetricView, embed an `OPERATION_READ` Function with a complete `queryPackage`. When editing, start from `metric-view get` and carry the actual bindings you intend to keep. For an Action, embed an `OPERATION_WRITE` Function with the Python protocol and explicit typed parameters described by the owner. Declare the classes and records needed for the Action in `--sample`. Java executes the Action in its own sandbox.
 
-For write logic, use `action generate` and `action save` with an `OPERATION_WRITE` Function. Generation usually takes one to several minutes and can take longer; do not wrap it in a short timeout or switch to a handwritten program while it is still running. When a business requirement specifies a parameter type, include each parameter's name and exact `TYPE_*` in the `action generate` description (for example `newAge: TYPE_NUMBER`), even if the target attribute is stored as text. Start write Functions from the program returned by `action generate` and preserve its protocol header; programs with an unsupported protocol are rejected on save. Java owns Action explanations and parameter rules. This agent already owns the conversation: do not launch the manager's Action-creation conversation or duplicate its draft lifecycle. Action save returns the persisted definition and generates the explanation when necessary. `action re-explain [--missing] [--id <id> ...]` explicitly refreshes explanations.
+Run `generate` with that definition. Java checks the actual code or query package and effective parameters before accepting the result. Correct failed tests and submit the updated definition. Pass `--save` only when authorized to persist the accepted definition. Ordinary `save` remains available for human-authored edits. `action re-explain [--missing] [--id <id> ...]` refreshes an existing Action's explanation.
+
+In an App Builder conversation, authoring uses the current run callback and the attached workspace's active build-test. Start one with `test start` before authoring. In the standalone suite, authoring opens and closes an explicit window with the current user's credentials. Pass `--workspace <id>` to use that workspace's active build-test. Without a workspace, standalone authoring uses the authorized live read scope and Action writes still go to its sandbox.
 
 A definition without an ID creates an asset; with an ID it updates that asset. Use the returned ID, never a same-name search. A MetricView's `bindings` belong to that metric: omit them to preserve existing bindings, use `[]` to remove them. The retired GENERAL/STATIC `type` field is not accepted.
 
 `metric-view execute <id> [<parameter JSON>] [--binding <id>]` reads data. `action execute <id> [<parameter JSON>] [--file <path> ...]` performs the business write; execute only within the authorized scope. Supply parameter values by the names in `function.parameters`. A binding supplies its saved values. Action files use multipart uploads. A vector parameter uses `{className, attrName, text, fileId, uploadFile}` as applicable; `uploadFile` is the zero-based file position. Vector writes use the platform's vector operations, not ordinary object insert/update.
 
-## SDK resources for an existing hosted application
+## SDK resources for legacy hosted maintenance
 
 ```sh
 node <skill>/ontomato.mjs sdk current
@@ -75,9 +79,9 @@ Every page reports what its reader looks at with `context.setPageContext({ page,
 
 The returned paths already include the deployment prefix. HTML module and stylesheet URLs use `sdkBasePath` exactly once; never embed the internal workbench address or fetch modules from a CDN. `sdk read` automatically uses the agent's reachable URL. The version's examples may show root deployment paths: apply `publicBasePath` when writing them into the application. Documentation belongs in the agent's scratch location, not the released directory.
 
-## Product assets for existing hosted applications and personal workspace
+## Legacy ProductAsset maintenance
 
-Start with reusable product assets. If the requested page fits the product document contract, create or edit those same assets through the authoring CLI; manual editing and Agent editing must converge on the same asset IDs. Use custom source only for interactions the asset contract cannot express. Do not reproduce an existing configured page in HTML.
+This section applies to existing hosted applications and older personal workspace configurations. If a maintained page fits its existing product document contract, create or edit those same assets through the authoring CLI; manual editing and Agent editing must converge on the same asset IDs. Use custom source only for interactions the asset contract cannot express. Do not reproduce an existing configured page in HTML.
 
 Custom source embeds existing assets with the SDK's `ProductAsset` component:
 
@@ -161,7 +165,7 @@ Positional names, IDs, paths, questions and descriptions are strings. Arguments 
 | `workspace import/publish/releases/rollback` | Required workspace ID; import needs a directory and explicit message, publish needs commit and declaration object, rollback needs release ID and declaration object. releases has no body. |
 
 
-The platform injects the Python helper module when it executes a generated Action; it is not a file in this skill package. Use the program returned by `action generate` through the Action API rather than running it with local Python. Write helpers take object dictionaries and arrays of dictionaries. A where is a nonempty condition object, never a list; invalid conditions fail before object queries or vector/file cleanup. `appendVector`/`updateVector` require nonempty text; with fileBase64 omitted or null, Java explicitly stores that text as a UTF-8 attachment. With fileBase64 supplied, it must be base64 file bytes; text remains required for embedding. There is no empty-file fallback when both are missing.
+The platform injects the Python helper module when it executes a generated Action; it is not a file in this skill package. Read the Python protocol and helpers with `action context`; execute through the Action authoring or business API. Write helpers take object dictionaries and arrays of dictionaries. A where is a nonempty condition object, never a list; invalid conditions fail before object queries or vector/file cleanup. `appendVector`/`updateVector` require nonempty text; with fileBase64 omitted or null, Java explicitly stores that text as a UTF-8 attachment. With fileBase64 supplied, it must be base64 file bytes; text remains required for embedding. There is no empty-file fallback when both are missing.
 
 ## Business testing
 

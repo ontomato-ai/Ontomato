@@ -54,6 +54,8 @@ export const ossIdentity: WorkbenchIdentity = {
     return pass;
   },
 
+  async assertPermission() {},
+
   guardMcpServiceManagement: pass,
 
   observeAccess: pass,

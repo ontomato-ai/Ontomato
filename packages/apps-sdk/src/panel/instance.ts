@@ -31,6 +31,8 @@ export interface PanelInstanceOptions {
   readProjection: (id: string) => Promise<ProductProjection>;
   /** Records, as the reader, the object a create draft's save created, so the draft addresses it from then on. */
   recordDraftCreated: (link: PageDraftLink, id: string) => Promise<void>;
+  /** Translates platform message keys (such as object-union type display names) in the current locale. */
+  translate?: (key: string) => string;
   reportDraftError?: (reason: unknown) => void;
 }
 
@@ -38,7 +40,8 @@ export interface PanelInstance {
   readonly manifest: PanelManifest;
   readonly state: PanelStateStore;
   readonly pageContext: DeepReadonly<Ref<PageContext>>;
-  readonly operations: DeepReadonly<Ref<readonly PanelOperationBinding[]>>;
+  /** Computed afresh from the registered projections; a reader never changes it. */
+  readonly operations: Readonly<Ref<readonly PanelOperationBinding[]>>;
   readonly projections: DeepReadonly<Ref<readonly PanelProjectionRegistration[]>>;
   /** The form adapters its projections registered, for the draft its address names. */
   readonly forms: PanelFormAdapters;
@@ -97,11 +100,12 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   const forms = new PanelFormAdapters(options.reportDraftError);
   const draft = shallowRef<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
   const names = shallowReactive(new Map<string, string>());
+  const translate = options.translate ?? ((key: string) => key);
   const pageContext = computed<PageContext>(() => ({
     pageKey: options.pageKey,
     url: options.url(),
     label: options.label(),
-    selection: panelSelection(manifest, state.values.value, names),
+    selection: panelSelection(manifest, state.values.value, names, translate),
   }));
   return {
     manifest,
@@ -173,10 +177,12 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
  */
 export function applyPanelRequest(manifest: PanelManifest, state: PanelStateStore, request: unknown): void {
   const parsed = panelOpenRequestSchema.parse(request);
+  const patch: Record<string, PanelStateValue> = {};
   for (const [name, value] of Object.entries(parsed.state)) {
     if (!manifest.state[name]?.deepLink) continue;
-    state.set(name, value);
+    patch[name] = value;
   }
+  state.setState(patch);
 }
 
 /** The draft link an address carries, if it carries one. */

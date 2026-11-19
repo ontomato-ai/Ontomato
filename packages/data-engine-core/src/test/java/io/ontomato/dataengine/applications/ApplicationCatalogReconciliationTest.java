@@ -75,4 +75,30 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         assertEquals("ontology", catalog.require("ontology").getString("id"));
         assertEquals("browser", catalog.require("browser").getString("id"));
     }
+
+    @Test void upgradesStoredDefaultAgentTargetsWithoutChangingTheirMeaning() {
+        catalog.builtins("data-engine", List.of(builtin("ontology", "native")));
+        jdbc.update("UPDATE sys_application SET panel_uses=?::jsonb, page_skills=?::jsonb WHERE id='ontology'", """
+            [{"id":"use","pageKey":"page","panelId":"panel","path":"/ontology/page",
+              "access":{"kind":"domain-member"},"defaultAgentId":"saved-agent"},
+             {"id":"other","pageKey":"other","panelId":"panel","path":"/ontology/other",
+              "access":{"kind":"domain-member"}}]
+            """, """
+            [{"permissionCode":"business-knowledge","skill":{"namespace":{"kind":"provider","provider":"ontology"},
+              "name":"knowledge-governance"},"defaults":[{"pageKey":"governance-report","agentKey":"knowledge-governance"}]}]
+            """);
+
+        new ApplicationCatalogUpgrade(jdbc).afterPropertiesSet();
+        var app = catalog.require("ontology");
+        var uses = app.getList("panelUses", ApplicationPanelUse.class);
+        assertEquals(new DefaultAgentTarget("id", "saved-agent", null), uses.getFirst().defaultAgent());
+        assertNull(uses.get(1).defaultAgent());
+        var mapping = app.getList("pageSkills", PageSkills.Mapping.class).getFirst();
+        assertEquals(new DefaultAgentTarget("preset", null, "knowledge-governance"), mapping.defaults().getFirst().defaultAgent());
+        var upgraded = records();
+
+        new ApplicationCatalogUpgrade(jdbc).afterPropertiesSet();
+        assertEquals(upgraded, records());
+    }
+
 }

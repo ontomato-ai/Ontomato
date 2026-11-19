@@ -156,6 +156,54 @@
     "value": "Business knowledge ID is required"
   },
   {
+    "key": "Admin.knowledge.form.id",
+    "value": "Knowledge ID"
+  },
+  {
+    "key": "Admin.knowledge.form.title",
+    "value": "Knowledge title"
+  },
+  {
+    "key": "Admin.knowledge.form.content",
+    "value": "Knowledge content"
+  },
+  {
+    "key": "Admin.knowledge.form.tags",
+    "value": "Tags"
+  },
+  {
+    "key": "Admin.knowledge.form.status",
+    "value": "Status"
+  },
+  {
+    "key": "Admin.knowledge.form.pending",
+    "value": "Pending review"
+  },
+  {
+    "key": "Admin.knowledge.form.approved",
+    "value": "Approved"
+  },
+  {
+    "key": "Admin.knowledge.form.invalidTarget",
+    "value": "Invalid business knowledge form target"
+  },
+  {
+    "key": "Admin.knowledge.form.invalidValues",
+    "value": "Invalid business knowledge form values"
+  },
+  {
+    "key": "Admin.knowledge.tag.general",
+    "value": "General"
+  },
+  {
+    "key": "Admin.knowledge.tag.business",
+    "value": "Business"
+  },
+  {
+    "key": "Admin.knowledge.tag.tech",
+    "value": "Tech"
+  },
+  {
     "key": "Admin.class.primaryKeyRequired",
     "value": "A new object class needs a primary key field name"
   },
