@@ -75,9 +75,10 @@ function ontologyAllowed(method: string, path: string) {
 const workbenchPath = /^\/api\/(?:panel-operation-intents|product-assets|dashboards|feedback|memories|query-history|preferences|personal-workspace)(?:\/|$)/;
 
 const skillReadPath = /^\/api\/skills(?:\/[^/]+\/(?:references|files|file))?$/u;
-
-const panelReads = [
-  ...[AGENT_DEFINITION, SKILL, MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE, ONTOLOGY_TYPE]
+const initiatorPanelReads = [AGENT_DEFINITION, SKILL]
+  .flatMap(type => panelClientReads(bindingKey({ kind: "PlatformObjectType", id: type })));
+const executorPanelReads = [
+  ...[MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE, ONTOLOGY_TYPE]
     .flatMap(type => panelClientReads(bindingKey({ kind: "PlatformObjectType", id: type }))),
   ...panelClientReads(bindingKey({ kind: "MetricView", id: "*" })),
   chartProjectionLookupRead,
@@ -146,11 +147,23 @@ assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
   const runId = callbackRun(req, callback);
   const target = z.enum(["ontology", "workbench"]).parse(req.params.target);
   const path = "/" + req.params[0];
-  const resourceRead = !req.path.includes("%") && (target === "ontology"
-    ? (req.method === "POST" && assetReadPaths.includes(path)) ||
-      [...scheduledTaskReads, ...panelReads].some(read => read.service === "/data-query" && read.method === req.method && read.path.test(path))
-    : (req.method === "GET" && skillReadPath.test(path)) ||
-      (path.startsWith("/api/") && panelReads.some(read => read.service === "" && read.method === req.method && read.path.test(path.slice(4)))));
+  const canonicalPath = !req.path.includes("%");
+  const workbenchResource = target === "workbench" && canonicalPath && path.startsWith("/api/");
+  const initiatorResourceRead = workbenchResource && (
+    (req.method === "GET" && skillReadPath.test(path)) ||
+    initiatorPanelReads.some(read => read.service === "" && read.method === req.method && read.path.test(path.slice(4)))
+  );
+  const executorResourceRead = target === "ontology"
+    ? canonicalPath && (
+      (req.method === "POST" && assetReadPaths.includes(path)) ||
+      [...scheduledTaskReads, ...executorPanelReads].some(
+        read => read.service === "/data-query" && read.method === req.method && read.path.test(path),
+      )
+    )
+    : workbenchResource && executorPanelReads.some(
+      read => read.service === "" && read.method === req.method && read.path.test(path.slice(4)),
+    );
+  const resourceRead = initiatorResourceRead || executorResourceRead;
   const assistantDirectory = target === "workbench" && req.method === "GET" && path === "/api/assistant/agents";
   if (/[\\%?#]/u.test(path) || path.split("/").some(segment => segment === "." || segment === "..") ||
     !(resourceRead || assistantDirectory || (target === "ontology" ? ontologyAllowed(req.method, path) : workbenchPath.test(path))))
@@ -158,10 +171,20 @@ assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
   const { owner, credentials: initiatorCredentials } = context(req);
   const grantAction=target==="ontology" && callback.businessGrant && governanceAction.test(path);
   const ownership = assistantDirectory || target === "workbench" && /^\/api\/(?:panel-operation-intents|feedback|query-history|product-assets|memories|preferences|personal-workspace)(?:\/|$)/u.test(path);
-  const credentials: AssistantCredentials = ownership || grantAction ? initiatorCredentials : (await credentialsForRun(owner, runId, initiatorCredentials)).credentials;
-  if(ownership || grantAction)await runForOwner(owner,runId);
+  let credentials: AssistantCredentials = initiatorCredentials;
+  if (initiatorResourceRead || ownership || grantAction) {
+    const run = await runForOwner(owner, runId);
+    if (initiatorResourceRead && (!run.channel || run.status !== "running")) {
+      throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
+    }
+  } else {
+    credentials = (await credentialsForRun(owner, runId, initiatorCredentials)).credentials;
+  }
   const headers = buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey, credentials.headers);
-  if (callback.businessGrant && !resourceRead) { headers.tk = callback.businessGrant; delete headers["X-API-Key"]; }
+  if (callback.businessGrant && !resourceRead && !assistantDirectory) {
+    headers.tk = callback.businessGrant;
+    delete headers["X-API-Key"];
+  }
   headers["X-Ontomato-Run-Id"] = runId;
   headers["X-Ontomato-Retrieval-Caller-Id"] = runId;
   const origin = target === "ontology" ? config.dataQuery.baseUrl : environment.agentRuntime().callbackUrl;

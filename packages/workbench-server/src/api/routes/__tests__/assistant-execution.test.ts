@@ -79,9 +79,31 @@ it('does not accept an upstream path or headers on the fixed retrieval business 
 
 it.each([
   ["GET", "workbench/api/assistant/agent-definitions"],
+  ["GET", `workbench/api/assistant/agent-definitions/${other}`],
   ["POST", "workbench/api/assistant/agent-definitions/form"],
   ["POST", "workbench/api/assistant/agent-definitions/validate"],
   ["GET", "workbench/api/assistant/agent-skills"],
+])("uses the initiator's visibility for %s %s", async (method, path) => {
+ const upstream = vi.fn(async (_url: string, _request: NonNullable<Parameters<typeof fetch>[1]>) => Response.json({}));
+ vi.stubGlobal("fetch", upstream);
+ mocks.run.mockResolvedValue({ status: "running", channel: {} });
+ expect((await call(path, { tk: "oq.business.grant" }, method)).status).toBe(200);
+ expect(upstream.mock.calls[0]?.[1].headers).toMatchObject({ tk: "initiator-token" });
+ expect(upstream.mock.calls[0]?.[1].headers).not.toHaveProperty("X-API-Key");
+ expect(mocks.run).toHaveBeenCalledWith({ userId: "U", domainId: "domain" }, run);
+ expect(mocks.restore).not.toHaveBeenCalled();
+});
+
+it("keeps the active-run requirement on skill visibility reads", async () => {
+ const upstream = vi.fn();
+ vi.stubGlobal("fetch", upstream);
+ mocks.run.mockResolvedValue({ status: "stopped", channel: {} });
+ expect((await call("workbench/api/assistant/agent-skills", {}, "GET")).status).toBe(409);
+ expect(upstream).not.toHaveBeenCalled();
+ expect(mocks.restore).not.toHaveBeenCalled();
+});
+
+it.each([
   ["GET", "workbench/api/mcp/services/names"],
   ["GET", "ontology/model-options"],
   ["GET", "ontology/platform/agent-execution/options?selected=worker"],
@@ -118,14 +140,16 @@ it.each([
   "/api/skills/reporting/references",
   "/api/skills/reporting/files",
   "/api/skills/reporting/file?path=references%2Freadme.md",
-])("forwards the declared skill read %s with the executor credential", async path => {
+])("forwards the declared skill read %s with the initiator credential", async path => {
  const upstream = vi.fn(async (_url: string, _request: NonNullable<Parameters<typeof fetch>[1]>) => Response.json({}));
  vi.stubGlobal("fetch", upstream);
+ mocks.run.mockResolvedValue({ status: "running", channel: {} });
  expect((await call("workbench" + path, { tk: "oq.business.grant" }, "GET")).status).toBe(200);
  const [url, request] = upstream.mock.calls[0]!;
  expect(url).toBe("http://workbench.test" + path);
- expect(request).toMatchObject({ method: "GET", headers: { "X-API-Key": "selected-user-key" } });
- expect(request.headers).not.toHaveProperty("tk");
+ expect(request).toMatchObject({ method: "GET", headers: { tk: "initiator-token" } });
+ expect(request.headers).not.toHaveProperty("X-API-Key");
+ expect(mocks.restore).not.toHaveBeenCalled();
 });
 
 it.each([
