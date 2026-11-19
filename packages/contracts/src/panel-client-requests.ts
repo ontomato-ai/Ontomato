@@ -278,6 +278,11 @@ export const panelOperationDescriptorRead = {
   path: new RegExp(`^/panel-operations/descriptor\\?${descriptorRequired}${descriptorPair}(?:&${descriptorPair}){2}$`),
 } as const satisfies ClientRequest;
 
+/** The frame can prepare an intent. The host alone reads it back for confirmation and dispatches it. */
+export const createPanelHumanOperationIntentRequest = {
+  method: "POST", service: "", path: /^\/panel-operations\/intents$/,
+} as const satisfies ClientRequest;
+
 /** Each binding's requests: what its client sends, and nothing more. */
 export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> = {
   ...readRequests,
@@ -336,7 +341,8 @@ export function clientSends(bindings: Iterable<string>, method: string, service:
   for (const binding of bindings) {
     if (clientRequests[binding]?.some(matches)) return true;
     // A published operation can read its owner's executable description. The server checks the actual use and operation.
-    if ((binding.startsWith("PlatformOperation:") || binding.startsWith("PlatformObjectType:")) && matches(panelOperationDescriptorRead))
+    if ((binding.startsWith("PlatformOperation:") || binding.startsWith("PlatformObjectType:"))
+      && (matches(panelOperationDescriptorRead) || matches(createPanelHumanOperationIntentRequest)))
       return true;
     const metricId = boundMetricId(binding);
     if (metricId && metricViewReads.some(request => {
