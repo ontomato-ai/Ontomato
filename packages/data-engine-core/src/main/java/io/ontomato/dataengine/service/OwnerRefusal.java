@@ -10,8 +10,11 @@ import com.alibaba.fastjson2.JSONObject;
  * {@code METRIC_VIEW_SYSTEM}; each owner keeps its own codes. A data-query controller answers a refusal as
  * {@code {success:false, code, message}} with HTTP 200, and an item of a batch answer as
  * {@code {id, outcome:"refusal", code, error:{message}}}. A failure keeps the same shapes without {@code code}.</p>
+ *
+ * <p>A refusal is a request the caller can correct, so it is an {@link IllegalArgumentException}: paths that reuse an
+ * owner outside its own controller and map that type to a correctable request error keep answering it that way.</p>
  */
-public class OwnerRefusal extends RuntimeException {
+public class OwnerRefusal extends IllegalArgumentException {
   private final String code;
 
   public OwnerRefusal(String code, String message) {
