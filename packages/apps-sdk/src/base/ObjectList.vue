@@ -20,7 +20,7 @@ import {
   type PlatformObjectQueryResult,
   type PlatformObjectRecord,
 } from "../panel/platform-objects";
-import { stateChildObject, stateObject } from "../panel/state";
+import { stateChildObject, stateObject, stateObjects, type PanelFieldValue } from "../panel/state";
 import type { ObjectListColumn, ObjectListFilter, ObjectListRef } from "./object-list-types";
 import { textHighlightSegments } from "./text-highlight";
 
@@ -309,14 +309,9 @@ const chosenRef = computed<ObjectListSelection | null>(() => {
 });
 const chosenIdentity = computed<string | null>(() => selectionIdentity(chosenRef.value));
 
-function isRefList(value: unknown): value is readonly ObjectListRef[] {
-  return Array.isArray(value);
-}
-
 const checkedRefs = computed<readonly ObjectListRef[]>(() => {
   if (checkedState.value) {
-    const value = panel.instance.state.values.value[checkedState.value];
-    return isRefList(value) ? value : [];
+    return stateObjects(panel.instance.state.values.value[checkedState.value]);
   }
   return props.checked ?? localChecked.value;
 });
@@ -425,8 +420,8 @@ function setSelected(next: ObjectListSelection | null) {
   if (selectedState.value) {
     const changed = selectionIdentity(next) !== chosenIdentity.value;
     if (changed && props.clears?.length) {
-      const patch: Record<string, PanelStateValue> = { [selectedState.value]: next };
-      for (const field of props.clears) patch[field] = null;
+      const patch: Record<string, PanelFieldValue> = { [selectedState.value]: next };
+      for (const field of props.clears) patch[field] = panel.manifest.state[field]?.kind === "objects" ? [] : null;
       panel.instance.state.setState(patch);
     } else {
       panel.instance.state.set(selectedState.value, next);
@@ -439,7 +434,7 @@ function setSelected(next: ObjectListSelection | null) {
 
 function setChecked(next: readonly ObjectListRef[]) {
   if (checkedState.value) {
-    panel.instance.state.set(checkedState.value, next as unknown as PanelStateValue);
+    panel.instance.state.set(checkedState.value, next);
   } else if (props.checked === undefined) {
     localChecked.value = next;
   }

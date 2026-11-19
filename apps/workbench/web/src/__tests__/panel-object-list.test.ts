@@ -729,3 +729,129 @@ it("two-way binds ObjectList search keyword and filters with scalar deepLink pan
   expect(sourceSelect!.value).toBe("qa");
   expect(ratingSelect!.value).toBe("");
 });
+
+it("writes outputs.checked to an instance-local objects collection state, freezes only visible rows on select-all, and stays out of deep links", async () => {
+  const projections = {
+    "metric-list": projection("metric-list", "ObjectList", METRIC, {
+      columns: [{ key: "label", labelKey: "cols.name" }],
+      selectable: true,
+      pageSize: 2,
+    }),
+  };
+  const manifest = definePanel({
+    state: {
+      selectedMetric: { kind: "object", objectType: METRIC, deepLink: true },
+      checkedMetrics: { kind: "objects", objectType: METRIC, deepLink: false },
+    },
+    slots: {
+      metrics: {
+        projectionId: "metric-list",
+        inputs: {},
+        outputs: {
+          selected: { state: "selectedMetric" },
+          checked: { state: "checkedMetrics" },
+        },
+      },
+    },
+    operations: [
+      { id: "clearChecked", labelKey: "ops.clearChecked", kind: "state", sets: { checkedMetrics: [] } },
+    ],
+  });
+  const panel = panelRecord("panel-checked-collection", "Checked metrics", manifest);
+  panel.content.messages = {
+    en: { "cols.name": "Metric", "ops.clearChecked": "Clear checked" },
+  };
+  panel.content.html = `
+    <div id="app">
+      <Projection slot="metrics">
+        <template #batch-actions="{ checked }">
+          <span class="batch-count">{{ checked.length }}</span>
+        </template>
+      </Projection>
+    </div>`;
+  const use = panelUse("use-checked", "checked-test", panel.id, "/applications/app-test/checked");
+
+  installPlatform(hostWith(projections));
+  const frame = panelFrame();
+  const stateMessages: Record<string, unknown>[] = [];
+  const onMessage = (event: MessageEvent) => {
+    if (event.data?.channel === PANEL_HOST_CHANNEL && event.data?.kind === "state") {
+      stateMessages.push(event.data.state as Record<string, unknown>);
+    }
+  };
+  window.addEventListener("message", onMessage);
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
+  inside(frame);
+
+  try {
+    const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
+    const allItems = [
+      { primaryKey: "m-1", label: "Metric 1", fields: {} },
+      { primaryKey: "m-2", label: "Metric 2", fields: {} },
+      { primaryKey: "m-3", label: "Metric 3", fields: {} },
+      { primaryKey: "m-4", label: "Metric 4", fields: {} },
+    ];
+    registerPlatformObjectAdapter({
+      objectType: METRIC,
+      query: async (q) => {
+        const offset = q.page?.offset ?? 0;
+        const limit = q.page?.limit ?? allItems.length;
+        return { items: allItems.slice(offset, offset + limit), total: allItems.length };
+      },
+    });
+
+    const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
+    const mounted = await mountPanel({});
+
+    await vi.waitFor(() => expect(document.querySelectorAll("tbody tr").length).toBe(2));
+
+    // Selecting row 1 sets selectedMetric (deep-linked) without writing checkedMetrics.
+    document.querySelector<HTMLTableRowElement>("tbody tr")!.click();
+    await nextTick();
+    expect(mounted.context.instance.state.values.value.selectedMetric).toEqual({ className: METRIC, primaryKey: "m-1" });
+    expect(mounted.context.instance.state.values.value.checkedMetrics).toBeNull();
+
+    // Select-all on page 1 (2 visible out of 4 total) freezes ONLY the 2 visible objects into checkedMetrics.
+    const selectAll = document.querySelector<HTMLInputElement>('thead input[type="checkbox"]')!;
+    selectAll.click();
+    await nextTick();
+    expect(mounted.context.instance.state.values.value.checkedMetrics).toEqual([
+      { className: METRIC, primaryKey: "m-1" },
+      { className: METRIC, primaryKey: "m-2" },
+    ]);
+    expect(document.querySelector(".batch-count")?.textContent).toBe("2");
+
+    // Collection state is instance-local: excluded from deepLink(), host state frame messages, and pageContext.selection.
+    expect(mounted.context.instance.deepLink()).toEqual({
+      selectedMetric: { className: METRIC, primaryKey: "m-1" },
+    });
+    expect(mounted.context.instance.pageContext.value.selection).toEqual([
+      { kind: METRIC, id: "m-1", label: `Metric 1 (${METRIC} m-1)` },
+    ]);
+    await vi.waitFor(() => expect(stateMessages.length).toBeGreaterThan(0));
+    expect(stateMessages.every((state) => !("checkedMetrics" in state))).toBe(true);
+
+    // State operation clearing checkedMetrics to [] syncs checkboxes back to unchecked.
+    await mounted.context.instance.invoke("clearChecked");
+    await nextTick();
+    expect(mounted.context.instance.state.values.value.checkedMetrics).toEqual([]);
+    expect(document.querySelector(".batch-count")).toBeNull();
+    expect([...document.querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]')].every((box) => !box.checked)).toBe(true);
+
+    // External partial retention (e.g. failed item left in checkedMetrics after batch write) reflects in UI checkboxes.
+    mounted.context.instance.state.set("checkedMetrics", [{ className: METRIC, primaryKey: "m-2" }]);
+    await nextTick();
+    const rowBoxes = [...document.querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]')];
+    expect(rowBoxes.map((box) => box.checked)).toEqual([false, true]);
+    expect(selectAll.indeterminate).toBe(true);
+    expect(document.querySelector(".batch-count")?.textContent).toBe("1");
+
+    // Wrong objectType inside objects collection is refused by checkPanelValue.
+    expect(() =>
+      mounted.context.instance.state.set("checkedMetrics", [{ className: FUNCTION, primaryKey: "fn-1" }]),
+    ).toThrow(TypeError);
+  } finally {
+    window.removeEventListener("message", onMessage);
+  }
+});
