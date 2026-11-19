@@ -5,7 +5,9 @@ import * as serverOperations from "../server-operations";
 import rawExamples from "../../../../../contracts/examples/platform-schedules.json";
 import {platformTaskSchema,platformScheduleFormSchema} from "@ontomato/contracts/platform-schedules";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import type { PanelOperationIntent } from "@ontomato/contracts/panel-agent";
+import { isPanelHumanOperationIntent, type PanelOperationIntent } from "@ontomato/contracts/panel-agent";
+import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
+import { panelReadOperationInputSchema, panelReadOperationResultSchema } from "@ontomato/contracts/panel-operations";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
 const mocks = vi.hoisted(() => ({draft:vi.fn(),recordCreated:vi.fn(),query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),catalogue:vi.fn(),pages:vi.fn(),restore:vi.fn(),sessionActor:vi.fn(),notify:vi.fn()}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
@@ -21,7 +23,10 @@ vi.mock("../../agent-host/caller",()=>({restoreAgentCaller:mocks.restore,readAge
 vi.mock("../../agent-host/presentation",()=>({publishObjectChanged:mocks.notify}));
 vi.mock("../current",()=>({readCurrentPanel:mocks.panel,readCurrentProjection:mocks.projection}));
 vi.mock("../skill-package",()=>({readComponentCatalogue:mocks.catalogue}));
-import { operatePanel as realOperatePanel, dispatchPanel, ownPanelSettings } from "../operations";
+import {
+  operatePanel as realOperatePanel, dispatchPanel, dispatchHumanPanelOperation, inspectPanelOperationImpact, ownPanelSettings,
+  prepareHumanPanelOperation, projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor,
+} from "../operations";
 import { panelOperationStore } from "../operation-store";
 configureI18n({defaultLocale:"en",appTextLocale:"en",languageSwitchEnabled:false,packs:{en:{messages:en,...enLocaleMeta}}});
 const uuid=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,"0")}`;
@@ -33,6 +38,11 @@ const use={id:"tasks",pageKey:"tasks",path:"/applications/A/tasks",panelId:"P",a
 let intents:Map<string,PanelOperationIntent>, automatic:boolean, current:RuntimeRun, human:Record<string,unknown>|null;
 const action=()=>({intentId:uuid(5),applicationId:"A",useId:"tasks",operationId:"run.runNow",call:{target:{kind:"object" as const,objectType:"platform:ScheduledTask",primaryKey:uuid(9)},input:{}}});
 const save=()=>({...action(),operationId:"form.save",call:{...action().call,input:{revision:4,values:{title:"draft"}}}});
+function agentQuestionId() {
+ const intent = intents.get(uuid(5))!;
+ if (isPanelHumanOperationIntent(intent)) throw new Error("Expected an agent intent");
+ return intent.questionId;
+}
 beforeEach(()=>{
  vi.resetAllMocks();intents=new Map();automatic=false;human=null;
  current={id:uuid(3),sessionId:session.sessionId,status:"running",executionUserId:"V",channel:{agent:{providerId:"workbench",agentId:"agent"},actor:{id:uuid(4),domainId:"d"},authority:{classNames:[],executionKind:"live"},root:{session:root,runId:uuid(10)},requestedBy:null,userRecipient:{session:root,actor:{id:uuid(4),domainId:"d"}}},resolvedSkills:[{skill}]} as unknown as RuntimeRun;
@@ -52,7 +62,7 @@ beforeEach(()=>{
  mocks.catalogue.mockResolvedValue(new Map([["run",{}],["form",{operations:[{client:"@binding",name:"save",label:"Save",kind:"form.save",inputSchema:{}}]}]]));
  mocks.restore.mockResolvedValue({owner});
  mocks.session.mockImplementation(async()=>({messages:human?[{message:human}]:[]}));
- mocks.request.mockImplementation(async(path:string,_method:string,body:{source:unknown})=>path==="/v1/channel/user-questions"?{questionId:intents.get(uuid(5))!.questionId,source:body.source,recipient:{session:root,actor:{id:uuid(4),domainId:"d"}}}:{questionId:intents.get(uuid(5))!.questionId,answerId:uuid(11),source:{kind:"user"},respondent:{id:uuid(12),domainId:"d"},recipientSession:root,selectedOption:1,text:"Execute"});
+ mocks.request.mockImplementation(async(path:string,_method:string,body:{source:unknown})=>path==="/v1/channel/user-questions"?{questionId:agentQuestionId(),source:body.source,recipient:{session:root,actor:{id:uuid(4),domainId:"d"}}}:{questionId:agentQuestionId(),answerId:uuid(11),source:{kind:"user"},respondent:{id:uuid(12),domainId:"d"},recipientSession:root,selectedOption:1,text:"Execute"});
  mocks.query.mockImplementation(async(sql:string,args:unknown[])=>{
    const id=String(args[sql.startsWith("SELECT intent,owner_id")?1:2]);
    if(sql.startsWith("SELECT confirm_before"))return {rows:automatic?[{confirm_before_execute:false}]:[]};
@@ -76,7 +86,7 @@ beforeEach(()=>{
 });
 afterEach(()=>{vi.unstubAllGlobals();vi.restoreAllMocks();});
 const ownerWrites=()=>vi.mocked(fetch).mock.calls.filter(([,init])=>["POST","PUT"].includes(init?.method ?? "GET"));
-function answer(source:object={kind:"user"}) {human={role:"notification",kind:"agent-answer",source,replyTo:intents.get(uuid(5))!.questionId,answerId:uuid(11)};}
+function answer(source:object={kind:"user"}) {human={role:"notification",kind:"agent-answer",source,replyTo:agentQuestionId(),answerId:uuid(11)};}
 it("returns immediately and ignores the parent's endorsement; a later run uses V once after a genuine U selection",async()=>{
  const request=action();const response=await operatePanel(owner,credentials,current.id,request);
  expect(response.kind).toBe("confirmation-required");expect(ownerWrites()).toHaveLength(0);
@@ -90,7 +100,7 @@ it("returns immediately and ignores the parent's endorsement; a later run uses V
  const results=await Promise.all([dispatchPanel(owner,credentials,current.id,request.intentId),dispatchPanel(owner,credentials,current.id,request.intentId)]);
  expect(results.some(result=>result.kind==="dispatched")).toBe(true);
  expect(ownerWrites()).toHaveLength(1);
- expect(intents.get(request.intentId)).toMatchObject({dispatched:true,outcome:{kind:"failure",code:"PERMISSION_DENIED"},source:{runId:uuid(3)}});
+ expect(intents.get(request.intentId)).toMatchObject({dispatched:true,outcome:{kind:"refusal",code:"PERMISSION_DENIED"},source:{runId:uuid(3)}});
  expect(mocks.notify).not.toHaveBeenCalled();
  await operatePanel(owner,credentials,current.id,request);
  await dispatchPanel(owner,credentials,current.id,request.intentId);
@@ -108,7 +118,7 @@ it("requires a new intent for changed parameters, target, questioning session or
 });
 it.each([undefined,0])("does not approve free text or the default selectedOption %s",async selectedOption=>{
  await operatePanel(owner,credentials,current.id,action());answer();
- mocks.request.mockResolvedValue({questionId:intents.get(uuid(5))!.questionId,answerId:uuid(11),source:{kind:"user"},respondent:{id:uuid(12),domainId:"d"},recipientSession:root,selectedOption:selectedOption??null,text:"I approve"});
+ mocks.request.mockResolvedValue({questionId:agentQuestionId(),answerId:uuid(11),source:{kind:"user"},respondent:{id:uuid(12),domainId:"d"},recipientSession:root,selectedOption:selectedOption??null,text:"I approve"});
  expect(await dispatchPanel(owner,credentials,current.id,uuid(5))).toMatchObject({code:"NOT_APPROVED"});
  expect(ownerWrites()).toHaveLength(0);
 });
@@ -132,7 +142,10 @@ it.each(["save","runNow"])("automatic %s calls the same owner client, preserving
    return Response.json(task);
  }));
  const response=await operatePanel(owner,credentials,current.id,operation==="save"?save():action());
- expect(response.kind).toBe("dispatched");expect(mocks.request).not.toHaveBeenCalled();
+ expect(response).toMatchObject({
+   kind: "dispatched", outcome: { kind: "refusal", code: operation === "save" ? "REVISION_CONFLICT" : "PERMISSION_DENIED" },
+ });
+ expect(mocks.request).not.toHaveBeenCalled();
  if(operation==="save")expect(JSON.parse(String(writes[0]?.body))).toMatchObject({revision:4});
 });
 const task=platformTaskSchema.parse({...rawExamples.creates.find(task=>task.name==="governance-instruction")!.response,id:uuid(9),revision:9});
@@ -298,4 +311,259 @@ it("rejects a batch when the registered owner does not declare batch support", a
     .rejects.toMatchObject({ code: "OPERATION_BATCH_UNSUPPORTED" });
   expect(intents.size).toBe(0);
   expect(ownerWrites()).toHaveLength(0);
+});
+
+it.each([
+  { status: 403, kind: "refusal", code: "FORBIDDEN" },
+  { status: 502, kind: "failure", code: "DEPENDENCY_UNAVAILABLE" },
+])("keeps an agent delete response with status $status as $kind", async ({ status, kind, code }) => {
+  automatic = true;
+  const objectType = "platform:AgentDefinition";
+  const panel = await mocks.panel();
+  panel.manifest.state.task.objectType = objectType;
+  panel.manifest.slots.run.inputs = { agent: { state: "task" } };
+  mocks.projection.mockResolvedValue({
+    id: "run", componentId: "run", name: "Delete agent", binding: { kind: "PlatformOperation", id: "agents.delete" },
+    inputs: { agent: { kind: "object", objectType } },
+  });
+  const input = { ...action(), operationId: "run.delete", call: {
+    target: { kind: "object" as const, objectType, primaryKey: uuid(9) }, input: {},
+  } };
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json(
+    { error: { code, message: "Owner response" }, correlationId: "test" }, { status },
+  )));
+  expect(await operatePanel(owner, credentials, current.id, input)).toMatchObject({
+    kind: "dispatched", outcome: { kind, code },
+  });
+  expect(mocks.notify).not.toHaveBeenCalled();
+});
+
+it("inspects the actual agent delete using the initiator's definition read", async () => {
+  const objectType = "platform:AgentDefinition", primaryKey = uuid(9);
+  const panel = await mocks.panel();
+  panel.manifest.state.task.objectType = objectType;
+  panel.manifest.slots.run.inputs = { agent: { state: "task" } };
+  mocks.projection.mockResolvedValue({
+    id: "run", componentId: "run", name: "Delete agent", binding: { kind: "PlatformOperation", id: "agents.delete" },
+    inputs: { agent: { kind: "object", objectType } },
+  });
+  const read = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+    expect(url).toBe(`http://workbench.test/api/assistant/agent-definitions/${primaryKey}`);
+    expect(init.method).toBe("GET");
+    expect(new Headers(init.headers).get("tk")).toBe("U-token");
+    return Response.json({
+      id: primaryKey, name: "Inventory analyst", description: "", icon: null, enabled: true,
+      executionUserId: null, modelSelection: { modelId: null }, skills: [], systemPrompt: "",
+    });
+  });
+  vi.stubGlobal("fetch", read);
+  const input = { applicationId: "A", useId: "tasks", operationId: "run.delete", call: {
+    target: { kind: "object" as const, objectType, primaryKey }, input: {},
+  } };
+  expect(await inspectPanelOperationImpact(owner, credentials, input)).toEqual({
+    summary: "This deletes the selected agent definition.",
+    objects: [{ target: { objectType, primaryKey }, label: "Inventory analyst" }], total: 1,
+  });
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(intents.size).toBe(0);
+});
+
+function installBatchOwner() {
+  const objectType = "platform:ScheduledTask";
+  const binding = { kind: "PlatformOperation" as const, id: "test.batch" };
+  const handler = {
+    handlerRef: binding.id, kind: "action" as const, binding, effect: "write" as const, batch: true as const,
+    targetType: objectType, targetInput: "task",
+    targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(objectType), primaryKey: z.string() }),
+    inputSchema: z.object({ status: z.number() }), resultSchema: z.object({ done: z.boolean() }),
+    targetLabel: vi.fn(async (_host, target: { primaryKey: string }) => target.primaryKey),
+    inspectImpact: { handlerRef: "test.batch.impact", inspect: vi.fn() },
+    execute: vi.fn(),
+    executeBatch: vi.fn(),
+  };
+  vi.spyOn(serverOperations, "panelServerOperation").mockReturnValue(handler);
+  mocks.projection.mockResolvedValue({
+    id: "run", name: "Set status", componentId: "run", binding, inputs: { task: { kind: "object", objectType } },
+  });
+  const call = (n: number, status: number) => ({
+    target: { kind: "object" as const, objectType, primaryKey: uuid(n) },
+    input: { status },
+  });
+  const calls: serverOperations.PanelBatchCalls = [call(9, 1), call(10, 2), call(11, 3), call(12, 4), call(13, 5)];
+  const impact = {
+    summary: "The owner will change these status records.",
+    total: 12,
+    objects: calls.map(({ target }, index) => ({
+      target: { objectType: target.objectType, primaryKey: target.primaryKey }, label: `Task ${index + 1}`,
+    })),
+  };
+  handler.inspectImpact.inspect.mockResolvedValue(impact);
+  const request = { intentId: uuid(5), applicationId: "A", useId: "tasks", operationId: "run.batch", calls };
+  return { handler, request, impact };
+}
+
+it("uses the same owner impact for the human read and agent confirmation of the frozen batch", async () => {
+  const { handler, request, impact } = installBatchOwner();
+  const { intentId: _intentId, ...inspect } = request;
+  expect(await inspectPanelOperationImpact(owner, credentials, inspect)).toEqual(impact);
+  expect(intents.size).toBe(0);
+  expect(await operatePanel(owner, credentials, current.id, request)).toMatchObject({ kind: "confirmation-required" });
+  expect(handler.inspectImpact.inspect).toHaveBeenCalledTimes(2);
+  for (const [host, calls] of handler.inspectImpact.inspect.mock.calls) {
+    expect(host).toMatchObject({ request: expect.any(Function) });
+    expect(calls).toEqual(request.calls);
+  }
+  const question = mocks.request.mock.calls[0]![2];
+  expect(question.message).toContain("Task 1");
+  expect(question.message).toContain("(12)");
+  expect(question.message).toContain(impact.summary);
+  expect(intents.get(request.intentId)).toMatchObject({
+    calls: request.calls, executionUserId: "V", operation: { batch: true, inspectImpact: { handlerRef: "test.batch.impact" } },
+  });
+  expect(handler.executeBatch).not.toHaveBeenCalled();
+});
+
+it("reads the registered owner descriptor for an admitted human panel use", async () => {
+  const { request } = installBatchOwner();
+  const input = { applicationId: request.applicationId, useId: request.useId, operationId: request.operationId };
+  expect(await readPanelOperationDescriptor(owner, credentials, input)).toMatchObject({
+    handlerRef: "test.batch", effect: "write", target: { source: "input", input: "task" },
+    inputSchema: { properties: { status: { type: "number" } } },
+    resultSchema: { properties: { done: { type: "boolean" } } },
+    batch: true, inspectImpact: { handlerRef: "test.batch.impact" },
+  });
+  await expect(readPanelOperationDescriptor(owner, credentials, { ...input, useId: "other" }))
+    .rejects.toMatchObject({ code: "FORBIDDEN" });
+  expect(mocks.pages).not.toHaveBeenCalled();
+  expect(intents.size).toBe(0);
+});
+
+it("dispatches one frozen batch once and merges affected evidence from successful items only", async () => {
+  const { handler, request, impact } = installBatchOwner();
+  const first = impact.objects[0]!.target, refused = impact.objects[1]!.target;
+  const statuses = [
+    { kind: "success", data: { done: true }, affected: { objects: [first], objectTypes: [first.objectType] } },
+    { kind: "refusal", code: "REVISION_CONFLICT", message: "The task changed" },
+    { kind: "failure", code: "DEPENDENCY_UNAVAILABLE", message: "Owner failure" },
+    { kind: "unknown", message: "No receipt" },
+    { kind: "success", data: { done: true }, affected: { objects: [first], objectTypes: [first.objectType] } },
+  ];
+  const items = impact.objects.map(({ target }, index) => ({ target, outcome: statuses[index] }));
+  handler.executeBatch.mockResolvedValue({ kind: "batch", items, affected: { objects: [refused], objectTypes: ["ignored"] } });
+  await operatePanel(owner, credentials, current.id, request);
+  answer();
+  const results = await Promise.all([
+    dispatchPanel(owner, credentials, current.id, request.intentId),
+    dispatchPanel(owner, credentials, current.id, request.intentId),
+  ]);
+  expect(results).toContainEqual(expect.objectContaining({
+    kind: "dispatched", outcome: { kind: "batch", items, affected: { objects: [first], objectTypes: [first.objectType] } },
+  }));
+  expect(handler.executeBatch).toHaveBeenCalledTimes(1);
+  expect(handler.executeBatch).toHaveBeenCalledWith(expect.objectContaining({ request: expect.any(Function) }), request.calls, request.intentId);
+  expect(handler.execute).not.toHaveBeenCalled();
+  expect(mocks.notify.mock.calls).toEqual([[{ domainId: owner.domainId, initiator: owner.userId, rootSession: root, target: first }]]);
+});
+
+it("keeps an uncertain owner batch terminal and publishes no change", async () => {
+  const { handler, request } = installBatchOwner();
+  automatic = true;
+  handler.executeBatch.mockRejectedValue(new Error("Connection lost after dispatch"));
+  expect(await operatePanel(owner, credentials, current.id, request)).toMatchObject({
+    kind: "dispatched", outcome: { kind: "unknown", message: "Connection lost after dispatch" },
+  });
+  await dispatchPanel(owner, credentials, current.id, request.intentId);
+  expect(handler.executeBatch).toHaveBeenCalledTimes(1);
+  expect(mocks.notify).not.toHaveBeenCalled();
+});
+
+it("keeps a definitive atomic batch receipt without inventing per-item receipts", async () => {
+  const { handler, request, impact } = installBatchOwner();
+  automatic = true;
+  const objects = impact.objects.map(item => item.target);
+  const outcome = { kind: "success", data: { updated: objects.length }, affected: {
+    objects, objectTypes: ["platform:ScheduledTask"],
+  } };
+  handler.executeBatch.mockResolvedValue(outcome);
+  expect(await operatePanel(owner, credentials, current.id, request)).toMatchObject({ kind: "dispatched", outcome });
+  expect(handler.executeBatch).toHaveBeenCalledTimes(1);
+  expect(mocks.notify).toHaveBeenCalledTimes(objects.length);
+});
+
+it("freezes a human batch and its impact, then claims once with the reader's credentials", async () => {
+  const { handler, request, impact } = installBatchOwner();
+  const { intentId: _intentId, ...input } = request;
+  const outcome = { kind: "batch", items: impact.objects.map(({ target }) => ({
+    target, outcome: { kind: "success", data: { done: true }, affected: { objects: [target], objectTypes: [target.objectType] } },
+  })) };
+  handler.executeBatch.mockImplementation(async (host: serverOperations.PanelOperationHost) => {
+    await host.requestWorkbench("/test-owner", { method: "POST" });
+    return outcome;
+  });
+  const ownerWrite = vi.fn(async (_url, init) => {
+    expect(new Headers(init.headers).get("tk")).toBe("U-token");
+    expect(new Headers(init.headers).get("X-API-Key")).toBeNull();
+    return Response.json({});
+  });
+  vi.stubGlobal("fetch", ownerWrite);
+  const preparation = await prepareHumanPanelOperation(owner, credentials, input);
+  const id = preparation.intentId;
+  expect(intents.get(id)).toMatchObject({ source: { kind: "human" }, initiator: owner, calls: input.calls, impact, dispatched: false });
+  const useRef = { applicationId: input.applicationId, useId: input.useId };
+  expect(await projectPanelOperationIntent(owner, id, useRef)).toEqual(preparation);
+  await expect(projectPanelOperationIntent(owner, id, { ...useRef, useId: "other" })).rejects.toMatchObject({ status: 404 });
+  expect(ownerWrite).not.toHaveBeenCalled();
+  await expect(dispatchPanel(owner, credentials, current.id, id)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  const results = await Promise.all([dispatchHumanPanelOperation(owner, credentials, id), dispatchHumanPanelOperation(owner, credentials, id)]);
+  expect(results).toContainEqual({ kind: "dispatched", intentId: id, outcome: {
+    ...outcome, affected: { objects: impact.objects.map(item => item.target), objectTypes: [input.calls[0].target.objectType] },
+  } });
+  expect(handler.inspectImpact.inspect).toHaveBeenCalledTimes(1);
+  expect(handler.executeBatch).toHaveBeenCalledOnce();
+  expect(handler.execute).not.toHaveBeenCalled();
+  expect(ownerWrite).toHaveBeenCalledOnce();
+  expect(mocks.resolve).not.toHaveBeenCalled();
+});
+
+it("refuses to dispatch an agent intent from the human route", async () => {
+  await operatePanel(owner, credentials, current.id, action());
+  await expect(dispatchHumanPanelOperation(owner, credentials, action().intentId)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  expect(ownerWrites()).toHaveLength(0);
+});
+
+it("runs a registered read using the reader and preview context without creating an intent", async () => {
+  const binding = { kind: "PlatformOperation" as const, id: "metricViews.testExecute" };
+  const input = { applicationId: "A", useId: "tasks", operationId: "run.testExecute", call: {
+    target: { kind: "draft" as const },
+    input: { draft: { name: "Unsaved metric" }, parameters: { amount: 3 }, bindingId: "sample" },
+  } };
+  const preview = { ...credentials, headers: { [BUILD_TEST_HEADER]: "build-preview" } };
+  const execute = vi.fn(async (host: serverOperations.PanelOperationHost, call: typeof input.call) => {
+    await host.request("/api/data-query/metricView/testExecute", { method: "POST", body: JSON.stringify(call.input) });
+    return { kind: "json" as const, value: [{ amount: 3 }] };
+  });
+  vi.spyOn(serverOperations, "panelServerOperation").mockReturnValue({
+    handlerRef: binding.id, effect: "read", kind: "action", batch: false, binding,
+    target: { source: "draft", slot: "form" }, targetSchema: z.object({ kind: z.literal("draft") }).strict(),
+    inputSchema: panelReadOperationInputSchema, resultSchema: panelReadOperationResultSchema, execute,
+  });
+  mocks.projection.mockResolvedValue({
+    id: "run", name: "Trial", componentId: "run", binding, inputs: {},
+  });
+  const ownerRead = vi.fn(async (url, init) => {
+    expect(url).toBe("http://owner.test/metricView/testExecute");
+    expect(new Headers(init.headers).get("tk")).toBe("U-token");
+    expect(new Headers(init.headers).get(BUILD_TEST_HEADER)).toBe("build-preview");
+    expect(JSON.parse(init.body)).toEqual(input.call.input);
+    return Response.json({});
+  });
+  vi.stubGlobal("fetch", ownerRead);
+  expect(await readPanelOperationDescriptor(owner, credentials, input)).toMatchObject({
+    effect: "read", batch: false, target: { source: "draft", slot: "form" },
+  });
+  expect(await readPanelOperation(owner, preview, input)).toEqual({ kind: "json", value: [{ amount: 3 }] });
+  await expect(prepareHumanPanelOperation(owner, credentials, input)).rejects.toMatchObject({ code: "OPERATION_WRITE_REQUIRED" });
+  expect(ownerRead).toHaveBeenCalledOnce();
+  expect(intents.size).toBe(0);
+  expect(mocks.notify).not.toHaveBeenCalled();
 });

@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { createApp, defineComponent, h, nextTick, provide } from "vue";
-import { createI18n } from "vue-i18n";
+import { defineComponent, h, nextTick } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import {
   ACTION,
@@ -15,7 +14,6 @@ import {
 } from "@ontomato/contracts/platform-object-types";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import type { GraphCanvasEdge, GraphCanvasNode, GraphCanvasPoint } from "@ontomato/foundation-ui/graph/g6";
-import publicEn from "@ontomato/workbench-ui/locales/en";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
   inside,
@@ -39,8 +37,7 @@ import {
  *   edges, internal layer filter (does not mutate panel state), query highlighting without hiding, selectedType output.
  * - Instance mode: default start(), 1-hop neighbors(), incremental merge on unexpanded click without losing or moving
  *   existing nodes, no redundant fetch on already-expanded node, query highlighting without hiding or refetching,
- *   drawn-only legend counts, fit/relayout toolbar actions, and U12 export PNG button (absent without host bridge,
- *   requests host download when bridge is provided).
+ *   drawn-only legend counts, and fit/relayout toolbar actions (no in-frame export button; host triggers exports).
  * - Three-state separation: no neighbors (all ok & 0 edges), owner refused, and read failed shown distinctly and never
  *   collapsed into an empty graph.
  */
@@ -448,7 +445,7 @@ it("runs instance mode with default start, incremental neighbor expand, full obj
   await vi.waitFor(() => expect(canvasRecorder.nodes.length).toBe(2));
   expect(neighborCalls).toEqual([{ className: USER, primaryKey: "u-1" }]);
 
-  // Export PNG button MUST NOT exist when host download bridge is absent (U12: no disabled placeholder)
+  // No in-frame Export PNG button: host owns the export action and requests PNG bytes over the bridge
   expect(document.querySelector('[data-graph-action="export-png"]')).toBeNull();
 
   // Record root position before expanding neighbor
@@ -601,76 +598,4 @@ it("separates no-neighbors, owner-refused and read-failed states without collaps
     expect(document.querySelector('[data-graph-state="failed"]')).not.toBeNull();
   });
   expect(document.querySelector('[data-graph-state="no-neighbors"]')).toBeNull();
-});
-
-it("shows Export PNG and delegates blob download to the host bridge when downloadFile is provided (U12)", async () => {
-  const { default: OntologyGraph } = await import("../../../../../packages/apps-sdk/src/base/OntologyGraph.vue");
-  const { panelContextKey, projectionKey } = await import("../../../../../packages/apps-sdk/src/panel/context");
-  const { createPanelInstance } = await import("../../../../../packages/apps-sdk/src/panel/instance");
-  const { registerPlatformObjectAdapter } = await import(
-    "../../../../../packages/apps-sdk/src/panel/platform-objects"
-  );
-
-  const proj = graphProjection("cap-graph-export", { exportFilename: "capability-map" });
-  const manifest = definePanel({
-    state: { selected: { kind: "object-union", layers: [...platformOntologyLayers], deepLink: false } },
-    slots: { graph: { projectionId: proj.id, inputs: {}, outputs: { selectedNode: { state: "selected" } } } },
-    operations: [],
-  });
-  const instance = createPanelInstance(manifest, {
-    pageKey: "export-test",
-    url: () => "/export",
-    label: () => "Export",
-    readProjection: async () => proj,
-    recordDraftCreated: async () => {},
-  });
-  registerPlatformObjectAdapter({
-    objectType: ONTOLOGY_TYPE,
-    graph: {
-      start: async () => ({ className: USER, primaryKey: "u-1", label: "Alice", layer: "governance" }),
-      neighbors: async ({ node }) => ({
-        node: { className: node.className, primaryKey: node.primaryKey, label: "Alice", layer: "governance" },
-        neighbors: [],
-        edges: [],
-        relations: [{ relationKind: "user.holds-role", status: "ok", edgeCount: 0 }],
-      }),
-    },
-  });
-
-  const downloaded: Array<{ filename: string; type: string; size: number }> = [];
-  const host = document.createElement("div");
-  document.body.appendChild(host);
-  const app = createApp({
-    setup() {
-      provide(panelContextKey, {
-        panel: { content: { html: "", module: "" }, manifest, sdkVersion: "1.0.0" },
-        manifest,
-        instance,
-        projection: async () => proj,
-        invoke: async () => undefined,
-        projectionsChanged: () => () => {},
-        draft: instance.draft,
-        holdUnsaved: () => () => {},
-        t: (key) => key,
-        resources: async () => {},
-        downloadFile: async ({ filename, blob }) => {
-          downloaded.push({ filename, type: blob.type, size: blob.size });
-        },
-      });
-      provide(projectionKey, { slot: "graph", projection: proj, inputs: {} });
-      return () => h(OntologyGraph, { exportFilename: "capability-map" });
-    },
-  });
-  app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } }));
-  app.mount(host);
-
-  await vi.waitFor(() => expect(canvasRecorder.nodes.length).toBe(1));
-  const exportBtn = host.querySelector<HTMLButtonElement>('[data-graph-action="export-png"]');
-  expect(exportBtn).not.toBeNull();
-  exportBtn!.click();
-  await vi.waitFor(() => expect(downloaded).toHaveLength(1));
-  expect(canvasRecorder.exportCalls).toBe(1);
-  expect(downloaded[0]).toEqual({ filename: "capability-map.png", type: "image/png", size: 9 });
-  expect(document.querySelector("a[download]")).toBeNull();
-  app.unmount();
 });

@@ -14,7 +14,7 @@ import {
   type PlatformObjectQuery,
   type PlatformObjectQueryResult,
 } from "./platform-objects";
-import { valueAt } from "./form-values";
+import { fieldAt, valueAt } from "./form-values";
 import type { PanelText } from "./text";
 
 /*
@@ -73,11 +73,6 @@ export interface PanelContext {
    * type — before the projection registers its ports, so a panel downloads only the clients of what it shows.
    */
   resources(projection: Pick<ProductProjection, "componentId" | "binding" | "graph">): Promise<void>;
-  /**
-   * Requests the platform host to download a frame-generated file (U12). Absent until the host download bridge is
-   * provided; controls hide their export action when absent rather than rendering a disabled placeholder.
-   */
-  readonly downloadFile?: (file: { filename: string; blob: Blob }) => Promise<void>;
 }
 
 /**
@@ -161,7 +156,7 @@ export function useFormField(): ProjectionFormField {
   const field = computed(() => {
     const form = handle.value;
     if (!form || !form.fields.value.length) return undefined;
-    const found = form.fields.value.find((item) => item.path === port.path);
+    const found = fieldAt(form.fields.value, port.path);
     if (!found) throw new Error(`The form in slot '${port.slot}' has no field ${port.path}`);
     return found;
   });
@@ -193,7 +188,9 @@ export interface ProjectionObjects extends Required<Pick<PlatformObjectAdapter, 
 
 function hasQueryParams(query: PlatformObjectQuery): boolean {
   return Boolean(
-    query.search?.trim()
+    query.parent
+    || query.objectType
+    || query.search?.trim()
     || query.page
     || (query.filters && Object.values(query.filters).some((value) => value !== "")),
   );
@@ -217,7 +214,17 @@ export function useProjectionObjects(objectType?: string): ProjectionObjects {
       const adapter = platformObjectAdapter(type);
       if (adapter.query) {
         const result = await adapter.query(query);
-        instance.nameObjects(type, result.items);
+        const byType = new Map<string, { primaryKey: string; label: string }[]>();
+        for (const item of result.items) {
+          const itemType = item.className ?? query.objectType ?? type;
+          let bucket = byType.get(itemType);
+          if (!bucket) {
+            bucket = [];
+            byType.set(itemType, bucket);
+          }
+          bucket.push(item);
+        }
+        for (const [itemType, items] of byType) instance.nameObjects(itemType, items);
         return result;
       }
       if (hasQueryParams(query)) throw new Error(`Platform object '${type}' has no query`);
