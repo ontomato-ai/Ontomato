@@ -24,7 +24,7 @@ Write a link in an answer as the page's path, for example `[Customer assistant](
 
 `execution-users` is the list for `executionUserId`. When `canSetExecutionUser` is false the caller may not change that field and `users` is empty: say so instead of proposing a user. Only a governance administrator gets users, and only enabled members of the current domain are listed.
 
-`get` returns the whole definition, including `id`. An update sends only the fields it changes, without `id`; a field it leaves out keeps its stored value, and read-only values are not fields of the form. To keep the agent's skills, leave `skills` out; naming them, `[]` included, replaces the whole selection.
+`get` returns the whole definition, including `id`. An update sends the same fields back without `id`; read-only values are not fields of the form. Only `skills` may be left out, to keep the agent's stored skills — `get` shows only the skills this caller may see, so sending them back is an explicit whole-selection change. Naming them, `[]` included, replaces the whole selection.
 
 ## Page context
 

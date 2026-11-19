@@ -20,7 +20,7 @@ The page is the agent platform's agent settings page (the ontology manager shows
 | `sortOrder` | Order in the list. |
 | `executionUserId` | `null` (the default) runs with the reader's own permission; a user ID from `execution-users` runs with that real domain user's permission. |
 
-A save writes the fields you send: an update leaves every field it omits as it is stored, so send only the fields the user changes and no `id`. To keep the agent's existing skills, leave `skills` out; naming the array — an empty one included — replaces the whole selection. The selected model and every skill you send must exist in the catalog, so read `models` and `skills` before choosing. Names, descriptions and prompts are business content; write them in the user's language.
+A save is the whole definition: read it, change the fields, and send every field back without `id`. The one field an update may leave out is `skills`: leave it out to keep the agent's stored skills, or name the array — an empty one included — to replace the whole selection. Never read the agent and send the skills it shows back to keep them: `get` lists only the skills this caller may see, and that array is an explicit whole-selection change. Every other field goes back as it was; `name`, `description`, `icon`, `enabled` and `systemPrompt` are required, and leaving out `classNames`, `enabledMcpServiceIds` or `modelSelection` takes its default (`[]`, `[]`, the domain model) instead of the stored value. The selected model and every skill you send must exist in the catalog, so read `models` and `skills` before choosing. Names, descriptions and prompts are business content; write them in the user's language.
 
 Some skills are protected: an agent may hold skills this caller cannot see, and the page, `get` and the catalogs show only the ones this caller may see. If the agent holds such a skill, an update that names `skills` is refused as a whole, and none of that request is written; the refusal does not name the skill. Leave `skills` out unless the user asked to change them. When an explicit skills change is refused, say it must be made by someone who can see the complete selection; never send back the skills `get` showed as a way around it.
 
@@ -51,7 +51,7 @@ Read [pages](references/pages.md) for the read commands and addresses, [forms](r
 
 The platform sets `ONTOMATO_SKILL_SCENARIO=platform`. Then `create`, `update` and `delete` refuse: write a page draft, validate it, and give the user the `draft-link` URL. The page opens with the form filled and unsaved; the user saves or discards it. Never say a change is saved, and never simulate the page's save.
 
-A draft's form holds only the fields the agent gives it this turn: the page fills those over the agent as it read it, and a field left out keeps its stored value. Leave `skills` out to keep the agent's skills; naming them, `[]` included, replaces the whole selection.
+A draft's form is the same whole definition: `get` the agent, bring every other field back as it was, and leave only `skills` out when the user is not changing them. Naming the skills, `[]` included, replaces the whole selection.
 
 Without `ONTOMATO_SKILL_SCENARIO` (the Skill suite, using the reader's own credential) the same package writes directly through the same endpoints.
 

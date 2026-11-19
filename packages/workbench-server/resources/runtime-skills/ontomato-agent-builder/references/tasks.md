@@ -1,6 +1,6 @@
 # Typical procedures
 
-Read `skills` and `models` first; they are also what a save validates against. Use `get` for the current definition of anything being changed, then write only the fields the user changes in `work/` and leave the rest out: an update keeps a field it does not send, so never copy the whole definition back.
+Read `skills` and `models` first; they are also what a save validates against. Use `get` for the current definition of anything being changed, and work on a copy in `work/` so every other field goes back as the agent holds it. Only `skills` may be left out, to keep the stored ones.
 
 ## Create an agent
 
@@ -11,8 +11,8 @@ Read `skills` and `models` first; they are also what a save validates against. U
 
 ## Change a prompt, skill or model
 
-1. `get <id>` to read the current values; write only the fields the user asked about into `work/agent.json`.
-2. Read `skills` and `models` if the change selects one. Leave `executionUserId` out unless the user asked to change it; an omitted field keeps its stored value.
+1. `get <id>`; copy the definition to `work/agent.json` and remove `id`.
+2. Read `skills` and `models` if the change selects one, and edit only the fields the user asked about. Keep `executionUserId` exactly as `get` returned it. Remove `skills` from the copy unless the user is changing the agent's skills.
 3. Inside the platform: `draft update <id> @work/agent.json`, validate it, and give the user the draft link. The page marks the changed fields and stays unsaved.
 4. Outside the platform: `update <id> @work/agent.json`.
 
@@ -21,8 +21,8 @@ If the user asks to change one thing after seeing the draft, edit the same form 
 ## Change the skills
 
 1. Read `skills` for the catalog this caller may choose from, and `get <id>` for the skills the agent holds now.
-2. To keep the agent's skills, leave `skills` out of the update. To replace them, write the whole array this change wants; `[]` clears them.
-3. Write and validate the draft, or run `update` outside the platform.
+2. To keep the agent's skills, remove `skills` from the copy. To replace them, write the whole array this change wants; `[]` clears them.
+3. The form stays the whole definition: every other field goes back as `get` returned it. `get` shows only the skills this caller may see, so never send that array back to keep them — that is an explicit whole-selection change. Write and validate the draft, or run `update` outside the platform.
 
 An agent may hold protected skills this caller cannot see, and `get`, the page and the catalog show only the ones this caller may see. If the agent holds such a skill, an update that names `skills` is refused as a whole and none of its fields are written; the refusal does not name the skill. That change needs someone who can see the complete selection. Report the owner's words and leave the skills alone; do not work around it by sending back the skills `get` showed.
 
@@ -40,4 +40,4 @@ Inside the platform, the page owns deletion: open `/agents/settings/<id>` and te
 
 ## Check the result
 
-After the user saves, `get <id>` and confirm the fields you changed, including `executionUserId`. `get` shows only the skills this caller may see, so it does not prove a kept protected selection; the agent's own runs do. A saved definition does not show that the agent uses the skills as intended; that needs a real conversation with the agent, opened from `/agents/settings/<id>`.
+After the user saves, `get <id>` and confirm every field, including `executionUserId`. `get` shows only the skills this caller may see, so it does not prove a kept protected selection; the agent's own runs do. A saved definition does not show that the agent uses the skills as intended; that needs a real conversation with the agent, opened from `/agents/settings/<id>`.
