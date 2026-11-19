@@ -40,7 +40,8 @@ export interface PanelInstance {
   readonly manifest: PanelManifest;
   readonly state: PanelStateStore;
   readonly pageContext: DeepReadonly<Ref<PageContext>>;
-  readonly operations: DeepReadonly<Ref<readonly PanelOperationBinding[]>>;
+  /** Computed afresh from the registered projections; a reader never changes it. */
+  readonly operations: Readonly<Ref<readonly PanelOperationBinding[]>>;
   readonly projections: DeepReadonly<Ref<readonly PanelProjectionRegistration[]>>;
   /** The form adapters its projections registered, for the draft its address names. */
   readonly forms: PanelFormAdapters;
