@@ -7,7 +7,7 @@ import { AGENT_DEFINITION, OBJECT_TYPE, RELATIONSHIP, SKILL } from "@ontomato/co
 import { PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
-  inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, writePanelDocument, type Sent,
+  inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
 /*
@@ -119,7 +119,7 @@ async function open(address: string, state: Record<string, unknown>, override?: 
   const sent = installPlatform((request) => override?.(request) ?? owner(request) ?? nothingAt(request));
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
-  platformPanelHost("ontology").frame(frame, use, panel);
+  platformPanelHost("ontology", use).frame(frame, registered("ontology", use, panel));
   writePanelDocument(panel, use, address, state as never);
   inside(frame);
   const failed: string[] = [];
@@ -206,7 +206,7 @@ async function openWithDraft(form: PanelFormValues, envelope: { operation: strin
   });
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
-  platformPanelHost("ontology").frame(frame, use, panel);
+  platformPanelHost("ontology", use).frame(frame, registered("ontology", use, panel));
   writePanelDocument(panel, use, `/ontology/agents?${query}`, { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } });
   inside(frame);
   const failed: string[] = [];

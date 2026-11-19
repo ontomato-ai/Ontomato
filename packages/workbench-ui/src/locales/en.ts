@@ -165,7 +165,7 @@ export default {
     "settings": "System settings",
     "dataGovernance": "Data governance platform",
     "panelNotInApplication": "{path} is not a panel of this application",
-    "panelUseMissing": "This application declares no panel use {use}",
+    "panelCandidateLabel": "Panel preview ({ref})",
     "panelNotStarted": "The panel has not started yet",
     "panelFileUnavailable": "The panel could not load {file}",
     "panelScriptThrew": "The panel's script failed while it ran",

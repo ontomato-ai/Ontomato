@@ -88,7 +88,11 @@ it("lists only named panel uses in declared order and gives one named use no men
   const application = {
     ...catalogFixture()[0]!, id: "app-panels-trial-b", kind: "product" as const,
     entry: { renderer: "panels", path: "/panels-trial-b" },
-    panelUses: [use("/tasks", { en: "Tasks", "zh-CN": "定时任务" }), use("/detail"), use("/summary", { en: "Task summary" })],
+    panelUses: [
+      use("/applications/app-panels-trial-b/tasks", { en: "Tasks", "zh-CN": "定时任务" }),
+      use("/applications/app-panels-trial-b/detail"),
+      use("/applications/app-panels-trial-b/summary", { en: "Task summary" }),
+    ],
   };
   const declare = (app: typeof application) => appDeclarations(
     generatedNavigation(), closedAccess([]), catalogPartition([app], "zh-CN"), t,

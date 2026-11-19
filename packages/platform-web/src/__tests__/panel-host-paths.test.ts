@@ -51,7 +51,7 @@ beforeEach(() => {
       return new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } });
     }
     const body = url.endsWith("/apps-sdk/current")
-        ? { version: "1.1.0", publicBasePath: "/apps-sdk", sdkBasePath: "/apps-sdk/1.1.0", manifestPath: "", docsPath: "", referencePath: "" }
+        ? { version: "1.1.0", publicBasePath: "", sdkBasePath: "/apps-sdk/1.1.0", manifestPath: "", docsPath: "", referencePath: "" }
         : url.includes("/panel-uses")
           ? { data: { applicationId: "app-a", entry: { path: "/tasks", renderer: "panels" }, panelUses: [] } }
           : url.endsWith("/snapshot") ? { panel: { id: "panel-a", revision: 1 }, projections: [] } : { panel: null };
@@ -79,26 +79,30 @@ describe("the panel host's addresses", () => {
   });
 
   it("sends each read to the address its owner serves", async () => {
-    const { panelAuthorDefinitions, platformPanelHost, panelUsesOf } = await import("../panel-host");
-    const port = platformPanelHost("app-a");
+    const { candidatePanelHost, panelAuthorDefinitions, platformPanelHost, panelUsesOf } = await import("../panel-host");
+    const use = { id: "use-a", pageKey: "tasks", panelId: "panel-a", path: "/applications/app-a/tasks", access: { kind: "domain-member" as const } };
+    const port = platformPanelHost("app-a", use);
     await panelUsesOf("app-a");
     // The record's contents are the stand-in's business, not this test's: what it asserts is the address each read went
     // to. A read that refuses is as good an observation as one that answers.
     await port.panel("panel-a").catch(() => {});
-    await port.sdkBase();
+    // The SDK's root is where Node serves its builds; a frame loads the exact version its definition names under it.
+    expect(await port.sdkRoot()).toBe("/apps-sdk");
     await port.snapshot("panel-a");
     const observer = panelAuthorDefinitions().observe([target], () => {}, error => { throw error; });
-    await vi.waitFor(() => expect(requested.length).toBe(5));
+    await candidatePanelHost({ id: "7c9e6679-7425-40de-944b-e07fc1f90ae7", ref: "working", pageKey: "tasks" }).source().catch(() => {});
+    await vi.waitFor(() => expect(requested.length).toBe(6));
     expect(requested.map((one) => `${one.method} ${one.url}`)).toEqual([
       "GET /api/data-query/platform/applications/app-a/panel-uses",
       "GET /api/product-panels/panel-a",
       "GET /api/apps-sdk/current",
       "GET /api/product-panels/panel-a/snapshot",
       "POST /api/product-assets/definition-stream",
+      "GET /api/workspaces/7c9e6679-7425-40de-944b-e07fc1f90ae7/panel-candidate?ref=working",
     ]);
     observer.close();
     expect(subscriptionSignal?.aborted).toBe(true);
-    expect(requested).toHaveLength(5);
+    expect(requested).toHaveLength(6);
   });
 });
 

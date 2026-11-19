@@ -17,6 +17,7 @@ import {
   task,
   taskForm,
   writePanelDocument,
+  registered,
   type Sent,
 } from "./panel-frame";
 
@@ -37,7 +38,7 @@ const panel = panelRecord(
     operations: [],
   }),
 );
-const use = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", panel.id, "/tasks");
+const use = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", panel.id, "/applications/app-panels-trial-a/tasks");
 const taskPath = `/api/data-query/platform/scheduled-tasks/${task.id}`;
 
 /** The service's own refusal bodies, checked against its contract. */
@@ -68,7 +69,7 @@ describe("a panel's form when the owner refuses a save", () => {
       return nothingAt(request);
     });
     const frame = panelFrame();
-    platformPanelHost("app-panels-trial-a").frame(frame, use, panel);
+    platformPanelHost("app-panels-trial-a", use).frame(frame, registered("app-panels-trial-a", use, panel));
     writePanelDocument(panel, use, "/applications/app-panels-trial-a/tasks", {
       selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id },
     });

@@ -143,7 +143,7 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
     const applicationRoute = embedded || panels;
     // Catalog entries may precede their renderer or an edition's asynchronous layout registration.
     const panelPages = panels ? app.panelUses?.flatMap(use => use.names ? [{
-      id: panelUsePath(app.id, use.path),
+      id: panelUsePath(use.path),
       label: use.names[locale] ?? use.names.en!,
     }] : []) ?? [] : [];
     const layout: NativeLayout = panelPages.length > 1

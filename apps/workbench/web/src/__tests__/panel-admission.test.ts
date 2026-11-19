@@ -19,6 +19,7 @@ import {
   task,
   taskForm,
   writePanelDocument,
+  registered,
   type Sent,
 } from "./panel-frame";
 
@@ -35,7 +36,7 @@ import {
  */
 
 const panelP = panelRecord("panel-schedules-trial", "Scheduled tasks (trial)", manifestP);
-const useOfP = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", panelP.id, "/tasks");
+const useOfP = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", panelP.id, "/applications/app-panels-trial-a/tasks");
 const tasks = "/api/data-query/platform/scheduled-tasks";
 const draftOf = (pageKey: string) => ({
   pageKey,
@@ -54,6 +55,9 @@ function answer(request: Sent) {
   if (request.path === `${tasks}/${task.id}/runs` && request.method === "POST") return Response.json(run);
   if (request.path === "/api/assistant/sessions/session-1/runs/run-1/page-draft") return Response.json(draftOf(useOfP.pageKey));
   if (request.path === "/api/assistant/sessions/session-1/runs/run-2/page-draft") return Response.json(draftOf("dashboard"));
+  if (request.path === "/api/assistant/sessions/session-1/runs/run-3/page-draft")
+    return Response.json({ ...draftOf(useOfP.pageKey), target: {} });
+  if (request.path === "/api/assistant/sessions/session-1/runs/run-3/page-draft/created") return new Response(null, { status: 204 });
   return nothingAt(request);
 }
 
@@ -64,7 +68,7 @@ describe("what a panel's frame may ask the platform for", () => {
     const sent = installPlatform(answer);
     const frame = panelFrame();
     // A's page shows P: A's panel host registers the frame with P's current record.
-    platformPanelHost("app-panels-trial-a").frame(frame, useOfP, panelP);
+    platformPanelHost("app-panels-trial-a", useOfP).frame(frame, registered("app-panels-trial-a", useOfP, panelP));
     writePanelDocument(panelP, useOfP, "/applications/app-panels-trial-a/tasks", {
       selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id },
     });
@@ -137,5 +141,28 @@ describe("what a panel's frame may ask the platform for", () => {
       ...allowed,
       "GET /api/assistant/sessions/session-1/runs/run-2/page-draft",
     ]);
+  });
+
+  it("records the object a create draft of its own page created, and no other draft's", { timeout: 20000 }, async () => {
+    const sent = installPlatform(answer);
+    const frame = panelFrame();
+    platformPanelHost("app-panels-trial-a", useOfP).frame(frame, registered("app-panels-trial-a", useOfP, panelP));
+    writePanelDocument(panelP, useOfP, "/applications/app-panels-trial-a/tasks", {});
+    inside(frame);
+    const { appContext } = await mountPanel(panelOf());
+    const transport = contextTransport(appContext);
+    const created = (run: string, path: string) =>
+      transport.request(`/assistant/sessions/session-1/runs/${run}/page-draft/created`, { method: "POST", body: JSON.stringify({ path, id: task.id }) }, "");
+
+    // Before the frame has read the draft, and for a draft it read that changes an existing task, nothing is recorded.
+    await expect(created("run-3", "outputs/drafts/task.page-draft.json")).rejects.toThrow("Outside what this panel's projections declare");
+    await transport.request("/assistant/sessions/session-1/runs/run-1/page-draft?path=outputs%2Fdrafts%2Ftask.page-draft.json", {}, "");
+    await expect(created("run-1", "outputs/drafts/task.page-draft.json")).rejects.toThrow("Outside what this panel's projections declare");
+    // The create draft written for this page, once read: its first save records what it created, at that draft alone.
+    await transport.request("/assistant/sessions/session-1/runs/run-3/page-draft?path=outputs%2Fdrafts%2Ftask.page-draft.json", {}, "");
+    expect((await created("run-3", "outputs/drafts/task.page-draft.json")).status).toBe(204);
+    await expect(created("run-3", "outputs/drafts/other.page-draft.json")).rejects.toThrow("Outside what this panel's projections declare");
+    expect(sent.filter(request => request.path.endsWith("/created")).map(request => request.body))
+      .toEqual([{ path: "outputs/drafts/task.page-draft.json", id: task.id }]);
   });
 });
