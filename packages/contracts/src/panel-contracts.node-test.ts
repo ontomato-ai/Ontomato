@@ -18,7 +18,10 @@ import {
   OBJECT_TYPE, RELATIONSHIP, SET_METRIC_VIEW_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, USER,
   bindingKey, clientSends, panelClientReads,
 } from "./panel-client-requests";
-import { candidatePanelSourceSchema, panelFrameMessageSchema, panelUsePath } from "./panel-host";
+import {
+  candidatePanelSourceSchema, panelCapacityPlanSchema, panelCapacityRequestSchema, panelFrameMessageSchema,
+  panelHostFrameMessageSchema, panelUsePath,
+} from "./panel-host";
 import { panelChildObjectIdentitySchema, panelManifestSchema, panelStateValueSchema } from "./panel-manifest";
 import { pageDraftSchema } from "./page-draft";
 import {
@@ -498,4 +501,18 @@ test("conversation entries declare the exact composer target and can prefill wit
     binding: { kind: "PlatformObjectType", id: "platform:AgentDefinition" }, inputs: {}, display: {}, conversationEntry,
   });
   assert.deepEqual(projection.conversationEntry, conversationEntry);
+});
+
+test("capacity admission separates a confirmed departure from activity in the frame", () => {
+  const current = { instance: "knowledge", address: "/ontology/knowledge?state=old" };
+  const next = { instance: "knowledge", address: "/ontology/knowledge?state=new" };
+  const request = { current, next, departure: "retain-clean" };
+  assert.deepEqual(panelCapacityRequestSchema.parse(request), request);
+  assert.equal(panelCapacityRequestSchema.safeParse({ ...request, departure: "dirty" }).success, false);
+
+  const plan = { kind: "admitted", next: "reuse", reclaim: [] };
+  assert.deepEqual(panelCapacityPlanSchema.parse(plan), plan);
+  assert.equal(panelCapacityPlanSchema.safeParse({ kind: "refused", reclaim: [current.instance] }).success, false);
+  assert.deepEqual(panelHostFrameMessageSchema.parse({ kind: "activity", active: false }), { kind: "activity", active: false });
+  assert.equal(panelFrameMessageSchema.safeParse({ kind: "activity", active: true }).success, false);
 });
