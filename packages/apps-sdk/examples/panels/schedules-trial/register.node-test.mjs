@@ -11,10 +11,18 @@ const run = promisify(execFile);
 const ROOT = join(HERE, "..", "..", "..", "..", "..");
 
 const SDK = "4.1.9-dev." + "a".repeat(64);
+const projectionPaths = [
+  "/api/product-projections/projection-schedules-summary",
+  "/api/product-projections/projection-schedules-tasks",
+  "/api/product-projections/projection-schedules-form",
+  "/api/product-projections/projection-schedules-run",
+];
 const panelPaths = [
   "/api/product-panels/panel-schedules-trial",
   "/api/product-panels/panel-schedules-summary",
 ];
+const recordPaths = [...projectionPaths, ...panelPaths];
+const idOf = (path) => path.split("/").at(-1);
 
 const notFound = (response) => {
   response.writeHead(403, { "Content-Type": "application/json" });
@@ -131,30 +139,36 @@ test("registers the trial's projections, panels and applications in that order",
   assert.ok(requests.every((request) => !JSON.stringify(request.body ?? {}).includes("a-credential")));
   const productRequests = requests.filter((request) => request.url.startsWith("/api/product"));
   assert.ok(productRequests.every((request) => request.method === "PUT" && request.body.revision === 0));
-  assert.ok(productRequests.filter((request) => request.url.startsWith("/api/product-panels/"))
-    .every((request) => request.body.sdkVersion === SDK));
+  // P is written without code and names no SDK version; Q keeps its module, pinned to the version given.
+  assert.deepEqual(productRequests.filter((request) => request.url.startsWith("/api/product-panels/"))
+    .map(({ url, body }) => [decodeURIComponent(url), body.sdkVersion, Object.hasOwn(body.content, "module")]), [
+    ["/api/product-panels/panel-schedules-trial", undefined, false],
+    ["/api/product-panels/panel-schedules-summary", SDK, true],
+  ]);
+  assert.ok(productRequests.filter((request) => request.url.startsWith("/api/product-projections/"))
+    .every((request) => request.body.componentId.startsWith("@ontomato/sdk:") && Object.keys(request.body.data).length === 1));
 });
 
-test("snapshots the pre-upgrade revisions and uses them without reading the legacy panels after the upgrade", async () => {
-  const stand = platform({ held: new Map(panelPaths.map(path => [path, { revision: 3 }])), existingApplications: true });
+test("snapshots the pre-upgrade revisions and uses them without reading the legacy records after the upgrade", async () => {
+  const stand = platform({ held: new Map(recordPaths.map(path => [path, { revision: 3 }])), existingApplications: true });
   const snapshot = await register(["--mode", "snapshot"], stand);
   assert.equal(snapshot.error, null, String(snapshot.error?.stderr ?? ""));
-  assert.deepEqual(stand.requests.map(({ method, url }) => [method, url]), panelPaths.map(path => ["GET", path]));
+  assert.deepEqual(stand.requests.map(({ method, url }) => [method, url]), recordPaths.map(path => ["GET", path]));
   assert.ok(stand.requests.every((request) => request.credential === undefined));
   stand.requests.length = 0;
 
   const { error } = await register(["--mode", "update", "--sdk-version", SDK, "--revisions", snapshot.stdout], stand);
   assert.equal(error, null, String(error?.stderr ?? ""));
   const writes = stand.requests.filter(request => request.method === "PUT");
-  assert.deepEqual(writes.slice(0, 2).map(({ url, body }) => [url, body.revision]), panelPaths.map(path => [path, 3]));
+  assert.deepEqual(writes.slice(0, 6).map(({ url, body }) => [url, body.revision]), recordPaths.map(path => [path, 3]));
   assert.ok(stand.requests.filter(request => request.method === "GET").every(request => !request.url.startsWith("/api/")));
-  assert.equal(writes.length, 4);
-  assert.deepEqual(writes.slice(0, 2).map(({ body }) => body.sdkVersion), [SDK, SDK]);
-  assert.deepEqual(writes.slice(2).map(({ body }) => [body.entry.path, body.panelUses.map(use => use.path)]), [
+  assert.equal(writes.length, 8);
+  assert.deepEqual(writes.slice(4, 6).map(({ body }) => body.sdkVersion), [undefined, SDK]);
+  assert.deepEqual(writes.slice(6).map(({ body }) => [body.entry.path, body.panelUses.map(use => use.path)]), [
     ["/applications/app-panels-trial-a", ["/applications/app-panels-trial-a/tasks"]],
     ["/applications/app-panels-trial-b", ["/applications/app-panels-trial-b/tasks", "/applications/app-panels-trial-b/summary"]],
   ]);
-  for (const { body } of writes.slice(2)) {
+  for (const { body } of writes.slice(6)) {
     assert.equal(Object.hasOwn(body, "declaration"), false);
     assert.equal(Object.hasOwn(body, "entryAccess"), false);
   }
@@ -162,16 +176,16 @@ test("snapshots the pre-upgrade revisions and uses them without reading the lega
 
 test("stops at a stale owner revision, preserving the completed item and exposing the conflict", async () => {
   const stand = platform({
-    held: new Map([[panelPaths[0], { revision: 3 }], [panelPaths[1], { revision: 4 }]]),
+    held: new Map([...[...projectionPaths, panelPaths[0]].map(path => [path, { revision: 3 }]), [panelPaths[1], { revision: 4 }]]),
     existingApplications: true,
   });
-  const revisions = JSON.stringify({ "panel-schedules-trial": 3, "panel-schedules-summary": 3 });
+  const revisions = JSON.stringify(Object.fromEntries(recordPaths.map(path => [idOf(path), 3])));
   const { stdout, error } = await register(["--mode", "update", "--sdk-version", SDK, "--revisions", revisions], stand);
   assert.equal(error?.code, 1);
   assert.match(stdout, /panel panel-schedules-trial/);
   assert.match(error.stderr, /panel panel-schedules-summary.*409.*PRODUCT_CONFLICT/);
   assert.deepEqual(stand.requests.filter(request => request.url.startsWith("/api")).map(({ method, url }) => [method, url]),
-    panelPaths.map(path => ["PUT", path]));
+    recordPaths.map(path => ["PUT", path]));
   assert.equal(stand.held.get(panelPaths[0]).revision, 4);
   assert.equal(stand.held.get(panelPaths[1]).revision, 4);
 });

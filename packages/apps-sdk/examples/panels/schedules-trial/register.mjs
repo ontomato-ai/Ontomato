@@ -2,8 +2,9 @@
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import {
+  directPanelInputSchema,
+  directProjectionInputSchema,
   productPanelInputSchema,
-  productProjectionInputSchema,
   registerApplicationPanelUsesRequestSchema,
 } from "@ontomato/contracts/product-panels";
 import { panelRegistrationClient } from "../../../../../agent-skills/ontomato-app-builder/panel-registration.mjs";
@@ -31,24 +32,28 @@ async function main() {
     headers: credential ? { tk: credential } : {},
   });
 
+  // The projections and panels this script writes, each with its kind: a snapshot and an update cover the same records.
+  const records = [...projections.map(({ id }) => ["projection", id]), ...panels.map(({ id }) => ["panel", id])];
   if (mode === "snapshot") {
     const entries = [];
-    for (const { id } of panels) entries.push([id, await client.currentRevision("panel", id)]);
+    for (const [kind, id] of records) entries.push([id, await client.currentRevision(kind, id)]);
     console.log(JSON.stringify(Object.fromEntries(entries), null, 2));
     return;
   }
 
   const creating = mode === "create";
   const expected = creating ? {} : JSON.parse(revisions.startsWith("@") ? readFileSync(revisions.slice(1), "utf8") : revisions);
-  const panelItems = panels.map(({ id, directory, name, description, manifest }) => ({
-    id, mode, revision: expected[id],
-    input: productPanelInputSchema.parse({
-      name, description, visibility: "domain", content: panelContent(directory), manifest, sdkVersion,
-    }),
-  }));
+  // A panel without code is a direct panel, which names no SDK version; a panel with a module is pinned to the one given.
+  const panelItems = panels.map(({ id, directory, name, description, manifest }) => {
+    const content = panelContent(directory);
+    const definition = { name, description, visibility: "domain", content, manifest };
+    return {
+      id, mode, revision: expected[id],
+      input: content.module === undefined ? directPanelInputSchema.parse(definition) : productPanelInputSchema.parse({ ...definition, sdkVersion }),
+    };
+  });
   await client.register({
-    // Existing projections already back the trial. Re-registration changes only the versioned panel records and routes.
-    projections: creating ? projections.map(({ id, input }) => ({ id, mode, input: productProjectionInputSchema.parse(input) })) : [],
+    projections: projections.map(({ id, input }) => ({ id, mode, revision: expected[id], input: directProjectionInputSchema.parse(input) })),
     panels: panelItems,
     applications: applications.map(({ applicationId: id, entry, panelUses, declaration, entryAccess }) => ({
       id, mode,

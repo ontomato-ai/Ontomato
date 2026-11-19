@@ -121,7 +121,38 @@ export const projections: Record<string, ProductProjection> = Object.fromEntries
 const selectedTask = { selectedTask: { kind: "object" as const, objectType: SCHEDULED_TASK, deepLink: true } };
 const slot = (projectionId: string, input: string) => ({ projectionId, inputs: { [input]: { state: "selectedTask" } } });
 
-/** Panel P's declaration (`p/declaration.mjs`): the list, the summary, the form and the run button. */
+/**
+ * The scheduled tasks panel as it was written with code: HTML that places its four projections for the SDK in a frame.
+ * The trial's own P is a direct panel now, drawn without a frame; these tests run the frame path that every panel with
+ * a module still takes, so they keep the frame's markup here.
+ */
+export const framedTasksPanelHtml = `<style>
+  [v-cloak] { display: none; }
+  .panel { display: grid; gap: 12px; grid-template-columns: 260px 1fr; padding: 12px; }
+  .side, .main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+</style>
+<div id="app" class="panel" v-cloak>
+  <aside class="side">
+    <el-card shadow="never">
+      <template #header>Scheduled tasks</template>
+      <projection slot="tasks"></projection>
+    </el-card>
+  </aside>
+  <section class="main">
+    <el-card shadow="never">
+      <template #header>Selected task</template>
+      <projection slot="summary"></projection>
+    </el-card>
+    <el-card shadow="never">
+      <template #header>Task</template>
+      <projection slot="form"></projection>
+      <projection slot="run"></projection>
+    </el-card>
+  </section>
+</div>
+`;
+
+/** The framed scheduled tasks panel's declaration: the list, the summary, the form and the run button. */
 export const manifestP = definePanel({
   state: selectedTask,
   slots: {
