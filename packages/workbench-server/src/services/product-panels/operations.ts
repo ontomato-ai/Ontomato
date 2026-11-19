@@ -86,6 +86,26 @@ async function declaredOperation(owner: AssistantOwner, credentials: AssistantCr
   }
   throw new HttpError(422,"No supported declared operation has that ID","OPERATION_UNAVAILABLE");
 }
+
+async function operationForUse(owner: AssistantOwner, credentials: AssistantCredentials, ref: PanelUseRef & { operationId: string }) {
+  return declaredOperation(owner, credentials, await requirePanelUse(credentials, ref), ref.operationId);
+}
+
+export async function readPanelOperationDescriptor(owner: AssistantOwner, credentials: AssistantCredentials, ref: PanelUseRef & { operationId: string }) {
+  const { operation } = await operationForUse(owner, credentials, ref);
+  const { id: _id, label: _label, kind: _kind, slot: _slot, ...descriptor } = operation;
+  return descriptor;
+}
+
+function requireFrozenOperation(
+  intent: Pick<PanelOperationIntent, "panelId" | "projectionId" | "binding" | "operation">,
+  current: Awaited<ReturnType<typeof declaredOperation>>,
+) {
+  if (current.use.panelId !== intent.panelId || current.projection.id !== intent.projectionId ||
+    !isDeepStrictEqual(current.projection.binding, intent.binding) || !isDeepStrictEqual(current.operation, intent.operation))
+    throw new HttpError(409, "Operation definition changed; create a new intent", "INTENT_CHANGED");
+}
+
 function validateCall(handler: PanelServerOperation, call: PanelOperationCall) {
   const target = handler.targetSchema.parse(call.target);
   handler.inputSchema.parse(call.input);
@@ -165,8 +185,7 @@ async function ownerImpact(inspector: PanelImpactInspector, host: PanelOperation
 export async function inspectPanelOperationImpact(owner: AssistantOwner, credentials: AssistantCredentials,
   input: z.infer<typeof inspectPanelOperationImpactRequestSchema>,
 ) {
-  const use = await requirePanelUse(credentials, input);
-  const { handler } = await declaredOperation(owner, credentials, use, input.operationId);
+  const { handler } = await operationForUse(owner, credentials, input);
   if (!handler.inspectImpact)
     throw new HttpError(422, "The owner has no impact description for this operation", "OPERATION_IMPACT_UNAVAILABLE");
   return ownerImpact(handler.inspectImpact, operationHost(credentials), validateInvocation(handler, input));
@@ -266,9 +285,7 @@ export async function dispatchPanel(owner: AssistantOwner, credentials: Assistan
   if (executor.executionUserId !== intent.executionUserId) throw new HttpError(409,"Executor changed; create a new intent","INTENT_CHANGED");
   if (run.channel!.authority.executionKind !== "live") throw new HttpError(422,"Management operations do not support test data","BUILD_TEST_UNSUPPORTED");
   const current = await admitted(owner,credentials,run,intent.use,intent.operation.id);
-  if (current.use.panelId !== intent.panelId || current.projection.id !== intent.projectionId ||
-    !isDeepStrictEqual(current.projection.binding,intent.binding) || !isDeepStrictEqual(current.operation,intent.operation))
-    throw new HttpError(409,"Operation definition changed; create a new intent","INTENT_CHANGED");
+  requireFrozenOperation(intent, current);
   const client = new RuntimeClient(owner.domainId,undefined,owner.userId);
   if (intent.confirmation === "required") {
     if (!intent.questionId) return {kind:"not-dispatched",intentId:id,code:"DRAFT_REQUIRES_SAVE",message:"The reader saves this draft in its form."};
@@ -286,24 +303,9 @@ export async function dispatchPanel(owner: AssistantOwner, credentials: Assistan
   }
   const prepared = validateInvocation(current.handler, intent);
   const draft = "call" in intent ? await verifyCreationDraft(intent, current.handler, current.use.pageKey) : undefined;
-  if (!await store.claim(owner,intent)) return replay(await store.get(owner,id));
-  let outcome: PanelOperationOutcome;
-  try {
-    const host = operationHost(executor.credentials);
-    if ("calls" in prepared) {
-      outcome = batchOutcome(await prepared.owner.executeBatch(host, prepared.calls, id), prepared.calls);
-    } else {
-      outcome = await current.handler.execute(host, prepared.target, prepared.call.input, id);
-      if (prepared.target.kind === "draft" && current.handler.kind === "form.save" && outcome.kind === "success") {
-        const created = current.handler.create!.createdObject(outcome.data);
-        if (draft) await assistantService.recordPageDraftCreated(draft.sessionId, draft.runId, draft.path, created.primaryKey, intent.initiator);
-      }
-    }
-  } catch (error) {
-    // An uncertain owner call never releases the irreversible claim.
-    outcome = {kind:"unknown",message:error instanceof Error?error.message:String(error)};
-  }
-  await store.outcome(owner,id,outcome);
+  const result = await claimAndExecutePanel(owner, executor.credentials, intent, current.handler, prepared, draft);
+  if (!result) return replay(await store.get(owner,id));
+  const { outcome } = result;
   if ((outcome.kind === "success" || outcome.kind === "batch") && outcome.affected) {
     for (const target of outcome.affected.objects)
       publishObjectChanged({
@@ -314,6 +316,31 @@ export async function dispatchPanel(owner: AssistantOwner, credentials: Assistan
       });
   }
   return {kind:"dispatched",intentId:id,outcome};
+}
+
+async function claimAndExecutePanel(owner: AssistantOwner, credentials: AssistantCredentials, intent: PanelOperationIntent,
+  handler: PanelServerOperation, prepared: CheckedInvocation, draft?: Awaited<ReturnType<typeof verifyCreationDraft>>,
+) {
+  if (!await store.claim(owner, intent)) return;
+  const id = intent.intentId;
+  let outcome: PanelOperationOutcome;
+  try {
+    const host = operationHost(credentials);
+    if ("calls" in prepared) {
+      outcome = batchOutcome(await prepared.owner.executeBatch(host, prepared.calls, id), prepared.calls);
+    } else {
+      outcome = await handler.execute(host, prepared.target, prepared.call.input, id);
+      if (prepared.target.kind === "draft" && handler.kind === "form.save" && outcome.kind === "success") {
+        const created = handler.create!.createdObject(outcome.data);
+        if (draft) await assistantService.recordPageDraftCreated(draft.sessionId, draft.runId, draft.path, created.primaryKey, owner);
+      }
+    }
+  } catch (error) {
+    // An uncertain owner call never releases the irreversible claim.
+    outcome = {kind:"unknown",message:error instanceof Error?error.message:String(error)};
+  }
+  await store.outcome(owner,id,outcome);
+  return { outcome };
 }
 /** Exact human owner, independent of readable/admin access and of any old run's liveness. */
 export async function ownPanelSettings(owner: AssistantOwner, root: AgentSessionRef) {

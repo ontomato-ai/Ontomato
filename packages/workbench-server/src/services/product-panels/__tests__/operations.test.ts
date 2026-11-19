@@ -21,7 +21,7 @@ vi.mock("../../agent-host/caller",()=>({restoreAgentCaller:mocks.restore,readAge
 vi.mock("../../agent-host/presentation",()=>({publishObjectChanged:mocks.notify}));
 vi.mock("../current",()=>({readCurrentPanel:mocks.panel,readCurrentProjection:mocks.projection}));
 vi.mock("../skill-package",()=>({readComponentCatalogue:mocks.catalogue}));
-import { operatePanel as realOperatePanel, dispatchPanel, inspectPanelOperationImpact, ownPanelSettings } from "../operations";
+import { operatePanel as realOperatePanel, dispatchPanel, inspectPanelOperationImpact, ownPanelSettings, readPanelOperationDescriptor } from "../operations";
 import { panelOperationStore } from "../operation-store";
 configureI18n({defaultLocale:"en",appTextLocale:"en",languageSwitchEnabled:false,packs:{en:{messages:en,...enLocaleMeta}}});
 const uuid=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,"0")}`;
@@ -410,6 +410,21 @@ it("uses the same owner impact for the human read and agent confirmation of the 
     calls: request.calls, executionUserId: "V", operation: { batch: true, inspectImpact: { handlerRef: "test.batch.impact" } },
   });
   expect(handler.executeBatch).not.toHaveBeenCalled();
+});
+
+it("reads the registered owner descriptor for an admitted human panel use", async () => {
+  const { request } = installBatchOwner();
+  const input = { applicationId: request.applicationId, useId: request.useId, operationId: request.operationId };
+  expect(await readPanelOperationDescriptor(owner, credentials, input)).toMatchObject({
+    handlerRef: "test.batch", effect: "write", target: { source: "input", input: "task" },
+    inputSchema: { properties: { status: { type: "number" } } },
+    resultSchema: { properties: { done: { type: "boolean" } } },
+    batch: true, inspectImpact: { handlerRef: "test.batch.impact" },
+  });
+  await expect(readPanelOperationDescriptor(owner, credentials, { ...input, useId: "other" }))
+    .rejects.toMatchObject({ code: "FORBIDDEN" });
+  expect(mocks.pages).not.toHaveBeenCalled();
+  expect(intents.size).toBe(0);
 });
 
 it("dispatches one frozen batch once and merges affected evidence from successful items only", async () => {
