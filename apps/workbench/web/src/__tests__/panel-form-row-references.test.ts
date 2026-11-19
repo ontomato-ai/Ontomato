@@ -82,7 +82,7 @@ async function open(slots: string[], shown = panel, saved: (values: PanelFormVal
     if (projected) return Response.json({ projection: projections[projected[1]!] });
     if (request.path === "/api/data-query/function/form") {
       const { values } = request.body as { values?: PanelFormValues };
-      return ok({ fields, values: values ?? stored, save });
+      return ok({ fields, values: values ?? stored, errors: [], save });
     }
     if (request.path === "/api/data-query/function/save") return saved(request.body as PanelFormValues);
     if (request.path === "/api/data-query/admin/getMetas")

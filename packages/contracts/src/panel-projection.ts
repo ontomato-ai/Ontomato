@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
-import { formFieldErrorSchema, panelFormOptionSchema } from "./form-fields";
+import { formFieldErrorSchema, formValuesSchema, panelFormOptionSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
-import { ontologyParameterTypeSchema, panelFormTargetSchema, panelMessageKeySchema, panelOperationId, type OntologyParameterType, type PanelManifest, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
+import { ontologyParameterTypeSchema, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, singleOntologyParameterTypeSchema, type OntologyParameterType, type PanelManifest, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
+import { platformObjectTypes, type PlatformObjectTypeDeclaration, type PlatformReadDeclaration } from "./platform-object-types";
 import type { ProductProjectionInput } from "./product-panels";
 
 /** Nested JSON in the owner's value shape. Field pointers address this object, including values filled by projections. */
@@ -23,6 +24,102 @@ const fieldPath = formFieldErrorSchema.shape.field;
 const objectType = z.string().min(1);
 
 export { formTimeValueSchema as panelFormTimeValueSchema } from "./form-fields";
+
+const readKey = z.string().min(1).max(200).refine(value => !["__proto__", "constructor", "prototype"].includes(value), "Reserved key");
+const inputRef = z.object({ input: readKey }).strict();
+export const directProjectionParamSchema = z.union([z.object({ literal: runtimeJsonValueSchema }).strict(), inputRef]);
+export const directProjectionDataSchema = z.object({
+  source: z.union([
+    z.object({ type: readKey }).strict(),
+    z.object({ object: z.union([z.object({ literal: panelObjectRefSchema }).strict(), inputRef]) }).strict(),
+    z.object({ operation: readKey }).strict(),
+  ]),
+  read: readKey,
+  params: z.record(readKey, directProjectionParamSchema),
+}).strict();
+export type DirectProjectionData = z.infer<typeof directProjectionDataSchema>;
+
+export const directProjectionPortsSchema = z.object({
+  componentId: z.enum(["@ontomato/sdk:ObjectList", "@ontomato/sdk:ObjectSummary", "@ontomato/sdk:ObjectForm", "@ontomato/sdk:OperationButton"]),
+  inputs: z.record(readKey, z.union([singleOntologyParameterTypeSchema, z.object({ kind: z.literal("json") }).strict()])),
+  outputs: z.record(readKey, singleOntologyParameterTypeSchema),
+  data: z.record(readKey, directProjectionDataSchema),
+  config: runtimeJsonObjectSchema,
+}).strict();
+export type DirectProjectionPorts = z.infer<typeof directProjectionPortsSchema>;
+
+export const panelReadParameterSchemas = { formValues: formValuesSchema, changedField: fieldPath.nullable() };
+
+type DirectObjectSource = Extract<DirectProjectionData["source"], { object: unknown }>["object"];
+
+function directObjectSourceType(projection: DirectProjectionPorts, object: DirectObjectSource): string | undefined {
+  if ("literal" in object) return object.literal.className;
+  const input = projection.inputs[object.input];
+  return input?.kind === "object" ? input.objectType : undefined;
+}
+
+/** Resolve the registered signature for one named projection read. */
+export function directReadDeclaration(projection: DirectProjectionPorts, data: DirectProjectionData): PlatformReadDeclaration | undefined {
+  const { source, read } = data;
+  let owner: PlatformObjectTypeDeclaration | undefined;
+  let sourceKind: PlatformReadDeclaration["source"];
+  let readName = read;
+  if ("type" in source) {
+    sourceKind = "type";
+    owner = platformObjectTypes[source.type];
+  } else if ("object" in source) {
+    const type = directObjectSourceType(projection, source.object);
+    if (type === undefined) return undefined;
+    sourceKind = "object";
+    owner = platformObjectTypes[type];
+  } else {
+    sourceKind = "operation";
+    owner = Object.values(platformObjectTypes).find(type => type.operations?.includes(source.operation));
+    readName = `${source.operation}.${read}`;
+  }
+  const declaration = owner?.reads?.[readName];
+  return declaration?.source === sourceKind ? declaration : undefined;
+}
+
+/** Match a declared read to its owner and verify that every parameter has a supported source. */
+export function validateDirectProjection(projection: DirectProjectionPorts, ctx: z.RefinementCtx): void {
+  const issue = (path: string[], message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
+  for (const [name, data] of Object.entries(projection.data)) {
+    const { source, params } = data;
+    const path = ["data", name];
+    const declaration = directReadDeclaration(projection, data);
+    if (!declaration) {
+      if ("object" in source && directObjectSourceType(projection, source.object) === undefined) {
+        issue([...path, "source", "object"], "The read source needs a declared object input or a literal object reference");
+      } else {
+        issue([...path, "read"], "Read is not registered for the declared source");
+      }
+      continue;
+    }
+    for (const [param, value] of Object.entries(params)) {
+      const parameter = declaration.params[param];
+      if (!parameter) {
+        issue([...path, "params", param], "Parameter is not registered for this read");
+      } else if ("literal" in value) {
+        if (!panelReadParameterSchemas[parameter].safeParse(value.literal).success)
+          issue([...path, "params", param, "literal"], "Value does not match the read parameter type");
+      } else {
+        const input = projection.inputs[value.input];
+        const valid = parameter === "formValues" ? input?.kind === "json" : input?.kind === "scalar" && input.type === "string";
+        if (!valid) issue([...path, "params", param, "input"], "Input does not match the read parameter type");
+      }
+    }
+  }
+}
+
+export const panelRecordSchema = z.object({
+  primaryKey: panelObjectRefSchema.shape.primaryKey,
+  label: z.string(),
+  subtitle: z.string().optional(),
+  fields: z.record(z.string()),
+}).strict();
+export type PanelRecord = z.infer<typeof panelRecordSchema>;
+export const panelRecordListSchema = z.array(panelRecordSchema);
 
 /** The frequency control edits the same value as the scheduled-task control. */
 export {
@@ -123,6 +220,8 @@ const formSaveRequestSchema = z.object({
 export const panelFormDescriptionSchema = z.object({
   fields: z.array(panelFormFieldSchema),
   values: panelFormValuesSchema,
+  /** Owner validation is part of a successful form read, alongside the current values. */
+  errors: z.array(formFieldErrorSchema),
   /** Present only when the owner's save requires the revision returned with these values. */
   revision: z.number().int().positive().safe().optional(),
   save: formSaveRequestSchema,

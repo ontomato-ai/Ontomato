@@ -96,7 +96,7 @@ function owners(request: Sent): Response {
   if (request.path === "/api/assistant/agent-definitions/form") {
     const { target, values } = request.body as { target: { kind: string }; values?: PanelFormValues };
     const create = target.kind === "draft";
-    return Response.json({ fields, values: values ?? (create ? defaults : stored), save: save(create) });
+    return Response.json({ fields, values: values ?? (create ? defaults : stored), errors: [], save: save(create) });
   }
   if (request.path === "/api/assistant/agent-definitions")
     return Response.json({ agents: [definition(AGENT, stored), definition(OTHER, { ...stored, name: "Planner" })] });

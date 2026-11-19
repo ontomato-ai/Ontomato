@@ -2,7 +2,9 @@ import { z } from "zod";
 import { defaultAgentSchema } from "./default-agent";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
-import { ontologyObjectUnionTypeSchema, ontologyParameterTypeSchema, panelManifestSchema, panelMessageKeySchema } from "./panel-manifest";
+import { directPanelManifestSchema, ontologyObjectUnionTypeSchema, ontologyParameterTypeSchema, panelManifestSchema, panelMessageKeySchema } from "./panel-manifest";
+import { PanelLayoutError, parsePanelLayout } from "./panel-layout";
+import { directProjectionPortsSchema, validateDirectProjection } from "./panel-projection";
 import { applicationMetadataSchema } from "./application-metadata";
 import { appsSdkBuildSchema } from "./apps-sdk";
 import { formFieldErrorSchema } from "./form-fields";
@@ -103,6 +105,15 @@ export const productProjectionSchema = z.union([
 ]);
 export type ProductProjection = z.infer<typeof productProjectionSchema>;
 
+const directProjectionInput = directProjectionPortsSchema.extend(editableDefinitionFields);
+export const directProjectionInputSchema = directProjectionInput.superRefine(validateDirectProjection);
+export type DirectProjectionInput = z.infer<typeof directProjectionInputSchema>;
+export const directProjectionSchema = directProjectionInput.extend(currentRecordFields).superRefine(validateDirectProjection);
+export type DirectProjection = z.infer<typeof directProjectionSchema>;
+export const registerDirectProjectionRequestSchema = directProjectionInput.extend({
+  revision: z.number().int().nonnegative(),
+}).superRefine(validateDirectProjection);
+
 const panelContentByteLimit = 256 * 1024;
 const panelText = z.string().refine(value => new TextEncoder().encode(value).byteLength <= panelContentByteLimit,
   "Panel text must not exceed 256 KiB");
@@ -135,6 +146,30 @@ export type ProductPanelInput = z.infer<typeof productPanelInputSchema>;
 
 export const productPanelSchema = productPanelInputSchema.extend(currentRecordFields).strict();
 export type ProductPanel = z.infer<typeof productPanelSchema>;
+
+/** The no-code pilot records need neither executable content nor a pinned SDK version. */
+export const directPanelContentSchema = productPanelContentSchema.omit({ module: true });
+const directPanelDefinitionContent = z.object({ content: directPanelContentSchema, manifest: directPanelManifestSchema }).strict();
+
+function validateDirectLayout(definition: z.infer<typeof directPanelDefinitionContent>, ctx: z.RefinementCtx): void {
+  try {
+    parsePanelLayout(definition.content.html, definition.manifest);
+  } catch (error) {
+    if (!(error instanceof PanelLayoutError)) throw error;
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["content", "html"], message: error.message, params: error.position });
+  }
+}
+
+export const directPanelDefinitionContentSchema = directPanelDefinitionContent.superRefine(validateDirectLayout);
+export type DirectPanelDefinitionContent = z.infer<typeof directPanelDefinitionContentSchema>;
+const directPanelInput = directPanelDefinitionContent.extend(editableDefinitionFields);
+export const directPanelInputSchema = directPanelInput.superRefine(validateDirectLayout);
+export type DirectPanelInput = z.infer<typeof directPanelInputSchema>;
+export const directPanelSchema = directPanelInput.extend(currentRecordFields).superRefine(validateDirectLayout);
+export type DirectPanel = z.infer<typeof directPanelSchema>;
+export const registerDirectPanelRequestSchema = directPanelInput.extend({
+  revision: z.number().int().nonnegative(),
+}).superRefine(validateDirectLayout);
 
 /** Owned by Java ApplicationCatalog; shared panels contain none of these entry facts. */
 export const applicationPanelUseSchema = z.object({

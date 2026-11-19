@@ -30,10 +30,18 @@ export const ONTOLOGY_RELATION_KIND = "platform:OntologyRelationKind";
 
 export const platformOntologyLayers = ["fact", "capability", "governance", "product"] as const;
 
+export interface PlatformReadDeclaration {
+  source: "type" | "object" | "operation";
+  params: Readonly<Record<string, "formValues" | "changedField">>;
+  result: "panelRecordList" | "panelRecord" | "panelFormDescription" | "panelOperationDescriptor";
+}
+
 export interface PlatformObjectTypeDeclaration {
   labelKey?: string;
   /** Set for types that have a declared place in the four-layer ontology. */
   layer?: typeof platformOntologyLayers[number];
+  reads?: Readonly<Record<string, PlatformReadDeclaration>>;
+  operations?: readonly string[];
   /** Named child collections owned by each instance of this type. */
   childCollections?: readonly string[];
 }
@@ -43,9 +51,20 @@ const describeType = (name: string, layer?: PlatformObjectTypeDeclaration["layer
   ...(layer && { layer }),
 });
 
+const runNow: typeof import("./panel-client-requests").RUN_NOW = "schedules.runNow";
+
 /** Type-level metadata shared by projection bindings and ontology catalogues. */
 export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDeclaration>> = {
-  [SCHEDULED_TASK]: describeType("scheduledTask"),
+  [SCHEDULED_TASK]: {
+    ...describeType("scheduledTask"),
+    reads: {
+      list: { source: "type", params: {}, result: "panelRecordList" },
+      record: { source: "object", params: {}, result: "panelRecord" },
+      form: { source: "object", params: { values: "formValues", changedField: "changedField" }, result: "panelFormDescription" },
+      [`${runNow}.describe`]: { source: "operation", params: {}, result: "panelOperationDescriptor" },
+    },
+    operations: [`${SCHEDULED_TASK}.save`, runNow],
+  },
   [MODEL_OPTION]: describeType("modelOption"),
   [MCP_SERVICE_OPTION]: describeType("mcpServiceOption"),
   [OBJECT_TYPE]: describeType("objectType", "fact"),

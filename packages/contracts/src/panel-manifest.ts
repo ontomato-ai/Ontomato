@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema } from "./form-fields";
 import { pageDraftLinkSchema } from "./page-draft";
 import { platformHasChildCollection, platformObjectTypes, platformOntologyLayers } from "./platform-object-types";
@@ -361,3 +362,75 @@ export const panelOpenRequestSchema = z
   })
   .strict();
 export type PanelOpenRequest = z.infer<typeof panelOpenRequestSchema>;
+
+export function matchesDirectPanelValue(type: z.infer<typeof singleOntologyParameterTypeSchema>, value: unknown): boolean {
+  if (value === null) return true;
+  if (type.kind === "object") {
+    const ref = panelObjectRefSchema.safeParse(value);
+    return ref.success && ref.data.className === type.objectType;
+  }
+  if (type.type === "date") return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/u.test(value);
+  return typeof value === type.type && (typeof value !== "number" || Number.isFinite(value));
+}
+
+export const directPanelStateFieldSchema = z.object({
+  type: singleOntologyParameterTypeSchema,
+  personal: z.literal(false).default(false),
+  deepLink: z.boolean().default(false),
+  external: z.boolean().default(false),
+  default: panelStateValueSchema.optional(),
+}).strict().superRefine((field, ctx) => {
+  if (field.default === undefined || field.default === null) return;
+  if (field.type.kind === "object" || !matchesDirectPanelValue(field.type, field.default))
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["default"], message: "Invalid default value for the declared state type" });
+});
+export type DirectPanelStateField = z.infer<typeof directPanelStateFieldSchema>;
+
+const literalValue = z.object({ literal: runtimeJsonValueSchema }).strict();
+const memberInput = z.union([literalValue, panelStateRefSchema]);
+const eventValue = z.union([literalValue, panelStateRefSchema, z.object({ event: z.literal(true) }).strict()]);
+export const directPanelMemberSchema = z.object({
+  target: z.object({ projectionId: key }).strict(),
+  inputs: z.record(key, memberInput).optional(),
+  outputs: z.record(key, panelStateRefSchema).optional(),
+  params: z.object({ width: z.enum(["quarter", "third", "half", "twoThirds", "full", "auto"]) }).strict().optional(),
+}).strict();
+export type DirectPanelMember = z.infer<typeof directPanelMemberSchema>;
+
+const directPanelEventSchema = z.object({
+  on: z.object({ member: key, output: key }).strict(),
+  do: z.union([
+    z.object({ set: z.object({ state: key, value: eventValue }).strict() }).strict(),
+    z.object({ invoke: z.object({ member: key, operation: key, inputs: z.record(key, eventValue) }).strict() }).strict(),
+  ]),
+}).strict();
+
+export const directPanelManifestSchema = z.object({
+  state: z.record(key, directPanelStateFieldSchema),
+  members: z.record(key, directPanelMemberSchema),
+  events: z.record(key, directPanelEventSchema),
+}).strict().superRefine(({ state, members, events }, ctx) => {
+  const requireName = (scope: Record<string, unknown>, name: string, path: string[]) => {
+    if (!Object.hasOwn(scope, name))
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: `Undeclared reference '${name}'` });
+  };
+  for (const [member, declaration] of Object.entries(members)) {
+    for (const [name, input] of Object.entries(declaration.inputs ?? {}))
+      if ("state" in input) requireName(state, input.state, ["members", member, "inputs", name, "state"]);
+    for (const [name, output] of Object.entries(declaration.outputs ?? {}))
+      requireName(state, output.state, ["members", member, "outputs", name, "state"]);
+  }
+  for (const [name, event] of Object.entries(events)) {
+    const path = ["events", name];
+    requireName(members, event.on.member, [...path, "on", "member"]);
+    if ("set" in event.do) {
+      requireName(state, event.do.set.state, [...path, "do", "set", "state"]);
+      if ("state" in event.do.set.value) requireName(state, event.do.set.value.state, [...path, "do", "set", "value", "state"]);
+    } else {
+      requireName(members, event.do.invoke.member, [...path, "do", "invoke", "member"]);
+      for (const [input, ref] of Object.entries(event.do.invoke.inputs))
+        if ("state" in ref) requireName(state, ref.state, [...path, "do", "invoke", "inputs", input, "state"]);
+    }
+  }
+});
+export type DirectPanelManifest = z.infer<typeof directPanelManifestSchema>;

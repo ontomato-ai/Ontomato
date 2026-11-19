@@ -99,9 +99,10 @@ describe("what a panel's frame may ask the platform for", () => {
       context.instance.invoke(operations.find((operation) => operation.handlerRef === "schedules.runNow")!.id),
     ).resolves.toMatchObject({ decision: "confirm", response: { kind: "dispatched", outcome: { kind: "success", data: { runId: run.id } } } });
     expect(sent.some((request) => request.path === `${tasks}/${task.id}/runs`)).toBe(false);
-    // The initial form, save validation and the two post-operation refreshes must all use the same allowed path.
+    // The initial form, save validation and the form's refresh after its own save all use the same allowed path. What the
+    // run changed reaches the frame through the host's refresh port, which this test leaves unwired.
     await vi.waitFor(() => {
-      expect(sent.filter(request => request.path === `${tasks}/applications/${task.appId}/form`)).toHaveLength(4);
+      expect(sent.filter(request => request.path === `${tasks}/applications/${task.appId}/form`)).toHaveLength(3);
       expect(document.querySelector('[data-field="/caseSetId"]')).not.toBeNull();
     });
     // A draft an agent wrote for this page is read the way the SDK reads one.

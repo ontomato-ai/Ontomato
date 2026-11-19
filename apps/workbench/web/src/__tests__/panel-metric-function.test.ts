@@ -76,6 +76,7 @@ function answer(request: Sent) {
     return Response.json({ success: true, data: {
       fields,
       values: create ? defaults : assets.find(asset => asset.id === body.target.primaryKey),
+      errors: [],
       save: { method: "POST", path: "/metricView/save", bodySchema: {}, draftOperation: create ? "metric-view.create" : "metric-view.update" },
     } });
   }

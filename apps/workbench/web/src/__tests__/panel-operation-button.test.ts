@@ -5,7 +5,7 @@ import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { AGENT_DEFINITION, DELETE_AGENT, FUNCTION, TEST_EXECUTE_METRIC_VIEW } from "@ontomato/contracts/panel-client-requests";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
-  ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
+  inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
 import { randomId } from "@ontomato/contracts/random-id";
@@ -96,6 +96,7 @@ function coordinator() {
       return Response.json({ success: true, data: {
         fields: [{ path: "/name", label: "Name", control: { kind: "text" }, valueSchema: {}, required: false, readOnly: false }],
         values: { id: "fn-1", name: "Revenue" },
+        errors: [],
         save: { method: "POST", path: "/function/save", bodySchema: {}, draftOperation: "function.update" },
       } });
     if (request.path === "/api/panel-operations/descriptor")
@@ -126,13 +127,15 @@ async function open(state: Record<string, unknown>, ...slots: string[]) {
   const sent = installPlatform(coordinator());
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
-  platformPanelHost(APPLICATION, use, ignoreChanges).frame(frame, registered(APPLICATION, use, panel), true);
+  // What the host hears an operation changed, at its one refresh port.
+  const hostChanges: unknown[] = [];
+  platformPanelHost(APPLICATION, use, (change) => hostChanges.push(change)).frame(frame, registered(APPLICATION, use, panel), true);
   writePanelDocument(registered(APPLICATION, use, panel), use.path, state as never);
   inside(frame);
   const mounted = await mountPanel(panelOf(...slots));
   const changed: unknown[] = [];
   mounted.context.instance.onObjectChanged((object) => changed.push(object));
-  return { ...mounted, sent, changed };
+  return { ...mounted, sent, changed, hostChanges };
 }
 
 const buttonOf = (slot: number) => document.querySelectorAll<HTMLElement>("#app .sdk-operation-button")[slot]!;
@@ -175,7 +178,7 @@ it("runs a trial from the form the owner targets and the inputs the slot declare
 });
 
 it("names what a delete removes in the host's dialog first, writes nothing on cancel, and dispatches once on confirm", async () => {
-  const { sent, changed } = await open({ selectedAgent: { className: AGENT_DEFINITION, primaryKey: "a" } }, "remove");
+  const { sent, changed, hostChanges } = await open({ selectedAgent: { className: AGENT_DEFINITION, primaryKey: "a" } }, "remove");
   await click(0);
   let box = await dialog();
   expect(box.textContent).toContain(impact.summary);
@@ -195,8 +198,9 @@ it("names what a delete removes in the host's dialog first, writes nothing on ca
   dialogButton(box, "Delete").click();
   await vi.waitFor(() => expect(buttonOf(0).querySelector("[data-outcome=success]")?.textContent).toBe("Done"));
   expect(writes(sent).filter((path) => path.endsWith("/dispatch"))).toHaveLength(1);
-  // What the owner reported it changed is read again.
-  expect(changed).toEqual([agent("a")]);
+  // What the owner reported changed goes to the host's refresh port once; the frame rereads nothing from the receipt.
+  expect(hostChanges).toEqual([{ target: null, affected: { objects: [agent("a")], objectTypes: [AGENT_DEFINITION] } }]);
+  expect(changed).toEqual([]);
 });
 
 it("runs one batch over the checked objects, reports each, and keeps checked the ones it did not change", async () => {
