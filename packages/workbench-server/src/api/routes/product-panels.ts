@@ -2,12 +2,13 @@ import {
   createPanelHumanOperationIntentRequestSchema, dispatchPanelHumanOperationIntentRequestSchema,
   inspectPanelOperationImpactRequestSchema, panelHumanOperationDispatchResponseSchema, panelHumanOperationIntentParamsSchema,
   panelOperationDescriptorResponseSchema, panelOperationRefSchema, panelUseRefSchema,
-  updatePanelOperationSettingsRequestSchema,
+  readPanelOperationRequestSchema, updatePanelOperationSettingsRequestSchema,
 } from "@ontomato/contracts/panel-agent";
 import { agentSessionRefSchema } from "@ontomato/contracts/agent-channel";
+import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import {
   dispatchHumanPanelOperation, inspectPanelOperationImpact, ownPanelSettings, prepareHumanPanelOperation,
-  projectPanelOperationIntent, readPanelOperationDescriptor,
+  projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor,
 } from "../../services/product-panels/operations";
 import { panelOperationStore } from "../../services/product-panels/operation-store";
 import { Router } from "express";
@@ -107,6 +108,14 @@ panelOperationsRouter.get("/panel-operations/descriptor", wrap(async (req, res) 
   const { owner, credentials } = context(req);
   const query = panelOperationRefSchema.parse(req.query);
   res.json(panelOperationDescriptorResponseSchema.parse(await readPanelOperationDescriptor(owner, credentials, query)));
+}));
+panelOperationsRouter.post("/panel-operations/read", wrap(async (req, res) => {
+  const { owner, credentials } = context(req);
+  const input = readPanelOperationRequestSchema.parse(req.body);
+  const preview = req.header(BUILD_TEST_HEADER);
+  const reader = preview === undefined
+    ? credentials : { ...credentials, headers: { ...credentials.headers, [BUILD_TEST_HEADER]: preview } };
+  res.json(await readPanelOperation(owner, reader, input));
 }));
 
 panelOperationsRouter.post("/panel-operations/inspect-impact", wrap(async (req, res) => {

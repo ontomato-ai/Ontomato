@@ -2,7 +2,10 @@ import type { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { panelWriteOperationSnapshotSchema, type PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import type { PanelFormTarget, PanelObjectIdentity, PanelOperation, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
-import type { panelBatchInvocationSchema, panelOperationImpactSchema, panelSingleInvocationSchema } from "@ontomato/contracts/panel-operations";
+import {
+  panelReadOperationDescriptorSchema, type PanelReadOperationResult, type panelBatchInvocationSchema,
+  type panelOperationImpactSchema, type panelReadOperationCallSchema, type panelSingleInvocationSchema,
+} from "@ontomato/contracts/panel-operations";
 import type { OntologyElementRef } from "@ontomato/contracts/product-panels";
 import { scheduledTaskServerOperations } from "@ontomato/platform-schedules/panel-server-operations";
 import { agentDefinitionOperations } from "../assistant/definition-operations";
@@ -34,7 +37,7 @@ interface ServerOperation {
   resultSchema: z.ZodTypeAny;
   execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>, intentId: string): Promise<SinglePanelOperationOutcome>;
 }
-export type PanelServerOperation = ServerOperation & (
+export type PanelWriteServerOperation = ServerOperation & (
   {
     kind: "form.save";
     batch: false;
@@ -56,6 +59,22 @@ export type PanelServerOperation = ServerOperation & (
   ))
 );
 
+type ReadCall = z.infer<typeof panelReadOperationCallSchema>;
+export interface PanelReadServerOperation {
+  handlerRef: string;
+  binding: OntologyElementRef;
+  kind: "action";
+  effect: "read";
+  batch: false;
+  target: { source: "draft"; slot: string };
+  targetSchema: z.ZodType<ReadCall["target"]>;
+  inputSchema: z.ZodType<ReadCall["input"]>;
+  resultSchema: z.ZodType<PanelReadOperationResult>;
+  execute(host: PanelOperationHost, call: ReadCall): Promise<PanelReadOperationResult>;
+}
+
+export type PanelServerOperation = PanelWriteServerOperation | PanelReadServerOperation;
+
 /** Each feature branch adds one entry for its owner's descriptor module. The coordinator owns this structure. */
 const registrations: readonly PanelServerOperation[] = [
   ...scheduledTaskServerOperations,
@@ -69,7 +88,7 @@ export function panelServerOperationSupportsBatch(handlerRef: string): boolean {
   return operations.get(handlerRef)?.batch === true;
 }
 
-export function snapshotPanelWrite(handler: PanelServerOperation, operation: PanelOperation, slot: string) {
+export function snapshotPanelWrite(handler: PanelWriteServerOperation, operation: PanelOperation, slot: string) {
   return panelWriteOperationSnapshotSchema.parse({
     id: operation.id, label: operation.label, kind: handler.kind, slot,
     handlerRef: handler.handlerRef, effect: handler.effect, batch: handler.batch,
@@ -77,6 +96,13 @@ export function snapshotPanelWrite(handler: PanelServerOperation, operation: Pan
     inputSchema: jsonSchema(handler.inputSchema),
     resultSchema: jsonSchema(handler.resultSchema),
     ...(handler.inspectImpact && { inspectImpact: { handlerRef: handler.inspectImpact.handlerRef } }),
+  });
+}
+
+export function describePanelRead(handler: PanelReadServerOperation) {
+  return panelReadOperationDescriptorSchema.parse({
+    handlerRef: handler.handlerRef, effect: handler.effect, batch: handler.batch, target: handler.target,
+    inputSchema: jsonSchema(handler.inputSchema), resultSchema: jsonSchema(handler.resultSchema),
   });
 }
 

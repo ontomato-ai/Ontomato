@@ -6,6 +6,8 @@ import rawExamples from "../../../../../contracts/examples/platform-schedules.js
 import {platformTaskSchema,platformScheduleFormSchema} from "@ontomato/contracts/platform-schedules";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { isPanelHumanOperationIntent, type PanelOperationIntent } from "@ontomato/contracts/panel-agent";
+import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
+import { panelReadOperationInputSchema, panelReadOperationResultSchema } from "@ontomato/contracts/panel-operations";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
 const mocks = vi.hoisted(() => ({draft:vi.fn(),recordCreated:vi.fn(),query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),catalogue:vi.fn(),pages:vi.fn(),restore:vi.fn(),sessionActor:vi.fn(),notify:vi.fn()}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
@@ -23,7 +25,7 @@ vi.mock("../current",()=>({readCurrentPanel:mocks.panel,readCurrentProjection:mo
 vi.mock("../skill-package",()=>({readComponentCatalogue:mocks.catalogue}));
 import {
   operatePanel as realOperatePanel, dispatchPanel, dispatchHumanPanelOperation, inspectPanelOperationImpact, ownPanelSettings,
-  prepareHumanPanelOperation, projectPanelOperationIntent, readPanelOperationDescriptor,
+  prepareHumanPanelOperation, projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor,
 } from "../operations";
 import { panelOperationStore } from "../operation-store";
 configureI18n({defaultLocale:"en",appTextLocale:"en",languageSwitchEnabled:false,packs:{en:{messages:en,...enLocaleMeta}}});
@@ -527,4 +529,41 @@ it("refuses to dispatch an agent intent from the human route", async () => {
   await operatePanel(owner, credentials, current.id, action());
   await expect(dispatchHumanPanelOperation(owner, credentials, action().intentId)).rejects.toMatchObject({ code: "FORBIDDEN" });
   expect(ownerWrites()).toHaveLength(0);
+});
+
+it("runs a registered read using the reader and preview context without creating an intent", async () => {
+  const binding = { kind: "PlatformOperation" as const, id: "metricViews.testExecute" };
+  const input = { applicationId: "A", useId: "tasks", operationId: "run.testExecute", call: {
+    target: { kind: "draft" as const },
+    input: { draft: { name: "Unsaved metric" }, parameters: { amount: 3 }, bindingId: "sample" },
+  } };
+  const preview = { ...credentials, headers: { [BUILD_TEST_HEADER]: "build-preview" } };
+  const execute = vi.fn(async (host: serverOperations.PanelOperationHost, call: typeof input.call) => {
+    await host.request("/api/data-query/metricView/testExecute", { method: "POST", body: JSON.stringify(call.input) });
+    return { kind: "json" as const, value: [{ amount: 3 }] };
+  });
+  vi.spyOn(serverOperations, "panelServerOperation").mockReturnValue({
+    handlerRef: binding.id, effect: "read", kind: "action", batch: false, binding,
+    target: { source: "draft", slot: "form" }, targetSchema: z.object({ kind: z.literal("draft") }).strict(),
+    inputSchema: panelReadOperationInputSchema, resultSchema: panelReadOperationResultSchema, execute,
+  });
+  mocks.projection.mockResolvedValue({
+    id: "run", name: "Trial", componentId: "run", binding, inputs: {},
+  });
+  const ownerRead = vi.fn(async (url, init) => {
+    expect(url).toBe("http://owner.test/metricView/testExecute");
+    expect(new Headers(init.headers).get("tk")).toBe("U-token");
+    expect(new Headers(init.headers).get(BUILD_TEST_HEADER)).toBe("build-preview");
+    expect(JSON.parse(init.body)).toEqual(input.call.input);
+    return Response.json({});
+  });
+  vi.stubGlobal("fetch", ownerRead);
+  expect(await readPanelOperationDescriptor(owner, credentials, input)).toMatchObject({
+    effect: "read", batch: false, target: { source: "draft", slot: "form" },
+  });
+  expect(await readPanelOperation(owner, preview, input)).toEqual({ kind: "json", value: [{ amount: 3 }] });
+  await expect(prepareHumanPanelOperation(owner, credentials, input)).rejects.toMatchObject({ code: "OPERATION_WRITE_REQUIRED" });
+  expect(ownerRead).toHaveBeenCalledOnce();
+  expect(intents.size).toBe(0);
+  expect(mocks.notify).not.toHaveBeenCalled();
 });
