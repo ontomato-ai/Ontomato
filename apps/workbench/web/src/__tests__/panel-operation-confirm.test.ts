@@ -146,6 +146,9 @@ describe("a person's confirmation of a panel operation", () => {
     expect(writes(sent).map(({ method, path, body }) => ({ method, path, body }))).toEqual([
       { method: "POST", path: `/api/panel-operations/intents/${intentId}/dispatch`, body: {} },
     ]);
+    // Node reads the intent back only within the use this frame shows.
+    const reads = sent.filter((request) => request.path === `/api/panel-operation-intents/${intentId}`);
+    expect(reads.map((request) => request.search)).toEqual(["?applicationId=app-agents&useId=use-agents", "?applicationId=app-agents&useId=use-agents"]);
   });
 
   it("tells the frame when Node did not dispatch the confirmed intent", async () => {
