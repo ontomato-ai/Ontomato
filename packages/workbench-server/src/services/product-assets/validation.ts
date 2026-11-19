@@ -10,7 +10,7 @@ import { backendGet, backendPost, buildBackendHeaders } from "../../utils/backen
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
 import { objectViewDocumentSchema, objectViewProductIssues,objectProjectionIssues } from "@ontomato/contracts/object-views";
-import {readDefinition} from './definitions';
+import {readDefinition} from '../business-definitions/definitions';
 import {platformObjectProvider} from './platform-objects';
 import {pageBindingType} from '@ontomato/contracts/product-page-state';
 

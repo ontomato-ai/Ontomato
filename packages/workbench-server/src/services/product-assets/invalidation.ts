@@ -1,7 +1,7 @@
 import {getProduct} from './store';
 import type {ProductOwner} from '../product-governance/grants';
 import {productReferences} from '@ontomato/contracts/product-assets';
-import {readDefinition} from './definitions';
+import {readDefinition} from '../business-definitions/definitions';
 import {DashboardMetricClient} from '../dashboard/metric-client';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 

@@ -6,7 +6,7 @@ import {config} from '../../config/application';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import type {ProductOwner} from '../product-governance/grants';
 import {assertAppBuilderAccess} from '../app-builder/access';
-import {platformObjectProvider,readPlatformObjects,withPlatformProjectionPreferences} from './platform-objects';
+import {platformObjectProvider,readPlatformObjects,withPlatformProjectionPreferences} from '../product-assets/platform-objects';
 import {personalWorkspaceSchema} from '@ontomato/contracts/personal-workspace';
 
 export async function readDefinition(owner:ProductOwner,id:string){
@@ -39,7 +39,7 @@ export async function executeDefinition(owner:ProductOwner,credentials:Assistant
   if(definition.objectType.startsWith('platform:')){
     let preferences;
     if(projectionId){
-      const {getProduct}=await import('./store');const projection=await getProduct(owner,projectionId);
+      const {getProduct}=await import('../product-assets/store');const projection=await getProduct(owner,projectionId);
       if(projection.document.kind!=='collection-view'||projection.document.renders.id!==id)throw new HttpError(400,'Projection Definition mismatch','INVALID_PRODUCT_TARGET');
       const overlay=await db().query(`SELECT preferences FROM ${t('product_user_overlays')} WHERE domain_id=$1 AND principal_id=$2 AND page_id=$3`,[owner.domainId,owner.userId,projectionId]);
       if(overlay.rows[0])preferences=personalWorkspaceSchema.parse(overlay.rows[0].preferences);

@@ -7,7 +7,6 @@ import { productAuthoringSchema, productTypes,productQuerySchema } from "@ontoma
 import { context, wrap } from "../utils/agent-host";
 import { listProducts, getProduct, saveProduct, deleteProduct, personalHome,queryProducts,dependencyProducts,countProductTypes,readProductOverlay,saveProductOverlay } from "../../services/product-assets/store";
 import {personalWorkspaceSchema} from '@ontomato/contracts/personal-workspace';
-import {readDefinition,executeDefinition,saveDefinition} from '../../services/product-assets/definitions';
 import { HttpError } from "../../utils/errors";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import {expandedProductDependencies} from '../../services/product-assets/dependencies';
@@ -17,7 +16,6 @@ import {validatePageState} from '@ontomato/contracts/product-page-state';
 import {productDefinitionStreamRequestSchema,productSubscriptionTargetSchema,type ProductDefinitionStreamFrame} from '@ontomato/contracts/product-subscriptions';
 import {subscribeProduct,resumeProductSubscription,deleteProductSubscription,authorizeDefinitionStream} from '../../services/product-assets/subscriptions';
 import {discoverProjections,validateDefaultProjections} from '../../services/product-assets/projections';
-import {readDefinitionTrigger,saveDefinitionTrigger} from '../../services/product-assets/triggers';
 import {readProductGrantRecords,changeProductGrant,changeProductDomainGrant} from '../../services/product-governance/grants';
 import {requireProductUse} from '../../services/product-assets/grants';
 import {assistantService} from '../../services/assistant/service';
@@ -58,8 +56,6 @@ router.get('/counts',wrap(async(req,res)=>{res.json({counts:await countProductTy
 router.get('/graph',wrap(async(req,res)=>{const {owner,credentials}=context(req);res.json({graph:await registeredProductGraph(owner,await listProducts(owner),credentials)});}));
 router.get('/validation/default-projections',wrap(async(req,res)=>{const c=context(req);res.json(await validateDefaultProjections(c.owner,c.credentials));}));
 router.get('/platform-object-types',wrap(async(_req,res)=>{res.json({objectTypes:platformObjectTypes()});}));
-router.get('/triggers/:id',wrap(async(req,res)=>{res.json({trigger:await readDefinitionTrigger(context(req).owner,String(req.params.id))});}));
-router.put('/triggers/:id',wrap(async(req,res)=>{const c=context(req);const input=z.object({trigger:z.unknown(),revision:z.number().int().nonnegative()}).strict().parse(req.body);if((input.trigger as {id?:string})?.id!==req.params.id)throw new HttpError(400,'Trigger ID mismatch','INVALID_REQUEST');res.json({trigger:await saveDefinitionTrigger(c.owner,c.credentials,input.trigger,input.revision)});}));
 router.get('/projections',wrap(async(req,res)=>{const input=z.object({kind:z.enum(['ObjectType','Definition','MetricView','Action']),id:z.string().min(1).max(200)}).parse(req.query);res.json(await discoverProjections(context(req).owner,input.kind,input.id));}));
 router.post('/subscriptions',wrap(async(req,res)=>{
   const {owner,credentials}=context(req);
@@ -80,9 +76,6 @@ router.post('/definition-stream',wrap(async(req,res)=>{
 }));
 router.get('/subscriptions/:subscriptionId',wrap(async(req,res)=>{const c=context(req);res.json(await resumeProductSubscription(c.owner,String(req.params.subscriptionId),c.credentials));}));
 router.delete('/subscriptions/:subscriptionId',wrap(async(req,res)=>{const c=context(req);await deleteProductSubscription(c.owner,String(req.params.subscriptionId));res.json({success:true});}));
-router.get('/definitions/:id',wrap(async(req,res)=>{res.json({definition:await readDefinition(context(req).owner,String(req.params.id))});}));
-router.put('/definitions/:id',wrap(async(req,res)=>{const c=context(req);const input=z.object({definition:z.unknown(),revision:z.number().int().nonnegative()}).strict().parse(req.body);if((input.definition as {id?:string})?.id!==req.params.id)throw new HttpError(400,'Definition ID mismatch','INVALID_REQUEST');res.json({definition:await saveDefinition(c.owner,c.credentials,input.definition,input.revision)});}));
-router.post('/definitions/:id/query',wrap(async(req,res)=>{const c=context(req);const input=z.object({parameters:z.record(z.unknown()),fields:z.array(z.string().min(1).max(200)).min(1).max(100),offset:z.number().int().nonnegative().default(0),projectionId:z.string().min(1).max(200).optional()}).strict().parse(req.body);res.json(await executeDefinition(c.owner,c.credentials,String(req.params.id),input.parameters,input.fields,input.offset,input.projectionId));}));
 router.get("/home", wrap(async (req,res) => { const c=context(req);res.json({asset:await personalHome(c.owner,c.credentials)}); }));
 router.get("/", wrap(async (req,res) => {const c=context(req);await ensurePlatformAssets(c.owner,c.credentials);res.json({assets:await listProducts(c.owner)}); }));
 router.get('/published/:applicationId',wrap(async(req,res)=>{const c=context(req);const snapshot=await publishedApplication(c.owner,c.credentials,String(req.params.applicationId));res.json({roots:snapshot.roots,assets:snapshot.assets,contracts:snapshot.contracts,triggers:snapshot.triggers??[],issues:await productReleaseIssues(c.owner,snapshot,c.credentials)});}));

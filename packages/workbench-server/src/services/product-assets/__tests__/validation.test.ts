@@ -5,7 +5,7 @@ import {productAssetInputSchema} from '@ontomato/contracts/product-assets';
 import {HttpError} from '../../../utils/errors';
 const mocks=vi.hoisted(()=>({post:vi.fn(),describe:vi.fn(),dashboard:vi.fn()}));
 const definitions=vi.hoisted(()=>({read:vi.fn()}));
-vi.mock('../definitions',()=>({readDefinition:definitions.read}));
+vi.mock('../../business-definitions/definitions',()=>({readDefinition:definitions.read}));
 vi.mock('../../../utils/backend-client',()=>({backendPost:mocks.post,backendGet:vi.fn(),buildBackendHeaders:()=>({tk:'caller'})}));
 vi.mock('../../dashboard/metric-client',()=>({DashboardMetricClient:class{describe=mocks.describe;}}));
 vi.mock('../../dashboard/access',()=>({getOwnedDashboard:mocks.dashboard}));

@@ -10,7 +10,7 @@ import type {ProductOwner} from '../product-governance/grants';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {readProductGrantRecords} from '../product-governance/grants';
 import {DashboardMetricClient} from '../dashboard/metric-client';
-import {readDefinition} from './definitions';
+import {readDefinition} from '../business-definitions/definitions';
 import {platformObjectTypes} from './platform-objects';
 import {assistantStore} from '../assistant/store';
 import {assistantName} from '../assistant/labels';
