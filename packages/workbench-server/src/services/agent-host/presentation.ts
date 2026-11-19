@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { AgentPrepareRequest } from "@ontomato/contracts/agent-channel";
 import type { AgentHostObjectChangedFrame, AgentHostSessionLiveFrame } from "@ontomato/contracts/agent-host";
+import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
+import type { PanelOperationAffected } from "@ontomato/contracts/panel-operations";
 import { isDirectUserRun } from "@ontomato/contracts/agent-visibility";
 import type {
   PresentationBinding, PresentationFrame, PresentationReceipt, PresentationResult,
@@ -56,12 +58,15 @@ export function publishObjectChanged(input: {
   domainId: string;
   initiator: string;
   rootSession: AgentHostObjectChangedFrame["session"];
-  target: AgentHostObjectChangedFrame["target"];
-}): void {
-  const { domainId, initiator, rootSession, target } = input;
+} & (
+  | { target: PanelObjectIdentity; affected?: PanelOperationAffected }
+  | { target: null; affected: PanelOperationAffected }
+)): void {
+  const { domainId, initiator, rootSession, ...change } = input;
+  const frame: AgentHostObjectChangedFrame = { type: "object-changed", session: rootSession, ...change };
   for (const { host, owner, send } of views.values()) {
     if (host === rootSession.providerId && owner.domainId === domainId && owner.userId === initiator)
-      send({ type: "object-changed", session: rootSession, target });
+      send(frame);
   }
 }
 
