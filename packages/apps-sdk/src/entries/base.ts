@@ -19,7 +19,6 @@ export { default as ObjectGraph } from "../base/ObjectGraph.vue";
 export { default as ObjectTree } from "../base/ObjectTree.vue";
 export { default as ObjectTextReader } from "../base/ObjectTextReader.vue";
 export { default as FileUploadControl } from "../base/FileUploadControl.vue";
-export { default as DownloadButton } from "../base/DownloadButton.vue";
 export {
   PathTree,
   buildPathTree,

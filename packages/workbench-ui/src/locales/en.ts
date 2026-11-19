@@ -192,8 +192,7 @@ export default {
     "uploadOverwrite": "Overwrite",
     "uploadConfirmTitle": "Confirm overwrite",
     "uploadInvalidType": "Only {accept} files are supported",
-    "uploadUploading": "Uploading…",
-    "downloadPreparing": "Downloading…"
+    "uploadUploading": "Uploading…"
   },
   "nav": {
     "agentsAndSkills": "Agents and Skills",

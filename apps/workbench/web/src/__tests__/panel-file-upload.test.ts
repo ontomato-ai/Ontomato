@@ -1,8 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { nextTick, ref } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
-import { APP_BRIDGE_CHANNEL } from "@ontomato/contracts/app-bridge";
-import { EXPORT_FEEDBACK, EXPORT_SKILL, IMPORT_SKILL, SKILL } from "@ontomato/contracts/panel-client-requests";
+import { IMPORT_SKILL } from "@ontomato/contracts/panel-client-requests";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
@@ -10,13 +9,10 @@ import {
 } from "./panel-frame";
 
 /*
- * U11 FileUploadControl and DownloadButton through the platform's real host and bridge:
- * - FileUploadControl opens the declared rules dialog first, validates `.zip` before upload, sends multipart FormData
- *   through the real bridge + panel-client-requests admission (`skills.import`), prompts for overwrite confirmation on
+ * U11 FileUploadControl through the platform's real host and bridge:
+ * - Opens the declared rules dialog first, validates `.zip` before upload, sends multipart FormData through the real
+ *   bridge + panel-client-requests admission (`skills.import`), prompts for overwrite confirmation on
  *   `PlatformUploadConflict`, and retries with `overwrite: true` only after confirmation.
- * - DownloadButton never fetches export bytes or triggers `<a download>` inside the sandboxed frame; it sends a
- *   structured host download request (`slot`, `operationId`, `handlerRef`, `target`, `input`) over the bridge for both
- *   single-object export (`skills.export`) and filtered collection export (`feedback.export`).
  */
 
 const current = {
@@ -26,12 +22,11 @@ const current = {
 
 const operationProjection = (
   id: string,
-  componentId: "FileUploadControl" | "DownloadButton",
   operationId: string,
   display: Record<string, unknown>,
   inputs: ProductProjection["inputs"] = {},
 ): ProductProjection => ({
-  ...current, id, name: id, description: "", componentId,
+  ...current, id, name: id, description: "", componentId: "FileUploadControl",
   binding: { kind: "PlatformOperation", id: operationId }, inputs, display,
 });
 
@@ -114,7 +109,7 @@ afterEach(() => {
 it("shows format rules dialog, rejects non-zip files, uploads multipart FormData through the real bridge, and confirms overwrite on conflict", async () => {
   installBlobPreservingMessageChannel();
   const projections = {
-    "skill-import": operationProjection("skill-import", "FileUploadControl", IMPORT_SKILL, {
+    "skill-import": operationProjection("skill-import", IMPORT_SKILL, {
       accept: ".zip",
       label: "import.button",
       intro: "import.intro",
@@ -234,124 +229,4 @@ it("shows format rules dialog, rejects non-zip files, uploads multipart FormData
   await vi.waitFor(() => expect(uploaded.value).toEqual({ skill: { id: "demo-skill" } }));
   expect(importRequests[2]).toEqual({ path: "/api/skills/import", search: "?overwrite=true", method: "POST", fileName: "demo.zip" });
   expect(refreshed).toHaveBeenCalledWith(null);
-});
-
-it("dispatches host download requests without fetching or creating download links inside the frame", async () => {
-  const projections = {
-    "skill-export": operationProjection("skill-export", "DownloadButton", EXPORT_SKILL, {
-      label: "export.skill",
-    }, { skill: { kind: "object", objectType: SKILL } }),
-    "feedback-export": operationProjection("feedback-export", "DownloadButton", EXPORT_FEEDBACK, {
-      label: "export.feedback",
-    }),
-  };
-  const manifest = definePanel({
-    state: {
-      selectedSkill: { kind: "object", objectType: SKILL, deepLink: false },
-    },
-    slots: {
-      exportSkill: { projectionId: "skill-export", inputs: { skill: { state: "selectedSkill" } } },
-      exportFeedback: { projectionId: "feedback-export", inputs: {} },
-    },
-    operations: [],
-  });
-  const panel = panelRecord("panel-download", "Download test", manifest);
-  panel.content.html = `
-    <div id="app">
-      <div class="skill-export"><Projection slot="exportSkill"></Projection></div>
-      <div class="feedback-export"><Projection slot="exportFeedback" :params="feedbackParams"></Projection></div>
-    </div>`;
-  panel.content.messages = {
-    en: {
-      "export.skill": "Export package",
-      "export.feedback": "Export CSV",
-    },
-  };
-  const use = panelUse("use-download", "download-test", panel.id, "/applications/app-test/download");
-
-  const exportHttpCalls: string[] = [];
-  installPlatform(hostWith(projections, (request) => {
-    if (request.path.includes("/export")) {
-      exportHttpCalls.push(request.path);
-      return new Response("unexpected", { status: 200 });
-    }
-    return undefined;
-  }));
-
-  // Intercept the transferred APP_BRIDGE_CHANNEL port to observe host download requests directly.
-  const downloadPayloads: unknown[] = [];
-  let failNextDownload = false;
-  const interceptConnect = (event: MessageEvent) => {
-    if (event.data?.channel !== APP_BRIDGE_CHANNEL || event.data?.operation !== "connect" || !event.ports[0]) return;
-    const port = event.ports[0];
-    const originalHandler = port.onmessage;
-    port.onmessage = (portEvent) => {
-      if (portEvent.data?.channel === APP_BRIDGE_CHANNEL && portEvent.data?.operation === "download") {
-        downloadPayloads.push(portEvent.data.payload);
-        port.postMessage(
-          failNextDownload
-            ? { channel: APP_BRIDGE_CHANNEL, id: portEvent.data.id, error: "Download denied" }
-            : { channel: APP_BRIDGE_CHANNEL, id: portEvent.data.id, result: null },
-        );
-        return;
-      }
-      originalHandler?.call(port, portEvent);
-    };
-  };
-  window.addEventListener("message", interceptConnect);
-
-  try {
-    const frame = panelFrame();
-    platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-    writePanelDocument(panel, use, use.path, {});
-    inside(frame);
-
-    const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
-    const feedbackParams = ref({ search: "slow", filters: { rating: "dislike" } });
-    const mounted = await mountPanel({ setup: () => ({ feedbackParams }) });
-
-    await vi.waitFor(() => expect(document.querySelector(".skill-export button")?.textContent?.trim()).toBe("Export package"));
-    const skillBtn = document.querySelector<HTMLButtonElement>(".skill-export button")!;
-    const feedbackBtn = document.querySelector<HTMLButtonElement>(".feedback-export button")!;
-
-    // Single-object export is disabled while no skill is selected; collection export is enabled immediately.
-    expect(skillBtn.disabled).toBe(true);
-    expect(feedbackBtn.disabled).toBe(false);
-
-    // Click feedback export -> sends host download request with current filter params; no frame fetch or <a download>.
-    feedbackBtn.click();
-    await vi.waitFor(() => expect(downloadPayloads).toHaveLength(1));
-    expect(downloadPayloads[0]).toEqual({
-      slot: "exportFeedback",
-      operationId: "exportFeedback.export",
-      handlerRef: EXPORT_FEEDBACK,
-      target: null,
-      input: { search: "slow", filters: { rating: "dislike" } },
-    });
-
-    // Select a skill -> skill export enables and sends target identity over the bridge.
-    mounted.context.instance.state.set("selectedSkill", { className: SKILL, primaryKey: "skill-1" });
-    await nextTick();
-    expect(skillBtn.disabled).toBe(false);
-    skillBtn.click();
-    await vi.waitFor(() => expect(downloadPayloads).toHaveLength(2));
-    expect(downloadPayloads[1]).toEqual({
-      slot: "exportSkill",
-      operationId: "exportSkill.export",
-      handlerRef: EXPORT_SKILL,
-      target: { kind: "object", objectType: SKILL, primaryKey: "skill-1" },
-      input: {},
-    });
-
-    // Frame never fetched export endpoints directly and never created a download anchor.
-    expect(exportHttpCalls).toEqual([]);
-    expect(document.querySelector("a[download]")).toBeNull();
-
-    // Host download rejection surfaces cleanly in role="alert".
-    failNextDownload = true;
-    feedbackBtn.click();
-    await vi.waitFor(() => expect(document.querySelector('.feedback-export [role="alert"]')?.textContent).toContain("Download denied"));
-  } finally {
-    window.removeEventListener("message", interceptConnect);
-  }
 });

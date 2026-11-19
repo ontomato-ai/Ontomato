@@ -320,14 +320,4 @@ export const components: readonly ComponentMetadata[] = [
     effects: "Runs the projection's upload operation with the chosen file as the reader and refreshes panel objects on success.",
     bindsElement: ["PlatformOperation:*"],
   }),
-  defineComponentMeta({
-    componentId: "DownloadButton",
-    module: "@ontomato/sdk/base",
-    exportName: "DownloadButton",
-    role: "control",
-    meaning:
-      "Dispatches a host-mediated download request for the declared PlatformOperation (on the selected object or with supplied filter parameters) without fetching export bytes or triggering browser downloads inside the sandboxed frame.",
-    effects: "Asks the host to execute the declared owner download action as the reader.",
-    bindsElement: ["PlatformOperation:*"],
-  }),
 ];

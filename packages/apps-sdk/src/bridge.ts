@@ -3,14 +3,6 @@ import type {AppHost,AppHostSnapshot,AppHostPreferences,AppFrameInsets} from '@o
 import type {AppExecutionContext} from '@ontomato/contracts/build-tests';
 import {randomId} from '@ontomato/contracts/random-id';
 
-let activeBridgeInvoke:((operation:string,payload?:unknown)=>Promise<unknown>)|null=null;
-
-/** Invokes a host bridge operation over the connected application bridge port (never exposes credentials to the frame). */
-export function invokeAppBridge(operation:string,payload?:unknown):Promise<unknown>{
-  if(!activeBridgeInvoke)return Promise.reject(new Error('Application bridge is not connected'));
-  return activeBridgeInvoke(operation,payload);
-}
-
 /** Opaque frames receive data and operations over a port, never the parent's credential or DOM. */
 export async function connectAppBridge():Promise<AppHost>{
   const channel=new MessageChannel();
@@ -47,7 +39,6 @@ export async function connectAppBridge():Promise<AppHost>{
     });
   }
   window.parent.postMessage({channel:APP_BRIDGE_CHANNEL,operation:'connect'},'*',[channel.port2]);
-  activeBridgeInvoke=(operation,payload)=>invoke(operation,payload);
   const initial=await invoke('initialize');snapshot=initial.snapshot;execution=initial.execution;
   const host:AppHost={
     snapshot:()=>snapshot,credential:()=>({type:'anonymous'}),executionContext:()=>execution,
@@ -75,6 +66,6 @@ export async function connectAppBridge():Promise<AppHost>{
       return ()=>{disposed=true;placements.delete(place);observer.disconnect();window.removeEventListener('scroll',place,true);window.removeEventListener('resize',place);if(mounted)void invoke('unmount',{id}).catch(()=>{});};
     },
   };
-  window.addEventListener('pagehide',()=>{closed=true;activeBridgeInvoke=null;channel.port1.close();for(const stream of streams.values())stream.error(new Error('Application closed'));streams.clear();for(const cleanup of streamCleanup.values())cleanup();streamCleanup.clear();for(const call of pending.values()){clearTimeout(call.timer);call.reject(new Error('Application closed'));}pending.clear();},{once:true});
+  window.addEventListener('pagehide',()=>{closed=true;channel.port1.close();for(const stream of streams.values())stream.error(new Error('Application closed'));streams.clear();for(const cleanup of streamCleanup.values())cleanup();streamCleanup.clear();for(const call of pending.values()){clearTimeout(call.timer);call.reject(new Error('Application closed'));}pending.clear();},{once:true});
   return host;
 }
