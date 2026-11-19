@@ -14,6 +14,10 @@ export async function readDefinition(owner:ProductOwner,id:string){
   if(!result.rows[0])throw new HttpError(404,'Published Definition unavailable','DEFINITION_UNAVAILABLE');
   return businessDefinitionSchema.parse(result.rows[0].definition);
 }
+export async function listPublishedDefinitions(owner:ProductOwner){
+  const result=await db().query(`SELECT definition FROM ${t('business_definitions')} WHERE domain_id=$1 AND status='PUBLISHED' ORDER BY id`,[owner.domainId]);
+  return result.rows.map(row=>businessDefinitionSchema.parse(row.definition));
+}
 export async function saveDefinition(owner:ProductOwner,credentials:AssistantCredentials,value:unknown,expectedRevision:number){
   await assertAppBuilderAccess(credentials);
   const definition=businessDefinitionSchema.parse(value);

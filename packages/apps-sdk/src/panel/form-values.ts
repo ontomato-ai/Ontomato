@@ -44,3 +44,31 @@ export function changedPaths(
       .map((field) => field.path),
   );
 }
+
+/**
+ * The owner's description of the field an absolute pointer names, through objects and array rows: a row field's path is
+ * relative to its row, so `/parameters/2/name` is the `/name` item field of the `/parameters` array. Undefined when the
+ * description names no such field.
+ */
+export function fieldAt(fields: readonly PanelFormField[], path: string, base = ""): PanelFormField | undefined {
+  for (const field of fields) {
+    const at = base + field.path;
+    if (path === at) return field;
+    if (!path.startsWith(`${at}/`)) continue;
+    const { control } = field;
+    if (control.kind === "object") return fieldAt(control.fields, path, at);
+    if (control.kind === "object-array") return fieldAt(control.itemFields, path, `${at}/${path.slice(at.length + 1).split("/")[0]}`);
+  }
+  return undefined;
+}
+
+/**
+ * A path after the rows of the array at `arrayPath` were rearranged, `order[next] = previous`: a path inside a row that
+ * moved follows it to its new index, one inside a removed row is gone (null), and any other path is unchanged.
+ */
+export function movedPath(path: string, arrayPath: string, order: readonly number[]): string | null {
+  if (!path.startsWith(`${arrayPath}/`)) return path;
+  const [index, ...rest] = path.slice(arrayPath.length + 1).split("/");
+  const next = order.indexOf(Number(index));
+  return next < 0 ? null : [`${arrayPath}/${next}`, ...rest].join("/");
+}

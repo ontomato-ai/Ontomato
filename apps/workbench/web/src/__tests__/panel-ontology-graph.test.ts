@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { createApp, defineComponent, h, nextTick, provide } from "vue";
-import { createI18n } from "vue-i18n";
+import { defineComponent, h, nextTick } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import {
   ACTION,
@@ -15,7 +14,6 @@ import {
 } from "@ontomato/contracts/platform-object-types";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import type { GraphCanvasEdge, GraphCanvasNode, GraphCanvasPoint } from "@ontomato/foundation-ui/graph/g6";
-import publicEn from "@ontomato/workbench-ui/locales/en";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
   inside,
@@ -39,8 +37,7 @@ import {
  *   edges, internal layer filter (does not mutate panel state), query highlighting without hiding, selectedType output.
  * - Instance mode: default start(), 1-hop neighbors(), incremental merge on unexpanded click without losing or moving
  *   existing nodes, no redundant fetch on already-expanded node, query highlighting without hiding or refetching,
- *   drawn-only legend counts, fit/relayout toolbar actions, and U12 export PNG button (absent without host bridge,
- *   requests host download when bridge is provided).
+ *   drawn-only legend counts, and fit/relayout toolbar actions (no in-frame export button; host triggers exports).
  * - Three-state separation: no neighbors (all ok & 0 edges), owner refused, and read failed shown distinctly and never
  *   collapsed into an empty graph.
  */
@@ -153,10 +150,15 @@ const graphProjection = (
   display,
 });
 
-function hostWith(projections: Record<string, ProductProjection>) {
-  return (request: Sent) => {
+function hostWith(
+  projections: Record<string, ProductProjection>,
+  extra?: (request: Sent) => Response | Promise<Response> | undefined,
+) {
+  return async (request: Sent) => {
     const match = /^\/api\/product-projections\/(.+)$/.exec(request.path);
     if (match && projections[match[1]!]) return Response.json({ projection: projections[match[1]!] });
+    const handled = await extra?.(request);
+    if (handled) return handled;
     return nothingAt(request);
   };
 }
@@ -250,19 +252,9 @@ it("renders type mode in four-layer columns with count statuses, internal layer 
   panel.content.html = `<div id="app"><Projection slot="graph"></Projection></div>`;
   const use = panelUse("use-cap-type", "cap-map-type", panel.id, "/ontology/assets/capability-map");
 
-  installPlatform(hostWith(projections));
-  const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, { mode: "type" });
-  inside(frame);
-
-  const { registerPlatformObjectAdapter } = await import(
-    "../../../../../packages/apps-sdk/src/panel/platform-objects"
-  );
-  registerPlatformObjectAdapter({
-    objectType: ONTOLOGY_TYPE,
-    graph: {
-      schema: async () => ({
+  installPlatform(hostWith(projections, (request) => {
+    if (request.path === "/api/platform-ontology/schema") {
+      return Response.json({
         layers: ["fact", "capability", "governance", "product"],
         objectTypes: [
           { id: OBJECT_TYPE, layer: "fact", labelKey: "platformOntology.types.objectType" },
@@ -287,19 +279,28 @@ it("renders type mode in four-layer columns with count statuses, internal layer 
             derived: true,
           },
         ],
-      }),
-      counts: async () => [
-        { type: OBJECT_TYPE, layer: "fact", status: "ok", count: 12 },
-        { type: ACTION, layer: "capability", status: "refused", reason: "No action permission" },
-        { type: WORKFLOW, layer: "capability", status: "failed", reason: "Upstream 500" },
-        { type: USER, layer: "governance", status: "ok", count: 5 },
-        { type: APPLICATION, layer: "product", status: "unavailable" },
-      ],
-      neighbors: async () => {
-        throw new Error("neighbors should not be called in type mode");
-      },
-    },
-  });
+      });
+    }
+    if (request.path === "/api/platform-ontology/counts") {
+      return Response.json({
+        counts: [
+          { type: OBJECT_TYPE, layer: "fact", status: "ok", count: 12 },
+          { type: ACTION, layer: "capability", status: "refused", reason: "No action permission" },
+          { type: WORKFLOW, layer: "capability", status: "failed", reason: "Upstream 500" },
+          { type: USER, layer: "governance", status: "ok", count: 5 },
+          { type: APPLICATION, layer: "product", status: "unavailable" },
+        ],
+      });
+    }
+    if (request.path === "/api/platform-ontology/neighbors") {
+      throw new Error("neighbors should not be called in type mode");
+    }
+    return undefined;
+  }));
+  const frame = panelFrame();
+  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(panel, use, use.path, { mode: "type" });
+  inside(frame);
 
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const mounted = await mountPanel({});
@@ -377,66 +378,61 @@ it("runs instance mode with default start, incremental neighbor expand, full obj
   panel.content.html = `<div id="app"><Projection slot="graph"></Projection></div>`;
   const use = panelUse("use-cap-instance", "cap-map-inst", panel.id, "/ontology/assets/capability-map");
 
-  installPlatform(hostWith(projections));
-  const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, { mode: "instance" });
-  inside(frame);
-
   const neighborCalls: Array<{ className: string; primaryKey: string }> = [];
-  const { registerPlatformObjectAdapter } = await import(
-    "../../../../../packages/apps-sdk/src/panel/platform-objects"
-  );
-  registerPlatformObjectAdapter({
-    objectType: ONTOLOGY_TYPE,
-    graph: {
-      start: async () => ({
-        className: USER,
-        primaryKey: "u-1",
+  installPlatform(hostWith(projections, (request) => {
+    if (request.path === "/api/platform-ontology/start") {
+      return Response.json({
+        node: { className: USER, primaryKey: "u-1" },
         label: "Alice",
         layer: "governance",
-      }),
-      neighbors: async ({ node }) => {
-        neighborCalls.push(node);
-        if (node.className === USER && node.primaryKey === "u-1") {
-          return {
-            node: { className: USER, primaryKey: "u-1", label: "Alice", layer: "governance" },
-            neighbors: [
-              { className: ROLE, primaryKey: "r-admin", label: "Admin", layer: "governance" },
-            ],
-            edges: [
-              {
-                id: "e-u1-r1",
-                relationKind: "user.holds-role",
-                from: { className: USER, primaryKey: "u-1" },
-                to: { className: ROLE, primaryKey: "r-admin" },
-                direction: "outgoing",
-                derived: false,
-              },
-            ],
-            relations: [{ relationKind: "user.holds-role", status: "ok", edgeCount: 1 }],
-          };
-        }
-        return {
-          node: { className: ROLE, primaryKey: "r-admin", label: "Admin", layer: "governance" },
+      });
+    }
+    if (request.path === "/api/platform-ontology/neighbors") {
+      const { node } = request.body as { node: { className: string; primaryKey: string } };
+      neighborCalls.push(node);
+      if (node.className === USER && node.primaryKey === "u-1") {
+        return Response.json({
+          node: { className: USER, primaryKey: "u-1", label: "Alice", layer: "governance" },
           neighbors: [
-            { className: ACTION, primaryKey: "act-approve", label: "Approve Order", layer: "capability" },
+            { className: ROLE, primaryKey: "r-admin", label: "Admin", layer: "governance" },
           ],
           edges: [
             {
-              id: "e-r1-act1",
-              relationKind: "role.can-execute-action",
-              from: { className: ROLE, primaryKey: "r-admin" },
-              to: { className: ACTION, primaryKey: "act-approve" },
+              id: "e-u1-r1",
+              relationKind: "user.holds-role",
+              from: { className: USER, primaryKey: "u-1" },
+              to: { className: ROLE, primaryKey: "r-admin" },
               direction: "outgoing",
               derived: false,
             },
           ],
-          relations: [{ relationKind: "role.can-execute-action", status: "ok", edgeCount: 1 }],
-        };
-      },
-    },
-  });
+          relations: [{ relationKind: "user.holds-role", status: "ok", edgeCount: 1 }],
+        });
+      }
+      return Response.json({
+        node: { className: ROLE, primaryKey: "r-admin", label: "Admin", layer: "governance" },
+        neighbors: [
+          { className: ACTION, primaryKey: "act-approve", label: "Approve Order", layer: "capability" },
+        ],
+        edges: [
+          {
+            id: "e-r1-act1",
+            relationKind: "role.can-execute-action",
+            from: { className: ROLE, primaryKey: "r-admin" },
+            to: { className: ACTION, primaryKey: "act-approve" },
+            direction: "outgoing",
+            derived: false,
+          },
+        ],
+        relations: [{ relationKind: "role.can-execute-action", status: "ok", edgeCount: 1 }],
+      });
+    }
+    return undefined;
+  }));
+  const frame = panelFrame();
+  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(panel, use, use.path, { mode: "instance" });
+  inside(frame);
 
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const mounted = await mountPanel({});
@@ -448,7 +444,7 @@ it("runs instance mode with default start, incremental neighbor expand, full obj
   await vi.waitFor(() => expect(canvasRecorder.nodes.length).toBe(2));
   expect(neighborCalls).toEqual([{ className: USER, primaryKey: "u-1" }]);
 
-  // Export PNG button MUST NOT exist when host download bridge is absent (U12: no disabled placeholder)
+  // No in-frame Export PNG button: host owns the export action and requests PNG bytes over the bridge
   expect(document.querySelector('[data-graph-action="export-png"]')).toBeNull();
 
   // Record root position before expanding neighbor
@@ -532,49 +528,49 @@ it("separates no-neighbors, owner-refused and read-failed states without collaps
   panel.content.html = `<div id="app"><Projection slot="graph"></Projection></div>`;
   const use = panelUse("use-cap-states", "cap-map-states", panel.id, "/ontology/assets/capability-map");
 
-  installPlatform(hostWith(projections));
+  let scenario: "no-neighbors" | "refused" | "failed-and-refused" = "no-neighbors";
+  installPlatform(hostWith(projections, (request) => {
+    if (request.path === "/api/platform-ontology/start") {
+      return Response.json({
+        node: { className: USER, primaryKey: "u-oss" },
+        label: "admin",
+        layer: "governance",
+      });
+    }
+    if (request.path === "/api/platform-ontology/neighbors") {
+      const { node } = request.body as { node: { className: string; primaryKey: string } };
+      if (scenario === "no-neighbors") {
+        return Response.json({
+          node: { className: node.className, primaryKey: node.primaryKey, label: "admin", layer: "governance" },
+          neighbors: [],
+          edges: [],
+          relations: [{ relationKind: "user.holds-role", status: "ok", edgeCount: 0 }],
+        });
+      }
+      if (scenario === "refused") {
+        return Response.json({
+          node: { className: node.className, primaryKey: node.primaryKey, label: "Bob", layer: "governance" },
+          neighbors: [],
+          edges: [],
+          relations: [{ relationKind: "user.holds-role", status: "refused", edgeCount: 0, reason: "403 Forbidden" }],
+        });
+      }
+      return Response.json({
+        node: { className: node.className, primaryKey: node.primaryKey, label: "Carol", layer: "governance" },
+        neighbors: [],
+        edges: [],
+        relations: [
+          { relationKind: "user.holds-role", status: "refused", edgeCount: 0, reason: "403 Forbidden" },
+          { relationKind: "user.created-action", status: "failed", edgeCount: 0, reason: "Timeout" },
+        ],
+      });
+    }
+    return undefined;
+  }));
   const frame = panelFrame();
   platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
   writePanelDocument(panel, use, use.path, { mode: "instance" });
   inside(frame);
-
-  let scenario: "no-neighbors" | "refused" | "failed-and-refused" = "no-neighbors";
-  const { registerPlatformObjectAdapter } = await import(
-    "../../../../../packages/apps-sdk/src/panel/platform-objects"
-  );
-  registerPlatformObjectAdapter({
-    objectType: ONTOLOGY_TYPE,
-    graph: {
-      start: async () => ({ className: USER, primaryKey: "u-oss", label: "admin", layer: "governance" }),
-      neighbors: async ({ node }) => {
-        if (scenario === "no-neighbors") {
-          return {
-            node: { className: node.className, primaryKey: node.primaryKey, label: "admin", layer: "governance" },
-            neighbors: [],
-            edges: [],
-            relations: [{ relationKind: "user.holds-role", status: "ok", edgeCount: 0 }],
-          };
-        }
-        if (scenario === "refused") {
-          return {
-            node: { className: node.className, primaryKey: node.primaryKey, label: "Bob", layer: "governance" },
-            neighbors: [],
-            edges: [],
-            relations: [{ relationKind: "user.holds-role", status: "refused", edgeCount: 0, reason: "403 Forbidden" }],
-          };
-        }
-        return {
-          node: { className: node.className, primaryKey: node.primaryKey, label: "Carol", layer: "governance" },
-          neighbors: [],
-          edges: [],
-          relations: [
-            { relationKind: "user.holds-role", status: "refused", edgeCount: 0, reason: "403 Forbidden" },
-            { relationKind: "user.created-action", status: "failed", edgeCount: 0, reason: "Timeout" },
-          ],
-        };
-      },
-    },
-  });
 
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const mounted = await mountPanel({});
@@ -601,76 +597,4 @@ it("separates no-neighbors, owner-refused and read-failed states without collaps
     expect(document.querySelector('[data-graph-state="failed"]')).not.toBeNull();
   });
   expect(document.querySelector('[data-graph-state="no-neighbors"]')).toBeNull();
-});
-
-it("shows Export PNG and delegates blob download to the host bridge when downloadFile is provided (U12)", async () => {
-  const { default: OntologyGraph } = await import("../../../../../packages/apps-sdk/src/base/OntologyGraph.vue");
-  const { panelContextKey, projectionKey } = await import("../../../../../packages/apps-sdk/src/panel/context");
-  const { createPanelInstance } = await import("../../../../../packages/apps-sdk/src/panel/instance");
-  const { registerPlatformObjectAdapter } = await import(
-    "../../../../../packages/apps-sdk/src/panel/platform-objects"
-  );
-
-  const proj = graphProjection("cap-graph-export", { exportFilename: "capability-map" });
-  const manifest = definePanel({
-    state: { selected: { kind: "object-union", layers: [...platformOntologyLayers], deepLink: false } },
-    slots: { graph: { projectionId: proj.id, inputs: {}, outputs: { selectedNode: { state: "selected" } } } },
-    operations: [],
-  });
-  const instance = createPanelInstance(manifest, {
-    pageKey: "export-test",
-    url: () => "/export",
-    label: () => "Export",
-    readProjection: async () => proj,
-    recordDraftCreated: async () => {},
-  });
-  registerPlatformObjectAdapter({
-    objectType: ONTOLOGY_TYPE,
-    graph: {
-      start: async () => ({ className: USER, primaryKey: "u-1", label: "Alice", layer: "governance" }),
-      neighbors: async ({ node }) => ({
-        node: { className: node.className, primaryKey: node.primaryKey, label: "Alice", layer: "governance" },
-        neighbors: [],
-        edges: [],
-        relations: [{ relationKind: "user.holds-role", status: "ok", edgeCount: 0 }],
-      }),
-    },
-  });
-
-  const downloaded: Array<{ filename: string; type: string; size: number }> = [];
-  const host = document.createElement("div");
-  document.body.appendChild(host);
-  const app = createApp({
-    setup() {
-      provide(panelContextKey, {
-        panel: { content: { html: "", module: "" }, manifest, sdkVersion: "1.0.0" },
-        manifest,
-        instance,
-        projection: async () => proj,
-        invoke: async () => undefined,
-        projectionsChanged: () => () => {},
-        draft: instance.draft,
-        holdUnsaved: () => () => {},
-        t: (key) => key,
-        resources: async () => {},
-        downloadFile: async ({ filename, blob }) => {
-          downloaded.push({ filename, type: blob.type, size: blob.size });
-        },
-      });
-      provide(projectionKey, { slot: "graph", projection: proj, inputs: {} });
-      return () => h(OntologyGraph, { exportFilename: "capability-map" });
-    },
-  });
-  app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } }));
-  app.mount(host);
-
-  await vi.waitFor(() => expect(canvasRecorder.nodes.length).toBe(1));
-  const exportBtn = host.querySelector<HTMLButtonElement>('[data-graph-action="export-png"]');
-  expect(exportBtn).not.toBeNull();
-  exportBtn!.click();
-  await vi.waitFor(() => expect(downloaded).toHaveLength(1));
-  expect(canvasRecorder.exportCalls).toBe(1);
-  expect(downloaded[0]).toEqual({ filename: "capability-map.png", type: "image/png", size: 9 });
-  expect(document.querySelector("a[download]")).toBeNull();
-  app.unmount();
 });

@@ -1,7 +1,7 @@
 import express from "express";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { runtimeDataDir } from "../../content/layout";
+import { installedAppsSdkDir } from "../../content/layout";
 
 /** Precompressed siblings written next to each SDK text file, in the order a browser may prefer them. */
 const ENCODINGS = [
@@ -21,7 +21,7 @@ function accepts(header: string | undefined, encoding: string) {
  * keep the content type of the original file.
  */
 export function mountAppsSdkStatic(app: express.Express) {
-  const root = runtimeDataDir("apps-sdk");
+  const root = installedAppsSdkDir();
   app.get(/^\/apps-sdk\/.+/, (req, res, next) => {
     const name = req.path.slice("/apps-sdk/".length);
     const versioned = name.includes("/");
