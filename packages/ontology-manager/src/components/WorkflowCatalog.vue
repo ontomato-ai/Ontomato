@@ -56,6 +56,7 @@ const grants = ref<CapabilityGrantRecord[]>([]);
 const grantsUnavailable = ref(false);
 /** Provenance ids are what is stored; names are resolved here so a renamed account reads current. */
 const subjectNames = ref<Record<string, string>>({});
+const subjects = ref<SubjectRecord[]>([]);
 const loading = ref(false);
 const saving = ref(false);
 const editing = ref(false);
@@ -119,14 +120,16 @@ onMounted(async () => {
   await refresh();
   try {
     // Names are a display concern: a missing directory must not block the page.
-    const subjects = await loadSubjects();
+    const directory = await loadSubjects();
+    subjects.value = directory;
     subjectNames.value = Object.fromEntries(
-      subjects.map((subject: SubjectRecord) => [
+      directory.map((subject: SubjectRecord) => [
         subject.id,
         subject.displayName || subject.loginCode || subject.id,
       ])
     );
   } catch {
+    subjects.value = [];
     subjectNames.value = {};
   }
   try {
@@ -228,16 +231,41 @@ function setStepActorPolicyMode(step: WorkflowStepRecord, mode: "none" | "rule" 
   stepActorPolicy(step).mode = mode;
 }
 
-function stepPolicyField(step: WorkflowStepRecord, field: "metricViewId" | "metricRevision" | "principalField" | "agentId" | "instruction") {
+function stepPolicyField(
+  step: WorkflowStepRecord,
+  field:
+    | "metricViewId"
+    | "metricRevision"
+    | "principalField"
+    | "executionPrincipalId"
+    | "agentId"
+    | "instruction",
+) {
   return stepActorPolicy(step)[field];
 }
 
 function setStepPolicyField(
   step: WorkflowStepRecord,
-  field: "metricViewId" | "metricRevision" | "principalField" | "agentId" | "instruction",
+  field:
+    | "metricViewId"
+    | "metricRevision"
+    | "principalField"
+    | "executionPrincipalId"
+    | "agentId"
+    | "instruction",
   value: string,
 ) {
   stepActorPolicy(step)[field] = value;
+}
+
+function policyPrincipalLabel(step: WorkflowStepRecord) {
+  const configured = step.actorPolicy?.executionPrincipalId?.trim();
+  if (!configured) return ot("workflowPolicySystemPrincipal");
+  const subject = subjects.value.find(
+    (candidate) => candidate.id === configured || candidate.loginCode === configured,
+  );
+  if (!subject) return configured;
+  return `${subject.displayName || subject.loginCode || subject.id} (${subject.loginCode || subject.id})`;
 }
 
 function addStep() {
@@ -290,10 +318,12 @@ function savedStep(step: WorkflowStepRecord): WorkflowStepRecord {
           principalField: editable.actorPolicy?.principalField?.trim() || "principal",
           parameters: parsePolicyObject(editable.parametersJson, ot("workflowPolicyParameters")),
           valueMap: parsePolicyObject(editable.valueMapJson, ot("workflowPolicyValueMap")) as Record<string, string>,
+          executionPrincipalId: editable.actorPolicy?.executionPrincipalId?.trim() || undefined,
         }
       : mode === "agent"
         ? {
             mode,
+            executionPrincipalId: editable.actorPolicy?.executionPrincipalId?.trim() || undefined,
             agentId: editable.actorPolicy?.agentId?.trim(),
             instruction: editable.actorPolicy?.instruction?.trim(),
           }
@@ -372,7 +402,8 @@ function stepSummary(workflow: WorkflowRecord) {
     .map((step) => {
       const actor = step.actorPolicy?.mode ?? "none";
       const invocation = step.invocationMode ?? "manual";
-      return `${step.name || step.actionId || "-"} [${actor}/${invocation}]`;
+      const principal = actor === "none" ? "" : ` · ${policyPrincipalLabel(step)}`;
+      return `${step.name || step.actionId || "-"} [${actor}/${invocation}${principal}]`;
     })
     .join(" → ");
 }
@@ -605,6 +636,27 @@ function grantSummary(workflow: WorkflowRecord) {
                     @update:model-value="setStepPolicyField(step, 'principalField', $event)"
                   />
                 </el-form-item>
+                <el-form-item :label="ot('workflowPolicyExecutionPrincipal')">
+                  <el-select
+                    :model-value="stepPolicyField(step, 'executionPrincipalId')"
+                    filterable
+                    clearable
+                    allow-create
+                    default-first-option
+                    :placeholder="ot('workflowPolicySystemPrincipal')"
+                    @update:model-value="setStepPolicyField(step, 'executionPrincipalId', $event)"
+                  >
+                    <el-option
+                      v-for="subject in subjects"
+                      :key="subject.id"
+                      :value="subject.id"
+                      :label="`${subject.displayName || subject.loginCode || subject.id} (${subject.loginCode || subject.id})`"
+                    />
+                  </el-select>
+                  <div class="workflow-policy-hint">
+                    {{ ot("workflowPolicyExecutionPrincipalHint") }}
+                  </div>
+                </el-form-item>
                 <el-form-item :label="ot('workflowPolicyParameters')">
                   <el-input
                     :model-value="stepParametersJson(step)"
@@ -624,6 +676,27 @@ function grantSummary(workflow: WorkflowRecord) {
               </div>
 
               <div v-if="stepActorPolicyMode(step) === 'agent'" class="workflow-policy-details">
+                <el-form-item :label="ot('workflowPolicyExecutionPrincipal')">
+                  <el-select
+                    :model-value="stepPolicyField(step, 'executionPrincipalId')"
+                    filterable
+                    clearable
+                    allow-create
+                    default-first-option
+                    :placeholder="ot('workflowPolicySystemPrincipal')"
+                    @update:model-value="setStepPolicyField(step, 'executionPrincipalId', $event)"
+                  >
+                    <el-option
+                      v-for="subject in subjects"
+                      :key="subject.id"
+                      :value="subject.id"
+                      :label="`${subject.displayName || subject.loginCode || subject.id} (${subject.loginCode || subject.id})`"
+                    />
+                  </el-select>
+                  <div class="workflow-policy-hint">
+                    {{ ot("workflowPolicyExecutionPrincipalHint") }}
+                  </div>
+                </el-form-item>
                 <el-form-item :label="ot('workflowAgentId')">
                   <el-input
                     :model-value="stepPolicyField(step, 'agentId')"
@@ -864,6 +937,12 @@ function grantSummary(workflow: WorkflowRecord) {
 }
 .workflow-policy-details textarea {
   font-family: var(--el-font-family-mono, monospace);
+}
+.workflow-policy-hint {
+  margin-top: 4px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.5;
 }
 .workflow-policy-warning {
   grid-column: 1 / -1;

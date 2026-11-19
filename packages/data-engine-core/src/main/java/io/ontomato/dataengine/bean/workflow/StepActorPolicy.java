@@ -28,6 +28,14 @@ public class StepActorPolicy {
     /** Optional mapping from the MetricView value to a principal candidate. */
     private Map<String, String> valueMap;
 
+    /**
+     * Subject used to evaluate the policy.
+     *
+     * <p>This is the caller identity for the MetricView or Agent request, not the actor selected for
+     * the workflow step. Empty means the Praxis system principal configured for the deployment.</p>
+     */
+    private String executionPrincipalId;
+
     /** Ontomato Agent used to choose the actor. */
     private String agentId;
     /** Natural-language assignment policy passed to the Agent as untrusted task data. */

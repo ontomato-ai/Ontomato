@@ -236,6 +236,7 @@ export interface WorkflowStepRecord {
     principalField?: string;
     parameters?: Record<string, unknown>;
     valueMap?: Record<string, string>;
+    executionPrincipalId?: string;
     agentId?: string;
     instruction?: string;
   };
