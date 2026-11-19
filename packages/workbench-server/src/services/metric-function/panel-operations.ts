@@ -287,15 +287,17 @@ export const m5ServerOperations = [
       return statusOutcome(await changeStatus(host, [target.primaryKey], status), target.primaryKey);
     },
     async executeBatch(host: Host, calls: readonly PanelBatchCalls[number][]): Promise<PanelOperationOutcome> {
-      const inputs = calls.map(call => statusInputSchema.parse(call.input));
-      const status = inputs[0]!.status;
-      if (inputs.some(input => input.status !== status))
-        throw new HttpError(400, "A batch must set one status for its metrics", "BATCH_STATUS_MISMATCH");
-      const answer = await changeStatus(host, calls.map(call => call.target.primaryKey), status);
+      // Each call may set its own status; the owner takes one status per request, so the calls go in one request per
+      // status and every call reads its own answer.
+      const statuses = calls.map(call => statusInputSchema.parse(call.input).status);
+      const answers = new Map<string, StatusAnswer>();
+      for (const status of new Set(statuses))
+        answers.set(status, await changeStatus(host, calls.filter((_, index) => statuses[index] === status)
+          .map(call => call.target.primaryKey), status));
       // A batch invocation is nonempty, so the items tuple starts with the first call's answer and spreads the rest.
-      const [first, ...rest] = calls.map(call => ({
+      const [first, ...rest] = calls.map((call, index) => ({
         target: { objectType: call.target.objectType, primaryKey: call.target.primaryKey },
-        outcome: statusOutcome(answer, call.target.primaryKey),
+        outcome: statusOutcome(answers.get(statuses[index]!)!, call.target.primaryKey),
       }));
       return { kind: "batch", items: [first!, ...rest] };
     },

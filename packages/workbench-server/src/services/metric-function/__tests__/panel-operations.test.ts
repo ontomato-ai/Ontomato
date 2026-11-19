@@ -213,15 +213,25 @@ describe("metric and function panel server operations", () => {
     expect(JSON.parse(String(answered.sent[0]?.init.body))).toEqual({ ids: ["m1", "m2"], status: "PENDING_REVIEW" });
   });
 
-  it("refuses a status batch whose calls name different statuses without asking the owner", async () => {
+  it("sends a status batch whose calls name different statuses as one owner request per status", async () => {
     const operation = batchAction(SET_METRIC_VIEW_STATUS);
     const secondMetric = { kind: "object" as const, objectType: METRIC_VIEW, primaryKey: "m2" };
-    const untouched = hostWith(() => Response.json({ success: true, data: { items: [] } }));
-    await expect(operation.executeBatch(untouched.host, [
+    const thirdMetric = { kind: "object" as const, objectType: METRIC_VIEW, primaryKey: "m3" };
+    const grouped = hostWith((_path, init) => {
+      const { ids, status } = JSON.parse(String(init.body)) as { ids: string[]; status: string };
+      return Response.json({ success: true, data: { items: ids.map(id => ({ id, outcome: "success", data: { id, status } })) } });
+    });
+    const outcome = await operation.executeBatch(grouped.host, [
       { target: metricTarget, input: { status: "PUBLISHED" } },
       { target: secondMetric, input: { status: "UNUSED" } },
-    ])).rejects.toMatchObject({ status: 400, code: "BATCH_STATUS_MISMATCH" });
-    expect(untouched.sent).toHaveLength(0);
+      { target: thirdMetric, input: { status: "PUBLISHED" } },
+    ]);
+    expect(grouped.sent.map(sent => JSON.parse(String(sent.init.body)))).toEqual([
+      { ids: ["m1", "m3"], status: "PUBLISHED" },
+      { ids: ["m2"], status: "UNUSED" },
+    ]);
+    expect(outcome.kind === "batch" && outcome.items.map(item => [item.target.primaryKey, item.outcome.kind === "success" && item.outcome.data.status]))
+      .toEqual([["m1", "PUBLISHED"], ["m2", "UNUSED"], ["m3", "PUBLISHED"]]);
   });
 
   it("refuses every call of a status batch the owner refuses wholesale", async () => {
