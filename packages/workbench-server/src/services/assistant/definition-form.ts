@@ -6,7 +6,8 @@ import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { agentDefinitionSave, agentFormJsonSchema, parseAgentDefinitionForm, parseAgentDefinitionUpdateForm } from "./definition-form-schema";
-import { checkedDefinition, readAgentDefinition } from "./definitions";
+import { checkedDefinition, projectAgentDefinitionSkills, readStoredAgentDefinition } from "./definitions";
+import { readAssistantSkillView } from "./skills";
 import { readExecutionOptions } from "./execution-setting";
 import type { AssistantOwner } from "./store";
 
@@ -49,11 +50,13 @@ export async function describeAgentDefinitionForm(
     const { primaryKey } = target;
     if (target.objectType !== AGENT_DEFINITION || !z.string().uuid().safeParse(primaryKey).success)
       throw new HttpError(400, "Invalid agent definition target", "INVALID_REQUEST");
-    definitionRead = readAgentDefinition(primaryKey, owner, credentials.locale);
+    definitionRead = readStoredAgentDefinition(primaryKey, owner, credentials.locale);
   }
   // The form uses the caller's capability. The user picker resolves the selected member separately.
-  const [definition, openOptions] = await Promise.all([
-    definitionRead, checkDraft ? undefined : readExecutionOptions(credentials, null),
+  const [definition, openOptions, skillView] = await Promise.all([
+    definitionRead,
+    checkDraft ? undefined : readExecutionOptions(credentials, null),
+    target.kind === "object" ? readAssistantSkillView(owner.domainId, credentials) : undefined,
   ]);
   let current = initialValues;
   if (definition) {
@@ -61,12 +64,14 @@ export async function describeAgentDefinitionForm(
     current = values;
   }
 
-  let values = submittedValues ?? current;
+  let values = submittedValues ?? (definition
+    ? { ...current, skills: projectAgentDefinitionSkills(definition, skillView!).skills }
+    : current);
   if (checkDraft) {
     const input = target.kind === "draft"
       ? parseAgentDefinitionForm(submittedValues)
       : parseAgentDefinitionUpdateForm(submittedValues);
-    const checked = await checkedDefinition(input, owner, credentials, current.executionUserId, current.skills);
+    const checked = await checkedDefinition(input, owner, credentials, current.executionUserId, current.skills, skillView);
     values = { ...input, ...checked };
   }
   const { canSetExecutionUser } = openOptions ?? await readExecutionOptions(credentials, null);

@@ -152,7 +152,7 @@ router.get(
   "/agent-definitions",
   agentAdmin,
   wrap(async (req, res) => {
-    res.json(await listAgentDefinitions(context(req).owner, context(req).credentials.locale));
+    res.json(await listAgentDefinitions(context(req).owner, context(req).credentials));
   }),
 );
 router.delete(
@@ -167,7 +167,7 @@ router.get(
   "/agent-definitions/:agentId",
   agentAdmin,
   wrap(async (req, res) => {
-    res.json(await readAgentDefinition(id(req, "agentId"), context(req).owner, context(req).credentials.locale));
+    res.json(await readAgentDefinition(id(req, "agentId"), context(req).owner, context(req).credentials));
   }),
 );
 router.post(

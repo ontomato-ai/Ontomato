@@ -6,14 +6,19 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { assistantAgentInputSchema } from "@ontomato/contracts/assistant-chat";
 
-const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", pageSkills: vi.fn(), validateSkills: vi.fn().mockResolvedValue([]), setting: vi.fn(), prepare: vi.fn() }));
+const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", skillView: vi.fn(), hiddenSkills: vi.fn(), visibleSkills: vi.fn(), validateSkills: vi.fn().mockResolvedValue([]), setting: vi.fn(), prepare: vi.fn() }));
 vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
 }));
 vi.mock("../../infrastructure/agent-runtime/client", () => ({ RuntimeClient: class { async modelOptions() { return { models: [{ ref: "test/configured", type: "chat", displayName: "Configured" }], defaultModelId: "test/configured" }; } } }));
 vi.mock("../../services/assistant/execution-setting", () => ({ validateExecutionSetting: state.setting, prepareExecutionSetting: state.prepare }));
-vi.mock("../../services/assistant/skills", () => ({ validateAssistantSkills: state.validateSkills, readPageSkills: state.pageSkills }));
+vi.mock("../../services/assistant/skills", () => ({
+  validateAssistantSkills: state.validateSkills,
+  readAssistantSkillView: state.skillView,
+  hasHiddenAssistantSkillRefs: state.hiddenSkills,
+  visibleAssistantSkillRefs: state.visibleSkills,
+}));
 vi.mock("../../services/skills/operations", () => ({ withDomainSkills: async (_domain: string, work: () => Promise<unknown>) => work() }));
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
@@ -60,7 +65,9 @@ describe("agent definitions on PostgreSQL", () => {
         BEGIN INSERT INTO "${state.schema}".skill_writes VALUES (NEW.id); RETURN NEW; END $$;
       CREATE TRIGGER record_skill_write AFTER UPDATE OF skills ON "${state.schema}".assistant_agents
         FOR EACH ROW EXECUTE FUNCTION "${state.schema}".record_skill_write()`);
-    state.pageSkills.mockResolvedValue({ registeredSkills: [], pageSkills: [] });
+    state.skillView.mockResolvedValue({});
+    state.hiddenSkills.mockImplementation((_refs, skillView: { hidden?: boolean }) => skillView.hidden === true);
+    state.visibleSkills.mockImplementation((refs, skillView: { hidden?: boolean }) => skillView.hidden ? [] : refs);
     configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { messages: en, ...enLocaleMeta } } });
     const requirePermission: WorkbenchIdentity["requirePermission"] = () => (_req, _res, next) => next();
     installWorkbenchIdentity({ requireDomainId: () => owner.domainId, requirePermission } as unknown as WorkbenchIdentity);
@@ -107,24 +114,25 @@ describe("agent definitions on PostgreSQL", () => {
     const id = randomUUID();
     expect((await write("POST", id, { ...form, skills: [savedSkill] })).status).toBe(201);
     state.validateSkills.mockClear();
-    state.pageSkills.mockClear();
+    state.skillView.mockClear();
+    state.hiddenSkills.mockClear();
+    state.skillView.mockResolvedValueOnce({ hidden: true });
     const updated = await write("PUT", id, { ...form, name: "Renamed", systemPrompt: "After", modelSelection: { modelId: "test/configured" } });
     expect(updated.status).toBe(200);
+    expect(await updated.json()).toMatchObject({ skills: [] });
     expect(await stored(id)).toMatchObject({
       name: "Renamed", system_prompt: "After", model_selection: { modelId: "test/configured" }, skills: [savedSkill],
     });
     expect(state.validateSkills).not.toHaveBeenCalled();
-    expect(state.pageSkills).not.toHaveBeenCalled();
+    expect(state.hiddenSkills).not.toHaveBeenCalled();
+    expect(state.skillView).toHaveBeenCalledTimes(1);
     expect(await skillWrites(id)).toBe(0);
     expect((await write("POST", randomUUID(), form)).status).toBe(400);
   });
   it("clears an explicitly submitted empty skill array through the existing validator", async () => {
     const id = randomUUID();
     expect((await write("POST", id, { ...form, skills: [savedSkill] })).status).toBe(201);
-    state.pageSkills.mockResolvedValueOnce({
-      registeredSkills: [savedSkill],
-      pageSkills: [{ permissionCode: "visible", skill: savedSkill }],
-    });
+    state.skillView.mockResolvedValueOnce({ hidden: false });
     expect((await write("PUT", id, { ...form, skills: [] })).status).toBe(200);
     expect(state.validateSkills).toHaveBeenLastCalledWith(owner.domainId, [], expect.objectContaining({ token: "editor" }), expect.anything());
     expect((await stored(id)).skills).toEqual([]);
@@ -139,7 +147,7 @@ describe("agent definitions on PostgreSQL", () => {
       expect((await write("POST", id, { ...form, skills: [savedSkill] })).status).toBe(201);
       const before = await stored(id);
       state.prepare.mockClear();
-      state.pageSkills.mockResolvedValueOnce({ registeredSkills: [savedSkill], pageSkills: [] });
+      state.skillView.mockResolvedValueOnce({ hidden: true });
       const refusal = await write("PUT", id, { ...form, name: "Must not persist", executionUserId: "other", skills });
       expect(refusal.status).toBe(403);
       expect(await refusal.text()).not.toContain(savedSkill.name);

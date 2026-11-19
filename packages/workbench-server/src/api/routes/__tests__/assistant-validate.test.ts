@@ -1,6 +1,6 @@
 import express, { type NextFunction, type Request, type Response } from "express";
 import { createServer, type Server } from "node:http";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import type { WorkbenchIdentity } from "../../../identity/types";
@@ -11,9 +11,14 @@ import { errorHandler } from "../../middleware/error-handler";
 import { HttpError } from "../../../utils/errors";
 
 const mocks = vi.hoisted(() => ({ model: vi.fn(), skills: vi.fn(), references: vi.fn(),
-  setting: vi.fn(), options: vi.fn(), prepare: vi.fn(), agent: vi.fn(), pool: vi.fn() }));
+  setting: vi.fn(), options: vi.fn(), skillView: vi.fn(), hiddenSkills: vi.fn(), visibleSkills: vi.fn(), prepare: vi.fn(), agent: vi.fn(), pool: vi.fn() }));
 vi.mock("../../../platform/agent-runtime/model-selection", () => ({ validateModelSelection: mocks.model }));
-vi.mock("../../../services/assistant/skills", () => ({ validateAssistantSkills: mocks.skills }));
+vi.mock("../../../services/assistant/skills", () => ({
+  readAssistantSkillView: mocks.skillView,
+  hasHiddenAssistantSkillRefs: mocks.hiddenSkills,
+  visibleAssistantSkillRefs: mocks.visibleSkills,
+  validateAssistantSkills: mocks.skills,
+}));
 vi.mock("../../../services/assistant/skill-references", () => ({ resolveAssistantSkillReferences: mocks.references }));
 vi.mock("../../../services/assistant/execution-setting", () => ({ validateExecutionSetting: mocks.setting, prepareExecutionSetting: mocks.prepare, readExecutionOptions: mocks.options }));
 vi.mock("../../../services/assistant/store", () => ({ assistantStore: { agent: mocks.agent } }));
@@ -22,6 +27,11 @@ vi.mock("../../../services/skills/operations", () => ({ withDomainSkills: async 
 import assistantRouter from "../assistant";
 
 configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { messages: en, ...enLocaleMeta } } });
+beforeEach(() => {
+  mocks.skillView.mockResolvedValue({});
+  mocks.hiddenSkills.mockReturnValue(false);
+  mocks.visibleSkills.mockImplementation(refs => refs);
+});
 const servers: Server[] = [];
 afterEach(async () => {
   for (const server of servers.splice(0)) await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -202,4 +212,26 @@ it("validates update drafts without filling in an omitted skill selection", asyn
   expect((await request({ target: { id }, form: update })).status).toBe(204);
   expect((await request({ target: {}, form: update })).status).toBe(400);
   expect(mocks.skills).not.toHaveBeenCalled();
+});
+
+it("projects stored form skills through the current caller's skill view without changing the saved values", async () => {
+  const skill = { name: "hidden-page-skill", namespace: { kind: "domain", domainId: "domain" } };
+  const skillView = { currentCaller: "alice" };
+  mocks.skillView.mockResolvedValue(skillView);
+  mocks.visibleSkills.mockReturnValue([]);
+  mocks.options.mockResolvedValue({ canSetExecutionUser: false, users: [] });
+  mocks.agent.mockResolvedValue({
+    id, kind: "custom", name: "Stored assistant", description: "", icon: null, enabled: true,
+    class_names: [], enabled_mcp_service_ids: [], sort_order: 0, system_prompt: "Before",
+    skills: [skill], model_selection: { modelId: null }, execution_user_id: null,
+  });
+  const request = await app();
+  const response = await request({
+    target: { kind: "object", objectType: "platform:AgentDefinition", primaryKey: id }, changedField: null,
+  }, "alice", "/form");
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ values: { skills: [] } });
+  expect(mocks.visibleSkills).toHaveBeenCalledWith([skill], skillView);
+  expect(mocks.skillView).toHaveBeenCalledTimes(1);
+  expect(mocks.pool).not.toHaveBeenCalled();
 });
