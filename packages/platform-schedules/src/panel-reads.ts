@@ -1,5 +1,5 @@
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { formFieldKey, formFieldPointer, type FormField, type FormValues } from "@ontomato/contracts/form-fields";
+import { formFieldKey, formFieldPointer, type FormField, type FormFieldError, type FormValues } from "@ontomato/contracts/form-fields";
 import { panelOwnerOperationDescriptorSchema } from "@ontomato/contracts/panel-operations";
 import type { PanelFormDescription, PanelFormField, PanelRecord } from "@ontomato/contracts/panel-projection";
 import type { PlatformScheduleForm, PlatformTask } from "@ontomato/contracts/platform-schedules";
@@ -51,33 +51,33 @@ const scheduledTaskRunNowDescription = panelOwnerOperationDescriptorSchema.parse
 
 type FormReader = (values: FormValues, changedField: string | null) => Promise<PlatformScheduleForm>;
 
-export class ScheduledTaskDraftRefusal extends Error {
-  constructor(message: string, readonly fieldErrors: Record<string, string>) {
-    super(message);
-  }
-}
-
-async function checkDraft(readForm: FormReader, savedValues: FormValues, draft: FormValues) {
+async function checkDraft(readForm: FormReader, savedValues: FormValues, draft: FormValues): Promise<PlatformScheduleForm> {
   const baseline = await readForm(savedValues, null);
   const changed = baseline.fields.find(field => field.type === "select" && field.refreshOnChange
     && Object.hasOwn(draft, field.key) && draft[field.key] !== baseline.values[field.key]);
   const effective = changed ? await readForm({ ...baseline.values, ...draft }, changed.key) : baseline;
   const allowed = new Set(effective.fields.map(field => field.key));
-  const extra = Object.keys(draft).filter(key => !allowed.has(key));
-  if (extra.length) {
-    throw new ScheduledTaskDraftRefusal(
-      `Draft fields not in the current form: ${extra.join(", ")}`,
-      Object.fromEntries(extra.map(key => [taskFieldPath(key), "Not a field of this form"])),
-    );
+  const submitted: FormValues = {};
+  const errors: FormFieldError[] = [];
+  for (const [key, value] of Object.entries(draft)) {
+    if (allowed.has(key)) {
+      submitted[key] = value;
+    } else {
+      errors.push({
+        field: formFieldPointer("/values/", key), code: "invalid_object", message: "Not a field of this form",
+      });
+    }
   }
-  const answer = changed ? effective : await readForm(draft, null);
-  if (!answer.submittable) {
-    throw new ScheduledTaskDraftRefusal(
-      answer.errors[0]?.message ?? "The scheduled task form is incomplete",
-      Object.fromEntries(answer.errors.map(({ field, message }) => [field.replace(/^\/values\//, "/"), message])),
-    );
+  const answer = changed ? effective : await readForm(submitted, null);
+  // The owner marks an incomplete draft un-submittable without listing missing required values.
+  for (const { key, required, label } of answer.fields) {
+    if (required && !answer.values[key].trim()) {
+      errors.push({
+        field: formFieldPointer("/values/", key), code: "required", message: `${label} is required`,
+      });
+    }
   }
-  return { ...answer, values: { ...answer.values, ...draft } };
+  return { ...answer, values: { ...answer.values, ...submitted }, errors: [...answer.errors, ...errors] };
 }
 
 export function createScheduledTaskReads(api: TaskReadApi) {
@@ -102,6 +102,7 @@ export function createScheduledTaskReads(api: TaskReadApi) {
       return {
         fields: answer.fields.map(typedField),
         values: answer.values,
+        errors: answer.errors.map(error => ({ ...error, field: error.field.replace(/^\/values\//, "/") })),
         revision: task.revision,
         save: scheduledTaskSaveDescription(task.id),
       };
