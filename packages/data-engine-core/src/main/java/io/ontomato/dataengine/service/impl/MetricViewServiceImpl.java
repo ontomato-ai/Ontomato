@@ -18,6 +18,8 @@ import io.ontomato.dataengine.bean.metricView.MetricView;
 import io.ontomato.dataengine.bean.metricView.MetricViewBinding;
 import io.ontomato.dataengine.service.MetricViewBindings;
 import io.ontomato.dataengine.service.MetricViewForm;
+import io.ontomato.dataengine.service.OwnerFieldRefusal;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.ontomato.dataengine.service.PanelFormFields;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -240,9 +242,11 @@ public class MetricViewServiceImpl implements MetricViewService {
     if (kind != WriteKind.IMPORT) {
       Set<String> owned = new HashSet<>();
       if (previous != null) for (var binding : previous.getBindings()) owned.add(binding.getId());
-      for (var binding : metric.getBindings())
-        if (binding.getId() != null && !owned.contains(binding.getId()))
-          throw new OwnerRefusal("METRIC_VIEW_BINDING_NOT_FOUND", "Metric binding not found");
+      List<MetricViewBinding> bindings = metric.getBindings();
+      for (int i = 0; i < bindings.size(); i++)
+        if (bindings.get(i).getId() != null && !owned.contains(bindings.get(i).getId()))
+          throw new OwnerFieldRefusal("METRIC_VIEW_BINDING_NOT_FOUND", "/bindings/" + i + "/id", "target_unavailable",
+              "Metric binding not found");
     }
     Function function = Objects.requireNonNull(metric.getFunction(), "Function is required");
     if (!Function.OPERATION_READ.equals(function.getOperation()))
@@ -259,16 +263,20 @@ public class MetricViewServiceImpl implements MetricViewService {
       }
     }
     function.setDomainId(domain);
-    QueryPackage.prepareReadFunction(function,
-        (List<Map<String, Object>>) adminService.getJSONRule(domain).get("classDef"));
+    try {
+      QueryPackage.prepareReadFunction(function,
+          (List<Map<String, Object>>) adminService.getJSONRule(domain).get("classDef"));
+    } catch (IllegalArgumentException error) {
+      throw new OwnerFieldRefusal("METRIC_VIEW_QUERY_PACKAGE_INVALID", QUERY_PACKAGE, "invalid_object", error.getMessage());
+    }
     if (function.getOrigin() == null) function.setOrigin(Function.ORIGIN_USER);
-    validateBindings(function, metric.getBindings());
-    validateSubjectReferences(function, metric.getBindings());
+    validateBindings(function, metric.getBindings(), true);
+    validateSubjectReferences(function, metric.getBindings(), true);
     List<MetricView> sharing = function.getId() == null ? List.of() : queryList(null, function.getId(), null, domain);
     for (MetricView other : sharing)
       if (!Objects.equals(other.getId(), metric.getId())) {
-        validateBindings(function, other.getBindings());
-        validateSubjectReferences(function, other.getBindings());
+        validateBindings(function, other.getBindings(), false);
+        validateSubjectReferences(function, other.getBindings(), false);
       }
     metric.setOrigin(previous == null ? MetricView.ORIGIN_USER : previous.getOrigin());
     metric.setCreateTimestamp(previous == null ? null : previous.getCreateTimestamp());
@@ -304,35 +312,46 @@ public class MetricViewServiceImpl implements MetricViewService {
    * literal that matches nothing, so the metric would publish happily and then answer "no rows" forever.
    * Catching it while the author is still editing is the difference between a typo and a silent outage.</p>
    */
-  private void validateSubjectReferences(Function function, List<MetricViewBinding> bindings) {
+  private void validateSubjectReferences(Function function, List<MetricViewBinding> bindings, boolean atField) {
     if (function.getParameters() != null) {
       for (Parameter parameter : function.getParameters()) {
         try {
           subjectValues.validate(parameter.getValue());
         } catch (IllegalArgumentException error) {
-          throw new OwnerRefusal("METRIC_VIEW_PARAMETER_INVALID",
+          throw refusal("METRIC_VIEW_PARAMETER_INVALID", atField ? QUERY_PACKAGE : null,
               "Parameter '" + parameter.getName() + "': " + error.getMessage());
         }
       }
     }
     if (bindings == null) return;
-    for (MetricViewBinding binding : bindings) {
-      if (binding.getParameters() == null) continue;
+    for (int i = 0; i < bindings.size(); i++) {
+      if (bindings.get(i).getParameters() == null) continue;
       try {
-        subjectValues.validateValues(binding.getParameters());
+        subjectValues.validateValues(bindings.get(i).getParameters());
       } catch (IllegalArgumentException error) {
-        throw new OwnerRefusal("METRIC_VIEW_PARAMETER_INVALID", error.getMessage());
+        throw refusal("METRIC_VIEW_PARAMETER_INVALID", atField ? "/bindings/" + i + "/parameters" : null, error.getMessage());
       }
     }
   }
 
-  /** The binding rules as this owner's refusal; {@link MetricViewBindings} stays the single judge. */
-  private static void validateBindings(Function function, List<MetricViewBinding> bindings) {
+  /**
+   * The binding rules as this owner's refusal; {@link MetricViewBindings} stays the single judge. {@code atField} names
+   * the saved metric's bindings, a field of its form where the draft check reports the same rule; another metric sharing
+   * the Function, an appended binding and a trial have no field to mark.
+   */
+  private static void validateBindings(Function function, List<MetricViewBinding> bindings, boolean atField) {
     try {
       MetricViewBindings.validate(function, bindings);
     } catch (IllegalArgumentException error) {
-      throw new OwnerRefusal("METRIC_VIEW_BINDING_INVALID", error.getMessage());
+      throw refusal("METRIC_VIEW_BINDING_INVALID", atField ? "/bindings" : null, error.getMessage());
     }
+  }
+
+  /** The metric form's pointer to the definition a saved Function's rules judge. */
+  private static final String QUERY_PACKAGE = "/function/queryPackage";
+
+  private static OwnerRefusal refusal(String code, String field, String message) {
+    return field == null ? new OwnerRefusal(code, message) : new OwnerFieldRefusal(code, field, "invalid_object", message);
   }
 
   /**
@@ -361,7 +380,7 @@ public class MetricViewServiceImpl implements MetricViewService {
       if (binding != null) {
         if (binding.getId() != null) throw new IllegalArgumentException("A new binding cannot choose an ID");
         MetricViewBindings.validate(metric.getFunction(), List.of(binding));
-        validateSubjectReferences(metric.getFunction(), List.of(binding));
+        validateSubjectReferences(metric.getFunction(), List.of(binding), false);
         String parameters = AgentJson.canonical(binding.getParameters());
         if (metric.getBindings().stream()
             .anyMatch(existing -> parameters.equals(AgentJson.canonical(existing.getParameters()))))
@@ -463,13 +482,15 @@ public class MetricViewServiceImpl implements MetricViewService {
       throw new IllegalArgumentException("target.kind: expected object or draft");
     }
     JSONObject values = request.getJSONObject("values");
+    // A stored metric and a refresh carry no verdict; an incoming draft is checked and its errors returned with it.
+    List<ObjectNode> errors = List.of();
     if (values == null) values = PanelFormFields.asset(metric);
-    else if (request.get("changedField") == null) MetricViewForm.checkDraft(values);
+    else if (request.get("changedField") == null) errors = MetricViewForm.fieldErrors(values);
     String readOnlyReason = null;
     if (metric.isWorkflowPending()) readOnlyReason = langService.get(lang, "PanelForm.readOnly.workflowPending");
     else if (MetricView.ORIGIN_SYSTEM.equals(metric.getOrigin()))
       readOnlyReason = langService.get(lang, "MetricView.cannotModifySystem");
-    return MetricViewForm.describe(values, existing, readOnlyReason, lang, langService);
+    return MetricViewForm.describe(values, errors, existing, readOnlyReason, lang, langService);
   }
 
   @Override
@@ -657,7 +678,7 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
     if (metric.isWorkflowPending()) return executePending(metric, bindingId, param, lang, user, permission, target);
     QueryPackage.prepareReadFunction(metric.getFunction(),
         (List<Map<String, Object>>) adminService.getJSONRule(user.getDomainId()).get("classDef"));
-    validateBindings(metric.getFunction(), metric.getBindings());
+    validateBindings(metric.getFunction(), metric.getBindings(), false);
     JSONObject values = subjectValues.metricParameters(metric, bindingId, param, user);
     Function execution = MetricViewBindings.executionFunction(metric.getFunction(), values);
     return abcProgramService.execute(UUID.randomUUID().toString(), execution, user.getId(), permission, target.sandboxId(), lang, timeoutMinutes, user.getDomainId(), new ABCProgramService.ExecutionContext(null, null, target));

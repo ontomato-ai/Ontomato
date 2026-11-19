@@ -18,6 +18,7 @@ import io.ontomato.dataengine.service.impl.FunctionServiceImpl;
 import io.ontomato.dataengine.service.scheduling.OntologyScheduleReferences;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -87,6 +88,25 @@ class FunctionFormTest {
   }
 
   @Test
+  void saveRefusesAQueryPackageAtItsField() {
+    AdminService admin = mock(AdminService.class);
+    when(admin.getJSONRule(anyString())).thenReturn(Map.of("classDef", List.of()));
+    ReflectionTestUtils.setField(service, "adminService", admin);
+    Function unconverted = readFunction();
+    unconverted.setId(null);
+    unconverted.setQueryPackage(null);
+
+    OwnerFieldRefusal refusal = assertThrows(OwnerFieldRefusal.class, () -> service.save(unconverted, "en"));
+
+    assertEquals("FUNCTION_QUERY_PACKAGE_INVALID", refusal.code());
+    assertEquals(1, refusal.errors().size());
+    assertEquals("/queryPackage", refusal.errors().get(0).get("field").asText());
+    assertEquals("invalid_object", refusal.errors().get(0).get("code").asText());
+    assertEquals(refusal.getMessage(), refusal.errors().get(0).get("message").asText());
+    verify(functionDao, never()).save(any(), anyString());
+  }
+
+  @Test
   void deleteRefusesSystemProductAndReferencedFunctions() {
     Function system = readFunction();
     system.setOrigin(Function.ORIGIN_SYSTEM);
@@ -111,6 +131,7 @@ class FunctionFormTest {
     JSONObject form = form(objectTarget("f1"));
 
     assertEquals("Revenue query", form.getJSONObject("values").getString("name"));
+    assertEquals(List.of(), form.get("errors"));
     assertTrue(field(form, "/name").getBooleanValue("required"));
     JSONObject operation = field(form, "/operation");
     assertEquals("select", operation.getJSONObject("control").getString("kind"));
@@ -294,7 +315,7 @@ class FunctionFormTest {
     List<ObjectNode> errors = draftErrors(values);
 
     assertEquals(1, errors.size());
-    assertEquals("/function", errors.get(0).get("field").asText());
+    assertEquals("/", errors.get(0).get("field").asText());
     assertEquals("invalid_object", errors.get(0).get("code").asText());
     assertTrue(errors.get(0).get("message").asText().contains("registered by the publication service"));
   }
@@ -304,13 +325,15 @@ class FunctionFormTest {
     assertEquals(code, refusal.code());
   }
 
+  /** A draft the owner does not accept is still a form read: its values come back with the errors. */
+  @SuppressWarnings("unchecked")
   private List<ObjectNode> draftErrors(JSONObject values) {
     JSONObject request = JSONObject.of("target", JSONObject.of("kind", "draft"));
     request.put("values", values);
     request.put("changedField", null);
-    PanelFormException error = assertThrows(PanelFormException.class, () -> service.form(request, "en", "domain-a"));
-    assertEquals("Invalid Function draft", error.getMessage());
-    return error.fields();
+    JSONObject form = service.form(request, "en", "domain-a");
+    assertSame(values, form.getJSONObject("values"));
+    return (List<ObjectNode>) form.get("errors");
   }
 
   private static void assertError(List<ObjectNode> fields, String field, String code) {

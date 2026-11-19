@@ -2,6 +2,7 @@ package io.ontomato.dataengine.service;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.bean.metricView.MetricView;
@@ -31,13 +32,18 @@ public final class MetricViewForm {
         "function", function);
   }
 
+  /**
+   * The form for {@code values} with the field errors the owner found in them. A draft may be malformed, so the fields
+   * read only what is well formed and the errors say what is not.
+   */
   public static JSONObject describe(
       JSONObject values,
+      List<ObjectNode> errors,
       boolean existing,
       String readOnlyReason,
       String lang,
       LangService langService) {
-    JSONObject function = values.getJSONObject("function");
+    JSONObject function = object(values, "function");
     if (function == null) function = new JSONObject();
     boolean legacy = legacy(function);
     JSONArray parameterDefs = parameterDefs(function);
@@ -103,7 +109,7 @@ public final class MetricViewForm {
               false));
     fields.add(textField("/function/logic", text(langService, lang, "PanelForm.logic"), true, false, readOnlyReason, null));
     fields.add(bindingsField(parameterDefs, readOnlyReason, lang, langService));
-    return description(fields, values, save(existing));
+    return JSONObject.of("fields", fields, "values", values, "errors", errors, "save", save(existing));
   }
 
   private static JSONObject bindingsField(
@@ -165,8 +171,8 @@ public final class MetricViewForm {
         false);
   }
 
-  /** Check an incoming draft without saving it; reject with the field paths that fail. */
-  public static void checkDraft(JSONObject values) {
+  /** The field errors of an incoming draft, empty when the owner accepts it; nothing is saved. */
+  public static List<ObjectNode> fieldErrors(JSONObject values) {
     PanelFormErrors errors = new PanelFormErrors();
     errors.requiredString(values, "name", "/name");
     errors.optionalString(values, "description", "/description");
@@ -178,19 +184,18 @@ public final class MetricViewForm {
     errors.stringArray(values, "matchQuestions", "/matchQuestions");
     checkFunctionShape(values, errors);
     checkBindingShapes(values, errors);
-    errors.throwIfAny("Invalid MetricView draft");
+    if (!errors.isEmpty()) return errors.list();
 
     Function function;
     try {
       function = Function.fromAsset(values);
     } catch (RuntimeException error) {
       errors.invalidObject("/function", error);
-      errors.throwIfAny("Invalid MetricView draft");
-      return;
+      return errors.list();
     }
     if (!Function.OPERATION_READ.equals(function.getOperation())) {
       errors.invalidOption("/function/operation", "expected OPERATION_READ");
-      errors.throwIfAny("Invalid MetricView draft");
+      return errors.list();
     }
     MetricView metric;
     try {
@@ -198,8 +203,7 @@ public final class MetricViewForm {
       metric.setFunction(function);
     } catch (RuntimeException error) {
       errors.invalidObject("/bindings", error);
-      errors.throwIfAny("Invalid MetricView draft");
-      return;
+      return errors.list();
     }
     List<MetricViewBinding> bindings = metric.getBindings() == null ? List.of() : metric.getBindings();
     try {
@@ -207,7 +211,7 @@ public final class MetricViewForm {
     } catch (RuntimeException error) {
       errors.invalidObject("/bindings", error);
     }
-    errors.throwIfAny("Invalid MetricView draft");
+    return errors.list();
   }
 
   private static void checkFunctionShape(JSONObject values, PanelFormErrors errors) {
@@ -256,15 +260,21 @@ public final class MetricViewForm {
     return options;
   }
 
+  /** The parameter definitions with a name; a malformed draft contributes only the ones it states well. */
   private static JSONArray parameterDefs(JSONObject function) {
-    JSONObject queryPackage = function.getJSONObject("queryPackage");
-    if (queryPackage != null) {
-      JSONObject manifest = queryPackage.getJSONObject("manifest");
-      JSONArray defs = manifest == null ? null : manifest.getJSONArray("parameterDefs");
-      return defs == null ? new JSONArray() : defs;
-    }
-    JSONArray parameters = function.getJSONArray("parameters");
-    return parameters == null ? new JSONArray() : parameters;
+    JSONObject queryPackage = object(function, "queryPackage");
+    JSONObject manifest = queryPackage == null ? null : object(queryPackage, "manifest");
+    Object raw = queryPackage != null ? (manifest == null ? null : manifest.get("parameterDefs")) : function.get("parameters");
+    JSONArray defs = new JSONArray();
+    if (raw instanceof List<?> list)
+      for (Object item : list)
+        if (item instanceof Map<?, ?> && JSONObject.from(item).get("name") instanceof String name && !name.isBlank())
+          defs.add(JSONObject.from(item));
+    return defs;
+  }
+
+  private static JSONObject object(JSONObject parent, String key) {
+    return parent.get(key) instanceof Map<?, ?> ? parent.getJSONObject(key) : null;
   }
 
   private static boolean legacy(JSONObject function) {
@@ -301,10 +311,6 @@ public final class MetricViewForm {
         readOnlyReason,
         help,
         false);
-  }
-
-  private static JSONObject description(JSONArray fields, JSONObject values, JSONObject save) {
-    return JSONObject.of("fields", fields, "values", values, "save", save);
   }
 
   private static JSONObject save(boolean existing) {
