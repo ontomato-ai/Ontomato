@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, shallowRef, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import { ElEmpty } from "element-plus/es/components/empty/index";
@@ -8,14 +8,13 @@ import {
   slotInputState,
   slotOutputState,
   usePanelContext,
-  useProjectionObjectRefresh,
   useProjectionObjects,
   useProjectionSlot,
 } from "../panel/context";
 import {
   adapterPart,
-  selectedKey,
   type PlatformFieldReference,
+  type PlatformGraphStatus,
   type PlatformObjectFacet,
   type PlatformObjectQuery,
   type PlatformObjectQueryResult,
@@ -31,6 +30,8 @@ import { textHighlightSegments } from "./text-highlight";
  */
 const props = withDefaults(
   defineProps<{
+    /** Dynamic object type ID (e.g. `"platform:Action"`) queried through the bound adapter's `query` port. */
+    type?: string | null;
     /** Slot input whose panel state holds the single selected object when `outputs.selected` is not declared. */
     input?: string;
     /** Multi-column table definition; when absent, renders a compact selectable list. */
@@ -65,8 +66,11 @@ const props = withDefaults(
     rowActionLabel?: string;
     /** Optional empty-state description. */
     emptyText?: string;
+    /** Optional prompt shown in dynamic-type mode before a type is selected. */
+    emptyTypeText?: string;
   }>(),
   {
+    type: undefined,
     input: undefined,
     columns: undefined,
     statusField: undefined,
@@ -84,6 +88,7 @@ const props = withDefaults(
     pageSize: undefined,
     rowActionLabel: undefined,
     emptyText: undefined,
+    emptyTypeText: undefined,
   },
 );
 
@@ -110,6 +115,8 @@ const dynamicFacets = shallowRef<readonly PlatformObjectFacet[]>([]);
 const nextCursor = ref<string | undefined>(undefined);
 const loading = ref(true);
 const failure = shallowRef<Error | null>(null);
+const queryStatus = ref<PlatformGraphStatus>("ok");
+const queryReason = ref<string | undefined>(undefined);
 
 const currentPage = ref(1);
 const cursorHistory = ref<(string | undefined)[]>([undefined]);
@@ -126,18 +133,49 @@ const draftFilters = ref<Record<string, string>>(initialFilters());
 const appliedSearch = ref("");
 const appliedFilters = ref<Record<string, string>>(initialFilters());
 
-const selectedState = computed(
-  () => slotOutputState(panel.manifest, slot.slot, "selected")
-    ?? slotInputState(panel.manifest, slot.slot, props.input),
-);
+const typeInputState = computed(() => slotInputState(panel.manifest, slot.slot, "type"));
+const dynamicTypeMode = computed(() => props.type !== undefined || typeInputState.value !== null);
+const activeType = computed<string | null>(() => {
+  if (props.type !== undefined) return props.type || null;
+  if (typeInputState.value) {
+    const value = panel.instance.state.values.value[typeInputState.value];
+    return typeof value === "string" && value ? value : null;
+  }
+  return objectType;
+});
+const hasActiveType = computed(() => !dynamicTypeMode.value || activeType.value !== null);
+
+const selectedState = computed(() => {
+  const output = slotOutputState(panel.manifest, slot.slot, "selected");
+  if (output) return output;
+  if (props.input) return slotInputState(panel.manifest, slot.slot, props.input);
+  if (dynamicTypeMode.value) return slotInputState(panel.manifest, slot.slot, "selected");
+  return slotInputState(panel.manifest, slot.slot);
+});
 const checkedState = computed(() => slotOutputState(panel.manifest, slot.slot, "checked"));
 const localSelected = shallowRef<ObjectListRef | null>(null);
 const localChecked = shallowRef<readonly ObjectListRef[]>([]);
 
-const chosen = computed<string | null>(() => {
-  if (selectedState.value) return selectedKey(panel.instance.state.values.value[selectedState.value]);
-  return localSelected.value?.primaryKey ?? null;
+function rowClassName(row: PlatformObjectRecord): string {
+  return row.className ?? activeType.value ?? objectType;
+}
+
+function refKey(refValue: ObjectListRef): string {
+  return `${refValue.className}\u0000${refValue.primaryKey}`;
+}
+
+function rowIdentityKey(row: PlatformObjectRecord): string {
+  return `${rowClassName(row)}\u0000${row.primaryKey}`;
+}
+
+const chosenRef = computed<ObjectListRef | null>(() => {
+  if (selectedState.value) {
+    const value = panel.instance.state.values.value[selectedState.value];
+    return value && typeof value === "object" ? { className: value.className, primaryKey: value.primaryKey } : null;
+  }
+  return localSelected.value;
 });
+const chosenIdentity = computed<string | null>(() => (chosenRef.value ? refKey(chosenRef.value) : null));
 
 function isRefList(value: unknown): value is readonly ObjectListRef[] {
   return Array.isArray(value);
@@ -151,22 +189,33 @@ const checkedRefs = computed<readonly ObjectListRef[]>(() => {
   return props.checked ?? localChecked.value;
 });
 
-const checkedKeys = computed(() => new Set(checkedRefs.value.map((item) => item.primaryKey)));
+const checkedIdentityKeys = computed(() => new Set(checkedRefs.value.map(refKey)));
 const allVisibleChecked = computed(
-  () => rows.value.length > 0 && rows.value.every((row) => checkedKeys.value.has(row.primaryKey)),
+  () => rows.value.length > 0 && rows.value.every((row) => checkedIdentityKeys.value.has(rowIdentityKey(row))),
 );
 const someVisibleChecked = computed(
-  () => !allVisibleChecked.value && rows.value.some((row) => checkedKeys.value.has(row.primaryKey)),
+  () => !allVisibleChecked.value && rows.value.some((row) => checkedIdentityKeys.value.has(rowIdentityKey(row))),
 );
 
 const requiresQuery = computed(
-  () => props.searchable || Boolean(props.filters?.length) || (props.pageSize !== undefined && props.pageSize > 0),
+  () => dynamicTypeMode.value || props.searchable || Boolean(props.filters?.length) || (props.pageSize !== undefined && props.pageSize > 0),
 );
 const isTable = computed(() => Boolean(props.columns?.length));
 const totalPages = computed(() => (props.pageSize && props.pageSize > 0 ? Math.max(1, Math.ceil(total.value / props.pageSize)) : 1));
 const showPagination = computed(
-  () => props.pageSize !== undefined && props.pageSize > 0 && (total.value > props.pageSize || currentPage.value > 1 || nextCursor.value !== undefined),
+  () =>
+    hasActiveType.value
+    && queryStatus.value === "ok"
+    && props.pageSize !== undefined
+    && props.pageSize > 0
+    && (total.value > props.pageSize || currentPage.value > 1 || nextCursor.value !== undefined),
 );
+const queryStatusLabel = computed(() => {
+  if (queryStatus.value === "refused") return t("platform.graphStatusRefused");
+  if (queryStatus.value === "failed") return t("platform.graphStatusFailed");
+  if (queryStatus.value === "unavailable") return t("platform.graphStatusUnavailable");
+  return "";
+});
 
 const resolvedFilters = computed<readonly ObjectListFilter[]>(() => {
   const facetsByKey = new Map(dynamicFacets.value.map((facet) => [facet.key, facet]));
@@ -225,6 +274,7 @@ function buildQuery(): PlatformObjectQuery {
       }
     : undefined;
   return {
+    ...(dynamicTypeMode.value && activeType.value ? { objectType: activeType.value } : {}),
     ...(search ? { search } : {}),
     ...(Object.keys(activeFilters).length ? { filters: activeFilters } : {}),
     ...(page ? { page } : {}),
@@ -236,6 +286,15 @@ let requestSeq = 0;
 function load() {
   const seq = ++requestSeq;
   failure.value = null;
+  queryStatus.value = "ok";
+  queryReason.value = undefined;
+  if (dynamicTypeMode.value && !activeType.value) {
+    rows.value = [];
+    total.value = 0;
+    nextCursor.value = undefined;
+    loading.value = false;
+    return;
+  }
   if (requiresQuery.value) {
     try {
       adapterPart(objectType, "query");
@@ -249,19 +308,22 @@ function load() {
   void objects.query(activeQuery).then(
     (result) => {
       if (seq !== requestSeq) return;
-      rows.value = result.items;
-      total.value = result.total;
+      const status = result.status ?? "ok";
+      queryStatus.value = status;
+      queryReason.value = result.reason;
+      rows.value = status === "ok" ? result.items : [];
+      total.value = status === "ok" ? result.total : 0;
       if (result.facets) dynamicFacets.value = result.facets;
-      nextCursor.value = result.nextCursor;
+      nextCursor.value = status === "ok" ? result.nextCursor : undefined;
       loading.value = false;
       emit("query", activeQuery, result);
 
-      if (props.fallbackToFirst) {
-        const stillVisible = chosen.value !== null && result.items.some((item) => item.primaryKey === chosen.value);
+      if (props.fallbackToFirst && status === "ok") {
+        const stillVisible = chosenIdentity.value !== null && result.items.some((item) => rowIdentityKey(item) === chosenIdentity.value);
         if (!stillVisible) {
           const first = result.items[0];
-          const next = first ? { className: objectType, primaryKey: first.primaryKey } : null;
-          if ((next?.primaryKey ?? null) !== chosen.value) setSelected(next);
+          const next = first ? { className: rowClassName(first), primaryKey: first.primaryKey } : null;
+          if ((next ? refKey(next) : null) !== chosenIdentity.value) setSelected(next);
         }
       }
     },
@@ -274,7 +336,27 @@ function load() {
 }
 
 onMounted(load);
-useProjectionObjectRefresh(() => true, load);
+watch(activeType, (next, prev) => {
+  if (next === prev) return;
+  draftSearch.value = "";
+  appliedSearch.value = "";
+  draftFilters.value = initialFilters();
+  appliedFilters.value = initialFilters();
+  dynamicFacets.value = [];
+  resetPaging();
+  rows.value = [];
+  total.value = 0;
+  nextCursor.value = undefined;
+  loading.value = Boolean(next);
+  load();
+});
+onBeforeUnmount(
+  panel.instance.onObjectChanged((object) => {
+    if (!object || object.objectType === objectType || (activeType.value && object.objectType === activeType.value)) {
+      load();
+    }
+  }),
+);
 
 function resetPaging() {
   currentPage.value = 1;
@@ -308,35 +390,37 @@ function goPage(nextPage: number) {
   load();
 }
 
-function choose(primaryKey: string) {
-  const next = props.toggleable && chosen.value === primaryKey
+function choose(row: PlatformObjectRecord) {
+  const identity = rowIdentityKey(row);
+  const next = props.toggleable && chosenIdentity.value === identity
     ? null
-    : { className: objectType, primaryKey };
+    : { className: rowClassName(row), primaryKey: row.primaryKey };
   setSelected(next);
 }
 
-function selectWithoutToggle(primaryKey: string) {
-  setSelected({ className: objectType, primaryKey });
+function selectWithoutToggle(row: PlatformObjectRecord) {
+  setSelected({ className: rowClassName(row), primaryKey: row.primaryKey });
 }
 
-function toggleChecked(primaryKey: string, checked: boolean) {
+function toggleChecked(row: PlatformObjectRecord, checked: boolean) {
+  const identity = rowIdentityKey(row);
   if (checked) {
-    if (checkedKeys.value.has(primaryKey)) return;
-    setChecked([...checkedRefs.value, { className: objectType, primaryKey }]);
+    if (checkedIdentityKeys.value.has(identity)) return;
+    setChecked([...checkedRefs.value, { className: rowClassName(row), primaryKey: row.primaryKey }]);
   } else {
-    setChecked(checkedRefs.value.filter((item) => item.primaryKey !== primaryKey));
+    setChecked(checkedRefs.value.filter((item) => refKey(item) !== identity));
   }
 }
 
 function toggleAllVisible(checked: boolean) {
-  const visibleKeys = new Set(rows.value.map((row) => row.primaryKey));
+  const visibleKeys = new Set(rows.value.map(rowIdentityKey));
   if (checked) {
     const added = rows.value
-      .filter((row) => !checkedKeys.value.has(row.primaryKey))
-      .map((row) => ({ className: objectType, primaryKey: row.primaryKey }));
+      .filter((row) => !checkedIdentityKeys.value.has(rowIdentityKey(row)))
+      .map((row) => ({ className: rowClassName(row), primaryKey: row.primaryKey }));
     setChecked([...checkedRefs.value, ...added]);
   } else {
-    setChecked(checkedRefs.value.filter((item) => !visibleKeys.has(item.primaryKey)));
+    setChecked(checkedRefs.value.filter((item) => !visibleKeys.has(refKey(item))));
   }
 }
 
@@ -437,7 +521,7 @@ watch(someVisibleChecked, () => {
       >
         {{ t("platform.listRefresh") }}
       </button>
-      <span v-if="showCount && !loading && !failure" class="sdk-object-list-count" role="status">
+      <span v-if="showCount && hasActiveType && queryStatus === 'ok' && !loading && !failure" class="sdk-object-list-count" role="status">
         {{ t("platform.listTotal", { count: total }) }}
       </span>
       <slot name="toolbar-actions"></slot>
@@ -467,8 +551,20 @@ watch(someVisibleChecked, () => {
     </div>
 
     <p v-if="failure" role="alert" class="sdk-object-list-error">{{ failure.message }}</p>
+    <p v-else-if="dynamicTypeMode && !activeType" class="sdk-object-list-status" data-status="no-type">
+      {{ emptyTypeText ? panel.t(emptyTypeText) : t("platform.listSelectTypePrompt") }}
+    </p>
     <el-skeleton v-else-if="loading" :rows="3" animated></el-skeleton>
-    <el-empty v-else-if="!rows.length" :description="emptyText" :image-size="48"></el-empty>
+    <p
+      v-else-if="queryStatus !== 'ok'"
+      class="sdk-object-list-status"
+      :data-status="queryStatus"
+      :role="queryStatus === 'failed' ? 'alert' : 'status'"
+    >
+      <span class="sdk-object-list-status-label">{{ queryStatusLabel }}</span>
+      <span v-if="queryReason" class="sdk-object-list-status-reason">{{ queryReason }}</span>
+    </p>
+    <el-empty v-else-if="!rows.length" :description="emptyText ? panel.t(emptyText) : undefined" :image-size="48"></el-empty>
 
     <div v-else-if="isTable" class="sdk-object-list-table-wrap">
       <table class="sdk-object-list-table">
@@ -492,17 +588,17 @@ watch(someVisibleChecked, () => {
         <tbody>
           <tr
             v-for="row in rows"
-            :key="row.primaryKey"
-            :aria-selected="row.primaryKey === chosen"
-            :class="{ chosen: row.primaryKey === chosen }"
-            @click="choose(row.primaryKey)"
+            :key="rowIdentityKey(row)"
+            :aria-selected="rowIdentityKey(row) === chosenIdentity"
+            :class="{ chosen: rowIdentityKey(row) === chosenIdentity }"
+            @click="choose(row)"
           >
             <td v-if="selectable" class="sdk-object-list-check-col" @click.stop>
               <input
                 type="checkbox"
                 :aria-label="row.label"
-                :checked="checkedKeys.has(row.primaryKey)"
-                @change="toggleChecked(row.primaryKey, ($event.target as HTMLInputElement).checked)"
+                :checked="checkedIdentityKeys.has(rowIdentityKey(row))"
+                @change="toggleChecked(row, ($event.target as HTMLInputElement).checked)"
               />
             </td>
             <td v-for="column in columns" :key="column.key">
@@ -551,7 +647,7 @@ watch(someVisibleChecked, () => {
               <button
                 type="button"
                 class="sdk-object-list-link-btn sdk-object-list-row-action"
-                @click="selectWithoutToggle(row.primaryKey)"
+                @click="selectWithoutToggle(row)"
               >
                 {{ rowActionLabel }}
               </button>
@@ -564,25 +660,25 @@ watch(someVisibleChecked, () => {
     <ul v-else role="listbox" class="sdk-object-list-items">
       <li
         v-for="row in rows"
-        :key="row.primaryKey"
+        :key="rowIdentityKey(row)"
         class="sdk-object-list-row"
-        :class="{ chosen: row.primaryKey === chosen }"
+        :class="{ chosen: rowIdentityKey(row) === chosenIdentity }"
       >
         <input
           v-if="selectable"
           type="checkbox"
           class="sdk-object-list-row-check"
           :aria-label="row.label"
-          :checked="checkedKeys.has(row.primaryKey)"
-          @change="toggleChecked(row.primaryKey, ($event.target as HTMLInputElement).checked)"
+          :checked="checkedIdentityKeys.has(rowIdentityKey(row))"
+          @change="toggleChecked(row, ($event.target as HTMLInputElement).checked)"
         />
         <button
           type="button"
           role="option"
           class="sdk-object-list-item-btn"
-          :aria-selected="row.primaryKey === chosen"
-          :class="{ chosen: row.primaryKey === chosen }"
-          @click="choose(row.primaryKey)"
+          :aria-selected="rowIdentityKey(row) === chosenIdentity"
+          :class="{ chosen: rowIdentityKey(row) === chosenIdentity }"
+          @click="choose(row)"
         >
           <span class="sdk-object-list-item-head">
             <span class="sdk-object-list-item-label">
@@ -883,6 +979,25 @@ watch(someVisibleChecked, () => {
 .sdk-object-list-error {
   color: var(--el-color-danger);
   margin: 0;
+}
+.sdk-object-list-status {
+  align-items: center;
+  color: var(--el-text-color-secondary);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--el-font-size-small, 12px);
+  gap: 6px;
+  margin: 0;
+  padding: 12px 4px;
+}
+.sdk-object-list-status[data-status="refused"] {
+  color: var(--el-color-warning);
+}
+.sdk-object-list-status[data-status="failed"] {
+  color: var(--el-color-danger);
+}
+.sdk-object-list-status-reason {
+  color: var(--el-text-color-secondary);
 }
 mark {
   background: var(--el-color-warning-light-7, #f8e3c5);

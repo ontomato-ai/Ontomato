@@ -285,6 +285,26 @@ export const components: readonly ComponentMetadata[] = [
     outputs: ["selectedNode", "selected", "selectedType"],
   }),
   defineComponentMeta({
+    componentId: "ObjectRelations",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectRelations",
+    role: "control",
+    meaning:
+      "Lists one-hop relations of the selected node from the bound resource's graph neighbors port, grouped by relation kind with distinct no-neighbors, owner-refused, read-failed and unavailable states, showing edge direction and stored/derived line semantics, and moving selection to a clicked peer node with its complete identity.",
+    effects: "Reads the bound graph source's one-hop neighbors as the reader; writes only the panel's own selection state.",
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
+    outputs: ["selected"],
+  }),
+  defineComponentMeta({
+    componentId: "SegmentedControl",
+    module: "@ontomato/sdk/base",
+    exportName: "SegmentedControl",
+    role: "control",
+    meaning:
+      "Switches one declared scalar panel state between mutually exclusive options supplied by the panel template or display configuration. It binds no ontology element and performs no platform reads.",
+    outputs: ["value"],
+  }),
+  defineComponentMeta({
     componentId: "TwoPaneLayout",
     module: "@ontomato/sdk/base",
     exportName: "TwoPaneLayout",

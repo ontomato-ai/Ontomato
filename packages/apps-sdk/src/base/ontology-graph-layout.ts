@@ -1,9 +1,11 @@
+import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import type { GraphCanvasPoint } from "@ontomato/foundation-ui/graph/g6";
 import type {
   PlatformGraphRelationStatus,
   PlatformGraphTypeSpec,
-  PlatformObjectRef,
 } from "../panel/platform-objects";
+
+type PanelObjectValue = Extract<PanelStateValue, { className: string }>;
 
 const COLUMN_GAP = 280;
 const ROW_GAP = 76;
@@ -13,7 +15,7 @@ const MAX_PER_RING = 12;
 const MIN_NODE_DISTANCE = 110;
 
 /** Collision-free canvas node ID encoding a node's full `{ className, primaryKey }` identity. */
-export function encodeGraphNodeId(ref: PlatformObjectRef): string {
+export function encodeGraphNodeId(ref: PanelObjectValue): string {
   return JSON.stringify([ref.className, ref.primaryKey]);
 }
 

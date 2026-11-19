@@ -199,7 +199,13 @@ export default {
     "graphFit": "Fit view",
     "graphRelayout": "Relayout",
     "graphExportPng": "Export PNG",
-    "graphExpanding": "Loading neighbors..."
+    "graphExpanding": "Loading neighbors...",
+    "listSelectTypePrompt": "Select a type to list its objects",
+    "relationsEmptySelection": "Select a node to inspect its relations",
+    "relationsNoNeighbors": "No neighbors",
+    "relationsOutgoing": "Outgoing",
+    "relationsIncoming": "Incoming",
+    "relationsLoading": "Loading relations..."
   },
   "nav": {
     "agentsAndSkills": "Agents and Skills",

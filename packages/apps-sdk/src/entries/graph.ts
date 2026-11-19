@@ -24,5 +24,4 @@ export type {
   PlatformGraphTypeCount,
   PlatformGraphTypeSpec,
   PlatformObjectGraph,
-  PlatformObjectRef,
 } from "../panel/platform-objects";

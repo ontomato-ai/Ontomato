@@ -39,6 +39,8 @@ export interface PlatformFieldReference {
 export interface PlatformObjectRecord {
   /** The primary key the object's own service uses, as text. */
   primaryKey: string;
+  /** Optional real object type when a dynamic-type query returns objects of a selected type (e.g. `platform:Action`). */
+  readonly className?: string;
   /** What a reader recognises it by, in one line. */
   label: string;
   /** Optional secondary line under the label (for example a description or highlighted excerpt). */
@@ -64,6 +66,8 @@ export interface PlatformObjectQueryPage {
 
 /** Search, filter and paging parameters handed to a resource adapter; the adapter owns all query semantics. */
 export interface PlatformObjectQuery {
+  /** Dynamic object type selected at runtime when listing objects across types (e.g. `platform:Action`). */
+  readonly objectType?: string;
   readonly search?: string;
   readonly filters?: Readonly<Record<string, string>>;
   readonly page?: PlatformObjectQueryPage;
@@ -90,6 +94,9 @@ export interface PlatformObjectQueryResult {
   readonly total: number;
   readonly facets?: readonly PlatformObjectFacet[];
   readonly nextCursor?: string;
+  /** Distinct access/read outcome for dynamic-type queries so refused/failed/unavailable never collapse into empty. */
+  readonly status?: PlatformGraphStatus;
+  readonly reason?: string;
 }
 
 /**
@@ -184,14 +191,10 @@ export interface PlatformObjectOptions {
   resolve(values: readonly RuntimeJsonValue[]): Promise<readonly PlatformObjectOption[]>;
 }
 
-/** Full object identity carried by graph nodes, selections and neighbor queries. */
-export interface PlatformObjectRef {
-  readonly className: string;
-  readonly primaryKey: string;
-}
-
 /** Per-type or per-relation-kind read outcome reported by a graph source; never collapsed into an empty graph. */
 export type PlatformGraphStatus = "ok" | "refused" | "failed" | "unavailable";
+
+type PanelObjectValue = Extract<PanelStateValue, { className: string }>;
 
 /** One node in a graph projection (instance mode). */
 export interface PlatformGraphNode {
@@ -209,8 +212,8 @@ export interface PlatformGraphEdge {
   readonly relationKind: string;
   /** Optional display label or message key; falls back to schema/platform relation labelKey when omitted. */
   readonly label?: string;
-  readonly from: PlatformObjectRef;
-  readonly to: PlatformObjectRef;
+  readonly from: PanelObjectValue;
+  readonly to: PanelObjectValue;
   readonly direction: "outgoing" | "incoming";
   readonly derived?: boolean;
 }
@@ -259,7 +262,7 @@ export interface PlatformGraphTypeCount {
 
 /** Request to expand one hop of neighbors around a node. */
 export interface PlatformGraphNeighborsQuery {
-  readonly node: PlatformObjectRef;
+  readonly node: PanelObjectValue;
   readonly relationKinds?: readonly string[];
   readonly layers?: readonly string[];
 }

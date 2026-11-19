@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElEmpty } from "element-plus/es/components/empty/index";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
-import { matchesObjectType } from "@ontomato/contracts/panel-manifest";
+import { matchesObjectType, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import { platformObjectTypes, platformRelationKinds } from "@ontomato/contracts/platform-object-types";
 import {
   G6GraphCanvas,
@@ -27,8 +27,9 @@ import type {
   PlatformGraphRelationStatus,
   PlatformGraphSchema,
   PlatformGraphTypeCount,
-  PlatformObjectRef,
 } from "../panel/platform-objects";
+
+type PanelObjectValue = Extract<PanelStateValue, { className: string }>;
 import {
   encodeGraphNodeId,
   layoutInstanceRadial,
@@ -50,9 +51,9 @@ const props = withDefaults(
     /** `"type"` draws declared types & relation kinds in layer columns; `"instance"` explores 1-hop neighbors. */
     mode?: "type" | "instance";
     /** Starting node identity for instance mode; when omitted/null, reads the resource's `start()` node. */
-    start?: PlatformObjectRef | null;
+    start?: PanelObjectValue | null;
     /** Currently selected instance node identity. */
-    selected?: PlatformObjectRef | null;
+    selected?: PanelObjectValue | null;
     /** Currently selected type ID in type mode (e.g. `"platform:Action"`). */
     selectedType?: string | null;
     /** Search string that highlights drawn matches without hiding other nodes or querying upstream. */
@@ -90,7 +91,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   /** Emitted in instance mode when a reader selects a node (full identity) or clears selection. */
-  "update:selected": [node: PlatformObjectRef | null];
+  "update:selected": [node: PanelObjectValue | null];
   /** Emitted in type mode when a reader selects a type node or clears selection. */
   "update:selectedType": [typeId: string | null];
 }>();
@@ -451,7 +452,7 @@ function resolveTypeSelectionState(): string | null {
   );
 }
 
-function writeSelectedNode(refValue: PlatformObjectRef | null) {
+function writeSelectedNode(refValue: PanelObjectValue | null) {
   const declaredIdentity = slot.projection.graph?.nodeIdentity;
   if (refValue && declaredIdentity && !matchesObjectType(declaredIdentity, refValue.className)) {
     throw new TypeError(`Graph node '${refValue.className}' is outside the projection's declared nodeIdentity`);
@@ -495,7 +496,7 @@ async function loadTypeMode(generation: number) {
   }
 }
 
-async function expandInstanceNode(refValue: PlatformObjectRef, generation: number, isRoot = false, force = false) {
+async function expandInstanceNode(refValue: PanelObjectValue, generation: number, isRoot = false, force = false) {
   const nodeId = encodeGraphNodeId(refValue);
   if ((!force && expandedNodes.value.has(nodeId)) || expandingNodeIds.has(nodeId)) return;
   expandingNodeIds.add(nodeId);
@@ -584,7 +585,7 @@ async function loadInstanceMode(generation: number) {
   focusedNodeId.value = null;
 
   try {
-    let startRef: PlatformObjectRef | null = props.start ? { className: props.start.className, primaryKey: props.start.primaryKey } : null;
+    let startRef: PanelObjectValue | null = props.start ? { className: props.start.className, primaryKey: props.start.primaryKey } : null;
     if (!startRef) {
       const startNode = await graphSource.start?.();
       if (generation !== loadGeneration) return;
@@ -646,7 +647,7 @@ function handleSelect(ids: string[]) {
   }
   const node = instanceNodes.value.get(pickedId);
   if (!node) return;
-  const fullRef: PlatformObjectRef = { className: node.className, primaryKey: node.primaryKey };
+  const fullRef: PanelObjectValue = { className: node.className, primaryKey: node.primaryKey };
   focusedNodeId.value = pickedId;
   writeSelectedNode(fullRef);
   if (!expandedNodes.value.has(pickedId)) {
