@@ -16,9 +16,10 @@ export const modelOptionAdapters: PlatformObjectAdapterFactory = requests => {
       async list() { return { options: await list() }; },
       async resolve(values) {
         const options = new Map((await list()).map(option => [option.primaryKey, option]));
-        return values.filter(value => value !== null).map(value => {
+        return values.map(value => {
+          if (value === null) return { primaryKey: "", value, label: "agents.useDomainDefault" };
           const id = modelReferenceSchema.parse(value);
-          return options.get(id) ?? { primaryKey: id, value: id, label: id, unavailable: { reason: "unavailable" } };
+          return options.get(id) ?? { primaryKey: id, value: id, label: id, unavailable: { reason: "assistant.unavailable" } };
         });
       },
     },
