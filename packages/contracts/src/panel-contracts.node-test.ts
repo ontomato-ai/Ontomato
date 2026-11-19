@@ -22,8 +22,7 @@ import { pageSkillSchema } from "./page-skills";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  AGENT_DEFINITION, ATTRIBUTE, DELETE_AGENT, DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW,
-  OBJECT_TYPE, RELATIONSHIP, SET_METRIC_VIEW_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, USER,
+  ACTION, AGENT_DEFINITION, ATTRIBUTE, DELETE_ACTION, DELETE_AGENT, DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SET_ACTION_STATUS, SET_METRIC_VIEW_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, USER,
   bindingKey, chartProjectionLookupRead, chartProjectionSourcePath, chartProjectionSourceSends, clientSends, panelClientReads,
 } from "./panel-client-requests";
 import {
@@ -31,10 +30,11 @@ import {
   panelHostFrameMessageSchema, panelHostMessageSchema, panelUsePath,
 } from "./panel-host";
 import {
-  matchesObjectType, objectUnionTypes, ontologyObjectUnionTypeSchema, ontologyParameterTypeSchema, panelChildObjectIdentitySchema,
-  panelManifestSchema, panelOpenRequestSchema, panelStateFieldSchema, panelStateOperationSchema,
-  panelStateValueSchema, singleOntologyParameterTypeSchema,
+  matchesObjectType, objectUnionTypes, ontologyObjectUnionTypeSchema, ontologyParameterTypeSchema,
+  panelChildCollectionQuerySchema, panelChildObjectIdentitySchema, panelManifestSchema, panelOpenRequestSchema, panelStateFieldSchema,
+  panelStateOperationSchema, panelStateValueSchema, singleOntologyParameterTypeSchema,
 } from "./panel-manifest";
+import { pageSelectionSchema } from "./page-context";
 import { pageDraftSchema } from "./page-draft";
 import {
   panelFormDescriptionSchema, panelFormFrequencyValueSchema, panelFormRequestSchema, panelFormSaveInputSchema, panelFormTimeValueSchema,
@@ -504,6 +504,24 @@ test("bridge and skill agree about the specific semantic reads", () => {
   assert.ok(clientSends([binding(USER)], "GET", "/data-query", "/platform/agent-execution/options?selected=u"));
 });
 
+test("Action definition reads and writes use distinct exact binding requests", () => {
+  const definitions = binding(ACTION);
+  const deletion = bindingKey({ kind: "PlatformOperation", id: DELETE_ACTION });
+  const status = bindingKey({ kind: "PlatformOperation", id: SET_ACTION_STATUS });
+  for (const path of ["/action/queryList", "/action/queryById", "/action/definitionForm"]) {
+    assert.ok(panelClientReads(definitions).some(read => read.method === "POST" && read.service === "/data-query" && read.path.test(path)));
+    assert.ok(clientSends([definitions], "POST", "/data-query", path));
+  }
+  assert.ok(clientSends([definitions], "POST", "/data-query", "/action/save"));
+  assert.ok(!panelClientReads(definitions).some(read => read.path.test("/action/save")));
+  assert.ok(!clientSends([definitions], "POST", "/data-query", "/action/form"));
+  assert.ok(!clientSends([definitions], "POST", "/data-query", "/action/delete"));
+  assert.ok(clientSends([deletion], "POST", "/data-query", "/action/delete", { id: "example" }));
+  assert.ok(!clientSends([deletion], "DELETE", "/data-query", "/action/delete"));
+  assert.ok(clientSends([status], "POST", "/data-query", "/action/setStatus", { ids: ["example"], status: 1 }));
+  assert.ok(!clientSends([status], "POST", "", "/action/setStatus"));
+});
+
 test("a panel operation descriptor admits exactly the three use and operation query keys", () => {
   const bindings = [bindingKey({ kind: "PlatformOperation", id: "schedules.runNow" })];
   const path = "/panel-operations/descriptor";
@@ -523,7 +541,6 @@ test("a panel operation descriptor admits exactly the three use and operation qu
   };
   assert.deepEqual(panelOperationDescriptorResponseSchema.parse(description), description);
 });
-
 
 const chartSource = { dashboardId: "board-a", cardId: "chart-1" };
 const chartProjection = {
@@ -740,6 +757,38 @@ test("a child key is meaningful with its parent identity", () => {
   const child = { parent: { objectType: SKILL, primaryKey: "skill-a" }, primaryKey: "references/guide.md" };
   assert.deepEqual(panelChildObjectIdentitySchema.parse(child), child);
   assert.equal(panelChildObjectIdentitySchema.safeParse({ primaryKey: child.primaryKey }).success, false);
+});
+
+test("a declared child collection carries its parent-scoped selection across panel boundaries", () => {
+  const field = { kind: "child-object", parentType: SKILL, collection: "files" };
+  const child = { parent: { objectType: SKILL, primaryKey: "skill-a" }, primaryKey: "SKILL.md" };
+  const state = { selectedFile: child };
+  assert.deepEqual(panelStateFieldSchema.parse({ ...field, deepLink: true }), { ...field, deepLink: true });
+  assert.deepEqual(ontologyParameterTypeSchema.parse(field), field);
+  assert.equal(singleOntologyParameterTypeSchema.safeParse(field).success, false);
+  assert.equal(panelStateFieldSchema.safeParse({ ...field, collection: "issues" }).success, false);
+
+  assert.deepEqual(panelOpenRequestSchema.parse({ useId: "skills", state }).state, state);
+  assert.deepEqual(panelStateOperationSchema.parse({ id: "choose", labelKey: "choose", kind: "state", sets: state }).sets, state);
+  const frame = { kind: "state", fromAddress: "/skills", state };
+  assert.deepEqual(panelFrameMessageSchema.parse(frame), frame);
+
+  const selection = {
+    kind: "child-object", parent: child.parent, id: child.primaryKey, collection: "files", label: "Skill Example / SKILL.md",
+  };
+  assert.deepEqual(pageSelectionSchema.parse(selection), selection);
+  assert.equal(pageSelectionSchema.safeParse({ kind: selection.kind, id: selection.id, label: selection.label }).success, false);
+});
+
+test("governance issues and sources use separate collection queries under one parent", () => {
+  const parent = { objectType: KNOWLEDGE_GOVERNANCE_RECORD, primaryKey: "report-a" };
+  for (const collection of ["issues", "sources"]) {
+    const query = { parent, collection };
+    assert.deepEqual(panelChildCollectionQuerySchema.parse(query), query);
+  }
+  assert.equal(panelChildCollectionQuerySchema.safeParse({ parent, collection: "files" }).success, false);
+  const unconverted = { className: parent.objectType, primaryKey: parent.primaryKey };
+  assert.equal(panelChildCollectionQuerySchema.safeParse({ parent: unconverted, collection: "sources" }).success, false);
 });
 
 test("checked object collections are typed ports and never become deep-link state", () => {

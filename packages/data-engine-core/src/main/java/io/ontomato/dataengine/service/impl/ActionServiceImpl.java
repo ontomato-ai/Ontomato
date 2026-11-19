@@ -35,6 +35,7 @@ import io.ontomato.dataengine.service.ActionFunctionAdmission;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
+import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.PanelFormFields;
 import io.ontomato.dataengine.service.ParameterForms;
 import io.ontomato.dataengine.service.SandboxService;
@@ -302,18 +303,18 @@ public class ActionServiceImpl implements ActionService {
     if (action.getId() != null) {
       Object[] exist = actionDao.queryById(action.getId());
       if (exist == null) {
-        throw new Exception(langService.get(lang, "Action.notFound"));
+        throw new OwnerRefusal("ACTION_NOT_FOUND", langService.get(lang, "Action.notFound"));
       }
       Action existAction = (Action) exist[0];
       if (Action.ORIGIN_SYSTEM.equals(existAction.getOrigin())) {
-        throw new Exception(langService.get(lang, "Action.cannotModifySystem"));
+        throw new OwnerRefusal("ACTION_SYSTEM", langService.get(lang, "Action.cannotModifySystem"));
       }
       if (!action.getDomainId().equals(existAction.getDomainId())) {
-        throw new Exception(langService.get(lang, "Action.domainMismatch"));
+        throw new OwnerRefusal("ACTION_NOT_FOUND", langService.get(lang, "Action.domainMismatch"));
       }
       if (scheduledReferences.referencesAction(action.getId()) && (action.getFunction() == null
           || !Objects.equals(exist[1], action.getFunction().getId())))
-        throw new IllegalArgumentException("A scheduled action must retain its referenced function");
+        throw new OwnerRefusal("ACTION_REFERENCED", "A scheduled action must retain its referenced function");
       storedCodeSegments = existAction.getCodeSegments();
       storedBusinessMeaning = existAction.getBusinessMeaning();
       storedCodeHash = existAction.getCodeHash();
@@ -326,9 +327,13 @@ public class ActionServiceImpl implements ActionService {
     action.setBusinessMeaning(null);
     Function function = action.getFunction();
     if (function == null) {
-      throw new Exception(langService.get(lang, "Function.cannotBeEmpty"));
+      throw new OwnerRefusal("ACTION_FUNCTION_INVALID", langService.get(lang, "Function.cannotBeEmpty"));
     }
-    ActionFunctionAdmission.requireSupported(function, langService, lang);
+    try {
+      ActionFunctionAdmission.requireSupported(function, langService, lang);
+    } catch (IllegalArgumentException error) {
+      throw new OwnerRefusal("ACTION_FUNCTION_INVALID", error.getMessage());
+    }
     // Vector storage and the domain-scoped asset index key off the function's domain; the
     // controller sets it on the action, so carry it onto a new function before saving.
     if (function.getDomainId() == null || function.getDomainId().isBlank()) {
@@ -338,7 +343,7 @@ public class ActionServiceImpl implements ActionService {
     if (function.getId() != null) {
       Function existFunction = functionDao.queryById(function.getId());
       if (existFunction == null) {
-        throw new Exception(langService.get(lang, "Function.notFound"));
+        throw new OwnerRefusal("ACTION_FUNCTION_INVALID", langService.get(lang, "Function.notFound"));
       }
       codeChanged = !existFunction.getCode().equals(function.getCode());
     }
@@ -346,7 +351,12 @@ public class ActionServiceImpl implements ActionService {
     // rewriting it in place would keep the approval while replacing what it approved. A change is a
     // new action, reviewed on its own; re-explaining the same code stays allowed above.
     if (Action.STATUS_PUBLISHED.equals(storedStatus) && codeChanged) {
-      throw new Exception(langService.get(lang, "Action.publishedIsFrozen"));
+      throw new OwnerRefusal("ACTION_PUBLISHED_FROZEN", langService.get(lang, "Action.publishedIsFrozen"));
+    }
+    try {
+      actionDao.validateDefinition(action);
+    } catch (IllegalArgumentException error) {
+      throw new OwnerRefusal("ACTION_DEFINITION_INVALID", error.getMessage());
     }
     String codeHash = CodeHashUtil.sha256(function.getCode());
     boolean reusable =
@@ -392,12 +402,13 @@ public class ActionServiceImpl implements ActionService {
 
   @Override
 	public void delete(String id, String lang) throws Exception {
-    if (scheduledReferences.referencesAction(id)) throw new IllegalArgumentException("Action is referenced by a scheduled task");
+    if (scheduledReferences.referencesAction(id))
+      throw new OwnerRefusal("ACTION_REFERENCED", "Action is referenced by a scheduled task");
 		Object[] exist = actionDao.queryById(id);
 		if (exist != null) {
 			Action existAction = (Action)exist[0];
 			if (Action.ORIGIN_SYSTEM.equals(existAction.getOrigin())) {
-				throw new Exception(langService.get(lang, "Action.cannotDeleteSystem"));
+				throw new OwnerRefusal("ACTION_SYSTEM", langService.get(lang, "Action.cannotDeleteSystem"));
 			}
 			actionDao.delete(id);
 		}
@@ -768,23 +779,26 @@ public class ActionServiceImpl implements ActionService {
   public List<StatusResult> setStatus(
       String domainId, String userId, List<String> ids, String status, String lang) {
     if (ids == null || ids.isEmpty())
-      throw new IllegalArgumentException("ids: expected at least one action id");
+      throw new OwnerRefusal("ACTION_STATUS_INVALID", "ids: expected at least one action id");
     if (status == null
         || !Set.of(Action.STATUS_PENDING_REVIEW, Action.STATUS_PUBLISHED, Action.STATUS_UNUSED)
             .contains(status))
-      throw new IllegalArgumentException("status: expected PENDING_REVIEW, PUBLISHED or UNUSED");
+      throw new OwnerRefusal("ACTION_STATUS_INVALID", "status: expected PENDING_REVIEW, PUBLISHED or UNUSED");
     List<StatusResult> results = new ArrayList<>();
     for (String id : new LinkedHashSet<>(ids)) {
       try {
         Action action = queryById(id);
         if (action == null || !domainId.equals(action.getDomainId()))
-          throw new IllegalArgumentException("Action not found");
+          throw new OwnerRefusal("ACTION_NOT_FOUND", "Action not found");
+        if (Action.ORIGIN_SYSTEM.equals(action.getOrigin()))
+          throw new OwnerRefusal("ACTION_SYSTEM", langService.get(lang, "Action.cannotModifySystem"));
         action.setStatus(status);
         if (Action.STATUS_PUBLISHED.equals(status)) action.setReviewedBy(userId);
-        results.add(
-            new StatusResult(id, save(action, null, new Owner(userId, domainId), lang), null));
+        results.add(new StatusResult(id, save(action, null, new Owner(userId, domainId), lang), null, null));
+      } catch (OwnerRefusal refusal) {
+        results.add(new StatusResult(id, null, refusal, null));
       } catch (Exception error) {
-        results.add(new StatusResult(id, null, failureMessage(error)));
+        results.add(new StatusResult(id, null, null, failureMessage(error)));
       }
     }
     return results;

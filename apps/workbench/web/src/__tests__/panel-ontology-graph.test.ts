@@ -16,7 +16,8 @@ import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import type { GraphCanvasEdge, GraphCanvasNode, GraphCanvasPoint } from "@ontomato/foundation-ui/graph/g6";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
-  ignoreChanges, inside,
+  ignoreChanges,
+  inside,
   installPlatform,
   leaveFrame,
   nothingAt,

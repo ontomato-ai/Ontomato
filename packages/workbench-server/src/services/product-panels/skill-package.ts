@@ -12,8 +12,9 @@ import { componentOperationSchema, panelStateOperation, projectionBindingKeys, p
 import { productPanelContentSchema, productPanelInputSchema, productProjectionInputSchema, type PanelSkillSource, type ProductProjectionInput } from "@ontomato/contracts/product-panels";
 import { installedAppsSdkDir } from "../../content/layout";
 import type { SkillOffering } from "../../core/skills";
+import { getDefaultLocale } from "../../i18n";
 import { findCurrentProduct, type CurrentProductKind } from "../../infrastructure/product-current";
-import { panelServerOperation } from "./server-operations";
+import { panelServerOperation, panelServerOperationSupportsBatch } from "./server-operations";
 
 const catalogue = z.object({
   version: z.string(),
@@ -35,7 +36,7 @@ function panelSkillManifest(skill: RuntimeSkillRef, panels: readonly PanelDescri
     ...(panels.some(panel => panel.reads) ? ["read current data"] : []),
     panels.length === 1 ? "open the panel" : "open the panels",
     ...(panels.some(panel => panel.forms.length) ? ["draft changes"] : []),
-    ...(panels.some(panel => panel.operations.length) ? ["review declared operations"] : []),
+    ...(panels.some(panel => panel.operations.length || panel.manifest.operations.length) ? ["review declared operations"] : []),
   ];
   const actionText = verbs.format(actions);
   const names = [...panels.map(panel => panel.name).join(", ")];
@@ -111,7 +112,7 @@ function describePanel(panel: z.infer<typeof panelMetadata> & { content: unknown
       operations: projectionOperations(manifest, { slot, ports }),
     };
   });
-  const operations = [...projections.flatMap(projection => projection.operations), ...manifest.operations.map(panelStateOperation)];
+  const operations = projections.flatMap(projection => projection.operations);
   return {
     ...panel,
     projections,
@@ -121,9 +122,11 @@ function describePanel(panel: z.infer<typeof panelMetadata> & { content: unknown
   };
 }
 
-function describeUse(use: Use, { name, description, content, manifest, projections, operations, forms, reads }: PanelDescription): string {
+function describeUse(use: Use, { name, description, content, manifest, projections, operations: projectionOperations, forms, reads }: PanelDescription): string {
   const address = panelUsePath(use.path);
-  const { recipes } = productPanelContentSchema.parse(content);
+  const { recipes, messages } = productPanelContentSchema.parse(content);
+  const resolveLabel = (key: string) => messages?.[getDefaultLocale()]?.[key] ?? key;
+  const operations = [...projectionOperations, ...manifest.operations.map(operation => panelStateOperation(operation, resolveLabel))];
   return [
     `## ${name} — ${use.pageKey}`,
     description,
@@ -144,6 +147,9 @@ function describeUse(use: Use, { name, description, content, manifest, projectio
       ...operations.map(describeOperation),
       ...(operations.length ? [] : ["No operations."]),
       "Call the declared operation with POST `$ONTOMATO_PANEL_OPERATIONS_URL/operate`, JSON `{intentId:<new UUID>,applicationId,useId,operationId,call:{target,input}}`. Send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. Never call a write owner endpoint directly from a platform panel skill.",
+      ...(operations.some(operation => panelServerOperationSupportsBatch(operation.handlerRef)) ? [
+        "For an operation marked as batch-capable, use `calls:[{target,input},...]` in place of `call`. Submit all concrete targets and their inputs under one intent for one confirmation. A batch result reports the owner's outcome for each item when available.",
+      ] : []),
       `Use applicationId ${JSON.stringify(use.applicationId)} and useId ${JSON.stringify(use.useId)}. The operationId is the declared ID above.`,
       "Default form.save returns an unsaved page-draft envelope: write it to the draft artifact and link the reader to review/save. Session automatic mode allows the same declared save to execute directly. Only the authenticated session owner changes that setting.",
       "An action can return confirmation-required with intentId. End this tool call immediately; do not wait or poll. Continue independent work or finish the round. A genuine user agent-answer is delivered back to this conversation and can wake a later run. Then POST `{}` to `$ONTOMATO_PANEL_OPERATIONS_URL/intents/<intentId>/dispatch` using THAT RUN's callback and run ID. Node verifies the real selected option and the current executor. Free text, defaults, parent answers, questionId or a different toolCallId never authorize execution. Changed parameters/target/executor require a new intent and confirmation.",
@@ -155,7 +161,10 @@ function describeUse(use: Use, { name, description, content, manifest, projectio
 
 function describeOperation(operation: PanelOperation): string {
   const summary = `- ${operation.label} (${operation.id}), kind ${operation.kind}, handlerRef ${operation.handlerRef}, target ${JSON.stringify(operation.target ?? null)}.`;
-  if (operation.kind !== "form.save") return `${summary} Input ${JSON.stringify(operation.inputSchema)}.`;
+  if (operation.kind !== "form.save") {
+    const batch = panelServerOperationSupportsBatch(operation.handlerRef) ? " Batch-capable." : "";
+    return `${summary} Input ${JSON.stringify(operation.inputSchema)}.${batch}`;
+  }
   const owner = panelServerOperation(operation.handlerRef);
   if (owner.kind !== "form.save") throw new Error(`Expected a form owner for ${operation.handlerRef}`);
   const schema = (value: z.ZodTypeAny) => JSON.stringify(zodToJsonSchema(value, { $refStrategy: "none" }));

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, markRaw, ref, watch } from "vue";
+import { computed, inject, markRaw, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { PanelHost, panelUnavailable, useUnsavedChanges, type PanelHostLabels, type PanelHostPort } from "@ontomato/platform-shell";
@@ -8,6 +8,7 @@ import { applicationRootPath } from "@ontomato/contracts/platform-identity";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import type { DisplayObjectRefresh } from "@ontomato/agent-shell-ui";
+import { countedTypesChangedKey } from "@ontomato/ontology-manager";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import { panelUsesOf, platformPanelHost, type PanelObjectChange } from "../panel-host";
 
@@ -58,9 +59,16 @@ const { t, locale } = useI18n();
 const uses = ref<readonly ApplicationPanelUse[] | null>(null);
 /** The shown page's instance, which the conversation's object signal reaches; kept pages are reconciled when shown again. */
 const host = ref<PanelRefreshPort | null>(null);
-/** A change to objects the page shows, from the conversation or from a receipt for an operation in the shown frame. */
+/** The Manager's counts, where it is installed: told which object types a write changed, they decide whether to re-read. */
+const countedTypesChanged = inject(countedTypesChangedKey, null);
+/**
+ * A change to objects the page shows, from the conversation or from a receipt for an operation in the shown frame: the
+ * one place either is taken in. The shown instance re-reads what it displays of the target, and the counts hear of the
+ * object types the write changed.
+ */
 function changed(change: PanelObjectChange) {
   host.value?.refresh(change.target);
+  if (change.affected) countedTypesChanged?.(change.affected.objectTypes);
 }
 watch(() => props.objectRefresh?.seq, () => {
   if (props.objectRefresh) changed(props.objectRefresh);

@@ -98,7 +98,7 @@ useProjectionObjectRefresh(id => id === key.value, () => load(key.value));
       </h3>
       <dl>
         <template v-for="name in shown" :key="name">
-          <dt>{{ name }}</dt>
+          <dt>{{ record.fieldLabels?.[name] ?? name }}</dt>
           <dd>
             <button
               v-if="record.references?.[name]"

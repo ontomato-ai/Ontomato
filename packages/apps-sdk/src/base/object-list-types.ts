@@ -1,18 +1,8 @@
+import type { PanelObjectListColumn } from "@ontomato/contracts/panel-projection";
 import type { PlatformObjectFacetOption } from "../panel/platform-objects";
 
-/** One column of `ObjectList` in table mode; field names, labels and rendering kinds come from the projection. */
-export interface ObjectListColumn {
-  /** Key in `record.fields`, or `"label"` / `"subtitle"` for the record's primary/secondary text. */
-  readonly key: string;
-  /** Column header text supplied by the projection/owner. */
-  readonly label: string;
-  /** Cell presentation: plain text, semantic status tag, tag list, or clickable object reference. */
-  readonly kind?: "text" | "tag" | "tags" | "reference";
-  /** Optional secondary field key drawn muted beneath this cell's primary value. */
-  readonly subtitleKey?: string;
-  /** Placeholder when the cell value is empty (defaults to `"—"`). */
-  readonly empty?: string;
-}
+/** One column of `ObjectList` in table mode; omit `labelKey` when the field is named by its owner via `fieldLabels`. */
+export type ObjectListColumn = PanelObjectListColumn;
 
 /** One option of a filter control (static or updated from the adapter's dynamic `facets`). */
 export type ObjectListFilterOption = PlatformObjectFacetOption;
@@ -21,8 +11,10 @@ export type ObjectListFilterOption = PlatformObjectFacetOption;
 export interface ObjectListFilter {
   /** Filter key passed to `adapter.query({ filters: { [key]: value } })`. */
   readonly key: string;
-  /** Accessible label and dropdown placeholder. */
-  readonly label: string;
+  /** Optional slot input/output port name bound to a scalar panel state; defaults to `key`. */
+  readonly port?: string;
+  /** Accessible label or panel message key, and dropdown placeholder. */
+  readonly label?: string;
   /** `"tabs"` renders segmented buttons (with optional counts); `"select"` renders a dropdown. */
   readonly kind?: "tabs" | "select";
   /** Initial or static options; replaced by dynamic `result.facets` matching `key` when returned. */

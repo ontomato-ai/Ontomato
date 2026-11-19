@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /** The Function owner describes read and write forms, their controls, read-only rules and save shape. */
@@ -43,6 +44,63 @@ class FunctionFormTest {
     when(metricViewDao.referencedFunctionIds()).thenReturn(Set.of());
     when(actionDao.queryList(any(), any(), any(), any())).thenReturn(List.of());
     when(scheduledTasks.references(anyString())).thenReturn(false);
+  }
+
+  @Test
+  void anObjectTargetOutsideThisDomainIsRefusedAsNotFound() {
+    OwnerRefusal refusal = assertThrows(OwnerRefusal.class, () -> form(objectTarget("missing")));
+
+    assertEquals("FUNCTION_NOT_FOUND", refusal.code());
+    assertEquals("Function not found", refusal.getMessage());
+  }
+
+  @Test
+  void saveRefusesTheFunctionRulesWithTheirCodes() {
+    Function existing = writeFunction();
+    existing.setId("f1");
+    when(functionDao.queryById("f1")).thenReturn(existing);
+
+    Function missing = writeFunction();
+    missing.setId("missing");
+    assertRefusal("FUNCTION_NOT_FOUND", () -> service.save(missing, "en"));
+
+    Function system = writeFunction();
+    system.setId("f1");
+    system.setOrigin(Function.ORIGIN_SYSTEM);
+    assertRefusal("FUNCTION_SYSTEM", () -> service.save(system, "en"));
+
+    Function otherDomain = writeFunction();
+    otherDomain.setId("f1");
+    otherDomain.setDomainId("domain-b");
+    assertRefusal("FUNCTION_DOMAIN_MISMATCH", () -> service.save(otherDomain, "en"));
+
+    Function replacement = writeFunction();
+    replacement.setId("f1");
+    existing.setOperation(Function.OPERATION_PRODUCT);
+    assertRefusal("FUNCTION_PRODUCT_IMMUTABLE", () -> service.save(replacement, "en"));
+    existing.setOperation(Function.OPERATION_WRITE);
+
+    when(metricViewDao.referencedFunctionIds()).thenReturn(Set.of("f1"));
+    OwnerRefusal referenced = assertThrows(OwnerRefusal.class, () -> service.save(replacement, "en"));
+    assertEquals("FUNCTION_REFERENCED", referenced.code());
+    assertEquals("Function.referencedByMetricView", referenced.getMessage());
+  }
+
+  @Test
+  void deleteRefusesSystemProductAndReferencedFunctions() {
+    Function system = readFunction();
+    system.setOrigin(Function.ORIGIN_SYSTEM);
+    when(functionDao.queryById("f1")).thenReturn(system);
+    assertRefusal("FUNCTION_SYSTEM", () -> service.delete("f1", "en"));
+
+    Function product = readFunction();
+    product.setOperation(Function.OPERATION_PRODUCT);
+    when(functionDao.queryById("f1")).thenReturn(product);
+    assertRefusal("FUNCTION_PRODUCT_IMMUTABLE", () -> service.delete("f1", "en"));
+
+    when(functionDao.queryById("f1")).thenReturn(readFunction());
+    when(metricViewDao.referencedFunctionIds()).thenReturn(Set.of("f1"));
+    assertRefusal("FUNCTION_REFERENCED", () -> service.delete("f1", "en"));
   }
 
   @Test
@@ -239,6 +297,11 @@ class FunctionFormTest {
     assertEquals("/function", errors.get(0).get("field").asText());
     assertEquals("invalid_object", errors.get(0).get("code").asText());
     assertTrue(errors.get(0).get("message").asText().contains("registered by the publication service"));
+  }
+
+  private static void assertRefusal(String code, Executable action) {
+    OwnerRefusal refusal = assertThrows(OwnerRefusal.class, action);
+    assertEquals(code, refusal.code());
   }
 
   private List<ObjectNode> draftErrors(JSONObject values) {

@@ -3,8 +3,10 @@ import {
   matchesObjectType,
   objectUnionTypes,
   panelStateValueSchema,
+  type PanelChildObjectIdentity,
   type PanelDeepLinkStateValue,
   type PanelManifest,
+  type PanelObjectIdentity,
   type PanelStateValue,
 } from "@ontomato/contracts/panel-manifest";
 import { platformObjectTypes } from "@ontomato/contracts/platform-object-types";
@@ -29,9 +31,18 @@ export interface PanelObjectRef {
 /** One field's value as the panel reads it: an object reference, a collection of them, a scalar, or null while unset. */
 export type PanelFieldValue = Exclude<PanelStateValue, readonly unknown[]> | readonly PanelObjectRef[];
 
-/** The one object a state value names; null for a scalar, a collection or nothing. */
+/** The one top-level object a state value names; null for a child identity, a scalar, a collection or nothing. */
 export function stateObject(value: DeepReadonly<PanelFieldValue> | undefined): PanelObjectRef | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as PanelObjectRef : null;
+  return value !== null && value !== undefined && typeof value === "object" && "className" in value
+    ? value as PanelObjectRef
+    : null;
+}
+
+/** The parent-scoped child identity a state value holds; null for anything else. */
+export function stateChildObject(value: DeepReadonly<PanelFieldValue> | undefined): PanelChildObjectIdentity | null {
+  return value !== null && value !== undefined && typeof value === "object" && "parent" in value
+    ? value as PanelChildObjectIdentity
+    : null;
 }
 
 /** The objects a collection state value holds; none for anything else. */
@@ -64,9 +75,9 @@ export interface PanelStateStore {
 }
 
 /**
- * Checks a value against the field a panel declared. `object` takes a reference to one object of the declared ontology
- * type, `objects` a collection of such references (an instance's checked objects); a scalar takes its own type. Null
- * clears the field.
+ * Checks a value against the field a panel declared. `object` and `object-union` take a top-level reference,
+ * `objects` a collection of such references (an instance's checked objects), `child-object` a parent-scoped child
+ * identity matching the declared parent type, and `scalar` its own primitive type. Null clears the field.
  */
 export function checkPanelValue(manifest: PanelManifest, name: string, value: PanelFieldValue): PanelFieldValue {
   const field = manifest.state[name];
@@ -81,10 +92,19 @@ export function checkPanelValue(manifest: PanelManifest, name: string, value: Pa
   }
   if (field.kind === "object" || field.kind === "object-union") {
     const expected = field.kind === "object" ? field.objectType : objectUnionTypes(field).join(" | ");
-    if (typeof parsed !== "object" || Array.isArray(parsed)) throw new TypeError(`Panel state '${name}' is a ${expected} reference`);
-    if (!matchesObjectType(field, parsed.className))
-      throw new TypeError(`Panel state '${name}' is a ${expected} reference, not ${parsed.className}`);
-    return parsed;
+    const objectRef = stateObject(parsed);
+    if (!objectRef) throw new TypeError(`Panel state '${name}' is a ${expected} reference`);
+    if (!matchesObjectType(field, objectRef.className))
+      throw new TypeError(`Panel state '${name}' is a ${expected} reference, not ${objectRef.className}`);
+    return objectRef;
+  }
+  if (field.kind === "child-object") {
+    const childRef = stateChildObject(parsed);
+    if (!childRef)
+      throw new TypeError(`Panel state '${name}' is a ${field.parentType}/${field.collection} child reference`);
+    if (childRef.parent.objectType !== field.parentType)
+      throw new TypeError(`Panel state '${name}' is a ${field.parentType}/${field.collection} child reference, not ${childRef.parent.objectType}`);
+    return childRef;
   }
   if (typeof parsed === "object") throw new TypeError(`Panel state '${name}' is a ${field.type}`);
   if (field.type === "date" && (typeof parsed !== "string" || !Number.isFinite(Date.parse(parsed))))
@@ -140,11 +160,17 @@ export function objectNameKey(objectType: string, primaryKey: string): string {
   return `${objectType}\u0000${primaryKey}`;
 }
 
+/** How an instance keeps the name of one child object it has read: scoped by parent identity and collection. */
+export function childObjectNameKey(parent: PanelObjectIdentity, collection: string, primaryKey: string): string {
+  return `child\u0000${parent.objectType}\u0000${parent.primaryKey}\u0000${collection}\u0000${primaryKey}`;
+}
+
 /**
- * The objects a panel instance holds, as a message names them: one entry per declared object field that has a value, in
- * declaration order. The entry's label is the name the object's owner gave it, from a read this instance already made,
- * followed by its type and key, so an agent reads which object it is from the same line as the page; an object not read
- * yet is named by its type and key alone. The name lives here and nowhere else: the state and the address hold the key.
+ * The objects a panel instance holds, as a message names them: one entry per declared object or child-object field
+ * that has a value, in declaration order. The entry's label is the name the object's owner gave it, from a read this
+ * instance already made, followed by its type and key, so an agent reads which object it is from the same line as the
+ * page; an object not read yet is named by its type and key alone. The name lives here and nowhere else: the state and
+ * the address hold the key.
  */
 export function panelSelection(
   manifest: PanelManifest,
@@ -153,6 +179,27 @@ export function panelSelection(
   translate: (key: string) => string,
 ): PanelSelection[] {
   return Object.entries(manifest.state).flatMap(([name, field]) => {
+    if (field.kind === "child-object") {
+      const child = stateChildObject(values[name]);
+      if (!child) return [];
+      const parentTypeMeta = platformObjectTypes[child.parent.objectType];
+      const parentTypeLabel = parentTypeMeta?.labelKey ? translate(parentTypeMeta.labelKey) : child.parent.objectType;
+      const parentNamed = names.get(objectNameKey(child.parent.objectType, child.parent.primaryKey));
+      const parentPart = parentNamed
+        ? `${parentTypeLabel} ${parentNamed}`
+        : `${parentTypeLabel} ${child.parent.primaryKey}`;
+      const childNamed = names.get(childObjectNameKey(child.parent, field.collection, child.primaryKey));
+      const childPart = childNamed && childNamed !== child.primaryKey
+        ? `${childNamed} (${child.primaryKey})`
+        : (childNamed ?? child.primaryKey);
+      return [{
+        kind: "child-object",
+        parent: child.parent,
+        collection: field.collection,
+        id: child.primaryKey,
+        label: `${parentPart} / ${childPart}`,
+      }];
+    }
     const value = stateObject(values[name]);
     if ((field.kind !== "object" && field.kind !== "object-union") || !value) return [];
     const objectType = field.kind === "object" ? field.objectType : value.className;

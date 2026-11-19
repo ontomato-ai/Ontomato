@@ -399,6 +399,26 @@ describe("the objects an agent changes", () => {
     await flushPromises();
     expect(refresh(wrapper)).toEqual({ seq: opened.seq + 2, target: null });
   });
+
+  it("carry the owner's affected objects and types to the page, a batch with no single object included", async () => {
+    const wrapper = await workbench();
+    await host.stream.current().frame({ type: "ready", connectionId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd3" });
+    await (wrapper.findComponent(AgentShell).vm as unknown as { send(text: string): Promise<void> }).send("change them");
+    await openLink(wrapper, "/first");
+    const opened = refresh(wrapper);
+    const session = { providerId: "workbench", sessionId: SESSION };
+
+    const one = { objects: [task], objectTypes: [task.objectType] };
+    host.stream.current().view!.frame({ type: "object-changed", session, target: task, affected: one });
+    await flushPromises();
+    expect(refresh(wrapper)).toEqual({ seq: opened.seq + 1, target: task, affected: one });
+
+    // A batch names no single object: the page reads everything it shows, and the host has the owner's account.
+    const batch = { objects: [task, { ...task, primaryKey: "task-2" }], objectTypes: [task.objectType] };
+    host.stream.current().view!.frame({ type: "object-changed", session, target: null, affected: batch });
+    await flushPromises();
+    expect(refresh(wrapper)).toEqual({ seq: opened.seq + 2, target: null, affected: batch });
+  });
 });
 
 /** The browser reports the tab hidden or shown again. */

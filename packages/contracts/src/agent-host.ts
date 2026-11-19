@@ -1,6 +1,7 @@
 import { agentInputDeliverySchema, agentPendingQuestionSchema, agentSessionRefSchema } from "./agent-channel";
 import { presentationBindingSchema, presentationFrameSchema, presentationReceiptSchema } from "./agent-presentation";
 import { panelObjectIdentitySchema } from "./panel-manifest";
+import { panelOperationAffectedSchema } from "./panel-operations";
 import { z } from "zod";
 import {
   runtimeMessageRecordSchema,
@@ -52,14 +53,17 @@ export const agentHostSessionRunFrameSchema = z.union([
   z.object({ type: z.literal("ready"), connectionId: presentationReceiptSchema.shape.connectionId }).strict(),
   runtimeSessionRunFrameSchema,
 ]);
-/** An invalidation contains the root conversation and the object to read from its owner. */
-export const agentHostObjectChangedFrameSchema = z.object({
+const objectChangedFrame = z.object({
   type: z.literal("object-changed"),
   session: agentSessionRefSchema,
-  target: panelObjectIdentitySchema,
 }).strict();
+/** A batch or a type-only invalidation can carry the owner result without a single target. */
+export const agentHostObjectChangedFrameSchema = z.union([
+  objectChangedFrame.extend({ target: panelObjectIdentitySchema, affected: panelOperationAffectedSchema.optional() }),
+  objectChangedFrame.extend({ target: z.null(), affected: panelOperationAffectedSchema }),
+]);
 /** Live frames on the same stream have their own SSE event names and no replay cursor. */
-export const agentHostSessionLiveFrameSchema = z.discriminatedUnion("type", [
+export const agentHostSessionLiveFrameSchema = z.union([
   presentationFrameSchema,
   agentHostObjectChangedFrameSchema,
 ]);
