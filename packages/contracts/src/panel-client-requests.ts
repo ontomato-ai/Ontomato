@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { runtimeJsonObjectSchema } from "./agent-runtime-values";
 import { platformSchedulesPath } from "./platform-schedules";
 import { AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER } from "./platform-object-types";
 
@@ -47,6 +49,64 @@ const task = `${tasks}/${uuidPattern}`;
 interface PanelClientRead extends ClientRequest {
   template: string;
   instructions?: string;
+}
+
+/** POST registers a card; GET looks up a projection by dashboardId and cardId. */
+export const CHART_PROJECTION_SOURCES_PATH = "/product-projections/chart-sources";
+
+/** Both operations resolve the source from this registered projection. */
+export function chartProjectionSourcePath(projectionId: string): string {
+  return `/product-projections/${encodeURIComponent(projectionId)}/chart-source`;
+}
+
+const chartProjectionSource = {
+  service: "",
+  path: /^\/product-projections\/[^/?#]+\/chart-source$/,
+  template: "/product-projections/:projectionId/chart-source",
+} as const;
+
+export const chartProjectionSourceRead = { method: "GET", ...chartProjectionSource } as const satisfies PanelClientRead;
+export const chartProjectionSourceEdit = { method: "PUT", ...chartProjectionSource } as const satisfies ClientRequest;
+
+/** The picker looks up an accessible card. A metric binding alone does not grant this request to a frame. */
+export const chartProjectionLookupRead = {
+  method: "GET", service: "", path: /^\/product-projections\/chart-sources(?:\?[^#]+)?$/,
+  template: CHART_PROJECTION_SOURCES_PATH,
+} as const satisfies PanelClientRead;
+
+/** Use only the projection IDs read as registered chart projections of this frame. The owner checks use or edit. */
+export function chartProjectionSourceSends(
+  projectionIds: Iterable<string>, method: string, service: string, path: string,
+): boolean {
+  if (service !== chartProjectionSource.service || !chartProjectionSource.path.test(path)
+    || (method !== chartProjectionSourceRead.method && method !== chartProjectionSourceEdit.method)) return false;
+  for (const id of projectionIds)
+    if (path === chartProjectionSourcePath(id)) return true;
+  return false;
+}
+
+const metricIdBodySchema = z.object({ id: z.string().min(1) }).strict();
+
+const metricViewReads = [
+  {
+    method: "POST", service: "/data-query", path: /^\/ontology\/query\/metrics\/describe$/,
+    template: "/ontology/query/metrics/describe", bodySchema: metricIdBodySchema,
+    instructions: "Use the bound MetricView id in the JSON body and read defaults from parameterDefs.",
+  },
+  {
+    method: "POST", service: "/data-query", path: /^\/metricView\/execute$/,
+    template: "/metricView/execute", bodySchema: metricIdBodySchema.extend({
+      param: runtimeJsonObjectSchema,
+      parameterTexts: z.record(z.string()).optional(),
+    }),
+    instructions: "Use the bound MetricView id. Start `param` with the source card parameters returned with the chart template and override them with this panel instance's bound inputs.",
+  },
+] as const satisfies readonly (PanelClientRead & { bodySchema: z.ZodTypeAny })[];
+
+const metricViewBindingPrefix = bindingKey({ kind: "MetricView", id: "" });
+
+function boundMetricId(binding: string): string | undefined {
+  return binding.startsWith(metricViewBindingPrefix) ? binding.slice(metricViewBindingPrefix.length) : undefined;
 }
 
 /** The owner reads shared by frames, the execution callback and the generated panel skill. */
@@ -126,7 +186,8 @@ const readRequests: Readonly<Record<string, readonly PanelClientRead[]>> = {
   [objectBinding(FUNCTION)]: functionDefinitionReads,
 };
 
-export const panelClientReads = (binding: string): readonly PanelClientRead[] => readRequests[binding] ?? [];
+export const panelClientReads = (binding: string): readonly PanelClientRead[] =>
+  boundMetricId(binding) ? metricViewReads : readRequests[binding] ?? [];
 
 /** Each binding's requests: what its client sends, and nothing more. */
 export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> = {
@@ -156,10 +217,17 @@ export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> 
   [bindingKey({ kind: "PlatformOperation", id: DELETE_FUNCTION })]: [dataQueryPost("/function/delete")],
 };
 
-/** Whether one of the given bindings' clients sends this request. */
-export function clientSends(bindings: Iterable<string>, method: string, service: string, path: string): boolean {
-  for (const binding of bindings)
-    if (clientRequests[binding]?.some((request) => request.method === method && request.service === service && request.path.test(path)))
+/** The host supplies the decoded JSON body for requests scoped to the specific object in a binding. */
+export function clientSends(bindings: Iterable<string>, method: string, service: string, path: string, body?: unknown): boolean {
+  for (const binding of bindings) {
+    if (clientRequests[binding]?.some(request => request.method === method && request.service === service && request.path.test(path)))
       return true;
+    const metricId = boundMetricId(binding);
+    if (metricId && metricViewReads.some(request => {
+      if (request.method !== method || request.service !== service || !request.path.test(path)) return false;
+      const parsed = request.bodySchema.safeParse(body);
+      return parsed.success && parsed.data.id === metricId;
+    })) return true;
+  }
   return false;
 }

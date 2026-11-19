@@ -218,7 +218,7 @@ router.post(
       (req as AuthenticatedRequest).userId,
       requireDomainId(req as AuthenticatedRequest),
       req.body || {},
-      {token:(req as AuthenticatedRequest).token,apiKey:(req as AuthenticatedRequest).apiKey,locale:(req as AuthenticatedRequest).locale}
+      credentialsFromRequest(req as AuthenticatedRequest)
     );
     res.json({ success: true });
   })

@@ -1,4 +1,5 @@
 import { RUN_NOW } from "@ontomato/contracts/panel-client-requests";
+import { METRIC_CHART_COMPONENT } from "@ontomato/contracts/product-panels";
 import {
   AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER,
 } from "@ontomato/contracts/platform-object-types";
@@ -27,5 +28,9 @@ export const platformResources: PlatformResources = {
   },
   operations: {
     [RUN_NOW]: () => import("../panel/schedules").then((module) => module.scheduledTaskRunNow),
+  },
+  components: {
+    // A chart's source template and its MetricView's data, fetched only by a panel that draws a chart.
+    [METRIC_CHART_COMPONENT]: () => import("../panel/metric-chart").then((module) => module.metricChartClients),
   },
 };

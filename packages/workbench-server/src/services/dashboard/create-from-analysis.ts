@@ -7,7 +7,7 @@ import { createDashboard } from "./store";
 import { DashboardMetricClient } from "./metric-client";
 import { planReferenceDashboard } from "./reference-planning";
 import type { DashboardDatasetInput } from "./types";
-import { validatePersonalDashboardMetrics } from "../product-assets/validation";
+import { validatePersonalDashboardMetrics } from "./validation";
 
 export async function resolveDashboardDatasets(
   sessionId: string, artifactIds: string[], owner: AssistantOwner,
