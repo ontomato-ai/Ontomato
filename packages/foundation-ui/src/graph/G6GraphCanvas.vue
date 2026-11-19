@@ -46,7 +46,7 @@ const props = withDefaults(
     maxHeight?: number;
     /** Categories in a fixed order: the n-th takes the palette's n-th colour; any other category is placed by its name. */
     categories?: readonly string[];
-    /** The widest a node's name is drawn, in graph units; a longer one ends in an ellipsis. Twice the node when absent. */
+    /** The widest a node's name is drawn, in graph units; a longer one ends in an ellipsis. 160 when absent. */
     labelWidth?: number;
     /**
      * Lets a reader ask for a new edge: dragging from a node to a node with Shift held hands back `connect`, while a

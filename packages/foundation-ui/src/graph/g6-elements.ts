@@ -11,8 +11,8 @@ import type { GraphCanvasEdge, GraphCanvasNode, GraphCanvasPoint } from "./types
 export const G6_NODE_SIZE = 32;
 /** The size of a node's name, in graph units. */
 export const G6_LABEL_SIZE = 12;
-/** The widest a node's name is drawn unless its caller says otherwise: twice the node. */
-export const G6_LABEL_WIDTH = G6_NODE_SIZE * 2;
+/** The widest a node's name is drawn unless its caller says otherwise: about 24 Latin or 13 Chinese characters. */
+export const G6_LABEL_WIDTH = 160;
 /** From this size on a graph is drawn without arrowheads: at that density they only add noise and drawing time. */
 const LARGE_NODES = 1000;
 const LARGE_EDGES = 2000;
@@ -69,7 +69,11 @@ export function g6NodeStyle(node: GraphCanvasNode, colors: G6Colors, categories:
     lineDash: node.tone === "accent" ? [4, 3] : [],
     opacity: node.tone === "muted" ? 0.25 : 1,
     labelText: node.label,
+    // G6 only cuts a node's name when it wraps; one line of wrapping ends it in an ellipsis.
     labelMaxWidth: labelWidth,
+    labelWordWrap: true,
+    labelMaxLines: 1,
+    labelTextOverflow: "…",
     labelFill: colors.text,
     labelFontSize: G6_LABEL_SIZE,
     labelFontWeight: 600,
