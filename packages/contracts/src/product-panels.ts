@@ -212,7 +212,7 @@ export type PanelApplicationEntry = z.infer<typeof panelApplicationEntrySchema>;
 export const productCurrentIdParamsSchema = z.object({ id }).strict();
 
 const [menuEntrance, domainMemberEntrance] = pageSkillEntranceSchema.options;
-/** GET /api/product-panels/:id takes either no query or one complete application-use entrance. */
+/** GET /api/product-panels/:id and /:id/snapshot take either no query or one complete application-use entrance. */
 export const productPanelReadQuerySchema = z.union([
   z.object({}).strict(),
   panelUseRefSchema.merge(menuEntrance),
@@ -278,8 +278,9 @@ export const registerProductPanelRequestSchema = productPanelInputSchema.extend(
 }).strict();
 export type RegisterProductPanelRequest = z.infer<typeof registerProductPanelRequestSchema>;
 
+export const currentPanelRecordSchema = z.union([directPanelSchema, productPanelSchema]);
 export const productPanelResponseSchema = z.object({
-  panel: productPanelSchema,
+  panel: currentPanelRecordSchema,
   pageSkillContext: pageSkillContextSchema.optional(),
 }).strict();
 export type ProductPanelResponse = z.infer<typeof productPanelResponseSchema>;

@@ -58,6 +58,7 @@ import {
   updateChartProjectionSourceRequestSchema,
 } from "./product-panels";
 import { ontologyParameterTypeSchema as legacyOntologyParameterTypeSchema } from "./product-projections";
+import { panelDefinitionSnapshotSchema } from "./product-subscriptions";
 
 const binding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
 
@@ -505,11 +506,35 @@ test("current panel reads can carry a page skill member for the verified entranc
       memberKey: "pvt-example",
     },
   };
+  const directPanel = {
+    id: panel.id, domainId: panel.domainId, ownerId: panel.ownerId, revision: panel.revision,
+    createdAt: panel.createdAt, updatedAt: panel.updatedAt, editable: panel.editable,
+    name: panel.name, description: panel.description, visibility: panel.visibility,
+    content: { html: '<panel-member ref="tasks"></panel-member>' },
+    manifest: { state: {}, members: { tasks: { target: { projectionId: "task-list" } } }, events: {} },
+  };
+  assert.deepEqual(productPanelResponseSchema.parse({ panel: directPanel }), { panel: directPanel });
+  assert.deepEqual(productPanelResponseSchema.parse({ panel: directPanel, pageSkillContext }), { panel: directPanel, pageSkillContext });
   assert.deepEqual(productPanelResponseSchema.parse({ panel }), { panel });
   assert.deepEqual(productPanelResponseSchema.parse({ panel, pageSkillContext }).pageSkillContext, pageSkillContext);
   const unavailable = { ...pageSkillContext, member: null };
   assert.deepEqual(productPanelResponseSchema.parse({ panel, pageSkillContext: unavailable }).pageSkillContext, unavailable);
   assert.equal(productPanelResponseSchema.safeParse({ panel, pageSkillContext: { ...pageSkillContext, member: {} } }).success, false);
+});
+
+test("panel reopen snapshots can carry a rechecked page skill context", () => {
+  const snapshot = {
+    panel: { id: "agent-settings", revision: 1 },
+    projections: [{ id: "definition-form", revision: 2 }],
+  };
+  const pageSkillContext = {
+    mode: "member",
+    locator: { permissionCode: "analysis-agent", pageKey: "agents-agent-settings" },
+    member: null,
+  };
+  assert.deepEqual(panelDefinitionSnapshotSchema.parse(snapshot), snapshot);
+  assert.deepEqual(panelDefinitionSnapshotSchema.parse({ ...snapshot, pageSkillContext }).pageSkillContext, pageSkillContext);
+  assert.equal(panelDefinitionSnapshotSchema.safeParse({ ...snapshot, pageSkillContext: { ...pageSkillContext, locator: {} } }).success, false);
 });
 
 test("a graph has two admitted sources and can use either a form field or separate selection outputs", () => {

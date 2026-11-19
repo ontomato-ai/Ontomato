@@ -1,5 +1,6 @@
 import {z} from 'zod';
 import {productDefinitionChangedEventSchema,type ProductDefinitionChangedEvent} from './product-panels';
+import {pageSkillContextSchema} from './page-skills';
 
 const id=z.string().min(1).max(200);
 export const productSubscriptionTargetSchema=z.discriminatedUnion('kind',[
@@ -17,6 +18,7 @@ export type DefinitionRevision = z.infer<typeof definitionRevisionSchema>;
 export const panelDefinitionSnapshotSchema = z.object({
   panel:definitionRevisionSchema,
   projections:z.array(definitionRevisionSchema),
+  pageSkillContext:pageSkillContextSchema.optional(),
 }).strict();
 export type PanelDefinitionSnapshot = z.infer<typeof panelDefinitionSnapshotSchema>;
 
