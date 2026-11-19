@@ -90,7 +90,7 @@ async function open() {
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
   platformPanelHost("app-metric", use).frame(frame, registered("app-metric", use, panel), true);
-  writePanelDocument(panel, use, use.path, {});
+  writePanelDocument(registered("app-metric", use, panel), use.path, {});
   inside(frame);
   return { ...(await mountPanel(panelOf("list", "form"))), sent };
 }

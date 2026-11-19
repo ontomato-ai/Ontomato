@@ -98,7 +98,8 @@ afterEach(() => {
 it("opens the first visible use at its own URL when entering a panel application", async () => {
   const { app, frame, router, sent } = await open(`/applications/${appB}`, true);
   try {
-    expect(hostMessageOf(frame.srcdoc).pageKey).toBe(useQ.pageKey);
+    // The frame is told which application use it shows: the one this address opened.
+    expect(hostMessageOf(frame.srcdoc)).toMatchObject({ pageKey: useQ.pageKey, use: { applicationId: appB, useId: useQ.id } });
     await vi.waitFor(() => expect(router.currentRoute.value.path).toBe(`/applications/${appB}/summary`));
     expect(sent.some(request => request.path.endsWith("/policy"))).toBe(false);
   } finally {

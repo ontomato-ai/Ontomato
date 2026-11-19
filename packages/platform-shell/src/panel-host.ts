@@ -17,6 +17,7 @@ import {
   type PanelRefreshPort,
 } from "@ontomato/contracts/panel-host";
 import type { PanelOperation, PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
 import type { PanelDefinitionContent, ProductPanel } from "@ontomato/contracts/product-panels";
 import { randomId } from "@ontomato/contracts/random-id";
 
@@ -42,6 +43,8 @@ export interface PanelHostPort<Source extends PanelHostSource = PanelHostSource>
   source(): Promise<Source>;
   /** The page key a draft for this page names: the use relation's, or the one the candidate is previewed as. */
   readonly pageKey: string;
+  /** The application use this instance shows, as the message names it to the frame; a candidate preview has none. */
+  readonly use: PanelUseRef | null;
   /** A registered panel's current record, read again when its revision moves. */
   panel(panelId: string): Promise<ProductPanel>;
   /** Where the platform serves its SDK builds, e.g. `/apps-sdk`: a definition's frame loads `<root>/<its sdkVersion>`. */
@@ -241,6 +244,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       kind: "panel-host-message",
       panel: { content, manifest, sdkVersion },
       pageKey: port.pageKey,
+      use: port.use,
       url: requestedAddress,
       // What a message calls the page: the panel's own registered name, which its author wrote, with the application's
       // when the page passes one.

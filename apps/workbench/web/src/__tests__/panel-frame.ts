@@ -270,10 +270,12 @@ export function inside(frame: Window) {
   Object.defineProperty(window, "parent", { value: parent, configurable: true });
 }
 
-/** Writes the frame's document as the panel host does: the panel's renderable definition and the run's facts. */
-export function writePanelDocument(panel: ProductPanel, use: ApplicationPanelUse, url: string, state: PanelHostMessage["state"]) {
-  const { content, manifest, sdkVersion } = panel;
-  writeFrameDocument({ kind: "panel-host-message", panel: { content, manifest, sdkVersion }, pageKey: use.pageKey, url, label: panel.name, state });
+/** Writes the frame's document as the panel host does for a registered use: the panel's renderable definition and the run's facts. */
+export function writePanelDocument(source: ReturnType<typeof registered>, url: string, state: PanelHostMessage["state"]) {
+  const { applicationId, use, panel: { content, manifest, sdkVersion, name } } = source;
+  writeFrameDocument({
+    kind: "panel-host-message", panel: { content, manifest, sdkVersion }, pageKey: use.pageKey, use: { applicationId, useId: use.id }, url, label: name, state,
+  });
 }
 
 /** Writes the frame's document from the run's facts the platform's panel host wrote for it. */

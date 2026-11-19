@@ -69,7 +69,7 @@ describe("what a panel's frame may ask the platform for", () => {
     const frame = panelFrame();
     // A's page shows P: A's panel host registers the frame with P's current record.
     platformPanelHost("app-panels-trial-a", useOfP).frame(frame, registered("app-panels-trial-a", useOfP, panelP), true);
-    writePanelDocument(panelP, useOfP, "/applications/app-panels-trial-a/tasks", {
+    writePanelDocument(registered("app-panels-trial-a", useOfP, panelP), "/applications/app-panels-trial-a/tasks", {
       selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id },
     });
     inside(frame);
@@ -147,7 +147,7 @@ describe("what a panel's frame may ask the platform for", () => {
     const sent = installPlatform(answer);
     const frame = panelFrame();
     platformPanelHost("app-panels-trial-a", useOfP).frame(frame, registered("app-panels-trial-a", useOfP, panelP), true);
-    writePanelDocument(panelP, useOfP, "/applications/app-panels-trial-a/tasks", {});
+    writePanelDocument(registered("app-panels-trial-a", useOfP, panelP), "/applications/app-panels-trial-a/tasks", {});
     inside(frame);
     const { appContext } = await mountPanel(panelOf());
     const transport = contextTransport(appContext);

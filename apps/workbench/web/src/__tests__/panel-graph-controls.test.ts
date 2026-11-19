@@ -159,7 +159,7 @@ it("renders ObjectRelations grouped by relation kind with distinct statuses and 
   }));
   const frame = panelFrame();
   platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, {});
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
@@ -316,7 +316,7 @@ it("supports dynamic type queries, status separation, search/paging reset and fu
   }));
   const frame = panelFrame();
   platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, {});
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
@@ -432,7 +432,7 @@ it("switches declared scalar panel state with SegmentedControl (unbound in catal
   installPlatform(hostWith([]));
   const frame = panelFrame();
   platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, {});
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");

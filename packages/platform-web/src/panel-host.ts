@@ -69,6 +69,7 @@ export function platformPanelHost(applicationId: string, use: ApplicationPanelUs
       return { kind: "registered", applicationId, use, panel: await panel(use.panelId) };
     },
     pageKey: use.pageKey,
+    use: { applicationId, useId: use.id },
     panel,
     sdkRoot,
     // The frame is this application's: the address the reader is on names it, and a panel shown beside a conversation is
@@ -98,6 +99,7 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
       return candidatePanelSourceSchema.parse(await json(panelHostPaths.candidate(candidate.id, candidate.ref)));
     },
     pageKey: candidate.pageKey,
+    use: null,
     panel,
     sdkRoot,
     frame: (frame, source, open) => registerCandidateFrame(frame, buildExecutionContext(source.workspace.id, source.previewContext.test), {
