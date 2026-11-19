@@ -134,7 +134,7 @@ function mounted(save: (values: Record<string, string>, revision: number) => Pro
     defineComponent({
       setup: () => {
         provide(panelContextKey, {
-          panel: { id: "panel-schedules-trial", domainId: "d", ownerId: "o", revision: 1, createdAt: "", updatedAt: "", editable: false, name: "Scheduled tasks (trial)", description: "", visibility: "domain", content: { html: "", module: "" }, manifest: panel },
+          panel: { content: { html: "", module: "" }, manifest: panel, sdkVersion: "1.1.1" },
           manifest: panel,
           instance,
           projection: (id: string) => instance.projection(id),
@@ -142,6 +142,7 @@ function mounted(save: (values: Record<string, string>, revision: number) => Pro
           projectionsChanged: () => () => {},
           draft: instance.draft,
           holdUnsaved: () => () => {},
+          t: (key: string) => key,
         });
         provide(projectionKey, slot);
         return () => h(ObjectForm);
@@ -155,7 +156,7 @@ function mounted(save: (values: Record<string, string>, revision: number) => Pro
   return { app, element, form, changed, unregister, save, instance, objectType };
 }
 
-/** What each field holds, by its key: a text's own value, or what a choice shows. */
+/** What each field holds, by its path: a text's own value, or what a choice shows. */
 function shown(element: Element) {
   const result: Record<string, string> = {};
   for (const item of element.querySelectorAll(".el-form-item")) {
@@ -171,7 +172,7 @@ describe("the form a panel shows", () => {
     const { app, element, form } = mounted(async () => ({}));
     await vi.waitFor(() => expect(element.textContent).toContain("Run automated tests"));
     expect(form).toHaveBeenCalledWith("task-1");
-    expect(shown(element)).toMatchObject({ operation: expect.stringContaining("Run automated tests") });
+    expect(shown(element)).toMatchObject({ "/operation": expect.stringContaining("Run automated tests") });
     app.unmount();
   });
 
@@ -192,13 +193,12 @@ describe("the form a panel shows", () => {
       },
       () => {},
     );
-    await vi.waitFor(() => expect(shown(element).instruction).toBe("look at tonight's failures"));
+    await vi.waitFor(() => expect(shown(element)["/instruction"]).toBe("look at tonight's failures"));
     // The form shows the draft's values, and the fields it changed are marked.
     // The field set is the owner's answer for the draft's operation: the instruction the draft switched to.
-    expect(Object.keys(shown(element))).toEqual(["operation", "instruction"]);
-    expect(element.textContent).toContain("Changed:");
-    expect(element.textContent).toContain("operation");
-    expect(element.textContent).toContain("instruction");
+    expect(Object.keys(shown(element))).toEqual(["/operation", "/instruction"]);
+    expect([...element.querySelectorAll(".sdk-owner-form-changed")].map((item) => item.getAttribute("data-field")))
+      .toEqual(["/operation", "/instruction"]);
     // Nothing was written: the draft is the reader's to save.
     expect(written).toEqual([]);
     expect(registeredHandlers()).toContain(`${mountedForm.objectType}.save`);

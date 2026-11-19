@@ -46,8 +46,9 @@ export interface PanelInstance {
   clearDraft(slot: string): void;
   /**
    * Whether the draft this instance holds is one none of its forms performs: every slot its declaration names has
-   * registered its projection, and none of them publishes a form save of the draft's operation. While a slot is still to
-   * register it is false, since that may be the form that takes the draft.
+   * registered its projection, and every form among them was offered the draft and found that its owner's form for the
+   * draft's target performs another operation. While a slot is still to register it is false, since that may be the form
+   * that takes the draft.
    */
   readonly unclaimedDraft: Readonly<Ref<boolean>>;
   register(registration: PanelProjectionRegistration): () => void;
@@ -104,13 +105,12 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       if (draft.value?.slot === slot) draft.value = null;
     },
     unclaimedDraft: computed(() => {
-      const operation = forms.heldOperation();
-      if (operation === null) return false;
       const registered = registrations.value;
       if (!Object.keys(manifest.slots).every((slot) => registered.some((registration) => registration.slot === slot))) return false;
-      return !registered.some((registration) =>
-        registration.ports.operations.some((published) => published.kind === "form.save" && published.handlerRef === operation),
-      );
+      const formSlots = registered
+        .filter((registration) => registration.ports.operations.some((operation) => operation.kind === "form.save"))
+        .map((registration) => registration.slot);
+      return forms.unclaimed(formSlots);
     }),
     projections: readonly(registrations),
     register(registration) {

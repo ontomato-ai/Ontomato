@@ -1,9 +1,13 @@
-import { inject, onBeforeUnmount, type InjectionKey, type Ref } from "vue";
+import { computed, inject, onBeforeUnmount, type ComputedRef, type InjectionKey, type Ref } from "vue";
 import type { PanelManifest, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelDefinitionContent, ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PanelInstance } from "./instance";
-import type { PanelFormAdapter, ReceivedPanelDraft } from "./draft";
-import { platformObjectFor, type PlatformObjectClient } from "./platform-objects";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import type { PanelFormField } from "@ontomato/contracts/panel-projection";
+import type { PanelFormAdapter, PanelFormHandle, ReceivedPanelDraft } from "./draft";
+import { adapterPart, type PlatformObjectAdapter } from "./platform-objects";
+import { valueAt } from "./form-values";
+import type { PanelText } from "./text";
 
 /*
  * The panel context the SDK provides to a panel's own module (overall design 3.3, 3.4): the panel's declaration, the
@@ -51,6 +55,11 @@ export interface PanelContext {
    * form. The SDK calls it for a received draft; a form component calls it for its own edits.
    */
   holdUnsaved(flag: Ref<boolean>): () => void;
+  /**
+   * The panel's own words (its content's `messages`) in the platform's current language: the current language, else
+   * the deployment's default, else the key. The panel's HTML reads the same function as `t(key, params)`.
+   */
+  readonly t: PanelText;
 }
 
 /**
@@ -84,18 +93,59 @@ export function useProjectionSlot(): ProjectionSlot {
 }
 
 /**
- * Registers a form component's draft handling for the projection it is drawn as. The component supplies its owner's own
- * read and save; the SDK compares what the draft says with what it read and reports the unsaved state to the host, so
- * neither a draft nor a definition change replaces the reader's work unasked.
+ * Registers a form component with the instance under its slot: the form other slots' field ports edit, the draft the
+ * address names, the header's save and discard and the unsaved state the host is told.
  */
-export function useProjectionForm<Form extends object>(adapter: Omit<PanelFormAdapter<Form, { id?: string }>, "operation">): void {
+export function useProjectionForm(adapter: PanelFormAdapter): void {
   const context = usePanelContext();
   const drawn = useProjectionSlot();
-  const operation = context.instance.projections.value
-    .find((registration) => registration.slot === drawn.slot)?.ports.operations.find((item) => item.kind === "form.save");
-  if (!operation) throw new Error(`The projection in slot '${drawn.slot}' publishes no form save`);
-  const stop = context.instance.forms.register(drawn.slot, { ...adapter, operation: operation.handlerRef });
-  onBeforeUnmount(stop);
+  const saves = context.instance.projections.value
+    .find((registration) => registration.slot === drawn.slot)?.ports.operations.some((item) => item.kind === "form.save");
+  if (!saves) throw new Error(`The projection in slot '${drawn.slot}' publishes no form save`);
+  onBeforeUnmount(context.instance.forms.register(drawn.slot, adapter));
+}
+
+/** One field of a form in this panel instance, as a field projection reads and edits it. */
+export interface ProjectionFormField {
+  /** The owner's description of the field; undefined until the form has read it. */
+  readonly field: ComputedRef<PanelFormField | undefined>;
+  readonly value: ComputedRef<RuntimeJsonValue | undefined>;
+  readonly error: ComputedRef<string | undefined>;
+  readonly changed: ComputedRef<boolean>;
+  /** Whether the reader may change it now: the owner's read-only rule and the form's own busy state. */
+  readonly disabled: ComputedRef<boolean>;
+  set(value: RuntimeJsonValue): void;
+}
+
+/**
+ * The form field this projection's slot edits (`formField: {slot, path}`): the value and the dirty state are the form's
+ * in the named slot, so a choice made here is the form's own edit, saved, discarded and drafted with it. A path the
+ * owner's current form does not describe fails visibly once that form has read its fields.
+ */
+export function useFormField(): ProjectionFormField {
+  const { instance, manifest } = usePanelContext();
+  const drawn = useProjectionSlot();
+  const port = manifest.slots[drawn.slot]?.formField;
+  if (!port) throw new Error(`Slot '${drawn.slot}' edits no form field: its declaration names no formField`);
+  const handle = computed<PanelFormHandle | undefined>(() => instance.forms.handle(port.slot));
+  const field = computed(() => {
+    const form = handle.value;
+    if (!form || !form.fields.value.length) return undefined;
+    const found = form.fields.value.find((item) => item.path === port.path);
+    if (!found) throw new Error(`The form in slot '${port.slot}' has no field ${port.path}`);
+    return found;
+  });
+  return {
+    field,
+    value: computed(() => (handle.value ? valueAt(handle.value.values.value, port.path) : undefined)),
+    error: computed(() => handle.value?.errors.value[port.path]),
+    changed: computed(() => handle.value?.changed.value.has(port.path) === true),
+    disabled: computed(() => !field.value || field.value.readOnly || handle.value!.busy.value),
+    set(value) {
+      if (!handle.value) throw new Error(`Slot '${port.slot}' holds no form yet`);
+      handle.value.set(port.path, value);
+    },
+  };
 }
 
 /** Refresh this projection when a local or server operation changed an object it shows. */
@@ -108,24 +158,22 @@ export function useProjectionObjectRefresh(shows: (id: string) => boolean, refre
 }
 
 /**
- * The objects of the type this projection binds, as its owner lists and reads them. Every object read through it names
- * itself to the instance, so the page context names the selected object by its owner's label without any component
- * doing so on its own.
+ * The objects of a type as its owner lists and reads them — the type this projection binds, unless another is named (a
+ * graph's edges). Every object read through it names itself to the instance, so the page context names the selected
+ * object by its owner's label without any component doing so on its own.
  */
-export function useProjectionObjects(): Pick<PlatformObjectClient, "list" | "read"> {
+export function useProjectionObjects(objectType?: string): Required<Pick<PlatformObjectAdapter, "list" | "read">> {
   const { instance } = usePanelContext();
-  const slot = useProjectionSlot();
-  const objectType = slot.projection.binding.id;
-  const client = platformObjectFor(objectType);
+  const type = objectType ?? useProjectionSlot().projection.binding.id;
   return {
     async list() {
-      const listed = await client.list();
-      instance.nameObjects(objectType, listed);
+      const listed = await adapterPart(type, "list")();
+      instance.nameObjects(type, listed);
       return listed;
     },
     async read(primaryKey) {
-      const found = await client.read(primaryKey);
-      instance.nameObjects(objectType, [found]);
+      const found = await adapterPart(type, "read")(primaryKey);
+      instance.nameObjects(type, [found]);
       return found;
     },
   };

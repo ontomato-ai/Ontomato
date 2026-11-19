@@ -2,6 +2,8 @@ import { createApp, h, nextTick, provide, ref, shallowReactive, watch, type Comp
 import { useI18n } from "vue-i18n";
 import { contextTransport, type AppContext } from "../context";
 import { connectPanelContext } from "./app-context";
+import { defaultLocale } from "apps-sdk:panel-appearance";
+import { createPanelText } from "./text";
 import {
   PANEL_HOST_CHANNEL,
   panelAddressState,
@@ -97,6 +99,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
       unsaved.add(flag);
       return () => unsaved.delete(flag);
     },
+    t: createPanelText(message.panel.content.messages ?? {}, appContext.locale, defaultLocale),
   };
   const app = createApp({
     setup: () => {
@@ -115,6 +118,8 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   // a single word on purpose.
   // eslint-disable-next-line vue/multi-word-component-names
   app.component("Projection", PanelProjection);
+  // The panel's own words, as its HTML reads them: `{{ t("settings.title") }}`. The platform's words stay `$t`.
+  app.config.globalProperties.t = context.t;
   // The platform objects this version's panels read, and the operations they run.
   registerSchedulesPlatformObject(appContext);
   for (const adapt of platformObjectAdapters)

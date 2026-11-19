@@ -66,7 +66,7 @@ describe("a draft at a panel application's own address", () => {
     await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain("caseSetId"), {
       timeout: 5000,
     });
-    expect(document.querySelector('[data-field="caseSetId"]')?.textContent).toContain("Smoke (8)");
+    expect(document.querySelector('[data-field="/caseSetId"]')?.textContent).toContain("Smoke (8)");
     expect(sent.filter((request) => request.method === "PUT")).toEqual([]);
     expect(sent.filter((request) => request.method === "POST" && request.path === "/api/product-assets/subscriptions"))
       .toMatchObject([{ body: { kind: "product-definition", target: { kind: "panel", id: scenario.panel.id } } }]);

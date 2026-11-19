@@ -8,6 +8,8 @@ export { default as ObjectForm } from "../base/ObjectForm.vue";
 export { default as OperationButton } from "../base/OperationButton.vue";
 export { default as TwoPaneLayout } from "../base/TwoPaneLayout.vue";
 export { default as SectionGroup } from "../base/SectionGroup.vue";
+export { default as ReferencePicker } from "../base/ReferencePicker.vue";
+export { default as ObjectGraph } from "../base/ObjectGraph.vue";
 export {
   GraphCanvas,
   type GraphCanvasEdge,

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createApp, defineComponent, h, nextTick, ref } from "vue";
+import { createApp, defineComponent, h, nextTick, ref, shallowRef } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { createPanelInstance } from "../../../../../packages/apps-sdk/src/panel/instance";
@@ -9,7 +9,7 @@ import { operationCall } from "../../../../../packages/apps-sdk/src/panel/ports"
 import { registerHandler, registeredHandlers } from "../../../../../packages/apps-sdk/src/panel/handlers";
 import {
   registerPlatformObject,
-  platformObjectFor,
+  platformObjectAdapter,
   registeredPlatformObjects,
 } from "../../../../../packages/apps-sdk/src/panel/platform-objects";
 import { panelContextKey } from "../../../../../packages/apps-sdk/src/panel/context";
@@ -131,7 +131,7 @@ describe("the platform objects this version reads", () => {
       changed: async () => ({ fields: [], values: {}, revision: 0 }),
       save: async () => ({ primaryKey: "", label: "", fields: {} }),
     })).toThrow(/already registered/);
-    expect(() => platformObjectFor("test:NotRegistered")).toThrow(/reads no platform object/);
+    expect(() => platformObjectAdapter("test:NotRegistered")).toThrow(/reads no platform object/);
   });
 
   it("saves an object through the type's own client, with the values the form holds", async () => {
@@ -155,7 +155,7 @@ describe("the platform objects this version reads", () => {
     });
     await instanceUnderTest.runHandler("test:Saved.save", {
       target: { kind: "object", objectType: "test:Saved", primaryKey: "task-1" },
-      input: { operation: "inspection", instruction: "look", revision: 3 },
+      input: { values: { operation: "inspection", instruction: "look" }, revision: 3 },
     });
     // The revision the caller read the object at travels with the write, so the owner can refuse one over a newer change.
     expect(save).toHaveBeenCalledWith("task-1", { operation: "inspection", instruction: "look" }, 3);
@@ -187,16 +187,20 @@ describe("a panel instance", () => {
     expect(q.pageContext.value.selection[0]?.id).toBe("task-7");
   });
 
-  it("takes the draft of its own form and marks the fields it changed", async () => {
+  it("hands a draft to the form whose owner names its operation, and marks the fields it changed", async () => {
     const adapters = new PanelFormAdapters();
-    adapters.register("form", {
-      operation: "platform:ScheduledTask.save",
-      prepareDraft: async () => ({ baseline: { operation: "autotest", caseSetId: "cases-1" }, apply: () => {} }),
-      save: async () => ({}),
+    // A form whose owner performs another operation for the draft's target declines it; the next form is asked.
+    const form = (performs: string, changed: readonly string[]) => ({
+      handle: { fields: shallowRef([]), values: shallowRef({}), errors: shallowRef({}), changed: shallowRef(new Set<string>()), busy: ref(false), set: () => {} },
+      receive: async (draft: { operation: string }) => (draft.operation === performs ? new Set(changed) : null),
       // Which slot takes the draft and what it changed is this test's subject; the form's own save and showing are the
       // component's, checked where the component is mounted.
       submit: async () => ({}),
+      dirty: () => false,
+      discard: () => {},
     });
+    adapters.register("other", form("agent.update", []));
+    adapters.register("form", form("platform:ScheduledTask.save", ["/instruction", "/operation"]));
     const received = await new Promise<ReceivedPanelDraft<Record<string, unknown>>>((taken) =>
       void receivePanelDraft(
         "panels-trial-a-tasks",
@@ -215,7 +219,8 @@ describe("a panel instance", () => {
     );
     // The draft is unsaved: it is what the form now holds, and the fields it changed are marked.
     expect(received.slot).toBe("form");
-    expect([...received.changed].sort()).toEqual(["instruction", "operation"]);
+    expect([...received.changed].sort()).toEqual(["/instruction", "/operation"]);
+    expect(adapters.unclaimed(["other", "form"])).toBe(false);
   });
 });
 
@@ -247,20 +252,7 @@ describe("a panel's module", () => {
     };
     const app = createApp({ setup: () => () => h(Panel) });
     app.provide(panelContextKey, {
-      panel: {
-        id: "panel-schedules-trial",
-        domainId: "domain-1",
-        ownerId: "owner-1",
-        revision: 1,
-        createdAt: "2026-11-18T00:00:00.000Z",
-        updatedAt: "2026-11-18T00:00:00.000Z",
-        editable: false,
-        name: "Scheduled tasks (trial)",
-        description: "",
-        visibility: "domain",
-        content: { html: '<div id="app"></div>', module: "" },
-        manifest: panel,
-      },
+      panel: { content: { html: '<div id="app"></div>', module: "" }, manifest: panel, sdkVersion: "1.1.1" },
       manifest: panel,
       instance: panelInstance,
       projection: (id: string) => panelInstance.projection(id),
@@ -268,6 +260,7 @@ describe("a panel's module", () => {
       projectionsChanged: () => () => {},
       draft: ref(null),
       holdUnsaved: () => () => {},
+      t: (key: string) => key,
     });
     app.mount(document.createElement("div"));
     await nextTick();

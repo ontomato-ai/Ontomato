@@ -1,4 +1,4 @@
-import type { FormField } from "@ontomato/contracts/form-fields";
+import { formFieldKey, formFieldPointer, formValuesSchema, type FormField } from "@ontomato/contracts/form-fields";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { panelFormTargetSchema, type PanelFormTarget, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import {
@@ -80,56 +80,76 @@ export class PlatformObjectRefusal extends Error {
   }
 }
 
-const clients = new Map<string, PlatformObjectClient>();
-
 /**
- * Registers one platform object type's client, and with it the type's own save operation — `<type>.save` — so the save a
- * form projection publishes is a registered handler like any other, reached by a person's header button and by an
- * agent's call alike. Registering the same type twice fails: one type, one client, one save.
+ * Registers the scheduled tasks' string client (the pilot's) as a typed adapter, so every component reads one
+ * interface. Its fields become typed fields at `/<key>`, a draft is checked against the owner's current form (one the
+ * fields changed is asked again, a key the form does not have refuses the whole draft), and the save sends the string
+ * values at the revision the form was read at. It goes when the scheduled tasks' adapter is written against
+ * `PlatformObjectAdapter`.
  */
 export function registerPlatformObject(client: PlatformObjectClient): void {
-  if (clients.has(client.objectType) || adapters.has(client.objectType)) throw new Error(`Platform object '${client.objectType}' is already registered`);
-  clients.set(client.objectType, client);
-  registerHandler({
-    handlerRef: `${client.objectType}.save`,
-    async invoke({ target, input }) {
-      if (target?.kind !== "object") throw new Error(`Saving a ${client.objectType} needs the object it saves`);
-      const { revision, ...values } = input;
-      if (typeof revision !== "number") throw new Error(`Saving a ${client.objectType} needs the revision it was read at`);
-      return client.save(
-        target.primaryKey,
-        Object.fromEntries(
-          Object.entries(values).map(([name, value]) => [name, typeof value === "string" ? value : String(value ?? "")]),
-        ),
-        revision,
-      );
+  const type = client.objectType;
+  const keyOf = (target: PanelFormTarget) => {
+    if (target.kind !== "object") throw new Error(`A ${type} form edits an existing object`);
+    return target.primaryKey;
+  };
+  const described = (form: PlatformObjectForm): PanelFormDescription => ({
+    fields: form.fields.map((field) => {
+      const common = { path: formFieldPointer("/", field.key), label: field.label, required: field.required, help: field.help, readOnly: false };
+      return field.type === "select"
+        ? { ...common, control: { kind: "select" as const, options: field.options }, valueSchema: { type: "string" }, refreshOnChange: field.refreshOnChange }
+        : { ...common, control: { kind: "text" as const, multiline: field.multiline, placeholder: field.placeholder, maxLength: field.maxLength }, valueSchema: { type: "string" } };
+    }),
+    values: { ...form.values },
+    revision: form.revision,
+    // Only the draft operation is read in a frame; the scheduled tasks' own skill text describes their request.
+    save: { method: "PUT", path: "/", bodySchema: {}, draftOperation: `${type}.save` },
+  });
+  const byPath = (refusal: unknown) =>
+    refusal instanceof PlatformObjectRefusal
+      ? new PlatformObjectRefusal(refusal.message, Object.fromEntries(Object.entries(refusal.fields).map(([key, message]) => [formFieldPointer("/", key), message])), { cause: refusal })
+      : refusal;
+  registerPlatformObjectAdapter({
+    objectType: type,
+    list: () => client.list(),
+    read: (primaryKey) => client.read(primaryKey),
+    forms: {
+      async describe({ target, values, changedField }) {
+        const primaryKey = keyOf(target);
+        if (values === undefined) return described(await client.form(primaryKey));
+        const filled = formValuesSchema.parse(values);
+        if (changedField !== null) return described(await client.changed(primaryKey, filled, formFieldKey(changedField, "/")!));
+        const baseline = await client.form(primaryKey);
+        const depended = baseline.fields.find((field) => field.type === "select" && field.refreshOnChange
+          && Object.hasOwn(filled, field.key) && filled[field.key] !== baseline.values[field.key]);
+        const effective = depended ? await client.changed(primaryKey, { ...baseline.values, ...filled }, depended.key) : baseline;
+        const allowed = new Set(effective.fields.map((field) => field.key));
+        const extra = Object.keys(filled).filter((key) => !allowed.has(key));
+        if (extra.length)
+          throw new PlatformObjectRefusal(`Draft fields not in the current form: ${extra.join(", ")}`,
+            Object.fromEntries(extra.map((key) => [formFieldPointer("/", key), "Not a field of this form"])));
+        return described({ ...effective, values: { ...effective.values, ...filled } });
+      },
+      async save(target, { values, revision }) {
+        if (revision === undefined) throw new Error(`Saving a ${type} needs the revision it was read at`);
+        try {
+          return await client.save(keyOf(target), formValuesSchema.parse(values), revision);
+        } catch (error) {
+          throw byPath(error);
+        }
+      },
     },
   });
-}
-
-/** The client that answers for one binding's type. */
-export function platformObjectFor(objectType: string): PlatformObjectClient {
-  const found = clients.get(objectType);
-  if (!found) throw new Error(`This SDK version reads no platform object '${objectType}'`);
-  return found;
-}
-
-/** The types this version reads: what a projection may bind. */
-export function registeredPlatformObjects(): readonly string[] {
-  return [...clients.keys()];
 }
 
 /*
  * ---- Resource adapters (M1 typed forms) ----
  *
- * What a resource adapter of the SDK gives for one platform object type: the reads a list and a summary need, the
- * owner's typed form, the choices a reference field offers and, for a type whose objects join two others, the edges a
- * graph draws. An adapter is written once per type (`resources/`), receives the frame's request path when the panel
+ * What a resource adapter of the SDK gives for one platform object type: the reads a list, a summary and a graph need,
+ * the owner's typed form and the choices a reference field offers. A graph's edges are the records of their own type
+ * (a relationship), whose endpoints the projection's `graph` declaration names by pointer into the record's fields. An adapter is written once per type (`resources/`), receives the frame's request path when the panel
  * mounts, and sends exactly the requests `contracts/panel-client-requests.ts` declares for its binding; nothing in it
  * decides a field, a default, a permission or a valid value — the owner answers all of those.
- *
- * `PlatformObjectClient` above is the scheduled tasks' string form of the pilot; it goes once their adapter is written
- * against this interface.
  */
 
 /**
@@ -191,24 +211,11 @@ export interface PlatformObjectOptions {
     total?: number;
   }>;
   /**
-   * The values a field holds now, as choices: each with its label, and those no longer offered marked unavailable with
-   * the owner's reason (the execution user's `selected`, a skill gone from the catalogue).
+   * The values a field holds now, as choices — one per value, in the same order: each with its label, and those no
+   * longer offered marked unavailable with the owner's reason (the execution user's `selected`, a skill gone from the
+   * catalogue).
    */
   resolve(values: readonly RuntimeJsonValue[]): Promise<readonly PlatformObjectOption[]>;
-}
-
-/** One edge between two objects of another type, by their primary keys: a relationship between two classes. */
-export interface PlatformObjectEdge {
-  primaryKey: string;
-  label: string;
-  source: string;
-  target: string;
-}
-
-/** The edges a relation type's objects make between the objects of `endpointType`. */
-export interface PlatformObjectEdges {
-  endpointType: string;
-  list(): Promise<readonly PlatformObjectEdge[]>;
 }
 
 /**
@@ -223,13 +230,12 @@ export interface PlatformObjectAdapter {
   read?(primaryKey: string): Promise<PlatformObjectRecord>;
   forms?: PlatformObjectForms;
   options?: PlatformObjectOptions;
-  edges?: PlatformObjectEdges;
 }
 
 /**
  * How a resource module provides its adapter: given the frame's request path when a panel mounts. Two types whose owner
  * answers both from one response (classes and relationships, from one metadata read) are written in one module that
- * returns both adapters over one read.
+ * returns both adapters over that one read.
  */
 export type PlatformObjectAdapterFactory = (requests: PlatformRequests) => readonly PlatformObjectAdapter[];
 
@@ -241,7 +247,7 @@ const adapters = new Map<string, PlatformObjectAdapter>();
  * one adapter, one save: registering a type twice fails.
  */
 export function registerPlatformObjectAdapter(adapter: PlatformObjectAdapter): void {
-  if (adapters.has(adapter.objectType) || clients.has(adapter.objectType))
+  if (adapters.has(adapter.objectType))
     throw new Error(`Platform object '${adapter.objectType}' is already registered`);
   adapters.set(adapter.objectType, adapter);
   const forms = adapter.forms;
@@ -260,8 +266,13 @@ export function platformObjectAdapter(objectType: string): PlatformObjectAdapter
   return found;
 }
 
+/** The types this version reads: what a projection may bind. */
+export function registeredPlatformObjects(): readonly string[] {
+  return [...adapters.keys()];
+}
+
 /** One part of a type's adapter, or a visible failure naming the type and the part it lacks. */
-export function adapterPart<Part extends "list" | "read" | "forms" | "options" | "edges">(
+export function adapterPart<Part extends "list" | "read" | "forms" | "options">(
   objectType: string,
   part: Part,
 ): NonNullable<PlatformObjectAdapter[Part]> {
