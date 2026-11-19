@@ -12,7 +12,7 @@ import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
 import { registerCandidateFrame, registerPanelFrame } from "./app-host";
 import type { PanelHostPort } from "@ontomato/platform-shell";
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
-import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
+import type { PanelOperationAffected } from "@ontomato/contracts/panel-operations";
 
 /*
  * The platform's panel host (overall design 3.4): the two reads a panel instance needs and the notices it listens to.
@@ -73,7 +73,7 @@ async function snapshot(panelId: string) {
 export interface PanelObjectChange {
   target: PanelObjectIdentity | null;
   /** The objects and object types the owner reports a write changed: what an operation's outcome carries. */
-  affected?: NonNullable<Extract<PanelOperationOutcome, { kind: "batch" }>["affected"]>;
+  affected?: PanelOperationAffected;
 }
 
 /**

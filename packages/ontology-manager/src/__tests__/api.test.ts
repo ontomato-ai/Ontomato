@@ -300,6 +300,58 @@ describe("stale responses and authentication failures", () => {
 
     await expect(client.deleteOntologyObject("X")).rejects.toThrow("Class does not exist");
   });
+
+  it("owner refusals throw the owner message and code", async () => {
+    respond = async () =>
+      json({ error: { code: "FIELD_VALIDATION_FAILED", message: "Some fields are invalid", fields: [] } }, 422);
+    const { client } = setup({ type: "token", token: "t" });
+
+    await expect(client.deleteOntologyObject("X")).rejects.toMatchObject({
+      message: "Some fields are invalid",
+      code: "FIELD_VALIDATION_FAILED",
+      status: 422,
+    });
+  });
+
+  it("object updates fill the unchanged field from the stored model", async () => {
+    respond = async (url) =>
+      url.endsWith("/admin/getMetas")
+        ? json({
+            success: true,
+            data: { classDef: [{ className: "Order", showName: "Order", classDesc: "desc" }] },
+          })
+        : json({});
+    const { client } = setup({ type: "token", token: "t" });
+
+    await client.updateOntologyObject("Order", { showName: "Renamed" });
+
+    expect(requests.map((r) => [r.url.replace("/custom/manager-api/data-query", ""), r.method, r.body]))
+      .toEqual([
+        ["/admin/getMetas", "POST", {}],
+        ["/ontology/model/object-type/update", "POST", {
+          className: "Order", showName: "Renamed", classDesc: "desc",
+        }],
+      ]);
+  });
+
+  it("attribute updates send the whole editable form and set the primary key separately", async () => {
+    const { client } = setup({ type: "token", token: "t" });
+
+    await client.updateOntologyAttribute(
+      "Order",
+      { name: "order_no", showName: "Order no", type: "varchar", attrDesc: "d", enable: true, bizzkeyBool: false },
+      { enable: false, primaryKey: true }
+    );
+
+    expect(requests.map((r) => [r.url.replace("/custom/manager-api/data-query", ""), r.method, r.body]))
+      .toEqual([
+        ["/ontology/model/attribute/update", "POST", {
+          className: "Order", name: "order_no", showName: "Order no", attrDesc: "d",
+          enable: false, businessKey: false,
+        }],
+        ["/ontology/model/attribute/primary-key", "POST", { className: "Order", name: "order_no" }],
+      ]);
+  });
 });
 
 describe("requests used by data browsing and visual modeling", () => {
@@ -373,34 +425,34 @@ describe("requests used by data browsing and visual modeling", () => {
     });
 
     expect(
-      requests.map((r) => [r.url.replace("/custom/manager-api/data-query", ""), r.body])
+      requests.map((r) => [r.url.replace("/custom/manager-api/data-query", ""), r.method, r.body])
     ).toEqual([
       [
-        "/admin/addClass",
-        expect.objectContaining({
+        "/ontology/model/object-type/create",
+        "POST",
+        {
           className: "Order",
           primaryKeyName: "order_no",
           showName: "Sales Order",
           classDesc: "d",
-          classToCard: false,
-          instanceToCard: false,
-          inStarChart: false,
-        }),
+        },
       ],
       [
-        "/admin/addRelationship",
-        expect.objectContaining({
-          relationName: "has",
-          fromClassName: "A",
-          toClassName: "B",
-          relationDesc: "d",
+        "/ontology/model/relationship/create",
+        "POST",
+        {
+          relationship: "has",
+          fromclass: "A",
+          toclass: "B",
+          desc: "d",
           fromField: "a_id",
           toField: "id",
-        }),
+        },
       ],
       [
-        "/admin/addRelationship",
-        expect.objectContaining({ relationName: "r", fromClassName: "A", toClassName: "B", relationDesc: "" }),
+        "/ontology/model/relationship/create",
+        "POST",
+        expect.objectContaining({ relationship: "r", fromclass: "A", toclass: "B", desc: "" }),
       ],
     ]);
   });

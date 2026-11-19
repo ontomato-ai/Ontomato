@@ -71,7 +71,9 @@ jobs:
         run: &build-images |
           if [ "$GITHUB_REF_TYPE" = tag ]; then version="${GITHUB_REF_NAME#v}"; elif [ "$GITHUB_REF_NAME" = develop ]; then version=edge; else version="${GITHUB_REF_NAME//\//-}"; fi
           BUILD_CACHE_REF="$REGISTRY/ontomato-workbench:cache-$version-$ARCH" $GHCR_RETRY make workbench ARCH="$ARCH"
-          BUILD_CACHE_REF="$REGISTRY/ontomato-data-engine:cache-$version-$ARCH" $GHCR_RETRY make data-engine ARCH="$ARCH"
+          maven_repo_url=$(cat .github/maven-wrapper-repo-url)
+          MVNW_REPOURL="$maven_repo_url" BUILD_CACHE_REF="$REGISTRY/ontomato-data-engine:cache-$version-$ARCH" \
+            $GHCR_RETRY make data-engine ARCH="$ARCH"
           BUILD_CACHE_REF="$REGISTRY/ontomato-agent-runtime:cache-$version-$ARCH" $GHCR_RETRY make agent-runtime ARCH="$ARCH"
           BUILD_CACHE_REF="$REGISTRY/ontomato-gateway:cache-$version-$ARCH" $GHCR_RETRY make gateway ARCH="$ARCH"
 

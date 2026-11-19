@@ -68,3 +68,4 @@ export const panelOperationAffectedSchema = z.object({
   objects: z.array(panelObjectIdentitySchema),
   objectTypes: z.array(runtimeKeySchema),
 }).strict();
+export type PanelOperationAffected = z.infer<typeof panelOperationAffectedSchema>;
