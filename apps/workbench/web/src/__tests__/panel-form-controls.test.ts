@@ -123,8 +123,8 @@ afterEach(() => {
 
 it("edits parameter rows at their absolute paths, and a message follows its row when the rows move", async () => {
   const { context, sent } = await open(() => Response.json({
-    success: false, message: "Check the parameters",
-    fields: [{ field: "/parameters/1/name", code: "invalid", message: "A parameter name is a word" }],
+    success: false, code: "FUNCTION_INVALID", message: "Check the parameters",
+    errors: [{ field: "/parameters/1/name", code: "invalid_object", message: "A parameter name is a word" }],
   }));
   // Each row's fields at the row's current place; the hidden identity is drawn by no control.
   expect(item("/parameters/0/name")?.querySelector("input")?.value).toBe("orderId");
