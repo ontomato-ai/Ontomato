@@ -51,9 +51,17 @@ public class OntologyGenerationController {
       HttpServletRequest request) throws Exception {
     access.service(request);
     var body = JSONObject.from(requestBody);
-    AgentJson.fields(body, "run", "input");
-    if (!(body.get("run") instanceof Map<?, ?>) || !(body.get("input") instanceof Map<?, ?>))
-      throw AgentHttpException.invalid("run and input must be objects");
+    switch (operation) {
+      case "adopt" -> AuthoringContract.validate("adoptionRequest", body);
+      case "read-test" -> AuthoringContract.validate("readTestRequest", body);
+      default -> {
+        AgentJson.fields(body, "run", "input");
+        if (!(body.get("run") instanceof Map<?, ?>) || !(body.get("input") instanceof Map<?, ?>))
+          throw AgentHttpException.invalid("run and input must be objects");
+        AuthoringContract.validate("hostRun", body.getJSONObject("run"));
+        AuthoringContract.validateOperation(kind, operation, body.getJSONObject("input"));
+      }
+    }
     return platform.operate(kind, operation, PlatformAuthoringService.Run.parse(body.getJSONObject("run")),
         body.getJSONObject("input"), language);
   }
@@ -74,7 +82,9 @@ public class OntologyGenerationController {
       @PathVariable String operation, @RequestBody Map<String, Object> input,
       HttpServletRequest request) throws Exception {
     access.authenticated(request);
-    return platform.operateExternal(AgentJson.id(run), kind, operation, JSONObject.from(input), access.current(request));
+    var body = JSONObject.from(input);
+    AuthoringContract.validateOperation(kind, operation, body);
+    return platform.operateExternal(AgentJson.id(run), kind, operation, body, access.current(request));
   }
 
   @GetMapping("/{run}/helpers")

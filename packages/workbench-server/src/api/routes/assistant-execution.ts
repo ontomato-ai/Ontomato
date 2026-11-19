@@ -115,7 +115,8 @@ for (const kind of ["action", "metric-view"] as const) {
         const { owner, credentials } = context(req);
         const input = "body" in operation ? operation.body.parse(req.body)
           : "params" in operation ? operation.params.parse({ executionId: req.params.executionId }) : {};
-        res.json(await executeAuthoring(owner, credentials, runId, kind, name as AuthoringOperation, input));
+        const result = await executeAuthoring(owner, credentials, runId, kind, name as AuthoringOperation, input);
+        res.json(operation.response.parse(result));
       }),
     );
   }

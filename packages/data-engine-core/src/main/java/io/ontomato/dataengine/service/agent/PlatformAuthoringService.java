@@ -64,18 +64,9 @@ public class PlatformAuthoringService {
   public record Run(String id, String session, Owner owner, String executor, List<String> classes,
       long expiresAt, JSONObject target) {
     public static Run parse(JSONObject body) {
-      AgentJson.fields(body, "hostId", "sessionId", "runId", "ownerId", "executionUserId",
-          "domainId", "classNames", "expiresAt", "target");
-      if (!"workbench".equals(AgentJson.text(body, "hostId")))
-        throw AgentHttpException.invalid("Unknown authoring host");
-      if (!(body.get("classNames") instanceof List<?> names)
-          || names.stream().anyMatch(name -> !(name instanceof String text) || text.isBlank()))
-        throw AgentHttpException.invalid("classNames must be an array of class names");
-      if (!(body.get("expiresAt") instanceof Number))
-        throw AgentHttpException.invalid("expiresAt must be an epoch millisecond timestamp");
       return new Run(AgentJson.id(body.getString("runId")), AgentJson.id(body.getString("sessionId")),
-          new Owner(AgentJson.text(body, "ownerId"), AgentJson.text(body, "domainId")),
-          AgentJson.text(body, "executionUserId"), body.getList("classNames", String.class),
+          new Owner(body.getString("ownerId"), body.getString("domainId")),
+          body.getString("executionUserId"), body.getList("classNames", String.class),
           body.getLongValue("expiresAt"), body.getJSONObject("target"));
     }
 
@@ -88,7 +79,6 @@ public class PlatformAuthoringService {
       throws Exception {
     String kind = kind(authoredKind);
     if (operation.equals("read-test")) {
-      AgentJson.fields(input, "executionId");
       row(run.id(), run.session(), run.owner(), false);
       return operations.readTest(run.id(), kind, AgentJson.id(input.getString("executionId")));
     }
@@ -96,7 +86,6 @@ public class PlatformAuthoringService {
     identity.requireQueryAccess(run.executor(), run.owner().domainId());
     if (kind.equals("action")) operations.requireWriteAccess(new Owner(run.executor(), run.owner().domainId()));
     if (operation.equals("adopt")) {
-      AgentJson.fields(input, "definition");
       return adopt(run, kind, input.getJSONObject("definition"), language);
     }
 
@@ -107,11 +96,10 @@ public class PlatformAuthoringService {
         var closedWindow = store.rows("SELECT closed FROM ontology_platform_authoring_runs WHERE run_id=? AND closed IS NOT NULL",
             uuid(run.id()));
         if (!closedWindow.isEmpty()) throw closed();
-        yield context(kind, input, access);
+        yield context(kind, access);
       }
       case "prepare" -> {
         requireAction(kind);
-        AgentJson.fields(input, "objDatas", "relDatas", "vectorDatas");
         var samples = operations.authorSamples(run.owner().domainId(), input, access.classNames());
         register(run);
         createSandbox(run, access.target().contextId());
@@ -147,11 +135,9 @@ public class PlatformAuthoringService {
           WHERE r.id=? AND r.external AND s.user_id=? AND s.domain_id=? AND g.kind=?
         """, uuid(run), owner.userId(), owner.domainId(), kind);
     if (operation.equals("read-test")) {
-      AgentJson.fields(input, "executionId");
       return operations.readTest(run, kind, AgentJson.id(input.getString("executionId")));
     }
     if (operation.equals("adopt")) {
-      AgentJson.fields(input, "definition");
       return adoptDefinition(run, owner, kind, input.getJSONObject("definition"), caller.language(),
           GenerationOperations.externalEvidenceScope(owner), () -> operations.gate(run, owner));
     }
@@ -162,10 +148,9 @@ public class PlatformAuthoringService {
     window.recheck().run();
     store.transaction(window.gate());
     return switch (operation) {
-      case "context" -> context(kind, input, window.access());
+      case "context" -> context(kind, window.access());
       case "prepare" -> {
         requireAction(kind);
-        AgentJson.fields(input, "objDatas", "relDatas", "vectorDatas");
         var samples = operations.authorSamples(owner.domainId(), input, window.access().classNames());
         yield operations.storeSamples(window, samples);
       }
@@ -185,25 +170,18 @@ public class PlatformAuthoringService {
     return switch (operation) {
       case "reset" -> {
         requireAction(window.kind());
-        AgentJson.fields(input);
         yield operations.reset(window);
       }
       case "query-sandbox" -> {
         requireAction(window.kind());
-        AgentJson.fields(input, "dsl");
         yield operations.query(window, input);
       }
-      case "test" -> {
-        if (window.kind().equals("action")) AgentJson.fields(input, "code", "parameterDefs", "sourceAnalysis");
-        else AgentJson.fields(input, "queryPackage", "columnLabels");
-        yield operations.test(window, input);
-      }
+      case "test" -> operations.test(window, input);
       default -> throw AgentHttpException.missing();
     };
   }
 
-  private JSONObject context(String kind, JSONObject input, QueryAccessService.Access access) throws Exception {
-    AgentJson.fields(input);
+  private JSONObject context(String kind, QueryAccessService.Access access) throws Exception {
     var rule = ontology.rule(access);
     var classes = ((List<?>) rule.get("classDef")).stream()
         .map(item -> ((Map<?, ?>) item).get("className").toString()).toList();
@@ -214,7 +192,6 @@ public class PlatformAuthoringService {
 
   private ActionService.ExplainedDraft explain(JSONObject input, QueryAccessService.Access access,
       Owner owner, String language) {
-    AgentJson.fields(input, "code", "parameterDefs");
     String source = AgentJson.text(input, "code");
     var parameters = operations.actionParameters(owner.domainId(), input.getJSONArray("parameterDefs"));
     return OntologyGenerationService.asOwner(access, () -> actions.explainDraft(source, parameters, owner, language));

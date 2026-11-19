@@ -29,7 +29,7 @@ import {
 import { assistantService } from "../../services/assistant/service";
 import { agentTasksFrameSchema } from "@ontomato/contracts/agent-tasks";
 import { pageDraftCreatedSchema, pageDraftPathSchema } from "@ontomato/contracts/page-draft";
-import { authoringKindSchema } from "@ontomato/contracts/authoring";
+import { authoringKindSchema, authoringTestRecordSchema } from "@ontomato/contracts/authoring";
 import { executeAuthoring } from "../../services/assistant/authoring";
 import { publicFrame, publicSnapshot } from "../../platform/agent-runtime/projection";
 import { RuntimeClient, readSseFrames, readRuntimeFrames } from "../../infrastructure/agent-runtime/client";
@@ -64,8 +64,9 @@ router.get("/sessions/:sessionId/runs/:runId/page-draft", wrap(async (req, res) 
 router.get("/sessions/:sessionId/runs/:runId/authoring/:kind/tests/:executionId", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
   const kind = authoringKindSchema.parse(req.params.kind);
-  res.json(await executeAuthoring(owner, credentials, id(req, "runId"), kind, "read-test",
-    { executionId: id(req, "executionId") }, id(req, "sessionId")));
+  const result = await executeAuthoring(owner, credentials, id(req, "runId"), kind, "read-test",
+    { executionId: id(req, "executionId") }, id(req, "sessionId"));
+  res.json(authoringTestRecordSchema.parse(result));
 }));
 /** What a create draft's first save created, recorded by the page that saved it; the same reader who may read the draft. */
 router.post("/sessions/:sessionId/runs/:runId/page-draft/created", wrap(async (req, res) => {
