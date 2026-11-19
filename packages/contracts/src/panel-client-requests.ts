@@ -1,4 +1,7 @@
 import { platformSchedulesPath } from "./platform-schedules";
+import { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER } from "./platform-object-types";
+
+export { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER } from "./platform-object-types";
 
 /*
  * The requests the SDK's platform clients send, by the binding that reaches each client (overall design 3.2, 5.1). A
@@ -11,18 +14,8 @@ import { platformSchedulesPath } from "./platform-schedules";
  * a contract, which both import.
  */
 
-/** The platform object type of the scheduled tasks, as a projection binds it. */
-export const SCHEDULED_TASK = "platform:ScheduledTask";
 /** The platform operation that runs one scheduled task now, as a projection binds it. */
 export const RUN_NOW = "schedules.runNow";
-
-export const AGENT_DEFINITION = "platform:AgentDefinition";
-export const SKILL = "platform:Skill";
-export const MODEL_OPTION = "platform:ModelOption";
-export const MCP_SERVICE_OPTION = "platform:McpServiceOption";
-export const USER = "platform:User";
-export const OBJECT_TYPE = "platform:ObjectType";
-export const RELATIONSHIP = "platform:Relationship";
 export const DELETE_AGENT = "agents.delete";
 
 /**
@@ -81,7 +74,7 @@ const agentDefinitionReads = [
 
 const ontologyMetadataRead = {
   method: "POST", service: "/data-query", path: /^\/admin\/getMetas$/, template: "/admin/getMetas",
-  instructions: "POST an empty JSON object. Class definitions and relationship rules come from this same response.",
+  instructions: "POST an empty JSON object. Classes, their attributes and relationship rules come from this same response.",
 } as const satisfies PanelClientRead;
 
 const objectBinding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
@@ -105,6 +98,7 @@ const readRequests: Readonly<Record<string, readonly PanelClientRead[]>> = {
     },
   ],
   [objectBinding(OBJECT_TYPE)]: [ontologyMetadataRead],
+  [objectBinding(ATTRIBUTE)]: [ontologyMetadataRead],
   [objectBinding(RELATIONSHIP)]: [ontologyMetadataRead],
 };
 
