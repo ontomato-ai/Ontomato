@@ -479,10 +479,9 @@ it("binds missing build contexts explicitly and leaves live requests unchanged",
   expect(requests[1]!.headers[BUILD_TEST_HEADER]).toBeUndefined();
 });
 
-it("marks a preview's Node request too, so its owner refuses what it does not support instead of running it live",async()=>{
+it("rejects unwired SDK operations instead of starting a live assistant from a preview",async()=>{
   const {context}=setup({type:"anonymous"});context.executionContext=buildExecutionContext("workspace",null);
   const request=createManagerRequest(context,()=>{});
-  await request.request("/assistant/sessions",{method:"POST"},"").catch(()=>{});
-  expect(requests).toHaveLength(1);
-  expect(JSON.parse(requests[0]!.headers[BUILD_TEST_HEADER]!)).toEqual({kind:"build-test",contextId:null});
+  await expect(request.request("/assistant/sessions",{method:"POST"},"")).rejects.toMatchObject({code:"BUILD_TEST_UNSUPPORTED"});
+  expect(requests).toHaveLength(0);
 });

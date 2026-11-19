@@ -40,10 +40,15 @@ function start(revision = 0) {
   if (!declaration) throw new Error(`The panel declares no slot '${props.slot}'`);
   loading.value = true;
   failure.value = null;
-  void panel!.projection(declaration.projectionId).then((projection) => {
+  void (async () => {
+    const projection = await panel!.projection(declaration.projectionId);
     if (generation !== readGeneration) return;
-    // The ports are the record's and its catalogue entry's, so they are registered before anything is drawn: the
-    // header and an agent can list and run this projection's operations while its component is still being fetched.
+    // The component the record names and the resource clients it binds are fetched together, each the first time a
+    // panel names it; every later projection of the same one draws at once.
+    const [component] = await Promise.all([componentFor(projection.componentId), panel!.resources(projection)]);
+    if (generation !== readGeneration) return;
+    // The ports are the record's and its catalogue entry's, registered before the component draws, so a form finds its
+    // own save among them and the header and an agent can list them.
     registered?.();
     registered = panel!.instance.register({
       slot: props.slot,
@@ -51,23 +56,10 @@ function start(revision = 0) {
       ports: portsOf(projection),
       invoke: (handlerRef, call) => panel!.invoke(handlerRef, call),
     });
-    // The component the record names is fetched the first time a panel names it; every later projection of the same one
-    // draws at once.
-    componentFor(projection.componentId).then(
-      (component) => {
-        if (generation !== readGeneration) return;
-        requestedRevision = 0;
-        loaded.value = { projection, component };
-        loading.value = false;
-      },
-      (reason: unknown) => {
-        if (generation !== readGeneration) return;
-        requestedRevision = 0;
-        failure.value = reason instanceof Error ? reason : new Error(String(reason));
-        loading.value = false;
-      },
-    );
-  }, (reason: unknown) => {
+    requestedRevision = 0;
+    loaded.value = { projection, component };
+    loading.value = false;
+  })().catch((reason: unknown) => {
     if (generation !== readGeneration) return;
     requestedRevision = 0;
     failure.value = reason instanceof Error ? reason : new Error(String(reason));

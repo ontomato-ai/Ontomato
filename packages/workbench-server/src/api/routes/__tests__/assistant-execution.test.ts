@@ -69,13 +69,34 @@ it('does not accept an upstream path or headers on the fixed retrieval business 
  expect(response.status).toBe(400);expect(upstream).not.toHaveBeenCalled();expect(mocks.restore).not.toHaveBeenCalled();
 });
 
-it('configuration keeps the original operator even when the selected business executor is invalid',async()=>{
- mocks.restore.mockRejectedValue(new Error('V is invalid'));
- const upstream=vi.fn(async()=>Response.json({saved:true}));vi.stubGlobal('fetch',upstream);
- expect((await call('workbench/api/assistant/agent-definitions/validate',{},'POST')).status).toBe(200);
- const headers=(upstream.mock.calls[0] as unknown as [string,NonNullable<Parameters<typeof fetch>[1]>])[1].headers;
- expect(headers).toMatchObject({tk:'initiator-token'});expect(headers).not.toHaveProperty('X-API-Key');
- expect(mocks.restore).not.toHaveBeenCalled();
+it.each([
+  ["GET", "workbench/api/assistant/agent-definitions"],
+  ["POST", "workbench/api/assistant/agent-definitions/form"],
+  ["POST", "workbench/api/assistant/agent-definitions/validate"],
+  ["GET", "workbench/api/assistant/agent-skills"],
+  ["GET", "workbench/api/mcp/services/names"],
+  ["GET", "ontology/model-options"],
+  ["GET", "ontology/platform/agent-execution/options?selected=worker"],
+  ["POST", "ontology/admin/getMetas"],
+])("uses the executor for %s %s", async (method, path) => {
+ const upstream = vi.fn(async (_url: string, _request: NonNullable<Parameters<typeof fetch>[1]>) => Response.json({}));
+ vi.stubGlobal("fetch", upstream);
+ expect((await call(path, { tk: "oq.business.grant" }, method)).status).toBe(200);
+ expect(upstream.mock.calls[0]?.[1].headers).toMatchObject({"X-API-Key":"selected-user-key"});
+ expect(upstream.mock.calls[0]?.[1].headers).not.toHaveProperty("tk");
+});
+
+it.each([
+  "workbench/api/assistant/agent-definitions",
+  "workbench/api/assistant/diagnosis-model",
+  "workbench/api/mcp/services/names",
+  "ontology/model-options",
+  "ontology/platform/agent-execution/options",
+])("rejects the unlisted POST %s", async path => {
+ const upstream = vi.fn();
+ vi.stubGlobal("fetch", upstream);
+ expect((await call(path)).status).toBe(403);
+ expect(upstream).not.toHaveBeenCalled();
 });
 
 it("lets Java restore V for governance business Grants without a Node key exchange",async()=>{

@@ -12,7 +12,7 @@ export type {
   PanelStateValue,
 } from "@ontomato/contracts/panel-manifest";
 export type { PageContext, PageSelection } from "@ontomato/contracts/page-context";
-export type { ProductPanel } from "@ontomato/contracts/product-panels";
+export type { PanelDefinitionContent } from "@ontomato/contracts/product-panels";
 export { mountPanel, type PanelComponent, type PanelMount } from "../panel/mount";
 export { default as Projection } from "../panel/Projection.vue";
 export { useProjectionSlot, useProjectionForm } from "../panel/context";
@@ -21,7 +21,7 @@ export { usePanelContext, type PanelContext, type ProjectionSlot } from "../pane
 export type { PanelInstance } from "../panel/instance";
 export { applyPanelRequest } from "../panel/instance";
 export { defineComponentMeta } from "../components";
-export type { ComponentMetadata, ComponentClient, ComponentRole } from "../components";
+export type { ComponentCatalogue, ComponentMetadata, ComponentClient, ComponentPort, ComponentPorts, ComponentRole } from "../components";
 export type { PanelFormAdapter, ReceivedPanelDraft } from "../panel/draft";
 export type { PanelOperationBinding } from "../panel/types";
 export type { PanelProjectionRegistration, ProjectionOperation, ProjectionPorts } from "../panel/ports";

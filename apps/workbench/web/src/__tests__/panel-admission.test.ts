@@ -77,7 +77,7 @@ describe("what a panel's frame may ask the platform for", () => {
       () => {
         expect(document.querySelector(".sdk-object-list [role=option]")?.textContent?.trim()).toBe(task.title);
         expect(document.querySelector(".sdk-object-summary-title")?.textContent).toBe(task.title);
-        expect(document.querySelector('[data-field="caseSetId"]')).not.toBeNull();
+        expect(document.querySelector('[data-field="/caseSetId"]')).not.toBeNull();
       },
       { timeout: 5000 },
     );
@@ -90,7 +90,7 @@ describe("what a panel's frame may ask the platform for", () => {
     // The initial form, save validation and the two post-operation refreshes must all use the same allowed path.
     await vi.waitFor(() => {
       expect(sent.filter(request => request.path === `${tasks}/applications/${task.appId}/form`)).toHaveLength(4);
-      expect(document.querySelector('[data-field="caseSetId"]')).not.toBeNull();
+      expect(document.querySelector('[data-field="/caseSetId"]')).not.toBeNull();
     });
     // A draft an agent wrote for this page is read the way the SDK reads one.
     const transport = contextTransport(appContext);

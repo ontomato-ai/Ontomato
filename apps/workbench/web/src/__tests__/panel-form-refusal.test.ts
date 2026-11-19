@@ -75,7 +75,7 @@ describe("a panel's form when the owner refuses a save", () => {
     });
     inside(frame);
     const { context } = await mountPanel(panelOf("form"));
-    await vi.waitFor(() => expect(document.querySelector('[data-field="caseSetId"]')).not.toBeNull(), { timeout: 5000 });
+    await vi.waitFor(() => expect(document.querySelector('[data-field="/caseSetId"]')).not.toBeNull(), { timeout: 5000 });
 
     // The save the header offers: the form's own, at the revision the form was read at.
     const save = context.instance.operations.value.find((operation) => operation.kind === "form.save")!;
@@ -84,7 +84,7 @@ describe("a panel's form when the owner refuses a save", () => {
     // Somebody else changed the task first: the service's reason, beside the reader's form, and nothing read again.
     await expect(context.instance.invoke(save.id)).rejects.toThrow(conflict.error.message);
     await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-refusal")?.textContent).toBe(conflict.error.message));
-    expect(document.querySelector('[data-field="caseSetId"]')).not.toBeNull();
+    expect(document.querySelector('[data-field="/caseSetId"]')).not.toBeNull();
     expect(writes()).toHaveLength(1);
     expect(writes()[0]!.body).toMatchObject({ revision: task.revision, content: task.content });
     const afterConflict = sent.length;
@@ -92,7 +92,7 @@ describe("a panel's form when the owner refuses a save", () => {
     // A value the service finds invalid: its reason, and its message on the field it names.
     await expect(context.instance.invoke(save.id)).rejects.toThrow(invalid.error.message);
     await vi.waitFor(() =>
-      expect(document.querySelector('[data-field="caseSetId"] .el-form-item__error')?.textContent?.trim()).toBe(
+      expect(document.querySelector('[data-field="/caseSetId"] .el-form-item__error')?.textContent?.trim()).toBe(
         invalid.error.fields![0]!.message,
       ),
     );

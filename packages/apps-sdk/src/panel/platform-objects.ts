@@ -1,9 +1,16 @@
-import type { FormField } from "@ontomato/contracts/form-fields";
-import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
-import { registerHandler } from "./handlers";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import { panelFormTargetSchema, type PanelFormTarget, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import {
+  panelFormSaveInputSchema,
+  type PanelFormDescription,
+  type PanelFormRequest,
+  type PanelFormSaveInput,
+} from "@ontomato/contracts/panel-projection";
+import { registerHandler, type RegisteredHandler } from "./handlers";
+import type { ProductProjection } from "@ontomato/contracts/product-panels";
 
 /*
- * How the SDK reads and writes one read-only platform object type (overall design 3.2): a projection binds
+ * How the SDK reads and writes one platform object type (overall design 3.2): a projection binds
  * `PlatformObjectType:platform:ScheduledTask`, and this registry says what reading one, listing them, reading the owner's
  * form for one and saving it mean for that type. It sits beside the handler registry and for the same reason: a component
  * is generic, and the type it is bound to decides which client answers.
@@ -23,42 +30,9 @@ export interface PlatformObjectRecord {
 }
 
 /**
- * One object as its owner hands it over to be edited: its fields, what they hold now, and the revision those values
- * belong to. The revision is the owner's own concurrency token, read once when the form opens (or when a draft arrives)
- * and sent back with the save, so a change somebody else made meanwhile is refused rather than overwritten.
- */
-export interface PlatformObjectForm {
-  fields: readonly FormField[];
-  values: Readonly<Record<string, string>>;
-  revision: number;
-}
-
-/** One object type's read side: what a list, a summary and a form need from its owner. */
-export interface PlatformObjectClient {
-  /** The type this client answers for, as a projection's binding names it: `platform:ScheduledTask`. */
-  objectType: string;
-  /** The objects of this type the reader may see, in the owner's own order. */
-  list(): Promise<readonly PlatformObjectRecord[]>;
-  /** One object as its owner holds it now. */
-  read(primaryKey: string): Promise<PlatformObjectRecord>;
-  /** The owner's current form for one object, with the revision its values belong to. */
-  form(primaryKey: string): Promise<PlatformObjectForm>;
-  /**
-   * Asks the owner for a new form after one of its fields changed, as the field declares the form depends on it. The
-   * answer is the complete form: a selection that removed fields removes them with their values.
-   */
-  changed(primaryKey: string, values: Readonly<Record<string, string>>, field: string): Promise<PlatformObjectForm>;
-  /**
-   * Writes one object through its owner's own interface, with the values its form holds and the revision those values
-   * were read at. An owner that has the object at another revision, or that finds a value invalid, refuses the write:
-   * the client throws a `PlatformObjectRefusal` with the owner's reason, and the reader sees it.
-   */
-  save(primaryKey: string, values: Readonly<Record<string, string>>, revision: number): Promise<PlatformObjectRecord>;
-}
-
-/**
- * An owner's refusal of a write, as a generic form shows it: the owner's own reason, and the message for each form field
- * the owner named, by field key. A refusal that names no field (somebody else changed the object first, say) has none.
+ * An owner's refusal of a write or of an incoming draft, as a generic form shows it: the owner's own reason, and the
+ * message for each form field the owner named — by the field's JSON Pointer path (`/executionUserId`). A refusal that names no field (somebody else changed
+ * the object first, say) has none.
  */
 export class PlatformObjectRefusal extends Error {
   constructor(
@@ -71,43 +45,180 @@ export class PlatformObjectRefusal extends Error {
   }
 }
 
-const clients = new Map<string, PlatformObjectClient>();
+/*
+ * ---- Resource adapters (M1 typed forms) ----
+ *
+ * What a resource adapter of the SDK gives for one platform object type: the reads a list, a summary and a graph need,
+ * the owner's typed form and the choices a reference field offers. A graph's edges are the records of their own type
+ * (a relationship), whose endpoints the projection's `graph` declaration names by pointer into the record's fields. An adapter is written once per type (`resources/`), receives the frame's request path when the panel
+ * mounts, and sends exactly the requests `contracts/panel-client-requests.ts` declares for its binding; nothing in it
+ * decides a field, a default, a permission or a valid value — the owner answers all of those.
+ */
 
 /**
- * Registers one platform object type's client, and with it the type's own save operation — `<type>.save` — so the save a
- * form projection publishes is a registered handler like any other, reached by a person's header button and by an
- * agent's call alike. Registering the same type twice fails: one type, one client, one save.
+ * The request path an adapter sends its owner's requests through: the frame's own, over the bridge, with the reader's
+ * credential (or the preview's trusted context). `service` is `""` for the Node API and `"/data-query"` for the data
+ * engine, as the frame's request declarations name them; the path is the one inside that service. The response is the
+ * owner's as it is: an adapter reads its status and body itself.
  */
-export function registerPlatformObject(client: PlatformObjectClient): void {
-  if (clients.has(client.objectType)) throw new Error(`Platform object '${client.objectType}' is already registered`);
-  clients.set(client.objectType, client);
+export interface PlatformRequests {
+  request(path: string, init: NonNullable<Parameters<typeof fetch>[1]>, service: "" | "/data-query"): Promise<Response>;
+}
+
+/**
+ * The owner's typed form for one type (design 2.2): one description and one save, by the contracts' `PanelFormRequest`,
+ * `PanelFormDescription` and `PanelFormSaveInput`. The values are the owner's JSON value shape — nested objects, arrays,
+ * `false` and `null` as they are — and field paths are JSON Pointers into them.
+ */
+export interface PlatformObjectForms {
+  /**
+   * Asks the owner for the form of a target: `{target, changedField: null}` opens it (an existing object, or the create
+   * target with the owner's defaults); `{target, values, changedField: "/path"}` asks again after a field the description
+   * marks `refreshOnChange` changed; `{target, values, changedField: null}` checks a complete incoming draft and returns
+   * it normalised, without writing. An owner that refuses the values throws a `PlatformObjectRefusal` naming each field
+   * by its path — a draft so refused is refused whole.
+   */
+  describe(request: PanelFormRequest): Promise<PanelFormDescription>;
+  /**
+   * Writes through the owner's own request: an `object` target updates it, a `draft` target creates one. `revision` is
+   * passed back exactly as the description gave it (the scheduled tasks') and absent where the owner has none (agent
+   * definitions). The result is the object as saved; for a create, its real primary key, which the panel selects next.
+   * A refusal throws a `PlatformObjectRefusal` with the owner's reason and its field errors by path.
+   */
+  save(target: PanelFormTarget, input: PanelFormSaveInput): Promise<PlatformObjectRecord>;
+}
+
+/**
+ * One choice a reference field offers. `value` is what the form field holds when it is chosen — a key (a model's
+ * `provider/model-id`, a UUID, a class name) or the owner's whole value (a skill's complete `RuntimeSkillRef`), never a
+ * shortened stand-in; `primaryKey` is the choice's identity, by which a held value is matched to it.
+ */
+export interface PlatformObjectOption {
+  primaryKey: string;
+  value: RuntimeJsonValue;
+  label: string;
+  description?: string;
+  /**
+   * Present when the choice cannot be chosen now, with the owner's reason: a value already held that is no longer
+   * offered (a removed skill, a disabled user) stays listed this way rather than vanishing.
+   */
+  unavailable?: { reason: string };
+}
+
+/** The choices of one reference type, as its owner offers them to the reader. */
+export interface PlatformObjectOptions {
+  /** The choices offered now, in the owner's order; `keyword` and `page` reach owners that search and page. */
+  list(query: { keyword?: string; page?: { number: number; size: number } }): Promise<{
+    options: readonly PlatformObjectOption[];
+    /** The number of choices the owner has for this query, where it pages. */
+    total?: number;
+  }>;
+  /**
+   * The values a field holds now, as choices — one per value, in the same order: each with its label, and those no
+   * longer offered marked unavailable with the owner's reason (the execution user's `selected`, a skill gone from the
+   * catalogue).
+   */
+  resolve(values: readonly RuntimeJsonValue[]): Promise<readonly PlatformObjectOption[]>;
+}
+
+/**
+ * Everything the SDK reads and writes for one platform object type. A part a type does not have is absent, and a
+ * projection that needs it fails visibly when it is drawn — a form bound to a type without `forms`, a picker bound to one
+ * without `options` — rather than falling back to another read.
+ */
+export interface PlatformObjectAdapter {
+  /** The type as a projection's binding names it: `platform:AgentDefinition`. */
+  objectType: string;
+  list?(): Promise<readonly PlatformObjectRecord[]>;
+  read?(primaryKey: string): Promise<PlatformObjectRecord>;
+  forms?: PlatformObjectForms;
+  options?: PlatformObjectOptions;
+}
+
+/**
+ * How a resource module provides its adapter: given the frame's request path when a panel mounts. Two types whose owner
+ * answers both from one response (classes and relationships, from one metadata read) are written in one module that
+ * returns both adapters over that one read.
+ */
+export type PlatformObjectAdapterFactory = (requests: PlatformRequests) => readonly PlatformObjectAdapter[];
+
+/** How a resource module provides one platform operation's handler (`schedules.runNow`), given the frame's request path. */
+export type PlatformOperationFactory = (requests: PlatformRequests) => RegisteredHandler;
+
+/**
+ * The resource modules of this SDK version, by the binding that reaches them (`PlatformObjectType:platform:Skill`,
+ * `PlatformOperation:schedules.runNow`). Each is fetched the first time a projection binds it, so a panel downloads
+ * the clients — and the owner schemas they parse with — of the resources it shows and no others.
+ */
+export interface PlatformResources {
+  objects: Readonly<Record<string, () => Promise<PlatformObjectAdapterFactory>>>;
+  operations: Readonly<Record<string, () => Promise<PlatformOperationFactory>>>;
+}
+
+/**
+ * What a frame calls before a projection registers its ports: every resource its record binds — its binding and, for a
+ * graph, its edges' — fetched and registered with the frame's request path, once per module. A binding this version has
+ * no module for is left to fail where it is used.
+ */
+export function platformResourceLoader(requests: PlatformRequests, resources: PlatformResources) {
+  const loaded = new Map<() => Promise<unknown>, Promise<void>>();
+  const once = <Factory>(load: (() => Promise<Factory>) | undefined, register: (factory: Factory) => void) => {
+    if (!load) return Promise.resolve();
+    let pending = loaded.get(load);
+    if (!pending) {
+      pending = load().then(register);
+      loaded.set(load, pending);
+    }
+    return pending;
+  };
+  return async (projection: Pick<ProductProjection, "binding" | "graph">): Promise<void> => {
+    const bindings = [projection.binding, ...(projection.graph ? [projection.graph.edges.binding] : [])];
+    await Promise.all(bindings.map((binding) => binding.kind === "PlatformOperation"
+      ? once(resources.operations[binding.id], (factory) => registerHandler(factory(requests)))
+      : once(resources.objects[binding.id], (factory) => factory(requests).forEach(registerPlatformObjectAdapter))));
+  };
+}
+
+const adapters = new Map<string, PlatformObjectAdapter>();
+
+/**
+ * Registers one type's adapter and, when it has a form, the type's own save operation — `<type>.save` — which a
+ * person's header button and an agent's call both reach with the form's target and `{values, revision?}`. One type,
+ * one adapter, one save: registering a type twice fails.
+ */
+export function registerPlatformObjectAdapter(adapter: PlatformObjectAdapter): void {
+  if (adapters.has(adapter.objectType))
+    throw new Error(`Platform object '${adapter.objectType}' is already registered`);
+  adapters.set(adapter.objectType, adapter);
+  const forms = adapter.forms;
+  if (!forms) return;
   registerHandler({
-    handlerRef: `${client.objectType}.save`,
-    async invoke({ target, input }) {
-      if (target?.kind !== "object") throw new Error(`Saving a ${client.objectType} needs the object it saves`);
-      const { revision, ...values } = input;
-      if (typeof revision !== "number") throw new Error(`Saving a ${client.objectType} needs the revision it was read at`);
-      return client.save(
-        target.primaryKey,
-        Object.fromEntries(
-          Object.entries(values).map(([name, value]) => [name, typeof value === "string" ? value : String(value ?? "")]),
-        ),
-        revision,
-      );
-    },
+    handlerRef: `${adapter.objectType}.save`,
+    // The call arrives from a person's click or an agent's operation: its target and input are checked here, once.
+    invoke: ({ target, input }) => forms.save(panelFormTargetSchema.parse(target), panelFormSaveInputSchema.parse(input)),
   });
 }
 
-/** The client that answers for one binding's type. */
-export function platformObjectFor(objectType: string): PlatformObjectClient {
-  const found = clients.get(objectType);
+/** The adapter that answers for one binding's type. */
+export function platformObjectAdapter(objectType: string): PlatformObjectAdapter {
+  const found = adapters.get(objectType);
   if (!found) throw new Error(`This SDK version reads no platform object '${objectType}'`);
   return found;
 }
 
 /** The types this version reads: what a projection may bind. */
 export function registeredPlatformObjects(): readonly string[] {
-  return [...clients.keys()];
+  return [...adapters.keys()];
+}
+
+/** One part of a type's adapter, or a visible failure naming the type and the part it lacks. */
+export function adapterPart<Part extends "list" | "read" | "forms" | "options">(
+  objectType: string,
+  part: Part,
+): NonNullable<PlatformObjectAdapter[Part]> {
+  const found = platformObjectAdapter(objectType)[part];
+  if (!found) throw new Error(`Platform object '${objectType}' has no ${part}`);
+  return found as NonNullable<PlatformObjectAdapter[Part]>;
 }
 
 /** The primary key a projection's input value names, or null when nothing is selected. */

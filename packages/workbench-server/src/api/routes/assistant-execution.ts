@@ -2,7 +2,7 @@ import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { createPanelOperationIntentRequestSchema, dispatchPanelOperationIntentRequestSchema } from "@ontomato/contracts/panel-agent";
 import { operatePanel, dispatchPanel } from "../../services/product-panels/operations";
 import { Router } from "express";
-import { scheduledTaskReads } from "@ontomato/contracts/panel-client-requests";
+import { AGENT_DEFINITION, SKILL, MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE, bindingKey, panelClientReads, scheduledTaskReads } from "@ontomato/contracts/panel-client-requests";
 import type {AssistantCredentials} from "../../platform/agent-runtime/runtime";
 import { Readable } from "node:stream";
 import { z } from "zod";
@@ -19,7 +19,10 @@ import type { RuntimeCallback } from "../../services/agent-runtime/callback-cred
 
 export const assistantExecutionRouter = Router();
 const ontologyPath = /^\/(?:ontology\/(?:query|ai\/(?:generation|knowledge-governance))(?:\/|$)|action(?:\/|$)|metricView(?:\/|$)|data\/queryInfoByNode$|knowledge(?:\/|$)|admin\/(?:getBussinessKnowledge)$)/;
-const workbenchPath = /^\/api\/(?:assistant|panel-operation-intents|product-assets|dashboards|feedback|memories|query-history|preferences|personal-workspace)(?:\/|$)/;
+const workbenchPath = /^\/api\/(?:panel-operation-intents|product-assets|dashboards|feedback|memories|query-history|preferences|personal-workspace)(?:\/|$)/;
+
+const panelReads = [AGENT_DEFINITION, SKILL, MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE]
+  .flatMap(type => panelClientReads(bindingKey({ kind: "PlatformObjectType", id: type })));
 
 assistantExecutionRouter.post("/:runId/panels/operate",wrap(async(req,res)=>{
   const runId=z.string().uuid().parse(req.params.runId);
@@ -59,18 +62,20 @@ assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
   if (!callback || callback.runId !== runId) throw new HttpError(403, "A run callback is required", "FORBIDDEN");
   const target = z.enum(["ontology", "workbench"]).parse(req.params.target);
   const path = "/" + req.params[0];
-  const scheduleRead = target === "ontology" && !req.path.includes("%") &&
-    scheduledTaskReads.some(request => request.method === req.method && request.path.test(path));
+  const resourceRead = !req.path.includes("%") && (target === "ontology"
+    ? [...scheduledTaskReads, ...panelReads].some(read => read.service === "/data-query" && read.method === req.method && read.path.test(path))
+    : path.startsWith("/api/") && panelReads.some(read => read.service === "" && read.method === req.method && read.path.test(path.slice(4))));
+  const assistantDirectory = target === "workbench" && req.method === "GET" && path === "/api/assistant/agents";
   if (/[\\%?#]/u.test(path) || path.split("/").some(segment => segment === "." || segment === "..") ||
-    !(target === "ontology" ? scheduleRead || ontologyPath.test(path) : workbenchPath.test(path)) || path.startsWith("/api/assistant/executions/"))
+    !(resourceRead || assistantDirectory || (target === "ontology" ? ontologyPath.test(path) : workbenchPath.test(path))))
     throw new HttpError(403, "Path is outside the execution callback", "FORBIDDEN");
   const { owner, credentials: initiatorCredentials } = context(req);
   const grantAction=target==="ontology" && callback.businessGrant && /^\/ontology\/ai\/knowledge-governance\/[^/]+\/runs\/[^/]+\/actions\/[^/]+$/u.test(path);
-  const ownership=target==="workbench" && /^\/api\/(?:assistant|panel-operation-intents|feedback|query-history|product-assets|memories|preferences|personal-workspace)(?:\/|$)/u.test(path);
+  const ownership = assistantDirectory || target === "workbench" && /^\/api\/(?:panel-operation-intents|feedback|query-history|product-assets|memories|preferences|personal-workspace)(?:\/|$)/u.test(path);
   const credentials: AssistantCredentials = ownership || grantAction ? initiatorCredentials : (await credentialsForRun(owner, runId, initiatorCredentials)).credentials;
   if(ownership || grantAction)await runForOwner(owner,runId);
   const headers = buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey, credentials.headers);
-  if (callback.businessGrant && !scheduleRead) { headers.tk = callback.businessGrant; delete headers["X-API-Key"]; }
+  if (callback.businessGrant && !resourceRead) { headers.tk = callback.businessGrant; delete headers["X-API-Key"]; }
   headers["X-Ontomato-Run-Id"] = runId;
   headers["X-Ontomato-Retrieval-Caller-Id"] = runId;
   const origin = target === "ontology" ? config.dataQuery.baseUrl : environment.agentRuntime().callbackUrl;

@@ -2,17 +2,18 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { stringify } from "yaml";
 import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import { type RuntimeSkillRef, type StandardSkillFrontmatter } from "@ontomato/contracts/agent-runtime-skills";
 import { PAGE_DRAFT_QUERY_KEYS } from "@ontomato/contracts/page-draft";
 import { panelClientReads } from "@ontomato/contracts/panel-client-requests";
 import { panelAddress, panelUsePath } from "@ontomato/contracts/panel-host";
 import type { PanelOperation } from "@ontomato/contracts/panel-manifest";
-import { componentOperationSchema, panelStateOperation, projectionOperations, projectionPorts } from "@ontomato/contracts/panel-projection";
+import { componentOperationSchema, panelStateOperation, projectionBindingKeys, projectionOperations, projectionPorts } from "@ontomato/contracts/panel-projection";
 import { productPanelContentSchema, productPanelInputSchema, productProjectionInputSchema, type PanelSkillSource, type ProductProjectionInput } from "@ontomato/contracts/product-panels";
 import { runtimeRoot } from "../../content/layout";
 import type { SkillOffering } from "../../core/skills";
 import { findCurrentProduct, type CurrentProductKind } from "../../infrastructure/product-current";
-import { appSdkBuild } from "../app-builder/sdk";
+import { panelServerOperation } from "./server-operations";
 
 const catalogue = z.object({
   version: z.string(),
@@ -42,8 +43,7 @@ function panelSkillManifest(skill: RuntimeSkillRef, panels: readonly PanelDescri
   return { name: skill.name, description: `${actionText[0]!.toUpperCase()}${actionText.slice(1)} for ${titleText}.` };
 }
 
-export async function readComponentCatalogue() {
-  const { version } = await appSdkBuild();
+export async function readComponentCatalogue(version: string) {
   const file = path.join(runtimeRoot(), "dist/apps-sdk", version, "components.json");
   const parsed = catalogue.parse(JSON.parse(await readFile(file, "utf8")));
   if (parsed.version !== version) throw new Error(`Expected SDK catalogue ${version}, found ${parsed.version}`);
@@ -66,14 +66,16 @@ export async function panelSkillOfferings(domainId: string, sources: readonly Pa
   })));
   const projectionIds = new Set([...panels.values()].flatMap(panel =>
     Object.values(panel.manifest.slots).map(slot => slot.projectionId)));
-  const [components, projections] = await Promise.all([
-    readComponentCatalogue(),
+  const versions = new Set([...panels.values()].map(panel => panel.sdkVersion));
+  const [catalogues, projections] = await Promise.all([
+    Promise.all([...versions].map(async version => [version, await readComponentCatalogue(version)] as const)),
     Promise.all([...projectionIds].map(async id =>
       [id, productProjectionInputSchema.parse(await currentDefinition(domainId, "projection", id))] as const)),
   ]);
   const projectionRecords = new Map(projections);
+  const components = new Map(catalogues);
   const descriptions = new Map([...panels].map(([id, panel]) =>
-    [id, describePanel(panel, projectionRecords, components)]));
+    [id, describePanel(panel, projectionRecords, components.get(panel.sdkVersion)!)]));
 
   return sources.map(({ skill, uses }) => {
     const ids = new Set(uses.map(use => use.panelId));
@@ -99,9 +101,13 @@ function describePanel(panel: z.infer<typeof panelMetadata> & { content: unknown
     const component = components.get(projection.componentId);
     if (!component) throw new Error(`SDK component ${projection.componentId} is missing for projection ${declaration.projectionId}`);
     const ports = projectionPorts(projection, component);
+    const bindings = projectionBindingKeys(projection);
+    const graph = projection.graph
+      ? ` Graph nodes use ${bindings[0]}. Edges use ${bindings[1]} with endpoint fields at ${projection.graph.edges.sourcePath} and ${projection.graph.edges.targetPath}.`
+      : "";
     return {
-      text: `- ${slot} — ${projection.name} (${declaration.projectionId}), ${projection.componentId}, binding ${ports.binding}. ${projection.description} ${component.meaning} Inputs from state: ${JSON.stringify(declaration.inputs)}. Display: ${JSON.stringify(projection.display)}.`,
-      binding: ports.binding,
+      text: `- ${slot} — ${projection.name} (${declaration.projectionId}), ${projection.componentId}, binding ${ports.binding}. ${projection.description} ${component.meaning}${graph} Inputs from state: ${JSON.stringify(declaration.inputs)}. Display: ${JSON.stringify(projection.display)}.`,
+      bindings,
       operations: projectionOperations(manifest, { slot, ports }),
     };
   });
@@ -111,12 +117,12 @@ function describePanel(panel: z.infer<typeof panelMetadata> & { content: unknown
     projections,
     operations,
     forms: operations.filter(operation => operation.kind === "form.save"),
-    reads: describeReads(new Set(projections.map(projection => projection.binding))),
+    reads: describeReads(new Set(projections.flatMap(projection => projection.bindings))),
   };
 }
 
 function describeUse(use: Use, { name, description, content, manifest, projections, operations, forms, reads }: PanelDescription): string {
-  const address = panelUsePath(use.applicationId, use.path);
+  const address = panelUsePath(use.path);
   const { recipes } = productPanelContentSchema.parse(content);
   return [
     `## ${name} — ${use.pageKey}`,
@@ -135,11 +141,10 @@ function describeUse(use: Use, { name, description, content, manifest, projectio
     describeDraft(use, address, forms),
     [
       "### Declared operations",
-      ...operations.map(operation => `- ${operation.label} (${operation.id}), kind ${operation.kind}, handlerRef ${operation.handlerRef}, input ${operation.kind === "form.save" ? "from the owner's dynamic form" : JSON.stringify(operation.inputSchema)}, target ${JSON.stringify(operation.target ?? null)}.`),
+      ...operations.map(describeOperation),
       ...(operations.length ? [] : ["No operations."]),
-      "Call the declared operation with POST `$ONTOMATO_PANEL_OPERATIONS_URL/operate`, JSON `{intentId:<new UUID>,applicationId,useId,operationId,call:{target:{kind:\"object\",objectType,primaryKey},input}}`. Send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. Never call a write owner endpoint directly from a platform panel skill.",
+      "Call the declared operation with POST `$ONTOMATO_PANEL_OPERATIONS_URL/operate`, JSON `{intentId:<new UUID>,applicationId,useId,operationId,call:{target,input}}`. Send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. Never call a write owner endpoint directly from a platform panel skill.",
       `Use applicationId ${JSON.stringify(use.applicationId)} and useId ${JSON.stringify(use.useId)}. The operationId is the declared ID above.`,
-      "For POST `/operate` only, put the task `revision` in `call.input` alongside the current dynamic form's string fields when invoking `form.save`. Use the revision of the task as read. The `runNow` action uses `call.input: {}`.",
       "Default form.save returns an unsaved page-draft envelope: write it to the draft artifact and link the reader to review/save. Session automatic mode allows the same declared save to execute directly. Only the authenticated session owner changes that setting.",
       "An action can return confirmation-required with intentId. End this tool call immediately; do not wait or poll. Continue independent work or finish the round. A genuine user agent-answer is delivered back to this conversation and can wake a later run. Then POST `{}` to `$ONTOMATO_PANEL_OPERATIONS_URL/intents/<intentId>/dispatch` using THAT RUN's callback and run ID. Node verifies the real selected option and the current executor. Free text, defaults, parent answers, questionId or a different toolCallId never authorize execution. Changed parameters/target/executor require a new intent and confirmation.",
       "A dispatched result is final for that intent, including failure/unknown; never retry the owner call under another toolCallId. Read the intent at `/api/panel-operation-intents/<intentId>` through ONTOMATO_WORKBENCH_URL when needed; this read does not execute it.",
@@ -148,38 +153,63 @@ function describeUse(use: Use, { name, description, content, manifest, projectio
   ].filter(Boolean).join("\n\n");
 }
 
+function describeOperation(operation: PanelOperation): string {
+  const summary = `- ${operation.label} (${operation.id}), kind ${operation.kind}, handlerRef ${operation.handlerRef}, target ${JSON.stringify(operation.target ?? null)}.`;
+  if (operation.kind !== "form.save") return `${summary} Input ${JSON.stringify(operation.inputSchema)}.`;
+  const owner = panelServerOperation(operation.handlerRef);
+  if (owner.kind !== "form.save") throw new Error(`Expected a form owner for ${operation.handlerRef}`);
+  const schema = (value: z.ZodTypeAny) => JSON.stringify(zodToJsonSchema(value, { $refStrategy: "none" }));
+  const created = owner.create
+    ? " For automatic save from an existing create draft, supply its artifact location as call.draft {sessionId,runId,path}."
+    : "";
+  return `${summary} Call target schema ${schema(owner.targetSchema)}. Call input schema ${schema(owner.inputSchema)}. ${owner.formInstructions}${created}`;
+}
+
 function describeReads(bindings: ReadonlySet<string>): string {
-  const endpoints = [...bindings].flatMap(binding => {
-    const reads = panelClientReads(binding);
-    return reads.length ? [
-      `Use these endpoints for \`${binding}\`. The binding's owner decides access and returns current data.`,
-      ...reads.map(({ method, template, instructions }) =>
-        `- \`${method} ${template}\`${instructions ? ` ${instructions}` : ""}`),
-    ] : [];
+  const requests = new Map<string, { read: ReturnType<typeof panelClientReads>[number]; owners: string[] }>();
+  for (const binding of bindings) {
+    for (const read of panelClientReads(binding)) {
+      const key = `${read.method} ${read.service} ${read.template}`;
+      const registered = requests.get(key);
+      if (registered) registered.owners.push(binding);
+      else requests.set(key, { read, owners: [binding] });
+    }
+  }
+  const endpoints = [...requests.values()].map(({ read: { method, service, template, instructions }, owners }) => {
+    const url = service === "" ? "ONTOMATO_WORKBENCH_URL" : "ONTOMATO_ONTOLOGY_URL";
+    const path = service === "" ? "/api" + template : template;
+    const resources = verbs.format(owners.map(binding => `\`${binding}\``));
+    return `- \`${method} ${path}\` on \`${url}\` for ${resources}.${instructions ? ` ${instructions}` : ""}`;
   });
   if (!endpoints.length) return "";
   return [
     "### Read current data",
     ...endpoints,
-    "Append the endpoint path to `ONTOMATO_ONTOLOGY_URL`. Choose authentication in this order:",
+    "Append each endpoint path to the indicated base URL. Choose authentication in this order:",
     "- If `ONTOMATO_TK` is set, send `tk: $ONTOMATO_TK`.",
     "- Otherwise, if `ONTOMATO_API_KEY` is set, send `X-API-Key: $ONTOMATO_API_KEY`.",
-    "- If neither is set and the base URL ends in `/api/assistant/executions/<runId>/ontology`, send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. The host forwards the read with this run's executor credential.",
+    "- If neither is set and the base URL ends in `/api/assistant/executions/<runId>/ontology` or `/api/assistant/executions/<runId>/workbench`, send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. The host forwards the read with this run's executor credential.",
     "- An anonymous direct Java URL needs no authentication header. Never send callback headers to a direct Java URL, even when a callback is present for panel operations.",
   ].join("\n");
 }
 
 function describeDraft(use: Use, address: string, forms: readonly PanelOperation[]): string {
   if (!forms.length) return "";
+  const owners = forms.map(form => {
+    const owner = panelServerOperation(form.handlerRef);
+    if (owner.kind !== "form.save") throw new Error(`Expected a form owner for ${form.handlerRef}`);
+    const target = { kind: "object" as const, objectType: owner.targetType, primaryKey: "<object id>" };
+    return { id: form.id, update: owner.draftOperation(target), create: owner.create && owner.draftOperation({ kind: "draft" }) };
+  });
   return [
     "### Draft a change",
-    "Ask the owner for the dynamic form with the intended values, including any changed dependencies. Write `outputs/drafts/<name>.page-draft.json` with this page-draft envelope:",
+    "Read the owner's form for the intended target and validate the complete values. Write `outputs/drafts/<name>.page-draft.json` with this page-draft envelope:",
     "```json",
-    JSON.stringify({ pageKey: use.pageKey, operation: forms[0]!.handlerRef, target: { id: "<object id>" }, form: {} }, null, 2),
+    JSON.stringify({ pageKey: use.pageKey, operation: owners[0]!.update, target: { id: "<object id>" }, form: {} }, null, 2),
     "```",
-    `Choose the matching form's handlerRef for operation: ${forms.map(form => form.handlerRef).join(", ")}.`,
+    ...owners.map(owner => `- ${owner.id} uses \`${owner.update}\` for an existing object.${owner.create ? ` Use \`${owner.create}\` with an empty target for creation.` : ""}`),
     "Put the selected object's ID in `target.id` when editing an existing object.",
-    "The draft's `form` contains only keys returned in the owner's current form `fields` and their values. Do not put `revision` or any other non-form key in the draft. The reader's save supplies the revision.",
+    "Use the owner-described values in `form`. An owner's revision, when required, is part of the operation input.",
     `Link to \`${address}\` with ${PAGE_DRAFT_QUERY_KEYS.map(key => `\`${key}\``).join(", ")} set to the current session ID, run ID, and encoded draft path. The panel fills the form and the reader reviews and saves it.`,
   ].join("\n");
 }

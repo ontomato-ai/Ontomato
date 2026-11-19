@@ -46,14 +46,23 @@ export async function readAgentDefinition(id: string, owner: AssistantOwner, loc
   return view(await editableAgent(id, owner), locale);
 }
 /** The checks every save makes before it writes; a draft's validation runs exactly these and changes nothing. */
-async function checkedDefinition(
+export async function checkedDefinition(
   input: AssistantAgentInput,
   owner: AssistantOwner,
   credentials: AssistantCredentials,
   oldExecutionUserId: string | null,
 ) {
   const executionUserId = input.executionUserId === undefined ? oldExecutionUserId : input.executionUserId;
-  await validateExecutionSetting(owner, oldExecutionUserId, executionUserId, credentials);
+  try {
+    await validateExecutionSetting(owner, oldExecutionUserId, executionUserId, credentials);
+  } catch (error) {
+    if (error instanceof HttpError && error.status < 500 && executionUserId !== oldExecutionUserId) {
+      throw new HttpError(error.status, error.message, error.code, {
+        fields: [{ field: "/executionUserId", message: error.message }],
+      });
+    }
+    throw error;
+  }
   await validateModelSelection(owner.domainId, input.modelSelection);
   const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
   await validateAssistantSkills(owner.domainId, skills, credentials);
@@ -77,12 +86,12 @@ export async function saveAgentDefinition(
   return withDomainSkills(owner.domainId, async () => {
     const agent = await editableAgent(id, owner);
     const { skills, executionUserId } = await checkedDefinition(input, owner, credentials, agent.execution_user_id);
-    if (input.executionUserId != null)
+    if (input.executionUserId != null && input.executionUserId !== agent.execution_user_id)
       await prepareExecutionSetting(owner, agent.execution_user_id, input.executionUserId, credentials);
     await transaction(async client=>{
     await lockProducts(client,owner);
     await client.query(
-      `UPDATE ${t("assistant_agents")} SET name=$3,description=$4,enabled=$5,system_prompt=$6,model_selection=$7,model_reference_migrated=true,skills=$8,icon=$9,class_names=$10,enabled_mcp_service_ids=$11,sort_order=$12,execution_user_id=$13 WHERE id=$1 AND domain_id=$2`,
+      `UPDATE ${t("assistant_agents")} SET name=$3,description=$4,enabled=$5,system_prompt=$6,model_selection=$7,model_reference_migrated=true,skills=$8,icon=$9,class_names=$10,enabled_mcp_service_ids=$11,sort_order=COALESCE($12,sort_order),execution_user_id=$13 WHERE id=$1 AND domain_id=$2`,
       [
         id,
         owner.domainId,
@@ -95,7 +104,7 @@ export async function saveAgentDefinition(
         input.icon,
         JSON.stringify(input.classNames),
         JSON.stringify(input.enabledMcpServiceIds),
-        input.sortOrder,
+        input.sortOrder ?? null,
         executionUserId,
       ],
     );
@@ -139,7 +148,7 @@ export async function createAgentDefinition(
         input.icon,
         JSON.stringify(input.classNames),
         JSON.stringify(input.enabledMcpServiceIds),
-        input.sortOrder,
+        assistantAgentDefinitionSchema.shape.sortOrder.parse(input.sortOrder),
         executionUserId,
       ],
     );

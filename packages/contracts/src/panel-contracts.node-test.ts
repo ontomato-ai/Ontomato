@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AGENT_DEFINITION, MCP_SERVICE_OPTION, OBJECT_TYPE, RELATIONSHIP, USER, bindingKey, clientSends, panelClientReads } from "./panel-client-requests";
+import { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, OBJECT_TYPE, RELATIONSHIP, USER, bindingKey, clientSends, panelClientReads } from "./panel-client-requests";
 import { candidatePanelSourceSchema, panelUsePath } from "./panel-host";
 import { panelManifestSchema } from "./panel-manifest";
 import { panelFormSaveInputSchema, projectionBindingKeys, projectionOperations, projectionPorts } from "./panel-projection";
@@ -105,7 +105,8 @@ test("bridge and skill agree about the specific semantic reads", () => {
   assert.ok(!clientSends([agents], "DELETE", "", "/assistant/agent-definitions/form"));
   assert.ok(clientSends([binding(MCP_SERVICE_OPTION)], "GET", "", "/mcp/services/names"));
   assert.ok(!clientSends([binding(MCP_SERVICE_OPTION)], "GET", "", "/mcp/services"));
-  assert.ok(clientSends([binding(OBJECT_TYPE)], "POST", "/data-query", "/admin/getMetas"));
+  for (const type of [OBJECT_TYPE, ATTRIBUTE, RELATIONSHIP])
+    assert.ok(clientSends([binding(type)], "POST", "/data-query", "/admin/getMetas"));
   assert.ok(!clientSends([binding(OBJECT_TYPE)], "POST", "/data-query", "/admin/getschemamarkdown"));
   assert.ok(clientSends([binding(USER)], "GET", "/data-query", "/platform/agent-execution/options?selected=u"));
 });
