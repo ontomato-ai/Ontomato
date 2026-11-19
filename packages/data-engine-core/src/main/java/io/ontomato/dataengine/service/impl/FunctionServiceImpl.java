@@ -16,8 +16,10 @@ import io.ontomato.dataengine.service.scheduling.OntologyScheduleReferences;
 import org.springframework.transaction.annotation.Transactional;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
+import io.ontomato.dataengine.service.FunctionForm;
 import io.ontomato.dataengine.service.FunctionService;
 import io.ontomato.dataengine.service.LangService;
+import io.ontomato.dataengine.service.PanelFormFields;
 import io.ontomato.dataengine.service.agent.OntologyGenerationPrompts;
 import io.ontomato.dataengine.service.agent.OntologyGenerationService;
 import io.ontomato.dataengine.util.DBSchemaUtil;
@@ -248,4 +250,48 @@ public class FunctionServiceImpl implements FunctionService {
 	public List<Function> queryList(String operation, String className, String domainId) {
 		return functionDao.queryList(operation, className, domainId);
 	}
+
+  @Override
+  public JSONObject form(JSONObject request, String lang, String domainId) {
+    JSONObject target = request.getJSONObject("target");
+    if (target == null) throw new IllegalArgumentException("target is required");
+    String kind = target.getString("kind");
+    boolean existing;
+    Function function;
+    if ("object".equals(kind)) {
+      if (!"platform:Function".equals(target.getString("objectType")))
+        throw new IllegalArgumentException("target.objectType: expected platform:Function");
+      String primaryKey = target.getString("primaryKey");
+      if (primaryKey == null || primaryKey.isBlank())
+        throw new IllegalArgumentException("target.primaryKey: expected a function id");
+      function = functionDao.queryById(primaryKey);
+      if (function == null || !domainId.equals(function.getDomainId()))
+        throw new IllegalArgumentException("Function not found");
+      existing = true;
+    } else if ("draft".equals(kind)) {
+      function = FunctionForm.defaultValues().to(Function.class);
+      function.setDomainId(domainId);
+      existing = false;
+    } else {
+      throw new IllegalArgumentException("target.kind: expected object or draft");
+    }
+    JSONObject values = request.getJSONObject("values");
+    if (values == null) values = PanelFormFields.asset(function);
+    else if (request.get("changedField") == null) FunctionForm.checkDraft(values);
+    String readOnlyReason = null;
+    if (Function.ORIGIN_SYSTEM.equals(function.getOrigin()))
+      readOnlyReason = langService.get(lang, "Function.cannotModifySystem");
+    else if (Function.OPERATION_PRODUCT.equals(function.getOperation()))
+      readOnlyReason = langService.get(lang, "PanelForm.readOnly.product");
+    else if (function.getId() != null) {
+      if (metricViewDao.referencedFunctionIds().contains(function.getId()))
+        readOnlyReason = langService.get(lang, "Function.referencedByMetricView");
+      else if (actionDao.queryList(null, function.getId(), null, null).size() > 0)
+        readOnlyReason = langService.get(lang, "Function.referencedByAction");
+      else if (scheduledTasks.references(function.getId()))
+        readOnlyReason = langService.get(lang, "Function.referencedByWriteTask");
+    }
+    String operationReadOnlyReason = langService.get(lang, "PanelForm.readOnly.operation");
+    return FunctionForm.describe(values, existing, readOnlyReason, operationReadOnlyReason, lang, langService);
+  }
 }

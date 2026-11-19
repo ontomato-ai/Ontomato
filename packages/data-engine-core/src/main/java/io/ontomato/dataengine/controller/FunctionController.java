@@ -78,6 +78,23 @@ public class FunctionController {
 	}
 	
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+	@PostMapping("/function/form")
+    @ResponseBody
+    public JSONObject form(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
+		JSONObject ret = new JSONObject();
+		try {
+			User user = SystemUtils.getCurUser();
+			ret.put("data", functionService.form(param, lang, user.getDomainId()));
+			ret.put("success", true);
+		} catch (Exception e) {
+			log.error(e.getMessage(), e);
+			ret.put("success", false);
+			ret.put("message", e.getMessage());
+		}
+		return ret;
+	}
+
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/function/queryList")
     @ResponseBody
     public JSONObject queryList(@RequestBody JSONObject param) {
