@@ -435,6 +435,42 @@ describe("the panel host", () => {
     expect(document).toContain('import {mountPanel} from "@ontomato/sdk/panel";');
   });
 
+  it("drops a settled draft's link from the address, and only the link the address still names", async () => {
+    const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
+    const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
+    const session = "6f1c2d3e-4b5a-4c6d-8e7f-a0b1c2d3e4f5";
+    const runs = ["0a1b2c3d-4e5f-4a6b-8c7d-e8f9a0b1c2d3", "1b2c3d4e-5f6a-4b7c-9d8e-f9a0b1c2d3e4"];
+    const link = (runId: string) => ({ sessionId: session, runId, path: "outputs/drafts/task.page-draft.json" });
+    const query = (runId: string) => new URLSearchParams({ tab: "runs", draftSessionId: session, draftRunId: runId, draftPath: link(runId).path });
+    const page = shallowRef(`/applications/app-a/a/schedules?${query(runs[1]!)}`);
+    const selected = { selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" } };
+    const scope = effectScope();
+    const a = scope.run(() => usePanelInstance(port.port("use-a"), { labels,
+      label: (source) => source.kind === "registered" ? source.panel.name : "",
+      address: () => page.value,
+      initial: () => selected,
+    }))!;
+    await a.ready;
+    const frame = frameWindow();
+    a.frame(frame);
+    const opened = a.address.value;
+    fromFrame(frame, { kind: "state", fromAddress: opened, state: selected });
+
+    // A late word about the draft opened before this one leaves the address alone.
+    fromFrame(frame, { kind: "draft-settled", draft: link(runs[0]!) });
+    expect(a.address.value).toBe(opened);
+    expect(postedTo(port, frame)).toEqual([]);
+
+    // The draft the address links: its three parameters go, the page's own and its state stay, and the frame hears it.
+    fromFrame(frame, { kind: "draft-settled", draft: link(runs[1]!) });
+    const settled = panelAddress("/applications/app-a/a/schedules?tab=runs", selected);
+    expect(a.address.value).toBe(settled);
+    expect(postedTo(port, frame)).toEqual([{ channel: PANEL_HOST_CHANNEL, kind: "address", address: settled }]);
+    fromFrame(frame, { kind: "state", fromAddress: settled, state: selected });
+    expect(a.address.value).toBe(settled);
+    scope.stop();
+  });
+
   it("pairs an operation's answer with the call that asked for it", async () => {
     const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
     const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });

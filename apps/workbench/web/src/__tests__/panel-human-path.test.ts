@@ -20,6 +20,7 @@ import {
   currentSdk, panelHostFrame, panelRecord, panelSnapshot, panelUse, projections, READER, run, SCHEDULED_TASK, SDK_VERSION, task, taskForm,
   writeFrameDocument,
   type Sent,
+  caseSetLabel,
 } from "./panel-frame";
 
 const appA = "app-panels-trial-a";
@@ -59,7 +60,7 @@ function answer(request: Sent) {
     pageKey: useP.pageKey, operation: `${SCHEDULED_TASK}.save`, target: { id: task.id },
     form: { ...task.content, caseSetId: "set-smoke" },
   });
-  if (request.path === `${taskPath}/applications/${task.appId}/form`) return Response.json(taskForm);
+  if (request.path === `${taskPath}/applications/${task.appId}/form`) return taskFormFor((request.body as { values: typeof taskForm.values }).values);
   return nothingAt(request);
 }
 
@@ -557,7 +558,7 @@ it("opens the saved draft's old link as an ordinary panel", async () => {
   });
   try {
     const { context } = await startFrame(frame);
-    await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain("caseSetId"));
+    await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain(caseSetLabel));
     await context.instance.invoke("form.save");
     expect(current.content.caseSetId).toBe("set-smoke");
     await vi.waitFor(() => expect(context.draft.value).toBeNull());
@@ -625,7 +626,7 @@ it("uses the conversation object signal to refresh only matching objects and pre
 
     const query = new URLSearchParams({ draftSessionId: "session-1", draftRunId: "run-1", draftPath: "outputs/drafts/task.page-draft.json" });
     await router.push(panelAddress(`${address}?${query}`, deepState));
-    await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")?.textContent).toContain("caseSetId"));
+    await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")?.textContent).toContain(caseSetLabel));
     const editing = formReads().length;
     current = { ...current, revision: current.revision + 1, content: { ...current.content, caseSetId: "agent-later" },
       summary: [{ key: "instruction", label: "Instruction", value: "Agent changed it again" }] };
@@ -836,7 +837,7 @@ it.each([true, false])("resolves a panel draft through the bridge with created=%
       await vi.waitFor(() => {
         expect(context.draft.value?.target.id).toBe(task.id);
         expect(context.instance.deepLink()).toEqual(deepState);
-        expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain("caseSetId");
+        expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain(caseSetLabel);
       });
       const addressedReads = taskReads().slice(initialReads);
       expect(addressedReads).not.toHaveLength(0);

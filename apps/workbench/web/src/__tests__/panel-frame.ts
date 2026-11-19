@@ -51,6 +51,9 @@ export const taskForm: PlatformScheduleForm = platformScheduleFormSchema.parse({
   submittable: true,
 });
 
+/** What the form's changed note names for the case set: the owner's own label for the field. */
+export const caseSetLabel = taskForm.fields.find((field) => field.key === "caseSetId")!.label;
+
 export const inspectionTaskForm = platformScheduleFormSchema.parse(example("forms", "operations-switch-to-inspection"));
 
 /** A manual run the service started for the task, as it answers "run now". */
@@ -381,7 +384,9 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
     if (request.path === `/api/product-projections/${formProjection.id}`)
       return served.then(() => Response.json({ projection: formProjection }));
     if (request.path === `/api/data-query/platform/scheduled-tasks/${task.id}`) return Response.json(task);
-    if (request.path === `/api/data-query/platform/scheduled-tasks/applications/${task.appId}/form`) return Response.json(form);
+    // The owner answers its form for the values it is given, as it checks a draft against them.
+    if (request.path === `/api/data-query/platform/scheduled-tasks/applications/${task.appId}/form`)
+      return Response.json({ ...form, values: (request.body as { values: typeof form.values }).values });
     if (request.path === "/api/assistant/sessions/session-1/runs/run-1/page-draft") {
       draftServed();
       return Response.json(draft);

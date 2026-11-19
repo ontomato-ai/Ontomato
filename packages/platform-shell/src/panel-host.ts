@@ -3,6 +3,7 @@ import type { PanelDefinitionSnapshot, ProductDefinitionRevision, ProductDefinit
 import { inject, onScopeDispose, shallowRef, watch, type InjectionKey, type Ref, type ShallowRef } from "vue";
 import { onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import type { PageContext } from "@ontomato/contracts/page-context";
+import { PAGE_DRAFT_QUERY_KEYS, pageDraftLink, type PageDraftLink } from "@ontomato/contracts/page-draft";
 import {
   PANEL_HOST_CHANNEL,
   panelAddress,
@@ -163,6 +164,13 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   /** A candidate read again whose definition differs from the one shown; it waits like a changed record does. */
   let pendingCandidate: PanelHostSource | null = null;
   let pendingObjectRefresh = false;
+  /** The draft the reader settled while the page's address still linked it. */
+  let settledDraft: PageDraftLink | null = null;
+  /** The page's address, without the link of a draft the reader has settled. */
+  const pageAddress = () => {
+    const page = options.address();
+    return settledDraft && linksDraft(page, settledDraft) ? withoutDraftLink(page) : page;
+  };
   let applying = Promise.resolve();
   const answering = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
   let settle: () => void = () => {};
@@ -201,7 +209,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   function adopt(next: PanelHostSource) {
     error.value = "";
     const requested = requestedState(next.panel) as Record<string, PanelStateValue>;
-    const requestedAddress = panelAddress(options.address(), requested);
+    const requestedAddress = panelAddress(pageAddress(), requested);
     const { content, manifest, sdkVersion } = next.panel;
     // Only the renderable definition crosses into the frame; the record's identity and a candidate's preview context stay
     // with the host.
@@ -349,7 +357,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
 
   function syncAddress(): boolean {
     if (!frameReady || !source.value) return false;
-    const requested = panelAddress(options.address(), requestedState(source.value.panel));
+    const requested = panelAddress(pageAddress(), requestedState(source.value.panel));
     if (requested === address.value) return false;
     frameAddress = requested;
     address.value = requested;
@@ -357,6 +365,20 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     return true;
   }
   watch([options.address, options.initial], syncAddress);
+
+  /**
+   * The reader saved or discarded the draft the address links: the address drops the link and keeps everything else, and
+   * the frame hears it as any address change. From then on the page's address is read without that link, so the page
+   * catching up later changes nothing; a late word about an earlier draft never drops a link opened since.
+   */
+  function settleDraft(draft: PageDraftLink) {
+    if (!linksDraft(address.value, draft)) return;
+    settledDraft = draft;
+    const settled = panelAddress(pageAddress(), state.value);
+    frameAddress = settled;
+    address.value = settled;
+    post({ kind: "address", address: settled });
+  }
 
   function reportFrameFailure(failure: NonNullable<DisplayLoad["error"]>) {
     error.value = failure.message;
@@ -385,8 +407,9 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
         if (syncAddress()) return;
       }
       state.value = payload.state;
-      address.value = panelAddress(options.address(), payload.state);
+      address.value = panelAddress(pageAddress(), payload.state);
     }
+    if (payload.kind === "draft-settled") settleDraft(payload.draft);
     if (payload.kind === "operations") operations.value = payload.operations;
     if (payload.kind === "dirty") {
       dirty.value = payload.dirty;
@@ -437,6 +460,20 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       disposeFrame = window && source.value ? port.frame(window, source.value) : undefined;
     },
   };
+}
+
+/** Whether an address links exactly this draft. */
+function linksDraft(address: string, draft: PageDraftLink) {
+  const linked = pageDraftLink(Object.fromEntries(new URLSearchParams(address.split("?")[1] ?? "")));
+  return linked?.sessionId === draft.sessionId && linked.runId === draft.runId && linked.path === draft.path;
+}
+
+/** An address without its draft link, everything else kept. */
+function withoutDraftLink(address: string) {
+  const [path, search = ""] = address.split("?");
+  const query = new URLSearchParams(search);
+  for (const key of PAGE_DRAFT_QUERY_KEYS) query.delete(key);
+  return query.size ? `${path}?${query}` : path!;
 }
 
 /** Escapes a text so it is data or code inside its own element and never ends the element it sits in. */
