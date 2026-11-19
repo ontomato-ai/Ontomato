@@ -232,6 +232,66 @@
     "value": "Indicator already exists"
   },
   {
+    "key": "Admin.relationship.notFound",
+    "value": "Relationship not found"
+  },
+  {
+    "key": "Admin.relationship.nameRequired",
+    "value": "A relationship name is required"
+  },
+  {
+    "key": "Admin.relationship.fromClassRequired",
+    "value": "A source object class is required"
+  },
+  {
+    "key": "Admin.relationship.toClassRequired",
+    "value": "A target object class is required"
+  },
+  {
+    "key": "Admin.relationship.descRequired",
+    "value": "A relationship description is required"
+  },
+  {
+    "key": "Admin.relationship.fromFieldRequired",
+    "value": "A source join field is required by this data source"
+  },
+  {
+    "key": "Admin.relationship.toFieldRequired",
+    "value": "A target join field is required by this data source"
+  },
+  {
+    "key": "Admin.relationship.fromFieldInvalid",
+    "value": "The source join field must be an attribute of the source object class"
+  },
+  {
+    "key": "Admin.relationship.toFieldInvalid",
+    "value": "The target join field must be an attribute of the target object class"
+  },
+  {
+    "key": "Admin.attr.nameRequired",
+    "value": "An attribute name is required"
+  },
+  {
+    "key": "Admin.attr.showNameRequired",
+    "value": "An attribute display name is required"
+  },
+  {
+    "key": "Admin.attr.typeRequired",
+    "value": "An attribute type is required"
+  },
+  {
+    "key": "Admin.field.booleanRequired",
+    "value": "A true or false value is required"
+  },
+  {
+    "key": "Admin.attr.inUse",
+    "value": "The attribute is used as a join field by these relationships"
+  },
+  {
+    "key": "Admin.validation.failed",
+    "value": "Some fields are invalid"
+  },
+  {
     "key": "PythonExecutor.execute.timeout",
     "value": "Python execution timeout (minutes)"
   },
