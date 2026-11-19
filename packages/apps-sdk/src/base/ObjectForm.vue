@@ -22,6 +22,9 @@ import FormFieldControl from "./FormFieldControl.vue";
  *
  * The form edits the object the panel has selected, or — when nothing is and the projection's display says it
  * `creates` — a new one, saved through the owner's own create; the panel then selects the object the owner created.
+ * A panel whose state says "creating" (`createWhen`: one of the slot's inputs equals a value) has the form on a new
+ * object whatever is selected, so a list that selects its first row again cannot turn the new object into another; once
+ * the new object is saved, that state is cleared and the form edits the object the owner created.
  * A field another projection draws (a reference chosen from its own catalogue, a data scope on a graph) is edited there,
  * through this form's field port, and is this form's value, dirty state and draft all the same.
  *
@@ -35,8 +38,13 @@ const props = withDefaults(
     inputName?: string;
     /** Whether, with nothing selected, the form creates a new object of the bound type. */
     creates?: boolean;
+    /**
+     * The slot input whose panel state, while it equals `equals`, puts the form on a new object regardless of the
+     * selection; the form clears it once that object is saved. Requires `creates`.
+     */
+    createWhen?: { input: string; equals: string };
   }>(),
-  { inputName: undefined, creates: false },
+  { inputName: undefined, creates: false, createWhen: undefined },
 );
 
 const { t } = useI18n();
@@ -47,11 +55,27 @@ const forms = adapterPart(objectType, "forms");
 
 const state = computed(() => slotState(panel.manifest, slot.slot, props.inputName));
 const key = computed(() => selectedKey(panel.instance.state.values.value[state.value]));
+if (props.createWhen && !props.creates) throw new Error("A form told when it creates must also create: set `creates`");
+/** The panel state that says the form is creating, when the display names one. */
+const createState = computed(() => (props.createWhen ? slotState(panel.manifest, slot.slot, props.createWhen.input) : null));
+const creating = computed(() =>
+  createState.value !== null && panel.instance.state.values.value[createState.value] === props.createWhen!.equals);
 const target = computed<PanelFormTarget | null>(() => {
+  if (creating.value) return { kind: "draft" };
   if (key.value) return { kind: "object", objectType, primaryKey: key.value };
   return props.creates ? { kind: "draft" } : null;
 });
 const targetKey = (value: PanelFormTarget | null) => (value === null ? "" : value.kind === "object" ? value.primaryKey : "draft");
+
+/**
+ * Puts the panel's state where the form shows `next`: a new object is the creating state where the panel has one (the
+ * selection left as it is) or no selection; an existing one is that object selected, and creating no longer.
+ */
+function moveTo(next: PanelFormTarget) {
+  if (createState.value !== null) panel.instance.state.set(createState.value, next.kind === "draft" ? props.createWhen!.equals : null);
+  if (next.kind === "object") panel.instance.state.set(state.value, { className: objectType, primaryKey: next.primaryKey });
+  else if (createState.value === null) panel.instance.state.set(state.value, null);
+}
 
 /** The owner's description now: its fields, which follow the values the form holds. */
 const description = shallowRef<PanelFormDescription | null>(null);
@@ -235,9 +259,8 @@ useProjectionForm({
     const checked = await forms.describe({ target: into, values: draft.form as PanelFormValues, changedField: null });
     const marked = changedPaths(checked.fields, baseline.values, checked.values);
     held = marked.size ? { target: targetKey(into), baseline, checked, changed: marked } : null;
-    const selected = into.kind === "object" ? { className: objectType, primaryKey: into.primaryKey } : null;
     if (targetKey(target.value) === targetKey(into)) load(into);
-    else panel.instance.state.set(state.value, selected);
+    else moveTo(into);
     return marked;
   },
   submit: () => write(),
@@ -284,7 +307,7 @@ async function write(): Promise<unknown> {
     held = null;
     opened.value = { ...description.value!, values: values.value };
     changed.value = new Set();
-    if (into.kind === "draft") panel.instance.state.set(state.value, { className: objectType, primaryKey: saved.primaryKey });
+    if (into.kind === "draft") moveTo({ kind: "object", objectType, primaryKey: saved.primaryKey });
     panel.instance.objectChanged({ objectType, primaryKey: saved.primaryKey });
     // A received draft ends with its save; a create draft first records the object it created. The save stands either
     // way: a record that fails is shown with the form, on the object the owner created.
