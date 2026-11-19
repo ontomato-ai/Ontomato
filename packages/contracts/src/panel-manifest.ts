@@ -137,8 +137,10 @@ export type PanelStateRef = z.infer<typeof panelStateRefSchema>;
 /** A projection reads and edits one owner-declared field of a form in this same panel instance. */
 export const panelFormFieldRefSchema = z.object({
   slot: key,
-  /** JSON Pointer relative to the owner form's values. */
+  /** JSON Pointer to a field, or to the owner-declared object-array when itemPath is set. */
   path: formFieldErrorSchema.shape.field,
+  /** JSON Pointer within each row. Resolve it against the row's current index for edits, refreshes and errors. */
+  itemPath: formFieldErrorSchema.shape.field.optional(),
 }).strict();
 export type PanelFormFieldRef = z.infer<typeof panelFormFieldRefSchema>;
 
