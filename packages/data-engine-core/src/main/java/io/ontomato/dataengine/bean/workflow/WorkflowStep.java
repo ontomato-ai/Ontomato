@@ -31,6 +31,12 @@ public class WorkflowStep {
     /** approve or execute; kept for display and for the pending-item wording. */
     private String actionType;
 
+    /** How the concrete actor is selected for this step. */
+    private StepActorPolicy actorPolicy;
+
+    /** manual (current implementation) or automatic (reserved for the next iteration). */
+    private String invocationMode;
+
     /** The scope this step grants to its role. */
     private GrantScope.Kind scope;
 
@@ -48,6 +54,8 @@ public class WorkflowStep {
 
     public static final String ACTION_TYPE_APPROVE = "approve";
     public static final String ACTION_TYPE_EXECUTE = "execute";
+    public static final String INVOCATION_MANUAL = "manual";
+    public static final String INVOCATION_AUTOMATIC = "automatic";
 
     public static void requireDistinctNames(List<WorkflowStep> steps) {
         var names = new java.util.HashSet<String>();
@@ -58,6 +66,10 @@ public class WorkflowStep {
 
     public static List<String> actionTypes() {
         return List.of(ACTION_TYPE_APPROVE, ACTION_TYPE_EXECUTE);
+    }
+
+    public static List<String> invocationModes() {
+        return List.of(INVOCATION_MANUAL, INVOCATION_AUTOMATIC);
     }
 
 }
