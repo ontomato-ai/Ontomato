@@ -14,7 +14,18 @@ import type { ShellFeatureDeclaration, ShellLabels, ShellWorkbenchDeclaration } 
  * address with the page already beside the conversation and opening the page later end the same way. An application
  * that runs on one agent heads its column with its own name.
  */
-const labels = { placeholder: "Message", send: "Send", stop: "Stop", agent: "Agent", newConversation: "New chat" } as unknown as ShellLabels;
+const labels = {
+  placeholder: "Message",
+  send: "Send",
+  stop: "Stop",
+  agent: "Agent",
+  newConversation: "New chat",
+  pageContext: (page: { label: string; url: string }) => `Current page: ${page.label} (${page.url})`,
+  pageContextAddress: (url: string) => `Current page: ${url}`,
+  selectionContext: (selection: string) => `Selected: ${selection}`,
+  fileContext: (file: { label: string; path: string }) => `Current file: ${file.label} (${file.path})`,
+  pageContextClosed: "Current page: closed",
+} as unknown as ShellLabels;
 const assistant = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const analyst = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const governance = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
@@ -71,6 +82,7 @@ function render(options: { page: string | null; agentPicker?: boolean; title?: s
         setAgentId: (id) => (agentId.value = id),
         sessionId: () => null,
         setSessionId: () => {},
+        onLeaveConversation: () => void display.close(),
       });
       // The application loads its agents once it is mounted, as the agent platform does.
       void nav.loadAgents();
@@ -121,6 +133,8 @@ it("opening the page later ends the same way, and closing it lists every agent a
 
   await display.openFeature("dashboards", "side");
   await settle();
+  // Switching to the native page's default candidate before any conversation starts must not close the page.
+  expect(display.page.value?.featureId).toBe("dashboards");
   const beside = await head(root);
   expect(beside.chooser).toBe(true);
   expect(beside.listed).toEqual(["Assistant"]);
@@ -282,4 +296,219 @@ it("narrows candidates from display-skill, re-queries on member switch, skips re
   await display.close();
   await settle();
   expect((await head(root)).listed).toEqual(["Assistant", "Analyst", "Knowledge governance"]);
+});
+
+it("keeps an active conversation on its own agent when new page candidates exclude it, and still lets the reader switch from the chooser", async () => {
+  const existingSessionId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  const runId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  const sentBodies: { path: string; message: string }[] = [];
+  const homeSkill: PageSkillContext = {
+    mode: "member",
+    locator: { pageKey: "home", access: "domain-member" },
+    member: { source: { kind: "home" }, memberKey: "pvt-home-panel" },
+  };
+  const drawerSkill: PageSkillContext = {
+    mode: "member",
+    locator: { pageKey: "home", access: "domain-member" },
+    member: { source: { kind: "object-detail", useId: "use-1", object: { className: "Order", primaryKey: "1" } }, memberKey: "pvt-drawer-panel" },
+  };
+  const session = {
+    id: existingSessionId,
+    agentId: assistant,
+    title: "Existing chat",
+    origin: "user",
+    createdAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString(),
+    latestRun: null,
+  };
+  const wire = (items: typeof every) => items.map((item) => ({ ...item, effectiveSkills: [] }));
+  const request = vi.fn(async (path: string, init?: RequestInit) => {
+    const url = new URL(path, "http://host.test");
+    if (url.pathname.endsWith("/history")) {
+      return new Response(JSON.stringify({
+        session,
+        messages: [],
+        runs: [],
+        latestRun: null,
+        pendingQuestions: [],
+        page: { messageSeq: 0, olderCursor: null },
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.pathname.endsWith("/runs") && init?.method === "POST") {
+      const body = JSON.parse(String(init.body)) as { message: string };
+      sentBodies.push({ path: url.pathname, message: body.message });
+      return new Response(JSON.stringify({
+        delivery: {
+          messageId: runId,
+          sessionRef: { providerId: "workbench", sessionId: existingSessionId },
+          runId,
+          delivery: "run",
+          status: "stopped",
+        },
+        input: {
+          id: runId,
+          runId,
+          messageSeq: 1,
+          contextSeq: 1,
+          message: { role: "user", content: body.message, timestamp: 1 },
+        },
+        snapshot: {
+          pendingQuestions: [],
+          run: {
+            id: runId,
+            sessionId: existingSessionId,
+            status: "stopped",
+            stopReason: "stop",
+            errorMessage: null,
+            answerMessageId: null,
+            workspaceCommit: null,
+            createdAt: new Date(0).toISOString(),
+            finishedAt: null,
+            resolvedSkills: [],
+          },
+          cursor: { runId, seq: 1, streamId: "ffffffff-ffff-4fff-8fff-ffffffffffff" },
+          messages: [],
+          pendingMessages: [],
+          toolExecutions: [],
+          artifacts: [],
+        },
+        pendingQuestions: [],
+        replayed: false,
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.pathname.endsWith("/sessions")) {
+      return new Response(JSON.stringify({ sessions: [session], nextCursor: null }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    const memberKey = url.searchParams.get("memberKey");
+    if (memberKey === "pvt-home-panel") {
+      return new Response(JSON.stringify({ agents: wire([every[0]]), defaultAgentId: assistant }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (memberKey === "pvt-drawer-panel") {
+      return new Response(JSON.stringify({ agents: wire([every[2]]), defaultAgentId: governance }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.searchParams.get("pageKey") === "dashboard") {
+      return new Response(JSON.stringify({ agents: wire([every[1]]), defaultAgentId: analyst }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ agents: wire(every) }), { status: 200, headers: { "Content-Type": "application/json" } });
+  });
+  const host = createAgentHostClient({ request });
+  const display = testDisplay(workbench, {
+    resolve: (address) =>
+      address.startsWith("/applications/")
+        ? { featureId: "panel-application", address, instance: address.split("?")[0]! }
+        : address === "/dashboards"
+          ? { featureId: "dashboards", address, instance: "dashboards" }
+          : null,
+    context: (page, reported) => ({
+      url: page.address,
+      label: reported?.label ?? (page.featureId === "dashboards" ? "Dashboards" : "Home"),
+      selection: reported?.selection ?? [],
+    }),
+    initial: { page: { featureId: "panel-application", address: "/applications/app/home", instance: "/applications/app/home" }, view: "side" },
+  });
+  const agentId = ref<string | null>(assistant);
+  const sessionId = ref<string | null>(existingSessionId);
+  const leftConversation = vi.fn(() => void display.close());
+  let currentNav!: ReturnType<typeof useAgentNav>;
+  const Host = defineComponent({
+    setup() {
+      const nav = useAgentNav({
+        client: () => host,
+        agentId: () => agentId.value,
+        setAgentId: (id) => (agentId.value = id),
+        sessionId: () => sessionId.value,
+        setSessionId: (id) => (sessionId.value = id),
+        onLeaveConversation: leftConversation,
+      });
+      currentNav = nav;
+      void nav.loadAgents();
+      return () =>
+        h(AgentShell, {
+          workbench,
+          client: host,
+          labels,
+          nav,
+          agentPicker: true,
+          title: workbench.label,
+          agentId: agentId.value,
+          "onUpdate:agentId": (id: string | null) => (agentId.value = id),
+          sessionId: sessionId.value,
+          "onUpdate:sessionId": (id: string | null) => (sessionId.value = id),
+          display,
+        });
+    },
+  });
+  app = createApp(Host);
+  const root = document.createElement("div");
+  document.body.append(root);
+  app.mount(root);
+  await settle();
+
+  // Start on the home member where Assistant is a candidate.
+  display.skill(homeSkill);
+  await settle();
+  expect((await head(root)).shown).toBe("Assistant");
+  expect(agentId.value).toBe(assistant);
+
+  // Switch to the drawer member whose candidates exclude Assistant: the open conversation stays on Assistant.
+  display.context({
+    url: "/applications/app/home",
+    label: "Order detail",
+    selection: [{ kind: "object", id: "Order:1", label: "Order #1" }],
+  });
+  display.skill(drawerSkill);
+  await settle();
+
+  expect(agentId.value).toBe(assistant);
+  expect(sessionId.value).toBe(existingSessionId);
+  expect(display.page.value?.address).toBe("/applications/app/home");
+  expect(leftConversation).not.toHaveBeenCalled();
+
+  const afterMemberSwitch = await head(root);
+  expect(afterMemberSwitch.shown).toBe("Assistant");
+  expect(afterMemberSwitch.listed).toEqual(["Knowledge governance"]);
+
+  const input = root.querySelector<HTMLTextAreaElement>(".composer textarea")!;
+  expect(input.disabled).toBe(false);
+  input.value = "Explain this order";
+  input.dispatchEvent(new Event("input"));
+  await nextTick();
+  const sendButton = root.querySelector<HTMLButtonElement>(".composer-button")!;
+  expect(sendButton.disabled).toBe(false);
+  sendButton.click();
+  await settle();
+
+  expect(sentBodies).toHaveLength(1);
+  expect(sentBodies[0]!.path).toBe(`/sessions/${existingSessionId}/runs`);
+  expect(sentBodies[0]!.message).toContain("Explain this order");
+  expect(sentBodies[0]!.message).toContain("Current page: Order detail (/applications/app/home)");
+  expect(sentBodies[0]!.message).toContain("Selected: Order #1");
+
+  // Opening a native page whose candidates exclude Assistant follows the same rule and keeps the page open.
+  await display.navigate("/dashboards", { view: "side", history: "push" });
+  await settle();
+  expect(agentId.value).toBe(assistant);
+  expect(sessionId.value).toBe(existingSessionId);
+  expect(display.page.value?.address).toBe("/dashboards");
+  expect(leftConversation).not.toHaveBeenCalled();
+  const onNativePage = await head(root);
+  expect(onNativePage.shown).toBe("Assistant");
+  expect(onNativePage.listed).toEqual(["Analyst"]);
+  expect(root.querySelector<HTMLTextAreaElement>(".composer textarea")!.disabled).toBe(false);
+
+  // The reader choosing another candidate from the dropdown follows the normal agent-switch path.
+  root.querySelector<HTMLButtonElement>(".shell-nav-body .switch-trigger")!.click();
+  await settle();
+  const option = [...document.querySelectorAll<HTMLButtonElement>(".agent-menu .agent-option")].find((item) =>
+    item.textContent?.includes("Analyst"),
+  )!;
+  option.click();
+  await settle();
+
+  expect(agentId.value).toBe(analyst);
+  expect(sessionId.value).toBeNull();
+  expect(leftConversation).toHaveBeenCalledTimes(1);
+  expect(display.page.value).toBeNull();
+  expect(currentNav.currentAgent.value?.id).toBe(analyst);
+  expect((await head(root)).shown).toBe("Analyst");
 });

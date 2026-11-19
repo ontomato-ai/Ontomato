@@ -414,6 +414,7 @@ onMounted(() => {
           :title="title"
           :agents="nav.agents.value"
           :agent-id="agentId"
+          :current-agent="currentAgent"
           :sessions="nav.sessions.value"
           :sessions-state="nav.sessionsState.value"
           :has-more="nav.nextCursor.value !== null"
