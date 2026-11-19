@@ -1,6 +1,6 @@
-import { updatePanelOperationSettingsRequestSchema } from "@ontomato/contracts/panel-agent";
+import { inspectPanelOperationImpactRequestSchema, updatePanelOperationSettingsRequestSchema } from "@ontomato/contracts/panel-agent";
 import { agentSessionRefSchema } from "@ontomato/contracts/agent-channel";
-import { ownPanelSettings } from "../../services/product-panels/operations";
+import { inspectPanelOperationImpact, ownPanelSettings } from "../../services/product-panels/operations";
 import { panelOperationStore } from "../../services/product-panels/operation-store";
 import { Router } from "express";
 import { z } from "zod";
@@ -95,6 +95,11 @@ productPanelsInternalRouter.post("/validate-references", wrap(async (req, res) =
 }));
 
 export const panelOperationsRouter = Router();
+panelOperationsRouter.post("/panel-operations/inspect-impact", wrap(async (req, res) => {
+  const { owner, credentials } = context(req);
+  const input = inspectPanelOperationImpactRequestSchema.parse(req.body);
+  res.json(await inspectPanelOperationImpact(owner, credentials, input));
+}));
 panelOperationsRouter.get("/panel-operation-intents/:intentId",wrap(async(req,res)=>{
   const c=context(req);
   const record = await panelOperationStore.get(c.owner,z.string().uuid().parse(req.params.intentId));

@@ -4,8 +4,9 @@ import { assistantAgentDefinitionSchema } from "@ontomato/contracts/assistant-ch
 import { AGENT_DEFINITION, DELETE_AGENT } from "@ontomato/contracts/panel-client-requests";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
+import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
-import type { PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelServerOperation, SinglePanelOperationOutcome } from "../product-panels/server-operations";
+import type { PanelImpactInspector, PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelServerOperation, SinglePanelOperationOutcome } from "../product-panels/server-operations";
 import { agentDefinitionSave, parseAgentDefinitionForm } from "./definition-form-schema";
 import { resolveAssistantSkillReferences } from "./skill-references";
 
@@ -27,6 +28,27 @@ async function ownerError(response: Response) {
 async function unsuccessfulWrite(response: Response): Promise<SinglePanelOperationOutcome> {
   return { kind: response.status >= 500 ? "failure" : "refusal", ...await ownerError(response) };
 }
+
+async function definitionLabel(host: PanelOperationHost, target: PanelRecordTarget) {
+  const response = await host.requestWorkbench(agentDefinitionSave(target).path, { method: "GET" });
+  if (!response.ok) {
+    const { code, message } = await ownerError(response);
+    throw new HttpError(response.status, message, code);
+  }
+  return assistantAgentDefinitionSchema.parse(await response.json()).name;
+}
+
+const deleteImpact: PanelImpactInspector = {
+  handlerRef: `${DELETE_AGENT}.inspect-impact`,
+  async inspect(host, calls) {
+    const target = calls[0]!.target as PanelRecordTarget;
+    const { objectType, primaryKey } = target;
+    return {
+      summary: tForLocale(host.locale, "panels.confirmation.deleteAgentImpact"),
+      objects: [{ target: { objectType, primaryKey }, label: await definitionLabel(host, target) }],
+    };
+  },
+};
 
 export const agentDefinitionOperations = [
   {
@@ -72,14 +94,8 @@ export const agentDefinitionOperations = [
     inputSchema: z.object({}).strict(),
     resultSchema: emptyResultSchema,
     targetInput: "agent",
-    async targetLabel(host: PanelOperationHost, target: PanelRecordTarget) {
-      const response = await host.requestWorkbench(agentDefinitionSave(target).path, { method: "GET" });
-      if (!response.ok) {
-        const { code, message } = await ownerError(response);
-        throw new HttpError(response.status, message, code);
-      }
-      return assistantAgentDefinitionSchema.parse(await response.json()).name;
-    },
+    targetLabel: definitionLabel,
+    inspectImpact: deleteImpact,
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const response = await host.requestWorkbench(agentDefinitionSave(target).path, { method: "DELETE" });
       return response.ok

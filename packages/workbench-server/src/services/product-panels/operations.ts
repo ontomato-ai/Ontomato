@@ -4,12 +4,13 @@ import { z } from "zod";
 import { pageDraftSchema } from "@ontomato/contracts/page-draft";
 import type { AgentSessionRef } from "@ontomato/contracts/agent-channel";
 import { agentQuestionAnswerReceiptSchema, agentUserQuestionReceiptSchema } from "@ontomato/contracts/agent-user-questions";
-import { applicationPanelUsesResponseSchema } from "@ontomato/contracts/product-panels";
+import { applicationPanelUsesResponseSchema, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import {
-  PANEL_CONFIRMATION_EXPIRED,
+  PANEL_CONFIRMATION_EXPIRED, panelOperationOutcomeSchema, type inspectPanelOperationImpactRequestSchema,
   type CreatePanelOperationIntentRequest, type PanelOperationIntent, type PanelOperateResponse,
   type PanelUseRef, type PanelOperationOutcome, type StoredPanelOperationIntent,
 } from "@ontomato/contracts/panel-agent";
+import { panelOperationImpactSchema } from "@ontomato/contracts/panel-operations";
 import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import { projectionOperations, projectionPorts } from "@ontomato/contracts/panel-projection";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
@@ -27,7 +28,10 @@ import type { AssistantOwner } from "../assistant/store";
 import { restoreAgentCaller, readAgentSessionActor } from "../agent-host/caller";
 import { readCurrentPanel, readCurrentProjection } from "./current";
 import { readComponentCatalogue } from "./skill-package";
-import { panelServerOperation, snapshotPanelWrite, type PanelServerOperation, type PanelOperationHost, type PanelRecordTarget } from "./server-operations";
+import {
+  panelServerOperation, snapshotPanelWrite, type PanelBatchCalls, type PanelOperationInvocation,
+  type PanelServerOperation, type PanelOperationHost, type PanelRecordTarget, type PanelImpactInspector,
+} from "./server-operations";
 import { panelConfirmation } from "./confirmation";
 import { publishObjectChanged } from "../agent-host/presentation";
 import { panelOperationStore as store } from "./operation-store";
@@ -36,18 +40,27 @@ type PanelRun = Awaited<ReturnType<typeof runForOwner>>;
 type SingleIntent = Extract<PanelOperationIntent, { call: PanelOperationCall }>;
 type ReadableIntent = Extract<StoredPanelOperationIntent, { intent: unknown }>["intent"];
 
-async function admitted(owner: AssistantOwner, credentials: AssistantCredentials, run: PanelRun, ref: PanelUseRef, operationId: string) {
+async function requirePanelUse(credentials: AssistantCredentials, ref: PanelUseRef) {
   const response = await backendGet("panel-use",`${config.dataQuery.baseUrl}/platform/applications/${encodeURIComponent(ref.applicationId)}/panel-uses`,
     {headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});
   const uses = z.object({success:z.literal(true),data:applicationPanelUsesResponseSchema}).parse(JSON.parse(response.text)).data;
   const use = uses.panelUses.find(use => use.id === ref.useId);
   if (!use) throw new HttpError(403,"Panel use is not available","FORBIDDEN");
+  return use;
+}
+
+async function admitted(owner: AssistantOwner, credentials: AssistantCredentials, run: PanelRun, ref: PanelUseRef, operationId: string) {
+  const use = await requirePanelUse(credentials, ref);
   const pages = await readPageSkills(credentials);
   const mapping = pages.pageSkills.find(mapping => "permissionCode" in use.access
     ? "permissionCode" in mapping && mapping.permissionCode === use.access.permissionCode
     : "access" in mapping && mapping.pageKey === use.pageKey);
   if (!mapping || !run.resolvedSkills.some(entry => runtimeSkillKey(entry.skill) === runtimeSkillKey(mapping.skill)))
     throw new HttpError(403,"This run does not have this panel's skill","FORBIDDEN");
+  return declaredOperation(owner, credentials, use, operationId);
+}
+
+async function declaredOperation(owner: AssistantOwner, credentials: AssistantCredentials, use: ApplicationPanelUse, operationId: string) {
   const panel = await readCurrentPanel(owner,credentials,use.panelId);
   const catalogue = await readComponentCatalogue(panel.sdkVersion);
   for (const [slot,declaration] of Object.entries(panel.manifest.slots)) {
@@ -101,6 +114,7 @@ function operationHost(credentials: AssistantCredentials): PanelOperationHost {
     return fetch(url,{...init,redirect:"error",headers});
   };
   return {
+    locale: credentials.locale,
     request: (path, init) => request(config.dataQuery.baseUrl.replace(/\/$/u,"") + path.slice(DATA_QUERY_GATEWAY.length), init),
     requestWorkbench: (path, init) => request(environment.agentRuntime().callbackUrl.replace(/\/$/u,"") + "/api" + path, init),
   };
@@ -112,7 +126,7 @@ function sourceMatches(intent: ReadableIntent, session: AgentSessionRef) {
 function matchingInvocation(intent: ReadableIntent, request: CreatePanelOperationIntentRequest, session: AgentSessionRef, executionUserId: string | null) {
   sourceMatches(intent, session);
   if (!isDeepStrictEqual(intent.use,{applicationId:request.applicationId,useId:request.useId}) || intent.operation.id !== request.operationId ||
-    !("call" in intent) || !("call" in request) || !isDeepStrictEqual(intent.call,request.call) || intent.executionUserId !== executionUserId)
+    !isDeepStrictEqual(invocationOf(intent),invocationOf(request)) || intent.executionUserId !== executionUserId)
     throw new HttpError(409,"Changed call or executor requires a new intent","INTENT_CHANGED");
 }
 function replay(record: StoredPanelOperationIntent): PanelOperateResponse {
@@ -122,8 +136,63 @@ function replay(record: StoredPanelOperationIntent): PanelOperateResponse {
   };
   return { kind: "dispatched", intentId: record.intent.intentId, outcome: record.intent.outcome };
 }
-function batchUnsupported(): never {
-  throw new HttpError(422, "This operation does not support a batch", "OPERATION_BATCH_UNSUPPORTED");
+function invocationOf(input: PanelOperationInvocation): PanelOperationInvocation {
+  return "calls" in input ? { calls: input.calls } : { call: input.call };
+}
+
+type CheckedInvocation =
+  | { call: PanelOperationCall; target: ReturnType<typeof validateCall> }
+  | { calls: PanelBatchCalls; owner: Extract<PanelServerOperation, { batch: true }> };
+
+function validateInvocation(handler: PanelServerOperation, input: PanelOperationInvocation): CheckedInvocation {
+  if ("calls" in input) {
+    if (!handler.batch) throw new HttpError(422, "This operation does not support a batch", "OPERATION_BATCH_UNSUPPORTED");
+    for (const call of input.calls) validateCall(handler, call);
+    return { calls: input.calls, owner: handler };
+  }
+  return { call: input.call, target: validateCall(handler, input.call) };
+}
+
+function concreteCalls(invocation: CheckedInvocation): readonly PanelOperationCall[] {
+  return "calls" in invocation ? invocation.calls : [invocation.call];
+}
+
+async function ownerImpact(inspector: PanelImpactInspector, host: PanelOperationHost, invocation: CheckedInvocation) {
+  const impact = panelOperationImpactSchema.parse(await inspector.inspect(host, concreteCalls(invocation)));
+  return { ...impact, total: impact.objects.length };
+}
+
+export async function inspectPanelOperationImpact(owner: AssistantOwner, credentials: AssistantCredentials,
+  input: z.infer<typeof inspectPanelOperationImpactRequestSchema>,
+) {
+  const use = await requirePanelUse(credentials, input);
+  const { handler } = await declaredOperation(owner, credentials, use, input.operationId);
+  if (!handler.inspectImpact)
+    throw new HttpError(422, "The owner has no impact description for this operation", "OPERATION_IMPACT_UNAVAILABLE");
+  return ownerImpact(handler.inspectImpact, operationHost(credentials), validateInvocation(handler, input));
+}
+
+function namedTargets(labels: string[], locale?: string) {
+  const names = new Intl.ListFormat(locale).format(labels.slice(0, 4));
+  return `${names} (${new Intl.NumberFormat(locale).format(labels.length)})`.trim();
+}
+
+function batchOutcome(value: unknown, calls: PanelBatchCalls): PanelOperationOutcome {
+  const outcome = panelOperationOutcomeSchema.parse(value);
+  // A definitive atomic receipt applies to the whole batch.
+  if (outcome.kind !== "batch") return outcome;
+  const { items } = outcome;
+  if (items.length !== calls.length || items.some(({ target }, index) => {
+    const { objectType, primaryKey } = calls[index]!.target;
+    return target.objectType !== objectType || target.primaryKey !== primaryKey;
+  })) throw new Error("The batch owner returned results for different targets");
+
+  const successes = items.flatMap(({ outcome }) => outcome.kind === "success" && outcome.affected ? [outcome.affected] : []);
+  if (!successes.length) return { kind: "batch", items };
+  const objects = new Map(successes.flatMap(({ objects }) => objects.map(target =>
+    [JSON.stringify([target.objectType, target.primaryKey]), target] as const)));
+  const objectTypes = new Set(successes.flatMap(affected => affected.objectTypes));
+  return { kind: "batch", items, affected: { objects: [...objects.values()], objectTypes: [...objectTypes] } };
 }
 export async function operatePanel(owner: AssistantOwner, credentials: AssistantCredentials, runId: string, input: CreatePanelOperationIntentRequest, initiatorName: string): Promise<PanelOperateResponse> {
   const run = await runForOwner(owner,runId);
@@ -135,18 +204,17 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
     return replay(record);
   }
   const current = await admitted(owner,credentials,run,input,input.operationId);
-  if (!("call" in input)) batchUnsupported();
   const executor = await credentialsForRun(owner,runId,credentials,run.sessionId);
   const root = rootOf(run);
   if (!root) throw new HttpError(409,"Execution has no authenticated human session","USER_SESSION_UNAVAILABLE");
   if (run.channel!.authority.executionKind !== "live") throw new HttpError(422,"Management operations do not support test data","BUILD_TEST_UNSUPPORTED");
-  const target = validateCall(current.handler, input.call);
+  const prepared = validateInvocation(current.handler, input);
   if (!record) {
     const settings = await store.settings(owner,root);
     record = await store.insert(owner,{
       intentId:input.intentId,source,rootSession:root,use:{applicationId:input.applicationId,useId:input.useId},
       panelId:current.use.panelId,projectionId:current.projection.id,binding:current.projection.binding,
-      operation:current.operation,call:input.call,initiator:owner,executionUserId:executor.executionUserId,
+      operation:current.operation,...invocationOf(input),initiator:owner,executionUserId:executor.executionUserId,
       confirmation:settings.confirmBeforeExecute?"required":"automatic",
       questionId:settings.confirmBeforeExecute && current.operation.kind !== "form.save" ? randomUUID() : null,
       answer:null,dispatched:false,outcome:null,
@@ -158,15 +226,20 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
   matchingInvocation(intent, input, source.session, executor.executionUserId);
   if (record.kind === "historical" || intent.dispatched) return replay(record);
   if (intent.confirmation === "automatic") return dispatchPanel(owner,credentials,runId,intent.intentId);
-  if (current.handler.kind === "form.save") return {kind:"draft",intentId:intent.intentId,
+  const handler = "calls" in prepared ? prepared.owner : current.handler;
+  if (handler.kind === "form.save" && "call" in prepared) return {kind:"draft",intentId:intent.intentId,
     draft:pageDraftSchema.parse({
-      pageKey: current.use.pageKey, operation: current.handler.draftOperation(target),
-      target: target.kind === "object" ? { id: target.primaryKey } : {},
-      form: current.handler.draftInput(input.call.input),
+      pageKey: current.use.pageKey, operation: handler.draftOperation(prepared.target),
+      target: prepared.target.kind === "object" ? { id: prepared.target.primaryKey } : {},
+      form: handler.draftInput(prepared.call.input),
     })};
+  const host = operationHost(credentials);
+  const impact = handler.inspectImpact && await ownerImpact(handler.inspectImpact, host, prepared);
+  const target = impact
+    ? namedTargets(impact.objects.map(object => object.label), credentials.locale)
+    : await confirmationTarget(handler as Extract<PanelServerOperation, { kind: "action" }>, host, prepared);
   const confirmation = await panelConfirmation(credentials, {
-    operation: intent.operation.label,
-    target: await current.handler.targetLabel(operationHost(credentials), target as PanelRecordTarget),
+    operation: intent.operation.label, target, impactSummary: impact?.summary,
     executionUserId: intent.executionUserId, initiatorName,
   });
   const question = agentUserQuestionReceiptSchema.parse(await new RuntimeClient(owner.domainId,undefined,owner.userId).request("/v1/channel/user-questions","POST",{
@@ -174,13 +247,20 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
   },intent.questionId!));
   return {kind:"confirmation-required",intentId:intent.intentId,question};
 }
+async function confirmationTarget(handler: Extract<PanelServerOperation, { kind: "action" }>,
+  host: PanelOperationHost, invocation: CheckedInvocation,
+) {
+  if ("call" in invocation) return handler.targetLabel(host, invocation.target as PanelRecordTarget);
+  const labels = await Promise.all(invocation.calls.map(call => handler.targetLabel(host, call.target)));
+  return namedTargets(labels, host.locale);
+}
+
 export async function dispatchPanel(owner: AssistantOwner, credentials: AssistantCredentials, runId: string, id: string): Promise<PanelOperateResponse> {
   const record = await store.get(owner,id);
   const run = await runForOwner(owner,runId);
   if (record.kind === "confirmation-expired") return replay(record);
   sourceMatches(record.intent,{providerId:run.channel!.agent.providerId,sessionId:run.sessionId});
   if (record.kind === "historical" || record.intent.dispatched) return replay(record);
-  if (!("call" in record.intent)) batchUnsupported();
   let intent = record.intent;
   const executor = await credentialsForRun(owner,runId,credentials,intent.source.session.sessionId);
   if (executor.executionUserId !== intent.executionUserId) throw new HttpError(409,"Executor changed; create a new intent","INTENT_CHANGED");
@@ -204,22 +284,27 @@ export async function dispatchPanel(owner: AssistantOwner, credentials: Assistan
     const {text:_text,...provenance} = answer;
     intent = {...intent,answer:provenance};
   }
-  const requestedTarget = validateCall(current.handler, intent.call);
-  const draft = await verifyCreationDraft(intent, current.handler, current.use.pageKey);
+  const prepared = validateInvocation(current.handler, intent);
+  const draft = "call" in intent ? await verifyCreationDraft(intent, current.handler, current.use.pageKey) : undefined;
   if (!await store.claim(owner,intent)) return replay(await store.get(owner,id));
   let outcome: PanelOperationOutcome;
   try {
-    outcome = await current.handler.execute(operationHost(executor.credentials),requestedTarget,intent.call.input,id);
-    if (requestedTarget.kind === "draft" && current.handler.kind === "form.save" && outcome.kind === "success") {
-      const created = current.handler.create!.createdObject(outcome.data);
-      if (draft) await assistantService.recordPageDraftCreated(draft.sessionId, draft.runId, draft.path, created.primaryKey, intent.initiator);
+    const host = operationHost(executor.credentials);
+    if ("calls" in prepared) {
+      outcome = batchOutcome(await prepared.owner.executeBatch(host, prepared.calls, id), prepared.calls);
+    } else {
+      outcome = await current.handler.execute(host, prepared.target, prepared.call.input, id);
+      if (prepared.target.kind === "draft" && current.handler.kind === "form.save" && outcome.kind === "success") {
+        const created = current.handler.create!.createdObject(outcome.data);
+        if (draft) await assistantService.recordPageDraftCreated(draft.sessionId, draft.runId, draft.path, created.primaryKey, intent.initiator);
+      }
     }
   } catch (error) {
     // An uncertain owner call never releases the irreversible claim.
     outcome = {kind:"unknown",message:error instanceof Error?error.message:String(error)};
   }
   await store.outcome(owner,id,outcome);
-  if (outcome.kind === "success" && outcome.affected) {
+  if ((outcome.kind === "success" || outcome.kind === "batch") && outcome.affected) {
     for (const target of outcome.affected.objects)
       publishObjectChanged({
         domainId: intent.initiator.domainId,

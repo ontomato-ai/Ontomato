@@ -21,7 +21,7 @@ vi.mock("../../agent-host/caller",()=>({restoreAgentCaller:mocks.restore,readAge
 vi.mock("../../agent-host/presentation",()=>({publishObjectChanged:mocks.notify}));
 vi.mock("../current",()=>({readCurrentPanel:mocks.panel,readCurrentProjection:mocks.projection}));
 vi.mock("../skill-package",()=>({readComponentCatalogue:mocks.catalogue}));
-import { operatePanel as realOperatePanel, dispatchPanel, ownPanelSettings } from "../operations";
+import { operatePanel as realOperatePanel, dispatchPanel, inspectPanelOperationImpact, ownPanelSettings } from "../operations";
 import { panelOperationStore } from "../operation-store";
 configureI18n({defaultLocale:"en",appTextLocale:"en",languageSwitchEnabled:false,packs:{en:{messages:en,...enLocaleMeta}}});
 const uuid=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,"0")}`;
@@ -326,4 +326,140 @@ it.each([
     kind: "dispatched", outcome: { kind, code },
   });
   expect(mocks.notify).not.toHaveBeenCalled();
+});
+
+it("inspects the actual agent delete using the initiator's definition read", async () => {
+  const objectType = "platform:AgentDefinition", primaryKey = uuid(9);
+  const panel = await mocks.panel();
+  panel.manifest.state.task.objectType = objectType;
+  panel.manifest.slots.run.inputs = { agent: { state: "task" } };
+  mocks.projection.mockResolvedValue({
+    id: "run", componentId: "run", name: "Delete agent", binding: { kind: "PlatformOperation", id: "agents.delete" },
+    inputs: { agent: { kind: "object", objectType } },
+  });
+  const read = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+    expect(url).toBe(`http://workbench.test/api/assistant/agent-definitions/${primaryKey}`);
+    expect(init.method).toBe("GET");
+    expect(new Headers(init.headers).get("tk")).toBe("U-token");
+    return Response.json({
+      id: primaryKey, name: "Inventory analyst", description: "", icon: null, enabled: true,
+      executionUserId: null, modelSelection: { modelId: null }, skills: [], systemPrompt: "",
+    });
+  });
+  vi.stubGlobal("fetch", read);
+  const input = { applicationId: "A", useId: "tasks", operationId: "run.delete", call: {
+    target: { kind: "object" as const, objectType, primaryKey }, input: {},
+  } };
+  expect(await inspectPanelOperationImpact(owner, credentials, input)).toEqual({
+    summary: "This deletes the selected agent definition.",
+    objects: [{ target: { objectType, primaryKey }, label: "Inventory analyst" }], total: 1,
+  });
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(intents.size).toBe(0);
+});
+
+function installBatchOwner() {
+  const objectType = "platform:ScheduledTask";
+  const binding = { kind: "PlatformOperation" as const, id: "test.batch" };
+  const handler = {
+    handlerRef: binding.id, kind: "action" as const, binding, effect: "write" as const, batch: true as const,
+    targetType: objectType, targetInput: "task",
+    targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(objectType), primaryKey: z.string() }),
+    inputSchema: z.object({ status: z.number() }), resultSchema: z.object({ done: z.boolean() }),
+    targetLabel: vi.fn(async (_host, target: { primaryKey: string }) => target.primaryKey),
+    inspectImpact: { handlerRef: "test.batch.impact", inspect: vi.fn() },
+    execute: vi.fn(),
+    executeBatch: vi.fn(),
+  };
+  vi.spyOn(serverOperations, "panelServerOperation").mockReturnValue(handler);
+  mocks.projection.mockResolvedValue({
+    id: "run", name: "Set status", componentId: "run", binding, inputs: { task: { kind: "object", objectType } },
+  });
+  const call = (n: number, status: number) => ({
+    target: { kind: "object" as const, objectType, primaryKey: uuid(n) },
+    input: { status },
+  });
+  const calls: serverOperations.PanelBatchCalls = [call(9, 1), call(10, 2), call(11, 3), call(12, 4), call(13, 5)];
+  const impact = {
+    summary: "The owner will change these status records.",
+    objects: calls.map(({ target }, index) => ({
+      target: { objectType: target.objectType, primaryKey: target.primaryKey }, label: `Task ${index + 1}`,
+    })),
+  };
+  handler.inspectImpact.inspect.mockResolvedValue(impact);
+  const request = { intentId: uuid(5), applicationId: "A", useId: "tasks", operationId: "run.batch", calls };
+  return { handler, request, impact };
+}
+
+it("uses the same owner impact for the human read and agent confirmation of the frozen batch", async () => {
+  const { handler, request, impact } = installBatchOwner();
+  const { intentId: _intentId, ...inspect } = request;
+  expect(await inspectPanelOperationImpact(owner, credentials, inspect)).toEqual({ ...impact, total: request.calls.length });
+  expect(intents.size).toBe(0);
+  expect(await operatePanel(owner, credentials, current.id, request)).toMatchObject({ kind: "confirmation-required" });
+  expect(handler.inspectImpact.inspect).toHaveBeenCalledTimes(2);
+  for (const [host, calls] of handler.inspectImpact.inspect.mock.calls) {
+    expect(host).toMatchObject({ request: expect.any(Function) });
+    expect(calls).toEqual(request.calls);
+  }
+  const question = mocks.request.mock.calls[0]![2];
+  expect(question.message).toContain("Task 1");
+  expect(question.message).toContain("(5)");
+  expect(question.message).toContain(impact.summary);
+  expect(intents.get(request.intentId)).toMatchObject({
+    calls: request.calls, executionUserId: "V", operation: { batch: true, inspectImpact: { handlerRef: "test.batch.impact" } },
+  });
+  expect(handler.executeBatch).not.toHaveBeenCalled();
+});
+
+it("dispatches one frozen batch once and merges affected evidence from successful items only", async () => {
+  const { handler, request, impact } = installBatchOwner();
+  const first = impact.objects[0]!.target, refused = impact.objects[1]!.target;
+  const statuses = [
+    { kind: "success", data: { done: true }, affected: { objects: [first], objectTypes: [first.objectType] } },
+    { kind: "refusal", code: "REVISION_CONFLICT", message: "The task changed" },
+    { kind: "failure", code: "DEPENDENCY_UNAVAILABLE", message: "Owner failure" },
+    { kind: "unknown", message: "No receipt" },
+    { kind: "success", data: { done: true }, affected: { objects: [first], objectTypes: [first.objectType] } },
+  ];
+  const items = impact.objects.map(({ target }, index) => ({ target, outcome: statuses[index] }));
+  handler.executeBatch.mockResolvedValue({ kind: "batch", items, affected: { objects: [refused], objectTypes: ["ignored"] } });
+  await operatePanel(owner, credentials, current.id, request);
+  answer();
+  const results = await Promise.all([
+    dispatchPanel(owner, credentials, current.id, request.intentId),
+    dispatchPanel(owner, credentials, current.id, request.intentId),
+  ]);
+  expect(results).toContainEqual(expect.objectContaining({
+    kind: "dispatched", outcome: { kind: "batch", items, affected: { objects: [first], objectTypes: [first.objectType] } },
+  }));
+  expect(handler.executeBatch).toHaveBeenCalledTimes(1);
+  expect(handler.executeBatch).toHaveBeenCalledWith(expect.objectContaining({ request: expect.any(Function) }), request.calls, request.intentId);
+  expect(handler.execute).not.toHaveBeenCalled();
+  expect(mocks.notify.mock.calls).toEqual([[{ domainId: owner.domainId, initiator: owner.userId, rootSession: root, target: first }]]);
+});
+
+it("keeps an uncertain owner batch terminal and publishes no change", async () => {
+  const { handler, request } = installBatchOwner();
+  automatic = true;
+  handler.executeBatch.mockRejectedValue(new Error("Connection lost after dispatch"));
+  expect(await operatePanel(owner, credentials, current.id, request)).toMatchObject({
+    kind: "dispatched", outcome: { kind: "unknown", message: "Connection lost after dispatch" },
+  });
+  await dispatchPanel(owner, credentials, current.id, request.intentId);
+  expect(handler.executeBatch).toHaveBeenCalledTimes(1);
+  expect(mocks.notify).not.toHaveBeenCalled();
+});
+
+it("keeps a definitive atomic batch receipt without inventing per-item receipts", async () => {
+  const { handler, request, impact } = installBatchOwner();
+  automatic = true;
+  const objects = impact.objects.map(item => item.target);
+  const outcome = { kind: "success", data: { updated: objects.length }, affected: {
+    objects, objectTypes: ["platform:ScheduledTask"],
+  } };
+  handler.executeBatch.mockResolvedValue(outcome);
+  expect(await operatePanel(owner, credentials, current.id, request)).toMatchObject({ kind: "dispatched", outcome });
+  expect(handler.executeBatch).toHaveBeenCalledTimes(1);
+  expect(mocks.notify).toHaveBeenCalledTimes(objects.length);
 });
