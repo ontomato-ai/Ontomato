@@ -142,6 +142,7 @@ export default {
   },
   "platform": {
     "serviceName": "Ontomato",
+    "confirmOperationTotal": "{total} affected in total",
     "noPages": "No page is available to this account",
     "apps": "Applications",
     "expandRail": "Show application names",
