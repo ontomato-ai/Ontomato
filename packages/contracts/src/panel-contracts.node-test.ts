@@ -89,13 +89,29 @@ test("direct task reads use the registered source, parameters and result envelop
   const { registerDirectProjectionRequestSchema } = await import("./product-panels");
   const { panelDataStateSchema, productPanelReadRequestSchema, productPanelReadResponseSchema } = await import("./panel-host");
   const { panelReadResultSchemas } = await import("./panel-operations");
+  const { directProjectionDataSchema, directReadDeclaration } = await import("./panel-projection");
   const form = {
     name: "Task form", description: "", visibility: "domain", revision: 0, componentId: "@ontomato/sdk:ObjectForm",
     inputs: { task: { kind: "object", objectType: "platform:ScheduledTask" }, values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
     outputs: {}, config: {},
     data: { form: { source: { object: { input: "task" } }, read: "form", params: { values: { input: "values" }, changedField: { input: "changedField" } } } },
   };
-  assert.deepEqual(registerDirectProjectionRequestSchema.parse(form), form);
+  const projection = registerDirectProjectionRequestSchema.parse(form);
+  assert.deepEqual(projection, form);
+  assert.equal(directReadDeclaration(projection, projection.data.form)?.source, "object");
+  const declaredReads = [
+    [{ type: "platform:ScheduledTask" }, "list", "type", "panelRecordList"],
+    [{ object: { literal: { className: "platform:ScheduledTask", primaryKey: "task-1" } } }, "record", "object", "panelRecord"],
+    [{ operation: "schedules.runNow" }, "describe", "operation", "panelOperationDescriptor"],
+  ] as const;
+  for (const [source, read, kind, result] of declaredReads) {
+    const declaration = directReadDeclaration(projection, directProjectionDataSchema.parse({ source, read, params: {} }));
+    assert.equal(declaration?.source, kind);
+    assert.equal(declaration?.result, result);
+  }
+  for (const data of [{ source: { type: "platform:ScheduledTask" }, read: "record" },
+    { source: { object: { input: "changedField" } }, read: "record" }])
+    assert.equal(directReadDeclaration(projection, directProjectionDataSchema.parse({ ...data, params: {} })), undefined);
   const read = form.data.form;
   for (const rejected of [{ ...read, read: "delete" }, { ...read, params: { values: { state: "selected" } } },
     { ...read, params: { changedField: { literal: "missing-slash" } } }, { ...read, source: { object: { input: "missing" } } }])

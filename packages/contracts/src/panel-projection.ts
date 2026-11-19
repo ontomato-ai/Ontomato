@@ -3,7 +3,7 @@ import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime
 import { formFieldErrorSchema, formValuesSchema, panelFormOptionSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
 import { ontologyParameterTypeSchema, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, singleOntologyParameterTypeSchema, type OntologyParameterType, type PanelManifest, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
-import { platformObjectTypes } from "./platform-object-types";
+import { platformObjectTypes, type PlatformObjectTypeDeclaration, type PlatformReadDeclaration } from "./platform-object-types";
 import type { ProductProjectionInput } from "./product-panels";
 
 /** Nested JSON in the owner's value shape. Field pointers address this object, including values filled by projections. */
@@ -50,33 +50,50 @@ export type DirectProjectionPorts = z.infer<typeof directProjectionPortsSchema>;
 
 export const panelReadParameterSchemas = { formValues: formValuesSchema, changedField: fieldPath.nullable() };
 
+type DirectObjectSource = Extract<DirectProjectionData["source"], { object: unknown }>["object"];
+
+function directObjectSourceType(projection: DirectProjectionPorts, object: DirectObjectSource): string | undefined {
+  if ("literal" in object) return object.literal.className;
+  const input = projection.inputs[object.input];
+  return input?.kind === "object" ? input.objectType : undefined;
+}
+
+/** Resolve the registered signature for one named projection read. */
+export function directReadDeclaration(projection: DirectProjectionPorts, data: DirectProjectionData): PlatformReadDeclaration | undefined {
+  const { source, read } = data;
+  let owner: PlatformObjectTypeDeclaration | undefined;
+  let sourceKind: PlatformReadDeclaration["source"];
+  let readName = read;
+  if ("type" in source) {
+    sourceKind = "type";
+    owner = platformObjectTypes[source.type];
+  } else if ("object" in source) {
+    const type = directObjectSourceType(projection, source.object);
+    if (type === undefined) return undefined;
+    sourceKind = "object";
+    owner = platformObjectTypes[type];
+  } else {
+    sourceKind = "operation";
+    owner = Object.values(platformObjectTypes).find(type => type.operations?.includes(source.operation));
+    readName = `${source.operation}.${read}`;
+  }
+  const declaration = owner?.reads?.[readName];
+  return declaration?.source === sourceKind ? declaration : undefined;
+}
+
 /** Match a declared read to its owner and verify that every parameter has a supported source. */
 export function validateDirectProjection(projection: DirectProjectionPorts, ctx: z.RefinementCtx): void {
   const issue = (path: string[], message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
   for (const [name, data] of Object.entries(projection.data)) {
-    const { source, read, params } = data;
-    let declaration;
+    const { source, params } = data;
     const path = ["data", name];
-    if ("type" in source) {
-      declaration = platformObjectTypes[source.type]?.reads?.[read];
-      if (declaration?.source !== "type") declaration = undefined;
-    } else if ("object" in source) {
-      const object = source.object;
-      const input = "input" in object ? projection.inputs[object.input] : undefined;
-      const type = "literal" in object ? object.literal.className : input?.kind === "object" ? input.objectType : undefined;
-      if (!type) {
-        issue([...path, "source", "object"], "The read source needs a declared object input or a literal object reference");
-        continue;
-      }
-      declaration = platformObjectTypes[type]?.reads?.[read];
-      if (declaration?.source !== "object") declaration = undefined;
-    } else {
-      const owner = Object.values(platformObjectTypes).find(type => type.operations?.includes(source.operation));
-      declaration = owner?.reads?.[`${source.operation}.${read}`];
-      if (declaration?.source !== "operation") declaration = undefined;
-    }
+    const declaration = directReadDeclaration(projection, data);
     if (!declaration) {
-      issue([...path, "read"], "Read is not registered for the declared source");
+      if ("object" in source && directObjectSourceType(projection, source.object) === undefined) {
+        issue([...path, "source", "object"], "The read source needs a declared object input or a literal object reference");
+      } else {
+        issue([...path, "read"], "Read is not registered for the declared source");
+      }
       continue;
     }
     for (const [param, value] of Object.entries(params)) {
