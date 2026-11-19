@@ -128,8 +128,13 @@ it("saves through the owner's operation, marks the fields the owner refused, and
   setOutcome({ kind: "success", data: {}, affected: { objects: [task("t-1")], objectTypes: [SCHEDULED_TASK] } });
   const before = reads.filter((read) => read.dataName === "form").length;
   await instance.invoke("form.save");
-  // The saved task is read again; the form shows the owner's values once it is clean.
+  await nextTick();
+  // The receipt rereads nothing itself; what it changed reaches the instance through the host's refresh port, once.
+  expect(reads.filter((read) => read.dataName === "form").length).toBe(before);
+  instance.refresh({ objects: [{ objectType: SCHEDULED_TASK, primaryKey: "t-1" }], objectTypes: [SCHEDULED_TASK] });
   await vi.waitFor(() => expect(reads.filter((read) => read.dataName === "form").length).toBe(before + 1));
+  await nextTick();
+  expect(reads.filter((read) => read.dataName === "form").length).toBe(before + 1);
 });
 
 it("runs run-now through the owner's operation for the selected task", async () => {

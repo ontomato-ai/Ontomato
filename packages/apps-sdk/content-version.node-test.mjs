@@ -76,3 +76,33 @@ test("the generated component catalogue carries the SDK version named by current
   const catalogue = JSON.parse(readFileSync(join(root, version, "components.json"), "utf8"));
   assert.deepEqual(catalogue, { version, components });
 });
+
+test("current.json names the release and the digest of its final uncompressed files", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "sdk-digest-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  function output(name, release, changed = "") {
+    const out = join(root, name);
+    const stage = join(out, VERSION_PLACEHOLDER);
+    mkdirSync(join(stage, "docs"), { recursive: true });
+    writeFileSync(join(stage, "sdk.js"), "export const sdk = 1;" + changed);
+    writeFileSync(join(stage, "sdk.json"), JSON.stringify({ version: VERSION_PLACEHOLDER, components: "components.json" }) + "\n");
+    writeFileSync(join(stage, "docs/index.md"), `/apps-sdk/${VERSION_PLACEHOLDER}/sdk.js`);
+    const version = finalizeSdk(out, "1.0.0", release);
+    return { out, version, current: JSON.parse(readFileSync(join(out, "current.json"), "utf8")) };
+  }
+  const built = output("dev", false);
+  assert.deepEqual(Object.keys(built.current), ["version", "digest"]);
+  assert.equal(built.current.version, built.version);
+  // The digest covers the files as served once their version is in them, and not the compressed copies beside them.
+  const hash = createHash("sha256");
+  for (const name of ["docs/index.md", "sdk.js", "sdk.json"]) {
+    const bytes = readFileSync(join(built.out, built.version, name));
+    hash.update(JSON.stringify([name, bytes.length]) + "\n").update(bytes);
+  }
+  assert.equal(built.current.digest, hash.digest("hex"));
+  assert.match(built.current.digest, /^[0-9a-f]{64}$/);
+  // A release keeps its plain version name and still names what it holds.
+  const release = output("release", true);
+  assert.equal(release.current.version, "1.0.0");
+  assert.notEqual(release.current.digest, output("release-changed", true, "export const next = 2;").current.digest);
+});

@@ -336,7 +336,9 @@ async function write(): Promise<unknown> {
     opened.value = { ...description.value!, values: values.value };
     changed.value = new Set();
     if (into.kind === "draft") moveTo({ kind: "object", objectType, primaryKey: saved.primaryKey });
-    panel.instance.objectChanged({ objectType, primaryKey: saved.primaryKey });
+    // A frame's save goes straight to the owner, so the frame says what it changed; a member's goes through the
+    // coordinator, whose receipt reaches the host's one refresh port and is read again from there.
+    if (!member) panel.instance.objectChanged({ objectType, primaryKey: saved.primaryKey });
     // A received draft ends with its save; a create draft first records the object it created. The save stands either
     // way: a record that fails is shown with the form, on the object the owner created.
     await panel.instance.settleDraft(slot.slot, into.kind === "draft" ? saved.primaryKey : undefined);

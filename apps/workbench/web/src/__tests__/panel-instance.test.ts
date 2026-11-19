@@ -132,7 +132,7 @@ describe("a panel's instance", () => {
     await expect(componentFor("NoSuchComponent")).rejects.toThrow(/no component 'NoSuchComponent'/);
   });
 
-  it("runs a person's action through the platform's coordinator, as an agent's runs, and reads again what it changed", async () => {
+  it("runs a person's action through the platform's coordinator, as an agent's runs, leaving what it changed to the host", async () => {
     const task = { kind: "object" as const, objectType: SCHEDULED_TASK, primaryKey: "task-1" };
     const prepare = vi.fn(async (operationId: string) => ({
       intentId: "5f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d03", operationId, label: "Run now", confirmation: { kind: "none" as const },
@@ -159,8 +159,8 @@ describe("a panel's instance", () => {
     expect(prepare).toHaveBeenCalledWith("runTask.runNow", { call: { target: task, input: {} } });
     expect(confirmOperation).toHaveBeenCalledWith(await prepare.mock.results[0]!.value);
     expect(registeredHandlers()).not.toContain("schedules.runNow");
-    // Only what the owner reported changed is read again.
-    expect(changed).toEqual([task]);
+    // What the owner reported changed comes back through the host's refresh port; the receipt rereads nothing itself.
+    expect(changed).toEqual([]);
   });
 
   it("calls a draft unclaimed only once every form slot has registered and declined it", async () => {
