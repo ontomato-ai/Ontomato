@@ -13,24 +13,34 @@ import type { ProductOwner } from "../product-governance/grants";
 import { grantedProductIds, registerProductResource, requireProductGrant } from "../product-governance/grants";
 import { notifyProductDefinitionChanged } from "./definition-stream";
 
-async function readable(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string) {
-  await requireProductGrant(id, "use", credentials);
-  const row = await findCurrentProduct(owner.domainId, kind, id);
+export async function loadCurrentProduct(domainId: string, kind: CurrentProductKind, id: string, client?: PoolClient) {
+  const row = await findCurrentProduct(domainId, kind, id, client);
   if (!row) throw new HttpError(404, "Current product definition not found", "PRODUCT_UNAVAILABLE");
   return row;
 }
+
+export async function requireCurrentProduct(owner: ProductOwner, credentials: AssistantCredentials,
+  kind: CurrentProductKind, id: string, verb: "use" | "edit", client?: PoolClient) {
+  await requireProductGrant(id, verb, credentials);
+  return loadCurrentProduct(owner.domainId, kind, id, client);
+}
+
+export function requireOrdinaryProjection(input: Pick<ProductProjectionInput, "componentId" | "display">) {
+  if (input.componentId === METRIC_CHART_COMPONENT || Object.hasOwn(input.display, "chartSource"))
+    throw new HttpError(400, "Register a chart through its source card", "CHART_SOURCE_REGISTRATION_REQUIRED");
+}
 export async function readCurrentProjection(owner: ProductOwner, credentials: AssistantCredentials, id: string) {
-  const row = await readable(owner, credentials, "projection", id);
+  const row = await requireCurrentProduct(owner, credentials, "projection", id, "use");
   return productProjectionSchema.parse(currentProductRecord(row, (await grantedProductIds("edit", credentials)).includes(id)));
 }
 export async function readCurrentPanel(owner: ProductOwner, credentials: AssistantCredentials, id: string) {
-  const row = await readable(owner, credentials, "panel", id);
+  const row = await requireCurrentProduct(owner, credentials, "panel", id, "use");
   return productPanelSchema.parse(currentProductRecord(row, (await grantedProductIds("edit", credentials)).includes(id)));
 }
 
-async function validatePanelReferences(owner: ProductOwner, credentials: AssistantCredentials, panel: ProductPanelInput) {
+async function validatePanelReferences(owner: ProductOwner, credentials: AssistantCredentials, panel: ProductPanelInput, client: PoolClient) {
   for (const slot of Object.values(panel.manifest.slots)) {
-    const projection = productProjectionSchema.parse(currentProductRecord(await readable(owner, credentials, "projection", slot.projectionId), false));
+    const projection = productProjectionSchema.parse(currentProductRecord(await requireCurrentProduct(owner, credentials, "projection", slot.projectionId, "use", client), false));
     for (const [name, ref] of Object.entries(slot.inputs)) {
       const target = projection.inputs[name];
       if (!target) throw new HttpError(400, `Projection has no input: ${name}`, "PANEL_INPUT_UNKNOWN");
@@ -52,7 +62,12 @@ async function currentForSave(owner: ProductOwner, credentials: AssistantCredent
 export async function insertCurrentProduct(client: PoolClient, owner: ProductOwner, credentials: AssistantCredentials,
   kind: CurrentProductKind, id: string, input: ProductPanelInput | ProductProjectionInput): Promise<CurrentProductRow> {
   const other = t(currentProductTables[kind === "panel" ? "projection" : "panel"]);
-  const collision = await client.query(`SELECT id FROM ${other} WHERE domain_id=$1 AND id=$2 UNION ALL SELECT id FROM ${t("product_assets")} WHERE domain_id=$1 AND id=$2`, [owner.domainId, id]);
+  const collision = await client.query(
+    `SELECT id FROM ${other} WHERE domain_id=$1 AND id=$2
+     UNION ALL SELECT id FROM ${t("product_assets")} WHERE domain_id=$1 AND id=$2
+     UNION ALL SELECT asset_id FROM ${t("product_asset_revisions")} WHERE domain_id=$1 AND asset_id=$2 LIMIT 1`,
+    [owner.domainId, id],
+  );
   if (collision.rows.length) throw new HttpError(409, "Product identity already belongs to another collection", "PRODUCT_ID_CONFLICT");
   await registerProductResource(owner, id, input.visibility === "domain");
   await requireProductGrant(id, "edit", credentials);
@@ -65,6 +80,7 @@ async function save(owner: ProductOwner, credentials: AssistantCredentials, kind
   input: ProductPanelInput | ProductProjectionInput, revision: number) {
   const row = await transaction(async client => {
     await lockProducts(client, owner);
+    if (kind === "panel") await validatePanelReferences(owner, credentials, input as ProductPanelInput, client);
     if (revision === 0) return insertCurrentProduct(client, owner, credentials, kind, id, input);
     const result = await client.query(`UPDATE ${t(currentProductTables[kind])} SET definition=$3::jsonb,revision=revision+1,updated_at=now() WHERE domain_id=$1 AND id=$2 AND revision=$4 RETURNING ${currentProductColumns}`, [owner.domainId, id, JSON.stringify(input), revision]);
     if (!result.rows.length) throw new HttpError(409, "Definition changed; reload before saving", "PRODUCT_CONFLICT");
@@ -87,13 +103,11 @@ export async function saveCurrentProjection(owner: ProductOwner, credentials: As
       inputs: current.inputs, display: current.display };
     return productProjectionSchema.parse(await save(owner, credentials, "projection", id, definition, revision));
   }
-  if (input.componentId === METRIC_CHART_COMPONENT || Object.hasOwn(input.display, "chartSource"))
-    throw new HttpError(400, "Register a chart through its source card", "CHART_SOURCE_REGISTRATION_REQUIRED");
+  requireOrdinaryProjection(input);
   return productProjectionSchema.parse(await save(owner, credentials, "projection", id, input, revision));
 }
 export async function saveCurrentPanel(owner: ProductOwner, credentials: AssistantCredentials, id: string, input: ProductPanelInput, revision: number) {
   await currentForSave(owner, credentials, "panel", id, revision);
-  await validatePanelReferences(owner, credentials, input);
   return productPanelSchema.parse(await save(owner, credentials, "panel", id, input, revision));
 }
 
