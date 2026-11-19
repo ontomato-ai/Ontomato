@@ -10,7 +10,7 @@ import type { ProductDefinitionTarget } from "@ontomato/contracts/product-subscr
 import { PanelHost, provideUnsavedChanges } from "@ontomato/platform-shell";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { panelAuthorDefinitions, panelHostPaths, platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import {
+import { ignoreChanges,
   currentSdk, hostMessageOf, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt, panelRecord,
   panelSnapshot, panelUse, projections, SCHEDULED_TASK, task, taskForm, writeFrameDocument, type Sent,
 } from "./panel-frame";
@@ -351,8 +351,8 @@ it("takes a kept author page's targets out of the document's stream, and puts th
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/", component: { render: () => null } }] });
   await router.push("/");
   const page = mountPlatformPage(() => h("main", [
-    h(PanelHost, { key: "p", port: platformPanelHost(appA, allUses[0]!, mode), address: allUses[0]!.path, labels, shown: showing.value === "p" }),
-    h(PanelHost, { key: "q", port: platformPanelHost(appA, allUses[1]!, mode), address: allUses[1]!.path, labels, shown: showing.value === "q" }),
+    h(PanelHost, { key: "p", port: platformPanelHost(appA, allUses[0]!, ignoreChanges, mode), address: allUses[0]!.path, labels, shown: showing.value === "p" }),
+    h(PanelHost, { key: "q", port: platformPanelHost(appA, allUses[1]!, ignoreChanges, mode), address: allUses[1]!.path, labels, shown: showing.value === "q" }),
   ]), router);
   page.app.use(ElementPlus);
   const targetsOf = (panel: typeof p) => [{ kind: "panel", id: panel.id },

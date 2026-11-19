@@ -1,3 +1,20 @@
+import type {
+  PlatformOntologyCountsResponse,
+  PlatformOntologyEdge,
+  PlatformOntologyNeighborsRequest,
+  PlatformOntologyNeighborsResponse,
+  PlatformOntologyNode,
+  PlatformOntologyNodeRef,
+  PlatformOntologyObjectItem,
+  PlatformOntologyObjectsRequest,
+  PlatformOntologyObjectsResponse,
+  PlatformOntologyRelationStatus,
+  PlatformOntologySchemaResponse,
+  PlatformOntologyStatus,
+  PlatformOntologyType,
+  PlatformOntologyTypeCount,
+} from "@ontomato/contracts/platform-ontology";
+import type { PlatformRelationKindDeclaration } from "@ontomato/contracts/platform-object-types";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import { createLogger } from "../../logging/logger";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -5,7 +22,6 @@ import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
 import {
   PlatformOntologyOwnerReaders,
-  type OwnerFailureStatus,
   type OwnerReadResult,
 } from "./owners";
 import {
@@ -32,103 +48,15 @@ import {
   USER,
   WORKFLOW,
   relationTargets,
-  type PlatformOntologyLayer,
-  type PlatformOntologyRelationKindSpec,
-  type PlatformOntologyTypeSpec,
 } from "./schema";
 
 const logger = createLogger("platform-ontology");
 
 const WORKFLOW_SAVE_API = "/workflow/save";
 
-export type PlatformOntologyStatus = "ok" | OwnerFailureStatus | "unavailable";
-
-export interface PlatformNodeRef {
-  className: string;
-  primaryKey: string;
-}
-
-export interface PlatformOntologyNode {
-  className: string;
-  primaryKey: string;
-  label: string;
-  layer: PlatformOntologyLayer;
-  detail?: string;
-}
-
-export interface PlatformOntologyEdge {
-  id: string;
-  relationKind: string;
-  from: PlatformNodeRef;
-  to: PlatformNodeRef;
-  direction: "outgoing" | "incoming";
-  derived: boolean;
-}
-
-export interface PlatformOntologyRelationStatus {
-  relationKind: string;
-  status: PlatformOntologyStatus;
-  edgeCount: number;
-  reason?: string;
-}
-
-export interface PlatformOntologySchemaResponse {
-  layers: readonly PlatformOntologyLayer[];
-  objectTypes: readonly PlatformOntologyTypeSpec[];
-  relationKinds: readonly PlatformOntologyRelationKindSpec[];
-}
-
-export interface PlatformOntologyTypeCount {
-  type: string;
-  layer: PlatformOntologyLayer;
-  status: PlatformOntologyStatus;
-  count?: number;
-  reason?: string;
-}
-
-export interface PlatformOntologyCountsResponse {
-  counts: PlatformOntologyTypeCount[];
-}
-
-export interface PlatformOntologyStartResponse {
-  node: PlatformNodeRef;
-  label: string;
-  layer: PlatformOntologyLayer;
-}
-
-export interface PlatformOntologyObjectItem {
-  node: PlatformNodeRef;
-  label: string;
-  detail?: string;
-}
-
-export interface PlatformOntologyObjectsResponse {
-  type: string;
-  layer: PlatformOntologyLayer;
-  status: PlatformOntologyStatus;
-  reason?: string;
-  items: PlatformOntologyObjectItem[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
-
-export interface PlatformOntologyNeighborsRequest {
-  node: PlatformNodeRef;
-  relationKinds?: readonly string[];
-  layers?: readonly PlatformOntologyLayer[];
-}
-
-export interface PlatformOntologyNeighborsResponse {
-  node: PlatformOntologyNode;
-  neighbors: PlatformOntologyNode[];
-  edges: PlatformOntologyEdge[];
-  relations: PlatformOntologyRelationStatus[];
-}
-
 interface RawEdgeCandidate {
-  from: PlatformNodeRef;
-  to: PlatformNodeRef;
+  from: PlatformOntologyNodeRef;
+  to: PlatformOntologyNodeRef;
   /** Optional labels already known from the relation owner's payload. */
   fromLabel?: string;
   fromDetail?: string;
@@ -149,7 +77,7 @@ const M3B_DEFERRED_TYPES = new Set<string>([
   APPLICATION,
 ]);
 
-function nodeKey(ref: PlatformNodeRef): string {
+function nodeKey(ref: PlatformOntologyNodeRef): string {
   return `${ref.className}\u0000${ref.primaryKey}`;
 }
 
@@ -169,7 +97,7 @@ function parseAttributeKey(primaryKey: string): [string, string] | null {
   return null;
 }
 
-function requireTypeSpec(typeId: string): PlatformOntologyTypeSpec {
+function requireTypeSpec(typeId: string): PlatformOntologyType {
   const spec = PLATFORM_ONTOLOGY_TYPE_MAP.get(typeId);
   if (!spec) throw new HttpError(400, `Unknown platform ontology type: ${typeId}`, "INVALID_PLATFORM_TYPE");
   return spec;
@@ -395,14 +323,15 @@ export async function readPlatformOntologyStart(
   owner: ProductOwner,
   credentials: AssistantCredentials,
   callerUserName?: string,
-): Promise<PlatformOntologyStartResponse> {
+): Promise<PlatformOntologyNode> {
   const readers = new PlatformOntologyOwnerReaders(owner, credentials);
   const subjectsRes = await readers.subjects();
   if (subjectsRes.ok) {
     const matched = subjectsRes.data.find((subj) => subj.id === owner.userId);
     if (matched) {
       return {
-        node: { className: USER, primaryKey: matched.id },
+        className: USER,
+        primaryKey: matched.id,
         label: matched.displayName || matched.loginCode || matched.id,
         layer: "governance",
       };
@@ -410,7 +339,8 @@ export async function readPlatformOntologyStart(
   }
   // OSS uses hostOwner (`system`), and enterprise callers without subject directory access still keep their real user ID.
   return {
-    node: { className: USER, primaryKey: owner.userId },
+    className: USER,
+    primaryKey: owner.userId,
     label: callerUserName?.trim() || owner.userId,
     layer: "governance",
   };
@@ -419,7 +349,7 @@ export async function readPlatformOntologyStart(
 export async function readPlatformOntologyObjects(
   owner: ProductOwner,
   credentials: AssistantCredentials,
-  input: { type: string; keyword?: string; page?: number; pageSize?: number },
+  input: PlatformOntologyObjectsRequest,
 ): Promise<PlatformOntologyObjectsResponse> {
   const spec = requireTypeSpec(input.type);
   const page = Math.max(1, input.page ?? 1);
@@ -467,8 +397,8 @@ export async function readPlatformOntologyObjects(
 /** Evaluates one declared relation kind for the requested center node (outgoing or incoming). */
 async function evaluateRelationKind(
   readers: PlatformOntologyOwnerReaders,
-  spec: PlatformOntologyRelationKindSpec,
-  node: PlatformNodeRef,
+  spec: PlatformRelationKindDeclaration,
+  node: PlatformOntologyNodeRef,
 ): Promise<RelationEvalResult> {
   switch (spec.id) {
     case "object-type.has-attribute": {
@@ -993,7 +923,7 @@ export async function readPlatformOntologyNeighbors(
   const seenEdges = new Set<string>();
   const edges: PlatformOntologyEdge[] = [];
   const relations: PlatformOntologyRelationStatus[] = [];
-  const neighborRefs = new Map<string, PlatformNodeRef>();
+  const neighborRefs = new Map<string, PlatformOntologyNodeRef>();
   const hintLabels = new Map<string, { label: string; detail?: string }>();
 
   for (const { spec, result } of evaluations) {
@@ -1055,7 +985,7 @@ export async function readPlatformOntologyNeighbors(
     }),
   );
 
-  const toNode = (ref: PlatformNodeRef): PlatformOntologyNode => {
+  const toNode = (ref: PlatformOntologyNodeRef): PlatformOntologyNode => {
     const typeSpec = PLATFORM_ONTOLOGY_TYPE_MAP.get(ref.className)!;
     const ownerEntry = labelMaps.get(ref.className)?.get(ref.primaryKey);
     const hintEntry = hintLabels.get(nodeKey(ref));

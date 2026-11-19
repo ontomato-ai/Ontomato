@@ -11,6 +11,8 @@ import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/v
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
 import { registerCandidateFrame, registerPanelFrame } from "./app-host";
 import type { PanelHostPort } from "@ontomato/platform-shell";
+import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
+import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 
 /*
  * The platform's panel host (overall design 3.4): the two reads a panel instance needs and the notices it listens to.
@@ -62,20 +64,39 @@ async function snapshot(panelId: string) {
   return panelDefinitionSnapshotSchema.parse(await json(panelHostPaths.snapshot(panelId)));
 }
 
-/** The platform's panel host for one use relation of the application whose page is showing it. */
-export function platformPanelHost(applicationId: string, use: ApplicationPanelUse, mode: PanelDefinitionMode = { kind: "view" }): PanelHostPort<Extract<PanelHostSource, { kind: "registered" }>> {
+/**
+ * A change to objects a panel shows, as the page showing it hears of it: from the conversation's session stream (an
+ * agent's write, an operation that finished later) or from Node's receipt for an operation the reader confirmed in this
+ * frame. The page re-reads what its shown instance displays of the target — everything it displays when there is none —
+ * and, when the owner says which object types changed, the counts that count them.
+ */
+export interface PanelObjectChange {
+  target: PanelObjectIdentity | null;
+  /** The objects and object types the owner reports a write changed: what an operation's outcome carries. */
+  affected?: NonNullable<Extract<PanelOperationOutcome, { kind: "batch" }>["affected"]>;
+}
+
+/**
+ * The platform's panel host for one use relation of the application whose page is showing it. `changed` is that page's:
+ * a change its frame's operations report reaches the page through it.
+ */
+export function platformPanelHost(
+  applicationId: string, use: ApplicationPanelUse, changed: (change: PanelObjectChange) => void, mode: PanelDefinitionMode = { kind: "view" },
+): PanelHostPort<Extract<PanelHostSource, { kind: "registered" }>> {
+  const shown = { applicationId, useId: use.id };
   return {
     async source() {
       return { kind: "registered", applicationId, use, panel: await panel(use.panelId) };
     },
     pageKey: use.pageKey,
+    use: shown,
     panel,
     sdkRoot,
     // The frame is this application's: the address the reader is on names it, and a panel shown beside a conversation is
     // the same application's page. Registering it under that ID is what lets the bridge recognise the frame and answer
     // its `connect`, and what keeps a frame of another application from being mistaken for this one. What it may ask for
     // is what the panel's record declares, for this use relation's page.
-    frame: (frame, source, open) => registerPanelFrame(frame, applicationId, { pageKey: use.pageKey, manifest: source.panel.manifest }, open),
+    frame: (frame, source, open) => registerPanelFrame(frame, shown, { pageKey: use.pageKey, manifest: source.panel.manifest }, open, changed),
     // The relation this page opens is still the application's, bound to the same panel: a kept page shown again is
     // checked against Java's current relations before its frame may ask for anything.
     async current() {
@@ -98,6 +119,7 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
       return candidatePanelSourceSchema.parse(await json(panelHostPaths.candidate(candidate.id, candidate.ref)));
     },
     pageKey: candidate.pageKey,
+    use: null,
     panel,
     sdkRoot,
     frame: (frame, source, open) => registerCandidateFrame(frame, buildExecutionContext(source.workspace.id, source.previewContext.test), {

@@ -163,6 +163,7 @@ async function main() {
     messageBridge: 2,
     entries: Object.fromEntries(ENTRIES.map((entry) => [entry.specifier, entry.file])),
     stylesheet: STYLESHEET,
+    components: "components.json",
     libraries: Object.fromEntries(LIBRARIES.map((name) => [name, libraryVersion(name)])),
     docs: "docs/index.md",
   }, null, 2)}\n`);

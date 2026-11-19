@@ -4,7 +4,7 @@ import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { PANEL_HOST_CHANNEL, panelAddressState } from "@ontomato/contracts/panel-host";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import {
+import { ignoreChanges,
   inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
@@ -90,8 +90,8 @@ it("clears child selection atomically when switching parent and never emits cros
   window.addEventListener("message", (event) => {
     if (event.data?.channel === PANEL_HOST_CHANNEL) observedBridgeMessages.push(event.data);
   });
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, {});
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
   const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
@@ -233,9 +233,9 @@ it("selects owner-declared defaultPrimaryKey or falls back to first child on par
 
   installPlatform(hostWith(projections));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
   const initialPath = `${use.path}?state=${encodeURIComponent(JSON.stringify({ selectedSkill: { className: SKILL, primaryKey: "skill-a" } }))}`;
-  writePanelDocument(panel, use, initialPath, panelAddressState(initialPath));
+  writePanelDocument(registered("app-test", use, panel), initialPath, panelAddressState(initialPath));
   inside(frame);
 
   const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
