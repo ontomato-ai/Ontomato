@@ -18,7 +18,7 @@ configureI18n({ defaultLocale: "en", packs: { en: { messages: en, ...enLocaleMet
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "domain-skills-contract-"));
 installContentLayout({ runtimeRoot: root, prompts: [], runtimeResources: [], publicSkillsRoot: path.resolve("skills") });
 const { skillManager } = await import("../skill-manager");
-const { assistantSkillCatalog, hasHiddenAssistantSkillRefs, prepareAssistantSkills, readAssistantSkillView, validateAssistantSkills, visibleAssistantSkillRefs } = await import("../../assistant/skills");
+const { assistantSkillCatalog, hasHiddenAssistantSkillRefs, pageSkillMemberContext, prepareAssistantSkills, readAssistantSkillView, validateAssistantSkills, visibleAssistantSkillRefs } = await import("../../assistant/skills");
 const { skillRegistryManager } = await import("../../../core/skills/registry/manager");
 const { registerSkillProvider, protectedSkillRef } = await import("../../../core/skills/providers");
 const domain = "contract-domain";
@@ -40,7 +40,8 @@ type Offering = {
   manifest: { name: string; description: string };
   provide: () => Promise<{ skill: RuntimeSkillRef; files: { path: string; content: string }[] }>;
 };
-let panelOfferings: (Offering | ProtectedSkillOffering)[] = [];
+let panelOfferings: Offering[] = [];
+let protectedPanelOfferings: ProtectedSkillOffering[] = [];
 let conflictOfferings: Offering[] = [];
 let panelCalls: string[] = [];
 let panelListError: Error | null = null;
@@ -50,6 +51,7 @@ const panelProvider = {
 };
 const conflictProvider = { id: "conflict-test", name: "Conflicting source", async list() { return conflictOfferings; } };
 registerSkillProvider(panelProvider);
+registerSkillProvider({ id: "product-panels", name: "Product panels", async list() { return protectedPanelOfferings; } });
 registerSkillProvider(conflictProvider);
 function offering(name: string, options: { domainId?: string; script?: string; packageName?: string;
   provideError?: Error; namespace?: RuntimeSkillRef["namespace"] } = {}): Offering {
@@ -69,7 +71,7 @@ const panelReference = (name = "panel-skill"): RuntimeSkillRef => ({ namespace: 
 afterAll(async () => { await fs.rm(root, { recursive: true, force: true }); });
 const pageDirectory = () => Response.json({ success: true, data: { pageSkills: [], registeredSkills: [] } });
 beforeEach(() => {
-  panelOfferings = []; conflictOfferings = []; panelCalls = []; panelListError = null;
+  panelOfferings = []; protectedPanelOfferings = []; conflictOfferings = []; panelCalls = []; panelListError = null;
   vi.stubGlobal("fetch", vi.fn(async () => pageDirectory()));
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
@@ -147,13 +149,14 @@ it("publishes the selected provider's current package and never provides an unse
 it("admits protected packages only through the initiator's exact entrance and every dependency", async () => {
   vi.stubEnv("AGENT_RUNTIME_SERVICE_TOKEN", "synthetic-host");
   const entrance = { permissionCode: "panel-menu", pageKey: "real-use" };
+  const source = { kind: "application-use", applicationId: "app-test", useId: "primary" } as const;
   const old = panelReference("panel-menu-panel-menu-123456789012345678901234");
-  const protectedRef = protectedSkillRef(panelProvider.id, domain, "panel-a", "main");
+  const protectedRef = protectedSkillRef("product-panels", domain, "panel-a", "main");
   const readManifest = vi.fn(async (ref: RuntimeSkillRef) => ({ name: ref.name, description: "Protected member" }));
   const provide = vi.fn(async (ref: RuntimeSkillRef) => ({
     skill: ref, files: [{ path: "SKILL.md", content: skillMarkdown(ref.name) }],
   }));
-  panelOfferings = [{
+  protectedPanelOfferings = [{
     kind: "protected", sourceKey: "panel-a", scopeKey: "main", entrances: [entrance],
     resourceIds: ["panel-a", "projection-a"], legacyAggregateRefs: [old], readManifest, provide,
   }];
@@ -169,6 +172,12 @@ it("admits protected packages only through the initiator's exact entrance and ev
       expect(JSON.parse(String(init.body))).toEqual({ verb: "use" });
       return Response.json({ ids });
     }
+    if (url.endsWith("/platform/applications/app-test/panel-uses"))
+      return Response.json({ success: true, data: {
+        applicationId: source.applicationId, entry: { path: "/applications/app-test", renderer: "panels" },
+        panelUses: [{ id: source.useId, pageKey: entrance.pageKey, panelId: "panel-a",
+          path: "/applications/app-test/panel", access: { permissionCode: entrance.permissionCode } }],
+      } });
     return Response.json({ skill: protectedRef, digest: "b".repeat(64), description: "Protected member" });
   });
   vi.stubGlobal("fetch", upstream);
@@ -182,6 +191,12 @@ it("admits protected packages only through the initiator's exact entrance and ev
   view = await readAssistantSkillView(domain, credentials);
   expect(visibleAssistantSkillRefs([old], view)).toEqual([protectedRef]);
   expect(hasHiddenAssistantSkillRefs([old], view)).toBe(false);
+  await expect(pageSkillMemberContext(view, entrance, source, { id: "panel-a" })).resolves.toEqual({
+    mode: "member", locator: entrance, member: { source, memberKey: protectedRef.name },
+  });
+  await expect(pageSkillMemberContext(view, entrance, source, { id: "old-panel" })).resolves.toEqual({
+    mode: "member", locator: entrance, member: null,
+  });
   expect(provide).not.toHaveBeenCalled();
   await expect(prepareAssistantSkills(domain, { kind: "custom", skills: [old] }, credentials))
     .resolves.toEqual({ skills: [{ skill: protectedRef, digest: "b".repeat(64) }], pageDrafts: true });
@@ -201,7 +216,7 @@ it("admits protected packages only through the initiator's exact entrance and ev
   expect(readManifest).not.toHaveBeenCalled();
   expect(provide).not.toHaveBeenCalled();
 
-  panelOfferings = [];
+  protectedPanelOfferings = [];
   view = await readAssistantSkillView(domain, credentials);
   expect(visibleAssistantSkillRefs([old, protectedRef], view)).toEqual([]);
   expect(hasHiddenAssistantSkillRefs([old, protectedRef], view)).toBe(false);
@@ -322,7 +337,7 @@ it("binds static and current-domain skills to the versions returned by their pub
   expect(script(published[1])).toBe(files["scripts/main.mjs"]);
   expect(script(published[2])).toBe("console.log('next run');\n");
   await expect(prepareAssistantSkills("another-domain", { kind: "custom", skills: [reference] }, credentials))
-    .rejects.toMatchObject({ code: "SKILL_NOT_FOUND" });
+    .rejects.toMatchObject({ status: 422, code: "SKILL_NOT_FOUND" });
 });
 
 it("publishes every bundled public directory with the same standard package contract", async () => {
