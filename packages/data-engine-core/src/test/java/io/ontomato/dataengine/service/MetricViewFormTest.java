@@ -154,6 +154,14 @@ class MetricViewFormTest {
   }
 
   @Test
+  void anObjectTargetOutsideThisDomainIsRefusedAsNotFound() {
+    OwnerRefusal refusal = assertThrows(OwnerRefusal.class, () -> form(objectTarget("missing")));
+
+    assertEquals("METRIC_VIEW_NOT_FOUND", refusal.code());
+    assertEquals("MetricView not found", refusal.getMessage());
+  }
+
+  @Test
   void aDraftGetsThePageDefaultsAndCreateOperation() {
     JSONObject form = form(JSONObject.of("target", JSONObject.of("kind", "draft")));
 
