@@ -7,22 +7,22 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { assistantAgentInputSchema } from "@ontomato/contracts/assistant-chat";
 
 const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", pageSkills: vi.fn(), validateSkills: vi.fn().mockResolvedValue([]), setting: vi.fn(), prepare: vi.fn() }));
-vi.mock("../../../infrastructure/postgres", () => ({
+vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
 }));
-vi.mock("../../../infrastructure/agent-runtime/client", () => ({ RuntimeClient: class { async modelOptions() { return { models: [{ ref: "test/configured", type: "chat", displayName: "Configured" }], defaultModelId: "test/configured" }; } } }));
-vi.mock("../execution-setting", () => ({ validateExecutionSetting: state.setting, prepareExecutionSetting: state.prepare }));
-vi.mock("../skills", () => ({ validateAssistantSkills: state.validateSkills, readPageSkills: state.pageSkills }));
-vi.mock("../../skills/operations", () => ({ withDomainSkills: async (_domain: string, work: () => Promise<unknown>) => work() }));
-import { configureI18n } from "../../../i18n";
-import { en, enLocaleMeta } from "../../../i18n/locales/en";
-import { installWorkbenchIdentity } from "../../../identity/installed";
-import type { WorkbenchIdentity } from "../../../identity/types";
-import assistantRouter from "../../../api/routes/assistant";
-import { HttpError } from "../../../utils/errors";
-import { createAgentDefinition, saveAgentDefinition, validateAgentDefinition } from "../definitions";
-import { readDiagnosisModel, saveDiagnosisModel } from "../../ops-diagnosis/model-settings";
+vi.mock("../../infrastructure/agent-runtime/client", () => ({ RuntimeClient: class { async modelOptions() { return { models: [{ ref: "test/configured", type: "chat", displayName: "Configured" }], defaultModelId: "test/configured" }; } } }));
+vi.mock("../../services/assistant/execution-setting", () => ({ validateExecutionSetting: state.setting, prepareExecutionSetting: state.prepare }));
+vi.mock("../../services/assistant/skills", () => ({ validateAssistantSkills: state.validateSkills, readPageSkills: state.pageSkills }));
+vi.mock("../../services/skills/operations", () => ({ withDomainSkills: async (_domain: string, work: () => Promise<unknown>) => work() }));
+import { configureI18n } from "../../i18n";
+import { en, enLocaleMeta } from "../../i18n/locales/en";
+import { installWorkbenchIdentity } from "../../identity/installed";
+import type { WorkbenchIdentity } from "../../identity/types";
+import assistantRouter from "../routes/assistant";
+import { HttpError } from "../../utils/errors";
+import { createAgentDefinition, saveAgentDefinition, validateAgentDefinition } from "../../services/assistant/definitions";
+import { readDiagnosisModel, saveDiagnosisModel } from "../../services/ops-diagnosis/model-settings";
 
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
 // A database-backed suite never skips silently: the integration command requires a disposable database.
