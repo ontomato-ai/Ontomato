@@ -7,6 +7,7 @@ import type { AgentRow } from "../store";
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(), post: vi.fn(), agents: vi.fn(), native: vi.fn(), profile: vi.fn(),
+  publishGovernance: vi.fn(), managed: [] as { skill: RuntimeSkillRef; title: string; description: string }[],
   grants: new Set<string>(),
 }));
 vi.mock("../../../utils/backend-client", () => ({ backendGet: mocks.get, backendPost: mocks.post,
@@ -17,11 +18,20 @@ vi.mock("../../../core/skills/manifest", () => ({
   readSkillMarkdown: () => ({ manifest: { description: "Skill" } }),
   InvalidSkillPackageError: class InvalidSkillPackageError extends Error {},
 }));
-vi.mock("../../../core/skills/registry/manager", () => ({ skillRegistryManager: { forDomain: async () => ({ getSkillByRef: () => null }) } }));
-vi.mock("../../skills/skill-manager", () => ({ skillManager: { getAllSkills: async () => [] } }));
-vi.mock("../../agent-runtime/skills", () => ({ publishSkill: vi.fn(), publishSkillPackage: vi.fn() }));
+vi.mock("../../../core/skills/registry/manager", () => ({ skillRegistryManager: {
+  forDomain: async (_domain: string, admit: (sources: []) => Promise<unknown>) => {
+    await admit([]);
+    return { getSkillByRef: () => null };
+  },
+} }));
+vi.mock("../../skills/skill-manager", () => ({ skillManager: { skillsInRegistry: () => mocks.managed } }));
+vi.mock("../../agent-runtime/skills", () => ({
+  workbenchBuiltinSkillRoot: () => "/resources",
+  publishSkill: vi.fn(async (_root: string, skill: RuntimeSkillRef) => ({ skill, digest: "a".repeat(64) })),
+  publishSkillPackage: vi.fn(),
+}));
 vi.mock("../../../i18n", () => ({ tForLocale: (_locale: string, key: string) => key }));
-vi.mock("../governance",()=>({publishGovernanceSkill:vi.fn()}));
+vi.mock("../governance", () => ({ publishGovernanceSkill: mocks.publishGovernance }));
 vi.mock("../store", () => ({ assistantStore: { agents: mocks.agents } }));
 vi.mock("../labels", () => ({ assistantName: (a: AgentRow) => a.name, assistantDescription: (a: AgentRow) => a.description }));
 vi.mock("../../product-assets/platform-assets", () => ({ nativeProfileId: mocks.native }));
@@ -29,7 +39,7 @@ vi.mock("../../product-assets/agent-profile", () => ({ profileIdForAgent: mocks.
 vi.mock("../../product-assets/grants", () => ({
   withProductGrants: (_owner: unknown, action: () => unknown) => action(), currentProductGrants: () => ({ use: mocks.grants }),
 }));
-import { assistantSkillCatalog, effectiveAssistantSkills, prepareAssistantSkills, validateAssistantSkills } from "../skills";
+import { assistantSkillCatalog, effectiveAssistantSkills, prepareAssistantSkills, readAssistantSkillView, validateAssistantSkills } from "../skills";
 import { listAssistantAgents } from "../agents";
 import { workbenchApplications } from "../../applications/builtins";
 
@@ -50,17 +60,24 @@ function projection(allowed = true): PageSkillsProjection {
 let current: PageSkillsProjection;
 beforeEach(() => {
   vi.clearAllMocks(); mocks.grants.clear(); current = projection();
+  mocks.managed.length = 0;
+  mocks.publishGovernance.mockResolvedValue({ skill: page, digest: "b".repeat(64) });
   mocks.get.mockImplementation(async () => ({ text: JSON.stringify({ success: true, data: current }) }));
   mocks.post.mockResolvedValue({ text: JSON.stringify({ allowed: true }) });
   mocks.native.mockResolvedValue(undefined); mocks.profile.mockResolvedValue(null);
   mocks.agents.mockResolvedValue([definition(0, "regular", [report]), definition(1, "custom")]);
 });
 
-it("removes denied page identities while preserving non-page skills, including the same name in another namespace", () => {
+it("removes denied page identities while preserving non-page skills, including the same name in another namespace", async () => {
+  mocks.managed.push({ skill: sameName, title: sameName.name, description: "Available from a different provider" });
+  current = projection(false);
+  const denied = await readAssistantSkillView(owner.domainId, credentials);
   for (const kind of ["regular", "custom"])
-    expect(effectiveAssistantSkills({ kind, skills: [report, page, sameName] }, projection(false))).toEqual([report, sameName]);
-  expect(effectiveAssistantSkills({ kind: "regular", skills: [report] }, projection())).toEqual([report, page]);
-  expect(effectiveAssistantSkills({ kind: "custom", skills: [report] }, projection())).toEqual([report]);
+    expect(effectiveAssistantSkills({ kind, skills: [report, page, sameName] }, denied)).toEqual([report, sameName]);
+  current = projection();
+  const allowed = await readAssistantSkillView(owner.domainId, credentials);
+  expect(effectiveAssistantSkills({ kind: "regular", skills: [report] }, allowed)).toEqual([report, page]);
+  expect(effectiveAssistantSkills({ kind: "custom", skills: [report] }, allowed)).toEqual([report]);
 });
 
 it("projects and admits the same skills, and rereads revocation on the next request", async () => {
@@ -69,7 +86,7 @@ it("projects and admits the same skills, and rereads revocation on the next requ
     current = projection(allowed);
     const directory = await listAssistantAgents(owner, credentials);
     for (const row of rows) {
-      const admitted = (await prepareAssistantSkills(owner.domainId, row, credentials)).skills;
+      const admitted = (await prepareAssistantSkills(owner.domainId, row, credentials)).skills.map(({ skill }) => skill);
       expect(directory.agents.find(a => a.id === row.id)?.effectiveSkills).toEqual(admitted);
       expect(admitted.some(skill => skill.name === page.name)).toBe(allowed);
     }

@@ -2,6 +2,7 @@ import type { AnalysisAgentSkillReference } from "@ontomato/contracts/skills";
 import type { AssistantAgentInput } from "@ontomato/contracts/assistant-chat";
 import { runtimeSkillRefSchema, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { HttpError } from "../../utils/errors";
+import { isAppBuilderKind } from "../app-builder/definition";
 import {
   getPostgresPool,
   qualifiedTable as t,
@@ -16,7 +17,7 @@ export function resolveAssistantSkillReferences(
       skill.namespace.domainId !== undefined &&
       skill.namespace.domainId !== domainId
     )
-      throw new HttpError(403, "Skill belongs to another domain");
+      throw new HttpError(400, "Skill is not in this domain's catalogue", "SKILL_NOT_FOUND");
     return runtimeSkillRefSchema.parse({
       ...skill,
       namespace:
@@ -28,17 +29,22 @@ export function resolveAssistantSkillReferences(
 }
 export async function listAnalysisAgentSkillReferences(
   domainId: string,
-  skill: RuntimeSkillRef,
-): Promise<AnalysisAgentSkillReference[]> {
-  return (
-    await getPostgresPool().query(
-      `SELECT id,name FROM ${t("assistant_agents")} WHERE domain_id=$1 AND skills @> $2::jsonb`,
-      [
-        domainId,
-        JSON.stringify([skill]),
-      ],
-    )
-  ).rows.map((r) => ({ ...r, usesAnalysis: true, usesVisualization: false }));
+  skills: readonly RuntimeSkillRef[],
+) {
+  const { rows } = await getPostgresPool().query<{ id: string; name: string; kind: string }>(
+    `SELECT id,name,kind FROM ${t("assistant_agents")}
+     WHERE domain_id=$1 AND EXISTS (
+       SELECT 1 FROM jsonb_array_elements($2::jsonb) selected(ref)
+       WHERE skills @> jsonb_build_array(selected.ref)
+     )`,
+    [domainId, JSON.stringify(skills)],
+  );
+  const reference = ({ id, name }: (typeof rows)[number]): AnalysisAgentSkillReference =>
+    ({ id, name, usesAnalysis: true, usesVisualization: false });
+  return {
+    all: rows.map(reference),
+    readable: rows.filter(row => !isAppBuilderKind(row.kind)).map(reference),
+  };
 }
 export async function removeAnalysisAgentSkillReferences(
   domainId: string,
