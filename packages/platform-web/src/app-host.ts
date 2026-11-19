@@ -1,6 +1,8 @@
 import type { AppExecutionContext } from "@ontomato/contracts/build-tests";
 import {BUILD_TEST_HEADER,BUILD_TEST_UNSUPPORTED} from '@ontomato/contracts/build-tests';
-import { watch,createVNode,render,type App } from "vue";
+import { watch,createVNode,render,h,type App } from "vue";
+import { ElMessageBox } from "element-plus";
+import { workbenchI18n } from "@ontomato/workbench-ui/i18n";
 import ProductRoute from './pages/ProductRoute.vue';
 import type { Router } from "vue-router";
 import {
@@ -23,8 +25,9 @@ import type {PanelManifest} from '@ontomato/contracts/panel-manifest';
 import {METRIC_CHART_COMPONENT,productProjectionResponseSchema} from '@ontomato/contracts/product-panels';
 import {pageDraftCreatedSchema,pageDraftReadSchema} from '@ontomato/contracts/page-draft';
 import {chartProjectionSourceSends,clientSends} from '@ontomato/contracts/panel-client-requests';
+import {panelHumanOperationDispatchResponseSchema,panelHumanOperationPreparationSchema} from '@ontomato/contracts/panel-agent';
 import {projectionBindingKeys} from '@ontomato/contracts/panel-projection';
-import type {AppBridgeExpandPageComposer} from '@ontomato/contracts/app-bridge';
+import type {AppBridgeConfirmPanelOperation,AppBridgeConfirmPanelOperationResult,AppBridgeExpandPageComposer} from '@ontomato/contracts/app-bridge';
 import type {PanelConversationEntry} from '@ontomato/contracts/panel-conversation-entry';
 import {servePageComposerKey,type PageComposerExpand,type ServePageComposer} from '@ontomato/agent-shell-ui';
 
@@ -95,7 +98,7 @@ export function installProductEmbedding(app:App){
   if(!host)return;
   // The bridge answers a frame as the application it was registered under: a published application's, or a panel
   // application's.
-  bridge?.dispose();bridge=installAppBridge(app,host,source=>publishedFrames.get(source)??panelFrames.get(source)?.bridgeIdentity,source=>panelFrames.get(source)?.open??true,expandPageComposer);
+  bridge?.dispose();bridge=installAppBridge(app,host,source=>publishedFrames.get(source)??panelFrames.get(source)?.bridgeIdentity,source=>panelFrames.get(source)?.open??true,expandPageComposer,confirmPanelOperation);
   host.mountProductAsset=(source,target,assetId)=>{
     const element=target as HTMLElement;
     if(executionContext(source).kind!=='live')throw new Error('Product embedding is unavailable in build-test previews; use product authoring commands');
@@ -258,6 +261,42 @@ function expandPageComposer(source:object,{slot,...asked}:AppBridgeExpandPageCom
   const expand=composers.at(-1);
   if(!expand)throw new Error('This page has no composer');
   expand(declared);
+}
+/**
+ * A panel frame asks the person to confirm a human intent it prepared at Node. Only its ID is the frame's: the platform
+ * reads the intent back from Node under the reader's own credential and shows the operation, the objects and their
+ * total as Node froze them, in its own dialog. The intent's operation must be one the frame's declaration holds — a
+ * slot of the panel, `<slot>.<name>`, whose projection the frame read through this host. Confirming dispatches the
+ * intent once with an empty body; a cancel sends nothing anywhere. A frame on a build-test context reaches Node with
+ * that context, as its own requests do.
+ */
+async function confirmPanelOperation(source:object,{intentId}:AppBridgeConfirmPanelOperation):Promise<AppBridgeConfirmPanelOperationResult>{
+  const panel=panelFrames.get(source);
+  if(!panel)throw new Error('This operation is not declared by the panel');
+  const execution=executionContext(source);
+  const headers=execution.kind==='build-test'?{[BUILD_TEST_HEADER]:JSON.stringify({kind:'build-test',contextId:execution.contextId})}:{};
+  const read=await nodeApiRequest(`/api/panel-operation-intents/${encodeURIComponent(intentId)}`,{headers});
+  const intent=await read.json();
+  if(!read.ok)throw new Error(intent.error?.message??'Operation request unavailable');
+  const {operationId,label,impact}=panelHumanOperationPreparationSchema.parse(intent);
+  const declared=Object.keys(panel.slots).some(slot=>operationId.startsWith(`${slot}.`)&&operationId.length>slot.length+1
+    &&panel.bindings.get(panel.slots[slot]!.projectionId)!=null);
+  if(!declared)throw new Error('This operation is not declared by the panel');
+  const {t}=workbenchI18n().global;
+  // The owner's names are text: each is rendered as a text node, never as markup.
+  const message=h('div',[
+    h('p',impact.summary),
+    h('ul',impact.objects.map(object=>h('li',object.label))),
+    h('p',t('platform.confirmOperationTotal',{total:impact.total})),
+  ]);
+  const confirmed=await ElMessageBox.confirm(message,label,{type:'warning',confirmButtonText:label,cancelButtonText:t('common.cancel')}).then(()=>true,()=>false);
+  if(!confirmed)return {decision:'cancel'};
+  const sent=await nodeApiRequest(`/api/panel-operations/intents/${encodeURIComponent(intentId)}/dispatch`,{method:'POST',body:'{}',headers});
+  const answer=await sent.json();
+  if(!sent.ok)throw new Error(answer.error?.message??'Operation request failed');
+  const dispatched=panelHumanOperationDispatchResponseSchema.parse(answer);
+  if(dispatched.kind==='not-dispatched')throw new Error(dispatched.message);
+  return {decision:'confirm'};
 }
 function executionContext(source: object) {
   const context=executionBindings.get(source);
