@@ -47,6 +47,7 @@ let knowledgeDeleteFails: Set<string>;
 let drafts: Map<string, unknown>;
 /** What the page recorded for a create draft after its save: `{ runId, body }`, as the platform's own route takes it. */
 let recordedCreated: { runId: string; body: { path: string; id: string } }[];
+let objectTypeChanges: Record<string, { showName?: string; classDesc?: string }>;
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -64,7 +65,7 @@ const metas = (classes: string[]) => ({
   },
 });
 
-function respond(url: string, body?: Record<string, unknown>): Response {
+function respond(url: string, body?: Record<string, unknown>, method = "POST"): Response {
   const path = url.replace(/^.*\/data-query/, "");
   const status = statusFor(path);
   if (status !== 200) return json({ success: false }, status);
@@ -92,14 +93,60 @@ function respond(url: string, body?: Record<string, unknown>): Response {
   }
   if (path === "/admin/delBussinessKnowledge" && knowledgeDeleteFails.has(String(body?.knowledgeID)))
     return json({ success: false, message: "locked" });
-  if (path === "/admin/getMetas") return json(metasFor(url));
-  if (path === "/objectView/read" || path === "/objectView/edit" || url.includes('/product-assets/object-views/read')||url.includes('/product-assets/object-views/edit')) return json({ success: true, data: { revision: 0, publishedRevision: null, versions: [] } });
-  if (path === "/admin/editRelationshipDesc") {
-    const state = metasFor(url) as { data: { relationship_rule: Record<string, Record<string, unknown>> } };
-    const { relationship, ...changes } = body!;
-    Object.assign(state.data.relationship_rule[String(relationship)], changes);
-    return json({ success: true });
+  if (path === "/admin/getMetas") {
+    const state = metasFor(url) as { data: { classDef: Record<string, unknown>[] } };
+    for (const [className, changes] of Object.entries(objectTypeChanges)) {
+      const classDef = state.data.classDef.find((item) => item.className === className);
+      if (classDef) Object.assign(classDef, changes);
+    }
+    return json(state);
   }
+  if (path === "/ontology/model/object-type/create" && method === "POST") {
+    return json({
+      className: body?.className,
+      showName: body?.showName,
+      classDesc: body?.classDesc,
+      attributeCount: 1,
+      businessKeyCount: 0,
+      relationshipCount: 0,
+      primaryKey: { status: "ok", name: body?.primaryKeyName },
+    }, 201);
+  }
+  if (path === "/ontology/model/object-type/update" && method === "POST") {
+    const className = String(body?.className);
+    objectTypeChanges[className] = {
+      showName: body?.showName as string,
+      classDesc: body?.classDesc as string,
+    };
+    return json({ className, ...objectTypeChanges[className] });
+  }
+  if (path === "/ontology/model/object-type/delete" && method === "POST") {
+    delete objectTypeChanges[String(body?.className)];
+    return json({ relationships: [] });
+  }
+  if (path === "/ontology/model/relationship/update" && method === "POST") {
+    const name = String(body?.relationship);
+    const state = metasFor(url) as { data: { relationship_rule: Record<string, Record<string, unknown>> } };
+    Object.assign(state.data.relationship_rule[name], {
+      desc: body?.desc,
+      fromField: body?.fromField,
+      toField: body?.toField,
+    });
+    return json({ relationship: name, ...body });
+  }
+  if (path === "/ontology/model/relationship/delete" && method === "POST") {
+    const name = String(body?.relationship);
+    const state = metasFor(url) as { data: { relationship_rule: Record<string, Record<string, unknown>> } };
+    delete state.data.relationship_rule[name];
+    return json({});
+  }
+  if (path === "/ontology/model/relationship/create" && method === "POST") {
+    return json({ relationship: body?.relationship, ...body }, 201);
+  }
+  if (path.startsWith("/ontology/model/attribute/")) {
+    return json({});
+  }
+  if (path === "/objectView/read" || path === "/objectView/edit" || url.includes('/product-assets/object-views/read')||url.includes('/product-assets/object-views/edit')) return json({ success: true, data: { revision: 0, publishedRevision: null, versions: [] } });
   if (path === "/metricView/queryList") return json({ success: true, data: [
     { id: "metric-1", name: "Revenue metric", status: "PUBLISHED", origin: "USER" },
   ] });
@@ -164,6 +211,7 @@ beforeEach(() => {
   mountedApps = [];
   held = new Map();
   holdPaths = new Set();
+  objectTypeChanges = {};
   statusFor = () => 200;
   metasFor = () => metas(["Order", "Item"]);
   functions = [];
@@ -194,11 +242,11 @@ beforeEach(() => {
     if (holdPaths.has(path)) {
       return new Promise<Response>((resolve) => {
         const waiting = held.get(path) ?? [];
-        waiting.push({ resolve: () => resolve(respond(url, body)) });
+        waiting.push({ resolve: () => resolve(respond(url, body, String(init.method))) });
         held.set(path, waiting);
       });
     }
-    return Promise.resolve(respond(url, body));
+    return Promise.resolve(respond(url, body, String(init.method)));
   });
 });
 
@@ -839,18 +887,23 @@ describe("Manager pages in the service router", () => {
     description.dispatchEvent(new Event("input"));
     await settle();
 
-    holdPaths.add("/admin/editClassShowName");
+    holdPaths.add("/ontology/model/object-type/update");
     requests = [];
     clickButton("Update");
     await settle();
-    expect(paths().filter((path) => path.startsWith("/admin/editClass"))).toEqual(["/admin/editClassShowName"]);
-    expect(requests[0].body).toEqual({ className: "Order", showName: "Order renamed" });
+    expect(requests.map((request) => [request.method, request.url.replace(/^.*\/data-query/, "")])).toEqual([
+      ["POST", "/admin/getMetas"],
+      ["POST", "/ontology/model/object-type/update"],
+    ]);
+    expect(requests[1].body).toEqual({ className: "Order", showName: "Order renamed", classDesc: "Order desc" });
 
     holdPaths.clear();
-    held.get("/admin/editClassShowName")!.forEach((waiting) => waiting.resolve(new Response()));
+    held.get("/ontology/model/object-type/update")!.forEach((waiting) => waiting.resolve(new Response()));
     await settle();
-    expect(paths().filter((path) => path.startsWith("/admin/editClass"))).toEqual(["/admin/editClassShowName", "/admin/editClassDesc"]);
-    expect(requests[1].body).toEqual({ className: "Order", desc: "Order desc renamed" });
+    expect(requests.filter((request) => request.url.endsWith("/ontology/model/object-type/update")).map((request) => request.body)).toEqual([
+      { className: "Order", showName: "Order renamed", classDesc: "Order desc" },
+      { className: "Order", showName: "Order renamed", classDesc: "Order desc renamed" },
+    ]);
 
     clickButton("Back to graph");
     await settle();
@@ -893,15 +946,15 @@ describe("Manager pages in the service router", () => {
     await settle();
     clickButton("Add");
     await settle();
-    expect(paths()).not.toContain("/admin/addRelationship");
+    expect(requests.some((request) => request.method === "POST" && request.url.endsWith("/ontology/model/relationship/create"))).toBe(false);
 
     fill("Enter Src Field", "order_id");
     fill("Enter Tgt Field", "id");
     await settle();
     clickButton("Add");
     await settle();
-    expect(requests.find((request) => request.url.endsWith("/admin/addRelationship"))?.body)
-      .toMatchObject({ relationDesc: "contains", fromField: "order_id", toField: "id" });
+    expect(requests.find((request) => request.method === "POST" && request.url.endsWith("/ontology/model/relationship/create"))?.body)
+      .toMatchObject({ desc: "contains", fromField: "order_id", toField: "id" });
   });
 
   it.each([
@@ -932,14 +985,14 @@ describe("Manager pages in the service router", () => {
     if (current === "postgresql") {
       clickButton("Create");
       await settle();
-      expect(paths()).not.toContain("/admin/addRelationship");
+      expect(requests.some((request) => request.method === "POST" && request.url.endsWith("/ontology/model/relationship/create"))).toBe(false);
       await select("Src Field", "Item link (item_id)");
       await select("Tgt Field", "Item key (id)");
       await select("Source Object", "Item (Item)");
       await select("Source Object", "Order (Order)");
       clickButton("Create");
       await settle();
-      expect(paths()).not.toContain("/admin/addRelationship");
+      expect(requests.some((request) => request.method === "POST" && request.url.endsWith("/ontology/model/relationship/create"))).toBe(false);
       await select("Src Field", "Item link (item_id)");
     } else {
       expect(dialog.textContent).toContain("Src Field");
@@ -952,11 +1005,11 @@ describe("Manager pages in the service router", () => {
 
     clickButton("Create");
     await settle();
-    expect(requests.find((request) => request.url.endsWith("/admin/addRelationship"))?.body).toEqual({
-      relationName: "contains",
-      fromClassName: "Order",
-      toClassName: "Item",
-      relationDesc: "contains an item",
+    expect(requests.find((request) => request.method === "POST" && request.url.endsWith("/ontology/model/relationship/create"))?.body).toEqual({
+      relationship: "contains",
+      fromclass: "Order",
+      toclass: "Item",
+      desc: "contains an item",
       fromField: fillFields ? "item_id" : "",
       toField: fillFields ? "id" : "",
     });
@@ -986,7 +1039,7 @@ describe("Manager pages in the service router", () => {
     }
     clickButton(entry === "detail" ? "Save" : "Update");
     await settle();
-    expect(requests.find((request) => request.url.endsWith("/admin/editRelationshipDesc"))?.body)
+    expect(requests.find((request) => request.url.endsWith("/ontology/model/relationship/update"))?.body)
       .toEqual({ relationship: "has", desc: "has", fromField: "item_id", toField: "id" });
 
     host.view = "/ontology/objects";
@@ -1080,21 +1133,19 @@ describe("Manager pages in the service router", () => {
     description.dispatchEvent(new Event("input"));
     await settle();
 
-    holdPaths.add("/admin/editClassShowName");
+    holdPaths.add("/ontology/model/object-type/update");
     requests = [];
     clickButton("Update");
     await settle();
     Object.assign(host, german);
     await settle();
     holdPaths.clear();
-    held.get("/admin/editClassShowName")!.forEach((waiting) => waiting.resolve(new Response()));
+    held.get("/ontology/model/object-type/update")!.forEach((waiting) => waiting.resolve(new Response()));
     await settle();
 
-    expect(paths().filter((path) => path.startsWith("/admin/editClass"))).toEqual(["/admin/editClassShowName", "/admin/editClassDesc"]);
-    expect(paths().filter((path) => path === "/admin/editClassShowName")).toHaveLength(1);
-    expect(paths().filter((path) => path === "/admin/editClassDesc")).toHaveLength(1);
-    expect(requests[0].headers["Accept-Language"]).toBe("en");
-    expect(requests[1].headers["Accept-Language"]).toBe("de");
+    const saves = requests.filter((request) => request.url.endsWith("/ontology/model/object-type/update"));
+    expect(saves).toHaveLength(2);
+    expect(saves.map((request) => request.headers["Accept-Language"])).toEqual(["en", "de"]);
   });
 
   it("graph and modeling take the node palette, edge label fragment and fit limit from the host", async () => {
@@ -1174,9 +1225,10 @@ describe("Manager pages in the service router", () => {
     requests = [];
     clickButton("Save Changes");
     await settle();
-    expect(requests.find((r) => r.url.endsWith("/admin/editClassDesc"))?.body).toEqual({
+    expect(requests.find((r) => r.url.endsWith("/ontology/model/object-type/update"))?.body).toEqual({
       className: "Order",
-      desc: "Host: no description (amended)",
+      showName: "Order",
+      classDesc: "Host: no description (amended)",
     });
   });
 
@@ -1187,7 +1239,7 @@ describe("Manager pages in the service router", () => {
     // Only the metadata re-read after creation contains the new class and its primary key: the page must show the backend's saved result, not locally assembled empty attributes.
     metasFor = () => {
       const saved = metas(["Order", "Item"]);
-      if (requests.some((request) => request.url.endsWith("/admin/addClass"))) {
+      if (requests.some((request) => request.method === "POST" && request.url.endsWith("/ontology/model/object-type/create"))) {
         saved.data.classDef.push({
           className: "Pump",
           showName: "Pump-label",
@@ -1220,13 +1272,13 @@ describe("Manager pages in the service router", () => {
 
     create();
     await settle();
-    expect(paths()).not.toContain("/admin/addClass");
+    expect(requests.some((request) => request.method === "POST" && request.url.endsWith("/ontology/model/object-type/create"))).toBe(false);
 
     fill(primaryKey, "pump_no");
     await settle();
     create();
     await settle();
-    expect(requests.find((request) => request.url.endsWith("/admin/addClass"))?.body).toMatchObject({
+    expect(requests.find((request) => request.method === "POST" && request.url.endsWith("/ontology/model/object-type/create"))?.body).toMatchObject({
       className: "Pump",
       primaryKeyName: "pump_no",
       showName: "Pump-label",

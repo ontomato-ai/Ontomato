@@ -11,35 +11,22 @@ public interface AdminService {
 
 	public void setDataSetDesc(String dataSetDesc, User user);
 	
-	public void addRelationship(String relationName, String fromClassName, String toClassName, String relationDesc, String fromField, String toField, String lang, User user) throws Exception;
 	
-	public void delRelationship(String relationName, User user);
 
-	public void editRelationship(String relationship, String desc, String fromField, String toField, User user);
 	
-	public void addClass(String className, String primaryKeyName, String showName, String classDesc, boolean classToCard, boolean instanceToCard, boolean inStarChart, String lang, User user) throws Exception;
 	
-	public void delClass(String className, User user);
 	
-	public void setClassDesc(String className, String desc, User user);
 	
-	public void setClassShowName(String className, String showName, User user);
 	
 	public void setClassInStarChart(String className, boolean inStarChart, User user);
 	
-	public void addClassAttr(String className, String attrName, String showName, String attrDesc, String type, boolean bizzKey, boolean enable, String lang, User user) throws Exception;
 	
-	public void delClassAttr(String className, String attrName, String lang, User user) throws Exception;
 	
-	public void setClassAttrDesc(String className, String attr, String desc, String enable, String lang, User user) throws Exception;
 	
-	public void setClassAttrShowName(String className, String attr, String showName, User user);
 	
 	public void setClassAttrTimeFormat(String className, String attr, String format, User user);
 	
-	public void setClassAttrShouldReturn(String className, String attr, boolean shouldReturn, User user);
 
-	public void setClassAttrPrimaryKey(String className, String attr, String lang, User user) throws Exception;
 	
 	public void addBucketIndicator(String className, String attrName, String indicatorName, String indicatorDesc, String indicatorUnit, String lang, User user) throws Exception;
 	
@@ -49,6 +36,9 @@ public interface AdminService {
 	
 	public void setBucketIndicatorUnit(String className, String attr, String indicator, String unit, User user);
 	
+	/** Save the whole rule; the model-wide primary-key check runs before the store sees it. */
+	public void writeJSONRule(Map<String, Object> jsonRule, String domainId);
+
 	public Map<String, Object> getJSONRule(String domainId);
 
 	public Map<String, String> getSchemaMarkdown(List<String> classNames, String domainId);

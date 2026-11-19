@@ -163,7 +163,7 @@ export interface CreateOntologyObjectInput {
   primaryKeyName: string;
   showName: string;
   classDesc: string;
-  /** Visual modeling submits false explicitly when creating a class. */
+  /** Kept on the caller's draft; the owner's create interface sets these flags to false. */
   classToCard?: boolean;
   instanceToCard?: boolean;
   inStarChart?: boolean;
@@ -477,25 +477,34 @@ export function createManagerClient(
   }
 
   function createOntologyObject(input: CreateOntologyObjectInput) {
-    return post("/admin/addClass", { ...input });
+    return post("/ontology/model/object-type/create", {
+      className: input.className,
+      primaryKeyName: input.primaryKeyName,
+      showName: input.showName,
+      classDesc: input.classDesc,
+    });
   }
 
   async function updateOntologyObject(
     className: string,
     changes: { showName?: string; classDesc?: string }
   ) {
-    const requests: Promise<unknown>[] = [];
-    if (changes.showName !== undefined) {
-      requests.push(post("/admin/editClassShowName", { className, showName: changes.showName }));
-    }
-    if (changes.classDesc !== undefined) {
-      requests.push(post("/admin/editClassDesc", { className, desc: changes.classDesc }));
-    }
-    await Promise.all(requests);
+    // The owner saves the whole editable form; a caller that changed one field keeps the other from the stored model.
+    const current =
+      changes.showName === undefined || changes.classDesc === undefined
+        ? ((await getMetas()).data?.classDef || []).find(
+            (item: Record<string, unknown>) => item.className === className
+          ) || {}
+        : {};
+    await post("/ontology/model/object-type/update", {
+      className,
+      showName: changes.showName ?? current.showName ?? "",
+      classDesc: changes.classDesc ?? current.classDesc ?? "",
+    });
   }
 
   function deleteOntologyObject(className: string) {
-    return post("/admin/delClass", { className });
+    return post("/ontology/model/object-type/delete", { className });
   }
 
   async function updateOntologyAttribute(
@@ -509,81 +518,53 @@ export function createManagerClient(
       primaryKey?: boolean;
     }
   ) {
-    const requests: Promise<unknown>[] = [];
-    if (changes.showName !== undefined) {
-      requests.push(
-        post("/admin/editClassAttrShowName", {
-          className,
-          attr: attr.name,
-          showName: changes.showName,
-        })
-      );
-    }
-    if (changes.attrDesc !== undefined || changes.enable !== undefined) {
-      requests.push(
-        post("/admin/editClassAttrDesc", {
-          className,
-          attr: attr.name,
-          desc: changes.attrDesc ?? attr.attrDesc ?? "",
-          enable: String(changes.enable ?? attr.enable ?? true),
-        })
-      );
-    }
-    if (changes.bizzkeyBool !== undefined) {
-      requests.push(
-        post("/admin/editClassAttrShouldReturn", {
-          className,
-          attr: attr.name,
-          shouldReturn: changes.bizzkeyBool,
-        })
-      );
-    }
+    await post("/ontology/model/attribute/update", {
+      className,
+      name: attr.name,
+      showName: changes.showName ?? attr.showName,
+      attrDesc: changes.attrDesc ?? attr.attrDesc ?? "",
+      enable: changes.enable ?? attr.enable !== false,
+      businessKey: changes.bizzkeyBool ?? Boolean(attr.bizzkeyBool),
+    });
     if (changes.primaryKey) {
-      requests.push(post("/admin/editClassAttrPrimaryKey", { className, attr: attr.name }));
+      await post("/ontology/model/attribute/primary-key", { className, name: attr.name });
     }
-    await Promise.all(requests);
   }
 
   async function createOntologyAttribute(input: CreateOntologyAttributeInput) {
-    await post("/admin/addClassAttr", {
+    await post("/ontology/model/attribute/create", {
       className: input.className,
-      attrName: input.name,
+      name: input.name,
       showName: input.showName,
-      attrDesc: input.attrDesc,
       type: input.type,
-      bizzKey: input.bizzKey,
+      attrDesc: input.attrDesc,
       enable: input.enable,
+      businessKey: input.bizzKey,
+      primaryKey: input.primaryKey === true,
     });
-
-    if (input.primaryKey) {
-      await post("/admin/editClassAttrPrimaryKey", {
-        className: input.className,
-        attr: input.name,
-      });
-    }
   }
 
   function deleteOntologyAttribute(className: string, attrName: string) {
-    return post("/admin/delClassAttr", { className, attrName });
+    return post("/ontology/model/attribute/delete", { className, name: attrName });
   }
 
   function updateOntologyRelation(relationship: string, changes: { desc: string; fromField: string; toField: string }) {
-    return post("/admin/editRelationshipDesc", { relationship, ...changes });
+    return post("/ontology/model/relationship/update", { relationship, ...changes });
   }
 
   function createOntologyRelation(input: CreateOntologyRelationInput) {
-    return post("/admin/addRelationship", {
-      relationName: input.relationship,
-      fromClassName: input.fromclass,
-      toClassName: input.toclass,
-      relationDesc: input.desc,
+    return post("/ontology/model/relationship/create", {
+      relationship: input.relationship,
+      fromclass: input.fromclass,
+      toclass: input.toclass,
+      desc: input.desc,
       fromField: input.fromField,
       toField: input.toField,
     });
   }
 
   function deleteOntologyRelation(relationName: string) {
-    return post("/admin/delRelationship", { relationName });
+    return post("/ontology/model/relationship/delete", { relationship: relationName });
   }
 
   /** search is submitted only when a non-empty keyword was entered in data browsing. */
