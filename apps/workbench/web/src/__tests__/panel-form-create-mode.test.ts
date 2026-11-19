@@ -6,7 +6,7 @@ import type { PanelFormValues } from "@ontomato/contracts/panel-projection";
 import { FUNCTION } from "@ontomato/contracts/panel-client-requests";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
-  inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
+  ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
 /*
@@ -62,8 +62,8 @@ async function open(state: Record<string, unknown>) {
   });
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
-  platformPanelHost("ontology", use).frame(frame, registered("ontology", use, panel), true);
-  writePanelDocument(panel, use, "/ontology/functions", state as never);
+  platformPanelHost("ontology", use, ignoreChanges).frame(frame, registered("ontology", use, panel), true);
+  writePanelDocument(registered("ontology", use, panel), "/ontology/functions", state as never);
   inside(frame);
   const mounted = await mountPanel(panelOf("list", "form"));
   return { ...mounted, sent };

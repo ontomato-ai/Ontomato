@@ -5,7 +5,7 @@ import type { PanelFormValues } from "@ontomato/contracts/panel-projection";
 import { FUNCTION } from "@ontomato/contracts/panel-client-requests";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
-  inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
+  ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
 /*
@@ -69,8 +69,8 @@ async function open() {
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const { readOperationInput } = await import("../../../../../packages/apps-sdk/src/panel/read-operation-input");
   const frame = panelFrame();
-  platformPanelHost("ontology", use).frame(frame, registered("ontology", use, panel), true);
-  writePanelDocument(panel, use, "/ontology/functions", { selected: { className: FUNCTION, primaryKey: "fn-1" } } as never);
+  platformPanelHost("ontology", use, ignoreChanges).frame(frame, registered("ontology", use, panel), true);
+  writePanelDocument(registered("ontology", use, panel), "/ontology/functions", { selected: { className: FUNCTION, primaryKey: "fn-1" } } as never);
   inside(frame);
   const mounted = await mountPanel(panelOf("definition", "trial"));
   await vi.waitFor(() => expect(mounted.context.instance.forms.handle("trial")?.values.value.sample).toBe(3), { timeout: 5000 });

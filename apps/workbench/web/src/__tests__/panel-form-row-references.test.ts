@@ -6,7 +6,7 @@ import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/
 import { FUNCTION, OBJECT_TYPE } from "@ontomato/contracts/panel-client-requests";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
-  inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
+  ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
 /*
@@ -94,8 +94,8 @@ async function open(slots: string[], shown = panel, saved: (values: PanelFormVal
   });
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
-  platformPanelHost("ontology", use).frame(frame, registered("ontology", use, shown), true);
-  writePanelDocument(shown, use, "/ontology/actions", { selected: { className: FUNCTION, primaryKey: ID } } as never);
+  platformPanelHost("ontology", use, ignoreChanges).frame(frame, registered("ontology", use, shown), true);
+  writePanelDocument(registered("ontology", use, shown), "/ontology/actions", { selected: { className: FUNCTION, primaryKey: ID } } as never);
   inside(frame);
   const mounted = await mountPanel(panelOf(...slots));
   await vi.waitFor(() => expect(item("/name")?.querySelector("input")?.value).toBe("Ship order"), { timeout: 5000 });

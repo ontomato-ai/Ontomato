@@ -4,7 +4,7 @@ import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { AGENT_DEFINITION, DELETE_AGENT, FUNCTION, TEST_EXECUTE_METRIC_VIEW } from "@ontomato/contracts/panel-client-requests";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
-  inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writeFrameDocument, type Sent,
+  ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
 import { randomId } from "@ontomato/contracts/random-id";
@@ -125,12 +125,8 @@ async function open(state: Record<string, unknown>, ...slots: string[]) {
   const sent = installPlatform(coordinator());
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
-  platformPanelHost(APPLICATION, use).frame(frame, registered(APPLICATION, use, panel), true);
-  // The host's message names the application use the panel runs as, which its operations run in.
-  writeFrameDocument({
-    kind: "panel-host-message", panel: { content: panel.content, manifest: panel.manifest, sdkVersion: panel.sdkVersion },
-    pageKey: use.pageKey, use: { applicationId: APPLICATION, useId: use.id }, url: use.path, label: panel.name, state: state as never,
-  });
+  platformPanelHost(APPLICATION, use, ignoreChanges).frame(frame, registered(APPLICATION, use, panel), true);
+  writePanelDocument(registered(APPLICATION, use, panel), use.path, state as never);
   inside(frame);
   const mounted = await mountPanel(panelOf(...slots));
   const changed: unknown[] = [];
