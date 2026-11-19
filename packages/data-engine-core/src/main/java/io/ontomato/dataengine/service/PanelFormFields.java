@@ -41,6 +41,13 @@ public final class PanelFormFields {
     return control;
   }
 
+  /** A nested object the caller may add or remove as a whole; removing it writes null. */
+  public static JSONObject object(JSONArray fields, JSONObject defaultObject) {
+    JSONObject control = JSONObject.of("kind", "object", "fields", fields);
+    if (defaultObject != null) control.put("defaultObject", defaultObject);
+    return control;
+  }
+
   public static JSONObject option(String value, String label) {
     JSONObject option = JSONObject.of("value", value, "label", label);
     option.put("description", null);

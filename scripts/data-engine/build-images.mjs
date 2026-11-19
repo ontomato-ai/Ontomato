@@ -74,7 +74,13 @@ function reactorArgs(app) {
 // and never enters the context.
 function exportArgs(app, version) {
   if (!app.secretExport)
-    return ["--build-arg", "EXPORT_STAGE=build-central", ...reactorArgs(app)];
+    return [
+      "--build-arg",
+      "EXPORT_STAGE=build-central",
+      "--build-arg",
+      "MVNW_REPOURL",
+      ...reactorArgs(app),
+    ];
   const secret = app.secretExport;
   if (!existsSync(secret.mavenSettings))
     throw new Error(
