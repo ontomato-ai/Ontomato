@@ -30,6 +30,8 @@ interface PageSkillViewCaller {
   initiatorCredentials: AssistantCredentials;
 }
 
+type ApplicationUseSkillSource = Extract<PageSkillSource, { kind: "application-use" }>;
+
 export interface PageSkillSourceOwner {
   kinds: readonly PageSkillSource["kind"][];
   listAssociations(caller: PageSkillViewCaller): Promise<readonly { entrance: PageSkillEntrance; identity: SkillSourceIdentity }[]>;
@@ -71,7 +73,7 @@ async function javaPageSkillProjection(credentials: AssistantCredentials) {
 }
 
 async function currentApplicationPanel(caller: PageSkillViewCaller, entrance: PageSkillEntrance,
-  source: Extract<PageSkillSource, { kind: "application-use" }>,
+  source: ApplicationUseSkillSource,
 ) {
   let response;
   try {
@@ -196,11 +198,12 @@ export async function readSkillView(domainId: string, initiatorCredentials: Assi
       const old = [...pages.legacy.values()].filter(({ members }) => members.some(ref => runtimeSkillKey(ref) === key));
       return [skill, ...old.map(({ old }) => old)];
     },
-    async resolveSource(entrance: PageSkillEntrance, source: PageSkillSource): Promise<RuntimeSkillRef | null> {
+    async resolveSource(entrance: PageSkillEntrance, source: PageSkillSource, loadedPanel?: { id: string }): Promise<RuntimeSkillRef | null> {
       const members = pages.byEntrance.get(entranceKey(entrance)) ?? [];
       if (!members.length) return null;
       if (source.kind === "application-use") {
         const panelId = await currentApplicationPanel(caller, entrance, source);
+        if (loadedPanel && loadedPanel.id !== panelId) return null;
         const matches = members.filter(member => member.providerId === "product-panels" && member.sourceKey === panelId);
         return matches.length === 1 ? matches[0]!.skill : null;
       }
@@ -226,7 +229,11 @@ export async function resolvePageSkillMember(view: SkillView, entrance: PageSkil
   return ref?.name === member.memberKey ? ref : null;
 }
 
-export async function pageSkillMemberContext(view: SkillView, locator: PageSkillEntrance, source: PageSkillSource): Promise<PageSkillContext> {
-  const ref = await resolvePageSkillSource(view, locator, source);
+/** An application snapshot can require that its already loaded panel still matches the Java use. */
+export async function pageSkillMemberContext(view: SkillView, locator: PageSkillEntrance,
+  ...input: [source: PageSkillSource] | [source: ApplicationUseSkillSource, loadedPanel: { id: string }]
+): Promise<PageSkillContext> {
+  const [source, loadedPanel] = input;
+  const ref = await view.resolveSource(locator, source, loadedPanel);
   return { mode: "member", locator, member: ref ? { source, memberKey: ref.name } : null };
 }

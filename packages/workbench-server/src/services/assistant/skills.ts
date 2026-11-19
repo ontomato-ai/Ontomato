@@ -162,7 +162,11 @@ async function publishSelectedSkill(domainId: string, ref: RuntimeSkillRef, view
     const { skill, digest } = await publishSkill(workbenchBuiltinSkillRoot(ref), ref);
     return { skill, digest };
   }
-  throw new HttpError(422, `Skill is not available: ${ref.name}`, "SKILL_NOT_FOUND");
+  throw unavailableRunSkill();
+}
+
+function unavailableRunSkill() {
+  return new HttpError(422, "A selected skill is not available", "SKILL_NOT_FOUND");
 }
 
 /** One initiator view binds this turn to the versions returned by the selected publishers. */
@@ -171,7 +175,7 @@ export async function prepareAssistantSkills(domainId: string, agent: { kind: st
 ) {
   const view = await readAssistantSkillView(domainId, initiatorCredentials);
   for (const ref of view.expandStoredRefs(agent.skills)) {
-    if (!view.hasSkill(ref) && !view.unavailableStoredPageSkill(ref)) throw skillNotFound();
+    if (!view.hasSkill(ref) && !view.unavailableStoredPageSkill(ref)) throw unavailableRunSkill();
   }
   const selected = effectiveAssistantSkills(agent, view);
   checkSkillSelection(selected, view);
