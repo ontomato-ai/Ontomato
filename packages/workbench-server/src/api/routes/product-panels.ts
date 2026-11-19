@@ -15,7 +15,8 @@ import { panelOperationStore } from "../../services/product-panels/operation-sto
 import { Router } from "express";
 import { z } from "zod";
 import {
-  chartProjectionLookupResponseSchema, chartProjectionTemplateSchema, productCurrentIdParamsSchema,
+  chartProjectionLookupResponseSchema, chartProjectionTemplateSchema, productCurrentIdParamsSchema, productPanelReadQuerySchema,
+  type ProductPanelReadQuery,
   registerChartProjectionRequestSchema, registerChartProjectionResponseSchema,
   registerDirectPanelRequestSchema, registerDirectProjectionRequestSchema, registerProductPanelRequestSchema,
   registerProductProjectionRequestSchema, updateChartProjectionSourceRequestSchema,
@@ -33,6 +34,19 @@ import { readProductPanelData } from "../../services/product-panels/data-reads";
 import { productDefinitionStreamRequestSchema, type ProductDefinitionStreamFrame } from "@ontomato/contracts/product-subscriptions";
 import { authorizeDefinitionStream, requirePanelDefinitions } from "../../services/product-panels/definition-stream";
 import type { createChartProjectionService } from "../../services/product-panels/chart-sources";
+import { pageSkillMemberContext, readSkillView } from "../../services/skills/view";
+
+async function withPageSkillContext<T extends { panel: { id: string } }>(
+  response: T, query: ProductPanelReadQuery, caller: ReturnType<typeof context>,
+) {
+  if (!("applicationId" in query)) return response;
+  const { applicationId, useId, ...entrance } = query;
+  const view = await readSkillView(caller.owner.domainId, caller.credentials);
+  const pageSkillContext = await pageSkillMemberContext(
+    view, entrance, { kind: "application-use", applicationId, useId }, response.panel,
+  );
+  return { ...response, pageSkillContext };
+}
 
 export const productPanelsRouter = Router();
 const panelRegistration = z.union([registerDirectPanelRequestSchema, registerProductPanelRequestSchema]);
@@ -48,7 +62,9 @@ productPanelsRouter.post("/read", wrap(async (req, res) => {
 }));
 productPanelsRouter.get("/:id/snapshot", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
-  res.json(await requirePanelDefinitions(c.owner, c.credentials, id));
+  const query = productPanelReadQuerySchema.parse(req.query);
+  const snapshot = await requirePanelDefinitions(c.owner, c.credentials, id);
+  res.json(await withPageSkillContext(snapshot, query, c));
 }));
 productPanelsRouter.post("/definition-stream", wrap(async (req, res) => {
   const {owner,credentials}=context(req);
@@ -65,7 +81,9 @@ productPanelsRouter.post("/definition-stream", wrap(async (req, res) => {
 }));
 productPanelsRouter.get("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
-  res.json({ panel: await readCurrentPanelRecord(c.owner, c.credentials, id) });
+  const query = productPanelReadQuerySchema.parse(req.query);
+  const panel = await readCurrentPanelRecord(c.owner, c.credentials, id);
+  res.json(await withPageSkillContext({ panel }, query, c));
 }));
 productPanelsRouter.put("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);

@@ -561,8 +561,8 @@ it("freezes a human batch and its impact, then claims once with the reader's cre
     source: { kind: "human" }, initiator: owner, calls: input.calls, confirmation: preparation.confirmation, dispatched: false,
   });
   const useRef = { applicationId: input.applicationId, useId: input.useId };
-  expect(await projectPanelOperationIntent(owner, id, useRef)).toEqual(preparation);
-  await expect(projectPanelOperationIntent(owner, id, { ...useRef, useId: "other" })).rejects.toMatchObject({ status: 404 });
+  expect(await projectPanelOperationIntent(owner, id, useRef, credentials)).toEqual(preparation);
+  await expect(projectPanelOperationIntent(owner, id, { ...useRef, useId: "other" }, credentials)).rejects.toMatchObject({ status: 404 });
   expect(ownerWrite).not.toHaveBeenCalled();
   await expect(dispatchPanel(owner, credentials, current.id, id)).rejects.toMatchObject({ code: "FORBIDDEN" });
   const results = await Promise.all([dispatchHumanPanelOperation(owner, credentials, id), dispatchHumanPanelOperation(owner, credentials, id)]);
