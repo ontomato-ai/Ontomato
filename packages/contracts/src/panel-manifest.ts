@@ -1,7 +1,6 @@
 import { z } from "zod";
-import { runtimeIdSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema } from "./form-fields";
-import { pageDraftPathSchema } from "./page-draft";
+import { pageDraftLinkSchema } from "./page-draft";
 
 /*
  * What a panel's `panel.mjs` exports through `definePanel`: the state the panel keeps for one instance and the
@@ -168,7 +167,7 @@ export const panelOperationCallSchema = z
     /** What the caller supplies, by the operation's `inputSchema`; a form save's is the owner's form values. */
     input: z.record(key, z.unknown()).default({}),
     /** A create from an existing draft link; the host verifies the artifact and records the new object under its owner. */
-    draft: z.object({ sessionId: runtimeIdSchema, runId: runtimeIdSchema, path: pageDraftPathSchema }).strict().optional(),
+    draft: pageDraftLinkSchema.optional(),
   })
   .strict();
 export type PanelOperationCall = z.infer<typeof panelOperationCallSchema>;
