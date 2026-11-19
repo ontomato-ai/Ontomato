@@ -1,10 +1,11 @@
+import { pageSkillSchema } from "./page-skills";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, OBJECT_TYPE, RELATIONSHIP, USER, bindingKey, clientSends, panelClientReads } from "./panel-client-requests";
 import { candidatePanelSourceSchema, panelFrameMessageSchema, panelUsePath } from "./panel-host";
 import { panelManifestSchema } from "./panel-manifest";
 import { panelFormSaveInputSchema, projectionBindingKeys, projectionOperations, projectionPorts } from "./panel-projection";
-import { applicationPanelUsePathSchema, ontologyElementRefSchema, productPanelContentSchema, productProjectionInputSchema } from "./product-panels";
+import { applicationPanelUseSchema, applicationPanelUsePathSchema, ontologyElementRefSchema, productPanelContentSchema, productProjectionInputSchema } from "./product-panels";
 
 const binding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
 
@@ -136,4 +137,19 @@ test("bridge and skill agree about the specific semantic reads", () => {
     assert.ok(clientSends([binding(type)], "POST", "/data-query", "/admin/getMetas"));
   assert.ok(!clientSends([binding(OBJECT_TYPE)], "POST", "/data-query", "/admin/getschemamarkdown"));
   assert.ok(clientSends([binding(USER)], "GET", "/data-query", "/platform/agent-execution/options?selected=u"));
+});
+
+
+test("application uses and page-skill defaults share the explicit agent target", () => {
+  const use = { id: "governance", pageKey: "report", panelId: "reports", path: "/governance/reports", access: { kind: "domain-member" } };
+  const preset = { kind: "preset", agentKind: "knowledge-governance" };
+  const concrete = { kind: "id", id: "saved-agent" };
+  assert.deepEqual(applicationPanelUseSchema.parse({ ...use, defaultAgent: concrete }).defaultAgent, concrete);
+  assert.equal(applicationPanelUseSchema.safeParse({ ...use, defaultAgentId: "saved-agent" }).success, false);
+  const mapping = {
+    permissionCode: "business-knowledge",
+    skill: { namespace: { kind: "provider", provider: "ontology" }, name: "knowledge-governance" },
+    defaults: [{ pageKey: use.pageKey, defaultAgent: preset }],
+  };
+  assert.deepEqual(pageSkillSchema.parse(mapping).defaults, mapping.defaults);
 });
