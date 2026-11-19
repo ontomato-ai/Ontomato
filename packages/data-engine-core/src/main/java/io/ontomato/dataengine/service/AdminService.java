@@ -11,22 +11,9 @@ public interface AdminService {
 
 	public void setDataSetDesc(String dataSetDesc, User user);
 	
-	
-
-	
-	
-	
-	
-	
 	public void setClassInStarChart(String className, boolean inStarChart, User user);
 	
-	
-	
-	
-	
 	public void setClassAttrTimeFormat(String className, String attr, String format, User user);
-	
-
 	
 	public void addBucketIndicator(String className, String attrName, String indicatorName, String indicatorDesc, String indicatorUnit, String lang, User user) throws Exception;
 	

@@ -16,7 +16,7 @@ public class OntologyModelException extends RuntimeException {
 		super(message);
 		this.status = status;
 		this.code = code;
-		this.details = details == null ? Map.of() : details;
+		this.details = details;
 	}
 
 	public int status() {
