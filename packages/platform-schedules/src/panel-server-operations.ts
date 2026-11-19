@@ -30,14 +30,40 @@ async function outcome(call: () => Promise<{ data: unknown; taskId: string }>): 
       affected: { objects: [{ objectType: SCHEDULED_TASK, primaryKey: taskId }], objectTypes: [SCHEDULED_TASK] },
     };
   } catch (error) {
-    if (error instanceof ScheduleRequestError && error.refusal)
+    if (!(error instanceof ScheduleRequestError) || !error.refusal) throw error;
+    const { code, message, fields } = error.refusal;
+    if (code === "FIELD_VALIDATION_FAILED" || fields) {
       return {
-        kind: error.status !== null && error.status >= 500 ? "failure" : "refusal",
-        code: error.refusal.code, message: error.refusal.message, details: JSON.parse(JSON.stringify(error.refusal)),
+        kind: "refusal", code, message,
+        errors: (fields ?? []).map(error => ({ ...error, field: error.field.replace(/^\/content\//, "/") })),
       };
-    throw error;
+    }
+    return {
+      kind: error.status !== null && error.status >= 500 ? "failure" : "refusal",
+      code, message, details: JSON.parse(JSON.stringify(error.refusal)),
+    };
   }
 }
+
+export const scheduledTaskRunNowOperation = {
+  handlerRef: RUN_NOW,
+  kind: "action",
+  binding: { kind: "PlatformOperation", id: RUN_NOW },
+  effect: "write",
+  batch: false,
+  targetType: SCHEDULED_TASK,
+  targetSchema,
+  inputSchema: z.object({}).strict(),
+  resultSchema: platformTaskRunSchema,
+  targetInput: "task",
+  targetLabel,
+  execute(host: Host, target: Target, _input: Record<string, unknown>, intentId: string) {
+    return outcome(async () => {
+      const data = await scheduledTaskPanelOperations(host).runNow(target.primaryKey, intentId);
+      return { data, taskId: data.taskId };
+    });
+  },
+} as const;
 
 /** Only the two server operations this owner currently implements, beside their shared pure client. */
 export const scheduledTaskServerOperations = [
@@ -63,23 +89,5 @@ export const scheduledTaskServerOperations = [
       });
     },
   },
-  {
-    handlerRef: RUN_NOW,
-    kind: "action",
-    binding: { kind: "PlatformOperation", id: RUN_NOW },
-    effect: "write",
-    batch: false,
-    targetType: SCHEDULED_TASK,
-    targetSchema,
-    inputSchema: z.object({}).strict(),
-    resultSchema: platformTaskRunSchema,
-    targetInput: "task",
-    targetLabel,
-    execute(host: Host, target: Target, _input: Record<string, unknown>, intentId: string) {
-      return outcome(async () => {
-        const data = await scheduledTaskPanelOperations(host).runNow(target.primaryKey, intentId);
-        return { data, taskId: data.taskId };
-      });
-    },
-  },
+  scheduledTaskRunNowOperation,
 ] as const;
