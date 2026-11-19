@@ -6,7 +6,7 @@ import {afterAll,beforeAll,beforeEach,expect,it,vi} from "vitest";
 import {productAssetSchema} from "@ontomato/contracts/product-assets";
 import {HttpError} from "../../../utils/errors";
 import {readSseData} from "@ontomato/contracts/sse";
-import {notifyPanelObjectChanged,notifyProductDefinitionChanged} from "../../../services/product-assets/subscriptions";
+import {notifyProductDefinitionChanged} from "../../../services/product-assets/subscriptions";
 
 const state=vi.hoisted(()=>({executor:"V" as string|null,use:true,visible:new Set<string>(),query:vi.fn(),post:vi.fn(),agent:vi.fn(),create:vi.fn(),bind:vi.fn()}));
 vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://ontology.test"}}}));
@@ -121,7 +121,7 @@ it.each(endpoints)("preserves %s dependency denial when self-mode U cannot acces
   expect(state.create).not.toHaveBeenCalled();
 });
 
-it("streams definition changes and only the owner’s object events on the product subscription route", async () => {
+it("streams definition changes on the product subscription route", async () => {
   const controller = new AbortController();
   try {
     const response = await fetch(new URL("../subscriptions", `${base}/`), {
@@ -131,26 +131,20 @@ it("streams definition changes and only the owner’s object events on the produ
     });
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/event-stream");
-    const before = state.query.mock.calls.length;
-    const target = { objectType: "platform:ScheduledTask", primaryKey: "task-1" };
     const events: unknown[] = [];
     const reading = readSseData(response, event => {
       events.push(event);
-      return events.length === 3;
+      return events.length === 2;
     }, () => true);
-    notifyPanelObjectChanged({ ...owner, userId: "executor" }, target);
-    notifyPanelObjectChanged({ ...owner, domainId: "other" }, target);
-    notifyPanelObjectChanged(owner, target);
-    expect(state.query.mock.calls).toHaveLength(before);
     const definition = { kind: "definition-changed", domainId: owner.domainId, target: { kind: "panel", id: panelId } } as const;
     await notifyProductDefinitionChanged(definition);
     await reading;
     expect(events).toEqual([
       { kind: "snapshot", panel: { id: panelId, revision: 3 }, projections: [{ id: "projection-live", revision: 7 }] },
-      { kind: "object-changed", target },
       definition,
     ]);
   } finally {
     controller.abort();
   }
 });
+

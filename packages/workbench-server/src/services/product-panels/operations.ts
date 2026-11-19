@@ -22,7 +22,7 @@ import { readCurrentPanel, readCurrentProjection } from "./current";
 import { readComponentCatalogue } from "./skill-package";
 import { panelServerOperation, type PanelServerOperation, type PanelOperationTarget, type PanelOperationHost } from "./server-operations";
 import { panelConfirmation } from "./confirmation";
-import { notifyPanelObjectChanged } from "../product-assets/subscriptions";
+import { publishObjectChanged } from "../agent-host/presentation";
 import { panelOperationStore as store } from "./operation-store";
 
 async function admitted(owner: AssistantOwner, credentials: AssistantCredentials, runId: string, ref: PanelUseRef, operationId: string) {
@@ -157,7 +157,12 @@ export async function dispatchPanel(owner: AssistantOwner, credentials: Assistan
   }
   await store.outcome(owner,id,outcome);
   if (outcome.kind === "success")
-    notifyPanelObjectChanged(intent.initiator, { objectType: target.objectType, primaryKey: target.primaryKey });
+    publishObjectChanged({
+      domainId: intent.initiator.domainId,
+      initiator: intent.initiator.userId,
+      rootSession: intent.rootSession,
+      target: { objectType: target.objectType, primaryKey: target.primaryKey },
+    });
   return {kind:"dispatched",intentId:id,outcome};
 }
 /** Exact human owner, independent of readable/admin access and of any old run's liveness. */

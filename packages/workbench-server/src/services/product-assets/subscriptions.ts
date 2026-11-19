@@ -9,7 +9,7 @@ import {readDefinitionTrigger} from './triggers';
 import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres';
 import {productDefinitionChangedEventSchema,type ProductDefinitionChangedEvent} from '@ontomato/contracts/product-panels';
 import {currentProductTables,findCurrentProduct,type CurrentProductKind} from '../../infrastructure/product-current';
-import {panelManifestSchema,type PanelObjectIdentity} from '@ontomato/contracts/panel-manifest';
+import {panelManifestSchema} from '@ontomato/contracts/panel-manifest';
 import {requireProductGrant} from './grants';
 
 type Subscription={id:string;owner:ProductOwner;credentials:AssistantCredentials;target:ProductSubscriptionTarget;expiresAt:number;fingerprint?:string;members?:Set<string>;events:ProductSubscriptionEvent[];busy:boolean;evaluation?:Promise<void>};
@@ -33,11 +33,6 @@ export async function authorizePanelStream(owner:ProductOwner,credentials:Assist
       return ()=>panelStreams.delete(stream);
     },
   };
-}
-export function notifyPanelObjectChanged(owner:ProductOwner,target:PanelObjectIdentity){
-  for(const stream of panelStreams)
-    if(stream.owner.domainId===owner.domainId&&stream.owner.userId===owner.userId)
-      stream.send({kind:'object-changed',target});
 }
 let timer:ReturnType<typeof setInterval>|undefined;
 const intervalMs=10_000;

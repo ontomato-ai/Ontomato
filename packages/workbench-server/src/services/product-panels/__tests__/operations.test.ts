@@ -16,7 +16,7 @@ vi.mock("../../assistant/execution-setting",()=>({resolveAgentExecution:mocks.re
 vi.mock("../../assistant/skills",()=>({readPageSkills:mocks.pages}));
 vi.mock("../../../utils/backend-client",()=>({backendGet:mocks.backend,buildBackendHeaders:(token:string,_x:unknown,_l:unknown,key:string,headers:object)=>({...headers,...(token?{tk:token}:{}),...(key?{"X-API-Key":key}:{})})}));
 vi.mock("../../agent-host/caller",()=>({restoreAgentCaller:mocks.restore,readAgentSessionActor:mocks.sessionActor}));
-vi.mock("../../product-assets/subscriptions",()=>({notifyPanelObjectChanged:mocks.notify}));
+vi.mock("../../agent-host/presentation",()=>({publishObjectChanged:mocks.notify}));
 vi.mock("../current",()=>({readCurrentPanel:mocks.panel,readCurrentProjection:mocks.projection}));
 vi.mock("../skill-package",()=>({readComponentCatalogue:mocks.catalogue}));
 import { operatePanel as realOperatePanel, dispatchPanel, ownPanelSettings } from "../operations";
@@ -155,7 +155,7 @@ it.each(["save","runNow"])("automatic %s succeeds through the server owner inter
  }));
  const input=operation==="save"?{...save(),call:{...save().call,input:{...task.content,revision:9}}}:action();
  expect(await operatePanel(owner,credentials,current.id,input)).toMatchObject({kind:"dispatched",outcome:{kind:"success"}});
- expect(mocks.notify.mock.calls).toEqual([[owner,{objectType:"platform:ScheduledTask",primaryKey:uuid(9)}]]);
+ expect(mocks.notify.mock.calls).toEqual([[{domainId:owner.domainId,initiator:owner.userId,rootSession:root,target:{objectType:"platform:ScheduledTask",primaryKey:uuid(9)}}]]);
  expect(mocks.request).not.toHaveBeenCalled();
 });
 it("notifies the initiator once after the later run dispatches an approved action",async()=>{
@@ -167,7 +167,7 @@ it("notifies the initiator once after the later run dispatches an approved actio
  vi.stubGlobal("fetch",vi.fn(async()=>Response.json({...rawExamples.runs.find(run=>run.name==="agents-running")!.response,taskId:task.id})));
  expect(await dispatchPanel(owner,credentials,current.id,input.intentId)).toMatchObject({kind:"dispatched",outcome:{kind:"success"}});
  await dispatchPanel(owner,credentials,current.id,input.intentId);
- expect(mocks.notify.mock.calls).toEqual([[owner,{objectType:"platform:ScheduledTask",primaryKey:uuid(9)}]]);
+ expect(mocks.notify.mock.calls).toEqual([[{domainId:owner.domainId,initiator:owner.userId,rootSession:root,target:{objectType:"platform:ScheduledTask",primaryKey:uuid(9)}}]]);
 });
 it("rejects a declaration whose target type does not match its platform operation",async()=>{
  const panel=await mocks.panel();panel.manifest.state.task.objectType="customer:Account";
