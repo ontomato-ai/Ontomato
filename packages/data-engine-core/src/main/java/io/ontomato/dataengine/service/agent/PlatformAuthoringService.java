@@ -13,6 +13,7 @@ import io.ontomato.dataengine.dao.MetricViewDao;
 import io.ontomato.dataengine.service.*;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Supplier;
@@ -106,7 +107,7 @@ public class PlatformAuthoringService {
         var closedWindow = store.rows("SELECT closed FROM ontology_platform_authoring_runs WHERE run_id=? AND closed IS NOT NULL",
             uuid(run.id()));
         if (!closedWindow.isEmpty()) throw closed();
-        yield context(input, access);
+        yield context(kind, input, access);
       }
       case "prepare" -> {
         requireAction(kind);
@@ -161,7 +162,7 @@ public class PlatformAuthoringService {
     window.recheck().run();
     store.transaction(window.gate());
     return switch (operation) {
-      case "context" -> context(input, window.access());
+      case "context" -> context(kind, input, window.access());
       case "prepare" -> {
         requireAction(kind);
         AgentJson.fields(input, "objDatas", "relDatas", "vectorDatas");
@@ -201,10 +202,14 @@ public class PlatformAuthoringService {
     };
   }
 
-  private JSONObject context(JSONObject input, QueryAccessService.Access access) throws Exception {
+  private JSONObject context(String kind, JSONObject input, QueryAccessService.Access access) throws Exception {
     AgentJson.fields(input);
-    return JSONObject.of("ontology", ontology.rule(access), "knowledge",
-        ontology.knowledge(new JSONObject(), access), "helpers", JSONObject.of("markdown", PythonHelperDocs.markdown()));
+    var rule = ontology.rule(access);
+    var classes = ((List<?>) rule.get("classDef")).stream()
+        .map(item -> ((Map<?, ?>) item).get("className").toString()).toList();
+    var lookup = JSONObject.of("query", kind + " " + String.join(" ", classes), "limit", 10);
+    return JSONObject.of("ontology", rule, "knowledge", ontology.knowledge(lookup, access),
+        "helpers", JSONObject.of("markdown", PythonHelperDocs.markdown()));
   }
 
   private ActionService.ExplainedDraft explain(JSONObject input, QueryAccessService.Access access,

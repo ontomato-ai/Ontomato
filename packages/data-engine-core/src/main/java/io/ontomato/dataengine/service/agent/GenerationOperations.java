@@ -3,6 +3,7 @@ package io.ontomato.dataengine.service.agent;
 import static io.ontomato.dataengine.service.agent.OntologyAgentStore.*;
 
 import com.alibaba.fastjson2.*;
+import io.ontomato.dataengine.bean.PythonExecuteResult;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.service.*;
@@ -323,13 +324,16 @@ public class GenerationOperations {
     });
   }
 
-  private Receipt finishTest(Window window, String execution, String digest, Object result) throws Exception {
+  private Receipt finishTest(Window window, String execution, String digest, PythonExecuteResult result) throws Exception {
+    Object recorded = window.evidenceScope() == null ? result : JSONObject.of(
+        "result", result.getResult(), "error", result.getError(), "spendTime", result.getSpendTime(),
+        "partialQuery", result.getPartialQuery());
     window.recheck().run();
     return store.transaction(() -> {
       window.gate().get();
       store.update("UPDATE ontology_generation_tests SET result=?::jsonb WHERE run_id=? AND execution_id=?",
-          AgentJson.json(result), uuid(window.run()), uuid(execution));
-      return new Receipt(execution, digest, result);
+          AgentJson.json(recorded), uuid(window.run()), uuid(execution));
+      return new Receipt(execution, digest, recorded);
     });
   }
 
@@ -363,6 +367,7 @@ public class GenerationOperations {
   Receipt readTest(String run, String kind, String execution) {
     var row = store.one("SELECT execution_id,digest,result FROM ontology_generation_tests WHERE run_id=? AND kind=? AND execution_id=?",
         uuid(run), kind, uuid(execution));
+    if (row.getJSONObject("result") == null) throw conflict("Authoring test has not completed");
     return receipt(row);
   }
 
