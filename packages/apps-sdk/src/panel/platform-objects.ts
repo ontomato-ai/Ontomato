@@ -193,6 +193,22 @@ export interface PlatformObjectOptions {
   resolve(values: readonly RuntimeJsonValue[]): Promise<readonly PlatformObjectOption[]>;
 }
 
+/** Offset-paged read request for a long-text source through a resource adapter. */
+export interface PlatformObjectSegmentQuery {
+  readonly parent?: PlatformObjectRef;
+  readonly sourceId: string;
+  readonly offset: number;
+}
+
+/** One offset-paged slice of plain text returned by a resource adapter's `readSegment` port. */
+export interface PlatformObjectSegmentPage {
+  readonly sourceId: string;
+  readonly title: string;
+  readonly items: readonly { readonly id: string; readonly text: string }[];
+  readonly nextOffset: number | null;
+  readonly emptyHint?: string;
+}
+
 /**
  * Everything the SDK reads and writes for one platform object type. A part a type does not have is absent, and a
  * projection that needs it fails visibly when it is drawn — a form bound to a type without `forms`, a picker bound to one
@@ -204,6 +220,7 @@ export interface PlatformObjectAdapter {
   list?(): Promise<readonly PlatformObjectRecord[]>;
   query?(query: PlatformObjectQuery): Promise<PlatformObjectQueryResult>;
   read?(primaryKey: string): Promise<PlatformObjectRecord>;
+  readSegment?(query: PlatformObjectSegmentQuery): Promise<PlatformObjectSegmentPage>;
   forms?: PlatformObjectForms;
   options?: PlatformObjectOptions;
 }
@@ -285,7 +302,7 @@ export function registeredPlatformObjects(): readonly string[] {
 }
 
 /** One part of a type's adapter, or a visible failure naming the type and the part it lacks. */
-export function adapterPart<Part extends "list" | "query" | "read" | "forms" | "options">(
+export function adapterPart<Part extends "list" | "query" | "read" | "readSegment" | "forms" | "options">(
   objectType: string,
   part: Part,
 ): NonNullable<PlatformObjectAdapter[Part]> {

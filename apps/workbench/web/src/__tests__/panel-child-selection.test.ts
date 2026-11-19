@@ -90,7 +90,7 @@ it("clears child selection atomically when switching parent and never emits cros
   window.addEventListener("message", (event) => {
     if (event.data?.channel === PANEL_HOST_CHANNEL) observedBridgeMessages.push(event.data);
   });
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel));
+  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
   writePanelDocument(panel, use, use.path, {});
   inside(frame);
 
@@ -233,7 +233,7 @@ it("selects owner-declared defaultPrimaryKey or falls back to first child on par
 
   installPlatform(hostWith(projections));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel));
+  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
   const initialPath = `${use.path}?state=${encodeURIComponent(JSON.stringify({ selectedSkill: { className: SKILL, primaryKey: "skill-a" } }))}`;
   writePanelDocument(panel, use, initialPath, panelAddressState(initialPath));
   inside(frame);

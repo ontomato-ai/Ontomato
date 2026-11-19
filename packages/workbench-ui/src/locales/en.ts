@@ -182,7 +182,11 @@ export default {
     "listClearSelection": "Clear",
     "listPagination": "Page {page} of {pages}",
     "listPrevPage": "Previous",
-    "listNextPage": "Next"
+    "listNextPage": "Next",
+    "readerMore": "More",
+    "readerClose": "Close",
+    "readerEmpty": "No content available",
+    "readerLoading": "Loading…"
   },
   "nav": {
     "agentsAndSkills": "Agents and Skills",
