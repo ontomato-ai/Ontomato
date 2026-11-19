@@ -355,8 +355,10 @@ public class GenerationOperations {
     var grant = grants.verify(token, window.run(), "/ontology/query/execute-dsl");
     var access = new QueryAccessService.Access(binding.user(), binding.permission(), grant, token, binding.expiresAt(),
         binding.classNames(), binding.target(), binding.executionUserId(), binding.initiatorUserId());
-    var result = QueryPackageExecution.test(execution, bundle, parameters, body.getJSONObject("columnLabels"),
-        access, "en", 10, ontology, python);
+    var labels = body.getJSONObject("columnLabels");
+    var result = window.evidenceScope() == null
+        ? QueryPackageExecution.execute(execution, bundle, parameters, labels, access, "en", 10, ontology, python)
+        : QueryPackageExecution.test(execution, bundle, parameters, labels, access, "en", 10, ontology, python);
     var output = result.execution();
     if (output.getError() == null || output.getError().isBlank()) {
       output.setResult(JSON.toJSONString(JSONObject.of("answer", result.rows()), JSONWriter.Feature.WriteMapNullValue));
