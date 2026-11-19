@@ -1,5 +1,8 @@
 import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
-import { applicationPanelUsesResponseSchema, productPanelSchema, type ApplicationPanelUse, type ProductPanel } from "@ontomato/contracts/product-panels";
+import {
+  applicationPanelUsesResponseSchema, productPanelResponseSchema, productPanelSchema, type ApplicationPanelUse, type PanelUseRef,
+  type ProductPanel, type ProductPanelReadQuery,
+} from "@ontomato/contracts/product-panels";
 import { appsSdkCurrentSchema } from "@ontomato/contracts/apps-sdk";
 import {
   panelDefinitionSnapshotSchema, productDefinitionStreamFrameSchema,
@@ -7,6 +10,8 @@ import {
 } from "@ontomato/contracts/product-subscriptions";
 import { candidatePanelSourceSchema, type CandidatePanelSource, type PanelHostSource, type PanelAuthorDefinitions, type PanelDefinitionMode } from "@ontomato/contracts/panel-host";
 import { buildExecutionContext } from "@ontomato/contracts/build-tests";
+
+import { pageSkillContextSchema, type PageSkillContext } from "@ontomato/contracts/page-skills";
 import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
 import { registerCandidateFrame, registerPanelFrame } from "./app-host";
@@ -63,10 +68,26 @@ async function snapshot(panelId: string) {
 }
 
 /** The platform's panel host for one use relation of the application whose page is showing it. */
-export function platformPanelHost(applicationId: string, use: ApplicationPanelUse, mode: PanelDefinitionMode = { kind: "view" }): PanelHostPort<Extract<PanelHostSource, { kind: "registered" }>> {
+export function platformPanelHost(
+  applicationId: string, use: ApplicationPanelUse, mode: PanelDefinitionMode = { kind: "view" },
+  /** Hears which page skill a message written beside this page reaches, as Node answers it with the panel. */
+  pageSkill?: (context: PageSkillContext) => void,
+): PanelHostPort<Extract<PanelHostSource, { kind: "registered" }>> {
+  // The page these reads are made for: the use relation it is shown for, and the entrance it is reached by — its menu
+  // code, or domain membership, with its page key. Node answers with them which page skill member the reader reaches
+  // here: null when it does not, never a public guess.
+  const shown: PanelUseRef = { applicationId, useId: use.id };
+  const read: ProductPanelReadQuery = "permissionCode" in use.access
+    ? { ...shown, pageKey: use.pageKey, permissionCode: use.access.permissionCode }
+    : { ...shown, pageKey: use.pageKey, access: "domain-member" };
+  const page = new URLSearchParams(read);
   return {
+    // Opening reads the panel for this page.
     async source() {
-      return { kind: "registered", applicationId, use, panel: await panel(use.panelId) };
+      const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(use.panelId)}?${page}`));
+      // A read that names its page is answered with the page skill context; the host passes on what Node answered.
+      pageSkill?.(pageSkillContextSchema.parse(answer.pageSkillContext));
+      return { kind: "registered", applicationId, use, panel: answer.panel as ProductPanel };
     },
     pageKey: use.pageKey,
     panel,
@@ -81,7 +102,13 @@ export function platformPanelHost(applicationId: string, use: ApplicationPanelUs
     async current() {
       return (await panelUsesOf(applicationId)).some(relation => relation.id === use.id && relation.panelId === use.panelId);
     },
-    snapshot,
+    // The page's check of its definitions, when it is shown again or comes back to the foreground, is read for this page
+    // too: the page skill it reaches is confirmed again with it, since what it may reach can have changed meanwhile.
+    async snapshot(panelId) {
+      const answer = panelDefinitionSnapshotSchema.parse(await json(`${panelHostPaths.snapshot(panelId)}?${page}`));
+      pageSkill?.(pageSkillContextSchema.parse(answer.pageSkillContext));
+      return answer;
+    },
     mode,
   };
 }

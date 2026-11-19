@@ -11,7 +11,7 @@ import { PanelHost, provideUnsavedChanges } from "@ontomato/platform-shell";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { panelAuthorDefinitions, panelHostPaths, platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
-  currentSdk, hostMessageOf, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt, panelRecord,
+  currentSdk, hostMessageOf, panelAnswer, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt, panelRecord,
   panelSnapshot, panelUse, projections, SCHEDULED_TASK, task, taskForm, writeFrameDocument, type Sent,
 } from "./panel-frame";
 
@@ -58,13 +58,13 @@ function answer(request: Sent) {
   if (request.path === `/api/data-query/platform/applications/${appB}/panel-uses`)
     return Response.json({ data: { applicationId: appB, entry: { path: `/applications/${appB}`, renderer: "panels" },
       panelUses: [panelUse("use-b", "keep-b", q.id, `/applications/${appB}/summary`)] } });
-  if (request.path === `/api/product-panels/${p.id}`) return Response.json({ panel: p });
-  if (request.path === `/api/product-panels/${q.id}`) return Response.json({ panel: q });
+  if (request.path === `/api/product-panels/${p.id}`) return panelAnswer(p, request);
+  if (request.path === `/api/product-panels/${q.id}`) return panelAnswer(q, request);
   if (request.path === `/api/product-panels/${p.id}/snapshot`) {
     const shown = p;
-    return (snapshotGate ?? Promise.resolve()).then(() => panelSnapshot(shown));
+    return (snapshotGate ?? Promise.resolve()).then(() => panelSnapshot(shown, projections, request));
   }
-  if (request.path === `/api/product-panels/${q.id}/snapshot`) return panelSnapshot(q);
+  if (request.path === `/api/product-panels/${q.id}/snapshot`) return panelSnapshot(q, projections, request);
   const projection = Object.values(projections).find(one => request.path === `/api/product-projections/${one.id}`);
   if (projection) return Response.json({ projection });
   if (request.path === "/api/apps-sdk/current") return currentSdk();

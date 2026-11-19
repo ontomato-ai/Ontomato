@@ -54,7 +54,9 @@ beforeEach(() => {
         ? { version: "1.1.0", publicBasePath: "", sdkBasePath: "/apps-sdk/1.1.0", manifestPath: "", docsPath: "", referencePath: "" }
         : url.includes("/panel-uses")
           ? { data: { applicationId: "app-a", entry: { path: "/tasks", renderer: "panels" }, panelUses: [] } }
-          : url.endsWith("/snapshot") ? { panel: { id: "panel-a", revision: 1 }, projections: [] } : { panel: null };
+          : new URL(url, "http://localhost").pathname.endsWith("/snapshot")
+            ? { panel: { id: "panel-a", revision: 1 }, projections: [], pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: "tasks" }, member: null } }
+            : { panel: null };
     return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
   });
 });
@@ -96,7 +98,8 @@ describe("the panel host's addresses", () => {
       "GET /api/data-query/platform/applications/app-a/panel-uses",
       "GET /api/product-panels/panel-a",
       "GET /api/apps-sdk/current",
-      "GET /api/product-panels/panel-a/snapshot",
+      // A page's snapshot is read for that page: Node confirms which page skill member it reaches with it.
+      "GET /api/product-panels/panel-a/snapshot?applicationId=app-a&useId=use-a&pageKey=tasks&access=domain-member",
       "POST /api/product-panels/definition-stream",
       "GET /api/workspaces/7c9e6679-7425-40de-944b-e07fc1f90ae7/panel-candidate?ref=working",
     ]);

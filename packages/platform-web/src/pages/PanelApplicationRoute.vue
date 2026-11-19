@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, markRaw, ref, watch } from "vue";
+import { computed, markRaw, ref, toRaw, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { PanelHost, panelUnavailable, useUnsavedChanges, type PanelHostLabels, type PanelHostPort } from "@ontomato/platform-shell";
@@ -9,6 +9,7 @@ import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import type { DisplayObjectRefresh } from "@ontomato/agent-shell-ui";
 import type { PageContext } from "@ontomato/contracts/page-context";
+import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import { panelUsesOf, platformPanelHost } from "../panel-host";
 
 /**
@@ -49,6 +50,8 @@ const emit = defineEmits<{
   "display-address": [input: DisplayPageAddressInput];
   "display-loaded": [load: DisplayLoad];
   "display-dirty": [dirty: boolean];
+  /** Which page skill a message written beside the shown page reaches, as Node answered it with the page's panel. */
+  "display-skill": [context: PageSkillContext];
 }>();
 
 const route = useRoute();
@@ -80,6 +83,10 @@ interface KeptPage {
   context: PageContext | null;
   /** Whether it holds unsaved changes; only the shown page can, and leaving it so drops it. */
   dirty: boolean;
+  /** Which page skill a message beside it reaches, as its instance's latest read for it answered; null until one has. */
+  pageSkill: PageSkillContext | null;
+  /** Shown again and not yet through its checks: what it reaches is passed on only once they have confirmed it. */
+  rechecking: boolean;
   /** When the reader was last on it, in the order of the pages shown: the page dropped is the one left longest ago. */
   lastShown: number;
 }
@@ -192,15 +199,10 @@ watch(use, (next, previous) => {
     const [oldest] = [...kept.value].sort((one, other) => one.lastShown - other.lastShown);
     kept.value = kept.value.filter((page) => page !== oldest);
   }
-  const page = found ?? {
-    use: next,
-    port: markRaw(platformPanelHost(props.applicationId, next)),
-    reported: panelAddress(pageAddress.value, requestedState.value),
-    context: null,
-    dirty: false,
-    lastShown: ++showings,
-  };
+  const page = found ?? openPage(next);
   if (!found) kept.value = [...kept.value, page];
+  // A kept page shown again is checked again, and its page skill with it; a new page tells it once its panel is read.
+  if (found) found.rechecking = true;
   // Its bare address opens a kept page as it was left: the address takes the state the page is at.
   if (found && !opened.value.includes("?")) reportAddress({ kind: "state", address: found.reported });
   emit("context", page.context ?? { url: page.reported, label: pageName.value, selection: [] });
@@ -214,6 +216,36 @@ if (!props.navigate)
 /** When a kept page shown again may ask for its objects again: the first of the two points its switch is measured at. */
 function markReopened(page: KeptPage) {
   performance.mark("ontomato:panel-page-reopened", { detail: { applicationId: props.applicationId, useId: page.use.id } });
+  // Its checks are through: the page skill they confirmed is the one a message beside it reaches now.
+  page.rechecking = false;
+  emit("display-skill", page.pageSkill!);
+}
+
+/** A new instance for a page of this application. */
+function openPage(use: ApplicationPanelUse): KeptPage {
+  const page: KeptPage = {
+    use,
+    port: undefined!,
+    reported: panelAddress(pageAddress.value, requestedState.value),
+    context: null,
+    dirty: false,
+    pageSkill: null,
+    rechecking: false,
+    lastShown: ++showings,
+  };
+  page.port = markRaw(platformPanelHost(props.applicationId, use, undefined, (context) => reportPageSkill(page, context)));
+  return page;
+}
+
+/**
+ * The page skill an instance's read answered: kept with the instance, and passed on when it changed, only while that
+ * same instance is the shown page and not in the middle of being checked again — an answer that arrives after the reader
+ * moved on, or for an instance since dropped, stays its own. A page shown again passes on what its checks confirmed.
+ */
+function reportPageSkill(page: KeptPage, context: PageSkillContext) {
+  const changed = JSON.stringify(context) !== JSON.stringify(page.pageSkill);
+  page.pageSkill = context;
+  if (changed && shownPage.value && toRaw(shownPage.value) === page && !page.rechecking) emit("display-skill", context);
 }
 
 /** A kept page shown again whose use relation was withdrawn or bound elsewhere ends; the page opens from the current relations. */
