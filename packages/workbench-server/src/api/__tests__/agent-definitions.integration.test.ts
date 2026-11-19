@@ -6,12 +6,16 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { assistantAgentInputSchema } from "@ontomato/contracts/assistant-chat";
 
-const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", skillView: vi.fn(), hiddenSkills: vi.fn(), visibleSkills: vi.fn(), validateSkills: vi.fn().mockResolvedValue([]), setting: vi.fn(), prepare: vi.fn() }));
+const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", assertPermission: vi.fn(), skillView: vi.fn(), hiddenSkills: vi.fn(), visibleSkills: vi.fn(), validateSkills: vi.fn().mockResolvedValue([]), setting: vi.fn(), prepare: vi.fn() }));
 vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
 }));
 vi.mock("../../infrastructure/agent-runtime/client", () => ({ RuntimeClient: class { async modelOptions() { return { models: [{ ref: "test/configured", type: "chat", displayName: "Configured" }], defaultModelId: "test/configured" }; } } }));
+vi.mock("../../identity/installed", async original => ({
+  ...await original<typeof import("../../identity/installed")>(),
+  assertPermission: state.assertPermission,
+}));
 vi.mock("../../services/assistant/execution-setting", () => ({ validateExecutionSetting: state.setting, prepareExecutionSetting: state.prepare }));
 vi.mock("../../services/assistant/skills", () => ({
   validateAssistantSkills: state.validateSkills,
@@ -26,7 +30,7 @@ import { installWorkbenchIdentity } from "../../identity/installed";
 import type { WorkbenchIdentity } from "../../identity/types";
 import assistantRouter from "../routes/assistant";
 import { HttpError } from "../../utils/errors";
-import { createAgentDefinition, saveAgentDefinition, validateAgentDefinition } from "../../services/assistant/definitions";
+import { createAgentDefinition, filterReadableAgentDefinitions, saveAgentDefinition, validateAgentDefinition } from "../../services/assistant/definitions";
 import { readDiagnosisModel, saveDiagnosisModel } from "../../services/ops-diagnosis/model-settings";
 
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
@@ -191,6 +195,23 @@ describe("agent definitions on PostgreSQL", () => {
     expect((await createAgentDefinition(id, input, owner, {})).modelSelection).toEqual({ modelId: "test/configured" });
     await expect(saveAgentDefinition(id, { ...input, modelSelection: { modelId: "test/missing" } }, owner, {})).rejects.toMatchObject({ status: 400 });
     expect((await saveAgentDefinition(id, { ...input, modelSelection: { modelId: null } }, owner, {})).modelSelection).toEqual({ modelId: null });
+  });
+  it("filters reference candidates with the definition's read permission and visibility rule", async () => {
+    const readable = randomUUID(), builder = randomUUID(), foreign = randomUUID();
+    await state.pool!.query(`INSERT INTO "${state.schema}".assistant_agents (id, domain_id, kind)
+      VALUES ($1,$2,'custom'), ($3,$2,'app-builder'), ($4,'foreign','custom')`,
+      [readable, owner.domainId, builder, foreign]);
+    state.assertPermission.mockResolvedValueOnce(undefined);
+    const candidates = [readable, builder, foreign, randomUUID()];
+    const credentials = { token: "editor" };
+    expect(await filterReadableAgentDefinitions(owner, credentials, candidates)).toEqual(new Set([readable]));
+    expect(state.assertPermission).toHaveBeenLastCalledWith(credentials, ["analysis-agent"]);
+
+    state.assertPermission.mockRejectedValueOnce(new HttpError(403, "Denied"));
+    expect(await filterReadableAgentDefinitions(owner, credentials, candidates)).toEqual(new Set());
+    const unavailable = new HttpError(502, "Permission service unavailable");
+    state.assertPermission.mockRejectedValueOnce(unavailable);
+    await expect(filterReadableAgentDefinitions(owner, credentials, candidates)).rejects.toBe(unavailable);
   });
   it("keeps diagnosis selection domain-owned and validates changes", async () => {
     expect(await readDiagnosisModel("diagnosis-a")).toEqual({ modelSelection: { modelId: null } });
