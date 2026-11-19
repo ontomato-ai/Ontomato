@@ -16,7 +16,7 @@ import {
 } from "@ontomato/contracts/panel-host";
 import type { DefinitionRevision } from "@ontomato/contracts/product-subscriptions";
 import { pageDraftReadSchema, type PageDraft } from "@ontomato/contracts/page-draft";
-import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import { panelOperationSchema, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import type { PanelDefinitionContent, ProductProjection } from "@ontomato/contracts/product-panels";
 import { panelContextKey, type PanelContext, type ProjectionSlot } from "./context";
 import { applyPanelRequest, createPanelInstance, pageDraftLinkOf, type PanelInstance } from "./instance";
@@ -229,13 +229,17 @@ function report({ instance, address, followAddress, unsaved, changed }: ReportOp
   // The operations the header draws and an agent lists; they change as projections register and unregister.
   watch(() => instance.operations.value, (operations) => {
     // The wire description carries data only. Invocation stays in this frame.
-    send({ kind: "operations", operations: operations.map(({ invoke: _invoke, ...operation }) => operation) });
+    send({
+      kind: "operations",
+      operations: operations.map(({ invoke: _invoke, ...operation }) => panelOperationSchema.parse(operation)),
+    });
   }, { immediate: true });
 
   window.addEventListener("message", (event) => {
     if (event.source !== host) return;
     const parsed = panelMessageOf(panelHostFrameMessageSchema, event);
     if (!parsed) return;
+    if (parsed.kind === "activity") return;
     if (parsed.kind === "address") {
       void followAddress(parsed.address).catch(failed);
       return;

@@ -12,4 +12,6 @@ export const baseComponents = {
   ObjectTree: () => import("./base/ObjectTree.vue").then(module => module.default),
   SegmentedTextReader: () => import("@ontomato/foundation-ui/reader").then(module => module.SegmentedTextReader),
   ObjectTextReader: () => import("./base/ObjectTextReader.vue").then(module => module.default),
+  FileUploadControl: () => import("./base/FileUploadControl.vue").then(module => module.default),
+  DownloadButton: () => import("./base/DownloadButton.vue").then(module => module.default),
 };

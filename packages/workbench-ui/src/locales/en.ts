@@ -186,7 +186,14 @@ export default {
     "readerMore": "More",
     "readerClose": "Close",
     "readerEmpty": "No content available",
-    "readerLoading": "Loading…"
+    "readerLoading": "Loading…",
+    "uploadChooseFile": "Choose file",
+    "uploadCancel": "Cancel",
+    "uploadOverwrite": "Overwrite",
+    "uploadConfirmTitle": "Confirm overwrite",
+    "uploadInvalidType": "Only {accept} files are supported",
+    "uploadUploading": "Uploading…",
+    "downloadPreparing": "Downloading…"
   },
   "nav": {
     "agentsAndSkills": "Agents and Skills",

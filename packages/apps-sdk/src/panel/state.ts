@@ -58,6 +58,12 @@ export function checkPanelValue(manifest: PanelManifest, name: string, value: Pa
       throw new TypeError(`Panel state '${name}' is a ${field.objectType} reference, not ${parsed.className}`);
     return parsed;
   }
+  if (field.kind === "object-union") {
+    if (typeof parsed !== "object") throw new TypeError(`Panel state '${name}' is one of ${field.objectTypes.join(", ")}`);
+    if (!field.objectTypes.includes(parsed.className))
+      throw new TypeError(`Panel state '${name}' does not accept ${parsed.className}`);
+    return parsed;
+  }
   if (typeof parsed === "object") throw new TypeError(`Panel state '${name}' is a ${field.type}`);
   if (field.type === "date" && (typeof parsed !== "string" || !Number.isFinite(Date.parse(parsed))))
     throw new TypeError(`Panel state '${name}' is a date`);
@@ -125,9 +131,10 @@ export function panelSelection(
 ): PanelSelection[] {
   return Object.entries(manifest.state).flatMap(([name, field]) => {
     const value = values[name];
-    if (field.kind !== "object" || !value || typeof value !== "object") return [];
-    const reference = `${field.objectType} ${value.primaryKey}`;
-    const named = names.get(objectNameKey(field.objectType, value.primaryKey));
-    return [{ kind: field.objectType, id: value.primaryKey, label: named ? `${named} (${reference})` : reference }];
+    if ((field.kind !== "object" && field.kind !== "object-union") || !value || typeof value !== "object") return [];
+    const objectType = field.kind === "object" ? field.objectType : value.className;
+    const reference = `${objectType} ${value.primaryKey}`;
+    const named = names.get(objectNameKey(objectType, value.primaryKey));
+    return [{ kind: objectType, id: value.primaryKey, label: named ? `${named} (${reference})` : reference }];
   });
 }
