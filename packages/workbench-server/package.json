@@ -10,7 +10,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run --exclude '**/*.integration.test.ts'",
-    "test:integration": "vitest run src/services/ops-diagnosis/__tests__/runtime-http.integration.test.ts src/api/__tests__/agent-definitions.integration.test.ts src/api/__tests__/page-draft-created.integration.test.ts src/api/__tests__/panel-skill-sdk-installed.integration.test.ts",
+    "test:integration": "vitest run src/services/ops-diagnosis/__tests__/runtime-http.integration.test.ts src/api/__tests__/agent-definitions.integration.test.ts src/api/__tests__/page-draft-created.integration.test.ts src/api/__tests__/panel-skill-sdk-installed.integration.test.ts src/api/__tests__/panel-human-operations.integration.test.ts src/api/__tests__/panel-pilot-current.integration.test.ts",
     "test:wire": "vitest run src/services/assistant/__tests__/ontology-wire.integration.test.ts",
     "build:report-skill": "node report-skill/build.mjs",
     "build:chart-skill": "node chart-skill/build.mjs",

@@ -31,10 +31,33 @@ async function outcome(call: () => Promise<{ data: unknown; taskId: string }>): 
     };
   } catch (error) {
     if (error instanceof ScheduleRequestError && error.refusal)
-      return { kind: "failure", code: error.refusal.code, message: error.refusal.message, details: JSON.parse(JSON.stringify(error.refusal)) };
+      return {
+        kind: error.status !== null && error.status >= 500 ? "failure" : "refusal",
+        code: error.refusal.code, message: error.refusal.message, details: JSON.parse(JSON.stringify(error.refusal)),
+      };
     throw error;
   }
 }
+
+export const scheduledTaskRunNowOperation = {
+  handlerRef: RUN_NOW,
+  kind: "action",
+  binding: { kind: "PlatformOperation", id: RUN_NOW },
+  effect: "write",
+  batch: false,
+  targetType: SCHEDULED_TASK,
+  targetSchema,
+  inputSchema: z.object({}).strict(),
+  resultSchema: platformTaskRunSchema,
+  targetInput: "task",
+  targetLabel,
+  execute(host: Host, target: Target, _input: Record<string, unknown>, intentId: string) {
+    return outcome(async () => {
+      const data = await scheduledTaskPanelOperations(host).runNow(target.primaryKey, intentId);
+      return { data, taskId: data.taskId };
+    });
+  },
+} as const;
 
 /** Only the two server operations this owner currently implements, beside their shared pure client. */
 export const scheduledTaskServerOperations = [
@@ -60,23 +83,5 @@ export const scheduledTaskServerOperations = [
       });
     },
   },
-  {
-    handlerRef: RUN_NOW,
-    kind: "action",
-    binding: { kind: "PlatformOperation", id: RUN_NOW },
-    effect: "write",
-    batch: false,
-    targetType: SCHEDULED_TASK,
-    targetSchema,
-    inputSchema: z.object({}).strict(),
-    resultSchema: platformTaskRunSchema,
-    targetInput: "task",
-    targetLabel,
-    execute(host: Host, target: Target, _input: Record<string, unknown>, intentId: string) {
-      return outcome(async () => {
-        const data = await scheduledTaskPanelOperations(host).runNow(target.primaryKey, intentId);
-        return { data, taskId: data.taskId };
-      });
-    },
-  },
+  scheduledTaskRunNowOperation,
 ] as const;
