@@ -149,15 +149,20 @@ function set(path: string, value: RuntimeJsonValue) {
 useProjectionForm({
   handle: { fields, values, errors, changed, busy: saving, set },
   async receive(draft) {
-    const own: PanelFormTarget = draft.target.id === undefined
+    const create = draft.target.id === undefined;
+    // A create draft for a form that creates nothing is refused as such, before any owner is asked about it — unless an
+    // earlier save already created its object, which it then addresses.
+    if (create && !props.creates && !draft.created) throw new Error("This panel's form does not create objects");
+    // The target whose owner form names the draft's operation: the create target of a form that creates, otherwise the
+    // object the draft (or its earlier save) addresses.
+    const named: PanelFormTarget = create && props.creates
       ? { kind: "draft" }
-      : { kind: "object", objectType, primaryKey: draft.target.id };
-    const ownForm = await forms.describe({ target: own, changedField: null });
-    if (ownForm.save.draftOperation !== draft.operation) return null;
-    if (own.kind === "draft" && !props.creates) throw new Error("This form does not create objects");
+      : { kind: "object", objectType, primaryKey: draft.target.id ?? draft.created!.id };
+    const namedForm = await forms.describe({ target: named, changedField: null });
+    if (namedForm.save.draftOperation !== draft.operation) return null;
     // A create draft saved once addresses the object it created from then on.
-    const into: PanelFormTarget = draft.created ? { kind: "object", objectType, primaryKey: draft.created.id } : own;
-    const baseline = draft.created ? await forms.describe({ target: into, changedField: null }) : ownForm;
+    const into: PanelFormTarget = draft.created ? { kind: "object", objectType, primaryKey: draft.created.id } : named;
+    const baseline = targetKey(into) === targetKey(named) ? namedForm : await forms.describe({ target: into, changedField: null });
     const checked = await forms.describe({ target: into, values: draft.form as PanelFormValues, changedField: null });
     const marked = changedPaths(checked.fields, baseline.values, checked.values);
     held = marked.size ? { target: targetKey(into), baseline, checked, changed: marked } : null;
@@ -223,6 +228,9 @@ async function write(): Promise<unknown> {
   }
 }
 
+/** The fields a received draft changed, by the owner's labels, in the form's order — those other slots draw included. */
+const changedLabels = computed(() => fields.value.filter((field) => changed.value.has(field.path)).map((field) => field.label).join(", "));
+
 const text = (field: PanelFormField) => {
   const value = valueAt(values.value, field.path);
   return typeof value === "string" ? value : "";
@@ -243,7 +251,7 @@ const text = (field: PanelFormField) => {
         :label="field.label"
         :required="field.required"
         :error="errors[field.path]"
-        :class="{ 'sdk-owner-form-changed': changed.has(field.path) }"
+        :class="{ 'sdk-owner-form-field-changed': changed.has(field.path) }"
         :data-field="field.path"
       >
         <el-input
@@ -281,6 +289,9 @@ const text = (field: PanelFormField) => {
         <p v-if="field.readOnly && field.readOnlyReason" class="sdk-owner-form-help">{{ field.readOnlyReason }}</p>
         <p v-else-if="field.help" class="sdk-owner-form-help">{{ field.help }}</p>
       </el-form-item>
+      <p v-if="changed.size" class="sdk-owner-form-changed" role="status">
+        {{ t("platform.panelDraftChanged", { fields: changedLabels }) }}
+      </p>
       <p v-if="refusal" class="sdk-owner-form-refusal" role="alert">{{ refusal.message }}</p>
       <div class="sdk-owner-form-actions">
         <el-button :disabled="saving || !canSettle" @click="discard">{{ t("platform.discard") }}</el-button>
@@ -299,8 +310,13 @@ const text = (field: PanelFormField) => {
 .sdk-owner-form-select {
   width: 100%;
 }
-.sdk-owner-form-changed :deep(.el-form-item__label) {
+.sdk-owner-form-field-changed :deep(.el-form-item__label) {
   color: var(--el-color-primary);
+}
+.sdk-owner-form-changed {
+  color: var(--el-color-primary);
+  font-size: var(--text-xs);
+  margin: 4px 0 0;
 }
 .sdk-owner-form-help {
   color: var(--el-text-color-secondary);

@@ -171,6 +171,7 @@ export default {
     "panelScriptThrew": "The panel's script failed while it ran",
     "panelScriptRejected": "The panel's script failed",
     "panelDraftUnclaimed": "This draft belongs to no form of this panel",
+    "panelDraftChanged": "Changed: {fields}",
     "graphIncludeAdjacent": "Include adjacent ({count})"
   },
   "nav": {

@@ -114,7 +114,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     async settleDraft(slot, created) {
       const ended = draft.value;
       if (ended?.slot !== slot) return;
-      if (created !== undefined && ended.target.id === undefined && ended.created === undefined)
+      if (created !== undefined && ended.target.id === undefined)
         await options.recordDraftCreated(ended.link, created);
       if (draft.value === ended) draft.value = null;
       for (const listener of settledListeners) listener(ended.link);
