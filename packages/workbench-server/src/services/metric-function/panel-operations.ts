@@ -1,21 +1,25 @@
 import { z } from "zod";
+import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "@ontomato/contracts/agent-runtime-values";
 import {
-  DATA_QUERY_GATEWAY, DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, METRIC_VIEW, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW,
+  DATA_QUERY_GATEWAY, DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, METRIC_VIEW, SET_METRIC_VIEW_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW,
 } from "@ontomato/contracts/panel-client-requests";
 import { panelReadOperationCallSchema, panelReadOperationInputSchema } from "@ontomato/contracts/panel-operations";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
+import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
 import type {
-  PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelServerOperation, SinglePanelOperationOutcome,
+  PanelBatchCalls, PanelImpactInspector, PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelServerOperation,
+  SinglePanelOperationOutcome,
 } from "../product-panels/server-operations";
 
 /*
- * The metric and function owners as panel server operations: the form save the coordinator dispatches for a person's
- * or an agent's call, and the two delete actions. The owners answer through the data-query service with their usual
- * envelope; a `success:false` answer is the owner's refusal, while an HTTP failure is an uncertain transport result. A
- * successful write names what changed: saving a metric may also change the function its definition embeds.
+ * The metric and function owners as panel server operations: the form saves the coordinator dispatches for a person's
+ * or an agent's call, the two delete actions with the impact their confirming human reads, and the batch change of a
+ * metric's publication status. The owners answer through the data-query service with their usual envelope; a
+ * `success:false` answer is the owner's refusal, while an HTTP failure is an uncertain transport result. A successful
+ * write names what changed: saving a metric may also change the function its definition embeds.
  */
 
 const ownerEnvelopeSchema = z.object({
@@ -27,6 +31,15 @@ const ownerEnvelopeSchema = z.object({
 const savedIdSchema = z.object({ id: z.string().min(1) }).passthrough();
 const deletedSchema = z.object({}).strict();
 const labelSchema = z.object({ name: z.string() }).passthrough();
+/** The delete impact reads the name a confirming human recognizes and the bindings the delete takes with it. */
+const metricImpactSchema = z.object({ name: z.string(), bindings: z.array(z.unknown()) }).passthrough();
+const statusInputSchema = z.object({ status: z.enum(["PENDING_REVIEW", "PUBLISHED", "UNUSED"]) }).strict();
+/** The owner answers one status change per requested id, with the saved metric or its reason. */
+const statusItemSchema = z.discriminatedUnion("outcome", [
+  z.object({ id: z.string().min(1), outcome: z.literal("success"), data: z.unknown() }).strict(),
+  z.object({ id: z.string().min(1), outcome: z.literal("failure"), error: z.object({ message: z.string() }).strict() }).strict(),
+]);
+const statusAnswerSchema = z.object({ items: z.array(statusItemSchema).nonempty() }).strict();
 
 const metricObjectTarget = z.object({
   kind: z.literal("object"), objectType: z.literal(METRIC_VIEW), primaryKey: z.string().min(1),
@@ -51,7 +64,8 @@ async function ownerPost(host: Host, path: string, body: unknown) {
   return ownerEnvelopeSchema.parse(await response.json());
 }
 
-async function targetLabel(host: Host, target: PanelRecordTarget, path: string, code: string): Promise<string> {
+/** The owner's record for one target; an unreadable target is the owner's error, never an id standing in for a name. */
+async function ownerRecord(host: Host, target: PanelRecordTarget, path: string, code: string): Promise<unknown> {
   const response = await host.request(`${DATA_QUERY_GATEWAY}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -63,7 +77,11 @@ async function targetLabel(host: Host, target: PanelRecordTarget, path: string, 
   }
   const envelope = ownerEnvelopeSchema.parse(await response.json());
   if (!envelope.success) throw new HttpError(404, envelope.message ?? "The owner could not read the target", code);
-  return labelSchema.parse(envelope.data).name;
+  return envelope.data;
+}
+
+async function targetLabel(host: Host, target: PanelRecordTarget, path: string, code: string): Promise<string> {
+  return labelSchema.parse(await ownerRecord(host, target, path, code)).name;
 }
 
 /** A save writes the chosen target: an existing id must match, and a new object carries none. */
@@ -100,6 +118,60 @@ async function remove(
     ? { kind: "success", data: {}, affected: affected(target.objectType, target.primaryKey, [target.objectType]) }
     : { kind: "refusal", code: refusalCode, message: envelope.message ?? "The owner refused the delete" };
 }
+
+type StatusAnswer = { refused: string } | { items: Map<string, z.infer<typeof statusItemSchema>> };
+
+/** One owner call: either its refusal for every requested id, or the owner's answer per id. */
+async function changeStatus(host: Host, ids: string[], status: string): Promise<StatusAnswer> {
+  const envelope = await ownerPost(host, "/metricView/setStatus", { ids, status });
+  if (!envelope.success) return { refused: envelope.message ?? "The owner refused the status change" };
+  return { items: new Map(statusAnswerSchema.parse(envelope.data).items.map(item => [item.id, item])) };
+}
+
+/** The owner's answer for one metric: a success carries the saved metric; a failure keeps the owner's reason. */
+function statusOutcome(answer: StatusAnswer, id: string): SinglePanelOperationOutcome {
+  if ("refused" in answer) return { kind: "refusal", code: "METRIC_VIEW_STATUS_REFUSED", message: answer.refused };
+  const item = answer.items.get(id)!;
+  if (item.outcome !== "success") return { kind: "refusal", code: "METRIC_VIEW_STATUS_REFUSED", message: item.error.message };
+  const data = runtimeJsonObjectSchema.parse(item.data);
+  return { kind: "success", data, affected: affected(METRIC_VIEW, savedIdSchema.parse(data).id, [METRIC_VIEW]) };
+}
+
+/*
+ * The impact a delete shows its confirming human: each selected object under its owner-read name, with the bindings a
+ * metric takes with it. A function referenced by a metric, an action or a write task is refused by the owner; the
+ * description says so and does not rejudge the rule.
+ */
+const deleteMetricViewImpact: PanelImpactInspector = {
+  handlerRef: `${DELETE_METRIC_VIEW}.inspect-impact`,
+  async inspect(host, calls) {
+    const targets = calls.map(call => call.target as PanelRecordTarget);
+    const records = await Promise.all(targets.map(async target =>
+      metricImpactSchema.parse(await ownerRecord(host, target, "/metricView/queryById", "METRIC_VIEW_UNAVAILABLE"))));
+    return {
+      summary: tForLocale(host.locale, "panels.confirmation.deleteMetricViewImpact",
+        { bindings: records.reduce((total, record) => total + record.bindings.length, 0) }),
+      objects: targets.map((target, index) => ({
+        target: { objectType: target.objectType, primaryKey: target.primaryKey }, label: records[index]!.name,
+      })),
+      total: targets.length,
+    };
+  },
+};
+const deleteFunctionImpact: PanelImpactInspector = {
+  handlerRef: `${DELETE_FUNCTION}.inspect-impact`,
+  async inspect(host, calls) {
+    const targets = calls.map(call => call.target as PanelRecordTarget);
+    return {
+      summary: tForLocale(host.locale, "panels.confirmation.deleteFunctionImpact"),
+      objects: await Promise.all(targets.map(async target => ({
+        target: { objectType: target.objectType, primaryKey: target.primaryKey },
+        label: await targetLabel(host, target, "/function/queryById", "FUNCTION_UNAVAILABLE"),
+      }))),
+      total: targets.length,
+    };
+  },
+};
 
 /*
  * The two read-only trials of a metric's unsaved definition. Both read the draft the metric panel's definition form
@@ -191,9 +263,41 @@ export const m5ServerOperations = [
     resultSchema: deletedSchema,
     targetInput: "metric",
     targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/metricView/queryById", "METRIC_VIEW_UNAVAILABLE"),
+    inspectImpact: deleteMetricViewImpact,
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected metric");
       return remove(host, "/metricView/delete", target, "METRIC_VIEW_DELETE_REFUSED");
+    },
+  },
+  {
+    handlerRef: SET_METRIC_VIEW_STATUS,
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: SET_METRIC_VIEW_STATUS },
+    effect: "write",
+    batch: true,
+    targetType: METRIC_VIEW,
+    targetSchema: metricObjectTarget,
+    inputSchema: statusInputSchema,
+    resultSchema: savedIdSchema,
+    targetInput: "metric",
+    targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/metricView/queryById", "METRIC_VIEW_UNAVAILABLE"),
+    async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
+      if (target.kind !== "object") throw new Error("The status change acts on a selected metric");
+      const { status } = statusInputSchema.parse(input);
+      return statusOutcome(await changeStatus(host, [target.primaryKey], status), target.primaryKey);
+    },
+    async executeBatch(host: Host, calls: readonly PanelBatchCalls[number][]): Promise<PanelOperationOutcome> {
+      const inputs = calls.map(call => statusInputSchema.parse(call.input));
+      const status = inputs[0]!.status;
+      if (inputs.some(input => input.status !== status))
+        throw new HttpError(400, "A batch must set one status for its metrics", "BATCH_STATUS_MISMATCH");
+      const answer = await changeStatus(host, calls.map(call => call.target.primaryKey), status);
+      // A batch invocation is nonempty, so the items tuple starts with the first call's answer and spreads the rest.
+      const [first, ...rest] = calls.map(call => ({
+        target: { objectType: call.target.objectType, primaryKey: call.target.primaryKey },
+        outcome: statusOutcome(answer, call.target.primaryKey),
+      }));
+      return { kind: "batch", items: [first!, ...rest] };
     },
   },
   {
@@ -234,6 +338,7 @@ export const m5ServerOperations = [
     resultSchema: deletedSchema,
     targetInput: "function",
     targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/function/queryById", "FUNCTION_UNAVAILABLE"),
+    inspectImpact: deleteFunctionImpact,
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected function");
       return remove(host, "/function/delete", target, "FUNCTION_DELETE_REFUSED");

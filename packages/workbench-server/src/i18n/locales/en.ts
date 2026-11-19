@@ -16,6 +16,8 @@ export const en = {
   "panels.confirmation.decline": "Do not execute",
   "panels.confirmation.approve": "Execute this operation",
   "panels.confirmation.deleteAgentImpact": "This deletes the selected agent definition.",
+  "panels.confirmation.deleteMetricViewImpact": "This deletes the selected metric, together with its bindings ({bindings} in total).",
+  "panels.confirmation.deleteFunctionImpact": "This deletes the selected function; the owner refuses one referenced by a metric, an action or a write task.",
   "assistant.governance.report.title": "Governance report",
   "assistant.default.knowledge-governance.name": "Knowledge governance",
   "assistant.default.knowledge-governance.description": "Review business knowledge with traceable evidence",
