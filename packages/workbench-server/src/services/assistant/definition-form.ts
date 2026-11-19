@@ -1,11 +1,14 @@
 import { z } from "zod";
 import { assistantAgentInputSchema, assistantAgentPanelValuesSchema as inputSchema, type AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
 import type { PanelFormDescription, PanelFormField, PanelFormRequest } from "@ontomato/contracts/panel-projection";
+import type { FormFieldError } from "@ontomato/contracts/form-fields";
 import { AGENT_DEFINITION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SKILL, USER } from "@ontomato/contracts/panel-client-requests";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import { agentDefinitionSave, agentFormJsonSchema, parseAgentDefinitionForm, parseAgentDefinitionUpdateForm } from "./definition-form-schema";
+import {
+  AgentDefinitionFieldError, agentDefinitionSave, agentFormJsonSchema, parseAgentDefinitionForm, parseAgentDefinitionUpdateForm,
+} from "./definition-form-schema";
 import { checkedDefinition, readAgentDefinition } from "./definitions";
 import { readExecutionOptions } from "./execution-setting";
 import type { AssistantOwner } from "./store";
@@ -62,17 +65,24 @@ export async function describeAgentDefinitionForm(
   }
 
   let values = submittedValues ?? current;
+  let errors: FormFieldError[] = [];
   if (checkDraft) {
-    const input = target.kind === "draft"
-      ? parseAgentDefinitionForm(submittedValues)
-      : parseAgentDefinitionUpdateForm(submittedValues);
-    const checked = await checkedDefinition(input, owner, credentials, current.executionUserId, current.skills);
-    values = { ...input, ...checked };
+    try {
+      const input = target.kind === "draft"
+        ? parseAgentDefinitionForm(submittedValues)
+        : parseAgentDefinitionUpdateForm(submittedValues);
+      const checked = await checkedDefinition(input, owner, credentials, current.executionUserId, current.skills);
+      values = { ...input, ...checked };
+    } catch (error) {
+      if (!(error instanceof AgentDefinitionFieldError)) throw error;
+      errors = error.errors;
+    }
   }
   const { canSetExecutionUser } = openOptions ?? await readExecutionOptions(credentials, null);
   const text = (key: string) => tForLocale(credentials.locale, `panels.agentForm.${key}`);
   return {
     values,
+    errors,
     fields: fieldSchemas.map(({ key, ...field }) => {
       const readOnly = key === "executionUserId" && !canSetExecutionUser;
       return {

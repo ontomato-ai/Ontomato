@@ -2,6 +2,7 @@ import { panelFormRequestSchema } from "@ontomato/contracts/panel-projection";
 import { validateBody } from "../middleware/validate";
 import { asyncHandler } from "../utils/http";
 import { describeAgentDefinitionForm } from "../../services/assistant/definition-form";
+import { AgentDefinitionFieldError } from "../../services/assistant/definition-form-schema";
 import { modelSelectionSchema } from "@ontomato/contracts/model-settings";
 import { assistantAgentsQuerySchema } from "@ontomato/contracts/page-skills";
 import { readDiagnosisModel, saveDiagnosisModel } from "../../services/ops-diagnosis/model-settings";
@@ -18,7 +19,7 @@ import {
   createAgentDefinition,
   validateAgentDefinition,
 } from "../../services/assistant/definitions";
-import { Router, type RequestHandler } from "express";
+import { Router, type Request, type RequestHandler, type Response } from "express";
 import { agentHostCreateSessionSchema } from "@ontomato/contracts/agent-host";
 import { z } from "zod";
 import {
@@ -38,7 +39,23 @@ const router: ReturnType<typeof Router> = Router(),
   uuid = z.string().uuid();
 
 import { context, id, wrap } from "../utils/agent-host";
+import { getRequestId } from "../../logging/log-context";
 import { createAgentHostRouter } from "./agent-host";
+
+function wrapDefinitionWrite(write: (req: Request, res: Response) => Promise<void>): RequestHandler {
+  return wrap(async (req, res) => {
+    try {
+      await write(req, res);
+    } catch (error) {
+      if (!(error instanceof AgentDefinitionFieldError)) throw error;
+      res.status(error.status).json({
+        error: { code: error.code, message: error.message },
+        correlationId: getRequestId() ?? "assistant",
+        errors: error.errors,
+      });
+    }
+  });
+}
 const guardBuilder: RequestHandler = (req, res, next) => {
   wrap(async () => {
     const c = context(req);
@@ -173,7 +190,7 @@ router.get(
 router.post(
   "/agent-definitions",
   agentAdmin,
-  wrap(async (req, res) => {
+  wrapDefinitionWrite(async (req, res) => {
     res
       .status(201)
       .json(
@@ -207,7 +224,7 @@ router.post(
 router.put(
   "/agent-definitions/:agentId",
   agentAdmin,
-  wrap(async (req, res) => {
+  wrapDefinitionWrite(async (req, res) => {
     res.json(
       await saveAgentDefinition(
         id(req, "agentId"),

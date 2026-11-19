@@ -127,14 +127,16 @@ it("checks and normalizes a complete typed draft without writing", async () => {
   expect(mocks.pool).not.toHaveBeenCalled();
   expect(mocks.prepare).not.toHaveBeenCalled();
 });
-it("rejects the whole unauthorized draft with the owner field and reason", async () => {
+it("describes a rejected execution-user field without replacing the draft or writing it", async () => {
   mocks.setting.mockRejectedValue(new HttpError(403, "Domain governance administrator required", "FORBIDDEN"));
+  mocks.options.mockResolvedValue({ canSetExecutionUser: false, users: [] });
   const request = await app();
-  const response = await request({ target, changedField: null, values: { ...form, enabledMcpServiceIds: [], executionUserId: "other" } }, "alice", "/form");
-  expect(response.status).toBe(403);
+  const values = { ...form, enabledMcpServiceIds: [], executionUserId: "other" };
+  const response = await request({ target, changedField: null, values }, "alice", "/form");
+  expect(response.status).toBe(200);
   expect(await response.json()).toMatchObject({
-    code: "FORBIDDEN", error: "Domain governance administrator required",
-    details: { fields: [{ field: "/executionUserId", message: "Domain governance administrator required" }] },
+    values,
+    errors: [{ field: "/executionUserId", code: "invalid_option", message: "Domain governance administrator required" }],
   });
   expect(mocks.pool).not.toHaveBeenCalled();
   expect(mocks.prepare).not.toHaveBeenCalled();

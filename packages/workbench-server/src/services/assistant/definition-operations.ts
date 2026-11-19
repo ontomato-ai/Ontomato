@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { agentHostErrorSchema } from "@ontomato/contracts/agent-host";
 import { assistantAgentDefinitionSchema } from "@ontomato/contracts/assistant-chat";
+import { formFieldErrorSchema } from "@ontomato/contracts/form-fields";
 import { AGENT_DEFINITION, DELETE_AGENT } from "@ontomato/contracts/panel-client-requests";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
@@ -26,7 +27,11 @@ async function ownerError(response: Response) {
 }
 
 async function unsuccessfulWrite(response: Response): Promise<SinglePanelOperationOutcome> {
-  return { kind: response.status >= 500 ? "failure" : "refusal", ...await ownerError(response) };
+  const { error, errors } = agentHostErrorSchema.extend({
+    errors: z.array(formFieldErrorSchema).optional(),
+  }).parse(await response.json());
+  if (response.status >= 500) return { kind: "failure", ...error };
+  return { kind: "refusal", ...error, ...(errors && { errors }) };
 }
 
 async function definitionLabel(host: PanelOperationHost, target: PanelRecordTarget) {

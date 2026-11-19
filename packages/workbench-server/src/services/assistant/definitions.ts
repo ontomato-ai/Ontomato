@@ -14,6 +14,7 @@ import {
 import { assistantStore, type AssistantOwner, type AgentRow } from "./store";
 import { HttpError } from "../../utils/errors";
 import { resolveAssistantSkillReferences } from "./skill-references";
+import { AgentDefinitionFieldError } from "./definition-form-schema";
 import { readPageSkills, validateAssistantSkills } from "./skills";
 import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { tForLocale } from "../../i18n";
@@ -60,14 +61,17 @@ export async function checkedDefinition(
   try {
     await validateExecutionSetting(owner, oldExecutionUserId, executionUserId, credentials);
   } catch (error) {
-    if (error instanceof HttpError && error.status < 500 && executionUserId !== oldExecutionUserId) {
-      throw new HttpError(error.status, error.message, error.code, {
-        fields: [{ field: "/executionUserId", message: error.message }],
-      });
+    if (error instanceof HttpError && (error.status === 400 || error.status === 403) && executionUserId !== oldExecutionUserId) {
+      throw AgentDefinitionFieldError.fromOption(error, "/executionUserId", "invalid_option");
     }
     throw error;
   }
-  await validateModelSelection(owner.domainId, input.modelSelection);
+  try {
+    await validateModelSelection(owner.domainId, input.modelSelection);
+  } catch (error) {
+    if (!(error instanceof HttpError) || error.status !== 400 || error.code !== "INVALID_REQUEST") throw error;
+    throw AgentDefinitionFieldError.fromOption(error, "/modelSelection/modelId", "target_unavailable");
+  }
   if (input.skills === undefined) return { executionUserId };
   const projection = oldSkills.length ? await readPageSkills(credentials) : undefined;
   if (projection) {
@@ -75,12 +79,19 @@ export async function checkedDefinition(
     const visible = new Set(projection.pageSkills.map(({ skill }) => runtimeSkillKey(skill)));
     if (oldSkills.map(runtimeSkillKey).some(key => registered.has(key) && !visible.has(key))) {
       const message = tForLocale(credentials.locale, "panels.agentForm.hiddenSkillSelection");
-      throw new HttpError(403, message, "SKILL_SELECTION_INCOMPLETE", { fields: [{ field: "/skills", message }] });
+      throw new AgentDefinitionFieldError(403, message, "SKILL_SELECTION_INCOMPLETE", [
+        { field: "/skills", code: "target_unavailable", message },
+      ]);
     }
   }
-  const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
-  await validateAssistantSkills(owner.domainId, skills, credentials, projection);
-  return { skills, executionUserId };
+  try {
+    const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
+    await validateAssistantSkills(owner.domainId, skills, credentials, projection);
+    return { skills, executionUserId };
+  } catch (error) {
+    if (!(error instanceof HttpError) || error.status !== 400 || !["SKILL_NOT_FOUND", "INVALID_REQUEST"].includes(error.code ?? "")) throw error;
+    throw AgentDefinitionFieldError.fromOption(error, "/skills", "invalid_option");
+  }
 }
 export async function validateAgentDefinition(
   draft: AssistantAgentValidation,
