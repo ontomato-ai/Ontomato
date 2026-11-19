@@ -14,6 +14,7 @@ import {
   type PanelFrameMessage,
   type PanelHostMessage,
 } from "@ontomato/contracts/panel-host";
+import type { DefinitionRevision } from "@ontomato/contracts/product-subscriptions";
 import { pageDraftReadSchema, type PageDraft } from "@ontomato/contracts/page-draft";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import type { PanelDefinitionContent, ProductProjection } from "@ontomato/contracts/product-panels";
@@ -204,7 +205,15 @@ function report({ instance, address, followAddress, unsaved, changed }: ReportOp
   watch([() => instance.state.values.value, address], () => {
     send({ kind: "state", fromAddress: address.value, state: instance.deepLink() });
   }, { deep: true, immediate: true });
-  watch(isDirty, dirty => send({ kind: "dirty", dirty }), { immediate: true });
+  const waiting = new Map<string, DefinitionRevision>();
+  const refreshProjections = () => {
+    for (const { id, revision } of waiting.values()) changed(id, revision);
+    waiting.clear();
+  };
+  watch(isDirty, dirty => {
+    send({ kind: "dirty", dirty });
+    if (!dirty) refreshProjections();
+  }, { immediate: true });
   // The operations the header draws and an agent lists; they change as projections register and unregister.
   watch(() => instance.operations.value, (operations) => {
     // The wire description carries data only. Invocation stays in this frame.
@@ -219,23 +228,15 @@ function report({ instance, address, followAddress, unsaved, changed }: ReportOp
       void followAddress(parsed.address).catch(failed);
       return;
     }
-    if (parsed.kind === "reconnect") {
-      for (const { id, revision } of parsed.projections) changed(id, revision);
-      // Changed definitions remount their own readers; refresh the other readers once they have been removed.
-      void nextTick(() => instance.refreshObjects());
+    if (parsed.kind === "projections-changed") {
+      for (const revision of parsed.projections)
+        if ((waiting.get(revision.id)?.revision ?? 0) < revision.revision) waiting.set(revision.id, revision);
+      if (!isDirty()) refreshProjections();
       return;
     }
     if (parsed.kind === "object-changed") {
-      instance.objectChanged(parsed.target);
-      return;
-    }
-    if (parsed.kind === "projection-changed") {
-      changed(parsed.projectionId);
-      return;
-    }
-    if (parsed.kind === "definition-changed") {
-      // A changed panel is handed over only when nothing is unsaved; the host opens the frame again with it.
-      send({ kind: "reloaded", reloaded: !isDirty() });
+      if (parsed.target) instance.objectChanged(parsed.target);
+      else void nextTick(() => instance.refreshObjects());
       return;
     }
     // A person's click in the platform's header: the same handler an agent's call reaches, run in this frame.

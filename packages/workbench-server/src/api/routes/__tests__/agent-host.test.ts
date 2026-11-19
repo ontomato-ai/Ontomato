@@ -1,8 +1,10 @@
 import express from "express";
+import { randomUUID } from "node:crypto";
+import { once } from "node:events";
 import { createServer, type Server, type ServerResponse } from "node:http";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { runtimeSessionRunFrameSchema } from "@ontomato/contracts/agent-runtime-events";
-import { agentHostSessionRunFrameSchema } from "@ontomato/contracts/agent-host";
+import { agentHostSessionLiveFrameSchema, agentHostSessionRunFrameSchema } from "@ontomato/contracts/agent-host";
 import { presentationFrameSchema, type PresentationResult } from "@ontomato/contracts/agent-presentation";
 import type {
   AgentHostService,
@@ -13,6 +15,7 @@ import { installWorkbenchIdentity } from "../../../identity/installed";
 import type { AuthenticatedRequest } from "../../../utils/request-identity";
 import { HttpError } from "../../../utils/errors";
 import { createAgentHostRouter } from "../agent-host";
+import { publishObjectChanged } from "../../../services/agent-host/presentation";
 import { callbackCredential, unwrapCallbackCredential } from "../../../services/agent-runtime/callback-credential";
 
 const owner: AgentHostOwner = { domainId: "domain-a", userId: "alice" };
@@ -83,7 +86,7 @@ function fakeService() {
   };
 }
 
-let server: Server, url: string, fake: ReturnType<typeof fakeService>;
+let server: Server, url: string, observeUrl: string, fake: ReturnType<typeof fakeService>;
 let runtimeServer: Server;
 let runtimeHeaderCalls: Array<Record<string, string | string[] | undefined>> = [];
 let statusCalls: Array<{ sessionIds: string[] }> = [];
@@ -155,13 +158,16 @@ beforeAll(async () => {
   app.use((req, _res, next) => {
     // The authentication boundary writes identity; the request body never supplies it.
     const caller = req.header("fixture-auth") ?? (req.header("tk") === "fixture-initiator" ? owner.userId : undefined);
-    if (caller) Object.assign(req as AuthenticatedRequest, { ...owner, userId: caller });
+    if (caller) Object.assign(req as AuthenticatedRequest, { domainId: req.header("fixture-domain") ?? owner.domainId, userId: caller });
     next();
   });
   app.use("/api/agent-host", createAgentHostRouter(fake.service));
+  app.use("/api/observe/agent", createAgentHostRouter({ ...fake.service, presentationHost: "observe" }));
   server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", resolve));
-  url = `http://127.0.0.1:${(server.address() as { port: number }).port}/api/agent-host`;
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  url = base + "/api/agent-host";
+  observeUrl = base + "/api/observe/agent";
 });
 
 afterAll(async () => {
@@ -297,8 +303,9 @@ it("refuses the list stream before opening the runtime stream", async () => {
   expect(runtimeHeaderCalls).toHaveLength(0);
 });
 
-async function openPresentationStream() {
-  const response = await fetch(url + "/sessions/run-events?presentation=true", { headers: auth });
+async function openPresentationStream(viewId = randomUUID(), host = url, headers: Record<string, string> = auth) {
+  const abort = new AbortController();
+  const response = await fetch(host + "/sessions/run-events?viewId=" + viewId, { headers, signal: abort.signal });
   expect(response.status).toBe(200);
   const reader = response.body!.getReader(), decoder = new TextDecoder();
   let buffer = "";
@@ -316,8 +323,61 @@ async function openPresentationStream() {
   const ready = await nextFrame();
   expect(ready.event).toBe("session-run");
   const frame = agentHostSessionRunFrameSchema.parse(ready.data);
-  if (frame.type !== "ready" || !("presentationBinding" in frame)) throw new Error("Opt-in stream has no binding");
-  return { connectionId: frame.presentationBinding.connectionId, nextFrame };
+  if (frame.type !== "ready" || !("connectionId" in frame)) throw new Error("View stream has no connection identity");
+  const upstream = [...upstreamStreams].at(-1)!;
+  return {
+    viewId, connectionId: frame.connectionId, nextFrame,
+    close: async () => {
+      const closed = once(upstream, "close");
+      abort.abort();
+      await closed;
+    },
+    finish: async () => {
+      upstream.end();
+      let remaining = buffer;
+      for (;;) {
+        const message = await reader.read();
+        if (message.done) return remaining + decoder.decode();
+        remaining += decoder.decode(message.value, { stream: true });
+      }
+    },
+  };
+}
+
+function presentationCalls(viewId: string) {
+  const runPath = `/sessions/${sessionId}/runs/${runId}`;
+  const callbackPath = `${runPath}/presentation-call/${viewId}`;
+  const credential = callbackCredential({
+    pathPrefix: "/api/agent-host" + callbackPath, runId, expiresAt: Date.now() + 60_000,
+    token: "fixture-initiator", apiKey: "",
+  }).value;
+  const callback = (toolCallId: string) => fetch(url + callbackPath, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json", "X-Ontomato-Callback-Credential": credential,
+      "X-Ontomato-Run-Id": runId,
+    },
+    body: JSON.stringify({ toolCallId, input: { target: "/fixture/page" } }),
+  });
+  const result: PresentationResult = {
+    status: "opened", reason: "target_selected", current: {
+      known: true, observedAt: new Date().toISOString(), placement: "side",
+      target: { kind: "page", url: "/fixture/page", label: "Opened page", selection: [] },
+      load: { status: "ready" },
+    },
+  };
+  const receipt = (toolCallId: string, connectionId: string, userId = owner.userId, currentSession = sessionId) =>
+    fetch(url + `/sessions/${currentSession}/runs/${runId}/presentation-result`, {
+      method: "POST", headers: { ...auth, "fixture-auth": userId },
+      body: JSON.stringify({ toolCallId, connectionId, result }),
+    });
+  return { callback, receipt, result };
+}
+
+async function expectPresentation(stream: Awaited<ReturnType<typeof openPresentationStream>>, toolCallId: string) {
+  const frame = await stream.nextFrame();
+  expect(frame.event).toBe("presentation");
+  expect(presentationFrameSchema.parse(frame.data)).toMatchObject({ sessionId, runId, toolCallId });
 }
 
 it("sends a live presentation to its bound stream and accepts only the matching receipt before the deadline", async () => {
@@ -325,40 +385,10 @@ it("sends a live presentation to its bound stream and accepts only the matching 
   try {
     const origin = await openPresentationStream(), other = await openPresentationStream();
     expect(origin.connectionId).not.toBe(other.connectionId);
-    const runPath = `/sessions/${sessionId}/runs/${runId}`;
-    const callbackPath = `${runPath}/presentation-call/${origin.connectionId}`;
-    const credential = callbackCredential({
-      pathPrefix: "/api/agent-host" + callbackPath, runId, expiresAt: Date.now() + 60_000,
-      token: "fixture-initiator", apiKey: "",
-    }).value;
-    const callback = (toolCallId: string) => fetch(url + callbackPath, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json", "X-Ontomato-Callback-Credential": credential,
-        "X-Ontomato-Run-Id": runId,
-      },
-      body: JSON.stringify({ toolCallId, input: { target: "/fixture/page" } }),
-    });
-    const result: PresentationResult = {
-      status: "opened", reason: "target_selected", current: {
-        known: true, observedAt: new Date().toISOString(), placement: "side",
-        target: { kind: "page", url: "/fixture/page", label: "Opened page", selection: [] },
-        load: { status: "ready" },
-      },
-    };
-    const receipt = (toolCallId: string, connectionId: string, userId = owner.userId, currentSession = sessionId) =>
-      fetch(url + `/sessions/${currentSession}/runs/${runId}/presentation-result`, {
-        method: "POST", headers: { ...auth, "fixture-auth": userId },
-        body: JSON.stringify({ toolCallId, connectionId, result }),
-      });
-    const expectPresentation = async (toolCallId: string) => {
-      const frame = await origin.nextFrame();
-      expect(frame.event).toBe("presentation");
-      expect(presentationFrameSchema.parse(frame.data)).toMatchObject({ sessionId, runId, toolCallId });
-    };
+    const { callback, receipt, result } = presentationCalls(origin.viewId);
 
     const display = callback("call-1");
-    await expectPresentation("call-1");
+    await expectPresentation(origin, "call-1");
     const marker = { type: "run_started", sessionId, runId };
     for (const stream of upstreamStreams) writeRuntimeFrame(stream, marker);
     expect(await other.nextFrame()).toEqual({ event: "session-run", data: marker });
@@ -377,7 +407,7 @@ it("sends a live presentation to its bound stream and accepts only the matching 
       return timer.signal;
     });
     const missing = callback("call-2");
-    await expectPresentation("call-2");
+    await expectPresentation(origin, "call-2");
     await vi.advanceTimersByTimeAsync(30_000);
     expect(await (await missing).json()).toEqual({
       status: "unknown", reason: "receipt_missing", current: { known: false, reason: "receipt_missing" },
@@ -386,6 +416,70 @@ it("sends a live presentation to its bound stream and accepts only the matching 
   } finally {
     vi.restoreAllMocks();
     vi.useRealTimers();
+    liveRunStreams = false;
+    for (const stream of upstreamStreams) stream.end();
+  }
+});
+
+it("drops offline calls and routes later calls of the same run only to the remounted connection of its view", async () => {
+  liveRunStreams = true;
+  try {
+    const initial = await openPresentationStream();
+    const { callback, receipt, result } = presentationCalls(initial.viewId);
+    const lost = callback("before-hide");
+    await expectPresentation(initial, "before-hide");
+
+    const superseding = await openPresentationStream(initial.viewId);
+    expect(superseding.connectionId).not.toBe(initial.connectionId);
+    expect((await receipt("before-hide", superseding.connectionId)).status).toBe(404);
+    await initial.close();
+    expect(await (await lost).json()).toMatchObject({ status: "unknown", reason: "receipt_missing" });
+
+    const resumed = callback("after-replacement");
+    await expectPresentation(superseding, "after-replacement");
+    expect((await receipt("after-replacement", initial.connectionId)).status).toBe(404);
+    expect((await receipt("after-replacement", superseding.connectionId)).status).toBe(204);
+    expect(await (await resumed).json()).toEqual(result);
+
+    await superseding.close();
+    const refreshed = await openPresentationStream();
+    expect(refreshed.viewId).not.toBe(initial.viewId);
+    expect(await (await callback("while-hidden")).json()).toMatchObject({
+      status: "not_opened", reason: "view_unavailable",
+    });
+
+    const returned = await openPresentationStream(initial.viewId);
+    const next = callback("after-return");
+    await expectPresentation(returned, "after-return");
+    expect((await receipt("after-return", returned.connectionId)).status).toBe(204);
+    expect(await (await next).json()).toEqual(result);
+    expect(await refreshed.finish()).toBe("");
+  } finally {
+    liveRunStreams = false;
+    for (const stream of upstreamStreams) stream.end();
+  }
+});
+
+it("sends object invalidations only to the initiator's active views in the root session host and domain", async () => {
+  liveRunStreams = true;
+  try {
+    const own = await openPresentationStream(), another = await openPresentationStream();
+    const differentUser = await openPresentationStream(randomUUID(), url, { ...auth, "fixture-auth": "bob" });
+    const differentDomain = await openPresentationStream(randomUUID(), url, { ...auth, "fixture-domain": "domain-b" });
+    const differentHost = await openPresentationStream(randomUUID(), observeUrl);
+    const rootSession = { providerId: "workbench", sessionId: secondSessionId };
+    const target = { objectType: "platform:ScheduledTask", primaryKey: "job-1" };
+    publishObjectChanged({ domainId: owner.domainId, initiator: owner.userId, rootSession, target });
+
+    for (const stream of [own, another]) {
+      const frame = await stream.nextFrame();
+      expect(frame.event).toBe("object-changed");
+      expect(agentHostSessionLiveFrameSchema.parse(frame.data)).toEqual({ type: "object-changed", session: rootSession, target });
+    }
+    for (const stream of [differentUser, differentDomain, differentHost]) {
+      expect(await stream.finish()).toBe("");
+    }
+  } finally {
     liveRunStreams = false;
     for (const stream of upstreamStreams) stream.end();
   }

@@ -1,6 +1,7 @@
 import { displayLoadSchema, PANEL_LOAD_ERROR_CODES, type DisplayLoad } from "@ontomato/contracts/agent-presentation";
-import type { PanelSubscriptionEvent, PanelSubscriptionSnapshot } from "@ontomato/contracts/product-subscriptions";
-import { inject, onBeforeUnmount, shallowRef, watch, type InjectionKey, type Ref, type ShallowRef } from "vue";
+import type { PanelDefinitionSnapshot, ProductDefinitionRevision, ProductDefinitionTarget } from "@ontomato/contracts/product-subscriptions";
+import { inject, onScopeDispose, shallowRef, watch, type InjectionKey, type Ref, type ShallowRef } from "vue";
+import { onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import {
   PANEL_HOST_CHANNEL,
@@ -8,7 +9,10 @@ import {
   panelAddressState,
   panelFrameMessageSchema,
   panelMessageOf,
+  type PanelDefinitionMode,
+  type PanelHostFrameMessage,
   type PanelHostMessage,
+  type PanelRefreshPort,
 } from "@ontomato/contracts/panel-host";
 import type { PanelOperation, PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import type { ApplicationPanelUse, ProductPanel } from "@ontomato/contracts/product-panels";
@@ -43,23 +47,11 @@ export interface PanelHostPort {
    * the frame may ask the platform for, which the panel's current record declares.
    */
   frame(frame: Window, use: ApplicationPanelUse, panel: ProductPanel): () => void;
-  /**
-   * Hears "definition changed" for the definitions this instance shows: the panel and every projection its declaration
-   * names. Events carry identity only. The returned function stops the notices.
-   */
-  subscribe(
-    panelId: string,
-    listener: (event: PanelSubscriptionEvent) => void,
-    recover: (snapshot: PanelSubscriptionSnapshot) => Promise<void>,
-  ): () => void;
+  snapshot(panelId: string): Promise<PanelDefinitionSnapshot>;
+  mode: PanelDefinitionMode;
 }
 
-/** The platform's notice that a projection's or a panel's current definition changed; it carries identity only. */
-export interface DefinitionChanged {
-  kind: "definition-changed";
-  domainId: string;
-  target: { kind: "projection" | "panel"; id: string };
-}
+export type { ProductDefinitionChangedEvent as DefinitionChanged } from "@ontomato/contracts/product-panels";
 
 export const panelHostKey: InjectionKey<PanelHostPort> = Symbol("panel-host");
 
@@ -69,7 +61,7 @@ export function usePanelHostPort(): PanelHostPort | null {
 }
 
 /** One running panel instance: its use, its record, the frame it runs in and what it reports. */
-export interface PanelInstanceView {
+export interface PanelInstanceView extends PanelRefreshPort {
   readonly use: Ref<ApplicationPanelUse | null>;
   readonly panel: Ref<ProductPanel | null>;
   /** What a message from this instance carries now; null until the panel's module reports. */
@@ -156,9 +148,11 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   let frameReady = false;
   let frameAddress = "";
   let disposeFrame: (() => void) | undefined;
-  let loadedPanelId: string | null = null;
-  /** The record read while the frame had unsaved changes: shown as soon as the reader saves or drops them. */
-  let waiting: ProductPanel | null = null;
+  let active = true;
+  let author: ReturnType<Extract<PanelDefinitionMode, { kind: "author" }>["definitions"]["observe"]> | undefined;
+  const pending = new Map<string, ProductDefinitionRevision>();
+  let pendingObjectRefresh = false;
+  let applying = Promise.resolve();
   const answering = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
   let settle: () => void = () => {};
   const ready = new Promise<void>((resolve) => (settle = resolve));
@@ -177,16 +171,6 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     };
   }
 
-  async function readPanel(id: string) {
-    try {
-      return await port.panel(id);
-    } catch (failure) {
-      const status = httpStatusOf(failure);
-      if (status === 403 || status === 404) reportPanelUnavailable(failure);
-      throw failure;
-    }
-  }
-
   /**
    * Reads what this instance needs: the use relation, the panel's current record and the SDK base its frame runs on.
    * Whatever fails is reported where the panel would have been — a page that cannot say why it is empty is worse than one
@@ -195,25 +179,31 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   async function load() {
     error.value = "";
     displayLoad.value = loading;
+    const useId = options.useId();
+    author?.close();
+    author = undefined;
+    pending.clear();
     try {
-      const applicationId = port.applicationId();
-      const relations = await port.uses(applicationId);
-      const relation = relations.find((candidate) => candidate.id === options.useId());
-      if (!relation) throw new Error(options.labels.useMissing(options.useId()));
-      await adopt(relation, await readPanel(relation.panelId));
-      loadedPanelId = relation.panelId;
-      stopNotices?.();
-      stopNotices = port.subscribe(relation.panelId, notice, recover);
+      const relations = await port.uses(port.applicationId());
+      const relation = relations.find(candidate => candidate.id === useId);
+      if (!relation) throw new Error(options.labels.useMissing(useId));
+      const [snapshot, record, base] = await Promise.all([
+        port.mode.kind === "view" ? port.snapshot(relation.panelId) : undefined,
+        port.panel(relation.panelId), port.sdkBase(),
+      ]);
+      if (!active || options.useId() !== useId) return;
+      adopt(relation, record, base);
+      if (port.mode.kind === "author")
+        author = port.mode.definitions.observe(targetsOf(record), advance, reportPanelUnavailable);
+      if (snapshot) void advance([{ kind: "panel", ...snapshot.panel }]);
     } catch (failure) {
-      reportPanelUnavailable(failure);
+      if (active && options.useId() === useId) reportPanelUnavailable(failure);
+    } finally {
+      settle();
     }
-    settle();
   }
 
-  async function adopt(relation: ApplicationPanelUse, record: ProductPanel) {
-    // The SDK base is read before the record is kept, so a version this platform cannot serve shows as an error rather
-    // than as an empty frame.
-    const base = await port.sdkBase();
+  function adopt(relation: ApplicationPanelUse, record: ProductPanel, base: string) {
     error.value = "";
     use.value = relation;
     panel.value = record;
@@ -239,58 +229,88 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
   }
 
+  function snapshotRevisions(snapshot: PanelDefinitionSnapshot): ProductDefinitionRevision[] {
+    return [
+      { kind: "panel", ...snapshot.panel },
+      ...snapshot.projections.map(projection => ({ kind: "projection" as const, ...projection })),
+    ];
+  }
+
+  function targetsOf(record: ProductPanel): ProductDefinitionTarget[] {
+    return [
+      { kind: "panel", id: record.id },
+      ...Object.values(record.manifest.slots).map(({ projectionId }) => ({ kind: "projection" as const, id: projectionId })),
+    ];
+  }
+
+  function advance(revisions: readonly ProductDefinitionRevision[]) {
+    for (const revision of revisions) {
+      const key = `${revision.kind}:${revision.id}`;
+      if ((pending.get(key)?.revision ?? 0) < revision.revision) pending.set(key, revision);
+    }
+    return applyPending();
+  }
+
+  // Serialize definition adoption. While a form is dirty even a projection reload may replace its component.
+  function applyPending() {
+    applying = applying.then(async () => {
+      const record = panel.value;
+      const relation = use.value;
+      if (!active || !frameReady || dirty.value || !record || !relation || relation.id !== options.useId()) return;
+      const key = `panel:${record.id}`;
+      if ((pending.get(key)?.revision ?? 0) > record.revision) {
+        const [next, base] = await Promise.all([port.panel(record.id), port.sdkBase()]);
+        if (!active || use.value !== relation || options.useId() !== relation.id || dirty.value) return;
+        if (next.revision < pending.get(key)!.revision) return;
+        pending.delete(key);
+        adopt(relation, next, base);
+        author?.replace(targetsOf(next));
+        return;
+      }
+      const projectionIds = new Set(Object.values(record.manifest.slots).map(slot => slot.projectionId));
+      const projections = [...pending.values()]
+        .filter(revision => revision.kind === "projection" && projectionIds.has(revision.id))
+        .map(({ id, revision }) => ({ id, revision }));
+      pending.clear();
+      if (projections.length) post({ kind: "projections-changed", projections });
+    }).catch(failure => { if (active) reportPanelUnavailable(failure); });
+    return applying;
+  }
+
+  async function restore() {
+    const record = panel.value;
+    const relation = use.value;
+    if (!record || !relation) return;
+    try {
+      const snapshot = await port.snapshot(record.id);
+      if (!active || options.useId() !== relation.id) return;
+      await advance(snapshotRevisions(snapshot));
+      if (active && options.useId() === relation.id) refresh(null);
+    } catch (failure) {
+      if (active && options.useId() === relation.id) reportPanelUnavailable(failure);
+    }
+  }
+
   watch(options.useId, () => void load(), { immediate: true });
+  const stopVisibility = onDocumentVisibility(visible => {
+    if (!visible) return;
+    if (port.mode.kind === "view") void restore();
+    else refresh(null);
+  });
+  onScopeDispose(() => {
+    active = false;
+    stopVisibility();
+    author?.close();
+  });
 
-  // What this instance watches: its own panel, and every projection its declaration names — the whole of X, not the
-  // slots that happen to be drawn.
-  let stopNotices: (() => void) | undefined;
-  function notice(event: PanelSubscriptionEvent) {
-    if (event.kind === "object-changed") {
-      post(event);
-      return;
-    }
-    if (!use.value) return;
-    // A changed projection is only read by the instances that use it: the panel's own declaration says which.
-    if (event.target.kind === "projection") {
-      const used = Object.values(panel.value?.manifest.slots ?? {}).some(
-        (slot) => slot.projectionId === event.target.id,
-      );
-      if (used) post({ kind: "projection-changed", projectionId: event.target.id });
-      return;
-    }
-    // A changed panel: read again by its ID, but never over a form the reader has unsaved.
-    if (event.target.id !== loadedPanelId) return;
-    void refreshPanel(event.target.id).catch(reportPanelUnavailable);
+  function post(message: PanelHostFrameMessage) {
+    frame?.postMessage({ channel: PANEL_HOST_CHANNEL, ...message }, "*");
   }
 
-  async function refreshPanel(id: string): Promise<boolean> {
-    const record = await readPanel(id);
-    if (dirty.value) {
-      waiting = record;
-      return false;
-    }
-    if (!use.value) return false;
-    await adopt(use.value, record);
-    return true;
-  }
-
-  async function recover(snapshot: PanelSubscriptionSnapshot) {
-    if (snapshot.panel.id !== loadedPanelId) return;
-    // An adopted definition already starts a frame whose projections will read current data.
-    if (snapshot.panel.revision !== panel.value?.revision) {
-      const adopted = await refreshPanel(snapshot.panel.id).catch(failure => {
-        reportPanelUnavailable(failure);
-        throw failure;
-      });
-      if (adopted) return;
-    }
-    if (frameReady) post({ kind: "reconnect", projections: snapshot.projections });
-  }
-  onBeforeUnmount(() => stopNotices?.());
-
-  function post(message: unknown) {
-    frame?.postMessage({ channel: PANEL_HOST_CHANNEL, ...(message as object) }, "*");
-  }
+  const refresh: PanelRefreshPort["refresh"] = target => {
+    if (frameReady) post({ kind: "object-changed", target: target && { ...target } });
+    else pendingObjectRefresh = true;
+  };
 
   function requestedState(record: ProductPanel) {
     return Object.fromEntries(Object.entries(options.initial()).filter(([name]) => record.manifest.state[name]?.deepLink));
@@ -326,6 +346,11 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       if (!frameReady) {
         frameReady = true;
         displayLoad.value = { status: "ready" };
+        void applyPending();
+        if (pendingObjectRefresh) {
+          pendingObjectRefresh = false;
+          refresh(null);
+        }
         if (syncAddress()) return;
       }
       state.value = payload.state;
@@ -334,12 +359,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     if (payload.kind === "operations") operations.value = payload.operations;
     if (payload.kind === "dirty") {
       dirty.value = payload.dirty;
-      // The reader saved or dropped their changes: now the record read while they were editing may be shown.
-      if (!dirty.value && waiting) {
-        const record = waiting;
-        waiting = null;
-        if (use.value) void adopt(use.value, record).catch(reportPanelUnavailable);
-      }
+      if (!dirty.value && pending.size) void applyPending();
     }
     if (payload.kind === "failed") {
       // The frame could not run its panel. The reason goes where the panel would have been, and no frame is drawn over it.
@@ -355,7 +375,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
   }
   window.addEventListener("message", message);
-  onBeforeUnmount(() => {
+  onScopeDispose(() => {
     window.removeEventListener("message", message);
     disposeFrame?.();
   });
@@ -372,6 +392,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     displayLoad,
     dirty,
     ready,
+    refresh,
     invoke(id, input) {
       if (!frame) return Promise.reject(new Error(options.labels.notStarted));
       const requestId = randomId();

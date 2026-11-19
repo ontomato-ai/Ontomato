@@ -1,4 +1,4 @@
-import type { PanelSubscriptionEvent } from "@ontomato/contracts/product-subscriptions";
+import type { ProductDefinitionRevision } from "@ontomato/contracts/product-subscriptions";
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -10,7 +10,6 @@ import { definePanel } from "@ontomato/contracts/panel-manifest";
 import {
   panelFrameDocument,
   usePanelInstance,
-  type DefinitionChanged,
   type PanelHostLabels,
   type PanelHostPort,
 } from "../panel-host";
@@ -84,7 +83,7 @@ function useRelation(id: string, pageKey: string, panelId: string, path: string)
  * windows a host registers, kept so a test can read what the host posted into them.
  */
 function platform(input: { applicationId?: string; panels: Map<string, ProductPanel>; uses: ApplicationPanelUse[] }) {
-  const listeners = new Set<(event: PanelSubscriptionEvent) => void>();
+  const listeners = new Set<(revisions: readonly ProductDefinitionRevision[]) => void>();
   const frames = new Map<Window, unknown[]>();
   const sent = new WeakMap<Window, unknown[]>();
   return {
@@ -103,11 +102,17 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
       }) as Window["postMessage"];
       return () => frames.delete(frame);
     },
-    subscribe: (_panelId: string, listener: (event: PanelSubscriptionEvent) => void) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    changed: (event: DefinitionChanged) => listeners.forEach((listener) => listener(event)),
+    snapshot: async (id: string) => ({ panel: { id, revision: input.panels.get(id)!.revision }, projections: [] }),
+    mode: {
+      kind: "author" as const,
+      definitions: {
+        observe(_targets, listener) {
+          listeners.add(listener);
+          return { replace() {}, close: () => listeners.delete(listener) };
+        },
+      },
+    } satisfies PanelHostPort["mode"],
+    changed: (revision: ProductDefinitionRevision) => listeners.forEach(listener => listener([revision])),
     posted: (frame: Window) => sent.get(frame) ?? [],
   };
 }
@@ -193,12 +198,16 @@ describe("the panel host", () => {
     const r = open("use-r");
     await Promise.all([a.ready, b.ready, q.ready, r.ready]);
     const frames = [frameWindow(), frameWindow(), frameWindow(), frameWindow()];
-    [a, b, q, r].forEach((view, index) => view.frame(frames[index]!));
+    [a, b, q, r].forEach((view, index) => {
+      const frame = frames[index]!;
+      view.frame(frame);
+      fromFrame(frame, { kind: "state", fromAddress: view.address.value, state: {} });
+    });
 
     // X changes: both uses of P and Q are told, each in its own frame; the panel that does not use X is not.
-    port.changed({ kind: "definition-changed", domainId: "domain-1", target: { kind: "projection", id: "projection-x" } });
+    port.changed({ kind: "projection", id: "projection-x", revision: 2 });
     for (const frame of frames.slice(0, 3))
-      expect(postedTo(port, frame)).toContainEqual({ channel: PANEL_HOST_CHANNEL, kind: "projection-changed", projectionId: "projection-x" });
+      await vi.waitFor(() => expect(postedTo(port, frame)).toContainEqual({ channel: PANEL_HOST_CHANNEL, kind: "projections-changed", projections: [{ id: "projection-x", revision: 2 }] }));
     expect(postedTo(port, frames[3]!)).toEqual([]);
     scope.stop();
   });
@@ -221,12 +230,13 @@ describe("the panel host", () => {
     await Promise.all([a.ready, q.ready]);
     const frameA = frameWindow();
     a.frame(frameA);
+    fromFrame(frameA, { kind: "state", fromAddress: a.address.value, state: {} });
 
     // The reader is editing: the frame says so, and the record that arrives meanwhile waits.
     fromFrame(frameA, { kind: "dirty", dirty: true });
     const beforeA = a.document.value;
-    panels.set("panel-p", record("panel-p", "Scheduled tasks, rearranged", panelP));
-    port.changed({ kind: "definition-changed", domainId: "domain-1", target: { kind: "panel", id: "panel-p" } });
+    panels.set("panel-p", { ...record("panel-p", "Scheduled tasks, rearranged", panelP), revision: 2 });
+    port.changed({ kind: "panel", id: "panel-p", revision: 2 });
     // The form on screen is not replaced while it has unsaved changes: neither the record it draws nor its document.
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(a.panel.value?.name).toBe("Scheduled tasks");

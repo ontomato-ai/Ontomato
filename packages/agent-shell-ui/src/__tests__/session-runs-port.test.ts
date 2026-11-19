@@ -110,32 +110,35 @@ describe("the notice port", () => {
   });
 });
 
-describe("presentation on the notice stream", () => {
+describe("a page view's live frames on the notice stream", () => {
   const binding = "33333333-3333-4333-8333-333333333333";
+  const view = "44444444-4444-4444-8444-444444444444";
   const presentation = {
     type: "presentation", sessionId: a, runId: a, toolCallId: "call-1",
     target: { kind: "page", address: "/dashboards?dashboardId=board-a" },
   };
+  const changed = { type: "object-changed", session: { providerId: "workbench", sessionId: a }, target: { objectType: "platform:ScheduledTask", primaryKey: "task-1" } };
 
-  it("asks for a display binding only when it takes presentation requests, and keeps those apart from the notices", async () => {
+  it("opens the stream for the view, and keeps its live frames apart from the lifecycle notices", async () => {
     const opened = stream();
     const request = vi.fn((_path: string, _init: RequestInit) => Promise.resolve(opened.response()));
     const host = createAgentHostClient({ request });
     const frames: unknown[] = [];
-    const presented: unknown[] = [];
+    const live: unknown[] = [];
     const detach = host.sessionRuns.subscribe({
       frame: async (frame) => void frames.push(frame),
-      presentation: (frame) => void presented.push(frame),
+      view: { id: view, frame: (frame) => void live.push(frame) },
       error: () => {},
     });
-    opened.push(`event: session-run\ndata: {"type":"ready","presentationBinding":{"connectionId":"${binding}"}}\n\n`);
+    opened.push(`event: session-run\ndata: {"type":"ready","connectionId":"${binding}"}\n\n`);
     opened.push(`event: presentation\ndata: ${JSON.stringify(presentation)}\n\n`);
-    await until(() => presented.length === 1);
+    opened.push(`event: object-changed\ndata: ${JSON.stringify(changed)}\n\n`);
+    await until(() => live.length === 2);
     detach();
 
-    expect(request.mock.calls[0]![0]).toBe("/sessions/run-events?presentation=true");
-    expect(frames).toEqual([{ type: "ready", presentationBinding: { connectionId: binding } }]);
-    expect(presented).toEqual([presentation]);
+    expect(request.mock.calls[0]![0]).toBe(`/sessions/run-events?viewId=${view}`);
+    expect(frames).toEqual([{ type: "ready", connectionId: binding }]);
+    expect(live).toEqual([presentation, changed]);
   });
 
   it("opens the plain notice stream for a page without a display", async () => {

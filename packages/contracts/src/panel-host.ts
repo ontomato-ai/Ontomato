@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { buildTestContextSchema } from "./build-tests";
 import { pageContextSchema } from "./page-context";
-import { panelOpenRequestSchema, panelOperationSchema, panelStateValueSchema, type PanelStateValue } from "./panel-manifest";
+import { pageDraftLinkSchema } from "./page-draft";
+import { panelObjectIdentitySchema, panelOpenRequestSchema, panelOperationSchema, panelStateValueSchema, type PanelObjectIdentity, type PanelStateValue } from "./panel-manifest";
 import { applicationPanelUseSchema, panelDefinitionContentSchema, productPanelSchema } from "./product-panels";
-import { panelObjectChangedEventSchema, panelSubscriptionSnapshotSchema } from "./product-subscriptions";
+import { definitionRevisionSchema, type ProductDefinitionRevision, type ProductDefinitionTarget } from "./product-subscriptions";
 import { workspaceDiffSchema, workspaceIdSchema } from "./workspaces";
 
 /*
@@ -63,6 +64,11 @@ export const panelFrameMessageSchema = z.discriminatedUnion("kind", [
   /** The instance's deep-linkable state, which the host keeps in the address. */
   z.object({ kind: z.literal("state"), fromAddress: z.string().min(1).max(4000), state: z.record(z.string(), panelStateValueSchema) }).strict(),
   /**
+   * The reader saved or discarded this linked draft. The host removes only its draft parameters if its current
+   * address still names that artifact; it reflects the resulting address through the normal address message.
+   */
+  z.object({ kind: z.literal("draft-settled"), draft: pageDraftLinkSchema }).strict(),
+  /**
    * The operations this instance offers, as the header and an agent list them. They are the panel's projections' and its
    * own declaration's; the frame runs one when the host asks it to.
    */
@@ -74,8 +80,6 @@ export const panelFrameMessageSchema = z.discriminatedUnion("kind", [
    * reloads over an answer of `true`: the form on screen is the reader's.
    */
   z.object({ kind: z.literal("dirty"), dirty: z.boolean() }).strict(),
-  /** The frame's answer to a panel definition change: nothing was unsaved, so the host may open it again. */
-  z.object({ kind: z.literal("reloaded"), reloaded: z.boolean() }).strict(),
   /**
    * The frame could not run its panel: a module the import map does not serve, a syntax error, or a component that threw
    * while mounting. The host shows it where the panel would have been — a frame that draws nothing and says nothing is
@@ -89,15 +93,8 @@ export type PanelFrameMessage = z.infer<typeof panelFrameMessageSchema>;
 export const panelHostFrameMessageSchema = z.discriminatedUnion("kind", [
   /** A link changed the address of this same instance. */
   z.object({ kind: z.literal("address"), address: z.string().min(1).max(4000) }).strict(),
-  panelObjectChangedEventSchema,
-  panelSubscriptionSnapshotSchema.pick({ projections: true }).extend({ kind: z.literal("reconnect") }),
-  /** The panel's own definition changed; the host has already decided it may be shown. */
-  z.object({ kind: z.literal("definition-changed"), panel: panelDefinitionContentSchema }).strict(),
-  /**
-   * One projection's definition changed, by ID. The instance reads that projection again and redraws it where it is
-   * used; a projection no slot of this panel names is not read at all.
-   */
-  z.object({ kind: z.literal("projection-changed"), projectionId: z.string().min(1).max(200) }).strict(),
+  z.object({ kind: z.literal("object-changed"), target: panelObjectIdentitySchema.nullable() }).strict(),
+  z.object({ kind: z.literal("projections-changed"), projections: z.array(definitionRevisionSchema) }).strict(),
   /**
    * A person clicked one of the instance's operations in the platform's header. The frame runs it with that person's
    * own credential; an agent's call never comes this way. `requestId` pairs the answer with this call alone.
@@ -105,6 +102,24 @@ export const panelHostFrameMessageSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("invoke"), requestId: z.string().min(1).max(100), id: z.string().min(1).max(300), input: z.record(z.string(), z.unknown()).optional() }).strict(),
 ]);
 export type PanelHostFrameMessage = z.infer<typeof panelHostFrameMessageSchema>;
+
+/** The author hosts in one document contribute targets to a single definition stream. */
+export interface PanelAuthorDefinitions {
+  observe(
+    targets: readonly ProductDefinitionTarget[],
+    onRevisions: (revisions: readonly ProductDefinitionRevision[]) => void,
+    onError: (error: unknown) => void,
+  ): {
+    replace(targets: readonly ProductDefinitionTarget[]): void;
+    close(): void;
+  };
+}
+
+export type PanelDefinitionMode = { kind: "view" } | { kind: "author"; definitions: PanelAuthorDefinitions };
+
+export interface PanelRefreshPort {
+  refresh(target: PanelObjectIdentity | null): void;
+}
 
 /** One message on the panel channel as it arrives: the channel's own key, and the message it carries. */
 export function panelMessageOf<T>(schema: { safeParse(value: unknown): { success: true; data: T } | { success: false } }, event: { data?: unknown }): T | null {

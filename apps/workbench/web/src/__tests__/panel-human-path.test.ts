@@ -2,9 +2,13 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, it, vi } from "vitest";
-import { h, ref } from "vue";
+import { h, nextTick, ref } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { PANEL_LOAD_ERROR_CODES, type PresentationFrame } from "@ontomato/contracts/agent-presentation";
+import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
+import type { ProductDefinitionStreamFrame, ProductDefinitionTarget } from "@ontomato/contracts/product-subscriptions";
+import { PanelHost } from "@ontomato/platform-shell";
+import { panelAuthorDefinitions, platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import type { PanelFrameMessage } from "@ontomato/contracts/panel-host";
 import { PANEL_HOST_CHANNEL, panelAddress } from "@ontomato/contracts/panel-host";
 import { useConversationDisplay } from "../../../../../packages/agent-shell-ui/src/conversation-display";
@@ -12,8 +16,8 @@ import { useApplicationCatalog } from "../../../../../packages/platform-web/src/
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { platformLayoutRoute } from "../../../../../packages/platform-web/src/layout-route";
 import {
-  hostMessageOf, idlePanelSubscription, inspectionTaskForm, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt,
-  panelHostFrame, panelRecord, panelUse, projections, READER, run, SCHEDULED_TASK, task, taskForm, writeFrameDocument,
+  hostMessageOf, inspectionTaskForm, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt,
+  panelHostFrame, panelRecord, panelSnapshot, panelUse, projections, READER, run, SCHEDULED_TASK, task, taskForm, writeFrameDocument,
   type Sent,
 } from "./panel-frame";
 
@@ -42,14 +46,14 @@ function answer(request: Sent) {
   } });
   const panel = [p, q].find(panel => request.path === `/api/product-panels/${panel.id}`);
   if (panel) return Response.json({ panel });
+  const snapshot = [p, q].find(panel => request.path === `/api/product-panels/${panel.id}/snapshot`);
+  if (snapshot) return panelSnapshot(snapshot);
   const projection = Object.values(projections).find(projection => request.path === `/api/product-projections/${projection.id}`);
   if (projection) return Response.json({ projection });
   if (request.path === "/api/apps-sdk/current") return Response.json({
     version: "1.1.1", publicBasePath: "/apps-sdk", sdkBasePath: "/apps-sdk/1.1.1",
     manifestPath: "/apps-sdk/1.1.1/sdk.json", docsPath: "/apps-sdk/1.1.1/docs", referencePath: "/apps-sdk/1.1.1/reference",
   });
-  if (request.path === "/api/product-assets/subscriptions") return idlePanelSubscription();
-  if (request.path === "/api/product-assets/subscriptions/subscription-1") return new Response(null, { status: 204 });
   if (request.path === taskPath) return Response.json({ tasks: [task], timeZone: task.timeZone });
   if (request.path === `${taskPath}/${task.id}`) return Response.json(task);
   if (request.path === `${taskPath}/${secondTask.id}`) return Response.json(secondTask);
@@ -98,6 +102,16 @@ it("opens the first visible use at its own URL when entering a panel application
     expect(hostMessageOf(frame.srcdoc).pageKey).toBe(useQ.pageKey);
     await vi.waitFor(() => expect(router.currentRoute.value.path).toBe(`/applications/${appB}/summary`));
     expect(sent.some(request => request.path.endsWith("/policy"))).toBe(false);
+  } finally {
+    app.unmount();
+  }
+});
+
+it("opens a viewing panel with a short snapshot and no definition stream", async () => {
+  const { app, sent } = await open(`/applications/${appB}/summary`);
+  try {
+    expect(sent.some(request => request.method === "GET" && request.path === `/api/product-panels/${q.id}/snapshot`)).toBe(true);
+    expect(sent.filter(request => request.path.startsWith("/api/product-assets/"))).toEqual([]);
   } finally {
     app.unmount();
   }
@@ -310,31 +324,37 @@ it.each([
   }
 });
 
-it.each([403, 404, 500])("reports HTTP %i when an open panel's record becomes unavailable", async status => {
+function visibility() {
+  const current = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  function set(value: "visible" | "hidden") {
+    current.mockReturnValue(value);
+    document.dispatchEvent(new Event("visibilitychange"));
+  }
+  set("visible");
+  return { set, reset: () => { set("visible"); current.mockRestore(); } };
+}
+
+it.each([403, 404, 500])("reports HTTP %i when the foreground snapshot is unavailable", async status => {
+  const foreground = visibility();
   const onDisplayLoaded = vi.fn();
-  let stream!: ReadableStreamDefaultController<Uint8Array>;
   let refused = false;
   const message = "The panel's owner refused this read";
   const { app, frame } = await open(`/applications/${appB}/summary`, false, request => {
-    if (request.path === "/api/product-assets/subscriptions") return new Response(new ReadableStream<Uint8Array>({
-      start(controller) { stream = controller; },
-    }), { headers: { "content-type": "text/event-stream" } });
-    if (refused && request.path === `/api/product-panels/${q.id}`) return Response.json({ error: { message } }, { status });
+    if (refused && request.path === `/api/product-panels/${q.id}/snapshot`) return Response.json({ error: { message } }, { status });
     return answer(request);
   }, { onDisplayLoaded });
   try {
     await startFrame(frame);
     await vi.waitFor(() => expect(onDisplayLoaded).toHaveBeenLastCalledWith({ status: "ready" }));
+    foreground.set("hidden");
     refused = true;
-    stream.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({
-      kind: "definition-changed", target: { kind: "panel", id: q.id }, domainId: "domain-a",
-    })}\n\n`));
+    foreground.set("visible");
     await vi.waitFor(() => expect(onDisplayLoaded).toHaveBeenLastCalledWith({
       status: "error", error: { code: PANEL_LOAD_ERROR_CODES.panelUnavailable, message: `HTTP ${status}: ${message}` },
     }));
   } finally {
     app.unmount();
-    stream.close();
+    foreground.reset();
   }
 });
 
@@ -566,26 +586,23 @@ it("opens the saved draft's old link as an ordinary panel", async () => {
   }
 });
 
-it("refreshes an open panel from the server stream and preserves a dirty form until discard", async () => {
+it("uses the conversation object signal to refresh only matching objects and preserves a dirty form until discard", async () => {
   let current = task;
-  let stream!: ReadableStreamDefaultController<Uint8Array>;
-  const encoder = new TextEncoder();
+  const refresh = ref<{ seq: number; target: PanelObjectIdentity | null } | null>(null);
   const address = `/applications/${appA}/tasks`;
   const onDisplayDirty = vi.fn();
   const { app, element, frame, router, sent } = await open(panelAddress(address, deepState), false, request => {
-    if (request.path === "/api/product-assets/subscriptions") return new Response(new ReadableStream<Uint8Array>({
-      start(controller) { stream = controller; },
-    }), { headers: { "content-type": "text/event-stream" } });
     if (request.path === `${taskPath}/${task.id}`) return Response.json(current);
     if (request.path === `${taskPath}/applications/${task.appId}/form`) {
       return taskFormFor((request.body as { values: typeof taskForm.values }).values);
     }
     return answer(request);
-  }, { onDisplayDirty });
+  }, { onDisplayDirty, get objectRefresh() { return refresh.value; } });
   const formReads = () => sent.filter(request => request.path.endsWith("/form"));
   const dataReads = () => sent.filter(request => request.path === `${taskPath}/${task.id}`);
-  const notify = (objectType = SCHEDULED_TASK, primaryKey = task.id) =>
-    stream.enqueue(encoder.encode(`data: ${JSON.stringify({ kind: "object-changed", target: { objectType, primaryKey } })}\n\n`));
+  const notify = (target: PanelObjectIdentity | null) => {
+    refresh.value = { seq: (refresh.value?.seq ?? 0) + 1, target };
+  };
   try {
     const { context } = await startFrame(frame);
     await vi.waitFor(() => {
@@ -596,9 +613,11 @@ it("refreshes an open panel from the server stream and preserves a dirty form un
     const before = dataReads().length;
     current = { ...current, revision: current.revision + 1, content: { ...current.content, caseSetId: "agent-cases" },
       summary: [{ key: "instruction", label: "Instruction", value: "Agent changed saved data" }] };
-    notify("platform:Other");
-    notify(SCHEDULED_TASK, secondTask.id);
-    notify();
+    notify({ objectType: "platform:Other", primaryKey: task.id });
+    await nextTick();
+    notify({ objectType: SCHEDULED_TASK, primaryKey: secondTask.id });
+    await nextTick();
+    notify({ objectType: SCHEDULED_TASK, primaryKey: task.id });
     await vi.waitFor(() => {
       expect(document.querySelector(".sdk-object-summary")?.textContent).toContain("Agent changed saved data");
       expect(formReads().at(-1)?.body).toMatchObject({ values: current.content });
@@ -611,7 +630,7 @@ it("refreshes an open panel from the server stream and preserves a dirty form un
     const editing = formReads().length;
     current = { ...current, revision: current.revision + 1, content: { ...current.content, caseSetId: "agent-later" },
       summary: [{ key: "instruction", label: "Instruction", value: "Agent changed it again" }] };
-    notify();
+    notify(null);
     await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary")?.textContent).toContain("Agent changed it again"));
     expect(formReads()).toHaveLength(editing);
     expect(context.instance.dirty()).toBe(true);
@@ -625,41 +644,30 @@ it("refreshes an open panel from the server stream and preserves a dirty form un
     expect(context.instance.dirty()).toBe(false);
     await vi.waitFor(() => expect(onDisplayDirty).toHaveBeenLastCalledWith(false));
     expect(sent.filter(request => request.path.startsWith("/api/product-projections/"))).toHaveLength(definitions);
-    expect(sent.filter(request => request.path === "/api/product-assets/subscriptions")).toHaveLength(1);
+    expect(sent.filter(request => request.path.startsWith("/api/product-assets/"))).toEqual([]);
     expect(element.querySelector("iframe.panel-host-frame")).toBe(frame);
   } finally {
     app.unmount();
-    stream.close();
   }
 });
 
-it("reconnects after EOF, reconciles missed changes, and stops on unmount", async () => {
+it("reconciles definitions and objects on foreground without replacing an unchanged panel", async () => {
+  const foreground = visibility();
   let current = task;
   let panel = p;
   let summary = projections["projection-schedules-summary"]!;
-  const streams: ReadableStreamDefaultController<Uint8Array>[] = [];
-  const encoder = new TextEncoder();
   const { app, element, frame, sent } = await open(panelAddress(`/applications/${appA}/tasks`, deepState), false, request => {
-    if (request.path === "/api/product-assets/subscriptions") return new Response(new ReadableStream<Uint8Array>({
-      start(controller) { streams.push(controller); },
-    }), { headers: { "content-type": "text/event-stream" } });
     if (request.path === `/api/product-panels/${panel.id}`) return Response.json({ panel });
+    if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel, { ...projections, [summary.id]: summary });
     if (request.path === `/api/product-projections/${summary.id}`) return Response.json({ projection: summary });
     if (request.path === `${taskPath}/${task.id}`) return Response.json(current);
     if (request.path === `${taskPath}/applications/${task.appId}/form`)
       return taskFormFor((request.body as { values: typeof taskForm.values }).values);
     return answer(request);
   });
-  const definitionReads = () => sent.filter(request => /\/api\/product-(panels|projections)\//.test(request.path));
+  const definitionReads = () => sent.filter(request => /\/api\/product-(panels|projections)\//.test(request.path) && !request.path.endsWith("/snapshot"));
   const formReads = () => sent.filter(request => request.path.endsWith("/form"));
-  const snapshot = (stream: ReadableStreamDefaultController<Uint8Array>) => stream.enqueue(encoder.encode(`data: ${JSON.stringify({
-    kind: "snapshot", panel: { id: panel.id, revision: panel.revision },
-    projections: Object.values(projections).map(projection => ({
-      id: projection.id, revision: projection.id === summary.id ? summary.revision : projection.revision,
-    })),
-  })}\n\n`));
   try {
-    snapshot(streams[0]!);
     await startFrame(frame);
     await vi.waitFor(() => {
       expect(document.querySelector(".sdk-object-summary-title")?.textContent).toBe(task.title);
@@ -667,39 +675,135 @@ it("reconnects after EOF, reconciles missed changes, and stops on unmount", asyn
     });
     const initialDefinitions = definitionReads().length;
     const initialForms = formReads().length;
-    streams[0]!.close();
-    summary = { ...summary, revision: summary.revision + 1, display: { fields: ["settings"] } };
+    const srcdoc = frame.srcdoc;
+    foreground.set("hidden");
     current = { ...current, revision: current.revision + 1, content: { ...current.content, caseSetId: "agent-cases" },
-      summary: [{ key: "instruction", label: "Instruction", value: "Changed while disconnected" }] };
-
-    await vi.waitFor(() => expect(streams).toHaveLength(2));
-    snapshot(streams[1]!);
+      summary: [{ key: "instruction", label: "Instruction", value: "Changed while hidden" }] };
+    foreground.set("visible");
     await vi.waitFor(() => {
-      expect(document.querySelector(".sdk-object-summary")?.textContent).toContain("Changed while disconnected");
-      expect(document.querySelector(".sdk-object-summary dt")?.textContent).toBe("settings");
+      expect(document.querySelector(".sdk-object-summary")?.textContent).toContain("Changed while hidden");
       expect(formReads().at(-1)?.body).toMatchObject({ values: current.content });
     });
     expect(formReads()).toHaveLength(initialForms + 1);
+    expect(definitionReads().slice(initialDefinitions)).toEqual([]);
+    expect(frame.srcdoc).toBe(srcdoc);
+
+    foreground.set("hidden");
+    summary = { ...summary, revision: summary.revision + 1, display: { fields: ["settings"] } };
+    foreground.set("visible");
+    await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary dt")?.textContent).toBe("settings"));
     expect(definitionReads().slice(initialDefinitions).map(request => request.path)).toEqual([
       `/api/product-projections/${summary.id}`,
     ]);
     expect(element.querySelector("iframe.panel-host-frame")).toBe(frame);
-    expect(sent.filter(request => request.path === `${taskPath}/${task.id}`)).toHaveLength(4);
 
+    foreground.set("hidden");
     panel = { ...p, revision: p.revision + 1 };
-    streams[1]!.close();
-    await vi.waitFor(() => expect(streams).toHaveLength(3));
-    snapshot(streams[2]!);
+    foreground.set("visible");
     await vi.waitFor(() => expect(hostMessageOf(frame.srcdoc).panel.revision).toBe(panel.revision));
-    expect(definitionReads().slice(initialDefinitions).map(request => request.path)).toEqual([
-      `/api/product-projections/${summary.id}`, `/api/product-panels/${panel.id}`,
-    ]);
+    expect(sent.filter(request => request.path.startsWith("/api/product-assets/"))).toEqual([]);
   } finally {
     app.unmount();
-    if (streams.length > 1) streams.at(-1)!.close();
+    foreground.reset();
   }
-  await new Promise(resolve => setTimeout(resolve, 0));
-  expect(streams).toHaveLength(3);
+});
+
+it("shares one definition stream across author panels, restores a changed collection, and observes a projection-only candidate", async () => {
+  const foreground = visibility();
+  const author = panelAuthorDefinitions();
+  const mode = { kind: "author", definitions: author } as const;
+  const showP = ref(true);
+  let summary = projections["projection-schedules-summary"]!;
+  const streams: { targets: ProductDefinitionTarget[]; body: ReadableStreamDefaultController<Uint8Array> }[] = [];
+  const openBodies = new Set<ReadableStreamDefaultController<Uint8Array>>();
+  installPlatform(request => {
+    if (request.path === "/api/product-assets/definition-stream") {
+      let body!: ReadableStreamDefaultController<Uint8Array>;
+      return new Response(new ReadableStream<Uint8Array>({
+        start(controller) {
+          body = controller;
+          openBodies.add(body);
+          streams.push({ targets: (request.body as { targets: ProductDefinitionTarget[] }).targets, body });
+        },
+        cancel() { openBodies.delete(body); },
+      }), { headers: { "content-type": "text/event-stream" } });
+    }
+    if (request.path === `/api/product-projections/${summary.id}`) return Response.json({ projection: summary });
+    return answer(request);
+  });
+  function send(stream: number, payload: ProductDefinitionStreamFrame) {
+    streams[stream]!.body.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`));
+  }
+  const signals = () => vi.mocked(fetch).mock.calls
+    .filter(([url]) => String(url).endsWith("/definition-stream")).map(([, init]) => init!.signal!);
+  const labels = {
+    useMissing: (id: string) => id,
+    notStarted: "Panel has not started",
+    failures: { fileUnavailable: "File unavailable", scriptThrew: "Script threw", scriptRejected: "Script rejected" },
+  };
+  const portA = platformPanelHost(appA, mode);
+  const portB = platformPanelHost(appB, mode);
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/", component: { render: () => null } }] });
+  await router.push("/");
+  const page = mountPlatformPage(() => h("main", [
+    showP.value ? h(PanelHost, { key: "p", port: portA, useId: useP.id, address: "/tasks", labels }) : null,
+    h(PanelHost, { key: "q", port: portB, useId: useQ.id, address: "/summary", labels, initial: deepState }),
+  ]), router);
+  try {
+    await vi.waitFor(() => expect(streams.at(-1)?.targets).toEqual(expect.arrayContaining([
+      { kind: "panel", id: p.id }, { kind: "panel", id: q.id }, { kind: "projection", id: summary.id },
+    ])));
+    expect(signals().filter(signal => !signal.aborted)).toHaveLength(1);
+    const fullCollection = streams.length - 1;
+    expect(streams[fullCollection]!.targets.filter(({ id }) => id === summary.id)).toHaveLength(1);
+    const frameQ = await vi.waitFor(() => {
+      const frames = page.element.querySelectorAll<HTMLIFrameElement>("iframe");
+      expect(frames).toHaveLength(2);
+      return frames[1]!;
+    });
+    await startFrame(frameQ);
+    await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary-title")?.textContent).toBe(task.title));
+
+    showP.value = false;
+    await vi.waitFor(() => expect(streams.at(-1)?.targets).toEqual([
+      { kind: "panel", id: q.id }, { kind: "projection", id: summary.id },
+    ]));
+    const reduced = streams.length - 1;
+    expect(signals()[fullCollection]!.aborted).toBe(true);
+    expect(signals().filter(signal => !signal.aborted)).toHaveLength(1);
+
+    // The shared projection changed while the old request closed and the reduced collection opened.
+    const previous = summary;
+    summary = { ...summary, revision: summary.revision + 1, display: { fields: ["settings"] } };
+    send(reduced, { kind: "snapshot", definitions: [{ kind: "projection", id: summary.id, revision: summary.revision }] });
+    await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary dt")?.textContent).toBe("settings"));
+    send(reduced, { kind: "definition-changed", definition: { kind: "projection", id: summary.id, revision: previous.revision } });
+
+    foreground.set("hidden");
+    expect(signals().filter(signal => !signal.aborted)).toHaveLength(0);
+    foreground.set("visible");
+    expect(signals().filter(signal => !signal.aborted)).toHaveLength(1);
+  } finally {
+    page.app.unmount();
+  }
+
+  const revisions = vi.fn();
+  const candidate = author.observe([{ kind: "projection", id: summary.id }], revisions, error => { throw error; });
+  try {
+    expect(streams.at(-1)?.targets).toEqual([{ kind: "projection", id: summary.id }]);
+    expect(signals().filter(signal => !signal.aborted)).toHaveLength(1);
+    const revision = { kind: "projection", id: summary.id, revision: summary.revision + 1 } as const;
+    send(streams.length - 1, { kind: "definition-changed", definition: revision });
+    send(streams.length - 1, {
+      kind: "snapshot", definitions: [{ ...revision, revision: summary.revision }],
+    });
+    await vi.waitFor(() => expect(revisions.mock.calls).toEqual([[[revision]]]));
+  } finally {
+    candidate.close();
+    foreground.reset();
+    for (const body of openBodies) body.close();
+  }
+  expect(signals().filter(signal => !signal.aborted)).toHaveLength(0);
 });
 
 it.each([true, false])("resolves a panel draft through the bridge with created=%s", async created => {

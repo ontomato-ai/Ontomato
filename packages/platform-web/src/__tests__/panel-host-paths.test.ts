@@ -3,7 +3,6 @@ import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import { installWorkbenchI18n } from "@ontomato/workbench-ui/i18n";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import en from "element-plus/es/locale/lang/en";
-import { ElMessage } from "element-plus";
 import { panelHostPaths } from "../panel-host";
 
 /*
@@ -37,14 +36,17 @@ installWorkbenchI18n({
 
 const requested: { method: string; url: string }[] = [];
 let subscriptionSignal: AbortSignal | undefined;
+const target = { kind: "panel", id: "panel-a" } as const;
 
 beforeEach(() => {
   requested.length = 0;
   subscriptionSignal = undefined;
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  document.dispatchEvent(new Event("visibilitychange"));
   vi.stubGlobal("fetch", async (input: string | URL, init?: { method?: string; signal?: AbortSignal }) => {
     const url = String(input);
     requested.push({ method: init?.method ?? "GET", url: new URL(url, "http://localhost").pathname + new URL(url, "http://localhost").search });
-    if (url.includes("/subscriptions")) {
+    if (url.includes("/definition-stream")) {
       subscriptionSignal = init?.signal;
       return new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } });
     }
@@ -52,13 +54,14 @@ beforeEach(() => {
         ? { version: "1.1.0", publicBasePath: "/apps-sdk", sdkBasePath: "/apps-sdk/1.1.0", manifestPath: "", docsPath: "", referencePath: "" }
         : url.includes("/panel-uses")
           ? { data: { applicationId: "app-a", entry: { path: "/tasks", renderer: "panels" }, panelUses: [] } }
-          : { panel: null };
+          : url.endsWith("/snapshot") ? { panel: { id: "panel-a", revision: 1 }, projections: [] } : { panel: null };
     return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
   });
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("the panel host's addresses", () => {
@@ -72,51 +75,52 @@ describe("the panel host's addresses", () => {
 
   it("asks Node for panels, projections and subscriptions under /api", () => {
     expect(panelHostPaths.panel("panel-a")).toBe("/api/product-panels/panel-a");
-    expect(panelHostPaths.subscriptions).toBe("/api/product-assets/subscriptions");
+    expect(panelHostPaths.definitionStream).toBe("/api/product-assets/definition-stream");
   });
 
   it("sends each read to the address its owner serves", async () => {
-    const { platformPanelHost, panelUsesOf } = await import("../panel-host");
+    const { panelAuthorDefinitions, platformPanelHost, panelUsesOf } = await import("../panel-host");
     const port = platformPanelHost("app-a");
     await panelUsesOf("app-a");
     // The record's contents are the stand-in's business, not this test's: what it asserts is the address each read went
     // to. A read that refuses is as good an observation as one that answers.
     await port.panel("panel-a").catch(() => {});
     await port.sdkBase();
-    const stop = port.subscribe("panel-a", () => {}, async () => {});
-    await vi.waitFor(() => expect(requested.length).toBe(4));
+    await port.snapshot("panel-a");
+    const observer = panelAuthorDefinitions().observe([target], () => {}, error => { throw error; });
+    await vi.waitFor(() => expect(requested.length).toBe(5));
     expect(requested.map((one) => `${one.method} ${one.url}`)).toEqual([
       "GET /api/data-query/platform/applications/app-a/panel-uses",
       "GET /api/product-panels/panel-a",
       "GET /api/apps-sdk/current",
-      "POST /api/product-assets/subscriptions",
+      "GET /api/product-panels/panel-a/snapshot",
+      "POST /api/product-assets/definition-stream",
     ]);
-    stop();
+    observer.close();
     expect(subscriptionSignal?.aborted).toBe(true);
-    expect(requested).toHaveLength(4);
+    expect(requested).toHaveLength(5);
   });
 });
 
 it.each([403, 404, "bad-frame"] as const)("reports %s and stops instead of reopening the subscription", async refusal => {
-  const message = vi.spyOn(ElMessage, "error").mockImplementation(() => ({ close() {} }));
+  const onError = vi.fn();
   const request = vi.fn(async () => refusal === "bad-frame"
     ? new Response("data: {}\n\n", { headers: { "Content-Type": "text/event-stream" } })
     : Response.json({ error: { message: "Panel unavailable" } }, { status: refusal }));
   vi.stubGlobal("fetch", request);
-  const { platformPanelHost } = await import("../panel-host");
-  const stop = platformPanelHost("app-a").subscribe("panel-a", () => {}, async () => {});
+  const { panelAuthorDefinitions } = await import("../panel-host");
+  const observer = panelAuthorDefinitions().observe([target], () => {}, onError);
   try {
-    await vi.waitFor(() => expect(message).toHaveBeenCalledWith(
-      refusal === "bad-frame" ? "Panel subscription frame broke the contract" : "Panel unavailable"));
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message:
+      refusal === "bad-frame" ? "Product definition stream frame broke the contract" : "Panel unavailable" })));
     expect(request).toHaveBeenCalledTimes(1);
   } finally {
-    stop();
-    message.mockRestore();
+    observer.close();
   }
 });
 
 it("backs off consecutive failures, resets on a snapshot, and cancels a pending reconnect", async () => {
-  const snapshot = { kind: "snapshot", panel: { id: "panel-a", revision: 1 }, projections: [] };
+  const snapshot = { kind: "snapshot", definitions: [{ ...target, revision: 1 }] };
   const headers = { "Content-Type": "text/event-stream" };
   const request = vi.fn()
     .mockResolvedValueOnce(new Response(null, { status: 503 }))
@@ -125,10 +129,10 @@ it("backs off consecutive failures, resets on a snapshot, and cancels a pending 
     .mockResolvedValueOnce(new Response(null, { status: 429 }))
     .mockImplementation(async () => new Response(new ReadableStream(), { headers }));
   vi.stubGlobal("fetch", request);
-  const { platformPanelHost } = await import("../panel-host");
-  const recover = vi.fn(async () => {});
+  const { panelAuthorDefinitions } = await import("../panel-host");
+  const onRevision = vi.fn();
   vi.useFakeTimers();
-  const stop = platformPanelHost("app-a").subscribe("panel-a", () => {}, recover);
+  const observer = panelAuthorDefinitions().observe([target], onRevision, error => { throw error; });
   try {
     await vi.advanceTimersByTimeAsync(499);
     expect(request).toHaveBeenCalledTimes(1);
@@ -139,7 +143,7 @@ it("backs off consecutive failures, resets on a snapshot, and cancels a pending 
     expect(request).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(1);
     expect(request).toHaveBeenCalledTimes(3);
-    expect(recover).toHaveBeenCalledWith(snapshot);
+    expect(onRevision).toHaveBeenCalledWith(snapshot.definitions);
 
     await vi.advanceTimersByTimeAsync(499);
     expect(request).toHaveBeenCalledTimes(3);
@@ -147,12 +151,12 @@ it("backs off consecutive failures, resets on a snapshot, and cancels a pending 
     expect(request).toHaveBeenCalledTimes(4);
     expect(vi.getTimerCount()).toBe(1);
 
-    stop();
+    observer.close();
     expect(vi.getTimerCount()).toBe(0);
     await vi.advanceTimersByTimeAsync(10_000);
     expect(request).toHaveBeenCalledTimes(4);
   } finally {
-    stop();
+    observer.close();
     vi.useRealTimers();
   }
 });

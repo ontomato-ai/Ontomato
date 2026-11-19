@@ -311,8 +311,12 @@ export function leaveFrame() {
   document.body.innerHTML = "";
 }
 
-export function idlePanelSubscription() {
-  return new Response(new ReadableStream<Uint8Array>(), { headers: { "Content-Type": "text/event-stream" } });
+export function panelSnapshot(panel: ProductPanel, current = projections) {
+  const ids = new Set(Object.values(panel.manifest.slots).map(slot => slot.projectionId));
+  return Response.json({
+    panel: { id: panel.id, revision: panel.revision },
+    projections: [...ids].map(id => ({ id, revision: current[id]!.revision })),
+  });
 }
 
 /**
@@ -361,8 +365,7 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
         docsPath: "/apps-sdk/1.1.0/docs",
         referencePath: "/apps-sdk/1.1.0/reference",
       });
-    if (request.path === "/api/product-assets/subscriptions") return idlePanelSubscription();
-    if (request.path === "/api/product-assets/subscriptions/subscription-1") return new Response(null, { status: 204 });
+    if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel);
     if (request.path === `/api/product-projections/${formProjection.id}`)
       return served.then(() => Response.json({ projection: formProjection }));
     if (request.path === `/api/data-query/platform/scheduled-tasks/${task.id}`) return Response.json(task);

@@ -37,6 +37,7 @@ export {
   type ConversationDisplay,
   type ConversationDisplayHost,
   type DisplayHistory,
+  type DisplayObjectRefresh,
   type DisplayPage,
   type DisplayTarget,
   type DisplayView,

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   agentHostSendRequestSchema,
+  agentHostSessionLiveFrameSchema,
   agentHostSessionRunEventsQuerySchema,
   agentHostSessionRunFrameSchema,
 } from "./agent-host";
@@ -18,7 +19,7 @@ import {
 const id = "a40cfd44-e82c-40f1-8f07-2c1591622381";
 const address = "/applications/scheduling/tasks";
 const state = { selectedTask: { className: "platform:ScheduledTask", primaryKey: "task-1" } };
-const presentationBinding = { connectionId: id };
+const presentationBinding = { viewId: id };
 
 test("present accepts only workspace outputs or a site-relative page and rejects conflicting state", () => {
   assert.deepEqual(presentRequestSchema.parse({ target: "outputs/result.dataset.json" }), {
@@ -39,18 +40,19 @@ test("present accepts only workspace outputs or a site-relative page and rejects
   ]) assert.equal(presentRequestSchema.safeParse(invalid).success, false, JSON.stringify(invalid));
 });
 
-test("display binding is issued on stream ready and only its connection ID is sent on the run request", () => {
-  assert.deepEqual(agentHostSessionRunEventsQuerySchema.parse({ presentation: "true" }), { presentation: "true" });
+test("run requests carry the view identity and ready identifies a particular connection", () => {
+  assert.deepEqual(agentHostSessionRunEventsQuerySchema.parse(presentationBinding), presentationBinding);
+  assert.equal(agentHostSessionRunEventsQuerySchema.safeParse({ presentation: "true" }).success, false);
   assert.deepEqual(agentHostSessionRunFrameSchema.parse({ type: "ready" }), { type: "ready" });
-  assert.deepEqual(agentHostSessionRunFrameSchema.parse({ type: "ready", presentationBinding }), {
-    type: "ready", presentationBinding,
+  assert.deepEqual(agentHostSessionRunFrameSchema.parse({ type: "ready", connectionId: id }), {
+    type: "ready", connectionId: id,
   });
   assert.deepEqual(agentHostSendRequestSchema.parse({ message: "Show the page", presentationBinding }), {
     message: "Show the page", presentationBinding,
   });
   assert.equal(agentHostSendRequestSchema.safeParse({ message: "Show the page", presentationBinding: id }).success, false);
   assert.equal(agentHostSendRequestSchema.safeParse({
-    message: "Show the page", presentationBinding: { connectionId: id, actor: id },
+    message: "Show the page", presentationBinding: { connectionId: id },
   }).success, false);
 });
 
@@ -67,6 +69,16 @@ test("a live display request is distinct from a lifecycle notice, and navigation
     assert.deepEqual(displayPageAddressInputSchema.parse(input), input);
   }
   assert.equal(displayPageAddressInputSchema.safeParse({ kind: "address", address }).success, false);
+});
+
+test("object invalidations are live frames with a root session and object identity", () => {
+  const change = {
+    type: "object-changed", session: { providerId: "workbench", sessionId: id },
+    target: { objectType: "platform:ScheduledTask", primaryKey: "task-1" },
+  };
+  assert.deepEqual(agentHostSessionLiveFrameSchema.parse(change), change);
+  assert.equal(agentHostSessionRunFrameSchema.safeParse(change).success, false);
+  assert.equal(agentHostSessionLiveFrameSchema.safeParse({ ...change, target: { ...change.target, data: {} } }).success, false);
 });
 
 test("a receipt reports an observed outcome, keeping an empty view distinct from a missing observation", () => {

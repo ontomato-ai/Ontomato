@@ -68,8 +68,7 @@ describe("a draft at a panel application's own address", () => {
     });
     expect(document.querySelector('[data-field="/caseSetId"]')?.textContent).toContain("Smoke (8)");
     expect(sent.filter((request) => request.method === "PUT")).toEqual([]);
-    expect(sent.filter((request) => request.method === "POST" && request.path === "/api/product-assets/subscriptions"))
-      .toMatchObject([{ body: { kind: "product-definition", target: { kind: "panel", id: scenario.panel.id } } }]);
+    expect(sent.filter(request => request.path.startsWith("/api/product-assets/"))).toEqual([]);
     const form = document.querySelector<HTMLFormElement>(".sdk-owner-form form")!;
     // The frame is sandboxed without allow-forms, so the save is the button's own click, not a form submission.
     const save = [...form.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Save")!;

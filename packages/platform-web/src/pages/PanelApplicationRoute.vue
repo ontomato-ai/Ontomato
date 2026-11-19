@@ -3,9 +3,10 @@ import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { PanelHost, type PanelHostLabels } from "@ontomato/platform-shell";
-import { panelAddress, panelAddressState, panelUsePath } from "@ontomato/contracts/panel-host";
+import { panelAddress, panelAddressState, panelUsePath, type PanelRefreshPort } from "@ontomato/contracts/panel-host";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
+import type { DisplayObjectRefresh } from "@ontomato/agent-shell-ui";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import { panelUsesOf, platformPanelHost } from "../panel-host";
 
@@ -36,6 +37,7 @@ const props = defineProps<{
    * full, the router's address is the page's.
    */
   address?: string;
+  objectRefresh?: DisplayObjectRefresh | null;
 }>();
 const emit = defineEmits<{
   /** What the reader looks at in the panel, as its instance reports it: what a message written beside it carries. */
@@ -50,6 +52,10 @@ const router = useRouter();
 const { t, locale } = useI18n();
 /** The application's use relations, once Java has answered; until then the page names none and says nothing. */
 const uses = ref<readonly ApplicationPanelUse[] | null>(null);
+const host = ref<PanelRefreshPort | null>(null);
+watch(() => props.objectRefresh?.seq, () => {
+  if (props.objectRefresh) host.value?.refresh(props.objectRefresh.target);
+}, { flush: "post" });
 const failure = ref("");
 const port = computed(() => platformPanelHost(props.applicationId));
 
@@ -143,6 +149,7 @@ function reportContext(context: PageContext) {
   <PanelHost
     v-else-if="use"
     :key="key"
+    ref="host"
     :port="port"
     :labels="labels"
     :use-id="use.id"

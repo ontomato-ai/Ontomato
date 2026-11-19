@@ -9,7 +9,13 @@ import { context, wrap } from "../utils/agent-host";
 import { platformService } from "../middleware/platform-service";
 import { readCurrentPanel, readCurrentProjection, requireCurrentPanels, saveCurrentPanel, saveCurrentProjection } from "../../services/product-panels/current";
 
+import { requirePanelDefinitions } from "../../services/product-assets/subscriptions";
+
 export const productPanelsRouter = Router();
+productPanelsRouter.get("/:id/snapshot", wrap(async (req, res) => {
+  const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
+  res.json(await requirePanelDefinitions(c.owner, c.credentials, id));
+}));
 productPanelsRouter.get("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
   res.json({ panel: await readCurrentPanel(c.owner, c.credentials, id) });

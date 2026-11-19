@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AGENT_DEFINITION, MCP_SERVICE_OPTION, OBJECT_TYPE, RELATIONSHIP, USER, bindingKey, clientSends, panelClientReads } from "./panel-client-requests";
-import { candidatePanelSourceSchema, panelUsePath } from "./panel-host";
+import { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, OBJECT_TYPE, RELATIONSHIP, USER, bindingKey, clientSends, panelClientReads } from "./panel-client-requests";
+import { candidatePanelSourceSchema, panelFrameMessageSchema, panelUsePath } from "./panel-host";
 import { panelManifestSchema } from "./panel-manifest";
 import { panelFormSaveInputSchema, projectionBindingKeys, projectionOperations, projectionPorts } from "./panel-projection";
 import { applicationPanelUsePathSchema, productPanelContentSchema, productProjectionInputSchema } from "./product-panels";
@@ -83,6 +83,20 @@ test("canonical relation paths are already routable and carry no view state", ()
     assert.equal(applicationPanelUsePathSchema.safeParse(path).success, false);
 });
 
+test("a frame settles a particular draft artifact without proposing an address", () => {
+  const settled = {
+    kind: "draft-settled",
+    draft: {
+      sessionId: "5931a639-a70d-4dae-96db-6b8a4460d228",
+      runId: "6a0c53c8-d21c-48cd-861e-5102be9e297b",
+      path: "outputs/drafts/agent.page-draft.json",
+    },
+  };
+  assert.deepEqual(panelFrameMessageSchema.parse(settled), settled);
+  assert.equal(panelFrameMessageSchema.safeParse({ ...settled, address: "/agents/settings" }).success, false);
+  assert.equal(panelFrameMessageSchema.safeParse({ ...settled, draft: { ...settled.draft, path: "outputs/report.md" } }).success, false);
+});
+
 test("candidate source needs only workspace identity, content and build-test context", () => {
   const candidate = {
     kind: "candidate",
@@ -105,7 +119,8 @@ test("bridge and skill agree about the specific semantic reads", () => {
   assert.ok(!clientSends([agents], "DELETE", "", "/assistant/agent-definitions/form"));
   assert.ok(clientSends([binding(MCP_SERVICE_OPTION)], "GET", "", "/mcp/services/names"));
   assert.ok(!clientSends([binding(MCP_SERVICE_OPTION)], "GET", "", "/mcp/services"));
-  assert.ok(clientSends([binding(OBJECT_TYPE)], "POST", "/data-query", "/admin/getMetas"));
+  for (const type of [OBJECT_TYPE, ATTRIBUTE, RELATIONSHIP])
+    assert.ok(clientSends([binding(type)], "POST", "/data-query", "/admin/getMetas"));
   assert.ok(!clientSends([binding(OBJECT_TYPE)], "POST", "/data-query", "/admin/getschemamarkdown"));
   assert.ok(clientSends([binding(USER)], "GET", "/data-query", "/platform/agent-execution/options?selected=u"));
 });
