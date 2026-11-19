@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
 
 @Service
 public class ApplicationCatalog {
+    public static final String DOMAIN_MEMBER_ENTRY = "domain-member";
     private record PanelSkillGroup(PageSkills.Mapping mapping, PanelSkills.Source source) {}
     public record Group(String key, Map<String,String> names, int sort) {}
     public record Permission(String code, Map<String,String> names, String groupKey, int sort) {}
@@ -182,7 +183,7 @@ public class ApplicationCatalog {
         if(!List.of("hosted","connected","product").contains(kind))throw bad("Invalid user application kind");
         if (!id.startsWith("app-") || user.getDomainId() == null) throw bad("A user application requires an app- ID and domain");
         for (var permission : declaration.permissions())
-            if (!permission.code().startsWith("app:" + id + ":")) throw bad("Application permission prefix required");
+            if (!permission.code().startsWith(permissionPrefix(id))) throw bad("Application permission prefix required");
         return transactions.execute(tx -> {
             lockCatalog();
             var old = all().stream().filter(a -> id.equals(a.getString("id"))).findFirst();
@@ -195,7 +196,7 @@ public class ApplicationCatalog {
             String owner = old.isEmpty() ? user.getId() : old.get().getString("ownerUserId");
             String path=kind.equals("product")?"/products/"+id+"?applicationId="+id:"/apps/"+id+"/";
             save(id, user.getDomainId(), List.of("hosted","product").contains(kind) ? "workbench" : "data-engine", owner, kind, "apps", "business", 100,
-                JSONObject.of("path",path), List.of("app:" + id + ":entry"), null, releaseId, declaration);
+                JSONObject.of("path",path), List.of(permissionPrefix(id) + "entry"), null, releaseId, declaration);
             var application = require(id);
             access.declare(application, declaration, old.isEmpty());
             return JSONObject.of("applicationId", id, "releaseId", releaseId, "entryPath",path);
@@ -329,9 +330,8 @@ public class ApplicationCatalog {
         if (supplied != null && (!supplied.pageSkills().isEmpty() || !supplied.panelUses().isEmpty())) throw bad("Supply panelUses only once");
         if (supplied != null) {
             validate(supplied);
-            for (var permission : supplied.permissions()) if (!permission.code().startsWith("app:" + id + ":")) throw bad("Application permission prefix required");
+            for (var permission : supplied.permissions()) if (!permission.code().startsWith(permissionPrefix(id))) throw bad("Application permission prefix required");
         }
-        if (body.entryAccess() != null && body.entryAccess().isEmpty()) throw bad("Entry access is required");
         var ids = uses.stream().map(ApplicationPanelUse::panelId).distinct().toList();
         for (var panelId : ids) if (!grants.allowed(panelId, "use")) throw denied();
         panels.requireCurrent(user.getDomainId(), ids);
@@ -343,9 +343,11 @@ public class ApplicationCatalog {
             if (current.isPresent() && (!inDomain(current.get(), user) || !access.canMaintain(current.get(), user))) throw denied();
             var old = current.orElse(null);
             if (old == null && (supplied == null || body.entryAccess() == null)) throw bad("New applications require metadata and entry access");
+            var entryAccess = body.entryAccess() == null ? old.getList("entryAccess", String.class) : body.entryAccess();
+            if (entryAccess.size() != 1 || !(DOMAIN_MEMBER_ENTRY.equals(entryAccess.getFirst()) || ownsPermissionCode(id, entryAccess.getFirst())))
+                throw bad("Entry access must be domain-member or one permission of this application");
             var entry = JSONObject.of("path", entryPath, "renderer", "panels");
             validateMappings(id, user.getDomainId(), entry, List.of(), uses);
-            var entryAccess = body.entryAccess() == null ? old.getList("entryAccess", String.class) : body.entryAccess();
             if (old != null && supplied == null) {
                 db.update("UPDATE sys_application SET entry=?::jsonb,entry_path=?,entry_access=?::jsonb,panel_uses=?::jsonb,page_skills='[]'::jsonb,updated_at=now() WHERE id=?",
                     entry.toJSONString(), entryPath, JSON.toJSONString(entryAccess), JSON.toJSONString(uses), id);
@@ -359,6 +361,13 @@ public class ApplicationCatalog {
             return JSONObject.of("applicationId", id, "entry", entry, "panelUses", uses);
         });
     }
+    public static String permissionPrefix(String applicationId) { return "app:" + applicationId + ":"; }
+
+    public static boolean ownsPermissionCode(String applicationId, String code) {
+        var prefix = permissionPrefix(applicationId);
+        return code != null && code.length() > prefix.length() && code.startsWith(prefix);
+    }
+
     private static String assignedPanelRoot(String id) { return "/applications/" + id; }
     /** Below /applications/ only domain applications live; the bare /applications stays the built-in gallery's entry. */
     private static boolean inAssignedSpace(String path) { return path.startsWith("/applications/"); }
