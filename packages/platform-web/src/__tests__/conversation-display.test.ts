@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import ElementPlus from "element-plus";
-import { defineComponent, h, ref } from "vue";
+import { defineComponent, h, ref, type PropType } from "vue";
 import { createPinia, setActivePinia } from "pinia";
 import { createMemoryHistory, createRouter, type Router } from "vue-router";
 import { pageCounterKey } from "@ontomato/agent-shell-ui";
@@ -13,7 +13,7 @@ import { BusinessWorkbench } from "@ontomato/workbench-ui/features/workbench";
 import elementEn from "element-plus/es/locale/lang/en";
 import type { AgentHostSendRequest } from "@ontomato/contracts/agent-host";
 import type { PresentationFrame } from "@ontomato/contracts/agent-presentation";
-import { AgentShell } from "@ontomato/agent-shell-ui";
+import { AgentShell, type DisplayObjectRefresh } from "@ontomato/agent-shell-ui";
 import { displayOf, openLink, paneButton } from "../../../workbench-ui/src/features/workbench/__tests__/shell";
 import { noticeStreamDouble } from "../../../workbench-ui/src/features/workbench/__tests__/host-double";
 
@@ -50,13 +50,18 @@ const agent = { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Assistant", d
  * move the reader asked for. Its address is what it shows.
  */
 const ReportingPage = defineComponent({
-  props: { address: { type: String, required: true } },
+  props: {
+    address: { type: String, required: true },
+    /** When to read its objects again, as the display tells it. */
+    objectRefresh: { type: Object as PropType<DisplayObjectRefresh | null>, default: null },
+  },
   emits: ["display-address", "display-dirty"],
   setup(props, { emit }) {
     emit("display-dirty", reports.dirty);
     return () =>
       h("div", { class: "reporting-page" }, [
         h("span", { class: "shown" }, props.address),
+        h("span", { class: "refresh" }, JSON.stringify(props.objectRefresh)),
         h("button", {
           class: "state",
           onClick: () => emit("display-address", { kind: "state", address: `${props.address.split("?")[0]}?selected=row-2` }),
@@ -235,23 +240,23 @@ describe("what an agent presents", () => {
   /** The platform with its notice stream ready and a conversation started in it, as a run that presents has. */
   async function started() {
     const wrapper = await workbench();
-    await host.stream.current().frame({ type: "ready", presentationBinding: { connectionId: BINDING } });
+    await host.stream.current().frame({ type: "ready", connectionId: BINDING });
     await (wrapper.findComponent(AgentShell).vm as unknown as { send(text: string): Promise<void> }).send("show me");
     await flushPromises();
     return wrapper;
   }
   async function present(target: PresentationFrame["target"], sessionId = SESSION) {
     const request = frame(target, sessionId);
-    host.stream.current().presentation!(request);
+    host.stream.current().view!.frame(request);
     await flushPromises();
     return host.stream.receipts.find((entry) => entry.receipt.toolCallId === request.toolCallId)!;
   }
 
-  it("asks for a binding and starts the conversation's runs with it", async () => {
+  it("opens the stream for its view and starts the conversation's runs with that view", async () => {
     await started();
     expect(host.stream.opened).toHaveLength(1);
-    expect(host.stream.current().presentation).toBeTypeOf("function");
-    expect(host.inputs.at(-1)).toMatchObject({ presentationBinding: { connectionId: BINDING } });
+    const view = host.stream.current().view!.id;
+    expect(host.inputs.at(-1)).toMatchObject({ presentationBinding: { viewId: view } });
   });
 
   it("shows an artifact beside the conversation and answers once with what is shown, leaving the address alone", async () => {
@@ -316,11 +321,76 @@ describe("what an agent presents", () => {
     expect(displayOf(wrapper).target.value).toBeNull();
   });
 
-  it("starts no run with a binding once its connection dropped", async () => {
+  it("serves the same view on its next connection: a later request is answered there, the old connection's is not", async () => {
     const wrapper = await started();
-    host.stream.current().error(new Error("dropped"));
+    const view = host.stream.current().view!.id;
+    const old = host.stream.current();
+
+    report("hidden");
+    await flushPromises();
+    report("visible");
+    await flushPromises();
+    expect(host.stream.opened).toHaveLength(2);
+    expect(host.stream.current().view!.id).toBe(view);
+    await host.stream.current().frame({ type: "ready", connectionId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd2" });
+
+    // A request arriving on the closed connection opens nothing and is answered nowhere.
+    old.view!.frame(frame({ kind: "artifact", artifact: artifact as never }));
+    await flushPromises();
+    expect(host.stream.receipts).toHaveLength(0);
+    expect(displayOf(wrapper).target.value).toBeNull();
+
+    const answer = await present({ kind: "artifact", artifact: artifact as never });
+    expect(answer.receipt).toMatchObject({ connectionId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd2", result: { status: "opened" } });
     await (wrapper.findComponent(AgentShell).vm as unknown as { send(text: string): Promise<void> }).send("again");
     await flushPromises();
-    expect(host.inputs.at(-1)).not.toHaveProperty("presentationBinding");
+    expect(host.inputs.at(-1)).toMatchObject({ presentationBinding: { viewId: view } });
+
+    // A reload is another view: it never takes over the old one's runs.
+    wrappers.splice(0).forEach((shown) => shown.unmount());
+    await workbench();
+    expect(host.stream.current().view!.id).not.toBe(view);
   });
 });
+
+describe("the objects an agent changes", () => {
+  const SESSION = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const task = { objectType: "platform:ScheduledTask", primaryKey: "task-1" };
+  const refresh = (wrapper: VueWrapper) => JSON.parse(wrapper.find(".reporting-page .refresh").text()) as DisplayObjectRefresh;
+
+  it("are read again by the page shown beside this conversation, and everything is read when the stream is ready", async () => {
+    const wrapper = await workbench();
+    await host.stream.current().frame({ type: "ready", connectionId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd1" });
+    await (wrapper.findComponent(AgentShell).vm as unknown as { send(text: string): Promise<void> }).send("change it");
+    await openLink(wrapper, "/first");
+    // A page just opened reads all it shows.
+    const opened = refresh(wrapper);
+    expect(opened.target).toBeNull();
+
+    host.stream.current().view!.frame({ type: "object-changed", session: { providerId: "workbench", sessionId: SESSION }, target: task });
+    await flushPromises();
+    expect(refresh(wrapper)).toEqual({ seq: opened.seq + 1, target: task });
+
+    // Another conversation's object is not this page's concern.
+    host.stream.current().view!.frame({
+      type: "object-changed", session: { providerId: "workbench", sessionId: "ffffffff-ffff-4fff-8fff-ffffffffffff" }, target: task,
+    });
+    await flushPromises();
+    expect(refresh(wrapper).seq).toBe(opened.seq + 1);
+
+    // Back from the background, nothing tells what changed meanwhile: the page reads everything once the stream is ready.
+    report("hidden");
+    await flushPromises();
+    report("visible");
+    await flushPromises();
+    await host.stream.current().frame({ type: "ready", connectionId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd2" });
+    await flushPromises();
+    expect(refresh(wrapper)).toEqual({ seq: opened.seq + 2, target: null });
+  });
+});
+
+/** The browser reports the tab hidden or shown again. */
+function report(state: "visible" | "hidden") {
+  Object.defineProperty(document, "visibilityState", { value: state, configurable: true });
+  document.dispatchEvent(new Event("visibilitychange"));
+}

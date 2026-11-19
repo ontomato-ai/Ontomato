@@ -26,7 +26,8 @@ import type {
   ShellWorkbenchDeclaration,
   ToolRendererOverride,
 } from "../types";
-import { pagePresentation, sessionRunNotices } from "../session-run-notices";
+import { pageSessionStream, sessionRunNotices } from "../session-run-notices";
+import { documentVisible } from "@ontomato/foundation-ui/visibility";
 import { useAgentConversation } from "../useAgentConversation";
 import ShellColumn from "./ShellColumn.vue";
 import ShellConversation from "./ShellConversation.vue";
@@ -113,18 +114,27 @@ const display = props.display;
 const taskFocus = ref<{ taskId: string; at: number } | null>(null);
 
 /**
- * The page's live display binding, where its feed has one: the runs this conversation starts carry it, and what those
- * runs present comes back here, to be shown only while this is still the conversation in view.
+ * The page view's session stream, where its feed serves one: the runs this conversation starts carry the view's binding,
+ * and the stream's live frames come back here. A presentation is shown only while the tab is in the foreground and this
+ * is still the conversation in view; an object an agent changed is read again by the shown page only when it was changed
+ * in this conversation; and a stream that is ready again has the page read everything it shows.
  */
-const presentation = inject(pagePresentation, null);
-const conversation = useAgentConversation(() => props.client, () => agentId.value, () => presentation?.binding.value ?? null);
-if (presentation) {
+const sessionStream = inject(pageSessionStream, null);
+const conversation = useAgentConversation(() => props.client, () => agentId.value, () => sessionStream?.binding ?? null);
+if (sessionStream) {
   onBeforeUnmount(
-    presentation.attach(async (frame) =>
-      frame.sessionId === conversation.state.sessionId
-        ? display.present(frame)
-        : { status: "not_opened", reason: "not_viewing_session", current: display.snapshot() },
-    ),
+    sessionStream.attach({
+      present: async (frame) =>
+        !documentVisible()
+          ? { status: "not_opened", reason: "view_unavailable", current: display.snapshot() }
+          : frame.sessionId === conversation.state.sessionId
+            ? display.present(frame)
+            : { status: "not_opened", reason: "not_viewing_session", current: display.snapshot() },
+      objectChanged: (frame) => {
+        if (frame.session.sessionId === conversation.state.sessionId) display.refreshObjects(frame.target);
+      },
+      ready: () => display.refreshObjects(null),
+    }),
   );
 }
 provide(displayPlacementKey, display.placed);

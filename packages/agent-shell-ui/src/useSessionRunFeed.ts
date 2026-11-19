@@ -1,8 +1,10 @@
 import { onBeforeUnmount, onMounted, watch, provide, shallowRef, readonly } from "vue";
-import { pagePresentation, sessionRunNotices } from "./session-run-notices";
+import { pageSessionStream, sessionRunNotices, type SessionStreamShell } from "./session-run-notices";
+import { randomId } from "@ontomato/contracts/random-id";
 import type { PresentationBinding, PresentationFrame, PresentationReceipt } from "@ontomato/contracts/agent-presentation";
 import type {
   AgentHostSession,
+  AgentHostSessionLiveFrame,
   AgentHostSessionRunFrame,
   AgentHostSessionRunSnapshot,
 } from "@ontomato/contracts/agent-host";
@@ -18,8 +20,9 @@ export interface SessionRunFeedOptions {
   /** Every frame, also for a conversation no list shows, so the page can refresh its own facts. */
   onNotice?(frame: AgentHostSessionRunFrame): void;
   /**
-   * The page shows a conversation shell with a display: its stream asks for a display binding, which the shell's runs
-   * carry, and the presentation requests riding on it go to that shell.
+   * The page shows a conversation shell with a display: the stream serves this page view, the runs the shell starts carry
+   * the view's binding, and the view's live frames — presentation requests, objects agents changed — go to that shell,
+   * never to `onNotice`.
    */
   presentation?: boolean;
   onError(error: unknown): void;
@@ -47,16 +50,22 @@ export function useSessionRunFeed(options: SessionRunFeedOptions) {
   /** The stream ended for good, or the page went away: no frame, read or reconnect after it. */
   let stopped = false;
   let queue: Promise<void> = Promise.resolve();
-  /** The binding of the connection now open; a request is answered on the connection it came on, while that one lasts. */
-  const binding = shallowRef<PresentationBinding | null>(null);
-  let present: ((frame: PresentationFrame) => Promise<PresentationReceipt["result"]>) | null = null;
-  if (options.presentation) {
-    provide(pagePresentation, {
-      binding: readonly(binding),
+  /**
+   * The page view this feed serves when the page shows a conversation display: one ID, made here in memory, for as long
+   * as the view is mounted — hidden and reconnected it stays, a reload or another window is another view. It is never
+   * written to the address or to storage.
+   */
+  const view: PresentationBinding | null = options.presentation ? { viewId: randomId() } : null;
+  /** The connection now serving the view, once ready; a request is answered on the connection it came on. */
+  let connection: string | null = null;
+  let shell: SessionStreamShell | null = null;
+  if (view) {
+    provide(pageSessionStream, {
+      binding: view,
       attach(next) {
-        present = next;
+        shell = next;
         return () => {
-          if (present === next) present = null;
+          if (shell === next) shell = null;
         };
       },
     });
@@ -65,15 +74,15 @@ export function useSessionRunFeed(options: SessionRunFeedOptions) {
   /**
    * One request, one answer. The shell checks it still shows the conversation and lets its display decide; with no
    * shell on the page there is no conversation in view. An answer for a connection that has since closed is not sent:
-   * the host already settled that call as unknown.
+   * the host already settled that call as unknown, and an answer never goes to the connection that replaced it.
    */
-  async function answer(frame: PresentationFrame, own: PresentationBinding) {
-    const result: PresentationReceipt["result"] = present
-      ? await present(frame)
+  async function answer(frame: PresentationFrame, own: string) {
+    const result: PresentationReceipt["result"] = shell
+      ? await shell.present(frame)
       : { status: "not_opened", reason: "not_viewing_session", current: { known: false, reason: "not_viewing_session" } };
-    if (stopped || binding.value !== own) return;
+    if (stopped || connection !== own) return;
     await options.port
-      .presentationResult(frame.sessionId, frame.runId, { connectionId: own.connectionId, toolCallId: frame.toolCallId, result })
+      .presentationResult(frame.sessionId, frame.runId, { connectionId: own, toolCallId: frame.toolCallId, result })
       .catch(options.onError);
   }
 
@@ -106,8 +115,8 @@ export function useSessionRunFeed(options: SessionRunFeedOptions) {
     detach = null;
     if (timer !== null) clearTimeout(timer);
     timer = null;
-    // The binding was this connection's: a run started now has no display until the next one is ready.
-    binding.value = null;
+    // A request that came on this connection is not answered on the next one.
+    connection = null;
   }
 
   function connect() {
@@ -121,17 +130,33 @@ export function useSessionRunFeed(options: SessionRunFeedOptions) {
         // `ready` is the runtime's barrier: every change from here on is a frame, so the rows are read once now.
         if (frame.type === "ready") {
           attempt = 0;
-          if ("presentationBinding" in frame) binding.value = frame.presentationBinding;
+          if ("connectionId" in frame) {
+            connection = frame.connectionId;
+            // What agents changed while no connection served the view reached nobody: the display reads its objects again.
+            shell?.ready();
+          }
           await read(ids());
           return;
         }
         if (options.sessions().some((row) => row.id === frame.sessionId)) await read([frame.sessionId]);
       },
-      ...(options.presentation ? { presentation: (frame: PresentationFrame) => void answer(frame, binding.value!) } : {}),
+      // The view's live frames: a request to show something, an object an agent changed. Neither is a lifecycle notice.
+      ...(view
+        ? {
+            view: {
+              id: view.viewId,
+              frame(live: AgentHostSessionLiveFrame) {
+                if (stopped || current !== generation) return;
+                if (live.type === "presentation") void answer(live, connection!);
+                else shell?.objectChanged(live);
+              },
+            },
+          }
+        : {}),
       error(error) {
         if (stopped || current !== generation) return;
         detach = null;
-        binding.value = null;
+        connection = null;
         // A frame off the contract is not a dropped line: present it and stop.
         if (error instanceof SessionRunStreamError) {
           stopped = true;
