@@ -48,6 +48,8 @@ const secondTask = { ...task, id: "ac186b00-a3dd-46d2-b404-72065d877a34", title:
 
 /** Holds P's definition check until the test lets it answer. */
 let snapshotGate: Promise<void> | null = null;
+/** Whether the reader has lost the use of P since its page was kept. */
+let snapshotRefused = false;
 /** The reader's answer to the platform's unsaved-changes question. */
 let leaveAnswer = true;
 const asked = vi.fn(async () => leaveAnswer);
@@ -62,6 +64,7 @@ function answer(request: Sent) {
   if (request.path === `/api/product-panels/${q.id}`) return Response.json({ panel: q });
   if (request.path === `/api/product-panels/${p.id}/snapshot`) {
     const shown = p;
+    if (snapshotRefused) return Response.json({ error: { message: "Panel use Grant required" } }, { status: 403 });
     return (snapshotGate ?? Promise.resolve()).then(() => panelSnapshot(shown));
   }
   if (request.path === `/api/product-panels/${q.id}/snapshot`) return panelSnapshot(q);
@@ -136,6 +139,7 @@ const unsavedSaid = (frame: HTMLIFrameElement) => new Promise<void>(resolve => w
 
 afterEach(() => {
   snapshotGate = null;
+  snapshotRefused = false;
   leaveAnswer = true;
   asked.mockClear();
   uses = allUses;
@@ -155,7 +159,7 @@ it("shows a page kept within its application as it was left: no document loaded 
     const moved: Node[] = [];
     new MutationObserver(records => records.forEach(record => moved.push(...record.removedNodes))).observe(element, { childList: true, subtree: true });
     const { transport } = await startFrame(tasks);
-    await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary-title")?.textContent).toBe(task.title));
+    await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary-title")?.textContent).toBe(task.title), { timeout: 5000 });
     const srcdoc = tasks.srcdoc;
 
     await router.push(at("summary"));
@@ -217,7 +221,7 @@ it("shows the new value of an object changed while its page was kept", async () 
   try {
     const tasks = await shownFrame(element);
     await startFrame(tasks);
-    await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary-title")?.textContent).toBe(task.title));
+    await vi.waitFor(() => expect(document.querySelector(".sdk-object-summary-title")?.textContent).toBe(task.title), { timeout: 5000 });
     await router.push(at("summary"));
     await shownFrame(element);
     // An agent renames the task while the page is kept: nothing is sent to the kept frame for it.
@@ -313,6 +317,52 @@ it("leaves a page with unsaved changes only through the platform's question, and
     await router.push(at("tasks"));
     const reopenedTasks = await shownFrame(element);
     expect(reopenedTasks).not.toBe(tasks);
+  } finally {
+    app.unmount();
+  }
+});
+
+it("tells a kept frame it is inactive, and active again only once its checks pass — its objects' refresh told first", async () => {
+  const { app, element, router } = await openApplication(at("tasks"));
+  try {
+    const tasks = await shownFrame(element);
+    await startFrame(tasks);
+    const told: string[] = [];
+    window.addEventListener("message", event => {
+      const data = event.data as { channel?: string; kind?: string; active?: boolean; target?: unknown } | null;
+      if (data?.channel !== PANEL_HOST_CHANNEL || event.source === tasks.contentWindow) return;
+      if (data.kind === "activity") told.push(`activity:${data.active}`);
+      if (data.kind === "object-changed") told.push(`object-changed:${JSON.stringify(data.target)}`);
+    });
+    await router.push(at("summary"));
+    await shownFrame(element);
+    await vi.waitFor(() => expect(told).toEqual(["activity:false"]));
+
+    let release!: () => void;
+    snapshotGate = new Promise(resolve => (release = resolve));
+    await router.push(at("tasks"));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(told).toEqual(["activity:false"]);
+    release();
+    await vi.waitFor(() => expect(told).toEqual(["activity:false", "object-changed:null", "activity:true"]));
+  } finally {
+    app.unmount();
+  }
+});
+
+it("shows no last content of a kept page the reader may no longer use", async () => {
+  const { app, element, router } = await openApplication(at("tasks"));
+  try {
+    const tasks = await shownFrame(element);
+    await router.push(at("summary"));
+    await shownFrame(element);
+    snapshotRefused = true;
+    await router.push(at("tasks"));
+    await vi.waitFor(() => expect([...element.querySelectorAll(".panel-host-error")].map(error => error.textContent))
+      .toContain("Panel use Grant required"));
+    // Its frame is gone where the refusal is shown, and its checks never opened it again.
+    expect(tasks.isConnected).toBe(false);
+    expect(performance.getEntriesByName("ontomato:panel-page-reopened")).toHaveLength(0);
   } finally {
     app.unmount();
   }

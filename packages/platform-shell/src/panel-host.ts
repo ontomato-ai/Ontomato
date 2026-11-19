@@ -369,16 +369,27 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
    */
   function resume(shown: PanelHostSource) {
     if (shown.kind === "candidate") {
+      activate(true);
       void rereadCandidate(shown);
       return;
     }
     refresh(null);
+    activate(true);
     if (port.mode.kind === "view") void restore(shown);
   }
 
   function openBridge(open: boolean) {
     bridgeOpen = open;
     registration?.open(open);
+  }
+
+  /**
+   * Tells the frame whether it is active: the tab is visible and this instance is the one shown (a route's page is never
+   * collapsed). A page becomes the shown one as the reader moves to it, in the visible tab. An inactive frame reads nothing of its own and holds what it is told until it is active again; a refresh
+   * of its objects is told before it becomes active, so it is folded into what it holds rather than read twice.
+   */
+  function activate(active: boolean) {
+    post({ kind: "activity", active });
   }
 
   /**
@@ -391,6 +402,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     if (shown.kind === "candidate") {
       openBridge(true);
       follow(shown);
+      activate(true);
       void rereadCandidate(shown);
       return;
     }
@@ -408,6 +420,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       options.reopened?.();
       follow(shown);
       refresh(null);
+      activate(true);
       if (snapshot) await advance(snapshotRevisions(snapshot));
     } catch (failure) {
       if (active) reportPanelUnavailable(failure);
@@ -423,11 +436,14 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
     author?.close();
     author = undefined;
+    activate(false);
     openBridge(false);
   });
   const stopVisibility = onDocumentVisibility(visible => {
     const shown = source.value;
-    if (visible && shown && shownToReader()) resume(shown);
+    if (!shown || !shownToReader()) return;
+    if (visible) resume(shown);
+    else activate(false);
   });
   void load();
   onScopeDispose(() => {

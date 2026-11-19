@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, markRaw, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { onBeforeRouteUpdate, useRoute, useRouter } from "vue-router";
+import type { PanelCapacityRequest } from "@ontomato/contracts/panel-host";
+import { panelCapacity, type PanelCapacity } from "../panel-capacity";
 import { useI18n } from "vue-i18n";
 import { PanelHost, panelUnavailable, useUnsavedChanges, type PanelHostLabels, type PanelHostPort } from "@ontomato/platform-shell";
 import { panelAddress, panelAddressState, panelUsePath, type PanelRefreshPort } from "@ontomato/contracts/panel-host";
@@ -67,10 +69,16 @@ watch(() => props.objectRefresh?.seq, () => {
  * How many of the application's pages keep their instance at once (design 7.2.1): the one shown and the one the reader
  * left last, which covers going back and forth between two pages of one application. Only a page left with nothing
  * unsaved is kept; a page left with unsaved changes is left through the platform's unsaved-changes question, and its
- * changes go with it. It is the prototype's number until the memory each kept frame holds has been measured
- * (`notes/keepalive.md`).
+ * changes go with it. It stays this number until the memory each kept frame holds has been measured.
  */
 const KEPT_PAGES = 2;
+
+/**
+ * When a kept page shown again is drawn: at once, its last content showing while its checks run and its objects are read
+ * again (`at-once`), or only once its checks have passed (`after-checks`). Drawing it only once its objects have been
+ * read again needs the frame to say so, which it does not yet; this is the one place that choice is made.
+ */
+const KEPT_PAGE_REVEAL: "at-once" | "after-checks" = "at-once";
 
 /** A page of this application whose instance is kept, shown or not. */
 interface KeptPage {
@@ -81,8 +89,8 @@ interface KeptPage {
   context: PageContext | null;
   /** Whether it holds unsaved changes; only the shown page can, and leaving it so drops it. */
   dirty: boolean;
-  /** When the reader was last on it, in the order of the pages shown: the page dropped is the one left longest ago. */
-  lastShown: number;
+  /** Shown again, and its checks not yet through. */
+  rechecking: boolean;
 }
 /**
  * The kept pages, in the order they were opened. The order never changes while a page is kept: a frame moved in the
@@ -90,7 +98,8 @@ interface KeptPage {
  */
 const kept = ref<KeptPage[]>([]);
 const catalog = useApplicationCatalog();
-let showings = 0;
+/** This application's kept instances: replaced, and every kept page dropped, when another application is opened. */
+let capacity = panelCapacity(KEPT_PAGES);
 const failure = ref("");
 
 /**
@@ -125,6 +134,7 @@ watch(() => props.applicationId, (applicationId, _, onCleanup) => {
   uses.value = catalog.applications.value.find((app) => app.id === applicationId)?.panelUses ?? null;
   answered.value = false;
   kept.value = [];
+  capacity = panelCapacity(KEPT_PAGES);
   failure.value = "";
   emit("display-loaded", { status: "loading" });
   void readUses(applicationId, () => current, relations);
@@ -196,27 +206,44 @@ const shownPage = computed(() => kept.value.find((page) => page.use.id === use.v
  * with no selection, since the panel has not said what it shows yet. What the frame reports later adds that; a kept page
  * says what it showed when it was left.
  */
+/** The capacity request for a switch from the page shown to the page an address names. */
+function switchTo(next: ApplicationPanelUse | null, address: string): PanelCapacityRequest {
+  const current = shownPage.value;
+  return {
+    current: current && { instance: current.use.id, address: current.reported },
+    next: next && { instance: next.id, address },
+    // A page left with unsaved changes was left through the unsaved-changes question: its changes go with its instance.
+    departure: current?.dirty ? "discarded" : "retain-clean",
+  };
+}
+
+/** The plan admitted for the address the router is moving to, applied once the move has happened. */
+let admitted: ReturnType<PanelCapacity["admit"]> | null = null;
+// The unsaved-changes question has been asked by the time a page of this application moves to another: what the move
+// keeps and what it drops is planned before the address changes.
+onBeforeRouteUpdate((to) => {
+  if (String(to.params.applicationId) !== props.applicationId) return;
+  admitted = capacity.admit(switchTo(useAt(to.path), to.fullPath));
+});
+
 watch(use, (next, previous) => {
   // Java's answer naming the page the catalog opened is the same page; a relation it rebinds ends that page's check.
   if (next && previous?.id === next.id && previous.panelId === next.panelId) return;
-  // A page left with unsaved changes was left through the unsaved-changes question: its changes go with its instance.
-  const left = previous && previous.id !== next?.id ? kept.value.find((page) => page.use.id === previous.id) : undefined;
-  if (left?.dirty) kept.value = kept.value.filter((page) => page !== left);
+  const plan = admitted ?? capacity.admit(switchTo(next, opened.value));
+  admitted = null;
+  plan.commit();
+  kept.value = kept.value.filter((page) => !plan.reclaim.includes(page.use.id));
   if (!next) return;
   performance.mark("ontomato:panel-page-opened", { detail: { applicationId: props.applicationId, useId: next.id } });
-  const found = kept.value.find((page) => page.use.id === next.id);
-  if (found) found.lastShown = ++showings;
-  else if (kept.value.length >= KEPT_PAGES) {
-    const [oldest] = [...kept.value].sort((one, other) => one.lastShown - other.lastShown);
-    kept.value = kept.value.filter((page) => page !== oldest);
-  }
+  const found = plan.next === "reuse" ? kept.value.find((page) => page.use.id === next.id) : undefined;
+  if (found) found.rechecking = true;
   const page = found ?? {
     use: next,
     port: markRaw(platformPanelHost(props.applicationId, next, undefined, answered.value ? undefined : relations!)),
     reported: panelAddress(pageAddress.value, requestedState.value),
     context: null,
     dirty: false,
-    lastShown: ++showings,
+    rechecking: false,
   };
   if (!found) kept.value = [...kept.value, page];
   // Its bare address opens a kept page as it was left: the address takes the state the page is at.
@@ -232,11 +259,18 @@ if (!props.navigate)
 /** When a kept page shown again may ask for its objects again: the first of the two points its switch is measured at. */
 function markReopened(page: KeptPage) {
   performance.mark("ontomato:panel-page-reopened", { detail: { applicationId: props.applicationId, useId: page.use.id } });
+  page.rechecking = false;
+}
+
+/** Whether a page is drawn now: the shown one, once `KEPT_PAGE_REVEAL` lets a page shown again be. */
+function drawn(page: KeptPage) {
+  return page === shownPage.value && (KEPT_PAGE_REVEAL === "at-once" || !page.rechecking);
 }
 
 /** A kept page shown again whose use relation was withdrawn or bound elsewhere ends; the page opens from the current relations. */
 function withdraw(page: KeptPage) {
   kept.value = kept.value.filter((other) => other !== page);
+  capacity.release(page.use.id);
   void readUses(props.applicationId, () => true);
 }
 
@@ -268,7 +302,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
   <template v-if="!failure">
     <PanelHost
       v-for="page in kept"
-      v-show="page === shownPage"
+      v-show="drawn(page)"
       :key="page.use.id"
       :ref="(instance) => { if (page === shownPage) host = instance as PanelRefreshPort | null; }"
       :port="page.port"
