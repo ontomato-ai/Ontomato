@@ -100,7 +100,7 @@ it("renders ObjectRelations grouped by relation kind with distinct statuses and 
   installPlatform(hostWith([relProj]));
   const frame = panelFrame();
   platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, {});
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
   const { registerPlatformObjectAdapter } = await import(
@@ -244,7 +244,7 @@ it("supports dynamic type queries, status separation, search/paging reset and fu
   installPlatform(hostWith([pickerProj]));
   const frame = panelFrame();
   platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, {});
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
   const { registerPlatformObjectAdapter } = await import(
@@ -405,7 +405,7 @@ it("switches declared scalar panel state with SegmentedControl (unbound in catal
   installPlatform(hostWith([]));
   const frame = panelFrame();
   platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, {});
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");

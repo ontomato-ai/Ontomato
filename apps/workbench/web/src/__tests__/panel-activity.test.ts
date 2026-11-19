@@ -31,7 +31,7 @@ async function opened() {
   });
   const frame = panelFrame();
   platformPanelHost("app-panels-trial-b", use).frame(frame, registered("app-panels-trial-b", use, panel), true);
-  writePanelDocument(panel, use, "/applications/app-panels-trial-b/summary", { selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id } });
+  writePanelDocument(registered("app-panels-trial-b", use, panel), "/applications/app-panels-trial-b/summary", { selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id } });
   inside(frame);
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   await mountPanel(panelOf("summary"));

@@ -96,6 +96,7 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
       return {
         source: async () => ({ kind: "registered", applicationId: input.applicationId ?? "app-a", use, panel: await stand.panel(use.panelId) }),
         pageKey: use.pageKey,
+        use: { applicationId: input.applicationId ?? "app-a", useId: use.id },
         panel: stand.panel,
         sdkRoot: () => stand.sdkRoot(),
         frame: stand.frame,
@@ -379,7 +380,7 @@ describe("the panel host", () => {
       const document = panelFrameDocument(
         { ...record(`panel-${directory}`, `Trial ${directory}`, panelP), content: { html, module } },
         "/apps-sdk/1.1.0",
-        { kind: "panel-host-message", panel: definition(record(`panel-${directory}`, `Trial ${directory}`, panelP)), pageKey: `trial-${directory}`, url: "/applications/app-panels-trial-a/tasks", label: "Scheduled tasks", state: {} },
+        { kind: "panel-host-message", panel: definition(record(`panel-${directory}`, `Trial ${directory}`, panelP)), pageKey: `trial-${directory}`, use: null, url: "/applications/app-panels-trial-a/tasks", label: "Scheduled tasks", state: {} },
         labels.failures,
       );
       // The panel's HTML is a fragment the host's document holds: no document of its own, and nothing left for the host
@@ -403,6 +404,7 @@ describe("the panel host", () => {
       kind: "panel-host-message",
       panel: definition(panel),
       pageKey: "schedules",
+      use: null,
       url: "/a/schedules",
       label: "Scheduled tasks",
       state: {},
@@ -424,6 +426,7 @@ describe("the panel host", () => {
       kind: "panel-host-message",
       panel: definition(panel),
       pageKey: "schedules",
+      use: null,
       url: "/a/schedules",
       label: "Scheduled tasks",
       state: {},

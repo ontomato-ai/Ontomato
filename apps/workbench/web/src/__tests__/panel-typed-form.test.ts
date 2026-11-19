@@ -125,7 +125,7 @@ async function open(address: string, state: Record<string, unknown>, override?: 
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
   platformPanelHost("ontology", use).frame(frame, registered("ontology", use, panel), true);
-  writePanelDocument(panel, use, address, state as never);
+  writePanelDocument(registered("ontology", use, panel), address, state as never);
   inside(frame);
   const failed: string[] = [];
   window.addEventListener("message", (event) => {
@@ -213,7 +213,7 @@ async function openWithDraft(form: PanelFormValues, envelope: { operation: strin
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
   platformPanelHost("ontology", use).frame(frame, registered("ontology", use, panel), true);
-  writePanelDocument(panel, use, `/ontology/agents?${query}`, { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } });
+  writePanelDocument(registered("ontology", use, panel), `/ontology/agents?${query}`, { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } });
   inside(frame);
   const failed: string[] = [];
   const settled: unknown[] = [];

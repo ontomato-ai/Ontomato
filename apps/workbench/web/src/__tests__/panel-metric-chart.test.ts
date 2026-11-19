@@ -178,7 +178,7 @@ it("draws a chart through the platform's bridge as the reader", async () => {
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
   platformPanelHost("app-charts", use).frame(frame, registered("app-charts", use, panel), true);
-  writePanelDocument(panel, use, "/applications/app-charts/charts", { customer: { className: "Customer", primaryKey: "c-9" } });
+  writePanelDocument(registered("app-charts", use, panel), "/applications/app-charts/charts", { customer: { className: "Customer", primaryKey: "c-9" } });
   inside(frame);
   await mountPanel(panelOf("revenue"));
   await vi.waitFor(() => expect(document.querySelector("#app .drawn")).not.toBeNull(), { timeout: 3000 });

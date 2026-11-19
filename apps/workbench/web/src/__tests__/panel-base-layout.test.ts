@@ -37,7 +37,7 @@ it("lays out the panel's HTML and draws its graph from the panel's own values, r
   installPlatform(nothingAt);
   const frame = panelFrame();
   platformPanelHost(application, use).frame(frame, registered(application, use, panel), true);
-  writePanelDocument(panel, use, `/applications/${application}/layout`, {});
+  writePanelDocument(registered(application, use, panel), `/applications/${application}/layout`, {});
   inside(frame);
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const chosen = ref(["Order"]);

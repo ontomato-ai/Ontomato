@@ -81,7 +81,7 @@ it("renders ObjectTree from child paths, selects defaultPrimaryKey or first file
   const frame = panelFrame();
   platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
   const initialPath = `${use.path}?state=${encodeURIComponent(JSON.stringify({ selectedSkill: { className: SKILL, primaryKey: "skill-1" } }))}`;
-  writePanelDocument(panel, use, initialPath, panelAddressState(initialPath));
+  writePanelDocument(registered("app-test", use, panel), initialPath, panelAddressState(initialPath));
   inside(frame);
 
   const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
@@ -179,7 +179,7 @@ it("reads segmented text by offset via ObjectTextReader and keeps only one ancho
   const frame = panelFrame();
   platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
   const initialPath = `${use.path}?state=${encodeURIComponent(JSON.stringify({ selectedRecord: { className: RECORD, primaryKey: "rec-1" } }))}`;
-  writePanelDocument(panel, use, initialPath, panelAddressState(initialPath));
+  writePanelDocument(registered("app-test", use, panel), initialPath, panelAddressState(initialPath));
   inside(frame);
 
   const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");

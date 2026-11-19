@@ -156,7 +156,7 @@ it("shows format rules dialog, rejects non-zip files, uploads multipart FormData
 
   const frame = panelFrame();
   platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, {});
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
   const { registerHandler } = await import("../../../../../packages/apps-sdk/src/panel/handlers");
