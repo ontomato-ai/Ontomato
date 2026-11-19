@@ -6,7 +6,7 @@ import { OBJECT_TYPE } from "@ontomato/contracts/platform-object-types";
 import { countedTypesChangedKey } from "@ontomato/ontology-manager";
 import { workbenchI18n } from "@ontomato/workbench-ui/i18n";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
-import type { PanelObjectChange } from "../../../../../packages/platform-web/src/panel-host";
+import type { DisplayObjectRefresh } from "../../../../../packages/agent-shell-ui/src/conversation-display";
 import {
   currentSdk, installPlatform, leaveFrame, manifestP, nothingAt, panelHostFrame, panelRecord, panelSnapshot, panelUse, SCHEDULED_TASK,
   task, type Sent,
@@ -41,7 +41,7 @@ afterEach(leaveFrame);
 it("tells the Manager's counts which object types a write changed, and nothing for a change that names none", async () => {
   installPlatform(answer);
   const counted: (readonly string[])[] = [];
-  const refresh = ref<({ seq: number } & PanelObjectChange) | null>(null);
+  const refresh = ref<DisplayObjectRefresh | null>(null);
   const router = createRouter({ history: createMemoryHistory(), routes: [{
     path: "/applications/:applicationId/:panelPath",
     component: PanelApplicationRoute,

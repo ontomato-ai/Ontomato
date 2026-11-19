@@ -7,6 +7,7 @@ import { panelAddress, panelAddressState, panelUsePath, type PanelRefreshPort } 
 import { applicationRootPath } from "@ontomato/contracts/platform-identity";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
+import type { DisplayObjectRefresh } from "@ontomato/agent-shell-ui";
 import { countedTypesChangedKey } from "@ontomato/ontology-manager";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import { panelUsesOf, platformPanelHost, type PanelObjectChange } from "../panel-host";
@@ -41,8 +42,7 @@ const props = defineProps<{
    * full, the router's address is the page's.
    */
   address?: string;
-  /** The conversation's latest object change for the page beside it (`DisplayObjectRefresh`), numbered so a repeat shows. */
-  objectRefresh?: ({ seq: number } & PanelObjectChange) | null;
+  objectRefresh?: DisplayObjectRefresh | null;
 }>();
 const emit = defineEmits<{
   /** What the reader looks at in the panel, as its instance reports it: what a message written beside it carries. */
