@@ -1,8 +1,9 @@
 import { z } from "zod";
-import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
+import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "@ontomato/contracts/agent-runtime-values";
 import {
-  DATA_QUERY_GATEWAY, DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, METRIC_VIEW,
+  DATA_QUERY_GATEWAY, DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, METRIC_VIEW, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW,
 } from "@ontomato/contracts/panel-client-requests";
+import { panelReadOperationCallSchema, panelReadOperationInputSchema } from "@ontomato/contracts/panel-operations";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import { HttpError } from "../../utils/errors";
@@ -100,6 +101,55 @@ async function remove(
     : { kind: "refusal", code: refusalCode, message: envelope.message ?? "The owner refused the delete" };
 }
 
+/*
+ * The two read-only trials of a metric's unsaved definition. Both read the draft the metric panel's definition form
+ * holds, with the parameter values the reader chose, and save nothing. The test answers in Markdown and reads the
+ * parameter values from the function's own parameter definitions; the test-and-return-JSON takes them beside the
+ * draft, and an optional saved binding, and its owner checks that the metric may run.
+ */
+const METRIC_FORM_SLOT = "definition";
+const metricTrialTarget = metricSaveTarget.nullable();
+const parameterDefinitionsSchema = z.array(z.object({ name: z.string() }).passthrough());
+const trialDraftSchema = z.object({
+  function: z.object({
+    queryPackage: z.object({
+      manifest: z.object({ parameterDefs: parameterDefinitionsSchema }).passthrough(),
+    }).passthrough().nullish(),
+    parameters: parameterDefinitionsSchema.nullish(),
+  }).passthrough(),
+}).passthrough();
+const markdownResultSchema = z.object({ kind: z.literal("markdown"), markdown: z.string() }).strict();
+const jsonResultSchema = z.object({ kind: z.literal("json"), value: runtimeJsonValueSchema }).strict();
+const testedContentSchema = z.object({ md: z.string() }).passthrough();
+const trialEnvelopeSchema = ownerEnvelopeSchema.extend({
+  code: z.string().nullish(),
+  truncated: z.boolean().optional(),
+  rowLimit: z.number().nullish(),
+  truncationHint: z.string().nullish(),
+});
+
+/** The draft with the chosen values written into the parameter definitions the trial reads them from. */
+function withParameterValues(draft: Record<string, unknown>, parameters: Record<string, unknown>) {
+  const copy = trialDraftSchema.parse(structuredClone(draft));
+  const definitions = copy.function.queryPackage ? copy.function.queryPackage.manifest.parameterDefs : copy.function.parameters ?? [];
+  for (const definition of definitions)
+    if (Object.hasOwn(parameters, definition.name)) definition.value = parameters[definition.name];
+  return copy;
+}
+
+/** The owner's answer to a trial; a refusal keeps the owner's reason and code. */
+async function trial(host: Host, path: string, body: unknown, refusalCode: string) {
+  const response = await host.request(`${DATA_QUERY_GATEWAY}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new HttpError(response.status, `Owner request failed: ${path}`, "OWNER_UNAVAILABLE");
+  const envelope = trialEnvelopeSchema.parse(await response.json());
+  if (!envelope.success) throw new HttpError(422, envelope.message ?? "The owner refused the trial", envelope.code ?? refusalCode);
+  return envelope;
+}
+
 const formInstructions = "Read the form for the intended target. Use its fields, values and save.bodySchema for the values, and save.draftOperation for the draft. Carry the complete form values in call.input.";
 
 export const m5ServerOperations = [
@@ -187,6 +237,44 @@ export const m5ServerOperations = [
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected function");
       return remove(host, "/function/delete", target, "FUNCTION_DELETE_REFUSED");
+    },
+  },
+  {
+    handlerRef: TEST_METRIC_VIEW,
+    binding: { kind: "PlatformOperation", id: TEST_METRIC_VIEW },
+    kind: "action",
+    effect: "read",
+    batch: false,
+    target: { source: "draft", slot: METRIC_FORM_SLOT },
+    targetSchema: metricTrialTarget,
+    inputSchema: panelReadOperationInputSchema,
+    resultSchema: markdownResultSchema,
+    async execute(host: Host, call: z.infer<typeof panelReadOperationCallSchema>) {
+      const { draft, parameters } = call.input;
+      const envelope = await trial(host, "/metricView/test", withParameterValues(draft, parameters), "METRIC_VIEW_TEST_REFUSED");
+      return { kind: "markdown" as const, markdown: testedContentSchema.parse(envelope.data).md };
+    },
+  },
+  {
+    handlerRef: TEST_EXECUTE_METRIC_VIEW,
+    binding: { kind: "PlatformOperation", id: TEST_EXECUTE_METRIC_VIEW },
+    kind: "action",
+    effect: "read",
+    batch: false,
+    target: { source: "draft", slot: METRIC_FORM_SLOT },
+    targetSchema: metricTrialTarget,
+    inputSchema: panelReadOperationInputSchema,
+    resultSchema: jsonResultSchema,
+    async execute(host: Host, call: z.infer<typeof panelReadOperationCallSchema>) {
+      const { draft, parameters, bindingId } = call.input;
+      const envelope = await trial(host, "/metricView/testExecute",
+        { metricView: draft, param: parameters, ...(bindingId ? { bindingId } : {}) }, "METRIC_VIEW_TEST_EXECUTE_REFUSED");
+      // A truncated run is a partial result: the reader sees that it is, and why, beside the rows.
+      const value = runtimeJsonValueSchema.parse({
+        result: envelope.data ?? null,
+        ...(envelope.truncated ? { truncated: true, rowLimit: envelope.rowLimit ?? null, truncationHint: envelope.truncationHint ?? null } : {}),
+      });
+      return { kind: "json" as const, value };
     },
   },
 ] satisfies readonly PanelServerOperation[];
