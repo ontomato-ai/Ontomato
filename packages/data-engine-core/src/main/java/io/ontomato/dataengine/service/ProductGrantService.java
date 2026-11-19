@@ -70,6 +70,11 @@ public class ProductGrantService implements InitializingBean {
         db.update("DELETE FROM product_resource WHERE domain_id=? AND id=?", domainId, id);
     }
 
+    @Transactional public void retireApplication(String domainId, String id) {
+        unregister(domainId, id);
+        db.update("DELETE FROM product_application_grant_migration WHERE domain_id=? AND id=?", domainId, id);
+    }
+
     private void lockResource(String domainId, String id) {
         db.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", Object.class, "product-grant:" + domainId + ":" + id);
     }

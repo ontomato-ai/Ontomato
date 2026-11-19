@@ -352,7 +352,7 @@ class PanelApplicationsTest {
 
     @Test void reverseLookupIncludesBuiltinAndDomainUsesButNoOtherDomainAndRequiresServiceAuth() throws Exception {
         var local = app("app-panel-a", "panels", List.of(use("tasks", "app:app-panel-a:private")));
-        local.put("names", JSONObject.of("en", "Local app"));
+        local.put("names", JSONObject.of("en", "Local app", "zh-CN", "域内应用"));
         var foreign = app("app-foreign", "panels", List.of(use("app-foreign", "tasks", null)));
         foreign.put("domainId", "foreign");
         var builtin = app("ontology", "panels", List.of(at("settings", "/ontology/settings")));
@@ -368,7 +368,8 @@ class PanelApplicationsTest {
             .param("domainId", "domain").param("panelId", "panel-p"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(2))
             .andExpect(jsonPath("$.data[0].applicationId").value("app-panel-a"))
-            .andExpect(jsonPath("$.data[0].applicationName").value("Local app"))
+            .andExpect(jsonPath("$.data[0].names.en").value("Local app"))
+            .andExpect(jsonPath("$.data[0].names['zh-CN']").value("域内应用"))
             .andExpect(jsonPath("$.data[0].useId").value("use-tasks"))
             .andExpect(jsonPath("$.data[0].path").value("/applications/app-panel-a/tasks"))
             .andExpect(jsonPath("$.data[1].applicationId").value("ontology"));
@@ -399,9 +400,13 @@ class PanelApplicationsTest {
         mvc.perform(delete("/platform/applications/ontology")).andExpect(status().isForbidden());
         mvc.perform(delete("/platform/applications/app-panel-a")).andExpect(status().isForbidden());
         verify(db, never()).update(startsWith("DELETE FROM sys_application"), anyString(), anyString());
+        verify(access, never()).retire(any());
         when(access.canMaintain(local, user)).thenReturn(true);
 
         mvc.perform(delete("/platform/applications/app-panel-a")).andExpect(status().isNoContent());
+        var retirement = inOrder(access, db);
+        retirement.verify(access).retire(local);
+        retirement.verify(db).update("DELETE FROM sys_application WHERE id=? AND domain_id=?", "app-panel-a", "domain");
         mvc.perform(get(ApplicationController.PANEL_USES_BY_PANEL).header(WorkbenchServiceAuthentication.HEADER, "service-fixture")
             .param("domainId", "domain").param("panelId", "panel-p"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(1))

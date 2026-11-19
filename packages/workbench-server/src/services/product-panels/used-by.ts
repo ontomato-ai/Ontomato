@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { applicationMetadataSchema } from "@ontomato/contracts/application-metadata";
 import { productPanelUsedBySchema } from "@ontomato/contracts/product-panels";
 import type { PoolClient } from "pg";
 import { config } from "../../config/application";
@@ -26,14 +27,19 @@ export async function panelsUsingProjection(domainId: string, id: string, creden
 const entrySchema = productPanelUsedBySchema.shape.applicationEntries.element;
 const entryResponseSchema = z.object({
   success: z.literal(true),
-  data: z.array(entrySchema.omit({ entryId: true }).extend({ useId: entrySchema.shape.entryId })),
+  data: z.array(entrySchema.omit({ entryId: true, applicationName: true }).extend({
+    names: applicationMetadataSchema.shape.names,
+    useId: entrySchema.shape.entryId,
+  })),
 });
 
-export async function applicationEntriesUsingPanel(domainId: string, id: string) {
+export async function applicationEntriesUsingPanel(domainId: string, id: string, locale: string = "en") {
   const query = new URLSearchParams({ domainId, panelId: id });
   const response = await backendGet("application-entries-using-panel",
     `${config.dataQuery.baseUrl}/platform/applications/panel-uses/by-panel?${query}`,
     { headers: { "X-Ontomato-Query-Service-Token": environment.agentRuntime().queryServiceToken }, retries: 1 });
   const { data } = entryResponseSchema.parse(JSON.parse(response.text));
-  return { applicationEntries: data.map(({ useId, ...entry }) => ({ ...entry, entryId: useId })) };
+  return { applicationEntries: data.map(({ useId, names, ...entry }) => ({
+    ...entry, entryId: useId, applicationName: names[locale] ?? names.en,
+  })) };
 }

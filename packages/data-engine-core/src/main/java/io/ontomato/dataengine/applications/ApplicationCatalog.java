@@ -2,6 +2,7 @@ package io.ontomato.dataengine.applications;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.TypeReference;
 import io.ontomato.dataengine.core.bean.User;
 import java.util.*;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,7 +14,7 @@ import org.springframework.http.HttpStatus;
 
 @Service
 public class ApplicationCatalog {
-    public record PanelUseLocation(String applicationId, String applicationName, String useId, String path) {}
+    public record PanelUseLocation(String applicationId, Map<String, String> names, String useId, String path) {}
     private record PanelSkillGroup(PageSkills.Mapping mapping, PanelSkills.Source source) {}
     public record Group(String key, Map<String,String> names, int sort) {}
     public record Permission(String code, Map<String,String> names, String groupKey, int sort) {}
@@ -304,7 +305,7 @@ public class ApplicationCatalog {
             .flatMap(app -> app.getList("panelUses", ApplicationPanelUse.class).stream()
                 .filter(use -> panelId.equals(use.panelId()))
                 .map(use -> new PanelUseLocation(app.getString("id"),
-                    app.getJSONObject("names").getString("en"), use.id(), use.path())))
+                    app.getObject("names", new TypeReference<Map<String, String>>() {}), use.id(), use.path())))
             .toList();
     }
 
@@ -313,6 +314,7 @@ public class ApplicationCatalog {
             lockCatalog();
             var app = require(id);
             requireDomainMaintainer(app, user);
+            access.retire(app);
             // The entry table is stored in this application row.
             db.update("DELETE FROM sys_application WHERE id=? AND domain_id=?", id, user.getDomainId());
         });

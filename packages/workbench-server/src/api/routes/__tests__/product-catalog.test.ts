@@ -29,7 +29,7 @@ vi.mock("../../../utils/request-identity", async original => ({
 type Verb = "use" | "edit";
 type Grant = { principalKind: "principal" | "role" | "domain"; principalId: string; verb: Verb };
 type Table = "product_panels" | "product_projections";
-type Location = { applicationId: string; applicationName: string; useId: string; path: string };
+type Location = { applicationId: string; names: Record<string, string>; useId: string; path: string };
 const ownerGrant = (principalId: string, verb: Verb): Grant => ({ principalKind: "principal", principalId, verb });
 const projectionDefinition = {
   name: "Metrics", description: "Sales overview", visibility: "domain",
@@ -124,7 +124,7 @@ beforeAll(async () => {
   });
   app.use("/api", (req, _res, next) => {
     const caller = req.get("tk");
-    Object.assign(req, { userId: caller, token: caller, domainId: "domain", locale: "en" });
+    Object.assign(req, { userId: caller, token: caller, domainId: "domain", locale: req.get("Accept-Language") ?? "en" });
     next();
   });
   app.use("/api/product-projections", productProjectionsRouter);
@@ -209,9 +209,9 @@ beforeEach(() => {
   });
 });
 
-function request(path: string, method = "GET", body?: unknown, caller = "alice") {
+function request(path: string, method = "GET", body?: unknown, caller = "alice", locale = "en") {
   return fetch(base + "/api/" + path, {
-    method, headers: { tk: caller, "Content-Type": "application/json" }, body: JSON.stringify(body),
+    method, headers: { tk: caller, "Content-Type": "application/json", "Accept-Language": locale }, body: JSON.stringify(body),
   });
 }
 
@@ -250,14 +250,21 @@ it("rejects delete and lists only the projection's readable using panels, counti
   expect(deregistered).toEqual([]);
 });
 
-it("lists all application's entries using a panel and refuses deletion while one remains", async () => {
+it("localizes entries using a panel, falling back to English, and returns the same uses on deletion refusal", async () => {
   seed("product_panels", "panel", "alice", panelDefinition());
-  const entry = { applicationId: "app-a", applicationName: "App A", path: "/applications/app-a/home" };
-  locations.set("panel", [{ ...entry, useId: "entry" }]);
+  const local = { applicationId: "app-a", path: "/applications/app-a/home", useId: "entry-a" };
+  const fallback = { applicationId: "app-b", path: "/applications/app-b/home", useId: "entry-b" };
+  locations.set("panel", [
+    { ...local, names: { en: "App A", "zh-CN": "应用甲" } },
+    { ...fallback, names: { en: "App B" } },
+  ]);
   const path = "product-panels/panel";
-  const used = await (await request(path + "/used-by")).json();
-  expect(used).toEqual({ applicationEntries: [{ ...entry, entryId: "entry" }] });
-  const denied = await request(path + "?revision=2", "DELETE");
+  const used = await (await request(path + "/used-by", "GET", undefined, "alice", "zh-CN")).json();
+  expect(used).toEqual({ applicationEntries: [
+    { applicationId: local.applicationId, path: local.path, entryId: local.useId, applicationName: "应用甲" },
+    { applicationId: fallback.applicationId, path: fallback.path, entryId: fallback.useId, applicationName: "App B" },
+  ] });
+  const denied = await request(path + "?revision=2", "DELETE", undefined, "alice", "zh-CN");
   expect(denied.status).toBe(409);
   expect(productPanelInUseErrorSchema.parse(await denied.json()).details).toEqual(used);
   expect(deregistered).toEqual([]);

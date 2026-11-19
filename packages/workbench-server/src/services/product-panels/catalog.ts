@@ -86,7 +86,7 @@ export async function currentProductUsedBy(owner: ProductOwner, credentials: Ass
   await requireCurrentProduct(owner, credentials, kind, id, "use");
   return kind === "projection"
     ? panelsUsingProjection(owner.domainId, id, credentials)
-    : applicationEntriesUsingPanel(owner.domainId, id);
+    : applicationEntriesUsingPanel(owner.domainId, id, credentials.locale);
 }
 
 export async function deleteCurrentProduct(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string, revision: number) {
@@ -100,7 +100,7 @@ export async function deleteCurrentProduct(owner: ProductOwner, credentials: Ass
       if (usage.panels.length || usage.hiddenCount)
         throw new HttpError(409, "Projection is in use", PRODUCT_IN_USE, usage);
     } else {
-      const usage = await applicationEntriesUsingPanel(owner.domainId, id);
+      const usage = await applicationEntriesUsingPanel(owner.domainId, id, credentials.locale);
       if (usage.applicationEntries.length)
         throw new HttpError(409, "Panel is in use", PRODUCT_IN_USE, usage);
     }
