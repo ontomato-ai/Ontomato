@@ -9,7 +9,7 @@ import { isPanelHumanOperationIntent, type PanelOperationIntent } from "@ontomat
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { panelReadOperationInputSchema, panelReadOperationResultSchema } from "@ontomato/contracts/panel-operations";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
-const mocks = vi.hoisted(() => ({draft:vi.fn(),recordCreated:vi.fn(),query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),catalogue:vi.fn(),pages:vi.fn(),resolveMember:vi.fn(),loadedMember:vi.fn(),restore:vi.fn(),sessionActor:vi.fn(),notify:vi.fn()}));
+const mocks = vi.hoisted(() => ({draft:vi.fn(), createDefinition:vi.fn(), projectDefinition:vi.fn(), assertPermission:vi.fn(),recordCreated:vi.fn(),query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),catalogue:vi.fn(),pages:vi.fn(),resolveMember:vi.fn(),loadedMember:vi.fn(),restore:vi.fn(),sessionActor:vi.fn(),notify:vi.fn()}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
 vi.mock("../../assistant/service",()=>({assistantService:{pageDraft:mocks.draft,recordPageDraftCreated:mocks.recordCreated}}));
 vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({callbackUrl:"http://workbench.test"})}}));
@@ -17,6 +17,13 @@ vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://o
 vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class{run=mocks.run;session=mocks.session;request=mocks.request;}}));
 vi.mock("../../assistant/store",()=>({assistantStore:{turn:async()=>({})}}));
 vi.mock("../../assistant/execution-setting",()=>({resolveAgentExecution:mocks.resolve}));
+vi.mock("../../../identity/installed", () => ({ assertPermission: mocks.assertPermission }));
+vi.mock("../../assistant/definitions", () => ({
+  agentDefinitionPermissions: ["analysis-agent"],
+  createAgentDefinitionSnapshot: mocks.createDefinition,
+  projectAgentDefinitionSkills: mocks.projectDefinition,
+}));
+
 vi.mock("../../assistant/skills",()=>({
   readAssistantSkillView: mocks.pages,
   loadedPageSkillVersion: mocks.loadedMember,
@@ -60,6 +67,8 @@ beforeEach(()=>{
    return {text:JSON.stringify({success:true,data:{applicationId:"A",entry:{path:"/panels/A",renderer:"panels"},panelUses:[use]}})};
  });
  mocks.pages.mockResolvedValue({ resolveSource: mocks.resolveMember });
+ mocks.assertPermission.mockResolvedValue(undefined);
+ mocks.projectDefinition.mockImplementation(definition => definition);
  mocks.resolveMember.mockResolvedValue(skill);
  mocks.loadedMember.mockImplementation((ref, loaded: RuntimeRun["resolvedSkills"]) =>
    loaded.find(entry => JSON.stringify(entry.skill) === JSON.stringify(ref)) ?? null);
@@ -259,18 +268,14 @@ it("reuses the original creation artifact as the initiator and saves as the exec
   mocks.draft.mockResolvedValue(form);
   const input = { ...save(), call: { target: { kind: "draft" as const }, input: { values }, draft: link } };
   const createdId = uuid(21);
-  const write = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-    expect(url).toBe("http://workbench.test/api/assistant/agent-definitions");
-    expect(init.method).toBe("POST");
-    const headers = new Headers(init.headers);
-    expect(headers.get("X-API-Key")).toBe("V-key");
-    expect(headers.get("tk")).toBeNull();
-    expect(headers.get("Idempotency-Key")).toBe(input.intentId);
-    expect(JSON.parse(String(init.body))).toEqual(values);
-    return Response.json({ ...values, id: createdId, executionUserId: null, sortOrder: 0 }, { status: 201 });
+  mocks.createDefinition.mockResolvedValue({
+    definition: { ...values, id: createdId, executionUserId: null, sortOrder: 0 },
   });
-  vi.stubGlobal("fetch", write);
   expect(await operatePanel(owner, credentials, current.id, input)).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
+  expect(mocks.assertPermission).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "V-key" }), ["analysis-agent"]);
+  expect(mocks.createDefinition).toHaveBeenCalledWith(input.intentId, values, { domainId: owner.domainId, userId: "V" },
+    expect.objectContaining({ apiKey: "V-key" }), { credentials, view: { resolveSource: mocks.resolveMember } });
+  expect(fetch).not.toHaveBeenCalled();
   expect(mocks.draft).toHaveBeenCalledWith(link.sessionId, link.runId, link.path, owner);
   expect(mocks.recordCreated).toHaveBeenCalledWith(link.sessionId, link.runId, link.path, createdId, owner);
   const target = { objectType, primaryKey: createdId };
@@ -280,7 +285,16 @@ it("reuses the original creation artifact as the initiator and saves as the exec
   mocks.draft.mockResolvedValue({ ...form, created: { id: createdId } });
   await expect(operatePanel(owner, credentials, current.id, { ...input, intentId: uuid(22) }))
     .rejects.toMatchObject({ code: "PAGE_DRAFT_MISMATCH" });
-  expect(write).toHaveBeenCalledTimes(1);
+  expect(mocks.createDefinition).toHaveBeenCalledTimes(1);
+
+  const currentView = { resolveSource: mocks.resolveMember, revoked: true };
+  mocks.pages.mockResolvedValueOnce(currentView);
+  mocks.projectDefinition.mockImplementationOnce(definition => ({ ...definition, skills: [] }));
+  expect(await dispatchPanel(owner, credentials, current.id, input.intentId)).toMatchObject({
+    kind: "dispatched", outcome: { kind: "success", data: { id: createdId, skills: [] } },
+  });
+  expect(mocks.projectDefinition).toHaveBeenLastCalledWith(expect.objectContaining({ skills: values.skills }), currentView);
+  expect(mocks.createDefinition).toHaveBeenCalledTimes(1);
 });
 
 it("freezes the owner write description with a named target and a result schema", async () => {

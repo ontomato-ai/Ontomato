@@ -87,14 +87,19 @@ export async function readAgentDefinition(id: string, owner: AssistantOwner, cre
   const definition = await readStoredAgentDefinition(id, owner, credentials.locale);
   return projectAgentDefinitionSkills(definition, await readAssistantSkillView(owner.domainId, credentials));
 }
-/** The checks every save makes before it writes; a draft's validation runs exactly these and changes nothing. */
+export interface AgentDefinitionSkillSelection {
+  credentials: AssistantCredentials;
+  view: AssistantSkillView;
+}
+
+/** The operator governs execution settings; the initiator's view governs the skill selection. */
 export async function checkedDefinition(
   input: AssistantAgentUpdateInput,
   owner: AssistantOwner,
   credentials: AssistantCredentials,
   oldExecutionUserId: string | null,
   oldSkills: readonly RuntimeSkillRef[],
-  skillView?: AssistantSkillView,
+  selection?: AgentDefinitionSkillSelection,
 ) {
   const executionUserId = input.executionUserId === undefined ? oldExecutionUserId : input.executionUserId;
   try {
@@ -112,16 +117,16 @@ export async function checkedDefinition(
     throw AgentDefinitionFieldError.fromOption(error, "/modelSelection/modelId", "target_unavailable");
   }
   if (input.skills === undefined) return { executionUserId };
-  const access = skillView ?? await readAssistantSkillView(owner.domainId, credentials);
-  if (hasHiddenAssistantSkillRefs(oldSkills, access)) {
-    const message = tForLocale(credentials.locale, "panels.agentForm.hiddenSkillSelection");
+  const access = selection ?? { credentials, view: await readAssistantSkillView(owner.domainId, credentials) };
+  if (hasHiddenAssistantSkillRefs(oldSkills, access.view)) {
+    const message = tForLocale(access.credentials.locale, "panels.agentForm.hiddenSkillSelection");
     throw new AgentDefinitionFieldError(403, message, "SKILL_SELECTION_INCOMPLETE", [
       { field: "/skills", code: "target_unavailable", message },
     ]);
   }
   try {
     const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
-    await validateAssistantSkills(owner.domainId, skills, credentials, access);
+    await validateAssistantSkills(owner.domainId, skills, access.credentials, access.view);
     return { skills, executionUserId };
   } catch (error) {
     if (!(error instanceof HttpError) || error.status !== 400 || !["SKILL_NOT_FOUND", "INVALID_REQUEST"].includes(error.code ?? "")) throw error;
@@ -137,16 +142,24 @@ export async function validateAgentDefinition(
   await checkedDefinition(draft.form, owner, credentials, old?.execution_user_id ?? null, old?.skills ?? []);
 }
 export async function saveAgentDefinition(
+  id: string, input: AssistantAgentUpdateInput, owner: AssistantOwner, credentials: AssistantCredentials,
+) {
+  const { definition, skillView } = await saveAgentDefinitionSnapshot(id, input, owner, credentials);
+  return projectAgentDefinitionSkills(definition, skillView);
+}
+
+export async function saveAgentDefinitionSnapshot(
   id: string,
   input: AssistantAgentUpdateInput,
   owner: AssistantOwner,
   credentials: AssistantCredentials,
+  selection?: AgentDefinitionSkillSelection,
 ) {
   const locale = credentials.locale;
   return withDomainSkills(owner.domainId, async () => {
     const agent = await editableAgent(id, owner);
-    const skillView = await readAssistantSkillView(owner.domainId, credentials);
-    const { skills, executionUserId } = await checkedDefinition(input, owner, credentials, agent.execution_user_id, agent.skills, skillView);
+    const access = selection ?? { credentials, view: await readAssistantSkillView(owner.domainId, credentials) };
+    const { skills, executionUserId } = await checkedDefinition(input, owner, credentials, agent.execution_user_id, agent.skills, access);
     if (input.executionUserId != null && input.executionUserId !== agent.execution_user_id)
       await prepareExecutionSetting(owner, agent.execution_user_id, input.executionUserId, credentials);
     await transaction(async client=>{
@@ -172,18 +185,26 @@ export async function saveAgentDefinition(
     const updated=await client.query(`SELECT * FROM ${t('assistant_agents')} WHERE id=$1 AND domain_id=$2`,[id,owner.domainId]);
     await synchronizeNativeProfile(client,owner,updated.rows[0],locale);
     });
-    return projectAgentDefinitionSkills(await readStoredAgentDefinition(id, owner, locale), skillView);
+    return { definition: await readStoredAgentDefinition(id, owner, locale), skillView: access.view };
   });
 }
 export async function createAgentDefinition(
+  id: string, input: AssistantAgentInput, owner: AssistantOwner, credentials: AssistantCredentials,
+) {
+  const { definition, skillView } = await createAgentDefinitionSnapshot(id, input, owner, credentials);
+  return projectAgentDefinitionSkills(definition, skillView);
+}
+
+export async function createAgentDefinitionSnapshot(
   id: string,
   input: AssistantAgentInput,
   owner: AssistantOwner,
   credentials: AssistantCredentials,
+  selection?: AgentDefinitionSkillSelection,
 ) {
   return withDomainSkills(owner.domainId, async () => {
-    const skillView = await readAssistantSkillView(owner.domainId, credentials);
-    const { skills, executionUserId } = await checkedDefinition(input, owner, credentials, null, [], skillView);
+    const access = selection ?? { credentials, view: await readAssistantSkillView(owner.domainId, credentials) };
+    const { skills, executionUserId } = await checkedDefinition(input, owner, credentials, null, [], access);
     const pool = getPostgresPool();
     const existing = (
       await pool.query(
@@ -231,7 +252,7 @@ export async function createAgentDefinition(
           "IDEMPOTENCY_CONFLICT",
         );
     }
-    return projectAgentDefinitionSkills(actual, skillView);
+    return { definition: actual, skillView: access.view };
   });
 }
 

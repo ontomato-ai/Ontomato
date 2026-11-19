@@ -76,7 +76,8 @@ export async function describeAgentDefinitionForm(
       const input = target.kind === "draft"
         ? parseAgentDefinitionForm(submittedValues)
         : parseAgentDefinitionUpdateForm(submittedValues);
-      const checked = await checkedDefinition(input, owner, credentials, current.executionUserId, current.skills, skillView);
+      const checked = await checkedDefinition(input, owner, credentials, current.executionUserId, current.skills,
+        skillView && { credentials, view: skillView });
       values = { ...input, ...checked };
     } catch (error) {
       if (!(error instanceof AgentDefinitionFieldError)) throw error;

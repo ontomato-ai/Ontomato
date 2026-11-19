@@ -157,10 +157,10 @@ panelOperationsRouter.post("/panel-operations/intents", wrap(async (req, res) =>
   res.json(await prepareHumanPanelOperation(owner, credentials, input));
 }));
 panelOperationsRouter.get("/panel-operation-intents/:intentId", wrap(async (req, res) => {
-  const { owner } = context(req);
+  const { owner, credentials } = context(req);
   const { intentId } = panelHumanOperationIntentParamsSchema.parse(req.params);
   const use = Object.keys(req.query).length ? panelUseRefSchema.parse(req.query) : undefined;
-  res.json(await projectPanelOperationIntent(owner, intentId, use));
+  res.json(await projectPanelOperationIntent(owner, intentId, use, credentials));
 }));
 panelOperationsRouter.post("/panel-operations/intents/:intentId/dispatch", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
