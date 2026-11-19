@@ -22,6 +22,7 @@ const feedbackRecordSchema = z.object({
   assistantOutput: z.string().optional(),
   feedbackText: z.string().optional(),
   metadata: z.unknown().optional(),
+  turnKey: z.string(),
   createdAt: z.number(),
 });
 

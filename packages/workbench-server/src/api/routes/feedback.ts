@@ -5,8 +5,9 @@ import type {
 import { Request, Response, Router } from "express";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { listFeedback } from "../../services/admin/feedback-store";
+import { feedbackCsv } from "../../services/admin/feedback-export";
 import { requirePermission } from "../../identity/installed";
-import { asyncHandler } from "../utils/http";
+import { asyncHandler, buildAttachmentContentDisposition } from "../utils/http";
 const router: ReturnType<typeof Router> = Router();
 
 function normalizeSourceType(value: unknown): FeedbackSourceType | null {
@@ -16,6 +17,29 @@ function normalizeSourceType(value: unknown): FeedbackSourceType | null {
 function normalizeRating(value: unknown): FeedbackRating | null {
   return value === "like" || value === "dislike" ? value : null;
 }
+
+router.get(
+  "/export",
+  requirePermission(["user-feedback"]),
+  asyncHandler(async (req: Request, res: Response) => {
+    const identity = req as AuthenticatedRequest;
+    const data = await listFeedback({
+      domainId: identity.domainId,
+      sourceType: normalizeSourceType(req.query.sourceType) || undefined,
+      rating: normalizeRating(req.query.rating) || undefined,
+      keyword:
+        typeof req.query.keyword === "string" ? req.query.keyword : undefined,
+      all: true,
+    });
+    const fileName = `feedback_records_${new Date().toISOString().slice(0, 10)}.csv`;
+    res
+      .set({
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": buildAttachmentContentDisposition(fileName),
+      })
+      .send(feedbackCsv(data.records, identity.locale));
+  }),
+);
 
 router.get(
   "/",

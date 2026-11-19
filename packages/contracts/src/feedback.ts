@@ -16,6 +16,8 @@ export interface FeedbackRecord {
   assistantOutput?: string;
   feedbackText?: string;
   metadata?: unknown;
+  /** The turn the feedback belongs to, derived by the owner; empty when it names a turn this record does not reach. */
+  turnKey: string;
   createdAt: number;
 }
 
