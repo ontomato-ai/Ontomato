@@ -102,7 +102,7 @@ public class PlatformAuthoringService {
         requireAction(kind);
         var samples = operations.authorSamples(run.owner().domainId(), input, access.classNames());
         register(run);
-        createSandbox(run, access.target().contextId());
+        createSandbox(run, access.target().contextId(), access.classNames());
         yield operations.storeSamples(window(run, kind, access), samples);
       }
       case "explain-draft" -> {
@@ -346,13 +346,13 @@ public class PlatformAuthoringService {
         }, run.evidenceScope());
   }
 
-  private void createSandbox(Run run, String contextId) {
+  private void createSandbox(Run run, String contextId, List<String> classes) {
     store.transaction(() -> {
       var row = open(run);
       if (row.getString("sandbox_id") != null) return null;
       String sandbox = "a" + run.id().replace("-", "");
       try {
-        operations.createSandbox(sandbox, run.owner().domainId());
+        operations.createSandbox(sandbox, run.owner().domainId(), classes);
       } catch (Exception error) {
         throw new IllegalStateException(error);
       }
