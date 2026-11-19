@@ -66,6 +66,7 @@ COPY --from=python-runtime /runtime-notices.txt /app/licenses/THIRD_PARTY_NOTICE
 COPY requirements-py310.txt /app/licenses/python-requirements.txt
 COPY tools/workbench/runtime-layout.mjs /tmp/runtime-layout.mjs
 RUN node -e 'import("/tmp/runtime-layout.mjs").then(m => m.checkNoBrokenSymlinks("/app"))' && rm /tmp/runtime-layout.mjs && mkdir /data
+LABEL org.opencontainers.image.source="https://github.com/ontomato-ai/Ontomato"
 WORKDIR /app/apps/agent-runtime
 # Import the assembled production graph without starting the service or contacting PostgreSQL.
 RUN node --import tsx --input-type=module -e 'await import("@ontomato/agent-runtime")' \

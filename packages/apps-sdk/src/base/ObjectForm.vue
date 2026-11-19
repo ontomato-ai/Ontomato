@@ -116,6 +116,8 @@ function fail(reason: unknown) {
 
 onMounted(() => load(target.value));
 let pendingRefresh = false;
+/** The latest read of the same object again; an older one that comes back after it is not applied. */
+let rereading = 0;
 watch(target, (next) => {
   pendingRefresh = false;
   if (targetKey(next) !== loaded) load(next);
@@ -123,7 +125,30 @@ watch(target, (next) => {
 function refreshWhenClean() {
   if (!pendingRefresh || canSettle.value || saving.value) return;
   pendingRefresh = false;
-  load(target.value);
+  reread();
+}
+
+/**
+ * Reads the object the form shows again, in place: the fields, the focus and the caret stay where they are while the
+ * read is on its way, and its answer replaces the values only if the form is still clean when it comes back. A reader
+ * who changed anything meanwhile keeps their edit; the read waits, pending, until the form is saved or discarded.
+ */
+function reread() {
+  const current = target.value;
+  const currentKey = targetKey(current);
+  if (current === null || held?.target === currentKey) return load(current);
+  const reading = ++rereading;
+  void forms.describe({ target: current, changedField: null }).then(
+    (answer) => {
+      if (loaded !== currentKey || reading !== rereading || held?.target === currentKey) return;
+      if (canSettle.value || saving.value) {
+        pendingRefresh = true;
+        return;
+      }
+      adopt(answer);
+    },
+    (reason: unknown) => { if (loaded === currentKey && reading === rereading) fail(reason); },
+  );
 }
 useProjectionObjectRefresh((id) => id === key.value, () => {
   pendingRefresh = true;
