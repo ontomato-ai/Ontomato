@@ -74,9 +74,13 @@ function answer(request: Sent) {
   const projection = /^\/api\/product-projections\/(.+)$/.exec(request.path);
   if (projection) return Response.json({ projection: projections[decodeURIComponent(projection[1]!)] });
   if (request.path === "/api/product-panels/read") {
-    const { dataName, inputs } = request.body as { dataName: string; inputs: { task: { primaryKey: string } } };
-    return Response.json({ status: "ready", value: dataName === "operation" ? runNow : form(`Task ${inputs.task.primaryKey}`) });
+    // The owner answers its form with the values it was asked with, when there are any (a draft's, an edit's).
+    const { dataName, inputs } = request.body as { dataName: string; inputs: { task: { primaryKey: string }; values?: { name: string } } };
+    if (dataName === "operation") return Response.json({ status: "ready", value: runNow });
+    return Response.json({ status: "ready", value: form(inputs.values?.name ?? `Task ${inputs.task.primaryKey}`) });
   }
+  if (request.path === "/api/assistant/sessions/session-1/runs/run-1/page-draft")
+    return Response.json({ pageKey: use.pageKey, operation: `${SCHEDULED_TASK}.save`, target: { id: "t-1" }, form: { name: "Drafted by an agent" } });
   if (request.path === "/api/panel-operations/intents")
     return Response.json({ intentId: INTENT, operationId: "run.runNow", label: "Run now", confirmation: { kind: "none" } });
   if (request.path === `/api/panel-operation-intents/${INTENT}`)
@@ -171,6 +175,20 @@ it("follows another chosen task in the same instance, reading the form for it", 
     // The same instance: its layout stays in place and its members' projections are not read again.
     expect(element.querySelector(".panel-layout-row")).toBe(layout);
     expect(sent.filter(request => request.path.startsWith("/api/product-projections/")).length).toBe(projectionReads);
+  } finally {
+    app.unmount();
+  }
+});
+
+it("takes the draft its address links into the member's form, as a frame's form does", async () => {
+  const draft = new URLSearchParams({ draftSessionId: "session-1", draftRunId: "run-1", draftPath: "outputs/drafts/task.page-draft.json" });
+  const { app, element, sent } = await open(panelAddress(`${use.path}?${draft}`, { selectedTask: task("t-1") }));
+  try {
+    await vi.waitFor(() => expect(element.querySelector<HTMLInputElement>('[data-member="form"] [data-field="/name"] input')?.value)
+      .toBe("Drafted by an agent"));
+    expect(sent.find(request => request.path.endsWith("/page-draft"))).toMatchObject({
+      method: "GET", search: `?${new URLSearchParams({ path: "outputs/drafts/task.page-draft.json" })}`, credential: READER,
+    });
   } finally {
     app.unmount();
   }
