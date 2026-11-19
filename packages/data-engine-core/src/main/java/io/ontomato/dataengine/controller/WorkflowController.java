@@ -264,6 +264,7 @@ public class WorkflowController {
                 item.put("workflowId", grant.workflowId());
                 item.put("stepNo", grant.stepNo());
                 item.put("scope", grant.scope());
+                item.put("inForce", grant.inForce());
                 item.put("activatedByWorkflowVersion", grant.activatedByWorkflowVersion());
                 data.add(item);
             }
@@ -283,13 +284,18 @@ public class WorkflowController {
         JSONObject ret = new JSONObject();
         try {
             User user = SystemUtils.getCurUser();
-            if (param.getString("id") != null) {
-                Workflow workflow = workflowService.queryById(param.getString("id"), user.getDomainId());
+            String id = param.getString("id");
+            String status = param.getString("status");
+            if (status != null) status = status.trim();
+            if (id != null) {
+                Workflow workflow = Workflow.STATUS_ACTIVE.equals(status)
+                        ? workflowService.queryActiveById(id, user.getDomainId())
+                        : workflowService.queryById(id, user.getDomainId());
                 ret.put("success", true);
                 ret.put("data", workflow == null ? null : render(workflow));
             } else {
                 List<Workflow> workflows =
-                        workflowService.queryList(param.getString("status"), user.getDomainId());
+                        workflowService.queryList(status, user.getDomainId());
                 JSONArray data = new JSONArray();
                 for (Workflow workflow : workflows) data.add(render(workflow));
                 ret.put("success", true);
@@ -330,6 +336,7 @@ public class WorkflowController {
         result.put("description", workflow.getDescription());
         result.put("status", workflow.getStatus());
         result.put("version", workflow.getVersion());
+        result.put("hasDraft", workflow.getHasDraft());
         result.put("runClassName", workflow.getRunClassName());
         result.put("temporary", workflow.getTemporary());
         result.put("caseFormSchema", workflow.getCaseFormSchema());

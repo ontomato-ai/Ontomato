@@ -28,4 +28,9 @@ public class AnonymousWorkflowGrantSink implements WorkflowGrantSink {
     public void revokeActivatedBy(String domainId, String workflowId, int workflowVersion) {
         // Nothing was granted, so nothing is withdrawn.
     }
+
+    @Override
+    public void revokeWorkflow(String domainId, String workflowId) {
+        // The open-source edition has no role grants to remove.
+    }
 }

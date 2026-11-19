@@ -11,6 +11,8 @@ public interface WorkflowService {
 
     Workflow queryById(String id, String domainId);
 
+    Workflow queryActiveById(String id, String domainId);
+
     List<Workflow> queryList(String status, String domainId);
 
     /**

@@ -39,6 +39,26 @@ public class WorkflowDao {
 	private static final String COLUMNS =
 			"id, name, description, domain_id, status, version, steps, run_class_name, run_contract, temporary, case_form_schema, create_timestamp, modify_timestamp, created_by";
 
+	private static final String HAS_DRAFT = """
+			(w.status = 'ACTIVE' AND ROW(w.name, w.description, w.steps, w.run_class_name,
+				w.run_contract, w.temporary, w.case_form_schema) IS DISTINCT FROM
+				ROW(v.name, v.description, v.steps, v.run_class_name,
+					v.run_contract, v.temporary, v.case_form_schema)) AS has_draft
+			""";
+
+	private static final String REVISION_JOIN = """
+			JOIN workflow_version v ON v.workflow_id = w.id AND v.domain_id = w.domain_id
+				AND v.version = w.version
+			""";
+
+	private static final String EDITABLE = "SELECT w.*, " + HAS_DRAFT + " FROM workflow w LEFT " + REVISION_JOIN;
+
+	private static final String ACTIVE = """
+			SELECT w.id, v.name, v.description, w.domain_id, w.status, w.version, v.steps,
+				v.run_class_name, v.run_contract, v.temporary, v.case_form_schema,
+				w.create_timestamp, v.create_timestamp AS modify_timestamp, w.created_by,
+			""" + HAS_DRAFT + " FROM workflow w " + REVISION_JOIN;
+
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
@@ -72,6 +92,8 @@ public class WorkflowDao {
 				+ "workflow_id VARCHAR(64), "
 				+ "domain_id VARCHAR(64), "
 				+ "version INTEGER, "
+				+ "name VARCHAR(255), "
+				+ "description TEXT, "
 				+ "steps TEXT, "
 				+ "run_class_name VARCHAR(255), "
 				+ "run_contract TEXT, "
@@ -84,6 +106,16 @@ public class WorkflowDao {
 		jdbcTemplate.execute("ALTER TABLE " + VERSION_TABLE + " ADD COLUMN IF NOT EXISTS case_form_schema TEXT");
 		jdbcTemplate.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_" + VERSION_TABLE
 				+ "_workflow_version ON " + VERSION_TABLE + "(workflow_id, version)");
+
+		jdbcTemplate.execute("ALTER TABLE " + VERSION_TABLE + " ADD COLUMN IF NOT EXISTS name VARCHAR(255)");
+		jdbcTemplate.execute("ALTER TABLE " + VERSION_TABLE + " ADD COLUMN IF NOT EXISTS description TEXT");
+		// Before draft saves preserved activation, an ACTIVE definition still matched its frozen revision.
+		jdbcTemplate.update("""
+				UPDATE workflow_version v SET name = w.name, description = w.description
+				FROM workflow w
+				WHERE v.workflow_id = w.id AND v.domain_id = w.domain_id AND v.version = w.version
+					AND v.name IS NULL AND w.status = 'ACTIVE'
+				""");
 
 		// Activation and deactivation are appended; nothing is ever updated in place.
 		jdbcTemplate.execute("CREATE TABLE IF NOT EXISTS " + EVENT_TABLE + " ("
@@ -100,47 +132,41 @@ public class WorkflowDao {
 		log.info(">>>workflow table initialization complete");
 	}
 
-	public Workflow save(Workflow workflow) {
+	public Workflow saveDraft(Workflow workflow) {
 		if (workflow.getId() == null) workflow.setId(UUID.randomUUID().toString());
-		if (workflow.getDomainId() == null) throw new IllegalArgumentException("A workflow requires its domain");
 		long now = System.currentTimeMillis();
-		if (workflow.getCreateTimestamp() == null) workflow.setCreateTimestamp(now);
-		workflow.setModifyTimestamp(now);
-		if (workflow.getVersion() == null) workflow.setVersion(0);
-
-		String steps = JSON.toJSONString(workflow.getSteps() == null ? List.of() : workflow.getSteps());
-		String runContract = workflow.getRunContract() == null
-				? null : JSON.toJSONString(workflow.getRunContract());
-		String caseFormSchema = workflow.getCaseFormSchema() == null
-				? null : JSON.toJSONString(workflow.getCaseFormSchema());
-		// version is deliberately absent from the SET list. A draft edit carries no version, and copying
-		// that over the row would erase the number of the newest published revision: activation would then
-		// compute 1 again, publishVersion would collide with the revision already frozen as 1, and the
-		// revision actually in force would no longer be the one on record. The number only moves forward,
-		// through updateVersion below.
-		jdbcTemplate.update(
+		int saved = jdbcTemplate.update(
 				"INSERT INTO " + TABLE + " (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-						+ "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, "
-						+ "status = EXCLUDED.status, steps = EXCLUDED.steps, "
-						// created_by is deliberately absent: it records the first save and must survive later ones.
-						+ "run_class_name = EXCLUDED.run_class_name, run_contract = EXCLUDED.run_contract, "
-						+ "temporary = EXCLUDED.temporary, case_form_schema = EXCLUDED.case_form_schema, "
-						+ "modify_timestamp = EXCLUDED.modify_timestamp",
+						+ """
+						ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description,
+							steps = EXCLUDED.steps, run_class_name = EXCLUDED.run_class_name,
+							run_contract = EXCLUDED.run_contract, temporary = EXCLUDED.temporary,
+							case_form_schema = EXCLUDED.case_form_schema, modify_timestamp = EXCLUDED.modify_timestamp
+						WHERE workflow.domain_id = EXCLUDED.domain_id
+						""",
 				workflow.getId(), workflow.getName(), workflow.getDescription(), workflow.getDomainId(),
-				workflow.getStatus(), workflow.getVersion(), steps, workflow.getRunClassName(),
-				runContract, workflow.getTemporary(), caseFormSchema,
-				workflow.getCreateTimestamp(), workflow.getModifyTimestamp(), workflow.getCreatedBy());
-		if (workflow.getVersion() != null && workflow.getVersion() > 0) {
-			updateVersion(workflow.getId(), workflow.getVersion());
-		}
-		return workflow;
+				Workflow.STATUS_DRAFT, 0, stepsJson(workflow), workflow.getRunClassName(),
+				runContractJson(workflow), workflow.getTemporary(), caseFormSchemaJson(workflow),
+				now, now, workflow.getCreatedBy());
+		if (saved == 0) throw new IllegalArgumentException("Workflow not found");
+		return queryById(workflow.getId());
 	}
 
-	/** Move the projected version forward; a smaller number is a stale caller and is ignored. */
-	public void updateVersion(String id, int version) {
-		jdbcTemplate.update(
-				"UPDATE " + TABLE + " SET version = ? WHERE id = ? AND (version IS NULL OR version < ?)",
-				version, id, version);
+	public void updateLifecycle(Workflow workflow) {
+		jdbcTemplate.update("UPDATE " + TABLE + " SET status = ?, version = ? WHERE id = ?",
+				workflow.getStatus(), workflow.getVersion(), workflow.getId());
+	}
+
+	private String stepsJson(Workflow workflow) {
+		return JSON.toJSONString(workflow.getSteps() == null ? List.of() : workflow.getSteps());
+	}
+
+	private String runContractJson(Workflow workflow) {
+		return workflow.getRunContract() == null ? null : JSON.toJSONString(workflow.getRunContract());
+	}
+
+	private String caseFormSchemaJson(Workflow workflow) {
+		return workflow.getCaseFormSchema() == null ? null : JSON.toJSONString(workflow.getCaseFormSchema());
 	}
 
 	/** The number the next published revision must take, derived from the frozen rows rather than the row. */
@@ -151,33 +177,18 @@ public class WorkflowDao {
 		return next == null ? 1 : next;
 	}
 
-	/**
-	 * Freeze the current steps as the next published revision, and number it from the frozen rows.
-	 *
-	 * <p>The revision number is allocated here rather than taken from the caller: the row's version is a
-	 * projection that a draft edit may not touch, so it cannot be trusted to say which revision is next.
-	 * A collision means two activations raced; that is reported rather than silently dropped, because a
-	 * dropped revision leaves the grants naming a version whose frozen steps are someone else's.</p>
-	 */
+	/** Freeze the definition as the next revision while the service holds the workflow row lock. */
 	public int publishVersion(Workflow workflow) {
 		int version = nextVersion(workflow.getId());
-		int inserted = jdbcTemplate.update(
-				"INSERT INTO " + VERSION_TABLE
-						+ " (id, workflow_id, domain_id, version, steps, run_class_name, run_contract, temporary, case_form_schema, create_timestamp) "
-						+ "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (workflow_id, version) DO NOTHING",
+		jdbcTemplate.update("""
+				INSERT INTO workflow_version (id, workflow_id, domain_id, version, name, description,
+					steps, run_class_name, run_contract, temporary, case_form_schema, create_timestamp)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				""",
 				UUID.randomUUID().toString(), workflow.getId(), workflow.getDomainId(), version,
-				JSON.toJSONString(workflow.getSteps() == null ? List.of() : workflow.getSteps()),
-				workflow.getRunClassName(),
-				workflow.getRunContract() == null ? null : JSON.toJSONString(workflow.getRunContract()),
-				workflow.getTemporary(),
-				workflow.getCaseFormSchema() == null ? null : JSON.toJSONString(workflow.getCaseFormSchema()),
+				workflow.getName(), workflow.getDescription(), stepsJson(workflow), workflow.getRunClassName(),
+				runContractJson(workflow), workflow.getTemporary(), caseFormSchemaJson(workflow),
 				System.currentTimeMillis());
-		if (inserted == 0) {
-			throw new IllegalStateException("Workflow revision " + version
-					+ " was published concurrently for " + workflow.getId()
-					+ "; the steps it froze are not the ones being granted");
-		}
-		workflow.setVersion(version);
 		return version;
 	}
 
@@ -191,21 +202,32 @@ public class WorkflowDao {
 	}
 
 	public Workflow queryById(String id) {
-		List<Workflow> found = jdbcTemplate.query(
-				"SELECT " + COLUMNS + " FROM " + TABLE + " WHERE id = ?",
-				(rs, rowNum) -> map(rs), id);
-		return found.isEmpty() ? null : found.get(0);
+		return queryOne(EDITABLE + " WHERE w.id = ?", id);
+	}
+
+	public Workflow queryByIdForUpdate(String id, String domainId) {
+		return queryOne(EDITABLE + " WHERE w.id = ? AND w.domain_id = ? FOR UPDATE OF w", id, domainId);
+	}
+
+	public Workflow queryActiveById(String id, String domainId) {
+		return queryOne(ACTIVE + " WHERE w.id = ? AND w.domain_id = ? AND w.status = 'ACTIVE'", id, domainId);
+	}
+
+	private Workflow queryOne(String sql, Object... params) {
+		List<Workflow> found = jdbcTemplate.query(sql, (rs, rowNum) -> map(rs), params);
+		return found.isEmpty() ? null : found.getFirst();
 	}
 
 	public List<Workflow> queryList(String status, String domainId) {
-		StringBuilder sql = new StringBuilder("SELECT " + COLUMNS + " FROM " + TABLE + " WHERE domain_id = ?");
+		String selection = Workflow.STATUS_ACTIVE.equals(status) ? ACTIVE : EDITABLE;
+		StringBuilder sql = new StringBuilder(selection + " WHERE w.domain_id = ?");
 		List<Object> params = new ArrayList<>();
 		params.add(domainId);
 		if (status != null && !status.isBlank()) {
-			sql.append(" AND status = ?");
-			params.add(status.trim());
+			sql.append(" AND w.status = ?");
+			params.add(status);
 		}
-		sql.append(" ORDER BY create_timestamp DESC");
+		sql.append(" ORDER BY w.create_timestamp DESC");
 		return jdbcTemplate.query(sql.toString(), (rs, rowNum) -> map(rs), params.toArray());
 	}
 
@@ -224,14 +246,6 @@ public class WorkflowDao {
                         rs.getBoolean("shared_class")), domain, id, version);
         return rows.isEmpty() ? null : rows.get(0);
     }
-
-	/** The steps of one published revision, so a grant can be re-derived from what was approved. */
-	public List<WorkflowStep> versionSteps(String workflowId, int version) {
-		List<String> found = jdbcTemplate.query(
-				"SELECT steps FROM " + VERSION_TABLE + " WHERE workflow_id = ? AND version = ?",
-				(rs, rowNum) -> rs.getString(1), workflowId, version);
-		return found.isEmpty() ? List.of() : parseSteps(found.get(0));
-	}
 
 	public void delete(String id) {
 		jdbcTemplate.update("DELETE FROM " + TABLE + " WHERE id = ?", id);
@@ -278,6 +292,7 @@ public class WorkflowDao {
 		workflow.setDomainId(rs.getString("domain_id"));
 		workflow.setStatus(rs.getString("status"));
 		workflow.setVersion(rs.getInt("version"));
+		workflow.setHasDraft(rs.getBoolean("has_draft"));
 		workflow.setSteps(parseSteps(rs.getString("steps")));
 		workflow.setRunClassName(rs.getString("run_class_name"));
 		String runContract = rs.getString("run_contract");

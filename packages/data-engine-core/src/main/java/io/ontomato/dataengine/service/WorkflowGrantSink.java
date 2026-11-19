@@ -34,14 +34,11 @@ public interface WorkflowGrantSink {
             String capabilityId,
             int workflowVersion, Integer stepNo, GrantScope scope);
 
-    /**
-     * Withdraw exactly the grants that this workflow revision activated.
-     *
-     * <p>Scoped by revision, not by workflow: deactivating the current revision must not silently remove
-     * authority that an earlier revision granted and that is still in force. Scoped by workflow too,
-     * because revision numbers repeat across workflows.</p>
-     */
+    /** Withdraw the grants written by the deactivated revision. */
     void revokeActivatedBy(String domainId, String workflowId, int workflowVersion);
+
+    /** Remove every grant written by a deleted workflow. */
+    void revokeWorkflow(String domainId, String workflowId);
 
     /** Record that a workflow became effective, so the change itself is auditable. */
     default void activated(Workflow workflow, String principalId) {}
