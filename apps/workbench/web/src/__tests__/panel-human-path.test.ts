@@ -579,7 +579,8 @@ it("opens the saved draft's old link as an ordinary panel", async () => {
     });
     // Let the adapter consume the reread owner's form before checking that the draft stayed empty.
     // It changes nothing, so nothing is marked or unsaved; the fields it writes are still what it submits, whatever their
-    // values, so the reader may save or discard them (submittedFields, 11-19 review).
+    // values, so the reader may save or discard them (submittedFields, 11-19 review). Pending the skills lead's decision:
+    // keep this, or have Node tell the frame a draft was already applied and show an ordinary panel again.
     await vi.waitFor(() => {
       expect(context.draft.value).toBeNull();
       expect(context.instance.dirty()).toBe(false);
