@@ -189,7 +189,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
         author = port.mode.definitions.observe(targetsOf(read), advance, reportPanelUnavailable);
       // A viewer's panel is reconciled with a short read; the frame does not wait for it.
       else if (read.kind === "registered")
-        void port.snapshot(read.panel.id).then(snapshot => active && advance([{ kind: "panel", ...snapshot.panel }]))
+        void port.snapshot(read.panel.id).then(snapshot => { if (active) return advance([{ kind: "panel", ...snapshot.panel }]); })
           .catch(failure => { if (active) reportPanelUnavailable(failure); });
     } catch (failure) {
       if (active) reportPanelUnavailable(failure);

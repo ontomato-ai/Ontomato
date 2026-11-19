@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { h } from "vue";
-import { createMemoryHistory, createRouter, RouterView } from "vue-router";
+import { createMemoryHistory, createRouter, RouterView, type RouteRecordRaw } from "vue-router";
 import { buildExecutionContext, type BuildTestContext } from "@ontomato/contracts/build-tests";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { CandidatePanelSource } from "@ontomato/contracts/panel-host";
@@ -93,7 +93,7 @@ function network(candidate: () => CandidatePanelSource | Response) {
 async function openPreview(answer: (request: Sent) => Response) {
   const sent = installPlatform(answer);
   // The platform's own route record, with its page loaded up front: each test starts the frame's modules afresh.
-  const routes = appBuilderPages().map(route => route.name === "PanelCandidatePreview" ? { ...route, component: PanelCandidateRoute } : route);
+  const routes = appBuilderPages().map(route => route.name === "PanelCandidatePreview" ? { ...route, component: PanelCandidateRoute } as RouteRecordRaw : route);
   const router = createRouter({ history: createMemoryHistory(), routes });
   await router.push(previewAddress);
   const page = mountPlatformPage(() => h(RouterView), router);

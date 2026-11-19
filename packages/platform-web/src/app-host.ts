@@ -21,8 +21,9 @@ import {invalidateProductData} from '@ontomato/contracts/product-invalidation';
 import {installAppBridge} from './app-bridge';
 import type {PanelManifest} from '@ontomato/contracts/panel-manifest';
 import {productProjectionResponseSchema} from '@ontomato/contracts/product-panels';
-import {pageDraftReadSchema} from '@ontomato/contracts/page-draft';
-import {bindingKey,clientSends} from '@ontomato/contracts/panel-client-requests';
+import {pageDraftCreatedSchema,pageDraftReadSchema} from '@ontomato/contracts/page-draft';
+import {clientSends} from '@ontomato/contracts/panel-client-requests';
+import {projectionBindingKeys} from '@ontomato/contracts/panel-projection';
 
 const executionBindings = new WeakMap<object, AppExecutionContext>();
 const publishedFrames=new WeakMap<object,string>();
@@ -44,13 +45,21 @@ interface PanelFrame {
   /**
    * Every projection the panel's declaration names, with the binding of its current record once the frame has read it
    * through this host. The record is Node's, read with the reader's credential, so the binding is the owner's, not the
-   * frame's word; a projection read again after its definition changed brings its new binding.
+   * frame's word; a projection read again after its definition changed brings its new bindings — a graph's edges
+   * included.
    */
-  bindings: Map<string,string|null>;
+  bindings: Map<string,readonly string[]|null>;
+  /**
+   * The create drafts this frame has read for its page, as `<session>/<run>/<path>`: the only drafts whose created object
+   * it may record after the reader's first save.
+   */
+  createDrafts: Set<string>;
 }
 const panelFrames=new WeakMap<object,PanelFrame>();
 const PROJECTION_READ=/^\/product-projections\/([^/?]+)$/;
-const DRAFT_READ=/^\/assistant\/sessions\/[^/?]+\/runs\/[^/?]+\/page-draft\?[^#]*$/;
+const DRAFT_READ=/^\/assistant\/sessions\/([^/?]+)\/runs\/([^/?]+)\/page-draft\?([^#]*)$/;
+const DRAFT_CREATED=/^\/assistant\/sessions\/([^/?]+)\/runs\/([^/?]+)\/page-draft\/created$/;
+const draftKey=(session:string,run:string,path:string)=>`${decodeURIComponent(session)}/${decodeURIComponent(run)}/${path}`;
 const executionListeners = new WeakMap<object, Set<(context: AppExecutionContext) => void>>();
 const frameInsets = new WeakMap<object, AppFrameInsets>();
 const insetListeners = new WeakMap<object, Set<(insets: AppFrameInsets) => void>>();
@@ -128,7 +137,7 @@ export function registerLiveFrame(source: object,applicationId?:string) {
 type PanelDeclaration = { pageKey: string; manifest: PanelManifest };
 
 function registerDeclaredFrame(source: object, bridgeIdentity: string, panel: PanelDeclaration, context: AppExecutionContext) {
-  panelFrames.set(source,{bridgeIdentity,pageKey:panel.pageKey,bindings:new Map(Object.values(panel.manifest.slots).map(slot=>[slot.projectionId,null]))});
+  panelFrames.set(source,{bridgeIdentity,pageKey:panel.pageKey,bindings:new Map(Object.values(panel.manifest.slots).map(slot=>[slot.projectionId,null])),createDrafts:new Set()});
   const binding=registerFrame(source,context);
   return ()=>{bridge?.disposeFrame(source);panelFrames.delete(source);binding.dispose();};
 }
@@ -151,13 +160,17 @@ export function registerCandidateFrame(source: object,context: Extract<AppExecut
   return registerDeclaredFrame(source,`workspace:${context.workspaceId}`,panel,context);
 }
 /** Refuses, before anything is sent, a request of a panel's frame that its declaration does not cover. */
-function admitPanelRequest(panel:PanelFrame,method:string,path:string,service:string){
+function admitPanelRequest(panel:PanelFrame,method:string,path:string,service:string,body:BodyInit|null|undefined){
   if(service===''&&method==='GET'){
     const projection=PROJECTION_READ.exec(path);
     if(projection&&panel.bindings.has(decodeURIComponent(projection[1]!)))return;
     if(DRAFT_READ.test(path))return;
   }
-  const bindings=[...panel.bindings.values()].filter((binding):binding is string=>binding!==null);
+  // The reader's first save of a create draft this frame read for its page records the object it created on that draft.
+  const created=service===''&&method==='POST'?DRAFT_CREATED.exec(path):null;
+  const record=created&&typeof body==='string'?pageDraftCreatedSchema.safeParse(JSON.parse(body)):null;
+  if(record?.success&&panel.createDrafts.has(draftKey(created![1]!,created![2]!,record.data.path)))return;
+  const bindings=[...panel.bindings.values()].flatMap(keys=>keys??[]);
   if(!clientSends(bindings,method,service,path))throw new Error("Outside what this panel's projections declare");
 }
 
@@ -170,9 +183,14 @@ async function relayToPanel(panel:PanelFrame,method:string,path:string,service:s
   const projection=PROJECTION_READ.exec(path);
   if(projection){
     const record=productProjectionResponseSchema.parse(await response.clone().json()).projection;
-    panel.bindings.set(decodeURIComponent(projection[1]!),bindingKey(record.binding));
-  }else if(DRAFT_READ.test(path)&&pageDraftReadSchema.parse(await response.clone().json()).pageKey!==panel.pageKey)
-    throw new Error('This draft was written for another page');
+    panel.bindings.set(decodeURIComponent(projection[1]!),projectionBindingKeys(record));
+    return response;
+  }
+  const read=DRAFT_READ.exec(path);
+  if(!read)return response;
+  const draft=pageDraftReadSchema.parse(await response.clone().json());
+  if(draft.pageKey!==panel.pageKey)throw new Error('This draft was written for another page');
+  if(draft.target.id===undefined)panel.createDrafts.add(draftKey(read[1]!,read[2]!,new URLSearchParams(read[3]).get('path')!));
   return response;
 }
 function executionContext(source: object) {
@@ -227,7 +245,7 @@ export function installAppHost(options: {
       const method=(init.method??'GET').toUpperCase();
       // A panel's frame asks only for what its own declaration covers; every other frame for the SDK's capabilities.
       const panel=panelFrames.get(source);
-      if(panel)admitPanelRequest(panel,method,path,service);
+      if(panel)admitPanelRequest(panel,method,path,service,init.body);
       else{
         const allowed=service==='/data-query'?['/metricView/queryById','/metricView/execute','/action/form','/action/execute']:[];
         if(service==='/data-query'&&!allowed.includes(path))throw new Error('Use a declared SDK capability');
