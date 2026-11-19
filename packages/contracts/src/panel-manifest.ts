@@ -144,6 +144,21 @@ export const panelFormFieldRefSchema = z.object({
 }).strict();
 export type PanelFormFieldRef = z.infer<typeof panelFormFieldRefSchema>;
 
+const panelOperationInputRefSchema = z.union([
+  panelStateRefSchema,
+  z.object({ formField: panelFormFieldRefSchema.pick({ slot: true, path: true }) }).strict(),
+]);
+
+/** Values supplied by this instance. The owner operation's target still supplies the draft. */
+export const panelReadOperationInputsSchema = z.object({
+  parameters: z.union([
+    panelOperationInputRefSchema,
+    z.object({ fields: z.record(key, panelOperationInputRefSchema) }).strict(),
+  ]),
+  bindingId: panelOperationInputRefSchema.optional(),
+}).strict();
+export type PanelReadOperationInputs = z.infer<typeof panelReadOperationInputsSchema>;
+
 /**
  * A projection placed in a slot. The slot carries the projection's ID and the values it is given; the projection's own
  * component, binding and display stay with the projection, and a panel that needs another presentation registers
@@ -159,6 +174,8 @@ export const panelSlotSchema = z
     /** Where each named projection output writes its value in this instance's declared state. */
     outputs: z.record(key, panelStateRefSchema).optional(),
     formField: panelFormFieldRefSchema.optional(),
+    /** Input sources by operation name within this projection. A direct parameters source holds the whole object. */
+    readOperationInputs: z.record(key, panelReadOperationInputsSchema).optional(),
   })
   .strict();
 export type PanelSlot = z.infer<typeof panelSlotSchema>;
@@ -279,6 +296,17 @@ export const panelManifestSchema = z
       for (const [output, ref] of Object.entries(declaration.outputs ?? {})) {
         if (!Object.hasOwn(manifest.state, ref.state))
           ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["slots", slot, "outputs", output], message: `Output '${output}' writes undeclared state '${ref.state}'` });
+      }
+      for (const [operation, { parameters, bindingId }] of Object.entries(declaration.readOperationInputs ?? {})) {
+        const refs = "fields" in parameters
+          ? Object.entries(parameters.fields).map(([name, ref]) => ({ path: ["parameters", "fields", name], ref }))
+          : [{ path: ["parameters"], ref: parameters }];
+        if (bindingId) refs.push({ path: ["bindingId"], ref: bindingId });
+        for (const { path, ref } of refs) {
+          const exists = "state" in ref ? Object.hasOwn(manifest.state, ref.state) : Object.hasOwn(manifest.slots, ref.formField.slot);
+          if (!exists) ctx.addIssue({ code: z.ZodIssueCode.custom,
+            path: ["slots", slot, "readOperationInputs", operation, ...path], message: "Input must reference declared state or a form slot" });
+        }
       }
     }
     const ids = new Set<string>();
