@@ -1,8 +1,11 @@
 import { z } from "zod";
 import { agentExecutionRefSchema, agentSessionRefSchema } from "./agent-channel";
 import { agentQuestionAnswerReceiptSchema, agentUserQuestionReceiptSchema } from "./agent-user-questions";
-import { panelOperationCallSchema, panelOperationSchema } from "./panel-manifest";
-import { panelReadOperationCallSchema } from "./panel-operations";
+import { panelObjectIdentitySchema, panelOperationCallSchema, panelOperationSchema } from "./panel-manifest";
+import {
+  panelBatchInvocationSchema, panelOperationAffectedSchema, panelOwnerOperationDescriptorSchema,
+  panelReadOperationCallSchema, panelSingleInvocationSchema,
+} from "./panel-operations";
 import { ontologyElementRefSchema } from "./product-panels";
 import { pageDraftSchema } from "./page-draft";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeKeySchema } from "./agent-runtime-values";
@@ -31,50 +34,113 @@ export const readPanelOperationRequestSchema = panelUseRefSchema.extend({
 }).strict();
 export type ReadPanelOperationRequest = z.infer<typeof readPanelOperationRequestSchema>;
 
-/** The host supplies session/run/initiator/executor from authenticated context, not this body. */
-export const createPanelOperationIntentRequestSchema = panelUseRefSchema.extend({
-  intentId: runtimeIdSchema,
-  operationId: key,
-  call: panelOperationCallSchema,
-}).strict();
+const panelOperationRefSchema = panelUseRefSchema.extend({ operationId: key }).strict();
+const panelIntentRequestScopeSchema = panelOperationRefSchema.extend({ intentId: runtimeIdSchema });
+
+/** The host supplies session/run/initiator/executor from authenticated context. */
+export const createPanelOperationIntentRequestSchema = z.union([
+  panelIntentRequestScopeSchema.merge(panelSingleInvocationSchema),
+  panelIntentRequestScopeSchema.merge(panelBatchInvocationSchema),
+]);
 export type CreatePanelOperationIntentRequest = z.infer<typeof createPanelOperationIntentRequestSchema>;
+
+/** Both human and agent confirmation inspect the exact calls that will be decided together. */
+export const inspectPanelOperationImpactRequestSchema = z.union([
+  panelOperationRefSchema.merge(panelSingleInvocationSchema),
+  panelOperationRefSchema.merge(panelBatchInvocationSchema),
+]);
+
 /** Dispatch reads the immutable stored call and channel evidence. No questionId, approval or changed call is accepted. */
 export const dispatchPanelOperationIntentRequestSchema = z.object({}).strict();
 
-export const panelOperationOutcomeSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("success"), data: runtimeJsonObjectSchema }).strict(),
-  z.object({ kind: z.literal("failure"), code: key, message: z.string(), details: runtimeJsonObjectSchema.optional() }).strict(),
-  /** A dispatched call with no authoritative answer is never released for redispatch. */
+const singleOutcomeSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("success"),
+    data: runtimeJsonObjectSchema,
+    affected: panelOperationAffectedSchema.optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("refusal"), code: key, message: z.string(), details: runtimeJsonObjectSchema.optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("failure"), code: key, message: z.string(), details: runtimeJsonObjectSchema.optional(),
+  }).strict(),
+  /** A dispatch with no authoritative answer is never released for redispatch. */
   z.object({ kind: z.literal("unknown"), message: z.string() }).strict(),
 ]);
+
+export const panelOperationOutcomeSchema = z.discriminatedUnion("kind", [
+  ...singleOutcomeSchema.options,
+  z.object({
+    kind: z.literal("batch"),
+    items: z.array(z.object({ target: panelObjectIdentitySchema, outcome: singleOutcomeSchema }).strict()).nonempty(),
+    /** The owner may report the affected objects and types from successful writes once for the batch. */
+    affected: panelOperationAffectedSchema.optional(),
+  }).strict(),
+]).superRefine((outcome, ctx) => {
+  if (outcome.kind === "batch" && outcome.affected && !outcome.items.some(item => item.outcome.kind === "success"))
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["affected"], message: "A batch needs a successful write to report changes" });
+});
 export type PanelOperationOutcome = z.infer<typeof panelOperationOutcomeSchema>;
 
-/** Node's minimal invocation fact; no revision history, approval workflow or credential snapshot. */
-export const panelOperationIntentSchema = z.object({
+/** The server resolves and freezes the owner description before confirmation. */
+export const panelWriteOperationSnapshotSchema = panelOwnerOperationDescriptorSchema.extend({
+  id: key,
+  label: z.string().min(1).max(200),
+  kind: z.enum(["form.save", "action"]),
+  slot: key,
+  effect: z.literal("write"),
+});
+
+const intentFactsSchema = z.object({
   intentId: runtimeIdSchema,
-  /** Original question execution for provenance; later dispatch binds only its session, not this runId. */
+  /** Original question execution for provenance; later dispatch binds only its session. */
   source: agentExecutionRefSchema,
   rootSession: agentSessionRefSchema,
   use: panelUseRefSchema,
   panelId: key,
   projectionId: key.nullable(),
   binding: ontologyElementRefSchema.nullable(),
-  /** Server-derived description at this invocation; dispatch resolves current semantics again, never an old version. */
-  operation: panelOperationSchema,
-  call: panelOperationCallSchema,
   initiator: initiatorSchema,
-  /** C-package semantics: null means the original initiator; otherwise the run's fixed real execution user. */
+  /** Null means the original initiator. */
   executionUserId: runtimeKeySchema.nullable(),
   confirmation: z.enum(["required", "automatic"]),
-  /** Server-assigned message identity, reserved with this intent before user-question delivery. */
   questionId: runtimeIdSchema.nullable(),
-  /** Keep authorization provenance, not another copy of the channel-owned answer text. */
   answer: agentQuestionAnswerReceiptSchema.omit({ text: true }).nullable(),
-  /** Claimed atomically before the owner call and never reset, including on a refusal or unknown result. */
+  /** Claimed atomically before the owner call and never reset. */
   dispatched: z.boolean(),
-  outcome: panelOperationOutcomeSchema.nullable(),
 }).strict();
+
+const currentIntentFactsSchema = intentFactsSchema.extend({
+  operation: panelWriteOperationSnapshotSchema,
+  outcome: panelOperationOutcomeSchema.nullable(),
+});
+
+/** Node's single immutable intent contains either one call or every item of the batch. */
+export const panelOperationIntentSchema = z.union([
+  currentIntentFactsSchema.merge(panelSingleInvocationSchema),
+  currentIntentFactsSchema.merge(panelBatchInvocationSchema),
+]);
 export type PanelOperationIntent = z.infer<typeof panelOperationIntentSchema>;
+
+const legacyStoredIntentSchema = intentFactsSchema.extend({
+  operation: panelOperationSchema,
+  call: panelOperationCallSchema,
+  outcome: singleOutcomeSchema.nullable(),
+});
+
+export const PANEL_CONFIRMATION_EXPIRED = "PANEL_CONFIRMATION_EXPIRED";
+
+/** At the persisted-data boundary, old records can report historical facts but cannot become current intents. */
+export function readStoredPanelOperationIntent(value: unknown) {
+  const current = panelOperationIntentSchema.safeParse(value);
+  if (current.success) return { kind: "current", intent: current.data } as const;
+  const legacy = legacyStoredIntentSchema.parse(value);
+  if (legacy.dispatched || legacy.outcome !== null)
+    return { kind: "historical", intent: legacy } as const;
+  return { kind: "confirmation-expired", intentId: legacy.intentId, code: PANEL_CONFIRMATION_EXPIRED } as const;
+}
+export type StoredPanelOperationIntent = ReturnType<typeof readStoredPanelOperationIntent>;
 
 export const panelOperateResponseSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("confirmation-required"), intentId: runtimeIdSchema, question: agentUserQuestionReceiptSchema }).strict(),
