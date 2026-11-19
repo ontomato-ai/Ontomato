@@ -73,11 +73,6 @@ export interface PanelContext {
    * type — before the projection registers its ports, so a panel downloads only the clients of what it shows.
    */
   resources(projection: Pick<ProductProjection, "componentId" | "binding" | "graph">): Promise<void>;
-  /**
-   * Requests the platform host to download a frame-generated file (U12). Absent until the host download bridge is
-   * provided; controls hide their export action when absent rather than rendering a disabled placeholder.
-   */
-  readonly downloadFile?: (file: { filename: string; blob: Blob }) => Promise<void>;
 }
 
 /**

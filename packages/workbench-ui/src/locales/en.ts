@@ -198,7 +198,6 @@ export default {
     "graphEmpty": "No graph nodes to display",
     "graphFit": "Fit view",
     "graphRelayout": "Relayout",
-    "graphExportPng": "Export PNG",
     "graphExpanding": "Loading neighbors...",
     "listSelectTypePrompt": "Select a type to list its objects",
     "relationsEmptySelection": "Select a node to inspect its relations",

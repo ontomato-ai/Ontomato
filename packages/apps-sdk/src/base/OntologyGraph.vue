@@ -60,15 +60,13 @@ const props = withDefaults(
     query?: string | null;
     /** Accessible graph label; falls back to the projection's name. */
     label?: string;
-    /** Base filename (without `.png`) used when requesting host PNG download (U12). */
-    exportFilename?: string;
     /** Initial enabled layers; defaults to all layers present in schema or loaded nodes. */
     layers?: readonly string[];
     /** Show layer filter pills when multiple layers exist. */
     showLayerFilter?: boolean;
     /** Show legend strip. */
     showLegend?: boolean;
-    /** Show floating fit/relayout/export toolbar. */
+    /** Show floating fit/relayout toolbar. */
     showToolbar?: boolean;
     /** Optional max height in CSS pixels forwarded to `G6GraphCanvas`. */
     maxHeight?: number;
@@ -80,7 +78,6 @@ const props = withDefaults(
     selectedType: null,
     query: "",
     label: undefined,
-    exportFilename: undefined,
     layers: undefined,
     showLayerFilter: true,
     showLegend: true,
@@ -136,7 +133,6 @@ let loadGeneration = 0;
 
 const activeMode = computed<"type" | "instance">(() => (props.mode === "type" ? "type" : "instance"));
 const accessibleLabel = computed(() => props.label ?? slot.projection.name);
-const canExportPng = computed(() => Boolean(panel.downloadFile));
 
 function resolveKey(key: string | undefined, fallback: string): string {
   if (!key) return fallback;
@@ -694,19 +690,6 @@ async function relayout() {
   await canvas.value?.fit({ maxZoom: 1.2, padding: 36 });
 }
 
-async function exportPng() {
-  if (!panel.downloadFile || !canvas.value) return;
-  errorMessage.value = null;
-  try {
-    const blob = await canvas.value.exportImage();
-    const baseName = props.exportFilename ?? slot.projection.id;
-    const filename = baseName.endsWith(".png") ? baseName : `${baseName}.png`;
-    await panel.downloadFile({ filename, blob });
-  } catch (reason: unknown) {
-    errorMessage.value = reason instanceof Error ? reason.message : String(reason);
-  }
-}
-
 onMounted(() => {
   if (rootEl.value) paletteSize.value = readGraphPalette(rootEl.value).length;
 });
@@ -824,19 +807,6 @@ onMounted(() => {
         >
           <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
             <path d="M13.5 8a5.5 5.5 0 1 1-1.3-3.55M13.5 2.5v2.75h-2.75" />
-          </svg>
-        </button>
-        <button
-          v-if="canExportPng"
-          type="button"
-          class="sdk-ontology-graph-tool"
-          data-graph-action="export-png"
-          :title="t('platform.graphExportPng')"
-          :aria-label="t('platform.graphExportPng')"
-          @click="exportPng"
-        >
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path d="M8 2.5v7.5m0 0-2.75-2.75M8 10l2.75-2.75M2.5 11.5v2h11v-2" />
           </svg>
         </button>
       </div>
