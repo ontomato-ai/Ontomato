@@ -4,7 +4,7 @@ import { ontologyParameterTypeSchema, panelManifestSchema } from "./panel-manife
 import { applicationMetadataSchema } from "./application-metadata";
 import { appsSdkBuildSchema } from "./apps-sdk";
 import { formFieldErrorSchema } from "./form-fields";
-import { dashboardCardRequestSchema, dashboardChartFileSchema } from "./dashboard";
+import { dashboardCardRequestSchema, dashboardChartFileSchema, dashboardMetricReferenceSchema } from "./dashboard";
 
 const id = z.string().min(1).max(200);
 const path = z.string().regex(/^\/(?!\/)/);
@@ -83,6 +83,8 @@ const chartProjectionDefinitionSchema = projectionDefinitionSchema.extend({
   graph: z.never().optional(),
   componentId: z.literal(METRIC_CHART_COMPONENT),
   binding: ontologyElementRefSchema.extend({ kind: z.literal("MetricView") }),
+  /** The owner omits parameters outside this vocabulary. Parameters without an input come from the source card. */
+  inputs: projectionDefinitionSchema.shape.inputs,
   display: z.object({ chartSource: chartProjectionSourceSchema }).strict(),
 });
 
@@ -197,15 +199,18 @@ export const registerChartProjectionResponseSchema = z.object({ projection: char
  */
 export const chartProjectionLookupResponseSchema = z.object({ projectionId: id.nullable() }).strict();
 
-/** The projection's use grant permits reading the source card's template. */
-export const chartProjectionTemplateSchema = z.object({ chartFile: dashboardChartFileSchema }).strict();
+/** Read the source card's current drawing and saved parameters under the projection's use grant. */
+export const chartProjectionTemplateSchema = z.object({
+  chartFile: dashboardChartFileSchema,
+  parameters: dashboardMetricReferenceSchema.shape.parameters,
+}).strict();
 
 /** The projection's edit grant permits updating the source template's drawing. */
 export const updateChartProjectionSourceRequestSchema = z.object({
   chartFile: dashboardChartFileSchema.pick({ content: true }),
 }).strict();
 
-/** The dashboard owner refuses a source card removal while any current chart projection refers to it. */
+/** Dashboard edits and deletes refuse removal of a referenced source card. Account cleanup removes its registered projections with the card. */
 export const CHART_SOURCE_IN_USE = "CHART_SOURCE_IN_USE";
 export const chartSourceInUseErrorSchema = z.object({
   success: z.literal(false),
