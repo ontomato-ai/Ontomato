@@ -64,11 +64,14 @@ export const panelBatchInvocationSchema = z.object({ calls: z.array(panelBatchOp
 
 export const panelOperationImpactSchema = z.object({
   summary: z.string(),
+  /** Total affected records, including any whose names are omitted from the preview. */
+  total: z.number().int().safe().nonnegative(),
   objects: z.array(z.object({
     target: panelObjectIdentitySchema,
     label: z.string(),
   }).strict()),
 }).strict();
+export type PanelOperationImpact = z.infer<typeof panelOperationImpactSchema>;
 
 export const panelOperationAffectedSchema = z.object({
   objects: z.array(panelObjectIdentitySchema),
