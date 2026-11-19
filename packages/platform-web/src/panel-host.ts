@@ -65,9 +65,6 @@ export function platformPanelHost(applicationId: string, mode: PanelDefinitionMo
       return panelDefinitionSnapshotSchema.parse(await json(panelHostPaths.snapshot(id)));
     },
     mode,
-    onVisible(listener) {
-      return onDocumentVisibility(visible => { if (visible) listener(); });
-    },
   };
 }
 

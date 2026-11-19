@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@ontomato/contracts": "workspace:*",
+    "@ontomato/foundation-ui": "workspace:*",
     "lucide-vue-next": "1.0.0"
   },
   "peerDependencies": {

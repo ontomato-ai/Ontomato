@@ -6,7 +6,7 @@ import { PanelHost, type PanelHostLabels } from "@ontomato/platform-shell";
 import { panelAddress, panelAddressState, panelUsePath, type PanelRefreshPort } from "@ontomato/contracts/panel-host";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
-import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
+import type { DisplayObjectRefresh } from "@ontomato/agent-shell-ui";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import { panelUsesOf, platformPanelHost } from "../panel-host";
 
@@ -37,7 +37,7 @@ const props = defineProps<{
    * full, the router's address is the page's.
    */
   address?: string;
-  objectRefresh?: { seq: number; target: PanelObjectIdentity | null } | null;
+  objectRefresh?: DisplayObjectRefresh | null;
 }>();
 const emit = defineEmits<{
   /** What the reader looks at in the panel, as its instance reports it: what a message written beside it carries. */

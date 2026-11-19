@@ -1,6 +1,7 @@
 import { displayLoadSchema, PANEL_LOAD_ERROR_CODES, type DisplayLoad } from "@ontomato/contracts/agent-presentation";
 import type { PanelDefinitionSnapshot, ProductDefinitionRevision, ProductDefinitionTarget } from "@ontomato/contracts/product-subscriptions";
-import { inject, onBeforeUnmount, shallowRef, watch, type InjectionKey, type Ref, type ShallowRef } from "vue";
+import { inject, onScopeDispose, shallowRef, watch, type InjectionKey, type Ref, type ShallowRef } from "vue";
+import { onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import {
   PANEL_HOST_CHANNEL,
@@ -48,7 +49,6 @@ export interface PanelHostPort {
   frame(frame: Window, use: ApplicationPanelUse, panel: ProductPanel): () => void;
   snapshot(panelId: string): Promise<PanelDefinitionSnapshot>;
   mode: PanelDefinitionMode;
-  onVisible(listener: () => void): () => void;
 }
 
 export type { ProductDefinitionChangedEvent as DefinitionChanged } from "@ontomato/contracts/product-panels";
@@ -292,11 +292,12 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   }
 
   watch(options.useId, () => void load(), { immediate: true });
-  const stopVisibility = port.onVisible(() => {
+  const stopVisibility = onDocumentVisibility(visible => {
+    if (!visible) return;
     if (port.mode.kind === "view") void restore();
     else refresh(null);
   });
-  onBeforeUnmount(() => {
+  onScopeDispose(() => {
     active = false;
     stopVisibility();
     author?.close();
@@ -374,7 +375,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
   }
   window.addEventListener("message", message);
-  onBeforeUnmount(() => {
+  onScopeDispose(() => {
     window.removeEventListener("message", message);
     disposeFrame?.();
   });

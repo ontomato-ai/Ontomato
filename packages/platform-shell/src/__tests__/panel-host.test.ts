@@ -103,7 +103,6 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
       return () => frames.delete(frame);
     },
     snapshot: async (id: string) => ({ panel: { id, revision: input.panels.get(id)!.revision }, projections: [] }),
-    onVisible: () => () => {},
     mode: {
       kind: "author" as const,
       definitions: {
