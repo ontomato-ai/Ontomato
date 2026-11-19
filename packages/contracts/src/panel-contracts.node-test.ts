@@ -161,6 +161,9 @@ test("a chart projection can only store the source reference and its metric bind
   assert.equal(productProjectionInputSchema.safeParse({
     ...chartProjection, binding: { kind: "Action", id: "unrelated" },
   }).success, false);
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...chartProjection, inputs: { department: { kind: "array", items: { kind: "scalar", type: "string" } } },
+  }).success, false);
   for (const data of [{ chartFile: {} }, { query: { metricId: "other" } }, { rows: [] }]) {
     assert.equal(productProjectionInputSchema.safeParse({
       ...chartProjection, display: { chartSource, ...data },
@@ -185,7 +188,7 @@ test("chart registration takes the source identity and ordinary writes cannot su
   }).success, true);
 });
 
-test("chart template read exposes only the chart file and edit supplies only its drawing", () => {
+test("chart template reads the drawing and saved parameters while edit only supplies the drawing", () => {
   const chartFile = {
     name: "department.chart.json",
     content: {
@@ -194,13 +197,19 @@ test("chart template read exposes only the chart file and edit supplies only its
       ontomato: {},
     },
   };
-  assert.deepEqual(chartProjectionTemplateSchema.parse({ chartFile }), { chartFile });
+  const parameters = { department: "sales", years: [2025, 2026] };
+  const template = { chartFile, parameters };
+  assert.deepEqual(chartProjectionTemplateSchema.parse(template), template);
+  assert.equal(chartProjectionTemplateSchema.safeParse({ chartFile }).success, false);
   for (const extra of [{ query: { metricId: "other" } }, { groups: [] }, { layout: {} }, { revision: 2 }])
-    assert.equal(chartProjectionTemplateSchema.safeParse({ chartFile, ...extra }).success, false);
+    assert.equal(chartProjectionTemplateSchema.safeParse({ ...template, ...extra }).success, false);
   assert.ok(updateChartProjectionSourceRequestSchema.safeParse({ chartFile: { content: chartFile.content } }).success);
   assert.equal(updateChartProjectionSourceRequestSchema.safeParse({ chartFile }).success, false);
   assert.equal(updateChartProjectionSourceRequestSchema.safeParse({
     chartFile: { content: chartFile.content }, query: { metricId: "other" },
+  }).success, false);
+  assert.equal(updateChartProjectionSourceRequestSchema.safeParse({
+    chartFile: { content: chartFile.content }, parameters,
   }).success, false);
 });
 

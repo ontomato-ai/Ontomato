@@ -94,7 +94,7 @@ const metricViewReads = [
       param: runtimeJsonObjectSchema,
       parameterTexts: z.record(z.string()).optional(),
     }),
-    instructions: "Use the bound MetricView id and this panel instance's parameters as `param`.",
+    instructions: "Use the bound MetricView id. Start `param` with the source card parameters returned with the chart template and override them with this panel instance's bound inputs.",
   },
 ] as const satisfies readonly (PanelClientRead & { bodySchema: z.ZodTypeAny })[];
 
