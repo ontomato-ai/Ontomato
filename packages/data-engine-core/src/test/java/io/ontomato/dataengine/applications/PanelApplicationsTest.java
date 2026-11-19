@@ -36,7 +36,10 @@ class PanelApplicationsTest {
         doReturn(List.of()).when(catalog).all();
     }
     private static ApplicationPanelUse use(String page, String permission) {
-        return new ApplicationPanelUse("use-" + page, page, "panel-p", "/" + page,
+        return use("app-panel-a", page, permission);
+    }
+    private static ApplicationPanelUse use(String application, String page, String permission) {
+        return new ApplicationPanelUse("use-" + page, page, "panel-p", "/applications/" + application + "/" + page,
             permission == null ? new ApplicationPanelUse.Access(null, "domain-member") : new ApplicationPanelUse.Access(permission, null), null, null);
     }
     private static ApplicationCatalog.Declaration metadata() {
@@ -44,12 +47,88 @@ class PanelApplicationsTest {
     }
     private static JSONObject app(String id, String renderer, List<ApplicationPanelUse> uses) {
         return JSONObject.of("id", id, "domainId", "domain", "ownerUserId", "author",
-            "entry", JSONObject.of("renderer", renderer, "path", "/" + id), "panelUses", uses,
+            "entry", JSONObject.of("renderer", renderer, "path", renderer.equals("panels") ? "/applications/" + id : "/" + id), "panelUses", uses,
             "pageSkills", List.of(), "entryAccess", List.of("domain-member"));
     }
     private static ApplicationController.PanelRegistration body(List<ApplicationPanelUse> uses, boolean create) {
-        return new ApplicationController.PanelRegistration(new ApplicationController.PanelEntry("/panel-example", "panels"), uses,
+        return body("app-panel-a", uses, create);
+    }
+    private static ApplicationController.PanelRegistration body(String application, List<ApplicationPanelUse> uses, boolean create) {
+        return new ApplicationController.PanelRegistration(new ApplicationController.PanelEntry("/applications/" + application, "panels"), uses,
             create ? metadata() : null, create ? List.of("domain-member") : null);
+    }
+
+    private static ApplicationPanelUse at(String page, String path) {
+        return new ApplicationPanelUse("use-" + page, page, "panel-p", path,
+            new ApplicationPanelUse.Access(null, "domain-member"), null, null);
+    }
+
+    private static ApplicationCatalog.Builtin builtin(String id, String path, ApplicationPanelUse use) {
+        var declaration = new ApplicationCatalog.Declaration(Map.of("en", id), Map.of(), "calendar", List.of(),
+            List.of(), List.of(), List.of(use));
+        return new ApplicationCatalog.Builtin(id, "native", "apps", "admin", 1,
+            JSONObject.of("renderer", "panels", "path", path), List.of("domain-member"), null, declaration);
+    }
+
+    @Test void rejectsDomainPathsOutsideTheAssignedSpaceAndNormalizedDuplicatesWithoutWrites() {
+        for (var path : List.of("/ontology/agents", "/applications/app-panel-b/tasks", "/applications/app-panel-ab/tasks",
+            "/applications/app-panel-a/%2e%2e/app-panel-b/tasks", "/applications/app-panel-a/%2Ftasks",
+            "/applications/app-panel-a/tasks?state={}")) {
+            assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a", body(List.of(at("tasks", path)), true), user));
+        }
+        var widened = new ApplicationController.PanelRegistration(new ApplicationController.PanelEntry("/ontology", "panels"),
+            List.of(at("agents", "/ontology/agents")), metadata(), List.of("domain-member"));
+        assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a", widened, user));
+        var aliases = List.of(at("tasks", "/applications/app-panel-a/tasks"), at("alias", "/applications/app-panel-a/%74asks/"));
+        assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a", body(aliases, true), user));
+        verifyNoInteractions(db, panels, grants, access);
+    }
+
+    @Test void onlyTrustedDeclarationsCanUseAnExplicitBuiltinPathAndItCannotBeClaimedTwice() {
+        doAnswer(call -> {
+            call.<java.util.function.Consumer<org.springframework.transaction.TransactionStatus>>getArgument(0).accept(null);
+            return null;
+        }).when(tx).executeWithoutResult(any());
+        var ontology = app("ontology", "panels", List.of(at("settings", "/ontology/agents")));
+        ontology.put("domainId", null);
+        ontology.put("kind", "native");
+        ontology.put("ownerService", "data-engine");
+        doReturn(ontology).when(catalog).require("ontology");
+        catalog.builtins("data-engine", List.of(builtin("ontology", "/ontology", at("settings", "/ontology/agents"))));
+        doReturn(List.of(ontology)).when(catalog).all();
+        assertEquals("/ontology/agents", catalog.panelSkillSources("domain").getFirst().uses().getFirst().path());
+
+        assertThrows(ResponseStatusException.class, () ->
+            catalog.builtins("workbench", List.of(builtin("agents", "/agents", at("other", "/ontology/agents/")))));
+        assertThrows(ResponseStatusException.class, () ->
+            catalog.builtins("workbench", List.of(builtin("agents", "/agents", at("other", "/applications/app-other/tasks")))));
+
+        var builtinWithDomainStyleId = app("app-panel-a", "panels", List.of());
+        builtinWithDomainStyleId.put("domainId", null);
+        doReturn(List.of(builtinWithDomainStyleId)).when(catalog).all();
+        var refusal = assertThrows(ResponseStatusException.class, () ->
+            catalog.putPanelUses("app-panel-a", body(List.of(use("tasks", null)), false), user));
+        assertEquals(403, refusal.getStatusCode().value());
+    }
+
+    @Test void oldTrialPathsFailTheDirectReadAndDoNotBlockAnotherTrialBeingReRegistered() throws Exception {
+        var trialA = app("app-panel-a", "panels", List.of(at("a", "/tasks")));
+        var trialB = app("app-panel-b", "panels", List.of(at("b", "/summary")));
+        doReturn(List.of(trialA, trialB)).when(catalog).all();
+        when(access.canEnter(trialA, user)).thenReturn(true);
+        when(access.canMaintain(trialA, user)).thenReturn(true);
+        var identity = mock(IdentityService.class);
+        when(identity.getCurrentUser()).thenReturn(user);
+        var mvc = MockMvcBuilders.standaloneSetup(new ApplicationController(catalog, identity, mock(WorkbenchServiceAuthentication.class)))
+            .setControllerAdvice(new ApplicationErrors()).build();
+
+        mvc.perform(get("/platform/applications/app-panel-a/panel-uses"))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("app-panel-a")));
+        assertTrue(catalog.panelSkillSources("domain").isEmpty());
+        assertTrue(catalog.visible(user).isEmpty());
+        var response = catalog.putPanelUses("app-panel-a", body(List.of(use("a", null)), false), user);
+        assertEquals("/applications/app-panel-a/a", response.getList("panelUses", ApplicationPanelUse.class).getFirst().path());
     }
 
     @Test void createsANewPanelsApplicationThroughTheRealJacksonHttpBoundaryWithoutPersistingPageSkills() throws Exception {
@@ -58,14 +137,15 @@ class PanelApplicationsTest {
         var identity = mock(IdentityService.class); when(identity.getCurrentUser()).thenReturn(user);
         var mvc = MockMvcBuilders.standaloneSetup(new ApplicationController(catalog, identity, mock(WorkbenchServiceAuthentication.class))).build();
         var result = mvc.perform(put("/platform/applications/app-panel-a/panel-uses").contentType(MediaType.APPLICATION_JSON).content("""
-            {"entry":{"path":"/panel-example","renderer":"panels"},"entryAccess":["domain-member"],
+            {"entry":{"path":"/applications/app-panel-a/","renderer":"panels"},"entryAccess":["domain-member"],
              "declaration":{"names":{"en":"Example"},"descriptions":{},"icon":"calendar","groups":[],"permissions":[]},
-             "panelUses":[{"id":"use-a","pageKey":"schedules-a","panelId":"panel-p","path":"/schedules-a",
+             "panelUses":[{"id":"use-a","pageKey":"schedules-a","panelId":"panel-p","path":"/applications/app-panel-a/%73chedules-a/",
                "access":{"kind":"domain-member"},"defaultAgentId":"preferred-agent","names":{"en":"Tasks","zh-CN":"任务"}}]}
             """)).andExpect(status().isOk()).andReturn();
         assertEquals("panels", JSONObject.parseObject(result.getResponse().getContentAsString()).getJSONObject("data").getJSONObject("entry").getString("renderer"));
         var savedUse = JSONObject.parseObject(result.getResponse().getContentAsString()).getJSONObject("data").getJSONArray("panelUses").getJSONObject(0);
         assertFalse(savedUse.containsKey("skill"));
+        assertEquals("/applications/app-panel-a/schedules-a", savedUse.getString("path"));
         assertEquals("preferred-agent", savedUse.getString("defaultAgentId"));
         assertEquals("任务", savedUse.getJSONObject("names").getString("zh-CN"));
         var dashboard = new PageSkills.Mapping(null, "domain-member", "dashboard",
@@ -120,16 +200,16 @@ class PanelApplicationsTest {
     }
 
     @Test void keepsMemberLocatorsUniqueAcrossApplications() {
-        doReturn(List.of(app("app-existing", "panels", List.of(use("schedules-a", null))))).when(catalog).all();
+        doReturn(List.of(app("app-existing", "panels", List.of(use("app-existing", "schedules-a", null))))).when(catalog).all();
         assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a", body(List.of(use("schedules-a", null)), true), user));
         verify(db, never()).update(anyString(), any(Object[].class));
     }
 
     @Test void sharesOneDerivedSkillAcrossPanelsWithTheSameMenu() {
         var first = app("app-panel-a", "panels", List.of(use("schedules-a", "menu")));
-        var second = app("app-panel-b", "panels", List.of(new ApplicationPanelUse("use-b", "schedules-b", "panel-q", "/tasks", new ApplicationPanelUse.Access("menu", null), "summary-agent", null)));
+        var second = app("app-panel-b", "panels", List.of(new ApplicationPanelUse("use-b", "schedules-b", "panel-q", "/applications/app-panel-b/tasks", new ApplicationPanelUse.Access("menu", null), "summary-agent", null)));
         doReturn(List.of(first)).when(catalog).all(); doReturn(second).when(catalog).require("app-panel-b");
-        catalog.putPanelUses("app-panel-b", body(second.getList("panelUses", ApplicationPanelUse.class), true), user);
+        catalog.putPanelUses("app-panel-b", body("app-panel-b", second.getList("panelUses", ApplicationPanelUse.class), true), user);
         doReturn(List.of(first, second)).when(catalog).all();
         var source = catalog.panelSkillSources("domain").getFirst();
         assertEquals(List.of("panel-p", "panel-q"), source.uses().stream().map(PanelSkills.Use::panelId).toList());
@@ -143,11 +223,11 @@ class PanelApplicationsTest {
     }
 
     @Test void serviceCatalogProjectsThreeMemberSkillsFromTwoApplicationsAndIsolatesDomains() throws Exception {
-        var a = app("app-panels-trial-a", "panels", List.of(use("panels-trial-a-tasks", null)));
-        var b = app("app-panels-trial-b", "panels", List.of(use("panels-trial-b-tasks", null),
-            new ApplicationPanelUse("use-q", "panels-trial-b-summary", "panel-q", "/summary",
+        var a = app("app-panels-trial-a", "panels", List.of(use("app-panels-trial-a", "panels-trial-a-tasks", null)));
+        var b = app("app-panels-trial-b", "panels", List.of(use("app-panels-trial-b", "panels-trial-b-tasks", null),
+            new ApplicationPanelUse("use-q", "panels-trial-b-summary", "panel-q", "/applications/app-panels-trial-b/summary",
                 new ApplicationPanelUse.Access(null, "domain-member"), null, null)));
-        var foreign = app("app-foreign", "panels", List.of(use("foreign-page", null)));
+        var foreign = app("app-foreign", "panels", List.of(use("app-foreign", "foreign-page", null)));
         foreign.put("domainId", "foreign");
         doReturn(List.of(a, b, foreign)).when(catalog).all();
         var identity = mock(IdentityService.class);
@@ -203,9 +283,9 @@ class PanelApplicationsTest {
     }
 
     @Test void navigationCatalogReusesPanelUseAccessAndKeepsItsNamesAndOrder() throws Exception {
-        var named = new ApplicationPanelUse("use-named", "named", "panel-p", "/named",
+        var named = new ApplicationPanelUse("use-named", "named", "panel-p", "/applications/app-panel-a/named",
             new ApplicationPanelUse.Access(null, "domain-member"), null, Map.of("en", "Tasks", "zh-CN", "任务"));
-        var denied = new ApplicationPanelUse("use-denied", "denied", "panel-q", "/denied",
+        var denied = new ApplicationPanelUse("use-denied", "denied", "panel-q", "/applications/app-panel-a/denied",
             new ApplicationPanelUse.Access("menu", null), null, Map.of("en", "Hidden"));
         var detail = use("detail", null);
         var declared = List.of(named, denied, detail);
@@ -220,14 +300,14 @@ class PanelApplicationsTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data[0].panelUses.length()").value(2))
             .andExpect(jsonPath("$.data[0].panelUses[0].names['zh-CN']").value("任务"))
-            .andExpect(jsonPath("$.data[0].panelUses[1].path").value("/detail"))
+            .andExpect(jsonPath("$.data[0].panelUses[1].path").value("/applications/app-panel-a/detail"))
             .andExpect(jsonPath("$.data[0].panelUses[1].names").doesNotExist());
         mvc.perform(get("/platform/applications/app-panel-a/panel-uses"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.panelUses.length()").value(2))
             .andExpect(jsonPath("$.data.panelUses[0].names.en").value("Tasks"));
         assertThrows(ResponseStatusException.class, () -> ApplicationPanelUse.validate(List.of(
-            new ApplicationPanelUse("use-invalid", "invalid", "panel-p", "/invalid",
+            new ApplicationPanelUse("use-invalid", "invalid", "panel-p", "/applications/app-panel-a/invalid",
                 new ApplicationPanelUse.Access(null, "domain-member"), null, Map.of("zh-CN", "任务"))
         )));
     }
