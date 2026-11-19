@@ -34,6 +34,7 @@ const ALLOWED: readonly Access[] = [
   ["GET", /^\/apps-sdk\/current$/],
   // product-panels.ts: current product definitions, never business reads or registration writes
   ["GET", /^\/product-(?:panels|projections)\/[^/]+$/],
+  ["POST", /^\/product-panels\/read$/],
   // product-panels.ts: registered operation metadata and owner-routed trials with the preview context
   ["GET", /^\/panel-operations\/descriptor$/],
   ["POST", /^\/panel-operations\/read$/],

@@ -129,6 +129,53 @@ it("uses the panel's default-locale text for declared state operation labels", a
   expect(files[0]!.content).toContain("actions.reset (reset), kind state");
 });
 
+it("reads a direct panel from the current SDK catalogue while keeping a code panel on its pinned catalogue", async () => {
+  const currentVersion = "2.0.0-pilot";
+  const build = path.join(root, "dist/apps-sdk");
+  const installed = path.join(root, "data/apps-sdk", currentVersion);
+  await mkdir(build, { recursive: true });
+  await mkdir(path.join(installed, "catalogue"), { recursive: true });
+  await writeFile(path.join(build, "current.json"), JSON.stringify({ version: currentVersion, digest: "a".repeat(64) }));
+  await writeFile(path.join(installed, "sdk.json"), JSON.stringify({ components: "catalogue/metadata.json" }));
+  await writeFile(path.join(installed, "catalogue/metadata.json"), JSON.stringify({
+    version: currentVersion, components: [{ componentId: "ObjectSummary", meaning: "Summary from the current SDK release." }],
+  }));
+  const panelId = "direct-panel", projectionId = "direct-summary";
+  const definitions = new Map<string, Record<string, unknown>>([
+    [panelId, {
+      name: "Direct summary panel", description: "", visibility: "domain",
+      content: { html: '<div flow="column"><panel-member ref="summary"></panel-member></div>' },
+      manifest: { state: {}, members: { summary: { target: { projectionId } } }, events: {} },
+    }],
+    [projectionId, {
+      name: "Direct summary", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectSummary",
+      inputs: {}, outputs: {}, config: {},
+      data: { record: { source: { object: { literal: { className: "platform:ScheduledTask", primaryKey: "task-a" } } },
+        read: "record", params: {} } },
+    }],
+  ]);
+  const previousRead = vi.mocked(findCurrentProduct).getMockImplementation()!;
+  vi.mocked(findCurrentProduct).mockImplementation(async (domain, kind, id, client) => {
+    const definition = definitions.get(id);
+    if (domain === domainId && definition) {
+      const timestamp = new Date("2026-11-20T00:00:00Z");
+      return { id, domainId, ownerId: "fixture-owner", revision: 1, definition, createdAt: timestamp, updatedAt: timestamp };
+    }
+    return previousRead(domain, kind, id, client);
+  });
+  javaSources([{
+    skill: skill(menuName),
+    uses: [uses[0]!, { ...uses[0]!, panelId, pageKey: "direct", path: "/applications/app-panels-trial-a/direct" }],
+  }]);
+
+  const [offering] = await panelSkillProvider.list({ domainId });
+  const { files } = await offering!.provide();
+  const markdown = files[0]!.content;
+  expect(markdown).toContain("Summary from the current SDK release.");
+  expect(markdown).toContain('Named data: {"record":');
+  expect(markdown).toContain(trial.panels[0]!.name);
+});
+
 it("assembles one current package for a shared menu with a section per use and the original recipes", async () => {
   const ref = skill(menuName);
   javaSources([{ skill: ref, uses: [uses[0]!, uses[2]!] }]);

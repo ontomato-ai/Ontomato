@@ -21,7 +21,7 @@ vi.mock("../../assistant/skills",()=>({readPageSkills:mocks.pages}));
 vi.mock("../../../utils/backend-client",()=>({backendGet:mocks.backend,buildBackendHeaders:(token:string,_x:unknown,_l:unknown,key:string,headers:object)=>({...headers,...(token?{tk:token}:{}),...(key?{"X-API-Key":key}:{})})}));
 vi.mock("../../agent-host/caller",()=>({restoreAgentCaller:mocks.restore,readAgentSessionActor:mocks.sessionActor}));
 vi.mock("../../agent-host/presentation",()=>({publishObjectChanged:mocks.notify}));
-vi.mock("../current",()=>({readCurrentPanel:mocks.panel,readCurrentProjection:mocks.projection}));
+vi.mock("../current",()=>({readCurrentPanelRecord:mocks.panel,readCurrentProjection:mocks.projection}));
 vi.mock("../skill-package",()=>({readComponentCatalogue:mocks.catalogue}));
 import {
   operatePanel as realOperatePanel, dispatchPanel, dispatchHumanPanelOperation, inspectPanelOperationImpact, ownPanelSettings,
@@ -57,7 +57,7 @@ beforeEach(()=>{
    return {text:JSON.stringify({success:true,data:{applicationId:"A",entry:{path:"/panels/A",renderer:"panels"},panelUses:[use]}})};
  });
  mocks.pages.mockResolvedValue({pageSkills:[{access:"domain-member",pageKey:"tasks",skill}]});
- mocks.panel.mockResolvedValue({id:"P",manifest:{state:{task:{kind:"object",objectType:"platform:ScheduledTask"}},slots:{run:{projectionId:"run",inputs:{task:{state:"task"}}},form:{projectionId:"form",inputs:{task:{state:"task"}}}},operations:[]}});
+ mocks.panel.mockResolvedValue({id:"P",sdkVersion:"1.0.0",manifest:{state:{task:{kind:"object",objectType:"platform:ScheduledTask"}},slots:{run:{projectionId:"run",inputs:{task:{state:"task"}}},form:{projectionId:"form",inputs:{task:{state:"task"}}}},operations:[]}});
  mocks.projection.mockImplementation(async(_o:unknown,c:unknown,id:string)=>{expect(c).toBe(credentials);return {id,name:"Run now",componentId:id,binding:id==="run"?{kind:"PlatformOperation",id:"schedules.runNow"}:{kind:"PlatformObjectType",id:"platform:ScheduledTask"},inputs:{task:{kind:"object",objectType:"platform:ScheduledTask"}}};});
  mocks.catalogue.mockResolvedValue(new Map([["run",{}],["form",{operations:[{client:"@binding",name:"save",label:"Save",kind:"form.save",inputSchema:{}}]}]]));
  mocks.restore.mockResolvedValue({owner});

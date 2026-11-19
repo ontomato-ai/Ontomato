@@ -9,11 +9,15 @@ import { panelClientReads } from "@ontomato/contracts/panel-client-requests";
 import { panelAddress, panelUsePath } from "@ontomato/contracts/panel-host";
 import type { PanelOperation } from "@ontomato/contracts/panel-manifest";
 import { componentOperationSchema, panelStateOperation, projectionBindingKeys, projectionOperations, projectionPorts } from "@ontomato/contracts/panel-projection";
-import { productPanelContentSchema, productPanelInputSchema, productProjectionInputSchema, type PanelSkillSource, type ProductProjectionInput } from "@ontomato/contracts/product-panels";
+import {
+  directPanelInputSchema, directProjectionInputSchema, productPanelContentSchema, productPanelInputSchema,
+  productProjectionInputSchema, type DirectPanelInput, type PanelSkillSource,
+} from "@ontomato/contracts/product-panels";
 import { installedAppsSdkDir } from "../../content/layout";
 import type { SkillOffering } from "../../core/skills";
 import { getDefaultLocale } from "../../i18n";
 import { findCurrentProduct, type CurrentProductKind } from "../../infrastructure/product-current";
+import { readCurrentAppSdkComponents } from "../app-builder/sdk";
 import { panelServerOperation, panelServerOperationSupportsBatch } from "./server-operations";
 
 const catalogue = z.object({
@@ -29,6 +33,9 @@ type ComponentMetadata = z.infer<typeof catalogue>["components"][number];
 type Use = PanelSkillSource["uses"][number];
 
 const panelMetadata = productPanelInputSchema.omit({ content: true });
+const skillProjectionSchema = z.union([productProjectionInputSchema, directProjectionInputSchema]);
+type SkillPanel = (z.infer<typeof panelMetadata> & { content: unknown }) | DirectPanelInput;
+type SkillProjection = z.infer<typeof skillProjectionSchema>;
 const verbs = new Intl.ListFormat("en", { type: "conjunction" });
 
 function panelSkillManifest(skill: RuntimeSkillRef, panels: readonly PanelDescription[]): StandardSkillFrontmatter {
@@ -36,7 +43,7 @@ function panelSkillManifest(skill: RuntimeSkillRef, panels: readonly PanelDescri
     ...(panels.some(panel => panel.reads) ? ["read current data"] : []),
     panels.length === 1 ? "open the panel" : "open the panels",
     ...(panels.some(panel => panel.forms.length) ? ["draft changes"] : []),
-    ...(panels.some(panel => panel.operations.length || panel.manifest.operations.length) ? ["review declared operations"] : []),
+    ...(panels.some(panel => panel.operations.length || panel.stateOperations.length) ? ["review declared operations"] : []),
   ];
   const actionText = verbs.format(actions);
   const names = [...panels.map(panel => panel.name).join(", ")];
@@ -46,7 +53,11 @@ function panelSkillManifest(skill: RuntimeSkillRef, panels: readonly PanelDescri
 
 export async function readComponentCatalogue(version: string) {
   const file = path.join(installedAppsSdkDir(), version, "components.json");
-  const parsed = catalogue.parse(JSON.parse(await readFile(file, "utf8")));
+  return parseComponentCatalogue(version, JSON.parse(await readFile(file, "utf8")));
+}
+
+function parseComponentCatalogue(version: string, raw: unknown) {
+  const parsed = catalogue.parse(raw);
   if (parsed.version !== version) throw new Error(`Expected SDK catalogue ${version}, found ${parsed.version}`);
   return new Map(parsed.components.map(component => [component.componentId, component]));
 }
@@ -61,22 +72,29 @@ async function currentDefinition(domainId: string, kind: CurrentProductKind, id:
 export async function panelSkillOfferings(domainId: string, sources: readonly PanelSkillSource[]): Promise<SkillOffering[]> {
   if (!sources.length) return [];
   const panelIds = new Set(sources.flatMap(source => source.uses.map(use => use.panelId)));
-  const panels = new Map(await Promise.all([...panelIds].map(async id => {
-    const { content, ...metadata } = await currentDefinition(domainId, "panel", id);
+  const panels = new Map<string, SkillPanel>(await Promise.all([...panelIds].map(async id => {
+    const definition = await currentDefinition(domainId, "panel", id);
+    if (!("sdkVersion" in definition)) return [id, directPanelInputSchema.parse(definition)] as const;
+    const { content, ...metadata } = definition;
     return [id, { ...panelMetadata.parse(metadata), content }] as const;
   })));
-  const projectionIds = new Set([...panels.values()].flatMap(panel =>
-    Object.values(panel.manifest.slots).map(slot => slot.projectionId)));
-  const versions = new Set([...panels.values()].map(panel => panel.sdkVersion));
-  const [catalogues, projections] = await Promise.all([
+  const projectionIds = new Set([...panels.values()].flatMap(panel => "sdkVersion" in panel
+    ? Object.values(panel.manifest.slots).map(slot => slot.projectionId)
+    : Object.values(panel.manifest.members).map(member => member.target.projectionId)));
+  const versions = new Set([...panels.values()].flatMap(panel => "sdkVersion" in panel ? [panel.sdkVersion] : []));
+  const hasDirectPanel = [...panels.values()].some(panel => !("sdkVersion" in panel));
+  const [catalogues, currentCatalogue, projections] = await Promise.all([
     Promise.all([...versions].map(async version => [version, await readComponentCatalogue(version)] as const)),
+    hasDirectPanel
+      ? readCurrentAppSdkComponents().then(({ version, catalogue: raw }) => parseComponentCatalogue(version, raw))
+      : undefined,
     Promise.all([...projectionIds].map(async id =>
-      [id, productProjectionInputSchema.parse(await currentDefinition(domainId, "projection", id))] as const)),
+      [id, skillProjectionSchema.parse(await currentDefinition(domainId, "projection", id))] as const)),
   ]);
   const projectionRecords = new Map(projections);
   const components = new Map(catalogues);
   const descriptions = new Map([...panels].map(([id, panel]) =>
-    [id, describePanel(panel, projectionRecords, components.get(panel.sdkVersion)!)]));
+    [id, describePanel(panel, projectionRecords, "sdkVersion" in panel ? components.get(panel.sdkVersion)! : currentCatalogue!)]));
 
   return sources.map(({ skill, uses }) => {
     const ids = new Set(uses.map(use => use.panelId));
@@ -94,13 +112,19 @@ export async function panelSkillOfferings(domainId: string, sources: readonly Pa
 
 type PanelDescription = ReturnType<typeof describePanel>;
 
-function describePanel(panel: z.infer<typeof panelMetadata> & { content: unknown },
-  records: ReadonlyMap<string, ProductProjectionInput>, components: ReadonlyMap<string, ComponentMetadata>) {
+function describePanel(
+  panel: SkillPanel, records: ReadonlyMap<string, SkillProjection>, components: ReadonlyMap<string, ComponentMetadata>,
+) {
+  const componentFor = (id: string, projectionId: string) => {
+    const component = components.get(id);
+    if (!component) throw new Error(`SDK component ${id} is missing for projection ${projectionId}`);
+    return component;
+  };
   const { manifest } = panel;
-  const projections = Object.entries(manifest.slots).map(([slot, declaration]) => {
+  const projections = "slots" in manifest ? Object.entries(manifest.slots).map(([slot, declaration]) => {
     const projection = records.get(declaration.projectionId)!;
-    const component = components.get(projection.componentId);
-    if (!component) throw new Error(`SDK component ${projection.componentId} is missing for projection ${declaration.projectionId}`);
+    if ("data" in projection) throw new Error(`Code panel slot ${slot} requires a code-panel projection`);
+    const component = componentFor(projection.componentId, declaration.projectionId);
     const ports = projectionPorts(projection, component);
     const bindings = projectionBindingKeys(projection);
     const graph = projection.graph
@@ -111,10 +135,24 @@ function describePanel(panel: z.infer<typeof panelMetadata> & { content: unknown
       bindings,
       operations: projectionOperations(manifest, { slot, ports }),
     };
+  }) : Object.entries(manifest.members).map(([member, declaration]) => {
+    const { projectionId } = declaration.target;
+    const projection = records.get(projectionId)!;
+    if (!("data" in projection)) throw new Error(`Direct panel member ${member} requires a direct projection`);
+    const component = componentFor(projection.componentId.slice("@ontomato/sdk:".length), projectionId);
+    return {
+      text: `- ${member} — ${projection.name} (${projectionId}), ${projection.componentId}. ${projection.description} ${component.meaning} Inputs: ${JSON.stringify(declaration.inputs ?? {})}. Named data: ${JSON.stringify(projection.data)}. Configuration: ${JSON.stringify(projection.config)}.`,
+      bindings: [],
+      operations: [],
+    };
   });
   const operations = projections.flatMap(projection => projection.operations);
   return {
-    ...panel,
+    name: panel.name,
+    description: panel.description,
+    state: manifest.state,
+    stateOperations: "operations" in manifest ? manifest.operations : [],
+    content: () => "sdkVersion" in panel ? productPanelContentSchema.parse(panel.content) : panel.content,
     projections,
     operations,
     forms: operations.filter(operation => operation.kind === "form.save"),
@@ -122,18 +160,18 @@ function describePanel(panel: z.infer<typeof panelMetadata> & { content: unknown
   };
 }
 
-function describeUse(use: Use, { name, description, content, manifest, projections, operations: projectionOperations, forms, reads }: PanelDescription): string {
+function describeUse(use: Use, { name, description, content, state, stateOperations, projections, operations: projectionOperations, forms, reads }: PanelDescription): string {
   const address = panelUsePath(use.path);
-  const { recipes, messages } = productPanelContentSchema.parse(content);
+  const { recipes, messages } = content();
   const resolveLabel = (key: string) => messages?.[getDefaultLocale()]?.[key] ?? key;
-  const operations = [...projectionOperations, ...manifest.operations.map(operation => panelStateOperation(operation, resolveLabel))];
+  const operations = [...projectionOperations, ...stateOperations.map(operation => panelStateOperation(operation, resolveLabel))];
   return [
     `## ${name} — ${use.pageKey}`,
     description,
     `### Projections\n${projections.map(projection => projection.text).join("\n") || "No projections."}`,
     [
       "### State and page context",
-      `The instance declares ${JSON.stringify(manifest.state)}. Slot inputs above identify the state field they read.`,
+      `The instance declares ${JSON.stringify(state)}. Slot inputs above identify the state field they read.`,
       "Use the message's page context to identify the page and its selected object references. Each selection carries its object type and ID. The panel address carries the instance's deep-linkable state.",
     ].join("\n"),
     reads,

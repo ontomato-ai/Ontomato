@@ -5,6 +5,8 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { assistantAgentInputSchema } from "@ontomato/contracts/assistant-chat";
+import { AGENT_DEFINITION } from "@ontomato/contracts/panel-client-requests";
+import { panelFormDescriptionSchema } from "@ontomato/contracts/panel-projection";
 
 const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", pageSkills: vi.fn(), validateSkills: vi.fn().mockResolvedValue([]), setting: vi.fn(), prepare: vi.fn() }));
 vi.mock("../../infrastructure/postgres", () => ({
@@ -12,7 +14,11 @@ vi.mock("../../infrastructure/postgres", () => ({
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
 }));
 vi.mock("../../infrastructure/agent-runtime/client", () => ({ RuntimeClient: class { async modelOptions() { return { models: [{ ref: "test/configured", type: "chat", displayName: "Configured" }], defaultModelId: "test/configured" }; } } }));
-vi.mock("../../services/assistant/execution-setting", () => ({ validateExecutionSetting: state.setting, prepareExecutionSetting: state.prepare }));
+vi.mock("../../services/assistant/execution-setting", () => ({
+  validateExecutionSetting: state.setting,
+  prepareExecutionSetting: state.prepare,
+  readExecutionOptions: async () => ({ canSetExecutionUser: false, users: [], selected: null }),
+}));
 vi.mock("../../services/assistant/skills", () => ({ validateAssistantSkills: state.validateSkills, readPageSkills: state.pageSkills }));
 vi.mock("../../services/skills/operations", () => ({ withDomainSkills: async (_domain: string, work: () => Promise<unknown>) => work() }));
 import { configureI18n } from "../../i18n";
@@ -22,6 +28,7 @@ import type { WorkbenchIdentity } from "../../identity/types";
 import assistantRouter from "../routes/assistant";
 import { HttpError } from "../../utils/errors";
 import { createAgentDefinition, saveAgentDefinition, validateAgentDefinition } from "../../services/assistant/definitions";
+import { agentDefinitionOperations } from "../../services/assistant/definition-operations";
 import { readDiagnosisModel, saveDiagnosisModel } from "../../services/ops-diagnosis/model-settings";
 
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
@@ -117,6 +124,36 @@ describe("agent definitions on PostgreSQL", () => {
     expect(state.pageSkills).not.toHaveBeenCalled();
     expect(await skillWrites(id)).toBe(0);
     expect((await write("POST", randomUUID(), form)).status).toBe(400);
+  });
+  it("keeps rejected draft values in a form result and returns field errors when saving", async () => {
+    const id = randomUUID();
+    expect((await write("POST", id, { ...form, skills: [] })).status).toBe(201);
+    const target = { kind: "object" as const, objectType: AGENT_DEFINITION, primaryKey: id };
+    const values = {
+      ...form, name: "Unsaved name", modelSelection: { modelId: "test/missing" },
+      skills: [], classNames: [], enabledMcpServiceIds: [],
+    };
+    const errors = [{
+      field: "/modelSelection/modelId", code: "target_unavailable", message: "The selected model does not exist in this domain",
+    }];
+    const describeForm = (draft?: typeof values) => fetch(base + "/form", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target, values: draft, changedField: null }),
+    });
+
+    const draft = await describeForm(values);
+    expect(draft.status).toBe(200);
+    expect(panelFormDescriptionSchema.parse(await draft.json())).toMatchObject({ values, errors });
+    expect(panelFormDescriptionSchema.parse(await (await describeForm()).json()).errors).toEqual([]);
+
+    const host = {
+      requestWorkbench: (path: string, init: NonNullable<Parameters<typeof fetch>[1]>) =>
+        fetch(new URL(`/api${path}`, base), { ...init, headers: { "Content-Type": "application/json" } }),
+      request: async () => { throw new Error("The definition owner is the Workbench Server"); },
+    };
+    const receipt = await agentDefinitionOperations[0].execute(host, target, { values }, id);
+    expect(receipt).toMatchObject({ kind: "refusal", code: "INVALID_REQUEST", errors });
+    expect((await stored(id)).name).toBe(form.name);
   });
   it("clears an explicitly submitted empty skill array through the existing validator", async () => {
     const id = randomUUID();
