@@ -25,7 +25,7 @@ const appIcons: Record<string, Component> = {
   'app-window':AppWindow,users:Users,microscope:Microscope,presentation:Presentation,'graduation-cap':GraduationCap,briefcase:Briefcase,'shopping-cart':ShoppingCart,package:Package,'clipboard-list':ClipboardList,chart:ChartNoAxesCombined,wallet:Wallet,'heart-pulse':HeartPulse,building:Building2,globe:Globe,calendar:Calendar,book:BookOpen,folder:Folder,workflow:GitBranch,database:Database,shield:ShieldCheck,
   'agent-builder':Bot,
   gallery: Grid2X2,
-  /** 主页 */
+  /** 个人工作台 */
   home: House,
   /** 智能体平台 */
   agents: Sparkles,
