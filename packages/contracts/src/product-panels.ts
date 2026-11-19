@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
-import { ontologyParameterTypeSchema, panelManifestSchema } from "./panel-manifest";
+import { ontologyObjectUnionTypeSchema, ontologyParameterTypeSchema, panelManifestSchema } from "./panel-manifest";
 import { applicationMetadataSchema } from "./application-metadata";
 import { appsSdkBuildSchema } from "./apps-sdk";
 import { formFieldErrorSchema } from "./form-fields";
@@ -47,11 +47,13 @@ const currentRecordFields = {
 
 /** A graph uses its primary binding for nodes and this second binding for edges. */
 export const projectionGraphSchema = z.object({
+  /** Mixed node records carry their complete identities and these allowed types. */
+  nodeIdentity: ontologyObjectUnionTypeSchema.optional(),
   edges: z.object({
     binding: ontologyElementRefSchema.extend({
       kind: ontologyElementRefSchema.shape.kind.extract(["PlatformObjectType", "Relationship"]),
     }),
-    /** JSON Pointers inside the edge record's fields, each resolving to a node primary key. */
+    /** JSON Pointers inside the edge record's fields, each resolving to a node key, or a complete identity for a mixed graph. */
     sourcePath: formFieldErrorSchema.shape.field,
     targetPath: formFieldErrorSchema.shape.field,
   }).strict(),

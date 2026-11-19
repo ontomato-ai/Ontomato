@@ -11,13 +11,14 @@ import {
   bindingKey, clientSends, panelClientReads,
 } from "./panel-client-requests";
 import { candidatePanelSourceSchema, panelFrameMessageSchema, panelUsePath } from "./panel-host";
-import { panelChildObjectIdentitySchema, panelManifestSchema } from "./panel-manifest";
+import { panelChildObjectIdentitySchema, panelManifestSchema, panelStateValueSchema } from "./panel-manifest";
 import { pageDraftSchema } from "./page-draft";
 import {
   panelFormDescriptionSchema, panelFormFrequencyValueSchema, panelFormRequestSchema, panelFormSaveInputSchema,
   projectionBindingKeys, projectionOperations, projectionPorts,
 } from "./panel-projection";
 import { platformTaskFrequencySchema } from "./platform-schedules";
+import { DEFINITION, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, USER as ONTOLOGY_USER, platformObjectTypes, platformRelationKinds } from "./platform-object-types";
 import { applicationPanelUsePathSchema, ontologyElementRefSchema, productPanelContentSchema, productProjectionInputSchema } from "./product-panels";
 
 const binding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
@@ -334,4 +335,48 @@ test("a child key is meaningful with its parent identity", () => {
   const child = { parent: { objectType: SKILL, primaryKey: "skill-a" }, primaryKey: "references/guide.md" };
   assert.deepEqual(panelChildObjectIdentitySchema.parse(child), child);
   assert.equal(panelChildObjectIdentitySchema.safeParse({ primaryKey: child.primaryKey }).success, false);
+});
+
+test("mixed graphs declare selected node types separately from the read bindings", () => {
+  const nodeIdentity = { kind: "object-union", objectTypes: [ONTOLOGY_USER, DEFINITION] };
+  const projection = productProjectionInputSchema.parse({
+    name: "Platform ontology graph", description: "", visibility: "domain", componentId: "GraphCanvas",
+    binding: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE },
+    graph: { nodeIdentity, edges: {
+      binding: { kind: "PlatformObjectType", id: ONTOLOGY_RELATION_KIND }, sourcePath: "/from", targetPath: "/to",
+    } },
+    inputs: { start: nodeIdentity }, display: {},
+  });
+  assert.deepEqual(projectionPorts(projection, {}).outputs?.selectedNode, nodeIdentity);
+  assert.deepEqual(projection.inputs.start, nodeIdentity);
+  const manifest = panelManifestSchema.parse({
+    state: { selected: nodeIdentity },
+    slots: { graph: { projectionId: "mixed", outputs: { selectedNode: { state: "selected" } } } }, operations: [],
+  });
+  assert.deepEqual(manifest.state.selected, { ...nodeIdentity, deepLink: false });
+  const user = panelStateValueSchema.parse({ className: ONTOLOGY_USER, primaryKey: "shared-key" });
+  const definition = panelStateValueSchema.parse({ className: DEFINITION, primaryKey: "shared-key" });
+  assert.notDeepEqual(user, definition);
+});
+
+test("platform ontology routes are semantic reads on the declared bindings", () => {
+  for (const [method, name] of [
+    ["GET", "schema"], ["GET", "counts"], ["GET", "start"], ["POST", "neighbors"], ["POST", "objects"],
+  ] as const) {
+    const path = `/platform-ontology/${name}`;
+    assert.ok(clientSends([binding(ONTOLOGY_TYPE), binding(ONTOLOGY_RELATION_KIND)], method, "", path));
+    assert.ok(panelClientReads(binding(ONTOLOGY_TYPE)).some(read => read.method === method && read.path.test(path)));
+    assert.ok(!clientSends([binding(OBJECT_TYPE)], method, "", path));
+  }
+  assert.ok(!clientSends([binding(ONTOLOGY_TYPE)], "POST", "", "/platform-ontology/delete"));
+});
+
+test("the four-layer topology points to declared kinds and distinguishes stored and derived edges", () => {
+  for (const relation of platformRelationKinds) {
+    assert.ok(platformObjectTypes[relation.from]?.labelKey);
+    for (const target of typeof relation.to === "string" ? [relation.to] : relation.to)
+      assert.ok(platformObjectTypes[target]?.labelKey);
+  }
+  assert.equal(platformRelationKinds.find(relation => relation.id === "user.published-workflow")?.derived, false);
+  assert.equal(platformRelationKinds.find(relation => relation.id === "role.can-author-workflow")?.derived, true);
 });

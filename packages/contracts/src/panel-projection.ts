@@ -199,7 +199,7 @@ export function projectionPorts(projection: Projection, meta: ComponentOperation
   }));
   const edgeBinding = projection.graph?.edges.binding;
   const outputs = edgeBinding && {
-    selectedNode: { kind: "object", objectType: projection.binding.id } as const,
+    selectedNode: projection.graph?.nodeIdentity ?? { kind: "object", objectType: projection.binding.id } as const,
     // Only a platform type binding declares the edge selection's object type.
     ...(edgeBinding.kind === "PlatformObjectType" && {
       selectedEdge: { kind: "object", objectType: edgeBinding.id } as const,

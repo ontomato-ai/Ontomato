@@ -20,14 +20,26 @@ const key = z
   .max(200)
   .refine((value) => !["__proto__", "constructor", "prototype"].includes(value), "Reserved key");
 
-/**
- * The typed value vocabulary of a panel: a reference to one ontology object (class and primary key, never a copy of its
- * data) or a scalar. Projections take their parameters in the same vocabulary, so a slot input and a projection's
- * parameter are compared without a translation table.
- */
+const ontologyTypeId = z.string().min(1).max(200);
+const ontologyObjectTypeSchema = z.object({ kind: z.literal("object"), objectType: ontologyTypeId }).strict();
+const ontologyScalarTypeSchema = z.object({
+  kind: z.literal("scalar"), type: z.enum(["string", "number", "boolean", "date"]),
+}).strict();
+
+/** One selected object whose type comes from this explicitly declared set. */
+export const ontologyObjectUnionTypeSchema = z.object({
+  kind: z.literal("object-union"),
+  objectTypes: z.array(ontologyTypeId).nonempty(),
+}).strict();
+
+/** The vocabulary for consumers that bind only a single known object type or a scalar. */
+export const singleOntologyParameterTypeSchema = z.discriminatedUnion("kind", [
+  ontologyObjectTypeSchema, ontologyScalarTypeSchema,
+]);
+
+/** A projection parameter names a scalar or the complete identity of one ontology object. */
 export const ontologyParameterTypeSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("object"), objectType: z.string().min(1).max(200) }).strict(),
-  z.object({ kind: z.literal("scalar"), type: z.enum(["string", "number", "boolean", "date"]) }).strict(),
+  ...singleOntologyParameterTypeSchema.options, ontologyObjectUnionTypeSchema,
 ]);
 export type OntologyParameterType = z.infer<typeof ontologyParameterTypeSchema>;
 
@@ -37,9 +49,11 @@ export type OntologyParameterType = z.infer<typeof ontologyParameterTypeSchema>;
  * The first object a panel shows comes from opening it (a deep link or an open request), never from the declaration: a
  * primary key in a shared panel would open every user's instance on the same object.
  */
+const deepLink = z.boolean().default(false);
 export const panelStateFieldSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("object"), objectType: z.string().min(1).max(200), deepLink: z.boolean().default(false) }).strict(),
-  z.object({ kind: z.literal("scalar"), type: z.enum(["string", "number", "boolean", "date"]), deepLink: z.boolean().default(false) }).strict(),
+  ontologyObjectTypeSchema.extend({ deepLink }),
+  ontologyObjectUnionTypeSchema.extend({ deepLink }),
+  ontologyScalarTypeSchema.extend({ deepLink }),
 ]);
 export type PanelStateField = z.infer<typeof panelStateFieldSchema>;
 
