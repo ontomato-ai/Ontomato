@@ -85,6 +85,8 @@ export const panelSlotSchema = z
     projectionId: z.string().min(1).max(200),
     /** Values passed to the projection's declared inputs, by parameter name, each from this panel's state. */
     inputs: z.record(key, panelStateRefSchema).default({}),
+    /** Where each named projection output writes its value in this instance's declared state. */
+    outputs: z.record(key, panelStateRefSchema).optional(),
     formField: panelFormFieldRefSchema.optional(),
   })
   .strict();
@@ -214,6 +216,10 @@ export const panelManifestSchema = z
       for (const [input, ref] of Object.entries(declaration.inputs)) {
         if (!Object.hasOwn(manifest.state, ref.state))
           ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["slots", slot, "inputs", input], message: `Input '${input}' reads undeclared state '${ref.state}'` });
+      }
+      for (const [output, ref] of Object.entries(declaration.outputs ?? {})) {
+        if (!Object.hasOwn(manifest.state, ref.state))
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["slots", slot, "outputs", output], message: `Output '${output}' writes undeclared state '${ref.state}'` });
       }
     }
     const ids = new Set<string>();

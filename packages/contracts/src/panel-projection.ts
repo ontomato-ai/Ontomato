@@ -87,7 +87,14 @@ export type ComponentOperation = Readonly<z.infer<typeof componentOperationSchem
 interface ComponentOperationMetadata {
   readonly operations?: readonly ComponentOperation[];
 }
-type Projection = Pick<ProductProjectionInput, "name" | "binding" | "inputs">;
+type ProjectionBindings = Pick<ProductProjectionInput, "binding" | "graph">;
+type Projection = ProjectionBindings & Pick<ProductProjectionInput, "name" | "inputs">;
+
+/** Both admission and skill reads use the entire set of resources this projection declares. */
+export function projectionBindingKeys(projection: ProjectionBindings): readonly string[] {
+  const primary = bindingKey(projection.binding);
+  return projection.graph ? [primary, bindingKey(projection.graph.edges.binding)] : [primary];
+}
 
 /** An operation a projection publishes: its own name, what it takes, and the SDK client operation it is. */
 export interface ProjectionOperation {
@@ -107,6 +114,8 @@ export interface ProjectionPorts {
   binding: string;
   /** The parameters it accepts, by name; a slot's inputs fill these. */
   inputs: Readonly<Record<string, OntologyParameterType>>;
+  /** The values it emits, by name; a slot can bind each output to its own panel state field. */
+  outputs?: Readonly<Record<string, OntologyParameterType>>;
   operations: readonly ProjectionOperation[];
 }
 
@@ -132,7 +141,11 @@ export function projectionPorts(projection: Projection, meta: ComponentOperation
     inputSchema: operation.inputSchema,
     handlerRef: `${client(operation.client)}.${operation.name}`,
   }));
-  return { binding, inputs: projection.inputs, operations: declared };
+  const outputs = projection.graph && {
+    selectedNode: { kind: "object", objectType: projection.binding.id } as const,
+    selectedEdge: { kind: "object", objectType: projection.graph.edges.binding.id } as const,
+  };
+  return { binding, inputs: projection.inputs, operations: declared, ...(outputs && { outputs }) };
 }
 
 /** The one operation a record bound to a platform operation publishes: the operation the record names. */
