@@ -126,7 +126,7 @@ export function panelSelection(
   manifest: PanelManifest,
   values: Readonly<Record<string, PanelFieldValue>>,
   names: ReadonlyMap<string, string>,
-  translate?: (key: string) => string,
+  translate: (key: string) => string,
 ): PanelSelection[] {
   return Object.entries(manifest.state).flatMap(([name, field]) => {
     const value = values[name];
@@ -137,9 +137,8 @@ export function panelSelection(
     if (field.kind === "object") {
       return [{ kind: objectType, id: value.primaryKey, label: named ? `${named} (${reference})` : reference }];
     }
-    const labelKey = platformObjectTypes[objectType]?.labelKey;
-    const typeLabel = labelKey ? (translate?.(labelKey) ?? labelKey) : undefined;
-    const prefix = typeLabel && named ? `${typeLabel} ${named}` : (typeLabel ?? named);
-    return [{ kind: objectType, id: value.primaryKey, label: prefix ? `${prefix} (${reference})` : reference }];
+    const typeLabel = translate(platformObjectTypes[objectType]!.labelKey!);
+    const prefix = named ? `${typeLabel} ${named}` : typeLabel;
+    return [{ kind: objectType, id: value.primaryKey, label: `${prefix} (${reference})` }];
   });
 }

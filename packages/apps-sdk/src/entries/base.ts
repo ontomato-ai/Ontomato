@@ -9,9 +9,12 @@ export type {
   ObjectListFilterOption,
   ObjectListRef,
 } from "../base/object-list-types";
+export { default as ObjectRelations } from "../base/ObjectRelations.vue";
 export { default as ObjectSummary } from "../base/ObjectSummary.vue";
 export { default as ObjectForm } from "../base/ObjectForm.vue";
 export { default as OperationButton } from "../base/OperationButton.vue";
+export { default as SegmentedControl } from "../base/SegmentedControl.vue";
+export type { SegmentedControlOption } from "../base/segmented-control-types";
 export { default as TwoPaneLayout } from "../base/TwoPaneLayout.vue";
 export { default as SectionGroup } from "../base/SectionGroup.vue";
 export { default as ReferencePicker } from "../base/ReferencePicker.vue";

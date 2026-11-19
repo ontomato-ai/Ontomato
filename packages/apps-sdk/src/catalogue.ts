@@ -279,10 +279,30 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "OntologyGraph",
     role: "control",
     meaning:
-      "Draws an interactive G6 graph from the bound resource's graph source port: type mode arranges declared object types and relation kinds by layer with per-type readable counts and access statuses; instance mode starts from a node and expands one hop of neighbors on click, preserving complete object identities, highlighting drawn query matches, keeping layer filter and viewport as internal view state, distinguishing no-neighbors, owner-refused and read-failed outcomes, and exposing fit, relayout and host-delegated PNG export when available.",
+      "Draws an interactive G6 graph from the bound resource's graph source port: type mode arranges declared object types and relation kinds by layer with per-type readable counts and access statuses; instance mode starts from a node and expands one hop of neighbors on click, preserving complete object identities, highlighting drawn query matches, keeping layer filter and viewport as internal view state, distinguishing no-neighbors, owner-refused and read-failed outcomes, and exposing fit and relayout controls.",
     effects: "Reads the bound graph source's schema, counts, starting node and one-hop neighbors as the reader; writes only the panel's own selection state.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     outputs: ["selectedNode", "selected", "selectedType"],
+  }),
+  defineComponentMeta({
+    componentId: "ObjectRelations",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectRelations",
+    role: "control",
+    meaning:
+      "Lists one-hop relations of the selected node from the bound resource's graph neighbors port, grouped by relation kind with distinct no-neighbors, owner-refused, read-failed and unavailable states, showing edge direction and stored/derived line semantics, and moving selection to a clicked peer node with its complete identity.",
+    effects: "Reads the bound graph source's one-hop neighbors as the reader; writes only the panel's own selection state.",
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
+    outputs: ["selected"],
+  }),
+  defineComponentMeta({
+    componentId: "SegmentedControl",
+    module: "@ontomato/sdk/base",
+    exportName: "SegmentedControl",
+    role: "control",
+    meaning:
+      "Switches one declared scalar panel state between mutually exclusive options supplied by the panel template or display configuration. It binds no ontology element and performs no platform reads.",
+    outputs: ["value"],
   }),
   defineComponentMeta({
     componentId: "TwoPaneLayout",
