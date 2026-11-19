@@ -478,12 +478,13 @@ if (cmd === 'login') {
 } else if (cmd === 'verify') {
   const workflowId = requireArg(args, 0, 'verify <workflowId>');
   const [workflow, grants, subjects] = await Promise.all([
-    post('/workflow/query', { id: workflowId }),
+    post('/workflow/query', { id: workflowId, status: 'ACTIVE' }),
     post('/workflow/grants', {}),
     post('/workflow/subjects', {}),
   ]);
   const roleIdsByCode = new Map();
   for (const g of grants || []) {
+    if (!g.inForce) continue;
     const code = String(g.roleCode || '').toUpperCase();
     if (!code || !g.roleId) continue;
     if (!roleIdsByCode.has(code)) roleIdsByCode.set(code, new Set());
@@ -491,18 +492,18 @@ if (cmd === 'login') {
   }
   const subjectRoleIds = new Set((subjects || []).flatMap((s) => s.roleIds || []));
   const checks = [];
-  checks.push({ check: 'status=ACTIVE', ok: workflow.status === 'ACTIVE', value: workflow.status });
-  checks.push({ check: 'version>=1', ok: Number(workflow.version) >= 1, value: workflow.version });
-  checks.push({ check: 'activationNotes empty', ok: !(workflow.activationNotes || []).length, value: workflow.activationNotes });
-  checks.push({ check: 'runContract or temporary declared', ok: Boolean(workflow.runContract) || workflow.temporary === true, value: workflow.runContract || workflow.temporary });
-  for (const step of workflow.steps || []) {
+  checks.push({ check: 'status=ACTIVE', ok: workflow?.status === 'ACTIVE', value: workflow?.status });
+  checks.push({ check: 'version>=1', ok: Number(workflow?.version) >= 1, value: workflow?.version });
+  checks.push({ check: 'activationNotes empty', ok: !(workflow?.activationNotes || []).length, value: workflow?.activationNotes });
+  checks.push({ check: 'runContract or temporary declared', ok: Boolean(workflow?.runContract) || workflow?.temporary === true, value: workflow?.runContract || workflow?.temporary });
+  for (const step of workflow?.steps || []) {
     const code = String(step.roleCode || '').toUpperCase();
     const roleIds = roleIdsByCode.get(code) || new Set();
     const members = [...subjectRoleIds].filter((id) => roleIds.has(id)).length;
     checks.push({ check: `step ${step.stepNo} role ${step.roleCode} has members`, ok: Boolean(code) && members > 0, value: members });
     checks.push({ check: `step ${step.stepNo} actionId`, ok: Boolean(step.actionId), value: step.actionId });
   }
-  console.log(JSON.stringify({ workflowId, ok: checks.every((c) => c.ok), checks }, null, 2));
+  console.log(JSON.stringify({ workflowId, hasDraft: workflow?.hasDraft ?? false, ok: checks.every((c) => c.ok), checks }, null, 2));
 } else {
   console.log(`Ontomato 流程管理员客户端
 

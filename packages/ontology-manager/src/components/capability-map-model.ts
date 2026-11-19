@@ -147,9 +147,9 @@ export function buildCapabilityMap(
     }
   }
 
-  // role -> action: a stored grant — the same row the executor consults before it runs anything.
+  // role -> action: authority currently in force.
   for (const grant of inputs.grants) {
-    if (grant.capabilityKind !== "ACTION" || !grant.capabilityId) continue;
+    if (!grant.inForce || grant.capabilityKind !== "ACTION" || !grant.capabilityId) continue;
     const role = grant.roleCode ? roleByCode.get(grant.roleCode) : undefined;
     if (role) push(`role:${role.code}`, `action:${grant.capabilityId}`, text("mapEdgeRuns"));
   }

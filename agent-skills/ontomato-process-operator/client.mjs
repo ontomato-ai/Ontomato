@@ -266,9 +266,8 @@ function requireArg(args, index, usage) {
 
 async function myActions() {
   const user = await me();
-  const [subjects, workflows, grants, actions] = await Promise.all([
+  const [subjects, grants, actions] = await Promise.all([
     post('/workflow/subjects', {}),
-    post('/workflow/query', {}),
     post('/workflow/grants', {}),
     post('/action/queryList', {}),
   ]);
@@ -276,10 +275,7 @@ async function myActions() {
   const roleIds = new Set(mine?.roleIds || []);
   const brief = { id: user.id, loginCode: user.loginCode, userName: user.userName };
   if (!roleIds.size) return { user: brief, roleIds: [], actions: [], reason: 'This subject holds no role in this domain.' };
-  const active = new Map((workflows || []).filter((w) => w.status === 'ACTIVE').map((w) => [w.id, String(w.version ?? '')]));
-  const inForce = (grants || [])
-    .filter((g) => roleIds.has(g.roleId))
-    .filter((g) => !g.workflowId || (active.has(g.workflowId) && active.get(g.workflowId) === String(g.activatedByWorkflowVersion ?? '')));
+  const inForce = (grants || []).filter((grant) => grant.inForce && roleIds.has(grant.roleId));
   const known = new Map((actions || []).map((a) => [a.id, a]));
   const rows = inForce
     .map((g) => {

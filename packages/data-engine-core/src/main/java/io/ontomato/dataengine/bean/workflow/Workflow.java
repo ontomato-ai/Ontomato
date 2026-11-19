@@ -42,6 +42,9 @@ public class Workflow {
     /** Incremented on every published revision; grants name the version that activated them. */
     private Integer version;
 
+    /** An active workflow has unpublished differences from its frozen revision. */
+    private Boolean hasDraft;
+
     private List<WorkflowStep> steps;
 
     private Long createTimestamp;
