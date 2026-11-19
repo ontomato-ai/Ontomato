@@ -67,6 +67,8 @@ public class QueryGrantService {
       expiresAt=Math.min(expiresAt,Math.min(current.expiresAt(),target.expiresAt()));
       binding.put("contextId",current.contextId());
       binding.put("executionKind","build-test");
+      if (!current.sandboxId().equals(authority.sandboxId()))
+        binding.put("contextSandboxId",current.sandboxId());
     }
     return issue(authority.userId(),authority.domainId(),authority.purpose(),execution,expiresAt,authority.classNames(),authority.sandboxId(),binding);
   }
@@ -115,6 +117,21 @@ public class QueryGrantService {
       List<String> classNames,
       String sandboxId,
       JSONObject binding) {
+    return issue(userId, domainId, purpose, runId, expiresAt, classNames, sandboxId, binding, true);
+  }
+
+  /** The target limits the grant, while only derived code executions belong to build-test cleanup. */
+  public String issueAuthoringParent(String userId, String domainId, String runId, long expiresAt,
+      List<String> classNames, ExecutionTarget target, JSONObject binding) {
+    if (target.testing()) {
+      binding.put("contextId", target.contextId());
+      binding.put("executionKind", "build-test");
+    }
+    return issue(userId, domainId, "user-read", runId, expiresAt, classNames, target.sandboxId(), binding, false);
+  }
+
+  private String issue(String userId, String domainId, String purpose, String runId,
+      long expiresAt, List<String> classNames, String sandboxId, JSONObject binding, boolean codeExecution) {
     if (userId == null
         || domainId == null
         || runId == null
@@ -151,7 +168,7 @@ public class QueryGrantService {
         runId,
         domainId,
         expiresAt);
-    if(binding!=null && binding.getString("contextId")!=null)
+    if(codeExecution && binding!=null && binding.getString("contextId")!=null)
       jdbc.update("UPDATE query_runtime_grants SET context_id=? WHERE id=?",binding.getString("contextId"),id);
     return token;
   }
@@ -181,7 +198,9 @@ public class QueryGrantService {
       if(claims.getString("contextId")!=null) {
         var target=contexts.require(claims.getString("contextId"),claims.getString("userId"),claims.getString("domainId"));
         target.requireClasses(claims.getList("classNames",String.class));
-        if(!target.sandboxId().equals(claims.getString("sandboxId"))) throw new IllegalArgumentException();
+        String contextSandbox = claims.getString("contextSandboxId");
+        if(!target.sandboxId().equals(contextSandbox == null ? claims.getString("sandboxId") : contextSandbox))
+          throw new IllegalArgumentException();
       }
       if (!allows(claims, runId, path))
         throw new ResponseStatusException(

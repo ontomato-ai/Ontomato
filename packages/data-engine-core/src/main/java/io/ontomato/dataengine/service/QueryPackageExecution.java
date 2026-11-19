@@ -20,6 +20,19 @@ public final class QueryPackageExecution {
   static Result execute(String id, JSONObject bundle, JSONObject parameters, JSONObject labels,
       QueryAccessService.Access access, String lang, int minutes, OntologyQueryService ontology,
       PythonExecuteService python, JSONObject workflowPredicate) throws Exception {
+    return execute(id, bundle, parameters, labels, access, lang, minutes, ontology, python, workflowPredicate, false);
+  }
+
+  public static Result test(String id, JSONObject bundle, JSONObject parameters, JSONObject labels,
+      QueryAccessService.Access access, String lang, int minutes, OntologyQueryService ontology,
+      PythonExecuteService python) throws Exception {
+    return execute(id, bundle, parameters, labels, access, lang, minutes, ontology, python, null, true);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static Result execute(String id, JSONObject bundle, JSONObject parameters, JSONObject labels,
+      QueryAccessService.Access access, String lang, int minutes, OntologyQueryService ontology,
+      PythonExecuteService python, JSONObject workflowPredicate, boolean test) throws Exception {
     QueryPackage.validate(bundle);
     var values = QueryPackage.parameters(bundle, parameters);
     var definitions = (List<Map<String, Object>>) ontology.rule(access).get("classDef");
@@ -47,6 +60,8 @@ public final class QueryPackageExecution {
       var inputs = new LinkedHashMap<String, String>();
       QueryPackage.files(bundle).forEach((path, content) -> inputs.put("package/" + path, content));
       execution = python.execute(id, QueryPackage.launcher(bundle), minutes, lang, authority, values, inputs);
+      if (test && execution.getError() != null && !execution.getError().isBlank())
+        return new Result(new JSONArray(), analysis, values, execution);
       rows = PythonRows.parse(execution.getResult(), execution.getError());
     }
     return new Result(QueryPermissions.mask(rows, analysis, access.permission()), analysis, values, execution);
