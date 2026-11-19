@@ -1,3 +1,7 @@
+import { panelFormRequestSchema } from "@ontomato/contracts/panel-projection";
+import { validateBody } from "../middleware/validate";
+import { asyncHandler } from "../utils/http";
+import { describeAgentDefinitionForm } from "../../services/assistant/definition-form";
 import { modelSelectionSchema } from "@ontomato/contracts/model-settings";
 import { assistantAgentsQuerySchema } from "@ontomato/contracts/page-skills";
 import { readDiagnosisModel, saveDiagnosisModel } from "../../services/ops-diagnosis/model-settings";
@@ -169,6 +173,15 @@ router.post(
           context(req).credentials,
         ),
       );
+  }),
+);
+router.post(
+  "/agent-definitions/form",
+  agentAdmin,
+  validateBody(panelFormRequestSchema),
+  asyncHandler(async (req, res) => {
+    const { owner, credentials } = context(req);
+    res.json(await describeAgentDefinitionForm(req.body, owner, credentials));
   }),
 );
 router.post(

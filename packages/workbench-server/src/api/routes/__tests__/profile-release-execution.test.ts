@@ -6,7 +6,7 @@ import {afterAll,beforeAll,beforeEach,expect,it,vi} from "vitest";
 import {productAssetSchema} from "@ontomato/contracts/product-assets";
 import {HttpError} from "../../../utils/errors";
 import {readSseData} from "@ontomato/contracts/sse";
-import {notifyPanelObjectChanged,notifyProductDefinitionChanged} from "../../../services/product-assets/subscriptions";
+import {notifyProductDefinitionChanged} from "../../../services/product-assets/subscriptions";
 
 const state=vi.hoisted(()=>({executor:"V" as string|null,use:true,visible:new Set<string>(),query:vi.fn(),post:vi.fn(),agent:vi.fn(),create:vi.fn(),bind:vi.fn()}));
 vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://ontology.test"}}}));
@@ -23,6 +23,7 @@ vi.mock("../../../services/assistant/service",()=>({assistantService:{create:sta
 vi.mock("../../../services/product-assets/profile-sessions",()=>({bindProfileSession:state.bind}));
 
 import router from "../product-assets";
+import { productPanelsRouter } from "../product-panels";
 import {contractHash,releaseSnapshotSchema} from "../../../services/product-assets/releases";
 
 const owner={domainId:"domain",userId:"U"},profileId="profile",agentId="definition";
@@ -40,6 +41,7 @@ let server:Server,base:string;
 beforeAll(async()=>{
   const app=express().use(express.json()).use((req,_res,next)=>{Object.assign(req,{...owner,token:"U-token",locale:"en"});next();});
   app.use("/api/product-assets",router);
+  app.use("/api/product-panels",productPanelsRouter);
   server=app.listen(0,"127.0.0.1");await new Promise<void>(resolve=>server.once("listening",resolve));
   base=`http://127.0.0.1:${(server.address() as AddressInfo).port}/api/product-assets/${profileId}`;
 });
@@ -121,36 +123,59 @@ it.each(endpoints)("preserves %s dependency denial when self-mode U cannot acces
   expect(state.create).not.toHaveBeenCalled();
 });
 
-it("streams definition changes and only the owner’s object events on the product subscription route", async () => {
-  const controller = new AbortController();
+it("reads panel and referenced projection revisions under their use grants without opening a stream", async () => {
+  const response = await fetch(new URL(`/api/product-panels/${panelId}/snapshot`, base));
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({
+    panel: { id: panelId, revision: 3 },
+    projections: [{ id: "projection-live", revision: 7 }],
+  });
+  expect(state.post.mock.calls.filter(([name]) => name === "product-grant-check")).toHaveLength(2);
+});
+
+it("delivers live projection-only author notices while its snapshot is still reading", async () => {
+  const connection = new AbortController();
+  const id = "projection-live";
+  let revision = 7;
+  let reads = 0;
+  let finishSnapshot!: () => void;
+  const held = new Promise<void>(resolve => { finishSnapshot = resolve; });
+  const query = state.query.getMockImplementation()!;
+  state.query.mockImplementation(async (sql: string, args: unknown[]) => {
+    if (!sql.includes("FROM product_projections")) return query(sql, args);
+    const row = { id, revision };
+    if (++reads === 2) await held;
+    return { rows: [row] };
+  });
   try {
-    const response = await fetch(new URL("../subscriptions", `${base}/`), {
-      method: "POST", signal: controller.signal,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "product-definition", target: { kind: "panel", id: panelId } }),
+    const response = await fetch(new URL("../definition-stream", `${base}/`), {
+      method: "POST", signal: connection.signal, headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targets: [{ kind: "projection", id }] }),
     });
     expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toContain("text/event-stream");
-    const before = state.query.mock.calls.length;
-    const target = { objectType: "platform:ScheduledTask", primaryKey: "task-1" };
-    const events: unknown[] = [];
-    const reading = readSseData(response, event => {
-      events.push(event);
-      return events.length === 3;
-    }, () => true);
-    notifyPanelObjectChanged({ ...owner, userId: "executor" }, target);
-    notifyPanelObjectChanged({ ...owner, domainId: "other" }, target);
-    notifyPanelObjectChanged(owner, target);
-    expect(state.query.mock.calls).toHaveLength(before);
-    const definition = { kind: "definition-changed", domainId: owner.domainId, target: { kind: "panel", id: panelId } } as const;
-    await notifyProductDefinitionChanged(definition);
+    const received: unknown[] = [];
+    const reading = readSseData(response, frame => { received.push(frame); return received.length === 2; }, () => true);
+    await vi.waitFor(() => expect(reads).toBe(2));
+    revision = 8;
+    await notifyProductDefinitionChanged({
+      kind: "definition-changed", domainId: owner.domainId, target: { kind: "projection", id },
+    });
+    await vi.waitFor(() => expect(received).toEqual([
+      { kind: "definition-changed", definition: { kind: "projection", id, revision: 8 } },
+    ]));
+    finishSnapshot();
     await reading;
-    expect(events).toEqual([
-      { kind: "snapshot", panel: { id: panelId, revision: 3 }, projections: [{ id: "projection-live", revision: 7 }] },
-      { kind: "object-changed", target },
-      definition,
-    ]);
+    expect(received[1]).toEqual({ kind: "snapshot", definitions: [{ kind: "projection", id, revision: 7 }] });
   } finally {
-    controller.abort();
+    finishSnapshot();
+    connection.abort();
   }
+});
+
+it("retires the single-panel subscription request", async () => {
+  const response = await fetch(new URL("../subscriptions", `${base}/`), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "product-definition", target: { kind: "panel", id: panelId } }),
+  });
+  expect(response.status).toBe(400);
 });

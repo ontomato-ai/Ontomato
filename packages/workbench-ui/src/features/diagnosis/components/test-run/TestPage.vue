@@ -6,6 +6,7 @@ import type {
 } from "@ontomato/contracts/autotest";
 import type { SseErrorEvent } from "@ontomato/contracts/errors";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { useDocumentVisible } from "@ontomato/foundation-ui/visibility";
 import { authHost } from "../../../../utils/auth";
 import { diagnosisApi } from "../../api";
 import {
@@ -65,6 +66,7 @@ const runSummary = ref<RunSummary>(emptyRunSummary());
 const logLines = ref<Array<{ level: string; ts: string; msg: string }>>([]);
 const logPanelRef = ref<InstanceType<typeof TestRunLogPanel> | null>(null);
 let eventSource: EventSource | null = null;
+const documentVisible = useDocumentVisible();
 
 const displayTotalCases = computed(() => {
   if (runSummary.value.total > 0) return runSummary.value.total;
@@ -211,7 +213,7 @@ async function startRun() {
     runState.value = "running";
     logLines.value = [];
 
-    connectSSE(data.runId);
+    followRun(data.runId);
     emit("run-created", data.runId);
   } catch (e: any) {
     errorText.value = e.message || t("diagnosis.startFailed");
@@ -231,13 +233,15 @@ async function stopRun() {
   }
 }
 
+/**
+ * Rebuilds the view of a run from what the server holds now: a settled run from its stored results, an active one by
+ * replaying the run's whole (bounded) event buffer onto an emptied log. The buffer has no cursor, so the log is never
+ * continued from where it stopped.
+ */
 async function restoreRun(id: string) {
-  if (!id || (runId.value === id && runState.value !== "idle")) return;
-
   loading.value = true;
   errorText.value = "";
   disconnectSSE();
-  logLines.value = [];
 
   try {
     const [runDetail, resultDetail] = await Promise.all([
@@ -255,10 +259,11 @@ async function restoreRun(id: string) {
         ? summarizeAutotestVerdicts(resultRows)
         : normalizeRunSummary(resultDetail.summary || runDetail.summary, resultRows.length);
 
+    logLines.value = [];
     appendLog("info", workbenchContent().text.observe.restoredTestBatch(runId.value));
 
     if (restoredState === "running" || restoredState === "stopping") {
-      connectSSE(runId.value);
+      followRun(runId.value);
     }
   } catch (e: any) {
     errorText.value = e.message || t("diagnosis.requestFailed");
@@ -270,6 +275,11 @@ async function restoreRun(id: string) {
 /* ------------------------------------------------------------------ */
 /*  SSE                                                                */
 /* ------------------------------------------------------------------ */
+
+/** A background tab holds no stream: the run is followed again, rebuilt, once the tab is back (design "long connections" 2). */
+function followRun(id: string) {
+  if (documentVisible.value) connectSSE(id);
+}
 
 function connectSSE(id: string) {
   disconnectSSE();
@@ -449,6 +459,20 @@ watch(
   },
   { immediate: true }
 );
+
+/*
+ * Hiding the tab only stops watching: closing the stream raises no error, so the run is not taken as failed, and nothing
+ * asks the server to stop it. Back in front, a run still followed is read again, even though its id has not changed.
+ */
+watch(documentVisible, async (shown) => {
+  if (!shown) {
+    disconnectSSE();
+    return;
+  }
+  if (!isActive.value) return;
+  await restoreRun(runId.value);
+  if (!isActive.value) emitRunSettled();
+});
 
 /* ------------------------------------------------------------------ */
 /*  Resizable Split                                                     */

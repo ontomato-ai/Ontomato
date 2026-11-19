@@ -52,10 +52,27 @@ export function defineComponentMeta<const Meta extends ComponentMetadata>(meta: 
   return meta;
 }
 
-/** The catalogue a build writes as `components.json`: every declared component of one SDK version. */
+/** One port of a component as its source declares it: a prop, an event or a slot, with its type and its comment. */
+export interface ComponentPort {
+  readonly name: string;
+  readonly type: string;
+  readonly description: string;
+}
+
+/**
+ * A component's ports — its props, its events and its slots — read by the build from the component's own source, the
+ * same reading its reference is written from, so what a directory shows of a component never differs from its code.
+ */
+export interface ComponentPorts {
+  readonly props: readonly (ComponentPort & { readonly required: boolean; readonly default?: string })[];
+  readonly events: readonly ComponentPort[];
+  readonly slots: readonly ComponentPort[];
+}
+
+/** The catalogue a build writes as `components.json`: every declared component of one SDK version, with its ports. */
 export interface ComponentCatalogue {
   readonly version: string;
-  readonly components: readonly ComponentMetadata[];
+  readonly components: readonly (ComponentMetadata & { readonly ports: ComponentPorts })[];
 }
 
 /** A component the catalogue describes, resolved back to the export a page imports. */

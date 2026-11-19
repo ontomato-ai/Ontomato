@@ -10,6 +10,7 @@ import java.util.Locale;
 public final class PanelSkills {
     private PanelSkills() {}
 
+    /** The path is the complete canonical route from the application catalog. */
     public record Use(String applicationId, String useId, String pageKey, String panelId, String path) {}
     public record Source(PageSkills.Skill skill, List<Use> uses) {}
 

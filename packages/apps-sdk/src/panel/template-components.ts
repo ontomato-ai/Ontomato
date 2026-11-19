@@ -1,4 +1,4 @@
-import { defineAsyncComponent, type App, type ComponentOptions } from "vue";
+import { defineAsyncComponent, type App, type Component, type ComponentOptions } from "vue";
 import loaders from "apps-sdk:element-components";
 
 const directives = {
@@ -26,10 +26,14 @@ function templateNames(template: ComponentOptions["template"]) {
   return names;
 }
 
-/** Static tags get the actual components before rendering, including children a parent inspects in its slots. */
-export async function prepareElementComponents(template: ComponentOptions["template"]) {
+/**
+ * Static tags get the actual components before rendering, including children a parent inspects in its slots: Element
+ * Plus's and the SDK's own (`own`), so a layout around the panel's projections never holds the first draw back for one
+ * more fetch. A tag the template does not name loads at its first render.
+ */
+export async function prepareTemplateComponents(template: ComponentOptions["template"], own: Readonly<Record<string, () => Promise<Component>>>) {
   const names = templateNames(template);
-  const components = Object.entries(loaders).map(async ([name, load]) => {
+  const components = Object.entries({ ...loaders, ...own }).map(async ([name, load]) => {
     const tag = name.replace(/(?!^)[A-Z]/g, letter => "-" + letter).toLowerCase();
     const used = names.has(tag) || names.has(name.toLowerCase());
     // Tags resolved dynamically by Vue can still load the component at first render.

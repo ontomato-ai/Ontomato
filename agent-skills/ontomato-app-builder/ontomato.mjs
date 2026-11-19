@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import { analystCommand } from "./client.mjs";
 import { authenticate } from "./identity.mjs";
+import { panelRegistrationClient } from "./panel-registration.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -230,15 +231,39 @@ async function workbench(api, method, endpoint, body) {
 }
 const print = value => console.log(JSON.stringify(value, null, 2));
 async function sdkCommand(api, args) {
-  const current = await workbench(api, "GET", "/apps-sdk/current");
-  if (args[0] === "current" && args.length === 1) return print(current);
-  if (args[0] !== "read" || args.length !== 2) die("sdk requires current or read <relative path>");
-  // The CLI reaches the deployment or internal Node URL; only HTML uses the returned public paths.
-  const response = await fetch(`${api.envUrl}/apps-sdk/${current.version}/${args[1]}`, { headers: headers(api), redirect: "error" });
+  if (args[0] === "current" && args.length === 1) return print(await workbench(api, "GET", "/apps-sdk/current"));
+  if (args[0] !== "read" || (args.length !== 2 && args.length !== 3)) die("sdk requires current or read [<exact version>] <relative path>");
+  const version = args.length === 3 ? args[1] : (await workbench(api, "GET", "/apps-sdk/current")).version;
+  // The CLI reaches the deployment or internal Node URL; only source rendered in the browser uses public paths.
+  const response = await fetch(`${api.envUrl}/apps-sdk/${encodeURIComponent(version)}/${args.at(-1)}`, { headers: headers(api), redirect: "error" });
   const text = await response.text();
   if (!response.ok) die(`${response.status}\n${text}`);
   console.log(text);
 }
+
+async function panelCommand(api, workspaceId, [command, ...args]) {
+  if (command === "applications" && args.length === 0) {
+    return printData(await requestJson(api, "GET", "/platform/applications?purpose=navigation"));
+  }
+  if (command === "preview" && args.length === 1) {
+    if (!workspaceId) die("Panel preview requires --workspace <id>");
+    const query = new URLSearchParams({ ref: args[0] });
+    return print(await workbench(api, "GET", `/workspaces/${encodeURIComponent(workspaceId)}/panel-candidate?${query}`));
+  }
+  if (command === "register" && args.length === 1) {
+    const client = panelRegistrationClient({ workbenchUrl: api.envUrl, ontologyUrl: api.ontologyUrl, headers: headers(api) });
+    return client.register(JSON.parse(readInput(args[0])), (kind, id) => console.log(`${kind} ${id}`));
+  }
+  if (command === "uses" && args.length === 1) {
+    return printData(await requestJson(api, "GET", `/platform/applications/${encodeURIComponent(args[0])}/panel-uses`));
+  }
+  if ((command === "projection" || command === "get") && args.length === 1) {
+    const collection = command === "projection" ? "projections" : "panels";
+    return print(await workbench(api, "GET", `/product-${collection}/${encodeURIComponent(args[0])}`));
+  }
+  die("panel requires applications, projection <id>, get <id>, uses <applicationId>, preview <working|commit> [--workspace <id>], or register <json|@file>");
+}
+
 async function functionCommand(api, [command, ...args]) {
   if (command === "list") return printData(await requestJson(api, "POST", "/function/queryList", args[0] ? JSON.parse(readInput(args[0])) : {}));
   if (args.length !== 1) die("function get/save/delete requires one id or definition");
@@ -329,7 +354,13 @@ function usage() {
   die(`usage: ontomato.mjs [--lang <tag>] <command>
   test start|status|stop [--workspace <id>] [--sample test-data/sample.json]
   sdk current
-  sdk read <relative path, e.g. docs/index.md>
+  sdk read [<exact version>] <relative path, e.g. docs/index.md>
+  panel applications
+  panel projection <id>
+  panel get <id>
+  panel uses <applicationId>
+  panel preview <working|commit> [--workspace <id>]
+  panel register <json|@file>
   function list [<filter json|@file>]
   function get <id>
   function save <definition json|@file>
@@ -392,6 +423,7 @@ async function main() {
     await bindTestTarget(api,workspaceId);
   }
   if (cmd === "sdk") return sdkCommand(api, argv.slice(1));
+  if (cmd === "panel") return panelCommand(api, workspaceId, argv.slice(1));
   if (cmd === "workspace") return workspaceCommand(api, argv.slice(1));
   if (cmd === "product") return productCommand(api, argv.slice(1));
   if (cmd === "function") return functionCommand(api, argv.slice(1));

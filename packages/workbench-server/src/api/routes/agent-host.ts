@@ -69,9 +69,9 @@ router.get(
             ]);
             if (!readable.has(frame.sessionId)) return;
           }
-          const notice = frame.type === "ready" && host && query.presentation
-            ? { ...frame, presentationBinding: openPresentationView(host, c.owner,
-              request => res.write(`event: presentation\ndata: ${JSON.stringify(request)}\n\n`), abort.signal) }
+          const notice = frame.type === "ready" && host && query.viewId
+            ? { ...frame, connectionId: openPresentationView(host, c.owner, query.viewId,
+              event => res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`), abort.signal) }
             : frame;
           res.write(`event: session-run\ndata: ${JSON.stringify(notice)}\n\n`);
         },
@@ -93,7 +93,7 @@ if (host) {
     const abort = new AbortController();
     res.once("close", () => abort.abort());
     res.json(await requestPresentation(service, host, context(req).owner, {
-      connectionId: id(req, "connectionId"), sessionId: id(req, "sessionId"), runId, toolCallId, input,
+      viewId: id(req, "viewId"), sessionId: id(req, "sessionId"), runId, toolCallId, input,
     }, abort.signal));
   }));
   router.post("/sessions/:sessionId/runs/:runId/presentation-result", wrap(async (req, res) => {

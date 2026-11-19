@@ -14,8 +14,8 @@ import {expandedProductDependencies} from '../../services/product-assets/depende
 import {readProductRelease,productReleaseIssues,snapshotAsset,publishProductBundle,rollbackProductBundle,listProductBundleReleases,synchronizeBundlePublication} from '../../services/product-assets/releases';
 import {assembleAgentProfile,renderAgentObjectContext,executeProfileTool} from '../../services/product-assets/agent-profile';
 import {validatePageState} from '@ontomato/contracts/product-page-state';
-import {productSubscriptionTargetSchema} from '@ontomato/contracts/product-subscriptions';
-import {subscribeProduct,resumeProductSubscription,deleteProductSubscription,authorizePanelStream} from '../../services/product-assets/subscriptions';
+import {productDefinitionStreamRequestSchema,productSubscriptionTargetSchema,type ProductDefinitionStreamFrame} from '@ontomato/contracts/product-subscriptions';
+import {subscribeProduct,resumeProductSubscription,deleteProductSubscription,authorizeDefinitionStream} from '../../services/product-assets/subscriptions';
 import {discoverProjections,validateDefaultProjections} from '../../services/product-assets/projections';
 import {readDefinitionTrigger,saveDefinitionTrigger} from '../../services/product-assets/triggers';
 import {readProductGrantRecords,changeProductGrant,changeProductDomainGrant,requireProductUse} from '../../services/product-assets/grants';
@@ -62,21 +62,20 @@ router.put('/triggers/:id',wrap(async(req,res)=>{const c=context(req);const inpu
 router.get('/projections',wrap(async(req,res)=>{const input=z.object({kind:z.enum(['ObjectType','Definition','MetricView','Action']),id:z.string().min(1).max(200)}).parse(req.query);res.json(await discoverProjections(context(req).owner,input.kind,input.id));}));
 router.post('/subscriptions',wrap(async(req,res)=>{
   const {owner,credentials}=context(req);
-  const target=productSubscriptionTargetSchema.parse(req.body);
-  if(target.kind!=='product-definition'||target.target.kind!=='panel'){
-    res.json(await subscribeProduct(owner,credentials,target));
-    return;
-  }
-  const {attach,snapshot}=await authorizePanelStream(owner,credentials,target.target.id);
+  res.json(await subscribeProduct(owner,credentials,productSubscriptionTargetSchema.parse(req.body)));
+}));
+router.post('/definition-stream',wrap(async(req,res)=>{
+  const {owner,credentials}=context(req);
+  const {targets}=productDefinitionStreamRequestSchema.parse(req.body);
+  const {attach,snapshot}=await authorizeDefinitionStream(owner,credentials,targets);
   if(res.destroyed)return;
-  const stop=attach(event=>res.write(`data: ${JSON.stringify(event)}\n\n`));
+  const send=(frame:ProductDefinitionStreamFrame)=>res.write(`data: ${JSON.stringify(frame)}\n\n`);
+  const stop=attach(send);
+  res.once('close',stop);
   res.set({'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','X-Accel-Buffering':'no'});
   res.flushHeaders();
-  res.write(`data: ${JSON.stringify(snapshot)}\n\n`);
-  // Keep the HTTP stream open through idle proxy timeouts without reading any product data.
-  const heartbeat=setInterval(()=>res.write(': heartbeat\n\n'),15_000);
-  heartbeat.unref();
-  res.once('close',()=>{clearInterval(heartbeat);stop();});
+  const definitions=await snapshot();
+  if(!res.destroyed)send({kind:'snapshot',definitions});
 }));
 router.get('/subscriptions/:subscriptionId',wrap(async(req,res)=>{const c=context(req);res.json(await resumeProductSubscription(c.owner,String(req.params.subscriptionId),c.credentials));}));
 router.delete('/subscriptions/:subscriptionId',wrap(async(req,res)=>{const c=context(req);await deleteProductSubscription(c.owner,String(req.params.subscriptionId));res.json({success:true});}));

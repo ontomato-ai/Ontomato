@@ -56,11 +56,11 @@ describe("an agent's presentation over a panel's unsaved form", () => {
     const { context } = await mountPanel(panelOf("form"));
     await vi.waitFor(() => expect(context.instance.dirty()).toBe(true), { timeout: 5000 });
 
-    // The page's notice stream is ready with its display binding, and a run of this conversation asks.
-    await host.stream.current().frame({ type: "ready", presentationBinding: { connectionId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd1" } });
+    // The page view's stream is ready, and a run of this conversation asks.
+    await host.stream.current().frame({ type: "ready", connectionId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd1" });
     const address = router.currentRoute.value.fullPath;
     const asked = Date.now();
-    host.stream.current().presentation!({
+    host.stream.current().view!.frame({
       type: "presentation", sessionId: SESSION, runId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", toolCallId: "call-1",
       target: { kind: "page", address: "/dashboards" },
     });

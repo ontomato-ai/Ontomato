@@ -31,12 +31,12 @@ const uses: ApplicationPanelUse[] = [
   {
     id: "use-tasks",
     panelId: "panel-tasks",
-    path: "/tasks",
+    path: "/applications/app-a/tasks",
     pageKey: "panels-trial-a-tasks",
     access: { kind: "domain-member" },
   },
 ];
-vi.mock("../panel-host", () => ({ panelUsesOf: async () => uses, platformPanelHost: () => ({}) }));
+vi.mock("../panel-host", () => ({ panelUsesOf: async () => uses, platformPanelHost: (_applicationId: string, use: ApplicationPanelUse) => ({ use }) }));
 
 /** Every panel instance mounted, with the state it opened at. */
 const instances: { initial: Record<string, unknown>; report: () => void; dirty: (value: boolean) => void }[] = [];
@@ -53,7 +53,7 @@ vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@ontomato/platform-shell")>()),
   // Stands in for the frame: it reports what the reader looks at, and a selection as the address it is now at.
   PanelHost: defineComponent({
-    props: { useId: String, address: String, initial: { type: Object, default: () => ({}) }, labels: Object },
+    props: { port: Object, address: String, initial: { type: Object, default: () => ({}) }, labels: Object },
     emits: ["display-address", "display-dirty", "context"],
     setup(props, { emit }) {
       const opened = (props.initial as { selectedTask?: { primaryKey: string } }).selectedTask?.primaryKey ?? null;

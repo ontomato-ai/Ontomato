@@ -94,15 +94,27 @@ export function createPanelState(manifest: PanelManifest, initial: PanelInitialS
   };
 }
 
+/** How an instance keeps the name of one object it has read: by its type and its key, never by its name. */
+export function objectNameKey(objectType: string, primaryKey: string): string {
+  return `${objectType}\u0000${primaryKey}`;
+}
+
 /**
- * The objects and scalars a panel instance holds, as a message names them: one entry per declared object field that has
- * a value, in declaration order. The entry's kind is its ontology class, so an agent reads which object it is from the
- * same line as the page.
+ * The objects a panel instance holds, as a message names them: one entry per declared object field that has a value, in
+ * declaration order. The entry's label is the name the object's owner gave it, from a read this instance already made,
+ * followed by its type and key, so an agent reads which object it is from the same line as the page; an object not read
+ * yet is named by its type and key alone. The name lives here and nowhere else: the state and the address hold the key.
  */
-export function panelSelection(manifest: PanelManifest, values: Readonly<Record<string, PanelFieldValue>>): PanelSelection[] {
+export function panelSelection(
+  manifest: PanelManifest,
+  values: Readonly<Record<string, PanelFieldValue>>,
+  names: ReadonlyMap<string, string>,
+): PanelSelection[] {
   return Object.entries(manifest.state).flatMap(([name, field]) => {
     const value = values[name];
     if (field.kind !== "object" || !value || typeof value !== "object") return [];
-    return [{ kind: field.objectType, id: value.primaryKey, label: `${field.objectType} ${value.primaryKey}` }];
+    const reference = `${field.objectType} ${value.primaryKey}`;
+    const named = names.get(objectNameKey(field.objectType, value.primaryKey));
+    return [{ kind: field.objectType, id: value.primaryKey, label: named ? `${named} (${reference})` : reference }];
   });
 }

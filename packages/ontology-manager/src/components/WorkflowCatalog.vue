@@ -136,7 +136,10 @@ onMounted(async () => {
 });
 
 function openCreate() {
-  Object.assign(form, { id: undefined, name: "", description: "", runClassName: null, runContract: null, steps: [blankStep(1)] });
+  Object.assign(form, {
+    id: undefined, name: "", description: "", runClassName: null, runContract: null,
+    temporary: null, caseFormSchema: null, steps: [blankStep(1)],
+  });
   editing.value = true;
 }
 
@@ -156,6 +159,8 @@ function openEdit(workflow: WorkflowRecord) {
     name: workflow.name,
     description: workflow.description ?? "",
     runClassName: workflow.runClassName,
+    temporary: workflow.temporary,
+    caseFormSchema: workflow.caseFormSchema,
     runContract: workflow.runContract ? { ...workflow.runContract, statusOpen: [...(workflow.runContract.statusOpen ?? [])] } : null,
     steps: (workflow.steps ?? []).map((step) => ({ ...step })),
   });
@@ -257,10 +262,9 @@ function stepSummary(workflow: WorkflowRecord) {
  */
 function workflowGrants(workflow: WorkflowRecord) {
   const rows = grants.value.filter((grant) => !!grant.workflowId && grant.workflowId === workflow.id);
-  const version = workflow.version == null ? "" : String(workflow.version);
   return {
-    inForce: rows.filter((grant) => grant.activatedByWorkflowVersion === version),
-    superseded: rows.filter((grant) => grant.activatedByWorkflowVersion !== version),
+    inForce: rows.filter((grant) => grant.inForce),
+    superseded: rows.filter((grant) => !grant.inForce),
   };
 }
 
@@ -328,7 +332,10 @@ function grantSummary(workflow: WorkflowRecord) {
         </el-table-column>
         <el-table-column :label="ot('workflowColumnStatus')" min-width="96">
           <template #default="{ row }">
-            <el-tag :type="statusTag(row.status).type" effect="light">{{ statusTag(row.status).text }}</el-tag>
+            <div class="workflow-status">
+              <el-tag :type="statusTag(row.status).type" effect="light">{{ statusTag(row.status).text }}</el-tag>
+              <el-tag v-if="row.hasDraft" type="warning" effect="light">{{ ot("workflowDraft") }}</el-tag>
+            </div>
           </template>
         </el-table-column>
         <el-table-column :label="ot('workflowColumnVersion')" min-width="72">
@@ -359,19 +366,18 @@ function grantSummary(workflow: WorkflowRecord) {
         <el-table-column :label="ot('workflowColumnReviewedBy')" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ subjectName(row.reviewedBy) }}</template>
         </el-table-column>
-        <!-- Wide enough for its three actions on one line; it stays at the right while the table scrolls sideways. -->
-        <el-table-column :label="ot('workflowColumnOps')" min-width="248" fixed="right">
+        <el-table-column :label="ot('workflowColumnOps')" min-width="308" fixed="right">
           <template #default="{ row }">
             <div class="workflow-operations">
               <el-button link type="primary" @click="openEdit(row)">
                 <ArrowDownUp :size="14" />
                 <span>{{ ot("workflowEdit") }}</span>
               </el-button>
-              <el-button v-if="row.status !== 'ACTIVE'" link type="success" @click="activate(row)">
+              <el-button v-if="row.status !== 'ACTIVE' || row.hasDraft" link type="success" @click="activate(row)">
                 <Play :size="14" />
                 <span>{{ ot("workflowActivate") }}</span>
               </el-button>
-              <el-button v-else link type="warning" @click="deactivate(row)">
+              <el-button v-if="row.status === 'ACTIVE'" link type="warning" @click="deactivate(row)">
                 <Pause :size="14" />
                 <span>{{ ot("workflowDeactivate") }}</span>
               </el-button>
@@ -469,7 +475,7 @@ function grantSummary(workflow: WorkflowRecord) {
       />
       <template v-else>
         <div v-if="grantPanel.inForce.length > 0" class="workflow-grants-group">
-          <h4>{{ ot("workflowGrantsInForce", { version: grantsFor?.version ?? 0 }) }}</h4>
+          <h4>{{ ot("workflowGrantsInForce", { version: grantPanel.inForce[0].activatedByWorkflowVersion ?? "" }) }}</h4>
           <el-table :data="grantsByRole(grantPanel.inForce)" row-key="role" size="small">
             <el-table-column :label="ot('workflowStepRole')" width="200">
               <template #default="{ row }"><span class="workflow-grant-role">{{ row.role }}</span></template>
@@ -541,6 +547,11 @@ function grantSummary(workflow: WorkflowRecord) {
 }
 .workflow-table :deep(.cell) {
   padding-inline: 8px;
+}
+.workflow-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 .workflow-operations {
   display: flex;

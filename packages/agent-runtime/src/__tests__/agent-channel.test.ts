@@ -38,7 +38,7 @@ function channel() {
 }
 
 const humanChannel = { ...context, userRecipient: { session: source.session, actor: context.actor } };
-const browserBinding = { connectionId: "55555555-5555-4555-8555-555555555555" };
+const browserBinding = { viewId: "55555555-5555-4555-8555-555555555555" };
 const initiatingCredential = { token: "initiating-token", apiKey: null };
 const userInput = { role: "user", content: "Show a page", timestamp: 1 } as const;
 
@@ -167,6 +167,48 @@ it("drops a submitted presentation binding at the credentialFrom HTTP entry", as
     expect(response.status).toBe(202);
     expect(request.mock.calls[0]?.at(-1)).toBeUndefined();
   } finally {
+    await new Promise<void>(done => server.close(() => done()));
+  }
+});
+
+it("accepts a delegated process cursor from the URL and rejects invalid cursor queries", async () => {
+  const streamId = "55555555-5555-4555-8555-555555555555";
+  const taskId = inputId;
+  const targetScope = { ...scope, hostId: "child-host" };
+  const process = vi.fn().mockResolvedValue({ scope: targetScope, runId });
+  const subscribe = vi.fn(async () => () => {});
+  const runtime = {
+    options: { hosts: [{ id: scope.hostId, token: "fixture-host-token" }] },
+    channel: { process },
+    subscribe,
+  } as unknown as AgentRuntime;
+  const server = createRuntimeHttp(runtime).listen(0, "127.0.0.1");
+  await new Promise<void>(done => server.once("listening", done));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/channel/sessions/${sessionId}/tasks/${taskId}/process/events`;
+  const request = (query: string) => fetch(`${url}?${query}`, {
+    headers: { authorization: "Bearer fixture-host-token", "x-domain-id": scope.domainId, "x-correlation-id": "fixture" },
+  });
+  try {
+    const valid = await request(`afterSeq=3&streamId=${streamId}`);
+    expect(valid.status).toBe(200);
+    expect(valid.headers.get("content-type")).toContain("text/event-stream");
+    expect(process).toHaveBeenCalledWith(scope, sessionId, taskId);
+    expect(subscribe).toHaveBeenCalledWith(targetScope, runId, 3, streamId, expect.any(Function));
+    await valid.body!.cancel();
+
+    subscribe.mockClear();
+    for (const query of [
+      `afterSeq=-1&streamId=${streamId}`, `afterSeq=3.5&streamId=${streamId}`,
+      `afterSeq=&streamId=${streamId}`, `afterSeq=3&afterSeq=4&streamId=${streamId}`,
+      "afterSeq=3&streamId=invalid",
+    ]) {
+      const invalid = await request(query);
+      expect(invalid.status).toBe(400);
+      expect(await invalid.json()).toMatchObject({ error: { code: "INVALID_REQUEST" } });
+    }
+    expect(subscribe).not.toHaveBeenCalled();
+  } finally {
+    server.closeAllConnections();
     await new Promise<void>(done => server.close(() => done()));
   }
 });

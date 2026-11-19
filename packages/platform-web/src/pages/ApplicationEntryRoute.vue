@@ -14,7 +14,6 @@ const application = computed(() => applications.value.find(app => app.id === pro
   <PanelApplicationRoute
     v-if="panelPath || (application && isPanelApplication(application))"
     :application-id="applicationId"
-    :panel-path="panelPath"
   />
   <ApplicationRoute v-else-if="application || !loading" />
 </template>

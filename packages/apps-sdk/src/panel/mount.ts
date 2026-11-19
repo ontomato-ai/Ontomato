@@ -1,7 +1,9 @@
-import { createApp, defineAsyncComponent, h, nextTick, provide, ref, shallowReactive, watch, type Component, type Ref } from "vue";
+import { createApp, h, nextTick, provide, ref, shallowReactive, watch, type Component, type Ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { contextTransport, type AppContext } from "../context";
 import { connectPanelContext } from "./app-context";
+import { defaultLocale } from "apps-sdk:panel-appearance";
+import { createPanelText } from "./text";
 import {
   PANEL_HOST_CHANNEL,
   panelAddressState,
@@ -12,16 +14,18 @@ import {
   type PanelFrameMessage,
   type PanelHostMessage,
 } from "@ontomato/contracts/panel-host";
+import type { DefinitionRevision } from "@ontomato/contracts/product-subscriptions";
 import { pageDraftReadSchema, type PageDraft } from "@ontomato/contracts/page-draft";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
-import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
+import type { PanelDefinitionContent, ProductProjection } from "@ontomato/contracts/product-panels";
 import { panelContextKey, type PanelContext, type ProjectionSlot } from "./context";
 import { applyPanelRequest, createPanelInstance, pageDraftLinkOf, type PanelInstance } from "./instance";
 import { receivePanelDraft } from "./draft";
 import PanelProjection from "./Projection.vue";
 import { baseComponents } from "../base-components";
-import { prepareElementComponents } from "./element-components";
-import { registerSchedulesPlatformObject } from "./schedules";
+import { prepareTemplateComponents } from "./template-components";
+import { platformResourceLoader } from "./platform-objects";
+import { platformResources } from "../resources";
 
 /*
  * How a panel's module runs (overall design 3.3, 3.4): the platform's panel host opens a frame for one instance and
@@ -59,9 +63,9 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   // A panel runs in a sandboxed frame of its own, which cannot read the platform's window: it connects the way a hosted
   // application does, over the message bridge. The platform sends each request with the reader's own credential and
   // decides which requests a frame may make.
-  const [appContext, installElementComponents] = await Promise.all([
+  const [appContext, installTemplateComponents] = await Promise.all([
     connectPanelContext(),
-    prepareElementComponents(typeof panelComponent === "function" ? undefined : panelComponent.template),
+    prepareTemplateComponents(typeof panelComponent === "function" ? undefined : panelComponent.template, baseComponents),
   ]);
   const transport = contextTransport(appContext);
   const address = ref(message.url);
@@ -71,6 +75,14 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     label: () => message.label,
     initial: message.state,
     reportDraftError: failed,
+    recordDraftCreated: async (link, id) => {
+      const response = await transport.request(
+        `/assistant/sessions/${encodeURIComponent(link.sessionId)}/runs/${encodeURIComponent(link.runId)}/page-draft/created`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: link.path, id }) },
+        "",
+      );
+      if (!response.ok) throw new Error(`The draft at ${link.path} could not record the object it created`);
+    },
     readProjection: async (id) => {
       const response = await transport.request(`/product-projections/${encodeURIComponent(id)}`, {}, "");
       const body = await response.json();
@@ -95,6 +107,9 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
       unsaved.add(flag);
       return () => unsaved.delete(flag);
     },
+    t: createPanelText(message.panel.content.messages ?? {}, appContext.locale, defaultLocale),
+    // The resource clients a projection binds, fetched with it and sending through this frame's request path.
+    resources: platformResourceLoader({ request: (path, init, service) => transport.request(path, init, service) }, platformResources),
   };
   const app = createApp({
     setup: () => {
@@ -113,12 +128,11 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   // a single word on purpose.
   // eslint-disable-next-line vue/multi-word-component-names
   app.component("Projection", PanelProjection);
-  // The base components a panel's HTML composes. Each carries no business; what a projection's binding names decides it.
-  for (const [name, load] of Object.entries(baseComponents)) app.component(name, defineAsyncComponent(load));
-  // The platform objects this version's panels read, and the operations they run.
-  registerSchedulesPlatformObject(appContext);
+  // The panel's own words, as its HTML reads them: `{{ t("settings.title") }}`. The platform's words stay `$t`.
+  app.config.globalProperties.t = context.t;
   app.config.errorHandler = failed;
-  installElementComponents(app);
+  // Element Plus's components and the SDK's base components a panel's HTML composes; neither carries business.
+  installTemplateComponents(app);
   app.use(appContext).mount(element);
 
   let currentDraft = "";
@@ -193,11 +207,23 @@ function report({ instance, address, followAddress, unsaved, changed }: ReportOp
     host.postMessage({ channel: PANEL_HOST_CHANNEL, ...panelFrameMessageSchema.parse(value) }, "*");
   const isDirty = () => instance.dirty() || [...unsaved].some((flag) => flag.value);
 
+  // The page context follows the state, the address and the names of the objects read since: a name that arrives after
+  // its selection reaches the host as a context of its own.
+  watch(() => instance.pageContext.value, (context) => send({ kind: "context", context }), { deep: true, immediate: true });
   watch([() => instance.state.values.value, address], () => {
-    send({ kind: "context", context: instance.pageContext.value });
     send({ kind: "state", fromAddress: address.value, state: instance.deepLink() });
   }, { deep: true, immediate: true });
-  watch(isDirty, dirty => send({ kind: "dirty", dirty }), { immediate: true });
+  const waiting = new Map<string, DefinitionRevision>();
+  const refreshProjections = () => {
+    for (const { id, revision } of waiting.values()) changed(id, revision);
+    waiting.clear();
+  };
+  // A draft the reader saved or discarded: the host takes its link out of the address, if the address still names it.
+  instance.onDraftSettled((draft) => send({ kind: "draft-settled", draft }));
+  watch(isDirty, dirty => {
+    send({ kind: "dirty", dirty });
+    if (!dirty) refreshProjections();
+  }, { immediate: true });
   // The operations the header draws and an agent lists; they change as projections register and unregister.
   watch(() => instance.operations.value, (operations) => {
     // The wire description carries data only. Invocation stays in this frame.
@@ -212,23 +238,15 @@ function report({ instance, address, followAddress, unsaved, changed }: ReportOp
       void followAddress(parsed.address).catch(failed);
       return;
     }
-    if (parsed.kind === "reconnect") {
-      for (const { id, revision } of parsed.projections) changed(id, revision);
-      // Changed definitions remount their own readers; refresh the other readers once they have been removed.
-      void nextTick(() => instance.refreshObjects());
+    if (parsed.kind === "projections-changed") {
+      for (const revision of parsed.projections)
+        if ((waiting.get(revision.id)?.revision ?? 0) < revision.revision) waiting.set(revision.id, revision);
+      if (!isDirty()) refreshProjections();
       return;
     }
     if (parsed.kind === "object-changed") {
-      instance.objectChanged(parsed.target);
-      return;
-    }
-    if (parsed.kind === "projection-changed") {
-      changed(parsed.projectionId);
-      return;
-    }
-    if (parsed.kind === "definition-changed") {
-      // A changed panel is handed over only when nothing is unsaved; the host opens the frame again with it.
-      send({ kind: "reloaded", reloaded: !isDirty() });
+      if (parsed.target) instance.objectChanged(parsed.target);
+      else void nextTick(() => instance.refreshObjects());
       return;
     }
     // A person's click in the platform's header: the same handler an agent's call reaches, run in this frame.
@@ -241,4 +259,4 @@ function report({ instance, address, followAddress, unsaved, changed }: ReportOp
   });
 }
 
-export { applyPanelRequest, type PageDraft, type PanelStateValue, type ProductPanel, type ProjectionSlot };
+export { applyPanelRequest, type PageDraft, type PanelDefinitionContent, type PanelStateValue, type ProjectionSlot };

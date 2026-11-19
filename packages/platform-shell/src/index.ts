@@ -41,6 +41,7 @@ export { pilotPageKey, usePilotPage, type PilotPage, type PilotPageResolver } fr
 export {
   panelHostKey,
   panelFrameDocument,
+  panelUnavailable,
   usePanelHostPort,
   usePanelInstance,
   type DefinitionChanged,

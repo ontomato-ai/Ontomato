@@ -233,8 +233,8 @@ export interface WorkflowStepRecord {
 }
 
 /**
- * A business process published as one unit of authority. `status` is only a projection of the newest
- * event; `version` is the revision whose grants are in force.
+ * An editable process definition. `status` reports its lifecycle and `version` its latest publication.
+ * An active process can have unpublished edits, indicated by `hasDraft`.
  */
 export interface WorkflowRecord {
   id?: string;
@@ -242,8 +242,11 @@ export interface WorkflowRecord {
   description?: string | null;
   status?: string;
   version?: number | null;
+  hasDraft?: boolean;
   runClassName?: string | null;
   runContract?: RunContractRecord | null;
+  temporary?: boolean | null;
+  caseFormSchema?: Record<string, unknown> | null;
   steps?: WorkflowStepRecord[];
   /** Subject id that created the process. */
   createdBy?: string | null;
@@ -251,7 +254,7 @@ export interface WorkflowRecord {
   reviewedBy?: string | null;
 }
 
-/** One capability grant in force: which role may run which object. */
+/** A capability grant and its current publication status. */
 export interface CapabilityGrantRecord {
   roleId?: string | null;
   roleCode?: string | null;
@@ -266,6 +269,7 @@ export interface CapabilityGrantRecord {
    */
   workflowId?: string | null;
   activatedByWorkflowVersion?: string | null;
+  inForce: boolean;
   scope: { kind: WorkflowScope; field?: string; className?: string };
   stepNo?: number | null;
 }
@@ -345,7 +349,8 @@ export function createManagerRequest(
     };
 
     const execution=context.executionContext;
-    if(execution?.kind==="build-test" && service!=="/data-query")
+    // A bridged request is admitted by its host and by the resource owner. Direct Manager requests stay on the Java boundary.
+    if(execution?.kind==="build-test" && service!=="/data-query" && !context.transport)
       throw Object.assign(new Error("This operation is not available for test-data preview"),{code:"BUILD_TEST_UNSUPPORTED"});
     const requestInit:RequestInit = {
       ...init,

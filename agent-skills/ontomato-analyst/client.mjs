@@ -256,17 +256,8 @@ async function listActions(ontology, headers) {
     return;
   }
 
-  const workflows = (await json(`${ontology}/workflow/query`, headers, {})).data ?? [];
-  const active = new Map(
-    workflows.filter((workflow) => workflow.status === "ACTIVE").map((workflow) => [workflow.id, String(workflow.version ?? "")]),
-  );
   const grants = (await json(`${ontology}/workflow/grants`, headers, {})).data ?? [];
-  const inForce = grants
-    .filter((grant) => roleIds.has(grant.roleId))
-    .filter((grant) => {
-      if (!grant.workflowId) return true; // granted by hand: it stands on its own
-      return active.has(grant.workflowId) && active.get(grant.workflowId) === String(grant.activatedByWorkflowVersion ?? "");
-    });
+  const inForce = grants.filter((grant) => grant.inForce && roleIds.has(grant.roleId));
 
   const actions = (await json(`${ontology}/action/queryList`, headers, {})).data ?? [];
   const known = new Map(actions.map((action) => [action.id, action]));
