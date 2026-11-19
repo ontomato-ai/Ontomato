@@ -1,3 +1,4 @@
+import type { DeepReadonly } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import {
   panelFormTargetSchema,
@@ -13,7 +14,6 @@ import {
 } from "@ontomato/contracts/panel-projection";
 import { registerHandler, type RegisteredHandler } from "./handlers";
 import { stateChildObject, stateObject, type PanelFieldValue } from "./state";
-import type { DeepReadonly } from "vue";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 
 /*
