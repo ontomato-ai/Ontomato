@@ -124,6 +124,8 @@ it.each([
   ["GET", "/platform/scheduled-tasks"],
   ["GET", `/platform/scheduled-tasks/${other}`],
   ["POST", "/platform/scheduled-tasks/applications/agents/form"],
+  ["POST", "/ontology/query/metrics/describe"],
+  ["POST", "/metricView/execute"],
 ])("forwards %s %s with the executor credential", async (method, path) => {
   const upstream = vi.fn(async (_url: string, _request?: Parameters<typeof fetch>[1]) => Response.json({}));
   vi.stubGlobal("fetch", upstream);
@@ -157,6 +159,19 @@ it.each([
 it.each(["PUT", "DELETE"])("rejects %s for a task at the existing callback credential boundary", async method => {
   expect((await call(`ontology/platform/scheduled-tasks/${other}`, {}, method)).status).toBe(401);
   expect(mocks.restore).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["GET", "product-projections/chart-sources?dashboardId=board&cardId=card", 200],
+  ["GET", "product-projections/projection/chart-source", 200],
+  ["POST", "product-projections/chart-sources", 403],
+  ["PUT", "product-projections/projection/chart-source", 401],
+])("only proxies the declared chart read pairs, %s %s", async (method, path, status) => {
+  const upstream = vi.fn(async (_url: string) => Response.json({}));
+  vi.stubGlobal("fetch", upstream);
+  expect((await call("workbench/api/" + path, {}, method)).status).toBe(status);
+  if (status === 200) expect(upstream).toHaveBeenCalledWith("http://workbench.test/api/" + path, expect.anything());
+  else expect(upstream).not.toHaveBeenCalled();
 });
 
 it("validates the fixed operation entrance and never accepts an approval or question ID from a tool",async()=>{
