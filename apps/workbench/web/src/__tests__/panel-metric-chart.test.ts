@@ -165,10 +165,7 @@ it("saves only the drawing of the source card and takes back the owner's saved f
   expect(sent).toEqual([{ path: `/product-projections/${chart.id}/chart-source`, service: "", method: "PUT", body: { chartFile: { content: chartFile.content } } }]);
 });
 
-// Through the platform's own bridge the frame's chart requests are refused today: the host admits neither the
-// projection's chart source read nor the bound MetricView's requests, whose admission reads the request body. When the
-// host admits them (`chartProjectionSourceSends`, `clientSends` with the body), this passes; make it an ordinary `it`.
-it.fails("draws a chart through the platform's bridge as the reader", async () => {
+it("draws a chart through the platform's bridge as the reader", async () => {
   const panel = panelRecord("panel-charts", "Charts", manifest);
   const use = panelUse("use-charts", "charts", panel.id, "/applications/app-charts/charts");
   installPlatform((request) => {
