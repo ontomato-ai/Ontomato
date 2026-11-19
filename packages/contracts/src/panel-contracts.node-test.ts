@@ -28,7 +28,7 @@ import {
 } from "./panel-manifest";
 import { pageDraftSchema } from "./page-draft";
 import {
-  panelFormDescriptionSchema, panelFormFrequencyValueSchema, panelFormRequestSchema, panelFormSaveInputSchema,
+  panelFormDescriptionSchema, panelFormFrequencyValueSchema, panelFormRequestSchema, panelFormSaveInputSchema, panelFormTimeValueSchema,
   projectionBindingKeys, projectionOperations, projectionPorts,
 } from "./panel-projection";
 import { platformTaskFrequencySchema } from "./platform-schedules";
@@ -51,6 +51,25 @@ test("the field port refers to another slot in the same manifest", () => {
   const slots = { definition: { projectionId: "definition-form" }, picker };
   assert.deepEqual(panelManifestSchema.parse({ state: {}, slots, operations: [] }).slots.picker?.formField, picker.formField);
   assert.equal(panelManifestSchema.safeParse({ state: {}, slots: { picker }, operations: [] }).success, false);
+});
+
+test("a row reference port identifies the array and a field relative to each row", () => {
+  const formField = { slot: "workflow", path: "/steps", itemPath: "/actionId" };
+  const slots = { workflow: { projectionId: "workflow-form" }, picker: { projectionId: "action-picker", formField } };
+  assert.deepEqual(panelManifestSchema.parse({ state: {}, slots, operations: [] }).slots.picker?.formField, formField);
+  const invalid = { ...slots, picker: { ...slots.picker, formField: { ...formField, itemPath: "actionId" } } };
+  assert.equal(panelManifestSchema.safeParse({ state: {}, slots: invalid, operations: [] }).success, false);
+});
+
+test("time controls and schedule frequencies accept local times at minute precision", () => {
+  for (const time of ["00:00", "09:05", "23:59"]) {
+    assert.equal(panelFormTimeValueSchema.parse(time), time);
+    assert.ok(platformTaskFrequencySchema.safeParse({ kind: "daily", time }).success);
+  }
+  for (const time of ["24:00", "09:60", "9:05", "09:05:00", "09:05Z", "09:05+08:00"]) {
+    assert.equal(panelFormTimeValueSchema.safeParse(time).success, false);
+    assert.equal(platformTaskFrequencySchema.safeParse({ kind: "daily", time }).success, false);
+  }
 });
 
 test("form saves address the draft target even when the slot receives a selected object", () => {

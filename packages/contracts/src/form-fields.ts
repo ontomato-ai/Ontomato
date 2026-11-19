@@ -60,6 +60,9 @@ export const formFieldSchema = z.discriminatedUnion("type", [
 /** Every field's value as text, by field key. */
 export const formValuesSchema = z.record(nonempty, z.string());
 
+/** A local wall-clock time at minute precision. The owner keeps the time zone in a separate field. */
+export const formTimeValueSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:mm");
+
 export const formFieldErrorCodeSchema = z.enum([
   "required", "invalid_option", "invalid_number", "invalid_time", "invalid_array", "invalid_object", "value_too_long",
   "target_unavailable",
