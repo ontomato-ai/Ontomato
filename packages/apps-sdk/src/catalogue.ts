@@ -245,6 +245,16 @@ export const components: readonly ComponentMetadata[] = [
     bindsElement: ["PlatformObjectType:*"],
   }),
   defineComponentMeta({
+    componentId: "MetricChart",
+    module: "@ontomato/sdk/base",
+    exportName: "MetricChart",
+    role: "presentation",
+    meaning:
+      "Draws one registered chart as its source card draws it: the card's chart file, which its dashboard owner hands over for this projection, filled with the bound MetricView's output for the MetricView's own defaults and the values the panel binds. The projection keeps no drawing, query or data of its own.",
+    effects: "Reads the chart's source template through the product service and the MetricView through the data engine, both as the reader.",
+    bindsElement: ["MetricView:*"],
+  }),
+  defineComponentMeta({
     componentId: "GraphCanvas",
     module: "@ontomato/sdk/base",
     exportName: "GraphCanvas",
