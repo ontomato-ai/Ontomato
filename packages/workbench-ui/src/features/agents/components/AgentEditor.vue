@@ -16,7 +16,13 @@ import {
 } from "@ontomato/agent-shell-ui";
 import { CodeEditor } from "@ontomato/foundation-ui/code";
 import { MarkdownView } from "@ontomato/foundation-ui/markdown";
-import { assistantAgentInputSchema, type AssistantAgentDefinition, type AssistantAgentInput } from "@ontomato/contracts/assistant-chat";
+import {
+  assistantAgentInputSchema,
+  assistantAgentUpdateInputSchema,
+  type AssistantAgentDefinition,
+  type AssistantAgentInput,
+  type AssistantAgentUpdateInput,
+} from "@ontomato/contracts/assistant-chat";
 import type { McpServiceOption } from "@ontomato/contracts/agent-runtime-mcp";
 import type { ModelOptions } from "@ontomato/contracts/model-settings";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
@@ -85,16 +91,10 @@ function toForm(agent: AssistantAgentDefinition | null): Form {
 }
 
 /**
- * The save this page sends: an update may leave the skills out, and the owner then keeps the ones it stores. The
- * definition's input still declares them required until its update input makes them omissible (M1-B).
- */
-type AgentSaveInput = Omit<AssistantAgentInput, "skills"> & { skills?: AssistantAgentInput["skills"] };
-
-/**
  * A draft's form is the page's own save request, so it fills the same fields a read agent does, as a save would store
  * them: once saved, the same draft reads as the agent it saved rather than as a change.
  */
-function fromInput(input: AssistantAgentInput, skillsGiven: boolean): Form {
+function fromInput(input: AssistantAgentUpdateInput): Form {
   const avatar = agentAvatar(input.icon);
   return {
     // The save trims the name.
@@ -106,7 +106,7 @@ function fromInput(input: AssistantAgentInput, skillsGiven: boolean): Form {
     systemPrompt: input.systemPrompt,
     modelId: input.modelSelection.modelId,
     // A draft that names no skills leaves them as the agent holds them; one that names them replaces the whole set.
-    skills: skillsGiven ? input.skills.map(heldSkill) : [...(props.agent?.skills ?? [])],
+    skills: input.skills ? input.skills.map(heldSkill) : [...(props.agent?.skills ?? [])],
     classNames: [...input.classNames],
     mcpServiceIds: [...input.enabledMcpServiceIds],
     // An update that omits the field keeps what the owner stores; a draft that names one fills it.
@@ -197,10 +197,12 @@ if (link) {
       if (target.kind === "update" && !props.agent) return settingsAddress.go(settingsAddress.agentAddress(target.id));
       // The draft and the page must name the same agent: a create only a new one, an update only the one shown.
       if (target.kind === "create" ? props.agent !== null : target.id !== props.agent?.id) throw new Error(t("agents.draftOtherAgent"));
-      // The draft's own fields: a form that leaves the skills out says nothing about them, so the validation fills the
-      // array it would otherwise require and the draft's presence of the field is read from the file itself.
-      const skillsGiven = "skills" in draft.form;
-      const filled = fromInput(assistantAgentInputSchema.parse({ skills: [], ...draft.form }), skillsGiven);
+      // A draft that names no skills says nothing about them: an update keeps the stored ones, while a create names
+      // them because a new definition needs its selection.
+      const drafted = target.kind === "update"
+        ? assistantAgentUpdateInputSchema.parse(draft.form)
+        : assistantAgentInputSchema.parse(draft.form);
+      const filled = fromInput(drafted);
       const changes = changedFields(toForm(props.agent), filled);
       // A draft that changes nothing is no draft (the same link after its draft was saved): the page stays as the agent
       // is, and the reader's own edits are left alone without asking.
@@ -208,7 +210,7 @@ if (link) {
       if (dirty.value && !(await leaving.confirm())) return;
       if (target.kind === "create") createDraft = link;
       changed.value = changes;
-      skillsTouched.value = skillsGiven;
+      skillsTouched.value = drafted.skills !== undefined;
       baseline.value = JSON.stringify(toForm(props.agent));
       form.value = filled;
       // A draft that changes whose permissions the agent runs with is the administrator's to save; the field shows what
@@ -270,7 +272,7 @@ function editSkills(skills: RuntimeSkillRef[]) {
   skillsTouched.value = true;
 }
 
-function validInput(): AgentSaveInput | null {
+function validInput(): AssistantAgentUpdateInput | null {
   const value = form.value;
   if (!value.name.trim()) {
     ElMessage.warning(t("analysis.agentNameRequired"));
@@ -303,12 +305,11 @@ async function save() {
   const input = validInput();
   if (!input || saving.value || !skillsReady.value) return;
   saving.value = true;
-  // The page's save input is the definition's request; a missing skills field means "keep the stored ones".
-  const written = input as AssistantAgentInput;
   try {
     const saved = props.agent
-      ? await agentDefinitionsApi.update(props.agent.id, written)
-      : await agentDefinitionsApi.create(written);
+      ? await agentDefinitionsApi.update(props.agent.id, input)
+      // A creation always names its skills, whatever an update may leave out.
+      : await agentDefinitionsApi.create({ ...input, skills: form.value.skills });
     baseline.value = JSON.stringify(form.value);
     changed.value = new Set();
     skillsTouched.value = false;
