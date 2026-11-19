@@ -30,7 +30,7 @@ import {
 import { pageDraftSchema } from "./page-draft";
 import {
   panelFormDescriptionSchema, panelFormFrequencyValueSchema, panelFormRequestSchema, panelFormSaveInputSchema,
-  projectionBindingKeys, projectionOperations, projectionPorts,
+  panelObjectListColumnSchema, panelStateOperation, projectionBindingKeys, projectionOperations, projectionPorts,
 } from "./panel-projection";
 import { platformTaskFrequencySchema } from "./platform-schedules";
 import {
@@ -179,6 +179,24 @@ test("panel content carries flat translated text without requiring complete tran
   assert.deepEqual(productPanelContentSchema.parse({ ...source, messages }).messages, messages);
   assert.equal(productPanelContentSchema.safeParse({ ...source, messages: { en: { graph: { count: "nested" } } } }).success, false);
   assert.equal(productPanelContentSchema.safeParse({ ...source, messages: { en: { text: "类".repeat(100_000) } } }).success, false);
+});
+
+test("panel state operations declare a message key for their label", () => {
+  const operation = { id: "create", kind: "state", labelKey: "metric.create", sets: {} };
+  const parsed = panelStateOperationSchema.parse(operation);
+  assert.deepEqual(parsed, operation);
+  const content = productPanelContentSchema.parse({ html: "", module: "", messages: { "zh-CN": { "metric.create": "新建指标" } } });
+  assert.equal(panelStateOperation(parsed, key => content.messages!["zh-CN"][key]).label, "新建指标");
+  assert.equal(panelStateOperationSchema.safeParse({ id: operation.id, kind: operation.kind, label: "New metric view" }).success, false);
+});
+
+test("list column headers come from owner fields or from panel message keys", () => {
+  const ownerField = { key: "status", kind: "tag" };
+  const panelColumn = { key: "notes", labelKey: "list.notes", emptyKey: "list.noNotes" };
+  assert.deepEqual(panelObjectListColumnSchema.parse(ownerField), ownerField);
+  assert.deepEqual(panelObjectListColumnSchema.parse(panelColumn), panelColumn);
+  assert.equal(panelObjectListColumnSchema.safeParse({ ...ownerField, label: "Status" }).success, false);
+  assert.equal(panelObjectListColumnSchema.safeParse({ ...panelColumn, empty: "No notes" }).success, false);
 });
 
 test("a graph has two admitted sources and can use either a form field or separate selection outputs", () => {
@@ -501,7 +519,7 @@ test("checked object collections are typed ports and never become deep-link stat
   assert.equal(singleOntologyParameterTypeSchema.safeParse(field).success, false);
   assert.deepEqual(panelStateValueSchema.parse(refs), refs);
   assert.deepEqual(panelStateValueSchema.parse([]), []);
-  assert.deepEqual(panelStateOperationSchema.parse({ id: "clear", label: "Clear", kind: "state", sets: { checked: [] } }).sets, { checked: [] });
+  assert.deepEqual(panelStateOperationSchema.parse({ id: "clear", labelKey: "selection.clear", kind: "state", sets: { checked: [] } }).sets, { checked: [] });
   assert.equal(panelOpenRequestSchema.safeParse({ useId: "metrics", state }).success, false);
   assert.equal(panelFrameMessageSchema.safeParse({ kind: "state", fromAddress: "/ontology/metrics", state }).success, false);
 });

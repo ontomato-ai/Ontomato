@@ -2,12 +2,22 @@ import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema, panelFormOptionSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
-import { ontologyParameterTypeSchema, panelFormTargetSchema, panelOperationId, type OntologyParameterType, type PanelManifest, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
+import { ontologyParameterTypeSchema, panelFormTargetSchema, panelMessageKeySchema, panelOperationId, type OntologyParameterType, type PanelManifest, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
 import type { ProductProjectionInput } from "./product-panels";
 
 /** Nested JSON in the owner's value shape. Field pointers address this object, including values filled by projections. */
 export const panelFormValuesSchema = runtimeJsonObjectSchema;
 export type PanelFormValues = z.infer<typeof panelFormValuesSchema>;
+
+/** Columns in an ObjectList projection's display. Omit labelKey for a field named by its owner. */
+export const panelObjectListColumnSchema = z.object({
+  key: z.string().min(1),
+  labelKey: panelMessageKeySchema.optional(),
+  kind: z.enum(["text", "tag", "tags", "reference"]).optional(),
+  subtitleKey: z.string().min(1).optional(),
+  emptyKey: panelMessageKeySchema.optional(),
+}).strict();
+export type PanelObjectListColumn = z.infer<typeof panelObjectListColumnSchema>;
 
 const fieldPath = formFieldErrorSchema.shape.field;
 const objectType = z.string().min(1);
@@ -258,7 +268,7 @@ function projectionTarget(
 }
 
 /** The wire description is shared by the SDK's header and the generated skill. */
-export function panelStateOperation(operation: PanelStateOperation): PanelOperation {
-  return { id: operation.id, label: operation.label, kind: operation.kind, inputSchema: {},
+export function panelStateOperation(operation: PanelStateOperation, resolveLabel: (key: string) => string): PanelOperation {
+  return { id: operation.id, label: resolveLabel(operation.labelKey), kind: operation.kind, inputSchema: {},
     handlerRef: `panel.state.${operation.id}` };
 }
