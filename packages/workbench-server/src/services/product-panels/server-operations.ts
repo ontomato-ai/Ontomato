@@ -7,6 +7,7 @@ import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import type { OntologyElementRef } from "@ontomato/contracts/product-panels";
 import { scheduledTaskServerOperations } from "@ontomato/platform-schedules/panel-server-operations";
 import { agentDefinitionOperations } from "../assistant/definition-operations";
+import { m5ServerOperations } from "../metric-function/panel-operations";
 import { ontologyModelServerOperations } from "../ontology-model/server-operations";
 import { HttpError } from "../../utils/errors";
 
@@ -46,6 +47,7 @@ export type PanelServerOperation = ServerOperation & (
 const registrations: readonly PanelServerOperation[] = [
   ...scheduledTaskServerOperations,
   ...agentDefinitionOperations,
+  ...m5ServerOperations,
   ...ontologyModelServerOperations,
 ];
 const operations = new Map(registrations.map(operation => [operation.handlerRef, operation]));

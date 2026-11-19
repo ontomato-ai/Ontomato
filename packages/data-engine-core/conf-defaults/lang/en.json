@@ -156,6 +156,54 @@
     "value": "Business knowledge ID is required"
   },
   {
+    "key": "Admin.knowledge.form.id",
+    "value": "Knowledge ID"
+  },
+  {
+    "key": "Admin.knowledge.form.title",
+    "value": "Knowledge title"
+  },
+  {
+    "key": "Admin.knowledge.form.content",
+    "value": "Knowledge content"
+  },
+  {
+    "key": "Admin.knowledge.form.tags",
+    "value": "Tags"
+  },
+  {
+    "key": "Admin.knowledge.form.status",
+    "value": "Status"
+  },
+  {
+    "key": "Admin.knowledge.form.pending",
+    "value": "Pending review"
+  },
+  {
+    "key": "Admin.knowledge.form.approved",
+    "value": "Approved"
+  },
+  {
+    "key": "Admin.knowledge.form.invalidTarget",
+    "value": "Invalid business knowledge form target"
+  },
+  {
+    "key": "Admin.knowledge.form.invalidValues",
+    "value": "Invalid business knowledge form values"
+  },
+  {
+    "key": "Admin.knowledge.tag.general",
+    "value": "General"
+  },
+  {
+    "key": "Admin.knowledge.tag.business",
+    "value": "Business"
+  },
+  {
+    "key": "Admin.knowledge.tag.tech",
+    "value": "Tech"
+  },
+  {
     "key": "Admin.class.primaryKeyRequired",
     "value": "A new object class needs a primary key field name"
   },
@@ -534,6 +582,130 @@
   {
     "key": "MetricView.snapshotUnreadable",
     "value": "Failed to read hot data result snapshot"
+  },
+  {
+    "key": "PanelForm.name",
+    "value": "Name"
+  },
+  {
+    "key": "PanelForm.description",
+    "value": "Description"
+  },
+  {
+    "key": "PanelForm.status",
+    "value": "Status"
+  },
+  {
+    "key": "PanelForm.status.pendingReview",
+    "value": "Pending review"
+  },
+  {
+    "key": "PanelForm.status.published",
+    "value": "Published"
+  },
+  {
+    "key": "PanelForm.status.unused",
+    "value": "Unused"
+  },
+  {
+    "key": "PanelForm.matchQuestions",
+    "value": "Match questions"
+  },
+  {
+    "key": "PanelForm.functionName",
+    "value": "Function name"
+  },
+  {
+    "key": "PanelForm.queryPackage",
+    "value": "Query package"
+  },
+  {
+    "key": "PanelForm.queryPackageLegacyHelp",
+    "value": "This metric still uses a legacy Python function; define a query package instead."
+  },
+  {
+    "key": "PanelForm.columnLabels",
+    "value": "Column labels"
+  },
+  {
+    "key": "PanelForm.logic",
+    "value": "Logic description"
+  },
+  {
+    "key": "PanelForm.legacyCode",
+    "value": "Legacy Python code"
+  },
+  {
+    "key": "PanelForm.bindings",
+    "value": "Bindings"
+  },
+  {
+    "key": "PanelForm.bindingId",
+    "value": "Binding ID"
+  },
+  {
+    "key": "PanelForm.operation",
+    "value": "Operation"
+  },
+  {
+    "key": "PanelForm.operation.read",
+    "value": "Read"
+  },
+  {
+    "key": "PanelForm.operation.write",
+    "value": "Write"
+  },
+  {
+    "key": "PanelForm.parameters",
+    "value": "Parameters"
+  },
+  {
+    "key": "PanelForm.parameter.type",
+    "value": "Type"
+  },
+  {
+    "key": "PanelForm.parameter.description",
+    "value": "Description"
+  },
+  {
+    "key": "PanelForm.parameter.sample",
+    "value": "Sample"
+  },
+  {
+    "key": "PanelForm.parameter.classNames",
+    "value": "Classes"
+  },
+  {
+    "key": "PanelForm.returnClassNames",
+    "value": "Return classes"
+  },
+  {
+    "key": "PanelForm.code",
+    "value": "Python code"
+  },
+  {
+    "key": "PanelForm.readOnly.workflowPending",
+    "value": "Edit the workflow to change its pending query"
+  },
+  {
+    "key": "PanelForm.readOnly.operation",
+    "value": "The operation type of a saved function cannot change"
+  },
+  {
+    "key": "PanelForm.readOnly.product",
+    "value": "A published product function cannot be changed"
+  },
+  {
+    "key": "PanelForm.origin.system",
+    "value": "System"
+  },
+  {
+    "key": "PanelForm.origin.user",
+    "value": "User"
+  },
+  {
+    "key": "PanelForm.operation.product",
+    "value": "Product"
   },
   {
     "key": "WriteFunctionOperation.classNotExist",

@@ -7,6 +7,7 @@ import java.util.Map;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.KnowledgeEntity;
 import io.ontomato.dataengine.service.KnowledgeService;
+import io.ontomato.dataengine.service.KnowledgeTagConfig;
 import io.ontomato.dataengine.util.SystemUtils;
 
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +43,9 @@ public class AdminController {
 
 	@Autowired
 	private LangService langService;
+
+	@Autowired
+	private KnowledgeTagConfig knowledgeTagConfig;
 
 	@PostMapping("/admin/editdatasetdesc")
 	@ResponseBody
@@ -408,6 +412,24 @@ public class AdminController {
 			Map<String, KnowledgeEntity> bussinessKnowledges = knowledgeService.getBussinessKnowledge(user.getDomainId());
 			ret.put("success", true);
 			ret.put("data", bussinessKnowledges);
+		} catch (Exception e) {
+			ret.put("success", false);
+			ret.put("message", e.getMessage());
+		}
+		return ret;
+	}
+
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+	@PostMapping("/admin/bussinessKnowledge/form")
+	@ResponseBody
+	public JSONObject bussinessKnowledgeForm(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang,
+			@RequestBody Map<String, Object> param) {
+		JSONObject ret = new JSONObject();
+		try {
+			User user = SystemUtils.getCurUser();
+			ret.put("success", true);
+			ret.put("data", BussinessKnowledgeForm.describe(lang, user.getDomainId(), param, knowledgeService,
+					langService, knowledgeTagConfig));
 		} catch (Exception e) {
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
