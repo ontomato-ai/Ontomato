@@ -98,7 +98,7 @@ function owner(request: Sent): Response | undefined {
         { field: "/executionUserId", code: "target_unavailable", message: "Only a domain governance administrator changes it" },
       ] } }, { status: 422 });
     const shown = values ? { ...values, name: String(values.name).trim() } : base;
-    return Response.json({ fields, values: shown, save: save(create ? "agent.create" : "agent.update") });
+    return Response.json({ fields, values: shown, errors: [], save: save(create ? "agent.create" : "agent.update") });
   }
   if (request.path === `/api/assistant/agent-definitions/${AGENT}` && request.method === "GET") return Response.json(definition(AGENT, stored));
   // The service keeps what an update omits (skills the reader did not submit), and answers with the whole definition.

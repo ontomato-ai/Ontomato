@@ -49,7 +49,7 @@ const manifest: DirectPanelManifest = {
 };
 const field = (path: string, label: string) => ({ path, label, control: { kind: "text" as const }, valueSchema: {}, required: false, readOnly: false });
 const form = (name: string, revision = 3) => ({
-  fields: [field("/name", "Name"), field("/note", "Note")], values: { name, note: "" }, revision,
+  fields: [field("/name", "Name"), field("/note", "Note")], values: { name, note: "" }, errors: [], revision,
   save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
 });
 const runNow = {
@@ -60,6 +60,7 @@ const runNow = {
 type Read = Omit<ProductPanelReadRequest, "source">;
 function open(answer: (request: Read) => ProductPanelReadResponse | Promise<ProductPanelReadResponse>, initial = {}) {
   const reads: Read[] = [];
+  const draftErrors: unknown[] = [];
   const prepared: [string, unknown][] = [];
   let outcome: unknown = { kind: "success", data: {}, affected: { objects: [task("t-1")], objectTypes: [SCHEDULED_TASK] } };
   const prepare = vi.fn(async (operationId: string, invocation: unknown): Promise<PanelHumanOperationPreparation> => {
@@ -72,6 +73,7 @@ function open(answer: (request: Read) => ProductPanelReadResponse | Promise<Prod
     operations: { ...noOperations.operations, prepare },
     confirmOperation: async ({ intentId }) => ({ decision: "confirm", response: { kind: "dispatched", intentId, outcome: outcome as never } }),
     recordDraftCreated: async () => {},
+    reportDraftError: (reason) => draftErrors.push(reason),
     readProjection: async (id) => projections[id]!,
     read: async (request) => {
       reads.push(request);
@@ -82,7 +84,7 @@ function open(answer: (request: Read) => ProductPanelReadResponse | Promise<Prod
   document.body.append(element);
   const app = createApp({ render: () => h("div", [h(PanelMember, { instance, member: "form" }), h(PanelMember, { instance, member: "run" })]) });
   app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus).mount(element);
-  return { instance, element, reads, prepared, setOutcome: (next: unknown) => { outcome = next; }, unmount: () => app.unmount() };
+  return { instance, element, reads, prepared, draftErrors, setOutcome: (next: unknown) => { outcome = next; }, unmount: () => app.unmount() };
 }
 
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
@@ -113,7 +115,7 @@ it("saves through the owner's operation, marks the fields the owner refused, and
   const { instance, element, prepared, setOutcome, reads } = open(owner, { selectedTask: task("t-1") });
   await vi.waitFor(() => expect(input(element, "/name")?.value).toBe("t-1"));
   setOutcome({ kind: "refusal", code: "FIELD_VALIDATION_FAILED", message: "Check the marked fields",
-    details: { fields: [{ field: "/note", message: "A note is a sentence" }] } });
+    errors: [{ field: "/note", code: "value_too_long", message: "A note is a sentence" }] });
   const note = input(element, "/note");
   note.value = "x";
   note.dispatchEvent(new Event("input"));
@@ -173,4 +175,33 @@ it("never draws an answer for an earlier selection over the later one", async ()
   await nextTick();
   await nextTick();
   expect(input(element, "/name").value).toBe("t-2");
+});
+
+it("shows the fields the owner does not accept in the form it read, keeping the values it returned", async () => {
+  const errors = [{ field: "/note", code: "value_too_long", message: "A note is a sentence" }];
+  const { element } = open((request) => (request.dataName === "operation" ? ready(runNow)
+    : ready({ ...form("t-1"), values: { name: "t-1", note: "x" }, errors })), { selectedTask: task("t-1") });
+  await vi.waitFor(() => expect(element.querySelector('[data-field="/note"] .el-form-item__error')?.textContent).toBe("A note is a sentence"));
+  expect(input(element, "/note").value).toBe("x");
+});
+
+it("refuses a draft whole when the owner's check of it names fields it does not accept", async () => {
+  const { receivePanelDraft } = await import("../../../../../packages/apps-sdk/src/panel/draft");
+  const errors = [{ field: "/note", code: "value_too_long", message: "A note is a sentence" }];
+  const { instance, element, reads, draftErrors } = open((request) => {
+    if (request.dataName === "operation") return ready(runNow);
+    // The owner checks the draft's values and answers its form with what it does not accept.
+    return ready(request.inputs.values ? { ...form("t-1"), values: request.inputs.values, errors } : form("t-1"));
+  }, { selectedTask: task("t-1") });
+  await vi.waitFor(() => expect(input(element, "/name")?.value).toBe("t-1"));
+  const link = { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/drafts/task.page-draft.json" };
+  await receivePanelDraft("tasks", instance.forms, {
+    readPageDraft: async () => ({ pageKey: "tasks", operation: `${SCHEDULED_TASK}.save`, target: { id: "t-1" }, form: { name: "t-1", note: "x" } }),
+  }, link, instance.receiveDraft);
+  await vi.waitFor(() => expect(draftErrors).toHaveLength(1));
+  expect((draftErrors[0] as Error).message).toBe("A note is a sentence");
+  expect(reads.find((read) => read.inputs.values)?.inputs).toMatchObject({ values: { name: "t-1", note: "x" }, changedField: null });
+  // Nothing of the refused draft is shown as the form's.
+  expect(instance.dirty()).toBe(false);
+  expect(input(element, "/note").value).toBe("");
 });

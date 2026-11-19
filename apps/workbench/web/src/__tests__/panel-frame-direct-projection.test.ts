@@ -42,6 +42,7 @@ const panel = definePanel({
 const description = {
   fields: [{ path: "/name", label: "Name", control: { kind: "text" as const }, valueSchema: {}, required: false, readOnly: false }],
   values: { name: "Nightly" }, revision: 2,
+  errors: [],
   save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
 };
 const runNow = { handlerRef: "schedules.runNow", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };

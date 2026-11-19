@@ -65,7 +65,7 @@ function owner(request: Sent): Response {
   if (projected) return Response.json({ projection: projections[projected[1]!] });
   if (request.path === "/api/assistant/agent-definitions/form") {
     const { values } = request.body as { values?: PanelFormValues };
-    return Response.json({ fields, values: { ...held, ...values }, save });
+    return Response.json({ fields, values: { ...held, ...values }, errors: [], save });
   }
   if (request.path === `/api/assistant/agent-definitions/${AGENT}` && request.method === "PUT")
     return Response.json({ id: AGENT, sortOrder: 0, ...held, ...(request.body as PanelFormValues) });

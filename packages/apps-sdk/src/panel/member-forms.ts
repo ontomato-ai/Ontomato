@@ -64,8 +64,7 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
       if (outcome.kind === "success") return { primaryKey: target.primaryKey };
       if (outcome.kind === "refusal") {
         // The owner names each refused field by its JSON Pointer.
-        const fields = (outcome.details?.fields ?? []) as { field: string; message: string }[];
-        throw new PlatformObjectRefusal(outcome.message, Object.fromEntries(fields.map(({ field, message }) => [field, message])));
+        throw new PlatformObjectRefusal(outcome.message, Object.fromEntries((outcome.errors ?? []).map(({ field, message }) => [field, message])));
       }
       if (outcome.kind === "batch") throw new Error("A form's save is one call, not a batch");
       throw new Error(outcome.message);
