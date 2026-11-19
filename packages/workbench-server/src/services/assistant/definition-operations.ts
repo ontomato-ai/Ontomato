@@ -20,8 +20,12 @@ const affectedDefinition = (id: string) => ({
   objectTypes: [AGENT_DEFINITION],
 });
 
-async function refusal(response: Response) {
+async function ownerError(response: Response) {
   return agentHostErrorSchema.parse(await response.json()).error;
+}
+
+async function unsuccessfulWrite(response: Response): Promise<SinglePanelOperationOutcome> {
+  return { kind: response.status >= 500 ? "failure" : "refusal", ...await ownerError(response) };
 }
 
 export const agentDefinitionOperations = [
@@ -52,7 +56,7 @@ export const agentDefinitionOperations = [
         headers: save.method === "POST" ? { "Idempotency-Key": intentId } : {},
         body: JSON.stringify(parseAgentDefinitionForm(inputSchema.parse(input).values)),
       });
-      if (!response.ok) return { kind: "failure", ...await refusal(response) };
+      if (!response.ok) return unsuccessfulWrite(response);
       const data = assistantAgentDefinitionSchema.parse(await response.json());
       return { kind: "success", data, affected: affectedDefinition(data.id) };
     },
@@ -71,7 +75,7 @@ export const agentDefinitionOperations = [
     async targetLabel(host: PanelOperationHost, target: PanelRecordTarget) {
       const response = await host.requestWorkbench(agentDefinitionSave(target).path, { method: "GET" });
       if (!response.ok) {
-        const { code, message } = await refusal(response);
+        const { code, message } = await ownerError(response);
         throw new HttpError(response.status, message, code);
       }
       return assistantAgentDefinitionSchema.parse(await response.json()).name;
@@ -80,7 +84,7 @@ export const agentDefinitionOperations = [
       const response = await host.requestWorkbench(agentDefinitionSave(target).path, { method: "DELETE" });
       return response.ok
         ? { kind: "success", data: {}, affected: affectedDefinition(target.primaryKey) }
-        : { kind: "failure", ...await refusal(response) };
+        : unsuccessfulWrite(response);
     },
   },
 ] satisfies readonly PanelServerOperation[];

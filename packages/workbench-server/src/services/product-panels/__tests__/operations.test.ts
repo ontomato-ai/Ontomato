@@ -90,7 +90,7 @@ it("returns immediately and ignores the parent's endorsement; a later run uses V
  const results=await Promise.all([dispatchPanel(owner,credentials,current.id,request.intentId),dispatchPanel(owner,credentials,current.id,request.intentId)]);
  expect(results.some(result=>result.kind==="dispatched")).toBe(true);
  expect(ownerWrites()).toHaveLength(1);
- expect(intents.get(request.intentId)).toMatchObject({dispatched:true,outcome:{kind:"failure",code:"PERMISSION_DENIED"},source:{runId:uuid(3)}});
+ expect(intents.get(request.intentId)).toMatchObject({dispatched:true,outcome:{kind:"refusal",code:"PERMISSION_DENIED"},source:{runId:uuid(3)}});
  expect(mocks.notify).not.toHaveBeenCalled();
  await operatePanel(owner,credentials,current.id,request);
  await dispatchPanel(owner,credentials,current.id,request.intentId);
@@ -132,7 +132,10 @@ it.each(["save","runNow"])("automatic %s calls the same owner client, preserving
    return Response.json(task);
  }));
  const response=await operatePanel(owner,credentials,current.id,operation==="save"?save():action());
- expect(response.kind).toBe("dispatched");expect(mocks.request).not.toHaveBeenCalled();
+ expect(response).toMatchObject({
+   kind: "dispatched", outcome: { kind: "refusal", code: operation === "save" ? "REVISION_CONFLICT" : "PERMISSION_DENIED" },
+ });
+ expect(mocks.request).not.toHaveBeenCalled();
  if(operation==="save")expect(JSON.parse(String(writes[0]?.body))).toMatchObject({revision:4});
 });
 const task=platformTaskSchema.parse({...rawExamples.creates.find(task=>task.name==="governance-instruction")!.response,id:uuid(9),revision:9});
@@ -298,4 +301,29 @@ it("rejects a batch when the registered owner does not declare batch support", a
     .rejects.toMatchObject({ code: "OPERATION_BATCH_UNSUPPORTED" });
   expect(intents.size).toBe(0);
   expect(ownerWrites()).toHaveLength(0);
+});
+
+it.each([
+  { status: 403, kind: "refusal", code: "FORBIDDEN" },
+  { status: 502, kind: "failure", code: "DEPENDENCY_UNAVAILABLE" },
+])("keeps an agent delete response with status $status as $kind", async ({ status, kind, code }) => {
+  automatic = true;
+  const objectType = "platform:AgentDefinition";
+  const panel = await mocks.panel();
+  panel.manifest.state.task.objectType = objectType;
+  panel.manifest.slots.run.inputs = { agent: { state: "task" } };
+  mocks.projection.mockResolvedValue({
+    id: "run", componentId: "run", name: "Delete agent", binding: { kind: "PlatformOperation", id: "agents.delete" },
+    inputs: { agent: { kind: "object", objectType } },
+  });
+  const input = { ...action(), operationId: "run.delete", call: {
+    target: { kind: "object" as const, objectType, primaryKey: uuid(9) }, input: {},
+  } };
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json(
+    { error: { code, message: "Owner response" }, correlationId: "test" }, { status },
+  )));
+  expect(await operatePanel(owner, credentials, current.id, input)).toMatchObject({
+    kind: "dispatched", outcome: { kind, code },
+  });
+  expect(mocks.notify).not.toHaveBeenCalled();
 });
