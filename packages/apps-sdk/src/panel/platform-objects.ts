@@ -7,6 +7,8 @@ import {
   type PanelFormSaveInput,
 } from "@ontomato/contracts/panel-projection";
 import { registerHandler, type RegisteredHandler } from "./handlers";
+import { stateObject, type PanelFieldValue } from "./state";
+import type { DeepReadonly } from "vue";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 
 /*
@@ -436,6 +438,6 @@ export function adapterPart<Part extends "list" | "query" | "read" | "readSegmen
 }
 
 /** The primary key a projection's input value names, or null when nothing is selected. */
-export function selectedKey(value: PanelStateValue | undefined): string | null {
-  return value && typeof value === "object" ? value.primaryKey : null;
+export function selectedKey(value: DeepReadonly<PanelFieldValue> | undefined): string | null {
+  return stateObject(value)?.primaryKey ?? null;
 }

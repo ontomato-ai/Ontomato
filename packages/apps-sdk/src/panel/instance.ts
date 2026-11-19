@@ -1,7 +1,7 @@
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import { computed, readonly, shallowReactive, shallowRef, type DeepReadonly, type Ref } from "vue";
 import type { PageContext } from "@ontomato/contracts/page-context";
-import { panelOpenRequestSchema, type PanelManifest, type PanelOperationCall, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import { panelOpenRequestSchema, type PanelDeepLinkStateValue, type PanelManifest, type PanelOperationCall, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { createPanelState, objectNameKey, panelSelection, type PanelInitialState, type PanelStateStore } from "./state";
 import type { PanelText } from "./text";
@@ -102,7 +102,7 @@ export interface PanelInstance {
   /** Whether this instance holds unsaved changes: a received draft, or a form the reader edited. */
   dirty(): boolean;
   /** The state an address or an open request may carry, for this instance. */
-  deepLink(): Record<string, PanelStateValue>;
+  deepLink(): Record<string, PanelDeepLinkStateValue>;
 }
 
 /**

@@ -16,6 +16,7 @@ import type {
   PlatformGraphNode,
   PlatformGraphStatus,
 } from "../panel/platform-objects";
+import { stateObject } from "../panel/state";
 
 type PanelObjectValue = Extract<PanelStateValue, { className: string }>;
 
@@ -67,8 +68,8 @@ const selectedStateName = computed(
 const activeSelected = computed<PanelObjectValue | null>(() => {
   if (props.selected !== undefined) return props.selected;
   if (!selectedStateName.value) return null;
-  const value = panel.instance.state.values.value[selectedStateName.value];
-  return value && typeof value === "object" ? { className: value.className, primaryKey: value.primaryKey } : null;
+  const value = stateObject(panel.instance.state.values.value[selectedStateName.value]);
+  return value && { className: value.className, primaryKey: value.primaryKey };
 });
 
 function nodeKey(ref: PanelObjectValue): string {

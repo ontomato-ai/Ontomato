@@ -9,6 +9,7 @@ import { slotState, usePanelContext, useProjectionSlot } from "../panel/context"
 import type { PanelOperationDescriptor } from "../panel/human-operations";
 import { readOperationInput } from "../panel/read-operation-input";
 import OperationResult from "./OperationResult.vue";
+import { stateObject } from "../panel/state";
 
 /**
  * The button of one operation a projection publishes, run as the reader the way an agent's call runs: the platform's
@@ -65,9 +66,8 @@ onMounted(() => {
 const values = computed(() => panel.instance.state.values.value);
 /** The object it acts on: what the panel has selected in the state this slot's input is filled from. */
 const target = computed<PanelOperationCall["target"]>(() => {
-  const selected = values.value[slotState(panel.manifest, slot.slot, props.input)];
-  return selected && typeof selected === "object"
-    ? { kind: "object", objectType: selected.className, primaryKey: selected.primaryKey } : null;
+  const selected = stateObject(values.value[slotState(panel.manifest, slot.slot, props.input)]);
+  return selected && { kind: "object", objectType: selected.className, primaryKey: selected.primaryKey };
 });
 const checkedState = computed(() => (props.checked ? slotState(panel.manifest, slot.slot, props.checked) : null));
 /** The checked objects, as the list holds them in the panel's state. */
