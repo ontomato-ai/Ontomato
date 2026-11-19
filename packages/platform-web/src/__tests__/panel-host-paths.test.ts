@@ -51,7 +51,7 @@ beforeEach(() => {
       return new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } });
     }
     const body = url.endsWith("/apps-sdk/current")
-        ? { version: "1.1.0", publicBasePath: "", sdkBasePath: "/apps-sdk/1.1.0", manifestPath: "", docsPath: "", referencePath: "" }
+        ? { version: "1.1.0", digest: "a".repeat(64), publicBasePath: "", sdkBasePath: "/apps-sdk/1.1.0", manifestPath: "", componentsPath: "", docsPath: "", referencePath: "" }
         : url.includes("/panel-uses")
           ? { data: { applicationId: "app-a", entry: { path: "/tasks", renderer: "panels" }, panelUses: [] } }
           : url.endsWith("/snapshot") ? { panel: { id: "panel-a", revision: 1 }, projections: [] } : { panel: null };
