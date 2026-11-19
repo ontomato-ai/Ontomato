@@ -76,6 +76,8 @@ const emit = defineEmits<{
 }>();
 
 const BATCH = 200;
+/** The area the canvas takes; the element G6 draws into sits inside it, because G6 restyles its own container. */
+const frame = ref<HTMLElement | null>(null);
 const host = ref<HTMLElement | null>(null);
 let graph: Graph | null = null;
 let colors: G6Colors;
@@ -204,7 +206,7 @@ let reported = "";
 function reportViewport(target: Graph) {
   const zoom = target.getZoom();
   const [x, y] = target.getCanvasByViewport([0, 0]);
-  const { width, height } = host.value!.getBoundingClientRect();
+  const { width, height } = frame.value!.getBoundingClientRect();
   const viewport = { x, y, width: width / zoom, height: height / zoom, zoom };
   if (JSON.stringify(viewport) === reported) return;
   reported = JSON.stringify(viewport);
@@ -307,7 +309,7 @@ watch(
 
 let resized: ResizeObserver | undefined;
 onMounted(() => {
-  const { width, height } = host.value!.getBoundingClientRect();
+  const { width, height } = frame.value!.getBoundingClientRect();
   if (width && height) void create(width, height);
   resized = new ResizeObserver(([entry]) => {
     const { width, height } = entry!.contentRect;
@@ -322,7 +324,7 @@ onMounted(() => {
       reportViewport(target);
     });
   });
-  resized.observe(host.value!);
+  resized.observe(frame.value!);
 });
 onBeforeUnmount(() => {
   resized?.disconnect();
@@ -388,7 +390,8 @@ defineExpose({
 
 <template>
   <div class="g6-graph-canvas" role="group" :aria-label="label" :style="maxHeight === undefined ? undefined : { maxHeight: `${maxHeight}px` }">
-    <div ref="host" class="g6-graph-host" />
+    <!-- G6 sets its container to position: relative, so it cannot be the element that takes the canvas's size. -->
+    <div ref="frame" class="g6-graph-frame"><div ref="host" class="g6-graph-host" /></div>
     <!--
       Follows the colour roles where the canvas is drawn: when a mode switch changes them, the probe's colours change and
       its transition ends, and the canvas resolves its colours again. No class or attribute of the page is read for it.
@@ -403,9 +406,14 @@ defineExpose({
   height: 100%;
   min-height: 0;
 }
-.g6-graph-host {
+.g6-graph-frame {
   position: absolute;
   inset: 0;
+  overflow: hidden;
+}
+.g6-graph-host {
+  width: 100%;
+  height: 100%;
 }
 .g6-theme-probe {
   position: absolute;
