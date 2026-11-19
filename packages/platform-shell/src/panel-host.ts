@@ -99,13 +99,18 @@ export interface DirectPanelRun {
   label: () => string;
   /** The declared deep-linkable state the address asks for. */
   initial: Record<string, PanelDeepLinkStateValue>;
-  /** Its deep-linkable state changed: the host carries it into the address. */
-  state(state: Record<string, PanelDeepLinkStateValue>): void;
+  /**
+   * Its deep-linkable state, as it holds it at the address it was told last: the host carries it into the address, and
+   * ignores a report for an address it has since replaced. The first report says the instance runs.
+   */
+  state(state: Record<string, PanelDeepLinkStateValue>, fromAddress: string): void;
   context(context: PageContext): void;
   operations(operations: readonly PanelOperation[]): void;
   dirty(dirty: boolean): void;
   /** The reader saved or discarded the draft the address links. */
   draftSettled(draft: PageDraftLink): void;
+  /** The panel cannot run (a draft no form takes, a draft that could not be read), and why. */
+  failed(reason: unknown): void;
 }
 
 /** A started direct instance. */
@@ -115,7 +120,7 @@ export interface DirectPanelMount {
   /** The instance's state, as its layout's conditions read it. */
   readonly values: Readonly<Ref<Readonly<Record<string, unknown>>>>;
   /** The address changed outside the instance (the reader went back, a link was followed): its state follows. */
-  address(url: string, state: Record<string, PanelDeepLinkStateValue>): void;
+  address(url: string): void;
   /** Objects it may show changed: it reads again what it shows of them. */
   refresh(target: PanelObjectIdentity | null, affected?: PanelOperationAffected): void;
   /** Projections it places have newer definitions: it reads them again. */
@@ -363,22 +368,23 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     state.value = requested;
     address.value = requestedAddress;
     frameAddress = requestedAddress;
+    frameReady = false;
+    displayLoad.value = loading;
     const layout = parsePanelLayout(next.panel.content.html, next.panel.manifest);
     const mount = port.direct(next, {
       pageKey: port.pageKey,
       url: () => address.value,
       label: () => options.label(next),
       initial: requested,
-      state: reportState,
+      state: stateReported,
       context: context => (pageContext.value = context),
       operations: offered => (operations.value = offered),
       dirty: reportDirty,
       draftSettled: settleDraft,
+      failed: reason => reportFrameFailure({ code: PANEL_LOAD_ERROR_CODES.scriptThrew, message: failureText(reason) }),
     });
     mount.activate(bridgeOpen);
     direct.value = { layout, mount };
-    frameReady = true;
-    displayLoad.value = { status: "ready" };
   }
 
   function endDirect() {
@@ -389,6 +395,25 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   /** What decides how a source is drawn: its content and declaration, not its revision or identity. */
   function definitionOf(shown: HostedPanelSource) {
     return { content: shown.panel.content, manifest: shown.panel.manifest };
+  }
+
+  /**
+   * The instance reported its state at an address: a report for an address since replaced is stale. The first says the
+   * instance runs — what waited for that (a definition change, a refresh, an address the page moved to) happens now.
+   */
+  function stateReported(next: Record<string, PanelDeepLinkStateValue>, fromAddress: string) {
+    if (fromAddress !== frameAddress) return;
+    if (!frameReady) {
+      frameReady = true;
+      displayLoad.value = { status: "ready" };
+      void applyPending();
+      if (pendingObjectRefresh) {
+        pendingObjectRefresh = false;
+        refresh(null);
+      }
+      if (syncAddress()) return;
+    }
+    reportState(next);
   }
 
   /** The instance's deep-linkable state changed: the address carries it. */
@@ -578,9 +603,9 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   }
 
   function refresh(target: PanelObjectIdentity | null, affected?: PanelOperationAffected) {
-    if (direct.value) direct.value.mount.refresh(target, affected);
-    else if (frameReady) post({ kind: "object-changed", target: target && { ...target } });
-    else pendingObjectRefresh = true;
+    if (!frameReady) pendingObjectRefresh = true;
+    else if (direct.value) direct.value.mount.refresh(target, affected);
+    else post({ kind: "object-changed", target: target && { ...target } });
   }
 
   function requestedState(panel: HostedPanelSource["panel"]) {
@@ -589,10 +614,9 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
 
   function syncAddress(): boolean {
     if (!frameReady || !source.value) return false;
-    const wanted = requestedState(source.value.panel) as Record<string, PanelDeepLinkStateValue>;
-    const requested = panelAddress(pageAddress(), wanted);
+    const requested = panelAddress(pageAddress(), requestedState(source.value.panel));
     if (requested === address.value) return false;
-    tellAddress(requested, wanted);
+    tellAddress(requested);
     return true;
   }
   watch([options.address, options.initial], syncAddress);
@@ -605,14 +629,14 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   function settleDraft(draft: PageDraftLink) {
     if (!linksDraft(address.value, draft)) return;
     settledDraft = draft;
-    tellAddress(panelAddress(pageAddress(), state.value), state.value);
+    tellAddress(panelAddress(pageAddress(), state.value));
   }
 
   /** The instance's address changed outside it: the frame hears it as a message, a direct instance as a call. */
-  function tellAddress(next: string, wanted: Record<string, PanelDeepLinkStateValue>) {
+  function tellAddress(next: string) {
     frameAddress = next;
     address.value = next;
-    if (direct.value) direct.value.mount.address(next, wanted);
+    if (direct.value) direct.value.mount.address(next);
     else post({ kind: "address", address: next });
   }
 
@@ -630,20 +654,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       return;
     }
     if (payload.kind === "context") pageContext.value = payload.context;
-    if (payload.kind === "state") {
-      if (payload.fromAddress !== frameAddress) return;
-      if (!frameReady) {
-        frameReady = true;
-        displayLoad.value = { status: "ready" };
-        void applyPending();
-        if (pendingObjectRefresh) {
-          pendingObjectRefresh = false;
-          refresh(null);
-        }
-        if (syncAddress()) return;
-      }
-      reportState(payload.state);
-    }
+    if (payload.kind === "state") stateReported(payload.state, payload.fromAddress);
     if (payload.kind === "draft-settled") settleDraft(payload.draft);
     if (payload.kind === "operations") operations.value = payload.operations;
     if (payload.kind === "dirty") reportDirty(payload.dirty);
