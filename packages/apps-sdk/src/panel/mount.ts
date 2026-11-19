@@ -1,4 +1,4 @@
-import { createApp, defineAsyncComponent, h, nextTick, provide, ref, shallowReactive, watch, type Component, type Ref } from "vue";
+import { createApp, h, nextTick, provide, ref, shallowReactive, watch, type Component, type Ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { contextTransport, type AppContext } from "../context";
 import { connectPanelContext } from "./app-context";
@@ -20,7 +20,7 @@ import { applyPanelRequest, createPanelInstance, pageDraftLinkOf, type PanelInst
 import { receivePanelDraft } from "./draft";
 import PanelProjection from "./Projection.vue";
 import { baseComponents } from "../base-components";
-import { prepareElementComponents } from "./element-components";
+import { prepareTemplateComponents } from "./template-components";
 import { registerSchedulesPlatformObject } from "./schedules";
 
 /*
@@ -59,9 +59,9 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   // A panel runs in a sandboxed frame of its own, which cannot read the platform's window: it connects the way a hosted
   // application does, over the message bridge. The platform sends each request with the reader's own credential and
   // decides which requests a frame may make.
-  const [appContext, installElementComponents] = await Promise.all([
+  const [appContext, installTemplateComponents] = await Promise.all([
     connectPanelContext(),
-    prepareElementComponents(typeof panelComponent === "function" ? undefined : panelComponent.template),
+    prepareTemplateComponents(typeof panelComponent === "function" ? undefined : panelComponent.template, baseComponents),
   ]);
   const transport = contextTransport(appContext);
   const address = ref(message.url);
@@ -113,12 +113,11 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   // a single word on purpose.
   // eslint-disable-next-line vue/multi-word-component-names
   app.component("Projection", PanelProjection);
-  // The base components a panel's HTML composes. Each carries no business; what a projection's binding names decides it.
-  for (const [name, load] of Object.entries(baseComponents)) app.component(name, defineAsyncComponent(load));
   // The platform objects this version's panels read, and the operations they run.
   registerSchedulesPlatformObject(appContext);
   app.config.errorHandler = failed;
-  installElementComponents(app);
+  // Element Plus's components and the SDK's base components a panel's HTML composes; neither carries business.
+  installTemplateComponents(app);
   app.use(appContext).mount(element);
 
   let currentDraft = "";
@@ -193,8 +192,10 @@ function report({ instance, address, followAddress, unsaved, changed }: ReportOp
     host.postMessage({ channel: PANEL_HOST_CHANNEL, ...panelFrameMessageSchema.parse(value) }, "*");
   const isDirty = () => instance.dirty() || [...unsaved].some((flag) => flag.value);
 
+  // The page context follows the state, the address and the names of the objects read since: a name that arrives after
+  // its selection reaches the host as a context of its own.
+  watch(() => instance.pageContext.value, (context) => send({ kind: "context", context }), { deep: true, immediate: true });
   watch([() => instance.state.values.value, address], () => {
-    send({ kind: "context", context: instance.pageContext.value });
     send({ kind: "state", fromAddress: address.value, state: instance.deepLink() });
   }, { deep: true, immediate: true });
   watch(isDirty, dirty => send({ kind: "dirty", dirty }), { immediate: true });

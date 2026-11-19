@@ -224,4 +224,29 @@ export const components: readonly ComponentMetadata[] = [
     effects: "Runs the projection's operation as the reader, with the object the panel has selected.",
     bindsElement: ["PlatformOperation:*"],
   }),
+  defineComponentMeta({
+    componentId: "GraphCanvas",
+    module: "@ontomato/sdk/base",
+    exportName: "GraphCanvas",
+    role: "control",
+    meaning:
+      "Draws the nodes and edges it is given as a light SVG graph, each node in the tone its caller gives it and marked when its ID is among the selected ones, and hands back the selection a reader's choice results in and the part of the graph in view. What the nodes are, which may be chosen and what a choice implies are its caller's: it reads nothing and decides nothing about them.",
+    outputs: ["selected", "viewport"],
+  }),
+  defineComponentMeta({
+    componentId: "TwoPaneLayout",
+    module: "@ontomato/sdk/base",
+    exportName: "TwoPaneLayout",
+    role: "presentation",
+    meaning:
+      "Lays out two panes of one page side by side in one bordered block, the first at the platform's list width and the second taking the rest, stacking them where the panel is too narrow for both. It binds nothing.",
+  }),
+  defineComponentMeta({
+    componentId: "SectionGroup",
+    module: "@ontomato/sdk/base",
+    exportName: "SectionGroup",
+    role: "presentation",
+    meaning:
+      "One titled group of a page's content, with one line of what it is for and the platform's spacing and hairline between groups that follow one another. It binds nothing.",
+  }),
 ];

@@ -356,6 +356,36 @@ it("sends an initial clean report from the frame", async () => {
   }
 });
 
+it("names the selected object by the label its owner gave it, and keeps the name out of the address", async () => {
+  const address = panelAddress(`/applications/${appA}/tasks`, deepState);
+  const { app, frame, router } = await open(address);
+  const selections: unknown[] = [];
+  const listener = (event: MessageEvent) => {
+    if (event.source === frame.contentWindow && event.data?.channel === PANEL_HOST_CHANNEL && event.data.kind === "context")
+      selections.push(event.data.context.selection);
+  };
+  window.addEventListener("message", listener);
+  try {
+    await startFrame(frame);
+    // The selection arrives from the address as a key alone; the name follows once a projection has read the object.
+    await vi.waitFor(() => expect(selections.at(-1)).toEqual([
+      { kind: SCHEDULED_TASK, id: task.id, label: `${task.title} (${SCHEDULED_TASK} ${task.id})` },
+    ]));
+    // An object the list never held is named by the summary's own read of it.
+    await router.push(panelAddress(`/applications/${appA}/tasks`, { selectedTask: { className: SCHEDULED_TASK, primaryKey: secondTask.id } }));
+    await vi.waitFor(() => expect(selections.at(-1)).toEqual([
+      { kind: SCHEDULED_TASK, id: secondTask.id, label: `${secondTask.title} (${SCHEDULED_TASK} ${secondTask.id})` },
+    ]));
+    expect(router.currentRoute.value.fullPath).not.toContain(encodeURIComponent(secondTask.title).slice(0, 12));
+    expect(JSON.parse(String(router.currentRoute.value.query.state))).toEqual({
+      selectedTask: { className: SCHEDULED_TASK, primaryKey: secondTask.id },
+    });
+  } finally {
+    window.removeEventListener("message", listener);
+    app.unmount();
+  }
+});
+
 it("blocks a presentation while a reader's form edit is unsaved, then clears dirty on discard and save", async () => {
   const path = `/applications/${appA}/tasks`;
   const address = panelAddress(path, deepState);

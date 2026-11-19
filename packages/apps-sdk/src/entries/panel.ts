@@ -21,7 +21,7 @@ export { usePanelContext, type PanelContext, type ProjectionSlot } from "../pane
 export type { PanelInstance } from "../panel/instance";
 export { applyPanelRequest } from "../panel/instance";
 export { defineComponentMeta } from "../components";
-export type { ComponentMetadata, ComponentClient, ComponentRole } from "../components";
+export type { ComponentCatalogue, ComponentMetadata, ComponentClient, ComponentPort, ComponentPorts, ComponentRole } from "../components";
 export type { PanelFormAdapter, ReceivedPanelDraft } from "../panel/draft";
 export type { PanelOperationBinding } from "../panel/types";
 export type { PanelProjectionRegistration, ProjectionOperation, ProjectionPorts } from "../panel/ports";

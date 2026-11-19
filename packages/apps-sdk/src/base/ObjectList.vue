@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, shallowRef } from "vue";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
-import { slotState, usePanelContext, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
-import { platformObjectFor, selectedKey } from "../panel/platform-objects";
+import { slotState, usePanelContext, useProjectionObjectRefresh, useProjectionObjects, useProjectionSlot } from "../panel/context";
+import { selectedKey } from "../panel/platform-objects";
 
 /**
  * A read-only platform object as a list a reader picks from. It shows what the object's owner lists, in the owner's
@@ -20,6 +20,7 @@ const props = defineProps<{
 
 const slot = useProjectionSlot();
 const panel = usePanelContext();
+const objects = useProjectionObjects();
 const rows = shallowRef<readonly { primaryKey: string; label: string }[]>([]);
 const loading = ref(true);
 const failure = shallowRef<Error | null>(null);
@@ -30,7 +31,7 @@ const state = computed(() => slotState(panel.manifest, slot.slot, props.input));
 const chosen = computed(() => selectedKey(panel.instance.state.values.value[state.value]));
 
 function load() {
-  void platformObjectFor(slot.projection.binding.id).list().then(
+  void objects.list().then(
     (listed) => {
       rows.value = listed.map((item) => ({ primaryKey: item.primaryKey, label: item.label }));
       loading.value = false;

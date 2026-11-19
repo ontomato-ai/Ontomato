@@ -3,6 +3,7 @@ import type { PanelManifest, PanelOperationCall } from "@ontomato/contracts/pane
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PanelInstance } from "./instance";
 import type { PanelFormAdapter, ReceivedPanelDraft } from "./draft";
+import { platformObjectFor, type PlatformObjectClient } from "./platform-objects";
 
 /*
  * The panel context the SDK provides to a panel's own module (overall design 3.3, 3.4): the panel's declaration, the
@@ -101,4 +102,28 @@ export function useProjectionObjectRefresh(shows: (id: string) => boolean, refre
   onBeforeUnmount(instance.onObjectChanged(object => {
     if (!object || (slot.projection.binding.id === object.objectType && shows(object.primaryKey))) refresh();
   }));
+}
+
+/**
+ * The objects of the type this projection binds, as its owner lists and reads them. Every object read through it names
+ * itself to the instance, so the page context names the selected object by its owner's label without any component
+ * doing so on its own.
+ */
+export function useProjectionObjects(): Pick<PlatformObjectClient, "list" | "read"> {
+  const { instance } = usePanelContext();
+  const slot = useProjectionSlot();
+  const objectType = slot.projection.binding.id;
+  const client = platformObjectFor(objectType);
+  return {
+    async list() {
+      const listed = await client.list();
+      instance.nameObjects(objectType, listed);
+      return listed;
+    },
+    async read(primaryKey) {
+      const found = await client.read(primaryKey);
+      instance.nameObjects(objectType, [found]);
+      return found;
+    },
+  };
 }

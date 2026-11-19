@@ -2,8 +2,8 @@
 import { computed, onMounted, ref, shallowRef, watch } from "vue";
 import { ElEmpty } from "element-plus/es/components/empty/index";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
-import { slotState, usePanelContext, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
-import { platformObjectFor, selectedKey } from "../panel/platform-objects";
+import { slotState, usePanelContext, useProjectionObjectRefresh, useProjectionObjects, useProjectionSlot } from "../panel/context";
+import { selectedKey } from "../panel/platform-objects";
 
 /**
  * One platform object as a few facts a reader recognises it by. Which facts are shown, and in what order, is the
@@ -19,6 +19,7 @@ const props = defineProps<{
 
 const slot = useProjectionSlot();
 const panel = usePanelContext();
+const objects = useProjectionObjects();
 const record = shallowRef<{ label: string; fields: Readonly<Record<string, string>> } | null>(null);
 const loading = ref(true);
 const failure = shallowRef<Error | null>(null);
@@ -37,7 +38,7 @@ function load(primaryKey: string | null) {
     return;
   }
   loading.value = true;
-  void platformObjectFor(slot.projection.binding.id).read(primaryKey).then(
+  void objects.read(primaryKey).then(
     (found) => {
       record.value = found;
       loading.value = false;
