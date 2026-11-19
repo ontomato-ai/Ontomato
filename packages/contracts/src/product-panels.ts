@@ -9,6 +9,7 @@ import { applicationMetadataSchema } from "./application-metadata";
 import { appsSdkBuildSchema } from "./apps-sdk";
 import { formFieldErrorSchema } from "./form-fields";
 import { dashboardCardRequestSchema, dashboardChartFileSchema, dashboardMetricReferenceSchema } from "./dashboard";
+import { pageSkillContextSchema, pageSkillEntranceSchema } from "./page-skills";
 
 const id = z.string().min(1).max(200);
 const path = z.string().regex(/^\/(?!\/)/);
@@ -188,6 +189,9 @@ export const applicationPanelUseSchema = z.object({
 }).strict();
 export type ApplicationPanelUse = z.infer<typeof applicationPanelUseSchema>;
 
+export const panelUseRefSchema = z.object({ applicationId: id, useId: id }).strict();
+export type PanelUseRef = z.infer<typeof panelUseRefSchema>;
+
 export const panelSkillSourceSchema = z.object({
   skill: runtimeSkillRefSchema,
   uses: z.array(applicationPanelUseSchema.pick({ pageKey: true, panelId: true, path: true }).extend({
@@ -206,6 +210,15 @@ export type PanelApplicationEntry = z.infer<typeof panelApplicationEntrySchema>;
 
 /** GET/PUT /api/product-projections/:id and /api/product-panels/:id. */
 export const productCurrentIdParamsSchema = z.object({ id }).strict();
+
+const [menuEntrance, domainMemberEntrance] = pageSkillEntranceSchema.options;
+/** GET /api/product-panels/:id takes either no query or one complete application-use entrance. */
+export const productPanelReadQuerySchema = z.union([
+  z.object({}).strict(),
+  panelUseRefSchema.merge(menuEntrance),
+  panelUseRefSchema.merge(domainMemberEntrance),
+]);
+export type ProductPanelReadQuery = z.infer<typeof productPanelReadQuerySchema>;
 
 /**
  * PUT creates at revision 0 or replaces a current definition at the supplied revision.
@@ -265,7 +278,10 @@ export const registerProductPanelRequestSchema = productPanelInputSchema.extend(
 }).strict();
 export type RegisterProductPanelRequest = z.infer<typeof registerProductPanelRequestSchema>;
 
-export const productPanelResponseSchema = z.object({ panel: productPanelSchema }).strict();
+export const productPanelResponseSchema = z.object({
+  panel: productPanelSchema,
+  pageSkillContext: pageSkillContextSchema.optional(),
+}).strict();
 export type ProductPanelResponse = z.infer<typeof productPanelResponseSchema>;
 
 const productCatalogCursorSchema = z.string().min(1);

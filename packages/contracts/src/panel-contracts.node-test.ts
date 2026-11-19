@@ -52,7 +52,8 @@ import {
 } from "./platform-object-types";
 import {
   applicationPanelUseSchema, applicationPanelUsePathSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema,
-  chartSourceInUseErrorSchema, ontologyElementRefSchema, productPanelContentSchema, productProjectionInputSchema, productProjectionResponseSchema,
+  chartSourceInUseErrorSchema, ontologyElementRefSchema, productPanelContentSchema, productPanelReadQuerySchema, productPanelResponseSchema,
+  productProjectionInputSchema, productProjectionResponseSchema,
   registerChartProjectionRequestSchema, registerChartProjectionResponseSchema, registerProductProjectionRequestSchema,
   updateChartProjectionSourceRequestSchema,
 } from "./product-panels";
@@ -475,6 +476,40 @@ test("list column headers come from owner fields or from panel message keys", ()
   assert.deepEqual(panelObjectListColumnSchema.parse(panelColumn), panelColumn);
   assert.equal(panelObjectListColumnSchema.safeParse({ ...ownerField, label: "Status" }).success, false);
   assert.equal(panelObjectListColumnSchema.safeParse({ ...panelColumn, empty: "No notes" }).success, false);
+});
+
+test("current panel reads take no context or a complete use and one entrance", () => {
+  const use = { applicationId: "ontology", useId: "ontology-agent-settings" };
+  const pageKey = "agent-settings";
+  const menu = { ...use, pageKey, permissionCode: "analysis-agent" };
+  const member = { ...use, pageKey, access: "domain-member" };
+  for (const query of [{}, menu, member]) assert.deepEqual(productPanelReadQuerySchema.parse(query), query);
+  for (const query of [use, { pageKey }, { ...use, pageKey }, { ...menu, useId: undefined }, { ...menu, access: member.access }]) {
+    assert.equal(productPanelReadQuerySchema.safeParse(query).success, false);
+  }
+});
+
+test("current panel reads can carry a page skill member for the verified entrance", () => {
+  const panel = {
+    id: "agent-settings", domainId: "domain", ownerId: "owner", revision: 1,
+    createdAt: "2026-11-19T00:00:00Z", updatedAt: "2026-11-19T00:00:00Z", editable: false,
+    name: "Agent settings", description: "", visibility: "domain", sdkVersion: "0.1.0",
+    content: { html: "<main></main>", module: "export {}" },
+    manifest: { slots: {}, state: {}, operations: [] },
+  };
+  const pageSkillContext = {
+    mode: "member",
+    locator: { permissionCode: "analysis-agent", pageKey: "agent-settings" },
+    member: {
+      source: { kind: "application-use", applicationId: "ontology", useId: "ontology-agent-settings" },
+      memberKey: "pvt-example",
+    },
+  };
+  assert.deepEqual(productPanelResponseSchema.parse({ panel }), { panel });
+  assert.deepEqual(productPanelResponseSchema.parse({ panel, pageSkillContext }).pageSkillContext, pageSkillContext);
+  const unavailable = { ...pageSkillContext, member: null };
+  assert.deepEqual(productPanelResponseSchema.parse({ panel, pageSkillContext: unavailable }).pageSkillContext, unavailable);
+  assert.equal(productPanelResponseSchema.safeParse({ panel, pageSkillContext: { ...pageSkillContext, member: {} } }).success, false);
 });
 
 test("a graph has two admitted sources and can use either a form field or separate selection outputs", () => {
