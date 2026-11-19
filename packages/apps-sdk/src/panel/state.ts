@@ -33,6 +33,12 @@ export interface PanelStateStore {
   field(name: string): DeepReadonly<Ref<PanelFieldValue>>;
   /** What the reader or a state operation set. A value of the wrong type for the field is refused here. */
   set(name: string, value: PanelFieldValue): void;
+  /**
+   * Atomically updates multiple declared fields in one state assignment (for example changing a parent object while
+   * clearing its child selection, or switching mutually exclusive selections). Every entry is validated before any
+   * field changes, so reactive watchers and the host bridge never see a half-updated state.
+   */
+  setState(patch: Readonly<Record<string, PanelFieldValue>>): void;
   /** The fields an address or an open request may carry, with the values they hold now. */
   deepLinkable(): Record<string, PanelFieldValue>;
 }
@@ -85,6 +91,13 @@ export function createPanelState(manifest: PanelManifest, initial: PanelInitialS
     },
     set(name, value) {
       values.value = { ...values.value, [name]: checkPanelValue(manifest, name, value) };
+    },
+    setState(patch) {
+      const entries = Object.entries(patch);
+      if (!entries.length) return;
+      const checked: Record<string, PanelFieldValue> = {};
+      for (const [name, value] of entries) checked[name] = checkPanelValue(manifest, name, value);
+      values.value = { ...values.value, ...checked };
     },
     deepLinkable() {
       return Object.fromEntries(

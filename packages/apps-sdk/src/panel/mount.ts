@@ -148,11 +148,13 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   }
   async function followAddress(next: string) {
     const desired = panelAddressState(next);
+    const patch: Record<string, PanelStateValue> = {};
     for (const [name, field] of Object.entries(message.panel.manifest.state)) {
       if (!field.deepLink) continue;
       const value = desired[name] ?? null;
-      if (JSON.stringify(instance.state.values.value[name]) !== JSON.stringify(value)) instance.state.set(name, value);
+      if (JSON.stringify(instance.state.values.value[name]) !== JSON.stringify(value)) patch[name] = value;
     }
+    instance.state.setState(patch);
     address.value = next;
     await followDraft();
   }

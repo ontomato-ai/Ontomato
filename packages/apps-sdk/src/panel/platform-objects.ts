@@ -62,8 +62,15 @@ export interface PlatformObjectQueryPage {
   readonly cursor?: string;
 }
 
-/** Search, filter and paging parameters handed to a resource adapter; the adapter owns all query semantics. */
+/** Full object reference carried in panel state and parent-scoped child queries. */
+export interface PlatformObjectRef {
+  readonly className: string;
+  readonly primaryKey: string;
+}
+
+/** Search, filter, parent-scope and paging parameters handed to a resource adapter; the adapter owns all query semantics. */
 export interface PlatformObjectQuery {
+  readonly parent?: PlatformObjectRef;
   readonly search?: string;
   readonly filters?: Readonly<Record<string, string>>;
   readonly page?: PlatformObjectQueryPage;
@@ -90,6 +97,8 @@ export interface PlatformObjectQueryResult {
   readonly total: number;
   readonly facets?: readonly PlatformObjectFacet[];
   readonly nextCursor?: string;
+  /** Optional default item key chosen by the owner/adapter when nothing in this result is selected. */
+  readonly defaultPrimaryKey?: string;
 }
 
 /**
