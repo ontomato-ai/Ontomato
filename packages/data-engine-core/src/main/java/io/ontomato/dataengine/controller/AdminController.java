@@ -682,6 +682,22 @@ public class AdminController {
 	}
 
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+	@PostMapping("/admin/bussinessKnowledge/form")
+	@ResponseBody
+	public JSONObject bussinessKnowledgeForm(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang,
+			@RequestBody Map<String, Object> param) {
+		try {
+			User user = SystemUtils.getCurUser();
+			return BussinessKnowledgeForm.describe(lang, user.getDomainId(), param, knowledgeService, langService);
+		} catch (Exception e) {
+			JSONObject ret = new JSONObject();
+			ret.put("success", false);
+			ret.put("message", e.getMessage());
+			return ret;
+		}
+	}
+
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/admin/getbussinessknowledgemarkdown")
 	@ResponseBody
 	public JSONObject getBussinessKnowledgeMarkdown(@RequestBody JSONObject param) {
