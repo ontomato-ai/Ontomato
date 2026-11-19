@@ -62,7 +62,7 @@ describe("a panel frame and the platform's message bridge", () => {
     const frame = panelFrame();
     // B's page shows Q: B's panel host registers the frame it draws, and writes Q opened at one task into it.
     platformPanelHost("app-panels-trial-b", useOfQ).frame(frame, registered("app-panels-trial-b", useOfQ, panelQ), true);
-    writePanelDocument(panelQ, useOfQ, "/applications/app-panels-trial-b/summary", {
+    writePanelDocument(registered("app-panels-trial-b", useOfQ, panelQ), "/applications/app-panels-trial-b/summary", {
       selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id },
     });
 
