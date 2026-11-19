@@ -1006,16 +1006,16 @@ export default {
     "removeFavorite": "Remove {name} from favorites",
     "moveEarlier": "Move {name} earlier",
     "moveLater": "Move {name} later",
-    "loadFailed": "The home could not be loaded: {reason}",
+    "loadFailed": "Personal workspace could not be loaded: {reason}",
     "retry": "Retry",
     "dashboardPicker": {
-      "title": "Dashboards on the home",
-      "shown": "Shown on the home",
+      "title": "Dashboards on personal workspace",
+      "shown": "Shown on personal workspace",
       "available": "Your other dashboards",
-      "nothingShown": "No dashboard is shown on the home",
+      "nothingShown": "No dashboard is shown on personal workspace",
       "none": "You have no dashboards yet. Create one in the Dashboards application.",
       "add": "Add",
-      "remove": "Remove from home"
+      "remove": "Remove from personal workspace"
     }
   },
 

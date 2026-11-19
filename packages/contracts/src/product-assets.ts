@@ -169,7 +169,7 @@ export const productPageSchema=z.object({items:z.array(productSummarySchema),tot
 export const productDefaultTexts={
   homeName:'我的工作台',
   homeDescription:'常用入口与正在进行的工作',
-  initialHomeName:'我的主页',
+  initialHomeName:'个人工作台',
   apps:'常用应用',
   data:'关注的数据',
   tasks:'任务动态',
