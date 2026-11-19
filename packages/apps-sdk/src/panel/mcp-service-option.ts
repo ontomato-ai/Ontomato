@@ -17,7 +17,7 @@ export const mcpServiceOptionAdapters: PlatformObjectAdapterFactory = requests =
         const options = new Map((await list()).map(option => [option.primaryKey, option]));
         return values.map(value => {
           const id = runtimeIdSchema.parse(value);
-          return options.get(id) ?? { primaryKey: id, value: id, label: id, unavailable: { reason: "unavailable" } };
+          return options.get(id) ?? { primaryKey: id, value: id, label: id, unavailable: { reason: "assistant.unavailable" } };
         });
       },
     },

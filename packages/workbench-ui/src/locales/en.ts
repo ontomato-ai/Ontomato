@@ -862,6 +862,7 @@ export default {
     "builtinSkills": "Built in",
     "model": "Model",
     "modelHint": "The model this agent uses. Following the domain default picks up later changes of the default.",
+    "useDomainDefault": "Use the domain default",
     "followDomainDefault": "Domain default ({model})",
     "noDefaultModel": "not set",
     "modelUnavailable": "{id} (unavailable)",

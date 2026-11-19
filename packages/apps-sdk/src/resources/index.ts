@@ -1,4 +1,5 @@
 import { AGENT_DEFINITION, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, RUN_NOW, SCHEDULED_TASK, SKILL, USER } from "@ontomato/contracts/panel-client-requests";
+import { ATTRIBUTE } from "@ontomato/contracts/platform-object-types";
 import type { PlatformResources } from "../panel/platform-objects";
 
 /*
@@ -18,7 +19,7 @@ export const platformResources: PlatformResources = {
     [USER]: () => import("../panel/user").then((module) => module.userAdapters),
     // Classes, attributes and relationships come from one metadata read, so one module answers all three.
     [OBJECT_TYPE]: ontologyMetadata,
-    "platform:Attribute": ontologyMetadata,
+    [ATTRIBUTE]: ontologyMetadata,
     [RELATIONSHIP]: ontologyMetadata,
     [SCHEDULED_TASK]: () => import("../panel/schedules").then((module) => module.scheduledTaskAdapters),
   },

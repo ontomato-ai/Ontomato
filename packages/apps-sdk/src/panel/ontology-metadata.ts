@@ -54,7 +54,7 @@ export const ontologyMetadataAdapters: PlatformObjectAdapterFactory = requests =
           const primaryKey = String(value);
           const label = labels.get(primaryKey);
           return label === undefined
-            ? { primaryKey, value, label: primaryKey, unavailable: { reason: "unavailable" } }
+            ? { primaryKey, value, label: primaryKey, unavailable: { reason: "assistant.unavailable" } }
             : { primaryKey, value, label };
         });
       },
