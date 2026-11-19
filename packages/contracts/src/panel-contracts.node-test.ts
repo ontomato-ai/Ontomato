@@ -3,6 +3,11 @@ import {
   APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL, EXPORT_FEEDBACK, EXPORT_SKILL,
   FEEDBACK_RECORD, IMPORT_SKILL, KNOWLEDGE_GOVERNANCE_RECORD, SKILL,
 } from "./panel-client-requests";
+import {
+  createPanelOperationIntentRequestSchema, inspectPanelOperationImpactRequestSchema, panelOperationOutcomeSchema,
+  panelWriteOperationSnapshotSchema, readPanelOperationRequestSchema, readStoredPanelOperationIntent,
+} from "./panel-agent";
+import { panelReadOperationDescriptorSchema, panelReadOperationResultSchema } from "./panel-operations";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -274,6 +279,26 @@ test("MetricView and Function management reads do not grant operation or concret
   }
 });
 
+test("a read-only trial carries the current draft and parameters without a write intent", () => {
+  const input = { draft: { query: { select: ["name"] } }, parameters: { limit: 3 } };
+  const request = {
+    applicationId: "ontology", useId: "metrics", operationId: "test.execute",
+    call: { target: { kind: "draft" }, input },
+  };
+  assert.deepEqual(readPanelOperationRequestSchema.parse(request), request);
+  assert.equal(readPanelOperationRequestSchema.safeParse({ ...request, effect: "read" }).success, false);
+  const owner = {
+    handlerRef: "metricViews.testExecute", effect: "read", batch: false, target: { source: "draft", slot: "definition" },
+    inputSchema: { type: "object" }, resultSchema: { type: "object" },
+  };
+  assert.deepEqual(panelReadOperationDescriptorSchema.parse(owner), owner);
+  assert.equal(panelReadOperationDescriptorSchema.safeParse({ ...owner, effect: "write" }).success, false);
+  for (const result of [{ kind: "markdown", markdown: "Preview" }, { kind: "json", value: [{ count: 1 }] }]) {
+    assert.deepEqual(panelReadOperationResultSchema.parse(result), result);
+    assert.equal(panelReadOperationResultSchema.safeParse({ ...result, affected: { objects: [] } }).success, false);
+  }
+});
+
 
 test("owner select options preserve integer status and customizable string tags", () => {
   const option = { description: null, disabled: false, disabledReason: null };
@@ -379,4 +404,63 @@ test("the four-layer topology points to declared kinds and distinguishes stored 
   }
   assert.equal(platformRelationKinds.find(relation => relation.id === "user.published-workflow")?.derived, false);
   assert.equal(platformRelationKinds.find(relation => relation.id === "role.can-author-workflow")?.derived, true);
+});
+
+const operationIntentId = "bda3d9bd-afc1-4dfa-92c2-41efda234bad";
+const operationTarget = { objectType: "platform:BusinessKnowledge", primaryKey: "knowledge" };
+
+test("batch confirmation and dispatch share the same concrete calls under one intent", () => {
+  const call = { target: { ...operationTarget, kind: "object" }, input: {} };
+  const calls = [call, { ...call, target: { ...call.target, primaryKey: "another" } }];
+  const use = { applicationId: "ontology", useId: "knowledge", operationId: "list.delete" };
+  const batch = { ...use, intentId: operationIntentId, calls };
+  assert.deepEqual(createPanelOperationIntentRequestSchema.parse(batch), batch);
+  assert.deepEqual(inspectPanelOperationImpactRequestSchema.parse({ ...use, calls }), { ...use, calls });
+  assert.equal(createPanelOperationIntentRequestSchema.safeParse({ ...batch, call }).success, false);
+  assert.equal(createPanelOperationIntentRequestSchema.safeParse({
+    ...batch, calls: [{ ...call, executionUserId: "another" }],
+  }).success, false);
+  assert.equal(panelWriteOperationSnapshotSchema.safeParse({
+    id: use.operationId, label: "Delete", kind: "action", slot: "list", handlerRef: "knowledge.delete",
+    target: { source: "input", input: "selection" }, inputSchema: {}, resultSchema: {}, batch: true,
+  }).success, false);
+});
+
+test("batch outcomes keep owner refusals, execution failures and unknown outcomes distinct", () => {
+  const affected = { objects: [operationTarget], objectTypes: [operationTarget.objectType] };
+  const items = [
+    { target: operationTarget, outcome: { kind: "success", data: {} } },
+    { target: { ...operationTarget, primaryKey: "refused" }, outcome: { kind: "refusal", code: "FORBIDDEN", message: "Denied" } },
+    { target: { ...operationTarget, primaryKey: "failed" }, outcome: { kind: "failure", code: "DEPENDENCY_UNAVAILABLE", message: "Failed" } },
+    { target: { ...operationTarget, primaryKey: "unknown" }, outcome: { kind: "unknown", message: "No receipt" } },
+  ];
+  const outcome = { kind: "batch", items, affected };
+  assert.deepEqual(panelOperationOutcomeSchema.parse(outcome), outcome);
+  assert.equal(panelOperationOutcomeSchema.safeParse({ ...outcome, items: items.slice(1) }).success, false);
+  assert.deepEqual(panelOperationOutcomeSchema.parse({ kind: "unknown", message: "No batch receipt" }), {
+    kind: "unknown", message: "No batch receipt",
+  });
+});
+
+test("legacy confirmations expire while dispatched and unknown records preserve their history", () => {
+  const session = { providerId: "workbench", sessionId: "959c449b-afd0-4af9-9f2d-663fecfce14a" };
+  const legacy = {
+    intentId: operationIntentId, source: { session, runId: "12a207b7-e868-45e5-a52d-e15f85447447" },
+    rootSession: session, use: { applicationId: "ontology", useId: "knowledge" }, panelId: "panel",
+    projectionId: "projection", binding: { kind: "PlatformOperation", id: "knowledge.delete" },
+    initiator: { domainId: "domain", userId: "author" }, executionUserId: null, confirmation: "required",
+    questionId: operationIntentId, answer: null, dispatched: false, outcome: null,
+    operation: { id: "list.delete", label: "Delete", kind: "action", slot: "list",
+      handlerRef: "knowledge.delete", target: { source: "state", state: "selected" }, inputSchema: {} },
+    call: { target: { ...operationTarget, kind: "object" }, input: {} },
+  };
+  assert.deepEqual(readStoredPanelOperationIntent(legacy), {
+    kind: "confirmation-expired", intentId: operationIntentId, code: "PANEL_CONFIRMATION_EXPIRED",
+  });
+  for (const record of [
+    { ...legacy, dispatched: true },
+    { ...legacy, dispatched: true, outcome: { kind: "unknown", message: "No receipt" } },
+  ]) {
+    assert.deepEqual(readStoredPanelOperationIntent(record), { kind: "historical", intent: record });
+  }
 });
