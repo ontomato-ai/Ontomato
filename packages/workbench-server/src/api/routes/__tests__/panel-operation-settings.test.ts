@@ -12,7 +12,8 @@ vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({url:
 vi.mock("../../../config/data-query-api",()=>({getApiConfig:()=>({baseUrl:state.identityUrl})}));
 vi.mock("../../../config/application",()=>({config:{dataQuery:{get baseUrl(){return state.identityUrl;}}}}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:state.query}),qualifiedTable:(name:string)=>name}));
-vi.mock("../../../services/assistant/skills",()=>({readPageSkills:vi.fn()}));
+vi.mock("../../../services/assistant/skills",()=>({readAssistantSkillView:vi.fn(async () => ({ options: [] }))}));
+vi.mock("../../../services/skills/view", () => ({ readSkillView: vi.fn(), pageSkillMemberContext: vi.fn() }));
 vi.mock("../../../services/product-panels/skill-package",()=>({readComponentCatalogue:vi.fn()}));
 vi.mock("../../../services/product-panels/current",()=>({readCurrentPanel:vi.fn(),readCurrentProjection:vi.fn(),requireCurrentPanels:vi.fn(),saveCurrentPanel:vi.fn(),saveCurrentProjection:vi.fn()}));
 vi.mock("../../../utils/request-identity",async original=>({...await original<typeof import("../../../utils/request-identity")>(),requireDomainId:(req:{domainId:string})=>req.domainId}));
@@ -20,6 +21,8 @@ import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { panelOperationsRouter } from "../product-panels";
 import { RuntimeClient } from "../../../infrastructure/agent-runtime/client";
+import { readCurrentPanel, readCurrentProjection } from "../../../services/product-panels/current";
+import { readComponentCatalogue } from "../../../services/product-panels/skill-package";
 
 const sessionId="77777777-7777-4777-8777-777777777777",actorId="11111111-1111-4111-8111-111111111111";
 const path=`/api/panel-operation-settings/workbench/${sessionId}`;
@@ -45,6 +48,14 @@ beforeAll(async()=>{
    gateway.once("exit",code=>reject(new Error(`Gateway fixture exited ${code}: ${errors}`)));
  });
  const identity=express();identity.use(express.json());
+ identity.get("/platform/applications/app-tasks/panel-uses", (req, res) => {
+   if (req.header("tk") !== "owner") { res.sendStatus(403); return; }
+   res.json({ success: true, data: {
+     applicationId: "app-tasks", entry: { path: "/applications/app-tasks", renderer: "panels" },
+     panelUses: [{ id: "tasks", pageKey: "tasks", path: "/applications/app-tasks/tasks", panelId: "panel-tasks",
+       access: { kind: "domain-member" } }],
+   } });
+ });
  identity.use((req,res,next)=>{
    if(req.header("X-Ontomato-Query-Service-Token")!=="query-service"){res.status(403).json({error:{code:"FORBIDDEN",message:"Service authorization required"}});return;}
    expect(req.header("tk")).toBeUndefined();expect(req.header("X-API-Key")).toBeUndefined();
@@ -102,5 +113,39 @@ it.each(["GET","PUT"])("rejects a different user for %s before reading or changi
 });
 it("does not read another domain's session",async()=>{
  expect((await settings("GET","owner","another-domain")).status).toBe(404);
+ expect(state.query).not.toHaveBeenCalled();
+});
+
+it("returns the server descriptor only for a current use of the authenticated reader", async () => {
+ const objectType = "platform:ScheduledTask";
+ const record = {
+   domainId: "domain", ownerId: "owner", visibility: "domain" as const, description: "",
+   revision: 1, createdAt: "2026-11-19T00:00:00Z", updatedAt: "2026-11-19T00:00:00Z", editable: true,
+ };
+ vi.mocked(readCurrentPanel).mockResolvedValue({
+   ...record, id: "panel-tasks", name: "Tasks", sdkVersion: "1.0.0", content: { html: "", module: "" },
+   manifest: {
+     state: { task: { kind: "object", objectType, deepLink: false } },
+     slots: { run: { projectionId: "run", inputs: { task: { state: "task" } } } },
+     operations: [],
+   },
+ });
+ vi.mocked(readCurrentProjection).mockResolvedValue({
+   ...record, id: "run", componentId: "run", name: "Run now", display: {},
+   binding: { kind: "PlatformOperation", id: "schedules.runNow" },
+   inputs: { task: { kind: "object", objectType } },
+ });
+ vi.mocked(readComponentCatalogue).mockResolvedValue(new Map([["run", { componentId: "run", meaning: "Run now" }]]));
+
+ const url = hostUrl + "/api/panel-operations/descriptor?applicationId=app-tasks&operationId=run.runNow";
+ const result = await fetch(url + "&useId=tasks", { headers: { tk: "owner" } });
+ expect(result.status).toBe(200);
+ expect(await result.json()).toMatchObject({
+   handlerRef: "schedules.runNow", effect: "write", batch: false,
+   target: { source: "input", input: "task" },
+   inputSchema: { type: "object" }, resultSchema: { type: "object" },
+ });
+ expect((await fetch(url + "&useId=missing", { headers: { tk: "owner" } })).status).toBe(403);
+ expect((await fetch(url + "&useId=tasks&effect=read", { headers: { tk: "owner" } })).status).toBe(400);
  expect(state.query).not.toHaveBeenCalled();
 });

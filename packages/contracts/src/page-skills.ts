@@ -18,7 +18,10 @@ export const pageSkillEntranceSchema = z.union([
 ]);
 export type PageSkillEntrance = z.infer<typeof pageSkillEntranceSchema>;
 
-export const pageSkillDefaultSchema = z.object({ pageKey: pageKeySchema, defaultAgent: defaultAgentSchema }).strict();
+export const pageSkillDefaultSchema = z.object({
+  pageKey: pageKeySchema,
+  defaultAgent: defaultAgentSchema,
+}).strict();
 export const pageSkillGroupSchema = z.object({
   locator: pageSkillLocatorSchema,
   skills: z.array(runtimeSkillRefSchema),
