@@ -220,6 +220,8 @@ const formSaveRequestSchema = z.object({
 export const panelFormDescriptionSchema = z.object({
   fields: z.array(panelFormFieldSchema),
   values: panelFormValuesSchema,
+  /** Owner validation is part of a successful form read, alongside the current values. */
+  errors: z.array(formFieldErrorSchema),
   /** Present only when the owner's save requires the revision returned with these values. */
   revision: z.number().int().positive().safe().optional(),
   save: formSaveRequestSchema,
