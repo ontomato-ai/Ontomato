@@ -1,0 +1,116 @@
+{
+  "origin": "",
+  "revisions": {
+    "ontomato": "",
+    "enterprise": ""
+  },
+  "deadline": "",
+  "device": {
+    "lan": "",
+    "ego": ""
+  },
+  "linkFile": "",
+  "timeoutMs": 12000,
+  "identity": {
+    "path": "/api/data-query/sso/verify",
+    "tokenKey": "data_agent_token",
+    "account": "",
+    "domainId": ""
+  },
+  "tasks": [
+    "",
+    ""
+  ],
+  "away": {
+    "path": "/home",
+    "leave": {
+      "selector": "",
+      "text": [
+        "主页",
+        "Home"
+      ],
+      "useAccessibleLabel": true
+    }
+  },
+  "native": {
+    "path": "/schedules",
+    "enter": {
+      "selector": "button.rail-row",
+      "text": [
+        "定时任务",
+        "Scheduled tasks",
+        "Scheduled Tasks"
+      ],
+      "useAccessibleLabel": true
+    },
+    "list": {
+      "row": {
+        "selector": ".schedules ul.cards article[data-task]",
+        "textFrom": ".title"
+      },
+      "action": "button.more"
+    },
+    "edit": {
+      "selector": ".el-dropdown-menu__item",
+      "text": [
+        "编辑",
+        "Edit"
+      ]
+    },
+    "close": {
+      "selector": ".el-dialog:has(.task-form) .el-dialog__footer button",
+      "text": [
+        "取消",
+        "Cancel"
+      ]
+    },
+    "form": {
+      "input": ".task-form [data-field=\"title\"] input",
+      "ready": {
+        "selector": ".el-dialog:has(.task-form) button[data-action=\"submit\"]:not(:disabled)"
+      }
+    }
+  },
+  "panel": {
+    "path": "",
+    "enter": {
+      "selector": ""
+    },
+    "list": {
+      "row": {
+        "selector": "",
+        "textFrom": ""
+      }
+    },
+    "form": {
+      "selected": {
+        "selector": "",
+        "textFrom": ""
+      },
+      "input": "",
+      "ready": {
+        "selector": ""
+      }
+    }
+  },
+  "direct": {
+    "root": "",
+    "frame": "iframe.panel-host-frame",
+    "instanceAttribute": "",
+    "lifecycleSource": ""
+  },
+  "initMarks": [],
+  "requests": {
+    "sdk": [
+      "^/apps-sdk/"
+    ],
+    "owner": [
+      "^/api/data-query/platform/scheduled-tasks(?:/|$)"
+    ],
+    "host": [
+      "^/api/product-panels/",
+      "^/api/data-query/platform/applications/",
+      "^/api/apps-sdk/current$"
+    ]
+  }
+}
