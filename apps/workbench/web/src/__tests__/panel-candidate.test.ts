@@ -76,7 +76,7 @@ function network(candidate: () => CandidatePanelSource | Response) {
       return source instanceof Response ? source : Response.json(source);
     }
     if (request.path === "/api/apps-sdk/current") return currentSdk();
-    if (request.path === "/api/product-assets/definition-stream") {
+    if (request.path === "/api/product-panels/definition-stream") {
       streams.push((request.body as { targets: ProductDefinitionTarget[] }).targets);
       return new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } });
     }
@@ -122,7 +122,8 @@ function visibility() {
 
 /** Anything the preview asked of a formal registration: a use relation, an application, a panel record or its writes. */
 const formal = (sent: Sent[]) => sent.filter(request =>
-  request.path.startsWith("/api/product-panels") || request.path.includes("/platform/applications") || request.method === "PUT" && request.path.startsWith("/api/product-"));
+  request.path.startsWith("/api/product-panels") && request.path !== "/api/product-panels/definition-stream"
+  || request.path.includes("/platform/applications") || request.method === "PUT" && request.path.startsWith("/api/product-"));
 
 afterEach(() => {
   leaveFrame();

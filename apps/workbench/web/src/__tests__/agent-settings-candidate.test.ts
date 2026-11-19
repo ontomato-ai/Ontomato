@@ -86,7 +86,7 @@ const refused = () => Response.json({ error: { code: "BUILD_TEST_UNSUPPORTED", m
 function owners(request: Sent): Response {
   if (request.path === `/api/workspaces/${WORKSPACE}/panel-candidate`) return Response.json(candidate());
   if (request.path === "/api/apps-sdk/current") return currentSdk();
-  if (request.path === "/api/product-assets/definition-stream")
+  if (request.path === "/api/product-panels/definition-stream")
     return new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } });
   const projected = /^\/api\/product-projections\/(.+)$/.exec(request.path);
   if (projected) return Response.json({ projection: projections[projected[1]!] });
@@ -140,7 +140,7 @@ const node = (id: string) => document.querySelector<SVGGElement>(`#app [data-nod
 const formSave = () => [...document.querySelectorAll<HTMLButtonElement>("#app .sdk-owner-form-actions button")]
   .find(button => button.textContent?.trim() === "Save")!;
 const fromFrame = (sent: Sent[]) => sent.filter(request => request.path !== `/api/workspaces/${WORKSPACE}/panel-candidate`
-  && request.path !== "/api/apps-sdk/current" && request.path !== "/api/product-assets/definition-stream");
+  && request.path !== "/api/apps-sdk/current" && request.path !== "/api/product-panels/definition-stream");
 
 /** Picks one choice of a picker the way a reader does: open its list and click the choice. */
 async function pick(path: string, label: string) {
@@ -232,7 +232,7 @@ it("edits one agent's definition as one form: its fields, model, skills and data
       && request.execution === JSON.stringify({ kind: "build-test", contextId: null }))).toBe(true);
     // Only the host's own reads (the candidate, the SDK root, the author definition stream) went out unmarked.
     expect(sent.filter(request => request.execution === null).map(request => request.path)).toEqual(sent.filter(request => [
-      `/api/workspaces/${WORKSPACE}/panel-candidate`, "/api/apps-sdk/current", "/api/product-assets/definition-stream",
+      `/api/workspaces/${WORKSPACE}/panel-candidate`, "/api/apps-sdk/current", "/api/product-panels/definition-stream",
     ].includes(request.path)).map(request => request.path));
     expect(sent.some(request => request.path.startsWith("/api/product-panels") || request.path.includes("/platform/applications"))).toBe(false);
   } finally {
