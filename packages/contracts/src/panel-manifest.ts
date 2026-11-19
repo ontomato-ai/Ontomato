@@ -153,6 +153,14 @@ export const panelObjectIdentitySchema = z.object({
 }).strict();
 export type PanelObjectIdentity = z.infer<typeof panelObjectIdentitySchema>;
 
+/** A child such as a skill file or governance issue is identified within its owner's parent record. */
+export const panelChildObjectIdentitySchema = z.object({
+  parent: panelObjectIdentitySchema,
+  /** The owner supplies this key. The client keeps the parent identity alongside it. */
+  primaryKey: panelObjectIdentitySchema.shape.primaryKey,
+}).strict();
+export type PanelChildObjectIdentity = z.infer<typeof panelChildObjectIdentitySchema>;
+
 /** An existing record or the form's create target, using the operation's existing draft identity. */
 export const panelFormTargetSchema = z.discriminatedUnion("kind", [
   panelObjectIdentitySchema.extend({ kind: z.literal("object") }),

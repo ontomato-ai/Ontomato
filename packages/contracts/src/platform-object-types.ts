@@ -10,6 +10,10 @@ export const RELATIONSHIP = "platform:Relationship";
 export const METRIC_VIEW = "platform:MetricView";
 export const FUNCTION = "platform:Function";
 
+export const BUSINESS_KNOWLEDGE = "platform:BusinessKnowledge";
+export const KNOWLEDGE_GOVERNANCE_RECORD = "platform:KnowledgeGovernanceRecord";
+export const FEEDBACK_RECORD = "platform:FeedbackRecord";
+
 export interface PlatformObjectTypeDeclaration {
   /** Set for types that have a declared place in the four-layer ontology. */
   layer?: "fact" | "capability" | "governance" | "product";
@@ -28,4 +32,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [RELATIONSHIP]: { layer: "fact" },
   [METRIC_VIEW]: { layer: "capability" },
   [FUNCTION]: { layer: "capability" },
+  [BUSINESS_KNOWLEDGE]: { layer: "capability" },
+  [KNOWLEDGE_GOVERNANCE_RECORD]: {},
+  [FEEDBACK_RECORD]: {},
 };
