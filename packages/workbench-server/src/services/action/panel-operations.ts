@@ -24,9 +24,12 @@ import {
 
 const deletedSchema = z.object({}).strict();
 const statusInputSchema = z.object({ status: z.enum(["PENDING_REVIEW", "PUBLISHED", "UNUSED"]) }).strict();
-/** The owner answers one status change per requested id: a saved action, its refusal, or its failure. */
+/**
+ * The owner answers one status change per requested id: a saved action, its refusal, or its failure. The saved action
+ * is read with the rest of the receipt, so a receipt this operation cannot read leaves only its own group unknown.
+ */
 const statusItemSchema = z.discriminatedUnion("outcome", [
-  z.object({ id: z.string().min(1), outcome: z.literal("success"), data: z.unknown() }).strict(),
+  z.object({ id: z.string().min(1), outcome: z.literal("success"), data: runtimeJsonObjectSchema.and(savedIdSchema) }).strict(),
   z.object({
     id: z.string().min(1), outcome: z.literal("refusal"), code: z.string().min(1),
     error: z.object({ message: z.string() }).strict(),
@@ -64,10 +67,8 @@ function statusOutcome(answer: StatusAnswer, id: string): SinglePanelOperationOu
   if ("group" in answer) return answer.group;
   if ("unknown" in answer) return { kind: "unknown", message: answer.unknown };
   const item = answer.items.get(id)!;
-  if (item.outcome === "success") {
-    const data = runtimeJsonObjectSchema.parse(item.data);
-    return { kind: "success", data, affected: affected(ACTION, savedIdSchema.parse(data).id, [ACTION]) };
-  }
+  if (item.outcome === "success")
+    return { kind: "success", data: item.data, affected: affected(ACTION, item.data.id, [ACTION]) };
   if (item.outcome === "refusal") return { kind: "refusal", code: item.code, message: item.error.message };
   return { kind: "failure", code: "ACTION_STATUS_FAILED", message: item.error.message };
 }

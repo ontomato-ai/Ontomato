@@ -191,6 +191,30 @@ describe("action panel server operations", () => {
     ] });
   });
 
+  it("leaves only the group unknown whose receipt carries an unreadable saved action", async () => {
+    const operation = batchAction(SET_ACTION_STATUS);
+    const grouped = hostWith((_path, init) => {
+      const { ids, status } = JSON.parse(String(init.body)) as { ids: string[]; status: string };
+      // The unused group's saved action has no id: that receipt cannot be read, the other one still counts.
+      return Response.json({ success: true, data: { items: ids.map(id => ({
+        id, outcome: "success", data: status === "UNUSED" ? { status } : { id, status },
+      })) } });
+    });
+
+    const outcome = await operation.executeBatch(grouped.host, [
+      { target: actionTarget, input: { status: "PUBLISHED" } },
+      { target: secondAction, input: { status: "UNUSED" } },
+    ]);
+
+    expect(outcome.kind).toBe("batch");
+    if (outcome.kind !== "batch") return;
+    expect(outcome.items[0]).toEqual({ target: { objectType: ACTION, primaryKey: "a1" }, outcome: {
+      kind: "success", data: { id: "a1", status: "PUBLISHED" },
+      affected: { objects: [{ objectType: ACTION, primaryKey: "a1" }], objectTypes: [ACTION] },
+    } });
+    expect(outcome.items[1]!.outcome.kind).toBe("unknown");
+  });
+
   it("answers the whole batch unknown when no status group has a receipt", async () => {
     const operation = batchAction(SET_ACTION_STATUS);
     const grouped = hostWith(() => Response.json({ message: "Owner unavailable" }, { status: 503 }));
