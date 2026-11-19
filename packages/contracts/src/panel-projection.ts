@@ -52,7 +52,7 @@ export const panelReadParameterSchemas = { formValues: formValuesSchema, changed
 
 type DirectObjectSource = Extract<DirectProjectionData["source"], { object: unknown }>["object"];
 
-function directObjectSourceType(projection: DirectProjectionPorts, object: DirectObjectSource): string | undefined {
+function directObjectSourceType(projection: Pick<DirectProjectionPorts, "inputs">, object: DirectObjectSource): string | undefined {
   if ("literal" in object) return object.literal.className;
   const input = projection.inputs[object.input];
   return input?.kind === "object" ? input.objectType : undefined;
@@ -258,8 +258,16 @@ interface ComponentOperationMetadata {
 type ProjectionBindings = Pick<ProductProjectionInput, "binding" | "graph">;
 type Projection = ProjectionBindings & Pick<ProductProjectionInput, "name" | "inputs">;
 
-/** Both admission and skill reads use the entire set of resources this projection declares. */
-export function projectionBindingKeys(projection: ProjectionBindings): readonly string[] {
+/** Both admission and skill reads use the resources of the validated projection. */
+export function projectionBindingKeys(projection: ProjectionBindings | Pick<DirectProjectionPorts, "inputs" | "data">): readonly string[] {
+  if ("data" in projection) {
+    const keys = Object.values(projection.data).map(({ source }) => {
+      if ("operation" in source) return bindingKey({ kind: "PlatformOperation", id: source.operation });
+      const type = "type" in source ? source.type : directObjectSourceType(projection, source.object)!;
+      return bindingKey({ kind: "PlatformObjectType", id: type });
+    });
+    return [...new Set(keys)];
+  }
   const primary = bindingKey(projection.binding);
   return projection.graph ? [primary, bindingKey(projection.graph.edges.binding)] : [primary];
 }
