@@ -107,6 +107,36 @@ it.each([
  expect(upstream).not.toHaveBeenCalled();
 });
 
+it.each([
+  "/api/skills",
+  "/api/skills/reporting/references",
+  "/api/skills/reporting/files",
+  "/api/skills/reporting/file?path=references%2Freadme.md",
+])("forwards the declared skill read %s with the executor credential", async path => {
+ const upstream = vi.fn(async (_url: string, _request: NonNullable<Parameters<typeof fetch>[1]>) => Response.json({}));
+ vi.stubGlobal("fetch", upstream);
+ expect((await call("workbench" + path, { tk: "oq.business.grant" }, "GET")).status).toBe(200);
+ const [url, request] = upstream.mock.calls[0]!;
+ expect(url).toBe("http://workbench.test" + path);
+ expect(request).toMatchObject({ method: "GET", headers: { "X-API-Key": "selected-user-key" } });
+ expect(request.headers).not.toHaveProperty("tk");
+});
+
+it.each([
+  ["GET", "workbench/api/skills/search?q=report"],
+  ["GET", "workbench/api/skills/reporting/export"],
+  ["GET", "workbench/api/skills/reporting/files/extra"],
+  ["GET", "ontology/api/skills"],
+  ["POST", "workbench/api/skills/reporting/files"],
+  ["POST", "workbench/api/skills/import"],
+])("refuses the unlisted skill callback %s %s before resolving the executor", async (method, path) => {
+ const upstream = vi.fn();
+ vi.stubGlobal("fetch", upstream);
+ expect((await call(path, {}, method)).status).toBe(403);
+ expect(mocks.restore).not.toHaveBeenCalled();
+ expect(upstream).not.toHaveBeenCalled();
+});
+
 it("lets Java restore V for governance business Grants without a Node key exchange",async()=>{
  mocks.restore.mockRejectedValue(new Error('V lookup must stay in Java'));
  const upstream=vi.fn(async()=>Response.json({items:[]}));vi.stubGlobal('fetch',upstream);

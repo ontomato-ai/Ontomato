@@ -17,6 +17,8 @@ import { componentFor } from "../catalogue-components";
  * The record is read every time the projection appears, and again by the same ID when the platform says its definition
  * changed: that is what makes a change to a shared projection reach every instance of every panel that uses it.
  */
+defineOptions({ inheritAttrs: false });
+
 const props = defineProps<{
   /** The slot of the panel's declaration this projection fills. */
   slot: string;
@@ -107,5 +109,9 @@ provide(projectionKey, {
 <template>
   <p v-if="failure" role="alert">{{ failure.message }}</p>
   <div v-else-if="loading || !loaded" class="sdk-projection-loading"></div>
-  <component :is="loaded.component" v-else v-bind="{ ...loaded.projection.display, ...inputs }"></component>
+  <component :is="loaded.component" v-else v-bind="{ ...loaded.projection.display, ...$attrs, ...inputs }">
+    <template v-for="(_, name) in $slots" :key="name" #[name]="slotProps">
+      <slot :name="name" v-bind="slotProps ?? {}"></slot>
+    </template>
+  </component>
 </template>
