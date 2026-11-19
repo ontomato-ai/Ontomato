@@ -19,6 +19,7 @@ import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.bean.function.ReturnDef;
 import io.ontomato.dataengine.config.ServiceConst;
+import io.ontomato.dataengine.core.bean.SimpleUser;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.FunctionDao;
@@ -37,6 +38,7 @@ import io.ontomato.dataengine.service.ParameterForms;
 import io.ontomato.dataengine.service.SandboxService;
 import io.ontomato.dataengine.service.agent.AgentRuntimeClient;
 import io.ontomato.dataengine.service.agent.OntologyGenerationPrompts;
+import io.ontomato.dataengine.service.agent.OntologyAgentStore.Owner;
 import io.ontomato.dataengine.service.agent.OntologyGenerationService;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.CodeHashUtil;
@@ -266,7 +268,7 @@ public class ActionServiceImpl implements ActionService {
                 action.getDomainId(),
                 lang,
                 businessId,
-                (segments, meaning) -> new Object[] {segments, meaning});
+                (explanation, segments, meaning) -> new Object[] {segments, meaning});
         JSONArray codeSegments = (JSONArray) explain[0];
         BusinessMeaning businessMeaning = (BusinessMeaning) explain[1];
         action.setCodeSegments(codeSegments);
@@ -287,7 +289,7 @@ public class ActionServiceImpl implements ActionService {
   }
 
   @Override
-  public Action save(Action action, String lang) throws Exception {
+  public Action save(Action action, String explanationRef, Owner owner, String lang) throws Exception {
     JSONArray storedCodeSegments = null;
     BusinessMeaning storedBusinessMeaning = null;
     String storedCodeHash = null;
@@ -351,7 +353,17 @@ public class ActionServiceImpl implements ActionService {
             && codeHash.equals(storedCodeHash)
             && storedExplanationVersion != null
             && storedExplanationVersion == Action.EXPLANATION_VERSION;
-    if (reusable) {
+    if (explanationRef != null) {
+      // An explanation accepted for an unsaved draft is reused only for exactly that code and the current version.
+      JSONObject evidence = generationService.explanationEvidence(explanationRef, owner);
+      if (!Objects.equals(codeHash, evidence.getString("sourceDigest"))
+          || evidence.getIntValue("explanationVersion") != Action.EXPLANATION_VERSION)
+        throw new IllegalArgumentException(
+            "explanationRef: the explanation was accepted for other code or an older explanation version; explain this code again");
+      JSONObject accepted = evidence.getJSONObject("acceptedResult");
+      action.setCodeSegments(accepted.getJSONArray("codeSegments"));
+      action.setBusinessMeaning(accepted.getObject("businessMeaning", BusinessMeaning.class));
+    } else if (reusable) {
       action.setCodeSegments(storedCodeSegments);
       action.setBusinessMeaning(storedBusinessMeaning);
     } else {
@@ -361,7 +373,7 @@ public class ActionServiceImpl implements ActionService {
           action.getDomainId(),
           lang,
           UUID.randomUUID().toString(),
-          (segments, meaning) -> {
+          (explanation, segments, meaning) -> {
             action.setCodeSegments(segments);
             action.setBusinessMeaning(meaning);
             action.setCodeHash(codeHash);
@@ -566,7 +578,7 @@ public class ActionServiceImpl implements ActionService {
             action.getDomainId(),
             lang,
             UUID.randomUUID().toString(),
-            (segments, meaning) -> {
+            (explanation, segments, meaning) -> {
               action.setCodeSegments(segments);
               action.setBusinessMeaning(meaning);
               action.setCodeHash(codeHash);
@@ -710,6 +722,27 @@ public class ActionServiceImpl implements ActionService {
     return form;
   }
 
+  @Override
+  public ExplainedDraft explainDraft(String code, List<Parameter> parameters, Owner owner, String lang) {
+    return OntologyGenerationService.asOwner(
+        new SimpleUser(owner.userId(), null, null, true, owner.domainId()),
+        () ->
+            explainCode(
+                parameters,
+                code,
+                owner.domainId(),
+                lang,
+                UUID.randomUUID().toString(),
+                (explanation, segments, meaning) ->
+                    new ExplainedDraft(
+                        segments,
+                        meaning,
+                        explanation.acceptExplanation(
+                            CodeHashUtil.sha256(code),
+                            Action.EXPLANATION_VERSION,
+                            JSONObject.of("codeSegments", segments, "businessMeaning", meaning)))));
+  }
+
   /**
    * Fills the explanation of an already assembled draft Action. Draft creation owns the only
    * explain call; saving the draft reuses this stored result and never explains again.
@@ -723,7 +756,7 @@ public class ActionServiceImpl implements ActionService {
         action.getDomainId(),
         lang,
         UUID.randomUUID().toString(),
-        (segments, meaning) -> {
+        (explanation, segments, meaning) -> {
           action.setCodeSegments(segments);
           action.setBusinessMeaning(meaning);
           return null;
@@ -732,7 +765,8 @@ public class ActionServiceImpl implements ActionService {
 
   @FunctionalInterface
   private interface ExplanationConsumer<T> {
-    T accept(JSONArray segments, BusinessMeaning meaning) throws Exception;
+    T accept(OntologyGenerationService.Generation explanation, JSONArray segments, BusinessMeaning meaning)
+        throws Exception;
   }
 
   private <T> T explainCode(
@@ -752,7 +786,7 @@ public class ActionServiceImpl implements ActionService {
       JSONObject result = generation.result();
       JSONArray segments = ActionCodeExplanationValidator.segments(result);
       BusinessMeaning meaning = ActionCodeExplanationValidator.businessMeaning(result);
-      return generation.settle(() -> consumer.accept(segments, meaning));
+      return generation.settle(() -> consumer.accept(generation, segments, meaning));
     } catch (Exception error) {
       throw new Exception(
           langService.get(lang, "Action.parseCodeExplainFailed") + ": " + error.getMessage(),
