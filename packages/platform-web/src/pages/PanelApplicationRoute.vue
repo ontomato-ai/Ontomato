@@ -2,8 +2,9 @@
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { PanelHost, type PanelHostLabels } from "@ontomato/platform-shell";
+import { PanelHost, panelUnavailable, type PanelHostLabels } from "@ontomato/platform-shell";
 import { panelAddress, panelAddressState, panelUsePath, type PanelRefreshPort } from "@ontomato/contracts/panel-host";
+import { applicationRootPath } from "@ontomato/contracts/platform-identity";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import type { DisplayObjectRefresh } from "@ontomato/agent-shell-ui";
@@ -14,9 +15,10 @@ import { panelUsesOf, platformPanelHost } from "../panel-host";
  * One page of an application whose entry is `renderer:'panels'`: the panel that one of its use relations names, shown
  * full.
  *
- * The address is the application's own — `/applications/<application>/<the use relation's path>` — and the panel's
- * declared deep-linkable state rides in the same address as `state`, so a link or an agent's open request restores the
- * view, a reload opens the same one, and no credential ever appears there.
+ * The address is the use relation's own full path, as Java declares it — `/applications/<application>/...` for a domain
+ * application — and the panel's declared deep-linkable state rides in the same address as `state`, so a link or an
+ * agent's open request restores the view, a reload opens the same one, and no credential ever appears there. The
+ * application's root address opens its first use the reader may see.
  *
  * The instance is the page's, keyed by the application and the use relation — not by the address — because the address
  * changes whenever the reader selects something: replacing the address must not rebuild the panel and lose that
@@ -25,8 +27,6 @@ import { panelUsesOf, platformPanelHost } from "../panel-host";
 const props = defineProps<{
   /** The application whose panel this address shows. */
   applicationId: string;
-  /** The rest of the address: the use relation's own path, without its leading slash. */
-  panelPath?: string;
   /**
    * The conversation's callback for explicit navigation, supplied when the display controller owns this page.
    * A full-page instance uses the router for its address.
@@ -57,7 +57,6 @@ watch(() => props.objectRefresh?.seq, () => {
   if (props.objectRefresh) host.value?.refresh(props.objectRefresh.target);
 }, { flush: "post" });
 const failure = ref("");
-const port = computed(() => platformPanelHost(props.applicationId));
 
 watch(() => props.applicationId, async (applicationId, _, onCleanup) => {
   let current = true;
@@ -69,20 +68,30 @@ watch(() => props.applicationId, async (applicationId, _, onCleanup) => {
     const records = await panelUsesOf(applicationId);
     if (current) uses.value = records;
   } catch (reason) {
-    if (current) failure.value = reason instanceof Error ? reason.message : String(reason);
+    if (!current) return;
+    failure.value = reason instanceof Error ? reason.message : String(reason);
+    emit("display-loaded", panelUnavailable(reason));
   }
 }, { immediate: true });
 
-/** The use relation this address names, or the application's first when the address is the application's own. */
+/** The page's address as the reader is on it: the conversation's page parameter beside a chat, the router's full. */
+const opened = computed(() => props.address ?? route.fullPath);
+const openedPath = computed(() => opened.value.split("?")[0]!);
+
+/** The use relation whose full path this address is, or the application's first when the address is the application's own. */
 const use = computed<ApplicationPanelUse | null>(() => {
-  const path = props.panelPath ? `/${props.panelPath}`.replace(/\/+$/, "") : "";
-  if (!path) return uses.value?.[0] ?? null;
-  return uses.value?.find((candidate) => candidate.path.replace(/\/+$/, "") === path) ?? null;
+  if (openedPath.value === applicationRootPath(props.applicationId)) return uses.value?.[0] ?? null;
+  return uses.value?.find((candidate) => panelUsePath(candidate.path) === openedPath.value) ?? null;
+});
+const port = computed(() => use.value && platformPanelHost(props.applicationId, use.value));
+/** An address that names no use relation the reader may open is a page that cannot load, and its receipt says so. */
+const missing = computed(() => uses.value && !use.value ? t("platform.panelNotInApplication", { path: openedPath.value }) : "");
+watch(missing, (message) => {
+  if (message) emit("display-loaded", panelUnavailable(new Error(message)));
 });
 
 /** What the panel host says to the reader, in the platform's language. */
 const labels = computed<PanelHostLabels>(() => ({
-  useMissing: (useId) => t("platform.panelUseMissing", { use: useId }),
   notStarted: t("platform.panelNotStarted"),
   failures: {
     // The frame puts the file it could not load where `{file}` stands.
@@ -92,17 +101,13 @@ const labels = computed<PanelHostLabels>(() => ({
   },
 }));
 
-/** The page's address as the reader is on it: the conversation's page parameter beside a chat, the router's full. */
-const opened = computed(() => props.address ?? route.fullPath);
-
 /**
- * The page's address without the panel's own state: the application's, this relation's own path, and the rest of the
- * address's query — a draft an agent wrote for this page names itself there (`draftSessionId`, `draftRunId`,
+ * The page's address without the panel's own state: this relation's own full path and the rest of the address's query — a draft an agent wrote for this page names itself there (`draftSessionId`, `draftRunId`,
  * `draftPath`), and the panel reads it from the address it is given. The state is the instance's to add.
  */
-const address = computed(() => {
+const pageAddress = computed(() => {
   const search = opened.value.split("?")[1];
-  const path = use.value ? panelUsePath(props.applicationId, use.value.path) : "";
+  const path = use.value ? panelUsePath(use.value.path) : "";
   return panelAddress(search ? `${path}?${search}` : path, {});
 });
 
@@ -135,7 +140,7 @@ const pageName = computed(() => use.value?.names?.[locale.value] ?? use.value?.n
  * with no selection, since the panel has not said what it shows yet. What the frame reports later adds that.
  */
 watch(use, (opened) => {
-  if (opened) emit("context", { url: panelAddress(address.value, requestedState.value), label: pageName.value, selection: [] });
+  if (opened) emit("context", { url: panelAddress(pageAddress.value, requestedState.value), label: pageName.value, selection: [] });
 }, { immediate: true });
 
 function reportContext(context: PageContext) {
@@ -145,15 +150,14 @@ function reportContext(context: PageContext) {
 
 <template>
   <p v-if="failure" role="alert">{{ failure }}</p>
-  <p v-else-if="uses && !use" role="alert">{{ t("platform.panelNotInApplication", { path: `/${panelPath ?? ""}` }) }}</p>
+  <p v-else-if="missing" role="alert">{{ missing }}</p>
   <PanelHost
-    v-else-if="use"
+    v-else-if="port"
     :key="key"
     ref="host"
     :port="port"
     :labels="labels"
-    :use-id="use.id"
-    :address="address"
+    :address="pageAddress"
     :initial="requestedState"
     @display-address="reportAddress"
     @display-loaded="emit('display-loaded', $event)"

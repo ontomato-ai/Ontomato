@@ -49,6 +49,8 @@ export function installAppBridge(app:App,host:AppHost,applicationFor:(source:obj
         else if(operation==='mount'){
           const input=appBridgeMountSchema.parse(payload);
           if(mounts.has(input.id)||mounts.size>=50)throw new Error('Invalid product mount');
+          // An embedded product reads live data in the platform's own window: never for a frame on a build-test context.
+          if(host.executionContext(source).kind!=='live')throw new Error('Product embedding is unavailable in build-test previews');
           const element=document.createElement('div');Object.assign(element.style,{position:'fixed',overflow:'auto',zIndex:'20',display:'none'});document.body.append(element);
           const vnode=createVNode(ProductRoute,{productAssetId:input.assetId,applicationId,embedded:true});vnode.appContext=app._context;render(vnode,element);mounts.set(input.id,element);
         }else if(operation==='placement'){

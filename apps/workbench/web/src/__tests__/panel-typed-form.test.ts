@@ -7,7 +7,7 @@ import { AGENT_DEFINITION, OBJECT_TYPE, RELATIONSHIP, SKILL } from "@ontomato/co
 import { PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
-  inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, writePanelDocument, type Sent,
+  inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
 /*
@@ -115,11 +115,11 @@ function owner(request: Sent): Response | undefined {
   return undefined;
 }
 
-async function open(address: string, state: Record<string, unknown>) {
-  const sent = installPlatform((request) => owner(request) ?? nothingAt(request));
+async function open(address: string, state: Record<string, unknown>, override?: (request: Sent) => Response | undefined) {
+  const sent = installPlatform((request) => override?.(request) ?? owner(request) ?? nothingAt(request));
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
-  platformPanelHost("ontology").frame(frame, use, panel);
+  platformPanelHost("ontology", use).frame(frame, registered("ontology", use, panel));
   writePanelDocument(panel, use, address, state as never);
   inside(frame);
   const failed: string[] = [];
@@ -206,7 +206,7 @@ async function openWithDraft(form: PanelFormValues, envelope: { operation: strin
   });
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
-  platformPanelHost("ontology").frame(frame, use, panel);
+  platformPanelHost("ontology", use).frame(frame, registered("ontology", use, panel));
   writePanelDocument(panel, use, `/ontology/agents?${query}`, { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } });
   inside(frame);
   const failed: string[] = [];
@@ -263,6 +263,17 @@ it("reopens a saved create draft on the agent it created, and creates nothing ag
   expect(context.draft.value).toBeNull();
   expect(context.instance.dirty()).toBe(false);
   expect(sent.some((request) => request.method === "POST" && request.path === "/api/assistant/agent-definitions")).toBe(false);
+});
+
+it("shows a localized reason for a stored skill no longer in the catalogue", async () => {
+  const { context } = await open("/ontology/agents", { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } },
+    request => request.path === "/api/assistant/agent-skills" ? Response.json({ skills: [] }) : undefined);
+  await vi.waitFor(() => expect(fieldItem("/skills")?.textContent).toContain("sql"), { timeout: 5000 });
+  fieldItem("/skills")!.querySelector(".el-select__wrapper")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await vi.waitFor(() => {
+    expect(document.querySelector('.el-select-dropdown__item[title="Unavailable"]')?.textContent).toContain("sql");
+  });
+  expect(context.instance.dirty()).toBe(false);
 });
 
 const button = (label: string) =>

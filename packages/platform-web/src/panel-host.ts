@@ -1,14 +1,15 @@
 import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
-import { applicationPanelUsesResponseSchema, productPanelSchema, type ProductPanel } from "@ontomato/contracts/product-panels";
+import { applicationPanelUsesResponseSchema, productPanelSchema, type ApplicationPanelUse, type ProductPanel } from "@ontomato/contracts/product-panels";
 import { appsSdkCurrentSchema } from "@ontomato/contracts/apps-sdk";
 import {
   panelDefinitionSnapshotSchema, productDefinitionStreamFrameSchema,
   type ProductDefinitionRevision, type ProductDefinitionTarget,
 } from "@ontomato/contracts/product-subscriptions";
-import type { PanelAuthorDefinitions, PanelDefinitionMode } from "@ontomato/contracts/panel-host";
+import { candidatePanelSourceSchema, type CandidatePanelSource, type PanelHostSource, type PanelAuthorDefinitions, type PanelDefinitionMode } from "@ontomato/contracts/panel-host";
+import { buildExecutionContext } from "@ontomato/contracts/build-tests";
 import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
-import { registerPanelFrame } from "./app-host";
+import { registerCandidateFrame, registerPanelFrame } from "./app-host";
 import type { PanelHostPort } from "@ontomato/platform-shell";
 
 /*
@@ -18,6 +19,9 @@ import type { PanelHostPort } from "@ontomato/platform-shell";
  *   permissions stay there.
  * - A panel's current record is Node's (`GET /api/product-panels/:id`), read outside the frame under the reader's own
  *   credential; a projection's record is read inside the frame by the projection itself.
+ * - An author's workspace candidate is Node's too (`GET /api/workspaces/:id/panel-candidate?ref=`), under the author's
+ *   workspace access. It is the same host with another source: no use relation, panel ID or revision of its own, and a
+ *   build-test execution context instead of a live one.
  * - Viewers reconcile revisions using short requests. Author hosts share the document's definition stream.
  */
 
@@ -34,6 +38,8 @@ export const panelHostPaths = {
   panel: (panelId: string) => `/api/product-panels/${encodeURIComponent(panelId)}`,
   snapshot: (panelId: string) => `/api/product-panels/${encodeURIComponent(panelId)}/snapshot`,
   definitionStream: "/api/product-assets/definition-stream",
+  candidate: (workspaceId: string, ref: string) =>
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/panel-candidate?${new URLSearchParams({ ref })}`,
 };
 
 async function json(path: string, init: RequestInit = {}) {
@@ -43,28 +49,58 @@ async function json(path: string, init: RequestInit = {}) {
   return body;
 }
 
-/** The platform's panel host, for the application whose page is showing a panel. */
-export function platformPanelHost(applicationId: string, mode: PanelDefinitionMode = { kind: "view" }): PanelHostPort {
+/** Where Node serves its installed SDK builds; each definition's frame loads the exact version it names there. */
+async function sdkRoot() {
+  return `${appsSdkCurrentSchema.parse(await json(panelHostPaths.appsSdkCurrent)).publicBasePath}/apps-sdk`;
+}
+
+async function panel(panelId: string) {
+  return productPanelSchema.parse((await json(panelHostPaths.panel(panelId))).panel) as ProductPanel;
+}
+
+async function snapshot(panelId: string) {
+  return panelDefinitionSnapshotSchema.parse(await json(panelHostPaths.snapshot(panelId)));
+}
+
+/** The platform's panel host for one use relation of the application whose page is showing it. */
+export function platformPanelHost(applicationId: string, use: ApplicationPanelUse, mode: PanelDefinitionMode = { kind: "view" }): PanelHostPort<Extract<PanelHostSource, { kind: "registered" }>> {
   return {
-    applicationId: () => applicationId,
-    async uses(id) {
-      return panelUsesOf(id);
+    async source() {
+      return { kind: "registered", applicationId, use, panel: await panel(use.panelId) };
     },
-    async panel(panelId) {
-      return productPanelSchema.parse((await json(panelHostPaths.panel(panelId))).panel) as ProductPanel;
-    },
-    async sdkBase() {
-      return appsSdkCurrentSchema.parse(await json(panelHostPaths.appsSdkCurrent)).sdkBasePath;
-    },
+    pageKey: use.pageKey,
+    panel,
+    sdkRoot,
     // The frame is this application's: the address the reader is on names it, and a panel shown beside a conversation is
     // the same application's page. Registering it under that ID is what lets the bridge recognise the frame and answer
     // its `connect`, and what keeps a frame of another application from being mistaken for this one. What it may ask for
     // is what the panel's record declares, for this use relation's page.
-    frame: (frame, use, panel) => registerPanelFrame(frame, applicationId, { pageKey: use.pageKey, manifest: panel.manifest }),
-    async snapshot(id) {
-      return panelDefinitionSnapshotSchema.parse(await json(panelHostPaths.snapshot(id)));
-    },
+    frame: (frame, source) => registerPanelFrame(frame, applicationId, { pageKey: use.pageKey, manifest: source.panel.manifest }),
+    snapshot,
     mode,
+  };
+}
+
+/**
+ * The author's preview of a workspace candidate (design 6.2): the same host, reading the candidate instead of a use
+ * relation. The preview is an author's host, so it declares author mode: the registered projections the candidate names
+ * follow the document's definition stream. Its frame runs on the workspace's build-test context — NONE when the
+ * workspace has none — and each owner decides what such a request may do.
+ */
+export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] & { pageKey: string }): PanelHostPort<CandidatePanelSource> {
+  return {
+    async source() {
+      return candidatePanelSourceSchema.parse(await json(panelHostPaths.candidate(candidate.id, candidate.ref)));
+    },
+    pageKey: candidate.pageKey,
+    panel,
+    sdkRoot,
+    frame: (frame, source) => registerCandidateFrame(frame, buildExecutionContext(source.workspace.id, source.previewContext.test), {
+      pageKey: candidate.pageKey,
+      manifest: source.panel.manifest,
+    }),
+    snapshot,
+    mode: { kind: "author", definitions: panelAuthorDefinitions() },
   };
 }
 

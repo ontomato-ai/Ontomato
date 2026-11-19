@@ -19,13 +19,16 @@ export const userAdapters: PlatformObjectAdapterFactory = requests => {
         return { options: users.map(({ id, name }) => ({ primaryKey: id, label: name, value: id })) };
       },
       resolve(values) {
-        return Promise.all(values.filter(value => value !== null).map(async value => {
+        return Promise.all(values.map(async value => {
+          if (value === null) return { primaryKey: "", value, label: "agents.executionOwn" };
           const selectedId = memberId.parse(value);
           const query = new URLSearchParams({ selected: selectedId, pageSize: "1" });
           const { selected } = withSelected.parse(await read(query));
           return {
             primaryKey: selected.id, label: selected.name, value: selected.id,
-            ...(selected.available ? {} : { unavailable: { reason: selected.reason ?? "unavailable" } }),
+            ...(selected.available ? {} : { unavailable: {
+              reason: selected.reason ? `agents.executionReason.${selected.reason}` : "agents.executionReasonUnknown",
+            } }),
           };
         }));
       },

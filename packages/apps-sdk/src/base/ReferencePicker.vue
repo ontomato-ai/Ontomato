@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, shallowRef, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElFormItem } from "element-plus/es/components/form/index";
 import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
@@ -15,6 +16,8 @@ import { adapterPart, type PlatformObjectOption } from "../panel/platform-object
 const slot = useProjectionSlot();
 const field = useFormField();
 const options = adapterPart(slot.projection.binding.id, "options");
+const { t, te } = useI18n();
+const localized = (text: string) => te(text) ? t(text) : text;
 
 /** Every choice seen so far, by its identity: the catalogue's and the held values' own. */
 const known = shallowRef(new Map<string, PlatformObjectOption>());
@@ -99,9 +102,9 @@ function choose(keys: string | string[]) {
         v-for="option in shown"
         :key="option.primaryKey"
         :value="option.primaryKey"
-        :label="option.label"
+        :label="option.value === null ? localized(option.label) : option.label"
         :disabled="option.unavailable !== undefined"
-        :title="option.unavailable?.reason ?? option.description"
+        :title="option.unavailable ? localized(option.unavailable.reason) : option.description"
       ></el-option>
     </el-select>
     <p v-if="field.field.value.readOnly && field.field.value.readOnlyReason" class="sdk-reference-picker-help">
