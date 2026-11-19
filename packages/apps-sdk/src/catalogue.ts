@@ -255,6 +255,26 @@ export const components: readonly ComponentMetadata[] = [
     outputs: ["selected", "viewport"],
   }),
   defineComponentMeta({
+    componentId: "G6GraphCanvas",
+    module: "@ontomato/sdk/graph",
+    exportName: "G6GraphCanvas",
+    role: "control",
+    meaning:
+      "Draws the nodes and edges it is given with G6, for graphs a reader pans, zooms and drags: the graph canvas's interface, plus each node coloured by its category from the edition's palette, edges labelled, dashed or weighted as given, and invisible anchors for aggregated edges. It hands back the selection a reader's choice results in, the part of the graph in view, a double-click, a dragged node's new place and a click on empty canvas, and gives its caller the current positions and an image of the view. What the nodes are, what a choice means, and where positions and images are kept are its caller's: it reads and stores nothing.",
+    outputs: ["selected", "viewport", "blank", "activate", "move", "progress"],
+  }),
+  defineComponentMeta({
+    componentId: "OntologyGraph",
+    module: "@ontomato/sdk/graph",
+    exportName: "OntologyGraph",
+    role: "control",
+    meaning:
+      "Draws an interactive G6 graph from the bound resource's graph source port: type mode arranges declared object types and relation kinds by layer with per-type readable counts and access statuses; instance mode starts from a node and expands one hop of neighbors on click, preserving complete object identities, highlighting drawn query matches, keeping layer filter and viewport as internal view state, distinguishing no-neighbors, owner-refused and read-failed outcomes, and exposing fit, relayout and host-delegated PNG export when available.",
+    effects: "Reads the bound graph source's schema, counts, starting node and one-hop neighbors as the reader; writes only the panel's own selection state.",
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
+    outputs: ["selectedNode", "selected", "selectedType"],
+  }),
+  defineComponentMeta({
     componentId: "TwoPaneLayout",
     module: "@ontomato/sdk/base",
     exportName: "TwoPaneLayout",

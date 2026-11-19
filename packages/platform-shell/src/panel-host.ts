@@ -580,6 +580,7 @@ const MODULES: Readonly<Record<string, string>> = {
   "@ontomato/sdk/chat": "chat.js",
   "@ontomato/sdk/panel": "panel.js",
   "@ontomato/sdk/base": "base.js",
+  "@ontomato/sdk/graph": "graph.js",
 };
 
 /**
