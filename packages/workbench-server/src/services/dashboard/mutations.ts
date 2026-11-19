@@ -1,12 +1,12 @@
 import { isDeepStrictEqual } from "node:util";
-import { validateStoredChartFile } from "@ontomato/contracts/chart-data";
-import type { MetricReferenceChartEntry, DashboardAuthoringForm } from "@ontomato/contracts/dashboard";
+import type { MetricReferenceChartEntry, DashboardAuthoringForm, DashboardDetail, DashboardGroup } from "@ontomato/contracts/dashboard";
 import { prepareChartImport } from "../charts/import";
-import { validatePersonalDashboardMetrics } from "./validation";
+import { validateDashboardChartDrawing, validatePersonalDashboardMetrics } from "./validation";
 import { randomUUID } from "node:crypto";
 
 import type { DashboardAddChartFile, DashboardAddArtifact } from "@ontomato/contracts/dashboard-artifacts";
 import { HttpError } from "../../utils/errors";
+import { transaction } from "../../infrastructure/postgres-transaction";
 import {
   ensureDashboard,
   parseDashboardInput,
@@ -25,6 +25,24 @@ import {
   getDashboard,
   saveDashboard,
 } from "./store";
+import { requireUnusedChartSources } from "./projection-references";
+
+function chartIds(groups: DashboardGroup[]) {
+  return groups.flatMap(group => group.charts.map(card => card.id));
+}
+
+async function saveLayout(ownerId: string, domainId: string, id: string,
+  nextGroups: (detail: DashboardDetail) => DashboardGroup[] | Promise<DashboardGroup[]>) {
+  await transaction(async client => {
+    const detail = ensureDashboard(ownerId, await getDashboard(ownerId, domainId, id, client));
+    const groups = await nextGroups(detail);
+    const retained = new Set(chartIds(groups));
+    await requireUnusedChartSources(client, domainId, id, chartIds(detail.groups).filter(cardId => !retained.has(cardId)));
+    detail.groups = groups;
+    await saveDashboard(ownerId, domainId, detail, client);
+  });
+}
+
 export async function createEmptyDashboard(
   ownerId: string,
   domainId: string,
@@ -90,7 +108,13 @@ export async function deleteDashboardById(
   domainId: string,
   body: any,
 ) {
-  await deleteDashboard(ownerId, domainId, requireDashboardId(body?.id));
+  const id = requireDashboardId(body?.id);
+  await transaction(async client => {
+    const detail = await getDashboard(ownerId, domainId, id, client);
+    if (!detail) return;
+    await requireUnusedChartSources(client, domainId, id, chartIds(detail.groups));
+    await deleteDashboard(ownerId, domainId, id, client);
+  });
 }
 export async function renameDashboardDimension(
   ownerId: string,
@@ -110,13 +134,9 @@ export async function deleteDashboardDimension(
   domainId: string,
   body: any,
 ) {
-  const detail = ensureDashboard(
-    ownerId,
-    await getDashboard(ownerId, domainId, requireDashboardId(body?.id)),
-  );
   const groupId = requireGroupId(body?.groupId);
-  detail.groups = detail.groups.filter((group) => group.id !== groupId);
-  await saveDashboard(ownerId, domainId, detail);
+  await saveLayout(ownerId, domainId, requireDashboardId(body?.id),
+    detail => detail.groups.filter(group => group.id !== groupId));
 }
 export async function renameDashboardChart(
   ownerId: string,
@@ -140,41 +160,32 @@ export async function deleteDashboardChart(
   domainId: string,
   body: any,
 ) {
-  const detail = ensureDashboard(
-    ownerId,
-    await getDashboard(ownerId, domainId, requireDashboardId(body?.id)),
-  );
   const chartId = String(body?.chartId || "").trim();
-  for (const group of detail.groups) {
-    group.charts = group.charts.filter((item) => item.id !== chartId);
-  }
-  await saveDashboard(ownerId, domainId, detail);
+  await saveLayout(ownerId, domainId, requireDashboardId(body?.id),
+    detail => detail.groups.map(group => ({ ...group, charts: group.charts.filter(card => card.id !== chartId) })));
 }
 export async function replaceDashboardLayout(ownerId: string, domainId: string, input: unknown, credentials: AssistantCredentials) {
-  const body=parseDashboardInput(dashboardReplaceLayoutSchema,input);
-  const detail=ensureDashboard(ownerId,await getDashboard(ownerId,domainId,body.id));
-  const charts=new Map(detail.groups.flatMap(group=>group.charts).map(card=>[card.id,card]));
-  const metrics=new Map(detail.groups.flatMap(group=>group.metrics).map(card=>[card.id,card]));
-  const client=new DashboardMetricClient(domainId,credentials);
-  detail.groups=await Promise.all(body.groups.map(async group=>({
-    id:group.id,title:group.title,
-    charts:await Promise.all(group.charts.map(async patch=>{
-      const card=charts.get(patch.id);
-      if(!card)throw new HttpError(400,"Layout can only contain saved cards","INVALID_REQUEST");
-      if(patch.chartFile&&!isDeepStrictEqual(patch.chartFile,card.chartFile)){
-        const metric=await client.describe(card.query.metricId);
-        const checked=validateStoredChartFile(patch.chartFile.content,metric.outputColumns);
-        if(!checked.ok)throw new HttpError(422,"Chart file does not match MetricView output","CARD_OUTPUT_MISMATCH",{cardId:card.id,metricId:card.query.metricId,missingColumns:checked.missingColumns,issues:checked.issues});
-      }
-      return {...card,...patch};
-    })),
-    metrics:group.metrics.map(patch=>{
-      const card=metrics.get(patch.id);
-      if(!card)throw new HttpError(400,"Layout can only contain saved cards","INVALID_REQUEST");
-      return {...card,...patch};
-    }),
-  })));
-  await saveDashboard(ownerId,domainId,detail);
+  const body = parseDashboardInput(dashboardReplaceLayoutSchema, input);
+  const client = new DashboardMetricClient(domainId, credentials);
+  await saveLayout(ownerId, domainId, body.id, detail => {
+    const charts = new Map(detail.groups.flatMap(group => group.charts).map(card => [card.id, card]));
+    const metrics = new Map(detail.groups.flatMap(group => group.metrics).map(card => [card.id, card]));
+    return Promise.all(body.groups.map(async group => ({
+      id: group.id, title: group.title,
+      charts: await Promise.all(group.charts.map(async patch => {
+        const card = charts.get(patch.id);
+        if (!card) throw new HttpError(400, "Layout can only contain saved cards", "INVALID_REQUEST");
+        if (patch.chartFile && !isDeepStrictEqual(patch.chartFile, card.chartFile))
+          await validateDashboardChartDrawing(card, patch.chartFile.content, client);
+        return { ...card, ...patch };
+      })),
+      metrics: group.metrics.map(patch => {
+        const card = metrics.get(patch.id);
+        if (!card) throw new HttpError(400, "Layout can only contain saved cards", "INVALID_REQUEST");
+        return { ...card, ...patch };
+      }),
+    })));
+  });
 }
 export async function renameDashboardMetric(
   ownerId: string,

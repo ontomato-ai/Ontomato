@@ -1,4 +1,5 @@
-import type { DashboardGroup } from "@ontomato/contracts/dashboard";
+import { validateStoredChartFile } from "@ontomato/contracts/chart-data";
+import type { DashboardChartEntry, DashboardGroup } from "@ontomato/contracts/dashboard";
 import { HttpError } from "../../utils/errors";
 import type { DashboardMetricClient } from "./metric-client";
 
@@ -10,4 +11,14 @@ export async function validatePersonalDashboardMetrics(groups: readonly Dashboar
     if (Object.keys(card.query.parameters).some(name => !parameters.has(name)))
       throw new HttpError(400, "Unknown capability parameter", "INVALID_PRODUCT_PARAMETER");
   }
+}
+
+export async function validateDashboardChartDrawing(
+  card: DashboardChartEntry, content: DashboardChartEntry["chartFile"]["content"], client: DashboardMetricClient,
+) {
+  const metric = await client.describe(card.query.metricId);
+  const checked = validateStoredChartFile(content, metric.outputColumns);
+  if (!checked.ok) throw new HttpError(422, "Chart file does not match MetricView output", "CARD_OUTPUT_MISMATCH", {
+    cardId: card.id, metricId: card.query.metricId, missingColumns: checked.missingColumns, issues: checked.issues,
+  });
 }
