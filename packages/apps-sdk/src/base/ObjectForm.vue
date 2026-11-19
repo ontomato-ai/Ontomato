@@ -11,7 +11,7 @@ import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/
 import { slotState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
 import { adapterPart, PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
 import { changedPaths, fieldAt, movedPath, valueAt, withValueAt } from "../panel/form-values";
-import { formControlsKey } from "./form-controls";
+import { formControlsKey, rowControlKey, rowControlsOf } from "./form-controls";
 import FormFieldControl from "./FormFieldControl.vue";
 
 /**
@@ -207,6 +207,12 @@ provide(formControlsKey, {
   set,
   reorder,
   invalid: markInvalid,
+  rowControl(path, itemPath) {
+    const declared = Object.values(panel.manifest.slots).some(({ formField }) =>
+      formField?.slot === slot.slot && formField.path === path && formField.itemPath === itemPath);
+    if (!declared) return undefined;
+    return rowControlsOf(panel.instance).get(rowControlKey(slot.slot, path, itemPath)) ?? null;
+  },
 });
 
 useProjectionForm({
