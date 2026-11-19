@@ -12,6 +12,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter.Feature;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.ontomato.dataengine.bean.PythonExecuteResult;
 import io.ontomato.dataengine.bean.action.Action;
 import io.ontomato.dataengine.bean.action.BusinessMeaning;
@@ -35,6 +36,7 @@ import io.ontomato.dataengine.service.ActionFunctionAdmission;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
+import io.ontomato.dataengine.service.OwnerFieldRefusal;
 import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.PanelFormFields;
 import io.ontomato.dataengine.service.ParameterForms;
@@ -327,12 +329,13 @@ public class ActionServiceImpl implements ActionService {
     action.setBusinessMeaning(null);
     Function function = action.getFunction();
     if (function == null) {
-      throw new OwnerRefusal("ACTION_FUNCTION_INVALID", langService.get(lang, "Function.cannotBeEmpty"));
+      throw new OwnerFieldRefusal("ACTION_FUNCTION_INVALID", "/function", "required",
+          langService.get(lang, "Function.cannotBeEmpty"));
     }
     try {
       ActionFunctionAdmission.requireSupported(function, langService, lang);
     } catch (IllegalArgumentException error) {
-      throw new OwnerRefusal("ACTION_FUNCTION_INVALID", error.getMessage());
+      throw new OwnerFieldRefusal("ACTION_FUNCTION_INVALID", "/function", "invalid_object", error.getMessage());
     }
     // Vector storage and the domain-scoped asset index key off the function's domain; the
     // controller sets it on the action, so carry it onto a new function before saving.
@@ -351,13 +354,10 @@ public class ActionServiceImpl implements ActionService {
     // rewriting it in place would keep the approval while replacing what it approved. A change is a
     // new action, reviewed on its own; re-explaining the same code stays allowed above.
     if (Action.STATUS_PUBLISHED.equals(storedStatus) && codeChanged) {
-      throw new OwnerRefusal("ACTION_PUBLISHED_FROZEN", langService.get(lang, "Action.publishedIsFrozen"));
+      throw new OwnerFieldRefusal("ACTION_PUBLISHED_FROZEN", "/function/code", "invalid_object",
+          langService.get(lang, "Action.publishedIsFrozen"));
     }
-    try {
-      actionDao.validateDefinition(action);
-    } catch (IllegalArgumentException error) {
-      throw new OwnerRefusal("ACTION_DEFINITION_INVALID", error.getMessage());
-    }
+    actionDao.validateDefinition(action);
     String codeHash = CodeHashUtil.sha256(function.getCode());
     boolean reusable =
         !codeChanged
@@ -762,8 +762,10 @@ public class ActionServiceImpl implements ActionService {
       throw new IllegalArgumentException("target.kind: expected object or draft");
     }
     JSONObject values = request.getJSONObject("values");
+    // A stored Action and a refresh carry no verdict; an incoming draft is checked and its errors returned with it.
+    List<ObjectNode> errors = List.of();
     if (values == null) values = PanelFormFields.asset(action);
-    else if (request.get("changedField") == null) ActionForm.checkDraft(values);
+    else if (request.get("changedField") == null) errors = ActionForm.fieldErrors(values);
     String readOnlyReason = null;
     if (Action.ORIGIN_SYSTEM.equals(action.getOrigin()))
       readOnlyReason = langService.get(lang, "Action.cannotModifySystem");
@@ -772,7 +774,7 @@ public class ActionServiceImpl implements ActionService {
       codeReadOnlyReason = langService.get(lang, "Action.publishedIsFrozen");
     JSONArray classOptions = JSONArray.from(adminService.getJSONRule(domainId).get("classDef"));
     return ActionForm.describe(
-        values, existing, readOnlyReason, codeReadOnlyReason, classOptions, lang, langService);
+        values, errors, existing, readOnlyReason, codeReadOnlyReason, classOptions, lang, langService);
   }
 
   @Override

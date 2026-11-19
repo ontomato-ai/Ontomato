@@ -91,6 +91,17 @@ describe("action panel server operations", () => {
       .toEqual({ kind: "failure", code: "ACTION_SAVE_FAILED", message: "Action service unavailable" });
   });
 
+  it("keeps the owner's field errors on a save refusal", async () => {
+    const operation = write(`${ACTION}.save`);
+    const message = "Action.publishedIsFrozen";
+    const errors = [{ field: "/function/code", code: "invalid_object", message }];
+    const { host } = hostWith(() =>
+      Response.json({ success: false, code: "ACTION_PUBLISHED_FROZEN", message, errors }));
+
+    expect(await operation.execute(host, actionTarget, { values: {} }))
+      .toEqual({ kind: "refusal", code: "ACTION_PUBLISHED_FROZEN", message, errors });
+  });
+
   it("describes the delete impact with the target names", async () => {
     const operation = action(DELETE_ACTION);
     const { host, sent } = hostWith(() => Response.json({ success: true, data: { name: "Approve order" } }));

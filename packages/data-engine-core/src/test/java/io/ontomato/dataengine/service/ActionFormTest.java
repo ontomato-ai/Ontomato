@@ -129,7 +129,7 @@ class ActionFormTest {
   }
 
   @Test
-  void aDraftChecksParametersUnderTheFunctionAndRejectsAnotherOperation() {
+  void aDraftReturnsParameterAndOperationErrorsWithTheForm() {
     JSONObject values = ActionForm.defaultValues();
     values.put("name", "New action");
     values.getJSONObject("function").put(
@@ -153,15 +153,16 @@ class ActionFormTest {
     assertEquals(Function.OPERATION_WRITE, values.getJSONObject("function").getString("operation"));
     assertEquals("action.create", form.getJSONObject("save").getString("draftOperation"));
     assertEquals("/action/save", form.getJSONObject("save").getString("path"));
+    assertEquals(List.of(), form.get("errors"));
   }
 
+  @SuppressWarnings("unchecked")
   private List<ObjectNode> draftErrors(JSONObject values) {
     JSONObject request = JSONObject.of("target", JSONObject.of("kind", "draft"));
     request.put("values", values);
     request.put("changedField", null);
-    PanelFormException error = assertThrows(PanelFormException.class, () -> service.definitionForm(request, "en", "domain-a"));
-    assertEquals("Invalid Action draft", error.getMessage());
-    return error.fields();
+    JSONObject form = service.definitionForm(request, "en", "domain-a");
+    return (List<ObjectNode>) form.get("errors");
   }
 
   private static void assertError(List<ObjectNode> fields, String field, String code) {

@@ -110,10 +110,6 @@ public final class PanelFormErrors {
     return List.copyOf(errors);
   }
 
-  public void throwIfAny(String message) {
-    if (!errors.isEmpty()) throw new PanelFormException(message, errors);
-  }
-
   private void add(String field, String code, String message) {
     errors.add(FormFields.error(field, code, message));
   }

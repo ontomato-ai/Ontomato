@@ -15,7 +15,7 @@ import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.service.ABCProgramService;
 import io.ontomato.dataengine.service.IdentityService;
-import io.ontomato.dataengine.service.OwnerRefusal;
+import io.ontomato.dataengine.service.OwnerFieldRefusal;
 import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.SystemUtils;
@@ -84,9 +84,11 @@ class ActionFunctionAdmissionTest {
   @ParameterizedTest
   @ValueSource(strings = {Function.OPERATION_READ, Function.OPERATION_WRITE})
   void saveRejectsQueryPackagesBeforePersistingOrCheckingPython(String operation) {
-    var error = assertThrows(OwnerRefusal.class, () -> service.save(action(operation), null, null, "en"));
+    var error = assertThrows(OwnerFieldRefusal.class, () -> service.save(action(operation), null, null, "en"));
     assertEquals("ACTION_FUNCTION_INVALID", error.code());
     assertTrue(error.getMessage().endsWith(message));
+    assertEquals("/function", error.errors().get(0).get("field").asText());
+    assertEquals("invalid_object", error.errors().get(0).get("code").asText());
     verifyNoInteractions(functions, actions);
   }
 
@@ -100,9 +102,10 @@ class ActionFunctionAdmissionTest {
     stored.setOperation(Function.OPERATION_WRITE);
     stored.setCode("# ontomato-python:2\nprint('ok')");
     when(functions.queryById("function-a")).thenReturn(stored);
-    var error = assertThrows(OwnerRefusal.class, () -> service.save(submitted, null, null, "en"));
+    var error = assertThrows(OwnerFieldRefusal.class, () -> service.save(submitted, null, null, "en"));
     assertEquals("ACTION_FUNCTION_INVALID", error.code());
     assertTrue(error.getMessage().endsWith(message));
+    assertEquals("/function", error.errors().get(0).get("field").asText());
     verify(functions, never()).save(any(), anyString());
     verifyNoInteractions(actions);
   }

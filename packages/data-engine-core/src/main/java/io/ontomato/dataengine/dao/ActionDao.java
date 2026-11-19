@@ -2,6 +2,7 @@ package io.ontomato.dataengine.dao;
 
 import io.ontomato.dataengine.bean.action.ActionTarget;
 import io.ontomato.dataengine.service.AdminService;
+import io.ontomato.dataengine.service.OwnerFieldRefusal;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -92,12 +93,23 @@ public class ActionDao extends BaseDao {
 	}
 
 	public void validateDefinition(Action action) {
-		io.ontomato.dataengine.service.ActionPreconditionService.requireBusinessConditions(action.getSubmissionCriteria());
+		try {
+			io.ontomato.dataengine.service.ActionPreconditionService.requireBusinessConditions(action.getSubmissionCriteria());
+		} catch (IllegalArgumentException error) {
+			throw new OwnerFieldRefusal("ACTION_DEFINITION_INVALID", "/submissionCriteria", "invalid_object", error.getMessage());
+		}
 		String mode = action.getApprovalMode();
 		if (mode != null && !Action.APPROVAL_AUTO.equals(mode) && !Action.APPROVAL_HUMAN.equals(mode)
 				&& !Action.APPROVAL_TWO_KEYS.equals(mode))
-			throw new IllegalArgumentException("approvalMode must be auto, human or twoKeys");
-		if (action.getTarget() != null) action.getTarget().validate(action, admin.getJSONRule(action.getDomainId()));
+			throw new OwnerFieldRefusal("ACTION_DEFINITION_INVALID", "/approvalMode", "invalid_option",
+					"approvalMode must be auto, human or twoKeys");
+		if (action.getTarget() != null) {
+			try {
+				action.getTarget().validate(action, admin.getJSONRule(action.getDomainId()));
+			} catch (IllegalArgumentException error) {
+				throw new OwnerFieldRefusal("ACTION_DEFINITION_INVALID", "/target", "invalid_object", error.getMessage());
+			}
+		}
 	}
 
 	public Action saveWithFunction(Action action, String lang) {
