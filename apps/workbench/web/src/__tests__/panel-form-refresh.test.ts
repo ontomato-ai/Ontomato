@@ -32,11 +32,16 @@ const inspection = { ...task, content: { operation: "inspection", instruction: "
 function opened() {
   let held: ((value: void) => void) | null = null;
   let hold = false;
+  /** Holds only the next form read; the reads after it are answered at once. */
+  let holdOne = false;
   const sent = installPlatform(async (request: Sent) => {
     if (request.path === `/api/product-projections/${formProjection.id}`) return Response.json({ projection: formProjection });
     if (request.path === taskPath && request.method === "GET") return Response.json(inspection);
     if (request.path === formPath) {
-      if (hold) await new Promise((resolve) => { held = resolve; });
+      if (hold || holdOne) {
+        holdOne = false;
+        await new Promise((resolve) => { held = resolve; });
+      }
       return Response.json({ ...inspectionTaskForm, values: inspection.content, submittable: true });
     }
     if (request.path === taskPath && request.method === "PUT")
@@ -55,6 +60,7 @@ function opened() {
       return mountPanel(panelOf(...slots));
     },
     holdReads() { hold = true; },
+    holdNextRead() { holdOne = true; },
     /** Waits until the held read is on its way. */
     async onItsWay() {
       await vi.waitFor(() => expect(held).not.toBeNull());
@@ -155,4 +161,24 @@ it("reads again once the reader discards what they typed while a read was on its
   [...document.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")].find((button) => button.textContent?.trim() === "Discard")!.click();
   await vi.waitFor(() => expect(formReads(platform.sent)).toBe(reads + 1));
   await vi.waitFor(() => expect(instruction()!.value).toBe(inspection.content.instruction));
+});
+
+it("keeps what the reader typed when a refresh during the first read is answered before it", { timeout: 15000 }, async () => {
+  // A page opened, or reloaded, and sent to the background and back at once: the host's refresh reaches the form while
+  // its first read is still on its way, the refresh's own read comes back first and the reader starts typing; the first
+  // read, answered last with the instruction as it was saved, must not put that back.
+  const platform = opened();
+  platform.holdNextRead();
+  const { context } = await platform.mount("form");
+  await platform.onItsWay();
+  platform.refresh();
+  await vi.waitFor(() => expect(instruction()?.value).toBe(inspection.content.instruction), { timeout: 5000 });
+  const input = instruction()!;
+  await typed(input, "Inspect this morning's failures");
+
+  await platform.release();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(instruction()).toBe(input);
+  expect(instruction()!.value).toBe("Inspect this morning's failures");
+  expect(context.instance.dirty()).toBe(true);
 });

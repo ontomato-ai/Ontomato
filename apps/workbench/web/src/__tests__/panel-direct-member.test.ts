@@ -205,3 +205,38 @@ it("refuses a draft whole when the owner's check of it names fields it does not 
   expect(instance.dirty()).toBe(false);
   expect(input(element, "/note").value).toBe("");
 });
+
+it("keeps what the reader types when the first read of the form is answered after a refresh's, and holds a refresh while they type", async () => {
+  // A directly rendered page opened, or reloaded, and sent to the background and back at once: the refresh reaches the
+  // form while its first read is on its way, the refresh's own read comes back first and the reader starts typing; the
+  // first read, answered last with the note as it was saved, must not put that back (128, 2026-11-19, in a frame).
+  let holdFirst: ((answer: ProductPanelReadResponse) => void) | null = null;
+  let formReads = 0;
+  const { instance, element } = open((request) => {
+    if (request.dataName !== "form") return owner(request);
+    formReads += 1;
+    if (formReads === 1) return new Promise((resolve) => { holdFirst = resolve; });
+    return owner(request);
+  }, { selectedTask: task("t-1") });
+  await vi.waitFor(() => expect(holdFirst).not.toBeNull());
+  instance.refreshAll();
+  await vi.waitFor(() => expect(input(element, "/name")?.value).toBe("t-1"));
+  const note = input(element, "/note");
+  note.value = "Typed while the first read was on its way";
+  note.dispatchEvent(new Event("input"));
+  await nextTick();
+
+  holdFirst!(owner({ memberPath: [{ member: "form" }], dataName: "form", inputs: { task: task("t-1") } }));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(input(element, "/note")).toBe(note);
+  expect(note.value).toBe("Typed while the first read was on its way");
+  expect(instance.dirty()).toBe(true);
+
+  // Another refresh while the reader holds the edit waits until they save or discard: what they typed stays.
+  const before = formReads;
+  instance.refreshAll();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(formReads).toBe(before);
+  expect(input(element, "/note").value).toBe("Typed while the first read was on its way");
+  expect(instance.dirty()).toBe(true);
+});
