@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import AdmZip from "adm-zip";
-import type { SkillInfo, SkillDeleteResult, SkillFile } from "@ontomato/contracts/skills";
+import type { AnalysisAgentSkillReference, SkillInfo, SkillDeleteResult, SkillFile } from "@ontomato/contracts/skills";
 import type { StandardSkillFrontmatter } from "@ontomato/contracts/agent-runtime-skills";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { isProtectedSkillName } from "../../core/skills/providers";
@@ -20,7 +20,15 @@ import { listAnalysisAgentSkillReferences, removeAnalysisAgentSkillReferences,
   restoreAnalysisAgentSkillReferences } from "../assistant/skill-references";
 
 const logger = createLogger("skill-manager");
-const agentDefinitionsAccess = { permissionCode: "analysis-agent" };
+interface ReferenceAccess {
+  credentials: AssistantCredentials;
+  readableAgentIds(ids: readonly string[]): Promise<ReadonlySet<string>>;
+}
+
+async function readableReferences(references: readonly AnalysisAgentSkillReference[], access: ReferenceAccess) {
+  const readable = await access.readableAgentIds(references.map(({ id }) => id));
+  return references.filter(({ id }) => readable.has(id));
+}
 /** The restriction is null only for a domain file, so a writable skill always has a source directory. */
 function requireWritable(skill: SkillEntry) {
   const restriction = skillWriteRestriction(skill);
@@ -60,19 +68,19 @@ class SkillManager {
     return (await this.getAllSkills(domainId, credentials)).filter((s) =>
       [s.id, s.title, s.description].some((v) => v.toLowerCase().includes(needle)));
   }
-  async getSkillReferences(domainId: string, id: string, credentials: AssistantCredentials) {
-    const view = await readSkillView(domainId, credentials);
+  async getSkillReferences(domainId: string, id: string, access: ReferenceAccess) {
+    const view = await readSkillView(domainId, access.credentials);
     const skill = requireSkill(view.registry, id);
-    if (!view.hasPageAccess(agentDefinitionsAccess)) return [];
-    return (await listAnalysisAgentSkillReferences(domainId, view.storedRefsTo(skill.skill))).readable;
+    const references = await listAnalysisAgentSkillReferences(domainId, view.storedRefsTo(skill.skill));
+    return readableReferences(references, access);
   }
-  async deleteSkill(domainId: string, id: string, credentials: AssistantCredentials): Promise<SkillDeleteResult> {
+  async deleteSkill(domainId: string, id: string, access: ReferenceAccess): Promise<SkillDeleteResult> {
     return withDomainSkills(domainId, async () => {
-      const view = await readSkillView(domainId, credentials);
+      const view = await readSkillView(domainId, access.credentials);
       const skill = requireSkill(view.registry, id);
       const source = requireWritable(skill);
       const references = await listAnalysisAgentSkillReferences(domainId, [skill.skill]);
-      const affectedAgents = view.hasPageAccess(agentDefinitionsAccess) ? references.readable : [];
+      const affectedAgents = await readableReferences(references, access);
       const trash = path.join(skillRegistryManager.getDomainSkillsRoot(domainId), ".trash", randomUUID());
       fs.mkdirSync(path.dirname(trash), { recursive: true });
       fs.renameSync(source.path, trash);
@@ -84,7 +92,7 @@ class SkillManager {
         return { affectedAgents, cleanedAgentCount: affectedAgents.length };
       } catch (error) {
         if (fs.existsSync(trash)) fs.renameSync(trash, source.path);
-        if (referencesRemoved) await restoreAnalysisAgentSkillReferences(domainId, id, references.all);
+        if (referencesRemoved) await restoreAnalysisAgentSkillReferences(domainId, id, references);
         throw error;
       }
     });

@@ -171,9 +171,6 @@ export async function readSkillView(domainId: string, initiatorCredentials: Assi
   const view = {
     registry,
     pageSkills: [...pages.groups.values()],
-    hasPageAccess(locator: PageSkillLocator) {
-      return pages.groups.has(locatorKey(locator));
-    },
     publicPageSkill(locator: PageSkillLocator) {
       return pages.publicSkills.get(locatorKey(locator)) ?? null;
     },

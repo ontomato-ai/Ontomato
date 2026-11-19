@@ -2,7 +2,6 @@ import type { AnalysisAgentSkillReference } from "@ontomato/contracts/skills";
 import type { AssistantAgentInput } from "@ontomato/contracts/assistant-chat";
 import { runtimeSkillRefSchema, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { HttpError } from "../../utils/errors";
-import { isAppBuilderKind } from "../app-builder/definition";
 import {
   getPostgresPool,
   qualifiedTable as t,
@@ -30,21 +29,16 @@ export function resolveAssistantSkillReferences(
 export async function listAnalysisAgentSkillReferences(
   domainId: string,
   skills: readonly RuntimeSkillRef[],
-) {
-  const { rows } = await getPostgresPool().query<{ id: string; name: string; kind: string }>(
-    `SELECT id,name,kind FROM ${t("assistant_agents")}
+): Promise<AnalysisAgentSkillReference[]> {
+  const { rows } = await getPostgresPool().query<{ id: string; name: string }>(
+    `SELECT id,name FROM ${t("assistant_agents")}
      WHERE domain_id=$1 AND EXISTS (
        SELECT 1 FROM jsonb_array_elements($2::jsonb) selected(ref)
        WHERE skills @> jsonb_build_array(selected.ref)
      )`,
     [domainId, JSON.stringify(skills)],
   );
-  const reference = ({ id, name }: (typeof rows)[number]): AnalysisAgentSkillReference =>
-    ({ id, name, usesAnalysis: true, usesVisualization: false });
-  return {
-    all: rows.map(reference),
-    readable: rows.filter(row => !isAppBuilderKind(row.kind)).map(reference),
-  };
+  return rows.map(({ id, name }) => ({ id, name, usesAnalysis: true, usesVisualization: false }));
 }
 export async function removeAnalysisAgentSkillReferences(
   domainId: string,

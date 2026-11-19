@@ -12,6 +12,12 @@ import type { ProtectedSkillOffering } from "../../../core/skills/providers";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 
+const referenceQuery = vi.hoisted(() => vi.fn());
+vi.mock("../../../infrastructure/postgres", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../infrastructure/postgres")>(),
+  getPostgresPool: () => ({ query: referenceQuery }),
+}));
+
 configureI18n({ defaultLocale: "en", packs: { en: { messages: en, ...enLocaleMeta } },
   languageSwitchEnabled: false, appTextLocale: "en" });
 
@@ -23,6 +29,7 @@ const { skillRegistryManager } = await import("../../../core/skills/registry/man
 const { registerSkillProvider, protectedSkillRef } = await import("../../../core/skills/providers");
 const domain = "contract-domain";
 const credentials = { token: "initiator", locale: "en" };
+const referenceAccess = { credentials, readableAgentIds: async () => new Set<string>() };
 const reference = { namespace: { kind: "domain" as const, domainId: domain }, name: "sample-skill" };
 const files = {
   "SKILL.md": "---\r\nname: sample-skill\r\ndescription: A portable sample\r\nlicense: MIT\r\nmetadata:\r\n  author: example\r\n---\r\nRun scripts/main.mjs.\r\n",
@@ -201,13 +208,22 @@ it("admits protected packages only through the initiator's exact entrance and ev
   await expect(prepareAssistantSkills(domain, { kind: "custom", skills: [old] }, credentials))
     .resolves.toEqual({ skills: [{ skill: protectedRef, digest: "b".repeat(64) }], pageDrafts: true });
 
+  referenceQuery.mockResolvedValueOnce({ rows: [
+    { id: "readable", name: "Readable agent" },
+    { id: "hidden", name: "Hidden agent" },
+  ] });
+  const readableAgentIds = vi.fn(async () => new Set(["readable"]));
+  await expect(skillManager.getSkillReferences(domain, protectedRef.name, { credentials, readableAgentIds }))
+    .resolves.toEqual([{ id: "readable", name: "Readable agent", usesAnalysis: true, usesVisualization: false }]);
+  expect(readableAgentIds).toHaveBeenCalledWith(["readable", "hidden"]);
+
   ids = ["panel-a"];
   readManifest.mockClear(); provide.mockClear();
   await expect(skillManager.exportSkill(domain, protectedRef.name, credentials))
     .rejects.toMatchObject({ status: 404, code: "SKILL_NOT_FOUND" });
-  await expect(skillManager.deleteSkill(domain, protectedRef.name, credentials))
+  await expect(skillManager.deleteSkill(domain, protectedRef.name, referenceAccess))
     .rejects.toMatchObject({ status: 404, code: "SKILL_NOT_FOUND" });
-  await expect(skillManager.getSkillReferences(domain, protectedRef.name, credentials))
+  await expect(skillManager.getSkillReferences(domain, protectedRef.name, referenceAccess))
     .rejects.toMatchObject({ status: 404, code: "SKILL_NOT_FOUND" });
   await expect(validateAssistantSkills(domain, [protectedRef], credentials))
     .rejects.toMatchObject({ code: "SKILL_NOT_FOUND", message: "Skill is not in this domain's catalogue" });
@@ -277,7 +293,7 @@ it("refuses to overwrite or delete provider content before touching a domain sou
     .rejects.toMatchObject({ status: 403, code: "SKILL_PROVIDER_READ_ONLY" });
   await expect(fs.access(path.join(skillRegistryManager.getDomainSkillsRoot(domain), "panel-skill")))
     .rejects.toThrow();
-  await expect(skillManager.deleteSkill(domain, "panel-skill", credentials))
+  await expect(skillManager.deleteSkill(domain, "panel-skill", referenceAccess))
     .rejects.toMatchObject({ status: 403, code: "SKILL_PROVIDER_READ_ONLY" });
   expect((await skillManager.getAllSkills(domain, credentials)).find((entry) => entry.id === "panel-skill")?.writeRestriction)
     .toMatchObject({ kind: "provider", providerName: "Test panels" });
@@ -290,7 +306,7 @@ it("keeps public packages read-only while leaving their files and export readabl
   replacement.addFile("SKILL.md", Buffer.from("---\nname: network-graph\ndescription: Replaced\n---\n"));
   await expect(skillManager.importSkill(domain, replacement.toBuffer(), credentials, true))
     .rejects.toMatchObject({ status: 403, code: "PUBLIC_SKILL_READ_ONLY" });
-  await expect(skillManager.deleteSkill(domain, "network-graph", credentials))
+  await expect(skillManager.deleteSkill(domain, "network-graph", referenceAccess))
     .rejects.toMatchObject({ status: 403, code: "PUBLIC_SKILL_READ_ONLY" });
 });
 

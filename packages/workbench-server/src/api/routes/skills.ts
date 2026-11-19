@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response, Router } from "express";
 import multer from "multer";
 import { skillManager } from "../../services/skills/skill-manager";
+import { filterReadableAgentDefinitions } from "../../services/assistant/definitions";
 import { InvalidSkillPackageError } from "../../core/skills/manifest";
 import { t, tApp } from "../../i18n";
 import { requirePermission } from "../../identity/installed";
@@ -17,6 +18,15 @@ function requireDomain(req: Request, res: Response, next: NextFunction): void {
     return;
   }
   next();
+}
+
+function referenceAccess(request: AuthenticatedRequest, domainId: string) {
+  const owner = { domainId, userId: request.userId };
+  const credentials = credentialsFromRequest(request);
+  return {
+    credentials,
+    readableAgentIds: (ids: readonly string[]) => filterReadableAgentDefinitions(owner, credentials, ids),
+  };
 }
 
 // Read-only endpoints — authenticated by the shared /api boundary.
@@ -42,9 +52,10 @@ router.get(
 router.get(
   "/:id/references",
   asyncHandler(async (req: Request, res: Response) => {
-    const domainId = (req as AuthenticatedRequest).domainId;
+    const request = req as AuthenticatedRequest;
+    const { domainId } = request;
     const affectedAgents = domainId
-      ? await skillManager.getSkillReferences(domainId, req.params.id, credentialsFromRequest(req as AuthenticatedRequest))
+      ? await skillManager.getSkillReferences(domainId, req.params.id, referenceAccess(request, domainId))
       : [];
     res.json({ success: true, affectedAgents });
   })
@@ -90,10 +101,12 @@ router.delete(
   requireDomain,
   requireSkillAdmin,
   asyncHandler(async (req: Request, res: Response) => {
+    const request = req as AuthenticatedRequest;
+    const domainId = request.domainId!;
     const result = await skillManager.deleteSkill(
-      (req as AuthenticatedRequest).domainId!,
+      domainId,
       req.params.id,
-      credentialsFromRequest(req as AuthenticatedRequest),
+      referenceAccess(request, domainId),
     );
     res.json({ success: true, ...result });
   })
