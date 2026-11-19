@@ -46,6 +46,7 @@ const deleteImpact: PanelImpactInspector = {
     return {
       summary: tForLocale(host.locale, "panels.confirmation.deleteAgentImpact"),
       objects: [{ target: { objectType, primaryKey }, label: await definitionLabel(host, target) }],
+      total: 1,
     };
   },
 };

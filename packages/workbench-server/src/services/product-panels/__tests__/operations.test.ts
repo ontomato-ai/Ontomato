@@ -382,6 +382,7 @@ function installBatchOwner() {
   const calls: serverOperations.PanelBatchCalls = [call(9, 1), call(10, 2), call(11, 3), call(12, 4), call(13, 5)];
   const impact = {
     summary: "The owner will change these status records.",
+    total: 12,
     objects: calls.map(({ target }, index) => ({
       target: { objectType: target.objectType, primaryKey: target.primaryKey }, label: `Task ${index + 1}`,
     })),
@@ -394,7 +395,7 @@ function installBatchOwner() {
 it("uses the same owner impact for the human read and agent confirmation of the frozen batch", async () => {
   const { handler, request, impact } = installBatchOwner();
   const { intentId: _intentId, ...inspect } = request;
-  expect(await inspectPanelOperationImpact(owner, credentials, inspect)).toEqual({ ...impact, total: request.calls.length });
+  expect(await inspectPanelOperationImpact(owner, credentials, inspect)).toEqual(impact);
   expect(intents.size).toBe(0);
   expect(await operatePanel(owner, credentials, current.id, request)).toMatchObject({ kind: "confirmation-required" });
   expect(handler.inspectImpact.inspect).toHaveBeenCalledTimes(2);
@@ -404,7 +405,7 @@ it("uses the same owner impact for the human read and agent confirmation of the 
   }
   const question = mocks.request.mock.calls[0]![2];
   expect(question.message).toContain("Task 1");
-  expect(question.message).toContain("(5)");
+  expect(question.message).toContain("(12)");
   expect(question.message).toContain(impact.summary);
   expect(intents.get(request.intentId)).toMatchObject({
     calls: request.calls, executionUserId: "V", operation: { batch: true, inspectImpact: { handlerRef: "test.batch.impact" } },

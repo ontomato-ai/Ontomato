@@ -178,8 +178,7 @@ function concreteCalls(invocation: CheckedInvocation): readonly PanelOperationCa
 }
 
 async function ownerImpact(inspector: PanelImpactInspector, host: PanelOperationHost, invocation: CheckedInvocation) {
-  const impact = panelOperationImpactSchema.parse(await inspector.inspect(host, concreteCalls(invocation)));
-  return { ...impact, total: impact.objects.length };
+  return panelOperationImpactSchema.parse(await inspector.inspect(host, concreteCalls(invocation)));
 }
 
 export async function inspectPanelOperationImpact(owner: AssistantOwner, credentials: AssistantCredentials,
@@ -191,9 +190,9 @@ export async function inspectPanelOperationImpact(owner: AssistantOwner, credent
   return ownerImpact(handler.inspectImpact, operationHost(credentials), validateInvocation(handler, input));
 }
 
-function namedTargets(labels: string[], locale?: string) {
+function namedTargets(labels: string[], total: number, locale?: string) {
   const names = new Intl.ListFormat(locale).format(labels.slice(0, 4));
-  return `${names} (${new Intl.NumberFormat(locale).format(labels.length)})`.trim();
+  return `${names} (${new Intl.NumberFormat(locale).format(total)})`.trim();
 }
 
 function batchOutcome(value: unknown, calls: PanelBatchCalls): PanelOperationOutcome {
@@ -255,7 +254,7 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
   const host = operationHost(credentials);
   const impact = handler.inspectImpact && await ownerImpact(handler.inspectImpact, host, prepared);
   const target = impact
-    ? namedTargets(impact.objects.map(object => object.label), credentials.locale)
+    ? namedTargets(impact.objects.map(object => object.label), impact.total, credentials.locale)
     : await confirmationTarget(handler as Extract<PanelServerOperation, { kind: "action" }>, host, prepared);
   const confirmation = await panelConfirmation(credentials, {
     operation: intent.operation.label, target, impactSummary: impact?.summary,
@@ -271,7 +270,7 @@ async function confirmationTarget(handler: Extract<PanelServerOperation, { kind:
 ) {
   if ("call" in invocation) return handler.targetLabel(host, invocation.target as PanelRecordTarget);
   const labels = await Promise.all(invocation.calls.map(call => handler.targetLabel(host, call.target)));
-  return namedTargets(labels, host.locale);
+  return namedTargets(labels, invocation.calls.length, host.locale);
 }
 
 export async function dispatchPanel(owner: AssistantOwner, credentials: AssistantCredentials, runId: string, id: string): Promise<PanelOperateResponse> {
