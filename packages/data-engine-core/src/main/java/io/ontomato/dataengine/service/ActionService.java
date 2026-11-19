@@ -69,5 +69,14 @@ public interface ActionService {
 	 * {@code readOnly} parameters keep their bound values.
 	 */
 	public JSONObject form(String id, JSONObject bound, JSONObject submitted, List<String> readOnly, String lang, User user) throws Exception;
+
+	/** The owner's form description for an Action, or a field error for an incoming draft. */
+	public JSONObject definitionForm(JSONObject request, String lang, String domainId);
+
+	/** One item of a batch publication-status change: its saved action, or why it failed. */
+	record StatusResult(String id, Action data, String error) {}
+
+	/** Change only the status of each action, saving it as the acting owner. */
+	public List<StatusResult> setStatus(String domainId, String userId, List<String> ids, String status, String lang);
 	
 }
