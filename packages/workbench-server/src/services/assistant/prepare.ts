@@ -60,7 +60,8 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
       a.model_selection.modelId,skills,credentials.locale,profile?[]:a.enabled_mcp_service_ids.map(id=>({id})),prepared?.pageDrafts??false),
       ...(profile?{productTools:profileRuntimeTools(profile,sessionId),toolSurface:"product" as const}:{})},
     environment: {
-      values: {...skillEnvironment.values,...(panelEnvironment?{ONTOMATO_PANEL_OPERATIONS_URL:panelEnvironment.values.ONTOMATO_PANEL_OPERATIONS_URL}:{}),ONTOMATO_ASSISTANT_SESSION_ID:session.id,
+      values: {...skillEnvironment.values,...(panelEnvironment?{ONTOMATO_PANEL_OPERATIONS_URL:panelEnvironment.values.ONTOMATO_PANEL_OPERATIONS_URL,
+          ONTOMATO_AUTHORING_URL:panelEnvironment.values.ONTOMATO_AUTHORING_URL}:{}),ONTOMATO_ASSISTANT_SESSION_ID:session.id,
         ...(retrieval?{ONTOMATO_RETRIEVAL_CALLER_ID:turn.retrieval_scope_id!}:{}),
         ...(governance?{ONTOMATO_GOVERNANCE_WINDOW_URL:environment.agentRuntime().callbackUrl.replace(/\/$/,"")+callbackPath}:{})},
       secrets: {...skillEnvironment.secrets,...(panelEnvironment?{ONTOMATO_EXECUTION_CALLBACK:panelEnvironment.secrets.ONTOMATO_EXECUTION_CALLBACK}:{}),

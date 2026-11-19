@@ -1,7 +1,7 @@
 import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { createPanelOperationIntentRequestSchema, dispatchPanelOperationIntentRequestSchema } from "@ontomato/contracts/panel-agent";
 import { operatePanel, dispatchPanel } from "../../services/product-panels/operations";
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { AGENT_DEFINITION, SKILL, MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE, bindingKey, panelClientReads, scheduledTaskReads } from "@ontomato/contracts/panel-client-requests";
 import type {AssistantCredentials} from "../../platform/agent-runtime/runtime";
 import { Readable } from "node:stream";
@@ -16,34 +16,78 @@ import {assistantRetrievalOperationSchema} from "@ontomato/contracts/assistant-r
 import {OntologyRetrievalClient} from "../../services/assistant/ontology-retrieval";
 import { credentialsForRun, runForOwner } from "../../services/assistant/execution";
 import type { RuntimeCallback } from "../../services/agent-runtime/callback-credential";
+import { executeAuthoring, type AuthoringOperation } from "../../services/assistant/authoring";
+import { authoringOperations } from "@ontomato/contracts/authoring";
 
 export const assistantExecutionRouter = Router();
-const ontologyPath = /^\/(?:ontology\/(?:query|ai\/(?:generation|knowledge-governance))(?:\/|$)|action(?:\/|$)|metricView(?:\/|$)|data\/queryInfoByNode$|knowledge(?:\/|$)|admin\/(?:getBussinessKnowledge)$)/;
+const ontologyReads = [
+  "/ontology/query/overview",
+  "/action/export",
+  "/metricView/export",
+];
+const ontologyPosts = [
+  "/ontology/query/schema",
+  "/ontology/query/dsl-reference",
+  "/ontology/query/distinct-values",
+  "/ontology/query/execute-dsl",
+  "/ontology/query/metrics/search",
+  "/ontology/query/metrics/describe",
+  "/ontology/query/metrics/parameter-form",
+  "/ontology/query/metrics/parse-parameters",
+  "/ontology/query/metrics/execute",
+  "/ontology/query/knowledge/search",
+  "/ontology/query/outputs",
+  "/action/queryById",
+  "/action/queryList",
+  "/action/find",
+  "/action/form",
+  "/action/execute",
+  "/action/re-explain",
+  "/metricView/queryById",
+  "/metricView/queryList",
+  "/metricView/find",
+  "/metricView/test",
+  "/metricView/execute",
+  "/metricView/testExecute",
+  "/data/queryInfoByNode",
+  "/knowledge/findknowledge",
+  "/admin/getBussinessKnowledge",
+];
+const queryOutput = /^\/ontology\/query\/outputs\/[0-9a-f-]+$/u;
+const queryOutputCancel = /^\/ontology\/query\/outputs\/[0-9a-f-]+\/cancel$/u;
+const governanceRead = /^\/ontology\/ai\/knowledge-governance\/[^/]+\/(?:work|sources\/[^/]+)$/u;
+const governanceAction = /^\/ontology\/ai\/knowledge-governance\/[^/]+\/runs\/[^/]+\/actions\/[^/]+$/u;
+const governanceClose = /^\/ontology\/ai\/knowledge-governance\/[^/]+\/skill-runs\/[^/]+\/close$/u;
+function ontologyAllowed(method: string, path: string) {
+  if (method === "GET") return ontologyReads.includes(path) || queryOutput.test(path) || governanceRead.test(path);
+  if (method === "POST") {
+    return ontologyPosts.includes(path) ||
+      queryOutputCancel.test(path) ||
+      path === "/ontology/ai/knowledge-governance/skill-runs" ||
+      governanceAction.test(path) || governanceClose.test(path);
+  }
+  return false;
+}
 const workbenchPath = /^\/api\/(?:panel-operation-intents|product-assets|dashboards|feedback|memories|query-history|preferences|personal-workspace)(?:\/|$)/;
 
 const panelReads = [AGENT_DEFINITION, SKILL, MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE]
   .flatMap(type => panelClientReads(bindingKey({ kind: "PlatformObjectType", id: type })));
 
 assistantExecutionRouter.post("/:runId/panels/operate",wrap(async(req,res)=>{
-  const runId=z.string().uuid().parse(req.params.runId);
-  const callback=res.locals.runtimeCallback as RuntimeCallback | undefined;
-  if(!callback || callback.runId!==runId)throw new HttpError(403,"A run callback is required","FORBIDDEN");
+  const runId = callbackRun(req, res.locals.runtimeCallback);
   const {owner,credentials}=context(req);
   res.json(await operatePanel(owner,credentials,runId,createPanelOperationIntentRequestSchema.parse(req.body),(req as AuthenticatedRequest).userName));
 }));
 assistantExecutionRouter.post("/:runId/panels/intents/:intentId/dispatch",wrap(async(req,res)=>{
-  const runId=z.string().uuid().parse(req.params.runId),intentId=z.string().uuid().parse(req.params.intentId);
-  const callback=res.locals.runtimeCallback as RuntimeCallback | undefined;
-  if(!callback || callback.runId!==runId)throw new HttpError(403,"A run callback is required","FORBIDDEN");
+  const runId = callbackRun(req, res.locals.runtimeCallback);
+  const intentId = z.string().uuid().parse(req.params.intentId);
   dispatchPanelOperationIntentRequestSchema.parse(req.body);
   const {owner,credentials}=context(req);
   res.json(await dispatchPanel(owner,credentials,runId,intentId));
 }));
 
 assistantExecutionRouter.post("/:runId/retrieval",wrap(async(req,res)=>{
-  const runId=z.string().uuid().parse(req.params.runId);
-  const callback=(res.locals.runtimeCallback as RuntimeCallback | undefined);
-  if(!callback || callback.runId!==runId)throw new HttpError(403,"A run callback is required","FORBIDDEN");
+  const runId = callbackRun(req, res.locals.runtimeCallback);
   const operation=assistantRetrievalOperationSchema.parse(req.body);
   const {owner,credentials:initiator}=context(req);
   let credentials:AssistantCredentials=initiator;
@@ -56,10 +100,30 @@ assistantExecutionRouter.post("/:runId/retrieval",wrap(async(req,res)=>{
   if(operation.operation==="close")res.status(204).end();else res.json(value);
 }));
 
-assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
+function callbackRun(req: Request, callback: RuntimeCallback | undefined) {
   const runId = z.string().uuid().parse(req.params.runId);
-  const callback = (res.locals.runtimeCallback as RuntimeCallback | undefined);
   if (!callback || callback.runId !== runId) throw new HttpError(403, "A run callback is required", "FORBIDDEN");
+  return runId;
+}
+
+for (const kind of ["action", "metric-view"] as const) {
+  for (const [name, operation] of Object.entries(authoringOperations[kind])) {
+    assistantExecutionRouter[operation.method === "GET" ? "get" : "post"](
+      "/:runId/authoring" + operation.path,
+      wrap(async (req, res) => {
+        const runId = callbackRun(req, res.locals.runtimeCallback);
+        const { owner, credentials } = context(req);
+        const input = "body" in operation ? operation.body.parse(req.body)
+          : "params" in operation ? operation.params.parse({ executionId: req.params.executionId }) : {};
+        res.json(await executeAuthoring(owner, credentials, runId, kind, name as AuthoringOperation, input));
+      }),
+    );
+  }
+}
+
+assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
+  const callback = res.locals.runtimeCallback as RuntimeCallback;
+  const runId = callbackRun(req, callback);
   const target = z.enum(["ontology", "workbench"]).parse(req.params.target);
   const path = "/" + req.params[0];
   const resourceRead = !req.path.includes("%") && (target === "ontology"
@@ -67,10 +131,10 @@ assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
     : path.startsWith("/api/") && panelReads.some(read => read.service === "" && read.method === req.method && read.path.test(path.slice(4))));
   const assistantDirectory = target === "workbench" && req.method === "GET" && path === "/api/assistant/agents";
   if (/[\\%?#]/u.test(path) || path.split("/").some(segment => segment === "." || segment === "..") ||
-    !(resourceRead || assistantDirectory || (target === "ontology" ? ontologyPath.test(path) : workbenchPath.test(path))))
+    !(resourceRead || assistantDirectory || (target === "ontology" ? ontologyAllowed(req.method, path) : workbenchPath.test(path))))
     throw new HttpError(403, "Path is outside the execution callback", "FORBIDDEN");
   const { owner, credentials: initiatorCredentials } = context(req);
-  const grantAction=target==="ontology" && callback.businessGrant && /^\/ontology\/ai\/knowledge-governance\/[^/]+\/runs\/[^/]+\/actions\/[^/]+$/u.test(path);
+  const grantAction=target==="ontology" && callback.businessGrant && governanceAction.test(path);
   const ownership = assistantDirectory || target === "workbench" && /^\/api\/(?:panel-operation-intents|feedback|query-history|product-assets|memories|preferences|personal-workspace)(?:\/|$)/u.test(path);
   const credentials: AssistantCredentials = ownership || grantAction ? initiatorCredentials : (await credentialsForRun(owner, runId, initiatorCredentials)).credentials;
   if(ownership || grantAction)await runForOwner(owner,runId);
