@@ -143,17 +143,48 @@ const agentDefinitionReads = [
   { method: "POST", service: "", path: new RegExp(`^${validateAgent}$`), template: validateAgent },
 ] as const satisfies readonly PanelClientRead[];
 
-const ontologyMetadataRead = {
-  method: "POST", service: "/data-query", path: /^\/admin\/getMetas$/, template: "/admin/getMetas",
-  instructions: "POST an empty JSON object. Classes, their attributes and relationship rules come from this same response.",
-} as const satisfies PanelClientRead;
-
 /** Exact Java endpoints used by the managed definition clients. */
 const dataQueryPost = (path: string) => ({
   method: "POST", service: "/data-query", path: new RegExp(`^${path}$`), template: path,
 } as const);
 
 const formReadInstructions = "POST JSON with the form target, changedField, and optional values. Use the returned fields and values.";
+
+/** The execution callback matches pathnames, while the frame sends the query too. Java checks required parameters. */
+const objectTypeReads = [
+  { method: "GET", service: "/data-query", path: /^\/ontology\/model\/object-types$/, template: "/ontology/model/object-types" },
+  {
+    method: "GET", service: "/data-query", path: /^\/ontology\/model\/object-type(?:\?className=[^&#]+)?$/,
+    template: "/ontology/model/object-type?className=:className",
+  },
+  {
+    method: "GET", service: "/data-query", path: /^\/ontology\/model\/object-type\/deletion-impact(?:\?className=[^&#]+)?$/,
+    template: "/ontology/model/object-type/deletion-impact?className=:className",
+    instructions: "Read the relationships that would be deleted with this object type.",
+  },
+  { ...dataQueryPost("/ontology/model/object-type/form"), instructions: formReadInstructions },
+] as const satisfies readonly PanelClientRead[];
+
+const attributeReads = [
+  {
+    method: "GET", service: "/data-query", path: /^\/ontology\/model\/attributes(?:\?className=[^&#]+)?$/,
+    template: "/ontology/model/attributes", instructions: "Pass className to list only attributes of that object type.",
+  },
+  { ...dataQueryPost("/ontology/model/attribute/form"), instructions: formReadInstructions },
+] as const satisfies readonly PanelClientRead[];
+
+const relationshipReads = [
+  {
+    method: "GET", service: "/data-query", path: /^\/ontology\/model\/relationships(?:\?className=[^&#]+)?$/,
+    template: "/ontology/model/relationships", instructions: "Pass className to list relationships involving that object type.",
+  },
+  {
+    method: "GET", service: "/data-query", path: /^\/ontology\/model\/relationship(?:\?relationship=[^&#]+)?$/,
+    template: "/ontology/model/relationship?relationship=:relationship",
+  },
+  { ...dataQueryPost("/ontology/model/relationship/form"), instructions: formReadInstructions },
+] as const satisfies readonly PanelClientRead[];
+
 const metricViewDefinitionReads = [
   dataQueryPost("/metricView/queryList"),
   dataQueryPost("/metricView/queryById"),
@@ -251,9 +282,9 @@ const readRequests: Readonly<Record<string, readonly PanelClientRead[]>> = {
       instructions: "Use keyword, pageNum, and pageSize to list choices; use selected to resolve the current reference.",
     },
   ],
-  [objectBinding(OBJECT_TYPE)]: [ontologyMetadataRead],
-  [objectBinding(ATTRIBUTE)]: [ontologyMetadataRead],
-  [objectBinding(RELATIONSHIP)]: [ontologyMetadataRead],
+  [objectBinding(OBJECT_TYPE)]: objectTypeReads,
+  [objectBinding(ATTRIBUTE)]: attributeReads,
+  [objectBinding(RELATIONSHIP)]: relationshipReads,
   [objectBinding(METRIC_VIEW)]: metricViewDefinitionReads,
   [objectBinding(FUNCTION)]: functionDefinitionReads,
   [objectBinding(ONTOLOGY_TYPE)]: platformOntologyReads,

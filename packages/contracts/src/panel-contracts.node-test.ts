@@ -259,10 +259,44 @@ test("bridge and skill agree about the specific semantic reads", () => {
   assert.ok(!clientSends([agents], "DELETE", "", "/assistant/agent-definitions/form"));
   assert.ok(clientSends([binding(MCP_SERVICE_OPTION)], "GET", "", "/mcp/services/names"));
   assert.ok(!clientSends([binding(MCP_SERVICE_OPTION)], "GET", "", "/mcp/services"));
-  for (const type of [OBJECT_TYPE, ATTRIBUTE, RELATIONSHIP])
-    assert.ok(clientSends([binding(type)], "POST", "/data-query", "/admin/getMetas"));
   assert.ok(!clientSends([binding(OBJECT_TYPE)], "POST", "/data-query", "/admin/getschemamarkdown"));
   assert.ok(clientSends([binding(USER)], "GET", "/data-query", "/platform/agent-execution/options?selected=u"));
+});
+
+test("ontology model bindings only admit their typed reads and form descriptions", () => {
+  const service = "/data-query";
+  const root = "/ontology/model";
+  const bindings = [binding(OBJECT_TYPE), binding(ATTRIBUTE), binding(RELATIONSHIP)];
+  const reads = [
+    [OBJECT_TYPE, "GET", "/object-types"],
+    [OBJECT_TYPE, "GET", "/object-type?className=Order"],
+    [OBJECT_TYPE, "GET", "/object-type/deletion-impact?className=Order"],
+    [OBJECT_TYPE, "POST", "/object-type/form"],
+    [ATTRIBUTE, "GET", "/attributes"],
+    [ATTRIBUTE, "GET", "/attributes?className=Order"],
+    [ATTRIBUTE, "POST", "/attribute/form"],
+    [RELATIONSHIP, "GET", "/relationships"],
+    [RELATIONSHIP, "GET", "/relationships?className=Order"],
+    [RELATIONSHIP, "GET", "/relationship?relationship=containsItem"],
+    [RELATIONSHIP, "POST", "/relationship/form"],
+  ] as const;
+  for (const [type, method, suffix] of reads) {
+    const key = binding(type);
+    const path = root + suffix;
+    const [pathname] = path.split("?");
+    assert.ok(clientSends([key], method, service, path), path);
+    assert.ok(panelClientReads(key).some(read => read.method === method && read.service === service && read.path.test(pathname)), pathname);
+    assert.ok(!clientSends(bindings.filter(other => other !== key), method, service, path), path);
+  }
+  assert.ok(!clientSends(bindings, "POST", service, "/admin/getMetas"));
+  assert.ok(!clientSends(bindings, "GET", "", `${root}/object-types`));
+  assert.ok(!clientSends(bindings, "GET", service, `${root}/object-type/Order`));
+  assert.ok(!clientSends(bindings, "GET", service, `${root}/relationship?className=Order`));
+  for (const resource of ["object-type", "attribute", "relationship"]) {
+    for (const write of ["create", "update", "delete"])
+      assert.ok(!clientSends(bindings, "POST", service, `${root}/${resource}/${write}`));
+  }
+  assert.ok(!clientSends(bindings, "POST", service, `${root}/attribute/primary-key`));
 });
 
 
