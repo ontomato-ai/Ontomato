@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { defaultAgentSchema } from "./default-agent";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
 
 const pageKeySchema = z.string().min(1);
@@ -51,7 +52,10 @@ export type PageSkillContext = z.infer<typeof pageSkillContextSchema>;
 
 const pageSkillFields = {
   skill: runtimeSkillRefSchema,
-  defaults: z.array(pageSkillDefaultSchema).optional(),
+  defaults: z.array(z.object({
+    pageKey: z.string().min(1),
+    defaultAgent: defaultAgentSchema,
+  }).strict()).optional(),
 };
 
 /** The application owns the mapping; leaf pages retain their existing menu codes. */

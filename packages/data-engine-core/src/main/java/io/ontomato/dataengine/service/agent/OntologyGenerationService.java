@@ -139,9 +139,16 @@ public class OntologyGenerationService {
   }
 
   public JSONObject open(String kind,String businessId,String source,Owner owner,boolean external) {
-    return openAt(kind,businessId,source,owner,external,UUID.randomUUID().toString(),UUID.randomUUID().toString(),false);
+    return openAt(kind,businessId,source,owner,external,UUID.randomUUID().toString(),UUID.randomUUID().toString(),false,List.of());
   }
-  private JSONObject openAt(String kind,String businessId,String source,Owner owner,boolean external,String session,String run,boolean channelManaged) {
+
+  public JSONObject openExternal(String kind, String businessId, String source, Owner owner, List<String> classes) {
+    return openAt(kind, businessId, source, owner, true, UUID.randomUUID().toString(),
+        UUID.randomUUID().toString(), false, classes);
+  }
+
+  private JSONObject openAt(String kind,String businessId,String source,Owner owner,boolean external,String session,String run,
+      boolean channelManaged,List<String> classes) {
     if(kind.equals("action")) operations.requireWriteAccess(owner);
     String sandbox = kind.equals("action") ? "a" + run.replace("-", "") : null;
     String agent = agentId(kind);
@@ -177,7 +184,7 @@ public class OntologyGenerationService {
       throw error;
     }
     try {
-      if (sandbox != null) operations.createSandbox(sandbox, owner.domainId());
+      if (sandbox != null) operations.createSandbox(sandbox, owner.domainId(), classes);
     } catch (Exception error) {
       close(session, run, owner);
       throw new IllegalStateException(error);

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
-import { formFieldErrorSchema, formOptionSchema } from "./form-fields";
+import { formFieldErrorSchema, panelFormOptionSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
 import { ontologyParameterTypeSchema, panelFormTargetSchema, panelOperationId, type OntologyParameterType, type PanelManifest, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
 import type { ProductProjectionInput } from "./product-panels";
@@ -11,27 +11,63 @@ export type PanelFormValues = z.infer<typeof panelFormValuesSchema>;
 
 const fieldPath = formFieldErrorSchema.shape.field;
 const objectType = z.string().min(1);
-const controlSchema = z.discriminatedUnion("kind", [
+
+/** The frequency control edits the same value as the scheduled-task control. */
+export {
+  platformTaskFrequencySchema as panelFormFrequencyValueSchema,
+  type PlatformTaskFrequency as PanelFormFrequencyValue,
+} from "./platform-schedules";
+
+const simpleControls = [
   z.object({
     kind: z.literal("text"), multiline: z.boolean().optional(),
     placeholder: z.string().nullish(), maxLength: z.number().int().positive().optional(),
   }).strict(),
-  z.object({ kind: z.literal("select"), options: z.array(formOptionSchema) }).strict(),
+  z.object({
+    kind: z.literal("select"),
+    options: z.array(panelFormOptionSchema),
+    multiple: z.boolean().optional(),
+    /** The owner permits adding a value to the selection. */
+    allowCreate: z.boolean().optional(),
+  }).strict(),
   z.object({ kind: z.literal("switch") }).strict(),
   z.object({ kind: z.literal("markdown") }).strict(),
   z.object({ kind: z.literal("avatar") }).strict(),
+  z.object({
+    kind: z.literal("code"),
+    /** JSON source edits the owner's JSON value, with a parse error on this field. */
+    language: z.enum(["javascript", "json", "markdown", "html", "python", "text"]),
+  }).strict(),
+  /** Each editable row is one string in the owner's JSON array. */
+  z.object({ kind: z.literal("string-array") }).strict(),
+  z.object({ kind: z.literal("number") }).strict(),
+  z.object({ kind: z.literal("time") }).strict(),
+  /** The time zone is a separate owner field. */
+  z.object({ kind: z.literal("frequency") }).strict(),
   z.object({
     /** A separate projection supplies the choices as well as any associated metadata, such as graph edges. */
     kind: z.literal("reference"), objectType, multiple: z.boolean(),
     relatedObjectTypes: z.array(objectType).optional(),
   }).strict(),
   z.object({ kind: z.literal("hidden") }).strict(),
-]);
+] as const;
 
-export const panelFormFieldSchema = z.object({
+const arrayControl = z.object({
+  kind: z.literal("object-array"),
+  defaultItem: runtimeJsonObjectSchema.optional(),
+  /** An owner-provided stable identity, addressed relative to the row. */
+  itemKeyPath: fieldPath.optional(),
+}).strict();
+
+const objectControl = z.object({
+  kind: z.literal("object"),
+  /** Initial value when explicitly added. Removing an object writes null. */
+  defaultObject: runtimeJsonObjectSchema.optional(),
+}).strict();
+
+const fieldShape = z.object({
   path: fieldPath,
   label: z.string().min(1),
-  control: controlSchema,
   /** JSON Schema for this value, derived from the owner's save schema for consumers such as the panel skill. */
   valueSchema: runtimeJsonObjectSchema,
   required: z.boolean(),
@@ -41,7 +77,24 @@ export const panelFormFieldSchema = z.object({
   readOnlyReason: z.string().min(1).optional(),
   refreshOnChange: z.boolean().optional(),
 }).strict();
-export type PanelFormField = z.infer<typeof panelFormFieldSchema>;
+
+export type PanelFormField = z.infer<typeof fieldShape> & {
+  control:
+    | z.infer<(typeof simpleControls)[number]>
+    | (z.infer<typeof arrayControl> & { itemFields: PanelFormField[] })
+    | (z.infer<typeof objectControl> & { fields: PanelFormField[] });
+};
+
+const childFields = z.array(z.lazy((): z.ZodType<PanelFormField> => panelFormFieldSchema));
+const controlSchema = z.discriminatedUnion("kind", [
+  ...simpleControls,
+  // Row paths are relative. Error, refresh and formField ports address the current absolute paths.
+  arrayControl.extend({ itemFields: childFields }),
+  // Child paths are relative to the object. An untouched, omitted object stays absent.
+  objectControl.extend({ fields: childFields }),
+]);
+
+export const panelFormFieldSchema = fieldShape.extend({ control: controlSchema });
 
 /** The client's native owner request. The form's binding supplies the body mapping to that owner's existing schema. */
 const formSaveRequestSchema = z.object({
@@ -72,7 +125,10 @@ export const panelFormRequestSchema = z.object({
 export type PanelFormRequest = z.infer<typeof panelFormRequestSchema>;
 
 /** Input to the form.save operation; the resource adapter sends the native owner request. */
-export const panelFormSaveInputSchema = panelFormDescriptionSchema.pick({ values: true, revision: true });
+export const panelFormSaveInputSchema = panelFormDescriptionSchema.pick({ values: true, revision: true }).extend({
+  /** JSON Pointers submitted explicitly. Omission leaves the existing save semantics in effect. */
+  submittedFields: z.array(fieldPath).optional(),
+});
 export type PanelFormSaveInput = z.infer<typeof panelFormSaveInputSchema>;
 
 /** Operation metadata declared by a component of the SDK. */
@@ -143,7 +199,7 @@ export function projectionPorts(projection: Projection, meta: ComponentOperation
   }));
   const edgeBinding = projection.graph?.edges.binding;
   const outputs = edgeBinding && {
-    selectedNode: { kind: "object", objectType: projection.binding.id } as const,
+    selectedNode: projection.graph?.nodeIdentity ?? { kind: "object", objectType: projection.binding.id } as const,
     // Only a platform type binding declares the edge selection's object type.
     ...(edgeBinding.kind === "PlatformObjectType" && {
       selectedEdge: { kind: "object", objectType: edgeBinding.id } as const,

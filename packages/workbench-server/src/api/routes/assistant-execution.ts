@@ -2,7 +2,7 @@ import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { createPanelOperationIntentRequestSchema, dispatchPanelOperationIntentRequestSchema } from "@ontomato/contracts/panel-agent";
 import { operatePanel, dispatchPanel } from "../../services/product-panels/operations";
 import { Router, type Request } from "express";
-import { AGENT_DEFINITION, SKILL, MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE, bindingKey, panelClientReads, scheduledTaskReads } from "@ontomato/contracts/panel-client-requests";
+import { AGENT_DEFINITION, SKILL, MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE, ONTOLOGY_TYPE, bindingKey, chartProjectionLookupRead, chartProjectionSourceRead, panelClientReads, scheduledTaskReads } from "@ontomato/contracts/panel-client-requests";
 import type {AssistantCredentials} from "../../platform/agent-runtime/runtime";
 import { Readable } from "node:stream";
 import { z } from "zod";
@@ -16,8 +16,8 @@ import {assistantRetrievalOperationSchema} from "@ontomato/contracts/assistant-r
 import {OntologyRetrievalClient} from "../../services/assistant/ontology-retrieval";
 import { credentialsForRun, runForOwner } from "../../services/assistant/execution";
 import type { RuntimeCallback } from "../../services/agent-runtime/callback-credential";
-import { executeAuthoring, type AuthoringOperation } from "../../services/assistant/authoring";
-import { authoringOperations } from "@ontomato/contracts/authoring";
+import { adoptAppBuilderDefinition, executeAuthoring, type AuthoringOperation } from "../../services/assistant/authoring";
+import { authoringAdoptionRequestSchema, authoringKindSchema, authoringOperations } from "@ontomato/contracts/authoring";
 
 export const assistantExecutionRouter = Router();
 const ontologyReads = [
@@ -31,7 +31,6 @@ const ontologyPosts = [
   "/ontology/query/distinct-values",
   "/ontology/query/execute-dsl",
   "/ontology/query/metrics/search",
-  "/ontology/query/metrics/describe",
   "/ontology/query/metrics/parameter-form",
   "/ontology/query/metrics/parse-parameters",
   "/ontology/query/metrics/execute",
@@ -43,15 +42,20 @@ const ontologyPosts = [
   "/action/form",
   "/action/execute",
   "/action/re-explain",
-  "/metricView/queryById",
-  "/metricView/queryList",
   "/metricView/find",
   "/metricView/test",
-  "/metricView/execute",
   "/metricView/testExecute",
   "/data/queryInfoByNode",
   "/knowledge/findknowledge",
   "/admin/getBussinessKnowledge",
+];
+const assetReadPaths = [
+  "/metricView/queryById",
+  "/metricView/queryList",
+  "/metricView/form",
+  "/function/queryList",
+  "/function/queryById",
+  "/function/form",
 ];
 const queryOutput = /^\/ontology\/query\/outputs\/[0-9a-f-]+$/u;
 const queryOutputCancel = /^\/ontology\/query\/outputs\/[0-9a-f-]+\/cancel$/u;
@@ -70,8 +74,15 @@ function ontologyAllowed(method: string, path: string) {
 }
 const workbenchPath = /^\/api\/(?:panel-operation-intents|product-assets|dashboards|feedback|memories|query-history|preferences|personal-workspace)(?:\/|$)/;
 
-const panelReads = [AGENT_DEFINITION, SKILL, MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE]
-  .flatMap(type => panelClientReads(bindingKey({ kind: "PlatformObjectType", id: type })));
+const skillReadPath = /^\/api\/skills(?:\/[^/]+\/(?:references|files|file))?$/u;
+
+const panelReads = [
+  ...[AGENT_DEFINITION, SKILL, MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE, ONTOLOGY_TYPE]
+    .flatMap(type => panelClientReads(bindingKey({ kind: "PlatformObjectType", id: type }))),
+  ...panelClientReads(bindingKey({ kind: "MetricView", id: "*" })),
+  chartProjectionLookupRead,
+  chartProjectionSourceRead,
+];
 
 assistantExecutionRouter.post("/:runId/panels/operate",wrap(async(req,res)=>{
   const runId = callbackRun(req, res.locals.runtimeCallback);
@@ -122,14 +133,24 @@ for (const kind of ["action", "metric-view"] as const) {
   }
 }
 
+assistantExecutionRouter.post("/:runId/authoring/:kind/adopt", wrap(async (req, res) => {
+  const runId = callbackRun(req, res.locals.runtimeCallback);
+  const kind = authoringKindSchema.parse(req.params.kind);
+  const { definition } = authoringAdoptionRequestSchema.shape.input.parse(req.body);
+  const { owner, credentials } = context(req);
+  res.json(await adoptAppBuilderDefinition(owner, credentials, runId, kind, definition));
+}));
+
 assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
   const callback = res.locals.runtimeCallback as RuntimeCallback;
   const runId = callbackRun(req, callback);
   const target = z.enum(["ontology", "workbench"]).parse(req.params.target);
   const path = "/" + req.params[0];
   const resourceRead = !req.path.includes("%") && (target === "ontology"
-    ? [...scheduledTaskReads, ...panelReads].some(read => read.service === "/data-query" && read.method === req.method && read.path.test(path))
-    : path.startsWith("/api/") && panelReads.some(read => read.service === "" && read.method === req.method && read.path.test(path.slice(4))));
+    ? (req.method === "POST" && assetReadPaths.includes(path)) ||
+      [...scheduledTaskReads, ...panelReads].some(read => read.service === "/data-query" && read.method === req.method && read.path.test(path))
+    : (req.method === "GET" && skillReadPath.test(path)) ||
+      (path.startsWith("/api/") && panelReads.some(read => read.service === "" && read.method === req.method && read.path.test(path.slice(4)))));
   const assistantDirectory = target === "workbench" && req.method === "GET" && path === "/api/assistant/agents";
   if (/[\\%?#]/u.test(path) || path.split("/").some(segment => segment === "." || segment === "..") ||
     !(resourceRead || assistantDirectory || (target === "ontology" ? ontologyAllowed(req.method, path) : workbenchPath.test(path))))

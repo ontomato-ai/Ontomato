@@ -11,7 +11,7 @@ public final class PageSkills {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Namespace(String kind, String provider, String domainId) {}
     public record Skill(Namespace namespace, String name) {}
-    public record Default(String pageKey, String agentKey) {}
+    public record Default(String pageKey, DefaultAgentTarget defaultAgent) {}
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Mapping(String permissionCode, String access, String pageKey, Skill skill, List<Default> defaults) {
         public String locator() { return PageSkills.locator(permissionCode, access, pageKey); }
@@ -43,7 +43,7 @@ public final class PageSkills {
             if (mapping.defaults() != null) {
                 Set<String> pages = new HashSet<>();
                 for (var entry : mapping.defaults())
-                    if (entry.pageKey() == null || entry.pageKey().isBlank() || entry.agentKey() == null || entry.agentKey().isBlank()
+                    if (entry.pageKey() == null || entry.pageKey().isBlank() || entry.defaultAgent() == null
                         || !pages.add(entry.pageKey())) throw ApplicationCatalog.bad("Invalid page skill default");
             }
         }

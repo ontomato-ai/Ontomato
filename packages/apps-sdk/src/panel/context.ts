@@ -5,8 +5,16 @@ import type { PanelInstance } from "./instance";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormField } from "@ontomato/contracts/panel-projection";
 import type { PanelFormAdapter, PanelFormHandle, ReceivedPanelDraft } from "./draft";
-import { adapterPart, type PlatformObjectAdapter } from "./platform-objects";
-import { valueAt } from "./form-values";
+import {
+  adapterPart,
+  platformObjectAdapter,
+  type PlatformGraphNode,
+  type PlatformObjectAdapter,
+  type PlatformObjectGraph,
+  type PlatformObjectQuery,
+  type PlatformObjectQueryResult,
+} from "./platform-objects";
+import { fieldAt, valueAt } from "./form-values";
 import type { PanelText } from "./text";
 
 /*
@@ -64,7 +72,7 @@ export interface PanelContext {
    * Fetches and registers the resource clients a projection record binds — its type or operation, and a graph's edge
    * type — before the projection registers its ports, so a panel downloads only the clients of what it shows.
    */
-  resources(projection: Pick<ProductProjection, "binding" | "graph">): Promise<void>;
+  resources(projection: Pick<ProductProjection, "componentId" | "binding" | "graph">): Promise<void>;
 }
 
 /**
@@ -72,12 +80,24 @@ export interface PanelContext {
  * writes or reads "the object this slot is about" asks this, so it never guesses a state field name.
  */
 export function slotState(manifest: PanelManifest, slot: string, input?: string): string {
+  const state = slotInputState(manifest, slot, input);
+  if (!state) throw new Error(`Slot '${slot}' fills no input, so it names no panel state`);
+  return state;
+}
+
+/** Like `slotState`, returning `null` when the slot binds no matching input. */
+export function slotInputState(manifest: PanelManifest, slot: string, input?: string): string | null {
   const declaration = manifest.slots[slot];
   if (!declaration) throw new Error(`The panel declares no slot '${slot}'`);
   const [name] = input ? [input] : Object.keys(declaration.inputs);
-  const ref = name ? declaration.inputs[name] : undefined;
-  if (!ref) throw new Error(`Slot '${slot}' fills no input, so it names no panel state`);
-  return ref.state;
+  return (name ? declaration.inputs[name]?.state : undefined) ?? null;
+}
+
+/** The panel state a named projection output port writes to, or `null` when the slot does not bind that output. */
+export function slotOutputState(manifest: PanelManifest, slot: string, output: string): string | null {
+  const declaration = manifest.slots[slot];
+  if (!declaration) throw new Error(`The panel declares no slot '${slot}'`);
+  return declaration.outputs?.[output]?.state ?? null;
 }
 
 /** The panel context a panel module runs under. */
@@ -136,7 +156,7 @@ export function useFormField(): ProjectionFormField {
   const field = computed(() => {
     const form = handle.value;
     if (!form || !form.fields.value.length) return undefined;
-    const found = form.fields.value.find((item) => item.path === port.path);
+    const found = fieldAt(form.fields.value, port.path);
     if (!found) throw new Error(`The form in slot '${port.slot}' has no field ${port.path}`);
     return found;
   });
@@ -162,12 +182,26 @@ export function useProjectionObjectRefresh(shows: (id: string) => boolean, refre
   }));
 }
 
+export interface ProjectionObjects extends Required<Pick<PlatformObjectAdapter, "list" | "read">> {
+  query(query?: PlatformObjectQuery): Promise<PlatformObjectQueryResult>;
+}
+
+function hasQueryParams(query: PlatformObjectQuery): boolean {
+  return Boolean(
+    query.parent
+    || query.objectType
+    || query.search?.trim()
+    || query.page
+    || (query.filters && Object.values(query.filters).some((value) => value !== "")),
+  );
+}
+
 /**
- * The objects of a type as its owner lists and reads them — the type this projection binds, unless another is named (a
- * graph's edges). Every object read through it names itself to the instance, so the page context names the selected
- * object by its owner's label without any component doing so on its own.
+ * The objects of a type as its owner lists, queries and reads them — the type this projection binds, unless another is
+ * named (a graph's edges). Every object read through it names itself to the instance, so the page context names the
+ * selected object by its owner's label without any component doing so on its own.
  */
-export function useProjectionObjects(objectType?: string): Required<Pick<PlatformObjectAdapter, "list" | "read">> {
+export function useProjectionObjects(objectType?: string): ProjectionObjects {
   const { instance } = usePanelContext();
   const type = objectType ?? useProjectionSlot().projection.binding.id;
   return {
@@ -176,10 +210,77 @@ export function useProjectionObjects(objectType?: string): Required<Pick<Platfor
       instance.nameObjects(type, listed);
       return listed;
     },
+    async query(query = {}) {
+      const adapter = platformObjectAdapter(type);
+      if (adapter.query) {
+        const result = await adapter.query(query);
+        const byType = new Map<string, { primaryKey: string; label: string }[]>();
+        for (const item of result.items) {
+          const itemType = item.className ?? query.objectType ?? type;
+          let bucket = byType.get(itemType);
+          if (!bucket) {
+            bucket = [];
+            byType.set(itemType, bucket);
+          }
+          bucket.push(item);
+        }
+        for (const [itemType, items] of byType) instance.nameObjects(itemType, items);
+        return result;
+      }
+      if (hasQueryParams(query)) throw new Error(`Platform object '${type}' has no query`);
+      const listed = await adapterPart(type, "list")();
+      instance.nameObjects(type, listed);
+      return { items: listed, total: listed.length };
+    },
     async read(primaryKey) {
       const found = await adapterPart(type, "read")(primaryKey);
       instance.nameObjects(type, [found]);
       return found;
+    },
+  };
+}
+
+/**
+ * The graph source port for the projection's bound type. Every node returned by `start` or `neighbors` registers its
+ * owner label on the panel instance, so `pageContext.selection` names selected graph nodes without extra reads.
+ */
+export function useProjectionGraph(objectType?: string): PlatformObjectGraph {
+  const { instance } = usePanelContext();
+  const type = objectType ?? useProjectionSlot().projection.binding.id;
+  const nameNodes = (nodes: readonly PlatformGraphNode[]) => {
+    const byType = new Map<string, { primaryKey: string; label: string }[]>();
+    for (const node of nodes) {
+      let bucket = byType.get(node.className);
+      if (!bucket) {
+        bucket = [];
+        byType.set(node.className, bucket);
+      }
+      bucket.push({ primaryKey: node.primaryKey, label: node.label });
+    }
+    for (const [className, items] of byType) instance.nameObjects(className, items);
+  };
+  return {
+    schema() {
+      const fn = adapterPart(type, "graph").schema;
+      if (!fn) throw new Error(`Platform object '${type}' has no graph schema`);
+      return fn();
+    },
+    counts() {
+      const fn = adapterPart(type, "graph").counts;
+      if (!fn) throw new Error(`Platform object '${type}' has no graph counts`);
+      return fn();
+    },
+    async start() {
+      const fn = adapterPart(type, "graph").start;
+      if (!fn) return null;
+      const node = await fn();
+      if (node) nameNodes([node]);
+      return node;
+    },
+    async neighbors(query) {
+      const result = await adapterPart(type, "graph").neighbors(query);
+      nameNodes([result.node, ...result.neighbors]);
+      return result;
     },
   };
 }

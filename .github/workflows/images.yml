@@ -145,7 +145,6 @@ jobs:
             local tags=(-t "$REGISTRY/$1:$version" -t "$REGISTRY/$1:${{ needs.build.outputs.build-tag }}")
             if [ "$GITHUB_REF_TYPE" = tag ]; then tags+=(-t "$REGISTRY/$1:latest"); fi
             bash scripts/ci-retry-ghcr.sh docker buildx imagetools create \
-              --annotation "index:org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
               "${tags[@]}" "$REGISTRY/$1:$2" "$REGISTRY/$1:$3"
           }
           for image in ontomato-workbench ontomato-data-engine ontomato-agent-runtime ontomato-gateway; do

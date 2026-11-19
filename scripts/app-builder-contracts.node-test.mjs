@@ -161,3 +161,91 @@ test("the app-builder CLI reads the exact SDK and author candidate, then registe
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+test("App Builder Action generation tests and adopts the actual definition before an explicit save", async () => {
+  const runId = "11111111-1111-4111-8111-111111111111";
+  const sample = { objDatas: [], relDatas: [] };
+  const definition = { name: "Action", function: { code: "print('ok')", parameters: [{ name: "value", type: "TYPE_STRING", value: "sample" }] } };
+  const explained = { ...definition, explanationRef: "22222222-2222-4222-8222-222222222222" };
+  const accepted = { ...explained, name: "Accepted definition" };
+  const requests = [];
+  const server = createServer(async (request, response) => {
+    let text = "";
+    for await (const chunk of request) text += chunk;
+    const body = JSON.parse(text);
+    requests.push({ path: request.url, body, callback: request.headers["x-ontomato-callback-credential"], key: request.headers["x-api-key"] });
+    response.setHeader("content-type", "application/json");
+    const operation = request.url.split("/").at(-1);
+    const replies = {
+      prepare: { prepared: true }, reset: { reset: true }, test: { result: { result: "completed" } },
+      "explain-draft": { explanationRef: explained.explanationRef }, adopt: { definition: accepted },
+      save: { data: { ...accepted, id: "saved" } },
+    };
+    response.end(JSON.stringify(replies[operation] ?? { success: false, message: "Unexpected request" }));
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const result = await promisify(execFile)(process.execPath, [
+      "agent-skills/ontomato-app-builder/ontomato.mjs", "action", "generate", "--save", "--sample",
+      JSON.stringify(sample), JSON.stringify(definition),
+    ], {
+      env: { ...process.env, ONTOMATO_SKILL_SCENARIO: "platform", ONTOMATO_RUN_ID: runId,
+        ONTOMATO_AUTHORING_URL: base + "/authoring", ONTOMATO_WORKBENCH_URL: base,
+        ONTOMATO_ONTOLOGY_URL: base + "/ontology", ONTOMATO_EXECUTION_CALLBACK: "run-callback", ONTOMATO_API_KEY: "save-key" },
+    });
+    const author = (path, body) => ({ path: "/authoring/action/" + path, body, callback: "run-callback", key: undefined });
+    const input = { code: definition.function.code, parameterDefs: definition.function.parameters };
+    assert.deepEqual(requests, [
+      author("prepare", sample), author("reset", {}), author("test", input),
+      author("explain-draft", input), author("adopt", { definition: explained }),
+      { path: "/ontology/action/save", body: accepted, callback: undefined, key: "save-key" },
+    ]);
+    assert.equal(JSON.parse(result.stdout).id, "saved");
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});
+
+test("standalone MetricView authoring closes its window when a bound query package fails", async () => {
+  const runId = "11111111-1111-4111-8111-111111111111";
+  const contextId = "22222222-2222-4222-8222-222222222222";
+  const definition = {
+    function: { queryPackage: { manifest: { parameterDefs: [{ name: "count", value: 1 }] } } },
+    bindings: [{ parameters: { count: 2 } }],
+  };
+  const requests = [];
+  const server = createServer(async (request, response) => {
+    let text = "";
+    for await (const chunk of request) text += chunk;
+    const body = text ? JSON.parse(text) : undefined;
+    const context = request.headers["x-ontomato-execution-context"];
+    requests.push({ path: request.url, method: request.method, context, body });
+    response.setHeader("content-type", "application/json");
+    if (request.url.endsWith("/build-tests")) response.end(JSON.stringify({ contextId }));
+    else if (request.url.endsWith("/gates")) response.end(JSON.stringify({ runId }));
+    else if (request.url.endsWith("/close")) response.end(JSON.stringify({ closed: true }));
+    else if (request.url.endsWith("/test")) {
+      const count = body.queryPackage.manifest.parameterDefs[0].value;
+      response.end(JSON.stringify({ result: { error: count === 2 ? "Sample query failed" : null } }));
+    } else response.end(JSON.stringify({ success: false, message: "Unexpected request" }));
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    await assert.rejects(promisify(execFile)(process.execPath, [
+      "agent-skills/ontomato-app-builder/ontomato.mjs", "metric-view", "generate", "--save",
+      "--workspace", "workspace", JSON.stringify(definition),
+    ], { env: { ...process.env, ONTOMATO_SKILL_SCENARIO: "external", ONTOMATO_RUN_ID: "",
+      ONTOMATO_AUTHORING_URL: "", ONTOMATO_EXECUTION_CALLBACK: "", ONTOMATO_WORKBENCH_URL: base,
+      ONTOMATO_ONTOLOGY_URL: base + "/ontology", ONTOMATO_API_KEY: "external-key" } }), /Sample query failed/);
+    const root = "/ontology/ontology/ai/generation";
+    const context = JSON.stringify({ kind: "build-test", contextId });
+    const trial = `${root}/${runId}/authoring/metric-view/test`;
+    assert.deepEqual(requests, [
+      { path: "/api/workspaces/workspace/build-tests", method: "GET", context: undefined, body: undefined },
+      { path: root + "/gates", method: "POST", context, body: { kind: "metric" } },
+      { path: trial, method: "POST", context, body: { queryPackage: definition.function.queryPackage } },
+      { path: trial, method: "POST", context, body: { queryPackage: { manifest: { parameterDefs: [{ name: "count", value: 2 }] } } } },
+      { path: `${root}/${runId}/close`, method: "POST", context: undefined, body: {} },
+    ]);
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});

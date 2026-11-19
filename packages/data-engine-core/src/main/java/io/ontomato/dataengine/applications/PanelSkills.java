@@ -16,6 +16,7 @@ public final class PanelSkills {
 
     record LocatedUse(String applicationId, ApplicationPanelUse use) {
         Use source() { return new Use(applicationId, use.id(), use.pageKey(), use.panelId(), use.path()); }
+        PageSkills.Default pageDefault() { return new PageSkills.Default(use.pageKey(), use.defaultAgent()); }
     }
 
     /**
