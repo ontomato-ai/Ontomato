@@ -6,8 +6,9 @@ import type { PanelOperationHost } from "../../product-panels/server-operations"
 import { m6ServerOperations } from "../panel-operations";
 
 /*
- * The action server operations: the form save and what it changes, the owner's business refusals as refusals, the
- * delete label read and impact, and the batch publication-status change grouped by status.
+ * The action server operations: the form save and what it changes, the owner's explicit refusals kept apart from
+ * failures, the delete label read and impact, and the batch publication-status change grouped by status and by the
+ * answer each group received.
  */
 
 // The impact description reads its localized summary through the installed English pack.
@@ -77,12 +78,17 @@ describe("action panel server operations", () => {
     });
   });
 
-  it("turns an action owner save refusal into a refusal", async () => {
+  it("keeps an explicit owner code as the save refusal and an unclassified save as a failure", async () => {
     const operation = write(`${ACTION}.save`);
-    const { host } = hostWith(() => Response.json({ success: false, message: "This action's code is frozen" }));
+    const refused = hostWith(() =>
+      Response.json({ success: false, code: "ACTION_SYSTEM", message: "Cannot modify a system Action" }));
+    expect(await operation.execute(refused.host, actionTarget, { values: {} }))
+      .toEqual({ kind: "refusal", code: "ACTION_SYSTEM", message: "Cannot modify a system Action" });
 
-    expect(await operation.execute(host, actionTarget, { values: {} }))
-      .toEqual({ kind: "refusal", code: "ACTION_SAVE_REFUSED", message: "This action's code is frozen" });
+    const failed = hostWith(() =>
+      Response.json({ success: false, message: "Action service unavailable" }));
+    expect(await operation.execute(failed.host, actionTarget, { values: {} }))
+      .toEqual({ kind: "failure", code: "ACTION_SAVE_FAILED", message: "Action service unavailable" });
   });
 
   it("describes the delete impact with the target names", async () => {
@@ -98,7 +104,7 @@ describe("action panel server operations", () => {
     expect(JSON.parse(String(sent[0]?.init.body))).toEqual({ id: "a1" });
   });
 
-  it("deletes by id and turns the owner's delete refusal into a refusal", async () => {
+  it("deletes by id, keeps an explicit owner code as the refusal and an unclassified delete as a failure", async () => {
     const operation = action(DELETE_ACTION);
     const removed = hostWith(() => Response.json({ success: true }));
     expect(await operation.execute(removed.host, actionTarget)).toEqual({
@@ -108,19 +114,56 @@ describe("action panel server operations", () => {
     expect(removed.sent[0]?.path).toBe("/api/data-query/action/delete");
     expect(JSON.parse(String(removed.sent[0]?.init.body))).toEqual({ id: "a1" });
 
-    const refused = hostWith(() => Response.json({ success: false, message: "Action is referenced by a scheduled task" }));
+    const refused = hostWith(() =>
+      Response.json({ success: false, code: "ACTION_REFERENCED", message: "Action is referenced by a scheduled task" }));
     expect(await operation.execute(refused.host, actionTarget))
-      .toEqual({ kind: "refusal", code: "ACTION_DELETE_REFUSED", message: "Action is referenced by a scheduled task" });
+      .toEqual({ kind: "refusal", code: "ACTION_REFERENCED", message: "Action is referenced by a scheduled task" });
+
+    const failed = hostWith(() =>
+      Response.json({ success: false, message: "Action service unavailable" }));
+    expect(await operation.execute(failed.host, actionTarget))
+      .toEqual({ kind: "failure", code: "ACTION_DELETE_FAILED", message: "Action service unavailable" });
   });
 
-  it("answers each call of a status batch by its action and groups different statuses into one request per status", async () => {
+  it("answers success, refusal and failure for each action of one status group", async () => {
+    const operation = batchAction(SET_ACTION_STATUS);
+    const thirdAction = { kind: "object" as const, objectType: ACTION, primaryKey: "a3" };
+    const answered = hostWith(() => Response.json({ success: true, data: { items: [
+      { id: "a1", outcome: "success", data: { id: "a1", status: "PUBLISHED" } },
+      { id: "a2", outcome: "refusal", code: "ACTION_SYSTEM", error: { message: "Cannot modify a system Action" } },
+      { id: "a3", outcome: "failure", error: { message: "database unavailable" } },
+    ] } }));
+
+    const outcome = await operation.executeBatch(answered.host, [
+      { target: actionTarget, input: { status: "PUBLISHED" } },
+      { target: secondAction, input: { status: "PUBLISHED" } },
+      { target: thirdAction, input: { status: "PUBLISHED" } },
+    ]);
+
+    expect(outcome).toEqual({ kind: "batch", items: [
+      { target: { objectType: ACTION, primaryKey: "a1" }, outcome: {
+        kind: "success", data: { id: "a1", status: "PUBLISHED" },
+        affected: { objects: [{ objectType: ACTION, primaryKey: "a1" }], objectTypes: [ACTION] },
+      } },
+      { target: { objectType: ACTION, primaryKey: "a2" }, outcome: {
+        kind: "refusal", code: "ACTION_SYSTEM", message: "Cannot modify a system Action",
+      } },
+      { target: { objectType: ACTION, primaryKey: "a3" }, outcome: {
+        kind: "failure", code: "ACTION_STATUS_FAILED", message: "database unavailable",
+      } },
+    ] });
+    expect(JSON.parse(String(answered.sent[0]?.init.body))).toEqual({ ids: ["a1", "a2", "a3"], status: "PUBLISHED" });
+  });
+
+  it("keeps the successful status group when another group has no receipt", async () => {
     const operation = batchAction(SET_ACTION_STATUS);
     const thirdAction = { kind: "object" as const, objectType: ACTION, primaryKey: "a3" };
     const grouped = hostWith((_path, init) => {
       const { ids, status } = JSON.parse(String(init.body)) as { ids: string[]; status: string };
-      return Response.json({ success: true, data: { items: ids.map(id => id === "a3"
-        ? { id, outcome: "failure", error: { message: "Action is frozen" } }
-        : { id, outcome: "success", data: { id, status } }) } });
+      if (status === "UNUSED") return Response.json({ message: "Owner unavailable" }, { status: 503 });
+      return Response.json({ success: true, data: { items: ids.map(id => ({
+        id, outcome: "success", data: { id, status },
+      })) } });
     });
 
     const outcome = await operation.executeBatch(grouped.host, [
@@ -139,27 +182,48 @@ describe("action panel server operations", () => {
         affected: { objects: [{ objectType: ACTION, primaryKey: "a1" }], objectTypes: [ACTION] },
       } },
       { target: { objectType: ACTION, primaryKey: "a2" }, outcome: {
-        kind: "success", data: { id: "a2", status: "UNUSED" },
-        affected: { objects: [{ objectType: ACTION, primaryKey: "a2" }], objectTypes: [ACTION] },
+        kind: "unknown", message: "Owner request failed: /action/setStatus",
       } },
       { target: { objectType: ACTION, primaryKey: "a3" }, outcome: {
-        kind: "refusal", code: "ACTION_STATUS_REFUSED", message: "Action is frozen",
+        kind: "success", data: { id: "a3", status: "PUBLISHED" },
+        affected: { objects: [{ objectType: ACTION, primaryKey: "a3" }], objectTypes: [ACTION] },
       } },
     ] });
   });
 
-  it("refuses every call of a status batch the owner refuses wholesale", async () => {
+  it("answers the whole batch unknown when no status group has a receipt", async () => {
     const operation = batchAction(SET_ACTION_STATUS);
-    const refused = hostWith(() => Response.json({ success: false, message: "No business domain for this account" }));
+    const grouped = hostWith(() => Response.json({ message: "Owner unavailable" }, { status: 503 }));
+
+    const outcome = await operation.executeBatch(grouped.host, [
+      { target: actionTarget, input: { status: "PUBLISHED" } },
+      { target: secondAction, input: { status: "UNUSED" } },
+    ]);
+
+    expect(outcome).toEqual({ kind: "batch", items: [
+      { target: { objectType: ACTION, primaryKey: "a1" }, outcome: {
+        kind: "unknown", message: "Owner request failed: /action/setStatus",
+      } },
+      { target: { objectType: ACTION, primaryKey: "a2" }, outcome: {
+        kind: "unknown", message: "Owner request failed: /action/setStatus",
+      } },
+    ] });
+  });
+
+  it("turns a coded wholesale status refusal into a refusal for every action of the group", async () => {
+    const operation = batchAction(SET_ACTION_STATUS);
+    const refused = hostWith(() =>
+      Response.json({ success: false, code: "ACTION_STATUS_INVALID", message: "status: expected PENDING_REVIEW, PUBLISHED or UNUSED" }));
+
     expect(await operation.executeBatch(refused.host, [
       { target: actionTarget, input: { status: "PUBLISHED" } },
       { target: secondAction, input: { status: "PUBLISHED" } },
     ])).toEqual({ kind: "batch", items: [
       { target: { objectType: ACTION, primaryKey: "a1" }, outcome: {
-        kind: "refusal", code: "ACTION_STATUS_REFUSED", message: "No business domain for this account",
+        kind: "refusal", code: "ACTION_STATUS_INVALID", message: "status: expected PENDING_REVIEW, PUBLISHED or UNUSED",
       } },
       { target: { objectType: ACTION, primaryKey: "a2" }, outcome: {
-        kind: "refusal", code: "ACTION_STATUS_REFUSED", message: "No business domain for this account",
+        kind: "refusal", code: "ACTION_STATUS_INVALID", message: "status: expected PENDING_REVIEW, PUBLISHED or UNUSED",
       } },
     ] });
   });
