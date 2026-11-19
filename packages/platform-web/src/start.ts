@@ -22,6 +22,7 @@ import {
 import { ontologyServiceAccessKey, type OntologyServiceAccess } from "@ontomato/workbench-ui";
 import { installBrandTheme, type BrandSource } from "@ontomato/design-tokens";
 import { installWorkbenchBrand } from "@ontomato/workbench-ui/brand";
+import { DETAIL_SELECTIONS, detailSelectionGuard } from "./detail-selection";
 
 export interface WorkbenchWebOptions {
   /** This edition's brand source; the workbench colour variables and the chart colours are generated from it. */
@@ -57,6 +58,8 @@ export function startWorkbenchWeb(options: WorkbenchWebOptions): void {
   const i18n = installWorkbenchI18n(options.language);
   const pinia = createPinia();
   const router = createRouter({ history: createWebHashHistory(), routes: [] });
+  // A page's old detail address opens the panel that took the page over, before any other guard sees it.
+  router.beforeEach(detailSelectionGuard(DETAIL_SELECTIONS));
   options.installGuards?.(router, pinia);
 
   const app = createApp(App);
