@@ -206,6 +206,7 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     holdUnsaved: () => () => {},
     t: instance.text,
     resources: () => Promise.resolve(),
+    expandPageComposer: frameOnly("Expanding the page's composer over the frame bridge"),
   };
 }
 
