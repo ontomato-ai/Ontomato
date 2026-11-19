@@ -1,4 +1,4 @@
-import { assistantAgentDefinitionListSchema, assistantAgentDefinitionSchema, assistantAgentPanelValuesSchema, type AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
+import { assistantAgentDefinitionListSchema, assistantAgentDefinitionSchema, assistantAgentPanelUpdateValuesSchema, assistantAgentPanelValuesSchema, type AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
 import { AGENT_DEFINITION } from "@ontomato/contracts/panel-client-requests";
 import { panelFormDescriptionSchema } from "@ontomato/contracts/panel-projection";
 import { randomId } from "@ontomato/contracts/random-id";
@@ -39,12 +39,18 @@ export const agentDefinitionAdapters: PlatformObjectAdapterFactory = requests =>
       const description = await definitionRequest(requests, `${base}/form`, { method: "POST", body: JSON.stringify(request) });
       return panelFormDescriptionSchema.parse(description);
     },
-    async save(target, { values }) {
+    async save(target, { values, submittedFields }) {
       const create = target.kind === "draft";
+      if (!create && submittedFields === undefined)
+        throw new Error("Agent definition updates require submittedFields");
+      const { skills: _skills, ...otherValues } = values;
+      const body = create || submittedFields?.includes("/skills")
+        ? assistantAgentPanelValuesSchema.parse(values)
+        : assistantAgentPanelUpdateValuesSchema.parse(otherValues);
       const response = await definitionRequest(requests, create ? base : pathOf(target.primaryKey), {
         method: create ? "POST" : "PUT",
         headers: { "Content-Type": "application/json", ...(create ? { "Idempotency-Key": randomId() } : {}) },
-        body: JSON.stringify(assistantAgentPanelValuesSchema.parse(values)),
+        body: JSON.stringify(body),
       });
       return record(assistantAgentDefinitionSchema.parse(response));
     },
