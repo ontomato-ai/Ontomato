@@ -75,10 +75,10 @@ function ontologyAllowed(method: string, path: string) {
 const workbenchPath = /^\/api\/(?:panel-operation-intents|product-assets|dashboards|feedback|memories|query-history|preferences|personal-workspace)(?:\/|$)/;
 
 const skillReadPath = /^\/api\/skills(?:\/[^/]+\/(?:references|files|file))?$/u;
-const initiatorPanelReads = [AGENT_DEFINITION, SKILL]
+const initiatorPanelReads = [AGENT_DEFINITION, SKILL, ONTOLOGY_TYPE]
   .flatMap(type => panelClientReads(bindingKey({ kind: "PlatformObjectType", id: type })));
 const executorPanelReads = [
-  ...[MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE, ONTOLOGY_TYPE]
+  ...[MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE]
     .flatMap(type => panelClientReads(bindingKey({ kind: "PlatformObjectType", id: type }))),
   ...panelClientReads(bindingKey({ kind: "MetricView", id: "*" })),
   chartProjectionLookupRead,
