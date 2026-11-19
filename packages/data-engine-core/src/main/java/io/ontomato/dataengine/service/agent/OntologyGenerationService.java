@@ -299,11 +299,14 @@ public class OntologyGenerationService {
     AgentJson.fields(parameters,"kind","businessId","prompt","source");
     String businessId=AgentJson.text(parameters,"businessId"),prompt=AgentJson.text(parameters,"prompt");
     checkBusiness(businessId);
-    var rows=store.rows("SELECT id FROM ontology_agent_runs WHERE id=?",uuid(run));
-    if(rows.isEmpty()) openAt(kind,businessId,parameters.getString("source"),context.owner(),false,session,run,true);
+    var boundSession = store.session(session, context.owner());
     var row=store.run(session,run,context.owner());
-    var owned=store.one("SELECT kind,business_id FROM ontology_generations WHERE run_id=?",uuid(run));
-    if(!kind.equals(owned.getString("kind")) || !businessId.equals(owned.getString("business_id"))) throw conflict("Generation target changed");
+    var owned=store.one("SELECT kind,business_id,source FROM ontology_generations WHERE run_id=?",uuid(run));
+    if (row.getBooleanValue("external") || !boundSession.getBooleanValue("runtime_owned")
+        || !agentId(kind).equals(boundSession.getString("agent_id"))
+        || !kind.equals(owned.getString("kind")) || !businessId.equals(owned.getString("business_id"))
+        || !Objects.equals(parameters.getString("source"), owned.getString("source")))
+      throw conflict("Generation requires its registered internal business call");
     store.update("UPDATE ontology_agent_runs SET request=request || ?::jsonb WHERE id=?",AgentJson.json(JSONObject.of("agentChannel",true,"input",input,"executionUserId",context.executionUserId(),"classNames",context.access().classNames())),uuid(run));
     if(kind.equals("metric")) definitions.publishMetricView(); else definitions.publishGeneration();
     long deadline=Instant.parse(row.getString("deadline")).toEpochMilli();
@@ -397,8 +400,10 @@ public class OntologyGenerationService {
       tolerateMissing(() -> sessions.markSessionCancelled(run, System.currentTimeMillis()));
       for (var test :
           store.rows(
-              "SELECT execution_id FROM ontology_generation_tests WHERE run_id=?", uuid(run)))
+              "SELECT execution_id FROM ontology_generation_tests WHERE run_id=?", uuid(run))) {
+        grants.revoke(owner.domainId(), test.getString("execution_id"));
         tolerateMissing(() -> code.closeIntent(owner.domainId(), test.getString("execution_id")));
+      }
       var intent=store.run(session,run,owner);
       if (interruptRuntime && !intent.getBooleanValue("external") && (intent.getJSONObject("observed_state")==null || !"stopped".equals(intent.getJSONObject("observed_state").getString("status"))))
         tolerateMissing(
@@ -487,6 +492,25 @@ public class OntologyGenerationService {
     }
   }
 
+  public JSONObject explanationEvidence(String explanationRef, Owner owner) {
+    var row = store.one("""
+        SELECT g.explanation FROM ontology_generations g
+          JOIN ontology_agent_runs r ON r.id=g.run_id
+          JOIN ontology_agent_sessions s ON s.id=r.session_id
+          LEFT JOIN ontology_platform_authoring_runs a ON a.run_id::text=g.explanation->>'authoringRunId'
+          WHERE g.run_id=? AND g.kind='explain' AND g.settled AND g.explanation IS NOT NULL
+            AND NOT r.external AND r.observed_state->>'stopReason'='stop' AND s.domain_id=?
+            AND (s.user_id=? OR r.request->>'executionUserId'=? AND a.user_id=s.user_id AND a.domain_id=s.domain_id)
+        """, uuid(explanationRef), owner.domainId(), owner.userId(), owner.userId());
+    return row.getJSONObject("explanation");
+  }
+
+  void attachAuthoringExplanation(String explanationRef, Owner owner, String authoringRun) {
+    explanationEvidence(explanationRef, owner);
+    store.update("UPDATE ontology_generations SET explanation=explanation || ?::jsonb WHERE run_id=?",
+        AgentJson.json(JSONObject.of("authoringRunId", authoringRun)), uuid(explanationRef));
+  }
+
   public final class Generation implements AutoCloseable {
     private final String session, run;
     private final Owner owner;
@@ -500,6 +524,16 @@ public class OntologyGenerationService {
 
     public JSONObject result() {
       return result;
+    }
+
+    /** The explanation core calls this inside settle, after accepting the structured result. */
+    public String acceptExplanation(String sourceDigest, int explanationVersion, JSONObject acceptedResult) {
+      var evidence = JSONObject.of("sourceDigest", sourceDigest, "explanationVersion", explanationVersion,
+          "acceptedResultRef", run, "acceptedResult", acceptedResult);
+      int writes = store.update("UPDATE ontology_generations SET explanation=?::jsonb"
+              + " WHERE run_id=? AND kind='explain' AND explanation IS NULL", AgentJson.json(evidence), uuid(run));
+      if (writes != 1) throw conflict("Explanation evidence was already accepted");
+      return run;
     }
 
     public <T> T settle(Work<T> work) {

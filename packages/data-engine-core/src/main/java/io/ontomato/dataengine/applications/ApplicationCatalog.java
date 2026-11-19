@@ -147,8 +147,7 @@ public class ApplicationCatalog {
                 if (old.isPresent() && (!service.equals(old.get().getString("ownerService")) || old.get().getString("domainId") != null))
                     throw denied();
                 var root = builtinPanelRoot(d.entry());
-                if ((root != null && ApplicationPanelUse.under(root, "/applications"))
-                    || declaration.panelUses().stream().anyMatch(use -> ApplicationPanelUse.under(use.path(), "/applications")))
+                if ((root != null && inAssignedSpace(root)) || declaration.panelUses().stream().anyMatch(use -> inAssignedSpace(use.path())))
                     throw bad("Built-in applications cannot occupy the assigned application space");
                 validateMappings(d.id(), null, d.entry(), declaration.pageSkills(), declaration.panelUses());
                 save(d.id(), null, service, null, d.kind(), d.rail(), d.category(), d.sort(), d.entry(), d.entryAccess(), d.scheduleAdapter(), null, declaration);
@@ -293,7 +292,7 @@ public class ApplicationCatalog {
             for (var use : app.getList("panelUses", ApplicationPanelUse.class)) {
                 if (!paths.add(use.path())) throw bad("Duplicate panel path: " + use.path());
                 for (var root : roots.entrySet())
-                    if (!root.getKey().equals(app.getString("id")) && ApplicationPanelUse.under(use.path(), root.getValue()))
+                    if (!root.getKey().equals(app.getString("id")) && !inAssignedSpace(use.path()) && ApplicationPanelUse.under(use.path(), root.getValue()))
                         throw bad("Panel path belongs to " + root.getKey() + ": " + use.path());
             }
         }
@@ -361,6 +360,8 @@ public class ApplicationCatalog {
         });
     }
     private static String assignedPanelRoot(String id) { return "/applications/" + id; }
+    /** Below /applications/ only domain applications live; the bare /applications stays the built-in gallery's entry. */
+    private static boolean inAssignedSpace(String path) { return path.startsWith("/applications/"); }
 
     private static boolean hasAssignedPanelPaths(JSONObject app) {
         if (!panelManaged(app) || app.getString("domainId") == null) return true;

@@ -111,6 +111,30 @@ class PanelApplicationsTest {
         assertEquals(403, refusal.getStatusCode().value());
     }
 
+    @Test void theApplicationGalleryKeepsTheBareApplicationsPathBesideAssignedPanelApplications() {
+        doAnswer(call -> {
+            call.<java.util.function.Consumer<org.springframework.transaction.TransactionStatus>>getArgument(0).accept(null);
+            return null;
+        }).when(tx).executeWithoutResult(any());
+        var galleryEntry = JSONObject.of("renderer", "application-gallery", "path", "/applications", "home", "/applications");
+        var gallery = JSONObject.of("id", "application-gallery", "kind", "native", "ownerService", "workbench",
+            "entry", galleryEntry, "panelUses", List.of(), "pageSkills", List.of(), "entryAccess", List.of("domain-member"));
+        gallery.put("domainId", null);
+        doReturn(gallery).when(catalog).require("application-gallery");
+        var declaration = new ApplicationCatalog.Declaration(Map.of("en", "Application gallery"), Map.of(), "gallery", List.of(),
+            List.of(), List.of(), List.of());
+        catalog.builtins("workbench", List.of(new ApplicationCatalog.Builtin("application-gallery", "native", "top", "business", 2,
+            galleryEntry, List.of("domain-member"), null, declaration)));
+        assertThrows(ResponseStatusException.class, () ->
+            catalog.builtins("workbench", List.of(builtin("gallery-child", "/applications/gallery-child", at("x", "/applications/gallery-child/x")))));
+
+        var trial = app("app-panel-a", "panels", List.of());
+        doReturn(List.of(gallery, trial)).when(catalog).all();
+        when(access.canMaintain(trial, user)).thenReturn(true);
+        var response = catalog.putPanelUses("app-panel-a", body(List.of(use("tasks", null)), false), user);
+        assertEquals("/applications/app-panel-a/tasks", response.getList("panelUses", ApplicationPanelUse.class).getFirst().path());
+    }
+
     @Test void oldTrialPathsFailTheDirectReadAndDoNotBlockAnotherTrialBeingReRegistered() throws Exception {
         var trialA = app("app-panel-a", "panels", List.of(at("a", "/tasks")));
         var trialB = app("app-panel-b", "panels", List.of(at("b", "/summary")));

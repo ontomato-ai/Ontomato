@@ -2,7 +2,8 @@ import express from 'express';
 import type {Server} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {afterAll,afterEach,beforeAll,beforeEach,expect,it,vi} from 'vitest';
-const mocks=vi.hoisted(()=>({restore:vi.fn(),run:vi.fn(),operate:vi.fn(),dispatch:vi.fn()}));
+const mocks=vi.hoisted(()=>({restore:vi.fn(),run:vi.fn(),operate:vi.fn(),dispatch:vi.fn(),authoring:vi.fn()}));
+vi.mock('../../../services/assistant/authoring',()=>({executeAuthoring:mocks.authoring}));
 vi.mock('../../../services/product-panels/operations',()=>({operatePanel:mocks.operate,dispatchPanel:mocks.dispatch}));
 vi.mock('../../../services/assistant/execution',()=>({credentialsForRun:mocks.restore,runForOwner:mocks.run}));
 vi.mock('../../../config/environment',()=>({environment:{agentRuntime:()=>({token:'test-callback-secret',callbackUrl:'http://workbench.test'})}}));
@@ -37,7 +38,14 @@ it('restores the initiator before resolving the executor and forwards only ordin
  expect(request.headers).toMatchObject({'X-API-Key':'selected-user-key','X-Ontomato-Run-Id':run,'X-Ontomato-Retrieval-Caller-Id':run});
  expect(request.headers).not.toHaveProperty('X-Ontomato-Query-Service-Token');expect(request.redirect).toBe('error');
 });
-it.each(['ontology/ontology/retrievals/skill-runs','ontology/ontology/retrievals/'+run+'/runs/'+run+'/outputs/'+other,'ontology/ontology/retrievals/'+run+'/runs/'+run+'/outputs/'+other+'/content','ontology/ontology/retrievals/'+run+'/skill-runs/'+run+'/close','ontology/ontology/retrievals/'+run+'/retriever/cancel','ontology/ontology/retrievals/'+run+'/runs/'+run+'/outputs','ontology/platform/agent-channel/commands','ontology/internal/agent-execution/resolve','ontology/agent-principals/execution','ontology/https%3A%2F%2Fevil.test','workbench/internal/agent-channel/prepare'])('refuses an out-of-scope path %s before resolving any key',async path=>{
+it.each([
+ 'ontology/ontology/ai/generation/gates',
+ 'ontology/ontology/ai/generation/platform/action/test',
+ 'ontology/action/save',
+ 'ontology/metricView/save',
+ 'ontology/action/generateFromNatureLanguage',
+ 'ontology/metricView/generateFromNatureLanguage',
+ 'ontology/ontology/retrievals/skill-runs','ontology/ontology/retrievals/'+run+'/runs/'+run+'/outputs/'+other,'ontology/ontology/retrievals/'+run+'/runs/'+run+'/outputs/'+other+'/content','ontology/ontology/retrievals/'+run+'/skill-runs/'+run+'/close','ontology/ontology/retrievals/'+run+'/retriever/cancel','ontology/ontology/retrievals/'+run+'/runs/'+run+'/outputs','ontology/platform/agent-channel/commands','ontology/internal/agent-execution/resolve','ontology/agent-principals/execution','ontology/https%3A%2F%2Fevil.test','workbench/internal/agent-channel/prepare'])('refuses an out-of-scope path %s before resolving any key',async path=>{
  const upstream=vi.fn();vi.stubGlobal('fetch',upstream);
  expect((await call(path)).status).toBe(403);expect(upstream).not.toHaveBeenCalled();expect(mocks.restore).not.toHaveBeenCalled();
 });
@@ -162,4 +170,16 @@ it("validates the fixed operation entrance and never accepts an approval or ques
    expect((await nativeFetch(base+`/api/assistant/executions/${run}/panels/operate`,{method:"POST",headers,body:JSON.stringify(forged)})).status).toBe(400);
  }
  expect(mocks.operate).not.toHaveBeenCalled();
+});
+
+it("accepts author parameters only through the registered method and the run's callback", async () => {
+ const context={ontology:[],knowledge:[],helpers:{markdown:""}};
+ mocks.authoring.mockResolvedValue(context);
+ expect((await call("authoring/metric-view/context",{},"GET")).status).toBe(200);
+ expect(mocks.authoring).toHaveBeenCalledWith({userId:"U",domainId:"domain"},expect.objectContaining({token:"initiator-token"}),
+   run,"metric-view","context",{});
+ mocks.authoring.mockClear();
+ expect((await call("authoring/metric-view/context",{},"POST")).status).toBeGreaterThanOrEqual(400);
+ expect((await call("authoring/action/context",{},"GET","")).status).toBe(403);
+ expect(mocks.authoring).not.toHaveBeenCalled();
 });
