@@ -1,7 +1,7 @@
 import { platformSchedulesPath } from "./platform-schedules";
-import { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER } from "./platform-object-types";
+import { AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER } from "./platform-object-types";
 
-export { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER } from "./platform-object-types";
+export { AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER } from "./platform-object-types";
 
 /*
  * The requests the SDK's platform clients send, by the binding that reaches each client (overall design 3.2, 5.1). A
@@ -17,6 +17,11 @@ export { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_T
 /** The platform operation that runs one scheduled task now, as a projection binds it. */
 export const RUN_NOW = "schedules.runNow";
 export const DELETE_AGENT = "agents.delete";
+export const DELETE_METRIC_VIEW = "metricViews.delete";
+export const SET_METRIC_VIEW_STATUS = "metricViews.setStatus";
+export const TEST_METRIC_VIEW = "metricViews.test";
+export const TEST_EXECUTE_METRIC_VIEW = "metricViews.testExecute";
+export const DELETE_FUNCTION = "functions.delete";
 
 /**
  * The gateway prefix the scheduled tasks' contract spells its paths with. A frame's request names the service and the
@@ -77,6 +82,23 @@ const ontologyMetadataRead = {
   instructions: "POST an empty JSON object. Classes, their attributes and relationship rules come from this same response.",
 } as const satisfies PanelClientRead;
 
+/** Exact Java endpoints used by the managed definition clients. */
+const dataQueryPost = (path: string) => ({
+  method: "POST", service: "/data-query", path: new RegExp(`^${path}$`), template: path,
+} as const);
+
+const formReadInstructions = "POST JSON with the form target, changedField, and optional values. Use the returned fields and values.";
+const metricViewDefinitionReads = [
+  dataQueryPost("/metricView/queryList"),
+  dataQueryPost("/metricView/queryById"),
+  { ...dataQueryPost("/metricView/form"), instructions: formReadInstructions },
+] as const satisfies readonly PanelClientRead[];
+const functionDefinitionReads = [
+  dataQueryPost("/function/queryList"),
+  dataQueryPost("/function/queryById"),
+  { ...dataQueryPost("/function/form"), instructions: formReadInstructions },
+] as const satisfies readonly PanelClientRead[];
+
 const objectBinding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
 const readRequests: Readonly<Record<string, readonly PanelClientRead[]>> = {
   [objectBinding(SCHEDULED_TASK)]: scheduledTaskReads,
@@ -100,6 +122,8 @@ const readRequests: Readonly<Record<string, readonly PanelClientRead[]>> = {
   [objectBinding(OBJECT_TYPE)]: [ontologyMetadataRead],
   [objectBinding(ATTRIBUTE)]: [ontologyMetadataRead],
   [objectBinding(RELATIONSHIP)]: [ontologyMetadataRead],
+  [objectBinding(METRIC_VIEW)]: metricViewDefinitionReads,
+  [objectBinding(FUNCTION)]: functionDefinitionReads,
 };
 
 export const panelClientReads = (binding: string): readonly PanelClientRead[] => readRequests[binding] ?? [];
@@ -123,6 +147,13 @@ export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> 
   [bindingKey({ kind: "PlatformOperation", id: DELETE_AGENT })]: [
     { method: "DELETE", service: "", path: new RegExp(`^${agent}$`) },
   ],
+  [objectBinding(METRIC_VIEW)]: [...metricViewDefinitionReads, dataQueryPost("/metricView/save")],
+  [objectBinding(FUNCTION)]: [...functionDefinitionReads, dataQueryPost("/function/save")],
+  [bindingKey({ kind: "PlatformOperation", id: DELETE_METRIC_VIEW })]: [dataQueryPost("/metricView/delete")],
+  [bindingKey({ kind: "PlatformOperation", id: SET_METRIC_VIEW_STATUS })]: [dataQueryPost("/metricView/setStatus")],
+  [bindingKey({ kind: "PlatformOperation", id: TEST_METRIC_VIEW })]: [dataQueryPost("/metricView/test")],
+  [bindingKey({ kind: "PlatformOperation", id: TEST_EXECUTE_METRIC_VIEW })]: [dataQueryPost("/metricView/testExecute")],
+  [bindingKey({ kind: "PlatformOperation", id: DELETE_FUNCTION })]: [dataQueryPost("/function/delete")],
 };
 
 /** Whether one of the given bindings' clients sends this request. */

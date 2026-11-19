@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, OBJECT_TYPE, RELATIONSHIP, USER, bindingKey, clientSends, panelClientReads } from "./panel-client-requests";
+import {
+  AGENT_DEFINITION, ATTRIBUTE, DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW,
+  OBJECT_TYPE, RELATIONSHIP, SET_METRIC_VIEW_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, USER,
+  bindingKey, clientSends, panelClientReads,
+} from "./panel-client-requests";
 import { candidatePanelSourceSchema, panelFrameMessageSchema, panelUsePath } from "./panel-host";
 import { panelManifestSchema } from "./panel-manifest";
-import { panelFormSaveInputSchema, projectionBindingKeys, projectionOperations, projectionPorts } from "./panel-projection";
+import { pageDraftSchema } from "./page-draft";
+import {
+  panelFormDescriptionSchema, panelFormFrequencyValueSchema, panelFormRequestSchema, panelFormSaveInputSchema,
+  projectionBindingKeys, projectionOperations, projectionPorts,
+} from "./panel-projection";
+import { platformTaskFrequencySchema } from "./platform-schedules";
 import { applicationPanelUsePathSchema, ontologyElementRefSchema, productPanelContentSchema, productProjectionInputSchema } from "./product-panels";
 
 const binding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
@@ -38,6 +47,95 @@ test("form save preserves nested JSON and the owner's revision when present", ()
   assert.deepEqual(panelFormSaveInputSchema.parse(agent), agent);
   const schedule = { values: { time: "09:00" }, revision: 17 };
   assert.deepEqual(panelFormSaveInputSchema.parse(schedule), schedule);
+});
+
+const editableField = { required: false, readOnly: false };
+const ownerSave = { method: "PUT", path: "/workflows/example", bodySchema: {}, draftOperation: "workflow.update" };
+
+test("code, number, time and line array controls retain the owner's JSON values and schema", () => {
+  const fields = [
+    { ...editableField, path: "/definition", label: "Definition", control: { kind: "code", language: "json" },
+      valueSchema: { type: "object" } },
+    { ...editableField, path: "/limit", label: "Limit", control: { kind: "number" },
+      valueSchema: { type: "integer", minimum: 0 } },
+    { ...editableField, path: "/start", label: "Start", control: { kind: "time" },
+      valueSchema: { type: "string", format: "time" } },
+    { ...editableField, readOnly: true, path: "/script", label: "Script", control: { kind: "code", language: "python" },
+      valueSchema: { type: "string" } },
+    { ...editableField, path: "/questions", label: "Matching questions", control: { kind: "string-array" },
+      valueSchema: { type: "array", items: { type: "string" } } },
+  ];
+  const values = {
+    definition: { output: ["name"] }, limit: 0, start: "09:00",
+    script: "print('ready')", questions: ["Who joined?", "Who left?"],
+  };
+  assert.deepEqual(panelFormDescriptionSchema.parse({ fields, values, save: ownerSave }), {
+    fields, values, save: ownerSave,
+  });
+});
+
+test("nested controls keep relative field metadata and the existing absolute reference port", () => {
+  const fields = [
+    {
+      ...editableField, path: "/steps", label: "Steps", valueSchema: { type: "array" },
+      control: {
+        kind: "object-array", itemKeyPath: "/id", defaultItem: { actionId: null },
+        itemFields: [{
+          ...editableField, path: "/actionId", label: "Action", valueSchema: { type: ["string", "null"] },
+          control: { kind: "reference", objectType: "platform:Action", multiple: false },
+        }],
+      },
+    },
+    {
+      ...editableField, path: "/runContract", label: "Run contract", valueSchema: { type: ["object", "null"] },
+      control: {
+        kind: "object", defaultObject: { statusOpen: [] },
+        fields: [{
+          ...editableField, path: "/statusOpen", label: "Open statuses", valueSchema: { type: "array" },
+          control: { kind: "select", multiple: true, allowCreate: true, options: [] },
+        }],
+      },
+    },
+  ];
+  const values = { steps: [{ id: "step-a", actionId: "review" }], runContract: { statusOpen: ["ready"] } };
+  assert.deepEqual(panelFormDescriptionSchema.parse({ fields, values, save: ownerSave }).fields, fields);
+
+  const path = "/steps/0/actionId";
+  const formField = { slot: "definition", path };
+  const manifest = panelManifestSchema.parse({
+    state: {}, operations: [],
+    slots: { definition: { projectionId: "workflow-form" }, picker: { projectionId: "action-picker", formField } },
+  });
+  assert.deepEqual(manifest.slots.picker?.formField, formField);
+  const target = { kind: "object", objectType: "platform:Workflow", primaryKey: "example" };
+  assert.equal(panelFormRequestSchema.parse({ target, values, changedField: path }).changedField, path);
+});
+
+test("frequency uses the scheduled-task value and keeps time zone in a separate field", () => {
+  assert.equal(panelFormFrequencyValueSchema, platformTaskFrequencySchema);
+  const frequency = panelFormFrequencyValueSchema.parse({ kind: "weekly", weekday: 1, time: "09:00" });
+  const timeZone = "Asia/Shanghai";
+  const values = { condition: { frequency, timeZone } };
+  const field = {
+    ...editableField, path: "/condition/frequency", label: "Frequency", control: { kind: "frequency" },
+    valueSchema: { $ref: "#/$defs/frequency" },
+  };
+  assert.deepEqual(panelFormDescriptionSchema.parse({ fields: [field], values, save: ownerSave }).values, values);
+  assert.equal(panelFormFrequencyValueSchema.safeParse({ ...frequency, timeZone }).success, false);
+});
+
+test("submitted field pointers stay separate from draft values and their presence", () => {
+  const omitted = { steps: [{ actionId: "review" }] };
+  const explicitNull = { ...omitted, runContract: null };
+  const draft = { pageKey: "workflows", operation: "workflow.update", target: { id: "example" } };
+  assert.deepEqual(pageDraftSchema.parse({ ...draft, form: omitted }).form, omitted);
+  assert.deepEqual(pageDraftSchema.parse({ ...draft, form: explicitNull }).form, explicitNull);
+
+  for (const submittedFields of [undefined, [], ["/runContract", "/steps/0/actionId"]]) {
+    const input = { values: explicitNull, ...(submittedFields === undefined ? {} : { submittedFields }) };
+    assert.deepEqual(panelFormSaveInputSchema.parse(input), input);
+  }
+  assert.equal(panelFormSaveInputSchema.safeParse({ values: omitted, submittedFields: ["steps/0/actionId"] }).success, false);
 });
 
 test("panel content carries flat translated text without requiring complete translations", () => {
@@ -136,4 +234,36 @@ test("bridge and skill agree about the specific semantic reads", () => {
     assert.ok(clientSends([binding(type)], "POST", "/data-query", "/admin/getMetas"));
   assert.ok(!clientSends([binding(OBJECT_TYPE)], "POST", "/data-query", "/admin/getschemamarkdown"));
   assert.ok(clientSends([binding(USER)], "GET", "/data-query", "/platform/agent-execution/options?selected=u"));
+});
+
+
+test("MetricView and Function management reads do not grant operation or concrete data access", () => {
+  for (const [type, root] of [[METRIC_VIEW, "/metricView"], [FUNCTION, "/function"]] as const) {
+    const resource = binding(type);
+    const reads = panelClientReads(resource);
+    for (const route of ["queryList", "queryById", "form"]) {
+      const path = `${root}/${route}`;
+      assert.ok(reads.some(read => read.method === "POST" && read.service === "/data-query" && read.path.test(path)));
+      assert.ok(clientSends([resource], "POST", "/data-query", path));
+    }
+    assert.ok(clientSends([resource], "POST", "/data-query", `${root}/save`));
+    assert.ok(!reads.some(read => read.path.test(`${root}/save`)));
+    assert.ok(!clientSends([resource], "POST", "/data-query", `${root}/delete`));
+  }
+
+  assert.ok(!clientSends([binding(METRIC_VIEW)], "POST", "/data-query", "/metricView/execute"));
+  assert.ok(!clientSends(["MetricView:example"], "POST", "/data-query", "/metricView/queryById"));
+
+  for (const [operation, path] of [
+    [DELETE_METRIC_VIEW, "/metricView/delete"],
+    [SET_METRIC_VIEW_STATUS, "/metricView/setStatus"],
+    [TEST_METRIC_VIEW, "/metricView/test"],
+    [TEST_EXECUTE_METRIC_VIEW, "/metricView/testExecute"],
+    [DELETE_FUNCTION, "/function/delete"],
+  ] as const) {
+    const operationKey = bindingKey({ kind: "PlatformOperation", id: operation });
+    assert.ok(clientSends([operationKey], "POST", "/data-query", path));
+    assert.ok(!clientSends([operationKey], "GET", "/data-query", path));
+    assert.ok(!clientSends([operationKey], "POST", "", path));
+  }
 });
