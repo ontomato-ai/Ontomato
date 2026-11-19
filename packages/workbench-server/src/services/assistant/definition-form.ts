@@ -42,27 +42,34 @@ const fieldSchemas = fields.map(({ schema, ...field }) => ({
 export async function describeAgentDefinitionForm(
   request: PanelFormRequest, owner: AssistantOwner, credentials: AssistantCredentials,
 ): Promise<PanelFormDescription> {
-  const { target } = request;
-  let current = initialValues;
+  const { target, values: submittedValues, changedField } = request;
+  const checkDraft = submittedValues !== undefined && changedField === null;
+  let definitionRead: Promise<AssistantAgentDefinition> | undefined;
   if (target.kind === "object") {
     const { primaryKey } = target;
     if (target.objectType !== AGENT_DEFINITION || !z.string().uuid().safeParse(primaryKey).success)
       throw new HttpError(400, "Invalid agent definition target", "INVALID_REQUEST");
-    const { id: _id, sortOrder: _sortOrder, ...values } = await readAgentDefinition(primaryKey, owner, credentials.locale);
+    definitionRead = readAgentDefinition(primaryKey, owner, credentials.locale);
+  }
+  // The form uses the caller's capability. The user picker resolves the selected member separately.
+  const [definition, openOptions] = await Promise.all([
+    definitionRead, checkDraft ? undefined : readExecutionOptions(credentials, null),
+  ]);
+  let current = initialValues;
+  if (definition) {
+    const { id: _id, sortOrder: _sortOrder, ...values } = definition;
     current = values;
   }
 
-  let values = request.values ?? current;
-  let selected = current.executionUserId;
-  if (request.values !== undefined && request.changedField === null) {
+  let values = submittedValues ?? current;
+  if (checkDraft) {
     const input = target.kind === "draft"
-      ? parseAgentDefinitionForm(request.values)
-      : parseAgentDefinitionUpdateForm(request.values);
+      ? parseAgentDefinitionForm(submittedValues)
+      : parseAgentDefinitionUpdateForm(submittedValues);
     const checked = await checkedDefinition(input, owner, credentials, current.executionUserId, current.skills);
     values = { ...input, ...checked };
-    selected = checked.executionUserId;
   }
-  const { canSetExecutionUser } = await readExecutionOptions(credentials, selected);
+  const { canSetExecutionUser } = openOptions ?? await readExecutionOptions(credentials, null);
   const text = (key: string) => tForLocale(credentials.locale, `panels.agentForm.${key}`);
   return {
     values,
