@@ -6,7 +6,7 @@ import { createApp, inject } from "vue";
 import { servePageComposerKey, type PageComposerExpand } from "../../../../../packages/agent-shell-ui/src/page-composer-entry";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import { installProductEmbedding } from "../../../../../packages/platform-web/src/app-host";
-import { inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, type Sent } from "./panel-frame";
+import { ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, type Sent } from "./panel-frame";
 
 /*
  * A panel's conversation entry (shared parts design, U18): the frame asks the platform to expand the page's composer,
@@ -73,7 +73,7 @@ function connect() {
 function shownFrame(open = true) {
   installPlatform(answer);
   const frame = panelFrame();
-  const registration = platformPanelHost("app-knowledge", use).frame(frame, registered("app-knowledge", use, panel), open);
+  const registration = platformPanelHost("app-knowledge", use, ignoreChanges).frame(frame, registered("app-knowledge", use, panel), open);
   inside(frame);
   return { invoke: connect(), registration };
 }

@@ -21,8 +21,12 @@ const key = z
   .max(200)
   .refine((value) => !["__proto__", "constructor", "prototype"].includes(value), "Reserved key");
 
+/** A flat reference into the current panel's content.messages. */
+export const panelMessageKeySchema = z.string().min(1);
+
 const ontologyTypeId = z.string().min(1).max(200);
 const ontologyObjectTypeSchema = z.object({ kind: z.literal("object"), objectType: ontologyTypeId }).strict();
+export const ontologyObjectCollectionTypeSchema = ontologyObjectTypeSchema.extend({ kind: z.literal("objects") });
 const ontologyScalarTypeSchema = z.object({
   kind: z.literal("scalar"), type: z.enum(["string", "number", "boolean", "date"]),
 }).strict();
@@ -54,8 +58,10 @@ export const singleOntologyParameterTypeSchema = z.discriminatedUnion("kind", [
   ontologyObjectTypeSchema, ontologyScalarTypeSchema,
 ]);
 
-/** A projection parameter names a scalar or the complete identity of one ontology object. */
-export const ontologyParameterTypeSchema = z.union([singleOntologyParameterTypeSchema, ontologyObjectUnionTypeSchema]);
+/** Projection ports may carry scalar values, object identities or an instance's checked collection. */
+export const ontologyParameterTypeSchema = z.union([
+  singleOntologyParameterTypeSchema, ontologyObjectUnionTypeSchema, ontologyObjectCollectionTypeSchema,
+]);
 export type OntologyParameterType = z.infer<typeof ontologyParameterTypeSchema>;
 
 export function matchesObjectType(field: OntologyObjectUnionType | z.infer<typeof ontologyObjectTypeSchema>, className: string): boolean {
@@ -73,6 +79,7 @@ export const panelStateFieldSchema = z.union([
   ontologyObjectTypeSchema.extend({ deepLink }),
   explicitObjectUnionTypeSchema.extend({ deepLink }),
   layeredObjectUnionTypeSchema.extend({ deepLink }),
+  ontologyObjectCollectionTypeSchema.extend({ deepLink: z.literal(false).default(false) }),
   ontologyScalarTypeSchema.extend({ deepLink }),
 ]);
 export type PanelStateField = z.infer<typeof panelStateFieldSchema>;
@@ -81,14 +88,25 @@ export type PanelStateField = z.infer<typeof panelStateFieldSchema>;
 export const panelStateSchema = z.record(key, panelStateFieldSchema);
 export type PanelState = z.infer<typeof panelStateSchema>;
 
-/** A state value as the SDK holds it in an instance: an object reference, a scalar, or nothing yet. */
-export const panelStateValueSchema = z.union([
-  z.object({ className: z.string().min(1).max(200), primaryKey: z.string().min(1).max(1000) }).strict(),
+/** An object reference in panel state. */
+export const panelObjectRefSchema = z.object({
+  className: z.string().min(1).max(200),
+  primaryKey: z.string().min(1).max(1000),
+}).strict();
+
+/** Values that can cross the address and deep-link state boundary. */
+export const panelDeepLinkStateValueSchema = z.union([
+  panelObjectRefSchema,
   z.string(),
   z.number().finite(),
   z.boolean(),
   z.null(),
 ]);
+export type PanelDeepLinkStateValue = z.infer<typeof panelDeepLinkStateValueSchema>;
+
+/** Checked identities belong to the instance. The declared field supplies the object type of every member. */
+export const panelObjectCollectionValueSchema = z.array(panelObjectRefSchema);
+export const panelStateValueSchema = z.union([panelDeepLinkStateValueSchema, panelObjectCollectionValueSchema]);
 export type PanelStateValue = z.infer<typeof panelStateValueSchema>;
 
 /**
@@ -101,10 +119,27 @@ export type PanelStateRef = z.infer<typeof panelStateRefSchema>;
 /** A projection reads and edits one owner-declared field of a form in this same panel instance. */
 export const panelFormFieldRefSchema = z.object({
   slot: key,
-  /** JSON Pointer relative to the owner form's values. */
+  /** JSON Pointer to a field, or to the owner-declared object-array when itemPath is set. */
   path: formFieldErrorSchema.shape.field,
+  /** JSON Pointer within each row. Resolve it against the row's current index for edits, refreshes and errors. */
+  itemPath: formFieldErrorSchema.shape.field.optional(),
 }).strict();
 export type PanelFormFieldRef = z.infer<typeof panelFormFieldRefSchema>;
+
+const panelOperationInputRefSchema = z.union([
+  panelStateRefSchema,
+  z.object({ formField: panelFormFieldRefSchema.pick({ slot: true, path: true }) }).strict(),
+]);
+
+/** Values supplied by this instance. The owner operation's target still supplies the draft. */
+export const panelReadOperationInputsSchema = z.object({
+  parameters: z.union([
+    panelOperationInputRefSchema,
+    z.object({ fields: z.record(key, panelOperationInputRefSchema) }).strict(),
+  ]),
+  bindingId: panelOperationInputRefSchema.optional(),
+}).strict();
+export type PanelReadOperationInputs = z.infer<typeof panelReadOperationInputsSchema>;
 
 /**
  * A projection placed in a slot. The slot carries the projection's ID and the values it is given; the projection's own
@@ -121,6 +156,8 @@ export const panelSlotSchema = z
     /** Where each named projection output writes its value in this instance's declared state. */
     outputs: z.record(key, panelStateRefSchema).optional(),
     formField: panelFormFieldRefSchema.optional(),
+    /** Input sources by operation name within this projection. A direct parameters source holds the whole object. */
+    readOperationInputs: z.record(key, panelReadOperationInputsSchema).optional(),
   })
   .strict();
 export type PanelSlot = z.infer<typeof panelSlotSchema>;
@@ -229,7 +266,7 @@ export function panelOperationId(slot: string, operation: string) {
 export const panelStateOperationSchema = z
   .object({
     id: key,
-    label: z.string().min(1).max(200),
+    labelKey: panelMessageKeySchema.max(200),
     kind: z.literal("state"),
     /** The fields it sets, by name, with the value each takes; a state operation writes nothing else. */
     sets: z.record(key, panelStateValueSchema).default({}),
@@ -262,6 +299,17 @@ export const panelManifestSchema = z
         if (!Object.hasOwn(manifest.state, ref.state))
           ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["slots", slot, "outputs", output], message: `Output '${output}' writes undeclared state '${ref.state}'` });
       }
+      for (const [operation, { parameters, bindingId }] of Object.entries(declaration.readOperationInputs ?? {})) {
+        const refs = "fields" in parameters
+          ? Object.entries(parameters.fields).map(([name, ref]) => ({ path: ["parameters", "fields", name], ref }))
+          : [{ path: ["parameters"], ref: parameters }];
+        if (bindingId) refs.push({ path: ["bindingId"], ref: bindingId });
+        for (const { path, ref } of refs) {
+          const exists = "state" in ref ? Object.hasOwn(manifest.state, ref.state) : Object.hasOwn(manifest.slots, ref.formField.slot);
+          if (!exists) ctx.addIssue({ code: z.ZodIssueCode.custom,
+            path: ["slots", slot, "readOperationInputs", operation, ...path], message: "Input must reference declared state or a form slot" });
+        }
+      }
     }
     const ids = new Set<string>();
     for (const operation of manifest.operations) {
@@ -292,7 +340,7 @@ export function definePanel(manifest: PanelManifest): PanelManifest {
 export const panelOpenRequestSchema = z
   .object({
     useId: z.string().min(1).max(200),
-    state: z.record(key, panelStateValueSchema).default({}),
+    state: z.record(key, panelDeepLinkStateValueSchema).default({}),
   })
   .strict();
 export type PanelOpenRequest = z.infer<typeof panelOpenRequestSchema>;

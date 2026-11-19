@@ -2,15 +2,27 @@ import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema, panelFormOptionSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
-import { ontologyParameterTypeSchema, panelFormTargetSchema, panelOperationId, type OntologyParameterType, type PanelManifest, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
+import { ontologyParameterTypeSchema, panelFormTargetSchema, panelMessageKeySchema, panelOperationId, type OntologyParameterType, type PanelManifest, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
 import type { ProductProjectionInput } from "./product-panels";
 
 /** Nested JSON in the owner's value shape. Field pointers address this object, including values filled by projections. */
 export const panelFormValuesSchema = runtimeJsonObjectSchema;
 export type PanelFormValues = z.infer<typeof panelFormValuesSchema>;
 
+/** Columns in an ObjectList projection's display. Omit labelKey for a field named by its owner. */
+export const panelObjectListColumnSchema = z.object({
+  key: z.string().min(1),
+  labelKey: panelMessageKeySchema.optional(),
+  kind: z.enum(["text", "tag", "tags", "reference"]).optional(),
+  subtitleKey: z.string().min(1).optional(),
+  emptyKey: panelMessageKeySchema.optional(),
+}).strict();
+export type PanelObjectListColumn = z.infer<typeof panelObjectListColumnSchema>;
+
 const fieldPath = formFieldErrorSchema.shape.field;
 const objectType = z.string().min(1);
+
+export { formTimeValueSchema as panelFormTimeValueSchema } from "./form-fields";
 
 /** The frequency control edits the same value as the scheduled-task control. */
 export {
@@ -41,6 +53,7 @@ const simpleControls = [
   /** Each editable row is one string in the owner's JSON array. */
   z.object({ kind: z.literal("string-array") }).strict(),
   z.object({ kind: z.literal("number") }).strict(),
+  /** A local time value in HH:mm, with null and presence determined by the owner's value schema. */
   z.object({ kind: z.literal("time") }).strict(),
   /** The time zone is a separate owner field. */
   z.object({ kind: z.literal("frequency") }).strict(),
@@ -88,7 +101,7 @@ export type PanelFormField = z.infer<typeof fieldShape> & {
 const childFields = z.array(z.lazy((): z.ZodType<PanelFormField> => panelFormFieldSchema));
 const controlSchema = z.discriminatedUnion("kind", [
   ...simpleControls,
-  // Row paths are relative. Error, refresh and formField ports address the current absolute paths.
+  // Row paths are relative. Edits, refreshes and errors address the current absolute paths.
   arrayControl.extend({ itemFields: childFields }),
   // Child paths are relative to the object. An untouched, omitted object stays absent.
   objectControl.extend({ fields: childFields }),
@@ -258,7 +271,7 @@ function projectionTarget(
 }
 
 /** The wire description is shared by the SDK's header and the generated skill. */
-export function panelStateOperation(operation: PanelStateOperation): PanelOperation {
-  return { id: operation.id, label: operation.label, kind: operation.kind, inputSchema: {},
+export function panelStateOperation(operation: PanelStateOperation, resolveLabel: (key: string) => string): PanelOperation {
+  return { id: operation.id, label: resolveLabel(operation.labelKey), kind: operation.kind, inputSchema: {},
     handlerRef: `panel.state.${operation.id}` };
 }

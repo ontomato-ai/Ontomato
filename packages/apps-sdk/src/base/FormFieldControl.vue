@@ -8,7 +8,7 @@ import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import { ElSwitch } from "element-plus/es/components/switch/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormField } from "@ontomato/contracts/panel-projection";
-import { valueAt } from "../panel/form-values";
+import { admitsNull, valueAt } from "../panel/form-values";
 import { useFormControls } from "./form-controls";
 import FormCodeField from "./FormCodeField.vue";
 
@@ -55,6 +55,11 @@ function addRow() {
 }
 /** A number as the reader typed it; cleared, it is null, never 0. (The input itself refuses text that is no number.) */
 const setNumber = (typed: string) => set(typed === "" ? null : Number(typed));
+/**
+ * A local time as HH:mm (the time zone is the owner's own field). Cleared, it is null where the owner's value schema
+ * admits null, and otherwise the empty text, which the owner refuses as it refuses any time it does not accept.
+ */
+const setTime = (typed: string) => set(typed === "" && admitsNull(props.field.valueSchema) ? null : typed);
 const setString = (index: number, next: string) => set(rows.value.map((row, at) => (at === index ? next : row)));
 /** A hidden field is the owner's and is drawn by no control; an avatar is drawn by the page that shows it. */
 const drawn = (fields: readonly PanelFormField[]) => fields.filter((child) => child.control.kind !== "hidden" && child.control.kind !== "avatar");
@@ -107,6 +112,14 @@ const addObject = () => set(control.value.kind === "object" ? control.value.defa
       @update:model-value="set($event === true)"
     ></el-switch>
     <el-input
+      v-else-if="control.kind === 'time'"
+      type="time"
+      :model-value="text"
+      :disabled="off"
+      class="sdk-form-field-time"
+      @update:model-value="setTime"
+    ></el-input>
+    <el-input
       v-else-if="control.kind === 'number'"
       type="number"
       :model-value="typeof value === 'number' ? String(value) : ''"
@@ -139,13 +152,21 @@ const addObject = () => set(control.value.kind === "object" ? control.value.defa
     <div v-else-if="control.kind === 'object-array'" class="sdk-form-rows">
       <div v-for="(row, index) in rows" :key="rowKey(row, index)" class="sdk-form-row" :data-row="path + '/' + index">
         <div class="sdk-form-row-fields">
-          <form-field-control
-            v-for="child in drawn(control.itemFields)"
-            :key="child.path"
-            :field="child"
-            :path="path + '/' + index + child.path"
-            :disabled="off"
-          ></form-field-control>
+          <template v-for="child in drawn(control.itemFields)" :key="child.path">
+            <!-- A row's reference is drawn by the projection declared for it, at the row's current index. -->
+            <template v-if="child.control.kind === 'reference'">
+              <component
+                :is="controls.rowControl(path, child.path)"
+                v-if="controls.rowControl(path, child.path)"
+                class="sdk-form-field"
+                :path="path + '/' + index + child.path"
+              ></component>
+              <p v-else-if="controls.rowControl(path, child.path) === undefined" role="alert" class="sdk-form-field-unavailable">
+                {{ child.label }}: {{ t("platform.formControlUnavailable") }}
+              </p>
+            </template>
+            <form-field-control v-else :field="child" :path="path + '/' + index + child.path" :disabled="off"></form-field-control>
+          </template>
         </div>
         <div v-if="!off" class="sdk-form-row-tools">
           <el-button text :disabled="index === 0" @click="move(index, index - 1)">{{ t("platform.formMoveUp") }}</el-button>
@@ -173,6 +194,9 @@ const addObject = () => set(control.value.kind === "object" ? control.value.defa
   font-size: var(--text-xs);
   line-height: 1.5;
   margin: 4px 0 0;
+}
+.sdk-form-field-time {
+  width: 160px;
 }
 .sdk-form-field-unavailable {
   color: var(--el-color-danger);

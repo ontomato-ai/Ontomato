@@ -25,6 +25,8 @@ import type { Router } from "vue-router";
 import elementEn from "element-plus/es/locale/lang/en";
 import { installAppHost, installProductEmbedding } from "../../../../../packages/platform-web/src/app-host";
 
+import type { ConfirmPanelOperation, PanelHumanOperations } from "../../../../../packages/apps-sdk/src/panel/human-operations";
+import { randomId } from "@ontomato/contracts/random-id";
 /*
  * A panel's frame inside the platform, for tests that run both ends for real: the platform's own app host and message
  * bridge, as the shell installs them, and on the frame's side the SDK's own modules. Only the browser is stood in for —
@@ -167,6 +169,9 @@ export function panelUse(id: string, pageKey: string, panelId: string, path: str
 }
 
 /** What a panel application's host shows for one use relation: the relation and the panel's current record. */
+/** What a frame registered outside any page does with a change its operations report: no page hears of it. */
+export const ignoreChanges = () => {};
+
 export const registered = (applicationId: string, use: ApplicationPanelUse, panel: ProductPanel) =>
   ({ kind: "registered", applicationId, use, panel }) as const;
 
@@ -270,10 +275,12 @@ export function inside(frame: Window) {
   Object.defineProperty(window, "parent", { value: parent, configurable: true });
 }
 
-/** Writes the frame's document as the panel host does: the panel's renderable definition and the run's facts. */
-export function writePanelDocument(panel: ProductPanel, use: ApplicationPanelUse, url: string, state: PanelHostMessage["state"]) {
-  const { content, manifest, sdkVersion } = panel;
-  writeFrameDocument({ kind: "panel-host-message", panel: { content, manifest, sdkVersion }, pageKey: use.pageKey, url, label: panel.name, state });
+/** Writes the frame's document as the panel host does for a registered use: the panel's renderable definition and the run's facts. */
+export function writePanelDocument(source: ReturnType<typeof registered>, url: string, state: PanelHostMessage["state"]) {
+  const { applicationId, use, panel: { content, manifest, sdkVersion, name } } = source;
+  writeFrameDocument({
+    kind: "panel-host-message", panel: { content, manifest, sdkVersion }, pageKey: use.pageKey, use: { applicationId, useId: use.id }, url, label: name, state,
+  });
 }
 
 /** Writes the frame's document from the run's facts the platform's panel host wrote for it. */
@@ -394,4 +401,38 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
     return nothingAt(request);
   };
   return { panel, use, address, answer };
+}
+
+/** The coordinator of an instance a test builds by hand and runs no operation of: any call to it fails the test. */
+const unused = () => Promise.reject(new Error("This test runs no operation of the panel"));
+export const noOperations: { operations: PanelHumanOperations; confirmOperation: ConfirmPanelOperation } = {
+  operations: { describe: unused, read: unused, prepare: unused }, confirmOperation: unused,
+};
+
+/**
+ * Node's coordinator for a person's writes, as the frame and its host reach it: the frame prepares one intent, the host
+ * reads it back and dispatches it once, and `outcome` is what the owner's registered operation returned for it. Nothing
+ * here needs confirming; the host's dialog is the host's own test.
+ */
+export function humanIntents(outcome: (operationId: string) => unknown, target: { source: "input"; input: string } = { source: "input", input: "task" }) {
+  const prepared = new Map<string, { intentId: string; operationId: string; label: string; confirmation: { kind: "none" } }>();
+  return (request: Sent): Response | undefined => {
+    // The owner's write: one object it acts on, with nothing to confirm.
+    if (request.method === "GET" && request.path === "/api/panel-operations/descriptor")
+      return Response.json({ handlerRef: "owner.write", effect: "write", target, inputSchema: {}, resultSchema: {}, batch: false });
+    if (request.method === "POST" && request.path === "/api/panel-operations/intents") {
+      const { operationId } = request.body as { operationId: string };
+      const preparation = { intentId: randomId(), operationId, label: operationId, confirmation: { kind: "none" as const } };
+      prepared.set(preparation.intentId, preparation);
+      return Response.json(preparation);
+    }
+    const read = /^\/api\/panel-operation-intents\/([^/?]+)$/.exec(request.path);
+    if (read && request.method === "GET") return Response.json(prepared.get(read[1]!));
+    const dispatch = /^\/api\/panel-operations\/intents\/([^/]+)\/dispatch$/.exec(request.path);
+    if (dispatch && request.method === "POST") {
+      const { intentId, operationId } = prepared.get(dispatch[1]!)!;
+      return Response.json({ kind: "dispatched", intentId, outcome: outcome(operationId) });
+    }
+    return undefined;
+  };
 }

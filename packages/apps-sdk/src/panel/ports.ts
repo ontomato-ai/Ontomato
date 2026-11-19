@@ -1,6 +1,6 @@
 import { type PanelManifest, type PanelOperation, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { ProjectionPorts } from "@ontomato/contracts/panel-projection";
-import type { PanelFieldValue } from "./state";
+import { stateObject, type PanelFieldValue } from "./state";
 
 export type { ProjectionOperation, ProjectionPorts } from "@ontomato/contracts/panel-projection";
 
@@ -12,16 +12,11 @@ export type { ProjectionOperation, ProjectionPorts } from "@ontomato/contracts/p
  * from a name.
  */
 
-/**
- * One projection registered in one panel instance: the slot it fills, what its component publishes, and how to run one
- * of its operations here.
- */
+/** One projection registered in one panel instance: the slot it fills and what its component publishes. */
 export interface PanelProjectionRegistration {
   slot: string;
   projectionId: string;
   ports: ProjectionPorts;
-  /** Runs one operation in this frame; the projection's client makes the request with the reader's own credential. */
-  invoke(handlerRef: string, call: PanelOperationCall): Promise<unknown>;
 }
 
 /**
@@ -56,9 +51,8 @@ function operationTarget(
 ): PanelOperationCall["target"] {
   if (!operation.target) return null;
   if (operation.target.source === "draft") return { kind: "draft" };
-  const value = state[operation.target.state];
-  if (!value || typeof value !== "object") return null;
-  return { kind: "object", objectType: value.className, primaryKey: value.primaryKey };
+  const value = stateObject(state[operation.target.state]);
+  return value && { kind: "object", objectType: value.className, primaryKey: value.primaryKey };
 }
 
 export function slotInputValues(

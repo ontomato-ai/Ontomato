@@ -66,9 +66,7 @@ describe("platform-ontology HTTP routes", () => {
     const startRes = await fetch(`${base}/api/platform-ontology/start`);
     expect(startRes.status).toBe(200);
     expect(await startRes.json()).toEqual({
-      node: { className: "platform:User", primaryKey: "user-1" },
-      label: "Alice",
-      layer: "governance",
+      node: { className: "platform:User", primaryKey: "user-1", label: "Alice", layer: "governance" },
     });
 
     const neighborsRes = await fetch(`${base}/api/platform-ontology/neighbors`, {
