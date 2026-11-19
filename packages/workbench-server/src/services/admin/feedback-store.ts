@@ -26,18 +26,14 @@ export interface ListFeedbackOptions {
 }
 
 /**
- * The turn the feedback belongs to: the record's own key, the target when it is a turn, or one built from the
- * conversation and its turn number. The admin page used to derive this itself; the owner now answers it.
+ * The turn the feedback belongs to: the target when it is a turn, or one built from the conversation and its turn
+ * number. The admin page used to derive this itself; the owner now answers it.
  */
 export function feedbackTurnKey(input: {
-  metadata?: unknown;
   targetId?: string | null;
   threadId?: string | null;
   requestSeq?: number | null;
 }): string {
-  const metadata = input.metadata as { turnKey?: unknown } | null | undefined;
-  const fromMetadata = typeof metadata?.turnKey === "string" ? metadata.turnKey.trim() : "";
-  if (fromMetadata) return fromMetadata;
   if (input.targetId?.startsWith("turn.")) return input.targetId;
   if (input.threadId && Number.isInteger(input.requestSeq))
     return `turn.${input.threadId}.${input.requestSeq}`;

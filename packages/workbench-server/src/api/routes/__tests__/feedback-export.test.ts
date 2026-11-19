@@ -68,7 +68,7 @@ beforeEach(() => {
 it("exports the filtered records as a BOM CSV attachment with the admin page's columns", async () => {
   records.mockResolvedValue({ records: [record], total: 1, limit: 20, offset: 0 });
 
-  const response = await fetch(`${base}/export?sourceType=qa&rating=like&keyword=refund`);
+  const response = await fetch(`${base}/export?sourceType=qa&rating=like&keyword=refund&timeZone=America%2FNew_York`);
 
   expect(response.status).toBe(200);
   expect(permission).toHaveBeenCalledWith(["user-feedback"]);
@@ -88,6 +88,7 @@ it("exports the filtered records as a BOM CSV attachment with the admin page's c
   expect([...bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
   const [header, row] = new TextDecoder().decode(bytes).split("\n");
   expect(header).toBe('"Time","Source","Rating","User","Turn key","Question","Answer","Comment"');
+  expect(row).toContain('"11/19/2026, 3:00:00 AM"');
   expect(row).toContain('"Query"');
   expect(row).toContain('"Like"');
   expect(row).toContain('"user-1"');
@@ -100,7 +101,7 @@ it("exports the filtered records as a BOM CSV attachment with the admin page's c
 it("keeps the list's admission and sends no filter it was not given", async () => {
   records.mockResolvedValue({ records: [], total: 0, limit: 20, offset: 0 });
 
-  const response = await fetch(`${base}/export`);
+  const response = await fetch(`${base}/export?timeZone=Asia%2FShanghai`);
 
   expect(response.status).toBe(200);
   expect(permission).toHaveBeenCalledWith(["user-feedback"]);
@@ -114,4 +115,15 @@ it("keeps the list's admission and sends no filter it was not given", async () =
   expect(new TextDecoder().decode(new Uint8Array(await response.arrayBuffer()))).toBe(
     '"Time","Source","Rating","User","Turn key","Question","Answer","Comment"',
   );
+});
+
+it.each([
+  ["a missing time zone", ""],
+  ["an empty time zone", "?timeZone="],
+  ["an invalid time zone", `?timeZone=${encodeURIComponent("Not/AZone")}`],
+])("refuses %s with a 400 before reading records", async (_case, query) => {
+  const response = await fetch(`${base}/export${query}`);
+
+  expect(response.status).toBe(400);
+  expect(records).not.toHaveBeenCalled();
 });

@@ -6,9 +6,13 @@ const cell = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
 
 /**
  * The feedback records of one filter as a CSV file: the same columns, labels and UTF-8 BOM the admin page used to
- * assemble in the browser, now answered by the feedback owner in the request's language.
+ * assemble in the browser, now answered by the feedback owner in the request's language and time zone.
  */
-export function feedbackCsv(records: readonly FeedbackRecord[], locale: string | undefined): string {
+export function feedbackCsv(
+  records: readonly FeedbackRecord[],
+  locale: string | undefined,
+  timeZone: string,
+): string {
   const text = (key: string) => tForLocale(locale, `api.feedbackExport.${key}`);
   const headers = [
     text("columns.time"),
@@ -22,7 +26,7 @@ export function feedbackCsv(records: readonly FeedbackRecord[], locale: string |
   ];
   const lines = records.map((record) =>
     [
-      new Date(record.createdAt).toLocaleString(locale),
+      new Date(record.createdAt).toLocaleString(locale, { timeZone }),
       text(`sources.${record.sourceType}`),
       text(`ratings.${record.rating}`),
       record.userName || record.userId,

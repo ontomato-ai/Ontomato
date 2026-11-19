@@ -17,12 +17,6 @@ import { feedbackTurnKey, listFeedback } from "../feedback-store";
 
 const thread = "11111111-1111-4111-8111-111111111111";
 
-it("keeps the turn key a record carries in its metadata", () => {
-  expect(
-    feedbackTurnKey({ metadata: { turnKey: " turn.thread.7 " }, targetId: "target", threadId: thread, requestSeq: 1 }),
-  ).toBe("turn.thread.7");
-});
-
 it("uses a target that is itself a turn", () => {
   expect(feedbackTurnKey({ targetId: "turn.thread.2", threadId: thread, requestSeq: 1 })).toBe("turn.thread.2");
 });
