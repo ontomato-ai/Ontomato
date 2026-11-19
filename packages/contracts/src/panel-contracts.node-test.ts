@@ -1,4 +1,5 @@
 import { formOptionSchema } from "./form-fields";
+import { appsSdkBuildSchema, appsSdkCurrentSchema } from "./apps-sdk";
 import {
   APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL, EXPORT_FEEDBACK, EXPORT_SKILL,
   FEEDBACK_RECORD, IMPORT_SKILL, KNOWLEDGE_GOVERNANCE_RECORD, SKILL,
@@ -45,6 +46,22 @@ import {
 import { ontologyParameterTypeSchema as legacyOntologyParameterTypeSchema } from "./product-projections";
 
 const binding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
+
+test("current SDK discovery carries the digest of the build and the component catalogue path", () => {
+  const build = { version: "1.1.2", digest: "2f".repeat(32) };
+  const root = "/tenant/api/apps-sdk/1.1.2";
+  const current = {
+    ...build, publicBasePath: "/tenant", sdkBasePath: root, manifestPath: `${root}/sdk.json`,
+    docsPath: `${root}/docs/index.md`, referencePath: `${root}/docs/reference.md`, componentsPath: `${root}/components.json`,
+  };
+  assert.deepEqual(appsSdkBuildSchema.parse(build), build);
+  assert.deepEqual(appsSdkCurrentSchema.parse(current), current);
+  for (const badDigest of [build.digest.toUpperCase(), build.digest.slice(1), "x".repeat(64)]) {
+    assert.equal(appsSdkBuildSchema.safeParse({ ...build, digest: badDigest }).success, false);
+    assert.equal(appsSdkCurrentSchema.safeParse({ ...current, digest: badDigest }).success, false);
+  }
+  assert.equal(appsSdkCurrentSchema.safeParse({ ...current, componentsPath: undefined }).success, false);
+});
 
 test("a no-code task panel registers and parses the same members and layout", async () => {
   const { registerDirectPanelRequestSchema } = await import("./product-panels");
