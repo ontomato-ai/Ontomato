@@ -58,13 +58,17 @@ export interface PanelFormAdapter {
   discard(): void;
 }
 
-/** A draft a form took, with the fields it changed by path. */
+/** A draft a form took, with the fields it changed by path and the link it was read at. */
 export interface ReceivedPanelDraft<Form extends object> {
   slot: string;
   operation: string;
   target: { id?: string };
+  /** The object a create draft's earlier save created; absent for an update draft and an unsaved create. */
+  created?: { id: string };
   form: Form;
   changed: ReadonlySet<string>;
+  /** The draft artifact the address named: what a save or a discard settles. */
+  link: PageDraftLink;
 }
 
 /** What a held draft is handed to once its form takes it: the draft as that form shows it. */
@@ -76,6 +80,7 @@ export class PanelFormAdapters {
   /** The draft this panel received and no registered form has taken yet, with the slots it was offered to. */
   readonly #held = shallowRef<{
     draft: PageDraft<Record<string, unknown>>;
+    link: PageDraftLink;
     taken: DraftTaken;
     current: () => boolean;
     offered: Set<string>;
@@ -99,8 +104,8 @@ export class PanelFormAdapters {
    * Holds a draft and offers it to the registered forms one at a time, in registration order, until one takes it; a
    * form that registers later is offered it then. `taken` hears the draft as the form shows it.
    */
-  hold(draft: PageDraft<Record<string, unknown>>, taken: DraftTaken, current: () => boolean = () => true): void {
-    this.#held.value = { draft, taken, current, offered: new Set(), declined: new Set(), offering: false };
+  hold(draft: PageDraft<Record<string, unknown>>, link: PageDraftLink, taken: DraftTaken, current: () => boolean = () => true): void {
+    this.#held.value = { draft, link, taken, current, offered: new Set(), declined: new Set(), offering: false };
     this.#offerNext();
   }
 
@@ -129,7 +134,8 @@ export class PanelFormAdapters {
         return;
       }
       this.#held.value = null;
-      if (changed.size) held.taken({ slot: next, operation: draft.operation, target: draft.target, form: draft.form, changed });
+      if (changed.size)
+        held.taken({ slot: next, operation: draft.operation, target: draft.target, created: draft.created, form: draft.form, changed, link: held.link });
     }, (reason: unknown) => {
       held.offering = false;
       if (this.#held.value === held) this.#held.value = null;
@@ -170,5 +176,5 @@ export async function receivePanelDraft(
   const draft = await source.readPageDraft(link.sessionId, link.runId, link.path);
   if (!current()) return;
   if (draft.pageKey !== pageKey) throw new Error(`Draft belongs to page ${draft.pageKey}, not ${pageKey}`);
-  adapters.hold(draft, taken, current);
+  adapters.hold(draft, link, taken, current);
 }

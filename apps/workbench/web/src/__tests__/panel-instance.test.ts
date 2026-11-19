@@ -75,6 +75,7 @@ function instance(initial?: Record<string, unknown>) {
     url: () => "/a/schedules",
     label: () => "Scheduled tasks",
     initial: initial as never,
+    recordDraftCreated: async () => {},
     readProjection: async (id) => records.get(id)!,
   });
 }
@@ -156,7 +157,7 @@ describe("a panel's instance", () => {
     const saves = { binding: `PlatformObjectType:${SCHEDULED_TASK}`, inputs: {}, operations: [
       { name: "save", label: "Save", kind: "form.save" as const, inputSchema: {}, handlerRef: `${SCHEDULED_TASK}.save` },
     ] };
-    panelInstance.forms.hold({ pageKey: "schedules", operation: "agent.update", target: { id: "a-1" }, form: {} }, () => {});
+    panelInstance.forms.hold({ pageKey: "schedules", operation: "agent.update", target: { id: "a-1" }, form: {} }, { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/drafts/a.page-draft.json" }, () => {});
     panelInstance.forms.register("taskForm", declining);
     await vi.waitFor(() => expect(panelInstance.forms.unclaimed(["taskForm"])).toBe(true));
     // A declared slot still to register may be the form that takes it.

@@ -76,6 +76,7 @@ function instance(initial?: Record<string, unknown>) {
     url: () => "/applications/app-panels-trial-a/tasks",
     label: () => "panels-trial-a-tasks",
     initial: initial as never,
+    recordDraftCreated: async () => {},
     readProjection: async (id) => records.get(id)!,
   });
 }
@@ -153,6 +154,7 @@ describe("a panel instance", () => {
       url: () => "/applications/app-panels-trial-b/summary",
       label: () => "panels-trial-b-summary",
       initial: { selectedTask: task("task-7") },
+      recordDraftCreated: async () => {},
       readProjection: async (id) => records.get(id)!,
     });
     p.state.set("selectedTask", task("task-9"));
