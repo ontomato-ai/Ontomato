@@ -26,7 +26,8 @@ import { contextProducts, type ContextProducts } from "./context-products";
 import type { SdkEdition } from "./edition";
 import type {ProductSubscriptionTarget,ProductSubscriptionEvent} from '@ontomato/contracts/product-subscriptions';
 import type {ProductNavigationTarget} from '@ontomato/contracts/product-page-state';
-import {connectAppBridge} from './bridge';
+import type {AppBridgeExpandPageComposer} from '@ontomato/contracts/app-bridge';
+import {connectAppBridge,expandHostPageComposer} from './bridge';
 
 /** What an app gets from the platform shell it runs in. */
 export interface AppContext {
@@ -77,6 +78,7 @@ export interface AppContext {
  */
 const transports = new WeakMap<AppContext, ManagerRequest>();
 const translators = new WeakMap<AppContext, (key: string) => string>();
+const hosts = new WeakMap<AppContext, AppHost>();
 let bridgedHost:AppHost|undefined;
 
 function parentHost() {
@@ -110,6 +112,13 @@ export function contextTranslate(context: AppContext): (key: string) => string {
   const translate = translators.get(context);
   if (!translate) throw new Error("Pass the context createAppContext() returned");
   return translate;
+}
+
+/** Asks the host behind this context to expand the page's composer for a panel slot's declared conversation entry. */
+export function contextExpandPageComposer(context: AppContext): (request: AppBridgeExpandPageComposer) => Promise<void> {
+  const host = hosts.get(context);
+  if (!host) throw new Error("Pass the context createAppContext() returned");
+  return (request) => expandHostPageComposer(host, request);
 }
 
 const isText = (value: unknown) => typeof value === "string" && value.trim() !== "";
@@ -252,5 +261,6 @@ export function createContext(host: AppHost, appearance: ContextAppearance): App
   };
   transports.set(context, transport);
   translators.set(context, (key) => i18n.global.t(key));
+  hosts.set(context, host);
   return context;
 }

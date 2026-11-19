@@ -370,4 +370,14 @@ export const components: readonly ComponentMetadata[] = [
     effects: "Runs the projection's upload operation with the chosen file as the reader and refreshes panel objects on success.",
     bindsElement: ["PlatformOperation:*"],
   }),
+  defineComponentMeta({
+    componentId: "ConversationEntry",
+    module: "@ontomato/sdk/base",
+    exportName: "ConversationEntry",
+    role: "control",
+    meaning:
+      "Renders a generic button for a projection's declared conversationEntry. Clicking it asks the platform host to expand the page's composer with the declared agent target and optional prefill text without sending a message.",
+    effects: "Requests the host to expand the page's composer with the projection's declared conversationEntry; performs no writes and never sends messages.",
+    bindsElement: ["PlatformObjectType:platform:AgentDefinition"],
+  }),
 ];

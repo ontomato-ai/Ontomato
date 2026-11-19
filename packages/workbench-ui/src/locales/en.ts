@@ -193,6 +193,7 @@ export default {
     "uploadConfirmTitle": "Confirm overwrite",
     "uploadInvalidType": "Only {accept} files are supported",
     "uploadUploading": "Uploading…",
+    "conversationEntryOpen": "Open conversation",
     "graphLayers": "Layers",
     "graphMatches": "{count} matches",
     "graphCounts": "{nodes} nodes · {edges} edges",

@@ -1,4 +1,5 @@
 import { computed, inject, onBeforeUnmount, type ComputedRef, type InjectionKey, type Ref } from "vue";
+import type { AppBridgeExpandPageComposer } from "@ontomato/contracts/app-bridge";
 import { panelChildCollectionQuerySchema, type PanelManifest, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelDefinitionContent, ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PanelInstance } from "./instance";
@@ -73,6 +74,11 @@ export interface PanelContext {
    * type — before the projection registers its ports, so a panel downloads only the clients of what it shows.
    */
   resources(projection: Pick<ProductProjection, "componentId" | "binding" | "graph">): Promise<void>;
+  /**
+   * Asks the host to expand the page's composer with the slot's declared agent target and optional prefill text.
+   * Never sends a message; the host enforces that the request matches the slot's declared projection.
+   */
+  expandPageComposer(request: AppBridgeExpandPageComposer): Promise<void>;
 }
 
 /**
