@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { installWorkbenchIdentity, workbenchIdentity } from "@ontomato/workbench-server";
-import { requirePermission } from "@ontomato/workbench-server/identity/installed";
+import { assertPermission, requirePermission } from "@ontomato/workbench-server/identity/installed";
 import { ossIdentity } from "../identity";
 
 beforeEach(() => {
@@ -8,10 +8,12 @@ beforeEach(() => {
 });
 
 describe("oss identity", () => {
-  it("allows feedback through the installed permission guard without any credential", () => {
+  it("allows feedback through the installed permission guard without any credential", async () => {
     const next = vi.fn();
     requirePermission(["user-feedback"])({} as never, {} as never, next);
     expect(next).toHaveBeenCalledOnce();
+    await expect(workbenchIdentity().assertPermission({}, ["analysis-agent"])).resolves.toBeUndefined();
+    await expect(assertPermission({}, ["analysis-agent"])).resolves.toBeUndefined();
   });
 
   it("returns 1 for every domain check and ignores the supplied domain", () => {
