@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { platformObjectTypes, platformRelationKinds } from "@ontomato/contracts/platform-object-types";
 import { installWorkbenchIdentity } from "../../../identity/installed";
 import type { WorkbenchIdentity } from "../../../identity/types";
 import { AuthFailedError, BackendResponseError, backendPost } from "../../../utils/backend-client";
@@ -163,11 +164,17 @@ beforeEach(() => {
 });
 
 describe("platform-ontology composite query", () => {
-  it("exposes all four layers, 18 object types, and 27 relation kinds with published as stored (non-derived)", () => {
+  it("exposes all four layers, 18 object types, and 27 relation kinds directly from contracts", () => {
     const schema = readPlatformOntologySchema();
     expect(schema.layers).toEqual(["fact", "capability", "governance", "product"]);
     expect(schema.objectTypes).toHaveLength(18);
+    expect(schema.relationKinds).toBe(platformRelationKinds);
     expect(schema.relationKinds).toHaveLength(27);
+
+    const expectedTypes = Object.entries(platformObjectTypes).filter(([, decl]) => Boolean(decl.layer));
+    expect(schema.objectTypes.map((t) => t.id)).toEqual(expectedTypes.map(([id]) => id));
+    expect(schema.objectTypes.every((t) => t.labelKey.startsWith("platformOntology.types."))).toBe(true);
+    expect(schema.relationKinds.every((r) => r.labelKey === `platformOntology.relations.${r.id}`)).toBe(true);
 
     const publishedRelations = schema.relationKinds.filter((r) => r.id.startsWith("user.published-"));
     expect(publishedRelations).toHaveLength(3);
