@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AGENT_DEFINITION, MCP_SERVICE_OPTION, OBJECT_TYPE, USER, bindingKey, clientSends, panelClientReads } from "./panel-client-requests";
+import { AGENT_DEFINITION, MCP_SERVICE_OPTION, OBJECT_TYPE, RELATIONSHIP, USER, bindingKey, clientSends, panelClientReads } from "./panel-client-requests";
 import { candidatePanelSourceSchema, panelUsePath } from "./panel-host";
 import { panelManifestSchema } from "./panel-manifest";
-import { panelFormSaveInputSchema, projectionOperations } from "./panel-projection";
-import { applicationPanelUsePathSchema } from "./product-panels";
+import { panelFormSaveInputSchema, projectionBindingKeys, projectionOperations, projectionPorts } from "./panel-projection";
+import { applicationPanelUsePathSchema, productPanelContentSchema, productProjectionInputSchema } from "./product-panels";
 
 const binding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
 
@@ -38,6 +38,42 @@ test("form save preserves nested JSON and the owner's revision when present", ()
   assert.deepEqual(panelFormSaveInputSchema.parse(agent), agent);
   const schedule = { values: { time: "09:00" }, revision: 17 };
   assert.deepEqual(panelFormSaveInputSchema.parse(schedule), schedule);
+});
+
+test("panel content carries flat translated text without requiring complete translations", () => {
+  const messages = { en: { "graph.count": "{count} classes", "graph.empty": "No classes" }, "zh-CN": { "graph.count": "{count} 个类" } };
+  const source = { html: "<main></main>", module: "export {}" };
+  assert.deepEqual(productPanelContentSchema.parse({ ...source, messages }).messages, messages);
+  assert.equal(productPanelContentSchema.safeParse({ ...source, messages: { en: { graph: { count: "nested" } } } }).success, false);
+  assert.equal(productPanelContentSchema.safeParse({ ...source, messages: { en: { text: "类".repeat(100_000) } } }).success, false);
+});
+
+test("a graph has two admitted sources and can use either a form field or separate selection outputs", () => {
+  const projection = productProjectionInputSchema.parse({
+    name: "Ontology graph", description: "", visibility: "domain", componentId: "GraphCanvas",
+    binding: { kind: "PlatformObjectType", id: OBJECT_TYPE },
+    graph: { edges: { binding: { kind: "PlatformObjectType", id: RELATIONSHIP }, sourcePath: "/fromclass", targetPath: "/toclass" } },
+    inputs: {}, display: {},
+  });
+  assert.deepEqual(projectionBindingKeys(projection), [binding(OBJECT_TYPE), binding(RELATIONSHIP)]);
+  assert.deepEqual(projectionPorts(projection, {}).outputs, {
+    selectedNode: { kind: "object", objectType: OBJECT_TYPE },
+    selectedEdge: { kind: "object", objectType: RELATIONSHIP },
+  });
+
+  const range = panelManifestSchema.parse({
+    state: {}, operations: [],
+    slots: {
+      definition: { projectionId: "definition-form" },
+      range: { projectionId: "data-scope", formField: { slot: "definition", path: "/classNames" } },
+    },
+  });
+  assert.equal(range.slots.range?.formField?.path, "/classNames");
+  const state = { node: { kind: "object", objectType: OBJECT_TYPE }, edge: { kind: "object", objectType: RELATIONSHIP } };
+  const outputs = { selectedNode: { state: "node" }, selectedEdge: { state: "edge" } };
+  const graph = { slots: { graph: { projectionId: "ontology-model", outputs } }, operations: [] };
+  assert.deepEqual(panelManifestSchema.parse({ ...graph, state }).slots.graph?.outputs, outputs);
+  assert.equal(panelManifestSchema.safeParse({ ...graph, state: { node: state.node } }).success, false);
 });
 
 test("canonical relation paths are already routable and carry no view state", () => {
