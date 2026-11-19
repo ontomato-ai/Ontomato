@@ -46,6 +46,7 @@ export {
   usePanelInstance,
   type DefinitionChanged,
   type PanelHostLabels,
+  type PanelFrameRegistration,
   type PanelHostPort,
   type PanelInstanceOptions,
   type PanelInstanceView,

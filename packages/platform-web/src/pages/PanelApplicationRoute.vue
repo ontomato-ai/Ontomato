@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, markRaw, ref, watch } from "vue";
-import { onBeforeRouteUpdate, useRoute, useRouter } from "vue-router";
-import { ElMessage } from "element-plus";
+import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { PanelHost, panelUnavailable, type PanelHostLabels, type PanelHostPort } from "@ontomato/platform-shell";
+import { PanelHost, panelUnavailable, useUnsavedChanges, type PanelHostLabels, type PanelHostPort } from "@ontomato/platform-shell";
 import { panelAddress, panelAddressState, panelUsePath, type PanelRefreshPort } from "@ontomato/contracts/panel-host";
 import { applicationRootPath } from "@ontomato/contracts/platform-identity";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
@@ -64,12 +63,13 @@ watch(() => props.objectRefresh?.seq, () => {
 }, { flush: "post" });
 
 /**
- * How many of the application's pages keep their instance at once (design 7.2.1): the one shown and the two the reader
- * was on last, which covers going back and forth between two or three pages of one application. Pages with unsaved
- * changes count, and are never the ones dropped. It is the prototype's number until the memory each kept frame holds has
- * been measured (`notes/keepalive.md`).
+ * How many of the application's pages keep their instance at once (design 7.2.1): the one shown and the one the reader
+ * left last, which covers going back and forth between two pages of one application. Only a page left with nothing
+ * unsaved is kept; a page left with unsaved changes is left through the platform's unsaved-changes question, and its
+ * changes go with it. It is the prototype's number until the memory each kept frame holds has been measured
+ * (`notes/keepalive.md`).
  */
-const KEPT_PAGES = 3;
+const KEPT_PAGES = 2;
 
 /** A page of this application whose instance is kept, shown or not. */
 interface KeptPage {
@@ -78,26 +78,40 @@ interface KeptPage {
   /** The instance's own address, with its state, as it last reported it: where it is shown again from its bare address. */
   reported: string;
   context: PageContext | null;
+  /** Whether it holds unsaved changes; only the shown page can, and leaving it so drops it. */
   dirty: boolean;
+  /** When the reader was last on it, in the order of the pages shown: the page dropped is the one left longest ago. */
+  lastShown: number;
 }
+/**
+ * The kept pages, in the order they were opened. The order never changes while a page is kept: a frame moved in the
+ * document is loaded again, which is the rebuild keeping it avoids.
+ */
 const kept = ref<KeptPage[]>([]);
+let showings = 0;
 const failure = ref("");
 
-watch(() => props.applicationId, async (applicationId, _, onCleanup) => {
+/** Reads the application's use relations, or says why it could not; `current` tells whether the answer is still wanted. */
+async function readUses(applicationId: string, current: () => boolean) {
+  try {
+    const records = await panelUsesOf(applicationId);
+    if (current()) uses.value = records;
+  } catch (reason) {
+    if (!current()) return;
+    failure.value = reason instanceof Error ? reason.message : String(reason);
+    emit("display-loaded", panelUnavailable(reason));
+  }
+}
+
+// Another application is another set of pages: the kept ones of the application left are dropped.
+watch(() => props.applicationId, (applicationId, _, onCleanup) => {
   let current = true;
   onCleanup(() => { current = false; });
   uses.value = null;
   kept.value = [];
   failure.value = "";
   emit("display-loaded", { status: "loading" });
-  try {
-    const records = await panelUsesOf(applicationId);
-    if (current) uses.value = records;
-  } catch (reason) {
-    if (!current) return;
-    failure.value = reason instanceof Error ? reason.message : String(reason);
-    emit("display-loaded", panelUnavailable(reason));
-  }
+  void readUses(applicationId, () => current);
 }, { immediate: true });
 
 /** The page's address as the reader is on it: the conversation's page parameter beside a chat, the router's full. */
@@ -159,64 +173,53 @@ const pageName = computed(() => use.value?.names?.[locale.value] ?? use.value?.n
 const shownPage = computed(() => kept.value.find((page) => page.use.id === use.value?.id) ?? null);
 
 /**
- * The page the reader opens becomes the shown one: a kept page as it was left, or a new instance. Beyond `KEPT_PAGES`, the
- * pages the reader left longest ago are dropped, except those with unsaved changes.
+ * The page the reader opens becomes the shown one: a kept page as it was left, or a new instance. At `KEPT_PAGES`, the
+ * page with nothing unsaved that the reader left longest ago is dropped to make room.
  *
  * The page the reader opened is known before its frame has loaded: its name and address go to the conversation at once,
  * with no selection, since the panel has not said what it shows yet. What the frame reports later adds that; a kept page
  * says what it showed when it was left.
  */
-watch(use, (next) => {
+watch(use, (next, previous) => {
+  // A page left with unsaved changes was left through the unsaved-changes question: its changes go with its instance.
+  const left = previous && previous.id !== next?.id ? kept.value.find((page) => page.use.id === previous.id) : undefined;
+  if (left?.dirty) kept.value = kept.value.filter((page) => page !== left);
   if (!next) return;
+  performance.mark("ontomato:panel-page-opened", { detail: { applicationId: props.applicationId, useId: next.id } });
   const found = kept.value.find((page) => page.use.id === next.id);
-  if (found) void recheck(found);
+  if (found) found.lastShown = ++showings;
+  else if (kept.value.length >= KEPT_PAGES) {
+    const [oldest] = [...kept.value].sort((one, other) => one.lastShown - other.lastShown);
+    kept.value = kept.value.filter((page) => page !== oldest);
+  }
   const page = found ?? {
     use: next,
     port: markRaw(platformPanelHost(props.applicationId, next)),
     reported: panelAddress(pageAddress.value, requestedState.value),
     context: null,
     dirty: false,
+    lastShown: ++showings,
   };
-  let excess = kept.value.length + (found ? 0 : 1) - KEPT_PAGES;
-  kept.value = [...kept.value.filter((other) => {
-    if (other === found || other.dirty || excess <= 0) return other !== found;
-    excess--;
-    return false;
-  }), page];
+  if (!found) kept.value = [...kept.value, page];
   // Its bare address opens a kept page as it was left: the address takes the state the page is at.
   if (found && !opened.value.includes("?")) reportAddress({ kind: "state", address: found.reported });
   emit("context", page.context ?? { url: page.reported, label: pageName.value, selection: [] });
 }, { immediate: true });
 
-/**
- * Opening another page when every kept page but the shown one has unsaved changes would drop one of them: the reader is
- * told to save or discard first, and stays where they are.
- */
-onBeforeRouteUpdate((to) => {
-  if (String(to.params.applicationId) !== props.applicationId) return true;
-  const next = useAt(to.path);
-  if (!next || kept.value.length < KEPT_PAGES || kept.value.some((page) => page.use.id === next.id)) return true;
-  if (kept.value.some((page) => page !== shownPage.value && !page.dirty)) return true;
-  ElMessage.warning(t("platform.panelPagesUnsaved"));
-  return false;
-});
+// Leaving the shown page with unsaved changes asks the platform's question first. Beside a conversation the display
+// controller asks instead, from the page's dirty report.
+if (!props.navigate)
+  useUnsavedChanges({ dirty: () => shownPage.value?.dirty ?? false, paths: () => use.value ? [panelUsePath(use.value.path)] : [] });
 
-/**
- * A kept page shown again is still this application's only while its use relation is: Java's current relations are read
- * beside the page's own checks. A relation withdrawn, or bound to another panel, drops the kept instance, and the page
- * then opens from the current relations.
- */
-async function recheck(page: KeptPage) {
-  const records = await panelUsesOf(props.applicationId).catch((reason: unknown) => {
-    failure.value = reason instanceof Error ? reason.message : String(reason);
-    emit("display-loaded", panelUnavailable(reason));
-    return null;
-  });
-  if (!records || records.find((relation) => relation.id === page.use.id)?.panelId === page.use.panelId) return;
-  // An unsaved page stays as it is until the reader saves or discards it; the prototype does not take it out of reach.
-  if (page.dirty) return;
+/** When a kept page shown again may ask for its objects again: the first of the two points its switch is measured at. */
+function markReopened(page: KeptPage) {
+  performance.mark("ontomato:panel-page-reopened", { detail: { applicationId: props.applicationId, useId: page.use.id } });
+}
+
+/** A kept page shown again whose use relation was withdrawn or bound elsewhere ends; the page opens from the current relations. */
+function withdraw(page: KeptPage) {
   kept.value = kept.value.filter((other) => other !== page);
-  uses.value = records;
+  void readUses(props.applicationId, () => true);
 }
 
 /**
@@ -259,6 +262,8 @@ function reportDirty(page: KeptPage, dirty: boolean) {
       @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
       @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"
       @context="(context: PageContext) => reportContext(page, context)"
+      @reopened="markReopened(page)"
+      @withdrawn="withdraw(page)"
     />
   </template>
 </template>

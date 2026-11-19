@@ -48,12 +48,23 @@ export interface PanelHostPort<Source extends PanelHostSource = PanelHostSource>
   sdkRoot(): Promise<string>;
   /**
    * Registers the frame the panel runs in: the execution context and identity for the page it shows, what the frame
-   * may ask the platform for, which the source's manifest declares, and whether the reader is on its page now — a frame
-   * kept for a page the reader left asks for nothing new.
+   * may ask the platform for, which the source's manifest declares, and whether it may ask for anything now.
    */
-  frame(frame: Window, source: Source, shown: () => boolean): () => void;
+  frame(frame: Window, source: Source, open: boolean): PanelFrameRegistration;
   snapshot(panelId: string): Promise<PanelDefinitionSnapshot>;
+  /**
+   * Whether the use relation this host opens is still the application's, bound to the same panel: what a kept page is
+   * checked against when it is shown again. A candidate has no relation to check.
+   */
+  current?(): Promise<boolean>;
   mode: PanelDefinitionMode;
+}
+
+/** A registered frame: ended with the instance, and closed to new requests while its page is not the reader's. */
+export interface PanelFrameRegistration {
+  dispose(): void;
+  /** Whether the frame may ask for anything; closing it also closes its streams. */
+  open(open: boolean): void;
 }
 
 export type { ProductDefinitionChangedEvent as DefinitionChanged } from "@ontomato/contracts/product-panels";
@@ -119,10 +130,14 @@ export interface PanelInstanceOptions {
   initial: () => Record<string, unknown>;
   /**
    * Whether the reader is on this instance's page. A page kept while the reader is on another of its application's pages
-   * holds no stream and does nothing; shown again, it is reconciled in the background as a page brought back to the
-   * foreground is. Absent means always shown.
+   * holds no stream and its frame may ask for nothing; shown again, it is checked before its frame may. Absent means
+   * always shown.
    */
   shown?: () => boolean;
+  /** A kept page shown again passed its checks: its frame may ask again, and its objects are being read again. */
+  reopened?: () => void;
+  /** A kept page shown again is no longer the application's: its use relation was withdrawn or bound elsewhere. */
+  withdrawn?: () => void;
 }
 
 /** What a failure is called in the panel's error place: its own message, or what it was, verbatim. */
@@ -164,7 +179,9 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   let sdkRoot = "";
   let frameReady = false;
   let frameAddress = "";
-  let disposeFrame: (() => void) | undefined;
+  let registration: PanelFrameRegistration | undefined;
+  /** Whether the frame may ask the platform for anything: not while its page is kept out of view, nor until it is checked. */
+  let bridgeOpen = true;
   let active = true;
   let author: ReturnType<Extract<PanelDefinitionMode, { kind: "author" }>["definitions"]["observe"]> | undefined;
   const pending = new Map<string, ProductDefinitionRevision>();
@@ -241,8 +258,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     displayLoad.value = loading;
     document.value = written;
     if (frame) {
-      disposeFrame?.();
-      disposeFrame = port.frame(frame, next, shownToReader);
+      registration?.dispose();
+      registration = port.frame(frame, next, bridgeOpen);
     }
   }
 
@@ -339,10 +356,9 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   }
 
   /**
-   * The reader is back on this instance — the document came to the foreground, or the page it was kept for was opened
-   * again. The frame is already there. The objects it shows are read again at once, whether or not anything changed,
-   * and a viewer's definition revisions are checked beside that read; a changed definition is adopted as any is, never
-   * over an unsaved form.
+   * The document came back to the foreground with this page shown: the objects it shows are read again, and a viewer's
+   * definition revisions are checked beside that read; a changed definition is adopted as any is, never over an unsaved
+   * form.
    */
   function resume(shown: PanelHostSource) {
     if (shown.kind === "candidate") {
@@ -353,16 +369,54 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     if (port.mode.kind === "view") void restore(shown);
   }
 
+  function openBridge(open: boolean) {
+    bridgeOpen = open;
+    registration?.open(open);
+  }
+
+  /**
+   * A kept page shown again. Its frame is in view at once, but asks for nothing until the host has checked the page is
+   * still the reader's — its use relation, and the current definitions the reader may use, read side by side. Then the
+   * objects it shows are read again, whether or not anything changed, and a changed definition is adopted as any is. A
+   * relation withdrawn or bound elsewhere ends the instance; a refused check is shown where the panel is.
+   */
+  async function reopen(shown: PanelHostSource) {
+    if (shown.kind === "candidate") {
+      openBridge(true);
+      follow(shown);
+      void rereadCandidate(shown);
+      return;
+    }
+    try {
+      const [current, snapshot] = await Promise.all([
+        port.current ? port.current() : true,
+        port.mode.kind === "view" ? port.snapshot(shown.panel.id) : undefined,
+      ]);
+      if (!active || !shownToReader()) return;
+      if (!current) {
+        options.withdrawn?.();
+        return;
+      }
+      openBridge(true);
+      options.reopened?.();
+      follow(shown);
+      refresh(null);
+      if (snapshot) await advance(snapshotRevisions(snapshot));
+    } catch (failure) {
+      if (active) reportPanelUnavailable(failure);
+    }
+  }
+
   watch(shownToReader, now => {
     const shown = source.value;
     if (!shown) return;
-    if (!now) {
-      author?.close();
-      author = undefined;
+    if (now) {
+      void reopen(shown);
       return;
     }
-    follow(shown);
-    resume(shown);
+    author?.close();
+    author = undefined;
+    openBridge(false);
   });
   const stopVisibility = onDocumentVisibility(visible => {
     const shown = source.value;
@@ -464,7 +518,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   window.addEventListener("message", message);
   onScopeDispose(() => {
     window.removeEventListener("message", message);
-    disposeFrame?.();
+    registration?.dispose();
   });
 
   return {
@@ -489,8 +543,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     },
     frame(window) {
       frame = window;
-      disposeFrame?.();
-      disposeFrame = window && source.value ? port.frame(window, source.value, shownToReader) : undefined;
+      registration?.dispose();
+      registration = window && source.value ? port.frame(window, source.value, bridgeOpen) : undefined;
     },
   };
 }

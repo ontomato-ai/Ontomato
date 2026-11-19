@@ -5,32 +5,36 @@ import ProductRoute from './pages/ProductRoute.vue';
 
 /** Bind one transferred port to the exact registered frame; messages never select an application identity. */
 /**
- * `shown` says whether the reader is on the page a frame shows: a frame kept for a page the reader left may still cancel
- * or unmount what it started, and gets the answer of a call it made before, but asks for nothing new.
+ * `open` says whether a frame may ask for anything now: a frame kept for a page the reader left may still cancel or
+ * unmount what it started, and gets the answer of a call it made before, but asks for nothing new.
  */
-export function installAppBridge(app:App,host:AppHost,applicationFor:(source:object)=>string|undefined,shown:(source:object)=>boolean){
-  const connections=new Map<object,()=>void>();
+export function installAppBridge(app:App,host:AppHost,applicationFor:(source:object)=>string|undefined,open:(source:object)=>boolean){
+  const connections=new Map<object,{dispose:()=>void;pause:()=>void;resume:()=>void}>();
   function connect(event:MessageEvent){
     if(event.data?.channel!==APP_BRIDGE_CHANNEL||event.data?.operation!=='connect'||!event.source||event.ports.length!==1)return;
     const source=event.source as Window,applicationId=applicationFor(source);if(!applicationId)return;
     if(event.origin!=='null')return;
     const frame=[...document.querySelectorAll('iframe')].find(frame=>frame.contentWindow===source);
     if(!frame||!frame.sandbox.contains('allow-scripts')||frame.sandbox.contains('allow-same-origin'))return;
-    connections.get(source)?.();
+    connections.get(source)?.dispose();
     const port=event.ports[0],mounts=new Map<string,HTMLElement>(),requests=new Map<string,AbortController>();
     let closed=false;
     const dispose=()=>{if(closed)return;closed=true;for(const request of requests.values())request.abort();requests.clear();port.close();stopPreferences();viewport.disconnect();window.removeEventListener('scroll',hideOutsideViewport,true);for(const element of mounts.values()){render(null,element);element.remove();}mounts.clear();connections.delete(source);};
-    const hideOutsideViewport=()=>{for(const element of mounts.values())element.style.display='none';port.postMessage({channel:APP_BRIDGE_CHANNEL,event:'viewport'});};
+    const hideOutsideViewport=()=>{for(const element of mounts.values())element.style.display='none';if(open(source))port.postMessage({channel:APP_BRIDGE_CHANNEL,event:'viewport'});};
     const viewport=new ResizeObserver(hideOutsideViewport);viewport.observe(frame);window.addEventListener('scroll',hideOutsideViewport,true);
-    const stopPreferences=host.subscribePreferences(preferences=>port.postMessage({channel:APP_BRIDGE_CHANNEL,event:'preferences',result:preferences}));
-    connections.set(source,dispose);
+    const sendPreferences=()=>{const {locale,theme}=host.snapshot();port.postMessage({channel:APP_BRIDGE_CHANNEL,event:'preferences',result:{locale,theme}});};
+    const stopPreferences=host.subscribePreferences(()=>{if(open(source))sendPreferences();});
+    // The requests answered as event streams: they last as long as the stream, not one answer.
+    const streams=new Set<string>();
+    // A frame whose page the reader left hears nothing and keeps no stream; opened again, it hears the preferences of now.
+    connections.set(source,{dispose,pause:()=>{for(const id of streams)requests.get(id)?.abort();},resume:sendPreferences});
     const current=()=>{if(closed||applicationFor(source)!==applicationId||!frame.isConnected)throw new Error('Application frame is no longer registered');};
     port.onmessage=async event=>{
       const parsed=appBridgeRequestSchema.safeParse(event.data);if(!parsed.success)return;
       const {id,operation,payload}=parsed.data;
       try{
         current();let result:unknown=null;
-        if(operation!=='cancel'&&operation!=='unmount'&&!shown(source))throw new Error('This page is not shown');
+        if(operation!=='cancel'&&operation!=='unmount'&&!open(source))throw new Error('This page is not shown');
         if(operation==='initialize')result={snapshot:host.snapshot(),execution:host.executionContext(source)};
         else if(operation==='request'){
           const input=appBridgeHttpSchema.parse(payload);
@@ -41,8 +45,9 @@ export function installAppBridge(app:App,host:AppHost,applicationFor:(source:obj
           const controller=new AbortController();requests.set(id,controller);
           let response:Response;try{response=await host.request!(source,input.path,{method:input.method,headers:input.headers,body,signal:controller.signal},input.service);}catch(reason){requests.delete(id);throw reason;}
           if(response.headers.get('content-type')?.includes('text/event-stream')){
+            streams.add(id);
             port.postMessage({channel:APP_BRIDGE_CHANNEL,id,result:{status:response.status,statusText:response.statusText,headers:[...response.headers.entries()],stream:true}});
-            try{const reader=response.body?.getReader();if(reader)for(;;){const chunk=await reader.read();if(chunk.done)break;current();port.postMessage({channel:APP_BRIDGE_CHANNEL,id,event:'chunk',result:chunk.value});}port.postMessage({channel:APP_BRIDGE_CHANNEL,id,event:'end'});}catch(reason){port.postMessage({channel:APP_BRIDGE_CHANNEL,id,event:'stream-error',error:reason instanceof Error?reason.message:'Stream failed'});}finally{requests.delete(id);}return;
+            try{const reader=response.body?.getReader();if(reader)for(;;){const chunk=await reader.read();if(chunk.done)break;current();port.postMessage({channel:APP_BRIDGE_CHANNEL,id,event:'chunk',result:chunk.value});}port.postMessage({channel:APP_BRIDGE_CHANNEL,id,event:'end'});}catch(reason){port.postMessage({channel:APP_BRIDGE_CHANNEL,id,event:'stream-error',error:reason instanceof Error?reason.message:'Stream failed'});}finally{requests.delete(id);streams.delete(id);}return;
           }
           try{result={status:response.status,statusText:response.statusText,headers:[...response.headers.entries()],body:await response.arrayBuffer()};}finally{requests.delete(id);}
         }else if(operation==='cancel'){const {requestId}=appBridgeCancelSchema.parse(payload);requests.get(requestId)?.abort();}
@@ -72,5 +77,12 @@ export function installAppBridge(app:App,host:AppHost,applicationFor:(source:obj
     port.start();
   }
   window.addEventListener('message',connect);
-  return {disposeFrame:(source:object)=>connections.get(source)?.(),dispose:()=>{window.removeEventListener('message',connect);for(const dispose of [...connections.values()])dispose();}};
+  return {
+    disposeFrame:(source:object)=>connections.get(source)?.dispose(),
+    /** A frame whose page the reader left keeps the answers of the calls it made, but none of its streams. */
+    pauseFrame:(source:object)=>connections.get(source)?.pause(),
+    /** The frame's page is the reader's again: it hears the platform's preferences as they are now. */
+    resumeFrame:(source:object)=>connections.get(source)?.resume(),
+    dispose:()=>{window.removeEventListener('message',connect);for(const connection of [...connections.values()])connection.dispose();},
+  };
 }

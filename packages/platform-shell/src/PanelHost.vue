@@ -43,6 +43,10 @@ const emit = defineEmits<{
   "display-address": [input: DisplayPageAddressInput];
   "display-loaded": [load: DisplayLoad];
   "display-dirty": [dirty: boolean];
+  /** Shown again, the page passed its checks: its frame may ask again and its objects are being read again. */
+  reopened: [];
+  /** Shown again, the page is no longer its application's: its use relation was withdrawn or bound elsewhere. */
+  withdrawn: [];
 }>();
 
 const view = usePanelInstance(props.port, {
@@ -51,6 +55,8 @@ const view = usePanelInstance(props.port, {
   address: () => props.address,
   initial: () => props.initial ?? {},
   shown: () => props.shown,
+  reopened: () => emit("reopened"),
+  withdrawn: () => emit("withdrawn"),
 });
 const frame = ref<HTMLIFrameElement | null>(null);
 watch(
