@@ -1,5 +1,6 @@
 import type { DashboardDetail, DashboardGroup } from "@ontomato/contracts/dashboard";
 import type { z } from "zod";
+import type { PoolClient } from "pg";
 import { t } from "../../i18n";
 import { HttpError } from "../../utils/errors";
 import { requireOwner } from "../../utils/owner-guard";
@@ -31,8 +32,8 @@ export function findGroup(detail: DashboardDetail, groupId: string): DashboardGr
   if (!group) throw new HttpError(404, t("api.dimensionNotFound"));
   return group;
 }
-export async function getOwnedDashboard(ownerId: string, domainId: string, id: unknown) {
-  return ensureDashboard(ownerId, await getDashboard(ownerId, domainId, requireDashboardId(id)));
+export async function getOwnedDashboard(ownerId: string, domainId: string, id: unknown, lock?: PoolClient) {
+  return ensureDashboard(ownerId, await getDashboard(ownerId, domainId, requireDashboardId(id), lock));
 }
 export async function listDashboardGroups(ownerId: string, domainId: string, id: unknown) {
   const detail = await getOwnedDashboard(ownerId, domainId, id);

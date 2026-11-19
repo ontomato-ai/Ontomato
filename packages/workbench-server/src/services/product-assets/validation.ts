@@ -1,10 +1,11 @@
 import { validateStoredChartFile } from "@ontomato/contracts/chart-data";
-import type { DashboardGroup, DashboardMetricDescription } from "@ontomato/contracts/dashboard";
+import type { DashboardMetricDescription } from "@ontomato/contracts/dashboard";
 import type { ViewWidget } from "@ontomato/contracts/object-views";
 import { productReferences, productWidgets,platformWidget, type ProductAssetInput,type ProductAsset } from "@ontomato/contracts/product-assets";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { DashboardMetricClient } from "../dashboard/metric-client";
 import { getOwnedDashboard } from "../dashboard/access";
+import { validatePersonalDashboardMetrics } from "../dashboard/validation";
 import { config } from "../../config/application";
 import { backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
@@ -13,16 +14,6 @@ import { objectViewDocumentSchema, objectViewProductIssues,objectProjectionIssue
 import {readDefinition} from '../business-definitions/definitions';
 import {platformObjectProvider} from './platform-objects';
 import {pageBindingType} from '@ontomato/contracts/product-page-state';
-
-/** Describe enforces Java's current-user execution rule, including creator-owned candidates. */
-export async function validatePersonalDashboardMetrics(groups: readonly DashboardGroup[], client: Pick<DashboardMetricClient, "describe">) {
-  for (const group of groups) for (const card of [...group.charts, ...group.metrics]) {
-    const metric = await client.describe(card.query.metricId);
-    const parameters = new Set(metric.parameterDefs.map(parameter => String(parameter.name)));
-    if (Object.keys(card.query.parameters).some(name => !parameters.has(name)))
-      throw new HttpError(400, "Unknown capability parameter", "INVALID_PRODUCT_PARAMETER");
-  }
-}
 
 /** Product storage owns empty snapshots; chart-data owns the format and output references. */
 function validateMetricFields(widget: ViewWidget, metric: Pick<DashboardMetricDescription, "outputColumns">) {
