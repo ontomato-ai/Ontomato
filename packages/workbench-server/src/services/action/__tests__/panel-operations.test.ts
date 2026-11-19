@@ -215,7 +215,7 @@ describe("action panel server operations", () => {
     expect(outcome.items[1]!.outcome.kind).toBe("unknown");
   });
 
-  it("answers the whole batch unknown when no status group has a receipt", async () => {
+  it("answers unknown as a whole when no status group has a receipt", async () => {
     const operation = batchAction(SET_ACTION_STATUS);
     const grouped = hostWith(() => Response.json({ message: "Owner unavailable" }, { status: 503 }));
 
@@ -224,14 +224,7 @@ describe("action panel server operations", () => {
       { target: secondAction, input: { status: "UNUSED" } },
     ]);
 
-    expect(outcome).toEqual({ kind: "batch", items: [
-      { target: { objectType: ACTION, primaryKey: "a1" }, outcome: {
-        kind: "unknown", message: "Owner request failed: /action/setStatus",
-      } },
-      { target: { objectType: ACTION, primaryKey: "a2" }, outcome: {
-        kind: "unknown", message: "Owner request failed: /action/setStatus",
-      } },
-    ] });
+    expect(outcome).toEqual({ kind: "unknown", message: "Owner request failed: /action/setStatus" });
   });
 
   it("turns a coded wholesale status refusal into a refusal for every action of the group", async () => {
