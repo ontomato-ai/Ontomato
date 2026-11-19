@@ -16,8 +16,8 @@ import {assistantRetrievalOperationSchema} from "@ontomato/contracts/assistant-r
 import {OntologyRetrievalClient} from "../../services/assistant/ontology-retrieval";
 import { credentialsForRun, runForOwner } from "../../services/assistant/execution";
 import type { RuntimeCallback } from "../../services/agent-runtime/callback-credential";
-import { executeAuthoring, type AuthoringOperation } from "../../services/assistant/authoring";
-import { authoringOperations } from "@ontomato/contracts/authoring";
+import { adoptAppBuilderDefinition, executeAuthoring, type AuthoringOperation } from "../../services/assistant/authoring";
+import { authoringAdoptionRequestSchema, authoringKindSchema, authoringOperations } from "@ontomato/contracts/authoring";
 
 export const assistantExecutionRouter = Router();
 const ontologyReads = [
@@ -44,6 +44,10 @@ const ontologyPosts = [
   "/action/re-explain",
   "/metricView/queryById",
   "/metricView/queryList",
+  "/metricView/form",
+  "/function/queryList",
+  "/function/queryById",
+  "/function/form",
   "/metricView/find",
   "/metricView/test",
   "/metricView/testExecute",
@@ -126,6 +130,14 @@ for (const kind of ["action", "metric-view"] as const) {
     );
   }
 }
+
+assistantExecutionRouter.post("/:runId/authoring/:kind/adopt", wrap(async (req, res) => {
+  const runId = callbackRun(req, res.locals.runtimeCallback);
+  const kind = authoringKindSchema.parse(req.params.kind);
+  const { definition } = authoringAdoptionRequestSchema.shape.input.parse(req.body);
+  const { owner, credentials } = context(req);
+  res.json(await adoptAppBuilderDefinition(owner, credentials, runId, kind, definition));
+}));
 
 assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
   const callback = res.locals.runtimeCallback as RuntimeCallback;
