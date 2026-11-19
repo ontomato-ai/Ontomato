@@ -62,6 +62,7 @@ function mounted(save: (values: Record<string, string>, revision: number) => Pro
     url: () => "/applications/app-panels-trial-a/tasks",
     label: () => "Scheduled tasks (trial)",
     initial: { selectedTask: { className: objectType, primaryKey: "task-1" } },
+    recordDraftCreated: async () => {},
     readProjection: async () => ({
       id: "projection-schedules-form",
       domainId: "domain-1",
@@ -205,6 +206,7 @@ describe("the form a panel shows", () => {
         target: { id: "task-1" },
         form: { operation: "inspection", instruction: "look at tonight's failures" },
       },
+      { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/drafts/a.page-draft.json" },
       () => {},
     );
     await vi.waitFor(() => expect(shown(element)["/instruction"]).toBe("look at tonight's failures"));

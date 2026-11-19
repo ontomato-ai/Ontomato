@@ -1,5 +1,7 @@
-import { AGENT_DEFINITION, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, RUN_NOW, SCHEDULED_TASK, SKILL, USER } from "@ontomato/contracts/panel-client-requests";
-import { ATTRIBUTE } from "@ontomato/contracts/platform-object-types";
+import { RUN_NOW } from "@ontomato/contracts/panel-client-requests";
+import {
+  AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER,
+} from "@ontomato/contracts/platform-object-types";
 import type { PlatformResources } from "../panel/platform-objects";
 
 /*

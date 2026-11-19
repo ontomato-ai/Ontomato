@@ -75,6 +75,14 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     label: () => message.label,
     initial: message.state,
     reportDraftError: failed,
+    recordDraftCreated: async (link, id) => {
+      const response = await transport.request(
+        `/assistant/sessions/${encodeURIComponent(link.sessionId)}/runs/${encodeURIComponent(link.runId)}/page-draft/created`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: link.path, id }) },
+        "",
+      );
+      if (!response.ok) throw new Error(`The draft at ${link.path} could not record the object it created`);
+    },
     readProjection: async (id) => {
       const response = await transport.request(`/product-projections/${encodeURIComponent(id)}`, {}, "");
       const body = await response.json();
@@ -210,6 +218,8 @@ function report({ instance, address, followAddress, unsaved, changed }: ReportOp
     for (const { id, revision } of waiting.values()) changed(id, revision);
     waiting.clear();
   };
+  // A draft the reader saved or discarded: the host takes its link out of the address, if the address still names it.
+  instance.onDraftSettled((draft) => send({ kind: "draft-settled", draft }));
   watch(isDirty, dirty => {
     send({ kind: "dirty", dirty });
     if (!dirty) refreshProjections();

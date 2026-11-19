@@ -174,7 +174,7 @@ useProjectionForm({
 function discard() {
   held = null;
   adopt(opened.value!);
-  panel.instance.clearDraft(slot.slot);
+  void panel.instance.settleDraft(slot.slot).catch(showRefusal);
 }
 
 async function saveFromForm() {
@@ -209,9 +209,11 @@ async function write(): Promise<unknown> {
     held = null;
     opened.value = { ...description.value!, values: values.value };
     changed.value = new Set();
-    panel.instance.clearDraft(slot.slot);
     if (into.kind === "draft") panel.instance.state.set(state.value, { className: objectType, primaryKey: saved.primaryKey });
     panel.instance.objectChanged({ objectType, primaryKey: saved.primaryKey });
+    // A received draft ends with its save; a create draft first records the object it created. The save stands either
+    // way: a record that fails is shown with the form, on the object the owner created.
+    await panel.instance.settleDraft(slot.slot, into.kind === "draft" ? saved.primaryKey : undefined);
     return saved;
   } catch (reason) {
     showRefusal(reason);

@@ -17,12 +17,12 @@ export const applicationPanelUsePathSchema = path.pipe(z.string().refine((value)
 
 /**
  * PlatformObjectType binds a platform-declared type and its owner APIs, including management of its definitions.
- * A MetricView, Action or ObjectType binding targets one specific ontology element.
+ * A MetricView, Action, ObjectType or Relationship binding targets one specific ontology element.
  * A PlatformOperation ID is the SDK client's registered operation name (for example, schedules.runNow),
  * identical to the derived operation's handlerRef; there is no second operation namespace.
  */
 export const ontologyElementRefSchema = z.object({
-  kind: z.enum(["MetricView", "Action", "ObjectType", "Definition", "PlatformObjectType", "PlatformOperation"]),
+  kind: z.enum(["MetricView", "Action", "ObjectType", "Relationship", "Definition", "PlatformObjectType", "PlatformOperation"]),
   id,
 }).strict();
 export type OntologyElementRef = z.infer<typeof ontologyElementRefSchema>;
@@ -48,7 +48,9 @@ const currentRecordFields = {
 /** A graph uses its primary binding for nodes and this second binding for edges. */
 export const projectionGraphSchema = z.object({
   edges: z.object({
-    binding: ontologyElementRefSchema.extend({ kind: z.literal("PlatformObjectType") }),
+    binding: ontologyElementRefSchema.extend({
+      kind: ontologyElementRefSchema.shape.kind.extract(["PlatformObjectType", "Relationship"]),
+    }),
     /** JSON Pointers inside the edge record's fields, each resolving to a node primary key. */
     sourcePath: formFieldErrorSchema.shape.field,
     targetPath: formFieldErrorSchema.shape.field,
