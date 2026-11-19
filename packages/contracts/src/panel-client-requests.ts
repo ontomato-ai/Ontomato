@@ -263,6 +263,16 @@ const readRequests: Readonly<Record<string, readonly PanelClientRead[]>> = {
 export const panelClientReads = (binding: string): readonly PanelClientRead[] =>
   boundMetricId(binding) ? metricViewReads : readRequests[binding] ?? [];
 
+const descriptorKeys = ["applicationId", "useId", "operationId"];
+const descriptorPair = `(?:${descriptorKeys.join("|")})=[^&#]+`;
+const descriptorRequired = descriptorKeys.map(key => `(?=(?:[^&#]+&)*${key}=[^&#]+(?:&|$))`).join("");
+
+/** The three required descriptor parameters may arrive in any order, exactly once each. */
+export const panelOperationDescriptorRead = {
+  method: "GET", service: "",
+  path: new RegExp(`^/panel-operations/descriptor\\?${descriptorRequired}${descriptorPair}(?:&${descriptorPair}){2}$`),
+} as const satisfies ClientRequest;
+
 /** Each binding's requests: what its client sends, and nothing more. */
 export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> = {
   ...readRequests,
@@ -314,8 +324,11 @@ export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> 
 
 /** The host supplies the decoded JSON body for requests scoped to the specific object in a binding. */
 export function clientSends(bindings: Iterable<string>, method: string, service: string, path: string, body?: unknown): boolean {
+  const matches = (request: ClientRequest) => request.method === method && request.service === service && request.path.test(path);
   for (const binding of bindings) {
-    if (clientRequests[binding]?.some(request => request.method === method && request.service === service && request.path.test(path)))
+    if (clientRequests[binding]?.some(matches)) return true;
+    // A published operation can read its owner's executable description. The server checks the actual use and operation.
+    if ((binding.startsWith("PlatformOperation:") || binding.startsWith("PlatformObjectType:")) && matches(panelOperationDescriptorRead))
       return true;
     const metricId = boundMetricId(binding);
     if (metricId && metricViewReads.some(request => {

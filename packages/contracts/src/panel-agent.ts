@@ -34,7 +34,10 @@ export const readPanelOperationRequestSchema = panelUseRefSchema.extend({
 }).strict();
 export type ReadPanelOperationRequest = z.infer<typeof readPanelOperationRequestSchema>;
 
-const panelOperationRefSchema = panelUseRefSchema.extend({ operationId: key }).strict();
+/** The descriptor GET query locates the published operation through its actual application use. */
+export const panelOperationRefSchema = panelUseRefSchema.extend({ operationId: key }).strict();
+export type PanelOperationRef = z.infer<typeof panelOperationRefSchema>;
+export { panelOwnerOperationDescriptorSchema as panelOperationDescriptorResponseSchema } from "./panel-operations";
 const panelIntentRequestScopeSchema = panelOperationRefSchema.extend({ intentId: runtimeIdSchema });
 
 /** The host supplies session/run/initiator/executor from authenticated context. */
