@@ -1,5 +1,6 @@
 import {z} from 'zod';
 import {panelConversationEntrySchema} from './panel-conversation-entry';
+import {panelOperationImpactSchema} from './panel-operations';
 
 export const APP_BRIDGE_CHANNEL='ontomato-app-v2';
 
@@ -9,7 +10,7 @@ export const APP_BRIDGE_CHANNEL='ontomato-app-v2';
  * `PageContext` with the frame's own address, at that single boundary.
  */
 export const appBridgePageContextSchema=z.object({page:z.string().trim().min(1).max(500),selection:z.object({className:z.string().min(1).max(200),primaryKey:z.string().min(1).max(1000),name:z.string().min(1).max(500)}).strict().nullable()}).strict();
-export const appBridgeRequestSchema=z.object({channel:z.literal(APP_BRIDGE_CHANNEL),id:z.string().min(1).max(100),operation:z.enum(['initialize','request','cancel','navigate','navigateProduct','pageContext','authFailure','invalidate','mount','unmount','placement','expand-page-composer']),payload:z.unknown()}).strict();
+export const appBridgeRequestSchema=z.object({channel:z.literal(APP_BRIDGE_CHANNEL),id:z.string().min(1).max(100),operation:z.enum(['initialize','request','cancel','navigate','navigateProduct','pageContext','authFailure','invalidate','mount','unmount','placement','expand-page-composer','confirm-panel-operation']),payload:z.unknown()}).strict();
 export const appBridgeCancelSchema=z.object({requestId:z.string().min(1).max(100)}).strict();
 export type AppBridgeRequest=z.infer<typeof appBridgeRequestSchema>;
 export interface AppBridgeResponse {channel:typeof APP_BRIDGE_CHANNEL;id:string;result?:unknown;error?:string}
@@ -34,3 +35,17 @@ export const appBridgeExpandPageComposerSchema = panelConversationEntrySchema.ex
   slot: z.string().min(1).max(200),
 });
 export type AppBridgeExpandPageComposer = z.infer<typeof appBridgeExpandPageComposerSchema>;
+
+/** Ask the host to render the owner impact for this operation. The bridge ID pairs the user's decision with this call. */
+export const appBridgeConfirmPanelOperationSchema = z.object({
+  operationId: z.string().min(1).max(300),
+  label: z.string().min(1).max(200),
+  impact: panelOperationImpactSchema,
+}).strict();
+export type AppBridgeConfirmPanelOperation = z.infer<typeof appBridgeConfirmPanelOperationSchema>;
+
+/** Human confirmation applies to the same inspected calls. Cancel ends the invocation before any write. */
+export const appBridgeConfirmPanelOperationResultSchema = z.object({
+  decision: z.enum(['confirm', 'cancel']),
+}).strict();
+export type AppBridgeConfirmPanelOperationResult = z.infer<typeof appBridgeConfirmPanelOperationResultSchema>;
