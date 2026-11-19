@@ -232,6 +232,134 @@
     "value": "Indicator already exists"
   },
   {
+    "key": "Admin.relationship.notFound",
+    "value": "Relationship not found"
+  },
+  {
+    "key": "Admin.relationship.nameRequired",
+    "value": "A relationship name is required"
+  },
+  {
+    "key": "Admin.relationship.fromClassRequired",
+    "value": "A source object class is required"
+  },
+  {
+    "key": "Admin.relationship.toClassRequired",
+    "value": "A target object class is required"
+  },
+  {
+    "key": "Admin.relationship.descRequired",
+    "value": "A relationship description is required"
+  },
+  {
+    "key": "Admin.relationship.fromFieldRequired",
+    "value": "A source join field is required by this data source"
+  },
+  {
+    "key": "Admin.relationship.toFieldRequired",
+    "value": "A target join field is required by this data source"
+  },
+  {
+    "key": "Admin.relationship.fromFieldInvalid",
+    "value": "The source join field must be an attribute of the source object class"
+  },
+  {
+    "key": "Admin.relationship.toFieldInvalid",
+    "value": "The target join field must be an attribute of the target object class"
+  },
+  {
+    "key": "Admin.attr.nameRequired",
+    "value": "An attribute name is required"
+  },
+  {
+    "key": "Admin.attr.showNameRequired",
+    "value": "An attribute display name is required"
+  },
+  {
+    "key": "Admin.attr.typeRequired",
+    "value": "An attribute type is required"
+  },
+  {
+    "key": "Admin.field.booleanRequired",
+    "value": "A true or false value is required"
+  },
+  {
+    "key": "Admin.attr.inUse",
+    "value": "The attribute is used as a join field by these relationships"
+  },
+  {
+    "key": "Admin.validation.failed",
+    "value": "Some fields are invalid"
+  },
+  {
+    "key": "Admin.form.className",
+    "value": "API name"
+  },
+  {
+    "key": "Admin.form.primaryKeyName",
+    "value": "Primary key name"
+  },
+  {
+    "key": "Admin.form.showName",
+    "value": "Display name"
+  },
+  {
+    "key": "Admin.form.desc",
+    "value": "Description"
+  },
+  {
+    "key": "Admin.form.ownerType",
+    "value": "Owner type"
+  },
+  {
+    "key": "Admin.form.name",
+    "value": "API name"
+  },
+  {
+    "key": "Admin.form.type",
+    "value": "Data type"
+  },
+  {
+    "key": "Admin.form.enable",
+    "value": "Enabled"
+  },
+  {
+    "key": "Admin.form.businessKey",
+    "value": "Business key"
+  },
+  {
+    "key": "Admin.form.primaryKey",
+    "value": "Primary key"
+  },
+  {
+    "key": "Admin.form.relationship",
+    "value": "Relationship name"
+  },
+  {
+    "key": "Admin.form.fromclass",
+    "value": "Source type"
+  },
+  {
+    "key": "Admin.form.fromField",
+    "value": "Source field"
+  },
+  {
+    "key": "Admin.form.toclass",
+    "value": "Target type"
+  },
+  {
+    "key": "Admin.form.toField",
+    "value": "Target field"
+  },
+  {
+    "key": "Admin.form.primaryKeyEnableLocked",
+    "value": "The primary key attribute cannot be disabled"
+  },
+  {
+    "key": "Admin.form.primaryKeySwitchHint",
+    "value": "Switch the primary key with the 'Set as primary key' action"
+  },
+  {
     "key": "PythonExecutor.execute.timeout",
     "value": "Python execution timeout (minutes)"
   },
