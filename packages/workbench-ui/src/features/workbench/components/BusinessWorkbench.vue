@@ -416,12 +416,14 @@ function appearanceSaved(value: WorkbenchAppearance) {
   >
     <template #feature="{ featureId: page }">
       <!-- What the page hands its display: what the reader looks at, its address moves, what its loader knows, and
-           whether leaving it now would drop unsaved changes. -->
+           whether leaving it now would drop unsaved changes. What the display hands the page: when to read its objects
+           again. -->
       <component
         :is="pilotPage.component"
         v-if="pilotPage"
         :key="display.page.value!.instance"
         v-bind="pilotPage.props"
+        :object-refresh="display.objectRefresh.value"
         @context="display.context"
         @display-address="display.address"
         @display-loaded="display.loaded"
