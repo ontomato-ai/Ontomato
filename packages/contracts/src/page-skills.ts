@@ -25,7 +25,7 @@ export const pageSkillGroupSchema = z.object({
 }).strict();
 export type PageSkillGroup = z.infer<typeof pageSkillGroupSchema>;
 
-const rootPageSkillSources = [
+export const pageSkillSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("application-use"), applicationId: z.string().min(1), useId: z.string().min(1) }).strict(),
   z.object({
     kind: z.literal("object-detail"),
@@ -34,15 +34,6 @@ const rootPageSkillSources = [
   }).strict(),
   z.object({ kind: z.literal("home") }).strict(),
   z.object({ kind: z.literal("panel-preview"), panelId: z.string().min(1) }).strict(),
-] as const;
-
-export const pageSkillSourceSchema = z.discriminatedUnion("kind", [
-  ...rootPageSkillSources,
-  z.object({
-    kind: z.literal("embedded-panel"),
-    host: z.discriminatedUnion("kind", rootPageSkillSources),
-    referencePath: z.array(z.string().min(1)).nonempty(),
-  }).strict(),
 ]);
 export type PageSkillSource = z.infer<typeof pageSkillSourceSchema>;
 
