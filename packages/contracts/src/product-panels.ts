@@ -4,6 +4,7 @@ import { ontologyParameterTypeSchema, panelManifestSchema } from "./panel-manife
 import { applicationMetadataSchema } from "./application-metadata";
 import { appsSdkBuildSchema } from "./apps-sdk";
 import { formFieldErrorSchema } from "./form-fields";
+import { dashboardCardRequestSchema, dashboardChartFileSchema, dashboardMetricReferenceSchema } from "./dashboard";
 
 const id = z.string().min(1).max(200);
 const path = z.string().regex(/^\/(?!\/)/);
@@ -57,8 +58,12 @@ export const projectionGraphSchema = z.object({
   }).strict(),
 }).strict();
 
+export const METRIC_CHART_COMPONENT = "MetricChart";
+export const chartProjectionSourceSchema = dashboardCardRequestSchema;
+export type ChartProjectionSource = z.infer<typeof chartProjectionSourceSchema>;
+
 /** Component-specific display validation belongs to the registered SDK component. */
-export const productProjectionInputSchema = z.object({
+const projectionDefinitionSchema = z.object({
   ...editableDefinitionFields,
   componentId: id,
   binding: ontologyElementRefSchema,
@@ -66,9 +71,31 @@ export const productProjectionInputSchema = z.object({
   inputs: z.record(id, ontologyParameterTypeSchema),
   display: z.record(z.unknown()),
 }).strict();
+
+const ordinaryProjectionDefinitionSchema = projectionDefinitionSchema.extend({
+  componentId: id.refine(value => value !== METRIC_CHART_COMPONENT, "Register a chart from its source card"),
+  display: projectionDefinitionSchema.shape.display.refine(
+    display => !Object.hasOwn(display, "chartSource"), "Register a chart source through its owner",
+  ),
+});
+
+const chartProjectionDefinitionSchema = projectionDefinitionSchema.extend({
+  graph: z.never().optional(),
+  componentId: z.literal(METRIC_CHART_COMPONENT),
+  binding: ontologyElementRefSchema.extend({ kind: z.literal("MetricView") }),
+  /** The owner omits parameters outside this vocabulary. Parameters without an input come from the source card. */
+  inputs: projectionDefinitionSchema.shape.inputs,
+  display: z.object({ chartSource: chartProjectionSourceSchema }).strict(),
+});
+
+export const productProjectionInputSchema = z.union([chartProjectionDefinitionSchema, ordinaryProjectionDefinitionSchema]);
 export type ProductProjectionInput = z.infer<typeof productProjectionInputSchema>;
 
-export const productProjectionSchema = productProjectionInputSchema.extend(currentRecordFields).strict();
+export const chartProjectionSchema = chartProjectionDefinitionSchema.extend(currentRecordFields);
+export const productProjectionSchema = z.union([
+  chartProjectionSchema,
+  ordinaryProjectionDefinitionSchema.extend(currentRecordFields),
+]);
 export type ProductProjection = z.infer<typeof productProjectionSchema>;
 
 const panelContentByteLimit = 256 * 1024;
@@ -139,15 +166,58 @@ export type PanelApplicationEntry = z.infer<typeof panelApplicationEntrySchema>;
 /** GET/PUT /api/product-projections/:id and /api/product-panels/:id. */
 export const productCurrentIdParamsSchema = z.object({ id }).strict();
 
-/** PUT creates at revision 0 or replaces the current definition at the supplied revision. */
-export const registerProductProjectionRequestSchema = productProjectionInputSchema.extend({
-  revision: z.number().int().nonnegative(),
-}).strict();
+/**
+ * PUT creates at revision 0 or replaces a current definition at the supplied revision.
+ * A chart metadata update repeats its current component and binding and supplies an empty display. The owner
+ * compares those values with the current record and retains the registered source; only source registration creates
+ * a MetricChart. The owner also rejects replacing a registered chart with an ordinary projection.
+ */
+export const registerProductProjectionRequestSchema = z.union([
+  ordinaryProjectionDefinitionSchema.extend({ revision: z.number().int().nonnegative() }),
+  chartProjectionDefinitionSchema.extend({
+    revision: currentRecordFields.revision,
+    display: z.object({}).strict(),
+  }),
+]);
 export type RegisterProductProjectionRequest = z.infer<typeof registerProductProjectionRequestSchema>;
 
 /** GET and PUT return the same current record; neither accepts a historical revision selector. */
 export const productProjectionResponseSchema = z.object({ projection: productProjectionSchema }).strict();
 export type ProductProjectionResponse = z.infer<typeof productProjectionResponseSchema>;
+
+/**
+ * Source registration accepts only the card identity. The owner authorizes the source and derives the binding,
+ * inputs, and stable projection identity in the caller's domain. The initial projection is private, with the card's
+ * name and an empty description. Subsequent sharing uses existing grants. Re-registering returns the same identity.
+ */
+export const registerChartProjectionRequestSchema = chartProjectionSourceSchema;
+export const registerChartProjectionResponseSchema = z.object({ projection: chartProjectionSchema }).strict();
+
+/**
+ * Lookup first checks source readability with the dashboard owner. An accessible card without a registration returns
+ * null. For a registered projection, the product grant check either authorizes returning its identity or refuses the request.
+ */
+export const chartProjectionLookupResponseSchema = z.object({ projectionId: id.nullable() }).strict();
+
+/** Read the source card's current drawing and saved parameters under the projection's use grant. */
+export const chartProjectionTemplateSchema = z.object({
+  chartFile: dashboardChartFileSchema,
+  parameters: dashboardMetricReferenceSchema.shape.parameters,
+}).strict();
+
+/** The projection's edit grant permits updating the source template's drawing. */
+export const updateChartProjectionSourceRequestSchema = z.object({
+  chartFile: dashboardChartFileSchema.pick({ content: true }),
+}).strict();
+
+/** Dashboard edits and deletes refuse removal of a referenced source card. Account cleanup removes its registered projections with the card. */
+export const CHART_SOURCE_IN_USE = "CHART_SOURCE_IN_USE";
+export const chartSourceInUseErrorSchema = z.object({
+  success: z.literal(false),
+  error: z.string(),
+  code: z.literal(CHART_SOURCE_IN_USE),
+  details: z.object({ projectionIds: z.array(id).nonempty() }).strict(),
+}).strict();
 
 export const registerProductPanelRequestSchema = productPanelInputSchema.extend({
   revision: z.number().int().nonnegative(),
