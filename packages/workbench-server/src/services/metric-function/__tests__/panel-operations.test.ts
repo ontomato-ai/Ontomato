@@ -99,10 +99,20 @@ describe("metric and function panel server operations", () => {
 
   it("turns a metric owner refusal into a refusal", async () => {
     const operation = write(`${METRIC_VIEW}.save`);
-    const { host } = hostWith(() => Response.json({ success: false, message: "Cannot modify a system MetricView" }));
+    const { host } = hostWith(() => Response.json({
+      success: false, code: "METRIC_VIEW_SYSTEM_READONLY", message: "Cannot modify a system MetricView",
+    }));
 
     expect(await operation.execute(host, metricTarget, { values: {} }))
-      .toEqual({ kind: "refusal", code: "METRIC_VIEW_SAVE_REFUSED", message: "Cannot modify a system MetricView" });
+      .toEqual({ kind: "refusal", code: "METRIC_VIEW_SYSTEM_READONLY", message: "Cannot modify a system MetricView" });
+  });
+
+  it("keeps an uncoded write error as a known failure", async () => {
+    const operation = write(`${METRIC_VIEW}.save`);
+    const { host } = hostWith(() => Response.json({ success: false, message: "The definition store could not complete the write" }));
+
+    expect(await operation.execute(host, metricTarget, { values: {} }))
+      .toEqual({ kind: "failure", code: "METRIC_VIEW_SAVE_FAILED", message: "The definition store could not complete the write" });
   });
 
   it("reads the metric label and deletes by id", async () => {
@@ -123,9 +133,11 @@ describe("metric and function panel server operations", () => {
     expect(remove.sent[0]?.path).toBe("/api/data-query/metricView/delete");
     expect(JSON.parse(String(remove.sent[0]?.init.body))).toEqual({ id: "m1" });
 
-    const refused = hostWith(() => Response.json({ success: false, message: "Cannot delete a system MetricView" }));
+    const refused = hostWith(() => Response.json({
+      success: false, code: "METRIC_VIEW_SYSTEM_READONLY", message: "Cannot delete a system MetricView",
+    }));
     expect(await operation.execute(refused.host, metricTarget))
-      .toEqual({ kind: "refusal", code: "METRIC_VIEW_DELETE_REFUSED", message: "Cannot delete a system MetricView" });
+      .toEqual({ kind: "refusal", code: "METRIC_VIEW_SYSTEM_READONLY", message: "Cannot delete a system MetricView" });
   });
 
   it("fails the metric label read with the owner's reason", async () => {
@@ -280,9 +292,11 @@ describe("metric and function panel server operations", () => {
       });
     expect(saved.sent[0]?.path).toBe("/api/data-query/function/save");
     expect(JSON.parse(String(saved.sent[0]?.init.body))).toEqual({ name: "Revenue query", id: "f1" });
-    const saveRefused = hostWith(() => Response.json({ success: false, message: "Function referenced by MetricView cannot be modified or deleted" }));
+    const saveRefused = hostWith(() => Response.json({
+      success: false, code: "FUNCTION_REFERENCED", message: "Function referenced by MetricView cannot be modified or deleted",
+    }));
     expect(await save.execute(saveRefused.host, functionTarget, { values: {} }))
-      .toEqual({ kind: "refusal", code: "FUNCTION_SAVE_REFUSED", message: "Function referenced by MetricView cannot be modified or deleted" });
+      .toEqual({ kind: "refusal", code: "FUNCTION_REFERENCED", message: "Function referenced by MetricView cannot be modified or deleted" });
 
     const remove = action(DELETE_FUNCTION);
     const labelled = hostWith(path => path.endsWith("/function/queryById")
@@ -295,9 +309,11 @@ describe("metric and function panel server operations", () => {
       affected: { objects: [{ objectType: FUNCTION, primaryKey: functionTarget.primaryKey }], objectTypes: [FUNCTION] },
     });
     expect(deleted.sent[0]?.path).toBe("/api/data-query/function/delete");
-    const deleteRefused = hostWith(() => Response.json({ success: false, message: "Function referenced by Action cannot be modified or deleted" }));
+    const deleteRefused = hostWith(() => Response.json({
+      success: false, code: "FUNCTION_REFERENCED", message: "Function referenced by Action cannot be modified or deleted",
+    }));
     expect(await remove.execute(deleteRefused.host, functionTarget))
-      .toEqual({ kind: "refusal", code: "FUNCTION_DELETE_REFUSED", message: "Function referenced by Action cannot be modified or deleted" });
+      .toEqual({ kind: "refusal", code: "FUNCTION_REFERENCED", message: "Function referenced by Action cannot be modified or deleted" });
   });
 
   it("describes the function delete impact with the owner's reference rule", async () => {

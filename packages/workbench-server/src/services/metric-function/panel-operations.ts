@@ -171,7 +171,7 @@ export const m5ServerOperations = [
     },
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       return save(host, "/metricView/save", valuesForTarget(target, saveInputSchema.parse(input).values),
-        "METRIC_VIEW_SAVE_REFUSED", METRIC_VIEW, [METRIC_VIEW, FUNCTION]);
+        "METRIC_VIEW_SAVE_FAILED", METRIC_VIEW, [METRIC_VIEW, FUNCTION]);
     },
   },
   {
@@ -189,7 +189,7 @@ export const m5ServerOperations = [
     inspectImpact: deleteMetricViewImpact,
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected metric");
-      return remove(host, "/metricView/delete", target, "METRIC_VIEW_DELETE_REFUSED");
+      return remove(host, "/metricView/delete", target, "METRIC_VIEW_DELETE_FAILED");
     },
   },
   {
@@ -248,7 +248,7 @@ export const m5ServerOperations = [
     },
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       return save(host, "/function/save", valuesForTarget(target, saveInputSchema.parse(input).values),
-        "FUNCTION_SAVE_REFUSED", FUNCTION, [FUNCTION]);
+        "FUNCTION_SAVE_FAILED", FUNCTION, [FUNCTION]);
     },
   },
   {
@@ -266,7 +266,7 @@ export const m5ServerOperations = [
     inspectImpact: deleteFunctionImpact,
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected function");
-      return remove(host, "/function/delete", target, "FUNCTION_DELETE_REFUSED");
+      return remove(host, "/function/delete", target, "FUNCTION_DELETE_FAILED");
     },
   },
   {

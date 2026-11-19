@@ -12,6 +12,7 @@ export const ownerEnvelopeSchema = z.object({
 
 export const savedIdSchema = z.object({ id: z.string().min(1) }).passthrough();
 const labelSchema = z.object({ name: z.string() }).passthrough();
+const ownerRefusalCodeSchema = z.string().min(1).max(200).optional();
 
 export type DataQueryOperationHost = Pick<PanelOperationHost, "request">;
 
@@ -64,20 +65,29 @@ export const affected = (objectType: string, primaryKey: string, objectTypes: st
   objects: [{ objectType, primaryKey }], objectTypes,
 });
 
+/** Only an explicit owner code classifies a negative write receipt as a refusal. */
+export function ownerWriteFailure(
+  envelope: z.infer<typeof ownerEnvelopeSchema>, failureCode: string, fallbackMessage: string,
+): Extract<SinglePanelOperationOutcome, { kind: "refusal" | "failure" }> {
+  const code = ownerRefusalCodeSchema.parse(envelope.code);
+  const message = envelope.message ?? fallbackMessage;
+  return code === undefined ? { kind: "failure", code: failureCode, message } : { kind: "refusal", code, message };
+}
+
 export async function save(
-  host: DataQueryOperationHost, path: string, values: unknown, refusalCode: string, objectType: string, objectTypes: string[],
+  host: DataQueryOperationHost, path: string, values: unknown, failureCode: string, objectType: string, objectTypes: string[],
 ): Promise<SinglePanelOperationOutcome> {
   const envelope = await ownerPost(host, path, values, ownerEnvelopeSchema);
-  if (!envelope.success) return { kind: "refusal", code: refusalCode, message: envelope.message ?? "The owner refused the save" };
+  if (!envelope.success) return ownerWriteFailure(envelope, failureCode, "The owner could not save the record");
   const data = runtimeJsonObjectSchema.parse(envelope.data);
   return { kind: "success", data, affected: affected(objectType, savedIdSchema.parse(data).id, objectTypes) };
 }
 
 export async function remove(
-  host: DataQueryOperationHost, path: string, target: PanelRecordTarget, refusalCode: string,
+  host: DataQueryOperationHost, path: string, target: PanelRecordTarget, failureCode: string,
 ): Promise<SinglePanelOperationOutcome> {
   const envelope = await ownerPost(host, path, { id: target.primaryKey }, ownerEnvelopeSchema);
   return envelope.success
     ? { kind: "success", data: {}, affected: affected(target.objectType, target.primaryKey, [target.objectType]) }
-    : { kind: "refusal", code: refusalCode, message: envelope.message ?? "The owner refused the delete" };
+    : ownerWriteFailure(envelope, failureCode, "The owner could not delete the record");
 }
