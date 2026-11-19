@@ -15,7 +15,8 @@ import { useConversationDisplay } from "../../../../../packages/agent-shell-ui/s
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { platformLayoutRoute } from "../../../../../packages/platform-web/src/layout-route";
-import { ignoreChanges,
+import {
+  framedTasksPanelHtml, ignoreChanges,
   hostMessageOf, inspectionTaskForm, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt,
   currentSdk, humanIntents, panelHostFrame, panelRecord, panelSnapshot, panelUse, projections, READER, run, SCHEDULED_TASK, SDK_VERSION, task, taskForm,
   writeFrameDocument,
@@ -28,7 +29,7 @@ const appB = "app-panels-trial-b";
 const panelPath = join(dirname(fileURLToPath(import.meta.url)), "../../../../../packages/apps-sdk/examples/panels/schedules-trial");
 const p = panelRecord("panel-schedules-trial", "Trial panel P", manifestP);
 const q = panelRecord("panel-schedules-summary", "Trial panel Q", manifestQ);
-p.content.html = readFileSync(join(panelPath, "p/panel.html"), "utf8");
+p.content.html = framedTasksPanelHtml;
 q.content.html = readFileSync(join(panelPath, "q/panel.html"), "utf8");
 const useP = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", p.id, `/applications/${appA}/tasks`);
 const useQ = panelUse("use-trial-b-summary", "panels-trial-b-summary", q.id, `/applications/${appB}/summary`);

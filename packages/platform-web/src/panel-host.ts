@@ -7,14 +7,17 @@ import {
 } from "@ontomato/contracts/product-subscriptions";
 import {
   candidatePanelSourceSchema, productPanelReadResponseSchema,
-  type CandidatePanelSource, type PanelHostSource, type PanelAuthorDefinitions, type PanelDefinitionMode,
+  type CandidatePanelSource, type DirectPanelHostSource, type PanelHostSource, type PanelAuthorDefinitions, type PanelDefinitionMode,
   type ProductPanelReadRequest, type ProductPanelReadResponse,
 } from "@ontomato/contracts/panel-host";
 import { buildExecutionContext } from "@ontomato/contracts/build-tests";
 import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
-import { registerCandidateFrame, registerPanelFrame } from "./app-host";
-import type { PanelHostPort } from "@ontomato/platform-shell";
+import { confirmPanelIntent, registerCandidateFrame, registerPanelFrame } from "./app-host";
+import type { DirectPanelRun, PanelHostPort } from "@ontomato/platform-shell";
+import { mountDirectPanel, type PlatformRequests } from "@ontomato/apps-sdk/direct";
+import { workbenchI18n } from "@ontomato/workbench-ui/i18n";
+import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
 import type { DisplayObjectChange } from "@ontomato/agent-shell-ui";
 
 /*
@@ -91,11 +94,13 @@ export type PanelObjectChange = DisplayObjectChange;
  */
 export function platformPanelHost(
   applicationId: string, use: ApplicationPanelUse, changed: (change: PanelObjectChange) => void, mode: PanelDefinitionMode = { kind: "view" },
-): PanelHostPort<Extract<PanelHostSource, { kind: "registered" }>> {
+): PanelHostPort<Extract<PanelHostSource | DirectPanelHostSource, { kind: "registered" }>> {
   const shown = { applicationId, useId: use.id };
   return {
     async source() {
-      return { kind: "registered", applicationId, use, panel: await panel(use.panelId) };
+      const record = await panel(use.panelId);
+      // A record with an SDK version is written with code and runs in a frame; one without is drawn directly.
+      return "sdkVersion" in record ? { kind: "registered", applicationId, use, panel: record } : { kind: "registered", applicationId, use, panel: record };
     },
     pageKey: use.pageKey,
     use: shown,
@@ -106,6 +111,9 @@ export function platformPanelHost(
     // its `connect`, and what keeps a frame of another application from being mistaken for this one. What it may ask for
     // is what the panel's record declares, for this use relation's page.
     frame: (frame, source, open) => registerPanelFrame(frame, shown, { pageKey: use.pageKey, manifest: source.panel.manifest }, open, changed),
+    // A panel without code is drawn in this document, as the same application's page: its members read through the
+    // platform as the reader, within this use, and a person's write is confirmed and dispatched here as a frame's is.
+    direct: (source, run) => mountDirect(source, run, shown, changed),
     // The relation this page opens is still the application's, bound to the same panel: a kept page shown again is
     // checked against Java's current relations before its frame may ask for anything.
     async current() {
@@ -135,9 +143,38 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
       pageKey: candidate.pageKey,
       manifest: source.panel.manifest,
     }, open),
+    // A workspace candidate is read as a panel written with code until Node answers direct candidates (D's loading).
+    direct: () => {
+      throw new Error("A workspace candidate without code cannot be previewed yet");
+    },
     snapshot,
     mode: { kind: "author", definitions: panelAuthorDefinitions() },
   };
+}
+
+/**
+ * The platform's requests as the reader, for a panel drawn in this document: the same paths a frame's SDK asks through
+ * the bridge, sent here directly, Node's at `/api` and Java's under its data-query prefix.
+ */
+const platformRequests: PlatformRequests = {
+  request: (path, init, service) => nodeApiRequest(`/api${service}${path}`, init),
+};
+
+/** Starts a direct panel of an application use: the SDK's instance with this platform's reads, requests and words. */
+function mountDirect(source: DirectPanelHostSource, run: DirectPanelRun, use: PanelUseRef, changed: (change: PanelObjectChange) => void) {
+  const { global } = workbenchI18n();
+  return mountDirectPanel({
+    manifest: source.panel.manifest,
+    run,
+    requests: platformRequests,
+    use,
+    read: request => readPanelData({ source: { kind: "registered", ...use }, ...request }),
+    confirmOperation: preparation => confirmPanelIntent(use, preparation.intentId, changed),
+    messages: source.panel.content.messages ?? {},
+    locale: global.locale,
+    defaultLocale: String(global.fallbackLocale.value),
+    translate: key => global.t(key),
+  });
 }
 
 /** One application's use relations, as Java declares them; the app's entry and its page skills belong to them. */
