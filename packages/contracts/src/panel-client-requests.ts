@@ -283,6 +283,10 @@ export const createPanelHumanOperationIntentRequest = {
   method: "POST", service: "", path: /^\/panel-operations\/intents$/,
 } as const satisfies ClientRequest;
 
+export const panelReadOperationRequest = {
+  method: "POST", service: "", path: /^\/panel-operations\/read$/,
+} as const satisfies ClientRequest;
+
 /** Each binding's requests: what its client sends, and nothing more. */
 export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> = {
   ...readRequests,
@@ -307,8 +311,8 @@ export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> 
   [objectBinding(FUNCTION)]: [...functionDefinitionReads, dataQueryPost("/function/save")],
   [bindingKey({ kind: "PlatformOperation", id: DELETE_METRIC_VIEW })]: [dataQueryPost("/metricView/delete"), panelOperationImpactRequest],
   [bindingKey({ kind: "PlatformOperation", id: SET_METRIC_VIEW_STATUS })]: [dataQueryPost("/metricView/setStatus")],
-  [bindingKey({ kind: "PlatformOperation", id: TEST_METRIC_VIEW })]: [dataQueryPost("/metricView/test")],
-  [bindingKey({ kind: "PlatformOperation", id: TEST_EXECUTE_METRIC_VIEW })]: [dataQueryPost("/metricView/testExecute")],
+  [bindingKey({ kind: "PlatformOperation", id: TEST_METRIC_VIEW })]: [panelReadOperationRequest],
+  [bindingKey({ kind: "PlatformOperation", id: TEST_EXECUTE_METRIC_VIEW })]: [panelReadOperationRequest],
   [bindingKey({ kind: "PlatformOperation", id: DELETE_FUNCTION })]: [dataQueryPost("/function/delete"), panelOperationImpactRequest],
   [objectBinding(BUSINESS_KNOWLEDGE)]: [
     ...knowledgeReads,

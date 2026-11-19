@@ -1,6 +1,6 @@
 import {z} from 'zod';
 import {panelConversationEntrySchema} from './panel-conversation-entry';
-import {panelHumanOperationPreparationSchema} from './panel-agent';
+import {panelHumanOperationDispatchResponseSchema,panelHumanOperationPreparationSchema} from './panel-agent';
 
 export const APP_BRIDGE_CHANNEL='ontomato-app-v2';
 
@@ -40,8 +40,9 @@ export type AppBridgeExpandPageComposer = z.infer<typeof appBridgeExpandPageComp
 export const appBridgeConfirmPanelOperationSchema = panelHumanOperationPreparationSchema;
 export type AppBridgeConfirmPanelOperation = z.infer<typeof appBridgeConfirmPanelOperationSchema>;
 
-/** Human confirmation applies to the same inspected calls. Cancel ends the invocation before any write. */
-export const appBridgeConfirmPanelOperationResultSchema = z.object({
-  decision: z.enum(['confirm', 'cancel']),
-}).strict();
+/** A proceeding request carries the dispatch receipt for the same frozen calls. */
+export const appBridgeConfirmPanelOperationResultSchema = z.discriminatedUnion('decision', [
+  z.object({decision:z.literal('cancel')}).strict(),
+  z.object({decision:z.literal('confirm'),response:panelHumanOperationDispatchResponseSchema}).strict(),
+]);
 export type AppBridgeConfirmPanelOperationResult = z.infer<typeof appBridgeConfirmPanelOperationResultSchema>;

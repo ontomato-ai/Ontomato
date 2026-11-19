@@ -33,6 +33,7 @@ export const readPanelOperationRequestSchema = panelUseRefSchema.extend({
   call: panelReadOperationCallSchema,
 }).strict();
 export type ReadPanelOperationRequest = z.infer<typeof readPanelOperationRequestSchema>;
+export { panelReadOperationResultSchema as readPanelOperationResponseSchema } from "./panel-operations";
 
 /** The descriptor GET query locates the published operation through its actual application use. */
 export const panelOperationRefSchema = panelUseRefSchema.extend({ operationId: key }).strict();
@@ -65,12 +66,24 @@ export const createPanelHumanOperationIntentRequestSchema = z.union([
 ]);
 export type CreatePanelHumanOperationIntentRequest = z.infer<typeof createPanelHumanOperationIntentRequestSchema>;
 
+/** A multi-target batch names its targets. A single call confirms only when its owner inspects the impact. */
+export const panelHumanOperationConfirmationSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("none") }).strict(),
+  z.object({ kind: z.literal("impact"), impact: panelOperationImpactSchema }).strict(),
+  z.object({
+    kind: z.literal("batch"),
+    targets: panelOperationImpactSchema.omit({ summary: true }),
+    impact: panelOperationImpactSchema.optional(),
+  }).strict(),
+]);
+export type PanelHumanOperationConfirmation = z.infer<typeof panelHumanOperationConfirmationSchema>;
+
 /** Preparation returned by POST /panel-operations/intents and reread by the host before displaying confirmation. */
 export const panelHumanOperationPreparationSchema = z.object({
   intentId: runtimeIdSchema,
   operationId: key,
   label: z.string().min(1).max(200),
-  impact: panelOperationImpactSchema,
+  confirmation: panelHumanOperationConfirmationSchema,
 }).strict();
 export type PanelHumanOperationPreparation = z.infer<typeof panelHumanOperationPreparationSchema>;
 
@@ -156,8 +169,8 @@ export type PanelAgentOperationIntent = z.infer<typeof panelAgentOperationIntent
 const humanIntentFactsSchema = commonIntentFactsSchema.extend({
   ...currentOperationFields,
   source: z.object({ kind: z.literal("human") }).strict(),
-  /** The host reads these frozen names from Node to confirm the same request. */
-  impact: panelOperationImpactSchema,
+  /** The host reads the frozen decision and names from Node for the same request. */
+  confirmation: panelHumanOperationConfirmationSchema,
 });
 export const panelHumanOperationIntentSchema = z.union([
   humanIntentFactsSchema.merge(panelHumanSingleInvocationSchema),

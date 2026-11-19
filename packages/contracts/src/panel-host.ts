@@ -2,6 +2,7 @@ import { z } from "zod";
 import { buildTestContextSchema } from "./build-tests";
 import { pageContextSchema } from "./page-context";
 import { pageDraftLinkSchema } from "./page-draft";
+import { panelUseRefSchema } from "./panel-agent";
 import { panelObjectIdentitySchema, panelOpenRequestSchema, panelOperationSchema, panelStateValueSchema, type PanelObjectIdentity, type PanelStateValue } from "./panel-manifest";
 import { applicationPanelUseSchema, panelDefinitionContentSchema, productPanelSchema } from "./product-panels";
 import { definitionRevisionSchema, type ProductDefinitionRevision, type ProductDefinitionTarget } from "./product-subscriptions";
@@ -48,6 +49,8 @@ export const panelHostMessageSchema = z
     panel: panelDefinitionContentSchema,
     /** This instance's registration key: the application use's pageKey. */
     pageKey: z.string().min(1).max(200),
+    /** The effective application use shared with the skill. Candidates have no use and cannot write an operation. */
+    use: panelUseRefSchema.nullable(),
     /** The instance's address, as the reader and a message see it. */
     url: z.string().min(1).max(4000),
     label: z.string().min(1).max(500),
