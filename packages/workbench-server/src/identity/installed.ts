@@ -19,6 +19,14 @@ export function requirePermission(keys: readonly string[]): RequestHandler {
   };
 }
 
+/** Verifies menu permissions inside a service call using the same edition boundary as `requirePermission`. */
+export function assertPermission(
+  identity: { token?: string; apiKey?: string },
+  keys: readonly string[],
+): Promise<void> {
+  return workbenchIdentity().assertPermission(identity, keys);
+}
+
 export const guardMcpServiceManagement: RequestHandler = (req, res, next) => {
   void workbenchIdentity().guardMcpServiceManagement(req, res, next);
 };
