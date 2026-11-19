@@ -22,7 +22,7 @@ import {installAppBridge} from './app-bridge';
 import type {PanelManifest} from '@ontomato/contracts/panel-manifest';
 import {METRIC_CHART_COMPONENT,productProjectionResponseSchema} from '@ontomato/contracts/product-panels';
 import {pageDraftCreatedSchema,pageDraftReadSchema} from '@ontomato/contracts/page-draft';
-import {chartProjectionLookupRead,chartProjectionSourceSends,clientSends} from '@ontomato/contracts/panel-client-requests';
+import {chartProjectionSourceSends,clientSends} from '@ontomato/contracts/panel-client-requests';
 import {projectionBindingKeys} from '@ontomato/contracts/panel-projection';
 
 const executionBindings = new WeakMap<object, AppExecutionContext>();
@@ -56,7 +56,7 @@ interface PanelFrame {
   createDrafts: Set<string>;
   /**
    * The projections this frame has read as MetricCharts, by ID. Only their chart sources are this frame's to read or
-   * redraw, and only a frame showing a chart looks a source card up; the owner still checks use and edit.
+   * redraw; the owner still checks use and edit.
    */
   charts: Set<string>;
 }
@@ -172,8 +172,6 @@ function admitPanelRequest(panel:PanelFrame,method:string,path:string,service:st
     if(DRAFT_READ.test(path))return;
   }
   if(chartProjectionSourceSends(panel.charts,method,service,path))return;
-  const lookup=chartProjectionLookupRead;
-  if(panel.charts.size&&method===lookup.method&&service===lookup.service&&lookup.path.test(path))return;
   // A request about one object of a binding (the metric a MetricView binding names) is checked against its JSON body.
   const decoded:unknown=typeof body==='string'&&body?JSON.parse(body):undefined;
   // The reader's first save of a create draft this frame read for its page records the object it created on that draft.

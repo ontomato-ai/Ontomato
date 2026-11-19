@@ -12,13 +12,14 @@ import {
 
 /*
  * What a panel's frame may ask for once it shows a MetricChart (M2 segment 1): the chart source of the chart projections
- * it read, the source-card lookup a chart's picker needs, and the bound metric's describe and execute — for that metric
- * alone, checked against the request's own body. Both ends are real: the platform's app host and bridge, the frame the
+ * it read, and the bound metric's describe and execute — for that metric alone, checked against the request's own body.
+ * Looking a projection up by its source card is no frame's: drawing a chart does not need it, and only a panel whose
+ * declaration's bindings register it may ask for it. Both ends are real: the platform's app host and bridge, the frame the
  * panel host registers, and the SDK's request path in the frame.
  *
  * What this rules out: a chart that cannot read its template or run its metric because admission ignored the body or
- * the chart source; a frame that runs another metric through its binding's path; and a frame that reads or redraws the
- * chart source of a projection it does not show.
+ * the chart source; a frame that runs another metric through its binding's path; a frame that reads or redraws the chart
+ * source of a projection it does not show; and a frame that looks a source card up.
  */
 
 const METRIC = "department-metric";
@@ -43,7 +44,6 @@ function answer(request: Sent) {
   if (request.path === `/api/product-projections/${chart.id}`) return Response.json({ projection: chart });
   if (request.path === `/api/product-projections/${summary.id}`) return Response.json({ projection: summary });
   if (request.path === `/api${chartProjectionSourcePath(chart.id)}`) return Response.json({ chartFile: { option: {} }, parameters: {} });
-  if (request.path === "/api/product-projections/chart-sources") return Response.json({ projectionId: chart.id });
   if (request.path === "/api/data-query/ontology/query/metrics/describe") return Response.json({ success: true, data: { parameterDefs: [] } });
   if (request.path === "/api/data-query/metricView/execute") return Response.json({ success: true, data: [] });
   return nothingAt(request);
@@ -64,11 +64,10 @@ const json = (body: unknown) => ({ method: "POST", body: JSON.stringify(body) })
 afterEach(leaveFrame);
 
 describe("what a frame showing a chart may ask for", () => {
-  it("reads and redraws its chart's source, looks a source card up, and runs its bound metric as the reader", async () => {
+  it("reads and redraws its chart's source and runs its bound metric as the reader", async () => {
     const { sent, transport } = await open();
     // Before the frame has read a chart projection, nothing of a chart is its to ask for.
     await expect(transport.request(chartProjectionSourcePath(chart.id), {}, "")).rejects.toThrow("Outside what this panel's projections declare");
-    await expect(transport.request(lookup, {}, "")).rejects.toThrow("Outside what this panel's projections declare");
     expect(sent).toEqual([]);
 
     await transport.request(`/product-projections/${chart.id}`, {}, "");
@@ -76,7 +75,6 @@ describe("what a frame showing a chart may ask for", () => {
     for (const [path, init, service] of [
       [chartProjectionSourcePath(chart.id), {}, ""],
       [chartProjectionSourcePath(chart.id), { method: "PUT", body: JSON.stringify({ chartFile: { option: {} } }) }, ""],
-      [lookup, {}, ""],
       ["/ontology/query/metrics/describe", json({ id: METRIC }), "/data-query"],
       ["/metricView/execute", json({ id: METRIC, param: { department: "sales" } }), "/data-query"],
     ] as const)
@@ -86,14 +84,13 @@ describe("what a frame showing a chart may ask for", () => {
       `GET /api/product-projections/${summary.id}`,
       `GET /api${chartProjectionSourcePath(chart.id)}`,
       `PUT /api${chartProjectionSourcePath(chart.id)}`,
-      `GET /api${lookup}`,
       "POST /api/data-query/ontology/query/metrics/describe",
       "POST /api/data-query/metricView/execute",
     ]);
     expect(sent.every(request => request.credential === READER)).toBe(true);
   });
 
-  it("refuses another metric through its binding's path, and the chart source of a projection it does not show as a chart", async () => {
+  it("refuses another metric through its binding's path, the chart source of a projection it does not show as a chart, and a source-card lookup", async () => {
     const { sent, transport } = await open();
     await transport.request(`/product-projections/${chart.id}`, {}, "");
     await transport.request(`/product-projections/${summary.id}`, {}, "");
@@ -107,6 +104,7 @@ describe("what a frame showing a chart may ask for", () => {
       [chartProjectionSourcePath("chart-of-another-panel"), {}, ""],
       [chartProjectionSourcePath(chart.id), { method: "DELETE" }, ""],
       ["/product-projections/chart-sources", json({ dashboardId: "board-a", cardId: "chart-2" }), ""],
+      [lookup, {}, ""],
     ] as const)
       await expect(transport.request(path, init, service), `${init.method ?? "GET"} ${service}${path}`)
         .rejects.toThrow("Outside what this panel's projections declare");
