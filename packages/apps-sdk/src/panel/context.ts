@@ -60,6 +60,11 @@ export interface PanelContext {
    * the deployment's default, else the key. The panel's HTML reads the same function as `t(key, params)`.
    */
   readonly t: PanelText;
+  /**
+   * Fetches and registers the resource clients a projection record binds — its type or operation, and a graph's edge
+   * type — before the projection registers its ports, so a panel downloads only the clients of what it shows.
+   */
+  resources(projection: Pick<ProductProjection, "binding" | "graph">): Promise<void>;
 }
 
 /**

@@ -232,6 +232,7 @@ describe("a panel's module", () => {
       draft: ref(null),
       holdUnsaved: () => () => {},
       t: (key: string) => key,
+      resources: async () => {},
     });
     app.mount(document.createElement("div"));
     await nextTick();
@@ -243,7 +244,7 @@ describe("a panel's module", () => {
       "projection-schedules-run",
     ]);
     // Every slot's projection is registered with the ports its record gave it.
-    expect(panelInstance.projections.value.map((item) => item.slot)).toEqual(["tasks", "summary", "form", "run"]);
+    await vi.waitFor(() => expect(panelInstance.projections.value.map((item) => item.slot)).toEqual(["tasks", "summary", "form", "run"]));
     app.unmount();
   });
 });

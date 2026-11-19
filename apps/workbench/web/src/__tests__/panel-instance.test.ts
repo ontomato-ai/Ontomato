@@ -213,6 +213,7 @@ describe("a panel's module", () => {
       draft: ref(null),
       holdUnsaved: () => () => {},
       t: (key: string) => key,
+      resources: async () => {},
     });
     app.mount(element);
     await nextTick();

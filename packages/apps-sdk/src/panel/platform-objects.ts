@@ -6,7 +6,8 @@ import {
   type PanelFormRequest,
   type PanelFormSaveInput,
 } from "@ontomato/contracts/panel-projection";
-import { registerHandler } from "./handlers";
+import { registerHandler, type RegisteredHandler } from "./handlers";
+import type { ProductProjection } from "@ontomato/contracts/product-panels";
 
 /*
  * How the SDK reads and writes one platform object type (overall design 3.2): a projection binds
@@ -140,6 +141,43 @@ export interface PlatformObjectAdapter {
  * returns both adapters over that one read.
  */
 export type PlatformObjectAdapterFactory = (requests: PlatformRequests) => readonly PlatformObjectAdapter[];
+
+/** How a resource module provides one platform operation's handler (`schedules.runNow`), given the frame's request path. */
+export type PlatformOperationFactory = (requests: PlatformRequests) => RegisteredHandler;
+
+/**
+ * The resource modules of this SDK version, by the binding that reaches them (`PlatformObjectType:platform:Skill`,
+ * `PlatformOperation:schedules.runNow`). Each is fetched the first time a projection binds it, so a panel downloads
+ * the clients — and the owner schemas they parse with — of the resources it shows and no others.
+ */
+export interface PlatformResources {
+  objects: Readonly<Record<string, () => Promise<PlatformObjectAdapterFactory>>>;
+  operations: Readonly<Record<string, () => Promise<PlatformOperationFactory>>>;
+}
+
+/**
+ * What a frame calls before a projection registers its ports: every resource its record binds — its binding and, for a
+ * graph, its edges' — fetched and registered with the frame's request path, once per module. A binding this version has
+ * no module for is left to fail where it is used.
+ */
+export function platformResourceLoader(requests: PlatformRequests, resources: PlatformResources) {
+  const loaded = new Map<() => Promise<unknown>, Promise<void>>();
+  const once = <Factory>(load: (() => Promise<Factory>) | undefined, register: (factory: Factory) => void) => {
+    if (!load) return Promise.resolve();
+    let pending = loaded.get(load);
+    if (!pending) {
+      pending = load().then(register);
+      loaded.set(load, pending);
+    }
+    return pending;
+  };
+  return async (projection: Pick<ProductProjection, "binding" | "graph">): Promise<void> => {
+    const bindings = [projection.binding, ...(projection.graph ? [projection.graph.edges.binding] : [])];
+    await Promise.all(bindings.map((binding) => binding.kind === "PlatformOperation"
+      ? once(resources.operations[binding.id], (factory) => registerHandler(factory(requests)))
+      : once(resources.objects[binding.id], (factory) => factory(requests).forEach(registerPlatformObjectAdapter))));
+  };
+}
 
 const adapters = new Map<string, PlatformObjectAdapter>();
 

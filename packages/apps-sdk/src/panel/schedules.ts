@@ -5,9 +5,7 @@ import { formFieldKey, formFieldPointer, formValuesSchema, type FormField, type 
 import { randomId } from "@ontomato/contracts/random-id";
 import type { PanelFormDescription, PanelFormField, PanelFormRequest, PanelFormSaveInput } from "@ontomato/contracts/panel-projection";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
-import { contextTransport, type AppContext } from "../context";
-import { registerHandler } from "./handlers";
-import { PlatformObjectRefusal, type PlatformObjectAdapterFactory, type PlatformObjectRecord } from "./platform-objects";
+import { PlatformObjectRefusal, type PlatformObjectAdapterFactory, type PlatformObjectRecord, type PlatformOperationFactory, type PlatformRequests } from "./platform-objects";
 import { DATA_QUERY_GATEWAY, RUN_NOW, SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 
 /*
@@ -27,16 +25,6 @@ import { DATA_QUERY_GATEWAY, RUN_NOW, SCHEDULED_TASK } from "@ontomato/contracts
  * starts sending must be declared there, or the platform refuses it from a panel's frame.
  */
 
-/** The scheduled tasks' request path inside a panel frame: the SDK's own client, over this frame's credential. */
-export function schedulesHost(context: AppContext): PlatformSchedulesHost {
-  const transport = contextTransport(context);
-  return {
-    request: (path, init) => transport.request(path.slice(DATA_QUERY_GATEWAY.length), init, "/data-query"),
-    // A panel shows tasks; the platform that mounts it owns the applications it names and where a result opens.
-    applications: () => [],
-    openResult: () => {},
-  };
-}
 
 /**
  * The task as a summary shows it: the service's own summary lines, its schedule, and whether it is on, paused or off.
@@ -118,12 +106,18 @@ const taskId = (target: PanelFormTarget) => {
 const taskFieldPath = (key: string) => formFieldPointer("/", key);
 
 /** The typed panel adapter keeps the application's original string values and the actual task revision. */
-export const scheduledTaskAdapters: PlatformObjectAdapterFactory = requests => {
-  const resource = schedulesResource({
+/** The scheduled tasks' request path inside a panel frame: the gateway prefix their contract spells becomes the service. */
+function dataQueryHost(requests: PlatformRequests): PlatformSchedulesHost {
+  return {
     request: (path, init) => requests.request(path.slice(DATA_QUERY_GATEWAY.length), init, "/data-query"),
+    // A panel shows tasks; the platform that mounts it owns the applications it names and where a result opens.
     applications: () => [],
     openResult: () => {},
-  }, taskFieldPath);
+  };
+}
+
+export const scheduledTaskAdapters: PlatformObjectAdapterFactory = requests => {
+  const resource = schedulesResource(dataQueryHost(requests), taskFieldPath);
   const forms = {
     async describe({ target, values, changedField }: PanelFormRequest): Promise<PanelFormDescription> {
       const id = taskId(target);
@@ -147,14 +141,15 @@ export const scheduledTaskAdapters: PlatformObjectAdapterFactory = requests => {
   return [{ objectType: SCHEDULED_TASK, list: resource.list, read: resource.read, forms }];
 };
 
-export function registerScheduledTaskRunNow(context: AppContext): void {
-  const { runNow } = scheduledTaskPanelOperations(schedulesHost(context));
-  registerHandler({
+/** `schedules.runNow`: runs one task now and leaves its schedule as it is, through the frame's request path. */
+export const scheduledTaskRunNow: PlatformOperationFactory = requests => {
+  const { runNow } = scheduledTaskPanelOperations(dataQueryHost(requests));
+  return {
     handlerRef: RUN_NOW,
     async invoke({ target }) {
       if (target?.kind !== "object") throw new Error("Run now acts on the selected task");
       const run = await runNow(target.primaryKey, randomId());
       return { runId: run.id, status: run.status, trigger: run.trigger };
     },
-  });
-}
+  };
+};

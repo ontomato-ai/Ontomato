@@ -23,9 +23,8 @@ import { receivePanelDraft } from "./draft";
 import PanelProjection from "./Projection.vue";
 import { baseComponents } from "../base-components";
 import { prepareTemplateComponents } from "./template-components";
-import { registerScheduledTaskRunNow } from "./schedules";
-import { registerPlatformObjectAdapter } from "./platform-objects";
-import { platformObjectAdapters } from "../resources";
+import { platformResourceLoader } from "./platform-objects";
+import { platformResources } from "../resources";
 
 /*
  * How a panel's module runs (overall design 3.3, 3.4): the platform's panel host opens a frame for one instance and
@@ -100,6 +99,8 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
       return () => unsaved.delete(flag);
     },
     t: createPanelText(message.panel.content.messages ?? {}, appContext.locale, defaultLocale),
+    // The resource clients a projection binds, fetched with it and sending through this frame's request path.
+    resources: platformResourceLoader({ request: (path, init, service) => transport.request(path, init, service) }, platformResources),
   };
   const app = createApp({
     setup: () => {
@@ -120,11 +121,6 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   app.component("Projection", PanelProjection);
   // The panel's own words, as its HTML reads them: `{{ t("settings.title") }}`. The platform's words stay `$t`.
   app.config.globalProperties.t = context.t;
-  // The platform objects this version's panels read, and the operations they run.
-  registerScheduledTaskRunNow(appContext);
-  for (const adapt of platformObjectAdapters)
-    for (const adapter of adapt({ request: (path, init, service) => transport.request(path, init, service) }))
-      registerPlatformObjectAdapter(adapter);
   app.config.errorHandler = failed;
   // Element Plus's components and the SDK's base components a panel's HTML composes; neither carries business.
   installTemplateComponents(app);

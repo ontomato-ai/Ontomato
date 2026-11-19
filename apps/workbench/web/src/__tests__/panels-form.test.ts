@@ -156,6 +156,7 @@ function mounted(save: (values: Record<string, string>, revision: number) => Pro
           draft: instance.draft,
           holdUnsaved: () => () => {},
           t: (key: string) => key,
+          resources: async () => {},
         });
         provide(projectionKey, slot);
         return () => h(ObjectForm);

@@ -1,19 +1,28 @@
-import { agentDefinitionAdapters } from "../panel/agent-definition";
-import { mcpServiceOptionAdapters } from "../panel/mcp-service-option";
-import { modelOptionAdapters } from "../panel/model-option";
-import { ontologyMetadataAdapters } from "../panel/ontology-metadata";
-import { skillAdapters } from "../panel/skill";
-import { userAdapters } from "../panel/user";
-import { scheduledTaskAdapters } from "../panel/schedules";
-import type { PlatformObjectAdapterFactory } from "../panel/platform-objects";
+import { AGENT_DEFINITION, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, RUN_NOW, SCHEDULED_TASK, SKILL, USER } from "@ontomato/contracts/panel-client-requests";
+import type { PlatformResources } from "../panel/platform-objects";
 
-/** Resource adapters use the frame's request path and the requests declared for their bindings. */
-export const platformObjectAdapters: readonly PlatformObjectAdapterFactory[] = [
-  agentDefinitionAdapters,
-  skillAdapters,
-  modelOptionAdapters,
-  mcpServiceOptionAdapters,
-  userAdapters,
-  ontologyMetadataAdapters,
-  scheduledTaskAdapters,
-];
+/*
+ * The resource modules of this SDK version (design 2.3), by the type or operation a projection binds: one module per
+ * owner, each written against `PlatformObjectAdapter` and sending only the requests `contracts/panel-client-requests.ts`
+ * declares for its binding. A module is fetched the first time a projection of the panel binds one of its types; a
+ * type not listed here is one no projection of this version can bind.
+ */
+const ontologyMetadata = () => import("../panel/ontology-metadata").then((module) => module.ontologyMetadataAdapters);
+
+export const platformResources: PlatformResources = {
+  objects: {
+    [AGENT_DEFINITION]: () => import("../panel/agent-definition").then((module) => module.agentDefinitionAdapters),
+    [SKILL]: () => import("../panel/skill").then((module) => module.skillAdapters),
+    [MODEL_OPTION]: () => import("../panel/model-option").then((module) => module.modelOptionAdapters),
+    [MCP_SERVICE_OPTION]: () => import("../panel/mcp-service-option").then((module) => module.mcpServiceOptionAdapters),
+    [USER]: () => import("../panel/user").then((module) => module.userAdapters),
+    // Classes, attributes and relationships come from one metadata read, so one module answers all three.
+    [OBJECT_TYPE]: ontologyMetadata,
+    "platform:Attribute": ontologyMetadata,
+    [RELATIONSHIP]: ontologyMetadata,
+    [SCHEDULED_TASK]: () => import("../panel/schedules").then((module) => module.scheduledTaskAdapters),
+  },
+  operations: {
+    [RUN_NOW]: () => import("../panel/schedules").then((module) => module.scheduledTaskRunNow),
+  },
+};

@@ -114,7 +114,11 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     }),
     projections: readonly(registrations),
     register(registration) {
-      registrations.value = [...registrations.value, registration];
+      // In the declaration's slot order, whichever projection finished loading first: the operations an agent lists and
+      // the header draws, and the forms a draft is offered to, keep the panel's own order.
+      const order = Object.keys(manifest.slots);
+      registrations.value = [...registrations.value, registration]
+        .sort((a, b) => order.indexOf(a.slot) - order.indexOf(b.slot));
       return () => {
         registrations.value = registrations.value.filter((item) => item !== registration);
       };
