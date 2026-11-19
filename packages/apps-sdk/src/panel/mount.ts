@@ -69,7 +69,9 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   ]);
   const transport = contextTransport(appContext);
   const address = ref(message.url);
+  const text = createPanelText(message.panel.content.messages ?? {}, appContext.locale, defaultLocale);
   const instance = createPanelInstance(message.panel.manifest, {
+    text,
     pageKey: message.pageKey,
     url: () => address.value,
     label: () => message.label,
@@ -108,7 +110,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
       unsaved.add(flag);
       return () => unsaved.delete(flag);
     },
-    t: createPanelText(message.panel.content.messages ?? {}, appContext.locale, defaultLocale),
+    t: text,
     // The resource clients a projection binds, fetched with it and sending through this frame's request path.
     resources: platformResourceLoader({ request: (path, init, service) => transport.request(path, init, service) }, platformResources),
   };

@@ -4,6 +4,7 @@ import { operationCall, type PanelProjectionRegistration } from "./ports";
 import type { PanelOperationBinding } from "./types";
 import type { PanelStateStore } from "./state";
 import type { PanelFormAdapters } from "./draft";
+import type { PanelText } from "./text";
 
 /*
  * The operations a panel instance offers (overall design 3.4, 5.1, "list and execute operations"): the ones its slots'
@@ -22,6 +23,7 @@ export function panelOperations(
   registrations: readonly PanelProjectionRegistration[],
   state: PanelStateStore,
   forms: PanelFormAdapters,
+  text: PanelText,
 ): PanelOperationBinding[] {
   return [
     ...registrations.flatMap((registration) =>
@@ -39,7 +41,8 @@ export function panelOperations(
       })),
     ),
     ...manifest.operations.map((operation) => ({
-      ...panelStateOperation(operation),
+      // A state operation is the panel's own, so its name is one of the panel's words, in the current language.
+      ...panelStateOperation(operation, (key) => text(key)),
       invoke: async () => {
         for (const [name, value] of Object.entries(operation.sets)) state.set(name, value);
         return operation.sets;

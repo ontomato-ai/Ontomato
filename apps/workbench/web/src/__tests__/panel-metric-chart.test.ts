@@ -83,6 +83,7 @@ function owners(template: () => Response) {
 
 function mounted(requests: PlatformRequests, customer: string | null) {
   const instance = createPanelInstance(manifest, {
+    text: (key) => key,
     pageKey: "charts", url: () => "/charts", label: () => "Charts",
     initial: customer ? { customer: { className: "Customer", primaryKey: customer } } : {},
     recordDraftCreated: async () => {},

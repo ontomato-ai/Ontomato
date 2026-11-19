@@ -4,6 +4,7 @@ import type { PageContext } from "@ontomato/contracts/page-context";
 import { panelOpenRequestSchema, type PanelManifest, type PanelOperationCall, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { createPanelState, objectNameKey, panelSelection, type PanelInitialState, type PanelStateStore } from "./state";
+import type { PanelText } from "./text";
 import { panelOperations } from "./operations";
 import type { PanelProjectionRegistration } from "./ports";
 import { PanelFormAdapters, type PageDraftLink, type ReceivedPanelDraft } from "./draft";
@@ -33,6 +34,8 @@ export interface PanelInstanceOptions {
   recordDraftCreated: (link: PageDraftLink, id: string) => Promise<void>;
   /** Translates platform message keys (such as object-union type display names) in the current locale. */
   translate?: (key: string) => string;
+  /** The panel's own words (its content's messages) in the current language: what a state operation is called. */
+  text: PanelText;
   reportDraftError?: (reason: unknown) => void;
 }
 
@@ -96,7 +99,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     for (const listener of objectListeners) listener(object);
   };
   const registrations = shallowRef<readonly PanelProjectionRegistration[]>([]);
-  const operations = computed(() => panelOperations(manifest, registrations.value, state, forms));
+  const operations = computed(() => panelOperations(manifest, registrations.value, state, forms, options.text));
   const forms = new PanelFormAdapters(options.reportDraftError);
   const draft = shallowRef<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
   const names = shallowReactive(new Map<string, string>());

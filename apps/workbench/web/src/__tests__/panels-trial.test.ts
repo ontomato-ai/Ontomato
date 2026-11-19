@@ -75,6 +75,7 @@ const records = new Map<string, ProductProjection>([
 
 function instance(initial?: Record<string, unknown>) {
   return createPanelInstance(panel, {
+    text: (key) => key,
     pageKey: "panels-trial-a-tasks",
     url: () => "/applications/app-panels-trial-a/tasks",
     label: () => "panels-trial-a-tasks",
@@ -153,6 +154,7 @@ describe("a panel instance", () => {
   it("keeps two instances' selections apart, and one opened at a link shows the task it names", () => {
     const p = instance({ selectedTask: task("task-1") });
     const q = createPanelInstance(summaryPanel, {
+      text: (key) => key,
       pageKey: "panels-trial-b-summary",
       url: () => "/applications/app-panels-trial-b/summary",
       label: () => "panels-trial-b-summary",

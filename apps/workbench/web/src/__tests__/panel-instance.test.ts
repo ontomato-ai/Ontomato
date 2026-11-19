@@ -10,6 +10,7 @@ import { registerHandler, handlerFor, registeredHandlers } from "../../../../../
 import { componentFor } from "../../../../../packages/apps-sdk/src/catalogue-components";
 import Projection from "../../../../../packages/apps-sdk/src/panel/Projection.vue";
 import { panelContextKey } from "../../../../../packages/apps-sdk/src/panel/context";
+import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 
 /*
  * A panel declares its state and places its projections, and the SDK does the rest: it reads each projection by ID,
@@ -33,7 +34,7 @@ const panel = definePanel({
     taskForm: { projectionId: "projection-task-form", inputs: { task: { state: "selectedTask" } } },
     runTask: { projectionId: "projection-run-task", inputs: { task: { state: "selectedTask" } } },
   },
-  operations: [{ id: "task.clear", label: "Clear", kind: "state", sets: { selectedTask: null } }],
+  operations: [{ id: "task.clear", labelKey: "tasks.clear", kind: "state", sets: { selectedTask: null } }],
 });
 
 /** What the host handed the frame: the panel's content, declaration and SDK version, without the record's identity. */
@@ -69,8 +70,13 @@ const records = new Map<string, ProductProjection>([
   ["projection-run-task", record("projection-run-task", "MarkdownView", { kind: "PlatformOperation", id: "schedules.runNow" })],
 ]);
 
+/** The panel's own words, in the language the platform hands the frame. */
+const locale = ref("en");
+const text = createPanelText({ en: { "tasks.clear": "Clear" }, "zh-CN": { "tasks.clear": "清除" } }, locale, "en");
+
 function instance(initial?: Record<string, unknown>) {
   return createPanelInstance(panel, {
+    text,
     pageKey: "schedules",
     url: () => "/a/schedules",
     label: () => "Scheduled tasks",
@@ -166,6 +172,15 @@ describe("a panel's instance", () => {
     expect(panelInstance.unclaimedDraft.value).toBe(false);
     panelInstance.register({ slot: "runTask", projectionId: "projection-run-task", ports: { ...saves, operations: [] }, invoke: async () => ({}) });
     expect(panelInstance.unclaimedDraft.value).toBe(true);
+  });
+
+  it("names a state operation by the panel's own word for it, in the current language", () => {
+    const panelInstance = instance();
+    const named = () => panelInstance.operations.value.find((operation) => operation.id === "task.clear")!.label;
+    expect(named()).toBe("Clear");
+    locale.value = "zh-CN";
+    expect(named()).toBe("清除");
+    locale.value = "en";
   });
 
   it("keeps a value the panel does not offer in an address out of one", () => {

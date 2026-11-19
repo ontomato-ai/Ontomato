@@ -618,6 +618,7 @@ it("shows Export PNG and delegates blob download to the host bridge when downloa
     operations: [],
   });
   const instance = createPanelInstance(manifest, {
+    text: (key) => key,
     pageKey: "export-test",
     url: () => "/export",
     label: () => "Export",

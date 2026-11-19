@@ -58,6 +58,7 @@ function mounted(save: (values: Record<string, string>, revision: number) => Pro
   const objectType = `test:Task${typeCount}`;
   const panel = panelFor(objectType);
   const instance = createPanelInstance(panel, {
+    text: (key) => key,
     pageKey: "panels-trial-a-tasks",
     url: () => "/applications/app-panels-trial-a/tasks",
     label: () => "Scheduled tasks (trial)",
