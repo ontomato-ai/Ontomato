@@ -20,6 +20,7 @@ import {
   type PlatformObjectQuery,
   type PlatformObjectQueryResult,
   type PlatformObjectRecord,
+  type PlatformObjectRef,
 } from "../panel/platform-objects";
 import type { ObjectListColumn, ObjectListFilter, ObjectListRef } from "./object-list-types";
 import { textHighlightSegments } from "./text-highlight";
@@ -33,6 +34,10 @@ const props = withDefaults(
   defineProps<{
     /** Slot input whose panel state holds the single selected object when `outputs.selected` is not declared. */
     input?: string;
+    /** Slot input whose panel state holds the parent object when listing child objects of a selected parent. */
+    parentInput?: string;
+    /** Panel state fields cleared in the same atomic `setState` update whenever this list changes its selection. */
+    clears?: readonly string[];
     /** Multi-column table definition; when absent, renders a compact selectable list. */
     columns?: readonly ObjectListColumn[];
     /** Field key rendered as a status tag on each item in compact list mode. */
@@ -68,6 +73,8 @@ const props = withDefaults(
   }>(),
   {
     input: undefined,
+    parentInput: undefined,
+    clears: undefined,
     columns: undefined,
     statusField: undefined,
     tagsField: undefined,
@@ -130,6 +137,15 @@ const selectedState = computed(
   () => slotOutputState(panel.manifest, slot.slot, "selected")
     ?? slotInputState(panel.manifest, slot.slot, props.input),
 );
+const parentState = computed(
+  () => (props.parentInput ? slotInputState(panel.manifest, slot.slot, props.parentInput) : null),
+);
+const parentRef = computed<PlatformObjectRef | null>(() => {
+  if (!parentState.value) return null;
+  const value = panel.instance.state.values.value[parentState.value];
+  return value && typeof value === "object" ? { className: value.className, primaryKey: value.primaryKey } : null;
+});
+const parentIdentity = computed(() => (parentRef.value ? `${parentRef.value.className}\u0000${parentRef.value.primaryKey}` : ""));
 const checkedState = computed(() => slotOutputState(panel.manifest, slot.slot, "checked"));
 const localSelected = shallowRef<ObjectListRef | null>(null);
 const localChecked = shallowRef<readonly ObjectListRef[]>([]);
@@ -160,7 +176,7 @@ const someVisibleChecked = computed(
 );
 
 const requiresQuery = computed(
-  () => props.searchable || Boolean(props.filters?.length) || (props.pageSize !== undefined && props.pageSize > 0),
+  () => Boolean(props.parentInput) || props.searchable || Boolean(props.filters?.length) || (props.pageSize !== undefined && props.pageSize > 0),
 );
 const isTable = computed(() => Boolean(props.columns?.length));
 const totalPages = computed(() => (props.pageSize && props.pageSize > 0 ? Math.max(1, Math.ceil(total.value / props.pageSize)) : 1));
@@ -168,23 +184,50 @@ const showPagination = computed(
   () => props.pageSize !== undefined && props.pageSize > 0 && (total.value > props.pageSize || currentPage.value > 1 || nextCursor.value !== undefined),
 );
 
+function panelText(text: string): string {
+  return panel.t(text);
+}
+
 const resolvedFilters = computed<readonly ObjectListFilter[]>(() => {
   const facetsByKey = new Map(dynamicFacets.value.map((facet) => [facet.key, facet]));
   const declared = (props.filters ?? []).map((filter) => {
     const facet = facetsByKey.get(filter.key);
-    if (!facet) return filter;
+    const label = filter.label ? panelText(filter.label) : (facet?.label ?? filter.key);
+    if (!facet) {
+      return {
+        ...filter,
+        label,
+        options: (filter.options ?? []).map((option) => ({
+          ...option,
+          label: option.label ? panelText(option.label) : option.value,
+        })),
+      };
+    }
     facetsByKey.delete(filter.key);
+    const declaredLabels = new Map(
+      (filter.options ?? [])
+        .filter((option) => Boolean(option.label))
+        .map((option) => [option.value, panelText(option.label!)]),
+    );
+    const mergedOptions = facet.options.map((option) => ({
+      value: option.value,
+      label: declaredLabels.get(option.value) || option.label || option.value,
+      count: option.count,
+    }));
     return {
       ...filter,
-      label: filter.label || facet.label,
-      options: facet.options,
+      label,
+      options: mergedOptions,
     };
   });
   const extra: ObjectListFilter[] = [...facetsByKey.values()].map((facet) => ({
     key: facet.key,
     label: facet.label,
     kind: facet.options.some((option) => option.count !== undefined) ? "tabs" : "select",
-    options: facet.options,
+    options: facet.options.map((option) => ({
+      ...option,
+      label: option.label || option.value,
+    })),
   }));
   return [...declared, ...extra];
 });
@@ -195,7 +238,14 @@ const showToolbar = computed(
 
 function setSelected(next: ObjectListRef | null) {
   if (selectedState.value) {
-    panel.instance.state.set(selectedState.value, next);
+    const changed = (next?.primaryKey ?? null) !== chosen.value;
+    if (changed && props.clears?.length) {
+      const patch: Record<string, PanelStateValue> = { [selectedState.value]: next };
+      for (const field of props.clears) patch[field] = null;
+      panel.instance.state.setState(patch);
+    } else {
+      panel.instance.state.set(selectedState.value, next);
+    }
   } else {
     localSelected.value = next;
   }
@@ -225,6 +275,7 @@ function buildQuery(): PlatformObjectQuery {
       }
     : undefined;
   return {
+    ...(parentRef.value ? { parent: parentRef.value } : {}),
     ...(search ? { search } : {}),
     ...(Object.keys(activeFilters).length ? { filters: activeFilters } : {}),
     ...(page ? { page } : {}),
@@ -236,6 +287,13 @@ let requestSeq = 0;
 function load() {
   const seq = ++requestSeq;
   failure.value = null;
+  if (props.parentInput && !parentRef.value) {
+    rows.value = [];
+    total.value = 0;
+    nextCursor.value = undefined;
+    loading.value = false;
+    return;
+  }
   if (requiresQuery.value) {
     try {
       adapterPart(objectType, "query");
@@ -259,8 +317,11 @@ function load() {
       if (props.fallbackToFirst) {
         const stillVisible = chosen.value !== null && result.items.some((item) => item.primaryKey === chosen.value);
         if (!stillVisible) {
-          const first = result.items[0];
-          const next = first ? { className: objectType, primaryKey: first.primaryKey } : null;
+          const preferred = result.defaultPrimaryKey
+            ? result.items.find((item) => item.primaryKey === result.defaultPrimaryKey)
+            : undefined;
+          const fallback = preferred ?? result.items[0];
+          const next = fallback ? { className: objectType, primaryKey: fallback.primaryKey } : null;
           if ((next?.primaryKey ?? null) !== chosen.value) setSelected(next);
         }
       }
@@ -274,6 +335,11 @@ function load() {
 }
 
 onMounted(load);
+watch(parentIdentity, () => {
+  if (!props.parentInput) return;
+  resetPaging();
+  load();
+});
 useProjectionObjectRefresh(() => true, load);
 
 function resetPaging() {

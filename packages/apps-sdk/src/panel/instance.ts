@@ -176,10 +176,12 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
  */
 export function applyPanelRequest(manifest: PanelManifest, state: PanelStateStore, request: unknown): void {
   const parsed = panelOpenRequestSchema.parse(request);
+  const patch: Record<string, PanelStateValue> = {};
   for (const [name, value] of Object.entries(parsed.state)) {
     if (!manifest.state[name]?.deepLink) continue;
-    state.set(name, value);
+    patch[name] = value;
   }
+  state.setState(patch);
 }
 
 /** The draft link an address carries, if it carries one. */

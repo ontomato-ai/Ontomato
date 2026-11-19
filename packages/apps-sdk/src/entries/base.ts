@@ -16,7 +16,24 @@ export { default as TwoPaneLayout } from "../base/TwoPaneLayout.vue";
 export { default as SectionGroup } from "../base/SectionGroup.vue";
 export { default as ReferencePicker } from "../base/ReferencePicker.vue";
 export { default as ObjectGraph } from "../base/ObjectGraph.vue";
+export { default as ObjectTree } from "../base/ObjectTree.vue";
+export { default as ObjectTextReader } from "../base/ObjectTextReader.vue";
+export { default as FileUploadControl } from "../base/FileUploadControl.vue";
 export { default as MetricChart } from "../base/MetricChart.vue";
+export {
+  PathTree,
+  buildPathTree,
+  firstTreeFile,
+  type PathTreeFile,
+  type PathTreeItem,
+  type PathTreeNode,
+} from "@ontomato/foundation-ui/tree";
+export {
+  SegmentedTextReader,
+  type SegmentedTextPage,
+  type SegmentedTextSource,
+  type TextSegmentItem,
+} from "@ontomato/foundation-ui/reader";
 export {
   GraphCanvas,
   type GraphCanvasEdge,

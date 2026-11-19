@@ -193,7 +193,8 @@ export interface ProjectionObjects extends Required<Pick<PlatformObjectAdapter, 
 
 function hasQueryParams(query: PlatformObjectQuery): boolean {
   return Boolean(
-    query.search?.trim()
+    query.parent
+    || query.search?.trim()
     || query.page
     || (query.filters && Object.values(query.filters).some((value) => value !== "")),
   );

@@ -62,17 +62,24 @@ export interface PlatformObjectQueryPage {
   readonly cursor?: string;
 }
 
-/** Search, filter and paging parameters handed to a resource adapter; the adapter owns all query semantics. */
+/** Full object reference carried in panel state and parent-scoped child queries. */
+export interface PlatformObjectRef {
+  readonly className: string;
+  readonly primaryKey: string;
+}
+
+/** Search, filter, parent-scope and paging parameters handed to a resource adapter; the adapter owns all query semantics. */
 export interface PlatformObjectQuery {
+  readonly parent?: PlatformObjectRef;
   readonly search?: string;
   readonly filters?: Readonly<Record<string, string>>;
   readonly page?: PlatformObjectQueryPage;
 }
 
-/** One option of a filter facet, with an optional count computed under the current search/query. */
+/** One option of a filter facet, with an optional label (when supplied by the owner) and count under the current query. */
 export interface PlatformObjectFacetOption {
   readonly value: string;
-  readonly label: string;
+  readonly label?: string;
   readonly count?: number;
 }
 
@@ -90,6 +97,8 @@ export interface PlatformObjectQueryResult {
   readonly total: number;
   readonly facets?: readonly PlatformObjectFacet[];
   readonly nextCursor?: string;
+  /** Optional default item key chosen by the owner/adapter when nothing in this result is selected. */
+  readonly defaultPrimaryKey?: string;
 }
 
 /**
@@ -105,6 +114,17 @@ export class PlatformObjectRefusal extends Error {
   ) {
     super(message, options);
     this.name = "PlatformObjectRefusal";
+  }
+}
+
+/**
+ * Thrown by an upload/import operation handler when the owner reports that an item already exists and may be retried
+ * with `overwrite: true` once the reader explicitly confirms.
+ */
+export class PlatformUploadConflict extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "PlatformUploadConflict";
   }
 }
 
@@ -184,10 +204,20 @@ export interface PlatformObjectOptions {
   resolve(values: readonly RuntimeJsonValue[]): Promise<readonly PlatformObjectOption[]>;
 }
 
-/** Full object identity carried by graph nodes, selections and neighbor queries. */
-export interface PlatformObjectRef {
-  readonly className: string;
-  readonly primaryKey: string;
+/** Offset-paged read request for a long-text source through a resource adapter. */
+export interface PlatformObjectSegmentQuery {
+  readonly parent?: PlatformObjectRef;
+  readonly sourceId: string;
+  readonly offset: number;
+}
+
+/** One offset-paged slice of plain text returned by a resource adapter's `readSegment` port. */
+export interface PlatformObjectSegmentPage {
+  readonly sourceId: string;
+  readonly title: string;
+  readonly items: readonly { readonly id: string; readonly text: string }[];
+  readonly nextOffset: number | null;
+  readonly emptyHint?: string;
 }
 
 /** Per-type or per-relation-kind read outcome reported by a graph source; never collapsed into an empty graph. */
@@ -295,6 +325,7 @@ export interface PlatformObjectAdapter {
   list?(): Promise<readonly PlatformObjectRecord[]>;
   query?(query: PlatformObjectQuery): Promise<PlatformObjectQueryResult>;
   read?(primaryKey: string): Promise<PlatformObjectRecord>;
+  readSegment?(query: PlatformObjectSegmentQuery): Promise<PlatformObjectSegmentPage>;
   forms?: PlatformObjectForms;
   options?: PlatformObjectOptions;
   graph?: PlatformObjectGraph;
@@ -386,7 +417,7 @@ export function registeredPlatformObjects(): readonly string[] {
 }
 
 /** One part of a type's adapter, or a visible failure naming the type and the part it lacks. */
-export function adapterPart<Part extends "list" | "query" | "read" | "forms" | "options" | "graph">(
+export function adapterPart<Part extends "list" | "query" | "read" | "readSegment" | "forms" | "options" | "graph">(
   objectType: string,
   part: Part,
 ): NonNullable<PlatformObjectAdapter[Part]> {
