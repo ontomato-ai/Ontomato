@@ -19,14 +19,77 @@ import type { ProductProjection } from "@ontomato/contracts/product-panels";
  * visibly; it never falls back to another read.
  */
 
-/** One object of a registered platform type, as its owner's list and read return it. */
+/** Half-open character range `[start, end)` in a plain text string to highlight; components escape all text. */
+export interface TextHighlightRange {
+  readonly start: number;
+  readonly end: number;
+}
+
+/** Semantic tone for a status tag rendered by a list or summary. */
+export type PlatformFieldTone = "default" | "info" | "success" | "warning" | "danger";
+
+/** Clickable reference to another ontology object carried by a field, never constructed from label text. */
+export interface PlatformFieldReference {
+  readonly className: string;
+  readonly primaryKey: string;
+  readonly label: string;
+}
+
+/** One object of a registered platform type, as its owner's list, query and read return it. */
 export interface PlatformObjectRecord {
   /** The primary key the object's own service uses, as text. */
   primaryKey: string;
   /** What a reader recognises it by, in one line. */
   label: string;
-  /** What a summary may show: the owner's own fields, by name, as text. */
+  /** Optional secondary line under the label (for example a description or highlighted excerpt). */
+  subtitle?: string;
+  /** What a summary or list column may show: the owner's own fields, by name, as text. */
   fields: Readonly<Record<string, string>>;
+  /** Optional semantic tones by field name, used when a field renders as a status tag. */
+  tones?: Readonly<Record<string, PlatformFieldTone>>;
+  /** Optional tag lists by field name, rendered as tags. */
+  tags?: Readonly<Record<string, readonly string[]>>;
+  /** Optional clickable object references by field name, emitted through the navigate port. */
+  references?: Readonly<Record<string, PlatformFieldReference>>;
+  /** Optional highlight ranges by field name (or `"label"` / `"subtitle"`), half-open `[start, end)`. */
+  highlights?: Readonly<Record<string, readonly TextHighlightRange[]>>;
+}
+
+/** Pagination input passed to a resource adapter's `query` port (offset/limit or cursor). */
+export interface PlatformObjectQueryPage {
+  readonly offset?: number;
+  readonly limit: number;
+  readonly cursor?: string;
+}
+
+/** Search, filter and paging parameters handed to a resource adapter; the adapter owns all query semantics. */
+export interface PlatformObjectQuery {
+  readonly search?: string;
+  readonly filters?: Readonly<Record<string, string>>;
+  readonly page?: PlatformObjectQueryPage;
+}
+
+/** One option of a filter facet, with an optional count computed under the current search/query. */
+export interface PlatformObjectFacetOption {
+  readonly value: string;
+  readonly label: string;
+  readonly count?: number;
+}
+
+/** One filter facet returned by a resource adapter's `query` port. */
+export interface PlatformObjectFacet {
+  readonly key: string;
+  readonly label: string;
+  readonly options: readonly PlatformObjectFacetOption[];
+}
+
+/** Result of a resource adapter's `query` port: matching records, owner total and optional facets. */
+export interface PlatformObjectQueryResult {
+  readonly items: readonly PlatformObjectRecord[];
+  /** Total matching records from the owner/adapter, never substituted with the current page size. */
+  readonly total: number;
+  readonly facets?: readonly PlatformObjectFacet[];
+  readonly nextCursor?: string;
 }
 
 /**
@@ -130,6 +193,7 @@ export interface PlatformObjectAdapter {
   /** The type as a projection's binding names it: `platform:AgentDefinition`. */
   objectType: string;
   list?(): Promise<readonly PlatformObjectRecord[]>;
+  query?(query: PlatformObjectQuery): Promise<PlatformObjectQueryResult>;
   read?(primaryKey: string): Promise<PlatformObjectRecord>;
   forms?: PlatformObjectForms;
   options?: PlatformObjectOptions;
@@ -212,7 +276,7 @@ export function registeredPlatformObjects(): readonly string[] {
 }
 
 /** One part of a type's adapter, or a visible failure naming the type and the part it lacks. */
-export function adapterPart<Part extends "list" | "read" | "forms" | "options">(
+export function adapterPart<Part extends "list" | "query" | "read" | "forms" | "options">(
   objectType: string,
   part: Part,
 ): NonNullable<PlatformObjectAdapter[Part]> {
