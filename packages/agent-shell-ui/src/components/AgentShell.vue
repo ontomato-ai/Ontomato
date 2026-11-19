@@ -130,10 +130,10 @@ if (sessionStream) {
           : frame.sessionId === conversation.state.sessionId
             ? display.present(frame)
             : { status: "not_opened", reason: "not_viewing_session", current: display.snapshot() },
-      objectChanged: (frame) => {
-        if (frame.session.sessionId === conversation.state.sessionId) display.refreshObjects(frame.target);
+      objectChanged: ({ session, target, affected }) => {
+        if (session.sessionId === conversation.state.sessionId) display.refreshObjects(affected ? { target, affected } : { target });
       },
-      ready: () => display.refreshObjects(null),
+      ready: () => display.refreshObjects({ target: null }),
     }),
   );
 }

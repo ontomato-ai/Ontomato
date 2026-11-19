@@ -38,6 +38,7 @@ export {
   type ConversationDisplay,
   type ConversationDisplayHost,
   type DisplayHistory,
+  type DisplayObjectChange,
   type DisplayObjectRefresh,
   type DisplayPage,
   type DisplayTarget,
