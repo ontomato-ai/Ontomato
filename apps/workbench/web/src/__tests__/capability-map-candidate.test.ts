@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { defineComponent, h, nextTick } from "vue";
+import { defineComponent, h } from "vue";
 import { createMemoryHistory, createRouter, RouterView, type RouteRecordRaw } from "vue-router";
 import type { CandidatePanelSource } from "@ontomato/contracts/panel-host";
 import { panelAddress } from "@ontomato/contracts/panel-host";

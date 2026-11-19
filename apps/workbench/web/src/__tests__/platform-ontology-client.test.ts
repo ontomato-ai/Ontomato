@@ -8,7 +8,9 @@ import {
 import type { PlatformRequests } from "../../../../../packages/apps-sdk/src/panel/platform-objects";
 import { platformResources } from "../../../../../packages/apps-sdk/src/resources/index";
 
-function mockRequests(handler: (path: string, init: RequestInit, service: "" | "/data-query") => Response | Promise<Response>) {
+type PlatformRequestInit = Parameters<PlatformRequests["request"]>[1];
+
+function mockRequests(handler: (path: string, init: PlatformRequestInit, service: "" | "/data-query") => Response | Promise<Response>) {
   const calls: Array<{ method: string; path: string; service: "" | "/data-query"; body?: unknown }> = [];
   const bindings = [
     bindingKey({ kind: "PlatformObjectType", id: ONTOLOGY_TYPE }),
@@ -128,7 +130,7 @@ describe("platform-ontology SDK client & adapters", () => {
   });
 
   it("queries objects of a dynamically selected objectType via /platform-ontology/objects and preserves distinct status/reason", async () => {
-    const handler = vi.fn((path: string, init: RequestInit) => {
+    const handler = vi.fn((path: string, init: PlatformRequestInit) => {
       if (path === "/platform-ontology/objects") {
         const body = JSON.parse(String(init.body));
         if (body.type === ACTION) {
