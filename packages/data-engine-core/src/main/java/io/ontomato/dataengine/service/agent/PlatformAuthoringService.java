@@ -11,6 +11,7 @@ import io.ontomato.dataengine.bean.metricView.MetricViewBinding;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.MetricViewDao;
 import io.ontomato.dataengine.service.*;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -186,8 +187,14 @@ public class PlatformAuthoringService {
     var classes = ((List<?>) rule.get("classDef")).stream()
         .map(item -> ((Map<?, ?>) item).get("className").toString()).toList();
     var lookup = JSONObject.of("query", kind + " " + String.join(" ", classes), "limit", 10);
+    String helpers = PythonHelperDocs.markdown();
+    if (kind.equals("metric")) {
+      try (var guide = PlatformAuthoringService.class.getResourceAsStream("/ontology-contracts/query-package.md")) {
+        helpers = new String(guide.readAllBytes(), StandardCharsets.UTF_8) + "\n\n" + helpers;
+      }
+    }
     return JSONObject.of("ontology", rule, "knowledge", ontology.knowledge(lookup, access),
-        "helpers", JSONObject.of("markdown", PythonHelperDocs.markdown()));
+        "helpers", JSONObject.of("markdown", helpers));
   }
 
   private ActionService.ExplainedDraft explain(JSONObject input, QueryAccessService.Access access,

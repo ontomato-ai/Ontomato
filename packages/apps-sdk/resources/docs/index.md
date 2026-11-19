@@ -1,5 +1,7 @@
 # Ontomato apps SDK {{version}}
 
+Follow the [Product Layer and Application Composition Standard](https://infohub.eloyzh.de/o/standard-66842053) when composing a panel application. Use this installed SDK version's component catalogue and contracts. The hosted ProductAsset and frozen release examples below apply to maintenance of existing hosted applications.
+
 Panel applications compose registered projections in a panel host. The panel supplies a layout, state and optional recipes. The platform supplies the sandboxed frame, the SDK and the identity for its reads. Existing hosted source applications use the static HTML and ES module setup in [Page skeleton](#page-skeleton).
 
 This directory is one exact version. It never changes, and it stays installed when the platform is upgraded, so an app

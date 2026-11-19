@@ -207,6 +207,11 @@ const feedbackReads = [
 
 const saveKnowledge = { method: "POST", service: "/data-query", path: /^\/admin\/editBussinessKnowledge$/ } as const satisfies ClientRequest;
 
+/** The owner resolves the declared operation and the exact calls under the viewer's existing access. */
+export const panelOperationImpactRequest = {
+  method: "POST", service: "", path: /^\/panel-operations\/inspect-impact$/,
+} as const satisfies ClientRequest;
+
 const platformOntologyReads = [
   {
     method: "GET", service: "", path: /^\/platform-ontology\/schema$/, template: "/platform-ontology/schema",
@@ -281,14 +286,15 @@ export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> 
   ],
   [bindingKey({ kind: "PlatformOperation", id: DELETE_AGENT })]: [
     { method: "DELETE", service: "", path: new RegExp(`^${agent}$`) },
+    panelOperationImpactRequest,
   ],
   [objectBinding(METRIC_VIEW)]: [...metricViewDefinitionReads, dataQueryPost("/metricView/save")],
   [objectBinding(FUNCTION)]: [...functionDefinitionReads, dataQueryPost("/function/save")],
-  [bindingKey({ kind: "PlatformOperation", id: DELETE_METRIC_VIEW })]: [dataQueryPost("/metricView/delete")],
+  [bindingKey({ kind: "PlatformOperation", id: DELETE_METRIC_VIEW })]: [dataQueryPost("/metricView/delete"), panelOperationImpactRequest],
   [bindingKey({ kind: "PlatformOperation", id: SET_METRIC_VIEW_STATUS })]: [dataQueryPost("/metricView/setStatus")],
   [bindingKey({ kind: "PlatformOperation", id: TEST_METRIC_VIEW })]: [dataQueryPost("/metricView/test")],
   [bindingKey({ kind: "PlatformOperation", id: TEST_EXECUTE_METRIC_VIEW })]: [dataQueryPost("/metricView/testExecute")],
-  [bindingKey({ kind: "PlatformOperation", id: DELETE_FUNCTION })]: [dataQueryPost("/function/delete")],
+  [bindingKey({ kind: "PlatformOperation", id: DELETE_FUNCTION })]: [dataQueryPost("/function/delete"), panelOperationImpactRequest],
   [objectBinding(BUSINESS_KNOWLEDGE)]: [
     ...knowledgeReads,
     { method: "POST", service: "/data-query", path: /^\/admin\/addBussinessKnowledge$/ },
@@ -297,9 +303,11 @@ export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> 
   [bindingKey({ kind: "PlatformOperation", id: APPROVE_KNOWLEDGE })]: [saveKnowledge],
   [bindingKey({ kind: "PlatformOperation", id: DELETE_KNOWLEDGE })]: [
     { method: "POST", service: "/data-query", path: /^\/admin\/delBussinessKnowledge$/ },
+    panelOperationImpactRequest,
   ],
   [bindingKey({ kind: "PlatformOperation", id: DELETE_SKILL })]: [
     { method: "DELETE", service: "", path: /^\/skills\/[^/?#]+$/ },
+    panelOperationImpactRequest,
   ],
   [bindingKey({ kind: "PlatformOperation", id: IMPORT_SKILL })]: [
     { method: "POST", service: "", path: /^\/skills\/import(?:\?overwrite=true)?$/ },
