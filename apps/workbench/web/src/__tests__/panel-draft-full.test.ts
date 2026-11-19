@@ -46,7 +46,7 @@ describe("a draft at a panel application's own address", () => {
         {
           path: "/applications/:applicationId/:panelPath(.*)",
           component: PanelApplicationRoute,
-          props: (route) => ({ applicationId: String(route.params.applicationId), panelPath: String(route.params.panelPath ?? "") }),
+          props: (route) => ({ applicationId: String(route.params.applicationId) }),
         },
       ],
     });

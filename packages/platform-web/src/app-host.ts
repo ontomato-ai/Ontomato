@@ -27,14 +27,18 @@ import {bindingKey,clientSends} from '@ontomato/contracts/panel-client-requests'
 const executionBindings = new WeakMap<object, AppExecutionContext>();
 const publishedFrames=new WeakMap<object,string>();
 /**
- * One panel instance's frame, in a panel application (`entry.renderer` is `panels`). Such an application has no published
- * record and no build of its own: its pages are use relations of shared panels. Its frame is narrowed by what the panel
- * declares, as a published application's frame is by its publication: the projections its declaration names, the
- * requests the SDK clients their bindings reach send (`@ontomato/contracts/panel-client-requests`), and the drafts written for
- * its use relation's page. Nothing else leaves it.
+ * One panel instance's frame, in a panel application (`entry.renderer` is `panels`) or in an author's candidate preview.
+ * Such an application has no published record and no build of its own: its pages are use relations of shared panels. Its
+ * frame is narrowed by what the panel declares, as a published application's frame is by its publication: the
+ * projections its declaration names, the requests the SDK clients their bindings reach send
+ * (`@ontomato/contracts/panel-client-requests`), and the drafts written for its page. Nothing else leaves it.
  */
 interface PanelFrame {
-  applicationId: string;
+  /**
+   * What the bridge binds the frame's port to: the panel application's ID, or the candidate's workspace. A frame of one
+   * is never mistaken for a frame of another.
+   */
+  bridgeIdentity: string;
   /** The use relation's page key: a draft this frame reads must have been written for it. */
   pageKey: string;
   /**
@@ -58,7 +62,7 @@ export function installProductEmbedding(app:App){
   if(!host)return;
   // The bridge answers a frame as the application it was registered under: a published application's, or a panel
   // application's.
-  bridge?.dispose();bridge=installAppBridge(app,host,source=>publishedFrames.get(source)??panelFrames.get(source)?.applicationId);
+  bridge?.dispose();bridge=installAppBridge(app,host,source=>publishedFrames.get(source)??panelFrames.get(source)?.bridgeIdentity);
   host.mountProductAsset=(source,target,assetId)=>{
     const element=target as HTMLElement;
     if(executionContext(source).kind!=='live')throw new Error('Product embedding is unavailable in build-test previews; use product authoring commands');
@@ -121,15 +125,30 @@ export function registerLiveFrame(source: object,applicationId?:string) {
   return ()=>{bridge?.disposeFrame(source);publishedFrames.delete(source);binding.dispose();};
 }
 
+type PanelDeclaration = { pageKey: string; manifest: PanelManifest };
+
+function registerDeclaredFrame(source: object, bridgeIdentity: string, panel: PanelDeclaration, context: AppExecutionContext) {
+  panelFrames.set(source,{bridgeIdentity,pageKey:panel.pageKey,bindings:new Map(Object.values(panel.manifest.slots).map(slot=>[slot.projectionId,null]))});
+  const binding=registerFrame(source,context);
+  return ()=>{bridge?.disposeFrame(source);panelFrames.delete(source);binding.dispose();};
+}
+
 /**
  * The frame one panel instance runs in, as a live frame of the panel application whose page shows it, narrowed by the
  * panel's declaration. The panel host draws it sandboxed with scripts only, so it speaks the message bridge, and
  * registers it as soon as the frame exists, before the panel's module can ask to connect.
  */
-export function registerPanelFrame(source: object,applicationId: string,panel:{pageKey:string;manifest:PanelManifest}) {
-  panelFrames.set(source,{applicationId,pageKey:panel.pageKey,bindings:new Map(Object.values(panel.manifest.slots).map(slot=>[slot.projectionId,null]))});
-  const binding=registerFrame(source,{kind:"live"});
-  return ()=>{bridge?.disposeFrame(source);panelFrames.delete(source);binding.dispose();};
+export function registerPanelFrame(source: object,applicationId: string,panel:PanelDeclaration) {
+  return registerDeclaredFrame(source,applicationId,panel,{kind:"live"});
+}
+
+/**
+ * The frame of an author's candidate preview: narrowed by the candidate's declaration like any panel frame, and running
+ * on its workspace's build-test context — never live. Its requests carry that context to their owners, which accept
+ * them only where they declared support for test data or definition-only reads.
+ */
+export function registerCandidateFrame(source: object,context: Extract<AppExecutionContext,{kind:"build-test"}>,panel:PanelDeclaration) {
+  return registerDeclaredFrame(source,`workspace:${context.workspaceId}`,panel,context);
 }
 /** Refuses, before anything is sent, a request of a panel's frame that its declaration does not cover. */
 function admitPanelRequest(panel:PanelFrame,method:string,path:string,service:string){
@@ -216,7 +235,9 @@ export function installAppHost(options: {
         if(service===''&&!declared)throw new Error('Use a declared SDK product operation');
       }
       if(!['GET','POST','PUT','DELETE'].includes(method))throw new Error('Unsupported SDK request method');
-      if(execution.kind==='build-test'&&service!=='/data-query')throw new Error('Product operations are unavailable in build previews');
+      // A hosted build preview reaches Java only. A panel frame's requests are its declaration's, and in a candidate
+      // preview they go to their owners marked with its build-test context: each owner admits or refuses them.
+      if(execution.kind==='build-test'&&service!=='/data-query'&&!panel)throw new Error('Product operations are unavailable in build previews');
       const applicationId=publishedFrames.get(source);
       const isolated=typeof document!=='undefined'&&[...document.querySelectorAll('iframe')].some(frame=>frame.contentWindow===source&&frame.sandbox.contains('allow-scripts')&&!frame.sandbox.contains('allow-same-origin'));
       if(applicationId&&isolated){

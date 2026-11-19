@@ -19,8 +19,8 @@ import elementEn from "element-plus/es/locale/lang/en";
  */
 
 const uses: ApplicationPanelUse[] = [
-  { id: "use-tasks", panelId: "panel-tasks", path: "/tasks", pageKey: "panels-trial-a-tasks", access: { kind: "domain-member" } },
-  { id: "use-summary", panelId: "panel-summary", path: "/summary", pageKey: "panels-trial-a-summary", access: { kind: "domain-member" } },
+  { id: "use-tasks", panelId: "panel-tasks", path: "/applications/app-a/tasks", pageKey: "panels-trial-a-tasks", access: { kind: "domain-member" } },
+  { id: "use-summary", panelId: "panel-summary", path: "/applications/app-a/summary", pageKey: "panels-trial-a-summary", access: { kind: "domain-member" } },
 ];
 
 /** Every panel instance the route mounted, and the address each last reported. */
@@ -28,20 +28,22 @@ const mountedInstances: { useId: string; address: ReturnType<typeof ref<string>>
 
 vi.mock("../panel-host", () => ({
   panelUsesOf: async () => uses,
-  platformPanelHost: () => ({}),
+  // The host the route builds is the one for the use relation its address names.
+  platformPanelHost: (_applicationId: string, use: ApplicationPanelUse) => ({ use }),
 }));
 
 vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@ontomato/platform-shell")>()),
   // Stands in for the frame: it reports an address the way a panel's own state report does.
   PanelHost: defineComponent({
-    props: { useId: { type: String, required: true }, address: { type: String, required: true }, initial: { type: Object, default: () => ({}) }, label: { type: String, default: "" }, labels: Object },
+    props: { port: { type: Object, required: true }, address: { type: String, required: true }, initial: { type: Object, default: () => ({}) }, label: { type: String, default: "" }, labels: Object },
     emits: ["display-address", "display-loaded", "display-dirty"],
     setup(props, { emit }) {
       const address = ref(props.address);
-      mountedInstances.push({ useId: props.useId, address, initial: props.initial });
+      const useId = (props.port as { use: ApplicationPanelUse }).use.id;
+      mountedInstances.push({ useId, address, initial: props.initial });
       return () =>
-        h("div", { "data-use": props.useId }, [
+        h("div", { "data-use": useId }, [
           h("button", { "data-select": "task-2", onClick: () => {
             const state = { selectedTask: { className: "platform:ScheduledTask", primaryKey: "task-2" } };
             const address = `${props.address}?state=${encodeURIComponent(JSON.stringify(state))}`;
@@ -72,10 +74,10 @@ async function mountAt(path: string, props: Record<string, unknown> = {}) {
     history: createMemoryHistory(),
     routes: [
       {
-        path: "/applications/:applicationId/:panelPath(.*)",
+        path: "/applications/:applicationId/:panelPath(.*)?",
         component: PanelApplicationRoute,
         // The page's address names the application and the use relation, as the platform's own route table does.
-        props: (route) => ({ ...props, applicationId: String(route.params.applicationId), panelPath: String(route.params.panelPath ?? "") }),
+        props: (route) => ({ ...props, applicationId: String(route.params.applicationId) }),
       },
     ],
   });
@@ -99,6 +101,11 @@ describe("a panel application's page", () => {
     });
     // … and the instance is the same one: the reader's selection in the panel survived the write.
     expect(mountedInstances).toHaveLength(1);
+  });
+
+  it("opens the application's first use at the application's own address", async () => {
+    await mountAt("/applications/app-a");
+    expect(mountedInstances.map((one) => one.useId)).toEqual(["use-tasks"]);
   });
 
   it("restores the view from the address on reload", async () => {
@@ -126,7 +133,7 @@ describe("a panel application's page", () => {
 
   it("says, in the platform's language, that an address names no panel of the application", async () => {
     const { wrapper } = await mountAt("/applications/app-a/reports");
-    expect(wrapper.get("[role=alert]").text()).toBe("/reports is not a panel of this application");
+    expect(wrapper.get("[role=alert]").text()).toBe("/applications/app-a/reports is not a panel of this application");
     expect(mountedInstances).toEqual([]);
     wrapper.unmount();
   });

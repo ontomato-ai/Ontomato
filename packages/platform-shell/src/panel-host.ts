@@ -11,11 +11,12 @@ import {
   panelMessageOf,
   type PanelDefinitionMode,
   type PanelHostFrameMessage,
+  type PanelHostSource,
   type PanelHostMessage,
   type PanelRefreshPort,
 } from "@ontomato/contracts/panel-host";
 import type { PanelOperation, PanelStateValue } from "@ontomato/contracts/panel-manifest";
-import type { ApplicationPanelUse, ProductPanel } from "@ontomato/contracts/product-panels";
+import type { PanelDefinitionContent, ProductPanel } from "@ontomato/contracts/product-panels";
 import { randomId } from "@ontomato/contracts/random-id";
 
 /*
@@ -30,23 +31,25 @@ import { randomId } from "@ontomato/contracts/random-id";
  */
 
 /**
- * What the platform gives a panel host. A use relation is Java's (`GET /platform/applications/:applicationId/panel-uses`)
- * and a panel's record is Node's (`GET /api/product-panels/:id`); both check the reader's use themselves.
+ * What the platform gives a panel host. The source is either a registered use relation with its current record — Java's
+ * `GET /platform/applications/:applicationId/panel-uses` and Node's `GET /api/product-panels/:id`, both checking the
+ * reader's use themselves — or an author's workspace candidate, which Node reads under the author's workspace access and
+ * which has no panel ID, revision or use of its own.
  */
-export interface PanelHostPort {
-  /** The application whose use relation this instance opens. */
-  applicationId(): string;
-  /** That application's use relations, as Java declares them. */
-  uses(applicationId: string): Promise<readonly ApplicationPanelUse[]>;
-  /** One panel's current record, read under the use relation's Grant. */
+export interface PanelHostPort<Source extends PanelHostSource = PanelHostSource> {
+  /** What this instance shows. A candidate is read again when the reader comes back to the page. */
+  source(): Promise<Source>;
+  /** The page key a draft for this page names: the use relation's, or the one the candidate is previewed as. */
+  readonly pageKey: string;
+  /** A registered panel's current record, read again when its revision moves. */
   panel(panelId: string): Promise<ProductPanel>;
-  /** The SDK version's module base this panel runs with, e.g. `/apps-sdk/1.1.0`. */
-  sdkBase(): Promise<string>;
+  /** Where the platform serves its SDK builds, e.g. `/apps-sdk`: a definition's frame loads `<root>/<its sdkVersion>`. */
+  sdkRoot(): Promise<string>;
   /**
-   * Registers the frame the panel runs in: the platform's execution binding and identity for the page it shows, and what
-   * the frame may ask the platform for, which the panel's current record declares.
+   * Registers the frame the panel runs in: the execution context and identity for the page it shows, and what the frame
+   * may ask the platform for, which the source's manifest declares.
    */
-  frame(frame: Window, use: ApplicationPanelUse, panel: ProductPanel): () => void;
+  frame(frame: Window, source: Source): () => void;
   snapshot(panelId: string): Promise<PanelDefinitionSnapshot>;
   mode: PanelDefinitionMode;
 }
@@ -60,10 +63,10 @@ export function usePanelHostPort(): PanelHostPort | null {
   return inject(panelHostKey, null);
 }
 
-/** One running panel instance: its use, its record, the frame it runs in and what it reports. */
+/** One running panel instance: its source, the frame it runs in and what it reports. */
 export interface PanelInstanceView extends PanelRefreshPort {
-  readonly use: Ref<ApplicationPanelUse | null>;
-  readonly panel: Ref<ProductPanel | null>;
+  /** What the instance shows, once read: the registered use and record, or the workspace candidate. */
+  readonly source: Ref<PanelHostSource | null>;
   /** What a message from this instance carries now; null until the panel's module reports. */
   readonly pageContext: Readonly<ShallowRef<PageContext | null>>;
   /** The message written into the frame's document; null while the record is being read. */
@@ -77,7 +80,7 @@ export interface PanelInstanceView extends PanelRefreshPort {
   readonly error: Ref<string>;
   readonly displayLoad: Readonly<ShallowRef<DisplayLoad>>;
   readonly dirty: Readonly<ShallowRef<boolean>>;
-  /** Resolves once the use relation and the record are read. */
+  /** Resolves once the source is read. */
   readonly ready: Promise<void>;
   /** A person clicked one of those operations: the frame runs it, and the promise settles with its answer. */
   invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
@@ -90,8 +93,6 @@ export interface PanelInstanceView extends PanelRefreshPort {
  * as it does the shell's.
  */
 export interface PanelHostLabels {
-  /** The page names a use relation its application does not declare. */
-  useMissing(useId: string): string;
   /** An operation was asked of the panel before its frame started. */
   notStarted: string;
   /**
@@ -104,13 +105,11 @@ export interface PanelHostLabels {
 export interface PanelInstanceOptions {
   /** The words the host shows the reader. */
   labels: PanelHostLabels;
-  /** The application use to open; changing it is another instance. */
-  useId: () => string;
-  /** What a message calls the page: the panel's own name, and whatever the page adds to it (its application, say). */
-  label: (panel: ProductPanel) => string;
+  /** What a message calls the page: the registered panel's own name, and whatever the page adds to it, or the page's word for a candidate. */
+  label: (source: PanelHostSource) => string;
   /**
-   * The page's address as the reader and a message see it — the application's address plus the relation's path, without
-   * any state. The instance's declared deep-linkable state is added to it here, and that is the only thing the address
+   * The page's address as the reader and a message see it — the use relation's full path, or the candidate preview's
+   * address — without any state. The instance's declared deep-linkable state is added to it here, and that is the only thing the address
    * carries beyond the page itself: no credential and no form value ever goes into it.
    */
   address: () => string;
@@ -125,17 +124,26 @@ function httpStatusOf(failure: unknown) {
   if (failure instanceof Error && "status" in failure && typeof failure.status === "number") return failure.status;
 }
 
+/** What a display receipt says when the panel's page could not read what it shows: the failure, with its HTTP status. */
+export function panelUnavailable(failure: unknown): DisplayLoad {
+  const message = failureText(failure);
+  const status = httpStatusOf(failure);
+  return {
+    status: "error",
+    error: { code: PANEL_LOAD_ERROR_CODES.panelUnavailable, message: status === undefined ? message : `HTTP ${status}: ${message}` },
+  };
+}
+
 // The bootstrap script can distinguish browser load failures before the SDK starts and sends its own reports.
 const frameLoadFailureSchema = displayLoadSchema.pick({ error: true }).required();
 const loading: DisplayLoad = { status: "loading" };
 
 /**
- * Loads one panel instance from its use relation and keeps it current. The instance is this composable's alone: two
+ * Loads one panel instance from its source and keeps it current. The instance is this composable's alone: two
  * callers of the same panel hold two states, and neither sees the other's selection.
  */
 export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOptions): PanelInstanceView {
-  const use = shallowRef<ApplicationPanelUse | null>(null);
-  const panel = shallowRef<ProductPanel | null>(null);
+  const source = shallowRef<PanelHostSource | null>(null);
   const pageContext = shallowRef<PageContext | null>(null);
   const document = shallowRef("");
   const error = shallowRef("");
@@ -145,12 +153,15 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const address = shallowRef("");
   const operations = shallowRef<readonly PanelOperation[]>([]);
   let frame: Window | null = null;
+  let sdkRoot = "";
   let frameReady = false;
   let frameAddress = "";
   let disposeFrame: (() => void) | undefined;
   let active = true;
   let author: ReturnType<Extract<PanelDefinitionMode, { kind: "author" }>["definitions"]["observe"]> | undefined;
   const pending = new Map<string, ProductDefinitionRevision>();
+  /** A candidate read again whose definition differs from the one shown; it waits like a changed record does. */
+  let pendingCandidate: PanelHostSource | null = null;
   let pendingObjectRefresh = false;
   let applying = Promise.resolve();
   const answering = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
@@ -158,74 +169,65 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const ready = new Promise<void>((resolve) => (settle = resolve));
 
   function reportPanelUnavailable(failure: unknown) {
-    const message = failureText(failure);
-    error.value = message;
+    error.value = failureText(failure);
     if (displayLoad.value.status === "error") return;
-    const status = httpStatusOf(failure);
-    displayLoad.value = {
-      status: "error",
-      error: {
-        code: PANEL_LOAD_ERROR_CODES.panelUnavailable,
-        message: status === undefined ? message : `HTTP ${status}: ${message}`,
-      },
-    };
+    displayLoad.value = panelUnavailable(failure);
   }
 
   /**
-   * Reads what this instance needs: the use relation, the panel's current record and the SDK base its frame runs on.
-   * Whatever fails is reported where the panel would have been — a page that cannot say why it is empty is worse than one
-   * that says what it could not read.
+   * Reads what this instance needs: its source and the SDK version its definition names. Whatever fails is reported
+   * where the panel would have been — a page that cannot say why it is empty is worse than one that says what it could
+   * not read.
    */
   async function load() {
-    error.value = "";
-    displayLoad.value = loading;
-    const useId = options.useId();
-    author?.close();
-    author = undefined;
-    pending.clear();
     try {
-      const relations = await port.uses(port.applicationId());
-      const relation = relations.find(candidate => candidate.id === useId);
-      if (!relation) throw new Error(options.labels.useMissing(useId));
-      const [snapshot, record, base] = await Promise.all([
-        port.mode.kind === "view" ? port.snapshot(relation.panelId) : undefined,
-        port.panel(relation.panelId), port.sdkBase(),
-      ]);
-      if (!active || options.useId() !== useId) return;
-      adopt(relation, record, base);
+      const [read, root] = await Promise.all([port.source(), port.sdkRoot()]);
+      if (!active) return;
+      sdkRoot = root;
+      adopt(read);
       if (port.mode.kind === "author")
-        author = port.mode.definitions.observe(targetsOf(record), advance, reportPanelUnavailable);
-      if (snapshot) void advance([{ kind: "panel", ...snapshot.panel }]);
+        author = port.mode.definitions.observe(targetsOf(read), advance, reportPanelUnavailable);
+      // A viewer's panel is reconciled with a short read; the frame does not wait for it.
+      else if (read.kind === "registered")
+        void port.snapshot(read.panel.id).then(snapshot => active && advance([{ kind: "panel", ...snapshot.panel }]))
+          .catch(failure => { if (active) reportPanelUnavailable(failure); });
     } catch (failure) {
-      if (active && options.useId() === useId) reportPanelUnavailable(failure);
+      if (active) reportPanelUnavailable(failure);
     } finally {
       settle();
     }
   }
 
-  function adopt(relation: ApplicationPanelUse, record: ProductPanel, base: string) {
+  function adopt(next: PanelHostSource) {
     error.value = "";
-    use.value = relation;
-    panel.value = record;
-    state.value = requestedState(record) as Record<string, PanelStateValue>;
-    address.value = panelAddress(options.address(), state.value);
+    const requested = requestedState(next.panel) as Record<string, PanelStateValue>;
+    const requestedAddress = panelAddress(options.address(), requested);
+    const { content, manifest, sdkVersion } = next.panel;
+    // Only the renderable definition crosses into the frame; the record's identity and a candidate's preview context stay
+    // with the host.
+    const message: PanelHostMessage = {
+      kind: "panel-host-message",
+      panel: { content, manifest, sdkVersion },
+      pageKey: port.pageKey,
+      url: requestedAddress,
+      // What a message calls the page: the panel's own registered name, which its author wrote, with the application's
+      // when the page passes one.
+      label: options.label(next),
+      state: requested,
+    };
+    const written = panelFrameDocument(message.panel, `${sdkRoot}/${sdkVersion}`, message, options.labels.failures);
+    source.value = next;
+    // A new revision with the same definition is the document the frame already runs: it keeps its instance.
+    if (written === document.value) return;
+    state.value = requested;
+    address.value = requestedAddress;
     frameAddress = address.value;
     frameReady = false;
     displayLoad.value = loading;
-    const message: PanelHostMessage = {
-      kind: "panel-host-message",
-      panel: record,
-      pageKey: relation.pageKey,
-      url: address.value,
-      // What a message calls the page: the panel's own registered name, which its author wrote, with the application's
-      // when the page passes one.
-      label: options.label(record),
-      state: state.value,
-    };
-    document.value = panelFrameDocument(record, base, message, options.labels.failures);
+    document.value = written;
     if (frame) {
       disposeFrame?.();
-      disposeFrame = port.frame(frame, relation, record);
+      disposeFrame = port.frame(frame, next);
     }
   }
 
@@ -236,10 +238,11 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     ];
   }
 
-  function targetsOf(record: ProductPanel): ProductDefinitionTarget[] {
+  /** A registered panel and its projections; a candidate has no panel record, only the registered projections it names. */
+  function targetsOf(shown: PanelHostSource): ProductDefinitionTarget[] {
     return [
-      { kind: "panel", id: record.id },
-      ...Object.values(record.manifest.slots).map(({ projectionId }) => ({ kind: "projection" as const, id: projectionId })),
+      ...(shown.kind === "registered" ? [{ kind: "panel" as const, id: shown.panel.id }] : []),
+      ...Object.values(shown.panel.manifest.slots).map(({ projectionId }) => ({ kind: "projection" as const, id: projectionId })),
     ];
   }
 
@@ -254,20 +257,29 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   // Serialize definition adoption. While a form is dirty even a projection reload may replace its component.
   function applyPending() {
     applying = applying.then(async () => {
-      const record = panel.value;
-      const relation = use.value;
-      if (!active || !frameReady || dirty.value || !record || !relation || relation.id !== options.useId()) return;
-      const key = `panel:${record.id}`;
-      if ((pending.get(key)?.revision ?? 0) > record.revision) {
-        const [next, base] = await Promise.all([port.panel(record.id), port.sdkBase()]);
-        if (!active || use.value !== relation || options.useId() !== relation.id || dirty.value) return;
-        if (next.revision < pending.get(key)!.revision) return;
-        pending.delete(key);
-        adopt(relation, next, base);
+      const shown = source.value;
+      if (!active || !frameReady || dirty.value || !shown) return;
+      if (pendingCandidate) {
+        const next = pendingCandidate;
+        pendingCandidate = null;
+        adopt(next);
         author?.replace(targetsOf(next));
         return;
       }
-      const projectionIds = new Set(Object.values(record.manifest.slots).map(slot => slot.projectionId));
+      if (shown.kind === "registered") {
+        const key = `panel:${shown.panel.id}`;
+        if ((pending.get(key)?.revision ?? 0) > shown.panel.revision) {
+          const record = await port.panel(shown.panel.id);
+          if (!active || source.value !== shown || dirty.value) return;
+          if (record.revision < pending.get(key)!.revision) return;
+          pending.delete(key);
+          const next = { ...shown, panel: record };
+          adopt(next);
+          author?.replace(targetsOf(next));
+          return;
+        }
+      }
+      const projectionIds = new Set(Object.values(shown.panel.manifest.slots).map(slot => slot.projectionId));
       const projections = [...pending.values()]
         .filter(revision => revision.kind === "projection" && projectionIds.has(revision.id))
         .map(({ id, revision }) => ({ id, revision }));
@@ -277,24 +289,43 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     return applying;
   }
 
-  async function restore() {
-    const record = panel.value;
-    const relation = use.value;
-    if (!record || !relation) return;
+  /** A viewer coming back reconciles the registered panel's revisions with a short read. */
+  async function restore(shown: Extract<PanelHostSource, { kind: "registered" }>) {
     try {
-      const snapshot = await port.snapshot(record.id);
-      if (!active || options.useId() !== relation.id) return;
+      const snapshot = await port.snapshot(shown.panel.id);
+      if (!active) return;
       await advance(snapshotRevisions(snapshot));
-      if (active && options.useId() === relation.id) refresh(null);
+      if (active) refresh(null);
     } catch (failure) {
-      if (active && options.useId() === relation.id) reportPanelUnavailable(failure);
+      if (active) reportPanelUnavailable(failure);
     }
   }
 
-  watch(options.useId, () => void load(), { immediate: true });
+  /**
+   * An author coming back to a candidate preview reads the workspace again: its files may have changed meanwhile. A
+   * changed definition waits for an unsaved form like a changed record does. The frame's execution context is fixed when
+   * it is registered, so a test context started since takes reopening the preview.
+   */
+  async function rereadCandidate(shown: PanelHostSource) {
+    try {
+      const next = await port.source();
+      if (!active) return;
+      if (JSON.stringify(next.panel) !== JSON.stringify(shown.panel)) {
+        pendingCandidate = next;
+        await applyPending();
+      }
+      if (active) refresh(null);
+    } catch (failure) {
+      if (active) reportPanelUnavailable(failure);
+    }
+  }
+
+  void load();
   const stopVisibility = onDocumentVisibility(visible => {
-    if (!visible) return;
-    if (port.mode.kind === "view") void restore();
+    const shown = source.value;
+    if (!visible || !shown) return;
+    if (shown.kind === "candidate") void rereadCandidate(shown);
+    else if (port.mode.kind === "view") void restore(shown);
     else refresh(null);
   });
   onScopeDispose(() => {
@@ -312,13 +343,13 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     else pendingObjectRefresh = true;
   };
 
-  function requestedState(record: ProductPanel) {
-    return Object.fromEntries(Object.entries(options.initial()).filter(([name]) => record.manifest.state[name]?.deepLink));
+  function requestedState(panel: PanelDefinitionContent) {
+    return Object.fromEntries(Object.entries(options.initial()).filter(([name]) => panel.manifest.state[name]?.deepLink));
   }
 
   function syncAddress(): boolean {
-    if (!frameReady || !panel.value) return false;
-    const requested = panelAddress(options.address(), requestedState(panel.value));
+    if (!frameReady || !source.value) return false;
+    const requested = panelAddress(options.address(), requestedState(source.value.panel));
     if (requested === address.value) return false;
     frameAddress = requested;
     address.value = requested;
@@ -359,7 +390,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     if (payload.kind === "operations") operations.value = payload.operations;
     if (payload.kind === "dirty") {
       dirty.value = payload.dirty;
-      if (!dirty.value && pending.size) void applyPending();
+      if (!dirty.value && (pending.size || pendingCandidate)) void applyPending();
     }
     if (payload.kind === "failed") {
       // The frame could not run its panel. The reason goes where the panel would have been, and no frame is drawn over it.
@@ -381,8 +412,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   });
 
   return {
-    use,
-    panel,
+    source,
     pageContext,
     document,
     state,
@@ -404,7 +434,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     frame(window) {
       frame = window;
       disposeFrame?.();
-      disposeFrame = window && use.value && panel.value ? port.frame(window, use.value, panel.value) : undefined;
+      disposeFrame = window && source.value ? port.frame(window, source.value) : undefined;
     },
   };
 }
@@ -466,7 +496,7 @@ const failureListener = (words: PanelHostLabels["failures"]) => `
  * the frame blank and the reader with no word about it.
  */
 export function panelFrameDocument(
-  record: ProductPanel,
+  record: PanelDefinitionContent,
   sdkBase: string,
   message: PanelHostMessage,
   failures: PanelHostLabels["failures"],

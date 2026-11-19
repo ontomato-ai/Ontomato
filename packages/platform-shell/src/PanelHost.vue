@@ -5,17 +5,22 @@ import { usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./pa
 import { usePageActions } from "./page-actions";
 
 /**
- * One panel instance, shown full screen, beside a conversation or inside another application: the same component in all
- * three, because all three only need the use relation, the current record and a place to show it. The panel's own text
+ * One panel instance, shown full screen, beside a conversation or inside another application, or as an author's candidate
+ * preview: the same component in all of them, because each only needs a source — a use relation with its current record,
+ * or a workspace candidate — and a place to show it. The panel's own text
  * runs in a frame of its own with this SDK version's modules; what it reports — what the reader looks at and its
  * deep-linkable state — goes up through `context` and `display-address`, so the enclosing page can reflect the view.
  */
 const props = defineProps<{
-  /** The platform's panel host: reading uses and records, the SDK base and the frame registration. */
+  /**
+   * The platform's panel host for one source: a registered use relation, or an author's workspace candidate. Another
+   * source is another instance with its own state.
+   */
   port: PanelHostPort;
-  /** The application use to open. Another use is another instance with its own state. */
-  useId: string;
-  /** What a message calls the page, before the panel's own name: its application, say. Empty means the panel's name. */
+  /**
+   * What a message calls the page, before a registered panel's own name: its application, say. Empty means the panel's
+   * name. A candidate has no registered name, so this is its whole name.
+   */
   label?: string;
   /** The page's address as the reader sees it; the instance's deep-linkable state is added to it. */
   address: string;
@@ -37,8 +42,7 @@ const emit = defineEmits<{
 
 const view = usePanelInstance(props.port, {
   labels: props.labels,
-  useId: () => props.useId,
-  label: (panel) => (props.label ? `${props.label} · ${panel.name}` : panel.name),
+  label: (source) => source.kind === "candidate" ? props.label! : props.label ? `${props.label} · ${source.panel.name}` : source.panel.name,
   address: () => props.address,
   initial: () => props.initial ?? {},
 });
@@ -66,7 +70,7 @@ const operations = computed(() =>
   })),
 );
 // A form presents its own Save and Discard; other panel operations can still be shown by the enclosing page.
-usePageActions(() => (view.panel.value ? { operations: operations.value.filter(operation => operation.kind !== "form.save") } : null));
+usePageActions(() => (view.source.value ? { operations: operations.value.filter(operation => operation.kind !== "form.save") } : null));
 
 defineExpose({ ...view, operations });
 </script>

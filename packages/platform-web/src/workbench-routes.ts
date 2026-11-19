@@ -117,12 +117,20 @@ export const schedulePages = (): RouteRecordRaw[] => [
 ];
 
 /**
- * 应用构建: one page at the workspace its address names, with the platform's facts the builder needs (its route page). An
- * edition adds what its guard reads to let a reader in (the enterprise edition the application's entry permission,
- * `app-builder`).
+ * 应用构建: one page at the workspace its address names, with the platform's facts the builder needs (its route page),
+ * and the author's preview of that workspace's panel candidate. An edition adds what its guard reads to let a reader in
+ * (the enterprise edition the application's entry permission, `app-builder`); Node lets only the workspace's author read
+ * its candidate.
  */
 export const appBuilderPages = (meta: RouteMeta = {}): RouteRecordRaw[] => [
   { ...routes.appBuilder, component: () => import("./pages/AppBuilderRoute.vue"), meta: { workbench: true, ...meta } },
+  {
+    name: "PanelCandidatePreview",
+    path: "/app-builder/:workspaceId/panel-preview/:ref/:pageKey",
+    component: () => import("./pages/PanelCandidateRoute.vue"),
+    props: (route) => ({ workspaceId: route.params.workspaceId, revision: route.params.ref, pageKey: route.params.pageKey }),
+    meta: { workbench: true, ...meta },
+  },
 ];
 
 /**

@@ -19,6 +19,7 @@ import {
   task,
   taskForm,
   writePanelDocument,
+  registered,
   type Sent,
 } from "./panel-frame";
 
@@ -35,7 +36,7 @@ import {
  */
 
 const panelP = panelRecord("panel-schedules-trial", "Scheduled tasks (trial)", manifestP);
-const useOfP = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", panelP.id, "/tasks");
+const useOfP = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", panelP.id, "/applications/app-panels-trial-a/tasks");
 const tasks = "/api/data-query/platform/scheduled-tasks";
 const draftOf = (pageKey: string) => ({
   pageKey,
@@ -64,7 +65,7 @@ describe("what a panel's frame may ask the platform for", () => {
     const sent = installPlatform(answer);
     const frame = panelFrame();
     // A's page shows P: A's panel host registers the frame with P's current record.
-    platformPanelHost("app-panels-trial-a").frame(frame, useOfP, panelP);
+    platformPanelHost("app-panels-trial-a", useOfP).frame(frame, registered("app-panels-trial-a", useOfP, panelP));
     writePanelDocument(panelP, useOfP, "/applications/app-panels-trial-a/tasks", {
       selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id },
     });
