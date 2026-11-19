@@ -58,11 +58,11 @@ export default {
     },
   },
   operations: [
-    { id: "showTypeMode", label: "Type mode", kind: "state", sets: { mode: "type" } },
-    { id: "showInstanceMode", label: "Instance mode", kind: "state", sets: { mode: "instance" } },
+    { id: "showTypeMode", labelKey: "capMap.modeType", kind: "state", sets: { mode: "type" } },
+    { id: "showInstanceMode", labelKey: "capMap.modeInstance", kind: "state", sets: { mode: "instance" } },
     {
       id: "resetToCurrentUser",
-      label: "Reset start to current user",
+      labelKey: "capMap.resetToCurrentUser",
       kind: "state",
       sets: { mode: "instance", start: null, selected: null },
     },

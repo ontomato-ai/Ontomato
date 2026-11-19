@@ -4,6 +4,7 @@ import AgentSettingsRoute from "./pages/AgentSettingsRoute.vue";
 import DashboardsPage from "./pages/DashboardsRoute.vue";
 import GovernanceReportRoute from "./pages/GovernanceReportRoute.vue";
 import PanelApplicationRoute from "./pages/PanelApplicationRoute.vue";
+import { DETAIL_SELECTIONS, detailSelectionAddress, type DetailSelection } from "./detail-selection";
 
 /**
  * The pages this assembly mounts beside a conversation (DESIGN.md "Applications and shells"). A page's own address is
@@ -16,9 +17,15 @@ import PanelApplicationRoute from "./pages/PanelApplicationRoute.vue";
  * A page's own navigation (another board, another agent, the list, a saved draft's handoff) is the callback it is given
  * here. The callback changes the parameter the conversation carries, never the browser's address, so the conversation
  * stays where it is and the page keeps its own address and its own state.
+ *
+ * An address an answer or a knowledge text names may be a page's old detail address: it opens the panel that took that
+ * page over, with its object selected, by the same conversion the router makes (`detail-selection.ts`).
  */
-export function pilotPageResolver(setPage: (address: string) => void): PilotPageResolver {
-  return (address) => {
+export function pilotPageResolver(
+  setPage: (address: string) => void, selections: readonly DetailSelection[] = DETAIL_SELECTIONS,
+): PilotPageResolver {
+  return (asked) => {
+    const address = detailSelectionAddress(selections, asked) ?? asked;
     const [path, search = ""] = address.split("?");
     const query = new URLSearchParams(search);
     // The agents' settings at the agent platform's own prefix: the address an answer and a draft link name.

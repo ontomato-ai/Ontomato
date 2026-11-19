@@ -4,7 +4,7 @@ import { panelOperationId } from "@ontomato/contracts/panel-manifest";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { directReadDeclaration, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
-import type { MemberData, MemberDataState, MemberInputs } from "./direct";
+import { readKey, type MemberData, type MemberDataState, type MemberInputs } from "./direct";
 import type { PanelInstance } from "./instance";
 import { adapterPart } from "./platform-objects";
 import { stateObject, type PanelFieldValue } from "./state";
@@ -75,9 +75,9 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
           },
         );
       };
-      watch(() => JSON.stringify(inputs()), reread, { immediate: true });
       // An object an operation changed is read again where it is shown: its own datum, or a list of its type.
       const data = projection.data[name]!;
+      watch(() => readKey(data, inputs()), reread, { immediate: true });
       onScopeDispose(instance.onObjectChanged((changed) => {
         const object = objectOf(data, inputs());
         if (!changed || (object && object.className === changed.objectType && object.primaryKey === changed.primaryKey)

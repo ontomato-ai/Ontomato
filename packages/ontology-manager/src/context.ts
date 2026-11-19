@@ -11,6 +11,7 @@ import {
 import { metricViewsKey } from "./clients/metric-views";
 import type { MessageKey, SharedKey, TextParams } from "./i18n";
 import { emptyOntologyResourceCounts, type OntologyResourceCounts } from "./workspace";
+import { ACTION, ATTRIBUTE, FUNCTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
 
 export type ManagerTheme = "light" | "dark";
 
@@ -85,11 +86,24 @@ export interface ManagerCounts {
   refresh(): Promise<void>;
   /** Reads the counts once per page load. */
   ensure(): void;
+  /**
+   * A write changed objects of these types (an owner's `affected.objectTypes`): the counts are read again when one of
+   * them is a type they count, once for the whole write.
+   */
+  changed(objectTypes: readonly string[]): void;
 }
+
+/** The object types whose writes move a count: what `refresh` reads. */
+const COUNTED_TYPES: ReadonlySet<string> = new Set([OBJECT_TYPE, ATTRIBUTE, RELATIONSHIP, METRIC_VIEW, ACTION, FUNCTION]);
 
 const contextKey: InjectionKey<ManagerContext> = Symbol("ontology-manager-context");
 const clientKey: InjectionKey<ManagerClient> = Symbol("ontology-manager-client");
 const countsKey: InjectionKey<ManagerCounts> = Symbol("ontology-manager-counts");
+/**
+ * The counts' one entry for a write a page shows: a panel page hands it what its writes changed and never reads or
+ * refreshes the counts itself. Where no Manager is installed there is none (an edition may start without one).
+ */
+export const countedTypesChangedKey: InjectionKey<ManagerCounts["changed"]> = Symbol("ontology-manager-counted-types-changed");
 
 function createCounts(client: ManagerClient): ManagerCounts {
   const values = reactive(emptyOntologyResourceCounts());
@@ -119,6 +133,9 @@ function createCounts(client: ManagerClient): ManagerCounts {
     refresh,
     ensure: () => {
       if (!started) void refresh();
+    },
+    changed: (objectTypes) => {
+      if (objectTypes.some(type => COUNTED_TYPES.has(type))) void refresh();
     },
   };
 }
@@ -163,6 +180,7 @@ export function createManager(options: ManagerOptions) {
       app.provide(contextKey, context);
       app.provide(clientKey, client);
       app.provide(countsKey, counts);
+      app.provide(countedTypesChangedKey, counts.changed);
       app.provide(metricViewsKey, client.metricViews);
     },
   };
@@ -176,6 +194,7 @@ export function provideManager(manager: Manager) {
     [contextKey as symbol]: manager.context,
     [clientKey as symbol]: manager.client,
     [countsKey as symbol]: manager.counts,
+    [countedTypesChangedKey as symbol]: manager.counts.changed,
     [metricViewsKey as symbol]: manager.client.metricViews,
   };
 }

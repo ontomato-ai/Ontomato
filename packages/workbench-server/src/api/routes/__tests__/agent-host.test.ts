@@ -470,11 +470,18 @@ it("sends object invalidations only to the initiator's active views in the root 
     const rootSession = { providerId: "workbench", sessionId: secondSessionId };
     const target = { objectType: "platform:ScheduledTask", primaryKey: "job-1" };
     publishObjectChanged({ domainId: owner.domainId, initiator: owner.userId, rootSession, target });
+    const affected = { objects: [target], objectTypes: [target.objectType, "platform:MetricView"] };
+    publishObjectChanged({ domainId: owner.domainId, initiator: owner.userId, rootSession, target: null, affected });
 
     for (const stream of [own, another]) {
       const frame = await stream.nextFrame();
       expect(frame.event).toBe("object-changed");
       expect(agentHostSessionLiveFrameSchema.parse(frame.data)).toEqual({ type: "object-changed", session: rootSession, target });
+      const batch = await stream.nextFrame();
+      expect(batch.event).toBe("object-changed");
+      expect(agentHostSessionLiveFrameSchema.parse(batch.data)).toEqual({
+        type: "object-changed", session: rootSession, target: null, affected,
+      });
     }
     for (const stream of [differentUser, differentDomain, differentHost]) {
       expect(await stream.finish()).toBe("");

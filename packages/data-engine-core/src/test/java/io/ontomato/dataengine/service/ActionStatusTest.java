@@ -26,7 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
-/** A batch status change saves each action as the acting owner and reuses the explanation already stored for its code. */
+/** A batch status change keeps its business refusals apart from execution failures. */
 class ActionStatusTest {
   private static final String CODE = "# ontomato-python:2\nprint('ok')";
 
@@ -62,7 +62,7 @@ class ActionStatusTest {
   }
 
   @Test
-  void oneFailureDoesNotStopTheOtherItems() {
+  void oneRefusalDoesNotStopTheOtherItems() {
     put(action("a1"));
 
     List<ActionService.StatusResult> results =
@@ -70,9 +70,12 @@ class ActionStatusTest {
 
     assertEquals(2, results.size());
     assertEquals("missing", results.get(0).id());
-    assertEquals("Action not found", results.get(0).error());
     assertNull(results.get(0).data());
+    assertEquals("ACTION_NOT_FOUND", results.get(0).refusal().code());
+    assertEquals("Action not found", results.get(0).refusal().getMessage());
+    assertNull(results.get(0).error());
     assertEquals("a1", results.get(1).id());
+    assertNull(results.get(1).refusal());
     assertNull(results.get(1).error());
     assertEquals(Action.STATUS_PUBLISHED, results.get(1).data().getStatus());
     assertEquals("Approve order", results.get(1).data().getName());
@@ -83,12 +86,41 @@ class ActionStatusTest {
   }
 
   @Test
+  void aSystemActionIsARejectionRatherThanAFailure() {
+    Action system = action("system");
+    system.setOrigin(Action.ORIGIN_SYSTEM);
+    put(system);
+
+    ActionService.StatusResult result =
+        service.setStatus("domain-a", "reviewer", List.of("system"), Action.STATUS_UNUSED, "en").get(0);
+
+    assertNull(result.data());
+    assertEquals("ACTION_SYSTEM", result.refusal().code());
+    assertEquals("Action.cannotModifySystem", result.refusal().getMessage());
+    assertNull(result.error());
+  }
+
+  @Test
+  void anExecutionFailureCarriesNoRefusalCode() {
+    put(action("a1"));
+    when(actionDao.saveWithFunction(any(), anyString())).thenThrow(new RuntimeException("database unavailable"));
+
+    ActionService.StatusResult result =
+        service.setStatus("domain-a", "reviewer", List.of("a1"), Action.STATUS_PUBLISHED, "en").get(0);
+
+    assertNull(result.data());
+    assertNull(result.refusal());
+    assertEquals("database unavailable", result.error());
+  }
+
+  @Test
   void publishingRecordsTheReviewerAndReusesTheStoredExplanation() {
     put(action("a1"));
 
     ActionService.StatusResult result =
         service.setStatus("domain-a", "reviewer", List.of("a1"), Action.STATUS_PUBLISHED, "en").get(0);
 
+    assertNull(result.refusal());
     assertNull(result.error());
     assertEquals("reviewer", result.data().getReviewedBy());
     assertEquals(segments, result.data().getCodeSegments());
@@ -109,12 +141,15 @@ class ActionStatusTest {
 
   @Test
   void rejectsAnEmptyIdListOrAnUnknownStatusBeforeAnyWork() {
-    assertThrows(IllegalArgumentException.class,
+    OwnerRefusal empty = assertThrows(OwnerRefusal.class,
         () -> service.setStatus("domain-a", "reviewer", List.of(), Action.STATUS_PUBLISHED, "en"));
-    assertThrows(IllegalArgumentException.class,
+    assertEquals("ACTION_STATUS_INVALID", empty.code());
+    OwnerRefusal unknown = assertThrows(OwnerRefusal.class,
         () -> service.setStatus("domain-a", "reviewer", List.of("a1"), "DELETED", "en"));
-    assertThrows(IllegalArgumentException.class,
+    assertEquals("ACTION_STATUS_INVALID", unknown.code());
+    OwnerRefusal missing = assertThrows(OwnerRefusal.class,
         () -> service.setStatus("domain-a", "reviewer", List.of("a1"), null, "en"));
+    assertEquals("ACTION_STATUS_INVALID", missing.code());
     verifyNoInteractions(actionDao);
   }
 

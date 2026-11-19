@@ -17,5 +17,6 @@ export const baseComponents = {
   SegmentedTextReader: () => import("@ontomato/foundation-ui/reader").then(module => module.SegmentedTextReader),
   ObjectTextReader: () => import("./base/ObjectTextReader.vue").then(module => module.default),
   FileUploadControl: () => import("./base/FileUploadControl.vue").then(module => module.default),
+  ConversationEntry: () => import("./base/ConversationEntry.vue").then(module => module.default),
   MetricChart: () => import("./base/MetricChart.vue").then(module => module.default),
 };

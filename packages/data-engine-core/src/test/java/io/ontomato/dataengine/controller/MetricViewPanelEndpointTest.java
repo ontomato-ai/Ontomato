@@ -17,6 +17,7 @@ import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.MetricViewForm;
 import io.ontomato.dataengine.service.MetricViewService;
+import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.PanelFormException;
 import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.service.agent.AgentExecutionScope;
@@ -50,6 +51,7 @@ class MetricViewPanelEndpointTest {
     context.registerBean(IdentityService.class, () -> identityService);
     context.refresh();
     new SpringBeanUtil().setApplicationContext(context);
+    ReflectionTestUtils.setField(controller, "identityService", identityService);
     ReflectionTestUtils.setField(controller, "metricViewService", metricViewService);
     ReflectionTestUtils.setField(controller, "subjectDirectory", subjectDirectory);
     ReflectionTestUtils.setField(controller, "langService", langService);
@@ -133,26 +135,92 @@ class MetricViewPanelEndpointTest {
     saved.setStatus(MetricView.STATUS_PUBLISHED);
     when(metricViewService.setStatus(eq("domain"), anyList(), eq("PUBLISHED"), eq("en")))
         .thenReturn(List.of(
-            new MetricViewService.StatusResult("m1", saved, null),
-            new MetricViewService.StatusResult("m2", null, "MetricView not found")));
+            new MetricViewService.StatusResult("m1", saved, null, null),
+            new MetricViewService.StatusResult("m2", null, null, "MetricView read Function is missing or belongs to another domain"),
+            new MetricViewService.StatusResult("m3", null,
+                new OwnerRefusal("METRIC_VIEW_SYSTEM", "Cannot modify a system MetricView"), null)));
 
     JSONObject body = perform("/metricView/setStatus", """
-        {"ids":["m1","m2"],"status":"PUBLISHED"}""");
+        {"ids":["m1","m2","m3"],"status":"PUBLISHED"}""");
 
     assertTrue(body.getBooleanValue("success"));
     JSONArray items = body.getJSONObject("data").getJSONArray("items");
     assertEquals("success", items.getJSONObject(0).getString("outcome"));
     assertEquals("Revenue", items.getJSONObject(0).getJSONObject("data").getString("name"));
     assertEquals("failure", items.getJSONObject(1).getString("outcome"));
-    assertEquals("MetricView not found", items.getJSONObject(1).getJSONObject("error").getString("message"));
-    verify(metricViewService).setStatus(eq("domain"), argThat(ids -> ids.equals(List.of("m1", "m2"))), eq("PUBLISHED"), eq("en"));
+    assertFalse(items.getJSONObject(1).containsKey("code"));
+    assertEquals("MetricView read Function is missing or belongs to another domain",
+        items.getJSONObject(1).getJSONObject("error").getString("message"));
+    assertEquals("refusal", items.getJSONObject(2).getString("outcome"));
+    assertEquals("m3", items.getJSONObject(2).getString("id"));
+    assertEquals("METRIC_VIEW_SYSTEM", items.getJSONObject(2).getString("code"));
+    assertEquals("Cannot modify a system MetricView", items.getJSONObject(2).getJSONObject("error").getString("message"));
+    verify(metricViewService).setStatus(eq("domain"), argThat(ids -> ids.equals(List.of("m1", "m2", "m3"))), eq("PUBLISHED"), eq("en"));
 
     clearInvocations(metricViewService);
     JSONObject rejected = perform("/metricView/setStatus", """
         {"ids":[],"status":"PUBLISHED"}""");
     assertFalse(rejected.getBooleanValue("success"));
+    assertEquals("METRIC_VIEW_STATUS_INVALID", rejected.getString("code"));
     assertNotNull(rejected.getString("message"));
     verifyNoInteractions(metricViewService);
+  }
+
+  @Test
+  void aRefusalIsAnEnvelopeCodeWhileAFailureKeepsAMessageOnly() throws Exception {
+    when(metricViewService.save(any(), eq("en")))
+        .thenThrow(new OwnerRefusal("METRIC_VIEW_SYSTEM", "Cannot modify a system MetricView"));
+    JSONObject refused = perform("/metricView/save", """
+        {"name":"Revenue","function":{"name":"calc","operation":"OPERATION_READ"}}""");
+    assertFalse(refused.getBooleanValue("success"));
+    assertEquals("METRIC_VIEW_SYSTEM", refused.getString("code"));
+    assertEquals("Cannot modify a system MetricView", refused.getString("message"));
+
+    when(metricViewService.save(any(), eq("en"))).thenThrow(new IllegalStateException("execution failed"));
+    JSONObject failed = perform("/metricView/save", """
+        {"name":"Revenue","function":{"name":"calc","operation":"OPERATION_READ"}}""");
+    assertFalse(failed.getBooleanValue("success"));
+    assertFalse(failed.containsKey("code"));
+    assertEquals("execution failed", failed.getString("message"));
+  }
+
+  @Test
+  void theSaveAndTestEndpointsRefuseARetiredTypeWithItsCode() throws Exception {
+    JSONObject saved = perform("/metricView/save", """
+        {"type":"STATIC","name":"Revenue","function":{"name":"calc","operation":"OPERATION_READ"}}""");
+    assertFalse(saved.getBooleanValue("success"));
+    assertEquals("METRIC_VIEW_TYPE_RETIRED", saved.getString("code"));
+
+    JSONObject tested = perform("/metricView/test", """
+        {"type":"STATIC","name":"Revenue","function":{"name":"calc","operation":"OPERATION_READ"}}""");
+    assertFalse(tested.getBooleanValue("success"));
+    assertEquals("METRIC_VIEW_TYPE_RETIRED", tested.getString("code"));
+  }
+
+  @Test
+  void theSingleReadRefusesAMetricOutsideThisDomain() throws Exception {
+    when(metricViewService.queryById("missing", "domain")).thenReturn(null);
+
+    JSONObject body = perform("/metricView/queryById", """
+        {"id":"missing"}""");
+
+    assertFalse(body.getBooleanValue("success"));
+    assertEquals("METRIC_VIEW_NOT_FOUND", body.getString("code"));
+    assertEquals("MetricView not found", body.getString("message"));
+  }
+
+  @Test
+  void theFormEndpointReportsAnOwnerRefusalWithItsCode() throws Exception {
+    when(metricViewService.form(any(), eq("en"), eq("domain")))
+        .thenThrow(new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found"));
+
+    JSONObject body = perform("/metricView/form", """
+        {"target":{"kind":"object","objectType":"platform:MetricView","primaryKey":"missing"},"changedField":null}""");
+
+    assertFalse(body.getBooleanValue("success"));
+    assertEquals("METRIC_VIEW_NOT_FOUND", body.getString("code"));
+    assertEquals("MetricView not found", body.getString("message"));
+    assertFalse(body.containsKey("fields"));
   }
 
   @Test

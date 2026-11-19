@@ -26,8 +26,8 @@ class ProductSourceFunctionsTest {
         var published=new io.ontomato.dataengine.bean.function.Function();published.setId("artifact");published.setOperation(io.ontomato.dataengine.bean.function.Function.OPERATION_PRODUCT);published.setDomainId("domain");
         when(dao.queryById("artifact")).thenReturn(published);
         var replacement=new io.ontomato.dataengine.bean.function.Function();replacement.setId("artifact");replacement.setOperation(io.ontomato.dataengine.bean.function.Function.OPERATION_WRITE);replacement.setDomainId("domain");
-        assertThrows(IllegalArgumentException.class,()->service.save(replacement,"en"));
-        assertThrows(IllegalArgumentException.class,()->service.delete("artifact","en"));
+        assertEquals("FUNCTION_PRODUCT_IMMUTABLE",assertThrows(OwnerRefusal.class,()->service.save(replacement,"en")).code());
+        assertEquals("FUNCTION_PRODUCT_IMMUTABLE",assertThrows(OwnerRefusal.class,()->service.delete("artifact","en")).code());
         verify(dao,never()).save(any(),anyString());verify(dao,never()).delete(anyString());
     }
     @Test void retryingTheSameArtifactResolvesItsOriginalIdentity(){

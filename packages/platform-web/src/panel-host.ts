@@ -11,8 +11,7 @@ import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/v
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
 import { registerCandidateFrame, registerPanelFrame } from "./app-host";
 import type { PanelHostPort } from "@ontomato/platform-shell";
-import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
-import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
+import type { DisplayObjectChange } from "@ontomato/agent-shell-ui";
 
 /*
  * The platform's panel host (overall design 3.4): the two reads a panel instance needs and the notices it listens to.
@@ -68,13 +67,10 @@ async function snapshot(panelId: string) {
  * A change to objects a panel shows, as the page showing it hears of it: from the conversation's session stream (an
  * agent's write, an operation that finished later) or from Node's receipt for an operation the reader confirmed in this
  * frame. The page re-reads what its shown instance displays of the target — everything it displays when there is none —
- * and, when the owner says which object types changed, the counts that count them.
+ * and, when the owner says which object types changed, the counts that count them. The conversation's display owns the
+ * shape; this is its name on the panel host's side.
  */
-export interface PanelObjectChange {
-  target: PanelObjectIdentity | null;
-  /** The objects and object types the owner reports a write changed: what an operation's outcome carries. */
-  affected?: NonNullable<Extract<PanelOperationOutcome, { kind: "batch" }>["affected"]>;
-}
+export type PanelObjectChange = DisplayObjectChange;
 
 /**
  * The platform's panel host for one use relation of the application whose page is showing it. `changed` is that page's:
