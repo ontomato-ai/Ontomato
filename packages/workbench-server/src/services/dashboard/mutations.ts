@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import { validateStoredChartFile } from "@ontomato/contracts/chart-data";
 import type { MetricReferenceChartEntry, DashboardAuthoringForm } from "@ontomato/contracts/dashboard";
 import { prepareChartImport } from "../charts/import";
-import { validatePersonalDashboardMetrics } from "../product-assets/validation";
+import { validatePersonalDashboardMetrics } from "./validation";
 import { randomUUID } from "node:crypto";
 
 import type { DashboardAddChartFile, DashboardAddArtifact } from "@ontomato/contracts/dashboard-artifacts";
