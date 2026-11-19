@@ -109,6 +109,7 @@ it("uses the panel's default-locale text for declared state operation labels", a
   javaSources([source]);
   vi.mocked(findCurrentProduct).mockResolvedValueOnce({
     id, domainId, ownerId: "fixture-owner", revision: 1,
+    createdAt: new Date("2026-11-20T00:00:00Z"), updatedAt: new Date("2026-11-20T00:00:00Z"),
     definition: {
       ...panel,
       manifest: {
@@ -120,7 +121,7 @@ it("uses the panel's default-locale text for declared state operation labels", a
       },
       content: { ...panel.content, messages: { en: { "actions.review": "Review scheduled tasks" } } },
     },
-  } as CurrentProductRow);
+  });
 
   const [offering] = await panelSkillProvider.list({ domainId });
   const { files } = await offering!.provide();
