@@ -5,7 +5,7 @@ import declarationP from "./p/declaration.mjs";
 import declarationQ from "./q/declaration.mjs";
 
 /*
- * Everything this trial registers, in the order it is registered: three projections used by two panels, the two panels
+ * Everything this trial registers, in the order it is registered: four projections used by two panels, the two panels
  * themselves, and the two applications that use them.
  *
  * A projection is one base component bound to one element, with its own display and its inputs — and nothing about who
@@ -118,7 +118,7 @@ export const applications = [
       groups: [],
       permissions: [],
     },
-    panelUses: [use("use-trial-a-tasks", "panels-trial-a-tasks", "panel-schedules-trial", "/tasks", { en: "Scheduled tasks", "zh-CN": "定时任务" })],
+    panelUses: [use("use-trial-a-tasks", "panels-trial-a-tasks", "panel-schedules-trial", "/applications/app-panels-trial-a/tasks", { en: "Scheduled tasks", "zh-CN": "定时任务" })],
   },
   {
     applicationId: "app-panels-trial-b",
@@ -132,8 +132,8 @@ export const applications = [
       permissions: [],
     },
     panelUses: [
-      use("use-trial-b-tasks", "panels-trial-b-tasks", "panel-schedules-trial", "/tasks", { en: "Scheduled tasks", "zh-CN": "定时任务" }),
-      use("use-trial-b-summary", "panels-trial-b-summary", "panel-schedules-summary", "/summary", { en: "Task summary", "zh-CN": "任务摘要" }),
+      use("use-trial-b-tasks", "panels-trial-b-tasks", "panel-schedules-trial", "/applications/app-panels-trial-b/tasks", { en: "Scheduled tasks", "zh-CN": "定时任务" }),
+      use("use-trial-b-summary", "panels-trial-b-summary", "panel-schedules-summary", "/applications/app-panels-trial-b/summary", { en: "Task summary", "zh-CN": "任务摘要" }),
     ],
   },
 ];
