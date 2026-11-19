@@ -27,7 +27,7 @@ class PageSkillsContractTest {
             "entry":{"path":"/example","renderer":"example"},"entryAccess":["business-knowledge"],"scheduleAdapter":null,
             "declaration":{"names":{"en":"Example"},"descriptions":{},"icon":"knowledge","groups":[],"permissions":[],
             "pageSkills":[{"permissionCode":"business-knowledge","skill":{"namespace":{"kind":"provider","provider":"ontology"},"name":"knowledge-governance"},
-            "defaults":[{"pageKey":"governance-report","agentKey":"knowledge-governance"}]}]}}]}
+            "defaults":[{"pageKey":"governance-report","defaultAgent":{"kind":"preset","agentKind":"knowledge-governance"}}]}]}}]}
             """.getBytes(StandardCharsets.UTF_8));
         input.getHeaders().setContentType(MediaType.APPLICATION_JSON);
         var batch = (ApplicationController.Batch)converter.read(ApplicationController.Batch.class,input);
