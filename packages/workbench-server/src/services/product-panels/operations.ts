@@ -30,8 +30,8 @@ import { credentialsForRun, runForOwner } from "../assistant/execution";
 import { readPageSkills } from "../assistant/skills";
 import type { AssistantOwner } from "../assistant/store";
 import { restoreAgentCaller, readAgentSessionActor } from "../agent-host/caller";
-import { readCurrentPanelRecord, readCurrentProjection } from "./current";
-import { declaredDirectOperation } from "./direct-operations";
+import { readCurrentPanelRecord, readCurrentProjectionRecord } from "./current";
+import { declaredDirectOperation, declaredDirectProjectionOperation } from "./direct-operations";
 import { readComponentCatalogue } from "./skill-package";
 import { requirePanelUse } from "./application-use";
 import {
@@ -61,9 +61,15 @@ async function admitted(owner: AssistantOwner, credentials: AssistantCredentials
 async function declaredOperation(owner: AssistantOwner, credentials: AssistantCredentials, use: ApplicationPanelUse, operationId: string) {
   const panel = await readCurrentPanelRecord(owner, credentials, use.panelId);
   if (!("sdkVersion" in panel)) return declaredDirectOperation(owner, credentials, use, panel, operationId);
-  const catalogue = await readComponentCatalogue(panel.sdkVersion);
+  let catalogue: Awaited<ReturnType<typeof readComponentCatalogue>> | undefined;
   for (const [slot,declaration] of Object.entries(panel.manifest.slots)) {
-    const projection = await readCurrentProjection(owner,credentials,declaration.projectionId);
+    const projection = await readCurrentProjectionRecord(owner, credentials, declaration.projectionId);
+    if ("data" in projection) {
+      const operation = declaredDirectProjectionOperation(use, projection, declaration.inputs, slot, operationId);
+      if (operation) return operation;
+      continue;
+    }
+    catalogue ??= await readComponentCatalogue(panel.sdkVersion);
     const metadata = catalogue.get(projection.componentId);
     if (!metadata) throw new HttpError(422,"Projection component is unavailable","COMPONENT_UNAVAILABLE");
     const ports = projectionPorts(projection, metadata);

@@ -1,3 +1,4 @@
+import {z} from 'zod';
 import type {PanelDefinitionSnapshot,ProductDefinitionTarget,ProductDefinitionRevision,ProductDefinitionStreamFrame} from '@ontomato/contracts/product-subscriptions';
 import type {ProductDefinitionChangedEvent} from '@ontomato/contracts/product-panels';
 import type {ProductOwner} from '../product-governance/grants';
@@ -5,7 +6,7 @@ import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {HttpError} from '../../utils/errors';
 import {findCurrentProduct,type CurrentProductKind} from '../../infrastructure/product-current';
 import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres';
-import {panelManifestSchema} from '@ontomato/contracts/panel-manifest';
+import {directPanelManifestSchema,panelManifestSchema} from '@ontomato/contracts/panel-manifest';
 import {requireProductGrant} from '../product-governance/grants';
 import {checkpoint,subscriptions} from './subscription-state';
 
@@ -16,6 +17,7 @@ type AuthorStream = {
   close: () => void;
 };
 const authorStreams = new Set<AuthorStream>();
+const definitionManifestSchema = z.union([panelManifestSchema, directPanelManifestSchema]);
 
 export function assertSubscriptionCapacity(owner:ProductOwner){
   const owned=({owner:other}:{owner:ProductOwner})=>other.domainId===owner.domainId&&other.userId===owner.userId;
@@ -40,8 +42,10 @@ export async function authorizeDefinitionStream(
 }
 export async function requirePanelDefinitions(owner:ProductOwner,credentials:AssistantCredentials,panelId:string):Promise<PanelDefinitionSnapshot>{
   const panel=await requireDefinition(owner,credentials,'panel',panelId);
-  const {slots}=panelManifestSchema.parse(panel.definition.manifest);
-  const projectionIds=new Set(Object.values(slots).map(slot=>slot.projectionId));
+  const manifest=definitionManifestSchema.parse(panel.definition.manifest);
+  const projectionIds=new Set('members' in manifest
+    ? Object.values(manifest.members).map(member=>member.target.projectionId)
+    : Object.values(manifest.slots).map(slot=>slot.projectionId));
   const projections=[];
   for(const id of projectionIds){
     const projection=await requireDefinition(owner,credentials,'projection',id);
