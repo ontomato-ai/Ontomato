@@ -4,7 +4,7 @@ import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { PANEL_HOST_CHANNEL, panelAddressState } from "@ontomato/contracts/panel-host";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import {
+import { ignoreChanges,
   inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
@@ -109,8 +109,8 @@ it("renders multi-column ObjectList with status tags, text search, count, separa
 
   installPlatform(hostWith(projections));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, {});
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
   const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
@@ -241,8 +241,8 @@ it("renders faceted count tabs, escaped highlights, fallback-to-first selection,
 
   installPlatform(hostWith(projections));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, {});
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
   const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
@@ -382,8 +382,8 @@ it("supports server-side pagination, submit-mode filters resetting to page 1, re
 
   installPlatform(hostWith(projections));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, {});
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
   const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
@@ -475,8 +475,8 @@ it("fails visibly when query features are enabled on a list-only adapter", async
 
   installPlatform(hostWith(projections));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, {});
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
   const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
@@ -529,8 +529,8 @@ it("resolves column labelKey/emptyKey via panel.t, falls back to owner fieldLabe
 
   installPlatform(hostWith(projections));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, {});
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
   const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
@@ -641,13 +641,13 @@ it("two-way binds ObjectList search keyword and filters with scalar deepLink pan
 
   installPlatform(hostWith(projections));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
   const initialPath = `${use.path}?state=${encodeURIComponent(JSON.stringify({
     sourceType: "qa",
     rating: "dislike",
     keyword: "timeout",
   }))}`;
-  writePanelDocument(panel, use, initialPath, panelAddressState(initialPath));
+  writePanelDocument(registered("app-test", use, panel), initialPath, panelAddressState(initialPath));
   inside(frame);
 
   const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");

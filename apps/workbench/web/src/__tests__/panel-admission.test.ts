@@ -2,9 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import { contextTransport } from "../../../../../packages/apps-sdk/src/context";
 import { mountPanel } from "../../../../../packages/apps-sdk/src/panel/mount";
-import {
+import { ignoreChanges,
   READER,
   SCHEDULED_TASK,
+  humanIntents,
   inside,
   installPlatform,
   leaveFrame,
@@ -45,14 +46,20 @@ const draftOf = (pageKey: string) => ({
   form: { ...task.content, caseSetId: "set-regression" },
 });
 
+/** The run the reader starts, as the task service's registered operation answers through the platform's coordinator. */
+const intents = humanIntents(() => ({
+  kind: "success", data: { runId: run.id },
+  affected: { objects: [{ objectType: SCHEDULED_TASK, primaryKey: task.id }], objectTypes: [SCHEDULED_TASK] },
+}));
 function answer(request: Sent) {
+  const prepared = intents(request);
+  if (prepared) return prepared;
   const projection = /^\/api\/product-projections\/(.+)$/.exec(request.path);
   if (projection && projections[projection[1]!]) return Response.json({ projection: projections[projection[1]!] });
   if (request.path === tasks && request.method === "GET") return Response.json({ tasks: [task], timeZone: task.timeZone });
   if (request.path === `${tasks}/${task.id}` && request.method === "GET") return Response.json(task);
   if (request.path === `${tasks}/applications/${task.appId}/form`) return Response.json(taskForm);
   if (request.path === `${tasks}/${task.id}` && request.method === "PUT") return Response.json({ ...task, revision: task.revision + 1 });
-  if (request.path === `${tasks}/${task.id}/runs` && request.method === "POST") return Response.json(run);
   if (request.path === "/api/assistant/sessions/session-1/runs/run-1/page-draft") return Response.json(draftOf(useOfP.pageKey));
   if (request.path === "/api/assistant/sessions/session-1/runs/run-2/page-draft") return Response.json(draftOf("dashboard"));
   if (request.path === "/api/assistant/sessions/session-1/runs/run-3/page-draft")
@@ -68,8 +75,8 @@ describe("what a panel's frame may ask the platform for", () => {
     const sent = installPlatform(answer);
     const frame = panelFrame();
     // A's page shows P: A's panel host registers the frame with P's current record.
-    platformPanelHost("app-panels-trial-a", useOfP).frame(frame, registered("app-panels-trial-a", useOfP, panelP), true);
-    writePanelDocument(panelP, useOfP, "/applications/app-panels-trial-a/tasks", {
+    platformPanelHost("app-panels-trial-a", useOfP, ignoreChanges).frame(frame, registered("app-panels-trial-a", useOfP, panelP), true);
+    writePanelDocument(registered("app-panels-trial-a", useOfP, panelP), "/applications/app-panels-trial-a/tasks", {
       selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id },
     });
     inside(frame);
@@ -84,12 +91,14 @@ describe("what a panel's frame may ask the platform for", () => {
       },
       { timeout: 5000 },
     );
-    // The reader saves the form and runs the task now: the operations the header offers, run in the frame.
+    // The reader saves the form, in the frame, and runs the task now, through the platform's coordinator: the frame only
+    // prepares the intent, which the host dispatches.
     const operations = context.instance.operations.value;
     await context.instance.invoke(operations.find((operation) => operation.kind === "form.save")!.id);
     await expect(
       context.instance.invoke(operations.find((operation) => operation.handlerRef === "schedules.runNow")!.id),
-    ).resolves.toMatchObject({ runId: run.id });
+    ).resolves.toMatchObject({ decision: "confirm", response: { kind: "dispatched", outcome: { kind: "success", data: { runId: run.id } } } });
+    expect(sent.some((request) => request.path === `${tasks}/${task.id}/runs`)).toBe(false);
     // The initial form, save validation and the two post-operation refreshes must all use the same allowed path.
     await vi.waitFor(() => {
       expect(sent.filter(request => request.path === `${tasks}/applications/${task.appId}/form`)).toHaveLength(4);
@@ -100,7 +109,9 @@ describe("what a panel's frame may ask the platform for", () => {
     const draft = await transport.request("/assistant/sessions/session-1/runs/run-1/page-draft?path=drafts%2Ftask.json", {}, "");
     expect(await draft.json()).toEqual(draftOf(useOfP.pageKey));
 
-    const allowed = sent.map(({ method, path }) => `${method} ${path}`);
+    // An intent's ID is Node's; the requests are the same whichever it is.
+    const line = ({ method, path }: Sent) => `${method} ${path.replace(/^(\/api\/panel-operation[^/]*\/(?:intents\/)?)[0-9a-f-]{36}/, "$1:intent")}`;
+    const allowed = sent.map(line);
     expect(new Set(allowed)).toEqual(
       new Set([
         ...Object.keys(projections).map((id) => `GET /api/product-projections/${id}`),
@@ -108,7 +119,12 @@ describe("what a panel's frame may ask the platform for", () => {
         `GET ${tasks}/${task.id}`,
         `POST ${tasks}/applications/${task.appId}/form`,
         `PUT ${tasks}/${task.id}`,
-        `POST ${tasks}/${task.id}/runs`,
+        // Running the task now: the frame reads the operation's description and prepares an intent; the host reads it
+        // back and dispatches it.
+        "GET /api/panel-operations/descriptor",
+        "POST /api/panel-operations/intents",
+        "GET /api/panel-operation-intents/:intent",
+        "POST /api/panel-operations/intents/:intent/dispatch",
         "GET /api/assistant/sessions/session-1/runs/run-1/page-draft",
       ]),
     );
@@ -137,7 +153,7 @@ describe("what a panel's frame may ask the platform for", () => {
     await expect(
       transport.request("/assistant/sessions/session-1/runs/run-2/page-draft?path=drafts%2Fboard.json", {}, ""),
     ).rejects.toThrow("written for another page");
-    expect(sent.map(({ method, path }) => `${method} ${path}`)).toEqual([
+    expect(sent.map(line)).toEqual([
       ...allowed,
       "GET /api/assistant/sessions/session-1/runs/run-2/page-draft",
     ]);
@@ -146,8 +162,8 @@ describe("what a panel's frame may ask the platform for", () => {
   it("records the object a create draft of its own page created, and no other draft's", { timeout: 20000 }, async () => {
     const sent = installPlatform(answer);
     const frame = panelFrame();
-    platformPanelHost("app-panels-trial-a", useOfP).frame(frame, registered("app-panels-trial-a", useOfP, panelP), true);
-    writePanelDocument(panelP, useOfP, "/applications/app-panels-trial-a/tasks", {});
+    platformPanelHost("app-panels-trial-a", useOfP, ignoreChanges).frame(frame, registered("app-panels-trial-a", useOfP, panelP), true);
+    writePanelDocument(registered("app-panels-trial-a", useOfP, panelP), "/applications/app-panels-trial-a/tasks", {});
     inside(frame);
     const { appContext } = await mountPanel(panelOf());
     const transport = contextTransport(appContext);

@@ -7,7 +7,7 @@ import { servePageComposerKey, type PageComposerExpand } from "../../../../../pa
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import { installProductEmbedding } from "../../../../../packages/platform-web/src/app-host";
 import {
-  inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, writePanelDocument, type Sent,
+  ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
 /*
@@ -101,8 +101,8 @@ it("expands the page composer with exact projection-declared targets (preset, id
   installPlatform(hostWith(projections));
   stopServing = providedServePageComposer()(expand);
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, {});
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
@@ -164,8 +164,8 @@ it("surfaces visible errors when conversationEntry is missing or the host has no
   installPlatform(hostWith(projections));
   providedServePageComposer();
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, {});
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
   inside(frame);
 
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");

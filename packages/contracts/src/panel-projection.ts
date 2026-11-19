@@ -22,6 +22,8 @@ export type PanelObjectListColumn = z.infer<typeof panelObjectListColumnSchema>;
 const fieldPath = formFieldErrorSchema.shape.field;
 const objectType = z.string().min(1);
 
+export { formTimeValueSchema as panelFormTimeValueSchema } from "./form-fields";
+
 /** The frequency control edits the same value as the scheduled-task control. */
 export {
   platformTaskFrequencySchema as panelFormFrequencyValueSchema,
@@ -51,6 +53,7 @@ const simpleControls = [
   /** Each editable row is one string in the owner's JSON array. */
   z.object({ kind: z.literal("string-array") }).strict(),
   z.object({ kind: z.literal("number") }).strict(),
+  /** A local time value in HH:mm, with null and presence determined by the owner's value schema. */
   z.object({ kind: z.literal("time") }).strict(),
   /** The time zone is a separate owner field. */
   z.object({ kind: z.literal("frequency") }).strict(),
@@ -98,7 +101,7 @@ export type PanelFormField = z.infer<typeof fieldShape> & {
 const childFields = z.array(z.lazy((): z.ZodType<PanelFormField> => panelFormFieldSchema));
 const controlSchema = z.discriminatedUnion("kind", [
   ...simpleControls,
-  // Row paths are relative. Error, refresh and formField ports address the current absolute paths.
+  // Row paths are relative. Edits, refreshes and errors address the current absolute paths.
   arrayControl.extend({ itemFields: childFields }),
   // Child paths are relative to the object. An untouched, omitted object stays absent.
   objectControl.extend({ fields: childFields }),

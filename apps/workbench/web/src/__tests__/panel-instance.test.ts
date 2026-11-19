@@ -6,11 +6,13 @@ import { createPanelInstance, applyPanelRequest } from "../../../../../packages/
 import { PanelFormAdapters, receivePanelDraft, type ReceivedPanelDraft } from "../../../../../packages/apps-sdk/src/panel/draft";
 import { portsOf } from "../../../../../packages/apps-sdk/src/panel/ports-of";
 import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
-import { registerHandler, handlerFor, registeredHandlers } from "../../../../../packages/apps-sdk/src/panel/handlers";
+import { registeredHandlers } from "../../../../../packages/apps-sdk/src/panel/handlers";
 import { componentFor } from "../../../../../packages/apps-sdk/src/catalogue-components";
 import Projection from "../../../../../packages/apps-sdk/src/panel/Projection.vue";
 import { panelContextKey } from "../../../../../packages/apps-sdk/src/panel/context";
+import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 
+import { noOperations } from "./panel-frame";
 /*
  * A panel declares its state and places its projections, and the SDK does the rest: it reads each projection by ID,
  * draws the component the catalogue names, derives the projection's ports from the record and the catalogue, and runs an
@@ -33,7 +35,7 @@ const panel = definePanel({
     taskForm: { projectionId: "projection-task-form", inputs: { task: { state: "selectedTask" } } },
     runTask: { projectionId: "projection-run-task", inputs: { task: { state: "selectedTask" } } },
   },
-  operations: [{ id: "task.clear", labelKey: "ops.clear", kind: "state", sets: { selectedTask: null } }],
+  operations: [{ id: "task.clear", labelKey: "tasks.clear", kind: "state", sets: { selectedTask: null } }],
 });
 
 /** What the host handed the frame: the panel's content, declaration and SDK version, without the record's identity. */
@@ -69,13 +71,18 @@ const records = new Map<string, ProductProjection>([
   ["projection-run-task", record("projection-run-task", "MarkdownView", { kind: "PlatformOperation", id: "schedules.runNow" })],
 ]);
 
-function instance(initial?: Record<string, unknown>, panelText?: (key: string) => string) {
+/** The panel's own words, in the language the platform hands the frame. */
+const locale = ref("en");
+const text = createPanelText({ en: { "tasks.clear": "Clear" }, "zh-CN": { "tasks.clear": "清除" } }, locale, "en");
+
+function instance(initial?: Record<string, unknown>, coordinator = noOperations) {
   return createPanelInstance(panel, {
+    ...coordinator,
+    text,
     pageKey: "schedules",
     url: () => "/a/schedules",
     label: () => "Scheduled tasks",
     initial: initial as never,
-    panelText: panelText ?? ((key) => (key === "ops.clear" ? "Clear" : key)),
     recordDraftCreated: async () => {},
     readProjection: async (id) => records.get(id)!,
   });
@@ -125,24 +132,35 @@ describe("a panel's instance", () => {
     await expect(componentFor("NoSuchComponent")).rejects.toThrow(/no component 'NoSuchComponent'/);
   });
 
-  it("runs an operation through the handler reference the catalogue registered, not one of the panel's own", async () => {
-    const run = vi.fn(async () => ({ id: "run-1" }));
-    registerHandler({ handlerRef: "schedules.runNow", invoke: run });
-    expect(registeredHandlers()).toContain("schedules.runNow");
-    const panelInstance = instance();
-    const ports = { binding: "PlatformOperation:schedules.runNow", inputs: {}, operations: [
-      { name: "runNow", label: "Run now", kind: "action" as const, inputSchema: {}, handlerRef: "schedules.runNow" },
-    ] };
-    panelInstance.register({
-      slot: "runTask",
-      projectionId: "projection-run-task",
-      ports,
-      invoke: (handlerRef, call) => panelInstance.runHandler(handlerRef, call),
+  it("runs a person's action through the platform's coordinator, as an agent's runs, and reads again what it changed", async () => {
+    const task = { kind: "object" as const, objectType: SCHEDULED_TASK, primaryKey: "task-1" };
+    const prepare = vi.fn(async (operationId: string) => ({
+      intentId: "5f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d03", operationId, label: "Run now", confirmation: { kind: "none" as const },
+    }));
+    const confirmOperation = vi.fn(async ({ intentId }: { intentId: string }) => ({
+      decision: "confirm" as const,
+      response: { kind: "dispatched" as const, intentId, outcome: {
+        kind: "success" as const, data: {}, affected: { objects: [task], objectTypes: [SCHEDULED_TASK] },
+      } },
+    }));
+    const panelInstance = instance({ selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" } }, {
+      operations: { ...noOperations.operations, prepare }, confirmOperation,
     });
+    const changed: unknown[] = [];
+    panelInstance.onObjectChanged((object) => changed.push(object));
+    panelInstance.register({ slot: "runTask", projectionId: "projection-run-task", ports: {
+      binding: "PlatformOperation:schedules.runNow", inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } }, operations: [
+        { name: "runNow", label: "Run now", kind: "action" as const, inputSchema: {}, handlerRef: "schedules.runNow" },
+      ],
+    } });
     const [operation] = panelInstance.operations.value.filter((candidate) => candidate.slot === "runTask");
     await panelInstance.invoke(operation!.id);
-    expect(run).toHaveBeenCalledTimes(1);
-    expect(handlerFor("schedules.runNow")).toBeDefined();
+    // One intent for the selected task, which the host dispatches; nothing runs in the frame.
+    expect(prepare).toHaveBeenCalledWith("runTask.runNow", { call: { target: task, input: {} } });
+    expect(confirmOperation).toHaveBeenCalledWith(await prepare.mock.results[0]!.value);
+    expect(registeredHandlers()).not.toContain("schedules.runNow");
+    // Only what the owner reported changed is read again.
+    expect(changed).toEqual([task]);
   });
 
   it("calls a draft unclaimed only once every form slot has registered and declined it", async () => {
@@ -162,11 +180,20 @@ describe("a panel's instance", () => {
     panelInstance.forms.register("taskForm", declining);
     await vi.waitFor(() => expect(panelInstance.forms.unclaimed(["taskForm"])).toBe(true));
     // A declared slot still to register may be the form that takes it.
-    panelInstance.register({ slot: "taskForm", projectionId: "projection-task-form", ports: saves, invoke: async () => ({}) });
-    panelInstance.register({ slot: "tasks", projectionId: "projection-x", ports: { ...saves, operations: [] }, invoke: async () => ({}) });
+    panelInstance.register({ slot: "taskForm", projectionId: "projection-task-form", ports: saves });
+    panelInstance.register({ slot: "tasks", projectionId: "projection-x", ports: { ...saves, operations: [] } });
     expect(panelInstance.unclaimedDraft.value).toBe(false);
-    panelInstance.register({ slot: "runTask", projectionId: "projection-run-task", ports: { ...saves, operations: [] }, invoke: async () => ({}) });
+    panelInstance.register({ slot: "runTask", projectionId: "projection-run-task", ports: { ...saves, operations: [] } });
     expect(panelInstance.unclaimedDraft.value).toBe(true);
+  });
+
+  it("names a state operation by the panel's own word for it, in the current language", () => {
+    const panelInstance = instance();
+    const named = () => panelInstance.operations.value.find((operation) => operation.id === "task.clear")!.label;
+    expect(named()).toBe("Clear");
+    locale.value = "zh-CN";
+    expect(named()).toBe("清除");
+    locale.value = "en";
   });
 
   it("keeps a value the panel does not offer in an address out of one", () => {

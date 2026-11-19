@@ -1,9 +1,10 @@
 import { createApp, h, nextTick, provide, ref, shallowReactive, watch, type Component, type Ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { contextExpandPageComposer, contextTranslate, contextTransport, type AppContext } from "../context";
+import { contextExpandPageComposer, contextTranslate, contextTransport, panelBridgeHost, type AppContext } from "../context";
 import { connectPanelContext } from "./app-context";
 import { defaultLocale } from "apps-sdk:panel-appearance";
 import { createPanelText } from "./text";
+import { panelHumanOperations } from "./human-operations";
 import {
   PANEL_HOST_CHANNEL,
   panelAddressState,
@@ -69,14 +70,16 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   ]);
   const transport = contextTransport(appContext);
   const address = ref(message.url);
-  const panelText = createPanelText(message.panel.content.messages ?? {}, appContext.locale, defaultLocale);
+  const text = createPanelText(message.panel.content.messages ?? {}, appContext.locale, defaultLocale);
   const instance = createPanelInstance(message.panel.manifest, {
+    text,
+    operations: panelHumanOperations(message.use, { request: (path, init, service) => transport.request(path, init, service) }),
+    confirmOperation: (preparation) => panelBridgeHost().confirmPanelOperation(preparation),
     pageKey: message.pageKey,
     url: () => address.value,
     label: () => message.label,
     initial: message.state,
     translate: contextTranslate(appContext),
-    panelText,
     reportDraftError: failed,
     recordDraftCreated: async (link, id) => {
       const response = await transport.request(
@@ -110,7 +113,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
       unsaved.add(flag);
       return () => unsaved.delete(flag);
     },
-    t: panelText,
+    t: text,
     // The resource clients a projection binds, fetched with it and sending through this frame's request path.
     resources: platformResourceLoader({ request: (path, init, service) => transport.request(path, init, service) }, platformResources),
     expandPageComposer: contextExpandPageComposer(appContext),

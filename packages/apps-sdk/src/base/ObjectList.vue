@@ -20,7 +20,7 @@ import {
   type PlatformObjectQueryResult,
   type PlatformObjectRecord,
 } from "../panel/platform-objects";
-import { isPanelChildObjectValue, isPanelObjectValue } from "../panel/state";
+import { stateChildObject, stateObject } from "../panel/state";
 import type { ObjectListColumn, ObjectListFilter, ObjectListRef } from "./object-list-types";
 import { textHighlightSegments } from "./text-highlight";
 
@@ -267,8 +267,8 @@ const parentState = computed(
 );
 const parentRef = computed<PanelObjectIdentity | null>(() => {
   if (!parentState.value) return null;
-  const value = panel.instance.state.values.value[parentState.value];
-  return isPanelObjectValue(value) ? { objectType: value.className, primaryKey: value.primaryKey } : null;
+  const value = stateObject(panel.instance.state.values.value[parentState.value]);
+  return value && { objectType: value.className, primaryKey: value.primaryKey };
 });
 const parentIdentity = computed(() => (parentRef.value ? `${parentRef.value.objectType}\u0000${parentRef.value.primaryKey}` : ""));
 const checkedState = computed(() => slotOutputState(panel.manifest, slot.slot, "checked"));
@@ -303,9 +303,7 @@ function rowIdentityKey(row: PlatformObjectRecord): string {
 const chosenRef = computed<ObjectListSelection | null>(() => {
   if (selectedState.value) {
     const value = panel.instance.state.values.value[selectedState.value];
-    if (isPanelChildObjectValue(value)) return value;
-    if (isPanelObjectValue(value)) return value;
-    return null;
+    return stateChildObject(value) ?? stateObject(value);
   }
   return localSelected.value;
 });

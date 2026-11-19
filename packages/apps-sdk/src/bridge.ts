@@ -1,4 +1,4 @@
-import {APP_BRIDGE_CHANNEL,type AppBridgeExpandPageComposer,type AppBridgeResponse} from '@ontomato/contracts/app-bridge';
+import {APP_BRIDGE_CHANNEL,appBridgeConfirmPanelOperationResultSchema,appBridgeConfirmPanelOperationSchema,type AppBridgeConfirmPanelOperation,type AppBridgeConfirmPanelOperationResult,type AppBridgeExpandPageComposer,type AppBridgeResponse} from '@ontomato/contracts/app-bridge';
 import type {AppHost,AppHostSnapshot,AppHostPreferences,AppFrameInsets} from '@ontomato/contracts/app-host';
 import type {AppExecutionContext} from '@ontomato/contracts/build-tests';
 import {randomId} from '@ontomato/contracts/random-id';
@@ -12,10 +12,15 @@ export function expandHostPageComposer(host:AppHost,request:AppBridgeExpandPageC
   return expand(request);
 }
 
+/** What a panel frame asks its host beyond an app's: to confirm a prepared write where it must and dispatch it once. */
+export interface PanelBridgeHost extends AppHost {
+  confirmPanelOperation(preparation:AppBridgeConfirmPanelOperation):Promise<AppBridgeConfirmPanelOperationResult>;
+}
+
 /** Opaque frames receive data and operations over a port, never the parent's credential or DOM. */
-export async function connectAppBridge():Promise<AppHost>{
+export async function connectAppBridge():Promise<PanelBridgeHost>{
   const channel=new MessageChannel();
-  const pending=new Map<string,{resolve:(value:unknown)=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>}>();
+  const pending=new Map<string,{resolve:(value:unknown)=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>|undefined}>();
   const streams=new Map<string,ReadableStreamDefaultController<Uint8Array>>(),streamCleanup=new Map<string,()=>void>();
   const placements=new Set<()=>void>();
   const preferenceListeners=new Set<(preferences:AppHostPreferences)=>void>(),insetListeners=new Set<(insets:AppFrameInsets)=>void>();
@@ -35,7 +40,8 @@ export async function connectAppBridge():Promise<AppHost>{
       call.resolve(result);
     }
   };
-  function invoke(operation:string,payload?:unknown,signal?:AbortSignal):Promise<any>{
+  /** A call the reader answers (`untimed`) waits for them; any other times out, and closing the page ends both. */
+  function invoke(operation:string,payload?:unknown,signal?:AbortSignal,untimed=false):Promise<any>{
     if(closed)return Promise.reject(new Error('Application bridge is closed'));
     const id=randomId();
     return new Promise((resolve,reject)=>{
@@ -43,13 +49,13 @@ export async function connectAppBridge():Promise<AppHost>{
       const abort=()=>{const call=pending.get(id);if(call){clearTimeout(call.timer);pending.delete(id);reject(new DOMException('Request aborted','AbortError'));}streams.get(id)?.error(new DOMException('Request aborted','AbortError'));streams.delete(id);streamCleanup.delete(id);cleanup();channel.port1.postMessage({channel:APP_BRIDGE_CHANNEL,id:randomId(),operation:'cancel',payload:{requestId:id}});};
       if(signal?.aborted){reject(new DOMException('Request aborted','AbortError'));return;}
       signal?.addEventListener('abort',abort,{once:true});
-      const timer=setTimeout(()=>{pending.delete(id);cleanup();channel.port1.postMessage({channel:APP_BRIDGE_CHANNEL,id:randomId(),operation:'cancel',payload:{requestId:id}});reject(new Error('Platform bridge request timed out'));},60_000);
+      const timer=untimed?undefined:setTimeout(()=>{pending.delete(id);cleanup();channel.port1.postMessage({channel:APP_BRIDGE_CHANNEL,id:randomId(),operation:'cancel',payload:{requestId:id}});reject(new Error('Platform bridge request timed out'));},60_000);
       pending.set(id,{resolve:value=>{if((value as {stream?:boolean})?.stream)streamCleanup.set(id,cleanup);else cleanup();resolve(value);},reject:error=>{cleanup();reject(error);},timer});channel.port1.postMessage({channel:APP_BRIDGE_CHANNEL,id,operation,payload});
     });
   }
   window.parent.postMessage({channel:APP_BRIDGE_CHANNEL,operation:'connect'},'*',[channel.port2]);
   const initial=await invoke('initialize');snapshot=initial.snapshot;execution=initial.execution;
-  const host:AppHost={
+  const host:PanelBridgeHost={
     snapshot:()=>snapshot,credential:()=>({type:'anonymous'}),executionContext:()=>execution,
     subscribeExecutionContext:(_source,listener)=>{listener(execution);return ()=>{};},
     subscribePreferences:listener=>{preferenceListeners.add(listener);return ()=>preferenceListeners.delete(listener);},
@@ -57,6 +63,11 @@ export async function connectAppBridge():Promise<AppHost>{
     navigate:path=>notify('navigate',path),navigateProduct:async(_source,target)=>{await invoke('navigateProduct',target);},
     onAuthFailure:status=>notify('authFailure',status),setPageContext:(_source,context)=>notify('pageContext',context),
     invalidateProductData:(_source,event)=>notify('invalidate',event),
+    // The host confirms where it must and dispatches once; its answer is Node's receipt, so the frame never retries.
+    async confirmPanelOperation(preparation){
+      const result=await invoke('confirm-panel-operation',appBridgeConfirmPanelOperationSchema.parse(preparation),undefined,true);
+      return appBridgeConfirmPanelOperationResultSchema.parse(result);
+    },
     async request(_source,path,init,service){
       const headers=[...new Headers(init.headers).entries()];
       let body:unknown=init.body??null;

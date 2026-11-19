@@ -4,6 +4,8 @@ import { operationCall, type PanelProjectionRegistration } from "./ports";
 import type { PanelOperationBinding } from "./types";
 import type { PanelStateStore } from "./state";
 import type { PanelFormAdapters } from "./draft";
+import type { PanelText } from "./text";
+import type { PanelWriteInvocation } from "./human-operations";
 
 /*
  * The operations a panel instance offers (overall design 3.4, 5.1, "list and execute operations"): the ones its slots'
@@ -11,9 +13,9 @@ import type { PanelFormAdapters } from "./draft";
  * declaration adds. Each is the description an agent reads and the handler a header button and an agent's call both
  * reach, so one operation has one implementation and there is no second "similar command".
  *
- * A person's button runs `invoke` in the panel's own frame, with whoever is signed in there, so a click uses the person's
- * own credential and keeps the owner's validation and confirmation. An agent's call is made by the platform's
- * coordinator with the run's executor, never through this frame (P3).
+ * A person's action runs as an agent's does: the platform's coordinator freezes it as one intent, the host confirms it
+ * where the owner asks and dispatches it once under the person's own credential, so one operation has one
+ * implementation, the owner's registered one. A form's save stays the form's own, and a state change the panel's.
  */
 
 /** What a panel offers: its projections' operations, then its own state changes, each with the handler to run. */
@@ -22,7 +24,8 @@ export function panelOperations(
   registrations: readonly PanelProjectionRegistration[],
   state: PanelStateStore,
   forms: PanelFormAdapters,
-  resolveLabel: (key: string) => string = (key) => key,
+  text: PanelText,
+  write: (operationId: string, invocation: PanelWriteInvocation) => Promise<unknown>,
 ): PanelOperationBinding[] {
   return [
     ...registrations.flatMap((registration) =>
@@ -36,11 +39,12 @@ export function panelOperations(
         invoke: (input?: Readonly<Record<string, unknown>>) =>
           operation.kind === "form.save"
             ? forms.submit(operation.slot!)
-            : registration.invoke(operation.handlerRef, operationCall(operation, state.values.value, input ?? {})),
+            : write(operation.id, { call: operationCall(operation, state.values.value, input ?? {}) }),
       })),
     ),
     ...manifest.operations.map((operation) => ({
-      ...panelStateOperation(operation, resolveLabel),
+      // A state operation is the panel's own, so its name is one of the panel's words, in the current language.
+      ...panelStateOperation(operation, (key) => text(key)),
       invoke: async () => {
         state.setState(operation.sets);
         return operation.sets;

@@ -15,9 +15,9 @@ import { useConversationDisplay } from "../../../../../packages/agent-shell-ui/s
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { platformLayoutRoute } from "../../../../../packages/platform-web/src/layout-route";
-import {
+import { ignoreChanges,
   hostMessageOf, inspectionTaskForm, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt,
-  currentSdk, panelHostFrame, panelRecord, panelSnapshot, panelUse, projections, READER, run, SCHEDULED_TASK, SDK_VERSION, task, taskForm,
+  currentSdk, humanIntents, panelHostFrame, panelRecord, panelSnapshot, panelUse, projections, READER, run, SCHEDULED_TASK, SDK_VERSION, task, taskForm,
   writeFrameDocument,
   type Sent,
   caseSetLabel,
@@ -98,7 +98,8 @@ afterEach(() => {
 it("opens the first visible use at its own URL when entering a panel application", async () => {
   const { app, frame, router, sent } = await open(`/applications/${appB}`, true);
   try {
-    expect(hostMessageOf(frame.srcdoc).pageKey).toBe(useQ.pageKey);
+    // The frame is told which application use it shows: the one this address opened.
+    expect(hostMessageOf(frame.srcdoc)).toMatchObject({ pageKey: useQ.pageKey, use: { applicationId: appB, useId: useQ.id } });
     await vi.waitFor(() => expect(router.currentRoute.value.path).toBe(`/applications/${appB}/summary`));
     expect(sent.some(request => request.path.endsWith("/policy"))).toBe(false);
   } finally {
@@ -498,11 +499,17 @@ it("blocks a presentation while a reader's form edit is unsaved, then clears dir
 it("refreshes X from the owner after the panel's form saves", async () => {
   let current = task;
   const before = panelAddress(`/applications/${appA}/tasks`, deepState);
+  // The run, as the task service's registered operation does it when the platform's coordinator dispatches it.
+  const intents = humanIntents(() => {
+    current = { ...current, summary: [{ key: "run", label: "Run", value: "Run started" }] };
+    return {
+      kind: "success", data: { runId: run.id },
+      affected: { objects: [{ objectType: SCHEDULED_TASK, primaryKey: task.id }], objectTypes: [SCHEDULED_TASK] },
+    };
+  });
   const { app, frame, sent } = await open(before, false, request => {
-    if (request.path === `${taskPath}/${task.id}/runs`) {
-      current = { ...current, summary: [{ key: "run", label: "Run", value: "Run started" }] };
-      return Response.json(run, { status: 202 });
-    }
+    const prepared = intents(request);
+    if (prepared) return prepared;
     if (request.path === `${taskPath}/${task.id}`) {
       if (request.method === "PUT") {
         current = { ...current, revision: current.revision + 1,
@@ -757,8 +764,8 @@ it("shares one definition stream across author panels, restores a changed collec
     notStarted: "Panel has not started",
     failures: { fileUnavailable: "File unavailable", scriptThrew: "Script threw", scriptRejected: "Script rejected" },
   };
-  const portA = platformPanelHost(appA, useP, mode);
-  const portB = platformPanelHost(appB, useQ, mode);
+  const portA = platformPanelHost(appA, useP, ignoreChanges, mode);
+  const portB = platformPanelHost(appB, useQ, ignoreChanges, mode);
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/", component: { render: () => null } }] });
   await router.push("/");
   const page = mountPlatformPage(() => h("main", [

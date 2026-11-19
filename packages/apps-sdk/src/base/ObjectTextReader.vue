@@ -9,7 +9,7 @@ import {
 } from "@ontomato/foundation-ui/reader";
 import { slotInputState, usePanelContext, useProjectionObjects, useProjectionSlot } from "../panel/context";
 import { adapterPart } from "../panel/platform-objects";
-import { isPanelObjectValue } from "../panel/state";
+import { stateObject } from "../panel/state";
 
 /**
  * Projection-bound offset-paged text reader. Reads sources (unless passed explicitly) and offset slices through the
@@ -69,8 +69,8 @@ const parentState = computed(
 );
 const parentRef = computed<PanelObjectIdentity | null>(() => {
   if (!parentState.value) return null;
-  const value = panel.instance.state.values.value[parentState.value];
-  return isPanelObjectValue(value) ? { objectType: value.className, primaryKey: value.primaryKey } : null;
+  const value = stateObject(panel.instance.state.values.value[parentState.value]);
+  return value && { objectType: value.className, primaryKey: value.primaryKey };
 });
 const parentIdentity = computed(() => (parentRef.value ? `${parentRef.value.objectType}\u0000${parentRef.value.primaryKey}` : ""));
 

@@ -16,7 +16,7 @@ import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import type { GraphCanvasEdge, GraphCanvasNode, GraphCanvasPoint } from "@ontomato/foundation-ui/graph/g6";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
-  inside,
+  ignoreChanges, inside,
   installPlatform,
   leaveFrame,
   nothingAt,
@@ -300,8 +300,8 @@ it("renders type mode in four-layer columns with count statuses, internal layer 
     return undefined;
   }));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, { mode: "type" });
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(registered("app-test", use, panel), use.path, { mode: "type" });
   inside(frame);
 
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
@@ -430,8 +430,8 @@ it("runs instance mode with default start, incremental neighbor expand, full obj
     return undefined;
   }));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, { mode: "instance" });
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(registered("app-test", use, panel), use.path, { mode: "instance" });
   inside(frame);
 
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
@@ -566,8 +566,8 @@ it("separates no-neighbors, owner-refused and read-failed states without collaps
     return undefined;
   }));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, { mode: "instance" });
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(registered("app-test", use, panel), use.path, { mode: "instance" });
   inside(frame);
 
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");

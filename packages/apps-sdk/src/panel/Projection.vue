@@ -56,7 +56,6 @@ function start(revision = 0) {
       slot: props.slot,
       projectionId: projection.id,
       ports: portsOf(projection),
-      invoke: (handlerRef, call) => panel!.invoke(handlerRef, call),
     });
     requestedRevision = 0;
     loaded.value = { projection, component };

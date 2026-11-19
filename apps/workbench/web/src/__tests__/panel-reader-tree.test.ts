@@ -5,7 +5,7 @@ import { panelAddressState } from "@ontomato/contracts/panel-host";
 import { KNOWLEDGE_GOVERNANCE_RECORD, SKILL } from "@ontomato/contracts/platform-object-types";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import {
+import { ignoreChanges,
   inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
@@ -79,9 +79,9 @@ it("renders ObjectTree from child paths, writes PanelChildObjectIdentity, and to
 
   installPlatform(hostWith(projections));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
   const initialPath = `${use.path}?state=${encodeURIComponent(JSON.stringify({ selectedSkill: { className: SKILL, primaryKey: "skill-1" } }))}`;
-  writePanelDocument(panel, use, initialPath, panelAddressState(initialPath));
+  writePanelDocument(registered("app-test", use, panel), initialPath, panelAddressState(initialPath));
   inside(frame);
 
   const fileQueries: unknown[] = [];
@@ -199,9 +199,9 @@ it("reads segmented text by offset via ObjectTextReader with child collection an
 
   installPlatform(hostWith(projections));
   const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
   const initialPath = `${use.path}?state=${encodeURIComponent(JSON.stringify({ selectedRecord: { className: KNOWLEDGE_GOVERNANCE_RECORD, primaryKey: "rec-1" } }))}`;
-  writePanelDocument(panel, use, initialPath, panelAddressState(initialPath));
+  writePanelDocument(registered("app-test", use, panel), initialPath, panelAddressState(initialPath));
   inside(frame);
 
   const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
