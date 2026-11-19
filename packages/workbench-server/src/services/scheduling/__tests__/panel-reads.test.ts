@@ -16,7 +16,7 @@ afterEach(() => {
 });
 
 it("reads the viewer's task rows and selected summary, and recomputes the selected task's form", async () => {
-  const fetchOwner = vi.fn(async (url: string, init: RequestInit) => {
+  const fetchOwner = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
     const path = new URL(url).pathname;
     if (init.method === "GET" && path.endsWith("/platform/scheduled-tasks"))
