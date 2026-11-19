@@ -52,6 +52,8 @@ export interface PlatformObjectRecord {
   subtitle?: string;
   /** What a summary or list column may show: the owner's own fields, by name, as text. */
   fields: Readonly<Record<string, string>>;
+  /** Optional owner-supplied display names by field key (used by ObjectSummary and ObjectList headers without labelKey). */
+  fieldLabels?: Readonly<Record<string, string>>;
   /** Optional semantic tones by field name, used when a field renders as a status tag. */
   tones?: Readonly<Record<string, PlatformFieldTone>>;
   /** Optional tag lists by field name, rendered as tags. */
@@ -107,6 +109,8 @@ export interface PlatformObjectQueryResult {
   readonly items: readonly PlatformObjectRecord[];
   /** Total matching records from the owner/adapter, never substituted with the current page size. */
   readonly total: number;
+  /** Optional owner-supplied display names by field key (used by ObjectList headers without labelKey, even when items is empty). */
+  readonly fieldLabels?: Readonly<Record<string, string>>;
   readonly facets?: readonly PlatformObjectFacet[];
   readonly nextCursor?: string;
   /** Optional default item key chosen by the owner/adapter when nothing in this result is selected. */

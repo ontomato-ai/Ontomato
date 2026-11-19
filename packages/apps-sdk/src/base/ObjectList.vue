@@ -123,6 +123,7 @@ const objectType = slot.projection.binding.id;
 
 const rows = shallowRef<readonly PlatformObjectRecord[]>([]);
 const total = ref(0);
+const resultFieldLabels = shallowRef<Readonly<Record<string, string>>>({});
 const dynamicFacets = shallowRef<readonly PlatformObjectFacet[]>([]);
 const nextCursor = ref<string | undefined>(undefined);
 const loading = ref(true);
@@ -263,6 +264,20 @@ function panelText(text: string): string {
   return panel.t(text);
 }
 
+const ownerFieldLabels = computed<Readonly<Record<string, string>>>(() => ({
+  ...(rows.value[0]?.fieldLabels ?? {}),
+  ...resultFieldLabels.value,
+}));
+
+function columnLabel(column: ObjectListColumn): string {
+  if (column.labelKey) return panelText(column.labelKey);
+  return ownerFieldLabels.value[column.key] ?? column.key;
+}
+
+function columnEmpty(column: ObjectListColumn): string {
+  return column.emptyKey ? panelText(column.emptyKey) : "—";
+}
+
 const resolvedFilters = computed<readonly ObjectListFilter[]>(() => {
   const facetsByKey = new Map(dynamicFacets.value.map((facet) => [facet.key, facet]));
   const declared = (props.filters ?? []).map((filter) => {
@@ -391,6 +406,7 @@ function load() {
       queryReason.value = result.reason;
       rows.value = status === "ok" ? result.items : [];
       total.value = status === "ok" ? result.total : 0;
+      resultFieldLabels.value = status === "ok" ? (result.fieldLabels ?? {}) : {};
       if (result.facets) dynamicFacets.value = result.facets;
       nextCursor.value = status === "ok" ? result.nextCursor : undefined;
       loading.value = false;
@@ -429,6 +445,7 @@ watch(activeType, (next, prev) => {
   draftFilters.value = initialFilters();
   appliedFilters.value = initialFilters();
   dynamicFacets.value = [];
+  resultFieldLabels.value = {};
   resetPaging();
   rows.value = [];
   total.value = 0;
@@ -553,8 +570,8 @@ watch(someVisibleChecked, () => {
         type="search"
         class="sdk-object-list-search"
         :value="draftSearch"
-        :placeholder="searchPlaceholder ?? t('platform.listSearchPlaceholder')"
-        :aria-label="searchPlaceholder ?? t('platform.listSearchPlaceholder')"
+        :placeholder="searchPlaceholder ? panelText(searchPlaceholder) : t('platform.listSearchPlaceholder')"
+        :aria-label="searchPlaceholder ? panelText(searchPlaceholder) : t('platform.listSearchPlaceholder')"
         @input="onSearchInput"
         @keydown.enter.prevent="submitQuery"
       />
@@ -667,7 +684,7 @@ watch(someVisibleChecked, () => {
                 @change="toggleAllVisible(($event.target as HTMLInputElement).checked)"
               />
             </th>
-            <th v-for="column in columns" :key="column.key">{{ column.label }}</th>
+            <th v-for="column in columns" :key="column.key">{{ columnLabel(column) }}</th>
             <th v-if="rowActionLabel" class="sdk-object-list-action-col"></th>
           </tr>
         </thead>
@@ -703,7 +720,7 @@ watch(someVisibleChecked, () => {
                 class="sdk-object-list-tag"
                 :data-tone="row.tones?.[column.key] ?? 'default'"
               >
-                <template v-for="(part, index) in cellSegments(row, column.key, column.empty)" :key="index">
+                <template v-for="(part, index) in cellSegments(row, column.key, columnEmpty(column))" :key="index">
                   <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                 </template>
               </span>
@@ -714,11 +731,11 @@ watch(someVisibleChecked, () => {
                   class="sdk-object-list-tag"
                   data-tone="info"
                 >{{ tag }}</span>
-                <template v-if="!(row.tags?.[column.key]?.length)">{{ column.empty ?? "—" }}</template>
+                <template v-if="!(row.tags?.[column.key]?.length)">{{ columnEmpty(column) }}</template>
               </span>
               <div v-else class="sdk-object-list-cell">
                 <span class="sdk-object-list-cell-main">
-                  <template v-for="(part, index) in cellSegments(row, column.key, column.empty)" :key="index">
+                  <template v-for="(part, index) in cellSegments(row, column.key, columnEmpty(column))" :key="index">
                     <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                   </template>
                 </span>
@@ -735,7 +752,7 @@ watch(someVisibleChecked, () => {
                 class="sdk-object-list-link-btn sdk-object-list-row-action"
                 @click="selectWithoutToggle(row)"
               >
-                {{ rowActionLabel }}
+                {{ panelText(rowActionLabel) }}
               </button>
             </td>
           </tr>

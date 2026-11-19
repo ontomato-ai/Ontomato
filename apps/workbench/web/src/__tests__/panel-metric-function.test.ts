@@ -24,7 +24,7 @@ const projection = (id: string, componentId: string, inputs: ProductProjection["
 });
 const projections: Record<string, ProductProjection> = {
   "metric-list": projection("metric-list", "ObjectList", {}, {
-    columns: [{ key: "label", label: "Name" }, { key: "status", label: "Status", kind: "tag" }],
+    columns: [{ key: "label", labelKey: "columns.name" }, { key: "status", labelKey: "columns.status", kind: "tag" }],
     searchable: true,
     showCount: true,
   }),

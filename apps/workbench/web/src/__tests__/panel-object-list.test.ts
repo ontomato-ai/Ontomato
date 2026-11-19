@@ -57,16 +57,16 @@ it("renders multi-column ObjectList with status tags, text search, count, separa
   const projections = {
     "metric-list": projection("metric-list", "ObjectList", METRIC, {
       columns: [
-        { key: "label", label: "Name", subtitleKey: "description" },
-        { key: "functionName", label: "Function", kind: "reference" },
-        { key: "status", label: "Status", kind: "tag" },
+        { key: "label", labelKey: "cols.name", subtitleKey: "description" },
+        { key: "functionName", labelKey: "cols.function", kind: "reference" },
+        { key: "status", labelKey: "cols.status", kind: "tag" },
       ],
       searchable: true,
       showCount: true,
       selectable: true,
     }),
     "function-list": projection("function-list", "ObjectList", FUNCTION, {
-      columns: [{ key: "label", label: "Function" }],
+      columns: [{ key: "label", labelKey: "cols.function" }],
     }),
   };
   const manifest = definePanel({
@@ -88,6 +88,9 @@ it("renders multi-column ObjectList with status tags, text search, count, separa
     operations: [],
   });
   const panel = panelRecord("panel-metrics", "Metrics", manifest);
+  panel.content.messages = {
+    en: { "cols.name": "Name", "cols.function": "Function", "cols.status": "Status" },
+  };
   panel.content.html = `
     <div id="app">
       <section class="metrics-pane">
@@ -341,9 +344,9 @@ it("supports server-side pagination, submit-mode filters resetting to page 1, re
   const projections = {
     "feedback-list": projection("feedback-list", "ObjectList", FEEDBACK, {
       columns: [
-        { key: "source", label: "Source", kind: "tag" },
-        { key: "rating", label: "Rating", kind: "tag" },
-        { key: "comment", label: "Comment" },
+        { key: "source", labelKey: "cols.source", kind: "tag" },
+        { key: "rating", labelKey: "cols.rating", kind: "tag" },
+        { key: "comment", labelKey: "cols.comment" },
       ],
       searchable: true,
       searchMode: "submit",
@@ -370,6 +373,9 @@ it("supports server-side pagination, submit-mode filters resetting to page 1, re
     operations: [],
   });
   const panel = panelRecord("panel-feedback", "Feedback", manifest);
+  panel.content.messages = {
+    en: { "cols.source": "Source", "cols.rating": "Rating", "cols.comment": "Comment" },
+  };
   panel.content.html = `<div id="app"><Projection slot="list" @query="lastQuery = $event"></Projection></div>`;
   const use = panelUse("use-feedback", "feedback-test", panel.id, "/applications/app-test/feedback");
 
@@ -482,4 +488,84 @@ it("fails visibly when query features are enabled on a list-only adapter", async
   await mountPanel({});
 
   await vi.waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toContain("has no query"));
+});
+
+it("resolves column labelKey/emptyKey via panel.t, falls back to owner fieldLabels on ObjectList and ObjectSummary, and resolves state operation labelKey", async () => {
+  const projections = {
+    "labeled-list": projection("labeled-list", "ObjectList", FEEDBACK, {
+      columns: [
+        { key: "source", kind: "tag" },
+        { key: "comment", labelKey: "cols.notes", emptyKey: "cols.noNotes" },
+        { key: "rawCode" },
+      ],
+    }),
+    "labeled-summary": projection("labeled-summary", "ObjectSummary", FEEDBACK, {
+      fields: ["source", "rawCode"],
+    }, { item: { kind: "object", objectType: FEEDBACK } }),
+  };
+  const manifest = definePanel({
+    state: {
+      selectedFeedback: { kind: "object", objectType: FEEDBACK, deepLink: true },
+    },
+    slots: {
+      list: { projectionId: "labeled-list", inputs: {}, outputs: { selected: { state: "selectedFeedback" } } },
+      summary: { projectionId: "labeled-summary", inputs: { item: { state: "selectedFeedback" } } },
+    },
+    operations: [
+      { id: "clearSelection", labelKey: "ops.clear", kind: "state", sets: { selectedFeedback: null } },
+    ],
+  });
+  const panel = panelRecord("panel-labels", "Labels", manifest);
+  panel.content.messages = {
+    en: { "cols.notes": "Reviewer notes", "cols.noNotes": "No notes", "ops.clear": "Clear selection" },
+  };
+  panel.content.html = `
+    <div id="app">
+      <Projection slot="list"></Projection>
+      <Projection slot="summary"></Projection>
+    </div>`;
+  const use = panelUse("use-labels", "labels-test", panel.id, "/applications/app-test/labels");
+
+  installPlatform(hostWith(projections));
+  const frame = panelFrame();
+  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(panel, use, use.path, {});
+  inside(frame);
+
+  const { registerPlatformObjectAdapter } = await import("../../../../../packages/apps-sdk/src/panel/platform-objects");
+  const record = {
+    primaryKey: "fb-1",
+    label: "Feedback 1",
+    fields: { source: "Q&A", comment: "", rawCode: "E-100" },
+    fieldLabels: { source: "Feedback source" },
+    tones: { source: "info" as const },
+  };
+  registerPlatformObjectAdapter({
+    objectType: FEEDBACK,
+    query: async () => ({
+      items: [record],
+      total: 1,
+      fieldLabels: { source: "Feedback source", comment: "Owner comment" },
+    }),
+    read: async () => record,
+  });
+
+  const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
+  const mounted = await mountPanel({});
+
+  await vi.waitFor(() => expect(document.querySelectorAll("thead th").length).toBe(3));
+  const headers = [...document.querySelectorAll("thead th")].map((th) => th.textContent?.trim());
+  // source omits labelKey -> uses owner fieldLabels; comment has labelKey -> panel.t wins over owner; rawCode falls back to key.
+  expect(headers).toEqual(["Feedback source", "Reviewer notes", "rawCode"]);
+  // emptyKey resolves through panel.t when cell value is empty.
+  const cells = [...document.querySelectorAll("tbody tr td")].map((td) => td.textContent?.trim());
+  expect(cells).toEqual(["Q&A", "No notes", "E-100"]);
+  // State operation labelKey resolves through panel.t.
+  expect(mounted.context.instance.operations.value.find((op) => op.id === "clearSelection")?.label).toBe("Clear selection");
+
+  // Select row -> ObjectSummary displays owner fieldLabels for "source" and falls back to raw key for "rawCode".
+  document.querySelector<HTMLTableRowElement>("tbody tr")!.click();
+  await vi.waitFor(() => expect(document.querySelectorAll(".sdk-object-summary dt").length).toBe(2));
+  const summaryLabels = [...document.querySelectorAll(".sdk-object-summary dt")].map((dt) => dt.textContent?.trim());
+  expect(summaryLabels).toEqual(["Feedback source", "rawCode"]);
 });
