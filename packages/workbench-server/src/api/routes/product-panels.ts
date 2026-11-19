@@ -1,9 +1,14 @@
 import {
-  inspectPanelOperationImpactRequestSchema, panelOperationDescriptorResponseSchema, panelOperationRefSchema,
+  createPanelHumanOperationIntentRequestSchema, dispatchPanelHumanOperationIntentRequestSchema,
+  inspectPanelOperationImpactRequestSchema, panelHumanOperationDispatchResponseSchema, panelHumanOperationIntentParamsSchema,
+  panelOperationDescriptorResponseSchema, panelOperationRefSchema, panelUseRefSchema,
   updatePanelOperationSettingsRequestSchema,
 } from "@ontomato/contracts/panel-agent";
 import { agentSessionRefSchema } from "@ontomato/contracts/agent-channel";
-import { inspectPanelOperationImpact, ownPanelSettings, readPanelOperationDescriptor } from "../../services/product-panels/operations";
+import {
+  dispatchHumanPanelOperation, inspectPanelOperationImpact, ownPanelSettings, prepareHumanPanelOperation,
+  projectPanelOperationIntent, readPanelOperationDescriptor,
+} from "../../services/product-panels/operations";
 import { panelOperationStore } from "../../services/product-panels/operation-store";
 import { Router } from "express";
 import { z } from "zod";
@@ -109,10 +114,22 @@ panelOperationsRouter.post("/panel-operations/inspect-impact", wrap(async (req, 
   const input = inspectPanelOperationImpactRequestSchema.parse(req.body);
   res.json(await inspectPanelOperationImpact(owner, credentials, input));
 }));
-panelOperationsRouter.get("/panel-operation-intents/:intentId",wrap(async(req,res)=>{
-  const c=context(req);
-  const record = await panelOperationStore.get(c.owner,z.string().uuid().parse(req.params.intentId));
-  res.json(record.kind === "confirmation-expired" ? record : record.intent);
+panelOperationsRouter.post("/panel-operations/intents", wrap(async (req, res) => {
+  const { owner, credentials } = context(req);
+  const input = createPanelHumanOperationIntentRequestSchema.parse(req.body);
+  res.json(await prepareHumanPanelOperation(owner, credentials, input));
+}));
+panelOperationsRouter.get("/panel-operation-intents/:intentId", wrap(async (req, res) => {
+  const { owner } = context(req);
+  const { intentId } = panelHumanOperationIntentParamsSchema.parse(req.params);
+  const use = Object.keys(req.query).length ? panelUseRefSchema.parse(req.query) : undefined;
+  res.json(await projectPanelOperationIntent(owner, intentId, use));
+}));
+panelOperationsRouter.post("/panel-operations/intents/:intentId/dispatch", wrap(async (req, res) => {
+  const { owner, credentials } = context(req);
+  const { intentId } = panelHumanOperationIntentParamsSchema.parse(req.params);
+  dispatchPanelHumanOperationIntentRequestSchema.parse(req.body);
+  res.json(panelHumanOperationDispatchResponseSchema.parse(await dispatchHumanPanelOperation(owner, credentials, intentId)));
 }));
 panelOperationsRouter.get("/panel-operation-settings/:providerId/:sessionId",wrap(async(req,res)=>{
   const c=context(req),root=agentSessionRefSchema.parse(req.params);

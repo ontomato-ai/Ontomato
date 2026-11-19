@@ -5,7 +5,7 @@ import * as serverOperations from "../server-operations";
 import rawExamples from "../../../../../contracts/examples/platform-schedules.json";
 import {platformTaskSchema,platformScheduleFormSchema} from "@ontomato/contracts/platform-schedules";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import type { PanelOperationIntent } from "@ontomato/contracts/panel-agent";
+import { isPanelHumanOperationIntent, type PanelOperationIntent } from "@ontomato/contracts/panel-agent";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
 const mocks = vi.hoisted(() => ({draft:vi.fn(),recordCreated:vi.fn(),query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),catalogue:vi.fn(),pages:vi.fn(),restore:vi.fn(),sessionActor:vi.fn(),notify:vi.fn()}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
@@ -21,7 +21,10 @@ vi.mock("../../agent-host/caller",()=>({restoreAgentCaller:mocks.restore,readAge
 vi.mock("../../agent-host/presentation",()=>({publishObjectChanged:mocks.notify}));
 vi.mock("../current",()=>({readCurrentPanel:mocks.panel,readCurrentProjection:mocks.projection}));
 vi.mock("../skill-package",()=>({readComponentCatalogue:mocks.catalogue}));
-import { operatePanel as realOperatePanel, dispatchPanel, inspectPanelOperationImpact, ownPanelSettings, readPanelOperationDescriptor } from "../operations";
+import {
+  operatePanel as realOperatePanel, dispatchPanel, dispatchHumanPanelOperation, inspectPanelOperationImpact, ownPanelSettings,
+  prepareHumanPanelOperation, projectPanelOperationIntent, readPanelOperationDescriptor,
+} from "../operations";
 import { panelOperationStore } from "../operation-store";
 configureI18n({defaultLocale:"en",appTextLocale:"en",languageSwitchEnabled:false,packs:{en:{messages:en,...enLocaleMeta}}});
 const uuid=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,"0")}`;
@@ -33,6 +36,11 @@ const use={id:"tasks",pageKey:"tasks",path:"/applications/A/tasks",panelId:"P",a
 let intents:Map<string,PanelOperationIntent>, automatic:boolean, current:RuntimeRun, human:Record<string,unknown>|null;
 const action=()=>({intentId:uuid(5),applicationId:"A",useId:"tasks",operationId:"run.runNow",call:{target:{kind:"object" as const,objectType:"platform:ScheduledTask",primaryKey:uuid(9)},input:{}}});
 const save=()=>({...action(),operationId:"form.save",call:{...action().call,input:{revision:4,values:{title:"draft"}}}});
+function agentQuestionId() {
+ const intent = intents.get(uuid(5))!;
+ if (isPanelHumanOperationIntent(intent)) throw new Error("Expected an agent intent");
+ return intent.questionId;
+}
 beforeEach(()=>{
  vi.resetAllMocks();intents=new Map();automatic=false;human=null;
  current={id:uuid(3),sessionId:session.sessionId,status:"running",executionUserId:"V",channel:{agent:{providerId:"workbench",agentId:"agent"},actor:{id:uuid(4),domainId:"d"},authority:{classNames:[],executionKind:"live"},root:{session:root,runId:uuid(10)},requestedBy:null,userRecipient:{session:root,actor:{id:uuid(4),domainId:"d"}}},resolvedSkills:[{skill}]} as unknown as RuntimeRun;
@@ -52,7 +60,7 @@ beforeEach(()=>{
  mocks.catalogue.mockResolvedValue(new Map([["run",{}],["form",{operations:[{client:"@binding",name:"save",label:"Save",kind:"form.save",inputSchema:{}}]}]]));
  mocks.restore.mockResolvedValue({owner});
  mocks.session.mockImplementation(async()=>({messages:human?[{message:human}]:[]}));
- mocks.request.mockImplementation(async(path:string,_method:string,body:{source:unknown})=>path==="/v1/channel/user-questions"?{questionId:intents.get(uuid(5))!.questionId,source:body.source,recipient:{session:root,actor:{id:uuid(4),domainId:"d"}}}:{questionId:intents.get(uuid(5))!.questionId,answerId:uuid(11),source:{kind:"user"},respondent:{id:uuid(12),domainId:"d"},recipientSession:root,selectedOption:1,text:"Execute"});
+ mocks.request.mockImplementation(async(path:string,_method:string,body:{source:unknown})=>path==="/v1/channel/user-questions"?{questionId:agentQuestionId(),source:body.source,recipient:{session:root,actor:{id:uuid(4),domainId:"d"}}}:{questionId:agentQuestionId(),answerId:uuid(11),source:{kind:"user"},respondent:{id:uuid(12),domainId:"d"},recipientSession:root,selectedOption:1,text:"Execute"});
  mocks.query.mockImplementation(async(sql:string,args:unknown[])=>{
    const id=String(args[sql.startsWith("SELECT intent,owner_id")?1:2]);
    if(sql.startsWith("SELECT confirm_before"))return {rows:automatic?[{confirm_before_execute:false}]:[]};
@@ -76,7 +84,7 @@ beforeEach(()=>{
 });
 afterEach(()=>{vi.unstubAllGlobals();vi.restoreAllMocks();});
 const ownerWrites=()=>vi.mocked(fetch).mock.calls.filter(([,init])=>["POST","PUT"].includes(init?.method ?? "GET"));
-function answer(source:object={kind:"user"}) {human={role:"notification",kind:"agent-answer",source,replyTo:intents.get(uuid(5))!.questionId,answerId:uuid(11)};}
+function answer(source:object={kind:"user"}) {human={role:"notification",kind:"agent-answer",source,replyTo:agentQuestionId(),answerId:uuid(11)};}
 it("returns immediately and ignores the parent's endorsement; a later run uses V once after a genuine U selection",async()=>{
  const request=action();const response=await operatePanel(owner,credentials,current.id,request);
  expect(response.kind).toBe("confirmation-required");expect(ownerWrites()).toHaveLength(0);
@@ -108,7 +116,7 @@ it("requires a new intent for changed parameters, target, questioning session or
 });
 it.each([undefined,0])("does not approve free text or the default selectedOption %s",async selectedOption=>{
  await operatePanel(owner,credentials,current.id,action());answer();
- mocks.request.mockResolvedValue({questionId:intents.get(uuid(5))!.questionId,answerId:uuid(11),source:{kind:"user"},respondent:{id:uuid(12),domainId:"d"},recipientSession:root,selectedOption:selectedOption??null,text:"I approve"});
+ mocks.request.mockResolvedValue({questionId:agentQuestionId(),answerId:uuid(11),source:{kind:"user"},respondent:{id:uuid(12),domainId:"d"},recipientSession:root,selectedOption:selectedOption??null,text:"I approve"});
  expect(await dispatchPanel(owner,credentials,current.id,uuid(5))).toMatchObject({code:"NOT_APPROVED"});
  expect(ownerWrites()).toHaveLength(0);
 });
@@ -478,4 +486,45 @@ it("keeps a definitive atomic batch receipt without inventing per-item receipts"
   expect(await operatePanel(owner, credentials, current.id, request)).toMatchObject({ kind: "dispatched", outcome });
   expect(handler.executeBatch).toHaveBeenCalledTimes(1);
   expect(mocks.notify).toHaveBeenCalledTimes(objects.length);
+});
+
+it("freezes a human batch and its impact, then claims once with the reader's credentials", async () => {
+  const { handler, request, impact } = installBatchOwner();
+  const { intentId: _intentId, ...input } = request;
+  const outcome = { kind: "batch", items: impact.objects.map(({ target }) => ({
+    target, outcome: { kind: "success", data: { done: true }, affected: { objects: [target], objectTypes: [target.objectType] } },
+  })) };
+  handler.executeBatch.mockImplementation(async (host: serverOperations.PanelOperationHost) => {
+    await host.requestWorkbench("/test-owner", { method: "POST" });
+    return outcome;
+  });
+  const ownerWrite = vi.fn(async (_url, init) => {
+    expect(new Headers(init.headers).get("tk")).toBe("U-token");
+    expect(new Headers(init.headers).get("X-API-Key")).toBeNull();
+    return Response.json({});
+  });
+  vi.stubGlobal("fetch", ownerWrite);
+  const preparation = await prepareHumanPanelOperation(owner, credentials, input);
+  const id = preparation.intentId;
+  expect(intents.get(id)).toMatchObject({ source: { kind: "human" }, initiator: owner, calls: input.calls, impact, dispatched: false });
+  const useRef = { applicationId: input.applicationId, useId: input.useId };
+  expect(await projectPanelOperationIntent(owner, id, useRef)).toEqual(preparation);
+  await expect(projectPanelOperationIntent(owner, id, { ...useRef, useId: "other" })).rejects.toMatchObject({ status: 404 });
+  expect(ownerWrite).not.toHaveBeenCalled();
+  await expect(dispatchPanel(owner, credentials, current.id, id)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  const results = await Promise.all([dispatchHumanPanelOperation(owner, credentials, id), dispatchHumanPanelOperation(owner, credentials, id)]);
+  expect(results).toContainEqual({ kind: "dispatched", intentId: id, outcome: {
+    ...outcome, affected: { objects: impact.objects.map(item => item.target), objectTypes: [input.calls[0].target.objectType] },
+  } });
+  expect(handler.inspectImpact.inspect).toHaveBeenCalledTimes(1);
+  expect(handler.executeBatch).toHaveBeenCalledOnce();
+  expect(handler.execute).not.toHaveBeenCalled();
+  expect(ownerWrite).toHaveBeenCalledOnce();
+  expect(mocks.resolve).not.toHaveBeenCalled();
+});
+
+it("refuses to dispatch an agent intent from the human route", async () => {
+  await operatePanel(owner, credentials, current.id, action());
+  await expect(dispatchHumanPanelOperation(owner, credentials, action().intentId)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  expect(ownerWrites()).toHaveLength(0);
 });

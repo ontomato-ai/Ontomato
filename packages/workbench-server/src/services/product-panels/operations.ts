@@ -6,8 +6,11 @@ import type { AgentSessionRef } from "@ontomato/contracts/agent-channel";
 import { agentQuestionAnswerReceiptSchema, agentUserQuestionReceiptSchema } from "@ontomato/contracts/agent-user-questions";
 import { applicationPanelUsesResponseSchema, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import {
-  PANEL_CONFIRMATION_EXPIRED, panelOperationOutcomeSchema, type inspectPanelOperationImpactRequestSchema,
-  type CreatePanelOperationIntentRequest, type PanelOperationIntent, type PanelOperateResponse, type PanelOperationRef,
+  PANEL_CONFIRMATION_EXPIRED, isPanelHumanOperationIntent, panelHumanOperationPreparationSchema, panelOperationOutcomeSchema,
+  type inspectPanelOperationImpactRequestSchema,
+  type CreatePanelHumanOperationIntentRequest, type CreatePanelOperationIntentRequest, type PanelAgentOperationIntent,
+  type PanelHumanOperationDispatchResponse, type PanelHumanOperationIntent, type PanelHumanOperationPreparation,
+  type PanelOperationIntent, type PanelOperateResponse, type PanelOperationRef,
   type PanelUseRef, type PanelOperationOutcome, type StoredPanelOperationIntent,
 } from "@ontomato/contracts/panel-agent";
 import { panelOperationImpactSchema } from "@ontomato/contracts/panel-operations";
@@ -37,8 +40,9 @@ import { publishObjectChanged } from "../agent-host/presentation";
 import { panelOperationStore as store } from "./operation-store";
 
 type PanelRun = Awaited<ReturnType<typeof runForOwner>>;
-type SingleIntent = Extract<PanelOperationIntent, { call: PanelOperationCall }>;
-type ReadableIntent = Extract<StoredPanelOperationIntent, { intent: unknown }>["intent"];
+type SingleIntent = Extract<PanelAgentOperationIntent, { call: PanelOperationCall }>;
+type AgentRecord = Exclude<StoredPanelOperationIntent, { kind: "current" }> | { kind: "current"; intent: PanelAgentOperationIntent };
+type ReadableAgentIntent = Extract<AgentRecord, { intent: unknown }>["intent"];
 
 async function requirePanelUse(credentials: AssistantCredentials, ref: PanelUseRef) {
   const response = await backendGet("panel-use",`${config.dataQuery.baseUrl}/platform/applications/${encodeURIComponent(ref.applicationId)}/panel-uses`,
@@ -140,16 +144,22 @@ function operationHost(credentials: AssistantCredentials): PanelOperationHost {
   };
 }
 const rootOf = (run: PanelRun) => run.channel!.userRecipient?.session;
-function sourceMatches(intent: ReadableIntent, session: AgentSessionRef) {
+function agentRecord(record: StoredPanelOperationIntent): AgentRecord {
+  if (record.kind !== "current") return record;
+  if (isPanelHumanOperationIntent(record.intent)) throw new HttpError(403, "This intent requires human dispatch", "FORBIDDEN");
+  return { kind: "current", intent: record.intent };
+}
+
+function sourceMatches(intent: ReadableAgentIntent, session: AgentSessionRef) {
   if (!isDeepStrictEqual(intent.source.session,session)) throw new HttpError(403,"Intent belongs to another questioning session","FORBIDDEN");
 }
-function matchingInvocation(intent: ReadableIntent, request: CreatePanelOperationIntentRequest, session: AgentSessionRef, executionUserId: string | null) {
+function matchingInvocation(intent: ReadableAgentIntent, request: CreatePanelOperationIntentRequest, session: AgentSessionRef, executionUserId: string | null) {
   sourceMatches(intent, session);
   if (!isDeepStrictEqual(intent.use,{applicationId:request.applicationId,useId:request.useId}) || intent.operation.id !== request.operationId ||
     !isDeepStrictEqual(invocationOf(intent),invocationOf(request)) || intent.executionUserId !== executionUserId)
     throw new HttpError(409,"Changed call or executor requires a new intent","INTENT_CHANGED");
 }
-function replay(record: StoredPanelOperationIntent): PanelOperateResponse {
+function replay(record: StoredPanelOperationIntent): PanelHumanOperationDispatchResponse {
   if (record.kind === "confirmation-expired") return {
     kind: "not-dispatched", intentId: record.intentId, code: PANEL_CONFIRMATION_EXPIRED,
     message: "This confirmation expired. Start a new operation.",
@@ -190,6 +200,75 @@ export async function inspectPanelOperationImpact(owner: AssistantOwner, credent
   return ownerImpact(handler.inspectImpact, operationHost(credentials), validateInvocation(handler, input));
 }
 
+function humanPreparation(intent: PanelHumanOperationIntent): PanelHumanOperationPreparation {
+  return panelHumanOperationPreparationSchema.parse({
+    intentId: intent.intentId, operationId: intent.operation.id, label: intent.operation.label, impact: intent.impact,
+  });
+}
+
+export async function projectPanelOperationIntent(owner: AssistantOwner, id: string, use?: PanelUseRef) {
+  const record = await store.get(owner, id);
+  if (use) {
+    if (record.kind !== "current" || !isPanelHumanOperationIntent(record.intent) || !isDeepStrictEqual(record.intent.use, use))
+      throw new HttpError(404, "Operation intent not found for this panel use", "NOT_FOUND");
+    if (record.intent.dispatched) throw new HttpError(409, "This operation was already dispatched", "INTENT_ALREADY_DISPATCHED");
+    return humanPreparation(record.intent);
+  }
+  const agent = agentRecord(record);
+  return agent.kind === "confirmation-expired" ? agent : agent.intent;
+}
+
+async function humanImpact(handler: PanelServerOperation, host: PanelOperationHost, invocation: CheckedInvocation) {
+  if (handler.inspectImpact) return ownerImpact(handler.inspectImpact, host, invocation);
+  const targets = "calls" in invocation
+    ? invocation.calls.map(call => call.target)
+    : invocation.target.kind === "object" ? [invocation.target] : [];
+  const objects = await Promise.all(targets.map(async target => ({
+    target: { objectType: target.objectType, primaryKey: target.primaryKey },
+    label: handler.kind === "action" ? await handler.targetLabel(host, target) : target.primaryKey,
+  })));
+  return { summary: "", objects, total: targets.length };
+}
+
+export async function prepareHumanPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials,
+  input: CreatePanelHumanOperationIntentRequest,
+): Promise<PanelHumanOperationPreparation> {
+  const current = await operationForUse(owner, credentials, input);
+  const prepared = validateInvocation(current.handler, input);
+  const impact = await humanImpact(current.handler, operationHost(credentials), prepared);
+  const intent: PanelHumanOperationIntent = {
+    intentId: randomUUID(),
+    source: { kind: "human" },
+    initiator: owner,
+    use: { applicationId: input.applicationId, useId: input.useId },
+    panelId: current.use.panelId,
+    projectionId: current.projection.id,
+    binding: current.projection.binding,
+    operation: current.operation,
+    ...invocationOf(input),
+    impact,
+    dispatched: false,
+    outcome: null,
+  };
+  await store.insert(owner, intent);
+  return humanPreparation(intent);
+}
+
+export async function dispatchHumanPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials, id: string): Promise<PanelHumanOperationDispatchResponse> {
+  const record = await store.get(owner, id);
+  if (record.kind !== "current" || !isPanelHumanOperationIntent(record.intent))
+    throw new HttpError(403, "This intent was not prepared for human dispatch", "FORBIDDEN");
+  const { intent } = record;
+  if (intent.dispatched) return replay(record);
+  const current = await operationForUse(owner, credentials, { ...intent.use, operationId: intent.operation.id });
+  requireFrozenOperation(intent, current);
+  const prepared = validateInvocation(current.handler, intent);
+  const result = await claimAndExecutePanel(owner, credentials, intent, current.handler, prepared);
+  return result
+    ? { kind: "dispatched", intentId: id, outcome: result.outcome }
+    : replay(await store.get(owner, id));
+}
+
 function namedTargets(labels: string[], total: number, locale?: string) {
   const names = new Intl.ListFormat(locale).format(labels.slice(0, 4));
   return `${names} (${new Intl.NumberFormat(locale).format(total)})`.trim();
@@ -215,7 +294,8 @@ function batchOutcome(value: unknown, calls: PanelBatchCalls): PanelOperationOut
 export async function operatePanel(owner: AssistantOwner, credentials: AssistantCredentials, runId: string, input: CreatePanelOperationIntentRequest, initiatorName: string): Promise<PanelOperateResponse> {
   const run = await runForOwner(owner,runId);
   const source = {session:{providerId:run.channel!.agent.providerId,sessionId:run.sessionId},runId};
-  let record = await store.find(owner,input.intentId);
+  const stored = await store.find(owner,input.intentId);
+  let record = stored && agentRecord(stored);
   if (record?.kind === "confirmation-expired") return replay(record);
   if (record && (record.kind === "historical" || record.intent.dispatched)) {
     matchingInvocation(record.intent, input, source.session, run.executionUserId ?? null);
@@ -229,14 +309,14 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
   const prepared = validateInvocation(current.handler, input);
   if (!record) {
     const settings = await store.settings(owner,root);
-    record = await store.insert(owner,{
+    record = agentRecord(await store.insert(owner,{
       intentId:input.intentId,source,rootSession:root,use:{applicationId:input.applicationId,useId:input.useId},
       panelId:current.use.panelId,projectionId:current.projection.id,binding:current.projection.binding,
       operation:current.operation,...invocationOf(input),initiator:owner,executionUserId:executor.executionUserId,
       confirmation:settings.confirmBeforeExecute?"required":"automatic",
       questionId:settings.confirmBeforeExecute && current.operation.kind !== "form.save" ? randomUUID() : null,
       answer:null,dispatched:false,outcome:null,
-    });
+    }));
   }
   if (record.kind === "confirmation-expired") return replay(record);
   const { intent } = record;
@@ -274,7 +354,7 @@ async function confirmationTarget(handler: Extract<PanelServerOperation, { kind:
 }
 
 export async function dispatchPanel(owner: AssistantOwner, credentials: AssistantCredentials, runId: string, id: string): Promise<PanelOperateResponse> {
-  const record = await store.get(owner,id);
+  const record = agentRecord(await store.get(owner,id));
   const run = await runForOwner(owner,runId);
   if (record.kind === "confirmation-expired") return replay(record);
   sourceMatches(record.intent,{providerId:run.channel!.agent.providerId,sessionId:run.sessionId});
