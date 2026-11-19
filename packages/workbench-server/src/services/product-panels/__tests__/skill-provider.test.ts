@@ -55,7 +55,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   extraProjections.clear();
   root = await mkdtemp(path.join(os.tmpdir(), "panel-skill-"));
-  const sdk = path.join(root, "dist/apps-sdk");
+  const sdk = path.join(root, "data/apps-sdk");
   await mkdir(path.join(sdk, version), { recursive: true });
   await writeFile(path.join(sdk, version, "components.json"), JSON.stringify({ version, components }));
   installContentLayout({ runtimeRoot: root, prompts: [], publicSkillsRoot: root, runtimeResources: [] });

@@ -1,19 +1,18 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, shallowRef, watch } from "vue";
+import { computed, onMounted, provide, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElEmpty } from "element-plus/es/components/empty/index";
-import { ElForm, ElFormItem } from "element-plus/es/components/form/index";
-import { ElInput } from "element-plus/es/components/input/index";
-import { ElOption, ElSelect } from "element-plus/es/components/select/index";
+import { ElForm } from "element-plus/es/components/form/index";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
-import { ElSwitch } from "element-plus/es/components/switch/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
-import type { PanelFormDescription, PanelFormField, PanelFormValues } from "@ontomato/contracts/panel-projection";
+import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import { slotState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
 import { adapterPart, PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
-import { changedPaths, valueAt, withValueAt } from "../panel/form-values";
+import { changedPaths, fieldAt, movedPath, valueAt, withValueAt } from "../panel/form-values";
+import { formControlsKey } from "./form-controls";
+import FormFieldControl from "./FormFieldControl.vue";
 
 /**
  * One object's form, exactly as its owner describes it: the owner's fields at their JSON Pointer paths, its values in
@@ -61,6 +60,8 @@ const opened = shallowRef<PanelFormDescription | null>(null);
 const values = shallowRef<PanelFormValues>({});
 const changed = shallowRef<ReadonlySet<string>>(new Set());
 const errors = shallowRef<Readonly<Record<string, string>>>({});
+/** Fields holding text that is not a value of the owner's (JSON that does not parse), by absolute path. */
+const invalid = shallowRef<Readonly<Record<string, string>>>({});
 const loading = ref(true);
 const saving = ref(false);
 const failure = shallowRef<Error | null>(null);
@@ -68,9 +69,14 @@ const failure = shallowRef<Error | null>(null);
 const refusal = shallowRef<Error | null>(null);
 
 const fields = computed(() => description.value?.fields ?? []);
-/** The fields this form draws itself; a reference is drawn by the projection that edits it, a hidden one by none. */
-const drawn = computed(() => fields.value.filter((field) => ["text", "markdown", "select", "switch"].includes(field.control.kind)));
-const dirty = computed(() => opened.value !== null && JSON.stringify(values.value) !== JSON.stringify(opened.value.values));
+/**
+ * The fields this form draws itself; a reference is drawn by the projection that edits it, an avatar by the page that
+ * shows it, a hidden one by none.
+ */
+const drawn = computed(() => fields.value.filter((field) => !["reference", "avatar", "hidden"].includes(field.control.kind)));
+/** Changed values, or text a reader typed that is no value yet (JSON that does not parse): either is unsaved. */
+const dirty = computed(() => opened.value !== null
+  && (JSON.stringify(values.value) !== JSON.stringify(opened.value.values) || Object.keys(invalid.value).length > 0));
 const canSettle = computed(() => dirty.value || panel.instance.draft.value?.slot === slot.slot);
 
 /** A draft this form took, for the target it addresses, shown once the form is on that target. */
@@ -85,6 +91,7 @@ function adopt(baseline: PanelFormDescription, shown: PanelFormDescription = bas
   changed.value = marked;
   refusal.value = null;
   errors.value = {};
+  invalid.value = {};
   failure.value = null;
   loading.value = false;
 }
@@ -159,7 +166,7 @@ watch([canSettle, saving], refreshWhenClean);
 /** One field changed: the form holds the value; a field the owner's form depends on has the owner asked again. */
 function set(path: string, value: RuntimeJsonValue) {
   values.value = withValueAt(values.value, path, value);
-  const field = fields.value.find((item) => item.path === path);
+  const field = fieldAt(fields.value, path);
   if (!field?.refreshOnChange) return;
   const asked = target.value!;
   const askedKey = targetKey(asked);
@@ -170,6 +177,37 @@ function set(path: string, value: RuntimeJsonValue) {
     values.value = answer.values;
   }, fail);
 }
+
+/**
+ * Rearranges the rows of an array field, `order[next] = previous`: the values, and the messages and marks inside each
+ * row, which follow the row to its new index (one inside a removed row goes with it).
+ */
+function reorder(path: string, order: readonly number[]) {
+  const rows = valueAt(values.value, path) as RuntimeJsonValue[];
+  const moved = (byPath: Readonly<Record<string, string>>) => Object.fromEntries(Object.entries(byPath).flatMap(([at, message]) => {
+    const next = movedPath(at, path, order);
+    return next === null ? [] : [[next, message]];
+  }));
+  errors.value = moved(errors.value);
+  invalid.value = moved(invalid.value);
+  changed.value = new Set([...changed.value].flatMap((at) => movedPath(at, path, order) ?? []));
+  set(path, order.map((index) => rows[index]!));
+}
+
+function markInvalid(path: string, message: string | null) {
+  const { [path]: _, ...rest } = invalid.value;
+  invalid.value = message === null ? rest : { ...rest, [path]: message };
+}
+
+provide(formControlsKey, {
+  values,
+  errors: computed(() => ({ ...errors.value, ...invalid.value })),
+  changed,
+  busy: saving,
+  set,
+  reorder,
+  invalid: markInvalid,
+});
 
 useProjectionForm({
   handle: { fields, values, errors, changed, busy: saving, set },
@@ -230,6 +268,7 @@ function showRefusal(reason: unknown) {
 async function write(): Promise<unknown> {
   const into = target.value;
   if (!into) throw new Error("This form edits one object, and none is selected");
+  if (Object.keys(invalid.value).length) throw new Error(t("platform.formFixInvalid"));
   saving.value = true;
   refusal.value = null;
   errors.value = {};
@@ -255,11 +294,6 @@ async function write(): Promise<unknown> {
 
 /** The fields a received draft changed, by the owner's labels, in the form's order — those other slots draw included. */
 const changedLabels = computed(() => fields.value.filter((field) => changed.value.has(field.path)).map((field) => field.label).join(", "));
-
-const text = (field: PanelFormField) => {
-  const value = valueAt(values.value, field.path);
-  return typeof value === "string" ? value : "";
-};
 </script>
 
 <template>
@@ -270,50 +304,7 @@ const text = (field: PanelFormField) => {
     <!-- The panel frame is sandboxed without allow-forms, so the browser drops a native form submission before any
          submit handler runs: the reader's save is the button's own click. -->
     <el-form v-else label-position="top">
-      <el-form-item
-        v-for="field in drawn"
-        :key="field.path"
-        :label="field.label"
-        :required="field.required"
-        :error="errors[field.path]"
-        :class="{ 'sdk-owner-form-field-changed': changed.has(field.path) }"
-        :data-field="field.path"
-      >
-        <el-input
-          v-if="field.control.kind === 'text' || field.control.kind === 'markdown'"
-          :model-value="text(field)"
-          :type="field.control.kind === 'markdown' || field.control.multiline ? 'textarea' : 'text'"
-          :autosize="field.control.kind === 'markdown' ? { minRows: 6 } : undefined"
-          :placeholder="field.control.kind === 'text' ? field.control.placeholder ?? undefined : undefined"
-          :maxlength="field.control.kind === 'text' ? field.control.maxLength : undefined"
-          :disabled="saving || field.readOnly"
-          @update:model-value="set(field.path, $event)"
-        ></el-input>
-        <el-select
-          v-else-if="field.control.kind === 'select'"
-          :model-value="text(field)"
-          :disabled="saving || field.readOnly"
-          class="sdk-owner-form-select"
-          @update:model-value="set(field.path, $event)"
-        >
-          <el-option
-            v-for="option in field.control.options"
-            :key="option.value"
-            :value="option.value"
-            :label="option.label"
-            :disabled="option.disabled"
-            :title="option.disabledReason ?? option.description ?? undefined"
-          ></el-option>
-        </el-select>
-        <el-switch
-          v-else
-          :model-value="valueAt(values, field.path) === true"
-          :disabled="saving || field.readOnly"
-          @update:model-value="set(field.path, $event === true)"
-        ></el-switch>
-        <p v-if="field.readOnly && field.readOnlyReason" class="sdk-owner-form-help">{{ field.readOnlyReason }}</p>
-        <p v-else-if="field.help" class="sdk-owner-form-help">{{ field.help }}</p>
-      </el-form-item>
+      <form-field-control v-for="field in drawn" :key="field.path" :field="field" :path="field.path"></form-field-control>
       <p v-if="changed.size" class="sdk-owner-form-changed" role="status">
         {{ t("platform.panelDraftChanged", { fields: changedLabels }) }}
       </p>
@@ -332,21 +323,9 @@ const text = (field: PanelFormField) => {
   justify-content: flex-end;
   margin-block-start: 12px;
 }
-.sdk-owner-form-select {
-  width: 100%;
-}
-.sdk-owner-form-field-changed :deep(.el-form-item__label) {
-  color: var(--el-color-primary);
-}
 .sdk-owner-form-changed {
   color: var(--el-color-primary);
   font-size: var(--text-xs);
-  margin: 4px 0 0;
-}
-.sdk-owner-form-help {
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-xs);
-  line-height: 1.5;
   margin: 4px 0 0;
 }
 .sdk-owner-form-refusal {
