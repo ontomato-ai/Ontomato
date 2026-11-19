@@ -1,7 +1,7 @@
 import { platformSchedulesPath } from "./platform-schedules";
-import { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER } from "./platform-object-types";
+import { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER } from "./platform-object-types";
 
-export { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER } from "./platform-object-types";
+export { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER } from "./platform-object-types";
 
 /*
  * The requests the SDK's platform clients send, by the binding that reaches each client (overall design 3.2, 5.1). A
@@ -77,6 +77,29 @@ const ontologyMetadataRead = {
   instructions: "POST an empty JSON object. Classes, their attributes and relationship rules come from this same response.",
 } as const satisfies PanelClientRead;
 
+const platformOntologyReads = [
+  {
+    method: "GET", service: "", path: /^\/platform-ontology\/schema$/, template: "/platform-ontology/schema",
+    instructions: "Read the four-layer platform ontology schema: declared platform object types (with layers and label keys) and relation kinds (from/to types, stored vs derived, owner).",
+  },
+  {
+    method: "GET", service: "", path: /^\/platform-ontology\/counts$/, template: "/platform-ontology/counts",
+    instructions: "Read per-type readable object counts for the current caller across the four layers. Each type reports status 'ok' with count, 'refused' when the owner denies access, or 'failed' on upstream error.",
+  },
+  {
+    method: "GET", service: "", path: /^\/platform-ontology\/start$/, template: "/platform-ontology/start",
+    instructions: "Read the default starting node for instance mode: the current caller's User identity ({ className: 'platform:User', primaryKey }, aligned via hostOwner in OSS) and display label.",
+  },
+  {
+    method: "POST", service: "", path: /^\/platform-ontology\/neighbors$/, template: "/platform-ontology/neighbors",
+    instructions: "POST JSON { node: { className, primaryKey }, relationKinds?: string[], layers?: ('fact'|'capability'|'governance'|'product')[] }. Queries owners for all declared relation kinds touching node.className and returns neighbor nodes (full identity, label, layer), edges (relationKind, direction, derived), and per-relation-kind status ('ok' | 'refused' | 'failed').",
+  },
+  {
+    method: "POST", service: "", path: /^\/platform-ontology\/objects$/, template: "/platform-ontology/objects",
+    instructions: "POST JSON { type: string, keyword?: string, page?: number, pageSize?: number }. Lists caller-readable objects of a single declared platform type so a reader can pick a starting node from type mode; returns status 'refused' if the owner denies access.",
+  },
+] as const satisfies readonly PanelClientRead[];
+
 const objectBinding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
 const readRequests: Readonly<Record<string, readonly PanelClientRead[]>> = {
   [objectBinding(SCHEDULED_TASK)]: scheduledTaskReads,
@@ -100,6 +123,8 @@ const readRequests: Readonly<Record<string, readonly PanelClientRead[]>> = {
   [objectBinding(OBJECT_TYPE)]: [ontologyMetadataRead],
   [objectBinding(ATTRIBUTE)]: [ontologyMetadataRead],
   [objectBinding(RELATIONSHIP)]: [ontologyMetadataRead],
+  [objectBinding(ONTOLOGY_TYPE)]: platformOntologyReads,
+  [objectBinding(ONTOLOGY_RELATION_KIND)]: platformOntologyReads,
 };
 
 export const panelClientReads = (binding: string): readonly PanelClientRead[] => readRequests[binding] ?? [];
