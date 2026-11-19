@@ -3,6 +3,12 @@
 // slot's input names decides where a selection goes. The graph canvas and the layouts bind nothing at all: what a graph
 // holds and what a choice on it means are the caller's.
 export { default as ObjectList } from "../base/ObjectList.vue";
+export type {
+  ObjectListColumn,
+  ObjectListFilter,
+  ObjectListFilterOption,
+  ObjectListRef,
+} from "../base/object-list-types";
 export { default as ObjectSummary } from "../base/ObjectSummary.vue";
 export { default as ObjectForm } from "../base/ObjectForm.vue";
 export { default as OperationButton } from "../base/OperationButton.vue";

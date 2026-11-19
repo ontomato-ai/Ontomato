@@ -186,10 +186,10 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectList",
     role: "control",
     meaning:
-      "Lists the read-only platform objects of the type the projection binds, in the owner's order and by the owner's label, and writes the object a reader picks into the panel state its slot's input names. It changes nothing itself.",
-    effects: "Reads the owner's list as the reader; it writes only the panel's own state.",
+      "Lists or tabulates platform objects of the bound type through its resource adapter's query or list port, providing search, faceted filters, safe highlight rendering, paging, single viewing selection, optional explicit multi-selection and clickable reference navigation without embedding business query rules.",
+    effects: "Reads the bound type's list or query as the reader; it writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*"],
-    outputs: ["chosen"],
+    outputs: ["selected", "checked", "navigate"],
   }),
   defineComponentMeta({
     componentId: "ObjectSummary",
@@ -197,9 +197,10 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectSummary",
     role: "presentation",
     meaning:
-      "Shows the few facts of one platform object a reader recognises it by. Which facts and in what order is the projection's display; what each holds is the object's own owner's.",
+      "Shows the few facts of one platform object a reader recognises it by, including owner-supplied highlight ranges, status tags and clickable object references. Which facts and in what order is the projection's display; what each holds is the object's own owner's.",
     effects: "Reads one object of the type the projection binds, as the reader.",
     bindsElement: ["PlatformObjectType:*"],
+    outputs: ["navigate"],
   }),
   defineComponentMeta({
     componentId: "ObjectForm",
