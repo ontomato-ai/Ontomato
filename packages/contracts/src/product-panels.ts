@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { defaultAgentSchema } from "./default-agent";
+import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
 import { ontologyParameterTypeSchema, panelManifestSchema } from "./panel-manifest";
 import { applicationMetadataSchema } from "./application-metadata";
@@ -64,6 +65,7 @@ export const productProjectionInputSchema = z.object({
   componentId: id,
   binding: ontologyElementRefSchema,
   graph: projectionGraphSchema.optional(),
+  conversationEntry: panelConversationEntrySchema.optional(),
   inputs: z.record(id, ontologyParameterTypeSchema),
   display: z.record(z.unknown()),
 }).strict();

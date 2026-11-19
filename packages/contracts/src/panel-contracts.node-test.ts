@@ -1,3 +1,5 @@
+import { appBridgeExpandPageComposerSchema, appBridgeRequestSchema, APP_BRIDGE_CHANNEL } from "./app-bridge";
+import { defaultAgentSchema } from "./default-agent";
 import { pageSkillSchema } from "./page-skills";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -152,4 +154,22 @@ test("application uses and page-skill defaults share the explicit agent target",
     defaults: [{ pageKey: use.pageKey, defaultAgent: preset }],
   };
   assert.deepEqual(pageSkillSchema.parse(mapping).defaults, mapping.defaults);
+});
+
+
+test("conversation entries declare the exact composer target and can prefill without a send command", () => {
+  const payload = { slot: "composer", target: { kind: "page-default" }, prefill: "Please review these entries" };
+  assert.ok(appBridgeRequestSchema.safeParse({
+    channel: APP_BRIDGE_CHANNEL, id: "expand", operation: "expand-page-composer", payload,
+  }).success);
+  assert.deepEqual(appBridgeExpandPageComposerSchema.parse(payload), payload);
+  assert.equal(appBridgeExpandPageComposerSchema.safeParse({ ...payload, send: true }).success, false);
+  assert.equal(defaultAgentSchema.safeParse(payload.target).success, false);
+
+  const conversationEntry = { target: { kind: "preset", agentKind: "knowledge-governance" }, prefill: payload.prefill };
+  const projection = productProjectionInputSchema.parse({
+    name: "Governance", description: "", visibility: "domain", componentId: "ConversationEntry",
+    binding: { kind: "PlatformObjectType", id: "platform:AgentDefinition" }, inputs: {}, display: {}, conversationEntry,
+  });
+  assert.deepEqual(projection.conversationEntry, conversationEntry);
 });
