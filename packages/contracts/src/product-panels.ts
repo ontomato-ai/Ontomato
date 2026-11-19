@@ -2,12 +2,22 @@ import { z } from "zod";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
 import { ontologyParameterTypeSchema, panelManifestSchema } from "./panel-manifest";
 import { applicationMetadataSchema } from "./application-metadata";
+import { appsSdkBuildSchema } from "./apps-sdk";
+import { formFieldErrorSchema } from "./form-fields";
 
 const id = z.string().min(1).max(200);
 const path = z.string().regex(/^\/(?!\/)/);
 
+/** The Java-owned canonical site route, before any instance state or draft query is added. */
+export const applicationPanelUsePathSchema = path.pipe(z.string().refine((value) => {
+  if (/[?#\\\s\p{Cc}]|%(?:2f|5c|(?![0-9a-f]{2}))/iu.test(value)) return false;
+  return new URL(value, "https://panel.invalid").pathname === value &&
+    (value === "/" || value.slice(1).split("/").every(Boolean));
+}, "Expected a canonical site path without query or fragment"));
+
 /**
- * PlatformObjectType refers to a read-only platform type, never a customer-editable ObjectType.
+ * PlatformObjectType binds a platform-declared type and its owner APIs, including management of its definitions.
+ * A MetricView, Action or ObjectType binding targets one specific ontology element.
  * A PlatformOperation ID is the SDK client's registered operation name (for example, schedules.runNow),
  * identical to the derived operation's handlerRef; there is no second operation namespace.
  */
@@ -35,11 +45,22 @@ const currentRecordFields = {
   editable: z.boolean(),
 };
 
+/** A graph uses its primary binding for nodes and this second binding for edges. */
+export const projectionGraphSchema = z.object({
+  edges: z.object({
+    binding: ontologyElementRefSchema.extend({ kind: z.literal("PlatformObjectType") }),
+    /** JSON Pointers inside the edge record's fields, each resolving to a node primary key. */
+    sourcePath: formFieldErrorSchema.shape.field,
+    targetPath: formFieldErrorSchema.shape.field,
+  }).strict(),
+}).strict();
+
 /** Component-specific display validation belongs to the registered SDK component. */
 export const productProjectionInputSchema = z.object({
   ...editableDefinitionFields,
   componentId: id,
   binding: ontologyElementRefSchema,
+  graph: projectionGraphSchema.optional(),
   inputs: z.record(id, ontologyParameterTypeSchema),
   display: z.record(z.unknown()),
 }).strict();
@@ -48,23 +69,35 @@ export type ProductProjectionInput = z.infer<typeof productProjectionInputSchema
 export const productProjectionSchema = productProjectionInputSchema.extend(currentRecordFields).strict();
 export type ProductProjection = z.infer<typeof productProjectionSchema>;
 
-const panelText = z.string().refine(value => new TextEncoder().encode(value).byteLength <= 256 * 1024,
+const panelContentByteLimit = 256 * 1024;
+const panelText = z.string().refine(value => new TextEncoder().encode(value).byteLength <= panelContentByteLimit,
   "Panel text must not exceed 256 KiB");
+const messageKey = z.string().min(1);
+/** Panel-authored text, by locale and literal flat key, using the platform's named interpolation syntax. */
+export const panelMessagesSchema = z.record(messageKey, z.record(messageKey, z.string()))
+  .refine(messages => new TextEncoder().encode(JSON.stringify(messages)).byteLength <= panelContentByteLimit,
+    "Panel messages must not exceed 256 KiB");
+export type PanelMessages = z.infer<typeof panelMessagesSchema>;
 
-/** Text owned by the current panel record, returned under the panel's use Grant. */
+/** The text of a current panel definition or a workspace candidate. */
 export const productPanelContentSchema = z.object({
   html: panelText,
   module: panelText,
   recipes: panelText.optional(),
+  messages: panelMessagesSchema.optional(),
 }).strict();
 export type ProductPanelContent = z.infer<typeof productPanelContentSchema>;
 
-export const productPanelInputSchema = z.object({
-  ...editableDefinitionFields,
+/** Everything needed to render a panel from either source, independent of its registration. */
+export const panelDefinitionContentSchema = z.object({
   content: productPanelContentSchema,
   /** Supplied by the registrant's module export; Node validates references without executing module text. */
   manifest: panelManifestSchema,
+  sdkVersion: appsSdkBuildSchema.shape.version.regex(/^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9.-]+)*$/),
 }).strict();
+export type PanelDefinitionContent = z.infer<typeof panelDefinitionContentSchema>;
+
+export const productPanelInputSchema = panelDefinitionContentSchema.extend(editableDefinitionFields);
 export type ProductPanelInput = z.infer<typeof productPanelInputSchema>;
 
 export const productPanelSchema = productPanelInputSchema.extend(currentRecordFields).strict();
@@ -75,7 +108,7 @@ export const applicationPanelUseSchema = z.object({
   id,
   pageKey: id,
   panelId: id,
-  path,
+  path: applicationPanelUsePathSchema,
   access: z.union([
     z.object({ permissionCode: id }).strict(),
     z.object({ kind: z.literal("domain-member") }).strict(),
@@ -140,8 +173,10 @@ export const registerApplicationPanelUsesRequestSchema = z.object({
 export type RegisterApplicationPanelUsesRequest = z.infer<typeof registerApplicationPanelUsesRequestSchema>;
 
 /** Current Java-owned entry and use relations; Java owns their access checks. */
-export const applicationPanelUsesResponseSchema = registerApplicationPanelUsesRequestSchema.omit({ declaration: true, entryAccess: true }).extend({
+export const applicationPanelUsesResponseSchema = z.object({
   applicationId: id,
+  entry: z.object({ path, renderer: id, home: path.optional() }).strict(),
+  panelUses: z.array(applicationPanelUseSchema),
 }).strict();
 export type ApplicationPanelUsesResponse = z.infer<typeof applicationPanelUsesResponseSchema>;
 

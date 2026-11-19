@@ -71,7 +71,7 @@ public class ApplicationCatalog {
     private static List<PanelSkillGroup> panelSkillGroups(String domainId, List<JSONObject> applications) {
         var groups = new LinkedHashMap<String, List<PanelSkills.LocatedUse>>();
         for (var app : applications) {
-            if (!panelManaged(app)) continue;
+            if (!panelManaged(app) || !hasAssignedPanelPaths(app)) continue;
             for (var use : app.getList("panelUses", ApplicationPanelUse.class)) {
                 groups.computeIfAbsent(use.locator(), key -> new ArrayList<>()).add(new PanelSkills.LocatedUse(app.getString("id"), use));
             }
@@ -96,7 +96,7 @@ public class ApplicationCatalog {
         return app.getString("domainId") == null || Objects.equals(app.getString("domainId"), user.getDomainId());
     }
     public List<JSONObject> visible(User user) {
-        return all().stream().filter(app -> canEnter(app, user)).map(app -> view(app, user)).toList();
+        return all().stream().filter(app -> canEnter(app, user) && hasAssignedPanelPaths(app)).map(app -> view(app, user)).toList();
     }
     public boolean canEnter(String id, User user) {
         return canEnter(require(id), user);
@@ -134,16 +134,25 @@ public class ApplicationCatalog {
         transactions.executeWithoutResult(tx -> {
             lockCatalog();
             for (var d : declarations) {
-                validateId(d.id()); validate(d.declaration()); validateEntry(d.entry(), d.declaration());
+                validateId(d.id());
+                var raw = d.declaration();
+                validate(raw);
+                var declaration = new Declaration(raw.names(), raw.descriptions(), raw.icon(), raw.groups(),
+                    raw.permissions(), raw.pageSkills(), ApplicationPanelUse.canonical(raw.panelUses()));
+                validateEntry(d.entry(), declaration);
                 if (!List.of("native","link").contains(d.kind()) || !List.of("top","apps","bottom").contains(d.rail())
                     || d.category() == null || !List.of("business","build","admin").contains(d.category()))
                     throw bad("Invalid built-in application");
                 var old = all().stream().filter(a -> d.id().equals(a.getString("id"))).findFirst();
                 if (old.isPresent() && (!service.equals(old.get().getString("ownerService")) || old.get().getString("domainId") != null))
                     throw denied();
-                validateMappings(d.id(), null, d.entry(), d.declaration().pageSkills(), d.declaration().panelUses());
-                save(d.id(), null, service, null, d.kind(), d.rail(), d.category(), d.sort(), d.entry(), d.entryAccess(), d.scheduleAdapter(), null, d.declaration());
-                access.declare(require(d.id()), d.declaration(), old.isEmpty());
+                var root = builtinPanelRoot(d.entry());
+                if ((root != null && ApplicationPanelUse.under(root, "/applications"))
+                    || declaration.panelUses().stream().anyMatch(use -> ApplicationPanelUse.under(use.path(), "/applications")))
+                    throw bad("Built-in applications cannot occupy the assigned application space");
+                validateMappings(d.id(), null, d.entry(), declaration.pageSkills(), declaration.panelUses());
+                save(d.id(), null, service, null, d.kind(), d.rail(), d.category(), d.sort(), d.entry(), d.entryAccess(), d.scheduleAdapter(), null, declaration);
+                access.declare(require(d.id()), declaration, old.isEmpty());
             }
         });
     }
@@ -219,7 +228,6 @@ public class ApplicationCatalog {
                 !groups.contains(permission.groupKey()) || !codes.add(permission.code())) throw bad("Invalid permission declaration");
         }
         PageSkills.validate(d.pageSkills());
-        ApplicationPanelUse.validate(d.panelUses());
         if (!d.pageSkills().isEmpty() && !d.panelUses().isEmpty()) throw bad("Panel applications cannot declare page skills");
     }
 
@@ -256,12 +264,41 @@ public class ApplicationCatalog {
     }
     private void validateMappings(String id, String domain, JSONObject entry, List<PageSkills.Mapping> pageSkills, List<ApplicationPanelUse> panelUses) {
         var apps = new ArrayList<>(all().stream().filter(app -> !id.equals(app.getString("id"))).toList());
-        apps.add(JSONObject.of("id", id, "domainId", domain, "entry", entry,
+        apps.add(JSONObject.of("id", id, "domainId", domain, "kind", domain == null ? "native" : "product", "entry", entry,
             "pageSkills", pageSkills, "panelUses", panelUses));
         var domains = new HashSet<String>(); domains.add(domain);
         for (var app : apps) domains.add(app.getString("domainId"));
-        for (var scope : domains) validateLocators(apps.stream().filter(app -> app.getString("domainId") == null || Objects.equals(scope, app.getString("domainId"))).toList());
+        for (var scope : domains) {
+            var visible = apps.stream().filter(app -> app.getString("domainId") == null || Objects.equals(scope, app.getString("domainId"))).toList();
+            validateLocators(visible);
+            validatePanelPaths(visible);
+        }
     }
+    private static String builtinPanelRoot(JSONObject entry) {
+        var path = entry.getString("path");
+        return path.startsWith("/") && !path.equals("/") ? ApplicationPanelUse.canonicalPath(path) : null;
+    }
+
+    private static void validatePanelPaths(List<JSONObject> applications) {
+        var roots = new HashMap<String, String>();
+        for (var app : applications) {
+            var kind = app.getString("kind");
+            if (app.getString("domainId") != null || !("native".equals(kind) || "link".equals(kind))) continue;
+            var root = builtinPanelRoot(app.getJSONObject("entry"));
+            if (root != null) roots.put(app.getString("id"), root);
+        }
+        var paths = new HashSet<String>();
+        for (var app : applications) {
+            if (!hasAssignedPanelPaths(app)) continue;
+            for (var use : app.getList("panelUses", ApplicationPanelUse.class)) {
+                if (!paths.add(use.path())) throw bad("Duplicate panel path: " + use.path());
+                for (var root : roots.entrySet())
+                    if (!root.getKey().equals(app.getString("id")) && ApplicationPanelUse.under(use.path(), root.getValue()))
+                        throw bad("Panel path belongs to " + root.getKey() + ": " + use.path());
+            }
+        }
+    }
+
     public JSONObject panelUses(String id, User user) {
         var app = require(id);
         if (!panelManaged(app)) throw bad("Application is not managed by panels");
@@ -269,51 +306,69 @@ public class ApplicationCatalog {
         return JSONObject.of("applicationId", id, "entry", app.getJSONObject("entry"), "panelUses", visiblePanelUses(app, user));
     }
     private List<ApplicationPanelUse> visiblePanelUses(JSONObject app, User user) {
+        if (!hasAssignedPanelPaths(app))
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Panel application " + app.getString("id") + " must be re-registered with complete canonical paths");
         return access.panelUses(app.getList("panelUses", ApplicationPanelUse.class), user).stream()
             .filter(use -> grants.allowed(use.panelId(), "use")).toList();
     }
     public JSONObject putPanelUses(String id, ApplicationController.PanelRegistration body, User user) {
         validateId(id);
         if (user.getDomainId() == null || !id.startsWith("app-")) throw bad("A panel application requires an app- ID and domain");
-        if (body.entry() == null || body.panelUses() == null || !"panels".equals(body.entry().renderer()) || body.entry().path() == null || !body.entry().path().matches("/(?!/).*"))
+        if (body.entry() == null || body.panelUses() == null || !"panels".equals(body.entry().renderer()))
             throw bad("A panels entry and local path are required");
         var existing = all().stream().filter(app -> id.equals(app.getString("id"))).findFirst();
+        if (existing.isPresent() && existing.get().getString("domainId") == null) throw denied();
         if (existing.isPresent() && !panelManaged(existing.get())) throw bad("Use registration cannot take over an existing application");
+        var root = assignedPanelRoot(id);
+        var entryPath = ApplicationPanelUse.canonicalPath(body.entry().path());
+        var uses = ApplicationPanelUse.canonical(body.panelUses());
+        if (!ApplicationPanelUse.under(entryPath, root) || uses.stream().anyMatch(use -> !ApplicationPanelUse.under(use.path(), root)))
+            throw bad("Panel entry and uses must be in the assigned application space: " + root);
         var supplied = body.declaration();
         if (existing.isEmpty() && (supplied == null || body.entryAccess() == null)) throw bad("New applications require metadata and entry access");
         if (supplied != null && (!supplied.pageSkills().isEmpty() || !supplied.panelUses().isEmpty())) throw bad("Supply panelUses only once");
-        ApplicationPanelUse.validate(body.panelUses());
         if (supplied != null) {
             validate(supplied);
             for (var permission : supplied.permissions()) if (!permission.code().startsWith("app:" + id + ":")) throw bad("Application permission prefix required");
         }
         if (body.entryAccess() != null && body.entryAccess().isEmpty()) throw bad("Entry access is required");
-        var ids = body.panelUses().stream().map(ApplicationPanelUse::panelId).distinct().toList();
+        var ids = uses.stream().map(ApplicationPanelUse::panelId).distinct().toList();
         for (var panelId : ids) if (!grants.allowed(panelId, "use")) throw denied();
         panels.requireCurrent(user.getDomainId(), ids);
         return transactions.execute(tx -> {
             lockCatalog();
             var current = all().stream().filter(app -> id.equals(app.getString("id"))).findFirst();
+            if (current.isPresent() && current.get().getString("domainId") == null) throw denied();
             if (current.isPresent() && !panelManaged(current.get())) throw bad("Use registration cannot take over an existing application");
             if (current.isPresent() && (!inDomain(current.get(), user) || !access.canMaintain(current.get(), user))) throw denied();
             var old = current.orElse(null);
             if (old == null && (supplied == null || body.entryAccess() == null)) throw bad("New applications require metadata and entry access");
-            var entry = JSONObject.of("path", body.entry().path(), "renderer", "panels");
-            validateMappings(id, user.getDomainId(), entry, List.of(), body.panelUses());
+            var entry = JSONObject.of("path", entryPath, "renderer", "panels");
+            validateMappings(id, user.getDomainId(), entry, List.of(), uses);
             var entryAccess = body.entryAccess() == null ? old.getList("entryAccess", String.class) : body.entryAccess();
             if (old != null && supplied == null) {
                 db.update("UPDATE sys_application SET entry=?::jsonb,entry_path=?,entry_access=?::jsonb,panel_uses=?::jsonb,page_skills='[]'::jsonb,updated_at=now() WHERE id=?",
-                    entry.toJSONString(), body.entry().path(), JSON.toJSONString(entryAccess), JSON.toJSONString(body.panelUses()), id);
+                    entry.toJSONString(), entryPath, JSON.toJSONString(entryAccess), JSON.toJSONString(uses), id);
             } else {
-                var declaration = new Declaration(supplied.names(), supplied.descriptions(), supplied.icon(), supplied.groups(), supplied.permissions(), List.of(), body.panelUses());
+                var declaration = new Declaration(supplied.names(), supplied.descriptions(), supplied.icon(), supplied.groups(), supplied.permissions(), List.of(), uses);
                 save(id, user.getDomainId(), "workbench", old == null ? user.getId() : old.getString("ownerUserId"),
                     "product", old == null ? "apps" : old.getString("rail"), old == null ? "business" : old.getString("category"),
                     old == null ? 100 : old.getIntValue("sort"), entry, entryAccess, null, null, declaration);
                 access.declare(require(id), declaration, old == null);
             }
-            return JSONObject.of("applicationId", id, "entry", entry, "panelUses", body.panelUses());
+            return JSONObject.of("applicationId", id, "entry", entry, "panelUses", uses);
         });
     }
+    private static String assignedPanelRoot(String id) { return "/applications/" + id; }
+
+    private static boolean hasAssignedPanelPaths(JSONObject app) {
+        if (!panelManaged(app) || app.getString("domainId") == null) return true;
+        var root = assignedPanelRoot(app.getString("id"));
+        return ApplicationPanelUse.under(app.getJSONObject("entry").getString("path"), root)
+            && app.getList("panelUses", ApplicationPanelUse.class).stream().allMatch(use -> ApplicationPanelUse.under(use.path(), root));
+    }
+
     private void lockCatalog() {
         db.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", Object.class, "application-catalog");
     }

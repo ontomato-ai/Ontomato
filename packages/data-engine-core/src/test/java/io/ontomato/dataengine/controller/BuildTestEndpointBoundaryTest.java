@@ -2,12 +2,15 @@ package io.ontomato.dataengine.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.config.BaseControllerAdvice;
 import io.ontomato.dataengine.service.*;
+import io.ontomato.dataengine.service.agent.*;
+import io.ontomato.dataengine.service.identity.AgentExecutionSettings;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -20,6 +23,31 @@ class BuildTestEndpointBoundaryTest {
   private static final String HEADER = BuildTestContextService.HEADER;
   private static final String CONTEXT = "{\"kind\":\"build-test\",\"contextId\":\"context-a\"}";
   private static final String UNBOUND_CONTEXT = "{\"kind\":\"build-test\",\"contextId\":null}";
+
+  @Test
+  void letsCandidateSettingsReadOptionsThroughTheExistingCallerServices() throws Exception {
+    var access = mock(OntologyAgentAccess.class);
+    when(access.authenticated(any())).thenReturn(new OntologyAgentAccess.Context(
+        new OntologyAgentStore.Owner("author", "author-domain"), null, null, null, "en", 0L, null));
+    var runtime = mock(AgentRuntimeClient.class);
+    when(runtime.json("author-domain", "model-options", "/v1/models/options", "GET", null, null))
+        .thenReturn(JSONObject.of("models", List.of()));
+    var settings = mock(AgentExecutionSettings.class);
+    when(settings.options(any(), eq(""), eq(1), eq(20), eq("saved-user")))
+        .thenReturn(new AgentExecutionSettings.Options(false, List.of(), null));
+    var mvc = MockMvcBuilders.standaloneSetup(new ModelSettingsController(runtime, access, mock(OntologyAgentModelSettings.class)),
+            new AgentExecutionController(mock(WorkbenchServiceAuthentication.class), settings))
+        .addInterceptors(new BuildTestAccessInterceptor())
+        .build();
+
+    mvc.perform(get("/model-options").header(HEADER, UNBOUND_CONTEXT))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data.models").isArray());
+    mvc.perform(get("/platform/agent-execution/options").param("selected", "saved-user").header(HEADER, CONTEXT))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.canSetExecutionUser").value(false));
+    mvc.perform(get("/model-settings").header(HEADER, CONTEXT)).andExpect(status().isUnprocessableEntity());
+    verify(access).authenticated(any());
+    verify(settings).options(any(), eq(""), eq(1), eq(20), eq("saved-user"));
+  }
 
   @Test
   void refusesAnUndeclaredBusinessEntryBeforeItsServiceRuns() throws Exception {

@@ -1,8 +1,6 @@
 # Ontomato apps SDK {{version}}
 
-An app is a set of static files, HTML and ES modules, that the platform hosts at `/apps/<app>/` and shows inside its
-shell in a same-origin frame. There is no build step: the page loads this SDK from its version directory through an
-import map, and Vue compiles the templates written in the HTML.
+Panel applications compose registered projections in a panel host. The panel supplies a layout, state and optional recipes. The platform supplies the sandboxed frame, the SDK and the identity for its reads. Existing hosted source applications use the static HTML and ES module setup in [Page skeleton](#page-skeleton).
 
 This directory is one exact version. It never changes, and it stays installed when the platform is upgraded, so an app
 keeps the behaviour of the version it names.
@@ -14,6 +12,7 @@ keeps the behaviour of the version it names.
 | `sdk.json` | The version, the product, the module files and the versions of the libraries |
 | `docs/index.md` | This guide |
 | `docs/reference.md` | The API of every `@ontomato/sdk` module, generated from their sources |
+| `components.json`, `docs/components.md` | Base components and their ports for this exact SDK |
 | `docs/element-plus.web-types.json` | Element Plus's own metadata for every component of the bundled version: attributes, events, slots |
 | `examples/basic.html` | Platform context, Element Plus, a chart in the platform's theme, a Markdown text, a CSV text in the code editor previewed as a table, and an HTML document in a sandboxed frame |
 | `examples/metric-action.html` | A published MetricView in a table and a chart, or its result as read-only JSON, the selected row as page context, then an Action through its form and a fresh read through the template ref of `<metric-view-data>` |
@@ -34,12 +33,52 @@ keeps the behaviour of the version it names.
 | `@ontomato/sdk/code` | `CodeEditor`, `<code-editor>`: code and structured text such as JSON, editable or read-only |
 | `@ontomato/sdk/preview` | `TablePreview`, `<table-preview>`: a table of text cells, with `parseCsv` for CSV and TSV; `HtmlPreview`, `<html-preview>`: an HTML document in a sandboxed frame |
 | `@ontomato/sdk/chat` | The platform's conversation components, `createAssistantClient` and `useShellLabels` |
+| `@ontomato/sdk/panel` | `definePanel`, `mountPanel` and `Projection` for the panel host |
 
 The chart, Markdown, form, code and preview components are the ones the platform's own pages use, so an app looks and
 behaves like them. Import each module where the page needs it; a page loads only the modules it imports.
 
 The versions of Vue, Element Plus and ECharts are in `sdk.json`. Use only these modules: the page must not load
 scripts, styles or fonts from the internet, because many installations have no internet access.
+
+## Compose a panel
+
+Choose the base components and ports in [the catalog](components.md). Each business slot references a registered
+projection that binds one of those components to a real ontology element. Put slot bindings, typed state and operations in
+the panel manifest. Mark state intended to travel in the address with `deepLink`. A slot's input maps declared projection
+inputs to the panel's state. Use existing platform resource clients and report any missing client to its owner.
+
+The author workspace contains these files at its root.
+
+| File | Content |
+| --- | --- |
+| `panel.html` | HTML fragment with a `div#app` and a visible `<projection slot="…"></projection>` for each business slot |
+| `panel.mjs` | ES module that calls `mountPanel` from `@ontomato/sdk/panel`. Use only the host's import map |
+| `panel.json` | The JSON object `{manifest, sdkVersion}`. Use the exact installed SDK directory name, including the full content hash for a development build |
+| `recipes.md` | Optional task guidance for the panel's derived skill |
+
+Use `definePanel` to validate the manifest at authoring time and serialize its result as the `manifest` in `panel.json`.
+See [the SDK reference](reference.md) for the declaration API. The host reads the JSON description and gives it to
+`mountPanel` before the module runs. The HTML can be the component's template.
+
+```html
+<div id="app">
+  <projection slot="details"></projection>
+</div>
+```
+
+```js
+import { mountPanel } from "@ontomato/sdk/panel";
+await mountPanel({});
+```
+
+Match `details` to a declared slot with a real projection ID. The SDK restores address state, reports page context,
+receives drafts for the declared forms and dispatches declared operations. Owner-provided form descriptions determine
+which values are editable. Keep business rules in the owner service.
+
+Open the workspace candidate as its author and test it before registering current definitions. The panel host supplies
+the workspace's test execution context. See [Build-test previews](#build-test-previews) for owner refusals and the
+app-builder technical guide for registration commands and application routes.
 
 ## Page skeleton
 
@@ -438,6 +477,6 @@ bundled version. Messages and dialogs come from the named exports: `ElMessage.su
 
 This SDK declares executionContext capability 1 in sdk.json. The same context.metricViews and context.actions clients use the preview frame's Java test context; published applications use their live target. No page code supplies a sandbox ID or manually adds an execution header. context.executionContext reports the host binding. Missing/expired/ended contexts fail with a preserved error code. Rebuild the preview frame to switch test contexts; never save a context ID or credential in application files. Upgrade old SDK references when the preview entry reports BUILD_TEST_SDK_UPGRADE_REQUIRED.
 
-Build-test preview supports the MetricView and Action data clients. Assistant chat is currently unavailable in a test-data preview; its SDK request fails as BUILD_TEST_UNSUPPORTED. It remains available in published applications.
+Build-test preview for hosted applications supports the MetricView and Action data clients. Assistant chat in that preview fails as BUILD_TEST_UNSUPPORTED. Candidate panels use the same test marker and the resources declared for their projections.
 
 A request that carries the test header but reaches an interface that does not support test data fails with BUILD_TEST_UNSUPPORTED (HTTP 422) before it reads live business data. Definition, metadata, parameter and identity requests remain available. Do not remove the header and retry against live data.

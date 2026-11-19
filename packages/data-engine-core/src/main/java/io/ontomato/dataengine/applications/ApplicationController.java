@@ -30,6 +30,7 @@ public class ApplicationController {
     public record Batch(List<ApplicationCatalog.Builtin> applications) {}
     public record Publication(ApplicationCatalog.Declaration declaration, String releaseId) {}
     public record Connected(String id, ApplicationCatalog.Declaration declaration, String upstream, String upstreamPrefix) {}
+    /** Domain applications submit their entry and uses inside their assigned application path. */
     public record PanelEntry(String path, String renderer) {}
     public record PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
                                     ApplicationCatalog.Declaration declaration, List<String> entryAccess) {}

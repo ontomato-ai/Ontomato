@@ -1,9 +1,10 @@
 import { z } from "zod";
+import { buildTestContextSchema } from "./build-tests";
 import { pageContextSchema } from "./page-context";
 import { panelObjectIdentitySchema, panelOpenRequestSchema, panelOperationSchema, panelStateValueSchema, type PanelObjectIdentity, type PanelStateValue } from "./panel-manifest";
-import { applicationRootPath } from "./platform-identity";
-import { productPanelSchema } from "./product-panels";
+import { applicationPanelUseSchema, panelDefinitionContentSchema, productPanelSchema } from "./product-panels";
 import { definitionRevisionSchema, type ProductDefinitionRevision, type ProductDefinitionTarget } from "./product-subscriptions";
+import { workspaceDiffSchema, workspaceIdSchema } from "./workspaces";
 
 /*
  * The port between a panel host and the frame a panel runs in (overall design 3.3, 3.4). A panel's content is text —
@@ -14,12 +15,36 @@ import { definitionRevisionSchema, type ProductDefinitionRevision, type ProductD
 
 export const PANEL_HOST_CHANNEL = "ontomato-panel-v1";
 
+/** The formal host source, after application use and current record have been read under the reader's permissions. */
+export const registeredPanelSourceSchema = z.object({
+  kind: z.literal("registered"),
+  applicationId: z.string().min(1),
+  use: applicationPanelUseSchema,
+  panel: productPanelSchema,
+}).strict();
+
+/** The author-only source. Only the host installs this workspace's execution context into the request bridge. */
+export const candidatePanelSourceSchema = z.object({
+  kind: z.literal("candidate"),
+  workspace: z.object({ id: workspaceIdSchema, ref: workspaceDiffSchema.shape.to }).strict(),
+  panel: panelDefinitionContentSchema,
+  previewContext: z.object({
+    kind: z.literal("build-test"),
+    /** Null is the existing build-test NONE state; it never denotes live execution. */
+    test: buildTestContextSchema.nullable(),
+  }).strict(),
+}).strict();
+
+export const panelHostSourceSchema = z.discriminatedUnion("kind", [registeredPanelSourceSchema, candidatePanelSourceSchema]);
+export type PanelHostSource = z.infer<typeof panelHostSourceSchema>;
+export type CandidatePanelSource = z.infer<typeof candidatePanelSourceSchema>;
+
 /** What the host writes into a panel frame's document before its module runs: the run's facts, as one JSON value. */
 export const panelHostMessageSchema = z
   .object({
     kind: z.literal("panel-host-message"),
-    /** The current panel record, read under this application use's Grant. */
-    panel: productPanelSchema,
+    /** Only the renderable portion of the host source crosses into the frame. */
+    panel: panelDefinitionContentSchema,
     /** This instance's registration key: the application use's pageKey. */
     pageKey: z.string().min(1).max(200),
     /** The instance's address, as the reader and a message see it. */
@@ -100,8 +125,8 @@ export function panelMessageOf<T>(schema: { safeParse(value: unknown): { success
 }
 
 /** The route owned by the application use. */
-export function panelUsePath(applicationId: string, path: string): string {
-  return `${applicationRootPath(applicationId)}${path === "/" ? "" : path}`;
+export function panelUsePath(path: string): string {
+  return path;
 }
 
 /**
