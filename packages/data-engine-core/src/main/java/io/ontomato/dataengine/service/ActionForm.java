@@ -200,7 +200,7 @@ public final class ActionForm {
         "/target",
         text(langService, lang, "PanelForm.action.target"),
         PanelFormFields.object(childFields, JSONObject.of("className", "", "keyParameter", "")),
-        PanelFormFields.schema("object"),
+        nullableObject(),
         false,
         readOnlyReason != null,
         readOnlyReason,
@@ -256,8 +256,8 @@ public final class ActionForm {
     properties.put("name", JSONObject.of("type", "string", "minLength", 1));
     properties.put("description", PanelFormFields.schema("string"));
     properties.put("status", JSONObject.of("type", "string", "enum", JSONArray.of(STATUSES.toArray())));
-    properties.put("target", PanelFormFields.schema("object"));
-    properties.put("submissionCriteria", PanelFormFields.schema("object"));
+    properties.put("target", nullableObject());
+    properties.put("submissionCriteria", nullableObject());
     properties.put("approvalMode", PanelFormFields.schema("string"));
     properties.put("function", PanelFormFields.schema("object"));
     properties.put("explanationRef", PanelFormFields.schema("string"));
@@ -270,6 +270,11 @@ public final class ActionForm {
                 "properties", properties,
                 "required", JSONArray.of("name", "function")),
         "draftOperation", existing ? UPDATE_OPERATION : CREATE_OPERATION);
+  }
+
+  /** A removable object writes null when removed, so its schema admits null beside the object. */
+  private static JSONObject nullableObject() {
+    return JSONObject.of("type", JSONArray.of("object", "null"));
   }
 
   private static String text(LangService langService, String lang, String key) {
