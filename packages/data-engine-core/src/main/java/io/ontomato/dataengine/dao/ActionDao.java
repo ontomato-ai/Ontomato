@@ -186,6 +186,15 @@ public class ActionDao extends BaseDao {
 		jdbcTemplate.update("DELETE FROM " + TABLE_NAME + " WHERE id = ?", id);
 	}
 
+	/**
+	 * Locks one Action of a domain until the caller's transaction ends. The Action's executable content is
+	 * written only through the Action's own save, which rewrites this row, so a check that compares a draft
+	 * with the stored Action under this lock compares against a version no concurrent save can replace.
+	 */
+	public void lock(String id, String domainId) {
+		jdbcTemplate.queryForList("SELECT id FROM " + TABLE_NAME + " WHERE id = ? AND domain_id = ? FOR UPDATE", String.class, id, domainId);
+	}
+
 	public int countDomainRows(String domainId) {
 		return jdbcTemplate.queryForObject(
 				"SELECT COUNT(*) FROM " + TABLE_NAME + " WHERE domain_id = ?", Integer.class, domainId);

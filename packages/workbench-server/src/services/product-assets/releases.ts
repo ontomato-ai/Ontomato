@@ -2,7 +2,8 @@ import {createHash} from 'node:crypto';
 import {z} from 'zod';
 import {productAssetSchema,productReferences,type ProductAsset} from '@ontomato/contracts/product-assets';
 import {assertLegacyProductWrite} from './panel-boundary';
-import {getProduct,lockProducts,type ProductOwner} from './store';
+import {getProduct,lockProducts} from './store';
+import type {ProductOwner} from '../product-governance/grants';
 import {validateProduct,validatePageBindings} from './validation';
 import {transaction} from '../../infrastructure/postgres-transaction';
 import {qualifiedTable as t,getPostgresPool} from '../../infrastructure/postgres';
@@ -11,14 +12,14 @@ import {backendPost,backendPut,buildBackendHeaders} from '../../utils/backend-cl
 import {config} from '../../config/application';
 import {HttpError} from '../../utils/errors';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
-import {readDefinition} from './definitions';
+import {readDefinition} from '../business-definitions/definitions';
 import {validateComposition} from './composition';
 import {randomUUID} from 'node:crypto';
 import {requireProductUse,withProductGrants} from './grants';
 import {platformObjectProvider} from './platform-objects';
 import {synchronizeProductOntology} from './ontology';
 import {definitionTriggerSchema} from '@ontomato/contracts/product-subscriptions';
-import {readDefinitionTrigger} from './triggers';
+import {readDefinitionTrigger} from '../business-definitions/triggers';
 import {nativeAgentAsset,nativeApplicationAsset} from './platform-assets';
 
 export const releaseSnapshotSchema=z.object({schemaVersion:z.literal(1),roots:z.array(z.string()),assets:z.array(productAssetSchema),triggers:z.array(definitionTriggerSchema).optional(),contracts:z.array(z.object({kind:z.enum(['metric','action','definition','object-type','trigger']),id:z.string(),hash:z.string().min(1),contractVersion:z.union([z.literal(1),z.literal(2)]).optional()}))}).superRefine((snapshot,context)=>{

@@ -89,7 +89,7 @@ export const agentChannelService = {
   },
   async settle(raw: unknown, domain: string, _supplied: AssistantCredentials = {}) {
     const { body, owner } = await this.execution(raw, domain);
-    if (body.execution.session.providerId === "workbench") await assistantService.settleTurn(body.execution.runId,owner);
+    if (body.execution.session.providerId === "workbench") await assistantService.settleTurn(body.execution.runId,owner,body.execution.session.sessionId);
     return { accepted: true };
   },
   async cancel(raw: unknown, domain: string, _supplied: AssistantCredentials = {}) {

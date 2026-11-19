@@ -53,6 +53,12 @@ public record PythonAuthority(String domainId, String userId, String purpose, St
         parentGrant, packageInput, identity, value, value.initiatorUserId()!=null?value.executionUserId():executionUserId, value.initiatorUserId()!=null?value.initiatorUserId():initiatorUserId);
   }
 
+  /** The build-test scope remains active while the author's writes go to the run's own sandbox. */
+  public PythonAuthority withAuthorSandbox(String sandbox) {
+    return new PythonAuthority(domainId, userId, purpose, sandbox, classNames, executionId,
+        parentGrant, packageInput, identity, target, executionUserId, initiatorUserId);
+  }
+
   public PythonAuthority forExecution(String id) {
     return new PythonAuthority(domainId, userId, purpose, sandboxId, classNames, id, parentGrant, packageInput, identity, target, executionUserId, initiatorUserId);
   }

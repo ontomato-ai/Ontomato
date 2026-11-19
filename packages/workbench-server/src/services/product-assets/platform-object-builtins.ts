@@ -8,7 +8,7 @@ import {platformTaskListSchema} from '@ontomato/contracts/platform-schedules';
 import {applicationCatalogSchema,applicationRootPath,isPanelApplication} from '@ontomato/contracts/platform-identity';
 import {defaultPersonalWorkspace,personalWorkspaceSchema} from '@ontomato/contracts/personal-workspace';
 import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres';
-import type {ProductOwner} from './store';
+import type {ProductOwner} from '../product-governance/grants';
 async function preferences(owner:ProductOwner){
   const selected=platformProjectionPreferences();if(selected)return selected;
   const result=await getPostgresPool().query(`SELECT overlay.preferences FROM ${t('product_home')} home JOIN ${t('product_user_overlays')} overlay ON overlay.domain_id=home.domain_id AND overlay.principal_id=home.user_id AND overlay.page_id=home.asset_id WHERE home.domain_id=$1 AND home.user_id=$2`,[owner.domainId,owner.userId]);

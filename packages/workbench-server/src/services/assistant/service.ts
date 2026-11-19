@@ -1,4 +1,6 @@
 import { closeGovernanceWindow } from "./governance";
+import { adoptAuthoringDefinition, authoringDraftKind, closeAuthoringRun } from "./authoring";
+import { executionSkillEnvironment } from "./execution-callback";
 import { agentHostSendResultSchema, type AgentHostSendRequest } from "@ontomato/contracts/agent-host";
 import { resolveLocale } from "../../i18n";
 import { assertAppBuilderAccess } from "../app-builder/access";
@@ -213,10 +215,15 @@ export const assistantService = {
     return {client:new ChannelProcessClient(owner,sessionId,taskId),process:task.process};
   },
   /** Parent completion records its own turn only; delegated executions retain their authorization. */
-  async settleTurn(id: string, owner: AssistantOwner) { await closeGovernanceWindow(id,owner); await assistantStore.settled(id); },
-  async cancelScope(id: string,owner: AssistantOwner,credentials: AssistantCredentials) {
+  async settleTurn(id: string, owner: AssistantOwner, sessionId: string) {
+    await closeAuthoringRun(id, sessionId, owner, "terminal");
     await closeGovernanceWindow(id,owner);
+    await assistantStore.settled(id);
+  },
+  async cancelScope(id: string,owner: AssistantOwner,credentials: AssistantCredentials) {
     const turn=await assistantStore.turn(id,owner);
+    await closeAuthoringRun(id, turn.session_id, owner, "cancelled");
+    await closeGovernanceWindow(id,owner);
     if (turn.retrieval_scope_id) await new OntologyRetrievalClient(owner,turn.retrieval_scope_id).closeScope(credentials);
     await assistantStore.settled(id);
   },
@@ -237,6 +244,13 @@ export const assistantService = {
       return prepare({ a,session,turn,message,input,inputId:body.inputId,ontologyContext:null,owner,credentials,executionUserId,executionCredentials,reader:visibilityReader(body) });
     });
     await assistantStore.admitted(id,message);
+    if (isAppBuilderKind(a.kind)) {
+      const authoring = executionSkillEnvironment(owner, credentials, id, true);
+      request.environment = {
+        values: { ...request.environment.values, ...authoring.values },
+        secrets: { ...request.environment.secrets, ...authoring.secrets },
+      };
+    }
     return { ...request,input,executionActor:executionActor(executionUserId,owner.domainId),authority: { classNames: a.class_names,executionKind: isAppBuilderKind(a.kind) ? "build-test" : "live" } };
   },
   async admitAgent(id: string, owner: AssistantOwner, credentials: AssistantCredentials, authority?: AgentRunContext["authority"]) {
@@ -301,7 +315,7 @@ export const assistantService = {
           }
         }
       }
-      if (!view || view.status === "stopped") await this.settleTurn(turn.id,owner);
+      if (!view || view.status === "stopped") await this.settleTurn(turn.id,owner,turn.session_id);
     } catch (e) {
       logger.warn("Assistant turn reconciliation failed", {
         runId: turn.id,
@@ -336,7 +350,10 @@ export const assistantService = {
       if (runtime && runtime.run.sessionId !== sessionId)
         throw new HttpError(404, "Run not found");
     }
-    if (existing) await closeGovernanceWindow(id,owner);
+    if (existing) {
+      await closeAuthoringRun(id, sessionId, owner, "cancelled");
+      await closeGovernanceWindow(id,owner);
+    }
     const c = new RuntimeClient(owner.domainId, undefined, owner.userId);
     await c.request(
       `/v1/sessions/${sessionId}/run-intents/${id}/cancel`,
@@ -436,7 +453,9 @@ export const assistantService = {
     owner: AssistantOwner,
   ): Promise<PageDraft<Record<string, unknown>>> {
     const { artifact } = await this.resolve(sessionId, runId, path, owner);
-    if (!artifact) throw new HttpError(404, "Page draft not found");
+    if (!artifact || artifact.runId !== runId || artifact.sessionId !== sessionId) {
+      throw new HttpError(404, "Page draft not found");
+    }
     const draft = pageDraftSchema.parse(
       JSON.parse((await this.content(sessionId, artifact.id, owner)).toString("utf-8")),
     );
@@ -446,6 +465,17 @@ export const assistantService = {
       [sessionId, runId, path],
     );
     return created.rowCount ? { ...draft, created: { id: created.rows[0].created_id } } : draft;
+  },
+  async acceptPageDraft(sessionId: string, runId: string, path: string, owner: AssistantOwner, credentials: AssistantCredentials) {
+    const draft = await this.pageDraft(sessionId, runId, path, owner);
+    const kind = authoringDraftKind(draft.operation);
+    if (!kind) return draft;
+    if (draft.form.id !== undefined && draft.form.id !== draft.target.id) {
+      throw new HttpError(400, "The definition does not match the draft target", "INVALID_REQUEST");
+    }
+    const definition = draft.target.id === undefined ? draft.form : { ...draft.form, id: draft.target.id };
+    const accepted = await adoptAuthoringDefinition(owner, credentials, { sessionId, runId, kind, definition });
+    return { ...draft, form: accepted.definition };
   },
   /**
    * Records the object a create draft's first save created, as the reader who may read the draft. Written once: the

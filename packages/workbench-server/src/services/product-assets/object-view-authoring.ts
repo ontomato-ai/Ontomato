@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import {createObjectView,objectViewDocumentSchema,type ObjectViewState} from '@ontomato/contracts/object-views';
-import {getProduct,listProducts,saveProduct,lockProducts,type ProductOwner} from './store';
+import {getProduct,listProducts,saveProduct,lockProducts} from './store';
+import type {ProductOwner} from '../product-governance/grants';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {backendPost,buildBackendHeaders} from '../../utils/backend-client';
 import {config} from '../../config/application';

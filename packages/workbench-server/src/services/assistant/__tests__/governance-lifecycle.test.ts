@@ -2,9 +2,10 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { HttpError } from "../../../utils/errors";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
-const mocks=vi.hoisted(()=>({query:vi.fn(),agent:vi.fn(),session:vi.fn(),turn:vi.fn(),turns:vi.fn(),create:vi.fn(),reserve:vi.fn(),admitted:vi.fn(),settled:vi.fn(),close:vi.fn(),callback:vi.fn(),skills:vi.fn(),request:vi.fn(),run:vi.fn(),open:vi.fn(),links:vi.fn(),scope:vi.fn(),scopeClose:vi.fn(),status:vi.fn(),overview:vi.fn(),record:vi.fn(),recordWindow:vi.fn()}));
+const mocks=vi.hoisted(()=>({query:vi.fn(),agent:vi.fn(),session:vi.fn(),turn:vi.fn(),turns:vi.fn(),create:vi.fn(),reserve:vi.fn(),admitted:vi.fn(),settled:vi.fn(),close:vi.fn(),closeAuthoring:vi.fn(),callback:vi.fn(),skills:vi.fn(),request:vi.fn(),run:vi.fn(),open:vi.fn(),links:vi.fn(),scope:vi.fn(),scopeClose:vi.fn(),status:vi.fn(),overview:vi.fn(),record:vi.fn(),recordWindow:vi.fn()}));
 vi.mock("../store",()=>({assistantStore:{agent:mocks.agent,session:mocks.session,turn:mocks.turn,turns:mocks.turns,create:mocks.create,reserve:mocks.reserve,admitted:mocks.admitted,settled:mocks.settled,recordRetrievalScope:mocks.scope,governanceWindow:mocks.record,recordGovernanceWindow:mocks.recordWindow,isBuilderRun:async()=>false}}));
 vi.mock("../governance",()=>({closeGovernanceWindow:mocks.close}));
+vi.mock("../authoring",()=>({closeAuthoringRun:mocks.closeAuthoring}));
 vi.mock("../../../core/skills/registry/manager",()=>({skillRegistryManager:{}}));
 vi.mock("../../skills/skill-manager",()=>({skillManager:{},skillReference:vi.fn()}));
 vi.mock("../skills",async original=>({...await original<typeof import("../skills")>(),prepareAssistantSkills:mocks.skills}));
@@ -72,10 +73,14 @@ it("cancellation follows the round's saved scope after definition skills change"
   await assistantService.cancelScope(runId,owner,{token:"user"});expect(mocks.scopeClose).not.toHaveBeenCalled();
 });
 it("closes the Java gate before asking the runtime to stop",async()=>{
-  let closed=false;mocks.close.mockImplementation(async()=>{closed=true;});mocks.request.mockImplementation(async()=>{expect(closed).toBe(true);});
+  let authoringClosed=false,governanceClosed=false;
+  mocks.closeAuthoring.mockImplementation(async()=>{authoringClosed=true;});
+  mocks.close.mockImplementation(async()=>{governanceClosed=true;});
+  mocks.request.mockImplementation(async()=>{expect(authoringClosed && governanceClosed).toBe(true);});
   mocks.run.mockRejectedValue(new HttpError(404,"not admitted"));
   await expect(assistantService.cancel(sessionId,runId,owner,{token:"user"})).resolves.toEqual({run:null});
   expect(mocks.close).toHaveBeenCalledWith(runId,owner);
+  expect(mocks.closeAuthoring).toHaveBeenCalledWith(runId,sessionId,owner,"cancelled");
 });
 it("provider and scheduled results share the run's saved governance report",async()=>{
   mocks.record.mockImplementation(async id=>id===runId?agentId:null);mocks.run.mockResolvedValue({run:{id:runId,sessionId,status:"running",stopReason:null},messages:[],artifacts:[]});

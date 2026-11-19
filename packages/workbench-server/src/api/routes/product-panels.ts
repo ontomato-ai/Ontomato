@@ -8,13 +8,26 @@ import { productCurrentIdParamsSchema, registerProductPanelRequestSchema, regist
 import { context, wrap } from "../utils/agent-host";
 import { platformService } from "../middleware/platform-service";
 import { readCurrentPanel, readCurrentProjection, requireCurrentPanels, saveCurrentPanel, saveCurrentProjection } from "../../services/product-panels/current";
-
-import { requirePanelDefinitions } from "../../services/product-assets/subscriptions";
+import { productDefinitionStreamRequestSchema, type ProductDefinitionStreamFrame } from "@ontomato/contracts/product-subscriptions";
+import { authorizeDefinitionStream, requirePanelDefinitions } from "../../services/product-panels/definition-stream";
 
 export const productPanelsRouter = Router();
 productPanelsRouter.get("/:id/snapshot", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
   res.json(await requirePanelDefinitions(c.owner, c.credentials, id));
+}));
+productPanelsRouter.post("/definition-stream", wrap(async (req, res) => {
+  const {owner,credentials}=context(req);
+  const {targets}=productDefinitionStreamRequestSchema.parse(req.body);
+  const {attach,snapshot}=await authorizeDefinitionStream(owner,credentials,targets);
+  if(res.destroyed)return;
+  const send=(frame:ProductDefinitionStreamFrame)=>res.write(`data: ${JSON.stringify(frame)}\n\n`);
+  const stop=attach(send);
+  res.once('close',stop);
+  res.set({'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','X-Accel-Buffering':'no'});
+  res.flushHeaders();
+  const definitions=await snapshot();
+  if(!res.destroyed)send({kind:'snapshot',definitions});
 }));
 productPanelsRouter.get("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);

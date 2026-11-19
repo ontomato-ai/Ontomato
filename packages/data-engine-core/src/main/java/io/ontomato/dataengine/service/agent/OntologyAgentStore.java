@@ -64,8 +64,11 @@ CREATE TABLE IF NOT EXISTS ontology_generations (
   run_id uuid PRIMARY KEY REFERENCES ontology_agent_runs(id), business_id text NOT NULL,
   kind text NOT NULL, owner_node text NOT NULL, sandbox_id text, source text, test_data jsonb, settled boolean NOT NULL DEFAULT false);
 CREATE TABLE IF NOT EXISTS ontology_generation_tests (
-  run_id uuid NOT NULL REFERENCES ontology_agent_runs(id), digest text NOT NULL,
+  run_id uuid NOT NULL, digest text NOT NULL,
   execution_id uuid PRIMARY KEY, result jsonb, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS ontology_platform_authoring_runs (
+  run_id uuid PRIMARY KEY, session_id uuid NOT NULL, user_id text NOT NULL, domain_id text NOT NULL,
+  closed text, sandbox_id text, sandbox_context text, test_data jsonb);
 CREATE TABLE IF NOT EXISTS ontology_retrievals (
   id uuid PRIMARY KEY REFERENCES ontology_agent_sessions(id), input jsonb NOT NULL,
   current_run_id uuid NOT NULL, decisions jsonb NOT NULL DEFAULT '[]', revision integer NOT NULL DEFAULT 0);
@@ -80,6 +83,9 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
     // A database created before this column existed is never altered by CREATE TABLE IF NOT EXISTS, and
     // sites upgrade by replacing the image. Without this, every retrieval start fails on insert.
     jdbc.execute("ALTER TABLE ontology_agent_runs ADD COLUMN IF NOT EXISTS language text");
+    jdbc.execute("ALTER TABLE ontology_generation_tests DROP CONSTRAINT IF EXISTS ontology_generation_tests_run_id_fkey");
+    jdbc.execute("ALTER TABLE ontology_generation_tests ADD COLUMN IF NOT EXISTS kind text, ADD COLUMN IF NOT EXISTS evidence_scope text, ADD COLUMN IF NOT EXISTS target_context text");
+    jdbc.execute("ALTER TABLE ontology_generations ADD COLUMN IF NOT EXISTS explanation jsonb");
     jdbc.execute("CREATE INDEX IF NOT EXISTS ontology_agent_runs_quality ON ontology_agent_runs(qc_id)");
     jdbc.execute("CREATE INDEX IF NOT EXISTS ontology_binding_runs_quality ON ontology_binding_runs(qc_id)");
     jdbc.execute("CREATE INDEX IF NOT EXISTS ontology_agent_runs_caller ON ontology_agent_runs(caller_id) WHERE input_hash<>''");

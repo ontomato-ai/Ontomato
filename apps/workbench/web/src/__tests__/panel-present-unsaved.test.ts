@@ -41,9 +41,16 @@ describe("an agent's presentation over a panel's unsaved form", () => {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ ...platformRoutes.chat, component: { render: () => null } }] });
     await router.push({ path: platformRoutes.chat.path, query: { sessionId: SESSION, page: scenario.address } });
     await router.isReady();
+    const onDisplayDirty = vi.fn();
     const app = createApp({ render: () => h(BusinessWorkbench, { defaultLogo: "", defaultBrandName: "Ontomato" }) })
       .use(router).use(workbenchI18n()).use(ElementPlus).use(createPinia())
-      .provide(pilotPageKey, pilotPageResolver)
+      .provide(pilotPageKey, (navigate) => {
+        const resolve = pilotPageResolver(navigate);
+        return (address) => {
+          const page = resolve(address);
+          return page && { ...page, props: { ...page.props, onDisplayDirty } };
+        };
+      })
       .provide(platformPageAccessKey, () => true);
     const root = document.createElement("div");
     document.body.append(root);
@@ -54,7 +61,8 @@ describe("an agent's presentation over a panel's unsaved form", () => {
     writeFrameDocument(hostMessageOf(element.getAttribute("srcdoc")!));
     inside(element.contentWindow!);
     const { context } = await mountPanel(panelOf("form"));
-    await vi.waitFor(() => expect(context.instance.dirty()).toBe(true), { timeout: 5000 });
+    // Wait for the page to report dirty to the display, after the frame message crosses the bridge.
+    await vi.waitFor(() => expect(onDisplayDirty).toHaveBeenLastCalledWith(true), { timeout: 5000 });
 
     // The page view's stream is ready, and a run of this conversation asks.
     await host.stream.current().frame({ type: "ready", connectionId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd1" });

@@ -2,7 +2,7 @@ import {qualifiedTable as t} from '../../infrastructure/postgres';
 import {transaction} from '../../infrastructure/postgres-transaction';
 import {lockSessionClaim} from '../agent-host/session-claim';
 import {HttpError} from '../../utils/errors';
-import type {ProductOwner} from './store';
+import type {ProductOwner} from '../product-governance/grants';
 
 export async function bindProfileSession(owner:ProductOwner,sessionId:string,profileId:string,releaseId:string,contextObjects:{className:string;primaryKey:string}[]=[],pageState:Record<string,unknown>={}){
   return transaction(async client=>{

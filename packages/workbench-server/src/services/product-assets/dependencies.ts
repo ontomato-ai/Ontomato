@@ -5,7 +5,7 @@ import { getOwnedDashboard } from '../dashboard/access';
 import { backendPost, buildBackendHeaders } from '../../utils/backend-client';
 import { config } from '../../config/application';
 import type { AssistantCredentials } from '../../platform/agent-runtime/runtime';
-import type { ProductOwner } from './store';
+import type { ProductOwner } from '../product-governance/grants';
 import {registeredProductGraph} from './ontology';
 
 /** Resolve service-owned definitions under the caller's identity, never a cached author identity. */

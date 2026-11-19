@@ -1,7 +1,7 @@
 import {beforeEach,expect,it,vi} from 'vitest';
 const mocks=vi.hoisted(()=>({query:vi.fn(),post:vi.fn()}));
 const grants=vi.hoisted(()=>({read:vi.fn()}));
-vi.mock('../grants',()=>({readProductGrantRecords:grants.read}));
+vi.mock('../../product-governance/grants',()=>({readProductGrantRecords:grants.read}));
 vi.mock('../../../infrastructure/postgres',()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
 vi.mock('../../../utils/backend-client',()=>({backendPost:mocks.post,backendGet:vi.fn(),buildBackendHeaders:()=>({tk:'caller'})}));
 vi.mock('../../../config/environment',()=>({environment:{agentRuntime:()=>({queryServiceToken:'service-only'})}}));

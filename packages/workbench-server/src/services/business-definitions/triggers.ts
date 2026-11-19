@@ -3,7 +3,7 @@ import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres
 import {readDefinition} from './definitions';
 import {assertAppBuilderAccess} from '../app-builder/access';
 import {HttpError} from '../../utils/errors';
-import type {ProductOwner} from './store';
+import type {ProductOwner} from '../product-governance/grants';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {backendPost,buildBackendHeaders} from '../../utils/backend-client';
 import {config} from '../../config/application';
