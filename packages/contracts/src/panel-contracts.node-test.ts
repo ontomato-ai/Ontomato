@@ -8,14 +8,17 @@ import {
   panelOperationDescriptorResponseSchema, panelOperationRefSchema,
   panelWriteOperationSnapshotSchema, readPanelOperationRequestSchema, readStoredPanelOperationIntent,
 } from "./panel-agent";
-import { panelReadOperationDescriptorSchema, panelReadOperationResultSchema } from "./panel-operations";
-import { appBridgeExpandPageComposerSchema, appBridgeRequestSchema, APP_BRIDGE_CHANNEL } from "./app-bridge";
+import { panelOperationImpactSchema, panelReadOperationDescriptorSchema, panelReadOperationResultSchema } from "./panel-operations";
+import {
+  appBridgeConfirmPanelOperationResultSchema, appBridgeConfirmPanelOperationSchema,
+  appBridgeExpandPageComposerSchema, appBridgeRequestSchema, APP_BRIDGE_CHANNEL,
+} from "./app-bridge";
 import { defaultAgentSchema } from "./default-agent";
 import { pageSkillSchema } from "./page-skills";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  AGENT_DEFINITION, ATTRIBUTE, DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW,
+  AGENT_DEFINITION, ATTRIBUTE, DELETE_AGENT, DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW,
   OBJECT_TYPE, RELATIONSHIP, SET_METRIC_VIEW_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, USER,
   bindingKey, chartProjectionLookupRead, chartProjectionSourcePath, chartProjectionSourceSends, clientSends, panelClientReads,
 } from "./panel-client-requests";
@@ -70,6 +73,47 @@ test("form saves address the draft target even when the slot receives a selected
     },
   });
   assert.deepEqual(save?.target, { source: "draft", slot: "definition" });
+});
+
+test("read operation inputs can take parameter values and a binding from this panel instance", () => {
+  const bindingId = { state: "bindingId" };
+  const parameters = { formField: { slot: "execution", path: "/parameters" } };
+  const manifest = {
+    state: { bindingId: { kind: "scalar", type: "string" } },
+    slots: {
+      execution: { projectionId: "runtime-form" },
+      trial: { projectionId: "trial", readOperationInputs: { testExecute: { parameters, bindingId } } },
+    },
+    operations: [],
+  };
+  assert.deepEqual(panelManifestSchema.parse(manifest).slots.trial?.readOperationInputs?.testExecute, { parameters, bindingId });
+  assert.equal(panelManifestSchema.safeParse({ ...manifest, state: {} }).success, false);
+  const named = { parameters: { fields: { amount: { formField: { slot: "execution", path: "/amount" } }, binding: bindingId } } };
+  const trial = { ...manifest.slots.trial, readOperationInputs: { testExecute: named } };
+  assert.deepEqual(panelManifestSchema.parse({ ...manifest, slots: { ...manifest.slots, trial } }).slots.trial?.readOperationInputs?.testExecute, named);
+  assert.equal(panelManifestSchema.safeParse({ ...manifest, slots: { trial } }).success, false);
+});
+
+test("declared delete operations can read a named impact with the total count", () => {
+  const operation = bindingKey({ kind: "PlatformOperation", id: DELETE_AGENT });
+  const path = "/panel-operations/inspect-impact";
+  assert.equal(clientSends([operation], "POST", "", path), true);
+  assert.equal(clientSends([binding(AGENT_DEFINITION)], "POST", "", path), false);
+  assert.equal(clientSends([operation], "GET", "", path), false);
+  const objects = [{ target: { objectType: AGENT_DEFINITION, primaryKey: "a" }, label: "Assistant A" }];
+  assert.deepEqual(panelOperationImpactSchema.parse({ summary: "Agent removal", objects, total: 4 }).total, 4);
+  assert.equal(panelOperationImpactSchema.safeParse({ summary: "Agent removal", objects }).success, false);
+});
+
+test("an operation asks the host for a user decision using the owner impact", () => {
+  const objects = [{ target: { objectType: AGENT_DEFINITION, primaryKey: "a" }, label: "Assistant A" }];
+  const payload = { operationId: "remove.delete", label: "Delete", impact: { summary: "Agent removal", objects, total: 1 } };
+  const request = { channel: APP_BRIDGE_CHANNEL, id: "confirmation", operation: "confirm-panel-operation", payload };
+  assert.deepEqual(appBridgeRequestSchema.parse(request), request);
+  assert.deepEqual(appBridgeConfirmPanelOperationSchema.parse(payload), payload);
+  assert.equal(appBridgeConfirmPanelOperationSchema.safeParse({ ...payload, call: {} }).success, false);
+  assert.deepEqual(appBridgeConfirmPanelOperationResultSchema.parse({ decision: "cancel" }), { decision: "cancel" });
+  assert.equal(appBridgeConfirmPanelOperationResultSchema.safeParse({ decision: "dispatch" }).success, false);
 });
 
 test("form save preserves nested JSON and the owner's revision when present", () => {
