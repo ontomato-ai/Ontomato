@@ -1,9 +1,13 @@
 import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
 import { applicationPanelUsesResponseSchema, productPanelSchema, type ProductPanel } from "@ontomato/contracts/product-panels";
 import { appsSdkCurrentSchema } from "@ontomato/contracts/apps-sdk";
-import { panelSubscriptionFrameSchema, type PanelSubscriptionEvent, type PanelSubscriptionSnapshot } from "@ontomato/contracts/product-subscriptions";
+import {
+  panelDefinitionSnapshotSchema, productDefinitionStreamFrameSchema,
+  type ProductDefinitionRevision, type ProductDefinitionTarget,
+} from "@ontomato/contracts/product-subscriptions";
+import type { PanelAuthorDefinitions, PanelDefinitionMode } from "@ontomato/contracts/panel-host";
+import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
-import { ElMessage } from "element-plus";
 import { registerPanelFrame } from "./app-host";
 import type { PanelHostPort } from "@ontomato/platform-shell";
 
@@ -14,7 +18,7 @@ import type { PanelHostPort } from "@ontomato/platform-shell";
  *   permissions stay there.
  * - A panel's current record is Node's (`GET /api/product-panels/:id`), read outside the frame under the reader's own
  *   credential; a projection's record is read inside the frame by the projection itself.
- * - Node's product subscription streams definition and object identities. The reader reads current data from its owner.
+ * - Viewers reconcile revisions using short requests. Author hosts share the document's definition stream.
  */
 
 /**
@@ -28,7 +32,8 @@ export const panelHostPaths = {
   applicationPanelUses: (applicationId: string) =>
     `/api/data-query/platform/applications/${encodeURIComponent(applicationId)}/panel-uses`,
   panel: (panelId: string) => `/api/product-panels/${encodeURIComponent(panelId)}`,
-  subscriptions: "/api/product-assets/subscriptions",
+  snapshot: (panelId: string) => `/api/product-panels/${encodeURIComponent(panelId)}/snapshot`,
+  definitionStream: "/api/product-assets/definition-stream",
 };
 
 async function json(path: string, init: RequestInit = {}) {
@@ -39,7 +44,7 @@ async function json(path: string, init: RequestInit = {}) {
 }
 
 /** The platform's panel host, for the application whose page is showing a panel. */
-export function platformPanelHost(applicationId: string): PanelHostPort {
+export function platformPanelHost(applicationId: string, mode: PanelDefinitionMode = { kind: "view" }): PanelHostPort {
   return {
     applicationId: () => applicationId,
     async uses(id) {
@@ -56,7 +61,13 @@ export function platformPanelHost(applicationId: string): PanelHostPort {
     // its `connect`, and what keeps a frame of another application from being mistaken for this one. What it may ask for
     // is what the panel's record declares, for this use relation's page.
     frame: (frame, use, panel) => registerPanelFrame(frame, applicationId, { pageKey: use.pageKey, manifest: panel.manifest }),
-    subscribe: subscribePanelDefinition,
+    async snapshot(id) {
+      return panelDefinitionSnapshotSchema.parse(await json(panelHostPaths.snapshot(id)));
+    },
+    mode,
+    onVisible(listener) {
+      return onDocumentVisibility(visible => { if (visible) listener(); });
+    },
   };
 }
 
@@ -68,55 +79,118 @@ export async function panelUsesOf(applicationId: string) {
 
 class PanelStreamContractError extends Error {}
 
-/** Follow the panel stream for as long as the reader keeps the instance open. */
-function subscribePanelDefinition(
-  panelId: string,
-  listener: (event: PanelSubscriptionEvent) => void,
-  recover: (snapshot: PanelSubscriptionSnapshot) => Promise<void>,
-): () => void {
+const targetKey = (target: ProductDefinitionTarget) => `${target.kind}:${target.id}`;
+type AuthorObserver = {
+  targets: Set<string>;
+  onRevisions: Parameters<PanelAuthorDefinitions["observe"]>[1];
+  onError: Parameters<PanelAuthorDefinitions["observe"]>[2];
+};
+
+let documentAuthors: PanelAuthorDefinitions | undefined;
+
+/** The actual editor or preview opts in and passes this document's port to its panels. */
+export function panelAuthorDefinitions(): PanelAuthorDefinitions {
+  return documentAuthors ??= createAuthorDefinitions();
+}
+
+function createAuthorDefinitions(): PanelAuthorDefinitions {
+  const observers = new Map<AuthorObserver, readonly ProductDefinitionTarget[]>();
+  const observed = new Map<string, ProductDefinitionRevision>();
+  let collection = "";
+  let stop: (() => void) | undefined;
+
+  function sync() {
+    const targets = new Map<string, ProductDefinitionTarget>();
+    for (const requested of observers.values())
+      for (const target of requested) targets.set(targetKey(target), target);
+    for (const key of observed.keys()) if (!targets.has(key)) observed.delete(key);
+    const next = documentVisible() && targets.size ? JSON.stringify([...targets.keys()].sort()) : "";
+    if (next === collection) return;
+    stop?.();
+    stop = undefined;
+    collection = next;
+    if (!next) return;
+    stop = openDefinitionStream([...targets.values()], revisions => {
+      const changed = revisions.filter(revision => {
+        const key = targetKey(revision);
+        if ((observed.get(key)?.revision ?? 0) >= revision.revision) return false;
+        observed.set(key, revision);
+        return true;
+      });
+      for (const observer of observers.keys()) {
+        const relevant = changed.filter(revision => observer.targets.has(targetKey(revision)));
+        if (relevant.length) observer.onRevisions(relevant);
+      }
+    }, error => {
+      for (const observer of observers.keys()) observer.onError(error);
+    });
+  }
+
+  onDocumentVisibility(sync);
+  return {
+    observe(requested, onRevisions, onError) {
+      const observer = { targets: new Set(requested.map(targetKey)), onRevisions, onError };
+      function replace(targets: readonly ProductDefinitionTarget[]) {
+        const previous = observers.has(observer) ? observer.targets : new Set<string>();
+        observer.targets = new Set(targets.map(targetKey));
+        observers.set(observer, targets);
+        sync();
+        const alreadyRead = [...observed.values()].filter(revision => {
+          const key = targetKey(revision);
+          return observer.targets.has(key) && !previous.has(key);
+        });
+        if (alreadyRead.length) onRevisions(alreadyRead);
+      }
+      replace(requested);
+      return {
+        replace,
+        close() {
+          observers.delete(observer);
+          sync();
+        },
+      };
+    },
+  };
+}
+
+/** Reconnect the document's current author collection using the existing stream backoff. */
+function openDefinitionStream(
+  targets: readonly ProductDefinitionTarget[],
+  onRevisions: AuthorObserver["onRevisions"],
+  onError: AuthorObserver["onError"],
+) {
   const stream = new AbortController();
-  let reconnecting = false;
   let attempt = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   async function connect() {
     try {
-      const response = await nodeApiRequest(panelHostPaths.subscriptions, {
-        method: "POST",
-        signal: stream.signal,
+      const response = await nodeApiRequest(panelHostPaths.definitionStream, {
+        method: "POST", signal: stream.signal,
         headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-        body: JSON.stringify({ kind: "product-definition", target: { kind: "panel", id: panelId } }),
+        body: JSON.stringify({ targets }),
       });
-      if (!response.body || response.headers.get("content-type")?.split(";")[0] !== "text/event-stream") {
-        throw new PanelStreamContractError("Panel subscription did not return an event stream");
-      }
-      await readSseData(response, async payload => {
-        const parsed = panelSubscriptionFrameSchema.safeParse(payload);
-        if (!parsed.success) throw new PanelStreamContractError("Panel subscription frame broke the contract", { cause: parsed.error });
+      if (!response.body || response.headers.get("content-type")?.split(";")[0] !== "text/event-stream")
+        throw new PanelStreamContractError("Product definition stream did not return an event stream");
+
+      await readSseData(response, payload => {
+        if (stream.signal.aborted) return true;
+        const parsed = productDefinitionStreamFrameSchema.safeParse(payload);
+        if (!parsed.success) throw new PanelStreamContractError("Product definition stream frame broke the contract", { cause: parsed.error });
         const frame = parsed.data;
-        if (frame.kind === "snapshot") {
-          attempt = 0;
-          if (reconnecting) await recover(frame);
-        } else {
-          listener(frame);
-        }
+        if (frame.kind === "snapshot") attempt = 0;
+        onRevisions(frame.kind === "snapshot" ? frame.definitions : [frame.definition]);
         return false;
       }, () => !stream.signal.aborted);
     } catch (reason) {
       if (stream.signal.aborted) return;
       const refused = reason instanceof ApiRequestError && (reason.status === 403 || reason.status === 404);
       if (refused || reason instanceof PanelStreamContractError || reason instanceof SyntaxError) {
-        ElMessage.error(reason.message);
+        onError(reason);
         return;
       }
     }
-
-    if (stream.signal.aborted) return;
-    reconnecting = true;
-    timer = setTimeout(() => {
-      timer = undefined;
-      void connect();
-    }, sseReconnectDelay(attempt++));
+    if (!stream.signal.aborted) timer = setTimeout(() => void connect(), sseReconnectDelay(attempt++));
   }
 
   void connect();

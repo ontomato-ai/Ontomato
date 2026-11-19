@@ -30,13 +30,18 @@ const failure = shallowRef<Error | null>(null);
 const loaded = shallowRef<{ projection: ProductProjection; component: Component } | null>(null);
 const inputs = ref<Record<string, unknown>>({});
 let registered: (() => void) | undefined;
+let readGeneration = 0;
+let requestedRevision = 0;
 
-function start() {
+function start(revision = 0) {
+  const generation = ++readGeneration;
+  requestedRevision = revision;
   const declaration = panel!.manifest.slots[props.slot];
   if (!declaration) throw new Error(`The panel declares no slot '${props.slot}'`);
   loading.value = true;
   failure.value = null;
   void panel!.projection(declaration.projectionId).then((projection) => {
+    if (generation !== readGeneration) return;
     // The ports are the record's and its catalogue entry's, so they are registered before anything is drawn: the
     // header and an agent can list and run this projection's operations while its component is still being fetched.
     registered?.();
@@ -50,15 +55,21 @@ function start() {
     // draws at once.
     componentFor(projection.componentId).then(
       (component) => {
+        if (generation !== readGeneration) return;
+        requestedRevision = 0;
         loaded.value = { projection, component };
         loading.value = false;
       },
       (reason: unknown) => {
+        if (generation !== readGeneration) return;
+        requestedRevision = 0;
         failure.value = reason instanceof Error ? reason : new Error(String(reason));
         loading.value = false;
       },
     );
   }, (reason: unknown) => {
+    if (generation !== readGeneration) return;
+    requestedRevision = 0;
     failure.value = reason instanceof Error ? reason : new Error(String(reason));
     loading.value = false;
   });
@@ -72,9 +83,11 @@ watch(
 // A changed definition is read again by the same ID here, so every instance that uses it redraws.
 const stop = panel.projectionsChanged((id, revision) => {
   if (panel.manifest.slots[props.slot]?.projectionId !== id) return;
-  if (revision === undefined || (loaded.value && loaded.value.projection.revision !== revision)) start();
+  const currentRevision = loaded.value?.projection.id === id ? loaded.value.projection.revision : 0;
+  if (revision === undefined || revision > Math.max(currentRevision, requestedRevision)) start(revision);
 });
 onBeforeUnmount(() => {
+  readGeneration++;
   stop();
   registered?.();
 });
