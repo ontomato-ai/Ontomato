@@ -8,6 +8,7 @@ import {
 } from "@ontomato/contracts/panel-operations";
 import type { OntologyElementRef } from "@ontomato/contracts/product-panels";
 import { scheduledTaskServerOperations } from "@ontomato/platform-schedules/panel-server-operations";
+import { m6ServerOperations } from "../action/panel-operations";
 import { agentDefinitionOperations } from "../assistant/definition-operations";
 import { m5ServerOperations } from "../metric-function/panel-operations";
 import { HttpError } from "../../utils/errors";
@@ -80,6 +81,7 @@ const registrations: readonly PanelServerOperation[] = [
   ...scheduledTaskServerOperations,
   ...agentDefinitionOperations,
   ...m5ServerOperations,
+  ...m6ServerOperations,
 ];
 const operations = new Map(registrations.map(operation => [operation.handlerRef, operation]));
 const jsonSchema = (schema: z.ZodTypeAny) => zodToJsonSchema(schema, { effectStrategy: "input" });

@@ -14,7 +14,7 @@ import type {
   SinglePanelOperationOutcome,
 } from "../product-panels/server-operations";
 import {
-  affected, ownerEnvelopeSchema, ownerPost, ownerRecord, remove, save, savedIdSchema, targetLabel,
+  affected, ownerEnvelopeSchema, ownerPost, ownerRecord, ownerWriteFailure, remove, save, savedIdSchema, targetLabel,
   valuesForTarget, type DataQueryOperationHost as Host,
 } from "../product-panels/data-query-operations";
 
@@ -30,11 +30,19 @@ const deletedSchema = z.object({}).strict();
 /** The delete impact reads the name a confirming human recognizes and the bindings the delete takes with it. */
 const metricImpactSchema = z.object({ name: z.string(), bindings: z.array(z.unknown()) }).passthrough();
 const statusInputSchema = z.object({ status: z.enum(["PENDING_REVIEW", "PUBLISHED", "UNUSED"]) }).strict();
-/** The owner answers one status change per requested id, with the saved metric or its reason. */
+/**
+ * The owner answers one status change per requested id: the saved metric, its refusal under the owner's code, or a
+ * failure with no code.
+ */
 const statusItemSchema = z.discriminatedUnion("outcome", [
   z.object({ id: z.string().min(1), outcome: z.literal("success"), data: z.unknown() }).strict(),
+  z.object({
+    id: z.string().min(1), outcome: z.literal("refusal"), code: z.string().min(1), error: z.object({ message: z.string() }).strict(),
+  }).strict(),
   z.object({ id: z.string().min(1), outcome: z.literal("failure"), error: z.object({ message: z.string() }).strict() }).strict(),
 ]);
+/** The code of a status change the owner failed without classifying it. */
+const STATUS_FAILED = "METRIC_VIEW_STATUS_FAILED";
 const statusAnswerSchema = z.object({ items: z.array(statusItemSchema).nonempty() }).strict();
 
 const metricObjectTarget = z.object({
@@ -48,20 +56,24 @@ const functionSaveTarget = z.discriminatedUnion("kind", [functionObjectTarget, p
 const saveInputSchema = panelFormSaveInputSchema.omit({ revision: true }).strict();
 const deleteInputSchema = z.object({}).strict();
 
-type StatusAnswer = { refused: string } | { items: Map<string, z.infer<typeof statusItemSchema>> };
+/**
+ * One owner request's answer: the same outcome for every id it named (the owner turned the whole request down, or the
+ * request got no authoritative answer), or the owner's answer per id.
+ */
+type StatusAnswer = { whole: SinglePanelOperationOutcome } | { items: Map<string, z.infer<typeof statusItemSchema>> };
 
-/** One owner call: either its refusal for every requested id, or the owner's answer per id. */
 async function changeStatus(host: Host, ids: string[], status: string): Promise<StatusAnswer> {
   const envelope = await ownerPost(host, "/metricView/setStatus", { ids, status }, ownerEnvelopeSchema);
-  if (!envelope.success) return { refused: envelope.message ?? "The owner refused the status change" };
+  if (!envelope.success) return { whole: ownerWriteFailure(envelope, STATUS_FAILED, "The owner could not change the status") };
   return { items: new Map(statusAnswerSchema.parse(envelope.data).items.map(item => [item.id, item])) };
 }
 
-/** The owner's answer for one metric: a success carries the saved metric; a failure keeps the owner's reason. */
+/** The owner's answer for one metric: the saved metric, its refusal under the owner's code, or its failure. */
 function statusOutcome(answer: StatusAnswer, id: string): SinglePanelOperationOutcome {
-  if ("refused" in answer) return { kind: "refusal", code: "METRIC_VIEW_STATUS_REFUSED", message: answer.refused };
+  if ("whole" in answer) return answer.whole;
   const item = answer.items.get(id)!;
-  if (item.outcome !== "success") return { kind: "refusal", code: "METRIC_VIEW_STATUS_REFUSED", message: item.error.message };
+  if (item.outcome === "refusal") return { kind: "refusal", code: item.code, message: item.error.message };
+  if (item.outcome === "failure") return { kind: "failure", code: STATUS_FAILED, message: item.error.message };
   const data = runtimeJsonObjectSchema.parse(item.data);
   return { kind: "success", data, affected: affected(METRIC_VIEW, savedIdSchema.parse(data).id, [METRIC_VIEW]) };
 }
@@ -171,7 +183,7 @@ export const m5ServerOperations = [
     },
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       return save(host, "/metricView/save", valuesForTarget(target, saveInputSchema.parse(input).values),
-        "METRIC_VIEW_SAVE_REFUSED", METRIC_VIEW, [METRIC_VIEW, FUNCTION]);
+        "METRIC_VIEW_SAVE_FAILED", METRIC_VIEW, [METRIC_VIEW, FUNCTION]);
     },
   },
   {
@@ -189,7 +201,7 @@ export const m5ServerOperations = [
     inspectImpact: deleteMetricViewImpact,
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected metric");
-      return remove(host, "/metricView/delete", target, "METRIC_VIEW_DELETE_REFUSED");
+      return remove(host, "/metricView/delete", target, "METRIC_VIEW_DELETE_FAILED");
     },
   },
   {
@@ -211,12 +223,22 @@ export const m5ServerOperations = [
     },
     async executeBatch(host: Host, calls: readonly PanelBatchCalls[number][]): Promise<PanelOperationOutcome> {
       // Each call may set its own status; the owner takes one status per request, so the calls go in one request per
-      // status and every call reads its own answer.
+      // status and every call reads its own answer. A request with no authoritative answer leaves its calls unknown
+      // while the other requests' answers stand; when no request got one, the batch answers unknown as a whole.
       const statuses = calls.map(call => statusInputSchema.parse(call.input).status);
       const answers = new Map<string, StatusAnswer>();
-      for (const status of new Set(statuses))
-        answers.set(status, await changeStatus(host, calls.filter((_, index) => statuses[index] === status)
-          .map(call => call.target.primaryKey), status));
+      let unanswered = "";
+      for (const status of new Set(statuses)) {
+        const ids = calls.filter((_, index) => statuses[index] === status).map(call => call.target.primaryKey);
+        try {
+          answers.set(status, await changeStatus(host, ids, status));
+        } catch (error) {
+          unanswered = error instanceof Error ? error.message : String(error);
+          answers.set(status, { whole: { kind: "unknown", message: unanswered } });
+        }
+      }
+      if ([...answers.values()].every(answer => "whole" in answer && answer.whole.kind === "unknown"))
+        return { kind: "unknown", message: unanswered };
       // A batch invocation is nonempty, so the items tuple starts with the first call's answer and spreads the rest.
       const [first, ...rest] = calls.map((call, index) => ({
         target: { objectType: call.target.objectType, primaryKey: call.target.primaryKey },
@@ -248,7 +270,7 @@ export const m5ServerOperations = [
     },
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       return save(host, "/function/save", valuesForTarget(target, saveInputSchema.parse(input).values),
-        "FUNCTION_SAVE_REFUSED", FUNCTION, [FUNCTION]);
+        "FUNCTION_SAVE_FAILED", FUNCTION, [FUNCTION]);
     },
   },
   {
@@ -266,7 +288,7 @@ export const m5ServerOperations = [
     inspectImpact: deleteFunctionImpact,
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected function");
-      return remove(host, "/function/delete", target, "FUNCTION_DELETE_REFUSED");
+      return remove(host, "/function/delete", target, "FUNCTION_DELETE_FAILED");
     },
   },
   {

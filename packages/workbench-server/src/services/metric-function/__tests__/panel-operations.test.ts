@@ -99,10 +99,20 @@ describe("metric and function panel server operations", () => {
 
   it("turns a metric owner refusal into a refusal", async () => {
     const operation = write(`${METRIC_VIEW}.save`);
-    const { host } = hostWith(() => Response.json({ success: false, message: "Cannot modify a system MetricView" }));
+    const { host } = hostWith(() => Response.json({
+      success: false, code: "METRIC_VIEW_SYSTEM_READONLY", message: "Cannot modify a system MetricView",
+    }));
 
     expect(await operation.execute(host, metricTarget, { values: {} }))
-      .toEqual({ kind: "refusal", code: "METRIC_VIEW_SAVE_REFUSED", message: "Cannot modify a system MetricView" });
+      .toEqual({ kind: "refusal", code: "METRIC_VIEW_SYSTEM_READONLY", message: "Cannot modify a system MetricView" });
+  });
+
+  it("keeps an uncoded write error as a known failure", async () => {
+    const operation = write(`${METRIC_VIEW}.save`);
+    const { host } = hostWith(() => Response.json({ success: false, message: "The definition store could not complete the write" }));
+
+    expect(await operation.execute(host, metricTarget, { values: {} }))
+      .toEqual({ kind: "failure", code: "METRIC_VIEW_SAVE_FAILED", message: "The definition store could not complete the write" });
   });
 
   it("reads the metric label and deletes by id", async () => {
@@ -123,9 +133,11 @@ describe("metric and function panel server operations", () => {
     expect(remove.sent[0]?.path).toBe("/api/data-query/metricView/delete");
     expect(JSON.parse(String(remove.sent[0]?.init.body))).toEqual({ id: "m1" });
 
-    const refused = hostWith(() => Response.json({ success: false, message: "Cannot delete a system MetricView" }));
+    const refused = hostWith(() => Response.json({
+      success: false, code: "METRIC_VIEW_SYSTEM_READONLY", message: "Cannot delete a system MetricView",
+    }));
     expect(await operation.execute(refused.host, metricTarget))
-      .toEqual({ kind: "refusal", code: "METRIC_VIEW_DELETE_REFUSED", message: "Cannot delete a system MetricView" });
+      .toEqual({ kind: "refusal", code: "METRIC_VIEW_SYSTEM_READONLY", message: "Cannot delete a system MetricView" });
   });
 
   it("fails the metric label read with the owner's reason", async () => {
@@ -181,36 +193,46 @@ describe("metric and function panel server operations", () => {
     expect(JSON.parse(String(changed.sent[0]?.init.body))).toEqual({ ids: ["m1"], status: "PUBLISHED" });
   });
 
-  it("keeps the owner's reason when one metric's status change fails", async () => {
+  it("tells one metric's coded refusal from its uncoded failure", async () => {
     const operation = batchAction(SET_METRIC_VIEW_STATUS);
     const refused = hostWith(() => Response.json({ success: true, data: { items: [
-      { id: "m1", outcome: "failure", error: { message: "MetricView not found" } },
+      { id: "m1", outcome: "refusal", code: "METRIC_VIEW_SYSTEM", error: { message: "Cannot modify a system MetricView" } },
     ] } }));
     expect(await operation.execute(refused.host, metricTarget, { status: "UNUSED" }))
-      .toEqual({ kind: "refusal", code: "METRIC_VIEW_STATUS_REFUSED", message: "MetricView not found" });
+      .toEqual({ kind: "refusal", code: "METRIC_VIEW_SYSTEM", message: "Cannot modify a system MetricView" });
+    const failed = hostWith(() => Response.json({ success: true, data: { items: [
+      { id: "m1", outcome: "failure", error: { message: "connection reset" } },
+    ] } }));
+    expect(await operation.execute(failed.host, metricTarget, { status: "UNUSED" }))
+      .toEqual({ kind: "failure", code: "METRIC_VIEW_STATUS_FAILED", message: "connection reset" });
   });
 
   it("answers each call of a status batch by its metric, in the calls' order", async () => {
     const operation = batchAction(SET_METRIC_VIEW_STATUS);
     const secondMetric = { kind: "object" as const, objectType: METRIC_VIEW, primaryKey: "m2" };
+    const thirdMetric = { kind: "object" as const, objectType: METRIC_VIEW, primaryKey: "m3" };
     const answered = hostWith(() => Response.json({ success: true, data: { items: [
       { id: "m2", outcome: "success", data: { id: "m2", status: "PENDING_REVIEW" } },
-      { id: "m1", outcome: "failure", error: { message: "Cannot unpublish a system MetricView" } },
+      { id: "m3", outcome: "failure", error: { message: "connection reset" } },
+      { id: "m1", outcome: "refusal", code: "METRIC_VIEW_SYSTEM", error: { message: "Cannot modify a system MetricView" } },
     ] } }));
     expect(await operation.executeBatch(answered.host, [
       { target: metricTarget, input: { status: "PENDING_REVIEW" } },
       { target: secondMetric, input: { status: "PENDING_REVIEW" } },
+      { target: thirdMetric, input: { status: "PENDING_REVIEW" } },
     ])).toEqual({
       kind: "batch",
       items: [
         { target: { objectType: METRIC_VIEW, primaryKey: "m1" },
-          outcome: { kind: "refusal", code: "METRIC_VIEW_STATUS_REFUSED", message: "Cannot unpublish a system MetricView" } },
+          outcome: { kind: "refusal", code: "METRIC_VIEW_SYSTEM", message: "Cannot modify a system MetricView" } },
         { target: { objectType: METRIC_VIEW, primaryKey: "m2" },
           outcome: { kind: "success", data: { id: "m2", status: "PENDING_REVIEW" },
             affected: { objects: [{ objectType: METRIC_VIEW, primaryKey: "m2" }], objectTypes: [METRIC_VIEW] } } },
+        { target: { objectType: METRIC_VIEW, primaryKey: "m3" },
+          outcome: { kind: "failure", code: "METRIC_VIEW_STATUS_FAILED", message: "connection reset" } },
       ],
     });
-    expect(JSON.parse(String(answered.sent[0]?.init.body))).toEqual({ ids: ["m1", "m2"], status: "PENDING_REVIEW" });
+    expect(JSON.parse(String(answered.sent[0]?.init.body))).toEqual({ ids: ["m1", "m2", "m3"], status: "PENDING_REVIEW" });
   });
 
   it("sends a status batch whose calls name different statuses as one owner request per status", async () => {
@@ -234,19 +256,49 @@ describe("metric and function panel server operations", () => {
       .toEqual([["m1", "PUBLISHED"], ["m2", "UNUSED"], ["m3", "PUBLISHED"]]);
   });
 
-  it("refuses every call of a status batch the owner refuses wholesale", async () => {
+  it("answers every call of a status request the owner turns down whole, coded or not", async () => {
     const operation = batchAction(SET_METRIC_VIEW_STATUS);
     const secondMetric = { kind: "object" as const, objectType: METRIC_VIEW, primaryKey: "m2" };
-    const refused = hostWith(() => Response.json({ success: false, message: "No business domain for this account" }));
-    expect(await operation.executeBatch(refused.host, [
+    const calls = [
       { target: metricTarget, input: { status: "PUBLISHED" } },
       { target: secondMetric, input: { status: "PUBLISHED" } },
-    ])).toEqual({ kind: "batch", items: [
+    ];
+    const refused = hostWith(() => Response.json({ success: false, code: "METRIC_VIEW_STATUS_INVALID", message: "ids: expected metric ids" }));
+    expect(await operation.executeBatch(refused.host, calls)).toEqual({ kind: "batch", items: [
       { target: { objectType: METRIC_VIEW, primaryKey: "m1" },
-        outcome: { kind: "refusal", code: "METRIC_VIEW_STATUS_REFUSED", message: "No business domain for this account" } },
+        outcome: { kind: "refusal", code: "METRIC_VIEW_STATUS_INVALID", message: "ids: expected metric ids" } },
       { target: { objectType: METRIC_VIEW, primaryKey: "m2" },
-        outcome: { kind: "refusal", code: "METRIC_VIEW_STATUS_REFUSED", message: "No business domain for this account" } },
+        outcome: { kind: "refusal", code: "METRIC_VIEW_STATUS_INVALID", message: "ids: expected metric ids" } },
     ] });
+    const failed = hostWith(() => Response.json({ success: false, message: "No business domain for this account" }));
+    expect(await operation.executeBatch(failed.host, calls)).toEqual({ kind: "batch", items: [
+      { target: { objectType: METRIC_VIEW, primaryKey: "m1" },
+        outcome: { kind: "failure", code: "METRIC_VIEW_STATUS_FAILED", message: "No business domain for this account" } },
+      { target: { objectType: METRIC_VIEW, primaryKey: "m2" },
+        outcome: { kind: "failure", code: "METRIC_VIEW_STATUS_FAILED", message: "No business domain for this account" } },
+    ] });
+  });
+
+  it("keeps the answered status requests of a batch when another gets no answer, and answers unknown when none does", async () => {
+    const operation = batchAction(SET_METRIC_VIEW_STATUS);
+    const secondMetric = { kind: "object" as const, objectType: METRIC_VIEW, primaryKey: "m2" };
+    const calls = [
+      { target: metricTarget, input: { status: "PUBLISHED" } },
+      { target: secondMetric, input: { status: "UNUSED" } },
+    ];
+    const partly = hostWith((_path, init) => {
+      const { ids, status } = JSON.parse(String(init.body)) as { ids: string[]; status: string };
+      return status === "UNUSED"
+        ? new Response("upstream down", { status: 502 })
+        : Response.json({ success: true, data: { items: ids.map(id => ({ id, outcome: "success", data: { id, status } })) } });
+    });
+    const outcome = await operation.executeBatch(partly.host, calls);
+    expect(outcome.kind === "batch" && outcome.items.map(item => [item.target.primaryKey, item.outcome.kind])).toEqual([
+      ["m1", "success"], ["m2", "unknown"],
+    ]);
+    const unanswered = hostWith(() => new Response("upstream down", { status: 502 }));
+    expect(await operation.executeBatch(unanswered.host, calls))
+      .toEqual({ kind: "unknown", message: "Owner request failed: /metricView/setStatus" });
   });
 
   it("binds a function save to its target and refuses another id", async () => {
@@ -280,9 +332,11 @@ describe("metric and function panel server operations", () => {
       });
     expect(saved.sent[0]?.path).toBe("/api/data-query/function/save");
     expect(JSON.parse(String(saved.sent[0]?.init.body))).toEqual({ name: "Revenue query", id: "f1" });
-    const saveRefused = hostWith(() => Response.json({ success: false, message: "Function referenced by MetricView cannot be modified or deleted" }));
+    const saveRefused = hostWith(() => Response.json({
+      success: false, code: "FUNCTION_REFERENCED", message: "Function referenced by MetricView cannot be modified or deleted",
+    }));
     expect(await save.execute(saveRefused.host, functionTarget, { values: {} }))
-      .toEqual({ kind: "refusal", code: "FUNCTION_SAVE_REFUSED", message: "Function referenced by MetricView cannot be modified or deleted" });
+      .toEqual({ kind: "refusal", code: "FUNCTION_REFERENCED", message: "Function referenced by MetricView cannot be modified or deleted" });
 
     const remove = action(DELETE_FUNCTION);
     const labelled = hostWith(path => path.endsWith("/function/queryById")
@@ -295,9 +349,11 @@ describe("metric and function panel server operations", () => {
       affected: { objects: [{ objectType: FUNCTION, primaryKey: functionTarget.primaryKey }], objectTypes: [FUNCTION] },
     });
     expect(deleted.sent[0]?.path).toBe("/api/data-query/function/delete");
-    const deleteRefused = hostWith(() => Response.json({ success: false, message: "Function referenced by Action cannot be modified or deleted" }));
+    const deleteRefused = hostWith(() => Response.json({
+      success: false, code: "FUNCTION_REFERENCED", message: "Function referenced by Action cannot be modified or deleted",
+    }));
     expect(await remove.execute(deleteRefused.host, functionTarget))
-      .toEqual({ kind: "refusal", code: "FUNCTION_DELETE_REFUSED", message: "Function referenced by Action cannot be modified or deleted" });
+      .toEqual({ kind: "refusal", code: "FUNCTION_REFERENCED", message: "Function referenced by Action cannot be modified or deleted" });
   });
 
   it("describes the function delete impact with the owner's reference rule", async () => {

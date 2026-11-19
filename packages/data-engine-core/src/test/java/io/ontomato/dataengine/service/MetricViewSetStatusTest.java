@@ -10,9 +10,11 @@ import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.function.ReturnDef;
 import io.ontomato.dataengine.bean.metricView.MetricView;
 import io.ontomato.dataengine.bean.metricView.MetricViewBinding;
+import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.dao.MetricViewDao;
 import io.ontomato.dataengine.service.impl.MetricViewServiceImpl;
+import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -90,18 +92,25 @@ class MetricViewSetStatusTest {
   }
 
   @Test
-  void oneFailureDoesNotStopTheOtherItems() {
+  void oneRefusalOneFailureAndOneSuccessDoNotStopEachOther() {
     put(metric("system", MetricView.ORIGIN_SYSTEM));
+    put(metric("broken", MetricView.ORIGIN_USER));
     put(metric("m1", MetricView.ORIGIN_USER));
+    when(functionDao.queryById("f-broken")).thenReturn(null);
 
     List<MetricViewService.StatusResult> results =
-        service.setStatus("domain-a", List.of("system", "m1"), MetricView.STATUS_PUBLISHED, "en");
+        service.setStatus("domain-a", List.of("system", "broken", "m1"), MetricView.STATUS_PUBLISHED, "en");
 
-    assertEquals(2, results.size());
+    assertEquals(3, results.size());
     assertEquals("system", results.get(0).id());
-    assertEquals("Cannot modify a system MetricView", results.get(0).error());
-    assertNull(results.get(1).error());
-    assertEquals(MetricView.STATUS_PUBLISHED, results.get(1).data().getStatus());
+    assertEquals("METRIC_VIEW_SYSTEM", results.get(0).refusal().code());
+    assertEquals("Cannot modify a system MetricView", results.get(0).refusal().getMessage());
+    assertEquals("broken", results.get(1).id());
+    assertNull(results.get(1).refusal());
+    assertEquals("MetricView read Function is missing or belongs to another domain", results.get(1).error());
+    assertEquals("m1", results.get(2).id());
+    assertNull(results.get(2).refusal());
+    assertEquals(MetricView.STATUS_PUBLISHED, results.get(2).data().getStatus());
   }
 
   @Test
@@ -113,8 +122,10 @@ class MetricViewSetStatusTest {
     List<MetricViewService.StatusResult> results =
         service.setStatus("domain-a", List.of("pending", "missing"), MetricView.STATUS_UNUSED, "en");
 
-    assertEquals("Edit the workflow to change its pending query", results.get(0).error());
-    assertEquals("MetricView not found", results.get(1).error());
+    assertEquals("METRIC_VIEW_WORKFLOW_PENDING", results.get(0).refusal().code());
+    assertEquals("Edit the workflow to change its pending query", results.get(0).refusal().getMessage());
+    assertEquals("METRIC_VIEW_NOT_FOUND", results.get(1).refusal().code());
+    assertEquals("MetricView not found", results.get(1).refusal().getMessage());
   }
 
   @Test
@@ -130,10 +141,41 @@ class MetricViewSetStatusTest {
 
   @Test
   void rejectsAnEmptyIdListOrAnUnknownStatusBeforeAnyWork() {
-    assertThrows(IllegalArgumentException.class, () -> service.setStatus("domain-a", List.of(), MetricView.STATUS_PUBLISHED, "en"));
-    assertThrows(IllegalArgumentException.class, () -> service.setStatus("domain-a", List.of("m1"), "DELETED", "en"));
-    assertThrows(IllegalArgumentException.class, () -> service.setStatus("domain-a", List.of("m1"), null, "en"));
+    for (OwnerRefusal refusal : List.of(
+        assertThrows(OwnerRefusal.class, () -> service.setStatus("domain-a", List.of(), MetricView.STATUS_PUBLISHED, "en")),
+        assertThrows(OwnerRefusal.class, () -> service.setStatus("domain-a", List.of("m1"), "DELETED", "en")),
+        assertThrows(OwnerRefusal.class, () -> service.setStatus("domain-a", List.of("m1"), null, "en"))))
+      assertEquals("METRIC_VIEW_STATUS_INVALID", refusal.code());
     verifyNoInteractions(metricViewDao);
+  }
+
+  @Test
+  void testExecuteRefusesAMetricThatIsNeitherPublishedNorTheCallersCandidate() {
+    MetricView candidate = metric("candidate", MetricView.ORIGIN_USER);
+    candidate.setCreatedBy("someone-else");
+    put(candidate);
+    User reader = mock(User.class);
+    when(reader.getId()).thenReturn("reviewer");
+    when(reader.getDomainId()).thenReturn("domain-a");
+
+    OwnerRefusal refusal = assertThrows(OwnerRefusal.class, () -> service.testExecute(
+        candidate, null, new JSONObject(), "en", reader, new UserDataPermission(), 1));
+
+    assertEquals("METRIC_VIEW_NOT_EXECUTABLE", refusal.code());
+    assertEquals("Executable read metric not found", refusal.getMessage());
+  }
+
+  @Test
+  void testExecuteReportsAMissingMetricAsNotFound() {
+    MetricView absent = metric("missing", MetricView.ORIGIN_USER);
+    User reader = mock(User.class);
+    when(reader.getId()).thenReturn("reviewer");
+    when(reader.getDomainId()).thenReturn("domain-a");
+
+    OwnerRefusal refusal = assertThrows(OwnerRefusal.class, () -> service.testExecute(
+        absent, null, new JSONObject(), "en", reader, new UserDataPermission(), 1));
+
+    assertEquals("METRIC_VIEW_NOT_FOUND", refusal.code());
   }
 
   private void put(MetricView metric) {

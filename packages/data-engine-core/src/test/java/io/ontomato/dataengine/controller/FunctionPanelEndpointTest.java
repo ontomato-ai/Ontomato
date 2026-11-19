@@ -16,6 +16,7 @@ import io.ontomato.dataengine.service.FormFields;
 import io.ontomato.dataengine.service.FunctionService;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.LangService;
+import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.PanelFormException;
 import io.ontomato.dataengine.util.SpringBeanUtil;
 import java.util.List;
@@ -88,6 +89,44 @@ class FunctionPanelEndpointTest {
     JSONObject data = body.getJSONObject("data");
     assertEquals(Function.OPERATION_READ, data.getString("operation"));
     assertEquals("PanelForm.operation.read", data.getString("operationLabel"));
+  }
+
+  @Test
+  void aRefusalIsAnEnvelopeCodeWhileAFailureKeepsAMessageOnly() throws Exception {
+    when(functionService.save(any(), eq("en")))
+        .thenThrow(new OwnerRefusal("FUNCTION_SYSTEM", "Function.cannotModifySystem"));
+    JSONObject refused = perform("/function/save", """
+        {"name":"Revenue query","operation":"OPERATION_READ"}""");
+    assertFalse(refused.getBooleanValue("success"));
+    assertEquals("FUNCTION_SYSTEM", refused.getString("code"));
+    assertEquals("Function.cannotModifySystem", refused.getString("message"));
+
+    when(functionService.save(any(), eq("en"))).thenThrow(new IllegalStateException("execution failed"));
+    JSONObject failed = perform("/function/save", """
+        {"name":"Revenue query","operation":"OPERATION_READ"}""");
+    assertFalse(failed.getBooleanValue("success"));
+    assertFalse(failed.containsKey("code"));
+    assertEquals("execution failed", failed.getString("message"));
+  }
+
+  @Test
+  void deleteAndFormReportOwnerRefusalsWithTheirCodes() throws Exception {
+    doThrow(new OwnerRefusal("FUNCTION_REFERENCED", "Function.referencedByMetricView"))
+        .when(functionService).delete("f1", "en");
+    JSONObject deleted = perform("/function/delete", """
+        {"id":"f1"}""");
+    assertFalse(deleted.getBooleanValue("success"));
+    assertEquals("FUNCTION_REFERENCED", deleted.getString("code"));
+    assertEquals("Function.referencedByMetricView", deleted.getString("message"));
+
+    when(functionService.form(any(), eq("en"), eq("domain")))
+        .thenThrow(new OwnerRefusal("FUNCTION_NOT_FOUND", "Function not found"));
+    JSONObject form = perform("/function/form", """
+        {"target":{"kind":"object","objectType":"platform:Function","primaryKey":"missing"},"changedField":null}""");
+    assertFalse(form.getBooleanValue("success"));
+    assertEquals("FUNCTION_NOT_FOUND", form.getString("code"));
+    assertEquals("Function not found", form.getString("message"));
+    assertFalse(form.containsKey("fields"));
   }
 
   @Test

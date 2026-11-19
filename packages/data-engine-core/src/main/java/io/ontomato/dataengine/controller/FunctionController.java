@@ -18,6 +18,7 @@ import io.ontomato.dataengine.config.ControllerConst;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.FunctionService;
 import io.ontomato.dataengine.service.LangService;
+import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.PanelFormException;
 import io.ontomato.dataengine.util.SystemUtils;
 
@@ -46,6 +47,8 @@ public class FunctionController {
 			function.setDomainId(user.getDomainId());
 			ret.put("data", withDisplay(functionService.save(function, lang), lang));
 			ret.put("success", true);
+		} catch (OwnerRefusal e) {
+			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -62,6 +65,8 @@ public class FunctionController {
 			String id = param.getString("id");
 			functionService.delete(id, lang);
 			ret.put("success", true);
+		} catch (OwnerRefusal e) {
+			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -80,6 +85,8 @@ public class FunctionController {
 			Function function = functionService.queryById(id);
 			ret.put("success", true);
 			ret.put("data", function == null ? null : withDisplay(function, lang));
+		} catch (OwnerRefusal e) {
+			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -101,6 +108,8 @@ public class FunctionController {
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
 			ret.put("fields", e.fields());
+		} catch (OwnerRefusal e) {
+			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
