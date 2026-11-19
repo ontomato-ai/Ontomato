@@ -6,6 +6,7 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import { MetricChart as ChartView } from "@ontomato/foundation-ui/chart";
 import { useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
 import { metricChartClient, type ChartRead } from "../panel/metric-chart";
+import { stateObject, type PanelFieldValue } from "../panel/state";
 
 /**
  * One registered chart, drawn as its source card draws it: the drawing is the card's chart file and the parameters are
@@ -27,8 +28,9 @@ const client = metricChartClient();
  */
 const bound = computed<Record<string, RuntimeJsonValue>>(() => Object.fromEntries(
   Object.entries(slot.inputs)
-    .filter(([, value]) => value !== null && value !== undefined)
-    .map(([name, value]) => [name, typeof value === "object" ? (value as { primaryKey: string }).primaryKey : value as RuntimeJsonValue]),
+    // A collection binds no MetricView parameter.
+    .filter(([, value]) => value !== null && value !== undefined && !Array.isArray(value))
+    .map(([name, value]) => [name, stateObject(value as PanelFieldValue)?.primaryKey ?? value as RuntimeJsonValue]),
 ));
 
 const chart = shallowRef<ChartRead | null>(null);
