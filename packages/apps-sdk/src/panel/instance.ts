@@ -29,6 +29,8 @@ export interface PanelInstanceOptions {
   initial?: PanelInitialState;
   /** Reads a current projection by ID, as the reader. */
   readProjection: (id: string) => Promise<ProductProjection>;
+  /** Records, as the reader, the object a create draft's save created, so the draft addresses it from then on. */
+  recordDraftCreated: (link: PageDraftLink, id: string) => Promise<void>;
   reportDraftError?: (reason: unknown) => void;
 }
 
@@ -43,7 +45,14 @@ export interface PanelInstance {
   /** The draft this instance received, once one arrived. */
   readonly draft: Readonly<Ref<ReceivedPanelDraft<Record<string, unknown>> | null>>;
   receiveDraft(value: ReceivedPanelDraft<Record<string, unknown>>): void;
-  clearDraft(slot: string): void;
+  /**
+   * Ends the draft a form in `slot` holds, once the reader saved or discarded it: a saved create draft first records the
+   * object it created (`created`), then whoever listens hears which draft ended. A slot that holds no draft has nothing
+   * to end.
+   */
+  settleDraft(slot: string, created?: string): Promise<void>;
+  /** Hears each draft that ended, by its link; the returned function stops it. */
+  onDraftSettled(listener: (link: PageDraftLink) => void): () => void;
   /**
    * Whether the draft this instance holds is one none of its forms performs: every slot its declaration names has
    * registered its projection, and every form among them was offered the draft and found that its owner's form for the
@@ -79,6 +88,7 @@ export interface PanelInstance {
 export function createPanelInstance(manifest: PanelManifest, options: PanelInstanceOptions): PanelInstance {
   const state = createPanelState(manifest, options.initial);
   const objectListeners = new Set<(object: PanelObjectIdentity | null) => void>();
+  const settledListeners = new Set<(link: PageDraftLink) => void>();
   const objectChanged = (object: PanelObjectIdentity | null) => {
     for (const listener of objectListeners) listener(object);
   };
@@ -101,8 +111,17 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     forms,
     draft: readonly(draft) as Readonly<Ref<ReceivedPanelDraft<Record<string, unknown>> | null>>,
     receiveDraft(value) { draft.value = value; },
-    clearDraft(slot) {
-      if (draft.value?.slot === slot) draft.value = null;
+    async settleDraft(slot, created) {
+      const ended = draft.value;
+      if (ended?.slot !== slot) return;
+      if (created !== undefined && ended.target.id === undefined && ended.created === undefined)
+        await options.recordDraftCreated(ended.link, created);
+      if (draft.value === ended) draft.value = null;
+      for (const listener of settledListeners) listener(ended.link);
+    },
+    onDraftSettled(listener) {
+      settledListeners.add(listener);
+      return () => settledListeners.delete(listener);
     },
     unclaimedDraft: computed(() => {
       const registered = registrations.value;

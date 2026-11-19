@@ -192,21 +192,31 @@ it("creates with the owner's defaults, and moves the panel onto the agent the ow
 });
 
 /** The panel opened at a link to a draft the agent wrote for it, the agent selected. */
+/** The draft the agent wrote, as its link names it. */
+const link = { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/drafts/agent.page-draft.json" };
+const draftAt = `/api/assistant/sessions/${link.sessionId}/runs/${link.runId}/page-draft`;
+
 async function openWithDraft(form: PanelFormValues, envelope: { operation: string; target: { id?: string }; created?: { id: string } } = { operation: "agent.update", target: { id: AGENT } }) {
-  const query = new URLSearchParams({ draftSessionId: "session-1", draftRunId: "run-1", draftPath: "outputs/drafts/agent.page-draft.json" });
+  const query = new URLSearchParams({ draftSessionId: link.sessionId, draftRunId: link.runId, draftPath: link.path });
   const draft = { pageKey: use.pageKey, ...envelope, form };
-  const sent = installPlatform((request) =>
-    request.path === "/api/assistant/sessions/session-1/runs/run-1/page-draft" ? Response.json(draft) : owner(request) ?? nothingAt(request));
+  const sent = installPlatform((request) => {
+    if (request.path === draftAt) return Response.json(draft);
+    if (request.path === `${draftAt}/created`) return new Response(null, { status: 204 });
+    return owner(request) ?? nothingAt(request);
+  });
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
   platformPanelHost("ontology").frame(frame, use, panel);
   writePanelDocument(panel, use, `/ontology/agents?${query}`, { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } });
   inside(frame);
   const failed: string[] = [];
+  const settled: unknown[] = [];
   window.addEventListener("message", (event) => {
-    if (event.data?.channel === PANEL_HOST_CHANNEL && event.data.kind === "failed") failed.push(event.data.message);
+    if (event.data?.channel !== PANEL_HOST_CHANNEL) return;
+    if (event.data.kind === "failed") failed.push(event.data.message);
+    if (event.data.kind === "draft-settled") settled.push(event.data.draft);
   });
-  return { ...(await mountPanel(panelOf("definition", "skills", "scope"))), failed, sent, draft };
+  return { ...(await mountPanel(panelOf("definition", "skills", "scope"))), failed, settled, sent, draft };
 }
 
 it("refuses a draft the owner refuses, whole, naming the field and the reason, and marks nothing", async () => {
@@ -253,4 +263,43 @@ it("reopens a saved create draft on the agent it created, and creates nothing ag
   expect(context.draft.value).toBeNull();
   expect(context.instance.dirty()).toBe(false);
   expect(sent.some((request) => request.method === "POST" && request.path === "/api/assistant/agent-definitions")).toBe(false);
+});
+
+const button = (label: string) =>
+  [...document.querySelectorAll<HTMLButtonElement>("#app .sdk-owner-form-actions button")].find((item) => item.textContent?.trim() === label)!;
+
+it("tells the host the draft is settled once the reader saved it, naming the draft that ended", async () => {
+  const { context, settled, sent } = await openWithDraft({ ...stored, name: "Analyst v2" });
+  await vi.waitFor(() => expect(context.draft.value?.changed).toEqual(new Set(["/name"])), { timeout: 5000 });
+  expect(settled).toEqual([]);
+  await context.instance.invoke("definition.save");
+  await vi.waitFor(() => expect(settled).toEqual([link]));
+  expect(sent.filter((request) => request.method === "PUT")).toHaveLength(1);
+  // An update draft has nothing to record: its object already existed.
+  expect(sent.some((request) => request.path === `${draftAt}/created`)).toBe(false);
+  expect(context.draft.value).toBeNull();
+});
+
+it("tells the host the draft is settled once the reader discarded it, and writes nothing", async () => {
+  const { context, settled, sent } = await openWithDraft({ ...stored, name: "Analyst v2" });
+  await vi.waitFor(() => expect(context.draft.value?.changed).toEqual(new Set(["/name"])), { timeout: 5000 });
+  button("Discard").click();
+  await vi.waitFor(() => expect(settled).toEqual([link]));
+  expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst");
+  expect(context.instance.dirty()).toBe(false);
+  expect(sent.some((request) => request.method === "PUT" || request.method === "POST" && request.path.endsWith("/created"))).toBe(false);
+});
+
+// The host does not yet admit a frame's `POST …/page-draft/created`, so the created record is refused before it is sent
+// and the draft stays unsettled. When the host admits it for the draft the frame read, this passes and `it.fails` fails:
+// make it an ordinary `it` then.
+it.fails("records what a saved create draft created before it tells the host the draft is settled", async () => {
+  const { context, settled, sent } = await openWithDraft({ ...defaults, name: "Planner" }, { operation: "agent.create", target: {} });
+  await vi.waitFor(() => expect(context.draft.value?.changed).toEqual(new Set(["/name"])), { timeout: 5000 });
+  expect(context.instance.state.values.value.selectedAgent).toBeNull();
+  await context.instance.invoke("definition.save");
+  await vi.waitFor(() => expect(settled).toEqual([link]));
+  const created = sent.findIndex((request) => request.path === `${draftAt}/created`);
+  expect(sent[created]?.body).toEqual({ path: link.path, id: CREATED });
+  expect(created).toBeGreaterThan(sent.findIndex((request) => request.method === "POST" && request.path === "/api/assistant/agent-definitions"));
 });
