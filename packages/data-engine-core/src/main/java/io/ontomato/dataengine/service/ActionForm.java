@@ -2,6 +2,7 @@ package io.ontomato.dataengine.service;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.ontomato.dataengine.bean.action.Action;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.function.Parameter;
@@ -37,6 +38,7 @@ public final class ActionForm {
 
   public static JSONObject describe(
       JSONObject values,
+      List<ObjectNode> errors,
       boolean existing,
       String readOnlyReason,
       String codeReadOnlyReason,
@@ -137,11 +139,11 @@ public final class ActionForm {
             codeReason,
             null,
             false));
-    return JSONObject.of("fields", fields, "values", values, "save", save(existing));
+    return JSONObject.of("fields", fields, "values", values, "errors", errors, "save", save(existing));
   }
 
-  /** Check an incoming draft without saving it; reject with the field paths that fail. */
-  public static void checkDraft(JSONObject values) {
+  /** The field errors of an incoming draft, empty when the owner accepts it; nothing is saved. */
+  public static List<ObjectNode> fieldErrors(JSONObject values) {
     PanelFormErrors errors = new PanelFormErrors();
     errors.requiredString(values, "name", "/name");
     errors.optionalString(values, "description", "/description");
@@ -162,13 +164,14 @@ public final class ActionForm {
         errors.stringArray(returnDef, "classNames", "/function/returnDef/classNames");
       FunctionForm.checkParameters(function.get("parameters"), errors, "/function");
     }
-    errors.throwIfAny("Invalid Action draft");
+    if (!errors.isEmpty()) return errors.list();
     try {
       Function.fromInput(function);
     } catch (RuntimeException error) {
+      // The embedded Function is one value of this form, so a shape it cannot take is an error on /function.
       errors.invalidObject("/function", error);
-      errors.throwIfAny("Invalid Action draft");
     }
+    return errors.list();
   }
 
   private static JSONObject targetField(

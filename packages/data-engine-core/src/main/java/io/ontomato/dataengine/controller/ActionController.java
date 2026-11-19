@@ -40,8 +40,8 @@ import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.security.CaseExecutionGuard;
 import io.ontomato.dataengine.service.ActionService;
 import io.ontomato.dataengine.service.LangService;
+import io.ontomato.dataengine.service.OwnerFieldRefusal;
 import io.ontomato.dataengine.service.OwnerRefusal;
-import io.ontomato.dataengine.service.PanelFormException;
 import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.service.agent.ActionCreationService;
 import io.ontomato.dataengine.service.impl.ActionDraftService;
@@ -142,7 +142,7 @@ public class ActionController {
 			try {
 				acceptedFunction = Function.fromAsset(param);
 			} catch (IllegalArgumentException e) {
-				throw new OwnerRefusal("ACTION_FUNCTION_INVALID", e.getMessage());
+				throw new OwnerFieldRefusal("ACTION_FUNCTION_INVALID", "/function", "invalid_object", e.getMessage());
 			}
             Action action = param.to(Action.class);
             action.setFunction(acceptedFunction);
@@ -283,10 +283,6 @@ public class ActionController {
 			User user = SystemUtils.getCurUser();
 			ret.put("data", actionService.definitionForm(param, lang, user.getDomainId()));
 			ret.put("success", true);
-		} catch (PanelFormException e) {
-			ret.put("success", false);
-			ret.put("message", e.getMessage());
-			ret.put("fields", e.fields());
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);

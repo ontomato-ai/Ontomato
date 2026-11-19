@@ -4,16 +4,20 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.alibaba.fastjson2.JSONObject;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.ontomato.dataengine.bean.action.Action;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.function.ReturnDef;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.service.LangService;
+import io.ontomato.dataengine.service.OwnerFieldRefusal;
 import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.agent.OntologyGenerationService;
 import io.ontomato.dataengine.service.scheduling.OntologyScheduleReferences;
 import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -61,11 +65,20 @@ class ActionRefusalTest {
     Action submitted = action("a1", Action.ORIGIN_USER, Action.STATUS_PUBLISHED);
     submitted.getFunction().setCode("# ontomato-python:2\nprint('new')");
 
-    OwnerRefusal error = assertThrows(OwnerRefusal.class,
+    OwnerFieldRefusal error = assertThrows(OwnerFieldRefusal.class,
         () -> service.save(submitted, null, null, "en"));
 
     assertEquals("ACTION_PUBLISHED_FROZEN", error.code());
     assertEquals("Action.publishedIsFrozen", error.getMessage());
+    assertEquals("/function/code", error.errors().get(0).get("field").asText());
+    assertEquals("invalid_object", error.errors().get(0).get("code").asText());
+    JSONObject envelope = new JSONObject();
+    error.writeTo(envelope);
+    assertFalse(envelope.getBooleanValue("success"));
+    assertEquals("ACTION_PUBLISHED_FROZEN", envelope.getString("code"));
+    @SuppressWarnings("unchecked")
+    List<ObjectNode> envelopeErrors = (List<ObjectNode>) envelope.get("errors");
+    assertEquals("/function/code", envelopeErrors.get(0).get("field").asText());
   }
 
   @Test
@@ -95,16 +108,34 @@ class ActionRefusalTest {
     Action draft = action("new", Action.ORIGIN_USER, Action.STATUS_PENDING_REVIEW);
     draft.setId(null);
     draft.getFunction().setId(null);
-    doThrow(new IllegalArgumentException("Action.target.className requires one primary key: /Order"))
+    doThrow(new OwnerFieldRefusal("ACTION_DEFINITION_INVALID", "/target", "invalid_object",
+        "Action.target.className requires one primary key: /Order"))
         .when(actionDao).validateDefinition(any());
 
-    OwnerRefusal error = assertThrows(OwnerRefusal.class,
+    OwnerFieldRefusal error = assertThrows(OwnerFieldRefusal.class,
         () -> service.save(draft, null, null, "en"));
 
     assertEquals("ACTION_DEFINITION_INVALID", error.code());
     assertEquals("Action.target.className requires one primary key: /Order", error.getMessage());
+    assertEquals("/target", error.errors().get(0).get("field").asText());
+    assertEquals("invalid_object", error.errors().get(0).get("code").asText());
     verifyNoInteractions(generationService);
     verify(actionDao, never()).saveWithFunction(any(), anyString());
+  }
+
+  @Test
+  void refusesAnEmptyFunctionAtTheFunctionField() {
+    Action draft = action("new", Action.ORIGIN_USER, Action.STATUS_PENDING_REVIEW);
+    draft.setId(null);
+    draft.setFunction(null);
+
+    OwnerFieldRefusal error = assertThrows(OwnerFieldRefusal.class,
+        () -> service.save(draft, null, null, "en"));
+
+    assertEquals("ACTION_FUNCTION_INVALID", error.code());
+    assertEquals("Function.cannotBeEmpty", error.getMessage());
+    assertEquals("/function", error.errors().get(0).get("field").asText());
+    assertEquals("required", error.errors().get(0).get("code").asText());
   }
 
   private static Action action(String id, String origin, String status) {
