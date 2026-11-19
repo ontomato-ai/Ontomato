@@ -10,7 +10,7 @@ import { panelAddress, panelUsePath } from "@ontomato/contracts/panel-host";
 import type { PanelOperation } from "@ontomato/contracts/panel-manifest";
 import { componentOperationSchema, panelStateOperation, projectionBindingKeys, projectionOperations, projectionPorts } from "@ontomato/contracts/panel-projection";
 import { productPanelContentSchema, productPanelInputSchema, productProjectionInputSchema, type PanelSkillSource, type ProductProjectionInput } from "@ontomato/contracts/product-panels";
-import { runtimeRoot } from "../../content/layout";
+import { installedAppsSdkDir } from "../../content/layout";
 import type { SkillOffering } from "../../core/skills";
 import { findCurrentProduct, type CurrentProductKind } from "../../infrastructure/product-current";
 import { panelServerOperation } from "./server-operations";
@@ -44,7 +44,7 @@ function panelSkillManifest(skill: RuntimeSkillRef, panels: readonly PanelDescri
 }
 
 export async function readComponentCatalogue(version: string) {
-  const file = path.join(runtimeRoot(), "dist/apps-sdk", version, "components.json");
+  const file = path.join(installedAppsSdkDir(), version, "components.json");
   const parsed = catalogue.parse(JSON.parse(await readFile(file, "utf8")));
   if (parsed.version !== version) throw new Error(`Expected SDK catalogue ${version}, found ${parsed.version}`);
   return new Map(parsed.components.map(component => [component.componentId, component]));
