@@ -54,12 +54,17 @@ The author workspace contains these files at its root.
 | --- | --- |
 | `panel.html` | HTML fragment with a `div#app` and a visible `<projection slot="…"></projection>` for each business slot |
 | `panel.mjs` | ES module that calls `mountPanel` from `@ontomato/sdk/panel`. Use only the host's import map |
-| `panel.json` | The JSON object `{manifest, sdkVersion}`. Use the exact installed SDK directory name, including the full content hash for a development build |
+| `panel.json` | The JSON object `{manifest, sdkVersion, content?}`. Optional `content.messages` supplies translations in the registration format. Use the exact installed SDK directory name, including the full content hash for a development build |
 | `recipes.md` | Optional task guidance for the panel's derived skill |
 
 Use `definePanel` to validate the manifest at authoring time and serialize its result as the `manifest` in `panel.json`.
 See [the SDK reference](reference.md) for the declaration API. The host reads the JSON description and gives it to
 `mountPanel` before the module runs. The HTML can be the component's template.
+
+For panel text, use `content.messages` with locale tags, flat keys and named placeholders such as `{name}`.
+For example, `{"en":{"settings.title":"Settings for {name}"}}` supplies `settings.title` to the panel's `t()`.
+The translation object may occupy up to 256 KiB as UTF-8 JSON. The preview source carries the same object
+under `panel.content.messages`, which is also the content used for registration.
 
 ```html
 <div id="app">

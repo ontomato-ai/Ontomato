@@ -1,7 +1,7 @@
 import { access } from "node:fs/promises";
 import { z } from "zod";
 import { candidatePanelSourceSchema, type CandidatePanelSource } from "@ontomato/contracts/panel-host";
-import { panelDefinitionContentSchema } from "@ontomato/contracts/product-panels";
+import { panelDefinitionContentSchema, productPanelContentSchema } from "@ontomato/contracts/product-panels";
 import { runtimeDataDir } from "../../content/layout";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
@@ -10,7 +10,10 @@ import { WorkspaceBuildTests } from "../app-builder/build-tests";
 import type { AssistantOwner } from "../assistant/store";
 import { readCurrentProjection } from "../product-panels/current";
 
-const descriptorSchema = panelDefinitionContentSchema.omit({ content: true });
+const descriptorSchema = panelDefinitionContentSchema.extend({
+  content: productPanelContentSchema.pick({ messages: true }).optional(),
+});
+const sourceFilesSchema = productPanelContentSchema.omit({ messages: true });
 const treeSchema = z.object({ files: z.array(z.object({ path: z.string() })) });
 
 async function requireInstalledSdk(version: string) {
@@ -42,10 +45,9 @@ export async function readPanelCandidate(
     if (!(error instanceof SyntaxError)) throw error;
     throw new HttpError(400, `Invalid panel.json: ${error.message}`, "PANEL_CANDIDATE_INVALID");
   }
-  const panel = panelDefinitionContentSchema.parse({
-    ...descriptorSchema.parse(descriptor),
-    content: { html, module, ...(recipes === undefined ? {} : { recipes }) },
-  });
+  const { content: inlineContent, ...metadata } = descriptorSchema.parse(descriptor);
+  const files = sourceFilesSchema.parse({ html, module, ...(recipes === undefined ? {} : { recipes }) });
+  const panel = { ...metadata, content: { ...files, ...inlineContent } };
   await requireInstalledSdk(panel.sdkVersion);
   const projectionIds = new Set(Object.values(panel.manifest.slots).map(slot => slot.projectionId));
   await Promise.all([...projectionIds].map(projectionId => readCurrentProjection(owner, credentials, projectionId)));
