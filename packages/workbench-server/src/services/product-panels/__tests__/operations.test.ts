@@ -508,7 +508,14 @@ it("freezes a human batch and its impact, then claims once with the reader's cre
   vi.stubGlobal("fetch", ownerWrite);
   const preparation = await prepareHumanPanelOperation(owner, credentials, input);
   const id = preparation.intentId;
-  expect(intents.get(id)).toMatchObject({ source: { kind: "human" }, initiator: owner, calls: input.calls, impact, dispatched: false });
+  expect(preparation.confirmation).toEqual({
+    kind: "batch", impact, targets: { total: input.calls.length, objects: input.calls.map(({ target }) => ({
+      target: { primaryKey: target.primaryKey, objectType: target.objectType }, label: target.primaryKey,
+    })) },
+  });
+  expect(intents.get(id)).toMatchObject({
+    source: { kind: "human" }, initiator: owner, calls: input.calls, confirmation: preparation.confirmation, dispatched: false,
+  });
   const useRef = { applicationId: input.applicationId, useId: input.useId };
   expect(await projectPanelOperationIntent(owner, id, useRef)).toEqual(preparation);
   await expect(projectPanelOperationIntent(owner, id, { ...useRef, useId: "other" })).rejects.toMatchObject({ status: 404 });
@@ -529,6 +536,20 @@ it("refuses to dispatch an agent intent from the human route", async () => {
   await operatePanel(owner, credentials, current.id, action());
   await expect(dispatchHumanPanelOperation(owner, credentials, action().intentId)).rejects.toMatchObject({ code: "FORBIDDEN" });
   expect(ownerWrites()).toHaveLength(0);
+});
+
+it("requires confirmation for a batch without an impact inspector", async () => {
+  const { handler, request } = installBatchOwner();
+  const { inspectImpact: _inspector, ...withoutInspector } = handler;
+  vi.mocked(serverOperations.panelServerOperation).mockReturnValue(withoutInspector);
+  const { intentId: _id, ...input } = request;
+  const { confirmation } = await prepareHumanPanelOperation(owner, credentials, input);
+  expect(confirmation).toEqual({ kind: "batch", targets: {
+    total: input.calls.length, objects: input.calls.map(({ target }) => ({
+      target: { primaryKey: target.primaryKey, objectType: target.objectType }, label: target.primaryKey,
+    })),
+  } });
+  expect(handler.executeBatch).not.toHaveBeenCalled();
 });
 
 it("runs a registered read using the reader and preview context without creating an intent", async () => {

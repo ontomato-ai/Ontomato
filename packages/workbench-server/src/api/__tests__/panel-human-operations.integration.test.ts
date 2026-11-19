@@ -54,7 +54,7 @@ const run = platformTaskRunSchema.parse({
 });
 const call = { target: { kind: "object", objectType, primaryKey: task.id }, input: {} };
 let server: Server;
-let currentTitle = task.title;
+let ownerReads = 0;
 const ownerWrites: { credential: string | undefined; idempotencyKey: string | undefined }[] = [];
 
 beforeAll(async () => {
@@ -75,7 +75,8 @@ beforeAll(async () => {
   });
   app.get("/platform/scheduled-tasks/:taskId", (req, res) => {
     if (req.params.taskId !== task.id || req.header("tk") !== "alice") { res.sendStatus(403); return; }
-    res.json({ ...task, title: currentTitle });
+    ownerReads += 1;
+    res.json(task);
   });
   app.post("/platform/scheduled-tasks/:taskId/runs", (req, res) => {
     if (req.params.taskId !== task.id || req.header("tk") !== "alice") { res.sendStatus(403); return; }
@@ -112,12 +113,9 @@ it("stores the host's exact confirmation and claims the registered owner once as
   expect(prepared.status).toBe(200);
   const confirmation = panelHumanOperationPreparationSchema.parse(await prepared.json());
   const { intentId } = confirmation;
-  expect(confirmation.impact).toEqual({
-    summary: "", total: 1, objects: [{ target: { objectType, primaryKey: task.id }, label: task.title }],
-  });
+  expect(confirmation.confirmation).toEqual({ kind: "none" });
+  expect(ownerReads).toBe(0);
   expect(ownerWrites).toEqual([]);
-
-  currentTitle = "Renamed live task";
   const read = `/panel-operation-intents/${intentId}?applicationId=${use.applicationId}&useId=`;
   expect(await (await request(read + use.useId, "alice")).json()).toEqual(confirmation);
   expect((await request(read + use.useId, "bob")).status).toBe(404);
@@ -142,6 +140,6 @@ it("stores the host's exact confirmation and claims the registered owner once as
   expect(ownerWrites).toEqual([{ credential: "alice", idempotencyKey: intentId }]);
   const stored = await state.pool!.query(`SELECT question_id,intent FROM "${state.schema}".panel_operation_intents WHERE id=$1`, [intentId]);
   expect(stored.rows).toMatchObject([{ question_id: null, intent: {
-    source: { kind: "human" }, call, impact: confirmation.impact, dispatched: true, outcome: result.outcome,
+    source: { kind: "human" }, call, confirmation: { kind: "none" }, dispatched: true, outcome: result.outcome,
   } }]);
 });

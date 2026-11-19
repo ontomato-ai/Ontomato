@@ -9,7 +9,8 @@ import {
   PANEL_CONFIRMATION_EXPIRED, isPanelHumanOperationIntent, panelHumanOperationPreparationSchema, panelOperationOutcomeSchema,
   type inspectPanelOperationImpactRequestSchema,
   type CreatePanelHumanOperationIntentRequest, type CreatePanelOperationIntentRequest, type PanelAgentOperationIntent,
-  type PanelHumanOperationDispatchResponse, type PanelHumanOperationIntent, type PanelHumanOperationPreparation,
+  type PanelHumanOperationConfirmation, type PanelHumanOperationDispatchResponse, type PanelHumanOperationIntent,
+  type PanelHumanOperationPreparation,
   type PanelOperationIntent, type PanelOperateResponse, type PanelOperationRef, type ReadPanelOperationRequest,
   type PanelUseRef, type PanelOperationOutcome, type StoredPanelOperationIntent,
 } from "@ontomato/contracts/panel-agent";
@@ -119,7 +120,7 @@ export async function readPanelOperation(owner: AssistantOwner, credentials: Ass
   if (current.effect !== "read") throw new HttpError(422, "This operation requires a write intent", "OPERATION_READ_REQUIRED");
   const { handler } = current;
   const call = { target: handler.targetSchema.parse(request.call.target), input: handler.inputSchema.parse(request.call.input) };
-  return handler.resultSchema.parse(await handler.execute(operationHost(credentials), call));
+  return handler.execute(operationHost(credentials), call);
 }
 
 function requireFrozenOperation(
@@ -223,7 +224,7 @@ export async function inspectPanelOperationImpact(owner: AssistantOwner, credent
 
 function humanPreparation(intent: PanelHumanOperationIntent): PanelHumanOperationPreparation {
   return panelHumanOperationPreparationSchema.parse({
-    intentId: intent.intentId, operationId: intent.operation.id, label: intent.operation.label, impact: intent.impact,
+    intentId: intent.intentId, operationId: intent.operation.id, label: intent.operation.label, confirmation: intent.confirmation,
   });
 }
 
@@ -239,16 +240,19 @@ export async function projectPanelOperationIntent(owner: AssistantOwner, id: str
   return agent.kind === "confirmation-expired" ? agent : agent.intent;
 }
 
-async function humanImpact(handler: PanelWriteServerOperation, host: PanelOperationHost, invocation: CheckedInvocation) {
-  if (handler.inspectImpact) return ownerImpact(handler.inspectImpact, host, invocation);
-  const targets = "calls" in invocation
-    ? invocation.calls.map(call => call.target)
-    : invocation.target.kind === "object" ? [invocation.target] : [];
-  const objects = await Promise.all(targets.map(async target => ({
-    target: { objectType: target.objectType, primaryKey: target.primaryKey },
-    label: handler.kind === "action" ? await handler.targetLabel(host, target) : target.primaryKey,
-  })));
-  return { summary: "", objects, total: targets.length };
+async function humanConfirmation(
+  handler: PanelWriteServerOperation, host: PanelOperationHost, invocation: CheckedInvocation,
+): Promise<PanelHumanOperationConfirmation> {
+  const impact = handler.inspectImpact && ownerImpact(handler.inspectImpact, host, invocation);
+  if ("call" in invocation) return impact ? { kind: "impact", impact: await impact } : { kind: "none" };
+  const [objects, details] = await Promise.all([
+    Promise.all(invocation.calls.map(async ({ target }) => ({
+      target: { objectType: target.objectType, primaryKey: target.primaryKey },
+      label: await invocation.owner.targetLabel(host, target),
+    }))),
+    impact,
+  ]);
+  return { kind: "batch", targets: { objects, total: invocation.calls.length }, ...(details && { impact: details }) };
 }
 
 export async function prepareHumanPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials,
@@ -256,7 +260,7 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
 ): Promise<PanelHumanOperationPreparation> {
   const current = writeOperation(await operationForUse(owner, credentials, input));
   const prepared = validateInvocation(current.handler, input);
-  const impact = await humanImpact(current.handler, operationHost(credentials), prepared);
+  const confirmation = await humanConfirmation(current.handler, operationHost(credentials), prepared);
   const intent: PanelHumanOperationIntent = {
     intentId: randomUUID(),
     source: { kind: "human" },
@@ -267,7 +271,7 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
     binding: current.projection.binding,
     operation: current.operation,
     ...invocationOf(input),
-    impact,
+    confirmation,
     dispatched: false,
     outcome: null,
   };

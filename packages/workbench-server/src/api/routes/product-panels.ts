@@ -2,7 +2,7 @@ import {
   createPanelHumanOperationIntentRequestSchema, dispatchPanelHumanOperationIntentRequestSchema,
   inspectPanelOperationImpactRequestSchema, panelHumanOperationDispatchResponseSchema, panelHumanOperationIntentParamsSchema,
   panelOperationDescriptorResponseSchema, panelOperationRefSchema, panelUseRefSchema,
-  readPanelOperationRequestSchema, updatePanelOperationSettingsRequestSchema,
+  readPanelOperationRequestSchema, readPanelOperationResponseSchema, updatePanelOperationSettingsRequestSchema,
 } from "@ontomato/contracts/panel-agent";
 import { agentSessionRefSchema } from "@ontomato/contracts/agent-channel";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
@@ -115,7 +115,7 @@ panelOperationsRouter.post("/panel-operations/read", wrap(async (req, res) => {
   const preview = req.header(BUILD_TEST_HEADER);
   const reader = preview === undefined
     ? credentials : { ...credentials, headers: { ...credentials.headers, [BUILD_TEST_HEADER]: preview } };
-  res.json(await readPanelOperation(owner, reader, input));
+  res.json(readPanelOperationResponseSchema.parse(await readPanelOperation(owner, reader, input)));
 }));
 
 panelOperationsRouter.post("/panel-operations/inspect-impact", wrap(async (req, res) => {
