@@ -17,10 +17,9 @@ public class KnowledgeGovernanceController {
     this.governance=governance;this.access=access;
   }
   @PostMapping("/skill-package")
-  @ResponseStatus(HttpStatus.NO_CONTENT)
-  public void publishSkill(HttpServletRequest request) throws Exception {
+  public AgentRuntimeClient.SkillVersion publishSkill(HttpServletRequest request) throws Exception {
     access.service(request);
-    governance.publishSkill();
+    return governance.publishSkill();
   }
   @PostMapping("/platform-windows")
   public Object register(@RequestBody java.util.Map<String,Object> input,HttpServletRequest request) {

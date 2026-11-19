@@ -15,10 +15,12 @@ vi.mock('../../../platform/agent-runtime/runtime',()=>({messageText:(message:{co
 vi.mock('../ontology-retrieval',()=>({OntologyRetrievalClient:class{open=mocks.open;}}));
 vi.mock('../../agent-runtime/callback-credential',()=>({callbackCredential:mocks.callback}));
 import {prepareAnalystRun,type AssistantPreparation} from '../prepare';
+const analyst = {name:'analyst',namespace:{kind:'provider' as const,provider:'ontology'}};
+const digest = 'a'.repeat(64);
 function request(executionUserId:string|null=null):AssistantPreparation {
- return {a:{id:'agent',kind:'regular',skills:[{name:'analyst'}],enabled_mcp_service_ids:['external'],model_selection:{modelId:null}},session:{id:'session',agent_id:'agent'},turn:{id:'run',created_at:new Date(),retrieval_scope_id:'run',class_names:['Person']},message:'Question',inputId:'input',input:{role:'user',content:'Question',timestamp:1},ontologyContext:null,owner:{domainId:'domain',userId:'human'},credentials:{token:'human-secret',locale:'en'},executionUserId,executionCredentials:executionUserId===null?{token:'human-secret',locale:'en'}:{apiKey:'executor-key',locale:'en',executionUserId}} as unknown as AssistantPreparation;
+ return {a:{id:'agent',kind:'regular',skills:[analyst],enabled_mcp_service_ids:['external'],model_selection:{modelId:null}},session:{id:'session',agent_id:'agent'},turn:{id:'run',created_at:new Date(),retrieval_scope_id:'run',class_names:['Person']},message:'Question',inputId:'input',input:{role:'user',content:'Question',timestamp:1},ontologyContext:null,owner:{domainId:'domain',userId:'human'},credentials:{token:'human-secret',locale:'en'},executionUserId,executionCredentials:executionUserId===null?{token:'human-secret',locale:'en'}:{apiKey:'executor-key',locale:'en',executionUserId}} as unknown as AssistantPreparation;
 }
-beforeEach(()=>{vi.resetAllMocks();mocks.source.mockResolvedValue(null);mocks.open.mockResolvedValue({id:"run"});mocks.profile.mockResolvedValue(null);mocks.skills.mockResolvedValue({skills:[{name:'analyst'}],pageDrafts:true});mocks.callback.mockReturnValue({value:'sealed-callback'});mocks.overview.mockResolvedValue('Ontology');mocks.environment.mockImplementation(credentials=>({values:{},secrets:{ONTOMATO_TK:credentials.token}}));});
+beforeEach(()=>{vi.resetAllMocks();mocks.source.mockResolvedValue(null);mocks.open.mockResolvedValue({id:"run"});mocks.profile.mockResolvedValue(null);mocks.skills.mockResolvedValue({skills:[{skill:analyst,digest}],pageDrafts:true});mocks.callback.mockReturnValue({value:'sealed-callback'});mocks.overview.mockResolvedValue('Ontology');mocks.environment.mockImplementation(credentials=>({values:{},secrets:{ONTOMATO_TK:credentials.token}}));});
 it('limits a Profile run to frozen projection tools without inherited skills or model-readable human credentials',async()=>{
  mocks.source.mockResolvedValue({profileId:'profile'});
  mocks.profile.mockResolvedValue({id:'profile',agentId:'agent',releaseId:'release',instructions:'Instructions',tools:[],contextViews:[]});
@@ -30,7 +32,7 @@ it('limits a Profile run to frozen projection tools without inherited skills or 
 });
 it('keeps the initiator identity for caller ownership and native skills in self mode',async()=>{
  const input=request();const run=await prepareAnalystRun(input);
- expect(run.definition.skills).toEqual([{name:'analyst'}]);expect(run.definition.externalMcp).toEqual([{id:'external'}]);expect(run.definition.toolSurface).toBeUndefined();
+ expect(run.definition.skills).toEqual([{skill:analyst,digest}]);expect(run.definition.externalMcp).toEqual([{id:'external'}]);expect(run.definition.toolSurface).toBeUndefined();
  expect(mocks.skills).toHaveBeenCalledWith('domain',input.a,input.credentials);
  expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({executionUserId:null,classNames:['Person']}),input.credentials);
  expect(run.environment.secrets.ONTOMATO_TK).toBe('human-secret');
@@ -50,10 +52,10 @@ it('uses executor business credentials while page skills and caller ownership st
 
 it.each(['regular','analysis'])('prepares the default %s with reusable chart producers and their shared instruction',async(kind)=>{
  const input=request();input.a.kind=kind;input.a.skills=defaultAssistantSkills;
- mocks.skills.mockResolvedValue({skills:input.a.skills,pageDrafts:false});mocks.environment.mockReturnValue({values:{},secrets:{}});
+ mocks.skills.mockResolvedValue({skills:input.a.skills.map(skill=>({skill,digest})),pageDrafts:false});mocks.environment.mockReturnValue({values:{},secrets:{}});
  const run=await prepareAnalystRun(input);
  for(const name of ['echarts','leaflet','admin-choropleth-map']){
-   expect(run.definition.skills).toContainEqual({name,namespace:{kind:'provider',provider:'workbench'}});
+   expect(run.definition.skills).toContainEqual({skill:{name,namespace:{kind:'provider',provider:'workbench'}},digest});
    expect(run.definition.systemPrompt).toContain(name);
  }
  expect(run.definition.systemPrompt).toContain('Do not hand-write ECharts options');
