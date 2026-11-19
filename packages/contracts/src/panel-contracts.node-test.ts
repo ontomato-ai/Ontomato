@@ -35,6 +35,11 @@ import {
 } from "./panel-projection";
 import { platformTaskFrequencySchema } from "./platform-schedules";
 import {
+  platformOntologyCountsResponseSchema, platformOntologyNeighborsRequestSchema, platformOntologyNeighborsResponseSchema,
+  platformOntologyObjectsRequestSchema, platformOntologyObjectsResponseSchema, platformOntologyReadQuerySchema,
+  platformOntologySchemaResponseSchema, platformOntologyStartResponseSchema,
+} from "./platform-ontology";
+import {
   DEFINITION, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, USER as ONTOLOGY_USER,
   platformObjectTypes, platformOntologyLayers, platformRelationKinds,
 } from "./platform-object-types";
@@ -515,7 +520,7 @@ test("a declared child collection carries its parent-scoped selection across pan
   assert.equal(panelStateFieldSchema.safeParse({ ...field, collection: "issues" }).success, false);
 
   assert.deepEqual(panelOpenRequestSchema.parse({ useId: "skills", state }).state, state);
-  assert.deepEqual(panelStateOperationSchema.parse({ id: "choose", label: "Choose", kind: "state", sets: state }).sets, state);
+  assert.deepEqual(panelStateOperationSchema.parse({ id: "choose", labelKey: "choose", kind: "state", sets: state }).sets, state);
   const frame = { kind: "state", fromAddress: "/skills", state };
   assert.deepEqual(panelFrameMessageSchema.parse(frame), frame);
 
@@ -535,6 +540,21 @@ test("governance issues and sources use separate collection queries under one pa
   assert.equal(panelChildCollectionQuerySchema.safeParse({ parent, collection: "files" }).success, false);
   const unconverted = { className: parent.objectType, primaryKey: parent.primaryKey };
   assert.equal(panelChildCollectionQuerySchema.safeParse({ parent: unconverted, collection: "sources" }).success, false);
+});
+
+test("checked object collections are typed ports and never become deep-link state", () => {
+  const field = { kind: "objects", objectType: METRIC_VIEW };
+  const refs = [{ className: METRIC_VIEW, primaryKey: "metric-a" }, { className: METRIC_VIEW, primaryKey: "metric-b" }];
+  const state = { checked: refs };
+  assert.deepEqual(panelStateFieldSchema.parse(field), { ...field, deepLink: false });
+  assert.equal(panelStateFieldSchema.safeParse({ ...field, deepLink: true }).success, false);
+  assert.deepEqual(ontologyParameterTypeSchema.parse(field), field);
+  assert.equal(singleOntologyParameterTypeSchema.safeParse(field).success, false);
+  assert.deepEqual(panelStateValueSchema.parse(refs), refs);
+  assert.deepEqual(panelStateValueSchema.parse([]), []);
+  assert.deepEqual(panelStateOperationSchema.parse({ id: "clear", labelKey: "clear", kind: "state", sets: { checked: [] } }).sets, { checked: [] });
+  assert.equal(panelOpenRequestSchema.safeParse({ useId: "metrics", state }).success, false);
+  assert.equal(panelFrameMessageSchema.safeParse({ kind: "state", fromAddress: "/ontology/metrics", state }).success, false);
 });
 
 test("mixed graphs declare selected node types separately from the read bindings", () => {
@@ -603,6 +623,36 @@ test("platform ontology routes are semantic reads on the declared bindings", () 
     assert.ok(!clientSends([binding(OBJECT_TYPE)], method, "", path));
   }
   assert.ok(!clientSends([binding(ONTOLOGY_TYPE)], "POST", "", "/platform-ontology/delete"));
+});
+
+test("platform ontology start uses the same full node as neighbors, or null", () => {
+  const identity = { className: ONTOLOGY_USER, primaryKey: "user-a" };
+  const node = { ...identity, label: "Alice", layer: "governance" };
+  assert.deepEqual(platformOntologyStartResponseSchema.parse({ node }), { node });
+  assert.deepEqual(platformOntologyStartResponseSchema.parse({ node: null }), { node: null });
+  assert.equal(platformOntologyStartResponseSchema.safeParse({ node: identity, label: node.label, layer: node.layer }).success, false);
+  assert.deepEqual(platformOntologyNeighborsResponseSchema.parse({ node, neighbors: [], edges: [], relations: [] }).node, node);
+});
+
+test("platform ontology reads preserve declared topology, owner status and scoped object identities", () => {
+  const catalog = {
+    layers: platformOntologyLayers,
+    objectTypes: [{ id: ONTOLOGY_USER, layer: "governance", labelKey: "platformOntology.types.user" }],
+    relationKinds: platformRelationKinds,
+  };
+  assert.deepEqual(platformOntologyReadQuerySchema.parse({}), {});
+  assert.deepEqual(platformOntologySchemaResponseSchema.parse(catalog), catalog);
+  const counts = { counts: [{ type: ONTOLOGY_USER, layer: "governance", status: "unavailable", reason: "Owner pending" }] };
+  assert.deepEqual(platformOntologyCountsResponseSchema.parse(counts), counts);
+
+  const node = { className: ONTOLOGY_USER, primaryKey: "user-a" };
+  assert.deepEqual(platformOntologyNeighborsRequestSchema.parse({ node, layers: ["capability"] }).node, node);
+  assert.equal(platformOntologyNeighborsRequestSchema.safeParse({ node, layers: ["unknown"] }).success, false);
+  const query = { type: ONTOLOGY_USER, keyword: "Alice", page: 2, pageSize: 10 };
+  assert.deepEqual(platformOntologyObjectsRequestSchema.parse(query), query);
+  assert.equal(platformOntologyObjectsRequestSchema.safeParse({ ...query, pageSize: 201 }).success, false);
+  const objects = { type: ONTOLOGY_USER, layer: "governance", status: "ok", items: [{ node, label: "Alice" }], total: 11, page: 2, pageSize: 10 };
+  assert.deepEqual(platformOntologyObjectsResponseSchema.parse(objects), objects);
 });
 
 test("the four-layer topology points to declared kinds and distinguishes stored and derived edges", () => {

@@ -64,11 +64,16 @@ function projectionRecord(
   };
 }
 
-function hostWith(projections: readonly ProductProjection[]) {
+function hostWith(
+  projections: readonly ProductProjection[],
+  extra?: (request: Sent) => Response | Promise<Response> | undefined,
+) {
   const byId = Object.fromEntries(projections.map((item) => [item.id, item]));
-  return (request: Sent) => {
+  return async (request: Sent) => {
     const match = /^\/api\/product-projections\/(.+)$/.exec(request.path);
     if (match && byId[match[1]!]) return Response.json({ projection: byId[match[1]!] });
+    const handled = await extra?.(request);
+    if (handled) return handled;
     return nothingAt(request);
   };
 }
@@ -97,73 +102,66 @@ it("renders ObjectRelations grouped by relation kind with distinct statuses and 
   panel.content.html = `<div id="app"><Projection slot="relations"></Projection></div>`;
   const use = panelUse("use-node-relations", "node-relations", panel.id, "/ontology/assets/relations");
 
-  installPlatform(hostWith([relProj]));
+  const neighborCalls: Array<{ className: string; primaryKey: string }> = [];
+  installPlatform(hostWith([relProj], (request) => {
+    if (request.path !== "/api/platform-ontology/neighbors") return undefined;
+    const { node } = request.body as { node: { className: string; primaryKey: string } };
+    neighborCalls.push({ ...node });
+    if (node.className === USER && node.primaryKey === "u-1") {
+      return Response.json({
+        node: { className: USER, primaryKey: "u-1", label: "Alice", layer: "governance" },
+        neighbors: [
+          { className: ROLE, primaryKey: "r-admin", label: "Platform Admin", layer: "governance" },
+          { className: ACTION, primaryKey: "act-deploy", label: "Deploy Release", layer: "capability" },
+        ],
+        edges: [
+          {
+            id: "e-role",
+            relationKind: "user.holds-role",
+            from: { className: USER, primaryKey: "u-1" },
+            to: { className: ROLE, primaryKey: "r-admin" },
+            direction: "outgoing",
+            derived: false,
+          },
+          {
+            id: "e-act",
+            relationKind: "user.created-action",
+            from: { className: USER, primaryKey: "u-1" },
+            to: { className: ACTION, primaryKey: "act-deploy" },
+            direction: "outgoing",
+            derived: true,
+          },
+        ],
+        relations: [
+          { relationKind: "user.holds-role", status: "ok", edgeCount: 1 },
+          { relationKind: "user.created-action", status: "ok", edgeCount: 1 },
+          { relationKind: "user.created-workflow", status: "ok", edgeCount: 0 },
+          { relationKind: "role.can-execute-action", status: "refused", edgeCount: 0, reason: "Missing grants:read" },
+          { relationKind: "agent.executes-as-user", status: "failed", edgeCount: 0, reason: "Assistant timeout" },
+          { relationKind: "user.published-metric-view", status: "unavailable", edgeCount: 0, reason: "Pending M4" },
+        ],
+      });
+    }
+    return Response.json({
+      node: { className: node.className, primaryKey: node.primaryKey, label: "Deploy Release", layer: "capability" },
+      neighbors: [{ className: USER, primaryKey: "u-1", label: "Alice", layer: "governance" }],
+      edges: [
+        {
+          id: "e-back",
+          relationKind: "user.created-action",
+          from: { className: USER, primaryKey: "u-1" },
+          to: { className: ACTION, primaryKey: "act-deploy" },
+          direction: "incoming",
+          derived: true,
+        },
+      ],
+      relations: [{ relationKind: "user.created-action", status: "ok", edgeCount: 1 }],
+    });
+  }));
   const frame = panelFrame();
   platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
   writePanelDocument(panel, use, use.path, {});
   inside(frame);
-
-  const { registerPlatformObjectAdapter } = await import(
-    "../../../../../packages/apps-sdk/src/panel/platform-objects"
-  );
-  const neighborCalls: Array<{ className: string; primaryKey: string }> = [];
-  registerPlatformObjectAdapter({
-    objectType: ONTOLOGY_TYPE,
-    graph: {
-      neighbors: async ({ node }) => {
-        neighborCalls.push({ ...node });
-        if (node.className === USER && node.primaryKey === "u-1") {
-          return {
-            node: { className: USER, primaryKey: "u-1", label: "Alice", layer: "governance" },
-            neighbors: [
-              { className: ROLE, primaryKey: "r-admin", label: "Platform Admin", layer: "governance" },
-              { className: ACTION, primaryKey: "act-deploy", label: "Deploy Release", layer: "capability" },
-            ],
-            edges: [
-              {
-                id: "e-role",
-                relationKind: "user.holds-role",
-                from: { className: USER, primaryKey: "u-1" },
-                to: { className: ROLE, primaryKey: "r-admin" },
-                direction: "outgoing",
-                derived: false,
-              },
-              {
-                id: "e-act",
-                relationKind: "user.created-action",
-                from: { className: USER, primaryKey: "u-1" },
-                to: { className: ACTION, primaryKey: "act-deploy" },
-                direction: "outgoing",
-                derived: true,
-              },
-            ],
-            relations: [
-              { relationKind: "user.holds-role", status: "ok", edgeCount: 1 },
-              { relationKind: "user.created-action", status: "ok", edgeCount: 1 },
-              { relationKind: "user.created-workflow", status: "ok", edgeCount: 0 },
-              { relationKind: "role.can-execute-action", status: "refused", edgeCount: 0, reason: "Missing grants:read" },
-              { relationKind: "agent.executes-as-user", status: "failed", edgeCount: 0, reason: "Assistant timeout" },
-              { relationKind: "user.published-metric-view", status: "unavailable", edgeCount: 0, reason: "Pending M4" },
-            ],
-          };
-        }
-        return {
-          node: { className: node.className, primaryKey: node.primaryKey, label: "Deploy Release", layer: "capability" },
-          neighbors: [{ className: USER, primaryKey: "u-1", label: "Alice", layer: "governance" }],
-          edges: [
-            {
-              id: "e-back",
-              relationKind: "user.created-action",
-              from: { className: USER, primaryKey: "u-1" },
-              to: { className: ACTION, primaryKey: "act-deploy" },
-              direction: "incoming",
-            },
-          ],
-          relations: [{ relationKind: "user.created-action", status: "ok", edgeCount: 1 }],
-        };
-      },
-    },
-  });
 
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const mounted = await mountPanel({});
@@ -241,56 +239,86 @@ it("supports dynamic type queries, status separation, search/paging reset and fu
   panel.content.messages = { en: { "picker.selectType": "Choose a type from the graph" } };
   const use = panelUse("use-type-picker", "type-picker", panel.id, "/ontology/assets/picker");
 
-  installPlatform(hostWith([pickerProj]));
+  const queries: Array<{ objectType?: string; search?: string; offset?: number; limit?: number }> = [];
+  installPlatform(hostWith([pickerProj], (request) => {
+    if (request.path !== "/api/platform-ontology/objects") return undefined;
+    const body = request.body as { type: string; keyword?: string; page?: number; pageSize?: number };
+    const pageSize = body.pageSize ?? 20;
+    const page = body.page ?? 1;
+    const offset = (page - 1) * pageSize;
+    queries.push({
+      objectType: body.type,
+      search: body.keyword,
+      offset,
+      limit: pageSize,
+    });
+    if (body.type === ROLE) {
+      return Response.json({
+        type: ROLE,
+        layer: "governance",
+        status: "refused",
+        reason: "No role permission",
+        items: [],
+        total: 0,
+        page,
+        pageSize,
+      });
+    }
+    if (body.type === USER) {
+      return Response.json({
+        type: USER,
+        layer: "governance",
+        status: "failed",
+        reason: "Identity service 503",
+        items: [],
+        total: 0,
+        page,
+        pageSize,
+      });
+    }
+    if (body.type === "platform:Definition") {
+      return Response.json({
+        type: "platform:Definition",
+        layer: "capability",
+        status: "unavailable",
+        reason: "Owner not connected",
+        items: [],
+        total: 0,
+        page,
+        pageSize,
+      });
+    }
+    if (body.type === WORKFLOW) {
+      // Shares primaryKey "shared-1" with ACTION to verify full (className, primaryKey) selection matching
+      return Response.json({
+        type: WORKFLOW,
+        layer: "capability",
+        status: "ok",
+        items: [{ node: { className: WORKFLOW, primaryKey: "shared-1" }, label: "Nightly Flow" }],
+        total: 1,
+        page,
+        pageSize,
+      });
+    }
+    const all = [
+      { node: { className: ACTION, primaryKey: "shared-1" }, label: "Deploy Action" },
+      { node: { className: ACTION, primaryKey: "act-2" }, label: "Rollback Action" },
+      { node: { className: ACTION, primaryKey: "act-3" }, label: "Audit Action" },
+    ].filter((item) => !body.keyword || item.label.toLowerCase().includes(body.keyword.toLowerCase()));
+    return Response.json({
+      type: body.type,
+      layer: "capability",
+      status: "ok",
+      items: all.slice(offset, offset + pageSize),
+      total: all.length,
+      page,
+      pageSize,
+    });
+  }));
   const frame = panelFrame();
   platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
   writePanelDocument(panel, use, use.path, {});
   inside(frame);
-
-  const { registerPlatformObjectAdapter } = await import(
-    "../../../../../packages/apps-sdk/src/panel/platform-objects"
-  );
-  const queries: Array<{ objectType?: string; search?: string; offset?: number; limit?: number }> = [];
-  registerPlatformObjectAdapter({
-    objectType: ONTOLOGY_TYPE,
-    query: async (q) => {
-      queries.push({
-        objectType: q.objectType,
-        search: q.search,
-        offset: q.page?.offset,
-        limit: q.page?.limit,
-      });
-      if (q.objectType === ROLE) {
-        return { items: [], total: 0, status: "refused", reason: "No role permission" };
-      }
-      if (q.objectType === USER) {
-        return { items: [], total: 0, status: "failed", reason: "Identity service 503" };
-      }
-      if (q.objectType === "platform:Definition") {
-        return { items: [], total: 0, status: "unavailable", reason: "Owner not connected" };
-      }
-      if (q.objectType === WORKFLOW) {
-        // Shares primaryKey "shared-1" with ACTION to verify full (className, primaryKey) selection matching
-        return {
-          items: [{ primaryKey: "shared-1", className: WORKFLOW, label: "Nightly Flow", fields: {} }],
-          total: 1,
-          status: "ok",
-        };
-      }
-      const all = [
-        { primaryKey: "shared-1", className: ACTION, label: "Deploy Action", fields: {} },
-        { primaryKey: "act-2", className: ACTION, label: "Rollback Action", fields: {} },
-        { primaryKey: "act-3", className: ACTION, label: "Audit Action", fields: {} },
-      ].filter((item) => !q.search || item.label.toLowerCase().includes(q.search.toLowerCase()));
-      const offset = q.page?.offset ?? 0;
-      const limit = q.page?.limit ?? all.length;
-      return {
-        items: all.slice(offset, offset + limit),
-        total: all.length,
-        status: "ok",
-      };
-    },
-  });
 
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const mounted = await mountPanel({});

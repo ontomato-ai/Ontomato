@@ -150,10 +150,15 @@ const graphProjection = (
   display,
 });
 
-function hostWith(projections: Record<string, ProductProjection>) {
-  return (request: Sent) => {
+function hostWith(
+  projections: Record<string, ProductProjection>,
+  extra?: (request: Sent) => Response | Promise<Response> | undefined,
+) {
+  return async (request: Sent) => {
     const match = /^\/api\/product-projections\/(.+)$/.exec(request.path);
     if (match && projections[match[1]!]) return Response.json({ projection: projections[match[1]!] });
+    const handled = await extra?.(request);
+    if (handled) return handled;
     return nothingAt(request);
   };
 }
@@ -247,19 +252,9 @@ it("renders type mode in four-layer columns with count statuses, internal layer 
   panel.content.html = `<div id="app"><Projection slot="graph"></Projection></div>`;
   const use = panelUse("use-cap-type", "cap-map-type", panel.id, "/ontology/assets/capability-map");
 
-  installPlatform(hostWith(projections));
-  const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, { mode: "type" });
-  inside(frame);
-
-  const { registerPlatformObjectAdapter } = await import(
-    "../../../../../packages/apps-sdk/src/panel/platform-objects"
-  );
-  registerPlatformObjectAdapter({
-    objectType: ONTOLOGY_TYPE,
-    graph: {
-      schema: async () => ({
+  installPlatform(hostWith(projections, (request) => {
+    if (request.path === "/api/platform-ontology/schema") {
+      return Response.json({
         layers: ["fact", "capability", "governance", "product"],
         objectTypes: [
           { id: OBJECT_TYPE, layer: "fact", labelKey: "platformOntology.types.objectType" },
@@ -275,6 +270,7 @@ it("renders type mode in four-layer columns with count statuses, internal layer 
             to: OBJECT_TYPE,
             labelKey: "platformOntology.relations.action.targets-object-type",
             derived: false,
+            owner: "java-action",
           },
           {
             id: "role.owns-workflow-step",
@@ -282,21 +278,31 @@ it("renders type mode in four-layer columns with count statuses, internal layer 
             to: WORKFLOW,
             labelKey: "platformOntology.relations.role.owns-workflow-step",
             derived: true,
+            owner: "java-workflow",
           },
         ],
-      }),
-      counts: async () => [
-        { type: OBJECT_TYPE, layer: "fact", status: "ok", count: 12 },
-        { type: ACTION, layer: "capability", status: "refused", reason: "No action permission" },
-        { type: WORKFLOW, layer: "capability", status: "failed", reason: "Upstream 500" },
-        { type: USER, layer: "governance", status: "ok", count: 5 },
-        { type: APPLICATION, layer: "product", status: "unavailable" },
-      ],
-      neighbors: async () => {
-        throw new Error("neighbors should not be called in type mode");
-      },
-    },
-  });
+      });
+    }
+    if (request.path === "/api/platform-ontology/counts") {
+      return Response.json({
+        counts: [
+          { type: OBJECT_TYPE, layer: "fact", status: "ok", count: 12 },
+          { type: ACTION, layer: "capability", status: "refused", reason: "No action permission" },
+          { type: WORKFLOW, layer: "capability", status: "failed", reason: "Upstream 500" },
+          { type: USER, layer: "governance", status: "ok", count: 5 },
+          { type: APPLICATION, layer: "product", status: "unavailable" },
+        ],
+      });
+    }
+    if (request.path === "/api/platform-ontology/neighbors") {
+      throw new Error("neighbors should not be called in type mode");
+    }
+    return undefined;
+  }));
+  const frame = panelFrame();
+  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(panel, use, use.path, { mode: "type" });
+  inside(frame);
 
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const mounted = await mountPanel({});
@@ -374,66 +380,59 @@ it("runs instance mode with default start, incremental neighbor expand, full obj
   panel.content.html = `<div id="app"><Projection slot="graph"></Projection></div>`;
   const use = panelUse("use-cap-instance", "cap-map-inst", panel.id, "/ontology/assets/capability-map");
 
-  installPlatform(hostWith(projections));
-  const frame = panelFrame();
-  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
-  writePanelDocument(panel, use, use.path, { mode: "instance" });
-  inside(frame);
-
   const neighborCalls: Array<{ className: string; primaryKey: string }> = [];
-  const { registerPlatformObjectAdapter } = await import(
-    "../../../../../packages/apps-sdk/src/panel/platform-objects"
-  );
-  registerPlatformObjectAdapter({
-    objectType: ONTOLOGY_TYPE,
-    graph: {
-      start: async () => ({
-        className: USER,
-        primaryKey: "u-1",
-        label: "Alice",
-        layer: "governance",
-      }),
-      neighbors: async ({ node }) => {
-        neighborCalls.push(node);
-        if (node.className === USER && node.primaryKey === "u-1") {
-          return {
-            node: { className: USER, primaryKey: "u-1", label: "Alice", layer: "governance" },
-            neighbors: [
-              { className: ROLE, primaryKey: "r-admin", label: "Admin", layer: "governance" },
-            ],
-            edges: [
-              {
-                id: "e-u1-r1",
-                relationKind: "user.holds-role",
-                from: { className: USER, primaryKey: "u-1" },
-                to: { className: ROLE, primaryKey: "r-admin" },
-                direction: "outgoing",
-                derived: false,
-              },
-            ],
-            relations: [{ relationKind: "user.holds-role", status: "ok", edgeCount: 1 }],
-          };
-        }
-        return {
-          node: { className: ROLE, primaryKey: "r-admin", label: "Admin", layer: "governance" },
+  installPlatform(hostWith(projections, (request) => {
+    if (request.path === "/api/platform-ontology/start") {
+      return Response.json({
+        node: { className: USER, primaryKey: "u-1", label: "Alice", layer: "governance" },
+      });
+    }
+    if (request.path === "/api/platform-ontology/neighbors") {
+      const { node } = request.body as { node: { className: string; primaryKey: string } };
+      neighborCalls.push(node);
+      if (node.className === USER && node.primaryKey === "u-1") {
+        return Response.json({
+          node: { className: USER, primaryKey: "u-1", label: "Alice", layer: "governance" },
           neighbors: [
-            { className: ACTION, primaryKey: "act-approve", label: "Approve Order", layer: "capability" },
+            { className: ROLE, primaryKey: "r-admin", label: "Admin", layer: "governance" },
           ],
           edges: [
             {
-              id: "e-r1-act1",
-              relationKind: "role.can-execute-action",
-              from: { className: ROLE, primaryKey: "r-admin" },
-              to: { className: ACTION, primaryKey: "act-approve" },
+              id: "e-u1-r1",
+              relationKind: "user.holds-role",
+              from: { className: USER, primaryKey: "u-1" },
+              to: { className: ROLE, primaryKey: "r-admin" },
               direction: "outgoing",
               derived: false,
             },
           ],
-          relations: [{ relationKind: "role.can-execute-action", status: "ok", edgeCount: 1 }],
-        };
-      },
-    },
-  });
+          relations: [{ relationKind: "user.holds-role", status: "ok", edgeCount: 1 }],
+        });
+      }
+      return Response.json({
+        node: { className: ROLE, primaryKey: "r-admin", label: "Admin", layer: "governance" },
+        neighbors: [
+          { className: ACTION, primaryKey: "act-approve", label: "Approve Order", layer: "capability" },
+        ],
+        edges: [
+          {
+            id: "e-r1-act1",
+            relationKind: "role.can-execute-action",
+            from: { className: ROLE, primaryKey: "r-admin" },
+            to: { className: ACTION, primaryKey: "act-approve" },
+            direction: "outgoing",
+            derived: false,
+          },
+        ],
+        relations: [{ relationKind: "role.can-execute-action", status: "ok", edgeCount: 1 }],
+      });
+    }
+    return undefined;
+  }));
+  const frame = panelFrame();
+  platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(panel, use, use.path, { mode: "instance" });
+  inside(frame);
 
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const mounted = await mountPanel({});
@@ -529,49 +528,47 @@ it("separates no-neighbors, owner-refused and read-failed states without collaps
   panel.content.html = `<div id="app"><Projection slot="graph"></Projection></div>`;
   const use = panelUse("use-cap-states", "cap-map-states", panel.id, "/ontology/assets/capability-map");
 
-  installPlatform(hostWith(projections));
+  let scenario: "no-neighbors" | "refused" | "failed-and-refused" = "no-neighbors";
+  installPlatform(hostWith(projections, (request) => {
+    if (request.path === "/api/platform-ontology/start") {
+      return Response.json({
+        node: { className: USER, primaryKey: "u-oss", label: "admin", layer: "governance" },
+      });
+    }
+    if (request.path === "/api/platform-ontology/neighbors") {
+      const { node } = request.body as { node: { className: string; primaryKey: string } };
+      if (scenario === "no-neighbors") {
+        return Response.json({
+          node: { className: node.className, primaryKey: node.primaryKey, label: "admin", layer: "governance" },
+          neighbors: [],
+          edges: [],
+          relations: [{ relationKind: "user.holds-role", status: "ok", edgeCount: 0 }],
+        });
+      }
+      if (scenario === "refused") {
+        return Response.json({
+          node: { className: node.className, primaryKey: node.primaryKey, label: "Bob", layer: "governance" },
+          neighbors: [],
+          edges: [],
+          relations: [{ relationKind: "user.holds-role", status: "refused", edgeCount: 0, reason: "403 Forbidden" }],
+        });
+      }
+      return Response.json({
+        node: { className: node.className, primaryKey: node.primaryKey, label: "Carol", layer: "governance" },
+        neighbors: [],
+        edges: [],
+        relations: [
+          { relationKind: "user.holds-role", status: "refused", edgeCount: 0, reason: "403 Forbidden" },
+          { relationKind: "user.created-action", status: "failed", edgeCount: 0, reason: "Timeout" },
+        ],
+      });
+    }
+    return undefined;
+  }));
   const frame = panelFrame();
   platformPanelHost("app-test", use).frame(frame, registered("app-test", use, panel), true);
   writePanelDocument(panel, use, use.path, { mode: "instance" });
   inside(frame);
-
-  let scenario: "no-neighbors" | "refused" | "failed-and-refused" = "no-neighbors";
-  const { registerPlatformObjectAdapter } = await import(
-    "../../../../../packages/apps-sdk/src/panel/platform-objects"
-  );
-  registerPlatformObjectAdapter({
-    objectType: ONTOLOGY_TYPE,
-    graph: {
-      start: async () => ({ className: USER, primaryKey: "u-oss", label: "admin", layer: "governance" }),
-      neighbors: async ({ node }) => {
-        if (scenario === "no-neighbors") {
-          return {
-            node: { className: node.className, primaryKey: node.primaryKey, label: "admin", layer: "governance" },
-            neighbors: [],
-            edges: [],
-            relations: [{ relationKind: "user.holds-role", status: "ok", edgeCount: 0 }],
-          };
-        }
-        if (scenario === "refused") {
-          return {
-            node: { className: node.className, primaryKey: node.primaryKey, label: "Bob", layer: "governance" },
-            neighbors: [],
-            edges: [],
-            relations: [{ relationKind: "user.holds-role", status: "refused", edgeCount: 0, reason: "403 Forbidden" }],
-          };
-        }
-        return {
-          node: { className: node.className, primaryKey: node.primaryKey, label: "Carol", layer: "governance" },
-          neighbors: [],
-          edges: [],
-          relations: [
-            { relationKind: "user.holds-role", status: "refused", edgeCount: 0, reason: "403 Forbidden" },
-            { relationKind: "user.created-action", status: "failed", edgeCount: 0, reason: "Timeout" },
-          ],
-        };
-      },
-    },
-  });
 
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const mounted = await mountPanel({});
