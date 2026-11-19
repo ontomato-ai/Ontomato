@@ -3,8 +3,9 @@
 This runner alternates the native task list and one registered declarative
 panel in an authenticated browser. It measures first entry, return through a
 shared page, and switching between the same two tasks. It does not submit forms
-or trigger tasks. The native page's credential renewal remains part of the
-measured path.
+or trigger tasks. Browser-local responses suppress navigation history updates
+and scheduled-task credential renewal, which can resume other tasks owned by
+the account. Record the local renewal response when comparing the native path.
 
 Copy the example to a local window configuration. Set the authorized origin,
 deadline, source revisions, identity, actual routes and selectors, and the

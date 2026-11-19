@@ -8,6 +8,11 @@ export function suppressNavigationWrites(origin) {
     const method = (init?.method ?? input?.method ?? "GET").toUpperCase();
     const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url, location.href);
     if (url.origin === origin && method === "POST") {
+      if (url.pathname === "/api/data-query/platform/scheduled-tasks/credential/renew") {
+        suppressed.push({ at: performance.timeOrigin + performance.now(), path: url.pathname });
+        // Native entry waits for this call. Answer locally because renewal can resume other tasks on the account.
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
       const app = url.pathname.match(/^\/api\/platform\/home\/applications\/([^/]+)\/open$/);
       if (app || url.pathname === "/api/personal-workspace/recent") {
         suppressed.push({ at: performance.timeOrigin + performance.now(), path: url.pathname });
