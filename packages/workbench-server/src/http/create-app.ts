@@ -69,7 +69,8 @@ import { initializeConnection } from "../infrastructure/connection";
 import { requestLogger as accessLogger, errorHandler } from "../api/middleware";
 import { buildTestAccess } from "../api/build-test-access";
 import { getDefaultLocale, tApp } from "../i18n/index";
-import { echartDir, webDistDir } from "../content/layout";
+import { echartDir } from "../content/layout";
+import { mountWebDist } from "./web-dist";
 import { workbenchIdentity } from "../identity/installed";
 import { MODEL_RUNTIME_TOKEN_ENV, modelKeySealKey } from "@ontomato/contracts/model-key-seal";
 
@@ -263,13 +264,7 @@ export function createWorkbenchApp(): Express {
   app.use("/api/workbench-appearance", workbenchAppearanceRouter);
   app.use(errorHandler);
 
-  if (!isDev) {
-    const staticPath = webDistDir();
-    app.use(express.static(staticPath));
-    app.get("*", (_req: Request, res: Response) => {
-      res.sendFile(path.join(staticPath, "index.html"));
-    });
-  }
+  if (!isDev) mountWebDist(app);
 
   return app;
 }
