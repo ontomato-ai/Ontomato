@@ -27,7 +27,7 @@ vi.mock("../../services/assistant/skills", () => ({ readPageSkills: vi.fn() }));
 const objectType = "platform:ScheduledTask";
 const use = { applicationId: "app-tasks", useId: "tasks", operationId: "run.runNow" };
 vi.mock("../../services/product-panels/current", () => ({
-  readCurrentPanel: async () => ({
+  readCurrentPanelRecord: async () => ({
     sdkVersion: "1.0.0",
     manifest: {
       state: { task: { kind: "object", objectType } },

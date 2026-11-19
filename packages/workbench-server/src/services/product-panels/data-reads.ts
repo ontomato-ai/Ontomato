@@ -5,7 +5,7 @@ import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contrac
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { directReadDeclaration, panelReadParameterSchemas, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import { platformObjectTypes } from "@ontomato/contracts/platform-object-types";
-import { directPanelSchema, directProjectionSchema, type DirectPanel, type DirectProjection } from "@ontomato/contracts/product-panels";
+import { directPanelSchema, type DirectPanel, type DirectProjection } from "@ontomato/contracts/product-panels";
 import { currentProductRecord } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendUnavailableError } from "../../utils/backend-client";
@@ -13,7 +13,7 @@ import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
 import { createScheduledTaskReadAdapter } from "../scheduling/panel-reads";
 import { requirePanelUse } from "./application-use";
-import { requireCurrentProduct } from "./current";
+import { requireCurrentProduct, requireDirectPanelMember } from "./current";
 
 type ReadInputs = ProductPanelReadRequest["inputs"];
 type ReadSelection = { typeId: string; method: string; primaryKey?: string };
@@ -77,10 +77,7 @@ export async function readProductPanelData(
   try {
     const panel = await readRoot(owner, viewer, request.source);
     const { member: key } = request.memberPath[0];
-    if (!Object.hasOwn(panel.manifest.members, key)) return { status: "forbidden" };
-    const member = panel.manifest.members[key];
-    const row = await requireCurrentProduct(owner, viewer, "projection", member.target.projectionId, "use");
-    const projection = directProjectionSchema.parse(currentProductRecord(row, false));
+    const { member, projection } = await requireDirectPanelMember(owner, viewer, panel, key);
     if (!Object.hasOwn(projection.data, request.dataName)) return { status: "forbidden" };
     const data = projection.data[request.dataName];
     const inputs = effectiveInputs(projection, member, request.inputs);

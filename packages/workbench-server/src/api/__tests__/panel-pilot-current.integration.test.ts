@@ -7,7 +7,7 @@ import path from "node:path";
 import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { platformTaskSchema } from "@ontomato/contracts/platform-schedules";
+import { platformScheduleFormSchema, platformTaskRunSchema, platformTaskSchema } from "@ontomato/contracts/platform-schedules";
 import examples from "../../../../contracts/examples/platform-schedules.json";
 import { installContentLayout } from "../../content/layout";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
@@ -34,6 +34,11 @@ const resourceIds = new Set<string>();
 const projectionId = "projection-pilot-summary";
 const panelId = "panel-schedules-pilot";
 const task = platformTaskSchema.parse(examples.creates.find(item => item.name === "governance-instruction")!.response);
+const taskForm = platformScheduleFormSchema.parse(examples.forms.find(item => item.name === "governance-ready")!.response);
+const taskRun = platformTaskRunSchema.parse({
+  ...examples.runs.find(item => item.name === "agents-running")!.response, taskId: task.id,
+});
+const ownerWrites: string[] = [];
 const taskType = { kind: "object", objectType: "platform:ScheduledTask" };
 const projection = {
   name: "Task summary", description: "", visibility: "domain",
@@ -45,12 +50,14 @@ const projection = {
 };
 const panel = {
   name: "Schedules", description: "", visibility: "domain",
-  content: { html: '<section flow="column"><panel-member ref="summary"></panel-member><panel-member ref="tasks"></panel-member></section>' },
+  content: { html: '<section flow="column"><panel-member ref="summary"></panel-member><panel-member ref="tasks"></panel-member><panel-member ref="form"></panel-member><panel-member ref="run"></panel-member></section>' },
   manifest: {
     state: { selectedTask: { type: taskType, deepLink: true, external: true, personal: false, default: null } },
     members: {
       summary: { target: { projectionId }, inputs: { task: { state: "selectedTask" } }, params: { width: "full" } },
       tasks: { target: { projectionId: "projection-pilot-list" } },
+      form: { target: { projectionId: "projection-pilot-form" }, inputs: { task: { state: "selectedTask" } } },
+      run: { target: { projectionId: "projection-pilot-run" }, inputs: { task: { state: "selectedTask" } } },
     },
     events: {},
   },
@@ -65,7 +72,9 @@ beforeAll(async () => {
   contentRoot = await mkdtemp(path.join(os.tmpdir(), "panel-pilot-"));
   installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
 
-  const { productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
+  const { panelOperationsRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
+  const { ensurePanelOperationsSchema } = await import("../../infrastructure/postgres-migrations/20261118-panel-operations/schema");
+  await ensurePanelOperationsSchema(state.pool);
   const app = express();
   app.use(express.json());
   app.post("/product-governance/register", (req, res) => {
@@ -99,12 +108,32 @@ beforeAll(async () => {
     if (req.params.taskId === task.id) { res.json(task); return; }
     res.status(404).json({ message: "Task no longer exists" });
   });
+  app.post("/platform/scheduled-tasks/applications/:appId/form", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.params.appId).toBe(task.appId);
+    expect(req.body).toMatchObject({ taskId: task.id, values: task.content, changedField: null });
+    res.json(taskForm);
+  });
+  app.put("/platform/scheduled-tasks/:taskId", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.params.taskId).toBe(task.id);
+    expect(req.body.revision).toBe(task.revision);
+    ownerWrites.push("save");
+    res.json({ ...task, revision: task.revision + 1 });
+  });
+  app.post("/platform/scheduled-tasks/:taskId/runs", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.params.taskId).toBe(task.id);
+    ownerWrites.push("runNow");
+    res.json(taskRun);
+  });
   app.use("/api", (req, _res, next) => {
     Object.assign(req, { domainId: "pilot", userId: "reader", token: "pilot-reader", locale: "en" });
     next();
   });
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
+  app.use("/api", panelOperationsRouter);
   server = await new Promise<Server>(resolve => {
     const started = app.listen(0, "127.0.0.1", () => resolve(started));
   });
@@ -139,6 +168,16 @@ it("reads back stable member keys and named data, and leaves the record intact a
     data: { rows: { source: { type: taskType.objectType }, read: "list", params: {} } },
   });
   expect(listWrite.status, await listWrite.text()).toBe(200);
+  const formWrite = await request("PUT", "product-projections/projection-pilot-form", {
+    ...projection, componentId: "@ontomato/sdk:ObjectForm", revision: 0,
+    data: { form: { ...projection.data.record, read: "form" } },
+  });
+  expect(formWrite.status, await formWrite.text()).toBe(200);
+  const runWrite = await request("PUT", "product-projections/projection-pilot-run", {
+    ...projection, componentId: "@ontomato/sdk:OperationButton", revision: 0,
+    data: { operation: { source: { operation: "schedules.runNow" }, read: "describe", params: {} } },
+  });
+  expect(runWrite.status, await runWrite.text()).toBe(200);
   const panelWrite = await request("PUT", panelPath, { ...panel, revision: 0 });
   expect(panelWrite.status, await panelWrite.text()).toBe(200);
   const original = (await (await request("GET", panelPath)).json()).panel;
@@ -165,6 +204,27 @@ it("reads back stable member keys and named data, and leaves the record intact a
   expect(await (await read("summary", "record", { task: { ...taskRef, primaryKey: "removed" } })).json()).toEqual({
     status: "error", message: "Task no longer exists",
   });
+  expect(await (await read("form", "form", { task: taskRef })).json()).toMatchObject({
+    status: "ready", value: { revision: task.revision },
+  });
+  expect(await (await read("run", "operation", {})).json()).toMatchObject({
+    status: "ready", value: { effect: "write", handlerRef: "schedules.runNow" },
+  });
+  const target = { kind: "object", objectType: taskType.objectType, primaryKey: task.id };
+  for (const [operationId, input] of [
+    ["form.save", { values: task.content, revision: task.revision }], ["run.runNow", {}],
+  ] as const) {
+    const prepared = await request("POST", "panel-operations/intents", {
+      applicationId: source.applicationId, useId: source.useId, operationId, call: { target, input },
+    });
+    const { intentId, ...preparation } = await prepared.json();
+    expect(prepared.status, JSON.stringify(preparation)).toBe(200);
+    expect(preparation).toMatchObject({ operationId, confirmation: { kind: "none" } });
+    const dispatch = `panel-operations/intents/${intentId}/dispatch`;
+    expect(await (await request("POST", dispatch, {})).json()).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
+    expect(await (await request("POST", dispatch, {})).json()).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
+  }
+  expect(ownerWrites).toEqual(["save", "runNow"]);
 });
 
 it("rejects reader requests carrying a caller-selected URL or handler", async () => {

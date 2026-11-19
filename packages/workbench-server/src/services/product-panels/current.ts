@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import {
   METRIC_CHART_COMPONENT, chartProjectionSchema, directPanelSchema, directProjectionSchema,
-  productPanelSchema, productProjectionSchema, type DirectPanelInput, type DirectProjectionInput,
+  productPanelSchema, productProjectionSchema, type DirectPanel, type DirectPanelInput, type DirectProjectionInput,
   type ProductPanelInput, type ProductProjectionInput, type RegisterProductProjectionRequest,
 } from "@ontomato/contracts/product-panels";
 import { matchesDirectPanelValue } from "@ontomato/contracts/panel-manifest";
@@ -52,6 +52,14 @@ export async function readCurrentProjectionRecord(owner: ProductOwner, credentia
 }
 export async function readCurrentPanelRecord(owner: ProductOwner, credentials: AssistantCredentials, id: string) {
   return panelRecordSchema.parse(await readCurrentRecord(owner, credentials, "panel", id));
+}
+
+export async function requireDirectPanelMember(owner: ProductOwner, credentials: AssistantCredentials, panel: DirectPanel, key: string) {
+  if (!Object.hasOwn(panel.manifest.members, key))
+    throw new HttpError(403, "Panel member is not available", "FORBIDDEN");
+  const member = panel.manifest.members[key];
+  const row = await requireCurrentProduct(owner, credentials, "projection", member.target.projectionId, "use");
+  return { member, projection: directProjectionSchema.parse(currentProductRecord(row, false)) };
 }
 
 async function validatePanelReferences(owner: ProductOwner, credentials: AssistantCredentials, manifest: ProductPanelInput["manifest"], client: PoolClient) {
