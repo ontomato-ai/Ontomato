@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick, ref, shallowRef } from "vue";
+import { createI18n } from "vue-i18n";
+import ElementPlus from "element-plus";
+import publicEn from "@ontomato/workbench-ui/locales/en";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { createPanelInstance } from "../../../../../packages/apps-sdk/src/panel/instance";
@@ -207,6 +210,10 @@ describe("a panel's module", () => {
       objectType: SCHEDULED_TASK,
       list: async () => [{ primaryKey: "task-1", label: "Nightly", fields: {} }],
       read: async (primaryKey) => ({ primaryKey, label: "Nightly", fields: { application: "operations", state: "on" } }),
+      forms: {
+        describe: async () => ({ fields: [], values: {}, revision: 1, save: { method: "PUT", path: "/", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` } }),
+        save: async (target) => ({ primaryKey: target.kind === "object" ? target.primaryKey : "", label: "Nightly", fields: {} }),
+      },
     });
     const panelInstance = instance();
     const Panel = defineComponent({
@@ -223,7 +230,9 @@ describe("a panel's module", () => {
       reads.push(id);
       return records.get(id)!;
     };
-    const app = createApp({ setup: () => () => h(Panel) });
+    // The frame installs the platform's words and Element Plus (apps-sdk panel/mount), so the drawn components have them.
+    const app = createApp({ setup: () => () => h(Panel) })
+      .use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus);
     app.provide(panelContextKey, {
       panel: { content: { html: '<div id="app"></div>', module: "" }, manifest: panel, sdkVersion: "1.1.1" },
       manifest: panel,
