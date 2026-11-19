@@ -52,7 +52,7 @@ function answer(request: Sent) {
 async function open() {
   const sent = installPlatform(answer);
   const frame = panelFrame();
-  platformPanelHost("app-charts", use).frame(frame, registered("app-charts", use, panel));
+  platformPanelHost("app-charts", use).frame(frame, registered("app-charts", use, panel), true);
   writePanelDocument(panel, use, use.path, {});
   inside(frame);
   const { appContext } = await mountPanel(panelOf());
