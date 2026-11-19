@@ -35,7 +35,7 @@ vi.mock("../../services/product-panels/current", () => ({
       operations: [],
     },
   }),
-  readCurrentProjection: async () => ({
+  readCurrentProjectionRecord: async () => ({
     id: "run", componentId: "run", name: "Run now",
     binding: { kind: "PlatformOperation", id: "schedules.runNow" },
     inputs: { task: { kind: "object", objectType } },

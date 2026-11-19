@@ -14,13 +14,13 @@ vi.mock("../../../config/application",()=>({config:{dataQuery:{get baseUrl(){ret
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:state.query}),qualifiedTable:(name:string)=>name}));
 vi.mock("../../../services/assistant/skills",()=>({readPageSkills:vi.fn()}));
 vi.mock("../../../services/product-panels/skill-package",()=>({readComponentCatalogue:vi.fn()}));
-vi.mock("../../../services/product-panels/current",()=>({readCurrentPanelRecord:vi.fn(),readCurrentProjection:vi.fn(),requireCurrentPanels:vi.fn(),saveCurrentPanel:vi.fn(),saveCurrentProjection:vi.fn()}));
+vi.mock("../../../services/product-panels/current",()=>({readCurrentPanelRecord:vi.fn(),readCurrentProjectionRecord:vi.fn(),requireCurrentPanels:vi.fn(),saveCurrentPanel:vi.fn(),saveCurrentProjection:vi.fn()}));
 vi.mock("../../../utils/request-identity",async original=>({...await original<typeof import("../../../utils/request-identity")>(),requireDomainId:(req:{domainId:string})=>req.domainId}));
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { panelOperationsRouter } from "../product-panels";
 import { RuntimeClient } from "../../../infrastructure/agent-runtime/client";
-import { readCurrentPanelRecord, readCurrentProjection } from "../../../services/product-panels/current";
+import { readCurrentPanelRecord, readCurrentProjectionRecord } from "../../../services/product-panels/current";
 import { readComponentCatalogue } from "../../../services/product-panels/skill-package";
 
 const sessionId="77777777-7777-4777-8777-777777777777",actorId="11111111-1111-4111-8111-111111111111";
@@ -129,7 +129,7 @@ it("returns the server descriptor only for a current use of the authenticated re
      operations: [],
    },
  });
- vi.mocked(readCurrentProjection).mockResolvedValue({
+ vi.mocked(readCurrentProjectionRecord).mockResolvedValue({
    ...record, id: "run", componentId: "run", name: "Run now", display: {},
    binding: { kind: "PlatformOperation", id: "schedules.runNow" },
    inputs: { task: { kind: "object", objectType } },

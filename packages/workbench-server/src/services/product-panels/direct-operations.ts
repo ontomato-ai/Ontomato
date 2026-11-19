@@ -26,21 +26,20 @@ function writeSource(projection: DirectProjection, name: string) {
       if (data.source.operation.split(".").at(-1) === name) return { handlerRef: data.source.operation };
     }
   }
-  return unavailable();
 }
 
-export async function declaredDirectOperation(
-  owner: ProductOwner, credentials: AssistantCredentials, use: ApplicationPanelUse, panel: DirectPanel, id: string,
+export function declaredDirectProjectionOperation(
+  use: ApplicationPanelUse, projection: DirectProjection, inputs: DirectPanel["manifest"]["members"][string]["inputs"],
+  slot: string, id: string,
 ) {
-  const separator = id.lastIndexOf(".");
-  if (separator < 1) return unavailable();
-  const slot = id.slice(0, separator), name = id.slice(separator + 1);
-  const { member, projection } = await requireDirectPanelMember(owner, credentials, panel, slot);
+  if (!id.startsWith(`${slot}.`)) return;
+  const name = id.slice(slot.length + 1);
   const source = writeSource(projection, name);
+  if (!source) return;
   const handler = panelServerOperation(source.handlerRef);
   if (handler.effect !== "write") return unavailable();
   const targetInput = handler.kind === "action" ? handler.targetInput : source.input;
-  const binding = targetInput === undefined ? undefined : member.inputs?.[targetInput];
+  const binding = targetInput === undefined ? undefined : inputs?.[targetInput];
   if (targetInput !== undefined) {
     const targetType = projection.inputs[targetInput];
     if (!binding || targetType?.kind !== "object" || targetType.objectType !== handler.targetType) return unavailable();
@@ -53,4 +52,14 @@ export async function declaredDirectOperation(
     handlerRef: handler.handlerRef, slot, inputSchema: {},
   }, slot);
   return { effect: "write" as const, use, projection: { id: projection.id, binding: handler.binding }, operation, handler, fixedTarget };
+}
+
+export async function declaredDirectOperation(
+  owner: ProductOwner, credentials: AssistantCredentials, use: ApplicationPanelUse, panel: DirectPanel, id: string,
+) {
+  const separator = id.lastIndexOf(".");
+  if (separator < 1) return unavailable();
+  const slot = id.slice(0, separator);
+  const { member, projection } = await requireDirectPanelMember(owner, credentials, panel, slot);
+  return declaredDirectProjectionOperation(use, projection, member.inputs, slot, id) ?? unavailable();
 }
