@@ -6,7 +6,7 @@ import type { PanelFormDescription, PanelFormSaveInput, PanelFormValues } from "
 import { AGENT_DEFINITION, SKILL } from "@ontomato/contracts/panel-client-requests";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
-  inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
+  ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
 /*
@@ -82,7 +82,7 @@ async function open(draft?: PanelFormValues, shown: PanelFormValues = stored) {
   });
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
-  platformPanelHost("ontology", use).frame(frame, registered("ontology", use, panel), true);
+  platformPanelHost("ontology", use, ignoreChanges).frame(frame, registered("ontology", use, panel), true);
   const query = draft ? `?${new URLSearchParams({ draftSessionId: link.sessionId, draftRunId: link.runId, draftPath: link.path })}` : "";
   writePanelDocument(registered("ontology", use, panel), `/ontology/agents${query}`, { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } } as never);
   inside(frame);
