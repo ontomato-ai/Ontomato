@@ -2,6 +2,7 @@ import { z } from "zod";
 import { agentExecutionRefSchema, agentSessionRefSchema } from "./agent-channel";
 import { agentQuestionAnswerReceiptSchema, agentUserQuestionReceiptSchema } from "./agent-user-questions";
 import { panelOperationCallSchema, panelOperationSchema } from "./panel-manifest";
+import { panelReadOperationCallSchema } from "./panel-operations";
 import { ontologyElementRefSchema } from "./product-panels";
 import { pageDraftSchema } from "./page-draft";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeKeySchema } from "./agent-runtime-values";
@@ -22,6 +23,13 @@ export type PanelOperationSettings = z.infer<typeof panelOperationSettingsSchema
 /** Authenticated root-session owner only; this request is not a skill/callback operation. */
 export const updatePanelOperationSettingsRequestSchema = z.object({ confirmBeforeExecute: z.boolean() }).strict();
 export type UpdatePanelOperationSettingsRequest = z.infer<typeof updatePanelOperationSettingsRequestSchema>;
+
+/** Resolve the declared read under the caller's authority without creating a write intent. */
+export const readPanelOperationRequestSchema = panelUseRefSchema.extend({
+  operationId: key,
+  call: panelReadOperationCallSchema,
+}).strict();
+export type ReadPanelOperationRequest = z.infer<typeof readPanelOperationRequestSchema>;
 
 /** The host supplies session/run/initiator/executor from authenticated context, not this body. */
 export const createPanelOperationIntentRequestSchema = panelUseRefSchema.extend({

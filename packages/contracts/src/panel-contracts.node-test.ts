@@ -1,3 +1,5 @@
+import { readPanelOperationRequestSchema } from "./panel-agent";
+import { panelReadOperationDescriptorSchema, panelReadOperationResultSchema } from "./panel-operations";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, OBJECT_TYPE, RELATIONSHIP, USER, bindingKey, clientSends, panelClientReads } from "./panel-client-requests";
@@ -136,4 +138,25 @@ test("bridge and skill agree about the specific semantic reads", () => {
     assert.ok(clientSends([binding(type)], "POST", "/data-query", "/admin/getMetas"));
   assert.ok(!clientSends([binding(OBJECT_TYPE)], "POST", "/data-query", "/admin/getschemamarkdown"));
   assert.ok(clientSends([binding(USER)], "GET", "/data-query", "/platform/agent-execution/options?selected=u"));
+});
+
+
+test("a read-only trial carries the current draft and parameters without a write intent", () => {
+  const input = { draft: { query: { select: ["name"] } }, parameters: { limit: 3 } };
+  const request = {
+    applicationId: "ontology", useId: "metrics", operationId: "test.execute",
+    call: { target: { kind: "draft" }, input },
+  };
+  assert.deepEqual(readPanelOperationRequestSchema.parse(request), request);
+  assert.equal(readPanelOperationRequestSchema.safeParse({ ...request, effect: "read" }).success, false);
+  const owner = {
+    handlerRef: "metricViews.testExecute", effect: "read", target: { source: "draft", slot: "definition" },
+    inputSchema: { type: "object" }, resultSchema: { type: "object" },
+  };
+  assert.deepEqual(panelReadOperationDescriptorSchema.parse(owner), owner);
+  assert.equal(panelReadOperationDescriptorSchema.safeParse({ ...owner, effect: "write" }).success, false);
+  for (const result of [{ kind: "markdown", markdown: "Preview" }, { kind: "json", value: [{ count: 1 }] }]) {
+    assert.deepEqual(panelReadOperationResultSchema.parse(result), result);
+    assert.equal(panelReadOperationResultSchema.safeParse({ ...result, affected: { objects: [] } }).success, false);
+  }
 });
