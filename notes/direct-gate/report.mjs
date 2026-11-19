@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 
 const [path] = process.argv.slice(2);
 const run = JSON.parse(await readFile(path));
-const { samples, stage, group, count, completed } = run;
+const { samples, stage, group, count, completed, suppressedRequests } = run;
 const fmt = number => Number.isFinite(number) ? number.toFixed(1) : "—";
 const ordered = (rows, value) => rows.map(value).sort((a, b) => a - b);
 const p95 = sorted => sorted[Math.ceil(0.95 * sorted.length) - 1];
@@ -27,7 +27,7 @@ console.log("清单 " + samples.find(sample => sample.step === "first")?.proof.l
 console.log();
 console.log("| 路径 | 原生 / 面板 N | 原生中位 / p95 ms | 面板中位 / p95 ms | 面板减原生中位 / p95 ms | 面板 SDK 传输 B 中位 / p95 | 原生 / 面板主线程 ms 中位 / p95 |");
 console.log("| --- | ---: | ---: | ---: | ---: | ---: | ---: |");
-let full = completed && consistentInventory && stage === "formal" && count >= 10;
+let full = completed && consistentInventory && stage === "formal" && count >= 10 && Array.isArray(suppressedRequests);
 for (const step of ["first", "away", "return", "switch"]) {
   const rows = lane => samples.filter(sample => sample.lane === lane && sample.step === step);
   const native = rows("native");
@@ -57,6 +57,23 @@ for (const lane of ["native", "panel"]) {
   console.log(lane + " 首开点击前 SDK 分类传输 B 中位 / p95 " +
     display(stats(rows, sample => sample.preClick.phases.sdk.bytes)) + "。");
 }
+
+console.log();
+console.log("## 本地拦截");
+console.log();
+console.log("| POST 路径 | 原生命中 | 面板命中 | G0 真实请求平均 |");
+console.log("| --- | ---: | ---: | --- |");
+for (const [kind, path, history] of [
+  ["credential-renew", "/api/data-query/platform/scheduled-tasks/credential/renew", "无样本，G0 测智能体设置"],
+  ["application-open", "/api/platform/home/applications/{id}/open", "无完整请求计时"],
+  ["recent-visit", "/api/personal-workspace/recent", "无完整请求计时"],
+]) {
+  const hits = lane => suppressedRequests?.filter(request => request.lane === lane && request.kind === kind).length ?? "未记录";
+  console.log("| " + [path, hits("native"), hits("panel"), history].join(" | ") + " |");
+}
+console.log();
+console.log("同一窗口的原生和面板使用同一规则；原生续期仅本地应答，其网络和服务端耗时不计入。G0 仅作历史参考。");
+
 if (full) {
   const swap = rebuild ? "超线" : proven ? "通过" : "待核实实例生命周期";
   console.log((group === "lan" ? "内网判线" : "本机参考") + " · 首开 " + label(first) + " · 热返回 " + label(hot) + " · 换选中 " + swap);

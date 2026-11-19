@@ -159,7 +159,7 @@ async function prepareSwitch(page, config, variant, panel) {
   return variant.edit;
 }
 
-export async function benchmark(page, config, { count, save }) {
+export async function benchmark(page, config, { count, save, saveSuppressed }) {
   await page.cdp("Page.enable");
   await page.cdp("Network.enable");
   await page.cdp("Performance.enable");
@@ -200,12 +200,17 @@ export async function benchmark(page, config, { count, save }) {
           pair.push(sample);
           await save(sample);
         };
-        const list = listCheck(config, variant);
-        await capture("first", variant.enter, list);
-        await capture("away", config.away.leave, { kind: "control", path: config.away.path, control: variant.enter });
-        await capture("return", variant.enter, list);
-        const select = await prepareSwitch(page, config, variant, panel);
-        await capture("switch", select, formCheck(variant, config.tasks[1]));
+        try {
+          const list = listCheck(config, variant);
+          await capture("first", variant.enter, list);
+          await capture("away", config.away.leave, { kind: "control", path: config.away.path, control: variant.enter });
+          await capture("return", variant.enter, list);
+          const select = await prepareSwitch(page, config, variant, panel);
+          await capture("switch", select, formCheck(variant, config.tasks[1]));
+        } finally {
+          const excluded = await page.evaluate(() => window.m1NavigationWritesSuppressed);
+          await saveSuppressed(excluded.map(request => ({ round, lane, ...request })));
+        }
       }
       const fingerprints = new Set(pair.filter(sample => sample.proof.listFingerprint).map(sample => sample.proof.listFingerprint));
       if (fingerprints.size !== 1) throw new Error("Visible task inventory differs across lanes or entry points");
@@ -226,15 +231,22 @@ export async function run(page, configPath, stage, outPath, group, flag) {
     lifecycleSource: config.direct.lifecycleSource, instanceAttribute: config.direct.instanceAttribute,
     route: { native: config.native.path, panel: config.panel.path, away: config.away.path },
     requestClassification: config.requests,
-    startedAt: new Date().toISOString(), count: stages[stage], samples: [] };
+    startedAt: new Date().toISOString(), count: stages[stage], samples: [], suppressedRequests: [] };
   if (!link?.bytes || !output.device) throw new Error("Missing device or measured connection");
   await mkdir(resolve(outPath, ".."), { recursive: true });
   const save = () => writeFile(outPath, JSON.stringify(output, null, 2) + "\n");
   try {
-    await benchmark(page, config, { count: output.count, save: async sample => {
-      output.samples.push(sample);
-      await save();
-    } });
+    await benchmark(page, config, {
+      count: output.count,
+      save: async sample => {
+        output.samples.push(sample);
+        await save();
+      },
+      saveSuppressed: async requests => {
+        output.suppressedRequests.push(...requests);
+        await save();
+      },
+    });
     output.endingBuild = await build(config);
     if (JSON.stringify(output.endingBuild) !== JSON.stringify(buildAtStart)) throw new Error("Build changed during acquisition");
     output.completed = true;

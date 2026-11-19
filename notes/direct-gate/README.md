@@ -5,7 +5,8 @@ panel in an authenticated browser. It measures first entry, return through a
 shared page, and switching between the same two tasks. It does not submit forms
 or trigger tasks. Browser-local responses suppress navigation history updates
 and scheduled-task credential renewal, which can resume other tasks owned by
-the account. Record the local renewal response when comparing the native path.
+the account. See the [measurement method](measurement.md) for both paths'
+interception rules, the native timing exclusion and the recorded history.
 
 Copy the example to a local window configuration. Set the authorized origin,
 deadline, source revisions, identity, actual routes and selectors, and the
