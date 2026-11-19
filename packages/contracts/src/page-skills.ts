@@ -18,7 +18,10 @@ export const pageSkillEntranceSchema = z.union([
 ]);
 export type PageSkillEntrance = z.infer<typeof pageSkillEntranceSchema>;
 
-export const pageSkillDefaultSchema = z.object({ pageKey: pageKeySchema, agentKey: z.string().min(1) }).strict();
+export const pageSkillDefaultSchema = z.object({
+  pageKey: pageKeySchema,
+  defaultAgent: defaultAgentSchema,
+}).strict();
 export const pageSkillGroupSchema = z.object({
   locator: pageSkillLocatorSchema,
   skills: z.array(runtimeSkillRefSchema),
@@ -52,10 +55,7 @@ export type PageSkillContext = z.infer<typeof pageSkillContextSchema>;
 
 const pageSkillFields = {
   skill: runtimeSkillRefSchema,
-  defaults: z.array(z.object({
-    pageKey: z.string().min(1),
-    defaultAgent: defaultAgentSchema,
-  }).strict()).optional(),
+  defaults: z.array(pageSkillDefaultSchema).optional(),
 };
 
 /** The application owns the mapping; leaf pages retain their existing menu codes. */
