@@ -10,7 +10,7 @@ import { domainSkillsRoot, publicSkillsRoot } from "../../../content/layout";
 import { SkillScanner } from "../discovery/scanner";
 import { InvalidSkillPackageError } from "../manifest";
 import { parseSkillPackage, readSkillPackage } from "../package";
-import { registeredSkillProviders, type SkillPackage, type SkillProvider } from "../providers";
+import { registeredSkillProviders, type SkillPackage, type RegisteredSkillProvider } from "../providers";
 import type { SkillEntry, SkillMeta, SkillSource } from "../types";
 
 function refLabel(ref: RuntimeSkillRef) {
@@ -22,7 +22,7 @@ function sourceLabel(source: SkillSource) {
   return `provider "${source.providerName}" (${source.providerId})`;
 }
 /** Keep the provider failure and its cause, adding which source failed and at what. */
-function providerFailure(provider: SkillProvider, action: string, error: unknown) {
+function providerFailure(provider: RegisteredSkillProvider, action: string, error: unknown) {
   const detail = error instanceof Error ? error.message : String(error);
   const failure = new Error(`Skill provider "${provider.name}" (${provider.id}) failed to ${action}: ${detail}`, { cause: error });
   const recorded = error as { code?: unknown; status?: unknown } | null;
@@ -34,7 +34,7 @@ function providerFailure(provider: SkillProvider, action: string, error: unknown
 export class SkillRegistryManager {
   private skills: SkillEntry[] = [];
   constructor(private readonly root: string, private readonly publicScanner: SkillScanner,
-    private readonly domainId: string, private readonly providers: readonly SkillProvider[]) {}
+    private readonly domainId: string, private readonly providers: readonly RegisteredSkillProvider[]) {}
 
   private fileEntry(meta: SkillMeta, source: { kind: "public" | "domain"; path: string }): SkillEntry {
     const skill: RuntimeSkillRef = source.kind === "public"
@@ -43,7 +43,7 @@ export class SkillRegistryManager {
     return { skill, manifest: meta.manifest, source, provide: () => readSkillPackage(source.path, skill) };
   }
 
-  private async listProvider(provider: SkillProvider) {
+  private async listProvider(provider: RegisteredSkillProvider) {
     try { return await provider.list({ domainId: this.domainId }); }
     catch (error) { throw providerFailure(provider, `list skills for domain "${this.domainId}"`, error); }
   }
@@ -52,6 +52,7 @@ export class SkillRegistryManager {
     const entries: SkillEntry[] = [];
     for (const provider of this.providers) {
       for (const offering of await this.listProvider(provider)) {
+        if ("kind" in offering) continue;
         const { skill } = offering;
         if (skill.namespace.kind === "domain" && skill.namespace.domainId !== this.domainId)
           throw new InvalidSkillPackageError(`Skill provider "${provider.name}" (${provider.id}) offered ${refLabel(skill)} `
