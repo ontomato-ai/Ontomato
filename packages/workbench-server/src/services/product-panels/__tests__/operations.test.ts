@@ -247,7 +247,7 @@ it("reuses the original creation artifact as the initiator and saves as the exec
   expect(await operatePanel(owner, credentials, current.id, input)).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
   expect(mocks.draft).toHaveBeenCalledWith(link.sessionId, link.runId, link.path, owner);
   expect(mocks.recordCreated).toHaveBeenCalledWith(link.sessionId, link.runId, link.path, createdId, owner);
-  expect(mocks.notify).toHaveBeenCalledWith(owner, { objectType, primaryKey: createdId });
+  expect(mocks.notify).toHaveBeenCalledWith({ domainId: owner.domainId, initiator: owner.userId, rootSession: root, target: { objectType, primaryKey: createdId } });
   mocks.draft.mockResolvedValue({ ...form, created: { id: createdId } });
   await expect(operatePanel(owner, credentials, current.id, { ...input, intentId: uuid(22) }))
     .rejects.toMatchObject({ code: "PAGE_DRAFT_MISMATCH" });
