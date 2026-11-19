@@ -1,9 +1,10 @@
 import { createApp, h, nextTick, provide, ref, shallowReactive, watch, type Component, type Ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { contextTranslate, contextTransport, type AppContext } from "../context";
+import { contextTranslate, contextTransport, panelBridgeHost, type AppContext } from "../context";
 import { connectPanelContext } from "./app-context";
 import { defaultLocale } from "apps-sdk:panel-appearance";
 import { createPanelText } from "./text";
+import { panelHumanOperations } from "./human-operations";
 import {
   PANEL_HOST_CHANNEL,
   panelAddressState,
@@ -72,6 +73,8 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   const text = createPanelText(message.panel.content.messages ?? {}, appContext.locale, defaultLocale);
   const instance = createPanelInstance(message.panel.manifest, {
     text,
+    operations: panelHumanOperations(message.use, { request: (path, init, service) => transport.request(path, init, service) }),
+    confirmOperation: (preparation) => panelBridgeHost().confirmPanelOperation(preparation),
     pageKey: message.pageKey,
     url: () => address.value,
     label: () => message.label,

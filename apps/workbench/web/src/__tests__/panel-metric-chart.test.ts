@@ -12,7 +12,7 @@ import { platformResourceLoader, type PlatformRequests } from "../../../../../pa
 import { platformResources } from "../../../../../packages/apps-sdk/src/resources";
 import Projection from "../../../../../packages/apps-sdk/src/panel/Projection.vue";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument } from "./panel-frame";
+import { inside, installPlatform, leaveFrame, noOperations, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument } from "./panel-frame";
 
 /*
  * A chart projection is the chart on its dashboard (M2 ruling 2026-11-19): it draws its source card's chart file with the
@@ -84,6 +84,7 @@ function owners(template: () => Response) {
 function mounted(requests: PlatformRequests, customer: string | null) {
   const instance = createPanelInstance(manifest, {
     text: (key) => key,
+    ...noOperations,
     pageKey: "charts", url: () => "/charts", label: () => "Charts",
     initial: customer ? { customer: { className: "Customer", primaryKey: customer } } : {},
     recordDraftCreated: async () => {},

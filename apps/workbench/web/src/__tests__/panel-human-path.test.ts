@@ -17,7 +17,7 @@ import PanelApplicationRoute from "../../../../../packages/platform-web/src/page
 import { platformLayoutRoute } from "../../../../../packages/platform-web/src/layout-route";
 import {
   hostMessageOf, inspectionTaskForm, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt,
-  currentSdk, panelHostFrame, panelRecord, panelSnapshot, panelUse, projections, READER, run, SCHEDULED_TASK, SDK_VERSION, task, taskForm,
+  currentSdk, humanIntents, panelHostFrame, panelRecord, panelSnapshot, panelUse, projections, READER, run, SCHEDULED_TASK, SDK_VERSION, task, taskForm,
   writeFrameDocument,
   type Sent,
   caseSetLabel,
@@ -498,11 +498,17 @@ it("blocks a presentation while a reader's form edit is unsaved, then clears dir
 it("refreshes X from the owner after the panel's form saves", async () => {
   let current = task;
   const before = panelAddress(`/applications/${appA}/tasks`, deepState);
+  // The run, as the task service's registered operation does it when the platform's coordinator dispatches it.
+  const intents = humanIntents(() => {
+    current = { ...current, summary: [{ key: "run", label: "Run", value: "Run started" }] };
+    return {
+      kind: "success", data: { runId: run.id },
+      affected: { objects: [{ objectType: SCHEDULED_TASK, primaryKey: task.id }], objectTypes: [SCHEDULED_TASK] },
+    };
+  });
   const { app, frame, sent } = await open(before, false, request => {
-    if (request.path === `${taskPath}/${task.id}/runs`) {
-      current = { ...current, summary: [{ key: "run", label: "Run", value: "Run started" }] };
-      return Response.json(run, { status: 202 });
-    }
+    const prepared = intents(request);
+    if (prepared) return prepared;
     if (request.path === `${taskPath}/${task.id}`) {
       if (request.method === "PUT") {
         current = { ...current, revision: current.revision + 1,

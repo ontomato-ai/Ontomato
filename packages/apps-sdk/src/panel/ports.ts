@@ -12,16 +12,11 @@ export type { ProjectionOperation, ProjectionPorts } from "@ontomato/contracts/p
  * from a name.
  */
 
-/**
- * One projection registered in one panel instance: the slot it fills, what its component publishes, and how to run one
- * of its operations here.
- */
+/** One projection registered in one panel instance: the slot it fills and what its component publishes. */
 export interface PanelProjectionRegistration {
   slot: string;
   projectionId: string;
   ports: ProjectionPorts;
-  /** Runs one operation in this frame; the projection's client makes the request with the reader's own credential. */
-  invoke(handlerRef: string, call: PanelOperationCall): Promise<unknown>;
 }
 
 /**

@@ -14,6 +14,7 @@ import type { PanelFormDescription } from "@ontomato/contracts/panel-projection"
 import { registeredHandlers } from "../../../../../packages/apps-sdk/src/panel/handlers";
 import ObjectForm from "../../../../../packages/apps-sdk/src/base/ObjectForm.vue";
 
+import { noOperations } from "./panel-frame";
 /*
  * The form a panel shows (design 10.3, third and sixth checks): a draft an agent wrote opens in it with its values, its
  * changed fields marked and nothing written; the reader's save is one operation at the revision the form was read at, so
@@ -59,6 +60,7 @@ function mounted(save: (values: Record<string, string>, revision: number) => Pro
   const panel = panelFor(objectType);
   const instance = createPanelInstance(panel, {
     text: (key) => key,
+    ...noOperations,
     pageKey: "panels-trial-a-tasks",
     url: () => "/applications/app-panels-trial-a/tasks",
     label: () => "Scheduled tasks (trial)",
@@ -122,7 +124,6 @@ function mounted(save: (values: Record<string, string>, revision: number) => Pro
       inputs: { task: { kind: "object", objectType } },
       operations: [{ name: "save", label: "Save", kind: "form.save", inputSchema: {}, handlerRef: `${objectType}.save` }],
     },
-    invoke: (handlerRef, call) => instance.runHandler(handlerRef, call),
   });
 
   const slot: ProjectionSlot = {
