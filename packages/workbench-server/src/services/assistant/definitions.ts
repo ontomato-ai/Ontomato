@@ -13,6 +13,7 @@ import {
 } from "../../infrastructure/postgres";
 import { assistantStore, type AssistantOwner, type AgentRow } from "./store";
 import { HttpError } from "../../utils/errors";
+import { assertPermission } from "../../identity/installed";
 import { resolveAssistantSkillReferences } from "./skill-references";
 import { AgentDefinitionFieldError } from "./definition-form-schema";
 import {
@@ -47,9 +48,28 @@ const view = (a: AgentRow, locale?: string) =>
     sortOrder: a.sort_order,
     systemPrompt: effectiveSystemPrompt(a, locale),
   });
+export const agentDefinitionPermissions = ["analysis-agent"] as const;
+const isReadableDefinition = (kind: string) => !isAppBuilderKind(kind);
+
+export async function filterReadableAgentDefinitions(
+  owner: AssistantOwner, credentials: AssistantCredentials, ids: readonly string[],
+): Promise<ReadonlySet<string>> {
+  try {
+    await assertPermission(credentials, agentDefinitionPermissions);
+  } catch (error) {
+    if (error instanceof HttpError && error.status === 403) return new Set();
+    throw error;
+  }
+  const { rows } = await getPostgresPool().query<Pick<AgentRow, "id" | "kind">>(
+    `SELECT id,kind FROM ${t("assistant_agents")} WHERE domain_id=$1 AND id=ANY($2::uuid[])`,
+    [owner.domainId, ids],
+  );
+  return new Set(rows.filter(({ kind }) => isReadableDefinition(kind)).map(({ id }) => id));
+}
+
 async function editableAgent(id: string, owner: AssistantOwner) {
   const agent = await assistantStore.agent(id, owner);
-  if (isAppBuilderKind(agent.kind)) throw new HttpError(404, "Agent definition not found", "NOT_FOUND");
+  if (!isReadableDefinition(agent.kind)) throw new HttpError(404, "Agent definition not found", "NOT_FOUND");
   return agent;
 }
 export async function readStoredAgentDefinition(id: string, owner: AssistantOwner, locale?: string) {

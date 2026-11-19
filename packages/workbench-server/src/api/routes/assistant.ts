@@ -12,6 +12,7 @@ import { assistantSkillCatalog } from "../../services/assistant/skills";
 import { readAnalysisScope } from "../../services/assistant/analysis-scope";
 import { readDrilldown } from "../../services/assistant/drilldown";
 import {
+  agentDefinitionPermissions,
   readAgentDefinition,
   listAgentDefinitions,
   deleteAgentDefinition,
@@ -99,7 +100,7 @@ router.get("/sessions/:sessionId/artifacts/:artifactId/drilldown", wrap(async (r
 router.get("/sessions/:sessionId/artifacts/:artifactId/analysis-scope", wrap(async (req, res) => {
   res.json(await readAnalysisScope(id(req, "sessionId"), id(req, "artifactId"), context(req).owner, z.string().max(35).optional().parse(req.query.locale)));
 }));
-const agentAdmin = requirePermission(["analysis-agent"]);
+const agentAdmin = requirePermission(agentDefinitionPermissions);
 router.get("/diagnosis-model", agentAdmin, wrap(async (req, res) => {
   res.json(await readDiagnosisModel(context(req).owner.domainId));
 }));
