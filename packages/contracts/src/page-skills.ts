@@ -1,11 +1,12 @@
 import { z } from "zod";
+import { defaultAgentSchema } from "./default-agent";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
 
 const pageSkillFields = {
   skill: runtimeSkillRefSchema,
   defaults: z.array(z.object({
     pageKey: z.string().min(1),
-    agentKey: z.string().min(1),
+    defaultAgent: defaultAgentSchema,
   }).strict()).optional(),
 };
 

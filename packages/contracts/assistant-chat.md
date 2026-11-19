@@ -19,8 +19,8 @@ the complete selectable skill catalogue and per-run package preparation.
 | GET `/agent-definitions/:agentId` | — | `AssistantAgentDefinition` |
 | POST `/agent-definitions` | `AssistantAgentInput`, UUID Idempotency-Key | 201 `AssistantAgentDefinition` |
 | POST `/agent-definitions/form` | `PanelFormRequest` | `PanelFormDescription`, reads or checks a settings draft without writing |
-| POST `/agent-definitions/validate` | `{target:{id?: UUID},form:AssistantAgentInput}`; omit target.id on creation | 204; no writes or Key preparation |
-| PUT `/agent-definitions/:agentId` | `AssistantAgentInput` | `AssistantAgentDefinition` |
+| POST `/agent-definitions/validate` | `{target,form}`; use `{id: UUID}` with `AssistantAgentUpdateInput` when editing or `{}` with `AssistantAgentInput` when creating | 204; no writes or Key preparation |
+| PUT `/agent-definitions/:agentId` | `AssistantAgentUpdateInput` | `AssistantAgentDefinition` |
 | DELETE `/agent-definitions/:agentId` | — | 204; existing history remains readable |
 | POST `S/export/ppt` | `{}` | PPTX from runtime history and accepted datasets |
 | GET `F/dataset-source` | — | `AssistantDatasetSource`; generic file: 404 |
@@ -31,7 +31,11 @@ the complete selectable skill catalogue and per-run package preparation.
 Definitions contain one systemPrompt, one skills list, modelSelection, name, description,
 icon, enabled, classNames, enabledMcpServiceIds, sortOrder and executionUserId.
 Omitting `sortOrder` creates a definition at 0 or preserves an existing definition's
-stored order. An explicit integer is written as supplied. The settings panel
+stored order. An explicit integer is written as supplied. An update that omits
+`skills` preserves the current selection without validating it. An explicit
+array replaces the selection, including an empty array to clear it. The owner
+refuses the entire replacement if the caller cannot see an existing active
+skill reference. Creation requires the `skills` array. The settings panel
 leaves sorting outside its form and writes the complete remaining values.
 The execution user is a nullable domain user ID: null uses the initiator. Creation
 defaults to null; omitted updates preserve the stored reference. Java authorizes

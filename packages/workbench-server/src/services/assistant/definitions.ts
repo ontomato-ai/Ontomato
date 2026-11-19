@@ -3,6 +3,7 @@ import { validateModelSelection } from "../../platform/agent-runtime/model-selec
 import {
   assistantAgentDefinitionSchema,
   type AssistantAgentInput,
+  type AssistantAgentUpdateInput,
   type AssistantAgentValidation,
 } from "@ontomato/contracts/assistant-chat";
 
@@ -13,7 +14,9 @@ import {
 import { assistantStore, type AssistantOwner, type AgentRow } from "./store";
 import { HttpError } from "../../utils/errors";
 import { resolveAssistantSkillReferences } from "./skill-references";
-import { validateAssistantSkills } from "./skills";
+import { readPageSkills, validateAssistantSkills } from "./skills";
+import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import { tForLocale } from "../../i18n";
 import { withDomainSkills } from "../skills/operations";
 import { effectiveSystemPrompt, storedSystemPrompt } from "./prompts";
 import { assistantName, assistantDescription } from "./labels";
@@ -47,10 +50,11 @@ export async function readAgentDefinition(id: string, owner: AssistantOwner, loc
 }
 /** The checks every save makes before it writes; a draft's validation runs exactly these and changes nothing. */
 export async function checkedDefinition(
-  input: AssistantAgentInput,
+  input: AssistantAgentUpdateInput,
   owner: AssistantOwner,
   credentials: AssistantCredentials,
   oldExecutionUserId: string | null,
+  oldSkills: readonly RuntimeSkillRef[],
 ) {
   const executionUserId = input.executionUserId === undefined ? oldExecutionUserId : input.executionUserId;
   try {
@@ -64,8 +68,18 @@ export async function checkedDefinition(
     throw error;
   }
   await validateModelSelection(owner.domainId, input.modelSelection);
+  if (input.skills === undefined) return { executionUserId };
+  const projection = oldSkills.length ? await readPageSkills(credentials) : undefined;
+  if (projection) {
+    const registered = new Set(projection.registeredSkills.map(runtimeSkillKey));
+    const visible = new Set(projection.pageSkills.map(({ skill }) => runtimeSkillKey(skill)));
+    if (oldSkills.map(runtimeSkillKey).some(key => registered.has(key) && !visible.has(key))) {
+      const message = tForLocale(credentials.locale, "panels.agentForm.hiddenSkillSelection");
+      throw new HttpError(403, message, "SKILL_SELECTION_INCOMPLETE", { fields: [{ field: "/skills", message }] });
+    }
+  }
   const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
-  await validateAssistantSkills(owner.domainId, skills, credentials);
+  await validateAssistantSkills(owner.domainId, skills, credentials, projection);
   return { skills, executionUserId };
 }
 export async function validateAgentDefinition(
@@ -73,25 +87,25 @@ export async function validateAgentDefinition(
   owner: AssistantOwner,
   credentials: AssistantCredentials,
 ) {
-  const old = draft.target.id ? await editableAgent(draft.target.id, owner) : null;
-  await checkedDefinition(draft.form, owner, credentials, old?.execution_user_id ?? null);
+  const old = "id" in draft.target ? await editableAgent(draft.target.id, owner) : null;
+  await checkedDefinition(draft.form, owner, credentials, old?.execution_user_id ?? null, old?.skills ?? []);
 }
 export async function saveAgentDefinition(
   id: string,
-  input: AssistantAgentInput,
+  input: AssistantAgentUpdateInput,
   owner: AssistantOwner,
   credentials: AssistantCredentials,
 ) {
   const locale = credentials.locale;
   return withDomainSkills(owner.domainId, async () => {
     const agent = await editableAgent(id, owner);
-    const { skills, executionUserId } = await checkedDefinition(input, owner, credentials, agent.execution_user_id);
+    const { skills, executionUserId } = await checkedDefinition(input, owner, credentials, agent.execution_user_id, agent.skills);
     if (input.executionUserId != null && input.executionUserId !== agent.execution_user_id)
       await prepareExecutionSetting(owner, agent.execution_user_id, input.executionUserId, credentials);
     await transaction(async client=>{
     await lockProducts(client,owner);
     await client.query(
-      `UPDATE ${t("assistant_agents")} SET name=$3,description=$4,enabled=$5,system_prompt=$6,model_selection=$7,model_reference_migrated=true,skills=$8,icon=$9,class_names=$10,enabled_mcp_service_ids=$11,sort_order=COALESCE($12,sort_order),execution_user_id=$13 WHERE id=$1 AND domain_id=$2`,
+      `UPDATE ${t("assistant_agents")} SET name=$3,description=$4,enabled=$5,system_prompt=$6,model_selection=$7,model_reference_migrated=true,icon=$8,class_names=$9,enabled_mcp_service_ids=$10,sort_order=COALESCE($11,sort_order),execution_user_id=$12${skills === undefined ? "" : ",skills=$13"} WHERE id=$1 AND domain_id=$2`,
       [
         id,
         owner.domainId,
@@ -100,12 +114,12 @@ export async function saveAgentDefinition(
         input.enabled,
         storedSystemPrompt(agent.kind, input.systemPrompt, locale),
         JSON.stringify(input.modelSelection),
-        JSON.stringify(skills),
         input.icon,
         JSON.stringify(input.classNames),
         JSON.stringify(input.enabledMcpServiceIds),
         input.sortOrder ?? null,
         executionUserId,
+        ...(skills === undefined ? [] : [JSON.stringify(skills)]),
       ],
     );
     const updated=await client.query(`SELECT * FROM ${t('assistant_agents')} WHERE id=$1 AND domain_id=$2`,[id,owner.domainId]);
@@ -121,7 +135,7 @@ export async function createAgentDefinition(
   credentials: AssistantCredentials,
 ) {
   return withDomainSkills(owner.domainId, async () => {
-    const { skills, executionUserId } = await checkedDefinition(input, owner, credentials, null);
+    const { skills, executionUserId } = await checkedDefinition(input, owner, credentials, null, []);
     const pool = getPostgresPool();
     const existing = (
       await pool.query(

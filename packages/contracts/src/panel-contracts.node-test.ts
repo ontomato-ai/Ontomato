@@ -1,3 +1,16 @@
+import { formOptionSchema } from "./form-fields";
+import {
+  APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL, EXPORT_FEEDBACK, EXPORT_SKILL,
+  FEEDBACK_RECORD, IMPORT_SKILL, KNOWLEDGE_GOVERNANCE_RECORD, SKILL,
+} from "./panel-client-requests";
+import {
+  createPanelOperationIntentRequestSchema, inspectPanelOperationImpactRequestSchema, panelOperationOutcomeSchema,
+  panelWriteOperationSnapshotSchema, readPanelOperationRequestSchema, readStoredPanelOperationIntent,
+} from "./panel-agent";
+import { panelReadOperationDescriptorSchema, panelReadOperationResultSchema } from "./panel-operations";
+import { appBridgeExpandPageComposerSchema, appBridgeRequestSchema, APP_BRIDGE_CHANNEL } from "./app-bridge";
+import { defaultAgentSchema } from "./default-agent";
+import { pageSkillSchema } from "./page-skills";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -5,8 +18,14 @@ import {
   OBJECT_TYPE, RELATIONSHIP, SET_METRIC_VIEW_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, USER,
   bindingKey, chartProjectionLookupRead, chartProjectionSourcePath, chartProjectionSourceSends, clientSends, panelClientReads,
 } from "./panel-client-requests";
-import { candidatePanelSourceSchema, panelFrameMessageSchema, panelUsePath } from "./panel-host";
-import { panelManifestSchema } from "./panel-manifest";
+import {
+  candidatePanelSourceSchema, panelCapacityPlanSchema, panelCapacityRequestSchema, panelFrameMessageSchema,
+  panelHostFrameMessageSchema, panelUsePath,
+} from "./panel-host";
+import {
+  matchesObjectType, objectUnionTypes, ontologyObjectUnionTypeSchema, panelChildObjectIdentitySchema,
+  panelManifestSchema, panelStateFieldSchema, panelStateValueSchema, singleOntologyParameterTypeSchema,
+} from "./panel-manifest";
 import { pageDraftSchema } from "./page-draft";
 import {
   panelFormDescriptionSchema, panelFormFrequencyValueSchema, panelFormRequestSchema, panelFormSaveInputSchema,
@@ -14,11 +33,16 @@ import {
 } from "./panel-projection";
 import { platformTaskFrequencySchema } from "./platform-schedules";
 import {
-  applicationPanelUsePathSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema,
+  DEFINITION, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, USER as ONTOLOGY_USER,
+  platformObjectTypes, platformOntologyLayers, platformRelationKinds,
+} from "./platform-object-types";
+import {
+  applicationPanelUseSchema, applicationPanelUsePathSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema,
   chartSourceInUseErrorSchema, ontologyElementRefSchema, productPanelContentSchema, productProjectionInputSchema,
   registerChartProjectionRequestSchema, registerChartProjectionResponseSchema, registerProductProjectionRequestSchema,
   updateChartProjectionSourceRequestSchema,
 } from "./product-panels";
+import { ontologyParameterTypeSchema as legacyOntologyParameterTypeSchema } from "./product-projections";
 
 const binding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
 
@@ -376,4 +400,270 @@ test("MetricView and Function management reads do not grant operation or concret
     assert.ok(!clientSends([operationKey], "GET", "/data-query", path));
     assert.ok(!clientSends([operationKey], "POST", "", path));
   }
+});
+
+test("a read-only trial carries the current draft and parameters without a write intent", () => {
+  const input = { draft: { query: { select: ["name"] } }, parameters: { limit: 3 } };
+  const request = {
+    applicationId: "ontology", useId: "metrics", operationId: "test.execute",
+    call: { target: { kind: "draft" }, input },
+  };
+  assert.deepEqual(readPanelOperationRequestSchema.parse(request), request);
+  assert.equal(readPanelOperationRequestSchema.safeParse({ ...request, effect: "read" }).success, false);
+  const owner = {
+    handlerRef: "metricViews.testExecute", effect: "read", batch: false, target: { source: "draft", slot: "definition" },
+    inputSchema: { type: "object" }, resultSchema: { type: "object" },
+  };
+  assert.deepEqual(panelReadOperationDescriptorSchema.parse(owner), owner);
+  assert.equal(panelReadOperationDescriptorSchema.safeParse({ ...owner, effect: "write" }).success, false);
+  for (const result of [{ kind: "markdown", markdown: "Preview" }, { kind: "json", value: [{ count: 1 }] }]) {
+    assert.deepEqual(panelReadOperationResultSchema.parse(result), result);
+    assert.equal(panelReadOperationResultSchema.safeParse({ ...result, affected: { objects: [] } }).success, false);
+  }
+});
+
+
+test("owner select options preserve integer status and customizable string tags", () => {
+  const option = { description: null, disabled: false, disabledReason: null };
+  const fields = [
+    {
+      ...editableField, path: "/status", label: "Status", valueSchema: { type: "integer", enum: [0, 1] },
+      control: { kind: "select", options: [
+        { ...option, value: 0, label: "Pending" }, { ...option, value: 1, label: "Approved" },
+      ] },
+    },
+    {
+      ...editableField, path: "/knowledgeTags", label: "Tags", valueSchema: { type: "array", items: { type: "string" } },
+      control: { kind: "select", multiple: true, allowCreate: true, options: [{ ...option, value: "policy", label: "Policy" }] },
+    },
+  ];
+  const values = { status: 0, knowledgeTags: ["policy", "new tag"] };
+  const form = panelFormDescriptionSchema.parse({ fields, values, save: ownerSave });
+  assert.deepEqual(form.fields, fields);
+  assert.deepEqual(panelFormSaveInputSchema.parse({ values: form.values }).values, values);
+  assert.equal(formOptionSchema.safeParse({ ...option, value: 0, label: "Pending" }).success, false);
+});
+
+test("knowledge, governance, feedback and skill reads stay at their declared owners", () => {
+  for (const [resource, method, service, path] of [
+    [BUSINESS_KNOWLEDGE, "POST", "/data-query", "/admin/getBussinessKnowledge"],
+    [BUSINESS_KNOWLEDGE, "POST", "/data-query", "/admin/bussinessKnowledge/form"],
+    [KNOWLEDGE_GOVERNANCE_RECORD, "GET", "/data-query", "/ontology/ai/knowledge-governance/record/work"],
+    [KNOWLEDGE_GOVERNANCE_RECORD, "GET", "/data-query", "/ontology/ai/knowledge-governance/record/sources/evidence?offset=20"],
+    [FEEDBACK_RECORD, "GET", "", "/feedback?rating=like&limit=20"],
+    [FEEDBACK_RECORD, "GET", "", "/feedback/12a207b7-e868-45e5-a52d-e15f85447447"],
+    [SKILL, "GET", "", "/skills/skill/file?path=references%2Fguide.md"],
+  ] as const) {
+    const key = binding(resource);
+    assert.ok(clientSends([key], method, service, path));
+    assert.ok(panelClientReads(key).some(read => read.method === method && read.service === service && read.path.test(path)));
+  }
+
+  for (const [operation, method, service, path] of [
+    [APPROVE_KNOWLEDGE, "POST", "/data-query", "/admin/editBussinessKnowledge"],
+    [DELETE_KNOWLEDGE, "POST", "/data-query", "/admin/delBussinessKnowledge"],
+    [DELETE_SKILL, "DELETE", "", "/skills/skill"],
+    [IMPORT_SKILL, "POST", "", "/skills/import?overwrite=true"],
+    [EXPORT_SKILL, "GET", "", "/skills/skill/export"],
+    [EXPORT_FEEDBACK, "GET", "", "/feedback/export?keyword=sample"],
+  ] as const) {
+    const key = bindingKey({ kind: "PlatformOperation", id: operation });
+    assert.ok(clientSends([key], method, service, path));
+    assert.ok(!panelClientReads(key).some(read => read.path.test(path)));
+  }
+
+  assert.ok(!clientSends([binding(SKILL)], "GET", "", "/skills/skill/export"));
+  assert.ok(!clientSends([binding(FEEDBACK_RECORD)], "GET", "", "/feedback/export"));
+  assert.ok(!clientSends([binding(FEEDBACK_RECORD)], "GET", "", "/feedback/state"));
+  assert.ok(!clientSends([binding(KNOWLEDGE_GOVERNANCE_RECORD)], "POST", "/data-query",
+    "/ontology/ai/knowledge-governance/record/runs/run/actions/approve"));
+});
+
+test("a child key is meaningful with its parent identity", () => {
+  const child = { parent: { objectType: SKILL, primaryKey: "skill-a" }, primaryKey: "references/guide.md" };
+  assert.deepEqual(panelChildObjectIdentitySchema.parse(child), child);
+  assert.equal(panelChildObjectIdentitySchema.safeParse({ primaryKey: child.primaryKey }).success, false);
+});
+
+test("mixed graphs declare selected node types separately from the read bindings", () => {
+  const nodeIdentity = { kind: "object-union", layers: [...platformOntologyLayers] };
+  const projection = productProjectionInputSchema.parse({
+    name: "Platform ontology graph", description: "", visibility: "domain", componentId: "GraphCanvas",
+    binding: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE },
+    graph: { nodeIdentity, edges: {
+      binding: { kind: "PlatformObjectType", id: ONTOLOGY_RELATION_KIND }, sourcePath: "/from", targetPath: "/to",
+    } },
+    inputs: { start: nodeIdentity }, display: {},
+  });
+  assert.deepEqual(projectionPorts(projection, {}).outputs?.selectedNode, nodeIdentity);
+  assert.deepEqual(projection.inputs.start, nodeIdentity);
+  const manifest = panelManifestSchema.parse({
+    state: { selected: nodeIdentity },
+    slots: { graph: { projectionId: "mixed", outputs: { selectedNode: { state: "selected" } } } }, operations: [],
+  });
+  assert.deepEqual(manifest.state.selected, { ...nodeIdentity, deepLink: false });
+  const user = panelStateValueSchema.parse({ className: ONTOLOGY_USER, primaryKey: "shared-key" });
+  const definition = panelStateValueSchema.parse({ className: DEFINITION, primaryKey: "shared-key" });
+  assert.notDeepEqual(user, definition);
+});
+
+test("object unions resolve current layer declarations or an explicit list of declared types", () => {
+  const explicit = ontologyObjectUnionTypeSchema.parse({ kind: "object-union", objectTypes: [DEFINITION, ONTOLOGY_TYPE] });
+  assert.deepEqual(objectUnionTypes(explicit), [DEFINITION, ONTOLOGY_TYPE]);
+  assert.equal(matchesObjectType(explicit, ONTOLOGY_TYPE), true);
+  assert.equal(matchesObjectType(explicit, ONTOLOGY_USER), false);
+
+  const layered = ontologyObjectUnionTypeSchema.parse({ kind: "object-union", layers: ["capability"] });
+  assert.equal(matchesObjectType(layered, DEFINITION), true);
+  assert.equal(matchesObjectType(layered, ONTOLOGY_USER), false);
+  assert.equal(matchesObjectType(layered, ONTOLOGY_TYPE), false);
+  assert.equal(matchesObjectType({ kind: "object", objectType: ONTOLOGY_USER }, ONTOLOGY_USER), true);
+});
+
+test("object union contracts reject unknown types, unknown layers and ambiguous selectors", () => {
+  for (const selector of [
+    { objectTypes: [DEFINITION, "platform:Missing"] },
+    { layers: ["unclassified"] },
+    { layers: ["capability"], objectTypes: [DEFINITION] },
+    {},
+  ]) {
+    const field = { kind: "object-union", ...selector };
+    assert.equal(ontologyObjectUnionTypeSchema.safeParse(field).success, false);
+    assert.equal(panelStateFieldSchema.safeParse(field).success, false);
+  }
+});
+
+test("legacy single-type projection parameters reject both object union selectors", () => {
+  for (const selector of [{ objectTypes: [DEFINITION] }, { layers: ["capability"] }]) {
+    const type = { kind: "object-union", ...selector };
+    assert.equal(singleOntologyParameterTypeSchema.safeParse(type).success, false);
+    assert.equal(legacyOntologyParameterTypeSchema.safeParse(type).success, false);
+  }
+});
+
+test("platform ontology routes are semantic reads on the declared bindings", () => {
+  for (const [method, name] of [
+    ["GET", "schema"], ["GET", "counts"], ["GET", "start"], ["POST", "neighbors"], ["POST", "objects"],
+  ] as const) {
+    const path = `/platform-ontology/${name}`;
+    assert.ok(clientSends([binding(ONTOLOGY_TYPE), binding(ONTOLOGY_RELATION_KIND)], method, "", path));
+    assert.ok(panelClientReads(binding(ONTOLOGY_TYPE)).some(read => read.method === method && read.path.test(path)));
+    assert.ok(!clientSends([binding(OBJECT_TYPE)], method, "", path));
+  }
+  assert.ok(!clientSends([binding(ONTOLOGY_TYPE)], "POST", "", "/platform-ontology/delete"));
+});
+
+test("the four-layer topology points to declared kinds and distinguishes stored and derived edges", () => {
+  for (const relation of platformRelationKinds) {
+    assert.ok(platformObjectTypes[relation.from]?.labelKey);
+    for (const target of typeof relation.to === "string" ? [relation.to] : relation.to)
+      assert.ok(platformObjectTypes[target]?.labelKey);
+  }
+  assert.equal(platformRelationKinds.find(relation => relation.id === "user.published-workflow")?.derived, false);
+  assert.equal(platformRelationKinds.find(relation => relation.id === "role.can-author-workflow")?.derived, true);
+});
+
+const operationIntentId = "bda3d9bd-afc1-4dfa-92c2-41efda234bad";
+const operationTarget = { objectType: "platform:BusinessKnowledge", primaryKey: "knowledge" };
+
+test("batch confirmation and dispatch share the same concrete calls under one intent", () => {
+  const call = { target: { ...operationTarget, kind: "object" }, input: {} };
+  const calls = [call, { ...call, target: { ...call.target, primaryKey: "another" } }];
+  const use = { applicationId: "ontology", useId: "knowledge", operationId: "list.delete" };
+  const batch = { ...use, intentId: operationIntentId, calls };
+  assert.deepEqual(createPanelOperationIntentRequestSchema.parse(batch), batch);
+  assert.deepEqual(inspectPanelOperationImpactRequestSchema.parse({ ...use, calls }), { ...use, calls });
+  assert.equal(createPanelOperationIntentRequestSchema.safeParse({ ...batch, call }).success, false);
+  assert.equal(createPanelOperationIntentRequestSchema.safeParse({
+    ...batch, calls: [{ ...call, executionUserId: "another" }],
+  }).success, false);
+  assert.equal(panelWriteOperationSnapshotSchema.safeParse({
+    id: use.operationId, label: "Delete", kind: "action", slot: "list", handlerRef: "knowledge.delete",
+    target: { source: "input", input: "selection" }, inputSchema: {}, resultSchema: {}, batch: true,
+  }).success, false);
+});
+
+test("batch outcomes keep owner refusals, execution failures and unknown outcomes distinct", () => {
+  const affected = { objects: [operationTarget], objectTypes: [operationTarget.objectType] };
+  const items = [
+    { target: operationTarget, outcome: { kind: "success", data: {} } },
+    { target: { ...operationTarget, primaryKey: "refused" }, outcome: { kind: "refusal", code: "FORBIDDEN", message: "Denied" } },
+    { target: { ...operationTarget, primaryKey: "failed" }, outcome: { kind: "failure", code: "DEPENDENCY_UNAVAILABLE", message: "Failed" } },
+    { target: { ...operationTarget, primaryKey: "unknown" }, outcome: { kind: "unknown", message: "No receipt" } },
+  ];
+  const outcome = { kind: "batch", items, affected };
+  assert.deepEqual(panelOperationOutcomeSchema.parse(outcome), outcome);
+  assert.equal(panelOperationOutcomeSchema.safeParse({ ...outcome, items: items.slice(1) }).success, false);
+  assert.deepEqual(panelOperationOutcomeSchema.parse({ kind: "unknown", message: "No batch receipt" }), {
+    kind: "unknown", message: "No batch receipt",
+  });
+});
+
+test("legacy confirmations expire while dispatched and unknown records preserve their history", () => {
+  const session = { providerId: "workbench", sessionId: "959c449b-afd0-4af9-9f2d-663fecfce14a" };
+  const legacy = {
+    intentId: operationIntentId, source: { session, runId: "12a207b7-e868-45e5-a52d-e15f85447447" },
+    rootSession: session, use: { applicationId: "ontology", useId: "knowledge" }, panelId: "panel",
+    projectionId: "projection", binding: { kind: "PlatformOperation", id: "knowledge.delete" },
+    initiator: { domainId: "domain", userId: "author" }, executionUserId: null, confirmation: "required",
+    questionId: operationIntentId, answer: null, dispatched: false, outcome: null,
+    operation: { id: "list.delete", label: "Delete", kind: "action", slot: "list",
+      handlerRef: "knowledge.delete", target: { source: "state", state: "selected" }, inputSchema: {} },
+    call: { target: { ...operationTarget, kind: "object" }, input: {} },
+  };
+  assert.deepEqual(readStoredPanelOperationIntent(legacy), {
+    kind: "confirmation-expired", intentId: operationIntentId, code: "PANEL_CONFIRMATION_EXPIRED",
+  });
+  for (const record of [
+    { ...legacy, dispatched: true },
+    { ...legacy, dispatched: true, outcome: { kind: "unknown", message: "No receipt" } },
+  ]) {
+    assert.deepEqual(readStoredPanelOperationIntent(record), { kind: "historical", intent: record });
+  }
+});
+
+test("application uses and page-skill defaults share the explicit agent target", () => {
+  const use = { id: "governance", pageKey: "report", panelId: "reports", path: "/governance/reports", access: { kind: "domain-member" } };
+  const preset = { kind: "preset", agentKind: "knowledge-governance" };
+  const concrete = { kind: "id", id: "saved-agent" };
+  assert.deepEqual(applicationPanelUseSchema.parse({ ...use, defaultAgent: concrete }).defaultAgent, concrete);
+  assert.equal(applicationPanelUseSchema.safeParse({ ...use, defaultAgentId: "saved-agent" }).success, false);
+  const mapping = {
+    permissionCode: "business-knowledge",
+    skill: { namespace: { kind: "provider", provider: "ontology" }, name: "knowledge-governance" },
+    defaults: [{ pageKey: use.pageKey, defaultAgent: preset }],
+  };
+  assert.deepEqual(pageSkillSchema.parse(mapping).defaults, mapping.defaults);
+});
+
+
+test("conversation entries declare the exact composer target and can prefill without a send command", () => {
+  const payload = { slot: "composer", target: { kind: "page-default" }, prefill: "Please review these entries" };
+  assert.ok(appBridgeRequestSchema.safeParse({
+    channel: APP_BRIDGE_CHANNEL, id: "expand", operation: "expand-page-composer", payload,
+  }).success);
+  assert.deepEqual(appBridgeExpandPageComposerSchema.parse(payload), payload);
+  assert.equal(appBridgeExpandPageComposerSchema.safeParse({ ...payload, send: true }).success, false);
+  assert.equal(defaultAgentSchema.safeParse(payload.target).success, false);
+
+  const conversationEntry = { target: { kind: "preset", agentKind: "knowledge-governance" }, prefill: payload.prefill };
+  const projection = productProjectionInputSchema.parse({
+    name: "Governance", description: "", visibility: "domain", componentId: "ConversationEntry",
+    binding: { kind: "PlatformObjectType", id: "platform:AgentDefinition" }, inputs: {}, display: {}, conversationEntry,
+  });
+  assert.deepEqual(projection.conversationEntry, conversationEntry);
+});
+
+test("capacity admission separates a confirmed departure from activity in the frame", () => {
+  const current = { instance: "knowledge", address: "/ontology/knowledge?state=old" };
+  const next = { instance: "knowledge", address: "/ontology/knowledge?state=new" };
+  const request = { current, next, departure: "retain-clean" };
+  assert.deepEqual(panelCapacityRequestSchema.parse(request), request);
+  assert.equal(panelCapacityRequestSchema.safeParse({ ...request, departure: "dirty" }).success, false);
+
+  const plan = { kind: "admitted", next: "reuse", reclaim: [] };
+  assert.deepEqual(panelCapacityPlanSchema.parse(plan), plan);
+  assert.equal(panelCapacityPlanSchema.safeParse({ kind: "refused", reclaim: [current.instance] }).success, false);
+  assert.deepEqual(panelHostFrameMessageSchema.parse({ kind: "activity", active: false }), { kind: "activity", active: false });
+  assert.equal(panelFrameMessageSchema.safeParse({ kind: "activity", active: true }).success, false);
 });

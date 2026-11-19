@@ -5,7 +5,7 @@ import { AGENT_DEFINITION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SKILL, USER 
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import { agentDefinitionSave, agentFormJsonSchema, parseAgentDefinitionForm } from "./definition-form-schema";
+import { agentDefinitionSave, agentFormJsonSchema, parseAgentDefinitionForm, parseAgentDefinitionUpdateForm } from "./definition-form-schema";
 import { checkedDefinition, readAgentDefinition } from "./definitions";
 import { readExecutionOptions } from "./execution-setting";
 import type { AssistantOwner } from "./store";
@@ -42,31 +42,44 @@ const fieldSchemas = fields.map(({ schema, ...field }) => ({
 export async function describeAgentDefinitionForm(
   request: PanelFormRequest, owner: AssistantOwner, credentials: AssistantCredentials,
 ): Promise<PanelFormDescription> {
-  const { target } = request;
-  let current = initialValues;
+  const { target, values: submittedValues, changedField } = request;
+  const checkDraft = submittedValues !== undefined && changedField === null;
+  let definitionRead: Promise<AssistantAgentDefinition> | undefined;
   if (target.kind === "object") {
     const { primaryKey } = target;
     if (target.objectType !== AGENT_DEFINITION || !z.string().uuid().safeParse(primaryKey).success)
       throw new HttpError(400, "Invalid agent definition target", "INVALID_REQUEST");
-    const { id: _id, sortOrder: _sortOrder, ...values } = await readAgentDefinition(primaryKey, owner, credentials.locale);
+    definitionRead = readAgentDefinition(primaryKey, owner, credentials.locale);
+  }
+  // The form uses the caller's capability. The user picker resolves the selected member separately.
+  const [definition, openOptions] = await Promise.all([
+    definitionRead, checkDraft ? undefined : readExecutionOptions(credentials, null),
+  ]);
+  let current = initialValues;
+  if (definition) {
+    const { id: _id, sortOrder: _sortOrder, ...values } = definition;
     current = values;
   }
 
-  let values = request.values ?? current;
-  let selected = current.executionUserId;
-  if (request.values !== undefined && request.changedField === null) {
-    const input = parseAgentDefinitionForm(request.values);
-    const checked = await checkedDefinition(input, owner, credentials, current.executionUserId);
+  let values = submittedValues ?? current;
+  if (checkDraft) {
+    const input = target.kind === "draft"
+      ? parseAgentDefinitionForm(submittedValues)
+      : parseAgentDefinitionUpdateForm(submittedValues);
+    const checked = await checkedDefinition(input, owner, credentials, current.executionUserId, current.skills);
     values = { ...input, ...checked };
-    selected = checked.executionUserId;
   }
-  const { canSetExecutionUser } = await readExecutionOptions(credentials, selected);
+  const { canSetExecutionUser } = openOptions ?? await readExecutionOptions(credentials, null);
   const text = (key: string) => tForLocale(credentials.locale, `panels.agentForm.${key}`);
   return {
     values,
     fields: fieldSchemas.map(({ key, ...field }) => {
       const readOnly = key === "executionUserId" && !canSetExecutionUser;
-      return { ...field, label: text(key), readOnly, ...(readOnly ? { readOnlyReason: text("executionReadOnly") } : {}) };
+      return {
+        ...field,
+        required: key === "skills" ? target.kind === "draft" : field.required,
+        label: text(key), readOnly, ...(readOnly ? { readOnlyReason: text("executionReadOnly") } : {}),
+      };
     }),
     save: agentDefinitionSave(target),
   };

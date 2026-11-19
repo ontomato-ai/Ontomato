@@ -93,6 +93,8 @@ export type PanelFrameMessage = z.infer<typeof panelFrameMessageSchema>;
 export const panelHostFrameMessageSchema = z.discriminatedUnion("kind", [
   /** A link changed the address of this same instance. */
   z.object({ kind: z.literal("address"), address: z.string().min(1).max(4000) }).strict(),
+  /** Active only while the tab is visible, this instance is current, and its placement and parent are expanded. */
+  z.object({ kind: z.literal("activity"), active: z.boolean() }).strict(),
   z.object({ kind: z.literal("object-changed"), target: panelObjectIdentitySchema.nullable() }).strict(),
   z.object({ kind: z.literal("projections-changed"), projections: z.array(definitionRevisionSchema) }).strict(),
   /**
@@ -119,6 +121,43 @@ export type PanelDefinitionMode = { kind: "view" } | { kind: "author"; definitio
 
 export interface PanelRefreshPort {
   refresh(target: PanelObjectIdentity | null): void;
+}
+
+const panelCapacityPageSchema = z.object({
+  /** Stable identity from the display host, scoped to its application, user and conversation or candidate source. */
+  instance: z.string().min(1),
+  /** Query/state may change while the instance identity stays the same. */
+  address: z.string().max(4000),
+}).strict();
+
+/** The existing leave guard has finished before the display requests a capacity plan. */
+export const panelCapacityRequestSchema = z.object({
+  current: panelCapacityPageSchema.nullable(),
+  next: panelCapacityPageSchema.nullable(),
+  departure: z.enum(["retain-clean", "discarded"]),
+}).strict();
+export type PanelCapacityRequest = z.infer<typeof panelCapacityRequestSchema>;
+
+export const panelCapacityPlanSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("admitted"),
+    next: z.enum(["reuse", "mount", "none"]),
+    reclaim: z.array(panelCapacityPageSchema.shape.instance),
+  }).strict(),
+  z.object({ kind: z.literal("refused") }).strict(),
+]);
+export type PanelCapacityPlan = z.infer<typeof panelCapacityPlanSchema>;
+
+export type PanelCapacityAdmission =
+  | Extract<PanelCapacityPlan, { kind: "refused" }>
+  | (Extract<PanelCapacityPlan, { kind: "admitted" }> & {
+    /** Apply the plan once the switch is confirmed. A refused write discards the plan without calling this. */
+    commit(): void;
+  });
+
+/** The display remains authoritative. Admission plans reuse or reclamation without changing the shown page. */
+export interface PanelCapacityPort {
+  admit(request: PanelCapacityRequest): PanelCapacityAdmission | Promise<PanelCapacityAdmission>;
 }
 
 /** One message on the panel channel as it arrives: the channel's own key, and the message it carries. */

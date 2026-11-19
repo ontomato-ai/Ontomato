@@ -55,14 +55,19 @@ export const assistantAgentInputSchema = assistantAgentDefinitionSchema
     modelSelection: modelSelectionSchema.default({ modelId: null }),
     skills: z.array(assistantSkillInputSchema),
   });
+/** An omitted skills field preserves the definition's existing selection. */
+export const assistantAgentUpdateInputSchema = assistantAgentInputSchema.partial({ skills: true });
+export type AssistantAgentUpdateInput = z.infer<typeof assistantAgentUpdateInputSchema>;
+
 /** The settings panel carries unedited MCP and avatar values, and leaves sorting to the native owner. */
 export const assistantAgentPanelValuesSchema = assistantAgentInputSchema.omit({ sortOrder: true }).extend({
   enabledMcpServiceIds: assistantAgentInputSchema.shape.enabledMcpServiceIds.removeDefault(),
 });
-export const assistantAgentValidationSchema = z.object({
-  target: z.object({ id: z.string().uuid().optional() }).strict(),
-  form: assistantAgentInputSchema,
-}).strict();
+export const assistantAgentPanelUpdateValuesSchema = assistantAgentPanelValuesSchema.partial({ skills: true });
+export const assistantAgentValidationSchema = z.union([
+  z.object({ target: z.object({ id: z.string().uuid() }).strict(), form: assistantAgentUpdateInputSchema }).strict(),
+  z.object({ target: z.object({}).strict(), form: assistantAgentInputSchema }).strict(),
+]);
 export type AssistantAgentValidation = z.infer<typeof assistantAgentValidationSchema>;
 export const agentExecutionOptionsSchema = z.object({
   selected: z.object({
