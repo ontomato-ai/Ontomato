@@ -11,7 +11,8 @@ import {normalizeComposition,validateComposition,validateAffectedCompositions} f
 import {backendPost,buildBackendHeaders} from '../../utils/backend-client';
 import {config} from '../../config/application';
 import {objectViewDocumentSchema} from '@ontomato/contracts/object-views';
-import {withProductGrants,currentProductGrants,registerProductResource,productGrantIdsForOwner,refreshProductGrants} from './grants';
+import {withProductGrants,currentProductGrants,refreshProductGrants} from './grants';
+import {registerProductResource,productGrantIdsForOwner,type ProductOwner} from '../product-governance/grants';
 import {assistantStore} from '../assistant/store';
 import {ontologyRegistration,synchronizeProductOntology} from './ontology';
 import {nativeAgentAsset,updateNativeAgent} from './platform-assets';
@@ -19,7 +20,6 @@ import {lockProducts} from '../../infrastructure/product-write-lock';
 import {assertLegacyProductWrite,assertLegacyProductIdentity} from './panel-boundary';
 export {lockProducts} from '../../infrastructure/product-write-lock';
 
-export interface ProductOwner { domainId: string; userId: string }
 const columns = `id, owner_id AS "ownerId", name, description, visibility, document, revision, created_at AS "createdAt", updated_at AS "updatedAt"`;
 function asset(row: Record<string, unknown>, owner: ProductOwner): ProductAsset {
   return productAssetSchema.parse({ ...row, editable: currentProductGrants(owner).edit.has(String(row.id)),

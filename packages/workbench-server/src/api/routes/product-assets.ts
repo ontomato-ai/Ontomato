@@ -18,7 +18,8 @@ import {productDefinitionStreamRequestSchema,productSubscriptionTargetSchema,typ
 import {subscribeProduct,resumeProductSubscription,deleteProductSubscription,authorizeDefinitionStream} from '../../services/product-assets/subscriptions';
 import {discoverProjections,validateDefaultProjections} from '../../services/product-assets/projections';
 import {readDefinitionTrigger,saveDefinitionTrigger} from '../../services/product-assets/triggers';
-import {readProductGrantRecords,changeProductGrant,changeProductDomainGrant,requireProductUse} from '../../services/product-assets/grants';
+import {readProductGrantRecords,changeProductGrant,changeProductDomainGrant} from '../../services/product-governance/grants';
+import {requireProductUse} from '../../services/product-assets/grants';
 import {assistantService} from '../../services/assistant/service';
 import {bindProfileSession} from '../../services/product-assets/profile-sessions';
 import {projectionSourceTypes} from '../../services/product-assets/invalidation';

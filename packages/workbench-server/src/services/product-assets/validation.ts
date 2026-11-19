@@ -8,7 +8,7 @@ import { getOwnedDashboard } from "../dashboard/access";
 import { config } from "../../config/application";
 import { backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
-import type { ProductOwner } from "./store";
+import type { ProductOwner } from "../product-governance/grants";
 import { objectViewDocumentSchema, objectViewProductIssues,objectProjectionIssues } from "@ontomato/contracts/object-views";
 import {readDefinition} from './definitions';
 import {platformObjectProvider} from './platform-objects';

@@ -6,9 +6,9 @@ import {backendPost,backendGet,buildBackendHeaders} from '../../utils/backend-cl
 import {environment} from '../../config/environment';
 import {config} from '../../config/application';
 import {HttpError} from '../../utils/errors';
-import type {ProductOwner} from './store';
+import type {ProductOwner} from '../product-governance/grants';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
-import {readProductGrantRecords} from './grants';
+import {readProductGrantRecords} from '../product-governance/grants';
 import {DashboardMetricClient} from '../dashboard/metric-client';
 import {readDefinition} from './definitions';
 import {platformObjectTypes} from './platform-objects';

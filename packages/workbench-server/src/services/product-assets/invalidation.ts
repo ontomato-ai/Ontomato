@@ -1,4 +1,5 @@
-import {getProduct,type ProductOwner} from './store';
+import {getProduct} from './store';
+import type {ProductOwner} from '../product-governance/grants';
 import {productReferences} from '@ontomato/contracts/product-assets';
 import {readDefinition} from './definitions';
 import {DashboardMetricClient} from '../dashboard/metric-client';

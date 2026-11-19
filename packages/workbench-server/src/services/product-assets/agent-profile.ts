@@ -1,4 +1,5 @@
-import {getProduct,type ProductOwner} from './store';
+import {getProduct} from './store';
+import type {ProductOwner} from '../product-governance/grants';
 import {validateProduct} from './validation';
 import {backendPost,buildBackendHeaders} from '../../utils/backend-client';
 import {config} from '../../config/application';

@@ -4,7 +4,7 @@ import { HttpError } from "../../../utils/errors";
 const mocks = vi.hoisted(() => ({ query: vi.fn(), grant: vi.fn(), register: vi.fn(), share: vi.fn(), notify: vi.fn(), edits: [] as string[] }));
 vi.mock("../../../infrastructure/postgres", () => ({ getPostgresPool: () => ({ query: mocks.query }), qualifiedTable: (name: string) => name }));
 vi.mock("../../../infrastructure/postgres-transaction", () => ({ transaction: (action: (client: { query: typeof mocks.query }) => unknown) => action({ query: mocks.query }) }));
-vi.mock("../../product-assets/grants", () => ({ requireProductGrant: mocks.grant, registerProductResource: mocks.register,
+vi.mock("../../product-governance/grants", () => ({ requireProductGrant: mocks.grant, registerProductResource: mocks.register,
   shareProductResource: mocks.share, grantedProductIds: async () => mocks.edits }));
 vi.mock("../../product-assets/subscriptions", () => ({ notifyProductDefinitionChanged: mocks.notify }));
 import { readCurrentPanel, readCurrentProjection, requireCurrentPanels, saveCurrentPanel, saveCurrentProjection } from "../current";

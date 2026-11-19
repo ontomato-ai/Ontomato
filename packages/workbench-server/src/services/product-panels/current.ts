@@ -5,8 +5,8 @@ import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postg
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { lockProducts } from "../../infrastructure/product-write-lock";
 import { HttpError } from "../../utils/errors";
-import type { ProductOwner } from "../product-assets/store";
-import { grantedProductIds, registerProductResource, requireProductGrant } from "../product-assets/grants";
+import type { ProductOwner } from "../product-governance/grants";
+import { grantedProductIds, registerProductResource, requireProductGrant } from "../product-governance/grants";
 import { notifyProductDefinitionChanged } from "../product-assets/subscriptions";
 
 async function readable(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string) {

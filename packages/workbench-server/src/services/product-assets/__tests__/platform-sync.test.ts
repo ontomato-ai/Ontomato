@@ -7,7 +7,7 @@ vi.mock('../../../infrastructure/postgres',()=>({getPostgresPool:()=>({query:moc
 vi.mock('../../../infrastructure/postgres-transaction',()=>({transaction:async(action:(client:{query:typeof mocks.query})=>unknown)=>action({query:mocks.query})}));
 vi.mock('../store',()=>({lockProducts:async()=>{}}));
 vi.mock('../ontology',()=>({ontologyRegistration:()=>null,synchronizeProductOntology:async()=>{}}));
-vi.mock('../grants',()=>({registerProductResource:async()=>{}}));
+vi.mock('../../product-governance/grants',()=>({registerProductResource:async()=>{}}));
 vi.mock('../../assistant/store',()=>({assistantStore:{agents:mocks.agents}}));
 vi.mock('../../app-builder/access',()=>({assertAppBuilderAccess:mocks.access}));
 import {ensurePlatformAssets,synchronizePlatformAssets} from '../platform-assets';

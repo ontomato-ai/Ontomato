@@ -1,7 +1,7 @@
 import {createHash,randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {productSubscriptionTargetSchema,type ProductSubscriptionTarget,type ProductSubscriptionEvent,type PanelDefinitionSnapshot,type ProductDefinitionTarget,type ProductDefinitionRevision,type ProductDefinitionStreamFrame} from '@ontomato/contracts/product-subscriptions';
-import type {ProductOwner} from './store';
+import type {ProductOwner} from '../product-governance/grants';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {executeDefinition} from './definitions';
 import {HttpError} from '../../utils/errors';
@@ -10,7 +10,7 @@ import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres
 import {productDefinitionChangedEventSchema,type ProductDefinitionChangedEvent} from '@ontomato/contracts/product-panels';
 import {findCurrentProduct,type CurrentProductKind} from '../../infrastructure/product-current';
 import {panelManifestSchema} from '@ontomato/contracts/panel-manifest';
-import {requireProductGrant} from './grants';
+import {requireProductGrant} from '../product-governance/grants';
 
 type Subscription={id:string;owner:ProductOwner;credentials:AssistantCredentials;target:ProductSubscriptionTarget;expiresAt:number;fingerprint?:string;members?:Set<string>;events:ProductSubscriptionEvent[];busy:boolean;evaluation?:Promise<void>};
 const subscriptions=new Map<string,Subscription>();

@@ -1,5 +1,5 @@
 import {saveProduct} from './store';
-import type {ProductOwner} from './store';
+import type {ProductOwner} from '../product-governance/grants';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 
 /** Creation registers the existing dashboard as a reusable product without copying its definition. */
