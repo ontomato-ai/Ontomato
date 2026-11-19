@@ -1,7 +1,7 @@
 import { platformSchedulesPath } from "./platform-schedules";
-import { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER } from "./platform-object-types";
+import { AGENT_DEFINITION, ATTRIBUTE, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, KNOWLEDGE_GOVERNANCE_RECORD, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER } from "./platform-object-types";
 
-export { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER } from "./platform-object-types";
+export { AGENT_DEFINITION, ATTRIBUTE, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, KNOWLEDGE_GOVERNANCE_RECORD, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER } from "./platform-object-types";
 
 /*
  * The requests the SDK's platform clients send, by the binding that reaches each client (overall design 3.2, 5.1). A
@@ -17,6 +17,12 @@ export { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_T
 /** The platform operation that runs one scheduled task now, as a projection binds it. */
 export const RUN_NOW = "schedules.runNow";
 export const DELETE_AGENT = "agents.delete";
+export const APPROVE_KNOWLEDGE = "knowledge.approve";
+export const DELETE_KNOWLEDGE = "knowledge.delete";
+export const DELETE_SKILL = "skills.delete";
+export const IMPORT_SKILL = "skills.import";
+export const EXPORT_SKILL = "skills.export";
+export const EXPORT_FEEDBACK = "feedback.export";
 
 /**
  * The gateway prefix the scheduled tasks' contract spells its paths with. A frame's request names the service and the
@@ -77,13 +83,55 @@ const ontologyMetadataRead = {
   instructions: "POST an empty JSON object. Classes, their attributes and relationship rules come from this same response.",
 } as const satisfies PanelClientRead;
 
+const knowledgeReads = [
+  { method: "POST", service: "/data-query", path: /^\/admin\/getBussinessKnowledge$/, template: "/admin/getBussinessKnowledge" },
+  {
+    method: "POST", service: "/data-query", path: /^\/admin\/bussinessKnowledge\/form$/, template: "/admin/bussinessKnowledge/form",
+    instructions: "POST a form target, changedField, and optional values. Use the owner's returned form description.",
+  },
+] as const satisfies readonly PanelClientRead[];
+
+const governanceRecordReads = [
+  {
+    method: "GET", service: "/data-query", path: /^\/ontology\/ai\/knowledge-governance\/[^/?#]+\/work$/,
+    template: "/ontology/ai/knowledge-governance/:id/work",
+  },
+  {
+    method: "GET", service: "/data-query",
+    path: /^\/ontology\/ai\/knowledge-governance\/[^/?#]+\/sources\/[^/?#]+(?:\?offset=\d+)?$/,
+    template: "/ontology/ai/knowledge-governance/:id/sources/:source",
+    instructions: "Use the record's source ID and the returned offset to read more source material.",
+  },
+] as const satisfies readonly PanelClientRead[];
+
+const skillReads = [
+  { method: "GET", service: "", path: /^\/assistant\/agent-skills$/, template: "/assistant/agent-skills" },
+  { method: "GET", service: "", path: /^\/skills$/, template: "/skills" },
+  { method: "GET", service: "", path: /^\/skills\/[^/?#]+\/references$/, template: "/skills/:id/references" },
+  { method: "GET", service: "", path: /^\/skills\/[^/?#]+\/files$/, template: "/skills/:id/files" },
+  {
+    method: "GET", service: "", path: /^\/skills\/[^/?#]+\/file\?path=[^&#]+$/, template: "/skills/:id/file?path=:path",
+    instructions: "Use the skill ID and the file path returned by its file list.",
+  },
+] as const satisfies readonly PanelClientRead[];
+
+const feedbackReads = [
+  {
+    method: "GET", service: "", path: /^\/feedback(?:\?[^#]+)?$/, template: "/feedback",
+    instructions: "Use sourceType, rating, and keyword to filter and limit and offset to page.",
+  },
+] as const satisfies readonly PanelClientRead[];
+
+const saveKnowledge = { method: "POST", service: "/data-query", path: /^\/admin\/editBussinessKnowledge$/ } as const satisfies ClientRequest;
+
 const objectBinding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
 const readRequests: Readonly<Record<string, readonly PanelClientRead[]>> = {
   [objectBinding(SCHEDULED_TASK)]: scheduledTaskReads,
   [objectBinding(AGENT_DEFINITION)]: agentDefinitionReads,
-  [objectBinding(SKILL)]: [
-    { method: "GET", service: "", path: /^\/assistant\/agent-skills$/, template: "/assistant/agent-skills" },
-  ],
+  [objectBinding(SKILL)]: skillReads,
+  [objectBinding(BUSINESS_KNOWLEDGE)]: knowledgeReads,
+  [objectBinding(KNOWLEDGE_GOVERNANCE_RECORD)]: governanceRecordReads,
+  [objectBinding(FEEDBACK_RECORD)]: feedbackReads,
   [objectBinding(MODEL_OPTION)]: [
     { method: "GET", service: "/data-query", path: /^\/model-options$/, template: "/model-options" },
   ],
@@ -122,6 +170,27 @@ export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> 
   ],
   [bindingKey({ kind: "PlatformOperation", id: DELETE_AGENT })]: [
     { method: "DELETE", service: "", path: new RegExp(`^${agent}$`) },
+  ],
+  [objectBinding(BUSINESS_KNOWLEDGE)]: [
+    ...knowledgeReads,
+    { method: "POST", service: "/data-query", path: /^\/admin\/addBussinessKnowledge$/ },
+    saveKnowledge,
+  ],
+  [bindingKey({ kind: "PlatformOperation", id: APPROVE_KNOWLEDGE })]: [saveKnowledge],
+  [bindingKey({ kind: "PlatformOperation", id: DELETE_KNOWLEDGE })]: [
+    { method: "POST", service: "/data-query", path: /^\/admin\/delBussinessKnowledge$/ },
+  ],
+  [bindingKey({ kind: "PlatformOperation", id: DELETE_SKILL })]: [
+    { method: "DELETE", service: "", path: /^\/skills\/[^/?#]+$/ },
+  ],
+  [bindingKey({ kind: "PlatformOperation", id: IMPORT_SKILL })]: [
+    { method: "POST", service: "", path: /^\/skills\/import(?:\?overwrite=true)?$/ },
+  ],
+  [bindingKey({ kind: "PlatformOperation", id: EXPORT_SKILL })]: [
+    { method: "GET", service: "", path: /^\/skills\/[^/?#]+\/export$/ },
+  ],
+  [bindingKey({ kind: "PlatformOperation", id: EXPORT_FEEDBACK })]: [
+    { method: "GET", service: "", path: /^\/feedback\/export(?:\?[^#]+)?$/ },
   ],
 };
 

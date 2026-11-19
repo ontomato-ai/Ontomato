@@ -1,8 +1,12 @@
+import {
+  APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL, EXPORT_FEEDBACK, EXPORT_SKILL,
+  FEEDBACK_RECORD, IMPORT_SKILL, KNOWLEDGE_GOVERNANCE_RECORD, SKILL,
+} from "./panel-client-requests";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, OBJECT_TYPE, RELATIONSHIP, USER, bindingKey, clientSends, panelClientReads } from "./panel-client-requests";
 import { candidatePanelSourceSchema, panelFrameMessageSchema, panelUsePath } from "./panel-host";
-import { panelManifestSchema } from "./panel-manifest";
+import { panelChildObjectIdentitySchema, panelManifestSchema } from "./panel-manifest";
 import { panelFormSaveInputSchema, projectionBindingKeys, projectionOperations, projectionPorts } from "./panel-projection";
 import { applicationPanelUsePathSchema, ontologyElementRefSchema, productPanelContentSchema, productProjectionInputSchema } from "./product-panels";
 
@@ -136,4 +140,44 @@ test("bridge and skill agree about the specific semantic reads", () => {
     assert.ok(clientSends([binding(type)], "POST", "/data-query", "/admin/getMetas"));
   assert.ok(!clientSends([binding(OBJECT_TYPE)], "POST", "/data-query", "/admin/getschemamarkdown"));
   assert.ok(clientSends([binding(USER)], "GET", "/data-query", "/platform/agent-execution/options?selected=u"));
+});
+
+
+test("knowledge, governance, feedback and skill reads stay at their declared owners", () => {
+  for (const [resource, method, service, path] of [
+    [BUSINESS_KNOWLEDGE, "POST", "/data-query", "/admin/getBussinessKnowledge"],
+    [BUSINESS_KNOWLEDGE, "POST", "/data-query", "/admin/bussinessKnowledge/form"],
+    [KNOWLEDGE_GOVERNANCE_RECORD, "GET", "/data-query", "/ontology/ai/knowledge-governance/record/work"],
+    [KNOWLEDGE_GOVERNANCE_RECORD, "GET", "/data-query", "/ontology/ai/knowledge-governance/record/sources/evidence?offset=20"],
+    [FEEDBACK_RECORD, "GET", "", "/feedback?rating=like&limit=20"],
+    [SKILL, "GET", "", "/skills/skill/file?path=references%2Fguide.md"],
+  ] as const) {
+    const key = binding(resource);
+    assert.ok(clientSends([key], method, service, path));
+    assert.ok(panelClientReads(key).some(read => read.method === method && read.service === service && read.path.test(path)));
+  }
+
+  for (const [operation, method, service, path] of [
+    [APPROVE_KNOWLEDGE, "POST", "/data-query", "/admin/editBussinessKnowledge"],
+    [DELETE_KNOWLEDGE, "POST", "/data-query", "/admin/delBussinessKnowledge"],
+    [DELETE_SKILL, "DELETE", "", "/skills/skill"],
+    [IMPORT_SKILL, "POST", "", "/skills/import?overwrite=true"],
+    [EXPORT_SKILL, "GET", "", "/skills/skill/export"],
+    [EXPORT_FEEDBACK, "GET", "", "/feedback/export?keyword=sample"],
+  ] as const) {
+    const key = bindingKey({ kind: "PlatformOperation", id: operation });
+    assert.ok(clientSends([key], method, service, path));
+    assert.ok(!panelClientReads(key).some(read => read.path.test(path)));
+  }
+
+  assert.ok(!clientSends([binding(SKILL)], "GET", "", "/skills/skill/export"));
+  assert.ok(!clientSends([binding(FEEDBACK_RECORD)], "GET", "", "/feedback/export"));
+  assert.ok(!clientSends([binding(KNOWLEDGE_GOVERNANCE_RECORD)], "POST", "/data-query",
+    "/ontology/ai/knowledge-governance/record/runs/run/actions/approve"));
+});
+
+test("a child key is meaningful with its parent identity", () => {
+  const child = { parent: { objectType: SKILL, primaryKey: "skill-a" }, primaryKey: "references/guide.md" };
+  assert.deepEqual(panelChildObjectIdentitySchema.parse(child), child);
+  assert.equal(panelChildObjectIdentitySchema.safeParse({ primaryKey: child.primaryKey }).success, false);
 });
