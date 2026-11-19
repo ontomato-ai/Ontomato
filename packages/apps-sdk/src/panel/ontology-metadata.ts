@@ -1,4 +1,4 @@
-import { OBJECT_TYPE, RELATIONSHIP } from "@ontomato/contracts/panel-client-requests";
+import { ATTRIBUTE, OBJECT_TYPE, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
 import type { PlatformObjectAdapterFactory } from "./platform-objects";
 
 interface AttributeMetadata {
@@ -17,8 +17,6 @@ interface RelationshipMetadata {
   showName?: string;
   desc?: string;
 }
-
-const ATTRIBUTE = "platform:Attribute";
 
 /** Classes, attributes and relationships use the same owner request and their native identities. */
 export const ontologyMetadataAdapters: PlatformObjectAdapterFactory = requests => {
