@@ -23,6 +23,7 @@ const key = z
 
 const ontologyTypeId = z.string().min(1).max(200);
 const ontologyObjectTypeSchema = z.object({ kind: z.literal("object"), objectType: ontologyTypeId }).strict();
+export const ontologyObjectCollectionTypeSchema = ontologyObjectTypeSchema.extend({ kind: z.literal("objects") });
 const ontologyScalarTypeSchema = z.object({
   kind: z.literal("scalar"), type: z.enum(["string", "number", "boolean", "date"]),
 }).strict();
@@ -54,8 +55,10 @@ export const singleOntologyParameterTypeSchema = z.discriminatedUnion("kind", [
   ontologyObjectTypeSchema, ontologyScalarTypeSchema,
 ]);
 
-/** A projection parameter names a scalar or the complete identity of one ontology object. */
-export const ontologyParameterTypeSchema = z.union([singleOntologyParameterTypeSchema, ontologyObjectUnionTypeSchema]);
+/** Projection ports may carry scalar values, object identities or an instance's checked collection. */
+export const ontologyParameterTypeSchema = z.union([
+  singleOntologyParameterTypeSchema, ontologyObjectUnionTypeSchema, ontologyObjectCollectionTypeSchema,
+]);
 export type OntologyParameterType = z.infer<typeof ontologyParameterTypeSchema>;
 
 export function matchesObjectType(field: OntologyObjectUnionType | z.infer<typeof ontologyObjectTypeSchema>, className: string): boolean {
@@ -73,6 +76,7 @@ export const panelStateFieldSchema = z.union([
   ontologyObjectTypeSchema.extend({ deepLink }),
   explicitObjectUnionTypeSchema.extend({ deepLink }),
   layeredObjectUnionTypeSchema.extend({ deepLink }),
+  ontologyObjectCollectionTypeSchema.extend({ deepLink: z.literal(false).default(false) }),
   ontologyScalarTypeSchema.extend({ deepLink }),
 ]);
 export type PanelStateField = z.infer<typeof panelStateFieldSchema>;
@@ -87,14 +91,19 @@ export const panelObjectRefSchema = z.object({
   primaryKey: z.string().min(1).max(1000),
 }).strict();
 
-/** A state value as the SDK holds it in an instance: an object reference, a scalar, or nothing yet. */
-export const panelStateValueSchema = z.union([
+/** Values that can cross the address and deep-link state boundary. */
+export const panelDeepLinkStateValueSchema = z.union([
   panelObjectRefSchema,
   z.string(),
   z.number().finite(),
   z.boolean(),
   z.null(),
 ]);
+export type PanelDeepLinkStateValue = z.infer<typeof panelDeepLinkStateValueSchema>;
+
+/** Checked identities belong to the instance. The declared field supplies the object type of every member. */
+export const panelObjectCollectionValueSchema = z.array(panelObjectRefSchema);
+export const panelStateValueSchema = z.union([panelDeepLinkStateValueSchema, panelObjectCollectionValueSchema]);
 export type PanelStateValue = z.infer<typeof panelStateValueSchema>;
 
 /**
@@ -298,7 +307,7 @@ export function definePanel(manifest: PanelManifest): PanelManifest {
 export const panelOpenRequestSchema = z
   .object({
     useId: z.string().min(1).max(200),
-    state: z.record(key, panelStateValueSchema).default({}),
+    state: z.record(key, panelDeepLinkStateValueSchema).default({}),
   })
   .strict();
 export type PanelOpenRequest = z.infer<typeof panelOpenRequestSchema>;

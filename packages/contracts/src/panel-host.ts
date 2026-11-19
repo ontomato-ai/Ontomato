@@ -2,7 +2,7 @@ import { z } from "zod";
 import { buildTestContextSchema } from "./build-tests";
 import { pageContextSchema } from "./page-context";
 import { pageDraftLinkSchema } from "./page-draft";
-import { panelObjectIdentitySchema, panelOpenRequestSchema, panelOperationSchema, panelStateValueSchema, type PanelObjectIdentity, type PanelStateValue } from "./panel-manifest";
+import { panelDeepLinkStateValueSchema, panelObjectIdentitySchema, panelOpenRequestSchema, panelOperationSchema, type PanelDeepLinkStateValue, type PanelObjectIdentity } from "./panel-manifest";
 import { applicationPanelUseSchema, panelDefinitionContentSchema, productPanelSchema } from "./product-panels";
 import { definitionRevisionSchema, type ProductDefinitionRevision, type ProductDefinitionTarget } from "./product-subscriptions";
 import { workspaceDiffSchema, workspaceIdSchema } from "./workspaces";
@@ -52,7 +52,7 @@ export const panelHostMessageSchema = z
     url: z.string().min(1).max(4000),
     label: z.string().min(1).max(500),
     /** The declared deep-linkable state to restore, as the host read it from the address. */
-    state: z.record(z.string(), panelStateValueSchema),
+    state: z.record(z.string(), panelDeepLinkStateValueSchema),
   })
   .strict();
 export type PanelHostMessage = z.infer<typeof panelHostMessageSchema>;
@@ -62,7 +62,7 @@ export const panelFrameMessageSchema = z.discriminatedUnion("kind", [
   /** What a message from this instance carries now: the one page context line. */
   z.object({ kind: z.literal("context"), context: pageContextSchema }).strict(),
   /** The instance's deep-linkable state, which the host keeps in the address. */
-  z.object({ kind: z.literal("state"), fromAddress: z.string().min(1).max(4000), state: z.record(z.string(), panelStateValueSchema) }).strict(),
+  z.object({ kind: z.literal("state"), fromAddress: z.string().min(1).max(4000), state: z.record(z.string(), panelDeepLinkStateValueSchema) }).strict(),
   /**
    * The reader saved or discarded this linked draft. The host removes only its draft parameters if its current
    * address still names that artifact; it reflects the resulting address through the normal address message.
@@ -190,7 +190,7 @@ export function panelAddress(path: string, state: Record<string, unknown>): stri
 }
 
 /** The state an address restores, or none. The host checks it against the panel's declaration before using it. */
-export function panelAddressState(address: string): Record<string, PanelStateValue> {
+export function panelAddressState(address: string): Record<string, PanelDeepLinkStateValue> {
   const value = new URL(address, "http://page.invalid").searchParams.get("state");
   return value === null ? {} : panelOpenRequestSchema.shape.state.parse(JSON.parse(value));
 }

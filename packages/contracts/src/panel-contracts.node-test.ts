@@ -23,8 +23,9 @@ import {
   panelHostFrameMessageSchema, panelUsePath,
 } from "./panel-host";
 import {
-  matchesObjectType, objectUnionTypes, ontologyObjectUnionTypeSchema, panelChildObjectIdentitySchema,
-  panelManifestSchema, panelStateFieldSchema, panelStateValueSchema, singleOntologyParameterTypeSchema,
+  matchesObjectType, objectUnionTypes, ontologyObjectUnionTypeSchema, ontologyParameterTypeSchema, panelChildObjectIdentitySchema,
+  panelManifestSchema, panelOpenRequestSchema, panelStateFieldSchema, panelStateOperationSchema,
+  panelStateValueSchema, singleOntologyParameterTypeSchema,
 } from "./panel-manifest";
 import { pageDraftSchema } from "./page-draft";
 import {
@@ -488,6 +489,21 @@ test("a child key is meaningful with its parent identity", () => {
   const child = { parent: { objectType: SKILL, primaryKey: "skill-a" }, primaryKey: "references/guide.md" };
   assert.deepEqual(panelChildObjectIdentitySchema.parse(child), child);
   assert.equal(panelChildObjectIdentitySchema.safeParse({ primaryKey: child.primaryKey }).success, false);
+});
+
+test("checked object collections are typed ports and never become deep-link state", () => {
+  const field = { kind: "objects", objectType: METRIC_VIEW };
+  const refs = [{ className: METRIC_VIEW, primaryKey: "metric-a" }, { className: METRIC_VIEW, primaryKey: "metric-b" }];
+  const state = { checked: refs };
+  assert.deepEqual(panelStateFieldSchema.parse(field), { ...field, deepLink: false });
+  assert.equal(panelStateFieldSchema.safeParse({ ...field, deepLink: true }).success, false);
+  assert.deepEqual(ontologyParameterTypeSchema.parse(field), field);
+  assert.equal(singleOntologyParameterTypeSchema.safeParse(field).success, false);
+  assert.deepEqual(panelStateValueSchema.parse(refs), refs);
+  assert.deepEqual(panelStateValueSchema.parse([]), []);
+  assert.deepEqual(panelStateOperationSchema.parse({ id: "clear", label: "Clear", kind: "state", sets: { checked: [] } }).sets, { checked: [] });
+  assert.equal(panelOpenRequestSchema.safeParse({ useId: "metrics", state }).success, false);
+  assert.equal(panelFrameMessageSchema.safeParse({ kind: "state", fromAddress: "/ontology/metrics", state }).success, false);
 });
 
 test("mixed graphs declare selected node types separately from the read bindings", () => {
