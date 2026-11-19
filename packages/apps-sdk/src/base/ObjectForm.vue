@@ -2,16 +2,17 @@
 import { computed, onMounted, provide, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
-import { ElEmpty } from "element-plus/es/components/empty/index";
 import { ElForm } from "element-plus/es/components/form/index";
-import { ElSkeleton } from "element-plus/es/components/skeleton/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import { slotState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
 import { adapterPart, PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
 import { changedPaths, fieldAt, movedPath, valueAt, withValueAt } from "../panel/form-values";
-import { formControlsKey } from "./form-controls";
+import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
+import { useMember } from "../panel/member";
+import { memberFormSource, MemberDataUnavailable, type FormSource } from "../panel/member-forms";
+import { formControlsKey, rowControlKey, rowControlsOf } from "./form-controls";
 import FormFieldControl from "./FormFieldControl.vue";
 
 /**
@@ -22,6 +23,9 @@ import FormFieldControl from "./FormFieldControl.vue";
  *
  * The form edits the object the panel has selected, or — when nothing is and the projection's display says it
  * `creates` — a new one, saved through the owner's own create; the panel then selects the object the owner created.
+ * A panel whose state says "creating" (`createWhen`: one of the slot's inputs equals a value) has the form on a new
+ * object whatever is selected, so a list that selects its first row again cannot turn the new object into another; once
+ * the new object is saved, that state is cleared and the form edits the object the owner created.
  * A field another projection draws (a reference chosen from its own catalogue, a data scope on a graph) is edited there,
  * through this form's field port, and is this form's value, dirty state and draft all the same.
  *
@@ -35,23 +39,47 @@ const props = withDefaults(
     inputName?: string;
     /** Whether, with nothing selected, the form creates a new object of the bound type. */
     creates?: boolean;
+    /**
+     * The slot input whose panel state, while it equals `equals`, puts the form on a new object regardless of the
+     * selection; the form clears it once that object is saved. Requires `creates`.
+     */
+    createWhen?: { input: string; equals: string };
   }>(),
-  { inputName: undefined, creates: false },
+  { inputName: undefined, creates: false, createWhen: undefined },
 );
 
 const { t } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
 const objectType = slot.projection.binding.id;
-const forms = adapterPart(objectType, "forms");
+const member = useMember();
+// A directly rendered member's form is read by the instance and saved through its owner's operation; a frame's, by
+// the bound type's resource module.
+const forms: FormSource = member ? memberFormSource(member, panel.instance) : adapterPart(objectType, "forms");
 
 const state = computed(() => slotState(panel.manifest, slot.slot, props.inputName));
 const key = computed(() => selectedKey(panel.instance.state.values.value[state.value]));
+if (props.createWhen && !props.creates) throw new Error("A form told when it creates must also create: set `creates`");
+/** The panel state that says the form is creating, when the display names one. */
+const createState = computed(() => (props.createWhen ? slotState(panel.manifest, slot.slot, props.createWhen.input) : null));
+const creating = computed(() =>
+  createState.value !== null && panel.instance.state.values.value[createState.value] === props.createWhen!.equals);
 const target = computed<PanelFormTarget | null>(() => {
+  if (creating.value) return { kind: "draft" };
   if (key.value) return { kind: "object", objectType, primaryKey: key.value };
   return props.creates ? { kind: "draft" } : null;
 });
 const targetKey = (value: PanelFormTarget | null) => (value === null ? "" : value.kind === "object" ? value.primaryKey : "draft");
+
+/**
+ * Puts the panel's state where the form shows `next`: a new object is the creating state where the panel has one (the
+ * selection left as it is) or no selection; an existing one is that object selected, and creating no longer.
+ */
+function moveTo(next: PanelFormTarget) {
+  if (createState.value !== null) panel.instance.state.set(createState.value, next.kind === "draft" ? props.createWhen!.equals : null);
+  if (next.kind === "object") panel.instance.state.set(state.value, { className: objectType, primaryKey: next.primaryKey });
+  else if (createState.value === null) panel.instance.state.set(state.value, null);
+}
 
 /** The owner's description now: its fields, which follow the values the form holds. */
 const description = shallowRef<PanelFormDescription | null>(null);
@@ -77,14 +105,29 @@ const drawn = computed(() => fields.value.filter((field) => !["reference", "avat
 /** Changed values, or text a reader typed that is no value yet (JSON that does not parse): either is unsaved. */
 const dirty = computed(() => opened.value !== null
   && (JSON.stringify(values.value) !== JSON.stringify(opened.value.values) || Object.keys(invalid.value).length > 0));
-const canSettle = computed(() => dirty.value || panel.instance.draft.value?.slot === slot.slot);
+/**
+ * The described fields this edit submits, by path: those the reader set (whatever value they end on) and those a received
+ * draft wrote. The owner keeps a field not named here as it is, so a field nobody touched is never added. Whether a
+ * value ended where it began does not matter: a field set back to the value shown is still submitted, and can be saved.
+ */
+const submitted = shallowRef<ReadonlySet<string>>(new Set());
+/** Whether the form has something to save or discard: changed values, a received draft, or fields set on purpose. */
+const canSettle = computed(() => dirty.value || panel.instance.draft.value?.slot === slot.slot || submitted.value.size > 0);
 
 /** A draft this form took, for the target it addresses, shown once the form is on that target. */
-let held: { target: string; baseline: PanelFormDescription; checked: PanelFormDescription; changed: ReadonlySet<string> } | null = null;
+let held: {
+  target: string; baseline: PanelFormDescription; checked: PanelFormDescription; changed: ReadonlySet<string>; submitted: ReadonlySet<string>;
+} | null = null;
 /** The target the form was last read for, so one change of target is one read. */
 let loaded: string | null = null;
 
-function adopt(baseline: PanelFormDescription, shown: PanelFormDescription = baseline, marked: ReadonlySet<string> = new Set()) {
+function adopt(
+  baseline: PanelFormDescription,
+  shown: PanelFormDescription = baseline,
+  marked: ReadonlySet<string> = new Set(),
+  written: ReadonlySet<string> = new Set(),
+) {
+  submitted.value = written;
   opened.value = baseline;
   description.value = shown;
   values.value = shown.values;
@@ -106,7 +149,7 @@ function load(next: PanelFormTarget | null) {
     return;
   }
   if (held?.target === nextKey) {
-    adopt(held.baseline, held.checked, held.changed);
+    adopt(held.baseline, held.checked, held.changed, held.submitted);
     return;
   }
   loading.value = true;
@@ -165,6 +208,9 @@ watch([canSettle, saving], refreshWhenClean);
 
 /** One field changed: the form holds the value; a field the owner's form depends on has the owner asked again. */
 function set(path: string, value: RuntimeJsonValue) {
+  // The described field the edit is in: a row's or an object's field submits the array or object it belongs to.
+  const described = fields.value.find((item) => path === item.path || path.startsWith(`${item.path}/`));
+  if (described) submitted.value = new Set([...submitted.value, described.path]);
   values.value = withValueAt(values.value, path, value);
   const field = fieldAt(fields.value, path);
   if (!field?.refreshOnChange) return;
@@ -207,6 +253,12 @@ provide(formControlsKey, {
   set,
   reorder,
   invalid: markInvalid,
+  rowControl(path, itemPath) {
+    const declared = Object.values(panel.manifest.slots).some(({ formField }) =>
+      formField?.slot === slot.slot && formField.path === path && formField.itemPath === itemPath);
+    if (!declared) return undefined;
+    return rowControlsOf(panel.instance).get(rowControlKey(slot.slot, path, itemPath)) ?? null;
+  },
 });
 
 useProjectionForm({
@@ -228,10 +280,12 @@ useProjectionForm({
     const baseline = targetKey(into) === targetKey(named) ? namedForm : await forms.describe({ target: into, changedField: null });
     const checked = await forms.describe({ target: into, values: draft.form as PanelFormValues, changedField: null });
     const marked = changedPaths(checked.fields, baseline.values, checked.values);
-    held = marked.size ? { target: targetKey(into), baseline, checked, changed: marked } : null;
-    const selected = into.kind === "object" ? { className: objectType, primaryKey: into.primaryKey } : null;
+    // What the draft wrote, by its presence: a field it left out is not submitted, though the owner's check returns it.
+    const written = new Set(checked.fields.filter((item) => valueAt(draft.form as PanelFormValues, item.path) !== undefined).map((item) => item.path));
+    // A draft is held for what it changed and for what it wrote: one that writes a field as it already is still submits it.
+    held = marked.size || written.size ? { target: targetKey(into), baseline, checked, changed: marked, submitted: written } : null;
     if (targetKey(target.value) === targetKey(into)) load(into);
-    else panel.instance.state.set(state.value, selected);
+    else moveTo(into);
     return marked;
   },
   submit: () => write(),
@@ -274,11 +328,14 @@ async function write(): Promise<unknown> {
   errors.value = {};
   try {
     const revision = opened.value!.revision;
-    const saved = await forms.save(into, { values: values.value, ...(revision === undefined ? {} : { revision }) });
+    const saved = await forms.save(into, {
+      values: values.value, submittedFields: [...submitted.value], ...(revision === undefined ? {} : { revision }),
+    });
+    submitted.value = new Set();
     held = null;
     opened.value = { ...description.value!, values: values.value };
     changed.value = new Set();
-    if (into.kind === "draft") panel.instance.state.set(state.value, { className: objectType, primaryKey: saved.primaryKey });
+    if (into.kind === "draft") moveTo({ kind: "object", objectType, primaryKey: saved.primaryKey });
     panel.instance.objectChanged({ objectType, primaryKey: saved.primaryKey });
     // A received draft ends with its save; a create draft first records the object it created. The save stands either
     // way: a record that fails is shown with the form, on the object the owner created.
@@ -292,18 +349,28 @@ async function write(): Promise<unknown> {
   }
 }
 
+/**
+ * The form's state, in the product's one presentation: the owner's form once read, a selection needed first, loading,
+ * no permission, or the reason it could not be read.
+ */
+const shown = computed<DataStateResult<PanelFormDescription>>(() => {
+  const reason = failure.value;
+  if (reason) return reason instanceof MemberDataUnavailable && reason.state.status !== "error" ? reason.state : { status: "error", message: reason.message };
+  if (loading.value) return { status: "loading" };
+  return description.value ? { status: "ready", value: description.value } : { status: "awaiting" };
+});
+const labels = computed(() => ({ empty: t("platform.dataEmpty"), forbidden: t("platform.dataForbidden"), awaiting: t("platform.dataAwaiting") }));
+
 /** The fields a received draft changed, by the owner's labels, in the form's order — those other slots draw included. */
 const changedLabels = computed(() => fields.value.filter((field) => changed.value.has(field.path)).map((field) => field.label).join(", "));
 </script>
 
 <template>
   <div class="sdk-owner-form">
-    <p v-if="failure" role="alert">{{ failure.message }}</p>
-    <el-skeleton v-else-if="loading" :rows="4" animated></el-skeleton>
-    <el-empty v-else-if="!description" :image-size="48"></el-empty>
+    <data-state :result="shown" :labels="labels">
     <!-- The panel frame is sandboxed without allow-forms, so the browser drops a native form submission before any
          submit handler runs: the reader's save is the button's own click. -->
-    <el-form v-else label-position="top">
+    <el-form label-position="top">
       <form-field-control v-for="field in drawn" :key="field.path" :field="field" :path="field.path"></form-field-control>
       <p v-if="changed.size" class="sdk-owner-form-changed" role="status">
         {{ t("platform.panelDraftChanged", { fields: changedLabels }) }}
@@ -314,6 +381,7 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
         <el-button type="primary" :disabled="!canSettle" :loading="saving" @click="saveFromForm">{{ t("platform.save") }}</el-button>
       </div>
     </el-form>
+    </data-state>
   </div>
 </template>
 

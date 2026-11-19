@@ -26,7 +26,7 @@ import { contextProducts, type ContextProducts } from "./context-products";
 import type { SdkEdition } from "./edition";
 import type {ProductSubscriptionTarget,ProductSubscriptionEvent} from '@ontomato/contracts/product-subscriptions';
 import type {ProductNavigationTarget} from '@ontomato/contracts/product-page-state';
-import {connectAppBridge} from './bridge';
+import {connectAppBridge,type PanelBridgeHost} from './bridge';
 
 /** What an app gets from the platform shell it runs in. */
 export interface AppContext {
@@ -77,7 +77,7 @@ export interface AppContext {
  */
 const transports = new WeakMap<AppContext, ManagerRequest>();
 const translators = new WeakMap<AppContext, (key: string) => string>();
-let bridgedHost:AppHost|undefined;
+let bridgedHost:PanelBridgeHost|undefined;
 
 function parentHost() {
   try {
@@ -90,6 +90,12 @@ function parentHost() {
 
 export async function connectAppHost(): Promise<AppHost> {
   return parentHost() ?? (bridgedHost = await connectAppBridge());
+}
+
+/** The frame bridge a panel runs over, which also confirms and dispatches the panel's writes. */
+export function panelBridgeHost(): PanelBridgeHost {
+  if (!bridgedHost) throw new Error("A panel's operations run over its frame's bridge to the platform host");
+  return bridgedHost;
 }
 
 export function currentAppHost(): AppHost {

@@ -30,15 +30,21 @@ import {
   panelHostFrameMessageSchema, panelHostMessageSchema, panelUsePath,
 } from "./panel-host";
 import {
-  matchesObjectType, objectUnionTypes, ontologyObjectUnionTypeSchema, panelChildObjectIdentitySchema,
-  panelManifestSchema, panelStateFieldSchema, panelStateValueSchema, singleOntologyParameterTypeSchema,
+  matchesObjectType, objectUnionTypes, ontologyObjectUnionTypeSchema, ontologyParameterTypeSchema, panelChildObjectIdentitySchema,
+  panelManifestSchema, panelOpenRequestSchema, panelStateFieldSchema, panelStateOperationSchema,
+  panelStateValueSchema, singleOntologyParameterTypeSchema,
 } from "./panel-manifest";
 import { pageDraftSchema } from "./page-draft";
 import {
-  panelFormDescriptionSchema, panelFormFrequencyValueSchema, panelFormRequestSchema, panelFormSaveInputSchema,
-  projectionBindingKeys, projectionOperations, projectionPorts,
+  panelFormDescriptionSchema, panelFormFrequencyValueSchema, panelFormRequestSchema, panelFormSaveInputSchema, panelFormTimeValueSchema,
+  panelObjectListColumnSchema, panelStateOperation, projectionBindingKeys, projectionOperations, projectionPorts,
 } from "./panel-projection";
 import { platformTaskFrequencySchema } from "./platform-schedules";
+import {
+  platformOntologyCountsResponseSchema, platformOntologyNeighborsRequestSchema, platformOntologyNeighborsResponseSchema,
+  platformOntologyObjectsRequestSchema, platformOntologyObjectsResponseSchema, platformOntologyReadQuerySchema,
+  platformOntologySchemaResponseSchema, platformOntologyStartResponseSchema,
+} from "./platform-ontology";
 import {
   DEFINITION, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, USER as ONTOLOGY_USER,
   platformObjectTypes, platformOntologyLayers, platformRelationKinds,
@@ -83,13 +89,29 @@ test("direct task reads use the registered source, parameters and result envelop
   const { registerDirectProjectionRequestSchema } = await import("./product-panels");
   const { panelDataStateSchema, productPanelReadRequestSchema, productPanelReadResponseSchema } = await import("./panel-host");
   const { panelReadResultSchemas } = await import("./panel-operations");
+  const { directProjectionDataSchema, directReadDeclaration } = await import("./panel-projection");
   const form = {
     name: "Task form", description: "", visibility: "domain", revision: 0, componentId: "@ontomato/sdk:ObjectForm",
     inputs: { task: { kind: "object", objectType: "platform:ScheduledTask" }, values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
     outputs: {}, config: {},
     data: { form: { source: { object: { input: "task" } }, read: "form", params: { values: { input: "values" }, changedField: { input: "changedField" } } } },
   };
-  assert.deepEqual(registerDirectProjectionRequestSchema.parse(form), form);
+  const projection = registerDirectProjectionRequestSchema.parse(form);
+  assert.deepEqual(projection, form);
+  assert.equal(directReadDeclaration(projection, projection.data.form)?.source, "object");
+  const declaredReads = [
+    [{ type: "platform:ScheduledTask" }, "list", "type", "panelRecordList"],
+    [{ object: { literal: { className: "platform:ScheduledTask", primaryKey: "task-1" } } }, "record", "object", "panelRecord"],
+    [{ operation: "schedules.runNow" }, "describe", "operation", "panelOperationDescriptor"],
+  ] as const;
+  for (const [source, read, kind, result] of declaredReads) {
+    const declaration = directReadDeclaration(projection, directProjectionDataSchema.parse({ source, read, params: {} }));
+    assert.equal(declaration?.source, kind);
+    assert.equal(declaration?.result, result);
+  }
+  for (const data of [{ source: { type: "platform:ScheduledTask" }, read: "record" },
+    { source: { object: { input: "changedField" } }, read: "record" }])
+    assert.equal(directReadDeclaration(projection, directProjectionDataSchema.parse({ ...data, params: {} })), undefined);
   const read = form.data.form;
   for (const rejected of [{ ...read, read: "delete" }, { ...read, params: { values: { state: "selected" } } },
     { ...read, params: { changedField: { literal: "missing-slash" } } }, { ...read, source: { object: { input: "missing" } } }])
@@ -115,6 +137,25 @@ test("the field port refers to another slot in the same manifest", () => {
   const slots = { definition: { projectionId: "definition-form" }, picker };
   assert.deepEqual(panelManifestSchema.parse({ state: {}, slots, operations: [] }).slots.picker?.formField, picker.formField);
   assert.equal(panelManifestSchema.safeParse({ state: {}, slots: { picker }, operations: [] }).success, false);
+});
+
+test("a row reference port identifies the array and a field relative to each row", () => {
+  const formField = { slot: "workflow", path: "/steps", itemPath: "/actionId" };
+  const slots = { workflow: { projectionId: "workflow-form" }, picker: { projectionId: "action-picker", formField } };
+  assert.deepEqual(panelManifestSchema.parse({ state: {}, slots, operations: [] }).slots.picker?.formField, formField);
+  const invalid = { ...slots, picker: { ...slots.picker, formField: { ...formField, itemPath: "actionId" } } };
+  assert.equal(panelManifestSchema.safeParse({ state: {}, slots: invalid, operations: [] }).success, false);
+});
+
+test("time controls and schedule frequencies accept local times at minute precision", () => {
+  for (const time of ["00:00", "09:05", "23:59"]) {
+    assert.equal(panelFormTimeValueSchema.parse(time), time);
+    assert.ok(platformTaskFrequencySchema.safeParse({ kind: "daily", time }).success);
+  }
+  for (const time of ["24:00", "09:60", "9:05", "09:05:00", "09:05Z", "09:05+08:00"]) {
+    assert.equal(panelFormTimeValueSchema.safeParse(time).success, false);
+    assert.equal(platformTaskFrequencySchema.safeParse({ kind: "daily", time }).success, false);
+  }
 });
 
 test("form saves address the draft target even when the slot receives a selected object", () => {
@@ -315,6 +356,24 @@ test("panel content carries flat translated text without requiring complete tran
   assert.deepEqual(productPanelContentSchema.parse({ ...source, messages }).messages, messages);
   assert.equal(productPanelContentSchema.safeParse({ ...source, messages: { en: { graph: { count: "nested" } } } }).success, false);
   assert.equal(productPanelContentSchema.safeParse({ ...source, messages: { en: { text: "类".repeat(100_000) } } }).success, false);
+});
+
+test("panel state operations declare a message key for their label", () => {
+  const operation = { id: "create", kind: "state", labelKey: "metric.create", sets: {} };
+  const parsed = panelStateOperationSchema.parse(operation);
+  assert.deepEqual(parsed, operation);
+  const content = productPanelContentSchema.parse({ html: "", module: "", messages: { "zh-CN": { "metric.create": "新建指标" } } });
+  assert.equal(panelStateOperation(parsed, key => content.messages!["zh-CN"][key]).label, "新建指标");
+  assert.equal(panelStateOperationSchema.safeParse({ id: operation.id, kind: operation.kind, label: "New metric view" }).success, false);
+});
+
+test("list column headers come from owner fields or from panel message keys", () => {
+  const ownerField = { key: "status", kind: "tag" };
+  const panelColumn = { key: "notes", labelKey: "list.notes", emptyKey: "list.noNotes" };
+  assert.deepEqual(panelObjectListColumnSchema.parse(ownerField), ownerField);
+  assert.deepEqual(panelObjectListColumnSchema.parse(panelColumn), panelColumn);
+  assert.equal(panelObjectListColumnSchema.safeParse({ ...ownerField, label: "Status" }).success, false);
+  assert.equal(panelObjectListColumnSchema.safeParse({ ...panelColumn, empty: "No notes" }).success, false);
 });
 
 test("a graph has two admitted sources and can use either a form field or separate selection outputs", () => {
@@ -645,6 +704,21 @@ test("a child key is meaningful with its parent identity", () => {
   assert.equal(panelChildObjectIdentitySchema.safeParse({ primaryKey: child.primaryKey }).success, false);
 });
 
+test("checked object collections are typed ports and never become deep-link state", () => {
+  const field = { kind: "objects", objectType: METRIC_VIEW };
+  const refs = [{ className: METRIC_VIEW, primaryKey: "metric-a" }, { className: METRIC_VIEW, primaryKey: "metric-b" }];
+  const state = { checked: refs };
+  assert.deepEqual(panelStateFieldSchema.parse(field), { ...field, deepLink: false });
+  assert.equal(panelStateFieldSchema.safeParse({ ...field, deepLink: true }).success, false);
+  assert.deepEqual(ontologyParameterTypeSchema.parse(field), field);
+  assert.equal(singleOntologyParameterTypeSchema.safeParse(field).success, false);
+  assert.deepEqual(panelStateValueSchema.parse(refs), refs);
+  assert.deepEqual(panelStateValueSchema.parse([]), []);
+  assert.deepEqual(panelStateOperationSchema.parse({ id: "clear", labelKey: "selection.clear", kind: "state", sets: { checked: [] } }).sets, { checked: [] });
+  assert.equal(panelOpenRequestSchema.safeParse({ useId: "metrics", state }).success, false);
+  assert.equal(panelFrameMessageSchema.safeParse({ kind: "state", fromAddress: "/ontology/metrics", state }).success, false);
+});
+
 test("mixed graphs declare selected node types separately from the read bindings", () => {
   const nodeIdentity = { kind: "object-union", layers: [...platformOntologyLayers] };
   const projection = productProjectionInputSchema.parse({
@@ -711,6 +785,36 @@ test("platform ontology routes are semantic reads on the declared bindings", () 
     assert.ok(!clientSends([binding(OBJECT_TYPE)], method, "", path));
   }
   assert.ok(!clientSends([binding(ONTOLOGY_TYPE)], "POST", "", "/platform-ontology/delete"));
+});
+
+test("platform ontology start uses the same full node as neighbors, or null", () => {
+  const identity = { className: ONTOLOGY_USER, primaryKey: "user-a" };
+  const node = { ...identity, label: "Alice", layer: "governance" };
+  assert.deepEqual(platformOntologyStartResponseSchema.parse({ node }), { node });
+  assert.deepEqual(platformOntologyStartResponseSchema.parse({ node: null }), { node: null });
+  assert.equal(platformOntologyStartResponseSchema.safeParse({ node: identity, label: node.label, layer: node.layer }).success, false);
+  assert.deepEqual(platformOntologyNeighborsResponseSchema.parse({ node, neighbors: [], edges: [], relations: [] }).node, node);
+});
+
+test("platform ontology reads preserve declared topology, owner status and scoped object identities", () => {
+  const catalog = {
+    layers: platformOntologyLayers,
+    objectTypes: [{ id: ONTOLOGY_USER, layer: "governance", labelKey: "platformOntology.types.user" }],
+    relationKinds: platformRelationKinds,
+  };
+  assert.deepEqual(platformOntologyReadQuerySchema.parse({}), {});
+  assert.deepEqual(platformOntologySchemaResponseSchema.parse(catalog), catalog);
+  const counts = { counts: [{ type: ONTOLOGY_USER, layer: "governance", status: "unavailable", reason: "Owner pending" }] };
+  assert.deepEqual(platformOntologyCountsResponseSchema.parse(counts), counts);
+
+  const node = { className: ONTOLOGY_USER, primaryKey: "user-a" };
+  assert.deepEqual(platformOntologyNeighborsRequestSchema.parse({ node, layers: ["capability"] }).node, node);
+  assert.equal(platformOntologyNeighborsRequestSchema.safeParse({ node, layers: ["unknown"] }).success, false);
+  const query = { type: ONTOLOGY_USER, keyword: "Alice", page: 2, pageSize: 10 };
+  assert.deepEqual(platformOntologyObjectsRequestSchema.parse(query), query);
+  assert.equal(platformOntologyObjectsRequestSchema.safeParse({ ...query, pageSize: 201 }).success, false);
+  const objects = { type: ONTOLOGY_USER, layer: "governance", status: "ok", items: [{ node, label: "Alice" }], total: 11, page: 2, pageSize: 10 };
+  assert.deepEqual(platformOntologyObjectsResponseSchema.parse(objects), objects);
 });
 
 test("the four-layer topology points to declared kinds and distinguishes stored and derived edges", () => {

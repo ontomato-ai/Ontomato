@@ -222,7 +222,13 @@ export default {
     "formMoveDown": "Move down",
     "formInvalidJson": "Not valid JSON: {message}",
     "formFixInvalid": "Correct the marked fields before saving",
-    "formControlUnavailable": "This field cannot be edited here yet"
+    "formControlUnavailable": "This field cannot be edited here yet",
+    "operationDone": "Done",
+    "operationUnknown": "Whether it was done is not known. {message}",
+    "operationBatchDone": "{done} of {total} done",
+    "dataEmpty": "Nothing to show",
+    "dataForbidden": "You do not have access to this",
+    "dataAwaiting": "Select an item first"
   },
   "nav": {
     "agentsAndSkills": "Agents and Skills",

@@ -17,7 +17,7 @@ import PanelApplicationRoute from "../../../../../packages/platform-web/src/page
 import { platformLayoutRoute } from "../../../../../packages/platform-web/src/layout-route";
 import { ignoreChanges,
   hostMessageOf, inspectionTaskForm, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt,
-  currentSdk, panelHostFrame, panelRecord, panelSnapshot, panelUse, projections, READER, run, SCHEDULED_TASK, SDK_VERSION, task, taskForm,
+  currentSdk, humanIntents, panelHostFrame, panelRecord, panelSnapshot, panelUse, projections, READER, run, SCHEDULED_TASK, SDK_VERSION, task, taskForm,
   writeFrameDocument,
   type Sent,
   caseSetLabel,
@@ -499,11 +499,17 @@ it("blocks a presentation while a reader's form edit is unsaved, then clears dir
 it("refreshes X from the owner after the panel's form saves", async () => {
   let current = task;
   const before = panelAddress(`/applications/${appA}/tasks`, deepState);
+  // The run, as the task service's registered operation does it when the platform's coordinator dispatches it.
+  const intents = humanIntents(() => {
+    current = { ...current, summary: [{ key: "run", label: "Run", value: "Run started" }] };
+    return {
+      kind: "success", data: { runId: run.id },
+      affected: { objects: [{ objectType: SCHEDULED_TASK, primaryKey: task.id }], objectTypes: [SCHEDULED_TASK] },
+    };
+  });
   const { app, frame, sent } = await open(before, false, request => {
-    if (request.path === `${taskPath}/${task.id}/runs`) {
-      current = { ...current, summary: [{ key: "run", label: "Run", value: "Run started" }] };
-      return Response.json(run, { status: 202 });
-    }
+    const prepared = intents(request);
+    if (prepared) return prepared;
     if (request.path === `${taskPath}/${task.id}`) {
       if (request.method === "PUT") {
         current = { ...current, revision: current.revision + 1,
@@ -579,12 +585,15 @@ it("opens the saved draft's old link as an ordinary panel", async () => {
       expect(sent.filter(request => request.path.endsWith("/form")).at(-1)?.body).toMatchObject({ values: current.content });
     });
     // Let the adapter consume the reread owner's form before checking that the draft stayed empty.
+    // It changes nothing, so nothing is marked or unsaved; the fields it writes are still what it submits, whatever their
+    // values, and the frame never decides from equal values that a draft was applied. The reader may save them, which is
+    // a new submission under the owner's own permissions, revision and save guards, or discard them (11-19 decision).
     await vi.waitFor(() => {
       expect(context.draft.value).toBeNull();
       expect(context.instance.dirty()).toBe(false);
       expect(document.querySelector(".sdk-owner-form-changed")).toBeNull();
       expect([...document.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")].map(button => button.disabled))
-        .toEqual([true, true]);
+        .toEqual([false, false]);
     });
     expect(element.querySelector(".panel-host-error")?.textContent).toBeUndefined();
     expect(element.querySelector("iframe.panel-host-frame")).toBe(frame);

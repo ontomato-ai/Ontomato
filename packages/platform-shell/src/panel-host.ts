@@ -17,7 +17,7 @@ import {
   type PanelHostMessage,
   type PanelRefreshPort,
 } from "@ontomato/contracts/panel-host";
-import type { PanelObjectIdentity, PanelOperation, PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import type { PanelObjectIdentity, PanelOperation, PanelDeepLinkStateValue } from "@ontomato/contracts/panel-manifest";
 import type { PanelOperationAffected } from "@ontomato/contracts/panel-operations";
 import { parsePanelLayout, type PanelLayoutNode } from "@ontomato/contracts/panel-layout";
 import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
@@ -98,9 +98,9 @@ export interface DirectPanelRun {
   url: () => string;
   label: () => string;
   /** The declared deep-linkable state the address asks for. */
-  initial: Record<string, PanelStateValue>;
+  initial: Record<string, PanelDeepLinkStateValue>;
   /** Its deep-linkable state changed: the host carries it into the address. */
-  state(state: Record<string, PanelStateValue>): void;
+  state(state: Record<string, PanelDeepLinkStateValue>): void;
   context(context: PageContext): void;
   operations(operations: readonly PanelOperation[]): void;
   dirty(dirty: boolean): void;
@@ -115,7 +115,7 @@ export interface DirectPanelMount {
   /** The instance's state, as its layout's conditions read it. */
   readonly values: Readonly<Ref<Readonly<Record<string, unknown>>>>;
   /** The address changed outside the instance (the reader went back, a link was followed): its state follows. */
-  address(url: string, state: Record<string, PanelStateValue>): void;
+  address(url: string, state: Record<string, PanelDeepLinkStateValue>): void;
   /** Objects it may show changed: it reads again what it shows of them. */
   refresh(target: PanelObjectIdentity | null, affected?: PanelOperationAffected): void;
   /** Projections it places have newer definitions: it reads them again. */
@@ -153,7 +153,7 @@ export interface PanelInstanceView {
   /** A panel the platform draws: its layout and its started instance; null when a frame runs the panel. */
   readonly direct: Readonly<ShallowRef<{ layout: PanelLayoutNode[]; mount: DirectPanelMount } | null>>;
   /** The reader's deep-linkable state, as the address carries it. */
-  readonly state: Ref<Record<string, PanelStateValue>>;
+  readonly state: Ref<Record<string, PanelDeepLinkStateValue>>;
   /** The instance's address, with its state; never a credential or a form value. */
   readonly address: Ref<string>;
   /** The operations the instance offers, as its frame reported them. */
@@ -246,7 +246,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const error = shallowRef("");
   const displayLoad = shallowRef(loading);
   const dirty = shallowRef(false);
-  const state = shallowRef<Record<string, PanelStateValue>>({});
+  const state = shallowRef<Record<string, PanelDeepLinkStateValue>>({});
   const address = shallowRef("");
   const operations = shallowRef<readonly PanelOperation[]>([]);
   let frame: Window | null = null;
@@ -309,7 +309,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   /** Shows a source: drawn by the platform when it has no code, in a frame when it has. */
   async function adopt(next: HostedPanelSource) {
     error.value = "";
-    const requested = requestedState(next.panel) as Record<string, PanelStateValue>;
+    const requested = requestedState(next.panel) as Record<string, PanelDeepLinkStateValue>;
     const requestedAddress = panelAddress(pageAddress(), requested);
     if (runsDirect(next)) {
       adoptDirect(next, requested, requestedAddress);
@@ -352,7 +352,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
    * Starts a panel the platform draws: its layout, parsed against its declaration, and its instance, which reports here
    * what a frame would report in its messages. A new revision with the same definition keeps the running instance.
    */
-  function adoptDirect(next: DirectPanelHostSource, requested: Record<string, PanelStateValue>, requestedAddress: string) {
+  function adoptDirect(next: DirectPanelHostSource, requested: Record<string, PanelDeepLinkStateValue>, requestedAddress: string) {
     const shown = source.value;
     source.value = next;
     if (direct.value && shown && JSON.stringify(definitionOf(shown)) === JSON.stringify(definitionOf(next))) return;
@@ -392,7 +392,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   }
 
   /** The instance's deep-linkable state changed: the address carries it. */
-  function reportState(next: Record<string, PanelStateValue>) {
+  function reportState(next: Record<string, PanelDeepLinkStateValue>) {
     state.value = next;
     address.value = panelAddress(pageAddress(), next);
   }
@@ -589,7 +589,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
 
   function syncAddress(): boolean {
     if (!frameReady || !source.value) return false;
-    const wanted = requestedState(source.value.panel) as Record<string, PanelStateValue>;
+    const wanted = requestedState(source.value.panel) as Record<string, PanelDeepLinkStateValue>;
     const requested = panelAddress(pageAddress(), wanted);
     if (requested === address.value) return false;
     tellAddress(requested, wanted);
@@ -609,7 +609,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   }
 
   /** The instance's address changed outside it: the frame hears it as a message, a direct instance as a call. */
-  function tellAddress(next: string, wanted: Record<string, PanelStateValue>) {
+  function tellAddress(next: string, wanted: Record<string, PanelDeepLinkStateValue>) {
     frameAddress = next;
     address.value = next;
     if (direct.value) direct.value.mount.address(next, wanted);

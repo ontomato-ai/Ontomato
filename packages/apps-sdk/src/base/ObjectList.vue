@@ -23,6 +23,7 @@ import {
 } from "../panel/platform-objects";
 import type { ObjectListColumn, ObjectListFilter, ObjectListRef } from "./object-list-types";
 import { textHighlightSegments } from "./text-highlight";
+import { stateObject } from "../panel/state";
 
 /**
  * Platform objects of the bound type as an interactive list or multi-column table. The resource adapter owns all query
@@ -164,8 +165,8 @@ const parentState = computed(
 );
 const parentRef = computed<PlatformObjectRef | null>(() => {
   if (!parentState.value) return null;
-  const value = panel.instance.state.values.value[parentState.value];
-  return value && typeof value === "object" ? { className: value.className, primaryKey: value.primaryKey } : null;
+  const value = stateObject(panel.instance.state.values.value[parentState.value]);
+  return value && { className: value.className, primaryKey: value.primaryKey };
 });
 const parentIdentity = computed(() => (parentRef.value ? `${parentRef.value.className}\u0000${parentRef.value.primaryKey}` : ""));
 const checkedState = computed(() => slotOutputState(panel.manifest, slot.slot, "checked"));
@@ -186,8 +187,8 @@ function rowIdentityKey(row: PlatformObjectRecord): string {
 
 const chosenRef = computed<ObjectListRef | null>(() => {
   if (selectedState.value) {
-    const value = panel.instance.state.values.value[selectedState.value];
-    return value && typeof value === "object" ? { className: value.className, primaryKey: value.primaryKey } : null;
+    const value = stateObject(panel.instance.state.values.value[selectedState.value]);
+    return value && { className: value.className, primaryKey: value.primaryKey };
   }
   return localSelected.value;
 });

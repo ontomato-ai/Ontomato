@@ -2,16 +2,28 @@ import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema, formValuesSchema, panelFormOptionSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
-import { ontologyParameterTypeSchema, panelFormTargetSchema, panelObjectRefSchema, panelOperationId, singleOntologyParameterTypeSchema, type OntologyParameterType, type PanelManifest, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
-import { platformObjectTypes } from "./platform-object-types";
+import { ontologyParameterTypeSchema, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, singleOntologyParameterTypeSchema, type OntologyParameterType, type PanelManifest, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
+import { platformObjectTypes, type PlatformObjectTypeDeclaration, type PlatformReadDeclaration } from "./platform-object-types";
 import type { ProductProjectionInput } from "./product-panels";
 
 /** Nested JSON in the owner's value shape. Field pointers address this object, including values filled by projections. */
 export const panelFormValuesSchema = runtimeJsonObjectSchema;
 export type PanelFormValues = z.infer<typeof panelFormValuesSchema>;
 
+/** Columns in an ObjectList projection's display. Omit labelKey for a field named by its owner. */
+export const panelObjectListColumnSchema = z.object({
+  key: z.string().min(1),
+  labelKey: panelMessageKeySchema.optional(),
+  kind: z.enum(["text", "tag", "tags", "reference"]).optional(),
+  subtitleKey: z.string().min(1).optional(),
+  emptyKey: panelMessageKeySchema.optional(),
+}).strict();
+export type PanelObjectListColumn = z.infer<typeof panelObjectListColumnSchema>;
+
 const fieldPath = formFieldErrorSchema.shape.field;
 const objectType = z.string().min(1);
+
+export { formTimeValueSchema as panelFormTimeValueSchema } from "./form-fields";
 
 const readKey = z.string().min(1).max(200).refine(value => !["__proto__", "constructor", "prototype"].includes(value), "Reserved key");
 const inputRef = z.object({ input: readKey }).strict();
@@ -38,33 +50,50 @@ export type DirectProjectionPorts = z.infer<typeof directProjectionPortsSchema>;
 
 export const panelReadParameterSchemas = { formValues: formValuesSchema, changedField: fieldPath.nullable() };
 
+type DirectObjectSource = Extract<DirectProjectionData["source"], { object: unknown }>["object"];
+
+function directObjectSourceType(projection: DirectProjectionPorts, object: DirectObjectSource): string | undefined {
+  if ("literal" in object) return object.literal.className;
+  const input = projection.inputs[object.input];
+  return input?.kind === "object" ? input.objectType : undefined;
+}
+
+/** Resolve the registered signature for one named projection read. */
+export function directReadDeclaration(projection: DirectProjectionPorts, data: DirectProjectionData): PlatformReadDeclaration | undefined {
+  const { source, read } = data;
+  let owner: PlatformObjectTypeDeclaration | undefined;
+  let sourceKind: PlatformReadDeclaration["source"];
+  let readName = read;
+  if ("type" in source) {
+    sourceKind = "type";
+    owner = platformObjectTypes[source.type];
+  } else if ("object" in source) {
+    const type = directObjectSourceType(projection, source.object);
+    if (type === undefined) return undefined;
+    sourceKind = "object";
+    owner = platformObjectTypes[type];
+  } else {
+    sourceKind = "operation";
+    owner = Object.values(platformObjectTypes).find(type => type.operations?.includes(source.operation));
+    readName = `${source.operation}.${read}`;
+  }
+  const declaration = owner?.reads?.[readName];
+  return declaration?.source === sourceKind ? declaration : undefined;
+}
+
 /** Match a declared read to its owner and verify that every parameter has a supported source. */
 export function validateDirectProjection(projection: DirectProjectionPorts, ctx: z.RefinementCtx): void {
   const issue = (path: string[], message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
   for (const [name, data] of Object.entries(projection.data)) {
-    const { source, read, params } = data;
-    let declaration;
+    const { source, params } = data;
     const path = ["data", name];
-    if ("type" in source) {
-      declaration = platformObjectTypes[source.type]?.reads?.[read];
-      if (declaration?.source !== "type") declaration = undefined;
-    } else if ("object" in source) {
-      const object = source.object;
-      const input = "input" in object ? projection.inputs[object.input] : undefined;
-      const type = "literal" in object ? object.literal.className : input?.kind === "object" ? input.objectType : undefined;
-      if (!type) {
-        issue([...path, "source", "object"], "The read source needs a declared object input or a literal object reference");
-        continue;
-      }
-      declaration = platformObjectTypes[type]?.reads?.[read];
-      if (declaration?.source !== "object") declaration = undefined;
-    } else {
-      const owner = Object.values(platformObjectTypes).find(type => type.operations?.includes(source.operation));
-      declaration = owner?.reads?.[`${source.operation}.${read}`];
-      if (declaration?.source !== "operation") declaration = undefined;
-    }
+    const declaration = directReadDeclaration(projection, data);
     if (!declaration) {
-      issue([...path, "read"], "Read is not registered for the declared source");
+      if ("object" in source && directObjectSourceType(projection, source.object) === undefined) {
+        issue([...path, "source", "object"], "The read source needs a declared object input or a literal object reference");
+      } else {
+        issue([...path, "read"], "Read is not registered for the declared source");
+      }
       continue;
     }
     for (const [param, value] of Object.entries(params)) {
@@ -121,6 +150,7 @@ const simpleControls = [
   /** Each editable row is one string in the owner's JSON array. */
   z.object({ kind: z.literal("string-array") }).strict(),
   z.object({ kind: z.literal("number") }).strict(),
+  /** A local time value in HH:mm, with null and presence determined by the owner's value schema. */
   z.object({ kind: z.literal("time") }).strict(),
   /** The time zone is a separate owner field. */
   z.object({ kind: z.literal("frequency") }).strict(),
@@ -168,7 +198,7 @@ export type PanelFormField = z.infer<typeof fieldShape> & {
 const childFields = z.array(z.lazy((): z.ZodType<PanelFormField> => panelFormFieldSchema));
 const controlSchema = z.discriminatedUnion("kind", [
   ...simpleControls,
-  // Row paths are relative. Error, refresh and formField ports address the current absolute paths.
+  // Row paths are relative. Edits, refreshes and errors address the current absolute paths.
   arrayControl.extend({ itemFields: childFields }),
   // Child paths are relative to the object. An untouched, omitted object stays absent.
   objectControl.extend({ fields: childFields }),
@@ -338,7 +368,7 @@ function projectionTarget(
 }
 
 /** The wire description is shared by the SDK's header and the generated skill. */
-export function panelStateOperation(operation: PanelStateOperation): PanelOperation {
-  return { id: operation.id, label: operation.label, kind: operation.kind, inputSchema: {},
+export function panelStateOperation(operation: PanelStateOperation, resolveLabel: (key: string) => string): PanelOperation {
+  return { id: operation.id, label: resolveLabel(operation.labelKey), kind: operation.kind, inputSchema: {},
     handlerRef: `panel.state.${operation.id}` };
 }

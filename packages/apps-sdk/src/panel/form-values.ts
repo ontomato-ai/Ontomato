@@ -72,3 +72,11 @@ export function movedPath(path: string, arrayPath: string, order: readonly numbe
   const next = order.indexOf(Number(index));
   return next < 0 ? null : [`${arrayPath}/${next}`, ...rest].join("/");
 }
+
+/** Whether an owner's JSON Schema for a value admits null: `type` naming it, or one of `anyOf`/`oneOf` that does. */
+export function admitsNull(schema: Readonly<Record<string, unknown>>): boolean {
+  const type = schema.type;
+  if (type === "null" || (Array.isArray(type) && type.includes("null"))) return true;
+  const options = [schema.anyOf, schema.oneOf].flatMap((list) => (Array.isArray(list) ? list : []));
+  return options.some((option) => option !== null && typeof option === "object" && admitsNull(option as Record<string, unknown>));
+}

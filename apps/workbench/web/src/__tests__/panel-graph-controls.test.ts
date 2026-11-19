@@ -152,6 +152,7 @@ it("renders ObjectRelations grouped by relation kind with distinct statuses and 
           from: { className: USER, primaryKey: "u-1" },
           to: { className: ACTION, primaryKey: "act-deploy" },
           direction: "incoming",
+          derived: true,
         },
       ],
       relations: [{ relationKind: "user.created-action", status: "ok", edgeCount: 1 }],

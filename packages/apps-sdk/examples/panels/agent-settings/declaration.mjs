@@ -22,5 +22,5 @@ export default {
     scope: { projectionId: "agent-data-scope", inputs: {}, formField: { slot: "definition", path: "/classNames" } },
   },
   // Creating an agent is a change of this instance's own state; the form's owner then supplies the new agent's defaults.
-  operations: [{ id: "newAgent", label: "New agent", kind: "state", sets: { selectedAgent: null, mode: "create" } }],
+  operations: [{ id: "newAgent", labelKey: "agents.creating", kind: "state", sets: { selectedAgent: null, mode: "create" } }],
 };

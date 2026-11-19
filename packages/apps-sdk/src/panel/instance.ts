@@ -1,15 +1,20 @@
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import { computed, readonly, shallowReactive, shallowRef, type DeepReadonly, type Ref } from "vue";
 import type { PageContext } from "@ontomato/contracts/page-context";
-import { panelOpenRequestSchema, type PanelManifest, type PanelOperationCall, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import { panelOpenRequestSchema, type PanelDeepLinkStateValue, type PanelManifest, type PanelOperationCall, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { createPanelState, objectNameKey, panelSelection, type PanelInitialState, type PanelStateStore } from "./state";
+import type { PanelText } from "./text";
 import { panelOperations } from "./operations";
 import type { PanelProjectionRegistration } from "./ports";
 import { PanelFormAdapters, type PageDraftLink, type ReceivedPanelDraft } from "./draft";
 import { handlerFor } from "./handlers";
 import { pageDraftLink } from "@ontomato/contracts/page-draft";
 import type { PanelOperationBinding } from "./types";
+import type { AppBridgeConfirmPanelOperationResult } from "@ontomato/contracts/app-bridge";
+import type { PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
+import type { ConfirmPanelOperation, PanelHumanOperations, PanelOperationDescriptor, PanelWriteInvocation } from "./human-operations";
+import type { ReadOperationInput } from "./read-operation-input";
 
 /*
  * One panel instance's runtime (overall design 3.4): its state, the projections it registered, the operations it offers,
@@ -33,6 +38,17 @@ export interface PanelInstanceOptions {
   recordDraftCreated: (link: PageDraftLink, id: string) => Promise<void>;
   /** Translates platform message keys (such as object-union type display names) in the current locale. */
   translate?: (key: string) => string;
+  /** The panel's own words (its content's messages) in the current language: what a state operation is called. */
+  text: PanelText;
+  /** The platform's coordinator, which runs this panel's operations as the reader. */
+  operations: PanelHumanOperations;
+  /** The host's confirmation and single dispatch of a prepared write. */
+  confirmOperation: ConfirmPanelOperation;
+  /**
+   * What the objects and types a successful write reports changed are read again by: each changed object, by default;
+   * a directly rendered panel reads again the named data they concern.
+   */
+  affected?: (affected: { objects: PanelObjectIdentity[]; objectTypes: string[] }) => void;
   reportDraftError?: (reason: unknown) => void;
 }
 
@@ -68,6 +84,16 @@ export interface PanelInstance {
   invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
   /** Runs one operation a projection publishes, by its handler reference, with the call it is given. */
   runHandler(handlerRef: string, call: PanelOperationCall): Promise<unknown>;
+  /** The owner's description of one of this panel's operations, by its ID. */
+  describeOperation(operationId: string): Promise<PanelOperationDescriptor>;
+  /** Runs a read-only operation as the reader: what it read, with nothing written and nothing reported changed. */
+  readOperation(operationId: string, call: { target: PanelOperationCall["target"]; input: ReadOperationInput }): Promise<PanelReadOperationResult>;
+  /**
+   * Runs a write as the reader, the way an agent's runs: one intent freezes the calls, the host confirms it where the
+   * owner or a batch asks and dispatches it once, and the objects the owner reports changed are read again here. A
+   * cancelled confirmation writes nothing.
+   */
+  writeOperation(operationId: string, invocation: PanelWriteInvocation): Promise<AppBridgeConfirmPanelOperationResult>;
   objectChanged(object: PanelObjectIdentity): void;
   refreshObjects(): void;
   onObjectChanged(listener: (object: PanelObjectIdentity | null) => void): () => void;
@@ -81,7 +107,7 @@ export interface PanelInstance {
   /** Whether this instance holds unsaved changes: a received draft, or a form the reader edited. */
   dirty(): boolean;
   /** The state an address or an open request may carry, for this instance. */
-  deepLink(): Record<string, PanelStateValue>;
+  deepLink(): Record<string, PanelDeepLinkStateValue>;
 }
 
 /**
@@ -96,7 +122,15 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     for (const listener of objectListeners) listener(object);
   };
   const registrations = shallowRef<readonly PanelProjectionRegistration[]>([]);
-  const operations = computed(() => panelOperations(manifest, registrations.value, state, forms));
+  const reportAffected = options.affected ?? ((affected) => { for (const object of affected.objects) objectChanged(object); });
+  async function writeOperation(operationId: string, invocation: PanelWriteInvocation) {
+    const result = await options.confirmOperation(await options.operations.prepare(operationId, invocation));
+    // Only the objects the owner reports a successful write changed; a refusal, a failure or an unknown result changes none.
+    const outcome = result.decision === "confirm" && result.response.kind === "dispatched" ? result.response.outcome : null;
+    if ((outcome?.kind === "success" || outcome?.kind === "batch") && outcome.affected) reportAffected(outcome.affected);
+    return result;
+  }
+  const operations = computed(() => panelOperations(manifest, registrations.value, state, forms, options.text, writeOperation));
   const forms = new PanelFormAdapters(options.reportDraftError);
   const draft = shallowRef<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
   const names = shallowReactive(new Map<string, string>());
@@ -156,6 +190,9 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       if (call.target?.kind === "object") objectChanged(call.target);
       return result;
     },
+    describeOperation: (operationId) => options.operations.describe(operationId),
+    readOperation: (operationId, call) => options.operations.read(operationId, call),
+    writeOperation,
     objectChanged,
     refreshObjects: () => objectChanged(null),
     onObjectChanged(listener) {
