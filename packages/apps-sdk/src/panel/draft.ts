@@ -135,7 +135,9 @@ export class PanelFormAdapters {
       }
       this.#held.value = null;
       if (changed.size)
-        held.taken({ slot: next, operation: draft.operation, target: draft.target, created: draft.created, form: draft.form, changed, link: held.link });
+        // A create draft saved once addresses the object it created from then on.
+        held.taken({ slot: next, operation: draft.operation, target: { id: draft.target.id ?? draft.created?.id },
+          created: draft.created, form: draft.form, changed, link: held.link });
     }, (reason: unknown) => {
       held.offering = false;
       if (this.#held.value === held) this.#held.value = null;

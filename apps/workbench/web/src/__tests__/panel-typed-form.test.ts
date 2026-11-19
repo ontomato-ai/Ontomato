@@ -237,7 +237,9 @@ it("shows a draft the owner accepts in the form and its field projections, marke
   // The owner's normalised value is what the form holds; the picker's field is the same form's, marked with it.
   expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst v2");
   expect(fieldItem("/skills")?.classList.contains("sdk-reference-picker-changed")).toBe(true);
-  expect(fieldItem("/name")?.classList.contains("sdk-owner-form-changed")).toBe(true);
+  expect(fieldItem("/name")?.classList.contains("sdk-owner-form-field-changed")).toBe(true);
+  // The changed fields are named in words too, by the owner's labels, not by colour alone.
+  expect(document.querySelector("#app .sdk-owner-form-changed")?.textContent?.trim()).toBe("Changed: Name, Skills");
   expect(context.instance.dirty()).toBe(true);
   expect(sent.some((request) => request.method === "PUT")).toBe(false);
 });
@@ -255,7 +257,9 @@ it("opens a draft that changes nothing as the agent is, with nothing unsaved", a
 
 it("reopens a saved create draft on the agent it created, and creates nothing again", async () => {
   const { context, sent } = await openWithDraft(stored, { operation: "agent.create", target: {}, created: { id: AGENT } });
-  await vi.waitFor(() => expect(context.instance.state.values.value.selectedAgent).toEqual({ className: AGENT_DEFINITION, primaryKey: AGENT }), { timeout: 5000 });
+  // The owner checked the draft against the agent it created.
+  await vi.waitFor(() => expect(sent.some((request) => (request.body as { values?: unknown } | null)?.values)).toBe(true), { timeout: 5000 });
+  await vi.waitFor(() => expect(context.instance.state.values.value.selectedAgent).toEqual({ className: AGENT_DEFINITION, primaryKey: AGENT }));
   await vi.waitFor(() => expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst"));
   // The draft was compared with the agent it created, not offered as a new one.
   expect(sent.filter((request) => (request.body as { values?: unknown } | null)?.values).map((request) => request.body))
@@ -301,10 +305,7 @@ it("tells the host the draft is settled once the reader discarded it, and writes
   expect(sent.some((request) => request.method === "PUT" || request.method === "POST" && request.path.endsWith("/created"))).toBe(false);
 });
 
-// The host does not yet admit a frame's `POST …/page-draft/created`, so the created record is refused before it is sent
-// and the draft stays unsettled. When the host admits it for the draft the frame read, this passes and `it.fails` fails:
-// make it an ordinary `it` then.
-it.fails("records what a saved create draft created before it tells the host the draft is settled", async () => {
+it("records what a saved create draft created before it tells the host the draft is settled", async () => {
   const { context, settled, sent } = await openWithDraft({ ...defaults, name: "Planner" }, { operation: "agent.create", target: {} });
   await vi.waitFor(() => expect(context.draft.value?.changed).toEqual(new Set(["/name"])), { timeout: 5000 });
   expect(context.instance.state.values.value.selectedAgent).toBeNull();

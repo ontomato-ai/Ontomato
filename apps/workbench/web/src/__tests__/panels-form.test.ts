@@ -213,8 +213,9 @@ describe("the form a panel shows", () => {
     // The form shows the draft's values, and the fields it changed are marked.
     // The field set is the owner's answer for the draft's operation: the instruction the draft switched to.
     expect(Object.keys(shown(element))).toEqual(["/operation", "/instruction"]);
-    expect([...element.querySelectorAll(".sdk-owner-form-changed")].map((item) => item.getAttribute("data-field")))
+    expect([...element.querySelectorAll(".sdk-owner-form-field-changed")].map((item) => item.getAttribute("data-field")))
       .toEqual(["/operation", "/instruction"]);
+    expect(element.querySelector(".sdk-owner-form-changed")?.textContent?.trim()).toBe("Changed: Operation, Instruction");
     // Nothing was written: the draft is the reader's to save.
     expect(written).toEqual([]);
     expect(registeredHandlers()).toContain(`${mountedForm.objectType}.save`);

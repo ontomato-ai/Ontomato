@@ -3,7 +3,7 @@ import { createSchedulesApi, scheduleFailure, type PlatformSchedulesHost } from 
 import type { PlatformTask } from "@ontomato/contracts/platform-schedules";
 import { formFieldKey, formFieldPointer, formValuesSchema, type FormField, type FormFieldError } from "@ontomato/contracts/form-fields";
 import { randomId } from "@ontomato/contracts/random-id";
-import type { PanelFormDescription, PanelFormField, PanelFormRequest, PanelFormSaveInput } from "@ontomato/contracts/panel-projection";
+import type { PanelFormDescription, PanelFormField, PanelFormRequest, PanelFormSaveInput, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import { PlatformObjectRefusal, type PlatformObjectAdapterFactory, type PlatformObjectRecord, type PlatformOperationFactory, type PlatformRequests } from "./platform-objects";
 import { DATA_QUERY_GATEWAY, RUN_NOW, SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
@@ -118,19 +118,42 @@ function dataQueryHost(requests: PlatformRequests): PlatformSchedulesHost {
 
 export const scheduledTaskAdapters: PlatformObjectAdapterFactory = requests => {
   const resource = schedulesResource(dataQueryHost(requests), taskFieldPath);
+  /**
+   * A complete draft, checked by the task's application. The application's form changes its fields only when it is asked
+   * about the field that changed, so a draft that changes such a field (the operation) is checked against the form that
+   * field leads to; a draft key that form does not have refuses the whole draft. Otherwise the application checks the
+   * drafted values as they are.
+   */
+  async function checkDraft(id: string, drafted: PanelFormValues): Promise<PanelFormDescription> {
+    const baseline = await resource.form(id, undefined, null);
+    const depended = baseline.answer.fields.find((field) => field.type === "select" && field.refreshOnChange
+      && Object.hasOwn(drafted, field.key) && drafted[field.key] !== baseline.answer.values[field.key]);
+    // The application's values are text: what a draft holds otherwise is no value of this form, and is named below.
+    const text = Object.fromEntries(Object.entries(drafted).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+    const effective = depended
+      ? await resource.form(id, { ...baseline.answer.values, ...text }, depended.key)
+      : baseline;
+    const allowed = new Set(effective.answer.fields.map((field) => field.key));
+    const extra = Object.keys(drafted).filter((key) => !allowed.has(key));
+    if (extra.length)
+      throw new PlatformObjectRefusal(`Draft fields not in the current form: ${extra.join(", ")}`,
+        Object.fromEntries(extra.map((key) => [taskFieldPath(key), "Not a field of this form"])));
+    const filled = formValuesSchema.parse(drafted);
+    const { answer, revision } = depended ? effective : await resource.form(id, filled, null);
+    if (!answer.submittable)
+      throw new PlatformObjectRefusal(answer.errors[0]?.message ?? "The scheduled task form is incomplete", fieldErrors(answer.errors, taskFieldPath));
+    return {
+      fields: answer.fields.map(typedField), values: { ...answer.values, ...filled }, revision, save: scheduledTaskSaveDescription(id),
+    };
+  }
   const forms = {
     async describe({ target, values, changedField }: PanelFormRequest): Promise<PanelFormDescription> {
       const id = taskId(target);
+      if (values !== undefined && changedField === null) return checkDraft(id, values);
       const { answer, revision } = await resource.form(
         id, values === undefined ? undefined : formValuesSchema.parse(values),
         changedField === null ? null : formFieldKey(changedField, "/"),
       );
-      if (values !== undefined && changedField === null && !answer.submittable) {
-        throw new PlatformObjectRefusal(
-          answer.errors[0]?.message ?? "The scheduled task form is incomplete",
-          fieldErrors(answer.errors, taskFieldPath),
-        );
-      }
       return { fields: answer.fields.map(typedField), values: answer.values, revision, save: scheduledTaskSaveDescription(id) };
     },
     save(target: PanelFormTarget, input: PanelFormSaveInput) {

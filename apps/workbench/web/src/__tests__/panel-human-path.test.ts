@@ -541,9 +541,16 @@ function taskFormFor(values: typeof taskForm.values) {
 it("opens the saved draft's old link as an ordinary panel", async () => {
   let current = task;
   const path = `/applications/${appA}/tasks`;
-  const draftQuery = new URLSearchParams({ draftSessionId: "session-1", draftRunId: "run-1", draftPath: "outputs/drafts/task.page-draft.json" });
+  // A run's draft link names its session and run by their UUIDs; the settled draft is reported by them.
+  const session = "5b0f8a52-3d2e-4c1a-9a7e-1f2b3c4d5e01";
+  const runId = "5b0f8a52-3d2e-4c1a-9a7e-1f2b3c4d5e02";
+  const draftQuery = new URLSearchParams({ draftSessionId: session, draftRunId: runId, draftPath: "outputs/drafts/task.page-draft.json" });
   const draftAddress = panelAddress(`${path}?${draftQuery}`, deepState);
   const { app, element, frame, router, sent } = await open(draftAddress, false, request => {
+    if (request.path === `/api/assistant/sessions/${session}/runs/${runId}/page-draft`) return Response.json({
+      pageKey: useP.pageKey, operation: `${SCHEDULED_TASK}.save`, target: { id: task.id },
+      form: { ...task.content, caseSetId: "set-smoke" },
+    });
     if (request.path === `${taskPath}/${task.id}`) {
       if (request.method === "PUT") {
         current = { ...current, revision: current.revision + 1, content: (request.body as { content: typeof task.content }).content };
@@ -893,7 +900,9 @@ it.each([
       expect([...document.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")].every(button => button.disabled)).toBe(true);
     } else {
       await vi.waitFor(() => {
-        expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain("operation, instruction");
+        // The changed fields, named by the application's own labels.
+        expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain(
+          inspectionTaskForm.fields.map(field => field.label).join(", "));
         expect(document.querySelector<HTMLTextAreaElement>('[data-field="/instruction"] textarea')?.value).toBe(drafted.instruction);
         expect(document.querySelector('.sdk-owner-form [data-field="/caseSetId"]')).toBeNull();
       });
