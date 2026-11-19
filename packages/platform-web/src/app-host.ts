@@ -355,6 +355,8 @@ export function installAppHost(options: {
       const target=applicationId&&assetRead&&!['counts','types','query','home','projections','graph'].includes(assetRead[1])?`/product-assets/published/${encodeURIComponent(applicationId)}/${assetRead[1]}`:path;
       const headers=new Headers(init.headers);
       headers.delete(BUILD_TEST_HEADER);headers.delete('tk');headers.delete('authorization');headers.delete('x-api-key');
+      // A multipart body's Content-Type carries its boundary: only the browser that writes the body may state it.
+      if(init.body instanceof FormData)headers.delete('content-type');
       if(!options.credential)throw new Error('Platform credential unavailable');
       if(options.credential.type==='token')headers.set('tk',options.credential.token);
       if(options.credential.type==='apiKey')headers.set('x-api-key',options.credential.apiKey);
