@@ -192,27 +192,15 @@
     "value": "Invalid business knowledge form values"
   },
   {
-    "key": "Admin.knowledge.tag.general.value",
+    "key": "Admin.knowledge.tag.general",
     "value": "General"
   },
   {
-    "key": "Admin.knowledge.tag.business.value",
+    "key": "Admin.knowledge.tag.business",
     "value": "Business"
   },
   {
-    "key": "Admin.knowledge.tag.tech.value",
-    "value": "Tech"
-  },
-  {
-    "key": "Admin.knowledge.tag.general.label",
-    "value": "General"
-  },
-  {
-    "key": "Admin.knowledge.tag.business.label",
-    "value": "Business"
-  },
-  {
-    "key": "Admin.knowledge.tag.tech.label",
+    "key": "Admin.knowledge.tag.tech",
     "value": "Tech"
   },
   {

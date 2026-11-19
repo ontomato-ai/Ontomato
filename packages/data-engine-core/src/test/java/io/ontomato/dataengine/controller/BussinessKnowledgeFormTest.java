@@ -24,17 +24,20 @@ import com.alibaba.fastjson2.JSONObject;
 
 import io.ontomato.dataengine.dao.KnowledgeEntity;
 import io.ontomato.dataengine.service.KnowledgeService;
+import io.ontomato.dataengine.service.KnowledgeTagConfig;
 import io.ontomato.dataengine.service.impl.LangServiceImpl;
 
 class BussinessKnowledgeFormTest {
 
 	private final KnowledgeService knowledge = mock(KnowledgeService.class);
 	private final LangServiceImpl lang = new LangServiceImpl();
+	private KnowledgeTagConfig tags;
 
 	@BeforeEach
 	void setup() throws Exception {
 		var english = JSON.parseArray(Files.readString(Path.of("conf-defaults/lang/en.json")));
 		ReflectionTestUtils.setField(lang, "langMap", Map.of("en", english));
+		tags = new KnowledgeTagConfig(JSON.parseObject(Files.readString(Path.of("conf-defaults/business-knowledge.json"))));
 	}
 
 	private static Map<String, Object> request(Object target, Object values) {
@@ -66,7 +69,7 @@ class BussinessKnowledgeFormTest {
 	@Test
 	void createDescribesTheFieldsAndValuesOfANewEntry() {
 		JSONObject form = BussinessKnowledgeForm.describe("en", "domain-a",
-				request(Map.of("kind", "draft"), null), knowledge, lang);
+				request(Map.of("kind", "draft"), null), knowledge, lang, tags);
 
 		JSONObject values = form.getJSONObject("values");
 		assertEquals("", values.getString("knowledgeID"));
@@ -122,7 +125,7 @@ class BussinessKnowledgeFormTest {
 
 		JSONObject form = BussinessKnowledgeForm.describe("en", "domain-a",
 				request(Map.of("kind", "object", "objectType", "platform:BusinessKnowledge", "primaryKey", "k1"), null),
-				knowledge, lang);
+				knowledge, lang, tags);
 
 		JSONObject values = form.getJSONObject("values");
 		assertEquals("k1", values.getString("knowledgeID"));
@@ -144,7 +147,7 @@ class BussinessKnowledgeFormTest {
 				request(Map.of("kind", "object", "objectType", "platform:BusinessKnowledge", "primaryKey", "k1"),
 						Map.of("knowledgeTitle", "Refund rule v2", "knowledgeText", "Within 14 days",
 								"knowledgeTags", List.of("Business"), "status", 1)),
-				knowledge, lang);
+				knowledge, lang, tags);
 
 		JSONObject values = form.getJSONObject("values");
 		assertEquals("k1", values.getString("knowledgeID"));
@@ -157,7 +160,7 @@ class BussinessKnowledgeFormTest {
 		when(knowledge.getBussinessKnowledge("domain-a")).thenReturn(Map.of());
 		var error = assertThrows(IllegalArgumentException.class, () -> BussinessKnowledgeForm.describe("en", "domain-a",
 				request(Map.of("kind", "object", "objectType", "platform:BusinessKnowledge", "primaryKey", "missing"), null),
-				knowledge, lang));
+				knowledge, lang, tags));
 		assertEquals("Business knowledge not found in the current domain", error.getMessage());
 	}
 
@@ -165,7 +168,7 @@ class BussinessKnowledgeFormTest {
 	void anotherObjectTypeIsRefused() {
 		var error = assertThrows(IllegalArgumentException.class, () -> BussinessKnowledgeForm.describe("en", "domain-a",
 				request(Map.of("kind", "object", "objectType", "platform:Skill", "primaryKey", "k1"), null),
-				knowledge, lang));
+				knowledge, lang, tags));
 		assertNotEquals("Admin.knowledge.form.invalidTarget", error.getMessage());
 		assertFalse(error.getMessage().isBlank());
 	}

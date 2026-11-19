@@ -2,6 +2,7 @@ package io.ontomato.dataengine.controller;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -28,6 +29,7 @@ import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.KnowledgeEntity;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.KnowledgeService;
+import io.ontomato.dataengine.service.KnowledgeTagConfig;
 import io.ontomato.dataengine.service.impl.LangServiceImpl;
 import io.ontomato.dataengine.util.SpringBeanUtil;
 
@@ -54,8 +56,10 @@ class BussinessKnowledgeFormBoundaryTest {
 
 		var english = JSON.parseArray(Files.readString(Path.of("conf-defaults/lang/en.json")));
 		ReflectionTestUtils.setField(lang, "langMap", Map.of("en", english));
+		var tags = new KnowledgeTagConfig(JSON.parseObject(Files.readString(Path.of("conf-defaults/business-knowledge.json"))));
 		ReflectionTestUtils.setField(controller, "knowledgeService", knowledge);
 		ReflectionTestUtils.setField(controller, "langService", lang);
+		ReflectionTestUtils.setField(controller, "knowledgeTagConfig", tags);
 	}
 
 	@Test
@@ -80,7 +84,9 @@ class BussinessKnowledgeFormBoundaryTest {
 						+ "\"changedField\":null}"))
 				.andExpect(status().isOk()).andReturn().getResponse();
 
-		JSONObject form = JSON.parseObject(response.getContentAsString());
+		JSONObject body = JSON.parseObject(response.getContentAsString());
+		assertTrue(body.getBooleanValue("success"));
+		JSONObject form = body.getJSONObject("data");
 		JSONObject values = form.getJSONObject("values");
 		assertEquals("k1", values.getString("knowledgeID"));
 		assertEquals("Refund rule v2", values.getString("knowledgeTitle"));

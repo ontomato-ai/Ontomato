@@ -8,12 +8,12 @@ import com.alibaba.fastjson2.JSONObject;
 
 import io.ontomato.dataengine.dao.KnowledgeEntity;
 import io.ontomato.dataengine.service.KnowledgeService;
+import io.ontomato.dataengine.service.KnowledgeTagConfig;
 import io.ontomato.dataengine.service.LangService;
 
 /**
  * The business knowledge form, described as the panel form contract takes it: the fields, the values of the target and
- * the native save request. Labels and tag candidates come from the requested language pack, so each edition declares its
- * own tag values instead of keeping a copy in the browser profile.
+ * the native save request. The tag values are the edition's data, while the language pack only names them.
  */
 public final class BussinessKnowledgeForm {
 
@@ -22,7 +22,7 @@ public final class BussinessKnowledgeForm {
     private BussinessKnowledgeForm() {}
 
     public static JSONObject describe(String lang, String domainId, Map<String, Object> request,
-            KnowledgeService knowledgeService, LangService langService) {
+            KnowledgeService knowledgeService, LangService langService, KnowledgeTagConfig tagConfig) {
         Map<String, Object> target = object(request.get("target"), lang, langService, "Admin.knowledge.form.invalidTarget");
         String kind = string(target.get("kind"));
         KnowledgeEntity current;
@@ -61,12 +61,12 @@ public final class BussinessKnowledgeForm {
 
         JSONObject form = new JSONObject();
         form.put("values", values);
-        form.put("fields", fields(lang, langService));
+        form.put("fields", fields(lang, langService, tagConfig));
         form.put("save", save(current == null));
         return form;
     }
 
-    private static JSONArray fields(String lang, LangService langService) {
+    private static JSONArray fields(String lang, LangService langService, KnowledgeTagConfig tagConfig) {
         JSONArray fields = new JSONArray();
         fields.add(field("/knowledgeTitle", langService.get(lang, "Admin.knowledge.form.title"),
                 new JSONObject().fluentPut("kind", "text").fluentPut("multiline", false).fluentPut("placeholder", null),
@@ -79,7 +79,7 @@ public final class BussinessKnowledgeForm {
                         .fluentPut("kind", "select")
                         .fluentPut("multiple", true)
                         .fluentPut("allowCreate", true)
-                        .fluentPut("options", tagOptions(lang, langService)),
+                        .fluentPut("options", tagOptions(lang, langService, tagConfig)),
                 new JSONObject().fluentPut("type", "array").fluentPut("items", stringSchema()), false, new JSONArray()));
         fields.add(field("/status", langService.get(lang, "Admin.knowledge.form.status"),
                 new JSONObject().fluentPut("kind", "select").fluentPut("options", statusOptions(lang, langService)),
@@ -101,12 +101,12 @@ public final class BussinessKnowledgeForm {
                 .fluentPut("defaultValue", defaultValue);
     }
 
-    private static JSONArray tagOptions(String lang, LangService langService) {
+    private static JSONArray tagOptions(String lang, LangService langService, KnowledgeTagConfig tagConfig) {
         JSONArray options = new JSONArray();
         for (String key : List.of("general", "business", "tech"))
             options.add(option(
-                    langService.get(lang, "Admin.knowledge.tag." + key + ".value"),
-                    langService.get(lang, "Admin.knowledge.tag." + key + ".label")));
+                    tagConfig.value(key),
+                    langService.get(lang, "Admin.knowledge.tag." + key)));
         return options;
     }
 
