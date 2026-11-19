@@ -8,6 +8,7 @@ import type {
 } from "@ontomato/contracts/agent-host";
 import { SessionRunStreamError, type SessionRunPort } from "./host";
 import { sseReconnectDelay } from "@ontomato/contracts/sse";
+import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 
 export interface SessionRunFeedOptions {
   /** The host's passive notice port of the same prefix every list on this page reads from. */
@@ -29,6 +30,10 @@ export interface SessionRunFeedOptions {
  * page already has. Hosts call it once per page and hand it every list they show, so switching agent, workspace or a
  * page's expanded lists changes the rows read, never the connection. A notice only says that something changed; the
  * state itself comes from the snapshot, and a conversation no list shows is not added.
+ *
+ * A background tab holds no stream (design "long connections" 2): hidden, the feed closes its connection, schedules no
+ * reconnect and drops the connection's display binding; back in the foreground it opens a new one, whose `ready` reads the
+ * listed rows again. Lifecycle notices are not replayed, so what changed meanwhile is what that read reports.
  */
 export function useSessionRunFeed(options: SessionRunFeedOptions) {
   const notice = shallowRef<AgentHostSessionRunFrame | null>(null);
@@ -36,6 +41,8 @@ export function useSessionRunFeed(options: SessionRunFeedOptions) {
   const ids = () => [...new Set(options.sessions().map((row) => row.id))];
   let detach: (() => void) | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  /** Which connection is current: a frame or failure of one closed since is not this feed's any more. */
+  let generation = 0;
   let attempt = 0;
   /** The stream ended for good, or the page went away: no frame, read or reconnect after it. */
   let stopped = false;
@@ -93,10 +100,22 @@ export function useSessionRunFeed(options: SessionRunFeedOptions) {
     return queue;
   }
 
+  function disconnect() {
+    generation++;
+    detach?.();
+    detach = null;
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+    // The binding was this connection's: a run started now has no display until the next one is ready.
+    binding.value = null;
+  }
+
   function connect() {
+    if (stopped || !documentVisible()) return;
+    const current = ++generation;
     detach = options.port.subscribe({
       async frame(frame) {
-        if (stopped) return;
+        if (stopped || current !== generation) return;
         notice.value = frame;
         options.onNotice?.(frame);
         // `ready` is the runtime's barrier: every change from here on is a frame, so the rows are read once now.
@@ -110,9 +129,8 @@ export function useSessionRunFeed(options: SessionRunFeedOptions) {
       },
       ...(options.presentation ? { presentation: (frame: PresentationFrame) => void answer(frame, binding.value!) } : {}),
       error(error) {
-        if (stopped) return;
+        if (stopped || current !== generation) return;
         detach = null;
-        // The binding was this connection's: a run started now has no display until the next one is ready.
         binding.value = null;
         // A frame off the contract is not a dropped line: present it and stop.
         if (error instanceof SessionRunStreamError) {
@@ -124,7 +142,7 @@ export function useSessionRunFeed(options: SessionRunFeedOptions) {
         // its `ready` reads every row.
         timer = setTimeout(() => {
           timer = null;
-          if (!stopped) connect();
+          connect();
         }, sseReconnectDelay(attempt++));
       },
     });
@@ -135,11 +153,10 @@ export function useSessionRunFeed(options: SessionRunFeedOptions) {
   watch(() => options.sessions().slice(), () => void read(ids()));
 
   onMounted(connect);
+  const stopVisibility = onDocumentVisibility((visible) => (visible ? connect() : disconnect()));
   onBeforeUnmount(() => {
     stopped = true;
-    if (timer !== null) clearTimeout(timer);
-    timer = null;
-    detach?.();
-    detach = null;
+    disconnect();
+    stopVisibility();
   });
 }

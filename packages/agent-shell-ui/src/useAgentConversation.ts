@@ -17,6 +17,7 @@ import {
   type ConversationState,
 } from "./conversation";
 import { conversationItems } from "./view";
+import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 
 /** A task stream that broke before settling is opened again after this long, and reads the whole snapshot again. */
 const TASK_RECONNECT_MS = 2000;
@@ -71,13 +72,14 @@ export function useAgentConversation(
   }
 
   /**
-   * Follows the conversation's tasks until they settle. The stream outlives the run that delegated them, so a review
-   * that arrives after the reply still shows; each new run opens it again.
+   * Follows the conversation's tasks: the host keeps the stream open and starts it with the whole snapshot, so a review
+   * that arrives after the reply still shows; each new run opens it again. A hidden tab holds no stream: it is opened
+   * again, snapshot first, when the tab comes back.
    */
   function followTasks(sessionId: string) {
     stopTasks();
     const host = port().tasks, selection = token;
-    if (!host) return;
+    if (!host || !documentVisible()) return;
     detachTasks = host.subscribe(sessionId, {
       frame(frame) {
         if (selection === token) {
@@ -161,14 +163,19 @@ export function useAgentConversation(
     if (type === "artifact_registered") artifactRevision.value++;
   }
 
-  function subscription(runId: string): RunSubscription<AgentHostSessionHistory[]> {
+  /**
+   * The open conversation's live run. Without `runId` it is whichever run the history's next read reports as the latest:
+   * the conversation catching up after the tab was hidden, when a round may have started meanwhile.
+   */
+  function subscription(runId?: string): RunSubscription<AgentHostSessionHistory[]> {
     const sessionId = state.sessionId!, client = port(), selection = token;
     let selectedRunId = runId;
     return {
-      get runId() { return selectedRunId; },
-      current: () => state.runs[selectedRunId],
+      get runId() { return selectedRunId!; },
+      current: () => (selectedRunId ? state.runs[selectedRunId] : undefined),
       async read() {
-        const first = await client.readHistory(sessionId, { after: historyCursor(sessionId, knownMessageSeq), runId: selectedRunId });
+        const after = historyCursor(sessionId, knownMessageSeq);
+        const first = await client.readHistory(sessionId, selectedRunId ? { after, runId: selectedRunId } : { after });
         const pages = [first];
         let next = first.page.nextCursor;
         while (next && selection === token) {
@@ -189,7 +196,7 @@ export function useAgentConversation(
         artifactRevision.value++;
       },
       event: applyEvent,
-      subscribe: (after, handlers) => client.subscribe(sessionId, selectedRunId, after, handlers),
+      subscribe: (after, handlers) => client.subscribe(sessionId, selectedRunId!, after, handlers),
     };
   }
 
@@ -297,10 +304,25 @@ export function useAgentConversation(
     return sessionId ? port().resolveArtifact(sessionId, runId, path) : null;
   }
 
+  /*
+   * A hidden tab stops watching the open conversation and keeps everything it showed; the run itself goes on. Back in the
+   * foreground the conversation reads what it missed from its cursor — the messages, the latest run, which may be a round
+   * that started meanwhile, and the questions waiting — and follows a live run from there; the task stream reopens with
+   * its snapshot. A run that was being followed catches up through its own subscription.
+   */
+  const stopVisibility = onDocumentVisibility((visible) => {
+    if (!visible) return stopTasks();
+    const sessionId = state.sessionId;
+    if (!sessionId || loading.value || sending.value) return;
+    followTasks(sessionId);
+    if (!stream.following()) void stream.load(subscription());
+  });
+
   onBeforeUnmount(() => {
     token++;
     stream.stop();
     stopTasks();
+    stopVisibility();
   });
 
   return {
