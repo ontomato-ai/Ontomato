@@ -23,9 +23,11 @@ import {
   panelHostFrameMessageSchema, panelUsePath,
 } from "./panel-host";
 import {
-  matchesObjectType, objectUnionTypes, ontologyObjectUnionTypeSchema, panelChildObjectIdentitySchema,
-  panelManifestSchema, panelStateFieldSchema, panelStateValueSchema, singleOntologyParameterTypeSchema,
+  matchesObjectType, objectUnionTypes, ontologyObjectUnionTypeSchema, ontologyParameterTypeSchema,
+  panelChildCollectionQuerySchema, panelChildObjectIdentitySchema, panelManifestSchema, panelOpenRequestSchema, panelStateFieldSchema,
+  panelStateOperationSchema, panelStateValueSchema, singleOntologyParameterTypeSchema,
 } from "./panel-manifest";
+import { pageSelectionSchema } from "./page-context";
 import { pageDraftSchema } from "./page-draft";
 import {
   panelFormDescriptionSchema, panelFormFrequencyValueSchema, panelFormRequestSchema, panelFormSaveInputSchema,
@@ -483,6 +485,38 @@ test("a child key is meaningful with its parent identity", () => {
   const child = { parent: { objectType: SKILL, primaryKey: "skill-a" }, primaryKey: "references/guide.md" };
   assert.deepEqual(panelChildObjectIdentitySchema.parse(child), child);
   assert.equal(panelChildObjectIdentitySchema.safeParse({ primaryKey: child.primaryKey }).success, false);
+});
+
+test("a declared child collection carries its parent-scoped selection across panel boundaries", () => {
+  const field = { kind: "child-object", parentType: SKILL, collection: "files" };
+  const child = { parent: { objectType: SKILL, primaryKey: "skill-a" }, primaryKey: "SKILL.md" };
+  const state = { selectedFile: child };
+  assert.deepEqual(panelStateFieldSchema.parse({ ...field, deepLink: true }), { ...field, deepLink: true });
+  assert.deepEqual(ontologyParameterTypeSchema.parse(field), field);
+  assert.equal(singleOntologyParameterTypeSchema.safeParse(field).success, false);
+  assert.equal(panelStateFieldSchema.safeParse({ ...field, collection: "issues" }).success, false);
+
+  assert.deepEqual(panelOpenRequestSchema.parse({ useId: "skills", state }).state, state);
+  assert.deepEqual(panelStateOperationSchema.parse({ id: "choose", label: "Choose", kind: "state", sets: state }).sets, state);
+  const frame = { kind: "state", fromAddress: "/skills", state };
+  assert.deepEqual(panelFrameMessageSchema.parse(frame), frame);
+
+  const selection = {
+    kind: "child-object", parent: child.parent, id: child.primaryKey, collection: "files", label: "Skill Example / SKILL.md",
+  };
+  assert.deepEqual(pageSelectionSchema.parse(selection), selection);
+  assert.equal(pageSelectionSchema.safeParse({ kind: selection.kind, id: selection.id, label: selection.label }).success, false);
+});
+
+test("governance issues and sources use separate collection queries under one parent", () => {
+  const parent = { objectType: KNOWLEDGE_GOVERNANCE_RECORD, primaryKey: "report-a" };
+  for (const collection of ["issues", "sources"]) {
+    const query = { parent, collection };
+    assert.deepEqual(panelChildCollectionQuerySchema.parse(query), query);
+  }
+  assert.equal(panelChildCollectionQuerySchema.safeParse({ parent, collection: "files" }).success, false);
+  const unconverted = { className: parent.objectType, primaryKey: parent.primaryKey };
+  assert.equal(panelChildCollectionQuerySchema.safeParse({ parent: unconverted, collection: "sources" }).success, false);
 });
 
 test("mixed graphs declare selected node types separately from the read bindings", () => {

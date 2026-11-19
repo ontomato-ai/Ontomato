@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { formFieldErrorSchema } from "./form-fields";
 import { pageDraftLinkSchema } from "./page-draft";
-import { platformObjectTypes, platformOntologyLayers } from "./platform-object-types";
+import { platformHasChildCollection, platformObjectTypes, platformOntologyLayers } from "./platform-object-types";
 
 /*
  * What a panel's `panel.mjs` exports through `definePanel`: the state the panel keeps for one instance and the
@@ -21,11 +21,43 @@ const key = z
   .max(200)
   .refine((value) => !["__proto__", "constructor", "prototype"].includes(value), "Reserved key");
 
+export const panelObjectIdentitySchema = z.object({
+  objectType: key,
+  primaryKey: z.string().min(1).max(1000),
+}).strict();
+export type PanelObjectIdentity = z.infer<typeof panelObjectIdentitySchema>;
+
+/** A child's key is unique within its owner's parent record, regardless of the view that presents it. */
+export const panelChildObjectIdentitySchema = z.object({
+  parent: panelObjectIdentitySchema,
+  primaryKey: panelObjectIdentitySchema.shape.primaryKey,
+}).strict();
+export type PanelChildObjectIdentity = z.infer<typeof panelChildObjectIdentitySchema>;
+
+const undeclaredCollection = { path: ["collection"], message: "Undeclared child collection for this parent type" };
+
+/** The owner reads a collection within a specific parent record. */
+export const panelChildCollectionQuerySchema = z.object({
+  parent: panelObjectIdentitySchema,
+  collection: key,
+}).strict().refine(({ parent, collection }) => platformHasChildCollection(parent.objectType, collection), undeclaredCollection);
+export type PanelChildCollectionQuery = z.infer<typeof panelChildCollectionQuerySchema>;
+
 const ontologyTypeId = z.string().min(1).max(200);
 const ontologyObjectTypeSchema = z.object({ kind: z.literal("object"), objectType: ontologyTypeId }).strict();
 const ontologyScalarTypeSchema = z.object({
   kind: z.literal("scalar"), type: z.enum(["string", "number", "boolean", "date"]),
 }).strict();
+
+const childObjectType = z.object({
+  kind: z.literal("child-object"), parentType: ontologyTypeId, collection: key,
+}).strict();
+
+const declaredChildCollection = ({ parentType, collection }: z.infer<typeof childObjectType>) =>
+  platformHasChildCollection(parentType, collection);
+
+export const ontologyChildObjectTypeSchema = childObjectType.refine(declaredChildCollection, undeclaredCollection);
+export type OntologyChildObjectType = z.infer<typeof ontologyChildObjectTypeSchema>;
 
 const explicitObjectUnionTypeSchema = z.object({
   kind: z.literal("object-union"),
@@ -55,7 +87,9 @@ export const singleOntologyParameterTypeSchema = z.discriminatedUnion("kind", [
 ]);
 
 /** A projection parameter names a scalar or the complete identity of one ontology object. */
-export const ontologyParameterTypeSchema = z.union([singleOntologyParameterTypeSchema, ontologyObjectUnionTypeSchema]);
+export const ontologyParameterTypeSchema = z.union([
+  singleOntologyParameterTypeSchema, ontologyObjectUnionTypeSchema, ontologyChildObjectTypeSchema,
+]);
 export type OntologyParameterType = z.infer<typeof ontologyParameterTypeSchema>;
 
 export function matchesObjectType(field: OntologyObjectUnionType | z.infer<typeof ontologyObjectTypeSchema>, className: string): boolean {
@@ -73,6 +107,7 @@ export const panelStateFieldSchema = z.union([
   ontologyObjectTypeSchema.extend({ deepLink }),
   explicitObjectUnionTypeSchema.extend({ deepLink }),
   layeredObjectUnionTypeSchema.extend({ deepLink }),
+  childObjectType.extend({ deepLink }).refine(declaredChildCollection, undeclaredCollection),
   ontologyScalarTypeSchema.extend({ deepLink }),
 ]);
 export type PanelStateField = z.infer<typeof panelStateFieldSchema>;
@@ -81,9 +116,10 @@ export type PanelStateField = z.infer<typeof panelStateFieldSchema>;
 export const panelStateSchema = z.record(key, panelStateFieldSchema);
 export type PanelState = z.infer<typeof panelStateSchema>;
 
-/** A state value as the SDK holds it in an instance: an object reference, a scalar, or nothing yet. */
+/** A state value as the SDK holds it in an instance: an object or child reference, a scalar, or nothing yet. */
 export const panelStateValueSchema = z.union([
   z.object({ className: z.string().min(1).max(200), primaryKey: z.string().min(1).max(1000) }).strict(),
+  panelChildObjectIdentitySchema,
   z.string(),
   z.number().finite(),
   z.boolean(),
@@ -174,26 +210,6 @@ export const panelOperationSchema = z
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["slot"], message: `Operation '${operation.id}' must name the slot that publishes it` });
   });
 export type PanelOperation = z.infer<typeof panelOperationSchema>;
-
-/**
- * One call of an operation: what it acts on and what the caller supplies. The target is a value here, not a reference to
- * the declaration — the object the reader has selected, or the draft's own object — so a caller outside the panel (the
- * platform's coordinator, on an agent's behalf) sends exactly what a person's click sends, and the handler needs nothing
- * from the panel's state to know which object it acts on.
- */
-export const panelObjectIdentitySchema = z.object({
-  objectType: key,
-  primaryKey: z.string().min(1).max(1000),
-}).strict();
-export type PanelObjectIdentity = z.infer<typeof panelObjectIdentitySchema>;
-
-/** A child such as a skill file or governance issue is identified within its owner's parent record. */
-export const panelChildObjectIdentitySchema = z.object({
-  parent: panelObjectIdentitySchema,
-  /** The owner supplies this key. The client keeps the parent identity alongside it. */
-  primaryKey: panelObjectIdentitySchema.shape.primaryKey,
-}).strict();
-export type PanelChildObjectIdentity = z.infer<typeof panelChildObjectIdentitySchema>;
 
 /** An existing record or the form's create target, using the operation's existing draft identity. */
 export const panelFormTargetSchema = z.discriminatedUnion("kind", [
