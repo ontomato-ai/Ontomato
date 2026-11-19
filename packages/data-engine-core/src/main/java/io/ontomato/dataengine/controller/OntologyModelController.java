@@ -86,6 +86,11 @@ public class OntologyModelController {
 			code = refused.code();
 			message = refused.getMessage();
 			details = refused.details();
+		} else if (error instanceof IllegalArgumentException invalid) {
+			// The whole-model primary-key check refuses a write while a stored class breaks the rule.
+			status = 409;
+			code = "MODEL_INVALID";
+			message = invalid.getMessage();
 		} else if (error instanceof HttpMessageNotReadableException
 				|| error instanceof ServletRequestBindingException) {
 			status = 400;
@@ -104,63 +109,63 @@ public class OntologyModelController {
 	}
 
 	@GetMapping("/object-types")
-	public List<ObjectTypeView> objectTypes(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang) {
+	public List<ObjectTypeView> objectTypes(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		return service.objectTypes(SystemUtils.getCurUser(), lang);
 	}
 
 	@GetMapping("/object-type")
 	public ObjectTypeView objectType(@RequestParam String className,
-			@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang) {
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		return service.objectType(className, SystemUtils.getCurUser(), lang);
 	}
 
 	@GetMapping("/object-type/deletion-impact")
 	public DeletionImpact deletionImpact(@RequestParam String className,
-			@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang) {
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		return service.deletionImpact(className, SystemUtils.getCurUser(), lang);
 	}
 
 	@GetMapping("/attributes")
 	public List<AttributeView> attributes(@RequestParam(required = false) String className,
-			@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang) {
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		return service.attributes(className, SystemUtils.getCurUser(), lang);
 	}
 
 	@GetMapping("/relationships")
 	public List<RelationshipView> relationships(@RequestParam(required = false) String className,
-			@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang) {
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		return service.relationships(className, SystemUtils.getCurUser(), lang);
 	}
 
 	@GetMapping("/relationship")
 	public RelationshipView relationship(@RequestParam String relationship,
-			@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang) {
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		return service.relationship(relationship, SystemUtils.getCurUser(), lang);
 	}
 
 	@PostMapping("/object-type/create")
 	public ResponseEntity<ObjectTypeView> createObjectType(@RequestBody ObjectTypeCreate body,
-			@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang) {
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		return ResponseEntity.status(201)
 				.body(service.createObjectType(body, SystemUtils.getCurUser(), lang));
 	}
 
 	@PostMapping("/object-type/update")
 	public ObjectTypeView updateObjectType(@RequestBody ObjectTypeUpdateRequest body,
-			@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang) {
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		return service.updateObjectType(body.className(),
 				new ObjectTypeUpdate(body.showName(), body.classDesc()), SystemUtils.getCurUser(), lang);
 	}
 
 	@PostMapping("/object-type/delete")
 	public ClassDeletion deleteObjectType(@RequestBody ObjectTypeDeleteRequest body,
-			@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang) {
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		return service.deleteObjectType(body.className(), SystemUtils.getCurUser(), lang);
 	}
 
 	@PostMapping("/attribute/create")
 	public ResponseEntity<AttributeView> createAttribute(@RequestBody AttributeCreateRequest body,
-			@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang) {
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		return ResponseEntity.status(201).body(service.createAttribute(body.className(),
 				new AttributeCreate(body.name(), body.showName(), body.type(), body.attrDesc(), body.enable(),
 						body.businessKey(), body.primaryKey()),
@@ -169,7 +174,7 @@ public class OntologyModelController {
 
 	@PostMapping("/attribute/update")
 	public AttributeView updateAttribute(@RequestBody AttributeUpdateRequest body,
-			@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang) {
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		return service.updateAttribute(body.className(), body.name(),
 				new AttributeUpdate(body.showName(), body.attrDesc(), body.enable(), body.businessKey()),
 				SystemUtils.getCurUser(), lang);
@@ -177,27 +182,27 @@ public class OntologyModelController {
 
 	@PostMapping("/attribute/primary-key")
 	public List<AttributeView> setPrimaryKey(@RequestBody PrimaryKeyRequest body,
-			@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang) {
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		return service.setPrimaryKey(body.className(), body.name(), SystemUtils.getCurUser(), lang);
 	}
 
 	@PostMapping("/attribute/delete")
 	public ResponseEntity<Map<String, Object>> deleteAttribute(@RequestBody AttributeDeleteRequest body,
-			@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang) {
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		service.deleteAttribute(body.className(), body.name(), SystemUtils.getCurUser(), lang);
 		return ResponseEntity.ok(Map.of());
 	}
 
 	@PostMapping("/relationship/create")
 	public ResponseEntity<RelationshipView> createRelationship(@RequestBody RelationshipCreate body,
-			@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang) {
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		return ResponseEntity.status(201)
 				.body(service.createRelationship(body, SystemUtils.getCurUser(), lang));
 	}
 
 	@PostMapping("/relationship/update")
 	public RelationshipView updateRelationship(@RequestBody RelationshipUpdateRequest body,
-			@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang) {
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		return service.updateRelationship(body.relationship(),
 				new RelationshipUpdate(body.desc(), body.fromField(), body.toField()),
 				SystemUtils.getCurUser(), lang);
@@ -205,7 +210,7 @@ public class OntologyModelController {
 
 	@PostMapping("/relationship/delete")
 	public ResponseEntity<Map<String, Object>> deleteRelationship(@RequestBody RelationshipDeleteRequest body,
-			@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang) {
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		service.deleteRelationship(body.relationship(), SystemUtils.getCurUser(), lang);
 		return ResponseEntity.ok(Map.of());
 	}

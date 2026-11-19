@@ -127,6 +127,24 @@ class OntologyModelControllerTest {
 	}
 
 	@Test
+	void aStoredModelThatBreaksThePrimaryKeyRuleAnswers409WithTheReason() throws Exception {
+		when(service.updateObjectType(eq("Pump"), any(), eq(user), eq(null))).thenThrow(
+				new IllegalArgumentException("Class [Legacy] must have exactly one attribute marked primaryKey=true, but found 0"));
+
+		var response = mvc().perform(post("/ontology/model/object-type/update")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"className":"Pump","showName":"Pump","classDesc":""}
+						"""))
+				.andExpect(status().isConflict()).andReturn().getResponse();
+
+		var error = JSON.parseObject(response.getContentAsString()).getJSONObject("error");
+		assertEquals("MODEL_INVALID", error.getString("code"));
+		assertEquals("Class [Legacy] must have exactly one attribute marked primaryKey=true, but found 0",
+				error.getString("message"));
+	}
+
+	@Test
 	void updatesAndDeletionsBindTheirPathAndBody() throws Exception {
 		when(service.updateObjectType(eq("Device"), any(), eq(user), eq("en"))).thenReturn(
 				new ObjectTypeView("Device", "Devices", "A device", 1, 0, 0, Map.of("status", "ok", "name", "id")));

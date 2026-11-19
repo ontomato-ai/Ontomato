@@ -698,7 +698,8 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 
 	private void fail(List<ObjectNode> errors, String lang) {
 		if (!errors.isEmpty()) {
-			throw OntologyModelException.validation(errors, langService.get(lang, "Admin.validation.failed"));
+			String reasons = String.join("; ", errors.stream().map(error -> error.path("message").asText()).toList());
+			throw OntologyModelException.validation(errors, langService.get(lang, "Admin.validation.failed") + ": " + reasons);
 		}
 	}
 
