@@ -1,5 +1,6 @@
-import { agentInputDeliverySchema, agentPendingQuestionSchema } from "./agent-channel";
-import { presentationBindingSchema } from "./agent-presentation";
+import { agentInputDeliverySchema, agentPendingQuestionSchema, agentSessionRefSchema } from "./agent-channel";
+import { presentationBindingSchema, presentationFrameSchema, presentationReceiptSchema } from "./agent-presentation";
+import { panelObjectIdentitySchema } from "./panel-manifest";
 import { z } from "zod";
 import {
   runtimeMessageRecordSchema,
@@ -44,12 +45,23 @@ export const agentHostRunStatusSchema = z
   .strict();
 /** Only a shell with a display port requests a binding when it opens the stream. */
 export const agentHostSessionRunEventsQuerySchema = z.object({
-  presentation: z.literal("true").optional(),
+  viewId: presentationBindingSchema.shape.viewId.optional(),
 }).strict();
-/** The host adds the connection's binding to ready for clients that requested presentation. */
+/** Ready for a registered view identifies this particular connection. */
 export const agentHostSessionRunFrameSchema = z.union([
-  z.object({ type: z.literal("ready"), presentationBinding: presentationBindingSchema }).strict(),
+  z.object({ type: z.literal("ready"), connectionId: presentationReceiptSchema.shape.connectionId }).strict(),
   runtimeSessionRunFrameSchema,
+]);
+/** An invalidation contains the root conversation and the object to read from its owner. */
+export const agentHostObjectChangedFrameSchema = z.object({
+  type: z.literal("object-changed"),
+  session: agentSessionRefSchema,
+  target: panelObjectIdentitySchema,
+}).strict();
+/** Live frames on the same stream have their own SSE event names and no replay cursor. */
+export const agentHostSessionLiveFrameSchema = z.discriminatedUnion("type", [
+  presentationFrameSchema,
+  agentHostObjectChangedFrameSchema,
 ]);
 export const agentHostSessionStatusRequestSchema = z
   .object({ sessionIds: z.array(runtimeIdSchema) })
@@ -160,6 +172,8 @@ export type AgentHostAgentList = z.infer<typeof agentHostAgentListSchema>;
 export type AgentHostRun = z.infer<typeof agentHostRunSchema>;
 export type AgentHostRunStatus = z.infer<typeof agentHostRunStatusSchema>;
 export type AgentHostSessionRunFrame = z.infer<typeof agentHostSessionRunFrameSchema>;
+export type AgentHostObjectChangedFrame = z.infer<typeof agentHostObjectChangedFrameSchema>;
+export type AgentHostSessionLiveFrame = z.infer<typeof agentHostSessionLiveFrameSchema>;
 export type AgentHostSessionStatusRequest = z.infer<
   typeof agentHostSessionStatusRequestSchema
 >;
