@@ -271,26 +271,41 @@ function expandPageComposer(source:object,{slot,...asked}:AppBridgeExpandPageCom
   expand(declared);
 }
 /**
- * A panel frame asks the platform to carry out a human intent it prepared at Node. Only its ID is the frame's: the
- * platform reads the intent back from Node under the reader's own credential, within the frame's own application use,
- * and its operation must be one the frame's declaration holds — a slot of the panel, `<slot>.<name>`, whose projection
- * the frame read through this host. What Node froze decides whether the person is asked: a single call its owner did not
- * inspect goes ahead at once; an inspected call or a batch is named in the platform's own dialog, as Node froze it. A
- * going-ahead dispatches the intent once with an empty body, hands what the owner reports changed to the page's change
- * port, and answers the frame with Node's receipt as it is; a cancel sends nothing anywhere. A candidate preview has no application use and carries out nothing.
+ * A panel frame asks the platform to carry out a human intent it prepared at Node. Only its ID is the frame's, and the
+ * frame is not trusted with more: the intent is read within the frame's own application use, and its operation must be
+ * one the frame's declaration holds — a slot of the panel, `<slot>.<name>`, whose projection the frame read through this
+ * host. A candidate preview has no application use and carries out nothing.
  */
 async function confirmPanelOperation(source:object,{intentId}:AppBridgeConfirmPanelOperation):Promise<AppBridgeConfirmPanelOperationResult>{
   const panel=panelFrames.get(source);
   if(!panel)throw new Error('This operation is not declared by the panel');
   const {registered}=panel;
   if(!registered)throw Object.assign(new Error('This operation is not available for test-data preview'),{code:BUILD_TEST_UNSUPPORTED});
-  const read=await nodeApiRequest(`/api/panel-operation-intents/${encodeURIComponent(intentId)}?${new URLSearchParams(registered.use)}`);
+  return confirmPanelIntent(registered.use,intentId,registered.changed,operationId=>{
+    const declared=Object.keys(panel.slots).some(slot=>operationId.startsWith(`${slot}.`)&&operationId.length>slot.length+1
+      &&panel.bindings.get(panel.slots[slot]!.projectionId)!=null);
+    if(!declared)throw new Error('This operation is not declared by the panel');
+  });
+}
+
+/**
+ * Carries out a human intent prepared at Node for a panel shown in an application use, the one way for a panel in a
+ * frame and a panel the platform draws itself. The platform reads the intent back from Node under the reader's own
+ * credential, within that use; nothing the caller says about it is shown. `admit` is a frame's own check of the
+ * operation Node holds, before anything is shown or sent; a panel the platform draws in its own document has none to
+ * make, and Node checks the use again when it dispatches. What Node froze decides whether the person is asked: a single
+ * call its owner did not inspect goes ahead at once; an inspected call or a batch is named in the platform's own dialog,
+ * as Node froze it. Going ahead dispatches the intent once with an empty body, hands what the owner reports changed to
+ * `changed` as `{target: null, affected}`, and answers with Node's receipt as it is; a cancel sends nothing anywhere.
+ */
+export async function confirmPanelIntent(
+  use:PanelUseRef,intentId:string,changed:(change:PanelObjectChange)=>void,admit?:(operationId:string)=>void,
+):Promise<AppBridgeConfirmPanelOperationResult>{
+  const read=await nodeApiRequest(`/api/panel-operation-intents/${encodeURIComponent(intentId)}?${new URLSearchParams(use)}`);
   const intent=await read.json();
   if(!read.ok)throw new Error(intent.error?.message??'Operation request unavailable');
   const {operationId,label,confirmation}=panelHumanOperationPreparationSchema.parse(intent);
-  const declared=Object.keys(panel.slots).some(slot=>operationId.startsWith(`${slot}.`)&&operationId.length>slot.length+1
-    &&panel.bindings.get(panel.slots[slot]!.projectionId)!=null);
-  if(!declared)throw new Error('This operation is not declared by the panel');
+  admit?.(operationId);
   if(confirmation.kind!=='none'&&!await askPerson(label,confirmation))return {decision:'cancel'};
   const sent=await nodeApiRequest(`/api/panel-operations/intents/${encodeURIComponent(intentId)}/dispatch`,{method:'POST',body:'{}'});
   const answer=await sent.json();
@@ -299,7 +314,7 @@ async function confirmPanelOperation(source:object,{intentId}:AppBridgeConfirmPa
   // What the owner reports changed reaches the page the way a conversation's change does: every shown object is read again.
   const outcome=response.kind==='dispatched'?response.outcome:null;
   const affected=outcome?.kind==='success'||outcome?.kind==='batch'?outcome.affected:undefined;
-  if(affected)registered.changed({target:null,affected});
+  if(affected)changed({target:null,affected});
   return {decision:'confirm',response};
 }
 

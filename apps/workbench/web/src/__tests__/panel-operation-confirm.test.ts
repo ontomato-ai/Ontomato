@@ -5,6 +5,7 @@ import { AGENT_DEFINITION, DELETE_AGENT, RUN_NOW } from "@ontomato/contracts/pan
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
+import { confirmPanelIntent } from "../../../../../packages/platform-web/src/app-host";
 import { inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, type Sent } from "./panel-frame";
 
 /*
@@ -238,5 +239,27 @@ describe("a person's confirmation of a panel operation", () => {
     await expect(invoke("confirm-panel-operation", confirmation)).rejects.toThrow("not shown");
     expect(document.querySelector(".el-message-box")).toBeNull();
     expect(writes(sent)).toEqual([]);
+  });
+});
+
+/*
+ * The same confirmation for a panel the platform draws in its own document: no frame and no bridge, only the use it is
+ * shown in. What rules out a second copy drifting from the frame's: both run this one function.
+ */
+describe("a person's confirmation of a panel the platform draws itself", () => {
+  it("reads the intent within the use, asks, dispatches once and hands the page what changed", async () => {
+    const sent = installPlatform(answer);
+    const changed = vi.fn();
+    dispatchAnswer = { kind: "dispatched", intentId, outcome: { kind: "success", data: {}, affected } };
+    const decided = confirmPanelIntent({ applicationId: "app-agents", useId: "use-agents" }, intentId, changed);
+    const box = await dialog();
+    expect(box.querySelector(".el-message-box__title")?.textContent).toContain("Delete");
+    button(box, "Delete").click();
+    await expect(decided).resolves.toEqual({ decision: "confirm", response: dispatchAnswer });
+    expect(changed.mock.calls).toEqual([[{ target: null, affected }]]);
+    expect(sent.map(({ method, path, search, body }) => ({ method, path, search, body }))).toEqual([
+      { method: "GET", path: `/api/panel-operation-intents/${intentId}`, search: "?applicationId=app-agents&useId=use-agents", body: null },
+      { method: "POST", path: `/api/panel-operations/intents/${intentId}/dispatch`, search: "", body: {} },
+    ]);
   });
 });
