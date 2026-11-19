@@ -105,7 +105,7 @@ const labels = computed<PanelHostLabels>(() => ({
  * The page's address without the panel's own state: this relation's own full path and the rest of the address's query — a draft an agent wrote for this page names itself there (`draftSessionId`, `draftRunId`,
  * `draftPath`), and the panel reads it from the address it is given. The state is the instance's to add.
  */
-const address = computed(() => {
+const pageAddress = computed(() => {
   const search = opened.value.split("?")[1];
   const path = use.value ? panelUsePath(use.value.path) : "";
   return panelAddress(search ? `${path}?${search}` : path, {});
@@ -140,7 +140,7 @@ const pageName = computed(() => use.value?.names?.[locale.value] ?? use.value?.n
  * with no selection, since the panel has not said what it shows yet. What the frame reports later adds that.
  */
 watch(use, (opened) => {
-  if (opened) emit("context", { url: panelAddress(address.value, requestedState.value), label: pageName.value, selection: [] });
+  if (opened) emit("context", { url: panelAddress(pageAddress.value, requestedState.value), label: pageName.value, selection: [] });
 }, { immediate: true });
 
 function reportContext(context: PageContext) {
@@ -157,7 +157,7 @@ function reportContext(context: PageContext) {
     ref="host"
     :port="port"
     :labels="labels"
-    :address="address"
+    :address="pageAddress"
     :initial="requestedState"
     @display-address="reportAddress"
     @display-loaded="emit('display-loaded', $event)"
