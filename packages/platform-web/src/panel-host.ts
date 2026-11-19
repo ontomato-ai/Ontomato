@@ -1,11 +1,15 @@
 import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
-import { applicationPanelUsesResponseSchema, productPanelSchema, type ApplicationPanelUse, type ProductPanel } from "@ontomato/contracts/product-panels";
+import { applicationPanelUsesResponseSchema, directPanelSchema, productPanelSchema, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import { appsSdkCurrentSchema } from "@ontomato/contracts/apps-sdk";
 import {
   panelDefinitionSnapshotSchema, productDefinitionStreamFrameSchema,
   type ProductDefinitionRevision, type ProductDefinitionTarget,
 } from "@ontomato/contracts/product-subscriptions";
-import { candidatePanelSourceSchema, type CandidatePanelSource, type PanelHostSource, type PanelAuthorDefinitions, type PanelDefinitionMode } from "@ontomato/contracts/panel-host";
+import {
+  candidatePanelSourceSchema, productPanelReadResponseSchema,
+  type CandidatePanelSource, type PanelHostSource, type PanelAuthorDefinitions, type PanelDefinitionMode,
+  type ProductPanelReadRequest, type ProductPanelReadResponse,
+} from "@ontomato/contracts/panel-host";
 import { buildExecutionContext } from "@ontomato/contracts/build-tests";
 import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
@@ -39,6 +43,8 @@ export const panelHostPaths = {
   panel: (panelId: string) => `/api/product-panels/${encodeURIComponent(panelId)}`,
   snapshot: (panelId: string) => `/api/product-panels/${encodeURIComponent(panelId)}/snapshot`,
   definitionStream: "/api/product-panels/definition-stream",
+  /** What a direct panel's member shows: one named datum, read by the platform as the reader. */
+  read: "/api/product-panels/read",
   candidate: (workspaceId: string, ref: string) =>
     `/api/workspaces/${encodeURIComponent(workspaceId)}/panel-candidate?${new URLSearchParams({ ref })}`,
 };
@@ -55,8 +61,15 @@ async function sdkRoot() {
   return `${appsSdkCurrentSchema.parse(await json(panelHostPaths.appsSdkCurrent)).publicBasePath}/apps-sdk`;
 }
 
+/** A panel's current record: one written with code carries its module and SDK version, a direct one neither. */
 async function panel(panelId: string) {
-  return productPanelSchema.parse((await json(panelHostPaths.panel(panelId))).panel) as ProductPanel;
+  const record = (await json(panelHostPaths.panel(panelId))).panel;
+  return "module" in record.content ? productPanelSchema.parse(record) : directPanelSchema.parse(record);
+}
+
+/** One named datum a direct panel's member shows, read by the platform as the reader, in one of its four states. */
+export async function readPanelData(request: ProductPanelReadRequest): Promise<ProductPanelReadResponse> {
+  return productPanelReadResponseSchema.parse(await json(panelHostPaths.read, { method: "POST", body: JSON.stringify(request) }));
 }
 
 async function snapshot(panelId: string) {
