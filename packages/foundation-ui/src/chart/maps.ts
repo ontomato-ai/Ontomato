@@ -1,4 +1,4 @@
-import { registerMap } from "echarts";
+import { registerMap } from "echarts/core";
 import { chartMapGeojson } from "@ontomato/contracts/chart-maps";
 
 /**

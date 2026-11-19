@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { init, type ECharts, type EChartsCoreOption } from "echarts";
+import { init, type ECharts, type EChartsCoreOption } from "echarts/core";
+import { prepareChart } from "./modules";
 
 /**
  * Draws one ECharts chart: creates the instance, applies each new option and theme, follows the size of
- * its element and disposes of the instance. What is drawn (option, data, layout, menus) belongs to the caller.
+ * its element and disposes of the instance. What is drawn (option, data, layout, menus) belongs to the caller. The parts
+ * of ECharts an option needs are made available before it is drawn (`prepareChart`), so a chart of any kind draws.
  */
 const props = defineProps<{
   /** The complete option; each new value replaces the drawn chart. */
@@ -20,23 +22,40 @@ const emit = defineEmits<{
 }>();
 
 const el = ref<HTMLElement>();
-let chart: ECharts;
-let observer: ResizeObserver;
+let chart: ECharts | undefined;
+let observer: ResizeObserver | undefined;
+let unmounted = false;
+/** The latest option, drawn once the parts it needs are there; an older one still loading is not drawn over it. */
+let latest = 0;
 
-onMounted(() => {
+function draw(option: EChartsCoreOption) {
+  const current = ++latest;
+  const apply = () => {
+    if (unmounted || current !== latest) return;
+    if (!chart) start();
+    chart!.setOption(option, { notMerge: true });
+  };
+  const pending = prepareChart(option as Record<string, unknown>);
+  if (pending) void pending.then(apply);
+  else apply();
+}
+
+function start() {
   chart = init(el.value!, props.theme);
   observer = new ResizeObserver(() => {
-    chart.resize();
-    emit("resize", { width: chart.getWidth(), height: chart.getHeight() });
+    chart!.resize();
+    emit("resize", { width: chart!.getWidth(), height: chart!.getHeight() });
   });
   observer.observe(el.value!);
-  chart.setOption(props.option, { notMerge: true });
-});
-watch(() => props.option, (option) => chart.setOption(option, { notMerge: true }));
-watch(() => props.theme, (theme) => chart.setTheme(theme ?? "default"));
+}
+
+onMounted(() => draw(props.option));
+watch(() => props.option, draw);
+watch(() => props.theme, (theme) => chart?.setTheme(theme ?? "default"));
 onBeforeUnmount(() => {
-  observer.disconnect();
-  chart.dispose();
+  unmounted = true;
+  observer?.disconnect();
+  chart?.dispose();
 });
 </script>
 

@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
 
 const registerMap = vi.fn();
-vi.mock("echarts", () => ({ registerMap: (name: string, json: unknown) => registerMap(name, json) }));
+vi.mock("echarts/core", () => ({ registerMap: (name: string, json: unknown) => registerMap(name, json) }));
 
 const { registerChartMaps } = await import("../maps");
 
