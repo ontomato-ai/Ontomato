@@ -53,7 +53,8 @@ class WorkflowServiceImplTest {
     grants = mock(WorkflowGrantSink.class);
     admin = mock(AdminService.class);
     metricGenerator = mock(WorkflowMetricGenerator.class);
-    service = new WorkflowServiceImpl(workflows, actions, grants, admin, metricGenerator);
+    service = new WorkflowServiceImpl(workflows, actions, grants, admin, metricGenerator,
+        org.springframework.transaction.support.TransactionOperations.withoutTransaction());
     Action local = new Action(); local.setDomainId(DOMAIN);
     when(actions.queryById(anyString())).thenReturn(new Object[] {local, null});
     when(metricGenerator.generate(any()))
@@ -65,7 +66,7 @@ class WorkflowServiceImplTest {
   @Test
   void activationFreezesANewVersionAndGrantsEveryStep() {
     Workflow workflow = workflow(step(1, "LEADER", "approve"), step(2, "FINANCE", "pay"));
-    when(workflows.queryById("w1")).thenReturn(workflow);
+    when(workflows.queryByIdForUpdate("w1", DOMAIN)).thenReturn(workflow);
     // The number comes from the DAO, which allocates it from the frozen revisions; the service must
     // grant exactly what was frozen rather than a number it computed itself.
     when(workflows.publishVersion(workflow)).thenReturn(1);
@@ -87,7 +88,7 @@ class WorkflowServiceImplTest {
     // steps — the grants and the audited revision would describe different processes.
     Workflow workflow = workflow(step(1, "LEADER", "approve"));
     workflow.setVersion(0);
-    when(workflows.queryById("w1")).thenReturn(workflow);
+    when(workflows.queryByIdForUpdate("w1", DOMAIN)).thenReturn(workflow);
     when(workflows.publishVersion(workflow)).thenReturn(2);
 
     Workflow activated = service.activate("w1", DOMAIN, "U1");
@@ -102,7 +103,7 @@ class WorkflowServiceImplTest {
     Workflow workflow = workflow(step(1, "LEADER", "approve"));
     workflow.setVersion(2);
     workflow.setStatus(Workflow.STATUS_ACTIVE);
-    when(workflows.queryById("w1")).thenReturn(workflow);
+    when(workflows.queryByIdForUpdate("w1", DOMAIN)).thenReturn(workflow);
 
     service.deactivate("w1", DOMAIN, "U1");
 
@@ -114,7 +115,7 @@ class WorkflowServiceImplTest {
   @Test
   void aStepWithoutARoleFailsActivationInsteadOfGrantingNothing() {
     Workflow workflow = workflow(step(1, null, "approve"));
-    when(workflows.queryById("w1")).thenReturn(workflow);
+    when(workflows.queryByIdForUpdate("w1", DOMAIN)).thenReturn(workflow);
 
     var refused = assertThrows(IllegalArgumentException.class, () -> service.activate("w1", DOMAIN, "U1"));
 
@@ -125,7 +126,7 @@ class WorkflowServiceImplTest {
   @Test
   void aStepNamingAnUnknownActionFailsActivation() {
     Workflow workflow = workflow(step(1, "LEADER", "missing"));
-    when(workflows.queryById("w1")).thenReturn(workflow);
+    when(workflows.queryByIdForUpdate("w1", DOMAIN)).thenReturn(workflow);
     when(actions.queryById("missing")).thenReturn(null);
 
     var refused = assertThrows(IllegalArgumentException.class, () -> service.activate("w1", DOMAIN, "U1"));
@@ -146,7 +147,6 @@ class WorkflowServiceImplTest {
   void aWorkflowFromAnotherDomainIsNotVisible() {
     Workflow workflow = workflow(step(1, "LEADER", "approve"));
     when(workflows.queryById("w1")).thenReturn(workflow);
-
     assertEquals(null, service.queryById("w1", "other"));
   }
 
@@ -154,7 +154,7 @@ class WorkflowServiceImplTest {
   void anActiveWorkflowMustBeDeactivatedBeforeDeletion() {
     Workflow workflow = workflow(step(1, "LEADER", "approve"));
     workflow.setStatus(Workflow.STATUS_ACTIVE);
-    when(workflows.queryById("w1")).thenReturn(workflow);
+    when(workflows.queryByIdForUpdate("w1", DOMAIN)).thenReturn(workflow);
 
     assertThrows(IllegalArgumentException.class, () -> service.delete("w1", DOMAIN));
     verify(workflows, never()).delete(anyString());
@@ -164,10 +164,11 @@ class WorkflowServiceImplTest {
   void deletingADraftRemovesItsHistoryToo() {
     Workflow workflow = workflow(step(1, "LEADER", "approve"));
     workflow.setStatus(Workflow.STATUS_DRAFT);
-    when(workflows.queryById("w1")).thenReturn(workflow);
+    when(workflows.queryByIdForUpdate("w1", DOMAIN)).thenReturn(workflow);
 
     service.delete("w1", DOMAIN);
 
+    verify(grants).revokeWorkflow(DOMAIN, "w1");
     verify(workflows, times(1)).delete("w1");
     verify(workflows, times(1)).deleteVersionRows("w1");
   }
@@ -185,7 +186,7 @@ class WorkflowServiceImplTest {
     assertEquals("workflow_instance", workflow.getRunClassName());
     // The identity field may be left out; a reader may then rely on "id" without repeating fallbacks.
     assertEquals("id", workflow.getRunContract().getIdField());
-    verify(workflows).save(workflow);
+    verify(workflows).saveDraft(workflow);
   }
 
   @Test
@@ -200,7 +201,7 @@ class WorkflowServiceImplTest {
       broken.setRunContract(contract("workflow_instance", "current_node", "status", List.of()));
       service.save(broken);
     });
-    verify(workflows).save(workflow);
+    verify(workflows).saveDraft(workflow);
   }
 
   @Test
@@ -211,7 +212,7 @@ class WorkflowServiceImplTest {
     IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> service.save(workflow));
 
     assertTrue(error.getMessage().contains("does not exist in this domain"), error.getMessage());
-    verify(workflows, never()).save(any());
+    verify(workflows, never()).saveDraft(any());
   }
 
   @Test
@@ -223,7 +224,7 @@ class WorkflowServiceImplTest {
 
     // This is the failure a contract exists to catch: a typo that would otherwise match nothing at read time.
     assertTrue(error.getMessage().contains("current_stp"), error.getMessage());
-    verify(workflows, never()).save(any());
+    verify(workflows, never()).saveDraft(any());
   }
 
   @Test
@@ -264,7 +265,7 @@ class WorkflowServiceImplTest {
   void activationRefusesAContractThatCannotBeRead() {
     Workflow workflow = workflow(step(1, "LEADER", "approve"));
     workflow.setRunContract(contract("workflow_instance", "current_stp", "status", List.of("待办")));
-    when(workflows.queryById("w1")).thenReturn(workflow);
+    when(workflows.queryByIdForUpdate("w1", DOMAIN)).thenReturn(workflow);
 
     assertThrows(IllegalArgumentException.class, () -> service.activate("w1", DOMAIN, "U1"));
 
@@ -278,7 +279,7 @@ class WorkflowServiceImplTest {
   @Test
   void activationGeneratesTheRevisionReadCapabilities() {
     Workflow workflow = workflow(step(1, "LEADER", "approve"));
-    when(workflows.queryById("w1")).thenReturn(workflow);
+    when(workflows.queryByIdForUpdate("w1", DOMAIN)).thenReturn(workflow);
     when(workflows.publishVersion(workflow)).thenReturn(1);
 
     service.activate("w1", DOMAIN, "U1");
@@ -290,7 +291,7 @@ class WorkflowServiceImplTest {
   @Test
   void activationReportsWhatCouldNotBeGenerated() {
     Workflow workflow = workflow(step(1, "LEADER", "approve"));
-    when(workflows.queryById("w1")).thenReturn(workflow);
+    when(workflows.queryByIdForUpdate("w1", DOMAIN)).thenReturn(workflow);
     when(workflows.publishVersion(workflow)).thenReturn(1);
     when(metricGenerator.generate(any()))
         .thenReturn(new WorkflowMetricGenerator.Generated(
@@ -305,7 +306,7 @@ class WorkflowServiceImplTest {
   @Test
   void aGenerationFailureDoesNotRollBackAuthority() {
     Workflow workflow = workflow(step(1, "LEADER", "approve"));
-    when(workflows.queryById("w1")).thenReturn(workflow);
+    when(workflows.queryByIdForUpdate("w1", DOMAIN)).thenReturn(workflow);
     when(workflows.publishVersion(workflow)).thenReturn(1);
     when(metricGenerator.generate(any())).thenThrow(new IllegalStateException("boom"));
 
@@ -365,7 +366,7 @@ class WorkflowServiceImplTest {
   void activationRefusesAContractThatUsesOneFieldForStepAndStatus() {
     Workflow workflow = workflow(step(1, "LEADER", "approve"));
     workflow.setRunContract(contract("workflow_instance", "status", "status", List.of("待办")));
-    when(workflows.queryById("w1")).thenReturn(workflow);
+    when(workflows.queryByIdForUpdate("w1", DOMAIN)).thenReturn(workflow);
     when(admin.getJSONRule(DOMAIN)).thenReturn(classRule("workflow_instance", "id", "status"));
 
     var error = assertThrows(IllegalArgumentException.class, () -> service.activate("w1", DOMAIN, "U1"));
@@ -388,7 +389,7 @@ class WorkflowServiceImplTest {
     var action = new Action(); action.setDomainId(DOMAIN);
     action.setTarget(new io.ontomato.dataengine.bean.action.ActionTarget("Report", "document"));
     when(actions.queryById("approve")).thenReturn(new Object[]{action, "f"});
-    when(workflows.queryById("w1")).thenReturn(workflow);
+    when(workflows.queryByIdForUpdate("w1", DOMAIN)).thenReturn(workflow);
     when(workflows.publishVersion(workflow)).thenReturn(1);
     service.activate("w1", DOMAIN, "reviewer");
     verify(grants).grant(DOMAIN, "w1", "LEADER", CapabilityGrantLookup.ACTION, "approve", 1, 1,

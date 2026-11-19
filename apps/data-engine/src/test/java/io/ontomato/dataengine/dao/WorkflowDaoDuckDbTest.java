@@ -41,8 +41,8 @@ import io.ontomato.dataengine.bean.workflow.WorkflowStep;
  * The workflow tables against a real database rather than a mock.
  *
  * <p>Three things can only be proven here: the DDL actually parses on the adapter used during the
- * rebuild (DuckDB), {@code ON CONFLICT} behaves as an idempotent publish on a composite key, and the
- * event table keeps one row per activation instead of overwriting.</p>
+ * rebuild (DuckDB), each publication freezes a numbered revision, and the event table keeps one
+ * row per activation instead of overwriting.</p>
  */
 class WorkflowDaoDuckDbTest {
 
@@ -76,7 +76,7 @@ class WorkflowDaoDuckDbTest {
         Workflow workflow = workflow("w1", step(1, "LEADER", "approve"), step(2, "FINANCE", "pay"));
         workflow.setStatus(Workflow.STATUS_DRAFT);
 
-        dao.save(workflow);
+        dao.saveDraft(workflow);
 
         Workflow read = dao.queryById("w1");
         assertNotNull(read);
@@ -92,10 +92,10 @@ class WorkflowDaoDuckDbTest {
     void savingTheSameWorkflowUpdatesInPlaceInsteadOfDuplicating() {
         dao.initIndex();
         Workflow workflow = workflow("w1", step(1, "LEADER", "approve"));
-        dao.save(workflow);
+        dao.saveDraft(workflow);
 
         workflow.setName("采购审批（修订）");
-        dao.save(workflow);
+        dao.saveDraft(workflow);
 
         assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM workflow WHERE id = 'w1'", Integer.class));
         assertEquals("采购审批（修订）", dao.queryById("w1").getName());
@@ -117,8 +117,8 @@ class WorkflowDaoDuckDbTest {
         assertEquals(1, jdbc.queryForObject(
                 "SELECT COUNT(*) FROM workflow_version WHERE workflow_id = 'w1' AND version = 2",
                 Integer.class));
-        assertEquals("LEADER", dao.versionSteps("w1", 1).get(0).getRoleCode());
-        assertTrue(dao.versionSteps("w1", 3).isEmpty());
+        assertEquals("LEADER", storedSteps(1).get(0).getRoleCode());
+        assertTrue(storedSteps(3).isEmpty());
     }
 
     @Test
@@ -128,34 +128,48 @@ class WorkflowDaoDuckDbTest {
         // and the new steps were dropped while the grants named the older revision.
         dao.initIndex();
         Workflow workflow = workflow("w1", step(1, "LEADER", "approve"));
+        dao.saveDraft(workflow);
         int published = dao.publishVersion(workflow);
-        dao.save(workflow);
+        workflow.setStatus(Workflow.STATUS_ACTIVE);
+        workflow.setVersion(published);
+        dao.updateLifecycle(workflow);
 
         // Someone edits the draft through the save path, which carries no version at all.
         Workflow draft = workflow("w1", step(1, "LEADER", "approve"), step(2, "FINANCE", "pay"));
         draft.setStatus(Workflow.STATUS_DRAFT);
-        dao.save(draft);
+        dao.saveDraft(draft);
 
-        assertEquals(published, dao.queryById("w1").getVersion());
+        Workflow edited = dao.queryById("w1");
+        assertEquals(published, edited.getVersion());
+        assertEquals(Workflow.STATUS_ACTIVE, edited.getStatus());
+        assertTrue(edited.getHasDraft());
+        assertEquals(2, edited.getSteps().size());
+        assertEquals(1, dao.queryActiveById("w1", "d1").getSteps().size());
         assertEquals(2, dao.nextVersion("w1"));
 
         // The next activation therefore freezes its own revision instead of colliding with v1.
         int next = dao.publishVersion(draft);
         assertEquals(2, next);
-        assertEquals(2, dao.versionSteps("w1", 2).size());
-        assertEquals(1, dao.versionSteps("w1", 1).size());
+        assertEquals(2, storedSteps(2).size());
+        assertEquals(1, storedSteps(1).size());
     }
 
     @Test
     void aStaleCallerCannotDragTheVersionBackwards() {
         dao.initIndex();
         Workflow workflow = workflow("w1", step(1, "LEADER", "approve"));
-        dao.save(workflow);
-        dao.updateVersion("w1", 3);
+        dao.saveDraft(workflow);
+        workflow.setVersion(3);
+        workflow.setStatus(Workflow.STATUS_INACTIVE);
+        dao.updateLifecycle(workflow);
 
-        dao.updateVersion("w1", 1);
+        workflow.setVersion(1);
+        workflow.setStatus(Workflow.STATUS_DRAFT);
+        dao.saveDraft(workflow);
 
-        assertEquals(3, dao.queryById("w1").getVersion());
+        var saved = dao.queryById("w1");
+        assertEquals(3, saved.getVersion());
+        assertEquals(Workflow.STATUS_INACTIVE, saved.getStatus());
     }
 
     @Test
@@ -167,8 +181,8 @@ class WorkflowDaoDuckDbTest {
         workflow.setSteps(List.of(step(1, "LEADER", "approve"), step(2, "FINANCE", "pay")));
         assertEquals(2, dao.publishVersion(workflow));
 
-        assertEquals(1, dao.versionSteps("w1", 1).size());
-        assertEquals(2, dao.versionSteps("w1", 2).size());
+        assertEquals(1, storedSteps(1).size());
+        assertEquals(2, storedSteps(2).size());
     }
 
     @Test
@@ -193,7 +207,7 @@ class WorkflowDaoDuckDbTest {
         dao.initIndex();
         Workflow workflow = workflow("w1", step(1, "LEADER", "approve"));
         workflow.setVersion(1);
-        dao.save(workflow);
+        dao.saveDraft(workflow);
         dao.publishVersion(workflow);
         dao.appendEvent(workflow, Workflow.EVENT_ACTIVATED, "U1");
 
@@ -210,14 +224,14 @@ class WorkflowDaoDuckDbTest {
         dao.initIndex();
         Workflow workflow = workflow("w1", step(1, "LEADER", "approve"));
         workflow.setCreatedBy("U1");
-        dao.save(workflow);
+        dao.saveDraft(workflow);
 
         // Someone else edits the draft afterwards. Authorship is who wrote it first, not who touched it
         // last, so the stored value must not move — this is the whole reason created_by is left out of
         // the upsert's SET list.
         workflow.setCreatedBy("U2");
         workflow.setName("采购审批（修订）");
-        dao.save(workflow);
+        dao.saveDraft(workflow);
 
         assertEquals("U1", dao.queryById("w1").getCreatedBy());
 
@@ -233,10 +247,17 @@ class WorkflowDaoDuckDbTest {
     void aWorkflowWithNoRecordedCreatorReadsBackAsAbsent() {
         dao.initIndex();
         // Rows written before provenance existed must stay readable; absence is not an error.
-        dao.save(workflow("w1", step(1, "LEADER", "approve")));
+        dao.saveDraft(workflow("w1", step(1, "LEADER", "approve")));
 
         assertNull(dao.queryById("w1").getCreatedBy());
         assertNull(dao.queryLastEventPrincipal("w1", Workflow.EVENT_ACTIVATED));
+    }
+
+    private List<WorkflowStep> storedSteps(int version) {
+        var rows = jdbc.queryForList(
+                "SELECT steps FROM workflow_version WHERE workflow_id = 'w1' AND version = ?",
+                String.class, version);
+        return rows.isEmpty() ? List.of() : WorkflowDao.parseSteps(rows.getFirst());
     }
 
     private Workflow workflow(String id, WorkflowStep... steps) {
@@ -263,14 +284,14 @@ class WorkflowDaoDuckDbTest {
         jdbc.execute("CREATE TABLE action (id TEXT, domain_id TEXT, submission_criteria TEXT)");
         jdbc.execute("CREATE TABLE action_drafts (id TEXT, domain_id TEXT, action JSON, consumed_at TIMESTAMP, expires_at TIMESTAMP)");
         var workflow = workflow("w1", step(1, "L", "approve"));
-        dao.save(workflow);
+        dao.saveDraft(workflow);
         dao.publishVersion(workflow);
         String old = "[{\"stepNo\":1,\"roleCode\":\"L\",\"actionId\":\"approve\",\"assignRule\":\"dept_role\"}]";
         jdbc.update("UPDATE workflow SET steps=?", old);
         jdbc.update("UPDATE workflow_version SET steps=?", old);
         new io.ontomato.dataengine.migration.ActionTargetScopeMigration(jdbc).run();
         assertEquals(io.ontomato.dataengine.bean.workflow.GrantScope.Kind.self_organization, dao.queryById("w1").getSteps().get(0).getScope());
-        assertEquals(dao.queryById("w1").getSteps(), dao.versionSteps("w1", 1));
+        assertEquals(dao.queryById("w1").getSteps(), storedSteps(1));
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM workflow_event", Integer.class));
     }
 
@@ -319,7 +340,11 @@ class WorkflowDaoDuckDbTest {
         var lead = step(1, "leader", "approve"); lead.setName("review");
         var person = step(2, "clerk", "approve"); person.setName("correct");
         var wf = workflow("w1", lead, person); wf.setDomainId("domain"); wf.setRunClassName("docs");
-        wf.setRunContract(contract); wf.setStatus(Workflow.STATUS_ACTIVE); dao.publishVersion(wf); dao.save(wf);
+        wf.setRunContract(contract);
+        dao.saveDraft(wf);
+        wf.setVersion(dao.publishVersion(wf));
+        wf.setStatus(Workflow.STATUS_ACTIVE);
+        dao.updateLifecycle(wf);
 
         var attrs = new JSONArray();
         for (var field : List.of("id","stage","status","department","holder","readable","flow"))
@@ -375,7 +400,8 @@ class WorkflowDaoDuckDbTest {
         assertTrue(outputs.execute("none",recipe,null,access,"en").getJSONArray("rows").isEmpty());
         when(lookup.stepAdmissions("user","domain","w1",1)).thenThrow(new IllegalStateException("roles unavailable"));
         org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, () -> outputs.execute("fail",recipe,null,access,"en"));
-        wf.setStatus(Workflow.STATUS_INACTIVE); dao.save(wf);
+        wf.setStatus(Workflow.STATUS_INACTIVE);
+        dao.updateLifecycle(wf);
         var stale = org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, () -> outputs.execute("stale",recipe,null,access,"en"));
         assertTrue(stale.getMessage().contains("no longer active"));
     }

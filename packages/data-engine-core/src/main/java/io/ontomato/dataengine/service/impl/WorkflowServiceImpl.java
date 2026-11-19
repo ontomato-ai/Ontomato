@@ -11,6 +11,8 @@ import java.util.Objects;
 import java.util.Set;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionOperations;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -28,9 +30,8 @@ import io.ontomato.dataengine.service.WorkflowService;
  * Publishes workflows as units of authority.
  *
  * <p>Activation freezes the current steps as a numbered revision, writes the grants those steps name,
- * and appends an event. Nothing here runs a process: a step's owner does their own step, and the
- * action's preconditions decide whether it is their turn. Deactivation withdraws only what this
- * version granted, so an earlier revision still in force is not silently removed.</p>
+ * and appends an event. Saving a draft leaves that revision in force. Deactivation withdraws the
+ * current revision's grants; deleting the workflow removes all of its grant rows.</p>
  */
 @Slf4j
 @Service
@@ -41,29 +42,32 @@ public class WorkflowServiceImpl implements WorkflowService {
     private final WorkflowGrantSink grants;
     private final AdminService admin;
     private final WorkflowMetricGenerator metricGenerator;
+    private final TransactionOperations transactions;
 
     public WorkflowServiceImpl(
             WorkflowDao workflows,
             ActionDao actions,
             WorkflowGrantSink grants,
             AdminService admin,
-            WorkflowMetricGenerator metricGenerator) {
+            WorkflowMetricGenerator metricGenerator,
+            TransactionOperations transactions) {
         this.workflows = workflows;
         this.actions = actions;
         this.grants = grants;
         this.admin = admin;
         this.metricGenerator = metricGenerator;
+        this.transactions = transactions;
     }
 
     @Override
+    @Transactional
     public Workflow save(Workflow workflow) {
         requireIdentity(workflow);
-        if (workflow.getStatus() == null) workflow.setStatus(Workflow.STATUS_DRAFT);
         if (Workflow.STATUS_ACTIVE.equals(workflow.getStatus())) {
             throw new IllegalArgumentException("Activating a workflow is its own operation");
         }
         validate(workflow, workflow.getDomainId());
-        return workflows.save(workflow);
+        return workflows.saveDraft(workflow);
     }
 
     @Override
@@ -73,24 +77,26 @@ public class WorkflowServiceImpl implements WorkflowService {
     }
 
     @Override
+    public Workflow queryActiveById(String id, String domainId) {
+        return workflows.queryActiveById(id, domainId);
+    }
+
+    @Override
     public List<Workflow> queryList(String status, String domainId) {
         return workflows.queryList(status, domainId);
     }
 
     @Override
     public Workflow activate(String id, String domainId, String principalId) {
-        Workflow workflow = require(id, domainId);
+        Workflow workflow = transactions.execute(status -> publish(id, domainId, principalId));
+        generateReadCapabilities(workflow);
+        return workflow;
+    }
+
+    private Workflow publish(String id, String domainId, String principalId) {
+        Workflow workflow = requireForUpdate(id, domainId);
         validate(workflow, domainId);
-
-        // The revision number is allocated by the DAO from the frozen rows, not from the row's version
-        // column: a draft edit carries no version, so the projection can lag behind what is published.
-        // The number is carried back onto the object here rather than relying on the DAO mutating it, so
-        // the grants, the event and the stored projection all name the same revision.
-        workflow.setStatus(Workflow.STATUS_ACTIVE);
         int version = workflows.publishVersion(workflow);
-        workflow.setVersion(version);
-        workflows.save(workflow);
-
         for (WorkflowStep step : workflow.getSteps()) {
             // Case-scoped steps are authorized per Case at execution time; a role-level grant would
             // widen a temporary process to the whole role and outlive the Case.
@@ -98,9 +104,12 @@ public class WorkflowServiceImpl implements WorkflowService {
             grants.grant(domainId, workflow.getId(), step.getRoleCode(), CapabilityGrantLookup.ACTION,
                     step.getActionId(), version, step.getStepNo(), GrantScope.freeze(step.getScope(), workflow.getRunContract()));
         }
+        workflow.setStatus(Workflow.STATUS_ACTIVE);
+        workflow.setVersion(version);
+        workflow.setHasDraft(false);
+        workflows.updateLifecycle(workflow);
         workflows.appendEvent(workflow, Workflow.EVENT_ACTIVATED, principalId);
         grants.activated(workflow, principalId);
-        generateReadCapabilities(workflow);
         return workflow;
     }
 
@@ -124,32 +133,36 @@ public class WorkflowServiceImpl implements WorkflowService {
     }
 
     @Override
+    @Transactional
     public Workflow deactivate(String id, String domainId, String principalId) {
-        Workflow workflow = require(id, domainId);
+        Workflow workflow = requireForUpdate(id, domainId);
         if (!Workflow.STATUS_ACTIVE.equals(workflow.getStatus())) {
             throw new IllegalArgumentException("Only an active workflow can be deactivated");
         }
         workflow.setStatus(Workflow.STATUS_INACTIVE);
-        workflows.save(workflow);
-        grants.revokeActivatedBy(domainId, workflow.getId(), workflow.getVersion() == null ? 0 : workflow.getVersion());
+        workflow.setHasDraft(false);
+        workflows.updateLifecycle(workflow);
+        grants.revokeActivatedBy(domainId, workflow.getId(), workflow.getVersion());
         workflows.appendEvent(workflow, Workflow.EVENT_DEACTIVATED, principalId);
         grants.deactivated(workflow, principalId);
         return workflow;
     }
 
     @Override
+    @Transactional
     public void delete(String id, String domainId) {
-        Workflow workflow = require(id, domainId);
+        Workflow workflow = requireForUpdate(id, domainId);
         if (Workflow.STATUS_ACTIVE.equals(workflow.getStatus())) {
             // Deleting an active workflow would remove authority without a record of doing so.
             throw new IllegalArgumentException("Deactivate a workflow before deleting it");
         }
+        grants.revokeWorkflow(domainId, id);
         workflows.delete(id);
         workflows.deleteVersionRows(id);
     }
 
-    private Workflow require(String id, String domainId) {
-        Workflow workflow = queryById(id, domainId);
+    private Workflow requireForUpdate(String id, String domainId) {
+        Workflow workflow = workflows.queryByIdForUpdate(id, domainId);
         if (workflow == null) throw new IllegalArgumentException("Workflow not found");
         return workflow;
     }

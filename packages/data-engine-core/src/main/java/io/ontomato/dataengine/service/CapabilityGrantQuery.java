@@ -28,7 +28,7 @@ public interface CapabilityGrantQuery {
             /** The workflow that activated this grant; null when granted directly. */
             String workflowId,
             /** The workflow revision that activated this grant; null when granted directly. */
-            String activatedByWorkflowVersion, Integer stepNo, GrantScope scope) {}
+            String activatedByWorkflowVersion, Integer stepNo, GrantScope scope, boolean inForce) {}
 
     /** Every grant in the domain. Read-only and unpaged: a domain's grants are bounded by its roles. */
     List<Grant> grantsInDomain(String domainId);

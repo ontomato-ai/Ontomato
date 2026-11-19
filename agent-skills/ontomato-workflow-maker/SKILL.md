@@ -324,10 +324,10 @@ node wf-client.mjs wf-activate <workflowId>
 激活后立刻核对授权真的落地了：
 
 ```bash
-node wf-client.mjs wf-grants       # 应出现 N 行：roleCode × actionId × activatedByWorkflowVersion=1
+node wf-client.mjs wf-grants       # 首次激活应有 N 个 inForce=true 且版本为 1 的步骤授权
 ```
 
-`wf-grants` 里没有对应行 = 这个动作谁都跑不了（除了例外，见下）。
+`inForce` 为真表示该行授权生效。动作没有任何授权行时沿用平台动作准入；有授权行时按生效授权准入。
 
 ### 激活还会生成两个查询
 
@@ -343,7 +343,7 @@ node wf-client.mjs wf-grants       # 应出现 N 行：roleCode × actionId × a
 核对：
 
 ```bash
-node wf-client.mjs wf-query <workflowId>     # 看 runContract 回显与 activationNotes
+node wf-client.mjs wf-query <workflowId> --active  # 看生效版 runContract，告警见激活响应
 # 生成的 metric 可在本体服务的「指标视图」页看到，状态应为 PUBLISHED
 ```
 
@@ -404,9 +404,9 @@ node wf-client.mjs dsl '{"problem":"查运行对象","answer":{"steps":[{"graph"
 
 ## 完成判据
 
-- `wf-query <id>`：`status=ACTIVE`、`version>=1`、`steps` 与设计一致（角色、动作、类型、派单规则）；`runContract` 回显且字段正确；`activationNotes` 为空。
+- `wf-query <id> --active`：生效快照为 `ACTIVE`，`version>=1`，步骤与运行契约和设计一致。回报 `hasDraft` 是否有待激活的改动，并核对激活响应的 `activationNotes`。
 - 生成的 `我的待办` / `单据详情` 两个 metric 存在且为 `PUBLISHED`；用一个真实待办执行 `我的待办`，只返回该角色的单。
-- `wf-grants`：每个步骤一行授权，`activatedByWorkflowVersion` 与流程版本一致。
+- `wf-grants`：检查 `inForce=true` 的步骤授权及版本。
 - 顺风路径：从发起到最后一步完成，运行对象的 `current_node`/`status` 逐步变化可查。
 - 反面路径：非本回合、无授权、驳回三条都有确切拒绝返回。
 - 向用户复述：流程名/版本、每步的「角色 → 动作 → 派单规则 → 实际由谁做」，以及哪几条是模拟执行（没有真的开虚机/打款）。
