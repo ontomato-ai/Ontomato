@@ -214,7 +214,14 @@ export default {
     "relationsNoNeighbors": "No neighbors",
     "relationsOutgoing": "Outgoing",
     "relationsIncoming": "Incoming",
-    "relationsLoading": "Loading relations..."
+    "relationsLoading": "Loading relations...",
+    "formAdd": "Add",
+    "formRemove": "Remove",
+    "formMoveUp": "Move up",
+    "formMoveDown": "Move down",
+    "formInvalidJson": "Not valid JSON: {message}",
+    "formFixInvalid": "Correct the marked fields before saving",
+    "formControlUnavailable": "This field cannot be edited here yet"
   },
   "nav": {
     "agentsAndSkills": "Agents and Skills",
