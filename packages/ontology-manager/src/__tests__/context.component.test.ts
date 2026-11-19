@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createApp, defineComponent, h, ref, type App } from "vue";
+import { createApp, defineComponent, h, inject, ref, type App } from "vue";
 import type { ManagerAuthFailureStatus, ManagerClient, ManagerCredential } from "../api";
-import { createManager, useManagerClient, useManagerContext, useManagerCounts, type ManagerTheme } from "../context";
+import { OBJECT_TYPE } from "@ontomato/contracts/platform-object-types";
+import { countedTypesChangedKey, createManager, useManagerClient, useManagerContext, useManagerCounts, type ManagerTheme } from "../context";
 
 let requests: { url: string; headers: Record<string, string> }[];
 let status: number;
@@ -60,12 +61,14 @@ function mountPage(credential: ManagerCredential = { type: "token", token: "t-1"
   const clients = {} as Record<Page, ManagerClient>;
   let observed: ReturnType<typeof useManagerContext> | undefined;
   let counts: ReturnType<typeof useManagerCounts> | undefined;
+  let countedTypesChanged: ((objectTypes: readonly string[]) => void) | null = null;
   const children = (Object.keys(pages) as Page[]).map((name) =>
     defineComponent({
       setup() {
         clients[name] = useManagerClient();
         observed = useManagerContext();
         counts = useManagerCounts();
+        countedTypesChanged = inject(countedTypesChangedKey, null);
         return () => h("div");
       },
     })
@@ -77,7 +80,7 @@ function mountPage(credential: ManagerCredential = { type: "token", token: "t-1"
   app.mount(el);
   mountedApps.push(app);
   const run = (name: Page) => pages[name](clients[name]);
-  return { manager, theme, locale, failures, clients, observed: () => observed!, counts: () => counts!, run };
+  return { manager, theme, locale, failures, clients, observed: () => observed!, counts: () => counts!, countedTypesChanged: () => countedTypesChanged!, run };
 }
 
 describe("the Manager installed in the page", () => {
@@ -139,6 +142,18 @@ describe("the Manager installed in the page", () => {
     expect(reads).toBe(1);
     await counts.refresh();
     expect(requests.filter((r) => r.url.endsWith("/admin/getMetas")).length).toBeGreaterThan(reads);
+  });
+
+  it("reads the counts again for a write that changed a type they count, once per write, and not for another", async () => {
+    const page = mountPage();
+    const reads = () => requests.filter((r) => r.url.endsWith("/admin/getMetas")).length;
+    // A page is handed the counts' one entry for its writes, not the counts themselves.
+    page.countedTypesChanged()(["Customer", "platform:ScheduledTask"]);
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(reads()).toBe(0);
+    page.countedTypesChanged()(["Customer", OBJECT_TYPE, OBJECT_TYPE]);
+    await vi.waitFor(() => expect(page.counts().values.objects).toBe(0));
+    expect(reads()).toBe(1);
   });
 
   it("reports a clear error when used in an app the Manager is not installed in", () => {
