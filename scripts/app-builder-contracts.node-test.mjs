@@ -93,3 +93,67 @@ test("agent dispatch carries build-test context and preserves the entry-point re
     assert.equal(paths.length,2);assert.ok(paths[1].endsWith("/platform/agent-channel/commands"));
   } finally {await new Promise(resolve=>server.close(resolve));}
 });
+
+test("the app-builder CLI reads the exact SDK and author candidate, then registers explicit current material", async () => {
+  const workspaceId = "11111111-1111-4111-8111-111111111111";
+  const ref = "f".repeat(40);
+  const sdkVersion = "4.1.9-dev." + "a".repeat(64);
+  const panel = {
+    content: { html: '<div id="app"></div>', module: 'import {mountPanel} from "@ontomato/sdk/panel"; await mountPanel({});' },
+    manifest: { slots: {}, state: {}, operations: [] },
+    sdkVersion,
+  };
+  const source = {
+    kind: "candidate", workspace: { id: workspaceId, ref }, panel,
+    previewContext: { kind: "build-test", test: null },
+  };
+  const requests = [];
+  const sdkPath = `/apps-sdk/${sdkVersion}`;
+  const candidatePath = `/api/workspaces/${workspaceId}/panel-candidate?ref=${ref}`;
+  const panelPath = "/api/product-panels/acceptance-panel";
+  const usesPath = "/owner/platform/applications/app-acceptance/panel-uses";
+  const server = createServer(async (request, response) => {
+    let content = "";
+    for await (const chunk of request) content += chunk;
+    const body = content ? JSON.parse(content) : undefined;
+    requests.push([request.method, request.url, body, request.headers["x-api-key"]]);
+    response.setHeader("content-type", "application/json");
+    if (request.url === `${sdkPath}/components.json`) response.end(JSON.stringify({ version: sdkVersion, components: [] }));
+    else if (request.url === `${sdkPath}/sdk.json`) response.end(JSON.stringify({ version: sdkVersion }));
+    else if (request.url === candidatePath) response.end(JSON.stringify(source));
+    else if (request.url === panelPath) response.end(JSON.stringify({ panel: { revision: 8 } }));
+    else if (request.url === usesPath) response.end(JSON.stringify({ success: true, data: { panelUses: [] } }));
+    else {
+      response.statusCode = 404;
+      response.end(JSON.stringify({ error: "Unexpected request" }));
+    }
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const run = (...args) => promisify(execFile)(process.execPath, ["agent-skills/ontomato-app-builder/ontomato.mjs", ...args], {
+    env: { ...process.env, ONTOMATO_WORKBENCH_URL: base, ONTOMATO_ONTOLOGY_URL: base + "/owner",
+      ONTOMATO_API_KEY: "author-key", ONTOMATO_WORKSPACE_ID: workspaceId },
+  });
+  try {
+    const catalog = await run("sdk", "read", sdkVersion, "components.json");
+    assert.equal(JSON.parse(catalog.stdout).version, sdkVersion);
+    const preview = JSON.parse((await run("panel", "preview", ref)).stdout);
+    assert.deepEqual(preview, source);
+    const input = { ...preview.panel, name: "Acceptance", description: "", visibility: "private" };
+    const application = { entry: { path: "/acceptance", renderer: "panels" }, panelUses: [] };
+    const result = await run("panel", "register", JSON.stringify({
+      panels: [{ id: "acceptance-panel", mode: "update", revision: 7, input }],
+      applications: [{ id: "app-acceptance", mode: "update", input: application }],
+    }));
+    assert.equal(result.stdout, "panel acceptance-panel\napplication app-acceptance\n");
+    assert.deepEqual(requests, [
+      ["GET", `${sdkPath}/components.json`, undefined, "author-key"],
+      ["GET", candidatePath, undefined, "author-key"],
+      ["GET", `${sdkPath}/sdk.json`, undefined, "author-key"],
+      ["PUT", panelPath, { ...input, revision: 7 }, "author-key"],
+      ["PUT", usesPath, application, "author-key"],
+    ]);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
