@@ -8,4 +8,4 @@ export {
 } from "./panel/direct";
 export { default as PanelMember } from "./panel/PanelMember.vue";
 export { panelHumanOperations, type ConfirmPanelOperation, type PanelHumanOperations } from "./panel/human-operations";
-export { createPanelText } from "./panel/text";
+export type { PlatformRequests } from "./panel/platform-objects";

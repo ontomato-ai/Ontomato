@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { createApp, h, nextTick } from "vue";
+import { createApp, h, nextTick, ref } from "vue";
 import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
@@ -8,7 +8,7 @@ import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import { panelAddress } from "@ontomato/contracts/panel-host";
-import { mountDirectPanel, createPanelText, type DirectPanelMount } from "../../../../../packages/apps-sdk/src/direct";
+import { mountDirectPanel, type DirectPanelMount } from "../../../../../packages/apps-sdk/src/direct";
 import { noOperations } from "./panel-frame";
 
 /*
@@ -41,7 +41,15 @@ const runNow = { handlerRef: "schedules.runNow", effect: "write", target: { sour
 function open() {
   const reads: Omit<ProductPanelReadRequest, "source">[] = [];
   const reports = { state: [] as unknown[], context: [] as unknown[], dirty: [] as boolean[] };
-  const readProjection = vi.fn(async (id: string) => projections[id]!());
+  // The platform's request path, as the reader: here only projection records are read through it.
+  const readProjection = vi.fn((id: string) => projections[id]!());
+  const requests = {
+    request: async (path: string) => {
+      const projected = /^\/product-projections\/(.+)$/.exec(path);
+      if (!projected) throw new Error(`Nothing at ${path}`);
+      return Response.json({ projection: readProjection(decodeURIComponent(projected[1]!)) });
+    },
+  };
   const mount: DirectPanelMount = mountDirectPanel({
     manifest,
     run: {
@@ -49,11 +57,9 @@ function open() {
       state: (state) => reports.state.push(state), context: (context) => reports.context.push(context),
       operations: () => {}, dirty: (dirty) => reports.dirty.push(dirty), draftSettled: () => {}, failed: (reason) => { throw reason; },
     },
-    text: createPanelText({}, { value: "en" } as never, "en"),
-    ...noOperations,
-    recordDraftCreated: async () => {},
-    readPageDraft: () => Promise.reject(new Error("No draft is read here")),
-    readProjection,
+    messages: {}, locale: ref("en"), defaultLocale: "en",
+    requests, use: { applicationId: "app-tasks", useId: "tasks" },
+    confirmOperation: noOperations.confirmOperation,
     read: async (request): Promise<ProductPanelReadResponse> => {
       reads.push(request);
       return { status: "ready", value: runNow as never };

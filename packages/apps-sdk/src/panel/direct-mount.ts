@@ -5,7 +5,12 @@ import type { DirectPanelManifest, PanelDeepLinkStateValue, PanelObjectIdentity,
 import type { DefinitionRevision } from "@ontomato/contracts/product-subscriptions";
 import { createDirectPanelInstance, type DirectPanelInstance, type DirectPanelInstanceOptions, type PanelOperationAffected } from "./direct";
 import { runPanel } from "./lifecycle";
-import type { PanelDraftSource } from "./draft";
+import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
+import { directProjectionSchema, type PanelMessages } from "@ontomato/contracts/product-panels";
+import { panelHumanOperations } from "./human-operations";
+import type { PlatformRequests } from "./platform-objects";
+import { readPageDraft, readProjectionRecord, recordDraftCreated } from "./platform-requests";
+import { createPanelText } from "./text";
 import type { PanelFieldValue } from "./state";
 import PanelMember from "./PanelMember.vue";
 
@@ -34,11 +39,17 @@ export interface DirectPanelRun {
   failed(reason: unknown): void;
 }
 
-export interface DirectPanelMountOptions
-  extends Omit<DirectPanelInstanceOptions, "pageKey" | "url" | "label" | "initial" | "affected"> {
+export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions, "read" | "confirmOperation" | "translate" | "reportDraftError"> {
   manifest: DirectPanelManifest;
   run: DirectPanelRun;
-  readPageDraft: PanelDraftSource["readPageDraft"];
+  /** The platform's request path, as the reader: drafts, projection records and the coordinator's operations. */
+  requests: PlatformRequests;
+  /** The application use the panel runs as; a candidate preview runs as none and runs no operation. */
+  use: PanelUseRef | null;
+  /** The panel's own words (its content's messages), in the platform's language with the deployment's default behind. */
+  messages: PanelMessages;
+  locale: Readonly<Ref<string>>;
+  defaultLocale: string;
 }
 
 /** What the host draws and drives the instance with. */
@@ -65,8 +76,16 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
   const { run } = options;
   return scope.run(() => {
     const address = ref(run.url());
+    const { requests } = options;
     const instance = createDirectPanelInstance(options.manifest, {
-      ...options,
+      read: options.read,
+      confirmOperation: options.confirmOperation,
+      translate: options.translate,
+      reportDraftError: options.reportDraftError,
+      text: createPanelText(options.messages, options.locale, options.defaultLocale),
+      operations: panelHumanOperations(options.use, requests),
+      recordDraftCreated: (link, id) => recordDraftCreated(requests, link, id),
+      readProjection: async (id) => directProjectionSchema.parse(await readProjectionRecord(requests, id)),
       pageKey: run.pageKey,
       url: () => address.value,
       label: run.label,
@@ -78,7 +97,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       pageKey: run.pageKey,
       address,
       isDirty: () => instance.dirty(),
-      readPageDraft: options.readPageDraft,
+      readPageDraft: (sessionId, runId, path) => readPageDraft(requests, sessionId, runId, path),
       projectionChanged: (id) => instance.projectionChanged(id),
       refreshObject: (target) => (target ? instance.refresh({ objects: [target], objectTypes: [] }) : instance.refreshAll()),
       reports: run,
