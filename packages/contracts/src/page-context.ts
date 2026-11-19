@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { panelChildObjectIdentitySchema } from "./panel-manifest";
+import { platformHasChildCollection } from "./platform-object-types";
 
 /*
  * What a message sent from beside a page carries (overall design 3.4): the page the reader is on and what is selected
@@ -23,7 +25,7 @@ import { z } from "zod";
  * `fileLinePath`; `carriedTargetIn` reads a reopened conversation's history for whichever of them it told last, or that
  * it said the target was closed. Every way the line is written and read back is here.
  */
-export const pageSelectionSchema = z
+const pageSelection = z
   .object({
     /** What kind of thing was selected (an ontology object, a file, a row) and what the message names it by. */
     kind: z.string().min(1).max(200),
@@ -32,6 +34,21 @@ export const pageSelectionSchema = z
     url: z.string().max(2000).optional(),
   })
   .strict();
+
+/** The exact identity is parent plus id. The label names the parent type, parent record and child for the reader. */
+const pageChildSelection = pageSelection.extend({
+  kind: z.literal("child-object"),
+  id: panelChildObjectIdentitySchema.shape.primaryKey,
+  parent: panelChildObjectIdentitySchema.shape.parent,
+  collection: z.string().min(1).max(200),
+}).refine(({ parent, collection }) => platformHasChildCollection(parent.objectType, collection), {
+  path: ["collection"], message: "Undeclared child collection for this parent type",
+});
+
+export const pageSelectionSchema = z.union([
+  pageChildSelection,
+  pageSelection.refine(({ kind }) => kind !== "child-object", { path: ["kind"], message: "Child selection requires its parent and collection" }),
+]);
 export type PageSelection = z.infer<typeof pageSelectionSchema>;
 
 export const pageContextSchema = z

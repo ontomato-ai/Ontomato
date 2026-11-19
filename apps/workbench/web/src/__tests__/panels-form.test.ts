@@ -93,6 +93,7 @@ function mounted(save: (values: Record<string, string>, revision: number) => Pro
     })),
     values,
     revision: 7,
+    errors: [],
     save: { method: "PUT", path: "/platform/scheduled-tasks/:id", bodySchema: {}, draftOperation: `${objectType}.save` },
   });
   const form = vi.fn(async (_primaryKey: string) => typed("autotest", { operation: "autotest", caseSetId: "cases-1" }));
@@ -160,6 +161,7 @@ function mounted(save: (values: Record<string, string>, revision: number) => Pro
           holdUnsaved: () => () => {},
           t: (key: string) => key,
           resources: async () => {},
+          expandPageComposer: async () => {},
         });
         provide(projectionKey, slot);
         return () => h(ObjectForm);

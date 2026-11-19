@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@ontomato/agent-shell-ui": "workspace:*",
+    "@ontomato/apps-sdk": "workspace:*",
     "@ontomato/contracts": "workspace:*",
     "@ontomato/design-tokens": "workspace:*",
     "@ontomato/foundation-ui": "workspace:*",

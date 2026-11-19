@@ -224,7 +224,7 @@ describe("a panel's module", () => {
       list: async () => [{ primaryKey: "task-1", label: "Nightly", fields: {} }],
       read: async (primaryKey) => ({ primaryKey, label: "Nightly", fields: { application: "operations", state: "on" } }),
       forms: {
-        describe: async () => ({ fields: [], values: {}, revision: 1, save: { method: "PUT", path: "/", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` } }),
+        describe: async () => ({ fields: [], values: {}, errors: [], revision: 1, save: { method: "PUT", path: "/", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` } }),
         save: async (target) => ({ primaryKey: target.kind === "object" ? target.primaryKey : "", label: "Nightly", fields: {} }),
       },
     });
@@ -257,6 +257,7 @@ describe("a panel's module", () => {
       holdUnsaved: () => () => {},
       t: (key: string) => key,
       resources: async () => {},
+      expandPageComposer: async () => {},
     });
     app.mount(document.createElement("div"));
     await nextTick();

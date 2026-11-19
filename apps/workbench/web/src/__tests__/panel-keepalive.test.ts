@@ -10,7 +10,8 @@ import type { ProductDefinitionTarget } from "@ontomato/contracts/product-subscr
 import { PanelHost, provideUnsavedChanges } from "@ontomato/platform-shell";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { panelAuthorDefinitions, panelHostPaths, platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { ignoreChanges,
+import {
+  framedTasksPanelHtml, ignoreChanges,
   currentSdk, hostMessageOf, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt, panelRecord,
   panelSnapshot, panelUse, projections, SCHEDULED_TASK, task, taskForm, writeFrameDocument, type Sent,
 } from "./panel-frame";
@@ -30,7 +31,7 @@ const appB = "app-keep-b";
 const trial = join(dirname(fileURLToPath(import.meta.url)), "../../../../../packages/apps-sdk/examples/panels/schedules-trial");
 let p = panelRecord("panel-keep-p", "Tasks", manifestP);
 const q = panelRecord("panel-keep-q", "Summary", manifestQ);
-p.content.html = readFileSync(join(trial, "p/panel.html"), "utf8");
+p.content.html = framedTasksPanelHtml;
 q.content.html = readFileSync(join(trial, "q/panel.html"), "utf8");
 const at = (path: string) => `/applications/${appA}/${path}`;
 const allUses = [
@@ -140,7 +141,7 @@ afterEach(() => {
   asked.mockClear();
   uses = allUses;
   shownTask = task;
-  p = { ...p, revision: 1, content: { ...p.content, html: readFileSync(join(trial, "p/panel.html"), "utf8") } };
+  p = { ...p, revision: 1, content: { ...p.content, html: framedTasksPanelHtml } };
   performance.clearMarks();
   leaveFrame();
   vi.resetModules();

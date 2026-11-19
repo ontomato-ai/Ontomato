@@ -34,6 +34,7 @@ const metric = (id: string, name: string, description: string, status: string, s
 const formDescription = {
   fields: [{ path: "/name", label: "Name", control: { kind: "text" }, valueSchema: { type: "string" }, required: true, readOnly: false }],
   values: { name: "Revenue" },
+  errors: [],
   save: { method: "POST", path: "/metricView/save", bodySchema: {}, draftOperation: "metric-view.update" },
 };
 
@@ -165,6 +166,7 @@ describe("metric and function resource adapters", () => {
   it("parses the function form description through the function endpoint", async () => {
     const description = {
       ...formDescription,
+      errors: [],
       save: { method: "POST", path: "/function/save", bodySchema: {}, draftOperation: "function.create" },
     };
     const { requests, sent } = fake(() => ({ success: true, data: description }));

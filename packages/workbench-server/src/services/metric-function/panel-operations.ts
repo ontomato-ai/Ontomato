@@ -1,31 +1,49 @@
 import { z } from "zod";
-import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
+import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
+import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "@ontomato/contracts/agent-runtime-values";
 import {
-  DATA_QUERY_GATEWAY, DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, METRIC_VIEW,
+  DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, METRIC_VIEW, SET_METRIC_VIEW_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW,
 } from "@ontomato/contracts/panel-client-requests";
+import { panelReadOperationCallSchema, panelReadOperationInputSchema } from "@ontomato/contracts/panel-operations";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
+import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
 import type {
-  PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelServerOperation, SinglePanelOperationOutcome,
+  PanelBatchCalls, PanelImpactInspector, PanelOperationTarget, PanelRecordTarget, PanelServerOperation,
+  SinglePanelOperationOutcome,
 } from "../product-panels/server-operations";
+import {
+  affected, ownerEnvelopeSchema, ownerPost, ownerRecord, ownerWriteFailure, remove, save, savedIdSchema, targetLabel,
+  valuesForTarget, type DataQueryOperationHost as Host,
+} from "../product-panels/data-query-operations";
 
 /*
- * The metric and function owners as panel server operations: the form save the coordinator dispatches for a person's
- * or an agent's call, and the two delete actions. The owners answer through the data-query service with their usual
- * envelope; a `success:false` answer is the owner's refusal, while an HTTP failure is an uncertain transport result. A
- * successful write names what changed: saving a metric may also change the function its definition embeds.
+ * The metric and function owners as panel server operations: the form saves the coordinator dispatches for a person's
+ * or an agent's call, the two delete actions with the impact their confirming human reads, and the batch change of a
+ * metric's publication status. The owners answer through the data-query service with their usual envelope; a
+ * `success:false` answer is the owner's refusal, while an HTTP failure is an uncertain transport result. A successful
+ * write names what changed: saving a metric may also change the function its definition embeds.
  */
 
-const ownerEnvelopeSchema = z.object({
-  success: z.boolean(),
-  message: z.string().nullish(),
-  data: z.unknown().optional(),
-}).passthrough();
-
-const savedIdSchema = z.object({ id: z.string().min(1) }).passthrough();
 const deletedSchema = z.object({}).strict();
-const labelSchema = z.object({ name: z.string() }).passthrough();
+/** The delete impact reads the name a confirming human recognizes and the bindings the delete takes with it. */
+const metricImpactSchema = z.object({ name: z.string(), bindings: z.array(z.unknown()) }).passthrough();
+const statusInputSchema = z.object({ status: z.enum(["PENDING_REVIEW", "PUBLISHED", "UNUSED"]) }).strict();
+/**
+ * The owner answers one status change per requested id: the saved metric, its refusal under the owner's code, or a
+ * failure with no code.
+ */
+const statusItemSchema = z.discriminatedUnion("outcome", [
+  z.object({ id: z.string().min(1), outcome: z.literal("success"), data: z.unknown() }).strict(),
+  z.object({
+    id: z.string().min(1), outcome: z.literal("refusal"), code: z.string().min(1), error: z.object({ message: z.string() }).strict(),
+  }).strict(),
+  z.object({ id: z.string().min(1), outcome: z.literal("failure"), error: z.object({ message: z.string() }).strict() }).strict(),
+]);
+/** The code of a status change the owner failed without classifying it. */
+const STATUS_FAILED = "METRIC_VIEW_STATUS_FAILED";
+const statusAnswerSchema = z.object({ items: z.array(statusItemSchema).nonempty() }).strict();
 
 const metricObjectTarget = z.object({
   kind: z.literal("object"), objectType: z.literal(METRIC_VIEW), primaryKey: z.string().min(1),
@@ -38,66 +56,105 @@ const functionSaveTarget = z.discriminatedUnion("kind", [functionObjectTarget, p
 const saveInputSchema = panelFormSaveInputSchema.omit({ revision: true }).strict();
 const deleteInputSchema = z.object({}).strict();
 
-type Host = Pick<PanelOperationHost, "request">;
+/**
+ * One owner request's answer: the same outcome for every id it named (the owner turned the whole request down, or the
+ * request got no authoritative answer), or the owner's answer per id.
+ */
+type StatusAnswer = { whole: SinglePanelOperationOutcome } | { items: Map<string, z.infer<typeof statusItemSchema>> };
 
-async function ownerPost(host: Host, path: string, body: unknown) {
-  const response = await host.request(`${DATA_QUERY_GATEWAY}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) throw new HttpError(response.status, `Owner request failed: ${path}`, "OWNER_UNAVAILABLE");
-  return ownerEnvelopeSchema.parse(await response.json());
+async function changeStatus(host: Host, ids: string[], status: string): Promise<StatusAnswer> {
+  const envelope = await ownerPost(host, "/metricView/setStatus", { ids, status }, ownerEnvelopeSchema);
+  if (!envelope.success) return { whole: ownerWriteFailure(envelope, STATUS_FAILED, "The owner could not change the status") };
+  return { items: new Map(statusAnswerSchema.parse(envelope.data).items.map(item => [item.id, item])) };
 }
 
-async function targetLabel(host: Host, target: PanelRecordTarget, path: string, code: string): Promise<string> {
-  const response = await host.request(`${DATA_QUERY_GATEWAY}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id: target.primaryKey }),
-  });
-  if (!response.ok) {
-    const body = await response.json() as { message?: string; error?: { message?: string } } | null;
-    throw new HttpError(response.status, body?.message ?? body?.error?.message ?? "The owner could not read the target", code);
-  }
-  const envelope = ownerEnvelopeSchema.parse(await response.json());
-  if (!envelope.success) throw new HttpError(404, envelope.message ?? "The owner could not read the target", code);
-  return labelSchema.parse(envelope.data).name;
+/** The owner's answer for one metric: the saved metric, its refusal under the owner's code, or its failure. */
+function statusOutcome(answer: StatusAnswer, id: string): SinglePanelOperationOutcome {
+  if ("whole" in answer) return answer.whole;
+  const item = answer.items.get(id)!;
+  if (item.outcome === "refusal") return { kind: "refusal", code: item.code, message: item.error.message };
+  if (item.outcome === "failure") return { kind: "failure", code: STATUS_FAILED, message: item.error.message };
+  const data = runtimeJsonObjectSchema.parse(item.data);
+  return { kind: "success", data, affected: affected(METRIC_VIEW, savedIdSchema.parse(data).id, [METRIC_VIEW]) };
 }
 
-/** A save writes the chosen target: an existing id must match, and a new object carries none. */
-function valuesForTarget(target: PanelOperationTarget, values: Record<string, unknown>): Record<string, unknown> {
-  if (target.kind === "draft") {
-    if (Object.hasOwn(values, "id"))
-      throw new HttpError(400, "A new object cannot carry an id", "TARGET_ID_MISMATCH");
-    return values;
-  }
-  if (Object.hasOwn(values, "id") && values.id !== target.primaryKey)
-    throw new HttpError(400, "The values name another object", "TARGET_ID_MISMATCH");
-  return { ...values, id: target.primaryKey };
-}
+/*
+ * The impact a delete shows its confirming human: each selected object under its owner-read name, with the bindings a
+ * metric takes with it. A function referenced by a metric, an action or a write task is refused by the owner; the
+ * description says so and does not rejudge the rule.
+ */
+const deleteMetricViewImpact: PanelImpactInspector = {
+  handlerRef: `${DELETE_METRIC_VIEW}.inspect-impact`,
+  async inspect(host, calls) {
+    const targets = calls.map(call => call.target as PanelRecordTarget);
+    const records = await Promise.all(targets.map(async target =>
+      metricImpactSchema.parse(await ownerRecord(host, target, "/metricView/queryById", "METRIC_VIEW_UNAVAILABLE"))));
+    return {
+      summary: tForLocale(host.locale, "panels.confirmation.deleteMetricViewImpact",
+        { bindings: records.reduce((total, record) => total + record.bindings.length, 0) }),
+      objects: targets.map((target, index) => ({
+        target: { objectType: target.objectType, primaryKey: target.primaryKey }, label: records[index]!.name,
+      })),
+      total: targets.length,
+    };
+  },
+};
+const deleteFunctionImpact: PanelImpactInspector = {
+  handlerRef: `${DELETE_FUNCTION}.inspect-impact`,
+  async inspect(host, calls) {
+    const targets = calls.map(call => call.target as PanelRecordTarget);
+    return {
+      summary: tForLocale(host.locale, "panels.confirmation.deleteFunctionImpact"),
+      objects: await Promise.all(targets.map(async target => ({
+        target: { objectType: target.objectType, primaryKey: target.primaryKey },
+        label: await targetLabel(host, target, "/function/queryById", "FUNCTION_UNAVAILABLE"),
+      }))),
+      total: targets.length,
+    };
+  },
+};
 
-/** The objects a write changed and the types whose lists and counts follow it. */
-const affected = (objectType: string, primaryKey: string, objectTypes: string[]) => ({
-  objects: [{ objectType, primaryKey }], objectTypes,
+/*
+ * The two read-only trials of a metric's unsaved definition. Both read the draft the metric panel's definition form
+ * holds, with the parameter values the reader chose, and save nothing. The test answers in Markdown and reads the
+ * parameter values from the function's own parameter definitions; the test-and-return-JSON takes them beside the
+ * draft, and an optional saved binding, and its owner checks that the metric may run.
+ */
+const METRIC_FORM_SLOT = "definition";
+const metricTrialTarget = metricSaveTarget.nullable();
+const parameterDefinitionsSchema = z.array(z.object({ name: z.string() }).passthrough());
+const trialDraftSchema = z.object({
+  function: z.object({
+    queryPackage: z.object({
+      manifest: z.object({ parameterDefs: parameterDefinitionsSchema }).passthrough(),
+    }).passthrough().nullish(),
+    parameters: parameterDefinitionsSchema.nullish(),
+  }).passthrough(),
+}).passthrough();
+const markdownResultSchema = z.object({ kind: z.literal("markdown"), markdown: z.string() }).strict();
+const jsonResultSchema = z.object({ kind: z.literal("json"), value: runtimeJsonValueSchema }).strict();
+const testedContentSchema = z.object({ md: z.string() }).passthrough();
+const trialEnvelopeSchema = ownerEnvelopeSchema.extend({
+  code: z.string().nullish(),
+  truncated: z.boolean().optional(),
+  rowLimit: z.number().nullish(),
+  truncationHint: z.string().nullish(),
 });
 
-async function save(
-  host: Host, path: string, values: unknown, refusalCode: string, objectType: string, objectTypes: string[],
-): Promise<SinglePanelOperationOutcome> {
-  const envelope = await ownerPost(host, path, values);
-  if (!envelope.success) return { kind: "refusal", code: refusalCode, message: envelope.message ?? "The owner refused the save" };
-  const data = runtimeJsonObjectSchema.parse(envelope.data);
-  return { kind: "success", data, affected: affected(objectType, savedIdSchema.parse(data).id, objectTypes) };
+/** The draft with the chosen values written into the parameter definitions the trial reads them from. */
+function withParameterValues(draft: Record<string, unknown>, parameters: Record<string, unknown>) {
+  const copy = trialDraftSchema.parse(structuredClone(draft));
+  const definitions = copy.function.queryPackage ? copy.function.queryPackage.manifest.parameterDefs : copy.function.parameters ?? [];
+  for (const definition of definitions)
+    if (Object.hasOwn(parameters, definition.name)) definition.value = parameters[definition.name];
+  return copy;
 }
 
-async function remove(
-  host: Host, path: string, target: PanelRecordTarget, refusalCode: string,
-): Promise<SinglePanelOperationOutcome> {
-  const envelope = await ownerPost(host, path, { id: target.primaryKey });
-  return envelope.success
-    ? { kind: "success", data: {}, affected: affected(target.objectType, target.primaryKey, [target.objectType]) }
-    : { kind: "refusal", code: refusalCode, message: envelope.message ?? "The owner refused the delete" };
+/** The owner's answer to a trial; a refusal keeps the owner's reason and code. */
+async function trial(host: Host, path: string, body: unknown, refusalCode: string) {
+  const envelope = await ownerPost(host, path, body, trialEnvelopeSchema);
+  if (!envelope.success) throw new HttpError(422, envelope.message ?? "The owner refused the trial", envelope.code ?? refusalCode);
+  return envelope;
 }
 
 const formInstructions = "Read the form for the intended target. Use its fields, values and save.bodySchema for the values, and save.draftOperation for the draft. Carry the complete form values in call.input.";
@@ -126,7 +183,7 @@ export const m5ServerOperations = [
     },
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       return save(host, "/metricView/save", valuesForTarget(target, saveInputSchema.parse(input).values),
-        "METRIC_VIEW_SAVE_REFUSED", METRIC_VIEW, [METRIC_VIEW, FUNCTION]);
+        "METRIC_VIEW_SAVE_FAILED", METRIC_VIEW, [METRIC_VIEW, FUNCTION]);
     },
   },
   {
@@ -141,9 +198,53 @@ export const m5ServerOperations = [
     resultSchema: deletedSchema,
     targetInput: "metric",
     targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/metricView/queryById", "METRIC_VIEW_UNAVAILABLE"),
+    inspectImpact: deleteMetricViewImpact,
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected metric");
-      return remove(host, "/metricView/delete", target, "METRIC_VIEW_DELETE_REFUSED");
+      return remove(host, "/metricView/delete", target, "METRIC_VIEW_DELETE_FAILED");
+    },
+  },
+  {
+    handlerRef: SET_METRIC_VIEW_STATUS,
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: SET_METRIC_VIEW_STATUS },
+    effect: "write",
+    batch: true,
+    targetType: METRIC_VIEW,
+    targetSchema: metricObjectTarget,
+    inputSchema: statusInputSchema,
+    resultSchema: savedIdSchema,
+    targetInput: "metric",
+    targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/metricView/queryById", "METRIC_VIEW_UNAVAILABLE"),
+    async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
+      if (target.kind !== "object") throw new Error("The status change acts on a selected metric");
+      const { status } = statusInputSchema.parse(input);
+      return statusOutcome(await changeStatus(host, [target.primaryKey], status), target.primaryKey);
+    },
+    async executeBatch(host: Host, calls: readonly PanelBatchCalls[number][]): Promise<PanelOperationOutcome> {
+      // Each call may set its own status; the owner takes one status per request, so the calls go in one request per
+      // status and every call reads its own answer. A request with no authoritative answer leaves its calls unknown
+      // while the other requests' answers stand; when no request got one, the batch answers unknown as a whole.
+      const statuses = calls.map(call => statusInputSchema.parse(call.input).status);
+      const answers = new Map<string, StatusAnswer>();
+      let unanswered = "";
+      for (const status of new Set(statuses)) {
+        const ids = calls.filter((_, index) => statuses[index] === status).map(call => call.target.primaryKey);
+        try {
+          answers.set(status, await changeStatus(host, ids, status));
+        } catch (error) {
+          unanswered = error instanceof Error ? error.message : String(error);
+          answers.set(status, { whole: { kind: "unknown", message: unanswered } });
+        }
+      }
+      if ([...answers.values()].every(answer => "whole" in answer && answer.whole.kind === "unknown"))
+        return { kind: "unknown", message: unanswered };
+      // A batch invocation is nonempty, so the items tuple starts with the first call's answer and spreads the rest.
+      const [first, ...rest] = calls.map((call, index) => ({
+        target: { objectType: call.target.objectType, primaryKey: call.target.primaryKey },
+        outcome: statusOutcome(answers.get(statuses[index]!)!, call.target.primaryKey),
+      }));
+      return { kind: "batch", items: [first!, ...rest] };
     },
   },
   {
@@ -169,7 +270,7 @@ export const m5ServerOperations = [
     },
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       return save(host, "/function/save", valuesForTarget(target, saveInputSchema.parse(input).values),
-        "FUNCTION_SAVE_REFUSED", FUNCTION, [FUNCTION]);
+        "FUNCTION_SAVE_FAILED", FUNCTION, [FUNCTION]);
     },
   },
   {
@@ -184,9 +285,48 @@ export const m5ServerOperations = [
     resultSchema: deletedSchema,
     targetInput: "function",
     targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/function/queryById", "FUNCTION_UNAVAILABLE"),
+    inspectImpact: deleteFunctionImpact,
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected function");
-      return remove(host, "/function/delete", target, "FUNCTION_DELETE_REFUSED");
+      return remove(host, "/function/delete", target, "FUNCTION_DELETE_FAILED");
+    },
+  },
+  {
+    handlerRef: TEST_METRIC_VIEW,
+    binding: { kind: "PlatformOperation", id: TEST_METRIC_VIEW },
+    kind: "action",
+    effect: "read",
+    batch: false,
+    target: { source: "draft", slot: METRIC_FORM_SLOT },
+    targetSchema: metricTrialTarget,
+    inputSchema: panelReadOperationInputSchema,
+    resultSchema: markdownResultSchema,
+    async execute(host: Host, call: z.infer<typeof panelReadOperationCallSchema>) {
+      const { draft, parameters } = call.input;
+      const envelope = await trial(host, "/metricView/test", withParameterValues(draft, parameters), "METRIC_VIEW_TEST_REFUSED");
+      return { kind: "markdown" as const, markdown: testedContentSchema.parse(envelope.data).md };
+    },
+  },
+  {
+    handlerRef: TEST_EXECUTE_METRIC_VIEW,
+    binding: { kind: "PlatformOperation", id: TEST_EXECUTE_METRIC_VIEW },
+    kind: "action",
+    effect: "read",
+    batch: false,
+    target: { source: "draft", slot: METRIC_FORM_SLOT },
+    targetSchema: metricTrialTarget,
+    inputSchema: panelReadOperationInputSchema,
+    resultSchema: jsonResultSchema,
+    async execute(host: Host, call: z.infer<typeof panelReadOperationCallSchema>) {
+      const { draft, parameters, bindingId } = call.input;
+      const envelope = await trial(host, "/metricView/testExecute",
+        { metricView: draft, param: parameters, ...(bindingId ? { bindingId } : {}) }, "METRIC_VIEW_TEST_EXECUTE_REFUSED");
+      // A truncated run is a partial result: the reader sees that it is, and why, beside the rows.
+      const value = runtimeJsonValueSchema.parse({
+        result: envelope.data ?? null,
+        ...(envelope.truncated ? { truncated: true, rowLimit: envelope.rowLimit ?? null, truncationHint: envelope.truncationHint ?? null } : {}),
+      });
+      return { kind: "json" as const, value };
     },
   },
 ] satisfies readonly PanelServerOperation[];

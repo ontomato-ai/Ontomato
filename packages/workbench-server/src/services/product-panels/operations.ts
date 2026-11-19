@@ -407,13 +407,15 @@ export async function dispatchPanel(owner: AssistantOwner, credentials: Assistan
   if (!result) return replay(await store.get(owner,id));
   const { outcome } = result;
   if ((outcome.kind === "success" || outcome.kind === "batch") && outcome.affected) {
-    for (const target of outcome.affected.objects)
-      publishObjectChanged({
-        domainId: intent.initiator.domainId,
-        initiator: intent.initiator.userId,
-        rootSession: intent.rootSession,
-        target,
-      });
+    const { affected } = outcome;
+    const target = "call" in intent && affected.objects.length === 1 ? affected.objects[0]! : null;
+    publishObjectChanged({
+      domainId: intent.initiator.domainId,
+      initiator: intent.initiator.userId,
+      rootSession: intent.rootSession,
+      target,
+      affected,
+    });
   }
   return {kind:"dispatched",intentId:id,outcome};
 }

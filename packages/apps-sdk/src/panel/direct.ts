@@ -83,6 +83,16 @@ function sharedManifest(direct: DirectPanelManifest): PanelManifest {
   };
 }
 
+/** The member inputs a datum reads: the one its source object is, and those its parameters take their values from. */
+export function inputsRead(data: DirectProjectionData): string[] {
+  const object = "object" in data.source && "input" in data.source.object ? [data.source.object.input] : [];
+  return [...object, ...Object.values(data.params).flatMap((param) => ("input" in param ? [param.input] : []))];
+}
+
+/** The values of the inputs a datum reads, as one comparable text: it is read again only when this changes. */
+export const readKey = (data: DirectProjectionData, inputs: MemberInputs) =>
+  JSON.stringify(inputsRead(data).map((name) => inputs[name] ?? null));
+
 /** The object a datum is read from now, when its source is one: the literal, or the input that holds it. */
 function sourceObject(data: DirectProjectionData, inputs: MemberInputs): PanelFieldValue | undefined {
   if (!("object" in data.source)) return undefined;
@@ -143,7 +153,7 @@ export function createDirectPanelInstance(direct: DirectPanelManifest, options: 
           };
           const entry = { data: projection.data[name]!, inputs, reread };
           shown.add(entry);
-          watch(() => JSON.stringify(inputs()), reread, { immediate: true });
+          watch(() => readKey(entry.data, inputs()), reread, { immediate: true });
           onScopeDispose(() => shown.delete(entry));
           return computed(() => state.value);
         },
@@ -196,6 +206,7 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     holdUnsaved: () => () => {},
     t: instance.text,
     resources: () => Promise.resolve(),
+    expandPageComposer: frameOnly("Expanding the page's composer over the frame bridge"),
   };
 }
 

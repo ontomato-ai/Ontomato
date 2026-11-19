@@ -38,6 +38,7 @@ import io.ontomato.dataengine.service.BackendSessionEntrance;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.MetricViewService;
+import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.PanelFormException;
 import io.ontomato.dataengine.service.SessionCancelledException;
 import io.ontomato.dataengine.service.SubjectDirectory;
@@ -113,7 +114,7 @@ public class MetricViewController {
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
-			if (param.containsKey("type")) throw new IllegalArgumentException("MetricView type is retired; edit parameter bindings on a dynamic metric");
+			if (param.containsKey("type")) throw new OwnerRefusal("METRIC_VIEW_TYPE_RETIRED", "MetricView type is retired; edit parameter bindings on a dynamic metric");
             var acceptedFunction = Function.fromAsset(param);
             MetricView metricView = param.to(MetricView.class);
             metricView.setFunction(acceptedFunction);
@@ -125,6 +126,8 @@ public class MetricViewController {
 			MetricView saved = metricViewService.save(metricView, lang);
             ret.put("data", withDisplay(saved, subjectNames(user.getDomainId()), lang));
 			ret.put("success", true);
+		} catch (OwnerRefusal e) {
+			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -141,6 +144,8 @@ public class MetricViewController {
 			String id = param.getString("id");
 			metricViewService.delete(id, SystemUtils.getCurUser().getDomainId(), lang);
 			ret.put("success", true);
+		} catch (OwnerRefusal e) {
+			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -159,9 +164,11 @@ public class MetricViewController {
 			String id = param.getString("id");
 			User user = SystemUtils.getCurUser();
 			MetricView metricView = metricViewService.queryById(id, user.getDomainId());
-            if (metricView == null) throw new IllegalArgumentException("MetricView not found");
+            if (metricView == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
 			ret.put("success", true);
 			ret.put("data", withDisplay(metricView, subjectNames(user.getDomainId()), lang));
+		} catch (OwnerRefusal e) {
+			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -234,6 +241,8 @@ public class MetricViewController {
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
 			ret.put("fields", e.fields());
+		} catch (OwnerRefusal e) {
+			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -252,6 +261,10 @@ public class MetricViewController {
 					statusIds(param), param.getString("status"), lang);
 			JSONArray items = new JSONArray();
 			for (MetricViewService.StatusResult result : results) {
+				if (result.refusal() != null) {
+					items.add(result.refusal().item(result.id()));
+					continue;
+				}
 				JSONObject item = JSONObject.of("id", result.id(),
 						"outcome", result.error() == null ? "success" : "failure");
 				if (result.error() == null) item.put("data", result.data());
@@ -260,6 +273,8 @@ public class MetricViewController {
 			}
 			ret.put("data", JSONObject.of("items", items));
 			ret.put("success", true);
+		} catch (OwnerRefusal e) {
+			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -272,11 +287,11 @@ public class MetricViewController {
 	private static List<String> statusIds(JSONObject param) {
 		Object raw = param.get("ids");
 		if (!(raw instanceof List<?> list) || list.isEmpty())
-			throw new IllegalArgumentException("ids: expected at least one metric id");
+			throw new OwnerRefusal("METRIC_VIEW_STATUS_INVALID", "ids: expected at least one metric id");
 		List<String> ids = new ArrayList<>();
 		for (Object id : list) {
 			if (!(id instanceof String text) || text.isBlank())
-				throw new IllegalArgumentException("ids: expected metric ids");
+				throw new OwnerRefusal("METRIC_VIEW_STATUS_INVALID", "ids: expected metric ids");
 			ids.add(text);
 		}
 		return ids;
@@ -370,7 +385,7 @@ public class MetricViewController {
 		try {
 			UserDataPermission curUserDataPermission = identityService.getCurrentUserDataPermission();
 	    	User user = SystemUtils.getCurUser();
-			if (param.containsKey("type")) throw new IllegalArgumentException("MetricView type is retired; edit parameter bindings on a dynamic metric");
+			if (param.containsKey("type")) throw new OwnerRefusal("METRIC_VIEW_TYPE_RETIRED", "MetricView type is retired; edit parameter bindings on a dynamic metric");
             var acceptedFunction = Function.fromAsset(param);
             MetricView metricView = param.to(MetricView.class);
             metricView.setFunction(acceptedFunction);
@@ -382,6 +397,8 @@ public class MetricViewController {
 			MetricViewContent metricViewContent = metricViewService.test(metricView, lang, user, curUserDataPermission, timeoutMinutes, agentExecutionScope.target(executionRequest,user,curUserDataPermission,buildTests.resolve(executionRequest)));
 			ret.put("success", true);
 			ret.put("data", metricViewContent);
+		} catch (OwnerRefusal e) {
+			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -440,6 +457,8 @@ public class MetricViewController {
 			ret.put("success", true);
 			ret.put("data", o[0]);
 			((PythonExecuteResult)o[1]).markCompleteness(ret);
+		} catch (OwnerRefusal e) {
+			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);

@@ -40,6 +40,7 @@ import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.security.CaseExecutionGuard;
 import io.ontomato.dataengine.service.ActionService;
 import io.ontomato.dataengine.service.LangService;
+import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.PanelFormException;
 import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.service.agent.ActionCreationService;
@@ -137,7 +138,12 @@ public class ActionController {
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
-			var acceptedFunction = Function.fromAsset(param);
+			Function acceptedFunction;
+			try {
+				acceptedFunction = Function.fromAsset(param);
+			} catch (IllegalArgumentException e) {
+				throw new OwnerRefusal("ACTION_FUNCTION_INVALID", e.getMessage());
+			}
             Action action = param.to(Action.class);
             action.setFunction(acceptedFunction);
 			action.setDomainId(user.getDomainId());
@@ -149,6 +155,8 @@ public class ActionController {
 					new io.ontomato.dataengine.service.agent.OntologyAgentStore.Owner(user.getId(), user.getDomainId()), lang);
 			ret.put("data", withDisplay(saved, subjectNames(user.getDomainId()), lang));
 			ret.put("success", true);
+		} catch (OwnerRefusal e) {
+			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -215,6 +223,8 @@ public class ActionController {
 			String id = param.getString("id");
 			actionService.delete(id, lang);
 			ret.put("success", true);
+		} catch (OwnerRefusal e) {
+			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -295,14 +305,19 @@ public class ActionController {
 					statusIds(param), param.getString("status"), lang);
 			JSONArray items = new JSONArray();
 			for (ActionService.StatusResult result : results) {
-				JSONObject item = JSONObject.of("id", result.id(),
-						"outcome", result.error() == null ? "success" : "failure");
-				if (result.error() == null) item.put("data", result.data());
-				else item.put("error", JSONObject.of("message", result.error()));
-				items.add(item);
+				if (result.data() != null) {
+					items.add(JSONObject.of("id", result.id(), "outcome", "success", "data", result.data()));
+				} else if (result.refusal() != null) {
+					items.add(result.refusal().item(result.id()));
+				} else {
+					items.add(JSONObject.of("id", result.id(), "outcome", "failure",
+							"error", JSONObject.of("message", result.error())));
+				}
 			}
 			ret.put("data", JSONObject.of("items", items));
 			ret.put("success", true);
+		} catch (OwnerRefusal e) {
+			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -315,11 +330,11 @@ public class ActionController {
 	private static List<String> statusIds(JSONObject param) {
 		Object raw = param.get("ids");
 		if (!(raw instanceof List<?> list) || list.isEmpty())
-			throw new IllegalArgumentException("ids: expected at least one action id");
+			throw new OwnerRefusal("ACTION_STATUS_INVALID", "ids: expected at least one action id");
 		List<String> ids = new ArrayList<>();
 		for (Object id : list) {
 			if (!(id instanceof String text) || text.isBlank())
-				throw new IllegalArgumentException("ids: expected action ids");
+				throw new OwnerRefusal("ACTION_STATUS_INVALID", "ids: expected action ids");
 			ids.add(text);
 		}
 		return ids;

@@ -1,6 +1,6 @@
 import { createApp, h, nextTick, provide, ref, shallowReactive, watch, type Component, type Ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { contextTranslate, contextTransport, panelBridgeHost, type AppContext } from "../context";
+import { contextExpandPageComposer, contextTranslate, contextTransport, panelBridgeHost, type AppContext } from "../context";
 import { connectPanelContext } from "./app-context";
 import { defaultLocale } from "apps-sdk:panel-appearance";
 import { createPanelText } from "./text";
@@ -103,6 +103,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     t: text,
     // The resource clients a projection binds, fetched with it and sending through this frame's request path.
     resources: platformResourceLoader({ request: (path, init, service) => transport.request(path, init, service) }, platformResources),
+    expandPageComposer: contextExpandPageComposer(appContext),
   };
   const app = createApp({
     setup: () => {

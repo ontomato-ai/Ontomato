@@ -121,6 +121,10 @@ let held: {
 /** The target the form was last read for, so one change of target is one read. */
 let loaded: string | null = null;
 
+/** The owner's field errors, by the field each names. */
+const fieldMessages = (list: readonly { field: string; message: string }[]) =>
+  Object.fromEntries(list.map(({ field, message }) => [field, message]));
+
 function adopt(
   baseline: PanelFormDescription,
   shown: PanelFormDescription = baseline,
@@ -133,14 +137,23 @@ function adopt(
   values.value = shown.values;
   changed.value = marked;
   refusal.value = null;
-  errors.value = {};
+  // The owner's verdict on the values it returned: a field it does not accept says why, on that field.
+  errors.value = fieldMessages(shown.errors);
   invalid.value = {};
   failure.value = null;
   loading.value = false;
 }
 
+/**
+ * The latest read of the form — its first, one for another target, or a refresh of the same object. Only the latest
+ * read's answer is applied: an earlier one that comes back after it (the first read, answered after a refresh that
+ * came in while it was on its way) would put back what a reader has typed since.
+ */
+let latestRead = 0;
+
 function load(next: PanelFormTarget | null) {
   const nextKey = targetKey(next);
+  const reading = ++latestRead;
   loaded = nextKey;
   if (next === null) {
     description.value = opened.value = null;
@@ -154,8 +167,8 @@ function load(next: PanelFormTarget | null) {
   }
   loading.value = true;
   void forms.describe({ target: next, changedField: null }).then(
-    (answer) => { if (loaded === nextKey && held?.target !== nextKey) adopt(answer); },
-    (reason: unknown) => { if (loaded === nextKey) fail(reason); },
+    (answer) => { if (reading === latestRead && held?.target !== nextKey) adopt(answer); },
+    (reason: unknown) => { if (reading === latestRead) fail(reason); },
   );
 }
 
@@ -166,8 +179,6 @@ function fail(reason: unknown) {
 
 onMounted(() => load(target.value));
 let pendingRefresh = false;
-/** The latest read of the same object again; an older one that comes back after it is not applied. */
-let rereading = 0;
 watch(target, (next) => {
   pendingRefresh = false;
   if (targetKey(next) !== loaded) load(next);
@@ -187,17 +198,17 @@ function reread() {
   const current = target.value;
   const currentKey = targetKey(current);
   if (current === null || held?.target === currentKey) return load(current);
-  const reading = ++rereading;
+  const reading = ++latestRead;
   void forms.describe({ target: current, changedField: null }).then(
     (answer) => {
-      if (loaded !== currentKey || reading !== rereading || held?.target === currentKey) return;
+      if (reading !== latestRead || held?.target === currentKey) return;
       if (canSettle.value || saving.value) {
         pendingRefresh = true;
         return;
       }
       adopt(answer);
     },
-    (reason: unknown) => { if (loaded === currentKey && reading === rereading) fail(reason); },
+    (reason: unknown) => { if (reading === latestRead) fail(reason); },
   );
 }
 useProjectionObjectRefresh((id) => id === key.value, () => {
@@ -221,6 +232,7 @@ function set(path: string, value: RuntimeJsonValue) {
     if (loaded !== askedKey) return;
     description.value = answer;
     values.value = answer.values;
+    errors.value = fieldMessages(answer.errors);
   }, fail);
 }
 
@@ -279,6 +291,8 @@ useProjectionForm({
     const into: PanelFormTarget = draft.created ? { kind: "object", objectType, primaryKey: draft.created.id } : named;
     const baseline = targetKey(into) === targetKey(named) ? namedForm : await forms.describe({ target: into, changedField: null });
     const checked = await forms.describe({ target: into, values: draft.form as PanelFormValues, changedField: null });
+    // A draft the owner does not accept is refused whole, with the fields and the reasons.
+    if (checked.errors.length) throw new PlatformObjectRefusal(checked.errors[0]!.message, fieldMessages(checked.errors));
     const marked = changedPaths(checked.fields, baseline.values, checked.values);
     // What the draft wrote, by its presence: a field it left out is not submitted, though the owner's check returns it.
     const written = new Set(checked.fields.filter((item) => valueAt(draft.form as PanelFormValues, item.path) !== undefined).map((item) => item.path));

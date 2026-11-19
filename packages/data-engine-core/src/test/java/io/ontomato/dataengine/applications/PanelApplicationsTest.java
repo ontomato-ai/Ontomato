@@ -86,6 +86,40 @@ class PanelApplicationsTest {
         verifyNoInteractions(db, panels, grants, access);
     }
 
+    @Test void rejectsEntryCodesBelongingToAnotherApplicationOrABuiltin() {
+        var use = use("tasks", null);
+        doReturn(app("app-panel-a", "panels", List.of(use))).when(catalog).require("app-panel-a");
+        var entry = body(List.of(use), true).entry();
+        for (var code : List.of("app:app-panel-b:entry", "data-browser")) {
+            var request = new ApplicationController.PanelRegistration(entry, List.of(use), metadata(), List.of(code));
+            assertEquals(400, assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a", request, user))
+                .getStatusCode().value());
+        }
+        verify(db, never()).update(anyString(), any(Object[].class));
+        verify(access, never()).declare(any(), any(), anyBoolean());
+    }
+
+    @Test void revalidatesTheStoredEntryCodeWhenAnUpdateDoesNotSupplyOne() {
+        var use = use("tasks", null);
+        var existing = app("app-panel-a", "panels", List.of(use));
+        existing.put("entryAccess", List.of("data-browser"));
+        doReturn(List.of(existing)).when(catalog).all();
+        when(access.canMaintain(existing, user)).thenReturn(true);
+        assertEquals(400, assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a", body(List.of(use), false), user))
+            .getStatusCode().value());
+        verify(db, never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test void acceptsOneDomainEntryRuleAtATime() {
+        var use = use("tasks", null);
+        doReturn(app("app-panel-a", "panels", List.of(use))).when(catalog).require("app-panel-a");
+        var request = new ApplicationController.PanelRegistration(body(List.of(use), true).entry(), List.of(use), metadata(),
+            List.of("domain-member", "app:app-panel-a:entry"));
+        assertEquals(400, assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a", request, user))
+            .getStatusCode().value());
+        verify(db, never()).update(anyString(), any(Object[].class));
+    }
+
     @Test void onlyTrustedDeclarationsCanUseAnExplicitBuiltinPathAndItCannotBeClaimedTwice() {
         doAnswer(call -> {
             call.<java.util.function.Consumer<org.springframework.transaction.TransactionStatus>>getArgument(0).accept(null);

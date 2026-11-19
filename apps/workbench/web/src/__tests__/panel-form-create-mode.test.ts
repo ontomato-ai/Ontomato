@@ -55,7 +55,7 @@ async function open(state: Record<string, unknown>) {
     if (request.path === "/api/data-query/function/form") {
       const { target } = request.body as { target: { kind: string; primaryKey?: string } };
       const values = target.kind === "draft" ? { name: "" } : assets.find((asset) => asset.id === target.primaryKey)!;
-      return ok({ fields, values, save: save(target.kind === "draft" ? "function.create" : "function.update") });
+      return ok({ fields, values, errors: [], save: save(target.kind === "draft" ? "function.create" : "function.update") });
     }
     if (request.path === "/api/data-query/function/save") return ok({ id: "fn-new", ...(request.body as PanelFormValues) });
     return nothingAt(request);

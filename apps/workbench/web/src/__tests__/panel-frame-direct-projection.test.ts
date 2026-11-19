@@ -42,6 +42,7 @@ const panel = definePanel({
 const description = {
   fields: [{ path: "/name", label: "Name", control: { kind: "text" as const }, valueSchema: {}, required: false, readOnly: false }],
   values: { name: "Nightly" }, revision: 2,
+  errors: [],
   save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
 };
 const runNow = { handlerRef: "schedules.runNow", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
@@ -85,7 +86,7 @@ it("draws a declared projection in a frame from this version's task module, and 
         projection: (id: string) => instance.projection(id),
         invoke: (handlerRef: string, call) => instance.runHandler(handlerRef, call),
         projectionsChanged: () => () => {}, draft: instance.draft, holdUnsaved: () => () => {},
-        t: (key: string) => key, resources: async () => {},
+        t: (key: string) => key, resources: async () => {}, expandPageComposer: async () => {},
       });
       return () => h("div", [h(Projection, { slot: "form" }), h(Projection, { slot: "run" })]);
     },

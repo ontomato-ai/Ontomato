@@ -84,7 +84,7 @@ async function open(saved: (values: PanelFormValues) => Response = (values) => o
     if (request.path === "/api/product-projections/function-form") return Response.json({ projection });
     if (request.path === "/api/data-query/function/form") {
       const { values } = request.body as { values?: PanelFormValues };
-      return ok({ fields, values: values ?? stored, save });
+      return ok({ fields, values: values ?? stored, errors: [], save });
     }
     if (request.path === "/api/data-query/function/save") return saved(request.body as PanelFormValues);
     return nothingAt(request);

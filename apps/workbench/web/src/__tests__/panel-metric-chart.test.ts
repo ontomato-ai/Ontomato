@@ -103,6 +103,7 @@ function mounted(requests: PlatformRequests, customer: string | null) {
     holdUnsaved: () => () => {},
     t: (key: string) => key,
     resources: platformResourceLoader(requests, platformResources),
+    expandPageComposer: async () => {},
   });
   app.mount(element);
   return { app, element, instance };

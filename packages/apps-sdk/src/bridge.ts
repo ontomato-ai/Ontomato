@@ -1,7 +1,16 @@
-import {APP_BRIDGE_CHANNEL,appBridgeConfirmPanelOperationResultSchema,appBridgeConfirmPanelOperationSchema,type AppBridgeConfirmPanelOperation,type AppBridgeConfirmPanelOperationResult,type AppBridgeResponse} from '@ontomato/contracts/app-bridge';
+import {APP_BRIDGE_CHANNEL,appBridgeConfirmPanelOperationResultSchema,appBridgeConfirmPanelOperationSchema,type AppBridgeConfirmPanelOperation,type AppBridgeConfirmPanelOperationResult,type AppBridgeExpandPageComposer,type AppBridgeResponse} from '@ontomato/contracts/app-bridge';
 import type {AppHost,AppHostSnapshot,AppHostPreferences,AppFrameInsets} from '@ontomato/contracts/app-host';
 import type {AppExecutionContext} from '@ontomato/contracts/build-tests';
 import {randomId} from '@ontomato/contracts/random-id';
+
+const composerExpanders=new WeakMap<AppHost,(request:AppBridgeExpandPageComposer)=>Promise<void>>();
+
+/** Asks the platform host to expand the page's composer with a slot's declared conversation entry. */
+export function expandHostPageComposer(host:AppHost,request:AppBridgeExpandPageComposer):Promise<void>{
+  const expand=composerExpanders.get(host);
+  if(!expand)return Promise.reject(new Error('This host does not support expanding the page composer'));
+  return expand(request);
+}
 
 /** What a panel frame asks its host beyond an app's: to confirm a prepared write where it must and dispatch it once. */
 export interface PanelBridgeHost extends AppHost {
@@ -77,6 +86,7 @@ export async function connectAppBridge():Promise<PanelBridgeHost>{
       return ()=>{disposed=true;placements.delete(place);observer.disconnect();window.removeEventListener('scroll',place,true);window.removeEventListener('resize',place);if(mounted)void invoke('unmount',{id}).catch(()=>{});};
     },
   };
+  composerExpanders.set(host,async request=>{await invoke('expand-page-composer',request);});
   window.addEventListener('pagehide',()=>{closed=true;channel.port1.close();for(const stream of streams.values())stream.error(new Error('Application closed'));streams.clear();for(const cleanup of streamCleanup.values())cleanup();streamCleanup.clear();for(const call of pending.values()){clearTimeout(call.timer);call.reject(new Error('Application closed'));}pending.clear();},{once:true});
   return host;
 }

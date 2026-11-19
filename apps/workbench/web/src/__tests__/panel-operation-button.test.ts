@@ -96,6 +96,7 @@ function coordinator() {
       return Response.json({ success: true, data: {
         fields: [{ path: "/name", label: "Name", control: { kind: "text" }, valueSchema: {}, required: false, readOnly: false }],
         values: { id: "fn-1", name: "Revenue" },
+        errors: [],
         save: { method: "POST", path: "/function/save", bodySchema: {}, draftOperation: "function.update" },
       } });
     if (request.path === "/api/panel-operations/descriptor")

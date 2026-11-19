@@ -24,7 +24,7 @@ const projection = (id: string, componentId: string, inputs: ProductProjection["
 });
 const projections: Record<string, ProductProjection> = {
   "metric-list": projection("metric-list", "ObjectList", {}, {
-    columns: [{ key: "label", label: "Name" }, { key: "status", label: "Status", kind: "tag" }],
+    columns: [{ key: "label", labelKey: "columns.name" }, { key: "status", labelKey: "columns.status", kind: "tag" }],
     searchable: true,
     showCount: true,
   }),
@@ -76,6 +76,7 @@ function answer(request: Sent) {
     return Response.json({ success: true, data: {
       fields,
       values: create ? defaults : assets.find(asset => asset.id === body.target.primaryKey),
+      errors: [],
       save: { method: "POST", path: "/metricView/save", bodySchema: {}, draftOperation: create ? "metric-view.create" : "metric-view.update" },
     } });
   }

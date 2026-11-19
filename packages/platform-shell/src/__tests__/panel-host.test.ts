@@ -100,6 +100,8 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
         panel: stand.panel,
         sdkRoot: () => stand.sdkRoot(),
         frame: stand.frame,
+        // These trial panels run in frames: they have modules of their own.
+        direct: () => { throw new Error("A panel with a module is not drawn directly"); },
         snapshot: stand.snapshot,
         mode: stand.mode,
       };
@@ -372,9 +374,10 @@ describe("the panel host", () => {
   });
 
   it("runs the trial's own panel content in a document of its own making", () => {
-    // The examples as they are registered: three texts, and the record is what carries the manifest.
+    // The example written with code as it is registered: its texts, and the record is what carries the manifest. P has no
+    // code; the platform draws it and writes no document for it.
     const trial = join(HERE, "..", "..", "..", "apps-sdk", "examples", "panels", "schedules-trial");
-    for (const directory of ["p", "q"]) {
+    for (const directory of ["q"]) {
       const html = readFileSync(join(trial, directory, "panel.html"), "utf8");
       const module = readFileSync(join(trial, directory, "panel.mjs"), "utf8");
       const document = panelFrameDocument(

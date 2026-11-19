@@ -170,7 +170,10 @@ it.each(["save","runNow"])("automatic %s succeeds through the server owner inter
  }));
  const input=operation==="save"?{...save(),call:{...save().call,input:{values:task.content,revision:9}}}:action();
  expect(await operatePanel(owner,credentials,current.id,input)).toMatchObject({kind:"dispatched",outcome:{kind:"success"}});
- expect(mocks.notify.mock.calls).toEqual([[{domainId:owner.domainId,initiator:owner.userId,rootSession:root,target:{objectType:"platform:ScheduledTask",primaryKey:uuid(9)}}]]);
+ const target = { objectType: "platform:ScheduledTask", primaryKey: uuid(9) };
+ expect(mocks.notify.mock.calls).toEqual([[{ domainId: owner.domainId, initiator: owner.userId, rootSession: root,
+   target, affected: { objects: [target], objectTypes: [target.objectType] },
+ }]]);
  expect(mocks.request).not.toHaveBeenCalled();
 });
 it("notifies the initiator once after the later run dispatches an approved action",async()=>{
@@ -182,7 +185,10 @@ it("notifies the initiator once after the later run dispatches an approved actio
  vi.stubGlobal("fetch",vi.fn(async()=>Response.json({...rawExamples.runs.find(run=>run.name==="agents-running")!.response,taskId:task.id})));
  expect(await dispatchPanel(owner,credentials,current.id,input.intentId)).toMatchObject({kind:"dispatched",outcome:{kind:"success"}});
  await dispatchPanel(owner,credentials,current.id,input.intentId);
- expect(mocks.notify.mock.calls).toEqual([[{domainId:owner.domainId,initiator:owner.userId,rootSession:root,target:{objectType:"platform:ScheduledTask",primaryKey:uuid(9)}}]]);
+ const target = { objectType: "platform:ScheduledTask", primaryKey: uuid(9) };
+ expect(mocks.notify.mock.calls).toEqual([[{ domainId: owner.domainId, initiator: owner.userId, rootSession: root,
+   target, affected: { objects: [target], objectTypes: [target.objectType] },
+ }]]);
 });
 it("rejects a declaration whose target type does not match its platform operation",async()=>{
  const panel=await mocks.panel();panel.manifest.state.task.objectType="customer:Account";
@@ -261,7 +267,10 @@ it("reuses the original creation artifact as the initiator and saves as the exec
   expect(await operatePanel(owner, credentials, current.id, input)).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
   expect(mocks.draft).toHaveBeenCalledWith(link.sessionId, link.runId, link.path, owner);
   expect(mocks.recordCreated).toHaveBeenCalledWith(link.sessionId, link.runId, link.path, createdId, owner);
-  expect(mocks.notify).toHaveBeenCalledWith({ domainId: owner.domainId, initiator: owner.userId, rootSession: root, target: { objectType, primaryKey: createdId } });
+  const target = { objectType, primaryKey: createdId };
+  expect(mocks.notify).toHaveBeenCalledWith({ domainId: owner.domainId, initiator: owner.userId, rootSession: root,
+    target, affected: { objects: [target], objectTypes: [objectType] },
+  });
   mocks.draft.mockResolvedValue({ ...form, created: { id: createdId } });
   await expect(operatePanel(owner, credentials, current.id, { ...input, intentId: uuid(22) }))
     .rejects.toMatchObject({ code: "PAGE_DRAFT_MISMATCH" });
@@ -462,7 +471,9 @@ it("dispatches one frozen batch once and merges affected evidence from successfu
   expect(handler.executeBatch).toHaveBeenCalledTimes(1);
   expect(handler.executeBatch).toHaveBeenCalledWith(expect.objectContaining({ request: expect.any(Function) }), request.calls, request.intentId);
   expect(handler.execute).not.toHaveBeenCalled();
-  expect(mocks.notify.mock.calls).toEqual([[{ domainId: owner.domainId, initiator: owner.userId, rootSession: root, target: first }]]);
+  expect(mocks.notify.mock.calls).toEqual([[{ domainId: owner.domainId, initiator: owner.userId, rootSession: root,
+    target: null, affected: { objects: [first], objectTypes: [first.objectType] },
+  }]]);
 });
 
 it("keeps an uncertain owner batch terminal and publishes no change", async () => {
@@ -487,7 +498,20 @@ it("keeps a definitive atomic batch receipt without inventing per-item receipts"
   handler.executeBatch.mockResolvedValue(outcome);
   expect(await operatePanel(owner, credentials, current.id, request)).toMatchObject({ kind: "dispatched", outcome });
   expect(handler.executeBatch).toHaveBeenCalledTimes(1);
-  expect(mocks.notify).toHaveBeenCalledTimes(objects.length);
+  expect(mocks.notify.mock.calls).toEqual([[{ domainId: owner.domainId, initiator: owner.userId, rootSession: root,
+    target: null, affected: outcome.affected,
+  }]]);
+});
+
+it("publishes type-only changes from a successful single write", async () => {
+  const { handler, request: { calls, ...request } } = installBatchOwner();
+  automatic = true;
+  const affected = { objects: [], objectTypes: ["platform:ScheduledTask"] };
+  handler.execute.mockResolvedValue({ kind: "success", data: { done: true }, affected });
+  await operatePanel(owner, credentials, current.id, { ...request, call: calls[0] });
+  expect(mocks.notify.mock.calls).toEqual([[{ domainId: owner.domainId, initiator: owner.userId, rootSession: root,
+    target: null, affected,
+  }]]);
 });
 
 it("freezes a human batch and its impact, then claims once with the reader's credentials", async () => {
@@ -530,6 +554,7 @@ it("freezes a human batch and its impact, then claims once with the reader's cre
   expect(handler.execute).not.toHaveBeenCalled();
   expect(ownerWrite).toHaveBeenCalledOnce();
   expect(mocks.resolve).not.toHaveBeenCalled();
+  expect(mocks.notify).not.toHaveBeenCalled();
 });
 
 it("refuses to dispatch an agent intent from the human route", async () => {

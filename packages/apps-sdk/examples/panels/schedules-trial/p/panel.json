@@ -1,0 +1,34 @@
+{
+  "state": {
+    "selectedTask": {
+      "type": { "kind": "object", "objectType": "platform:ScheduledTask" },
+      "deepLink": true,
+      "external": true,
+      "default": null
+    }
+  },
+  "members": {
+    "tasks": {
+      "target": { "projectionId": "projection-schedules-tasks" },
+      "inputs": { "value": { "state": "selectedTask" } },
+      "outputs": { "selected": { "state": "selectedTask" } },
+      "params": { "width": "third" }
+    },
+    "summary": {
+      "target": { "projectionId": "projection-schedules-summary" },
+      "inputs": { "task": { "state": "selectedTask" } },
+      "params": { "width": "full" }
+    },
+    "form": {
+      "target": { "projectionId": "projection-schedules-form" },
+      "inputs": { "task": { "state": "selectedTask" } },
+      "params": { "width": "full" }
+    },
+    "run": {
+      "target": { "projectionId": "projection-schedules-run" },
+      "inputs": { "task": { "state": "selectedTask" } },
+      "params": { "width": "auto" }
+    }
+  },
+  "events": {}
+}

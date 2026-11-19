@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { computed, markRaw, ref, watch } from "vue";
+import { computed, inject, markRaw, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { PanelHost, panelUnavailable, useUnsavedChanges, type PanelHostLabels, type PanelHostPort } from "@ontomato/platform-shell";
-import { panelAddress, panelAddressState, panelUsePath, type PanelRefreshPort } from "@ontomato/contracts/panel-host";
+import { PanelHost, panelUnavailable, useUnsavedChanges, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
+import { panelAddress, panelAddressState, panelUsePath } from "@ontomato/contracts/panel-host";
 import { applicationRootPath } from "@ontomato/contracts/platform-identity";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import type { DisplayObjectRefresh } from "@ontomato/agent-shell-ui";
+import { countedTypesChangedKey } from "@ontomato/ontology-manager";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import { panelUsesOf, platformPanelHost, type PanelObjectChange } from "../panel-host";
 
@@ -57,10 +58,19 @@ const { t, locale } = useI18n();
 /** The application's use relations, once Java has answered; until then the page names none and says nothing. */
 const uses = ref<readonly ApplicationPanelUse[] | null>(null);
 /** The shown page's instance, which the conversation's object signal reaches; kept pages are reconciled when shown again. */
-const host = ref<PanelRefreshPort | null>(null);
-/** A change to objects the page shows, from the conversation or from a receipt for an operation in the shown frame. */
+/** What the conversation's and an operation's changes reach: the shown page's instance. */
+type ShownInstance = Pick<PanelInstanceView, "refresh">;
+const host = ref<ShownInstance | null>(null);
+/** The Manager's counts, where it is installed: told which object types a write changed, they decide whether to re-read. */
+const countedTypesChanged = inject(countedTypesChangedKey, null);
+/**
+ * A change to objects the page shows, from the conversation or from a receipt for an operation in the shown frame: the
+ * one place either is taken in. The shown instance re-reads what it displays of the target, and the counts hear of the
+ * object types the write changed.
+ */
 function changed(change: PanelObjectChange) {
-  host.value?.refresh(change.target);
+  host.value?.refresh(change.target, change.affected);
+  if (change.affected) countedTypesChanged?.(change.affected.objectTypes);
 }
 watch(() => props.objectRefresh?.seq, () => {
   if (props.objectRefresh) changed(props.objectRefresh);
@@ -256,7 +266,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
       v-for="page in kept"
       v-show="page === shownPage"
       :key="page.use.id"
-      :ref="(instance) => { if (page === shownPage) host = instance as PanelRefreshPort | null; }"
+      :ref="(instance) => { if (page === shownPage) host = instance as ShownInstance | null; }"
       :port="page.port"
       :labels="labels"
       :shown="page === shownPage"

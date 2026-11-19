@@ -1,13 +1,12 @@
-import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
-import type { PanelMessages, ProductPanelContent, ProductPanelInput, ProductProjectionInput } from "@ontomato/contracts/product-panels";
-import type { workspaceFileSchema } from "@ontomato/contracts/workspaces";
-import type { z } from "zod";
+import type { PanelMaterial } from "../material.mjs";
 
-export const PANEL_ID: "agent-settings";
-export const manifest: PanelManifest;
-export const messages: PanelMessages;
-export const projections: readonly { id: string; input: ProductProjectionInput }[];
-export function panelContent(): ProductPanelContent;
-export function candidateFiles(sdkVersion: string): z.infer<typeof workspaceFileSchema>[];
-export function panelInput(sdkVersion: string): ProductPanelInput;
-export function projectionMaterial(): { projections: { id: string; mode: "create"; input: ProductProjectionInput }[] };
+type Material = PanelMaterial<"agent-settings">;
+export const PANEL_ID: Material["PANEL_ID"];
+export const manifest: Material["manifest"];
+export const messages: Material["messages"];
+export const projections: Material["projections"];
+export const panelContent: Material["panelContent"];
+export const candidateFiles: Material["candidateFiles"];
+export const panelInput: Material["panelInput"];
+export const projectionMaterial: Material["projectionMaterial"];
+export const panelMaterial: Material["panelMaterial"];

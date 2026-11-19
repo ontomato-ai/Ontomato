@@ -81,6 +81,19 @@ test("object invalidations are live frames with a root session and object identi
   assert.equal(agentHostSessionLiveFrameSchema.safeParse({ ...change, target: { ...change.target, data: {} } }).success, false);
 });
 
+test("one live invalidation carries the batch's owner-reported objects and types", () => {
+  const session = { providerId: "workbench", sessionId: id };
+  const objects = [{ objectType: "platform:MetricView", primaryKey: "metric-1" }, { objectType: "platform:Function", primaryKey: "function-1" }];
+  const affected = { objects, objectTypes: ["platform:MetricView", "platform:Function"] };
+  const batch = { type: "object-changed", session, target: null, affected };
+  assert.deepEqual(agentHostSessionLiveFrameSchema.parse(batch), batch);
+  const single = { ...batch, target: objects[0] };
+  assert.deepEqual(agentHostSessionLiveFrameSchema.parse(single), single);
+  const typesOnly = { ...batch, affected: { ...affected, objects: [] } };
+  assert.deepEqual(agentHostSessionLiveFrameSchema.parse(typesOnly), typesOnly);
+  assert.equal(agentHostSessionLiveFrameSchema.safeParse({ ...batch, affected: undefined }).success, false);
+});
+
 test("a receipt reports an observed outcome, keeping an empty view distinct from a missing observation", () => {
   const observedAt = "2026-11-18T10:00:00Z";
   const current = { known: true, observedAt, target: null };
