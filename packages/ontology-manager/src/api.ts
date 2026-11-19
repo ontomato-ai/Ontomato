@@ -345,7 +345,8 @@ export function createManagerRequest(
     };
 
     const execution=context.executionContext;
-    if(execution?.kind==="build-test" && service!=="/data-query")
+    // A bridged request is admitted by its host and by the resource owner. Direct Manager requests stay on the Java boundary.
+    if(execution?.kind==="build-test" && service!=="/data-query" && !context.transport)
       throw Object.assign(new Error("This operation is not available for test-data preview"),{code:"BUILD_TEST_UNSUPPORTED"});
     const requestInit:RequestInit = {
       ...init,

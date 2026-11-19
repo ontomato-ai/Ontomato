@@ -1,11 +1,13 @@
-import { scheduledTaskPanelOperations } from "@ontomato/platform-schedules/panel-operations";
+import { scheduledTaskPanelOperations, scheduledTaskPanelSaveSchema, scheduledTaskSaveDescription } from "@ontomato/platform-schedules/panel-operations";
 import { createSchedulesApi, scheduleFailure, type PlatformSchedulesHost } from "@ontomato/platform-schedules";
 import type { PlatformTask } from "@ontomato/contracts/platform-schedules";
-import { formFieldKey } from "@ontomato/contracts/form-fields";
+import { formFieldKey, formFieldPointer, formValuesSchema, type FormField, type FormFieldError } from "@ontomato/contracts/form-fields";
 import { randomId } from "@ontomato/contracts/random-id";
+import type { PanelFormDescription, PanelFormField, PanelFormRequest, PanelFormSaveInput } from "@ontomato/contracts/panel-projection";
+import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import { contextTransport, type AppContext } from "../context";
 import { registerHandler } from "./handlers";
-import { PlatformObjectRefusal, registerPlatformObject, type PlatformObjectRecord } from "./platform-objects";
+import { PlatformObjectRefusal, registerPlatformObject, type PlatformObjectAdapterFactory, type PlatformObjectRecord } from "./platform-objects";
 import { DATA_QUERY_GATEWAY, RUN_NOW, SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 
 /*
@@ -58,65 +60,117 @@ function record(task: PlatformTask): PlatformObjectRecord {
  * The service's refusal of a save, as a generic form shows it: the service's own reason, and the message for each of the
  * task's content fields it names (`/content/<key>`), by key. A failure the service did not answer is passed on as it is.
  */
-function refused(error: unknown): unknown {
+function fieldErrors(errors: readonly FormFieldError[], fieldPath: (key: string) => string) {
+  return Object.fromEntries(errors.flatMap((field) => {
+    const key = formFieldKey(field.field, "/content/") ?? formFieldKey(field.field, "/values/");
+    return key === null ? [] : [[fieldPath(key), field.message]];
+  }));
+}
+function refused(error: unknown, fieldPath: (key: string) => string): unknown {
   const { refusal } = scheduleFailure(error);
   if (!refusal) return error;
-  const fields = Object.fromEntries(
-    (refusal.fields ?? []).flatMap((field) => {
-      const key = formFieldKey(field.field, "/content/");
-      return key === null ? [] : [[key, field.message]];
-    }),
-  );
-  return new PlatformObjectRefusal(refusal.message, fields, { cause: error });
+  return new PlatformObjectRefusal(refusal.message, fieldErrors(refusal.fields ?? [], fieldPath), { cause: error });
 }
 
-/**
- * Registers the scheduled tasks this version's panels read and write: the list, one task, its application's form (which
- * the application answers again when a field it depends on changes), and the save at the task's own revision. Then
- * `schedules.runNow`, which runs one task now and leaves its schedule as it is.
- */
-export function registerSchedulesPlatformObject(context: AppContext): void {
-  const host = schedulesHost(context);
+/** Shared owner requests used by the resource and the current panel registration. */
+function schedulesResource(host: PlatformSchedulesHost, fieldPath: (key: string) => string) {
   const api = createSchedulesApi(host);
   const operations = scheduledTaskPanelOperations(host);
-
-  /** The task's application's form for the values it holds, with the task's revision. */
-  async function form(task: PlatformTask, values: Readonly<Record<string, string>>, changedField: string | null) {
-    const answer = await api.form(task.appId, { values, changedField, taskId: task.id, timeZone: task.timeZone });
-    return { fields: answer.fields, values: answer.values, revision: task.revision };
-  }
-
-  registerPlatformObject({
-    objectType: SCHEDULED_TASK,
+  return {
     async list() {
       return (await api.list(null)).tasks.map(record);
     },
-    async read(primaryKey) {
+    async read(primaryKey: string) {
       return record(await api.task(primaryKey));
     },
-    async form(primaryKey) {
+    async form(primaryKey: string, values: Record<string, string> | undefined, changedField: string | null) {
       const task = await api.task(primaryKey);
-      return form(task, task.content, null);
+      const answer = await api.form(task.appId, {
+        values: values ?? task.content, changedField, taskId: task.id, timeZone: task.timeZone,
+      });
+      return { answer, revision: task.revision };
     },
-    async changed(primaryKey, values, field) {
-      return form(await api.task(primaryKey), values, field);
-    },
-    async save(primaryKey, values, revision) {
+    async save(primaryKey: string, values: Record<string, string>, revision: number) {
       try {
         return record(await operations.save(primaryKey, values, revision));
       } catch (error) {
-        throw refused(error);
+        throw refused(error, fieldPath);
       }
     },
-  });
+  };
+}
 
+function typedField(field: FormField): PanelFormField {
+  const { key, label, required, defaultValue, help } = field;
+  const common = { path: formFieldPointer("/", key), label, required, defaultValue, help, readOnly: false };
+  return field.type === "select"
+    ? { ...common, control: { kind: "select", options: field.options }, valueSchema: { type: "string" },
+      refreshOnChange: field.refreshOnChange }
+    : { ...common, control: { kind: "text", multiline: field.multiline, placeholder: field.placeholder, maxLength: field.maxLength },
+      valueSchema: { type: "string", maxLength: field.maxLength } };
+}
+
+const taskId = (target: PanelFormTarget) => {
+  if (target.kind !== "object" || target.objectType !== SCHEDULED_TASK) throw new Error("Select a scheduled task");
+  return target.primaryKey;
+};
+
+const taskFieldPath = (key: string) => formFieldPointer("/", key);
+
+/** The typed panel adapter keeps the application's original string values and the actual task revision. */
+export const scheduledTaskAdapters: PlatformObjectAdapterFactory = requests => {
+  const resource = schedulesResource({
+    request: (path, init) => requests.request(path.slice(DATA_QUERY_GATEWAY.length), init, "/data-query"),
+    applications: () => [],
+    openResult: () => {},
+  }, taskFieldPath);
+  const forms = {
+    async describe({ target, values, changedField }: PanelFormRequest): Promise<PanelFormDescription> {
+      const id = taskId(target);
+      const { answer, revision } = await resource.form(
+        id, values === undefined ? undefined : formValuesSchema.parse(values),
+        changedField === null ? null : formFieldKey(changedField, "/"),
+      );
+      if (values !== undefined && changedField === null && !answer.submittable) {
+        throw new PlatformObjectRefusal(
+          answer.errors[0]?.message ?? "The scheduled task form is incomplete",
+          fieldErrors(answer.errors, taskFieldPath),
+        );
+      }
+      return { fields: answer.fields.map(typedField), values: answer.values, revision, save: scheduledTaskSaveDescription(id) };
+    },
+    save(target: PanelFormTarget, input: PanelFormSaveInput) {
+      const { values, revision } = scheduledTaskPanelSaveSchema.parse(input);
+      return resource.save(taskId(target), values, revision);
+    },
+  };
+  return [{ objectType: SCHEDULED_TASK, list: resource.list, read: resource.read, forms }];
+};
+
+export function registerScheduledTaskRunNow(context: AppContext): void {
+  const { runNow } = scheduledTaskPanelOperations(schedulesHost(context));
   registerHandler({
     handlerRef: RUN_NOW,
     async invoke({ target }) {
       if (target?.kind !== "object") throw new Error("Run now acts on the selected task");
-      // The service replays a repeated key with the run it created; this one is new per call.
-      const run = await operations.runNow(target.primaryKey, randomId());
+      const run = await runNow(target.primaryKey, randomId());
       return { runId: run.id, status: run.status, trigger: run.trigger };
     },
   });
+}
+
+/** Entry used by the current SDK registry until it consumes typed resource clients. */
+export function registerSchedulesPlatformObject(context: AppContext): void {
+  const { form, ...resource } = schedulesResource(schedulesHost(context), key => key);
+  async function stringForm(primaryKey: string, values: Record<string, string> | undefined, changedField: string | null) {
+    const { answer, revision } = await form(primaryKey, values, changedField);
+    return { fields: answer.fields, values: answer.values, revision };
+  }
+  registerPlatformObject({
+    ...resource,
+    objectType: SCHEDULED_TASK,
+    form: primaryKey => stringForm(primaryKey, undefined, null),
+    changed: stringForm,
+  });
+  registerScheduledTaskRunNow(context);
 }

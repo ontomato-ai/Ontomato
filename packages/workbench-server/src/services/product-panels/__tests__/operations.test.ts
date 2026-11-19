@@ -7,8 +7,10 @@ import {platformTaskSchema,platformScheduleFormSchema} from "@ontomato/contracts
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import type { PanelOperationIntent } from "@ontomato/contracts/panel-agent";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
-const mocks = vi.hoisted(() => ({query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),catalogue:vi.fn(),pages:vi.fn(),restore:vi.fn(),sessionActor:vi.fn(),notify:vi.fn()}));
+const mocks = vi.hoisted(() => ({draft:vi.fn(),recordCreated:vi.fn(),query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),catalogue:vi.fn(),pages:vi.fn(),restore:vi.fn(),sessionActor:vi.fn(),notify:vi.fn()}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
+vi.mock("../../assistant/service",()=>({assistantService:{pageDraft:mocks.draft,recordPageDraftCreated:mocks.recordCreated}}));
+vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({callbackUrl:"http://workbench.test"})}}));
 vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://owner.test"}}}));
 vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class{run=mocks.run;session=mocks.session;request=mocks.request;}}));
 vi.mock("../../assistant/store",()=>({assistantStore:{turn:async()=>({})}}));
@@ -27,10 +29,10 @@ const owner={domainId:"d",userId:"U"},credentials={token:"U-token",locale:"en"};
 const operatePanel=(initiator:typeof owner,auth:typeof credentials,runId:string,input:Parameters<typeof realOperatePanel>[3])=>realOperatePanel(initiator,auth,runId,input,"Alice");
 const session={providerId:"workbench",sessionId:uuid(1)},root={providerId:"ontology",sessionId:uuid(2)};
 const skill={namespace:{kind:"domain" as const,domainId:"d"},name:"derived-panel"};
-const use={id:"tasks",pageKey:"tasks",path:"/tasks",panelId:"P",access:{kind:"domain-member"}};
+const use={id:"tasks",pageKey:"tasks",path:"/applications/A/tasks",panelId:"P",access:{kind:"domain-member"}};
 let intents:Map<string,PanelOperationIntent>, automatic:boolean, current:RuntimeRun, human:Record<string,unknown>|null;
 const action=()=>({intentId:uuid(5),applicationId:"A",useId:"tasks",operationId:"run.runNow",call:{target:{kind:"object" as const,objectType:"platform:ScheduledTask",primaryKey:uuid(9)},input:{}}});
-const save=()=>({...action(),operationId:"form.save",call:{...action().call,input:{revision:4,title:"draft"}}});
+const save=()=>({...action(),operationId:"form.save",call:{...action().call,input:{revision:4,values:{title:"draft"}}}});
 beforeEach(()=>{
  vi.resetAllMocks();intents=new Map();automatic=false;human=null;
  current={id:uuid(3),sessionId:session.sessionId,status:"running",executionUserId:"V",channel:{agent:{providerId:"workbench",agentId:"agent"},actor:{id:uuid(4),domainId:"d"},authority:{classNames:[],executionKind:"live"},root:{session:root,runId:uuid(10)},requestedBy:null,userRecipient:{session:root,actor:{id:uuid(4),domainId:"d"}}},resolvedSkills:[{skill}]} as unknown as RuntimeRun;
@@ -153,7 +155,7 @@ it.each(["save","runNow"])("automatic %s succeeds through the server owner inter
    if(url.endsWith("/form"))return Response.json(rawExamples.forms.find(form=>form.name==="governance-ready")!.response);
    return Response.json(task);
  }));
- const input=operation==="save"?{...save(),call:{...save().call,input:{...task.content,revision:9}}}:action();
+ const input=operation==="save"?{...save(),call:{...save().call,input:{values:task.content,revision:9}}}:action();
  expect(await operatePanel(owner,credentials,current.id,input)).toMatchObject({kind:"dispatched",outcome:{kind:"success"}});
  expect(mocks.notify.mock.calls).toEqual([[owner,{objectType:"platform:ScheduledTask",primaryKey:uuid(9)}]]);
  expect(mocks.request).not.toHaveBeenCalled();
@@ -214,4 +216,40 @@ it("dispatches through the registered owner without a resource-specific coordina
  expect(await operatePanel(owner,credentials,current.id,input)).toMatchObject({kind:"dispatched",outcome:{kind:"success",data:{done:true}}});
  expect(handler.execute).toHaveBeenCalledWith(expect.objectContaining({request:expect.any(Function)}),input.call.target,input.call.input,input.intentId);
  expect(fetch).not.toHaveBeenCalled();
+});
+
+it("reuses the original creation artifact as the initiator and saves as the executor", async () => {
+  automatic = true;
+  const objectType = "platform:AgentDefinition";
+  const values = { name: "Assistant", icon: "legacy", description: "", enabled: false,
+    systemPrompt: "", skills: [{ name: "report", namespace: { kind: "domain", domainId: owner.domainId } }],
+    classNames: ["Customer"], modelSelection: { modelId: null }, enabledMcpServiceIds: [] };
+  const link = { sessionId: session.sessionId, runId: current.id, path: "outputs/drafts/new.page-draft.json" };
+  const form = { pageKey: use.pageKey, operation: "agent.create", target: {},
+    form: { ...values, skills: [{ name: "report", namespace: { kind: "domain" } }] } };
+  mocks.projection.mockResolvedValue({
+    id: "form", name: "Agent form", componentId: "form", binding: { kind: "PlatformObjectType", id: objectType }, inputs: {},
+  });
+  mocks.draft.mockResolvedValue(form);
+  const input = { ...save(), call: { target: { kind: "draft" as const }, input: { values }, draft: link } };
+  const createdId = uuid(21);
+  const write = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+    expect(url).toBe("http://workbench.test/api/assistant/agent-definitions");
+    expect(init.method).toBe("POST");
+    const headers = new Headers(init.headers);
+    expect(headers.get("X-API-Key")).toBe("V-key");
+    expect(headers.get("tk")).toBeNull();
+    expect(headers.get("Idempotency-Key")).toBe(input.intentId);
+    expect(JSON.parse(String(init.body))).toEqual(values);
+    return Response.json({ ...values, id: createdId, executionUserId: null, sortOrder: 0 }, { status: 201 });
+  });
+  vi.stubGlobal("fetch", write);
+  expect(await operatePanel(owner, credentials, current.id, input)).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
+  expect(mocks.draft).toHaveBeenCalledWith(link.sessionId, link.runId, link.path, owner);
+  expect(mocks.recordCreated).toHaveBeenCalledWith(link.sessionId, link.runId, link.path, createdId, owner);
+  expect(mocks.notify).toHaveBeenCalledWith(owner, { objectType, primaryKey: createdId });
+  mocks.draft.mockResolvedValue({ ...form, created: { id: createdId } });
+  await expect(operatePanel(owner, credentials, current.id, { ...input, intentId: uuid(22) }))
+    .rejects.toMatchObject({ code: "PAGE_DRAFT_MISMATCH" });
+  expect(write).toHaveBeenCalledTimes(1);
 });

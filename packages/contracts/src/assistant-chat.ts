@@ -49,10 +49,16 @@ export const assistantAgentInputSchema = assistantAgentDefinitionSchema
     id: true,
   })
   .extend({
+    name: assistantAgentDefinitionSchema.shape.name.trim().min(1),
     executionUserId: assistantAgentDefinitionSchema.shape.executionUserId.optional(),
+    sortOrder: assistantAgentDefinitionSchema.shape.sortOrder.removeDefault().optional(),
     modelSelection: modelSelectionSchema.default({ modelId: null }),
     skills: z.array(assistantSkillInputSchema),
   });
+/** The settings panel carries unedited MCP and avatar values, and leaves sorting to the native owner. */
+export const assistantAgentPanelValuesSchema = assistantAgentInputSchema.omit({ sortOrder: true }).extend({
+  enabledMcpServiceIds: assistantAgentInputSchema.shape.enabledMcpServiceIds.removeDefault(),
+});
 export const assistantAgentValidationSchema = z.object({
   target: z.object({ id: z.string().uuid().optional() }).strict(),
   form: assistantAgentInputSchema,
