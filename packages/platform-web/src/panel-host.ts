@@ -75,7 +75,12 @@ export function platformPanelHost(applicationId: string, use: ApplicationPanelUs
     // the same application's page. Registering it under that ID is what lets the bridge recognise the frame and answer
     // its `connect`, and what keeps a frame of another application from being mistaken for this one. What it may ask for
     // is what the panel's record declares, for this use relation's page.
-    frame: (frame, source) => registerPanelFrame(frame, applicationId, { pageKey: use.pageKey, manifest: source.panel.manifest }),
+    frame: (frame, source, open) => registerPanelFrame(frame, applicationId, { pageKey: use.pageKey, manifest: source.panel.manifest }, open),
+    // The relation this page opens is still the application's, bound to the same panel: a kept page shown again is
+    // checked against Java's current relations before its frame may ask for anything.
+    async current() {
+      return (await panelUsesOf(applicationId)).some(relation => relation.id === use.id && relation.panelId === use.panelId);
+    },
     snapshot,
     mode,
   };
@@ -95,10 +100,10 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
     pageKey: candidate.pageKey,
     panel,
     sdkRoot,
-    frame: (frame, source) => registerCandidateFrame(frame, buildExecutionContext(source.workspace.id, source.previewContext.test), {
+    frame: (frame, source, open) => registerCandidateFrame(frame, buildExecutionContext(source.workspace.id, source.previewContext.test), {
       pageKey: candidate.pageKey,
       manifest: source.panel.manifest,
-    }),
+    }, open),
     snapshot,
     mode: { kind: "author", definitions: panelAuthorDefinitions() },
   };
