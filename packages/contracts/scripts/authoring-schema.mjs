@@ -6,3 +6,11 @@ import { authoringWireSchemas } from "../src/authoring.ts";
 const { $schema, definitions } = zodToJsonSchema(z.never(), { definitions: authoringWireSchemas });
 const schema = { $schema, $ref: "#/definitions/hostRun", definitions };
 await writeFile(new URL("../src/authoring.schema.json", import.meta.url), JSON.stringify(schema, null, 2) + "\n");
+
+// Java loads a definition directly with fastjson2, which cannot resolve this bundle's nested references.
+const { definitions: javaDefinitions } = zodToJsonSchema(z.never(), {
+  definitions: authoringWireSchemas,
+  $refStrategy: "none",
+});
+const javaSchema = { $schema, definitions: javaDefinitions };
+await writeFile(new URL("../src/authoring.java.schema.json", import.meta.url), JSON.stringify(javaSchema, null, 2) + "\n");
