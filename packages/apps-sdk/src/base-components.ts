@@ -4,6 +4,8 @@ export const baseComponents = {
   ObjectForm: () => import("./base/ObjectForm.vue").then(module => module.default),
   OperationButton: () => import("./base/OperationButton.vue").then(module => module.default),
   GraphCanvas: () => import("@ontomato/foundation-ui/graph").then(module => module.GraphCanvas),
+  G6GraphCanvas: () => import("@ontomato/foundation-ui/graph/g6").then(module => module.G6GraphCanvas),
+  OntologyGraph: () => import("./base/OntologyGraph.vue").then(module => module.default),
   TwoPaneLayout: () => import("./base/TwoPaneLayout.vue").then(module => module.default),
   SectionGroup: () => import("./base/SectionGroup.vue").then(module => module.default),
   ReferencePicker: () => import("./base/ReferencePicker.vue").then(module => module.default),
@@ -13,4 +15,5 @@ export const baseComponents = {
   SegmentedTextReader: () => import("@ontomato/foundation-ui/reader").then(module => module.SegmentedTextReader),
   ObjectTextReader: () => import("./base/ObjectTextReader.vue").then(module => module.default),
   FileUploadControl: () => import("./base/FileUploadControl.vue").then(module => module.default),
+  MetricChart: () => import("./base/MetricChart.vue").then(module => module.default),
 };

@@ -146,5 +146,6 @@ COPY tools/workbench/runtime-layout.mjs /tmp/tools/workbench/runtime-layout.mjs
 RUN node -e 'import("/tmp/tools/workbench/runtime-layout.mjs").then(m => m.checkNoBrokenSymlinks("/app"))' \
  && rm -rf /tmp/tools
 
+LABEL org.opencontainers.image.source="https://github.com/ontomato-ai/Ontomato"
 WORKDIR /app
 CMD ["/app/launch.sh"]

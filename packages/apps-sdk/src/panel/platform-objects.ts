@@ -220,6 +220,100 @@ export interface PlatformObjectSegmentPage {
   readonly emptyHint?: string;
 }
 
+/** Per-type or per-relation-kind read outcome reported by a graph source; never collapsed into an empty graph. */
+export type PlatformGraphStatus = "ok" | "refused" | "failed" | "unavailable";
+
+/** One node in a graph projection (instance mode). */
+export interface PlatformGraphNode {
+  readonly className: string;
+  readonly primaryKey: string;
+  readonly label: string;
+  /** Optional layer key (for example `"fact" | "capability" | "governance" | "product"`). */
+  readonly layer?: string;
+  readonly detail?: string;
+}
+
+/** One edge in a graph projection (instance mode). */
+export interface PlatformGraphEdge {
+  readonly id: string;
+  readonly relationKind: string;
+  /** Optional display label or message key; falls back to schema/platform relation labelKey when omitted. */
+  readonly label?: string;
+  readonly from: PlatformObjectRef;
+  readonly to: PlatformObjectRef;
+  readonly direction: "outgoing" | "incoming";
+  readonly derived?: boolean;
+}
+
+/** Outcome of querying one relation kind for a node's neighbors. */
+export interface PlatformGraphRelationStatus {
+  readonly relationKind: string;
+  readonly status: PlatformGraphStatus;
+  readonly edgeCount: number;
+  readonly reason?: string;
+}
+
+/** One object type declared in a graph's type-mode schema. */
+export interface PlatformGraphTypeSpec {
+  readonly id: string;
+  readonly layer?: string;
+  readonly labelKey?: string;
+  readonly label?: string;
+}
+
+/** One relation kind declared in a graph's type-mode schema. */
+export interface PlatformGraphRelationKindSpec {
+  readonly id: string;
+  readonly from: string;
+  readonly to: string | readonly string[];
+  readonly labelKey?: string;
+  readonly label?: string;
+  readonly derived?: boolean;
+}
+
+/** Schema returned for type mode: ordered layers (optional), types and relation kinds. */
+export interface PlatformGraphSchema {
+  readonly layers?: readonly string[];
+  readonly objectTypes: readonly PlatformGraphTypeSpec[];
+  readonly relationKinds: readonly PlatformGraphRelationKindSpec[];
+}
+
+/** Readable count and access status for one object type in type mode. */
+export interface PlatformGraphTypeCount {
+  readonly type: string;
+  readonly layer?: string;
+  readonly status: PlatformGraphStatus;
+  readonly count?: number;
+  readonly reason?: string;
+}
+
+/** Request to expand one hop of neighbors around a node. */
+export interface PlatformGraphNeighborsQuery {
+  readonly node: PlatformObjectRef;
+  readonly relationKinds?: readonly string[];
+  readonly layers?: readonly string[];
+}
+
+/** Result of expanding one hop of neighbors around a node. */
+export interface PlatformGraphNeighborsResult {
+  readonly node: PlatformGraphNode;
+  readonly neighbors: readonly PlatformGraphNode[];
+  readonly edges: readonly PlatformGraphEdge[];
+  readonly relations: readonly PlatformGraphRelationStatus[];
+}
+
+/** Graph source port implemented by a resource adapter bound to a graph projection (M3 capability map, M4 instance graph). */
+export interface PlatformObjectGraph {
+  /** Schema of types and relation kinds for type mode (optional for instance-only graphs such as M4). */
+  schema?(): Promise<PlatformGraphSchema>;
+  /** Per-type readable counts and access status for type mode (optional for instance-only graphs). */
+  counts?(): Promise<readonly PlatformGraphTypeCount[]>;
+  /** Default starting node for instance mode when no explicit `start` input is provided. */
+  start?(): Promise<PlatformGraphNode | null>;
+  /** One-hop neighbors, edges and per-relation-kind outcome statuses for one node. */
+  neighbors(query: PlatformGraphNeighborsQuery): Promise<PlatformGraphNeighborsResult>;
+}
+
 /**
  * Everything the SDK reads and writes for one platform object type. A part a type does not have is absent, and a
  * projection that needs it fails visibly when it is drawn — a form bound to a type without `forms`, a picker bound to one
@@ -234,6 +328,7 @@ export interface PlatformObjectAdapter {
   readSegment?(query: PlatformObjectSegmentQuery): Promise<PlatformObjectSegmentPage>;
   forms?: PlatformObjectForms;
   options?: PlatformObjectOptions;
+  graph?: PlatformObjectGraph;
 }
 
 /**
@@ -254,11 +349,17 @@ export type PlatformOperationFactory = (requests: PlatformRequests) => Registere
 export interface PlatformResources {
   objects: Readonly<Record<string, () => Promise<PlatformObjectAdapterFactory>>>;
   operations: Readonly<Record<string, () => Promise<PlatformOperationFactory>>>;
+  /**
+   * The clients a component reads its own resource through, by the component a projection draws (`MetricChart`'s chart
+   * source): the module registers its client with the frame's request path.
+   */
+  components: Readonly<Record<string, () => Promise<(requests: PlatformRequests) => void>>>;
 }
 
 /**
  * What a frame calls before a projection registers its ports: every resource its record binds — its binding and, for a
- * graph, its edges' — fetched and registered with the frame's request path, once per module. A binding this version has
+ * graph, its edges' — and the client its component reads through, fetched and registered with the frame's request
+ * path, once per module. A binding this version has
  * no module for is left to fail where it is used.
  */
 export function platformResourceLoader(requests: PlatformRequests, resources: PlatformResources) {
@@ -272,11 +373,14 @@ export function platformResourceLoader(requests: PlatformRequests, resources: Pl
     }
     return pending;
   };
-  return async (projection: Pick<ProductProjection, "binding" | "graph">): Promise<void> => {
+  return async (projection: Pick<ProductProjection, "componentId" | "binding" | "graph">): Promise<void> => {
     const bindings = [projection.binding, ...(projection.graph ? [projection.graph.edges.binding] : [])];
-    await Promise.all(bindings.map((binding) => binding.kind === "PlatformOperation"
-      ? once(resources.operations[binding.id], (factory) => registerHandler(factory(requests)))
-      : once(resources.objects[binding.id], (factory) => factory(requests).forEach(registerPlatformObjectAdapter))));
+    await Promise.all([
+      ...bindings.map((binding) => binding.kind === "PlatformOperation"
+        ? once(resources.operations[binding.id], (factory) => registerHandler(factory(requests)))
+        : once(resources.objects[binding.id], (factory) => factory(requests).forEach(registerPlatformObjectAdapter))),
+      once(resources.components[projection.componentId], (register) => register(requests)),
+    ]);
   };
 }
 
@@ -313,7 +417,7 @@ export function registeredPlatformObjects(): readonly string[] {
 }
 
 /** One part of a type's adapter, or a visible failure naming the type and the part it lacks. */
-export function adapterPart<Part extends "list" | "query" | "read" | "readSegment" | "forms" | "options">(
+export function adapterPart<Part extends "list" | "query" | "read" | "readSegment" | "forms" | "options" | "graph">(
   objectType: string,
   part: Part,
 ): NonNullable<PlatformObjectAdapter[Part]> {

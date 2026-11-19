@@ -70,6 +70,46 @@ it("writes a draft that keeps the execution user and prints the page link", asyn
   );
 });
 
+it("writes a draft with only the fields the agent gives it", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-builder-partial-draft-"));
+  const changed = { name: "Renamed agent", systemPrompt: "A new prompt" };
+  await writeFile(path.join(cwd, "form.json"), JSON.stringify(changed));
+  const env = { ONTOMATO_SKILL_SCENARIO: "platform", ONTOMATO_SESSION_ID: "session", ONTOMATO_RUN_ID: "run" };
+  expect((await run(["draft", "update", agentId, "@form.json"], env, cwd)).code).toBe(0);
+  // A draft keeps the shape the agent gave: it does not fill the skills, or anything else, from the stored agent.
+  expect(JSON.parse(await readFile(path.join(cwd, "outputs/drafts/agent.page-draft.json"), "utf8")).form).toEqual(changed);
+});
+
+it("sends an outside update's own fields, with no skills when the file names none", async () => {
+  const seen: { method?: string; url: string; body: unknown }[] = [];
+  const base = await serve((url, body, response, request) => {
+    seen.push({ method: request.method, url, body });
+    response.setHeader("Content-Type", "application/json");
+    response.end(JSON.stringify({ ...form, name: "Renamed agent" }));
+  });
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-builder-update-"));
+  await writeFile(path.join(cwd, "form.json"), JSON.stringify({ name: "Renamed agent", systemPrompt: "A new prompt" }));
+  const env = { ONTOMATO_WORKBENCH_URL: base, ONTOMATO_ONTOLOGY_URL: base, ONTOMATO_TK: "session-token" };
+  const result = await run(["update", agentId, "@form.json"], env, cwd);
+  expect(result.code).toBe(0);
+  // The file's fields are the whole request: the owner keeps the skills the agent holds because none is sent.
+  expect(seen).toEqual([{ method: "PUT", url: `/api/assistant/agent-definitions/${agentId}`, body: { name: "Renamed agent", systemPrompt: "A new prompt" } }]);
+});
+
+it("sends an outside update's explicit empty skills as the whole selection", async () => {
+  const seen: { body: unknown }[] = [];
+  const base = await serve((_url, body, response) => {
+    seen.push({ body });
+    response.setHeader("Content-Type", "application/json");
+    response.end(JSON.stringify({ ...form, skills: [] }));
+  });
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-builder-clear-"));
+  await writeFile(path.join(cwd, "form.json"), JSON.stringify({ skills: [] }));
+  const env = { ONTOMATO_WORKBENCH_URL: base, ONTOMATO_ONTOLOGY_URL: base, ONTOMATO_TK: "session-token" };
+  expect((await run(["update", agentId, "@form.json"], env, cwd)).code).toBe(0);
+  expect(seen).toEqual([{ body: { skills: [] } }]);
+});
+
 it("validates the draft's target and form together", async () => {
   const seen: { url: string; body: unknown }[] = [];
   const base = await serve((url, body, response) => {

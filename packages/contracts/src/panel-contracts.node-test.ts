@@ -16,21 +16,33 @@ import test from "node:test";
 import {
   AGENT_DEFINITION, ATTRIBUTE, DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW,
   OBJECT_TYPE, RELATIONSHIP, SET_METRIC_VIEW_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, USER,
-  bindingKey, clientSends, panelClientReads,
+  bindingKey, chartProjectionLookupRead, chartProjectionSourcePath, chartProjectionSourceSends, clientSends, panelClientReads,
 } from "./panel-client-requests";
 import {
   candidatePanelSourceSchema, panelCapacityPlanSchema, panelCapacityRequestSchema, panelFrameMessageSchema,
   panelHostFrameMessageSchema, panelUsePath,
 } from "./panel-host";
-import { panelChildObjectIdentitySchema, panelManifestSchema, panelStateValueSchema } from "./panel-manifest";
+import {
+  matchesObjectType, objectUnionTypes, ontologyObjectUnionTypeSchema, panelChildObjectIdentitySchema,
+  panelManifestSchema, panelStateFieldSchema, panelStateValueSchema, singleOntologyParameterTypeSchema,
+} from "./panel-manifest";
 import { pageDraftSchema } from "./page-draft";
 import {
   panelFormDescriptionSchema, panelFormFrequencyValueSchema, panelFormRequestSchema, panelFormSaveInputSchema,
   projectionBindingKeys, projectionOperations, projectionPorts,
 } from "./panel-projection";
 import { platformTaskFrequencySchema } from "./platform-schedules";
-import { DEFINITION, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, USER as ONTOLOGY_USER, platformObjectTypes, platformRelationKinds } from "./platform-object-types";
-import { applicationPanelUseSchema, applicationPanelUsePathSchema, ontologyElementRefSchema, productPanelContentSchema, productProjectionInputSchema } from "./product-panels";
+import {
+  DEFINITION, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, USER as ONTOLOGY_USER,
+  platformObjectTypes, platformOntologyLayers, platformRelationKinds,
+} from "./platform-object-types";
+import {
+  applicationPanelUseSchema, applicationPanelUsePathSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema,
+  chartSourceInUseErrorSchema, ontologyElementRefSchema, productPanelContentSchema, productProjectionInputSchema,
+  registerChartProjectionRequestSchema, registerChartProjectionResponseSchema, registerProductProjectionRequestSchema,
+  updateChartProjectionSourceRequestSchema,
+} from "./product-panels";
+import { ontologyParameterTypeSchema as legacyOntologyParameterTypeSchema } from "./product-projections";
 
 const binding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
 
@@ -254,6 +266,111 @@ test("bridge and skill agree about the specific semantic reads", () => {
 });
 
 
+const chartSource = { dashboardId: "board-a", cardId: "chart-1" };
+const chartProjection = {
+  name: "Departments", description: "", visibility: "private",
+  componentId: "MetricChart", binding: { kind: "MetricView", id: "department-metric" },
+  inputs: { department: { kind: "scalar", type: "string" } },
+  display: { chartSource },
+};
+
+test("a chart projection can only store the source reference and its metric binding", () => {
+  const projection = {
+    ...chartProjection, id: "projection-a", domainId: "domain", ownerId: "author",
+    revision: 1, createdAt: "2026-11-19T00:00:00Z", updatedAt: "2026-11-19T00:00:00Z", editable: true,
+  };
+  assert.deepEqual(registerChartProjectionResponseSchema.parse({ projection }).projection.display, { chartSource });
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...chartProjection, binding: { kind: "Action", id: "unrelated" },
+  }).success, false);
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...chartProjection, inputs: { department: { kind: "array", items: { kind: "scalar", type: "string" } } },
+  }).success, false);
+  for (const data of [{ chartFile: {} }, { query: { metricId: "other" } }, { rows: [] }]) {
+    assert.equal(productProjectionInputSchema.safeParse({
+      ...chartProjection, display: { chartSource, ...data },
+    }).success, false);
+  }
+});
+
+test("chart registration takes the source identity and ordinary writes cannot supply it", () => {
+  assert.deepEqual(registerChartProjectionRequestSchema.parse(chartSource), chartSource);
+  assert.equal(registerChartProjectionRequestSchema.safeParse({
+    ...chartSource, id: "supplied-projection", binding: chartProjection.binding, domainId: "another-domain",
+  }).success, false);
+  assert.equal(registerProductProjectionRequestSchema.safeParse({ ...chartProjection, revision: 1 }).success, false);
+  assert.equal(registerProductProjectionRequestSchema.safeParse({
+    ...chartProjection, componentId: "ObjectSummary", revision: 0,
+  }).success, false);
+  assert.equal(registerProductProjectionRequestSchema.safeParse({
+    ...chartProjection, display: {}, revision: 0,
+  }).success, false);
+  assert.equal(registerProductProjectionRequestSchema.safeParse({
+    ...chartProjection, display: {}, revision: 2,
+  }).success, true);
+});
+
+test("chart template reads the drawing and saved parameters while edit only supplies the drawing", () => {
+  const chartFile = {
+    name: "department.chart.json",
+    content: {
+      dataset: [{ id: "metric", dimensions: ["name", "value"], source: [] }],
+      series: [{ id: "main", type: "bar", datasetId: "metric", encode: { x: "name", y: "value" } }],
+      ontomato: {},
+    },
+  };
+  const parameters = { department: "sales", years: [2025, 2026] };
+  const template = { chartFile, parameters };
+  assert.deepEqual(chartProjectionTemplateSchema.parse(template), template);
+  assert.equal(chartProjectionTemplateSchema.safeParse({ chartFile }).success, false);
+  for (const extra of [{ query: { metricId: "other" } }, { groups: [] }, { layout: {} }, { revision: 2 }])
+    assert.equal(chartProjectionTemplateSchema.safeParse({ ...template, ...extra }).success, false);
+  assert.ok(updateChartProjectionSourceRequestSchema.safeParse({ chartFile: { content: chartFile.content } }).success);
+  assert.equal(updateChartProjectionSourceRequestSchema.safeParse({ chartFile }).success, false);
+  assert.equal(updateChartProjectionSourceRequestSchema.safeParse({
+    chartFile: { content: chartFile.content }, query: { metricId: "other" },
+  }).success, false);
+  assert.equal(updateChartProjectionSourceRequestSchema.safeParse({
+    chartFile: { content: chartFile.content }, parameters,
+  }).success, false);
+});
+
+test("the chart client is restricted to its chart projection and bound metric", () => {
+  const path = chartProjectionSourcePath("chart:id");
+  assert.ok(chartProjectionSourceSends(["chart:id"], "GET", "", path));
+  assert.ok(chartProjectionSourceSends(["chart:id"], "PUT", "", path));
+  assert.ok(!chartProjectionSourceSends(["other"], "GET", "", path));
+  assert.ok(!chartProjectionSourceSends(["chart:id"], "DELETE", "", path));
+
+  const metric = bindingKey(chartProjection.binding);
+  for (const [path, body] of [
+    ["/ontology/query/metrics/describe", { id: "department-metric" }],
+    ["/metricView/execute", { id: "department-metric", param: { department: "sales" } }],
+  ] as const) {
+    assert.ok(panelClientReads(metric).some(read => read.method === "POST" && read.path.test(path)));
+    assert.ok(clientSends([metric], "POST", "/data-query", path, body));
+    assert.ok(!clientSends([metric], "POST", "/data-query", path, { ...body, id: "other" }));
+    assert.ok(!clientSends([metric], "POST", "/data-query", path));
+  }
+  const rawDefinitionPath = "/metricView/queryById";
+  assert.ok(!panelClientReads(metric).some(read => read.path.test(rawDefinitionPath)));
+  assert.ok(!clientSends([metric], "POST", "/data-query", rawDefinitionPath, { id: "department-metric" }));
+
+  const lookup = "/product-projections/chart-sources?dashboardId=board-a&cardId=chart-1";
+  assert.ok(chartProjectionLookupRead.path.test(lookup));
+  assert.ok(!clientSends([metric], "GET", "", lookup));
+  assert.deepEqual(chartProjectionLookupResponseSchema.parse({ projectionId: null }), { projectionId: null });
+});
+
+test("a blocked chart source removal reports the referring projection IDs", () => {
+  const refusal = {
+    success: false, error: "Chart source is in use", code: "CHART_SOURCE_IN_USE",
+    details: { projectionIds: ["projection-a"] },
+  };
+  assert.deepEqual(chartSourceInUseErrorSchema.parse(refusal).details.projectionIds, ["projection-a"]);
+  assert.equal(chartSourceInUseErrorSchema.safeParse({ ...refusal, details: { projectionIds: [] } }).success, false);
+});
+
 test("MetricView and Function management reads do not grant operation or concrete data access", () => {
   for (const [type, root] of [[METRIC_VIEW, "/metricView"], [FUNCTION, "/function"]] as const) {
     const resource = binding(type);
@@ -369,7 +486,7 @@ test("a child key is meaningful with its parent identity", () => {
 });
 
 test("mixed graphs declare selected node types separately from the read bindings", () => {
-  const nodeIdentity = { kind: "object-union", objectTypes: [ONTOLOGY_USER, DEFINITION] };
+  const nodeIdentity = { kind: "object-union", layers: [...platformOntologyLayers] };
   const projection = productProjectionInputSchema.parse({
     name: "Platform ontology graph", description: "", visibility: "domain", componentId: "GraphCanvas",
     binding: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE },
@@ -388,6 +505,40 @@ test("mixed graphs declare selected node types separately from the read bindings
   const user = panelStateValueSchema.parse({ className: ONTOLOGY_USER, primaryKey: "shared-key" });
   const definition = panelStateValueSchema.parse({ className: DEFINITION, primaryKey: "shared-key" });
   assert.notDeepEqual(user, definition);
+});
+
+test("object unions resolve current layer declarations or an explicit list of declared types", () => {
+  const explicit = ontologyObjectUnionTypeSchema.parse({ kind: "object-union", objectTypes: [DEFINITION, ONTOLOGY_TYPE] });
+  assert.deepEqual(objectUnionTypes(explicit), [DEFINITION, ONTOLOGY_TYPE]);
+  assert.equal(matchesObjectType(explicit, ONTOLOGY_TYPE), true);
+  assert.equal(matchesObjectType(explicit, ONTOLOGY_USER), false);
+
+  const layered = ontologyObjectUnionTypeSchema.parse({ kind: "object-union", layers: ["capability"] });
+  assert.equal(matchesObjectType(layered, DEFINITION), true);
+  assert.equal(matchesObjectType(layered, ONTOLOGY_USER), false);
+  assert.equal(matchesObjectType(layered, ONTOLOGY_TYPE), false);
+  assert.equal(matchesObjectType({ kind: "object", objectType: ONTOLOGY_USER }, ONTOLOGY_USER), true);
+});
+
+test("object union contracts reject unknown types, unknown layers and ambiguous selectors", () => {
+  for (const selector of [
+    { objectTypes: [DEFINITION, "platform:Missing"] },
+    { layers: ["unclassified"] },
+    { layers: ["capability"], objectTypes: [DEFINITION] },
+    {},
+  ]) {
+    const field = { kind: "object-union", ...selector };
+    assert.equal(ontologyObjectUnionTypeSchema.safeParse(field).success, false);
+    assert.equal(panelStateFieldSchema.safeParse(field).success, false);
+  }
+});
+
+test("legacy single-type projection parameters reject both object union selectors", () => {
+  for (const selector of [{ objectTypes: [DEFINITION] }, { layers: ["capability"] }]) {
+    const type = { kind: "object-union", ...selector };
+    assert.equal(singleOntologyParameterTypeSchema.safeParse(type).success, false);
+    assert.equal(legacyOntologyParameterTypeSchema.safeParse(type).success, false);
+  }
 });
 
 test("platform ontology routes are semantic reads on the declared bindings", () => {

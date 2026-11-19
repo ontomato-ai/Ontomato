@@ -1,6 +1,6 @@
 import { createApp, h, nextTick, provide, ref, shallowReactive, watch, type Component, type Ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { contextTransport, type AppContext } from "../context";
+import { contextTranslate, contextTransport, type AppContext } from "../context";
 import { connectPanelContext } from "./app-context";
 import { defaultLocale } from "apps-sdk:panel-appearance";
 import { createPanelText } from "./text";
@@ -16,7 +16,7 @@ import {
 } from "@ontomato/contracts/panel-host";
 import type { DefinitionRevision } from "@ontomato/contracts/product-subscriptions";
 import { pageDraftReadSchema, type PageDraft } from "@ontomato/contracts/page-draft";
-import { panelOperationSchema, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import { panelOperationSchema, type PanelObjectIdentity, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import type { PanelDefinitionContent, ProductProjection } from "@ontomato/contracts/product-panels";
 import { panelContextKey, type PanelContext, type ProjectionSlot } from "./context";
 import { applyPanelRequest, createPanelInstance, pageDraftLinkOf, type PanelInstance } from "./instance";
@@ -74,6 +74,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     url: () => address.value,
     label: () => message.label,
     initial: message.state,
+    translate: contextTranslate(appContext),
     reportDraftError: failed,
     recordDraftCreated: async (link, id) => {
       const response = await transport.request(
@@ -220,11 +221,37 @@ function report({ instance, address, followAddress, unsaved, changed }: ReportOp
     for (const { id, revision } of waiting.values()) changed(id, revision);
     waiting.clear();
   };
+  /*
+   * Whether the reader sees this instance (A's activity contract): the host says so as the tab, the shown page and the
+   * instance's place change. While inactive the instance reads nothing on its own: a new address, a changed projection
+   * and a changed object are held, and when it is active again each is acted on once — the latest address, each
+   * projection at its latest revision, each object once however often it changed (any untargeted refresh covers them
+   * all).
+   */
+  let active = true;
+  let heldAddress: string | null = null;
+  let heldAll = false;
+  const heldObjects = new Map<string, PanelObjectIdentity>();
+  const followAddressNow = (next: string) => void followAddress(next).catch(failed);
+  const refreshObject = (target: PanelObjectIdentity | null) => {
+    if (target) instance.objectChanged(target);
+    else void nextTick(() => instance.refreshObjects());
+  };
+  const resume = () => {
+    if (heldAddress !== null) followAddressNow(heldAddress);
+    if (!isDirty()) refreshProjections();
+    if (heldAll) refreshObject(null);
+    else for (const target of heldObjects.values()) refreshObject(target);
+    heldAddress = null;
+    heldAll = false;
+    heldObjects.clear();
+  };
+
   // A draft the reader saved or discarded: the host takes its link out of the address, if the address still names it.
   instance.onDraftSettled((draft) => send({ kind: "draft-settled", draft }));
   watch(isDirty, dirty => {
     send({ kind: "dirty", dirty });
-    if (!dirty) refreshProjections();
+    if (!dirty && active) refreshProjections();
   }, { immediate: true });
   // The operations the header draws and an agent lists; they change as projections register and unregister.
   watch(() => instance.operations.value, (operations) => {
@@ -239,20 +266,26 @@ function report({ instance, address, followAddress, unsaved, changed }: ReportOp
     if (event.source !== host) return;
     const parsed = panelMessageOf(panelHostFrameMessageSchema, event);
     if (!parsed) return;
-    if (parsed.kind === "activity") return;
+    if (parsed.kind === "activity") {
+      active = parsed.active;
+      if (active) resume();
+      return;
+    }
     if (parsed.kind === "address") {
-      void followAddress(parsed.address).catch(failed);
+      if (active) followAddressNow(parsed.address);
+      else heldAddress = parsed.address;
       return;
     }
     if (parsed.kind === "projections-changed") {
       for (const revision of parsed.projections)
         if ((waiting.get(revision.id)?.revision ?? 0) < revision.revision) waiting.set(revision.id, revision);
-      if (!isDirty()) refreshProjections();
+      if (active && !isDirty()) refreshProjections();
       return;
     }
     if (parsed.kind === "object-changed") {
-      if (parsed.target) instance.objectChanged(parsed.target);
-      else void nextTick(() => instance.refreshObjects());
+      if (active) refreshObject(parsed.target);
+      else if (parsed.target) heldObjects.set(`${parsed.target.objectType}\u0000${parsed.target.primaryKey}`, parsed.target);
+      else heldAll = true;
       return;
     }
     // A person's click in the platform's header: the same handler an agent's call reaches, run in this frame.

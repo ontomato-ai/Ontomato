@@ -17,9 +17,14 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
-import com.alibaba.fastjson2.JSON;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.PythonExecuteResult;
@@ -33,7 +38,9 @@ import io.ontomato.dataengine.service.BackendSessionEntrance;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.MetricViewService;
+import io.ontomato.dataengine.service.PanelFormException;
 import io.ontomato.dataengine.service.SessionCancelledException;
+import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.SseEmitterUtil;
@@ -68,6 +75,12 @@ public class MetricViewController {
 
 	@Autowired
 	private BackendSessionEntrance sessionEntrance;
+
+	@Autowired
+	private SubjectDirectory subjectDirectory;
+
+	@Autowired
+	private ObjectMapper objectMapper;
 	
 	@PostMapping("/metricView/generateFromNatureLanguage")
     @ResponseBody
@@ -109,8 +122,8 @@ public class MetricViewController {
 			if (metricView.getFunction() != null) {
 				metricView.getFunction().setDomainId(user.getDomainId());
 			}
-			metricViewService.save(metricView, lang);
-            ret.put("data", metricView);
+			MetricView saved = metricViewService.save(metricView, lang);
+            ret.put("data", withDisplay(saved, subjectNames(user.getDomainId()), lang));
 			ret.put("success", true);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
@@ -139,14 +152,16 @@ public class MetricViewController {
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/metricView/queryById")
     @ResponseBody
-    public JSONObject queryById(@RequestBody JSONObject param) {
+    public JSONObject queryById(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, defaultValue = "en") String lang,
+    		@RequestBody JSONObject param) {
 		JSONObject ret = new JSONObject();
 		try {
 			String id = param.getString("id");
-			MetricView metricView = metricViewService.queryById(id, SystemUtils.getCurUser().getDomainId());
+			User user = SystemUtils.getCurUser();
+			MetricView metricView = metricViewService.queryById(id, user.getDomainId());
             if (metricView == null) throw new IllegalArgumentException("MetricView not found");
 			ret.put("success", true);
-			ret.put("data", metricView);
+			ret.put("data", withDisplay(metricView, subjectNames(user.getDomainId()), lang));
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -158,7 +173,8 @@ public class MetricViewController {
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/metricView/queryList")
     @ResponseBody
-    public JSONObject queryList(@RequestBody JSONObject param) {
+    public JSONObject queryList(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, defaultValue = "en") String lang,
+		@RequestBody JSONObject param) {
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
@@ -166,7 +182,7 @@ public class MetricViewController {
 			String className = param.getString("className");
 			List<MetricView> metricViews = metricViewService.queryList(status, null, className, user.getDomainId());
 			ret.put("success", true);
-			ret.put("data", metricViews);
+			ret.put("data", withDisplay(metricViews, user.getDomainId(), lang));
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -205,6 +221,111 @@ public class MetricViewController {
 		return ret;
 	}
 	
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+	@PostMapping("/metricView/form")
+	@ResponseBody
+	public JSONObject form(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
+		JSONObject ret = new JSONObject();
+		try {
+			User user = SystemUtils.getCurUser();
+			ret.put("data", metricViewService.form(param, lang, user.getDomainId()));
+			ret.put("success", true);
+		} catch (PanelFormException e) {
+			ret.put("success", false);
+			ret.put("message", e.getMessage());
+			ret.put("fields", e.fields());
+		} catch (Exception e) {
+			log.error(e.getMessage(), e);
+			ret.put("success", false);
+			ret.put("message", e.getMessage());
+		}
+		return ret;
+	}
+
+	@PostMapping("/metricView/setStatus")
+	@ResponseBody
+	public JSONObject setStatus(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
+		JSONObject ret = new JSONObject();
+		try {
+			User user = SystemUtils.getCurUser();
+			List<MetricViewService.StatusResult> results = metricViewService.setStatus(user.getDomainId(),
+					statusIds(param), param.getString("status"), lang);
+			JSONArray items = new JSONArray();
+			for (MetricViewService.StatusResult result : results) {
+				JSONObject item = JSONObject.of("id", result.id(),
+						"outcome", result.error() == null ? "success" : "failure");
+				if (result.error() == null) item.put("data", result.data());
+				else item.put("error", JSONObject.of("message", result.error()));
+				items.add(item);
+			}
+			ret.put("data", JSONObject.of("items", items));
+			ret.put("success", true);
+		} catch (Exception e) {
+			log.error(e.getMessage(), e);
+			ret.put("success", false);
+			ret.put("message", e.getMessage());
+		}
+		return ret;
+	}
+
+	/** The ids a batch publication-status change acts on; Jackson binds the request array as a List. */
+	private static List<String> statusIds(JSONObject param) {
+		Object raw = param.get("ids");
+		if (!(raw instanceof List<?> list) || list.isEmpty())
+			throw new IllegalArgumentException("ids: expected at least one metric id");
+		List<String> ids = new ArrayList<>();
+		for (Object id : list) {
+			if (!(id instanceof String text) || text.isBlank())
+				throw new IllegalArgumentException("ids: expected metric ids");
+			ids.add(text);
+		}
+		return ids;
+	}
+
+	/** The metric's creator and reviewer ids become the names a reader sees; a missing subject stays null. */
+	private ObjectNode withDisplay(MetricView metricView, Map<String, String> names, String lang) {
+		ObjectNode item = objectMapper.valueToTree(metricView);
+		item.put("createdByName", names.get(metricView.getCreatedBy()));
+		item.put("reviewedByName", names.get(metricView.getReviewedBy()));
+		item.put("statusLabel", statusLabel(metricView.getStatus(), lang));
+		item.put("originLabel", originLabel(metricView.getOrigin(), lang));
+		return item;
+	}
+
+	private ArrayNode withDisplay(List<MetricView> metricViews, String domainId, String lang) {
+		Map<String, String> names = subjectNames(domainId);
+		ArrayNode items = objectMapper.createArrayNode();
+		for (MetricView metricView : metricViews) items.add(withDisplay(metricView, names, lang));
+		return items;
+	}
+
+	private Map<String, String> subjectNames(String domainId) {
+		Map<String, String> names = new HashMap<>();
+		for (SubjectDirectory.Subject subject : subjectDirectory.subjectsInDomain(domainId))
+			names.put(subject.id(), subject.displayName() == null || subject.displayName().isBlank()
+					? subject.loginCode() : subject.displayName());
+		return names;
+	}
+
+	private String statusLabel(String status, String lang) {
+		if (status == null) return null;
+		return switch (status) {
+			case MetricView.STATUS_PENDING_REVIEW -> langService.get(lang, "PanelForm.status.pendingReview");
+			case MetricView.STATUS_PUBLISHED -> langService.get(lang, "PanelForm.status.published");
+			case MetricView.STATUS_UNUSED -> langService.get(lang, "PanelForm.status.unused");
+			default -> status;
+		};
+	}
+
+	private String originLabel(String origin, String lang) {
+		if (origin == null) return null;
+		return switch (origin) {
+			case MetricView.ORIGIN_SYSTEM -> langService.get(lang, "PanelForm.origin.system");
+			case MetricView.ORIGIN_USER -> langService.get(lang, "PanelForm.origin.user");
+			default -> origin;
+		};
+	}
+
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/metricView/find")
     @ResponseBody
