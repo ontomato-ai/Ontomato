@@ -115,8 +115,8 @@ function owner(request: Sent): Response | undefined {
   return undefined;
 }
 
-async function open(address: string, state: Record<string, unknown>) {
-  const sent = installPlatform((request) => owner(request) ?? nothingAt(request));
+async function open(address: string, state: Record<string, unknown>, override?: (request: Sent) => Response | undefined) {
+  const sent = installPlatform((request) => override?.(request) ?? owner(request) ?? nothingAt(request));
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
   platformPanelHost("ontology").frame(frame, use, panel);
@@ -253,4 +253,15 @@ it("reopens a saved create draft on the agent it created, and creates nothing ag
   expect(context.draft.value).toBeNull();
   expect(context.instance.dirty()).toBe(false);
   expect(sent.some((request) => request.method === "POST" && request.path === "/api/assistant/agent-definitions")).toBe(false);
+});
+
+it("shows a localized reason for a stored skill no longer in the catalogue", async () => {
+  const { context } = await open("/ontology/agents", { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } },
+    request => request.path === "/api/assistant/agent-skills" ? Response.json({ skills: [] }) : undefined);
+  await vi.waitFor(() => expect(fieldItem("/skills")?.textContent).toContain("sql"), { timeout: 5000 });
+  fieldItem("/skills")!.querySelector(".el-select__wrapper")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await vi.waitFor(() => {
+    expect(document.querySelector('.el-select-dropdown__item[title="Unavailable"]')?.textContent).toContain("sql");
+  });
+  expect(context.instance.dirty()).toBe(false);
 });

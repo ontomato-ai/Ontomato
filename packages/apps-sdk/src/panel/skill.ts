@@ -20,7 +20,7 @@ export const skillAdapters: PlatformObjectAdapterFactory = requests => {
         return values.map(value => {
           const skill = runtimeSkillRefSchema.parse(value);
           const primaryKey = runtimeSkillKey(skill);
-          return options.get(primaryKey) ?? { primaryKey, value: skill, label: skill.name, unavailable: { reason: "unavailable" } };
+          return options.get(primaryKey) ?? { primaryKey, value: skill, label: skill.name, unavailable: { reason: "assistant.unavailable" } };
         });
       },
     },
