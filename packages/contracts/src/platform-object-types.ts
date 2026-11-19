@@ -7,6 +7,8 @@ export const USER = "platform:User";
 export const OBJECT_TYPE = "platform:ObjectType";
 export const ATTRIBUTE = "platform:Attribute";
 export const RELATIONSHIP = "platform:Relationship";
+export const METRIC_VIEW = "platform:MetricView";
+export const FUNCTION = "platform:Function";
 
 export interface PlatformObjectTypeDeclaration {
   /** Set for types that have a declared place in the four-layer ontology. */
@@ -24,4 +26,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [OBJECT_TYPE]: { layer: "fact" },
   [ATTRIBUTE]: { layer: "fact" },
   [RELATIONSHIP]: { layer: "fact" },
+  [METRIC_VIEW]: { layer: "capability" },
+  [FUNCTION]: { layer: "capability" },
 };

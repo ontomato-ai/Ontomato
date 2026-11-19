@@ -2,7 +2,7 @@ import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { createPanelOperationIntentRequestSchema, dispatchPanelOperationIntentRequestSchema } from "@ontomato/contracts/panel-agent";
 import { operatePanel, dispatchPanel } from "../../services/product-panels/operations";
 import { Router, type Request } from "express";
-import { AGENT_DEFINITION, SKILL, MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE, bindingKey, panelClientReads, scheduledTaskReads } from "@ontomato/contracts/panel-client-requests";
+import { AGENT_DEFINITION, SKILL, MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE, bindingKey, chartProjectionLookupRead, chartProjectionSourceRead, panelClientReads, scheduledTaskReads } from "@ontomato/contracts/panel-client-requests";
 import type {AssistantCredentials} from "../../platform/agent-runtime/runtime";
 import { Readable } from "node:stream";
 import { z } from "zod";
@@ -31,7 +31,6 @@ const ontologyPosts = [
   "/ontology/query/distinct-values",
   "/ontology/query/execute-dsl",
   "/ontology/query/metrics/search",
-  "/ontology/query/metrics/describe",
   "/ontology/query/metrics/parameter-form",
   "/ontology/query/metrics/parse-parameters",
   "/ontology/query/metrics/execute",
@@ -47,7 +46,6 @@ const ontologyPosts = [
   "/metricView/queryList",
   "/metricView/find",
   "/metricView/test",
-  "/metricView/execute",
   "/metricView/testExecute",
   "/data/queryInfoByNode",
   "/knowledge/findknowledge",
@@ -70,8 +68,15 @@ function ontologyAllowed(method: string, path: string) {
 }
 const workbenchPath = /^\/api\/(?:panel-operation-intents|product-assets|dashboards|feedback|memories|query-history|preferences|personal-workspace)(?:\/|$)/;
 
-const panelReads = [AGENT_DEFINITION, SKILL, MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE]
-  .flatMap(type => panelClientReads(bindingKey({ kind: "PlatformObjectType", id: type })));
+const skillReadPath = /^\/api\/skills(?:\/[^/]+\/(?:references|files|file))?$/u;
+
+const panelReads = [
+  ...[AGENT_DEFINITION, SKILL, MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE]
+    .flatMap(type => panelClientReads(bindingKey({ kind: "PlatformObjectType", id: type }))),
+  ...panelClientReads(bindingKey({ kind: "MetricView", id: "*" })),
+  chartProjectionLookupRead,
+  chartProjectionSourceRead,
+];
 
 assistantExecutionRouter.post("/:runId/panels/operate",wrap(async(req,res)=>{
   const runId = callbackRun(req, res.locals.runtimeCallback);
@@ -129,7 +134,8 @@ assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
   const path = "/" + req.params[0];
   const resourceRead = !req.path.includes("%") && (target === "ontology"
     ? [...scheduledTaskReads, ...panelReads].some(read => read.service === "/data-query" && read.method === req.method && read.path.test(path))
-    : path.startsWith("/api/") && panelReads.some(read => read.service === "" && read.method === req.method && read.path.test(path.slice(4))));
+    : (req.method === "GET" && skillReadPath.test(path)) ||
+      (path.startsWith("/api/") && panelReads.some(read => read.service === "" && read.method === req.method && read.path.test(path.slice(4)))));
   const assistantDirectory = target === "workbench" && req.method === "GET" && path === "/api/assistant/agents";
   if (/[\\%?#]/u.test(path) || path.split("/").some(segment => segment === "." || segment === "..") ||
     !(resourceRead || assistantDirectory || (target === "ontology" ? ontologyAllowed(req.method, path) : workbenchPath.test(path))))

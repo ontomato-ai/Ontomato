@@ -174,6 +174,18 @@ describe("the reader's navigation", () => {
     expect(displayOf(wrapper).target.value?.kind).toBe("artifact");
     expect(pageParameter()).toBeUndefined();
   });
+
+  // A link or a bookmark may carry the page encoded or not; the address bar keeps it as written.
+  it.each(["%2Ffirst", "/first"])("moves a page opened from `?page=%s` beside the conversation", async (written) => {
+    await router.push(`${platformRoutes.chat.path}?page=${written}`);
+    const wrapper = await workbench();
+    expect(displayOf(wrapper).view.value).toBe("full");
+
+    await paneButton(wrapper, "collapse").trigger("click");
+    await flushPromises();
+    expect(displayOf(wrapper).view.value).toBe("side");
+    expect(pageParameter()).toBe("/first");
+  });
 });
 
 describe("a page's own reports", () => {

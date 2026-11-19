@@ -172,7 +172,17 @@ export default {
     "panelScriptRejected": "The panel's script failed",
     "panelDraftUnclaimed": "This draft belongs to no form of this panel",
     "panelDraftChanged": "Changed: {fields}",
-    "graphIncludeAdjacent": "Include adjacent ({count})"
+    "graphIncludeAdjacent": "Include adjacent ({count})",
+    "listSearchPlaceholder": "Search",
+    "listQuery": "Query",
+    "listRefresh": "Refresh",
+    "listTotal": "{count} items",
+    "listSelectAll": "Select all",
+    "listSelectedCount": "{count} selected",
+    "listClearSelection": "Clear",
+    "listPagination": "Page {page} of {pages}",
+    "listPrevPage": "Previous",
+    "listNextPage": "Next"
   },
   "nav": {
     "agentsAndSkills": "Agents and Skills",

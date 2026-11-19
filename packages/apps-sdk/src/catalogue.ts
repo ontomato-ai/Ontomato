@@ -186,10 +186,10 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectList",
     role: "control",
     meaning:
-      "Lists the read-only platform objects of the type the projection binds, in the owner's order and by the owner's label, and writes the object a reader picks into the panel state its slot's input names. It changes nothing itself.",
-    effects: "Reads the owner's list as the reader; it writes only the panel's own state.",
+      "Lists or tabulates platform objects of the bound type through its resource adapter's query or list port, providing search, faceted filters, safe highlight rendering, paging, single viewing selection, optional explicit multi-selection and clickable reference navigation without embedding business query rules.",
+    effects: "Reads the bound type's list or query as the reader; it writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*"],
-    outputs: ["chosen"],
+    outputs: ["selected", "checked", "navigate"],
   }),
   defineComponentMeta({
     componentId: "ObjectSummary",
@@ -197,9 +197,10 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectSummary",
     role: "presentation",
     meaning:
-      "Shows the few facts of one platform object a reader recognises it by. Which facts and in what order is the projection's display; what each holds is the object's own owner's.",
+      "Shows the few facts of one platform object a reader recognises it by, including owner-supplied highlight ranges, status tags and clickable object references. Which facts and in what order is the projection's display; what each holds is the object's own owner's.",
     effects: "Reads one object of the type the projection binds, as the reader.",
     bindsElement: ["PlatformObjectType:*"],
+    outputs: ["navigate"],
   }),
   defineComponentMeta({
     componentId: "ObjectForm",
@@ -243,6 +244,16 @@ export const components: readonly ComponentMetadata[] = [
       "Draws the objects of the bound type as a graph joined by the objects of its graph's edge type, and chooses on it the list of node keys one form field of the same panel holds: a choice adds or removes a node, the nodes one edge away from a chosen one are marked, and one action adds them all. It decides nothing about what the nodes stand for or who may read them.",
     effects: "Reads the node and edge types' lists as the reader; it writes only the form field its slot's field port names.",
     bindsElement: ["PlatformObjectType:*"],
+  }),
+  defineComponentMeta({
+    componentId: "MetricChart",
+    module: "@ontomato/sdk/base",
+    exportName: "MetricChart",
+    role: "presentation",
+    meaning:
+      "Draws one registered chart as its source card draws it: the card's chart file, which its dashboard owner hands over for this projection, filled with the bound MetricView's output for the MetricView's own defaults and the values the panel binds. The projection keeps no drawing, query or data of its own.",
+    effects: "Reads the chart's source template through the product service and the MetricView through the data engine, both as the reader.",
+    bindsElement: ["MetricView:*"],
   }),
   defineComponentMeta({
     componentId: "GraphCanvas",

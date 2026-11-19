@@ -107,6 +107,36 @@ it.each([
  expect(upstream).not.toHaveBeenCalled();
 });
 
+it.each([
+  "/api/skills",
+  "/api/skills/reporting/references",
+  "/api/skills/reporting/files",
+  "/api/skills/reporting/file?path=references%2Freadme.md",
+])("forwards the declared skill read %s with the executor credential", async path => {
+ const upstream = vi.fn(async (_url: string, _request: NonNullable<Parameters<typeof fetch>[1]>) => Response.json({}));
+ vi.stubGlobal("fetch", upstream);
+ expect((await call("workbench" + path, { tk: "oq.business.grant" }, "GET")).status).toBe(200);
+ const [url, request] = upstream.mock.calls[0]!;
+ expect(url).toBe("http://workbench.test" + path);
+ expect(request).toMatchObject({ method: "GET", headers: { "X-API-Key": "selected-user-key" } });
+ expect(request.headers).not.toHaveProperty("tk");
+});
+
+it.each([
+  ["GET", "workbench/api/skills/search?q=report"],
+  ["GET", "workbench/api/skills/reporting/export"],
+  ["GET", "workbench/api/skills/reporting/files/extra"],
+  ["GET", "ontology/api/skills"],
+  ["POST", "workbench/api/skills/reporting/files"],
+  ["POST", "workbench/api/skills/import"],
+])("refuses the unlisted skill callback %s %s before resolving the executor", async (method, path) => {
+ const upstream = vi.fn();
+ vi.stubGlobal("fetch", upstream);
+ expect((await call(path, {}, method)).status).toBe(403);
+ expect(mocks.restore).not.toHaveBeenCalled();
+ expect(upstream).not.toHaveBeenCalled();
+});
+
 it("lets Java restore V for governance business Grants without a Node key exchange",async()=>{
  mocks.restore.mockRejectedValue(new Error('V lookup must stay in Java'));
  const upstream=vi.fn(async()=>Response.json({items:[]}));vi.stubGlobal('fetch',upstream);
@@ -124,6 +154,8 @@ it.each([
   ["GET", "/platform/scheduled-tasks"],
   ["GET", `/platform/scheduled-tasks/${other}`],
   ["POST", "/platform/scheduled-tasks/applications/agents/form"],
+  ["POST", "/ontology/query/metrics/describe"],
+  ["POST", "/metricView/execute"],
 ])("forwards %s %s with the executor credential", async (method, path) => {
   const upstream = vi.fn(async (_url: string, _request?: Parameters<typeof fetch>[1]) => Response.json({}));
   vi.stubGlobal("fetch", upstream);
@@ -157,6 +189,19 @@ it.each([
 it.each(["PUT", "DELETE"])("rejects %s for a task at the existing callback credential boundary", async method => {
   expect((await call(`ontology/platform/scheduled-tasks/${other}`, {}, method)).status).toBe(401);
   expect(mocks.restore).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["GET", "product-projections/chart-sources?dashboardId=board&cardId=card", 200],
+  ["GET", "product-projections/projection/chart-source", 200],
+  ["POST", "product-projections/chart-sources", 403],
+  ["PUT", "product-projections/projection/chart-source", 401],
+])("only proxies the declared chart read pairs, %s %s", async (method, path, status) => {
+  const upstream = vi.fn(async (_url: string) => Response.json({}));
+  vi.stubGlobal("fetch", upstream);
+  expect((await call("workbench/api/" + path, {}, method)).status).toBe(status);
+  if (status === 200) expect(upstream).toHaveBeenCalledWith("http://workbench.test/api/" + path, expect.anything());
+  else expect(upstream).not.toHaveBeenCalled();
 });
 
 it("validates the fixed operation entrance and never accepts an approval or question ID from a tool",async()=>{
