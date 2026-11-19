@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import type {ontologyParameterTypeSchema} from './panel-manifest';
+import type {ontologyParameterTypeSchema} from './product-projections';
 import type {ProductAsset} from './product-assets';
 type ParameterType=z.infer<typeof ontologyParameterTypeSchema>;
 const objectSelectionSchema=z.object({className:z.string().min(1).max(200),primaryKey:z.string().trim().min(1).max(1000)}).strict();

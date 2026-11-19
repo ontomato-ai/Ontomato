@@ -9,6 +9,7 @@ export const en = {
   "panels.agentForm.classNames": "Data scope",
   "panels.agentForm.enabledMcpServiceIds": "MCP services",
   "panels.agentForm.executionUserId": "Execution user",
+  "panels.agentForm.hiddenSkillSelection": "This agent has selected skills you cannot view. Ask someone who can see the full selection to change it.",
   "panels.agentForm.executionReadOnly": "Only a domain governance administrator may change the execution user.",
   "panels.confirmation.message": 'Run “{operation}” on “{target}” as {executor}?',
   "panels.confirmation.default": "This operation will not run unless you choose to execute it.",

@@ -143,6 +143,38 @@ it.each([
  expect(upstream).not.toHaveBeenCalled();
 });
 
+it.each([
+  ["GET", "/api/platform-ontology/schema", undefined],
+  ["GET", "/api/platform-ontology/counts", undefined],
+  ["GET", "/api/platform-ontology/start", undefined],
+  ["POST", "/api/platform-ontology/neighbors", { node: { className: "platform:User", primaryKey: "V" }, relationKinds: ["owns"] }],
+  ["POST", "/api/platform-ontology/objects", { type: "platform:User", keyword: "V", page: 1 }],
+])("forwards the platform ontology read %s %s with the executor credential", async (method, path, body) => {
+ const upstream = vi.fn(async (_url: string, _request: NonNullable<Parameters<typeof fetch>[1]>) => Response.json({}));
+ vi.stubGlobal("fetch", upstream);
+ const response = await nativeFetch(base+`/api/assistant/executions/${run}/workbench`+path, {
+   method, headers: { "content-type": "application/json", "X-Ontomato-Callback-Credential": credential(), "X-Ontomato-Run-Id": run, tk: "oq.business.grant" },
+   body: body === undefined ? undefined : JSON.stringify(body),
+ });
+ expect(response.status).toBe(200);
+ expect(upstream.mock.calls[0]?.[0]).toBe("http://workbench.test" + path);
+ expect(upstream.mock.calls[0]?.[1]).toMatchObject({ method, body: body === undefined ? undefined : JSON.stringify(body), headers: { "X-API-Key": "selected-user-key" } });
+ expect(upstream.mock.calls[0]?.[1].headers).not.toHaveProperty("tk");
+});
+
+it.each([
+  ["POST", "workbench/api/platform-ontology/schema"],
+  ["GET", "workbench/api/platform-ontology/neighbors"],
+  ["POST", "workbench/api/platform-ontology/objects/extra"],
+  ["GET", "ontology/platform-ontology/start"],
+])("refuses the unlisted platform ontology callback %s %s", async (method, route) => {
+ const upstream = vi.fn();
+ vi.stubGlobal("fetch", upstream);
+ expect((await call(route, {}, method)).status).toBe(403);
+ expect(mocks.restore).not.toHaveBeenCalled();
+ expect(upstream).not.toHaveBeenCalled();
+});
+
 it("lets Java restore V for governance business Grants without a Node key exchange",async()=>{
  mocks.restore.mockRejectedValue(new Error('V lookup must stay in Java'));
  const upstream=vi.fn(async()=>Response.json({items:[]}));vi.stubGlobal('fetch',upstream);

@@ -31,6 +31,8 @@ export interface PanelInstanceOptions {
   readProjection: (id: string) => Promise<ProductProjection>;
   /** Records, as the reader, the object a create draft's save created, so the draft addresses it from then on. */
   recordDraftCreated: (link: PageDraftLink, id: string) => Promise<void>;
+  /** Translates platform message keys (such as object-union type display names) in the current locale. */
+  translate?: (key: string) => string;
   reportDraftError?: (reason: unknown) => void;
 }
 
@@ -38,7 +40,8 @@ export interface PanelInstance {
   readonly manifest: PanelManifest;
   readonly state: PanelStateStore;
   readonly pageContext: DeepReadonly<Ref<PageContext>>;
-  readonly operations: DeepReadonly<Ref<readonly PanelOperationBinding[]>>;
+  /** Computed afresh from the registered projections; a reader never changes it. */
+  readonly operations: Readonly<Ref<readonly PanelOperationBinding[]>>;
   readonly projections: DeepReadonly<Ref<readonly PanelProjectionRegistration[]>>;
   /** The form adapters its projections registered, for the draft its address names. */
   readonly forms: PanelFormAdapters;
@@ -101,7 +104,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     pageKey: options.pageKey,
     url: options.url(),
     label: options.label(),
-    selection: panelSelection(manifest, state.values.value, names),
+    selection: panelSelection(manifest, state.values.value, names, options.translate),
   }));
   return {
     manifest,

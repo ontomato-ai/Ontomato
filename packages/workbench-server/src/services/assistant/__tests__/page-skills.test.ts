@@ -103,18 +103,33 @@ it("keeps ordinary native skills and excludes true product Profile skills from p
   expect((await listAssistantAgents(owner, credentials)).agents.some(a => a.id === native.id)).toBe(true);
 });
 
-it("uses the registered default only if it remains an enabled and usable page candidate", async () => {
-  current.pageSkills[0].defaults = [{ pageKey: "governance-report", agentKey: "custom" }];
+it("returns the directory without a default when a preset is missing, disabled or unusable", async () => {
+  current.pageSkills[0].defaults = [{ pageKey: "governance-report", defaultAgent: { kind: "preset", agentKind: "custom" } }];
+  mocks.agents.mockResolvedValue([definition(0, "regular"), definition(1, "custom", [page])]);
   expect((await listAssistantAgents(owner, credentials, query)).defaultAgentId).toBe(ids[1]);
-  for (const rows of [[definition(0, "regular")], [definition(0, "regular"), { ...definition(1, "custom"), enabled: false }], [definition(0, "regular"), definition(1, "custom", [report])]]) {
+  for (const rows of [
+    [definition(0, "regular")],
+    [definition(0, "regular"), { ...definition(1, "custom", [page]), enabled: false }],
+    [definition(0, "regular"), definition(1, "custom", [report])],
+  ]) {
     mocks.agents.mockResolvedValue(rows);
-    await expect(listAssistantAgents(owner, credentials, query)).rejects.toMatchObject({ code: "PAGE_DEFAULT_AGENT_UNAVAILABLE" });
+    const directory = await listAssistantAgents(owner, credentials, query);
+    expect(directory.agents.map(agent => agent.id)).toEqual([ids[0]]);
+    expect(directory).not.toHaveProperty("defaultAgentId");
   }
 });
 
+it("selects a concrete ID without treating it as a preset kind", async () => {
+  mocks.agents.mockResolvedValue([definition(0, "regular"), definition(1, "custom", [page])]);
+  current.pageSkills[0].defaults = [{ pageKey: "governance-report", defaultAgent: { kind: "id", id: ids[1] } }];
+  expect((await listAssistantAgents(owner, credentials, query)).defaultAgentId).toBe(ids[1]);
+  current.pageSkills[0].defaults[0]!.defaultAgent = { kind: "id", id: "custom" };
+  await expect(listAssistantAgents(owner, credentials, query)).rejects.toMatchObject({ code: "PAGE_DEFAULT_AGENT_UNAVAILABLE" });
+});
+
 it("locates each domain-member page by pageKey and keeps dashboard's own skill and default", async () => {
-  current = { pageSkills: [{ access: "domain-member", pageKey: "dashboard", skill: dashboard, defaults: [{ pageKey: "dashboard", agentKey: "custom" }] },
-    {access:"domain-member",pageKey:"schedules",skill:page,defaults:[{pageKey:"schedules",agentKey:ids[0]}]}], registeredSkills: [dashboard,page] };
+  current = { pageSkills: [{ access: "domain-member", pageKey: "dashboard", skill: dashboard, defaults: [{ pageKey: "dashboard", defaultAgent: { kind: "preset", agentKind: "custom" } }] },
+    {access:"domain-member",pageKey:"schedules",skill:page,defaults:[{pageKey:"schedules",defaultAgent:{kind:"id",id:ids[0]}}]}], registeredSkills: [dashboard,page] };
   mocks.agents.mockResolvedValue([definition(0, "regular", [report]), definition(1, "custom", [dashboard])]);
   expect((await listAssistantAgents(owner, credentials, { pageKey: "dashboard", access: "domain-member" })).defaultAgentId).toBe(ids[1]);
   expect((await listAssistantAgents(owner, credentials, { pageKey: "schedules", access: "domain-member" })).defaultAgentId).toBe(ids[0]);
