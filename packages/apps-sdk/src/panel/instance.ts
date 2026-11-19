@@ -100,11 +100,12 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   const forms = new PanelFormAdapters(options.reportDraftError);
   const draft = shallowRef<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
   const names = shallowReactive(new Map<string, string>());
+  const translate = options.translate ?? ((key: string) => key);
   const pageContext = computed<PageContext>(() => ({
     pageKey: options.pageKey,
     url: options.url(),
     label: options.label(),
-    selection: panelSelection(manifest, state.values.value, names, options.translate),
+    selection: panelSelection(manifest, state.values.value, names, translate),
   }));
   return {
     manifest,
