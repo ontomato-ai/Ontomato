@@ -28,8 +28,10 @@ import { useApplicationCatalog } from "../catalog";
  * selection.
  *
  * Going from one of the application's pages to another keeps the page left, up to `KEPT_PAGES`: back on it, the reader
- * finds its frame as it was, with no frame rebuilt and no SDK loaded again, while its definition and objects are checked
- * behind it. A kept page holds no stream and reports nothing. Leaving the application drops them all.
+ * finds its frame as it was, its last content showing at once, with no frame rebuilt and no SDK loaded again. Its use
+ * relation and the reader's use of it are checked meanwhile; only once they pass may the frame ask for anything again,
+ * and its objects are read again and updated in place. A page the reader may no longer use shows that instead of its
+ * last content. A kept page holds no stream and reports nothing. Leaving the application drops them all.
  */
 const props = defineProps<{
   /** The application whose panel this address shows. */
@@ -73,12 +75,6 @@ watch(() => props.objectRefresh?.seq, () => {
  */
 const KEPT_PAGES = 2;
 
-/**
- * When a kept page shown again is drawn: at once, its last content showing while its checks run and its objects are read
- * again (`at-once`), or only once its checks have passed (`after-checks`). Drawing it only once its objects have been
- * read again needs the frame to say so, which it does not yet; this is the one place that choice is made.
- */
-const KEPT_PAGE_REVEAL: "at-once" | "after-checks" = "at-once";
 
 /** A page of this application whose instance is kept, shown or not. */
 interface KeptPage {
@@ -89,8 +85,6 @@ interface KeptPage {
   context: PageContext | null;
   /** Whether it holds unsaved changes; only the shown page can, and leaving it so drops it. */
   dirty: boolean;
-  /** Shown again, and its checks not yet through. */
-  rechecking: boolean;
 }
 /**
  * The kept pages, in the order they were opened. The order never changes while a page is kept: a frame moved in the
@@ -236,14 +230,12 @@ watch(use, (next, previous) => {
   if (!next) return;
   performance.mark("ontomato:panel-page-opened", { detail: { applicationId: props.applicationId, useId: next.id } });
   const found = plan.next === "reuse" ? kept.value.find((page) => page.use.id === next.id) : undefined;
-  if (found) found.rechecking = true;
   const page = found ?? {
     use: next,
     port: markRaw(platformPanelHost(props.applicationId, next, undefined, answered.value ? undefined : relations!)),
     reported: panelAddress(pageAddress.value, requestedState.value),
     context: null,
     dirty: false,
-    rechecking: false,
   };
   if (!found) kept.value = [...kept.value, page];
   // Its bare address opens a kept page as it was left: the address takes the state the page is at.
@@ -259,12 +251,6 @@ if (!props.navigate)
 /** When a kept page shown again may ask for its objects again: the first of the two points its switch is measured at. */
 function markReopened(page: KeptPage) {
   performance.mark("ontomato:panel-page-reopened", { detail: { applicationId: props.applicationId, useId: page.use.id } });
-  page.rechecking = false;
-}
-
-/** Whether a page is drawn now: the shown one, once `KEPT_PAGE_REVEAL` lets a page shown again be. */
-function drawn(page: KeptPage) {
-  return page === shownPage.value && (KEPT_PAGE_REVEAL === "at-once" || !page.rechecking);
 }
 
 /** A kept page shown again whose use relation was withdrawn or bound elsewhere ends; the page opens from the current relations. */
@@ -302,7 +288,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
   <template v-if="!failure">
     <PanelHost
       v-for="page in kept"
-      v-show="drawn(page)"
+      v-show="page === shownPage"
       :key="page.use.id"
       :ref="(instance) => { if (page === shownPage) host = instance as PanelRefreshPort | null; }"
       :port="page.port"
