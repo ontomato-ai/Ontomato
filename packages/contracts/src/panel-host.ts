@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { buildTestContextSchema } from "./build-tests";
 import { pageContextSchema } from "./page-context";
 import { pageDraftLinkSchema } from "./page-draft";
 import { panelUseRefSchema } from "./panel-agent";
 import { panelObjectIdentitySchema, panelOpenRequestSchema, panelOperationSchema, panelStateValueSchema, type PanelObjectIdentity, type PanelStateValue } from "./panel-manifest";
-import { applicationPanelUseSchema, panelDefinitionContentSchema, productPanelSchema } from "./product-panels";
+import { applicationPanelUseSchema, directPanelDefinitionContentSchema, directPanelSchema, panelDefinitionContentSchema, productPanelSchema } from "./product-panels";
 import { definitionRevisionSchema, type ProductDefinitionRevision, type ProductDefinitionTarget } from "./product-subscriptions";
 import { workspaceDiffSchema, workspaceIdSchema } from "./workspaces";
 
@@ -40,6 +41,43 @@ export const candidatePanelSourceSchema = z.object({
 export const panelHostSourceSchema = z.discriminatedUnion("kind", [registeredPanelSourceSchema, candidatePanelSourceSchema]);
 export type PanelHostSource = z.infer<typeof panelHostSourceSchema>;
 export type CandidatePanelSource = z.infer<typeof candidatePanelSourceSchema>;
+
+export const directPanelHostSourceSchema = z.discriminatedUnion("kind", [
+  registeredPanelSourceSchema.extend({ panel: directPanelSchema }),
+  candidatePanelSourceSchema.extend({ panel: directPanelDefinitionContentSchema }),
+]);
+export type DirectPanelHostSource = z.infer<typeof directPanelHostSourceSchema>;
+
+export const productPanelReadSourceSchema = z.discriminatedUnion("kind", [
+  panelUseRefSchema.extend({ kind: z.literal("registered") }),
+  candidatePanelSourceSchema.pick({ kind: true, workspace: true }),
+]);
+export type ProductPanelReadSource = z.infer<typeof productPanelReadSourceSchema>;
+
+/** The first direct instance reads one named item of a fixed member. */
+export const directPanelMemberPathSchema = z.tuple([z.object({ member: z.string().min(1).max(200) }).strict()]);
+export type DirectPanelMemberPath = z.infer<typeof directPanelMemberPathSchema>;
+
+export const productPanelReadRequestSchema = z.object({
+  source: productPanelReadSourceSchema,
+  memberPath: directPanelMemberPathSchema,
+  dataName: z.string().min(1).max(200),
+  inputs: runtimeJsonObjectSchema,
+}).strict();
+export type ProductPanelReadRequest = z.infer<typeof productPanelReadRequestSchema>;
+
+const panelReadResults = [
+  z.object({ status: z.literal("ready"), value: runtimeJsonValueSchema }).strict(),
+  z.object({ status: z.literal("empty") }).strict(),
+  z.object({ status: z.literal("error"), message: z.string().min(1) }).strict(),
+  z.object({ status: z.literal("forbidden") }).strict(),
+] as const;
+export const productPanelReadResponseSchema = z.discriminatedUnion("status", panelReadResults);
+export type ProductPanelReadResponse = z.infer<typeof productPanelReadResponseSchema>;
+export const panelDataStateSchema = z.discriminatedUnion("status", [
+  ...panelReadResults, z.object({ status: z.literal("loading") }).strict(),
+]);
+export type PanelDataState = z.infer<typeof panelDataStateSchema>;
 
 /** What the host writes into a panel frame's document before its module runs: the run's facts, as one JSON value. */
 export const panelHostMessageSchema = z
