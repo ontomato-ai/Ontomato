@@ -6,6 +6,7 @@ import { createApp, defineComponent, h, ref, resolveComponent } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { definePanel, type PanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { PanelHostMessage } from "@ontomato/contracts/panel-host";
+import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import {
   platformScheduleFormSchema,
   platformTaskRunSchema,
@@ -49,6 +50,9 @@ export const taskForm: PlatformScheduleForm = platformScheduleFormSchema.parse({
   values: task.content,
   submittable: true,
 });
+
+/** What the form's changed note names for the case set: the owner's own label for the field. */
+export const caseSetLabel = taskForm.fields.find((field) => field.key === "caseSetId")!.label;
 
 export const inspectionTaskForm = platformScheduleFormSchema.parse(example("forms", "operations-switch-to-inspection"));
 
@@ -134,9 +138,21 @@ export const manifestQ = definePanel({
   operations: [],
 });
 
+/**
+ * The exact SDK version the trial's panel records name: an installed development build, with its content hash. It is not
+ * the version the platform currently serves, so a frame that loads it shows the host followed the record.
+ */
+export const SDK_VERSION = `1.1.1-dev.${"0123456789abcdef".repeat(4)}`;
+
+/** What Node answers for the SDK it currently serves; a panel's frame loads the version its record names instead. */
+export const currentSdk = () => Response.json({
+  version: "1.2.0", publicBasePath: "", sdkBasePath: "/apps-sdk/1.2.0",
+  manifestPath: "/apps-sdk/1.2.0/sdk.json", docsPath: "/apps-sdk/1.2.0/docs/index.md", referencePath: "/apps-sdk/1.2.0/docs/reference.md",
+});
+
 /** A panel's current record; its HTML has the element the SDK mounts into, and the test supplies the component. */
 export function panelRecord(id: string, name: string, manifest: PanelManifest): ProductPanel {
-  return { ...current, id, name, description: name, content: { html: '<div id="app"></div>', module: "" }, manifest };
+  return { ...current, id, name, description: name, content: { html: '<div id="app"></div>', module: "" }, manifest, sdkVersion: SDK_VERSION };
 }
 
 /** A use relation of one of the trial's applications, as Java declares it. */
@@ -150,12 +166,18 @@ export function panelUse(id: string, pageKey: string, panelId: string, path: str
   };
 }
 
+/** What a panel application's host shows for one use relation: the relation and the panel's current record. */
+export const registered = (applicationId: string, use: ApplicationPanelUse, panel: ProductPanel) =>
+  ({ kind: "registered", applicationId, use, panel }) as const;
+
 /** One request that reached the network, as the platform sent it for the frame. */
 export interface Sent {
   method: string;
   path: string;
   search: string;
   credential: string | null;
+  /** The execution context the request is marked with (`X-Ontomato-Execution-Context`), or null for a live request. */
+  execution: string | null;
   body: unknown;
 }
 
@@ -196,6 +218,7 @@ export function installPlatform(answer: (request: Sent) => Response | Promise<Re
       path: url.pathname,
       search: url.search,
       credential: new Headers(init?.headers).get("tk"),
+      execution: new Headers(init?.headers).get(BUILD_TEST_HEADER),
       body: typeof init?.body === "string" ? JSON.parse(init.body) : null,
     };
     sent.push(request);
@@ -247,9 +270,10 @@ export function inside(frame: Window) {
   Object.defineProperty(window, "parent", { value: parent, configurable: true });
 }
 
-/** Writes the frame's document as the panel host does: the panel's HTML and the run's facts. */
+/** Writes the frame's document as the panel host does: the panel's renderable definition and the run's facts. */
 export function writePanelDocument(panel: ProductPanel, use: ApplicationPanelUse, url: string, state: PanelHostMessage["state"]) {
-  writeFrameDocument({ kind: "panel-host-message", panel, pageKey: use.pageKey, url, label: panel.name, state });
+  const { content, manifest, sdkVersion } = panel;
+  writeFrameDocument({ kind: "panel-host-message", panel: { content, manifest, sdkVersion }, pageKey: use.pageKey, url, label: panel.name, state });
 }
 
 /** Writes the frame's document from the run's facts the platform's panel host wrote for it. */
@@ -330,7 +354,7 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
     "Task form (trial)",
     definePanel({ state: selectedTask, slots: { form: slot(formProjection.id, "task") }, operations: [] }),
   );
-  const use = panelUse("use-trial-a-form", "panels-trial-a-form", panel.id, "/form");
+  const use = panelUse("use-trial-a-form", "panels-trial-a-form", panel.id, "/applications/app-panels-trial-a/form");
   // The operations application's form for the task, with a second case set to choose from.
   const form = platformScheduleFormSchema.parse({
     ...taskForm,
@@ -355,20 +379,14 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
         data: { applicationId: "app-panels-trial-a", entry: { path: "/panels-trial-a", renderer: "panels" }, panelUses: [use] },
       });
     if (request.path === `/api/product-panels/${panel.id}`) return Response.json({ panel });
-    if (request.path === "/api/apps-sdk/current")
-      return Response.json({
-        version: "1.1.0",
-        publicBasePath: "/apps-sdk",
-        sdkBasePath: "/apps-sdk/1.1.0",
-        manifestPath: "/apps-sdk/1.1.0/manifest.json",
-        docsPath: "/apps-sdk/1.1.0/docs",
-        referencePath: "/apps-sdk/1.1.0/reference",
-      });
+    if (request.path === "/api/apps-sdk/current") return currentSdk();
     if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel);
     if (request.path === `/api/product-projections/${formProjection.id}`)
       return served.then(() => Response.json({ projection: formProjection }));
     if (request.path === `/api/data-query/platform/scheduled-tasks/${task.id}`) return Response.json(task);
-    if (request.path === `/api/data-query/platform/scheduled-tasks/applications/${task.appId}/form`) return Response.json(form);
+    // The owner answers its form for the values it is given, as it checks a draft against them.
+    if (request.path === `/api/data-query/platform/scheduled-tasks/applications/${task.appId}/form`)
+      return Response.json({ ...form, values: (request.body as { values: typeof form.values }).values });
     if (request.path === "/api/assistant/sessions/session-1/runs/run-1/page-draft") {
       draftServed();
       return Response.json(draft);

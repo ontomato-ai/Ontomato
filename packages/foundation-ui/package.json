@@ -13,6 +13,7 @@
     "./markdown": "./src/markdown/index.ts",
     "./preview": "./src/preview/index.ts",
     "./theme": "./src/theme/index.ts",
+    "./graph": "./src/graph/index.ts",
     "./visibility": "./src/visibility.ts"
   },
   "scripts": {

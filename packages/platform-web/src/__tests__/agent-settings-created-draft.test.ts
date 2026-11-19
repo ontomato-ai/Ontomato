@@ -57,7 +57,7 @@ const form: AssistantAgentInput = {
   modelSelection: { modelId: null }, skills: [], classNames: [], enabledMcpServiceIds: [], sortOrder: 0,
 };
 /** The agent the draft's first save created, as the owner stores it. */
-const created: AssistantAgentDefinition = { ...form, skills: [], id: CREATED, executionUserId: null };
+const created: AssistantAgentDefinition = { ...form, skills: [], sortOrder: 0, id: CREATED, executionUserId: null };
 const existing = { ...created, id: EXISTING, name: "Existing analyst" };
 const edited = { ...created, id: EDITED, name: "Second analyst" };
 

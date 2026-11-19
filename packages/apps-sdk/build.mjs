@@ -12,7 +12,7 @@ import { finalizeSdk, VERSION_PLACEHOLDER } from "./content-version.mjs";
 import { elementComponents } from "./element-components.mjs";
 import { panelAppearance } from "./panel-appearance.mjs";
 import { sdkChunks } from "./sdk-chunks.mjs";
-import { catalogueMarkdown, checkCatalogue, componentMetadata, referenceMarkdown } from "./reference.mjs";
+import { catalogueMarkdown, checkCatalogue, componentMetadata, componentPorts, referenceMarkdown } from "./reference.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -132,8 +132,14 @@ async function main() {
   mkdirSync(join(outDir, "docs"), { recursive: true });
   writeFileSync(join(outDir, "docs/index.md"), render(readFileSync(join(HERE, "resources/docs/index.md"), "utf8"), version));
   const components = componentMetadata({ tsconfig: join(HERE, "tsconfig.json"), source: join(HERE, "src/catalogue.ts") });
-  checkCatalogue(ENTRIES.filter((entry) => entry.specifier.startsWith("@ontomato/")), components, HERE, join(HERE, "tsconfig.json"));
-  writeFileSync(join(outDir, "components.json"), `${JSON.stringify({ version, components: components.map((component) => component.metadata) }, null, 2)}\n`);
+  const publicEntries = ENTRIES.filter((entry) => entry.specifier.startsWith("@ontomato/"));
+  checkCatalogue(publicEntries, components, HERE, join(HERE, "tsconfig.json"));
+  // Each component's meaning is its declaration's; its ports are read from its source, as the reference reads them.
+  const ports = componentPorts({ root: HERE, tsconfig: join(HERE, "tsconfig.json"), entries: publicEntries });
+  writeFileSync(join(outDir, "components.json"), `${JSON.stringify({
+    version,
+    components: components.map(({ metadata }) => ({ ...metadata, ports: ports.get(`${metadata.module}#${metadata.exportName}`) })),
+  }, null, 2)}\n`);
   writeFileSync(join(outDir, "docs/components.md"), render(catalogueMarkdown(version, components), version));
   writeFileSync(join(outDir, "docs/reference.md"), [
     `# @ontomato/sdk ${version}: reference`,

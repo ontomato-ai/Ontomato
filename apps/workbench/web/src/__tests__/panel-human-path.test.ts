@@ -17,8 +17,10 @@ import PanelApplicationRoute from "../../../../../packages/platform-web/src/page
 import { platformLayoutRoute } from "../../../../../packages/platform-web/src/layout-route";
 import {
   hostMessageOf, inspectionTaskForm, inside, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt,
-  panelHostFrame, panelRecord, panelSnapshot, panelUse, projections, READER, run, SCHEDULED_TASK, task, taskForm, writeFrameDocument,
+  currentSdk, panelHostFrame, panelRecord, panelSnapshot, panelUse, projections, READER, run, SCHEDULED_TASK, SDK_VERSION, task, taskForm,
+  writeFrameDocument,
   type Sent,
+  caseSetLabel,
 } from "./panel-frame";
 
 const appA = "app-panels-trial-a";
@@ -28,8 +30,8 @@ const p = panelRecord("panel-schedules-trial", "Trial panel P", manifestP);
 const q = panelRecord("panel-schedules-summary", "Trial panel Q", manifestQ);
 p.content.html = readFileSync(join(panelPath, "p/panel.html"), "utf8");
 q.content.html = readFileSync(join(panelPath, "q/panel.html"), "utf8");
-const useP = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", p.id, "/tasks");
-const useQ = panelUse("use-trial-b-summary", "panels-trial-b-summary", q.id, "/summary");
+const useP = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", p.id, `/applications/${appA}/tasks`);
+const useQ = panelUse("use-trial-b-summary", "panels-trial-b-summary", q.id, `/applications/${appB}/summary`);
 const taskPath = "/api/data-query/platform/scheduled-tasks";
 const deepState = { selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id } };
 const secondTask = { ...task, id: "ac186b00-a3dd-46d2-b404-72065d877a34", title: "Second scheduled task" };
@@ -50,10 +52,7 @@ function answer(request: Sent) {
   if (snapshot) return panelSnapshot(snapshot);
   const projection = Object.values(projections).find(projection => request.path === `/api/product-projections/${projection.id}`);
   if (projection) return Response.json({ projection });
-  if (request.path === "/api/apps-sdk/current") return Response.json({
-    version: "1.1.1", publicBasePath: "/apps-sdk", sdkBasePath: "/apps-sdk/1.1.1",
-    manifestPath: "/apps-sdk/1.1.1/sdk.json", docsPath: "/apps-sdk/1.1.1/docs", referencePath: "/apps-sdk/1.1.1/reference",
-  });
+  if (request.path === "/api/apps-sdk/current") return currentSdk();
   if (request.path === taskPath) return Response.json({ tasks: [task], timeZone: task.timeZone });
   if (request.path === `${taskPath}/${task.id}`) return Response.json(task);
   if (request.path === `${taskPath}/${secondTask.id}`) return Response.json(secondTask);
@@ -61,7 +60,7 @@ function answer(request: Sent) {
     pageKey: useP.pageKey, operation: `${SCHEDULED_TASK}.save`, target: { id: task.id },
     form: { ...task.content, caseSetId: "set-smoke" },
   });
-  if (request.path === `${taskPath}/applications/${task.appId}/form`) return Response.json(taskForm);
+  if (request.path === `${taskPath}/applications/${task.appId}/form`) return taskFormFor((request.body as { values: typeof taskForm.values }).values);
   return nothingAt(request);
 }
 
@@ -71,7 +70,7 @@ async function mountPage(address: string, usePlatformRoutes: boolean, reply: typ
   const router = createRouter({ history: createMemoryHistory(), routes: usePlatformRoutes ? [platformLayoutRoute([])] : [{
     path: "/applications/:applicationId/:panelPath",
     component: PanelApplicationRoute,
-    props: route => ({ ...route.params, ...listeners }),
+    props: route => ({ applicationId: route.params.applicationId, ...listeners }),
   }] });
   await router.push(address);
   const { app, element } = mountPlatformPage(() => h(RouterView), router);
@@ -290,11 +289,11 @@ it.each([
 
 it.each([
   {
-    case: "the use relation is gone",
+    case: "the application declares no use at this address",
     response: () => Response.json({ data: {
       applicationId: appB, entry: { path: "/", renderer: "panels" }, panelUses: [],
     } }),
-    message: `This application declares no panel use ${useQ.id}`,
+    message: `${useQ.path} is not a panel of this application`,
     status: "",
   },
   {
@@ -303,22 +302,23 @@ it.each([
     message: "Application catalog failed",
     status: "HTTP 500: ",
   },
-])("reports a load error when $case after opening the route", async ({ response, message, status }) => {
+])("reports a load error when $case", async ({ response, message, status }) => {
   const onDisplayLoaded = vi.fn();
-  let reads = 0;
-  const { app, element } = await mountPage(`/applications/${appB}/summary`, false, request => {
-    // The route knows the use before the host tries to load it.
-    if (request.path === `/api/data-query/platform/applications/${appB}/panel-uses` && ++reads === 2) return response();
+  const { app, element, sent } = await mountPage(useQ.path, false, request => {
+    if (request.path === `/api/data-query/platform/applications/${appB}/panel-uses`) return response();
     return answer(request);
   }, { onDisplayLoaded });
   try {
     await vi.waitFor(() => {
-      expect(element.querySelector(".panel-host-error")?.textContent).toBe(message);
+      expect(element.querySelector('[role="alert"]')?.textContent).toBe(message);
       expect(onDisplayLoaded.mock.calls).toEqual([
         [{ status: "loading" }],
         [{ status: "error", error: { code: PANEL_LOAD_ERROR_CODES.panelUnavailable, message: status + message } }],
       ]);
     });
+    // The route reads the application's uses once; no panel is read for an address that names none.
+    expect(sent.filter(request => request.path.endsWith("/panel-uses"))).toHaveLength(1);
+    expect(sent.some(request => request.path.startsWith("/api/product-panels/"))).toBe(false);
   } finally {
     app.unmount();
   }
@@ -376,6 +376,36 @@ it("sends an initial clean report from the frame", async () => {
   }
 });
 
+it("names the selected object by the label its owner gave it, and keeps the name out of the address", async () => {
+  const address = panelAddress(`/applications/${appA}/tasks`, deepState);
+  const { app, frame, router } = await open(address);
+  const selections: unknown[] = [];
+  const listener = (event: MessageEvent) => {
+    if (event.source === frame.contentWindow && event.data?.channel === PANEL_HOST_CHANNEL && event.data.kind === "context")
+      selections.push(event.data.context.selection);
+  };
+  window.addEventListener("message", listener);
+  try {
+    await startFrame(frame);
+    // The selection arrives from the address as a key alone; the name follows once a projection has read the object.
+    await vi.waitFor(() => expect(selections.at(-1)).toEqual([
+      { kind: SCHEDULED_TASK, id: task.id, label: `${task.title} (${SCHEDULED_TASK} ${task.id})` },
+    ]));
+    // An object the list never held is named by the summary's own read of it.
+    await router.push(panelAddress(`/applications/${appA}/tasks`, { selectedTask: { className: SCHEDULED_TASK, primaryKey: secondTask.id } }));
+    await vi.waitFor(() => expect(selections.at(-1)).toEqual([
+      { kind: SCHEDULED_TASK, id: secondTask.id, label: `${secondTask.title} (${SCHEDULED_TASK} ${secondTask.id})` },
+    ]));
+    expect(router.currentRoute.value.fullPath).not.toContain(encodeURIComponent(secondTask.title).slice(0, 12));
+    expect(JSON.parse(String(router.currentRoute.value.query.state))).toEqual({
+      selectedTask: { className: SCHEDULED_TASK, primaryKey: secondTask.id },
+    });
+  } finally {
+    window.removeEventListener("message", listener);
+    app.unmount();
+  }
+});
+
 it("blocks a presentation while a reader's form edit is unsaved, then clears dirty on discard and save", async () => {
   const path = `/applications/${appA}/tasks`;
   const address = panelAddress(path, deepState);
@@ -424,7 +454,7 @@ it("blocks a presentation while a reader's form edit is unsaved, then clears dir
     onDisplayDirty,
   });
   const editInstruction = (value: string) => {
-    const input = document.querySelector<HTMLTextAreaElement>('[data-field="instruction"] textarea')!;
+    const input = document.querySelector<HTMLTextAreaElement>('[data-field="/instruction"] textarea')!;
     input.value = value;
     input.dispatchEvent(new Event("input", { bubbles: true }));
   };
@@ -436,7 +466,7 @@ it("blocks a presentation while a reader's form edit is unsaved, then clears dir
   };
   try {
     await startFrame(frame);
-    await vi.waitFor(() => expect(document.querySelector<HTMLTextAreaElement>('[data-field="instruction"] textarea')?.value)
+    await vi.waitFor(() => expect(document.querySelector<HTMLTextAreaElement>('[data-field="/instruction"] textarea')?.value)
       .toBe(baseline.instruction));
     editInstruction("Inspect the weekly failures");
     await vi.waitFor(() => expect(onDisplayDirty).toHaveBeenLastCalledWith(true));
@@ -511,9 +541,16 @@ function taskFormFor(values: typeof taskForm.values) {
 it("opens the saved draft's old link as an ordinary panel", async () => {
   let current = task;
   const path = `/applications/${appA}/tasks`;
-  const draftQuery = new URLSearchParams({ draftSessionId: "session-1", draftRunId: "run-1", draftPath: "outputs/drafts/task.page-draft.json" });
+  // A run's draft link names its session and run by their UUIDs; the settled draft is reported by them.
+  const session = "5b0f8a52-3d2e-4c1a-9a7e-1f2b3c4d5e01";
+  const runId = "5b0f8a52-3d2e-4c1a-9a7e-1f2b3c4d5e02";
+  const draftQuery = new URLSearchParams({ draftSessionId: session, draftRunId: runId, draftPath: "outputs/drafts/task.page-draft.json" });
   const draftAddress = panelAddress(`${path}?${draftQuery}`, deepState);
   const { app, element, frame, router, sent } = await open(draftAddress, false, request => {
+    if (request.path === `/api/assistant/sessions/${session}/runs/${runId}/page-draft`) return Response.json({
+      pageKey: useP.pageKey, operation: `${SCHEDULED_TASK}.save`, target: { id: task.id },
+      form: { ...task.content, caseSetId: "set-smoke" },
+    });
     if (request.path === `${taskPath}/${task.id}`) {
       if (request.method === "PUT") {
         current = { ...current, revision: current.revision + 1, content: (request.body as { content: typeof task.content }).content };
@@ -528,7 +565,7 @@ it("opens the saved draft's old link as an ordinary panel", async () => {
   });
   try {
     const { context } = await startFrame(frame);
-    await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain("caseSetId"));
+    await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain(caseSetLabel));
     await context.instance.invoke("form.save");
     expect(current.content.caseSetId).toBe("set-smoke");
     await vi.waitFor(() => expect(context.draft.value).toBeNull());
@@ -596,7 +633,7 @@ it("uses the conversation object signal to refresh only matching objects and pre
 
     const query = new URLSearchParams({ draftSessionId: "session-1", draftRunId: "run-1", draftPath: "outputs/drafts/task.page-draft.json" });
     await router.push(panelAddress(`${address}?${query}`, deepState));
-    await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")?.textContent).toContain("caseSetId"));
+    await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")?.textContent).toContain(caseSetLabel));
     const editing = formReads().length;
     current = { ...current, revision: current.revision + 1, content: { ...current.content, caseSetId: "agent-later" },
       summary: [{ key: "instruction", label: "Instruction", value: "Agent changed it again" }] };
@@ -667,10 +704,20 @@ it("reconciles definitions and objects on foreground without replacing an unchan
     ]);
     expect(element.querySelector("iframe.panel-host-frame")).toBe(frame);
 
+    // A new revision of the same definition is read by the host, and the frame keeps running the document it has.
     foreground.set("hidden");
     panel = { ...p, revision: p.revision + 1 };
     foreground.set("visible");
-    await vi.waitFor(() => expect(hostMessageOf(frame.srcdoc).panel.revision).toBe(panel.revision));
+    await vi.waitFor(() => expect(definitionReads().at(-1)?.path).toBe(`/api/product-panels/${p.id}`));
+    await nextTick();
+    expect(frame.srcdoc).toBe(srcdoc);
+
+    // A revision that changes the definition reaches the frame: only the renderable definition crosses into it.
+    foreground.set("hidden");
+    panel = { ...p, revision: p.revision + 2, content: { ...p.content, html: `${p.content.html}<p id="rearranged"></p>` } };
+    foreground.set("visible");
+    await vi.waitFor(() => expect(hostMessageOf(frame.srcdoc).panel.content.html).toContain('id="rearranged"'));
+    expect(hostMessageOf(frame.srcdoc).panel).toEqual({ content: panel.content, manifest: panel.manifest, sdkVersion: SDK_VERSION });
     expect(sent.filter(request => request.path.startsWith("/api/product-assets/"))).toEqual([]);
   } finally {
     app.unmount();
@@ -707,17 +754,16 @@ it("shares one definition stream across author panels, restores a changed collec
   const signals = () => vi.mocked(fetch).mock.calls
     .filter(([url]) => String(url).endsWith("/definition-stream")).map(([, init]) => init!.signal!);
   const labels = {
-    useMissing: (id: string) => id,
     notStarted: "Panel has not started",
     failures: { fileUnavailable: "File unavailable", scriptThrew: "Script threw", scriptRejected: "Script rejected" },
   };
-  const portA = platformPanelHost(appA, mode);
-  const portB = platformPanelHost(appB, mode);
+  const portA = platformPanelHost(appA, useP, mode);
+  const portB = platformPanelHost(appB, useQ, mode);
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/", component: { render: () => null } }] });
   await router.push("/");
   const page = mountPlatformPage(() => h("main", [
-    showP.value ? h(PanelHost, { key: "p", port: portA, useId: useP.id, address: "/tasks", labels }) : null,
-    h(PanelHost, { key: "q", port: portB, useId: useQ.id, address: "/summary", labels, initial: deepState }),
+    showP.value ? h(PanelHost, { key: "p", port: portA, address: useP.path, labels }) : null,
+    h(PanelHost, { key: "q", port: portB, address: useQ.path, labels, initial: deepState }),
   ]), router);
   try {
     await vi.waitFor(() => expect(streams.at(-1)?.targets).toEqual(expect.arrayContaining([
@@ -798,7 +844,7 @@ it.each([true, false])("resolves a panel draft through the bridge with created=%
       await vi.waitFor(() => {
         expect(context.draft.value?.target.id).toBe(task.id);
         expect(context.instance.deepLink()).toEqual(deepState);
-        expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain("caseSetId");
+        expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain(caseSetLabel);
       });
       const addressedReads = taskReads().slice(initialReads);
       expect(addressedReads).not.toHaveLength(0);
@@ -841,7 +887,7 @@ it.each([
   });
   try {
     const { context } = await startFrame(frame);
-    await vi.waitFor(() => expect(document.querySelector('.sdk-owner-form [data-field="caseSetId"]')).not.toBeNull());
+    await vi.waitFor(() => expect(document.querySelector('.sdk-owner-form [data-field="/caseSetId"]')).not.toBeNull());
     await router.push(panelAddress(`${path}?${query}`, deepState));
     await vi.waitFor(() => expect(sent.filter(request => request.path === formPath)
       .some(request => (request.body as { changedField?: string }).changedField === "operation")).toBe(true));
@@ -854,9 +900,11 @@ it.each([
       expect([...document.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")].every(button => button.disabled)).toBe(true);
     } else {
       await vi.waitFor(() => {
-        expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain("operation, instruction");
-        expect(document.querySelector<HTMLTextAreaElement>('[data-field="instruction"] textarea')?.value).toBe(drafted.instruction);
-        expect(document.querySelector('.sdk-owner-form [data-field="caseSetId"]')).toBeNull();
+        // The changed fields, named by the application's own labels.
+        expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain(
+          inspectionTaskForm.fields.map(field => field.label).join(", "));
+        expect(document.querySelector<HTMLTextAreaElement>('[data-field="/instruction"] textarea')?.value).toBe(drafted.instruction);
+        expect(document.querySelector('.sdk-owner-form [data-field="/caseSetId"]')).toBeNull();
       });
       const save = [...document.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")]
         .find(button => button.textContent?.trim() === "Save");

@@ -53,10 +53,10 @@ export function pilotPageResolver(setPage: (address: string) => void): PilotPage
         },
       } satisfies PilotPage;
     }
-    // A panel application's page: `/applications/<application>/<the use relation's path>`, shown by the same component
-    // that shows it full. It opens at the state its address names and reports selections to the display controller.
-    // The panel stays the same instance while only its state changes.
-    const panel = /^\/applications\/([^/]+)(\/.*)?$/.exec(path);
+    // A panel application's page: a use relation's full path under `/applications/<application>`, shown by the same
+    // component that shows it full. It opens at the state its address names and reports selections to the display
+    // controller. The panel stays the same instance while only its state changes.
+    const panel = /^\/applications\/([^/]+)(?:\/.*)?$/.exec(path);
     if (panel) {
       return {
         id: "panel-application",
@@ -64,7 +64,6 @@ export function pilotPageResolver(setPage: (address: string) => void): PilotPage
         instance: path,
         props: {
           applicationId: decodeURIComponent(panel[1]!),
-          panelPath: (panel[2] ?? "").replace(/^\//, ""),
           address,
           navigate: setPage,
         },

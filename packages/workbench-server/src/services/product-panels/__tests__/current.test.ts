@@ -15,7 +15,7 @@ let rows: Map<string, CurrentProductRow>;
 const projection = () => registerProductProjectionRequestSchema.parse({ name: "Task summary", description: "", visibility: "domain", revision: 0,
   componentId: "TaskSummary", binding: { kind: "PlatformObjectType", id: "platform:ScheduledTask" },
   inputs: { task: { kind: "object", objectType: "platform:ScheduledTask" } }, display: { fields: ["name"] } });
-const panel = () => registerProductPanelRequestSchema.parse({ name: "Tasks", description: "", visibility: "domain", revision: 0,
+const panel = () => registerProductPanelRequestSchema.parse({ name: "Tasks", description: "", visibility: "domain", revision: 0, sdkVersion: "1.1.2",
   content: { html: "<main></main>", module: "throw new Error('Node must never execute this module')", recipes: "Choose a test task." },
   manifest: { state: { selectedTask: { kind: "object", objectType: "platform:ScheduledTask" } },
     slots: { summary: { projectionId: "x", inputs: { task: { state: "selectedTask" } } } }, operations: [] } });

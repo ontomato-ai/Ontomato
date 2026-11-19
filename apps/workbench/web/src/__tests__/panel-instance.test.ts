@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { createApp, defineComponent, h, nextTick, ref } from "vue";
+import { createApp, defineComponent, h, nextTick, ref, shallowRef } from "vue";
 import { definePanel, type PanelManifest } from "@ontomato/contracts/panel-manifest";
-import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
+import type { PanelDefinitionContent, ProductProjection } from "@ontomato/contracts/product-panels";
 import { createPanelInstance, applyPanelRequest } from "../../../../../packages/apps-sdk/src/panel/instance";
 import { PanelFormAdapters, receivePanelDraft, type ReceivedPanelDraft } from "../../../../../packages/apps-sdk/src/panel/draft";
 import { portsOf } from "../../../../../packages/apps-sdk/src/panel/ports-of";
@@ -36,20 +36,11 @@ const panel = definePanel({
   operations: [{ id: "task.clear", label: "Clear", kind: "state", sets: { selectedTask: null } }],
 });
 
-/** The panel's own registered definition: what the host read and the frame was handed. */
-const registered: ProductPanel = {
-  id: "panel-schedules",
-  domainId: "domain-1",
-  ownerId: "owner-1",
-  revision: 1,
-  createdAt: "2026-11-18T00:00:00.000Z",
-  updatedAt: "2026-11-18T00:00:00.000Z",
-  editable: false,
-  name: "Scheduled tasks",
-  description: "",
-  visibility: "domain",
+/** What the host handed the frame: the panel's content, declaration and SDK version, without the record's identity. */
+const registered: PanelDefinitionContent = {
   content: { html: '<div id="app"></div>', module: 'import {mountPanel} from "@ontomato/sdk/panel";' },
   manifest: panel,
+  sdkVersion: "1.1.1",
 };
 
 /** The records the platform holds, as the frame reads them by ID. */
@@ -84,6 +75,7 @@ function instance(initial?: Record<string, unknown>) {
     url: () => "/a/schedules",
     label: () => "Scheduled tasks",
     initial: initial as never,
+    recordDraftCreated: async () => {},
     readProjection: async (id) => records.get(id)!,
   });
 }
@@ -152,35 +144,28 @@ describe("a panel's instance", () => {
     expect(handlerFor("schedules.runNow")).toBeDefined();
   });
 
-  it("takes a draft of its own form, comparing it with the owner's reading", async () => {
-    const adapters = new PanelFormAdapters();
-    const prepareDraft = vi.fn(async () => ({ baseline: { title: "Nightly", application: "reports" }, apply: () => {} }));
-    adapters.register("taskForm", {
-      operation: "schedules.update",
-      prepareDraft,
-      save: async () => ({ id: "task-1" }),
-      // This test only checks which slot takes the draft and which fields it changed; the form's own save and the
-      // showing of the draft are the component's, checked in its own test.
+  it("calls a draft unclaimed only once every form slot has registered and declined it", async () => {
+    const panelInstance = instance();
+    const declining = {
+      handle: { fields: shallowRef([]), values: shallowRef({}), errors: shallowRef({}), changed: shallowRef(new Set<string>()), busy: ref(false), set: () => {} },
+      // The owner's form for the draft's target performs another operation.
+      receive: async () => null,
       submit: async () => ({}),
-    });
-    const received = await new Promise<ReceivedPanelDraft<Record<string, unknown>>>((taken) =>
-      void receivePanelDraft(
-        "schedules",
-        adapters,
-        {
-          readPageDraft: async () => ({
-            pageKey: "schedules",
-            operation: "schedules.update",
-            target: { id: "task-1" },
-            form: { title: "Nightly report", application: "reports" },
-          }),
-        },
-        { sessionId: "s", runId: "r", path: "outputs/drafts/a.page-draft.json" },
-        taken,
-      ),
-    );
-    expect(received.slot).toBe("taskForm");
-    expect([...received.changed]).toEqual(["title"]);
+      dirty: () => false,
+      discard: () => {},
+    };
+    const saves = { binding: `PlatformObjectType:${SCHEDULED_TASK}`, inputs: {}, operations: [
+      { name: "save", label: "Save", kind: "form.save" as const, inputSchema: {}, handlerRef: `${SCHEDULED_TASK}.save` },
+    ] };
+    panelInstance.forms.hold({ pageKey: "schedules", operation: "agent.update", target: { id: "a-1" }, form: {} }, { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/drafts/a.page-draft.json" }, () => {});
+    panelInstance.forms.register("taskForm", declining);
+    await vi.waitFor(() => expect(panelInstance.forms.unclaimed(["taskForm"])).toBe(true));
+    // A declared slot still to register may be the form that takes it.
+    panelInstance.register({ slot: "taskForm", projectionId: "projection-task-form", ports: saves, invoke: async () => ({}) });
+    panelInstance.register({ slot: "tasks", projectionId: "projection-x", ports: { ...saves, operations: [] }, invoke: async () => ({}) });
+    expect(panelInstance.unclaimedDraft.value).toBe(false);
+    panelInstance.register({ slot: "runTask", projectionId: "projection-run-task", ports: { ...saves, operations: [] }, invoke: async () => ({}) });
+    expect(panelInstance.unclaimedDraft.value).toBe(true);
   });
 
   it("keeps a value the panel does not offer in an address out of one", () => {
@@ -228,6 +213,8 @@ describe("a panel's module", () => {
       projectionsChanged: () => () => {},
       draft: ref(null),
       holdUnsaved: () => () => {},
+      t: (key: string) => key,
+      resources: async () => {},
     });
     app.mount(element);
     await nextTick();

@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { formFieldErrorSchema } from "./form-fields";
+import { pageDraftLinkSchema } from "./page-draft";
 
 /*
  * What a panel's `panel.mjs` exports through `definePanel`: the state the panel keeps for one instance and the
@@ -62,6 +64,14 @@ export type PanelStateValue = z.infer<typeof panelStateValueSchema>;
 export const panelStateRefSchema = z.object({ state: key }).strict();
 export type PanelStateRef = z.infer<typeof panelStateRefSchema>;
 
+/** A projection reads and edits one owner-declared field of a form in this same panel instance. */
+export const panelFormFieldRefSchema = z.object({
+  slot: key,
+  /** JSON Pointer relative to the owner form's values. */
+  path: formFieldErrorSchema.shape.field,
+}).strict();
+export type PanelFormFieldRef = z.infer<typeof panelFormFieldRefSchema>;
+
 /**
  * A projection placed in a slot. The slot carries the projection's ID and the values it is given; the projection's own
  * component, binding and display stay with the projection, and a panel that needs another presentation registers
@@ -74,6 +84,9 @@ export const panelSlotSchema = z
     projectionId: z.string().min(1).max(200),
     /** Values passed to the projection's declared inputs, by parameter name, each from this panel's state. */
     inputs: z.record(key, panelStateRefSchema).default({}),
+    /** Where each named projection output writes its value in this instance's declared state. */
+    outputs: z.record(key, panelStateRefSchema).optional(),
+    formField: panelFormFieldRefSchema.optional(),
   })
   .strict();
 export type PanelSlot = z.infer<typeof panelSlotSchema>;
@@ -140,17 +153,21 @@ export const panelObjectIdentitySchema = z.object({
 }).strict();
 export type PanelObjectIdentity = z.infer<typeof panelObjectIdentitySchema>;
 
+/** An existing record or the form's create target, using the operation's existing draft identity. */
+export const panelFormTargetSchema = z.discriminatedUnion("kind", [
+  panelObjectIdentitySchema.extend({ kind: z.literal("object") }),
+  z.object({ kind: z.literal("draft"), id: z.string().min(1).max(200).optional() }).strict(),
+]);
+export type PanelFormTarget = z.infer<typeof panelFormTargetSchema>;
+
 export const panelOperationCallSchema = z
   .object({
     /** The object the call acts on: an ontology reference, or a draft target that may not exist yet. */
-    target: z
-      .union([
-        panelObjectIdentitySchema.extend({ kind: z.literal("object") }),
-        z.object({ kind: z.literal("draft"), id: z.string().min(1).max(200).optional() }).strict(),
-      ])
-      .nullable(),
+    target: panelFormTargetSchema.nullable(),
     /** What the caller supplies, by the operation's `inputSchema`; a form save's is the owner's form values. */
     input: z.record(key, z.unknown()).default({}),
+    /** A create from an existing draft link; the host verifies the artifact and records the new object under its owner. */
+    draft: pageDraftLinkSchema.optional(),
   })
   .strict();
 export type PanelOperationCall = z.infer<typeof panelOperationCallSchema>;
@@ -192,9 +209,16 @@ export const panelManifestSchema = z
   .strict()
   .superRefine((manifest, ctx) => {
     for (const [slot, declaration] of Object.entries(manifest.slots)) {
+      const form = declaration.formField;
+      if (form && (form.slot === slot || !Object.hasOwn(manifest.slots, form.slot)))
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["slots", slot, "formField", "slot"], message: "A field port must reference another declared slot" });
       for (const [input, ref] of Object.entries(declaration.inputs)) {
         if (!Object.hasOwn(manifest.state, ref.state))
           ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["slots", slot, "inputs", input], message: `Input '${input}' reads undeclared state '${ref.state}'` });
+      }
+      for (const [output, ref] of Object.entries(declaration.outputs ?? {})) {
+        if (!Object.hasOwn(manifest.state, ref.state))
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["slots", slot, "outputs", output], message: `Output '${output}' writes undeclared state '${ref.state}'` });
       }
     }
     const ids = new Set<string>();
