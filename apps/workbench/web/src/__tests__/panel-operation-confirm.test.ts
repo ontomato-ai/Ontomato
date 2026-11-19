@@ -66,6 +66,7 @@ const confirmation = {
   confirmation: { kind: "impact", impact: { summary: "Nothing goes.", total: 0, objects: [] } },
 };
 const dispatched = { kind: "dispatched", intentId, outcome: null };
+const affected = { objects: [{ objectType: AGENT_DEFINITION, primaryKey: "a" }], objectTypes: [AGENT_DEFINITION] };
 
 let stored: PanelHumanOperationPreparation = prepared;
 let dispatchAnswer: unknown = dispatched;
@@ -102,11 +103,13 @@ function connect() {
 function shownFrame() {
   const sent = installPlatform(answer);
   const frame = panelFrame();
-  const registration = platformPanelHost("app-agents", use).frame(frame, registered("app-agents", use, panel), true);
+  // The page's port for what changed: a person's operation hands it what the owner reports, as a conversation does.
+  const changed = vi.fn();
+  const registration = platformPanelHost("app-agents", use, changed).frame(frame, registered("app-agents", use, panel), true);
   inside(frame);
   const invoke = connect();
   const read = (id: string) => invoke("request", { path: `/product-projections/${id}`, service: "", method: "GET", headers: [], body: null });
-  return { sent, invoke, read, registration };
+  return { sent, invoke, read, registration, changed };
 }
 
 /** The platform's confirmation dialog, once it is shown. */
@@ -127,7 +130,7 @@ afterEach(() => {
 
 describe("a person's confirmation of a panel operation", () => {
   it("names what Node froze, dispatches once on confirm, and answers the same call with Node's receipt", async () => {
-    const { sent, invoke, read } = shownFrame();
+    const { sent, invoke, read, changed } = shownFrame();
     await read(removal);
 
     const cancelled = invoke("confirm-panel-operation", confirmation);
@@ -141,7 +144,7 @@ describe("a person's confirmation of a panel operation", () => {
     expect(box.textContent).not.toContain("Nothing goes.");
     button(box, "Cancel").click();
     await expect(cancelled).resolves.toEqual({ decision: "cancel" });
-    // Cancelling writes nothing.
+    // Cancelling writes nothing, and nothing changed.
     expect(writes(sent)).toEqual([]);
 
     await vi.waitFor(() => expect(document.querySelector(".el-message-box")).toBeNull());
@@ -155,6 +158,29 @@ describe("a person's confirmation of a panel operation", () => {
     // Node reads the intent back only within the use this frame shows.
     const reads = sent.filter((request) => request.path === `/api/panel-operation-intents/${intentId}`);
     expect(reads.map((request) => request.search)).toEqual(["?applicationId=app-agents&useId=use-agents", "?applicationId=app-agents&useId=use-agents"]);
+    // Node finished nothing yet (no outcome): the page hears of no change.
+    expect(changed).not.toHaveBeenCalled();
+  });
+
+  it("hands the page what the owner reports changed, before the frame hears the receipt", async () => {
+    const { invoke, read, changed } = shownFrame();
+    await read(removal);
+    const changesWhenHeard: number[] = [];
+    for (const outcome of [
+      { kind: "success", data: {}, affected },
+      { kind: "batch", items: [{ target: { objectType: AGENT_DEFINITION, primaryKey: "a" }, outcome: { kind: "success", data: {} } }], affected },
+      { kind: "success", data: {} },
+    ]) {
+      storing({ kind: "none" });
+      dispatchAnswer = { kind: "dispatched", intentId, outcome };
+      const heard = vi.fn();
+      await invoke("confirm-panel-operation", confirmation).then(heard);
+      expect(heard).toHaveBeenCalledWith({ decision: "confirm", response: dispatchAnswer });
+      changesWhenHeard.push(changed.mock.calls.length);
+    }
+    expect(changed.mock.calls).toEqual([[{ target: null, affected }], [{ target: null, affected }]]);
+    // The page had heard of each change by the time the frame heard its receipt; an outcome without one adds none.
+    expect(changesWhenHeard).toEqual([1, 2, 2]);
   });
 
   it("hands the frame Node's receipt as it is, also when Node did not dispatch", async () => {
