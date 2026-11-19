@@ -84,7 +84,7 @@ async function open(draft?: PanelFormValues, shown: PanelFormValues = stored) {
   const frame = panelFrame();
   platformPanelHost("ontology", use).frame(frame, registered("ontology", use, panel), true);
   const query = draft ? `?${new URLSearchParams({ draftSessionId: link.sessionId, draftRunId: link.runId, draftPath: link.path })}` : "";
-  writePanelDocument(panel, use, `/ontology/agents${query}`, { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } } as never);
+  writePanelDocument(registered("ontology", use, panel), `/ontology/agents${query}`, { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } } as never);
   inside(frame);
   const mounted = await mountPanel(panelOf("definition", "skills"));
   await vi.waitFor(() => expect(document.querySelector<HTMLInputElement>('#app [data-field="/name"] input')?.value).toBeTruthy(), { timeout: 5000 });
