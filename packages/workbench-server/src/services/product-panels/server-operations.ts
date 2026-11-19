@@ -1,6 +1,10 @@
 import type { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { panelWriteOperationSnapshotSchema } from "@ontomato/contracts/panel-agent";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import type { AssistantSkillView } from "../assistant/skills";
+import type { AssistantOwner } from "../assistant/store";
+import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import type { PanelOperation } from "@ontomato/contracts/panel-manifest";
 import type { PanelFormTarget, PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
@@ -12,7 +16,14 @@ import { HttpError } from "../../utils/errors";
 export type PanelOperationTarget = PanelFormTarget;
 export type SinglePanelOperationOutcome = Exclude<PanelOperationOutcome, { kind: "batch" }>;
 export type PanelRecordTarget = Extract<PanelOperationTarget, { kind: "object" }>;
+export interface PanelOperationActor {
+  owner: AssistantOwner;
+  credentials: AssistantCredentials;
+}
 export interface PanelOperationHost {
+  initiator: PanelOperationActor;
+  executor: PanelOperationActor;
+  skillView: AssistantSkillView;
   requestWorkbench(path: string, init: NonNullable<Parameters<typeof fetch>[1]>): Promise<Response>;
   request(path: string, init: NonNullable<Parameters<typeof fetch>[1]>): Promise<Response>;
 }
@@ -25,13 +36,14 @@ interface ServerOperation {
   targetSchema: z.ZodType<PanelOperationTarget>;
   inputSchema: z.ZodType<Record<string, unknown>>;
   resultSchema: z.ZodTypeAny;
+  projectResult?(data: Record<string, RuntimeJsonValue>, view: AssistantSkillView): Record<string, RuntimeJsonValue>;
   execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>, intentId: string): Promise<SinglePanelOperationOutcome>;
 }
 export type PanelServerOperation = ServerOperation & (
   {
     kind: "form.save";
     draftOperation(target: PanelOperationTarget): string;
-    draftInput(input: Record<string, unknown>): Record<string, unknown>;
+    draftInput(input: Record<string, unknown>, target: PanelOperationTarget): Record<string, unknown>;
     formInstructions: string;
     create?: {
       draftValues(values: unknown, domainId: string): Record<string, unknown>;
@@ -57,6 +69,10 @@ export function snapshotPanelWrite(handler: PanelServerOperation, operation: Pan
     inputSchema: jsonSchema(handler.inputSchema),
     resultSchema: jsonSchema(handler.resultSchema),
   });
+}
+
+export function panelResultProjection(handlerRef: string) {
+  return operations.get(handlerRef)?.projectResult;
 }
 
 export function panelServerOperation(handlerRef: string): PanelServerOperation {

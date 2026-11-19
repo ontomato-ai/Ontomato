@@ -30,7 +30,7 @@ import { installWorkbenchIdentity } from "../../identity/installed";
 import type { WorkbenchIdentity } from "../../identity/types";
 import assistantRouter from "../routes/assistant";
 import { HttpError } from "../../utils/errors";
-import { createAgentDefinition, filterReadableAgentDefinitions, saveAgentDefinition, validateAgentDefinition } from "../../services/assistant/definitions";
+import { createAgentDefinition, filterReadableAgentDefinitions, saveAgentDefinition, saveAgentDefinitionSnapshot, validateAgentDefinition, type AgentDefinitionSkillSelection } from "../../services/assistant/definitions";
 import { readDiagnosisModel, saveDiagnosisModel } from "../../services/ops-diagnosis/model-settings";
 
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
@@ -196,6 +196,28 @@ describe("agent definitions on PostgreSQL", () => {
     await expect(saveAgentDefinition(id, { ...input, modelSelection: { modelId: "test/missing" } }, owner, {})).rejects.toMatchObject({ status: 400 });
     expect((await saveAgentDefinition(id, { ...input, modelSelection: { modelId: null } }, owner, {})).modelSelection).toEqual({ modelId: null });
   });
+  it("checks an agent operation's skill selection as the initiator and its execution settings as the executor", async () => {
+    const id = randomUUID();
+    expect((await write("POST", id, { ...form, skills: [savedSkill] })).status).toBe(201);
+    const before = await stored(id);
+    const executor = { ...owner, userId: "executor" }, executorCredentials = { apiKey: "executor-key", locale: "en" };
+    const initiatorCredentials = { token: "initiator-token", locale: "en" };
+    const selection = { credentials: initiatorCredentials, view: { hidden: true } as unknown as AgentDefinitionSkillSelection["view"] };
+    const update = assistantAgentInputSchema.parse({ ...form, skills: [], executionUserId: "other" });
+    state.prepare.mockClear();
+    await expect(saveAgentDefinitionSnapshot(id, update, executor, executorCredentials, selection))
+      .rejects.toMatchObject({ code: "SKILL_SELECTION_INCOMPLETE" });
+    expect(state.setting).toHaveBeenLastCalledWith(executor, null, "other", executorCredentials);
+    expect(state.prepare).not.toHaveBeenCalled();
+    expect(await stored(id)).toEqual(before);
+
+    const visible = { ...selection, view: { hidden: false } as unknown as AgentDefinitionSkillSelection["view"] };
+    await saveAgentDefinitionSnapshot(id, update, executor, executorCredentials, visible);
+    expect(state.validateSkills).toHaveBeenLastCalledWith(owner.domainId, [], initiatorCredentials, visible.view);
+    expect(state.prepare).toHaveBeenLastCalledWith(executor, null, "other", executorCredentials);
+    expect((await stored(id)).skills).toEqual([]);
+  });
+
   it("filters reference candidates with the definition's read permission and visibility rule", async () => {
     const readable = randomUUID(), builder = randomUUID(), foreign = randomUUID();
     await state.pool!.query(`INSERT INTO "${state.schema}".assistant_agents (id, domain_id, kind)
