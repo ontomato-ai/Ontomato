@@ -81,9 +81,15 @@ export type PanelStateField = z.infer<typeof panelStateFieldSchema>;
 export const panelStateSchema = z.record(key, panelStateFieldSchema);
 export type PanelState = z.infer<typeof panelStateSchema>;
 
+/** An object reference in panel state. */
+export const panelObjectRefSchema = z.object({
+  className: z.string().min(1).max(200),
+  primaryKey: z.string().min(1).max(1000),
+}).strict();
+
 /** A state value as the SDK holds it in an instance: an object reference, a scalar, or nothing yet. */
 export const panelStateValueSchema = z.union([
-  z.object({ className: z.string().min(1).max(200), primaryKey: z.string().min(1).max(1000) }).strict(),
+  panelObjectRefSchema,
   z.string(),
   z.number().finite(),
   z.boolean(),

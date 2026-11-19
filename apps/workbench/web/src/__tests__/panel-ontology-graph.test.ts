@@ -270,6 +270,7 @@ it("renders type mode in four-layer columns with count statuses, internal layer 
             to: OBJECT_TYPE,
             labelKey: "platformOntology.relations.action.targets-object-type",
             derived: false,
+            owner: "java-action",
           },
           {
             id: "role.owns-workflow-step",
@@ -277,6 +278,7 @@ it("renders type mode in four-layer columns with count statuses, internal layer 
             to: WORKFLOW,
             labelKey: "platformOntology.relations.role.owns-workflow-step",
             derived: true,
+            owner: "java-workflow",
           },
         ],
       });
@@ -382,9 +384,7 @@ it("runs instance mode with default start, incremental neighbor expand, full obj
   installPlatform(hostWith(projections, (request) => {
     if (request.path === "/api/platform-ontology/start") {
       return Response.json({
-        node: { className: USER, primaryKey: "u-1" },
-        label: "Alice",
-        layer: "governance",
+        node: { className: USER, primaryKey: "u-1", label: "Alice", layer: "governance" },
       });
     }
     if (request.path === "/api/platform-ontology/neighbors") {
@@ -532,9 +532,7 @@ it("separates no-neighbors, owner-refused and read-failed states without collaps
   installPlatform(hostWith(projections, (request) => {
     if (request.path === "/api/platform-ontology/start") {
       return Response.json({
-        node: { className: USER, primaryKey: "u-oss" },
-        label: "admin",
-        layer: "governance",
+        node: { className: USER, primaryKey: "u-oss", label: "admin", layer: "governance" },
       });
     }
     if (request.path === "/api/platform-ontology/neighbors") {

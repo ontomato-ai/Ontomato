@@ -1,5 +1,9 @@
 import { Router } from "express";
-import { z } from "zod";
+import {
+  platformOntologyNeighborsRequestSchema,
+  platformOntologyObjectsRequestSchema,
+  type PlatformOntologyStartResponse,
+} from "@ontomato/contracts/platform-ontology";
 import { context, wrap } from "../utils/agent-host";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
 import {
@@ -9,32 +13,6 @@ import {
   readPlatformOntologySchema,
   readPlatformOntologyStart,
 } from "../../services/platform-ontology/query";
-
-const layerSchema = z.enum(["fact", "capability", "governance", "product"]);
-
-const nodeRefSchema = z
-  .object({
-    className: z.string().min(1).max(120),
-    primaryKey: z.string().min(1).max(500),
-  })
-  .strict();
-
-const neighborsBodySchema = z
-  .object({
-    node: nodeRefSchema,
-    relationKinds: z.array(z.string().min(1).max(120)).max(100).optional(),
-    layers: z.array(layerSchema).max(4).optional(),
-  })
-  .strict();
-
-const objectsBodySchema = z
-  .object({
-    type: z.string().min(1).max(120),
-    keyword: z.string().max(200).optional(),
-    page: z.number().int().min(1).optional(),
-    pageSize: z.number().int().min(1).max(200).optional(),
-  })
-  .strict();
 
 export const platformOntologyRouter = Router();
 
@@ -58,7 +36,8 @@ platformOntologyRouter.get(
   wrap(async (req, res) => {
     const c = context(req);
     const callerUserName = (req as AuthenticatedRequest).userName;
-    res.json(await readPlatformOntologyStart(c.owner, c.credentials, callerUserName));
+    const node = await readPlatformOntologyStart(c.owner, c.credentials, callerUserName);
+    res.json({ node } satisfies PlatformOntologyStartResponse);
   }),
 );
 
@@ -66,7 +45,7 @@ platformOntologyRouter.post(
   "/neighbors",
   wrap(async (req, res) => {
     const c = context(req);
-    const input = neighborsBodySchema.parse(req.body);
+    const input = platformOntologyNeighborsRequestSchema.parse(req.body);
     const callerUserName = (req as AuthenticatedRequest).userName;
     res.json(await readPlatformOntologyNeighbors(c.owner, c.credentials, input, callerUserName));
   }),
@@ -76,7 +55,7 @@ platformOntologyRouter.post(
   "/objects",
   wrap(async (req, res) => {
     const c = context(req);
-    const input = objectsBodySchema.parse(req.body);
+    const input = platformOntologyObjectsRequestSchema.parse(req.body);
     res.json(await readPlatformOntologyObjects(c.owner, c.credentials, input));
   }),
 );
