@@ -1,6 +1,6 @@
 import { inject, onBeforeUnmount, type InjectionKey, type Ref } from "vue";
 import type { PanelManifest, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
-import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
+import type { PanelDefinitionContent, ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PanelInstance } from "./instance";
 import type { PanelFormAdapter, ReceivedPanelDraft } from "./draft";
 import { platformObjectFor, type PlatformObjectClient } from "./platform-objects";
@@ -30,8 +30,11 @@ export interface ProjectionSlot {
  * states, two draft slots and two sets of registered projections.
  */
 export interface PanelContext {
-  /** The panel's current definition, as registered. */
-  readonly panel: ProductPanel;
+  /**
+   * What the panel is made of — its content, declaration and SDK version — as the host handed it over. The record's
+   * identity and revision stay with the trusted host, which also runs a candidate preview this way.
+   */
+  readonly panel: PanelDefinitionContent;
   readonly manifest: PanelManifest;
   /** This instance: its state, page context, projections and operations. */
   readonly instance: PanelInstance;

@@ -14,7 +14,7 @@ import {
 } from "@ontomato/contracts/panel-host";
 import { pageDraftReadSchema, type PageDraft } from "@ontomato/contracts/page-draft";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
-import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
+import type { PanelDefinitionContent, ProductProjection } from "@ontomato/contracts/product-panels";
 import { panelContextKey, type PanelContext, type ProjectionSlot } from "./context";
 import { applyPanelRequest, createPanelInstance, pageDraftLinkOf, type PanelInstance } from "./instance";
 import { receivePanelDraft } from "./draft";
@@ -22,6 +22,8 @@ import PanelProjection from "./Projection.vue";
 import { baseComponents } from "../base-components";
 import { prepareTemplateComponents } from "./template-components";
 import { registerSchedulesPlatformObject } from "./schedules";
+import { registerPlatformObjectAdapter } from "./platform-objects";
+import { platformObjectAdapters } from "../resources";
 
 /*
  * How a panel's module runs (overall design 3.3, 3.4): the platform's panel host opens a frame for one instance and
@@ -115,6 +117,9 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   app.component("Projection", PanelProjection);
   // The platform objects this version's panels read, and the operations they run.
   registerSchedulesPlatformObject(appContext);
+  for (const adapt of platformObjectAdapters)
+    for (const adapter of adapt({ request: (path, init, service) => transport.request(path, init, service) }))
+      registerPlatformObjectAdapter(adapter);
   app.config.errorHandler = failed;
   // Element Plus's components and the SDK's base components a panel's HTML composes; neither carries business.
   installTemplateComponents(app);
@@ -242,4 +247,4 @@ function report({ instance, address, followAddress, unsaved, changed }: ReportOp
   });
 }
 
-export { applyPanelRequest, type PageDraft, type PanelStateValue, type ProductPanel, type ProjectionSlot };
+export { applyPanelRequest, type PageDraft, type PanelDefinitionContent, type PanelStateValue, type ProjectionSlot };
