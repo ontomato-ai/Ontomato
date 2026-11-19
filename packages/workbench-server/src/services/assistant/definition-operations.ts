@@ -33,7 +33,7 @@ function draftInput(input: Record<string, unknown>, target: PanelOperationTarget
   return parseAgentDefinitionUpdateForm(otherValues);
 }
 
-async function refusal(response: Response) {
+async function ownerError(response: Response) {
   return agentHostErrorSchema.parse(await response.json()).error;
 }
 
@@ -90,7 +90,7 @@ export const agentDefinitionOperations = [
     async targetLabel(host: PanelOperationHost, target: PanelRecordTarget) {
       const response = await host.requestWorkbench(agentDefinitionSave(target).path, { method: "GET" });
       if (!response.ok) {
-        const { code, message } = await refusal(response);
+        const { code, message } = await ownerError(response);
         throw new HttpError(response.status, message, code);
       }
       return assistantAgentDefinitionSchema.parse(await response.json()).name;
@@ -99,7 +99,7 @@ export const agentDefinitionOperations = [
       const response = await host.requestWorkbench(agentDefinitionSave(target).path, { method: "DELETE" });
       return response.ok
         ? { kind: "success", data: {}, affected: affectedDefinition(target.primaryKey) }
-        : { kind: "failure", ...await refusal(response) };
+        : { kind: response.status >= 500 ? "failure" : "refusal", ...await ownerError(response) };
     },
   },
 ] satisfies readonly PanelServerOperation[];

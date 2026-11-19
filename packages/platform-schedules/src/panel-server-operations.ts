@@ -30,8 +30,14 @@ async function outcome(call: () => Promise<{ data: unknown; taskId: string }>): 
       affected: { objects: [{ objectType: SCHEDULED_TASK, primaryKey: taskId }], objectTypes: [SCHEDULED_TASK] },
     };
   } catch (error) {
-    if (error instanceof ScheduleRequestError && error.refusal)
-      return { kind: "failure", code: error.refusal.code, message: error.refusal.message, details: JSON.parse(JSON.stringify(error.refusal)) };
+    if (error instanceof ScheduleRequestError && error.refusal) {
+      return {
+        kind: error.status !== null && error.status >= 500 ? "failure" : "refusal",
+        code: error.refusal.code,
+        message: error.refusal.message,
+        details: JSON.parse(JSON.stringify(error.refusal)),
+      };
+    }
     throw error;
   }
 }
