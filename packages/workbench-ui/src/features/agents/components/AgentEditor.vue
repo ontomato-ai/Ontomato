@@ -85,10 +85,16 @@ function toForm(agent: AssistantAgentDefinition | null): Form {
 }
 
 /**
+ * The save this page sends: an update may leave the skills out, and the owner then keeps the ones it stores. The
+ * definition's input still declares them required until its update input makes them omissible (M1-B).
+ */
+type AgentSaveInput = Omit<AssistantAgentInput, "skills"> & { skills?: AssistantAgentInput["skills"] };
+
+/**
  * A draft's form is the page's own save request, so it fills the same fields a read agent does, as a save would store
  * them: once saved, the same draft reads as the agent it saved rather than as a change.
  */
-function fromInput(input: AssistantAgentInput): Form {
+function fromInput(input: AssistantAgentInput, skillsGiven: boolean): Form {
   const avatar = agentAvatar(input.icon);
   return {
     // The save trims the name.
@@ -99,7 +105,8 @@ function fromInput(input: AssistantAgentInput): Form {
     enabled: input.enabled,
     systemPrompt: input.systemPrompt,
     modelId: input.modelSelection.modelId,
-    skills: input.skills.map(heldSkill),
+    // A draft that names no skills leaves them as the agent holds them; one that names them replaces the whole set.
+    skills: skillsGiven ? input.skills.map(heldSkill) : [...(props.agent?.skills ?? [])],
     classNames: [...input.classNames],
     mcpServiceIds: [...input.enabledMcpServiceIds],
     // An update that omits the field keeps what the owner stores; a draft that names one fills it.
@@ -121,6 +128,12 @@ function heldSkill(skill: AssistantAgentInput["skills"][number]): RuntimeSkillRe
 const form = ref<Form>(toForm(props.agent));
 /** The avatar as the draft would store it, for the head's preview. */
 const formIcon = computed(() => storedAgentAvatar({ key: form.value.avatarKey, color: form.value.avatarColor }));
+/**
+ * Whether this save carries the skills: the reader worked in the skills area, or the draft named them. Otherwise the
+ * save leaves the field out and the owner keeps the skills it stores — the page shows only the ones this reader may
+ * see, so sending what it shows would replace the whole selection.
+ */
+const skillsTouched = ref(false);
 /** The form's own field names under the page's words, for the line listing what the draft changed. */
 const CHANGED_FIELD_LABELS: Record<string, string> = {
   name: "common.name",
@@ -142,6 +155,7 @@ watch(() => props.agent, (agent) => {
   if (dirty.value) return;
   form.value = toForm(agent);
   baseline.value = JSON.stringify(form.value);
+  skillsTouched.value = false;
 });
 const saving = ref(false);
 /** The execution field reports whether this reader may change it; the save sends the field only within that. */
@@ -169,7 +183,7 @@ const assistant = createAssistantClient();
 /** The create draft the form holds: its first save records there the agent it created. */
 let createDraft: PageDraftLink | null = null;
 if (link) {
-  void readPageDraft(assistant, link, {
+  void readPageDraft<Record<string, unknown>, "agent.create" | "agent.update">(assistant, link, {
     pageKey: "agent-settings",
     operations: ["agent.create", "agent.update"] as const,
   })
@@ -183,7 +197,10 @@ if (link) {
       if (target.kind === "update" && !props.agent) return settingsAddress.go(settingsAddress.agentAddress(target.id));
       // The draft and the page must name the same agent: a create only a new one, an update only the one shown.
       if (target.kind === "create" ? props.agent !== null : target.id !== props.agent?.id) throw new Error(t("agents.draftOtherAgent"));
-      const filled = fromInput(assistantAgentInputSchema.parse(draft.form));
+      // The draft's own fields: a form that leaves the skills out says nothing about them, so the validation fills the
+      // array it would otherwise require and the draft's presence of the field is read from the file itself.
+      const skillsGiven = "skills" in draft.form;
+      const filled = fromInput(assistantAgentInputSchema.parse({ skills: [], ...draft.form }), skillsGiven);
       const changes = changedFields(toForm(props.agent), filled);
       // A draft that changes nothing is no draft (the same link after its draft was saved): the page stays as the agent
       // is, and the reader's own edits are left alone without asking.
@@ -191,6 +208,7 @@ if (link) {
       if (dirty.value && !(await leaving.confirm())) return;
       if (target.kind === "create") createDraft = link;
       changed.value = changes;
+      skillsTouched.value = skillsGiven;
       baseline.value = JSON.stringify(toForm(props.agent));
       form.value = filled;
       // A draft that changes whose permissions the agent runs with is the administrator's to save; the field shows what
@@ -246,7 +264,13 @@ async function loadMcp() {
 }
 onMounted(loadMcp);
 
-function validInput(): AssistantAgentInput | null {
+/** The reader worked in the skills area: what it shows is this save's whole selection, even when it matches the agent. */
+function editSkills(skills: RuntimeSkillRef[]) {
+  form.value.skills = skills;
+  skillsTouched.value = true;
+}
+
+function validInput(): AgentSaveInput | null {
   const value = form.value;
   if (!value.name.trim()) {
     ElMessage.warning(t("analysis.agentNameRequired"));
@@ -263,7 +287,9 @@ function validInput(): AssistantAgentInput | null {
     enabled: value.enabled,
     systemPrompt: value.systemPrompt,
     modelSelection: { modelId: value.modelId },
-    skills: value.skills,
+    // A new agent names its skills; an update names them only when this save carries them, and otherwise keeps the ones
+    // the owner stores.
+    ...(props.agent === null || skillsTouched.value ? { skills: value.skills } : {}),
     classNames: value.classNames,
     enabledMcpServiceIds: value.mcpServiceIds,
     sortOrder: props.agent?.sortOrder ?? 0,
@@ -277,12 +303,15 @@ async function save() {
   const input = validInput();
   if (!input || saving.value || !skillsReady.value) return;
   saving.value = true;
+  // The page's save input is the definition's request; a missing skills field means "keep the stored ones".
+  const written = input as AssistantAgentInput;
   try {
     const saved = props.agent
-      ? await agentDefinitionsApi.update(props.agent.id, input)
-      : await agentDefinitionsApi.create(input);
+      ? await agentDefinitionsApi.update(props.agent.id, written)
+      : await agentDefinitionsApi.create(written);
     baseline.value = JSON.stringify(form.value);
     changed.value = new Set();
+    skillsTouched.value = false;
     // A saved update drops its draft handoff. A create moves straight to the new agent through the page.
     if (link && props.agent) settingsAddress.go(settingsAddress.savedAddress.value);
     ElMessage.success(props.agent ? t("analysis.agentUpdated") : t("analysis.agentCreated"));
@@ -332,7 +361,10 @@ async function discard() {
     () => true,
     () => false,
   );
-  if (confirmed) form.value = JSON.parse(baseline.value) as Form;
+  if (confirmed) {
+    form.value = JSON.parse(baseline.value) as Form;
+    skillsTouched.value = false;
+  }
 }
 
 /** The header's Save waits for the skills the agent may choose: its draft holds them by reference. */
@@ -428,7 +460,7 @@ useUnsavedChanges({ dirty: () => dirty.value, paths: () => [pagePath] });
             <div class="capability-group">
               <h4 class="group-title">{{ t("agents.skills") }}</h4>
               <p class="group-hint">{{ t("agents.skillsHint") }}</p>
-              <SkillSelector v-model="form.skills" @ready="skillsReady = $event" />
+              <SkillSelector :model-value="form.skills" @update:model-value="editSkills" @ready="skillsReady = $event" />
             </div>
 
             <div class="capability-group">
