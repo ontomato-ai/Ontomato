@@ -34,6 +34,7 @@ keeps the behaviour of the version it names.
 | `@ontomato/sdk/code` | `CodeEditor`, `<code-editor>`: code and structured text such as JSON, editable or read-only |
 | `@ontomato/sdk/preview` | `TablePreview`, `<table-preview>`: a table of text cells, with `parseCsv` for CSV and TSV; `HtmlPreview`, `<html-preview>`: an HTML document in a sandboxed frame |
 | `@ontomato/sdk/chat` | The platform's conversation components, `createAssistantClient` and `useShellLabels` |
+| `@ontomato/sdk/graph` | `G6GraphCanvas`, `<g6-graph-canvas>`: a graph a reader pans, zooms and drags, drawn with G6; large, so import it only where a page draws one |
 
 The chart, Markdown, form, code and preview components are the ones the platform's own pages use, so an app looks and
 behaves like them. Import each module where the page needs it; a page loads only the modules it imports.

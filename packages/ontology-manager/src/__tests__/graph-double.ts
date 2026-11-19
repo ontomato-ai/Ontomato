@@ -54,7 +54,7 @@ export class GraphDouble {
             };
           }
           if (key === "getZoom") return () => graphRecord.zoom;
-          if (key === "getViewportByCanvas") return (point: number[]) => point;
+          if (key === "getViewportByCanvas" || key === "getCanvasByViewport") return (point: number[]) => point;
           if (key === "draw" || key === "render") return async () => {
             graphHandlers.afterdraw?.({});
           };
@@ -63,9 +63,10 @@ export class GraphDouble {
             return id ? nodes.find((node) => node.id === id) : nodes;
           };
           if (key === "getEdgeData") return () => graphRecord.dataBatches.flatMap((batch) => batch.edges || []);
-          if (key === "removeEdgeData") return (ids: string[]) => {
+          if (key === "removeEdgeData" || key === "removeNodeData") return (ids: string[]) => {
+            const kind = key === "removeEdgeData" ? "edges" : "nodes";
             for (const batch of graphRecord.dataBatches) {
-              if (batch.edges) batch.edges = batch.edges.filter((edge: any) => !ids.includes(edge.id));
+              if (batch[kind]) batch[kind] = batch[kind].filter((item: any) => !ids.includes(item.id));
             }
           };
           if (key === "zoomTo") {

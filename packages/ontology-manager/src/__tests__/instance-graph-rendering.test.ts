@@ -1,10 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
-import type { GraphData } from "@antv/g6";
+import { describe, expect, it } from "vitest";
 import {
-  drawInstanceGraphBatches,
-  GRAPH_BATCH_SIZE,
   instanceNodePosition,
-  instanceEdgeGeometry,
   neighborNodePosition,
   overviewPositions,
   overviewRelations,
@@ -14,7 +10,6 @@ import {
 const nodes = Array.from({ length: 451 }, (_, index) => ({
   id: `node:${index}`, name: `Node ${index}`, class: "Item",
 }));
-const edges = nodes.slice(1).map((node) => ({ source: nodes[0].id, target: node.id }));
 
 describe("instance graph incremental drawing", () => {
   it("keeps a multiline heading with its own cluster when another row blocks the space above", () => {
@@ -84,27 +79,27 @@ describe("instance graph incremental drawing", () => {
     ];
     const positions = overviewPositions(sample);
     const result = overviewRelations(sample, relations, positions);
-    expect(result.nodes).toHaveLength(2);
+    expect(result.anchors).toHaveLength(2);
+    expect(result.anchors.every((anchor) => anchor.anchor && Number.isFinite(anchor.x) && Number.isFinite(anchor.y))).toBe(true);
     expect(result.edges).toHaveLength(4);
-    expect(result.edges.map((edge) => edge.data)).toEqual(expect.arrayContaining([
-      { type: "owns", count: 2, aggregated: true },
-      { type: "owns", count: 1, aggregated: true },
-      { type: "reviews", count: 1, aggregated: true },
-      { type: "parent", count: 1, aggregated: true },
+    expect(result.edges.map((edge) => ({ type: edge.type, count: edge.count, weight: edge.weight }))).toEqual(expect.arrayContaining([
+      { type: "owns", count: 2, weight: 2 },
+      { type: "owns", count: 1, weight: 1 },
+      { type: "reviews", count: 1, weight: 1 },
+      { type: "parent", count: 1, weight: 1 },
     ]));
-    const aggregated = result.edges.filter((edge) => (edge.data as { aggregated?: boolean }).aggregated);
-    const edgeOf = (type: string, count: number) => aggregated.find((edge) => {
-      const data = edge.data as { type?: string; count?: number };
-      return data.type === type && data.count === count;
-    })!;
+    const edgeOf = (type: string, count: number) => result.edges.find((edge) => edge.type === type && edge.count === count)!;
     const ownsOut = edgeOf("owns", 2);
     const ownsBack = edgeOf("owns", 1);
     expect(ownsOut.source).toBe(ownsBack.target);
     expect(ownsOut.target).toBe(ownsBack.source);
-    expect(edgeOf("parent", 1).style.loop).toBe(true);
-    expect(ownsOut.style.curveOffset).not.toBe(edgeOf("reviews", 1).style.curveOffset);
+    // A class's relation to itself ends at its own anchor, which reaches round its cluster.
+    expect(edgeOf("parent", 1).source).toBe(edgeOf("parent", 1).target);
+    expect(result.anchors.find((anchor) => anchor.id === edgeOf("parent", 1).source)!.anchor!.radius).toBeGreaterThan(0);
+    expect(result.edges.every((edge) => edge.tone === "default")).toBe(true);
     const selected = overviewRelations(sample, relations, positions, "A:2");
-    const direct = selected.edges.filter((edge) => !(edge.data as { aggregated?: boolean }).aggregated);
+    const direct = selected.edges.filter((edge) => edge.count === undefined);
+    expect(selected.edges.filter((edge) => edge.count !== undefined).every((edge) => edge.tone === "muted")).toBe(true);
     expect(direct).toHaveLength(2);
     expect(direct.map((edge) => [edge.source, edge.target])).toEqual(expect.arrayContaining([
       ["A:2", "B:1"], ["A:1", "A:2"],
@@ -127,83 +122,12 @@ describe("instance graph incremental drawing", () => {
     const a = bounds("A"), b = bounds("B");
     expect(a.right < b.left || b.right < a.left || a.bottom < b.top || b.bottom < a.top).toBe(true);
   });
-  it("separates parallel relationships and draws self relationships as loops", () => {
-    const geometry = instanceEdgeGeometry([
-      { source: "A", target: "B", type: "owns" },
-      { source: "A", target: "B", type: "reviews" },
-      { source: "A", target: "A", type: "parent" },
-    ]);
-    expect(geometry[0].type).toBe("quadratic");
-    expect(geometry[0].style.curveOffset).not.toBe(geometry[1].style.curveOffset);
-    expect(geometry[2].style.loop).toBe(true);
-  });
-
   it("places later neighborhood pages beyond earlier positions", () => {
     const center = { x: 15, y: 20 };
     const first = neighborNodePosition(0, center);
     const later = neighborNodePosition(100, center);
     expect(Math.hypot(later.x - center.x, later.y - center.y)).toBeGreaterThan(Math.hypot(first.x - center.x, first.y - center.y));
   });
-  it("draws bounded batches, yields between draws and adds edges only after their endpoints", async () => {
-    const batches: GraphData[] = [];
-    const knownIds = new Set<string>();
-    let yielded = false;
-    const target = {
-      addData(data: GraphData) {
-        expect(yielded).toBe(true);
-        expect((data.nodes?.length || 0) + (data.edges?.length || 0)).toBeLessThanOrEqual(GRAPH_BATCH_SIZE);
-        data.nodes?.forEach((node) => knownIds.add(node.id));
-        data.edges?.forEach((edge) => {
-          expect(knownIds.has(edge.source)).toBe(true);
-          expect(knownIds.has(edge.target)).toBe(true);
-        });
-        batches.push(data);
-        yielded = false;
-      },
-      draw: vi.fn(async () => {}),
-    };
-    const progress: number[] = [];
-    expect(await drawInstanceGraphBatches(target, nodes, edges, () => "red", {
-      isCurrent: () => true,
-      yieldControl: async () => { yielded = true; },
-      onProgress: (completed) => progress.push(completed),
-    })).toBe(true);
-    expect(batches.flatMap((batch) => batch.nodes || []).map((node) => node.id)).toEqual(nodes.map((node) => node.id));
-    expect(batches.flatMap((batch) => batch.edges || [])).toHaveLength(edges.length);
-    expect(progress.at(-1)).toBe(nodes.length + edges.length);
-    expect(progress.every((value, index) => index === 0 || value > progress[index - 1])).toBe(true);
-  });
-
-  it("does not touch a replaced or unmounted graph after yielding", async () => {
-    const target = { addData: vi.fn(), draw: vi.fn(async () => {}) };
-    let current = true;
-    const progress = vi.fn();
-    expect(await drawInstanceGraphBatches(target, nodes, edges, () => "red", {
-      isCurrent: () => current,
-      yieldControl: async () => { current = false; },
-      onProgress: progress,
-    })).toBe(false);
-    expect(target.addData).not.toHaveBeenCalled();
-    expect(target.draw).not.toHaveBeenCalled();
-    expect(progress).not.toHaveBeenCalled();
-  });
-
-  it("stops after an in-flight draw without publishing stale progress or starting another batch", async () => {
-    let current = true;
-    const target = {
-      addData: vi.fn(),
-      draw: vi.fn(async () => { current = false; }),
-    };
-    const progress = vi.fn();
-    expect(await drawInstanceGraphBatches(target, nodes, edges, () => "red", {
-      isCurrent: () => current,
-      yieldControl: async () => {},
-      onProgress: progress,
-    })).toBe(false);
-    expect(target.addData.mock.calls.length).toBeLessThanOrEqual(1);
-    expect(progress).not.toHaveBeenCalled();
-  });
-
   it("assigns distinct finite positions to every node", () => {
     expect(nodes.every((_, index) => Object.values(instanceNodePosition(index, nodes.length)).every(Number.isFinite))).toBe(true);
     expect(new Set(nodes.map((_, index) => JSON.stringify(instanceNodePosition(index, nodes.length)))).size).toBe(nodes.length);

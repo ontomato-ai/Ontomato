@@ -12,6 +12,8 @@
  * into the page drew their names at two pixels.</p>
  */
 
+import { G6_LABEL_SIZE, G6_NODE_SIZE } from "@ontomato/foundation-ui/graph/g6";
+
 export type CapabilityLayer = "governance" | "capability";
 
 export type CapabilityKind = "subject" | "role" | "action" | "workflow" | "trigger" | "metric" | "function" | "skill";
@@ -43,9 +45,6 @@ export interface CapabilityEdge {
   derived?: boolean;
 }
 
-/** Node diameter and label size in canvas units; at zoom 1 they are screen pixels. */
-export const CAPABILITY_NODE_SIZE = 28;
-export const CAPABILITY_LABEL_SIZE = 12;
 /** The widest a label is drawn: a longer name ends in an ellipsis rather than running into the next column. */
 export const CAPABILITY_LABEL_WIDTH = 160;
 
@@ -53,7 +52,7 @@ const CELL_WIDTH = CAPABILITY_LABEL_WIDTH + 16;
 /** One node, its label below it, and the gap before the next row. */
 const CELL_HEIGHT = 68;
 /** Where a node's centre sits in its cell: the white ring around the node stays inside the cell. */
-const NODE_Y = CAPABILITY_NODE_SIZE / 2 + 4;
+const NODE_Y = G6_NODE_SIZE / 2 + 4;
 /** Between two kinds: wider than between two columns of one kind, so a kind reads as one group. */
 const BLOCK_GAP = 48;
 /** Between two shelves of blocks; the cells above already end in a row gap. */
@@ -61,7 +60,7 @@ const SHELF_GAP = 32;
 /** Kept clear around the map when it is placed in the window. */
 const MARGIN = 24;
 /** The smallest zoom the map opens at: below it a label is drawn under 11 screen pixels. */
-const CAPABILITY_MIN_OPEN_ZOOM = 11 / CAPABILITY_LABEL_SIZE;
+const CAPABILITY_MIN_OPEN_ZOOM = 11 / G6_LABEL_SIZE;
 /** Opening never enlarges: a small domain is drawn at its natural size, as the other graphs fit theirs. */
 const MAX_OPEN_ZOOM = 1;
 

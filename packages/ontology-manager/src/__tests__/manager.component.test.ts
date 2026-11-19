@@ -148,6 +148,7 @@ function respond(url: string, body?: Record<string, unknown>): Response {
 }
 
 beforeEach(() => {
+  for (const name of Object.keys(graphHandlers)) delete graphHandlers[name];
   graphRecord.options = [];
   graphRecord.addedNodes = [];
   graphRecord.zoom = 1;
@@ -386,7 +387,9 @@ describe("Manager pages in the service router", () => {
     expect(options.data.nodes ?? []).toEqual([]);
     expect(options.data.edges ?? []).toEqual([]);
     expect(options.layout).toBeUndefined();
-    expect(graphRecord.dataBatches.length).toBeGreaterThan(1);
+    // Only the overview sample is drawn, not the 50,000 instances.
+    expect(graphRecord.dataBatches.flatMap((batch) => batch.nodes || []).filter((node: any) => !node.data.anchor).map((node: any) => node.id))
+      .toEqual(["Order:1", "Item:2"]);
     expect(paths()).toContain("/data/instanceGraph/nodes");
     expect(root().querySelector(".node-search input")?.hasAttribute("disabled")).toBe(false);
 
@@ -405,7 +408,7 @@ describe("Manager pages in the service router", () => {
     (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[0] as HTMLElement).click();
     await vi.waitFor(async () => {
       await settle();
-      expect(graphRecord.dataBatches.flatMap(batch => batch.nodes || []).filter((node: any) => node.data?.node).length).toBe(1000);
+      expect(graphRecord.dataBatches.flatMap(batch => batch.nodes || []).filter((node: any) => !node.data.anchor).length).toBe(1000);
     }, { timeout: 10000 });
     graphHandlers["node:click"]({ target: { id: "Order:1" } });
     await settle();
@@ -424,34 +427,33 @@ describe("Manager pages in the service router", () => {
     (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[0] as HTMLElement).click();
     await settle();
     await settle();
-    expect(graphRecord.dataBatches.at(-1).edges[0].data).toMatchObject({ aggregated: true, count: 1, type: "has" });
+    const graphEdges = () => graphRecord.dataBatches.flatMap((batch) => batch.edges || []);
+    const graphNodes = () => graphRecord.dataBatches.flatMap((batch) => batch.nodes || []);
+    expect(graphEdges()).toHaveLength(1);
+    const aggregatedEdge = graphEdges()[0];
+    expect(aggregatedEdge.id).toMatch(/^overview-relation:/);
+    expect(aggregatedEdge.style.labelText).toBe("has · 1");
+    expect([aggregatedEdge.source, aggregatedEdge.target]).toEqual(['overview-class:"Order"', 'overview-class:"Item"']);
     (root().querySelector(".graph-toolbar button[aria-label='Display settings']") as HTMLButtonElement).click();
     await settle();
     expect(root().querySelector(".graph-display-settings [role='switch'][aria-label='Aggregate connections']")?.getAttribute("aria-checked")).toBe("true");
     expect(root().querySelector("button[aria-label='Center on this instance']")).toBeNull();
-    const options = graphRecord.options.at(-1);
-    const aggregatedLabel = options.edge.style.labelText({ data: { aggregated: true, count: 120, type: "has" } });
-    expect(aggregatedLabel).toContain("has");
-    expect(aggregatedLabel).toContain("120");
     graphHandlers["node:click"]({ target: { id: "Order:1" } });
     await settle();
-    const graphEdges = () => graphRecord.dataBatches.flatMap((batch) => batch.edges || []);
-    const aggregatedEdge = graphEdges().find((edge: any) => edge.data.aggregated);
     expect(graphEdges()).toHaveLength(2);
     const faded = aggregatedEdge.style.opacity;
     expect(faded).toBeLessThan(1);
     graphHandlers["canvas:click"]({});
     await settle();
-    expect(graphEdges()).toHaveLength(1);
-    expect(graphEdges()[0]).toBe(aggregatedEdge);
+    expect(graphEdges()).toEqual([aggregatedEdge]);
     expect(aggregatedEdge.style.opacity).toBeGreaterThan(faded);
     graphHandlers["canvas:click"]({});
     await settle();
     expect(graphEdges()).toEqual([aggregatedEdge]);
     (root().querySelector(".graph-display-settings [role='switch'][aria-label='Aggregate connections']") as HTMLElement).click();
     await settle();
-    expect(graphRecord.dataBatches.at(-1).edges[0].source).toBe("Order:1");
-    expect(graphRecord.dataBatches.at(-1).edges[0].data.aggregated).toBeUndefined();
+    expect(graphEdges()).toEqual([expect.objectContaining({ source: "Order:1", target: "Item:2" })]);
+    expect(graphEdges()[0].id).not.toMatch(/^overview-relation:/);
     graphHandlers["node:click"]({ target: { id: "Order:1" } });
     await settle();
     const neighborhoodButton = root().querySelector(".node-actions button[title='View instance and direct neighbors']") as HTMLButtonElement;
@@ -462,8 +464,9 @@ describe("Manager pages in the service router", () => {
     const neighborhoodRequest = requests.filter((request) => request.url.endsWith("/data/instanceGraph/neighborhood")).at(-1);
     expect(neighborhoodRequest?.body).toMatchObject({ id: "Order:1", offset: 0 });
     expect(neighborhoodRequest?.body?.direction).toBeUndefined();
-    expect(graphRecord.dataBatches.at(-2).nodes.map((node: any) => node.id)).toEqual(expect.arrayContaining(["Item:2", "Order:1"]));
-    expect(graphRecord.dataBatches.at(-1).edges[0]).toMatchObject({ source: "Order:1", target: "Item:2" });
+    // The neighbourhood replaces the overview: its instances and their edge, without the class anchors.
+    expect(graphNodes().map((node: any) => node.id).sort()).toEqual(["Item:2", "Order:1"]);
+    expect(graphEdges()).toEqual([expect.objectContaining({ source: "Order:1", target: "Item:2" })]);
     const back = root().querySelector<HTMLButtonElement>(".instance-graph > .back-to-overview");
     back!.click();
     await settle();
@@ -505,8 +508,8 @@ describe("Manager pages in the service router", () => {
       .toMatchObject({ term: "spare", version: "v1" });
     expect(requests.find((request) => request.url.endsWith("/instanceGraph/neighborhood"))?.body)
       .toMatchObject({ id: "Item:2", version: "v1", offset: 0 });
-    expect(graphRecord.dataBatches.at(-2).nodes.map((node: any) => node.id)).toEqual(expect.arrayContaining(["Item:2", "Order:1"]));
-    expect(graphRecord.dataBatches.at(-1).edges[0]).toMatchObject({ source: "Order:1", target: "Item:2" });
+    expect(graphRecord.dataBatches.flatMap((batch) => batch.nodes || []).map((node: any) => node.id).sort()).toEqual(["Item:2", "Order:1"]);
+    expect(graphRecord.dataBatches.flatMap((batch) => batch.edges || [])).toEqual([expect.objectContaining({ source: "Order:1", target: "Item:2" })]);
 
     holdPaths.add("/data/queryInfoByNode");
     graphHandlers["node:click"]({ target: { id: "Order:1" } });
@@ -613,23 +616,21 @@ describe("Manager pages in the service router", () => {
     await settle();
     const edge = graphRecord.dataBatches.flatMap((batch) => batch.edges || [])[0];
     const node = graphRecord.dataBatches.flatMap((batch) => batch.nodes || [])[0];
-    const options = graphRecord.options.at(-1);
     (root().querySelector(".graph-toolbar button[aria-label='Display settings']") as HTMLButtonElement).click();
     await settle();
     const toggle = root().querySelector<HTMLElement>(".graph-display-settings [role='switch']")!;
-    expect(options.node.style.labelText(node)).toBe("First order");
-    expect(options.edge.style.labelText(edge)).toBeTruthy();
+    expect(node.style.labelText).toBe("First order");
+    expect(edge.style.labelText).toBeTruthy();
     requests = [];
     toggle.click();
     await settle();
     expect(toggle.getAttribute("aria-checked")).toBe("false");
-    expect(options.edge.style.labelText(edge)).toBe("");
-    expect(graphRecord.edgeUpdates.at(-1)).toEqual([{ id: edge.id, style: { labelText: "" } }]);
-    expect(options.node.style.labelText(node)).toBe("First order");
+    expect(edge.style.labelText).toBe("");
+    expect(graphRecord.nodeUpdates).toEqual([]);
     toggle.click();
     await settle();
     expect(toggle.getAttribute("aria-checked")).toBe("true");
-    expect(graphRecord.edgeUpdates.at(-1)?.[0].style.labelText).toBeTruthy();
+    expect(edge.style.labelText).toBeTruthy();
     expect(requests).toEqual([]);
   });
 
@@ -649,7 +650,7 @@ describe("Manager pages in the service router", () => {
     host.theme = "dark";
     await settle();
     expect(toggle.getAttribute("aria-checked")).toBe("false");
-    expect(graphRecord.options.at(-1).edge.style.labelText(edge)).toBe("");
+    expect(edge.style.labelText).toBe("");
     expect(requests).toEqual([]);
   });
 

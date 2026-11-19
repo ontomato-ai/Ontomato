@@ -1,16 +1,9 @@
-import type { GraphData } from "@antv/g6";
+import type { GraphCanvasEdge, GraphCanvasNode } from "@ontomato/foundation-ui/graph/g6";
 import type { InstanceGraphEdge, InstanceGraphNode } from "../api";
 
-export const GRAPH_BATCH_SIZE = 200;
-
+/** A neighbourhood this large is relaid out on a plain grid: clustering it by class is not worth the wait. */
 export function isLargeInstanceGraph(nodeCount: number, edgeCount: number) {
   return nodeCount > 1000 || edgeCount > 2000;
-}
-
-export function instanceGraphNodeLabel(name: string | undefined, _id: string) {
-  const label = name?.trim() || "—";
-  const characters = Array.from(label);
-  return characters.length > 24 ? `${characters.slice(0, 23).join("")}…` : label;
 }
 
 export function instanceNodePosition(index: number, nodeCount: number) {
@@ -91,109 +84,48 @@ export function overviewPositions(nodes: InstanceGraphNode[]) {
   return positions;
 }
 
-export function instanceEdgeGeometry(edges: InstanceGraphEdge[]) {
-  const groups = new Map<string, number[]>();
-  edges.forEach((edge, index) => {
-    const key = JSON.stringify([edge.source, edge.target].sort());
-    groups.set(key, [...(groups.get(key) || []), index]);
-  });
-  return edges.map((edge, index) => {
-    const group = groups.get(JSON.stringify([edge.source, edge.target].sort()))!;
-    const position = group.indexOf(index);
-    if (edge.source === edge.target) {
-      return { type: "cubic", style: { loop: true, loopPlacement: "top" as const, loopDist: 60 + position * 28 } };
-    }
-    const offset = (position - (group.length - 1) / 2) * 36;
-    return { type: group.length > 1 ? "quadratic" : "line", style: { curveOffset: edge.source < edge.target ? offset : -offset } };
-  });
+export function overviewAnchorId(className: string) {
+  return `overview-class:${JSON.stringify(className)}`;
 }
 
-/** Aggregate only loaded sample edges; counts never imply datasource totals. */
+/** An overview relation as the page labels it: the instance edge's type, and how many sample edges it stands for. */
+export interface OverviewRelation extends GraphCanvasEdge {
+  type?: string;
+  count?: number;
+}
+
+/**
+ * The overview's relations between classes, aggregated from the loaded sample edges only — counts never imply
+ * datasource totals. Each class gets an anchor in the middle of its cluster for the aggregated edges to end at; the
+ * selected instance's own edges are drawn on top, and the aggregated ones fade behind them.
+ */
 export function overviewRelations(
   nodes: InstanceGraphNode[], edges: InstanceGraphEdge[],
   positions: Record<string, { x: number; y: number }>, selectedId = "",
-) {
+): { anchors: GraphCanvasNode[]; edges: OverviewRelation[] } {
   const classes = new Map(nodes.map((node) => [node.id, node.class]));
-  const groups = new Map<string, { source: string; target: string; type?: string; count: number }>();
-  const anchorId = (name: string) => `overview-class:${JSON.stringify(name)}`;
+  const groups = new Map<string, OverviewRelation>();
   for (const edge of edges) {
     const source = classes.get(edge.source), target = classes.get(edge.target);
     if (source == null || target == null) continue;
     const key = JSON.stringify([source, target, edge.type ?? ""]);
     const group = groups.get(key);
-    if (group) group.count++;
-    else groups.set(key, { source: anchorId(source), target: anchorId(target), type: edge.type, count: 1 });
+    if (group) group.count! += 1;
+    else groups.set(key, {
+      id: `overview-relation:${key}`, source: overviewAnchorId(source), target: overviewAnchorId(target),
+      type: edge.type, count: 1, weight: 1, tone: selectedId ? "muted" : "default",
+    });
   }
+  for (const group of groups.values()) group.weight = group.count;
   const anchors = [...new Set(classes.values())].map((name) => {
     const points = nodes.filter((node) => node.class === name).map((node) => positions[node.id]).filter(Boolean);
     const x = points.length ? (Math.min(...points.map((p) => p.x)) + Math.max(...points.map((p) => p.x))) / 2 : 0;
     const y = points.length ? (Math.min(...points.map((p) => p.y)) + Math.max(...points.map((p) => p.y))) / 2 : 0;
-    return { id: anchorId(name), data: { anchor: true }, style: { x, y, size: 0, labelText: "", lineWidth: 0, shadowBlur: 0, opacity: 0 } };
+    const radius = Math.max(0, ...points.map((point) => Math.hypot(point.x - x, point.y - y)));
+    return { id: overviewAnchorId(name), label: "", anchor: { radius }, x, y };
   });
-  const aggregated = [...groups.values()];
-  const geometry = instanceEdgeGeometry(aggregated);
-  const radii = new Map(anchors.map((anchor) => [anchor.id, Math.max(0, ...nodes
-    .filter((node) => anchorId(node.class) === anchor.id)
-    .map((node) => positions[node.id] ? Math.hypot(positions[node.id].x - anchor.style.x, positions[node.id].y - anchor.style.y) : 0))]));
-  const drawnEdges = aggregated.map((edge, index) => ({
-    id: `overview-relation:${index}`, source: edge.source, target: edge.target,
-    data: { type: edge.type, count: edge.count, aggregated: true }, ...geometry[index],
-    style: { ...geometry[index].style,
-      ...(edge.source === edge.target ? { loopDist: (radii.get(edge.source) || 0) + (geometry[index].style.loopDist || 60) } : {}),
-      lineWidth: Math.min(7, 1.5 + Math.log2(edge.count + 1)), opacity: selectedId ? 0.15 : 0.8 },
-  }));
   const direct = edges.filter((edge) => edge.source === selectedId || edge.target === selectedId);
-  const directGeometry = instanceEdgeGeometry(direct);
-  return { nodes: anchors, edges: [...drawnEdges, ...direct.map((edge, index) => ({
-    id: `overview-direct:${index}`, source: edge.source, target: edge.target,
-    data: { type: edge.type }, ...directGeometry[index],
+  return { anchors, edges: [...groups.values(), ...direct.map((edge, index) => ({
+    id: `overview-direct:${index}`, source: edge.source, target: edge.target, type: edge.type,
   }))] };
-}
-
-// Nodes precede edges so every edge endpoint exists before G6 draws it.
-export async function drawInstanceGraphBatches(
-  target: { addData: (data: GraphData) => void; draw: () => Promise<void> },
-  nodes: InstanceGraphNode[],
-  edges: InstanceGraphEdge[],
-  color: (className: string) => string,
-  options: {
-    isCurrent: () => boolean;
-    yieldControl: () => Promise<void>;
-    onProgress: (completed: number) => void;
-    positions?: Record<string, { x: number; y: number }>;
-  }
-) {
-  let completed = 0;
-  const geometry = instanceEdgeGeometry(edges);
-  for (let offset = 0; offset < nodes.length; offset += GRAPH_BATCH_SIZE) {
-    await options.yieldControl();
-    if (!options.isCurrent()) return false;
-    const batch = nodes.slice(offset, offset + GRAPH_BATCH_SIZE).map((node, index) => ({
-      id: node.id,
-      data: { node, color: color(node.class) },
-      style: options.positions?.[node.id] || instanceNodePosition(offset + index, nodes.length),
-    }));
-    target.addData({ nodes: batch });
-    await target.draw();
-    if (!options.isCurrent()) return false;
-    completed += batch.length;
-    options.onProgress(completed);
-  }
-  for (let offset = 0; offset < edges.length; offset += GRAPH_BATCH_SIZE) {
-    await options.yieldControl();
-    if (!options.isCurrent()) return false;
-    const batch = edges.slice(offset, offset + GRAPH_BATCH_SIZE).map((edge, index) => ({
-      id: `edge:${offset + index}:${edge.source}:${edge.target}`,
-      source: edge.source,
-      target: edge.target,
-      data: { type: edge.type, label: edge.label },
-      ...geometry[offset + index],
-    }));
-    target.addData({ edges: batch });
-    await target.draw();
-    if (!options.isCurrent()) return false;
-    completed += batch.length;
-    options.onProgress(completed);
-  }
-  return options.isCurrent();
 }

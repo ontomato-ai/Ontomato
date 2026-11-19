@@ -1,5 +1,17 @@
 <script setup lang="ts">
-import { Graph } from "@antv/g6";
+import {
+  G6GraphCanvas,
+  G6_LABEL_SIZE,
+  G6_LABEL_WIDTH,
+  G6_NODE_SIZE,
+  graphCategorySlot,
+  readGraphPalette,
+  type GraphCanvasEdge,
+  type GraphCanvasElement,
+  type GraphCanvasNode,
+  type GraphCanvasPoint,
+  type GraphCanvasViewport,
+} from "@ontomato/foundation-ui/graph/g6";
 import type { ObjectReference } from "@ontomato/contracts/object-views";
 import {
   Box,
@@ -21,20 +33,15 @@ import {
   Info,
   Eye,
 } from "lucide-vue-next";
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import { ElButton, ElPopover, ElSelect, ElOption, ElCheckbox, ElSwitch, ElSelectV2, vLoading } from "element-plus";
 import { useManagerFeedback } from "../feedback";
 import type { InstanceGraphEdge, InstanceGraphNode, InstanceGraphStatus, InstanceGraphSummary } from "../api";
 import { useManagerClient, useManagerContext, useOntologyText, useSharedText } from "../context";
-import { readGraphColors } from "../graph-colors";
 import {
-  drawInstanceGraphBatches,
-  GRAPH_BATCH_SIZE,
   instanceNodePosition,
   isLargeInstanceGraph,
   neighborNodePosition,
-  instanceEdgeGeometry,
-  instanceGraphNodeLabel,
   overviewPositions,
   overviewRelations,
   overviewClassHeadings,
@@ -55,19 +62,22 @@ const { t } = useSharedText();
 const { loadInstanceGraphSummary, loadInstanceGraphConnections, searchInstanceGraph, loadInstanceNeighborhood, queryInstanceInfo, loadOntology } =
   useManagerClient();
 
-const graphRef = ref<HTMLDivElement | null>(null);
+const root = ref<HTMLElement | null>(null);
+const canvas = ref<InstanceType<typeof G6GraphCanvas> | null>(null);
 const loading = ref(false);
 const connectionsLoading = ref(false);
 const error = ref("");
 const status = ref<InstanceGraphStatus>("READY");
 const nodes = shallowRef<InstanceGraphNode[]>([]);
 const edges = shallowRef<InstanceGraphEdge[]>([]);
+/** Where each instance is drawn: the page's layout, and where the reader dragged a node to. */
+const positions = shallowRef<Record<string, GraphCanvasPoint>>({});
+const viewport = shallowRef<GraphCanvasViewport | null>(null);
 const selectedNode = ref<InstanceGraphNode | null>(null);
 const selectedClassLabel = ref("");
 const selectedAttributes = ref<Array<{ name: string; showName: string; value: unknown }>>([]);
 const detailsLoading = ref(false);
 const detailsError = ref("");
-const nodeActionPosition = ref<{ x: number; y: number } | null>(null);
 const neighborClass = ref<string | null | undefined>("");
 const relationType = ref<string | null | undefined>("");
 const direction = ref("both");
@@ -81,56 +91,47 @@ const relationLabels = ref<Record<string, string>>({});
 const showRelationLabels = ref(true);
 const classLabels = ref<Record<string, string>>({});
 const layouting = ref(false);
-const rendering = ref(false);
-const renderedElements = ref(0);
+/** The canvas's progress through a change it draws in batches: the elements drawn so far, and how many there are. */
+const drawing = ref({ drawn: 0, total: 0 });
+const rendering = computed(() => drawing.value.drawn < drawing.value.total);
 const largeGraph = computed(() => isLargeInstanceGraph(nodes.value.length, edges.value.length));
 const summary = shallowRef<InstanceGraphSummary | null>(null);
 const overview = ref(true);
 const aggregateRelations = ref(true);
 const selectedClass = ref("");
-const classGroups = shallowRef<Array<{ name: string; x: number; y: number; width: number; height: number }>>([]);
 const searchNodes = shallowRef<InstanceGraphNode[]>([]);
 const searching = ref(false);
 const searchMore = ref(false);
 const expanding = ref(false);
 const neighborPages = shallowRef<Record<string, { nextOffset: number | null; total: number | null; loaded: number }>>({});
 const currentPage = computed(() => selectedNode.value ? neighborPages.value[selectedNode.value.id] : undefined);
+/** How many colours the edition's categorical palette has; class headings take the slot the canvas gives the class. */
+const paletteSize = ref(0);
 let searchRequest = 0;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
-
-let graph: Graph | null = null;
-let graphReady = false;
-let selectedId = "";
 let nodeInfoRequest = 0;
 let graphRequest = 0;
-let resizeObserver: ResizeObserver | null = null;
 let generationTimer: ReturnType<typeof setTimeout> | undefined;
-let overviewRelationsUpdate = Promise.resolve();
+
+const layoutKey = () => `ontology-instance-overview:${context.apiBase}`;
 
 function saveOverviewLayout() {
-  if (!overview.value || !graph || !summary.value || rendering.value) return;
-  const positions = Object.fromEntries(graph.getNodeData().filter((node) => !node.data?.anchor).map((node) => [node.id, {
-    x: Number(node.style?.x), y: Number(node.style?.y),
-  }]).filter(([, position]) => {
-    const point = position as { x: number; y: number };
-    return Number.isFinite(point.x) && Number.isFinite(point.y);
-  }));
+  if (!overview.value || !summary.value) return;
+  const saved = Object.fromEntries(nodes.value.map((node) => [node.id, positions.value[node.id]]));
   try {
-    localStorage.setItem(`ontology-instance-overview:${context.apiBase}`, JSON.stringify({ version: summary.value.version, positions }));
+    localStorage.setItem(layoutKey(), JSON.stringify({ version: summary.value.version, positions: saved }));
   } catch { /* Storage may be unavailable in embedded browsers. */ }
 }
 
-function readOverviewLayout(): Record<string, { x: number; y: number }> | null {
-  if (!overview.value || !summary.value) return null;
+function readOverviewLayout(): Record<string, { x: number; y: number }> {
+  if (!overview.value || !summary.value) return {};
   try {
-    const saved = JSON.parse(localStorage.getItem(`ontology-instance-overview:${context.apiBase}`) || "null");
-    if (!saved?.positions) return null;
-    const valid = Object.fromEntries(nodes.value.filter((node) => Number.isFinite(saved.positions[node.id]?.x)
+    const saved = JSON.parse(localStorage.getItem(layoutKey()) || "null");
+    if (!saved?.positions) return {};
+    return Object.fromEntries(nodes.value.filter((node) => Number.isFinite(saved.positions[node.id]?.x)
       && Number.isFinite(saved.positions[node.id]?.y)).map((node) => [node.id, saved.positions[node.id]]));
-    return Object.keys(valid).length ? valid : null;
-  } catch { return null; }
+  } catch { return {}; }
 }
-
 
 const searchOptions = computed(() =>
   searchNodes.value.map((node) => ({
@@ -141,254 +142,70 @@ const searchOptions = computed(() =>
   }))
 );
 
+/** A class's colour for the HTML beside the canvas: the slot the canvas gives the same category, following the mode. */
 function colorForClass(className: string) {
-  const palette = context.presentation.nodePalette[context.theme];
-  let hash = 5381;
-  for (const character of className) {
-    hash = (hash * 33) ^ character.charCodeAt(0);
+  return paletteSize.value ? `var(--chart-${graphCategorySlot(className, [], paletteSize.value) + 1})` : undefined;
+}
+
+function relationLabel(type: string | undefined, count?: number) {
+  if (!showRelationLabels.value) return undefined;
+  const label = (type && relationLabels.value[type]) || type || "";
+  return count === undefined ? label : `${label} · ${count.toLocaleString(context.locale)}`;
+}
+
+/** The instances the canvas draws, and in the overview each class's anchor for the aggregated relations. */
+const overviewLinks = computed(() =>
+  overview.value ? overviewRelations(nodes.value, edges.value, positions.value, selectedNode.value?.id) : null,
+);
+const canvasNodes = computed<GraphCanvasNode[]>(() => [
+  ...nodes.value.map((node) => ({ id: node.id, label: node.name?.trim() || "—", category: node.class, ...positions.value[node.id]! })),
+  ...(overviewLinks.value?.anchors ?? []),
+]);
+const canvasEdges = computed<GraphCanvasEdge[]>(() => {
+  if (overviewLinks.value && aggregateRelations.value) {
+    return overviewLinks.value.edges.map((edge) => ({ ...edge, label: relationLabel(edge.type, edge.count) }));
   }
-  return palette[(hash >>> 0) % palette.length];
-}
+  return edges.value.map((edge, index) => ({ id: `edge:${index}`, source: edge.source, target: edge.target, label: relationLabel(edge.type) }));
+});
 
-function graphColors() {
-  return readGraphColors(graphRef.value!);
-}
-
-function nodeOptions(colors: ReturnType<typeof graphColors>) {
-  return {
-    type: "circle" as const,
-    style: {
-      size: 32,
-      fill: (datum: any) => datum.data.color,
-      stroke: colors.nodeStroke,
-      lineWidth: 4,
-      shadowColor: colors.shadow,
-      shadowBlur: largeGraph.value ? 0 : 10,
-      labelText: (datum: any) => datum.data?.anchor ? "" : instanceGraphNodeLabel(datum.data.node.name, datum.id),
-      labelFill: colors.text,
-      labelFontSize: 12,
-      labelFontWeight: 600,
-      labelPlacement: "bottom" as const,
-      labelOffsetY: 6,
-      cursor: "pointer" as const,
-    },
-    state: {
-      selected: { stroke: colors.primary, lineWidth: 5 },
-    },
-  };
-}
-
-function edgeOptions(colors: ReturnType<typeof graphColors>) {
-  return {
-    type: "line" as const,
-    style: {
-      stroke: colors.edge,
-      lineWidth: 1.5,
-      endArrow: !largeGraph.value,
-      labelText: (datum: any) => edgeLabel(datum.data),
-      labelFill: colors.muted,
-      labelBackground: true,
-      labelBackgroundFill: colors.surface,
-      labelBackgroundPadding: [2, 4] as [number, number],
-    },
-  };
-}
-
-function edgeLabel(data: any) {
-  if (!showRelationLabels.value) return "";
-  const label = relationLabels.value[data?.type] || data?.type || "";
-  return data?.aggregated ? `${label} · ${Number(data.count).toLocaleString(context.locale)}` : label;
-}
-
-function updateOverviewRelations() {
-  // Canvas clicks can arrive while a node selection is still drawing. Queue the
-  // updates so a stale redraw cannot remove the newly restored relation lines.
-  const target = graph;
-  const request = graphRequest;
-  const update = overviewRelationsUpdate.then(async () => {
-    if (!target || target !== graph || request !== graphRequest || !overview.value) return;
-    const positions = Object.fromEntries(target.getNodeData().filter((node) => !node.data?.anchor)
-      .map((node) => [node.id, { x: Number(node.style?.x || 0), y: Number(node.style?.y || 0) }]));
-    const aggregated = overviewRelations(nodes.value, edges.value, positions, selectedNode.value?.id);
-    const existingAnchors = target.getNodeData().filter((node) => node.data?.anchor);
-    const anchorIds = new Set(existingAnchors.map((node) => node.id));
-    const addedAnchors = aggregated.nodes.filter((node) => !anchorIds.has(node.id));
-    const updatedAnchors = aggregated.nodes.filter((node) => anchorIds.has(node.id));
-    if (addedAnchors.length) target.addData({ nodes: addedAnchors });
-    if (updatedAnchors.length) target.updateNodeData(updatedAnchors);
-    const nextEdges = aggregateRelations.value ? aggregated.edges : (() => {
-      const geometry = instanceEdgeGeometry(edges.value);
-      return edges.value.map((edge, index) => ({
-        id: `edge:${index}:${edge.source}:${edge.target}`, source: edge.source, target: edge.target,
-        data: { type: edge.type, label: edge.label }, ...geometry[index],
-      }));
-    })();
-    // Removing and adding the same ID before drawing leaves G6 with conflicting
-    // lifecycle operations. Keep existing edges and update them in place.
-    const currentIds = new Set(target.getEdgeData().map((edge) => edge.id));
-    const nextIds = new Set(nextEdges.map((edge) => edge.id));
-    const removed = [...currentIds].filter((id): id is string => !!id && !nextIds.has(id));
-    const updated = nextEdges.filter((edge) => currentIds.has(edge.id));
-    const added = nextEdges.filter((edge) => !currentIds.has(edge.id));
-    if (removed.length) target.removeEdgeData(removed);
-    if (updated.length) target.updateEdgeData(updated);
-    if (added.length) target.addData({ edges: added });
-    await target.draw();
+async function fitGraph() {
+  await canvas.value?.fit({
+    maxZoom: Math.min(1, context.presentation.maxFitZoom ?? 1),
+    // The overview keeps room above the top cluster for its class heading.
+    padding: overview.value ? [64, 48, 48, 48] : 48,
   });
-  overviewRelationsUpdate = update.catch(() => {});
-  return update;
 }
 
-async function toggleAggregation() {
-  aggregateRelations.value = !aggregateRelations.value;
-  await updateOverviewRelations();
+/** Draws `nodes` at the layout's places (in the overview, where the reader last left them) and fits them in view. */
+async function renderGraph() {
+  const defaults = overviewPositions(nodes.value);
+  positions.value = { ...defaults, ...readOverviewLayout() };
+  await fitGraph();
 }
 
-async function fitGraph(target: Graph) {
-  if (!graphRef.value) return;
-  const { width, height } = graphRef.value.getBoundingClientRect();
-  if (!width || !height) return;
-  if (overview.value) {
-    target.setOptions({ padding: [64, 48, 48, 48] });
-  }
-  target.resize(Math.round(width), Math.round(height));
-  await target.fitView({ when: "always", direction: "both" });
-  const maxZoom = Math.min(1, context.presentation.maxFitZoom ?? 1);
-  if (target.getZoom() > maxZoom) {
-    await target.zoomTo(maxZoom, false);
-  }
-  await target.fitCenter();
-  if (target === graph) updateClassGroups();
-}
-
-function yieldToBrowser() {
-  return new Promise<void>((resolve) => window.setTimeout(resolve, 0));
-}
-
-async function renderGraph(request: number) {
-  if (!graphRef.value) return;
-  await yieldToBrowser();
-  if (request !== graphRequest || !graphRef.value) return;
-  const { width, height } = graphRef.value.getBoundingClientRect();
-  if (!width || !height) return;
-  graphReady = false;
-  const previous = graph;
-  graph = null;
-  previous?.destroy();
-  selectedId = "";
-  const colors = graphColors();
-  const target = new Graph({
-    container: graphRef.value,
-    width: Math.round(width),
-    height: Math.round(height),
-    autoResize: false,
-    padding: 48,
-    animation: false,
-    data: { nodes: [], edges: [] },
-    behaviors: ["drag-canvas", "zoom-canvas", "drag-element"],
-    node: nodeOptions(colors),
-    edge: edgeOptions(colors),
-  });
-  graph = target;
-  target.on("node:click", (event: any) => {
-    if (!rendering.value && !expanding.value) {
-      void selectNode(event.target.id);
-    }
-  });
-  target.on("canvas:click", clearSelection);
-  const updateOverlays = () => {
-    if (graph === target && graphReady && request === graphRequest) updateNodeActionPosition();
-  };
-  target.on("aftertransform", updateOverlays);
-  target.on("afterdraw", updateOverlays);
-  target.on("node:drag", updateOverlays);
-  target.on("node:dragend", updateOverlays);
-  target.on("node:dragend", saveOverviewLayout);
-  target.on("node:dragend", () => { void updateOverviewRelations(); });
-  target.on("node:dblclick", (event: any) => {
-    if (!rendering.value && !expanding.value) {
-      void selectNode(event.target.id).then(expandNeighbors);
-    }
-  });
-  const isCurrent = () => request === graphRequest && graph === target;
-  rendering.value = true;
-  renderedElements.value = 0;
-  try {
-    await target.render();
-    if (!isCurrent()) return;
-    graphReady = true;
-    const complete = await drawInstanceGraphBatches(target, nodes.value, overview.value ? [] : edges.value, colorForClass, {
-      isCurrent,
-      yieldControl: yieldToBrowser,
-      onProgress: (completed) => { renderedElements.value = completed; },
-      positions: overviewPositions(nodes.value),
-    });
-    if (!complete) return;
-    const savedLayout = readOverviewLayout();
-    if (savedLayout) {
-      const defaults = overviewPositions(nodes.value);
-      target.updateNodeData(nodes.value.map((node, index) => ({ id: node.id, style: savedLayout[node.id] || defaults[node.id] || instanceNodePosition(index, nodes.value.length) })));
-      await target.draw();
-    }
-    if (isCurrent() && overview.value) await updateOverviewRelations();
-    if (isCurrent()) await fitGraph(target);
-  } finally {
-    if (isCurrent()) rendering.value = false;
-  }
+function moveNode(id: string, position: GraphCanvasPoint) {
+  positions.value = { ...positions.value, [id]: position };
+  saveOverviewLayout();
 }
 
 async function relayoutGraph() {
-  if (!graph || layouting.value || loading.value || rendering.value || expanding.value) return;
-  const target = graph;
-  const request = graphRequest;
-  const isCurrent = () => request === graphRequest && graph === target;
+  if (layouting.value || loading.value || rendering.value || expanding.value) return;
   layouting.value = true;
   try {
-    if (overview.value) {
-      const positions = overviewPositions(nodes.value);
-      target.updateNodeData(nodes.value.map((node) => ({ id: node.id, style: positions[node.id] })));
-      await updateOverviewRelations();
-      await target.draw();
-    } else if (largeGraph.value) {
-      for (let offset = 0; offset < nodes.value.length; offset += GRAPH_BATCH_SIZE) {
-        await yieldToBrowser();
-        if (!isCurrent()) return;
-        target.updateNodeData(nodes.value.slice(offset, offset + GRAPH_BATCH_SIZE).map((node, index) => ({
-          id: node.id,
-          style: instanceNodePosition(offset + index, nodes.value.length),
-        })));
-        await target.draw();
-      }
-    } else {
-      const positions = overviewPositions(nodes.value);
-      target.updateNodeData(nodes.value.map((node) => ({ id: node.id, style: positions[node.id] })));
-      await target.draw();
-    }
-    if (isCurrent()) await fitGraph(target);
-    if (isCurrent()) saveOverviewLayout();
+    positions.value = !overview.value && largeGraph.value
+      ? Object.fromEntries(nodes.value.map((node, index) => [node.id, instanceNodePosition(index, nodes.value.length)]))
+      : overviewPositions(nodes.value);
+    await canvas.value?.relayout();
+    await fitGraph();
+    saveOverviewLayout();
   } finally {
-    if (isCurrent()) layouting.value = false;
+    layouting.value = false;
   }
-}
-
-function applySelection(id: string) {
-  if (!graph) return;
-  const states: Record<string, string[]> = {};
-  if (selectedId && selectedId !== id) states[selectedId] = [];
-  states[id] = ["selected"];
-  selectedId = id;
-  void graph.setElementState(states, false);
 }
 
 function clearSelection() {
-  nodeActionPosition.value = null;
   nodeInfoRequest += 1;
-  if (graph && selectedId) {
-    void graph.setElementState({ [selectedId]: [] }, false);
-  }
-  selectedId = "";
   selectedNode.value = null;
-  if (!loading.value && !rendering.value) void updateOverviewRelations();
   selectedClassLabel.value = "";
   selectedAttributes.value = [];
   detailsLoading.value = false;
@@ -426,7 +243,7 @@ async function loadNodeInfo(node: InstanceGraphNode) {
   }
 }
 
-async function selectNode(id: string) {
+function selectNode(id: string) {
   const node = nodes.value.find((item) => item.id === id);
   if (!node) return;
   if (selectedClass.value) {
@@ -438,70 +255,76 @@ async function selectNode(id: string) {
     searching.value = false;
   }
   selectedNode.value = node;
-  applySelection(id);
-  await updateOverviewRelations();
-  updateNodeActionPosition();
   void loadNodeInfo(node);
 }
 
-function updateNodeActionPosition() {
-  updateClassGroups();
-  if (!graph || !graphReady || !graphRef.value || !selectedNode.value) {
-    nodeActionPosition.value = null;
-    return;
-  }
-  const style = graph.getNodeData().find((node) => node.id === selectedNode.value?.id)?.style;
-  if (!style) return;
-  const point = graph.getViewportByCanvas([Number(style.x || 0), Number(style.y || 0)]);
-  const { width, height } = graphRef.value.getBoundingClientRect();
-  if (point[0] < 0 || point[0] > width || point[1] < 0 || point[1] > height) {
-    nodeActionPosition.value = null;
-    return;
-  }
-  // Node geometry scales with the canvas; the gap and HTML toolbar stay in screen pixels.
-  const nodeRadius = (16 + 2.5) * graph.getZoom();
-  nodeActionPosition.value = {
-    x: point[0],
-    y: graphRef.value.offsetTop + point[1] - nodeRadius - 12,
-  };
+/** A reader's choice on the canvas; ignored while the graph is still being drawn or grown. */
+function chooseNode(ids: string[]) {
+  if (rendering.value || expanding.value) return;
+  if (ids[0]) selectNode(ids[0]);
+  else clearSelection();
 }
 
+function activate(element: GraphCanvasElement) {
+  if (element.kind !== "node" || rendering.value || expanding.value) return;
+  selectNode(element.id);
+  void expandNeighbors();
+}
+
+/** Screen pixels inside the canvas for a graph point, or null where the point is out of view. */
+function onScreen(point: GraphCanvasPoint) {
+  const view = viewport.value!;
+  const x = (point.x - view.x) * view.zoom;
+  const y = (point.y - view.y) * view.zoom;
+  return x < 0 || x > view.width * view.zoom || y < 0 || y > view.height * view.zoom ? null : { x, y };
+}
+
+const nodeActionPosition = computed(() => {
+  const node = selectedNode.value;
+  const point = node && viewport.value && positions.value[node.id];
+  const at = point ? onScreen(point) : null;
+  if (!at) return null;
+  // Node geometry scales with the canvas; the gap and HTML toolbar stay in screen pixels.
+  const nodeRadius = (G6_NODE_SIZE / 2 + 2.5) * viewport.value!.zoom;
+  return { x: at.x, y: (canvas.value!.$el as HTMLElement).offsetTop + at.y - nodeRadius - 12 };
+});
+
 /** Screen-space headings follow pan, zoom and dragged nodes, including their visible labels. */
-function updateClassGroups() {
-  if (!graph || !graphReady || !graphRef.value || !overview.value) { classGroups.value = []; return; }
+const classGroups = computed(() => {
+  const view = viewport.value;
+  if (!view || !overview.value || !root.value) return [];
+  const width = view.width * view.zoom;
+  const height = view.height * view.zoom;
   const groups = new Map<string, Array<{ x: number; y: number }>>();
   const instances: OverviewRect[] = [];
-  const zoom = graph.getZoom();
   const measure = document.createElement("canvas").getContext("2d");
-  const fontFamily = getComputedStyle(graphRef.value).fontFamily;
+  const fontFamily = getComputedStyle(root.value).fontFamily;
   const textWidth = (text: string, size: number) => {
     if (!measure) return Array.from(text).length * size;
     measure.font = `600 ${size}px ${fontFamily}`;
     return measure.measureText(text).width;
   };
-  for (const datum of graph.getNodeData()) {
-    const node = datum.data?.node as InstanceGraphNode | undefined;
-    if (!node || datum.data?.anchor) continue;
-    const point = graph.getViewportByCanvas([Number(datum.style?.x || 0), Number(datum.style?.y || 0)]);
-    if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])) continue;
+  for (const node of nodes.value) {
+    const position = positions.value[node.id];
+    if (!position) continue;
+    const point = { x: (position.x - view.x) * view.zoom, y: (position.y - view.y) * view.zoom };
     const points = groups.get(node.class) || [];
-    points.push({ x: point[0], y: point[1] }); groups.set(node.class, points);
-    const halfWidth = Math.max(18, textWidth(instanceGraphNodeLabel(node.name, node.id), 12) / 2) * zoom;
-    instances.push({ x: point[0] - halfWidth, y: point[1] - 18 * zoom,
-      width: halfWidth * 2, height: 58 * zoom });
+    points.push(point); groups.set(node.class, points);
+    const halfWidth = Math.max(18, Math.min(G6_LABEL_WIDTH, textWidth(node.name?.trim() || "—", G6_LABEL_SIZE)) / 2) * view.zoom;
+    instances.push({ x: point.x - halfWidth, y: point.y - 18 * view.zoom,
+      width: halfWidth * 2, height: 58 * view.zoom });
   }
-  classGroups.value = overviewClassHeadings([...groups].map(([name, points]) => {
+  return overviewClassHeadings([...groups].map(([name, points]) => {
     const label = classLabels.value[name] || name;
     const count = classCount(name, points.length);
-    const width = Math.min(Math.max(64, textWidth(label, 12) + textWidth(count, 12) + 30), 240,
-      Math.max(80, graphRef.value!.clientWidth - 32));
+    const headingWidth = Math.min(Math.max(64, textWidth(label, 12) + textWidth(count, 12) + 30), 240, Math.max(80, width - 32));
     const left = Math.min(...points.map(p => p.x));
     const right = Math.max(...points.map(p => p.x));
-    const top = Math.min(...points.map(p => p.y)) - 18 * zoom;
-    const bottom = Math.max(...points.map(p => p.y)) + 40 * zoom;
-    return { name, bounds: { x: left, y: top, width: right - left, height: bottom - top }, width, height: 26 };
-  }), instances, { x: 8, y: 8, width: graphRef.value.clientWidth - 16, height: graphRef.value.clientHeight - 16 });
-}
+    const top = Math.min(...points.map(p => p.y)) - 18 * view.zoom;
+    const bottom = Math.max(...points.map(p => p.y)) + 40 * view.zoom;
+    return { name, bounds: { x: left, y: top, width: right - left, height: bottom - top }, width: headingWidth, height: 26 };
+  }), instances, { x: 8, y: 8, width: width - 16, height: height - 16 });
+});
 
 function classCount(name: string, shown: number) {
   const total = summary.value?.classes.find((item) => item.class === name)?.instanceCount;
@@ -526,8 +349,9 @@ async function showDirectNeighborhood() {
     neighborPages.value = { [node.id]: {
       nextOffset: result.nextOffset, total: result.total, loaded: result.edges.length,
     } };
-    await renderGraph(++graphRequest);
-    await selectNode(node.id);
+    graphRequest += 1;
+    selectNode(node.id);
+    await renderGraph();
   } catch (reason) {
     if (request === graphRequest) reportGraphError(reason);
   } finally {
@@ -536,8 +360,7 @@ async function showDirectNeighborhood() {
 }
 
 async function focusNode(id: string | undefined) {
-  const target = graph;
-  if (!id || !target || loading.value || rendering.value || layouting.value || expanding.value) return;
+  if (!id || loading.value || rendering.value || layouting.value || expanding.value) return;
   const match = searchNodes.value.find((node) => node.id === id);
   if (!match) return;
   overview.value = false;
@@ -545,14 +368,11 @@ async function focusNode(id: string | undefined) {
   nodes.value = [match];
   edges.value = [];
   neighborPages.value = {};
-  await renderGraph(++graphRequest);
-  await selectNode(id);
+  graphRequest += 1;
+  selectNode(id);
+  await renderGraph();
   await showDirectNeighborhood();
-  if (graph) {
-    const maxZoom = Math.min(1, context.presentation.maxFitZoom ?? 1);
-    if (graph.getZoom() > maxZoom) await graph.zoomTo(maxZoom, false);
-    await graph.focusElement(id, false);
-  }
+  await canvas.value?.focus(id);
 }
 
 function scheduleSearch(term: string) {
@@ -594,8 +414,9 @@ async function chooseClass(id: string) {
   await runSearch("", ++searchRequest);
 }
 
-async function showOverview(request = ++graphRequest) {
+async function showOverview() {
   if (!summary.value) return;
+  graphRequest += 1;
   clearSelection();
   clearTimeout(searchTimer);
   searchRequest++;
@@ -611,52 +432,34 @@ async function showOverview(request = ++graphRequest) {
   overview.value = true;
   nodes.value = summary.value.overviewNodes || [];
   edges.value = summary.value.overviewEdges || [];
-  await renderGraph(request);
+  await renderGraph();
 }
 
 async function expandNeighbors() {
   const node = selectedNode.value;
   const version = summary.value?.version;
-  const target = graph;
-  if (!node || !version || !target || expanding.value || rendering.value || filtersDirty.value || versionChanged.value) return;
+  if (!node || !version || expanding.value || rendering.value || filtersDirty.value || versionChanged.value) return;
   const page = neighborPages.value[node.id];
   if (page?.nextOffset === null) return;
   const request = graphRequest;
   expanding.value = true;
   try {
     const result = await loadInstanceNeighborhood(node.id, version, page?.nextOffset ?? 0, appliedNeighborFilters.value);
-    if (request !== graphRequest || graph !== target) return;
-    const fromOverview = overview.value;
+    if (request !== graphRequest) return;
     const knownNodes = new Set(nodes.value.map((item) => item.id));
     const knownEdges = new Set(edges.value.map((item) => JSON.stringify([item.source, item.target, item.type])));
     const addedNodes = result.nodes.filter((item) => !knownNodes.has(item.id));
     const addedEdges = result.edges.filter((item) => !knownEdges.has(JSON.stringify([item.source, item.target, item.type])));
-    const center = target.getNodeData(node.id).style ?? { x: 0, y: 0 };
+    const center = positions.value[node.id] ?? { x: 0, y: 0 };
+    positions.value = { ...positions.value, ...Object.fromEntries(addedNodes.map((item, index) =>
+      [item.id, neighborNodePosition((page?.loaded ?? 0) + index, center)])) };
     nodes.value = [...nodes.value, ...addedNodes];
     edges.value = [...edges.value, ...addedEdges];
-    target.addData({
-      nodes: addedNodes.map((item, index) => ({ id: item.id, data: { node: item, color: colorForClass(item.class) },
-        style: neighborNodePosition((page?.loaded ?? 0) + index, { x: Number(center.x || 0), y: Number(center.y || 0) }),
-      })),
-      edges: (fromOverview ? [] : addedEdges).map((item) => ({ ...item, id: `connection:${JSON.stringify([item.source, item.target, item.type])}`,
-        data: { type: item.type, label: item.label } })),
-    });
-    if (fromOverview) {
-      await updateOverviewRelations();
-    } else {
-      const geometry = instanceEdgeGeometry(edges.value);
-      target.updateEdgeData(target.getEdgeData().map((item) => {
-      const index = edges.value.findIndex((edge) => edge.source === item.source && edge.target === item.target && edge.type === item.data?.type);
-      return { id: item.id, ...geometry[index] };
-      }));
-    }
-    await target.draw();
-    if (request !== graphRequest) return;
     neighborPages.value = { ...neighborPages.value, [node.id]: {
       nextOffset: result.nextOffset, total: result.total,
       loaded: (page?.loaded ?? 0) + result.edges.length,
     } };
-    if (fitAfterExpand.value) await fitGraph(target);
+    if (fitAfterExpand.value) await fitGraph();
   } catch (reason) {
     if (request === graphRequest) reportGraphError(reason);
   } finally {
@@ -676,84 +479,33 @@ async function applyNeighborhoodFilters() {
   nodes.value = [node];
   edges.value = [];
   neighborPages.value = {};
-  await renderGraph(++graphRequest);
-  await selectNode(node.id);
+  graphRequest += 1;
+  await renderGraph();
   await expandNeighbors();
 }
 
 function zoomIn() {
-  void graph?.zoomBy(1.2);
+  void canvas.value?.zoomBy(1.2);
 }
 
 function zoomOut() {
-  void graph?.zoomBy(0.8);
-}
-
-async function toggleRelationLabels() {
-  showRelationLabels.value = !showRelationLabels.value;
-  const target = graph;
-  if (!target) return;
-  target.updateEdgeData(target.getEdgeData().map((edge) => ({
-    id: edge.id,
-    style: { labelText: edgeLabel(edge.data) },
-  })));
-  await target.draw();
-}
-
-async function updateGraphTheme() {
-  const target = graph;
-  if (!target || rendering.value) return;
-  const colors = graphColors();
-  target.setNode(nodeOptions(colors));
-  target.setEdge(edgeOptions(colors));
-  target.updateNodeData(target.getNodeData().map((node) => ({
-    id: node.id,
-    // The palette is per theme; overview anchors carry no instance and keep their data.
-    data: node.data?.node
-      ? { ...node.data, color: colorForClass((node.data.node as InstanceGraphNode).class) }
-      : node.data,
-    style: { stroke: colors.nodeStroke, shadowColor: colors.shadow, labelFill: colors.text },
-  })));
-  target.updateEdgeData(target.getEdgeData().map((edge) => ({
-    id: edge.id,
-    style: { stroke: colors.edge, labelFill: colors.muted, labelBackgroundFill: colors.surface },
-  })));
-  await target.draw();
+  void canvas.value?.zoomBy(0.8);
 }
 
 function fitGraphView() {
-  if (graph) void fitGraph(graph);
+  void fitGraph();
 }
 
-function downloadGraph() {
-  const container = graphRef.value;
-  const layers = container ? Array.from(container.querySelectorAll("canvas")) : [];
-  if (!container || !layers.length) return;
-
-  const width = Math.max(...layers.map((canvas) => canvas.width));
-  const height = Math.max(...layers.map((canvas) => canvas.height));
-  const output = document.createElement("canvas");
-  output.width = width;
-  output.height = height;
-  const canvasContext = output.getContext("2d");
-  if (!canvasContext) return;
-
-  const background = getComputedStyle(container.parentElement || container).backgroundColor;
-  canvasContext.fillStyle = background;
-  canvasContext.fillRect(0, 0, width, height);
-  layers.forEach((canvas) => canvasContext.drawImage(canvas, 0, 0, width, height));
-
-  output.toBlob((blob) => {
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `instance-graph-${new Date().toISOString().slice(0, 10)}.png`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, "image/png");
+async function downloadGraph() {
+  const blob = await canvas.value!.exportImage();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `instance-graph-${new Date().toISOString().slice(0, 10)}.png`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 async function refresh() {
@@ -769,11 +521,6 @@ async function refresh() {
   searching.value = false;
   searchNodes.value = [];
   clearSelection();
-  graphReady = false;
-  const previous = graph;
-  graph = null;
-  previous?.destroy();
-  rendering.value = false;
   layouting.value = false;
   nodes.value = [];
   edges.value = [];
@@ -789,20 +536,18 @@ async function refresh() {
     status.value = result.status;
     if (result.status === "READY") {
       summary.value = result.summary;
-      await showOverview(request);
       loading.value = false;
+      const overviewRequest = graphRequest + 1;
+      await showOverview();
       connectionsLoading.value = true;
-      void loadInstanceGraphConnections(result.summary.version, result.summary.sampleToken).then(async connections => {
-        if (request !== graphRequest || !summary.value || connections.version !== summary.value.version) return;
+      void loadInstanceGraphConnections(result.summary.version, result.summary.sampleToken).then(connections => {
+        if (overviewRequest !== graphRequest || !summary.value || connections.version !== summary.value.version) return;
         const visible = new Set(summary.value.overviewNodes?.map(node => node.id));
         const connectedEdges = connections.overviewEdges.filter(edge => visible.has(edge.source) && visible.has(edge.target));
         summary.value = { ...summary.value, overviewEdges: connectedEdges, overviewEdgesTruncated: connections.overviewEdgesTruncated };
-        if (overview.value) {
-          edges.value = connectedEdges;
-          await updateOverviewRelations();
-        }
-      }).catch(reason => { if (request === graphRequest) reportGraphError(reason); })
-        .finally(() => { if (request === graphRequest) connectionsLoading.value = false; });
+        if (overview.value) edges.value = connectedEdges;
+      }).catch(reason => { if (overviewRequest === graphRequest) reportGraphError(reason); })
+        .finally(() => { if (overviewRequest === graphRequest) connectionsLoading.value = false; });
     } else if (result.status === "GENERATING") {
       generationTimer = setTimeout(() => { void refresh(); }, 2000);
     }
@@ -816,18 +561,8 @@ async function refresh() {
 
 const isEmpty = computed(() => !loading.value && !error.value && nodes.value.length === 0);
 
-watch(() => context.theme, () => void updateGraphTheme());
-
 onMounted(() => {
-  resizeObserver = new ResizeObserver(([entry]) => {
-    if (!graph || !entry) return;
-    const { width, height } = entry.contentRect;
-    if (width && height) {
-      graph.resize(Math.round(width), Math.round(height));
-      updateClassGroups();
-    }
-  });
-  if (graphRef.value) resizeObserver.observe(graphRef.value);
+  paletteSize.value = readGraphPalette(root.value!).length;
   void refresh();
 });
 
@@ -837,22 +572,32 @@ onBeforeUnmount(() => {
   searchRequest++;
   graphRequest += 1;
   nodeInfoRequest += 1;
-  resizeObserver?.disconnect();
-  graphReady = false;
-  const previous = graph;
-  graph = null;
-  previous?.destroy();
 });
 </script>
 
 <template>
   <section
-    v-loading="loading"
-    :element-loading-text="rendering ? ot('instanceGraphRenderProgress', { completed: renderedElements, total: nodes.length + edges.length }) : undefined"
+    ref="root"
+    v-loading="loading || rendering"
+    :element-loading-text="rendering ? ot('instanceGraphRenderProgress', { completed: drawing.drawn, total: drawing.total }) : undefined"
     class="instance-graph"
   >
     <div class="graph-canvas">
-      <div ref="graphRef" class="graph-viewport" />
+      <G6GraphCanvas
+        ref="canvas"
+        class="graph-viewport"
+        :label="ot('instanceGraphTitle')"
+        :nodes="canvasNodes"
+        :edges="canvasEdges"
+        :selected="selectedNode ? [selectedNode.id] : []"
+        :layout="{ type: 'preset' }"
+        @update:selected="chooseNode"
+        @blank="clearSelection"
+        @activate="activate"
+        @move="moveNode"
+        @viewport="viewport = $event"
+        @progress="(drawn, total) => (drawing = { drawn, total })"
+      />
       <div v-if="summary && overview" class="sample-legend class-groups" :aria-label="t('nav.objectTypes')">
         <div v-for="group in classGroups" :key="group.name" class="class-group"
           :style="{ left: `${group.x}px`, top: `${group.y}px`, width: `${group.width}px`, height: `${group.height}px`, '--group-color': colorForClass(group.name) }">
@@ -906,11 +651,11 @@ onBeforeUnmount(() => {
           <strong>{{ ot('instanceGraphDisplaySettings') }}</strong>
           <label class="display-setting">
             <span>{{ ot('instanceGraphRelationLabels') }}</span>
-            <el-switch :model-value="showRelationLabels" :aria-label="ot('instanceGraphRelationLabels')" :disabled="loading || rendering || expanding" size="small" @change="toggleRelationLabels" />
+            <el-switch :model-value="showRelationLabels" :aria-label="ot('instanceGraphRelationLabels')" :disabled="loading || rendering || expanding" size="small" @change="showRelationLabels = !showRelationLabels" />
           </label>
           <label v-if="summary && overview" class="display-setting" :title="ot('instanceGraphAggregateHint')">
             <span>{{ ot('instanceGraphAggregateRelations') }}</span>
-            <el-switch :model-value="aggregateRelations" :aria-label="ot('instanceGraphAggregateRelations')" :disabled="loading || rendering || expanding || layouting" size="small" @change="toggleAggregation" />
+            <el-switch :model-value="aggregateRelations" :aria-label="ot('instanceGraphAggregateRelations')" :disabled="loading || rendering || expanding || layouting" size="small" @change="aggregateRelations = !aggregateRelations" />
           </label>
         </div>
       </el-popover>
