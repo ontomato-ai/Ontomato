@@ -23,6 +23,7 @@ import { agentHostCreateSessionSchema } from "@ontomato/contracts/agent-host";
 import { z } from "zod";
 import {
   assistantAgentInputSchema,
+  assistantAgentUpdateInputSchema,
   assistantAgentValidationSchema,
   assistantFeedbackWriteSchema,
 } from "@ontomato/contracts/assistant-chat";
@@ -210,7 +211,7 @@ router.put(
     res.json(
       await saveAgentDefinition(
         id(req, "agentId"),
-        assistantAgentInputSchema.parse(req.body),
+        assistantAgentUpdateInputSchema.parse(req.body),
         context(req).owner,
         context(req).credentials,
       ),

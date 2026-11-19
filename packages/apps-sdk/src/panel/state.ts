@@ -1,9 +1,12 @@
 import { computed, readonly, ref, type DeepReadonly, type Ref } from "vue";
 import {
+  matchesObjectType,
+  objectUnionTypes,
   panelStateValueSchema,
   type PanelManifest,
   type PanelStateValue,
 } from "@ontomato/contracts/panel-manifest";
+import { platformObjectTypes } from "@ontomato/contracts/platform-object-types";
 import type { PanelSelection } from "./types";
 
 /*
@@ -46,10 +49,11 @@ export function checkPanelValue(manifest: PanelManifest, name: string, value: Pa
   if (!field) throw new Error(`Panel state has no field '${name}'`);
   const parsed = panelStateValueSchema.parse(value);
   if (parsed === null) return null;
-  if (field.kind === "object") {
-    if (typeof parsed !== "object") throw new TypeError(`Panel state '${name}' is a ${field.objectType} reference`);
-    if (parsed.className !== field.objectType)
-      throw new TypeError(`Panel state '${name}' is a ${field.objectType} reference, not ${parsed.className}`);
+  if (field.kind === "object" || field.kind === "object-union") {
+    const expected = field.kind === "object" ? field.objectType : objectUnionTypes(field).join(" | ");
+    if (typeof parsed !== "object") throw new TypeError(`Panel state '${name}' is a ${expected} reference`);
+    if (!matchesObjectType(field, parsed.className))
+      throw new TypeError(`Panel state '${name}' is a ${expected} reference, not ${parsed.className}`);
     return parsed;
   }
   if (typeof parsed === "object") throw new TypeError(`Panel state '${name}' is a ${field.type}`);
@@ -109,12 +113,20 @@ export function panelSelection(
   manifest: PanelManifest,
   values: Readonly<Record<string, PanelFieldValue>>,
   names: ReadonlyMap<string, string>,
+  translate?: (key: string) => string,
 ): PanelSelection[] {
   return Object.entries(manifest.state).flatMap(([name, field]) => {
     const value = values[name];
-    if (field.kind !== "object" || !value || typeof value !== "object") return [];
-    const reference = `${field.objectType} ${value.primaryKey}`;
-    const named = names.get(objectNameKey(field.objectType, value.primaryKey));
-    return [{ kind: field.objectType, id: value.primaryKey, label: named ? `${named} (${reference})` : reference }];
+    if ((field.kind !== "object" && field.kind !== "object-union") || !value || typeof value !== "object") return [];
+    const objectType = field.kind === "object" ? field.objectType : value.className;
+    const reference = `${objectType} ${value.primaryKey}`;
+    const named = names.get(objectNameKey(objectType, value.primaryKey));
+    if (field.kind === "object") {
+      return [{ kind: objectType, id: value.primaryKey, label: named ? `${named} (${reference})` : reference }];
+    }
+    const labelKey = platformObjectTypes[objectType]?.labelKey;
+    const typeLabel = labelKey ? (translate?.(labelKey) ?? labelKey) : undefined;
+    const prefix = typeLabel && named ? `${typeLabel} ${named}` : (typeLabel ?? named);
+    return [{ kind: objectType, id: value.primaryKey, label: prefix ? `${prefix} (${reference})` : reference }];
   });
 }

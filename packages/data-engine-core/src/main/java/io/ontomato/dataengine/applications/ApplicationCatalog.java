@@ -79,8 +79,8 @@ public class ApplicationCatalog {
         return groups.values().stream().map(uses -> {
             var first = uses.getFirst().use();
             var skill = PanelSkills.identity(domainId, first);
-            var defaults = uses.stream().map(PanelSkills.LocatedUse::use).filter(use -> use.defaultAgentId() != null)
-                .map(use -> new PageSkills.Default(use.pageKey(), use.defaultAgentId())).toList();
+            var defaults = uses.stream().filter(located -> located.use().defaultAgent() != null)
+                .map(PanelSkills.LocatedUse::pageDefault).toList();
             var key = first.access().permissionCode() == null ? first.pageKey() : null;
             var mapping = new PageSkills.Mapping(first.access().permissionCode(), first.access().kind(), key, skill,
                 defaults.isEmpty() ? null : defaults);

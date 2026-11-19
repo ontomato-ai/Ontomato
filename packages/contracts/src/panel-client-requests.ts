@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema } from "./agent-runtime-values";
 import { platformSchedulesPath } from "./platform-schedules";
-import { AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER } from "./platform-object-types";
+import { AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, KNOWLEDGE_GOVERNANCE_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE } from "./platform-object-types";
 
-export { AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER } from "./platform-object-types";
+export { AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, KNOWLEDGE_GOVERNANCE_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE } from "./platform-object-types";
 
 /*
  * The requests the SDK's platform clients send, by the binding that reaches each client (overall design 3.2, 5.1). A
@@ -24,6 +24,12 @@ export const SET_METRIC_VIEW_STATUS = "metricViews.setStatus";
 export const TEST_METRIC_VIEW = "metricViews.test";
 export const TEST_EXECUTE_METRIC_VIEW = "metricViews.testExecute";
 export const DELETE_FUNCTION = "functions.delete";
+export const APPROVE_KNOWLEDGE = "knowledge.approve";
+export const DELETE_KNOWLEDGE = "knowledge.delete";
+export const DELETE_SKILL = "skills.delete";
+export const IMPORT_SKILL = "skills.import";
+export const EXPORT_SKILL = "skills.export";
+export const EXPORT_FEEDBACK = "feedback.export";
 
 /**
  * The gateway prefix the scheduled tasks' contract spells its paths with. A frame's request names the service and the
@@ -137,17 +143,48 @@ const agentDefinitionReads = [
   { method: "POST", service: "", path: new RegExp(`^${validateAgent}$`), template: validateAgent },
 ] as const satisfies readonly PanelClientRead[];
 
-const ontologyMetadataRead = {
-  method: "POST", service: "/data-query", path: /^\/admin\/getMetas$/, template: "/admin/getMetas",
-  instructions: "POST an empty JSON object. Classes, their attributes and relationship rules come from this same response.",
-} as const satisfies PanelClientRead;
-
 /** Exact Java endpoints used by the managed definition clients. */
 const dataQueryPost = (path: string) => ({
   method: "POST", service: "/data-query", path: new RegExp(`^${path}$`), template: path,
 } as const);
 
 const formReadInstructions = "POST JSON with the form target, changedField, and optional values. Use the returned fields and values.";
+
+/** The execution callback matches pathnames, while the frame sends the query too. Java checks required parameters. */
+const objectTypeReads = [
+  { method: "GET", service: "/data-query", path: /^\/ontology\/model\/object-types$/, template: "/ontology/model/object-types" },
+  {
+    method: "GET", service: "/data-query", path: /^\/ontology\/model\/object-type(?:\?className=[^&#]+)?$/,
+    template: "/ontology/model/object-type?className=:className",
+  },
+  {
+    method: "GET", service: "/data-query", path: /^\/ontology\/model\/object-type\/deletion-impact(?:\?className=[^&#]+)?$/,
+    template: "/ontology/model/object-type/deletion-impact?className=:className",
+    instructions: "Read the relationships that would be deleted with this object type.",
+  },
+  { ...dataQueryPost("/ontology/model/object-type/form"), instructions: formReadInstructions },
+] as const satisfies readonly PanelClientRead[];
+
+const attributeReads = [
+  {
+    method: "GET", service: "/data-query", path: /^\/ontology\/model\/attributes(?:\?className=[^&#]+)?$/,
+    template: "/ontology/model/attributes", instructions: "Pass className to list only attributes of that object type.",
+  },
+  { ...dataQueryPost("/ontology/model/attribute/form"), instructions: formReadInstructions },
+] as const satisfies readonly PanelClientRead[];
+
+const relationshipReads = [
+  {
+    method: "GET", service: "/data-query", path: /^\/ontology\/model\/relationships(?:\?className=[^&#]+)?$/,
+    template: "/ontology/model/relationships", instructions: "Pass className to list relationships involving that object type.",
+  },
+  {
+    method: "GET", service: "/data-query", path: /^\/ontology\/model\/relationship(?:\?relationship=[^&#]+)?$/,
+    template: "/ontology/model/relationship?relationship=:relationship",
+  },
+  { ...dataQueryPost("/ontology/model/relationship/form"), instructions: formReadInstructions },
+] as const satisfies readonly PanelClientRead[];
+
 const metricViewDefinitionReads = [
   dataQueryPost("/metricView/queryList"),
   dataQueryPost("/metricView/queryById"),
@@ -159,13 +196,79 @@ const functionDefinitionReads = [
   { ...dataQueryPost("/function/form"), instructions: formReadInstructions },
 ] as const satisfies readonly PanelClientRead[];
 
+const knowledgeReads = [
+  { method: "POST", service: "/data-query", path: /^\/admin\/getBussinessKnowledge$/, template: "/admin/getBussinessKnowledge" },
+  {
+    method: "POST", service: "/data-query", path: /^\/admin\/bussinessKnowledge\/form$/, template: "/admin/bussinessKnowledge/form",
+    instructions: "POST a form target, changedField, and optional values. Use the owner's returned form description.",
+  },
+] as const satisfies readonly PanelClientRead[];
+
+const governanceRecordReads = [
+  {
+    method: "GET", service: "/data-query", path: /^\/ontology\/ai\/knowledge-governance\/[^/?#]+\/work$/,
+    template: "/ontology/ai/knowledge-governance/:id/work",
+  },
+  {
+    method: "GET", service: "/data-query",
+    path: /^\/ontology\/ai\/knowledge-governance\/[^/?#]+\/sources\/[^/?#]+(?:\?offset=\d+)?$/,
+    template: "/ontology/ai/knowledge-governance/:id/sources/:source",
+    instructions: "Use the record's source ID and the returned offset to read more source material.",
+  },
+] as const satisfies readonly PanelClientRead[];
+
+const skillReads = [
+  { method: "GET", service: "", path: /^\/assistant\/agent-skills$/, template: "/assistant/agent-skills" },
+  { method: "GET", service: "", path: /^\/skills$/, template: "/skills" },
+  { method: "GET", service: "", path: /^\/skills\/[^/?#]+\/references$/, template: "/skills/:id/references" },
+  { method: "GET", service: "", path: /^\/skills\/[^/?#]+\/files$/, template: "/skills/:id/files" },
+  {
+    method: "GET", service: "", path: /^\/skills\/[^/?#]+\/file\?path=[^&#]+$/, template: "/skills/:id/file?path=:path",
+    instructions: "Use the skill ID and the file path returned by its file list.",
+  },
+] as const satisfies readonly PanelClientRead[];
+
+const feedbackReads = [
+  {
+    method: "GET", service: "", path: /^\/feedback(?:\?[^#]+)?$/, template: "/feedback",
+    instructions: "Use sourceType, rating, and keyword to filter and limit and offset to page.",
+  },
+  { method: "GET", service: "", path: new RegExp(`^/feedback/${uuidPattern}$`), template: "/feedback/:id" },
+] as const satisfies readonly PanelClientRead[];
+
+const saveKnowledge = { method: "POST", service: "/data-query", path: /^\/admin\/editBussinessKnowledge$/ } as const satisfies ClientRequest;
+
+const platformOntologyReads = [
+  {
+    method: "GET", service: "", path: /^\/platform-ontology\/schema$/, template: "/platform-ontology/schema",
+    instructions: "Read the four-layer platform ontology schema: declared platform object types (with layers and label keys) and relation kinds (from/to types, stored vs derived, owner).",
+  },
+  {
+    method: "GET", service: "", path: /^\/platform-ontology\/counts$/, template: "/platform-ontology/counts",
+    instructions: "Read per-type readable object counts for the current caller across the four layers. Each type reports status 'ok' with count, 'refused' when the owner denies access, or 'failed' on upstream error.",
+  },
+  {
+    method: "GET", service: "", path: /^\/platform-ontology\/start$/, template: "/platform-ontology/start",
+    instructions: "Read the default starting node for instance mode: the current caller's User identity ({ className: 'platform:User', primaryKey }, aligned via hostOwner in OSS) and display label.",
+  },
+  {
+    method: "POST", service: "", path: /^\/platform-ontology\/neighbors$/, template: "/platform-ontology/neighbors",
+    instructions: "POST JSON { node: { className, primaryKey }, relationKinds?: string[], layers?: ('fact'|'capability'|'governance'|'product')[] }. Queries owners for all declared relation kinds touching node.className and returns neighbor nodes (full identity, label, layer), edges (relationKind, direction, derived), and per-relation-kind status ('ok' | 'refused' | 'failed').",
+  },
+  {
+    method: "POST", service: "", path: /^\/platform-ontology\/objects$/, template: "/platform-ontology/objects",
+    instructions: "POST JSON { type: string, keyword?: string, page?: number, pageSize?: number }. Lists caller-readable objects of a single declared platform type so a reader can pick a starting node from type mode; returns status 'refused' if the owner denies access.",
+  },
+] as const satisfies readonly PanelClientRead[];
+
 const objectBinding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
 const readRequests: Readonly<Record<string, readonly PanelClientRead[]>> = {
   [objectBinding(SCHEDULED_TASK)]: scheduledTaskReads,
   [objectBinding(AGENT_DEFINITION)]: agentDefinitionReads,
-  [objectBinding(SKILL)]: [
-    { method: "GET", service: "", path: /^\/assistant\/agent-skills$/, template: "/assistant/agent-skills" },
-  ],
+  [objectBinding(SKILL)]: skillReads,
+  [objectBinding(BUSINESS_KNOWLEDGE)]: knowledgeReads,
+  [objectBinding(KNOWLEDGE_GOVERNANCE_RECORD)]: governanceRecordReads,
+  [objectBinding(FEEDBACK_RECORD)]: feedbackReads,
   [objectBinding(MODEL_OPTION)]: [
     { method: "GET", service: "/data-query", path: /^\/model-options$/, template: "/model-options" },
   ],
@@ -179,11 +282,13 @@ const readRequests: Readonly<Record<string, readonly PanelClientRead[]>> = {
       instructions: "Use keyword, pageNum, and pageSize to list choices; use selected to resolve the current reference.",
     },
   ],
-  [objectBinding(OBJECT_TYPE)]: [ontologyMetadataRead],
-  [objectBinding(ATTRIBUTE)]: [ontologyMetadataRead],
-  [objectBinding(RELATIONSHIP)]: [ontologyMetadataRead],
+  [objectBinding(OBJECT_TYPE)]: objectTypeReads,
+  [objectBinding(ATTRIBUTE)]: attributeReads,
+  [objectBinding(RELATIONSHIP)]: relationshipReads,
   [objectBinding(METRIC_VIEW)]: metricViewDefinitionReads,
   [objectBinding(FUNCTION)]: functionDefinitionReads,
+  [objectBinding(ONTOLOGY_TYPE)]: platformOntologyReads,
+  [objectBinding(ONTOLOGY_RELATION_KIND)]: platformOntologyReads,
 };
 
 export const panelClientReads = (binding: string): readonly PanelClientRead[] =>
@@ -215,6 +320,27 @@ export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> 
   [bindingKey({ kind: "PlatformOperation", id: TEST_METRIC_VIEW })]: [dataQueryPost("/metricView/test")],
   [bindingKey({ kind: "PlatformOperation", id: TEST_EXECUTE_METRIC_VIEW })]: [dataQueryPost("/metricView/testExecute")],
   [bindingKey({ kind: "PlatformOperation", id: DELETE_FUNCTION })]: [dataQueryPost("/function/delete")],
+  [objectBinding(BUSINESS_KNOWLEDGE)]: [
+    ...knowledgeReads,
+    { method: "POST", service: "/data-query", path: /^\/admin\/addBussinessKnowledge$/ },
+    saveKnowledge,
+  ],
+  [bindingKey({ kind: "PlatformOperation", id: APPROVE_KNOWLEDGE })]: [saveKnowledge],
+  [bindingKey({ kind: "PlatformOperation", id: DELETE_KNOWLEDGE })]: [
+    { method: "POST", service: "/data-query", path: /^\/admin\/delBussinessKnowledge$/ },
+  ],
+  [bindingKey({ kind: "PlatformOperation", id: DELETE_SKILL })]: [
+    { method: "DELETE", service: "", path: /^\/skills\/[^/?#]+$/ },
+  ],
+  [bindingKey({ kind: "PlatformOperation", id: IMPORT_SKILL })]: [
+    { method: "POST", service: "", path: /^\/skills\/import(?:\?overwrite=true)?$/ },
+  ],
+  [bindingKey({ kind: "PlatformOperation", id: EXPORT_SKILL })]: [
+    { method: "GET", service: "", path: /^\/skills\/[^/?#]+\/export$/ },
+  ],
+  [bindingKey({ kind: "PlatformOperation", id: EXPORT_FEEDBACK })]: [
+    { method: "GET", service: "", path: /^\/feedback\/export(?:\?[^#]+)?$/ },
+  ],
 };
 
 /** The host supplies the decoded JSON body for requests scoped to the specific object in a binding. */

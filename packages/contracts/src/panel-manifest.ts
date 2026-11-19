@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { formFieldErrorSchema } from "./form-fields";
 import { pageDraftLinkSchema } from "./page-draft";
+import { platformObjectTypes, platformOntologyLayers } from "./platform-object-types";
 
 /*
  * What a panel's `panel.mjs` exports through `definePanel`: the state the panel keeps for one instance and the
@@ -20,16 +21,46 @@ const key = z
   .max(200)
   .refine((value) => !["__proto__", "constructor", "prototype"].includes(value), "Reserved key");
 
-/**
- * The typed value vocabulary of a panel: a reference to one ontology object (class and primary key, never a copy of its
- * data) or a scalar. Projections take their parameters in the same vocabulary, so a slot input and a projection's
- * parameter are compared without a translation table.
- */
-export const ontologyParameterTypeSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("object"), objectType: z.string().min(1).max(200) }).strict(),
-  z.object({ kind: z.literal("scalar"), type: z.enum(["string", "number", "boolean", "date"]) }).strict(),
+const ontologyTypeId = z.string().min(1).max(200);
+const ontologyObjectTypeSchema = z.object({ kind: z.literal("object"), objectType: ontologyTypeId }).strict();
+const ontologyScalarTypeSchema = z.object({
+  kind: z.literal("scalar"), type: z.enum(["string", "number", "boolean", "date"]),
+}).strict();
+
+const explicitObjectUnionTypeSchema = z.object({
+  kind: z.literal("object-union"),
+  objectTypes: z.array(ontologyTypeId.refine((id) => Object.hasOwn(platformObjectTypes, id), "Undeclared platform object type")).nonempty(),
+}).strict();
+
+const layeredObjectUnionTypeSchema = z.object({
+  kind: z.literal("object-union"),
+  layers: z.array(z.enum(platformOntologyLayers)).nonempty(),
+}).strict();
+
+/** One selected object whose type is declared explicitly or belongs to one of the selected layers. */
+export const ontologyObjectUnionTypeSchema = z.union([explicitObjectUnionTypeSchema, layeredObjectUnionTypeSchema]);
+export type OntologyObjectUnionType = z.infer<typeof ontologyObjectUnionTypeSchema>;
+
+/** Resolve layer selectors against the current type declarations, keeping the selector in the stored manifest. */
+export function objectUnionTypes(field: OntologyObjectUnionType): readonly string[] {
+  if ("objectTypes" in field) return field.objectTypes;
+  return Object.entries(platformObjectTypes)
+    .filter(([, { layer }]) => layer !== undefined && field.layers.includes(layer))
+    .map(([id]) => id);
+}
+
+/** The vocabulary for consumers that bind only a single known object type or a scalar. */
+export const singleOntologyParameterTypeSchema = z.discriminatedUnion("kind", [
+  ontologyObjectTypeSchema, ontologyScalarTypeSchema,
 ]);
+
+/** A projection parameter names a scalar or the complete identity of one ontology object. */
+export const ontologyParameterTypeSchema = z.union([singleOntologyParameterTypeSchema, ontologyObjectUnionTypeSchema]);
 export type OntologyParameterType = z.infer<typeof ontologyParameterTypeSchema>;
+
+export function matchesObjectType(field: OntologyObjectUnionType | z.infer<typeof ontologyObjectTypeSchema>, className: string): boolean {
+  return field.kind === "object" ? field.objectType === className : objectUnionTypes(field).includes(className);
+}
 
 /**
  * One field of a panel's own state. Two instances of the same panel keep separate values, so a selection made in one is
@@ -37,9 +68,12 @@ export type OntologyParameterType = z.infer<typeof ontologyParameterTypeSchema>;
  * The first object a panel shows comes from opening it (a deep link or an open request), never from the declaration: a
  * primary key in a shared panel would open every user's instance on the same object.
  */
-export const panelStateFieldSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("object"), objectType: z.string().min(1).max(200), deepLink: z.boolean().default(false) }).strict(),
-  z.object({ kind: z.literal("scalar"), type: z.enum(["string", "number", "boolean", "date"]), deepLink: z.boolean().default(false) }).strict(),
+const deepLink = z.boolean().default(false);
+export const panelStateFieldSchema = z.union([
+  ontologyObjectTypeSchema.extend({ deepLink }),
+  explicitObjectUnionTypeSchema.extend({ deepLink }),
+  layeredObjectUnionTypeSchema.extend({ deepLink }),
+  ontologyScalarTypeSchema.extend({ deepLink }),
 ]);
 export type PanelStateField = z.infer<typeof panelStateFieldSchema>;
 
@@ -152,6 +186,14 @@ export const panelObjectIdentitySchema = z.object({
   primaryKey: z.string().min(1).max(1000),
 }).strict();
 export type PanelObjectIdentity = z.infer<typeof panelObjectIdentitySchema>;
+
+/** A child such as a skill file or governance issue is identified within its owner's parent record. */
+export const panelChildObjectIdentitySchema = z.object({
+  parent: panelObjectIdentitySchema,
+  /** The owner supplies this key. The client keeps the parent identity alongside it. */
+  primaryKey: panelObjectIdentitySchema.shape.primaryKey,
+}).strict();
+export type PanelChildObjectIdentity = z.infer<typeof panelChildObjectIdentitySchema>;
 
 /** An existing record or the form's create target, using the operation's existing draft identity. */
 export const panelFormTargetSchema = z.discriminatedUnion("kind", [

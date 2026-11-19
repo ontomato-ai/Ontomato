@@ -76,6 +76,7 @@ export interface AppContext {
  * clients, never through a request to any platform path, so its calls stay within the documented contract.
  */
 const transports = new WeakMap<AppContext, ManagerRequest>();
+const translators = new WeakMap<AppContext, (key: string) => string>();
 let bridgedHost:AppHost|undefined;
 
 function parentHost() {
@@ -102,6 +103,13 @@ export function contextTransport(context: AppContext) {
   const transport = transports.get(context);
   if (!transport) throw new Error("Pass the context createAppContext() returned");
   return transport;
+}
+
+/** Translates platform message keys in the context's reactive locale, for the SDK's own modules. */
+export function contextTranslate(context: AppContext): (key: string) => string {
+  const translate = translators.get(context);
+  if (!translate) throw new Error("Pass the context createAppContext() returned");
+  return translate;
 }
 
 const isText = (value: unknown) => typeof value === "string" && value.trim() !== "";
@@ -243,5 +251,6 @@ export function createContext(host: AppHost, appearance: ContextAppearance): App
     },
   };
   transports.set(context, transport);
+  translators.set(context, (key) => i18n.global.t(key));
   return context;
 }
