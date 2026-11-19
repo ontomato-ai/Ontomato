@@ -1,0 +1,24 @@
+<!--
+  Functions: the domain's functions in one column, or the chosen one's definition — or a new one — in its place, so the
+  panel stays usable at the narrow width beside a conversation. Each part is a projection the declaration names. This
+  file places them and says nothing about what they read, which fields may change or how a function is saved or deleted.
+-->
+<style>
+  [v-cloak] { display: none; }
+  .functions-detail { display: flex; flex-direction: column; gap: var(--page-content-gap); }
+  .functions-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--spacing-md); }
+</style>
+<div id="app" v-cloak>
+  <section-group v-if="mode === 'list'" :title="t('functions.title')" :description="t('functions.description')">
+    <projection slot="functions"></projection>
+  </section-group>
+  <div v-else class="functions-detail">
+    <div class="functions-actions">
+      <el-button class="functions-back" @click="backToList">{{ t('functions.back') }}</el-button>
+      <projection v-if="mode === 'edit'" slot="delete"></projection>
+    </div>
+    <section-group :title="mode === 'create' ? t('functions.creating') : t('functions.definition')">
+      <projection slot="definition"></projection>
+    </section-group>
+  </div>
+</div>

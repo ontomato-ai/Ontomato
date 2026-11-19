@@ -1,0 +1,25 @@
+<!--
+  Metric views: the domain's metric views in one column, or the chosen one's definition — or a new one — in its place,
+  so the panel stays usable at the narrow width beside a conversation. Each part is a projection the declaration names;
+  the definition, its bindings and its status are fields of the one definition form. This file places them and says
+  nothing about what they read, which fields may change or how a metric view is saved or deleted.
+-->
+<style>
+  [v-cloak] { display: none; }
+  .metric-views-detail { display: flex; flex-direction: column; gap: var(--page-content-gap); }
+  .metric-views-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--spacing-md); }
+</style>
+<div id="app" v-cloak>
+  <section-group v-if="mode === 'list'" :title="t('metrics.title')" :description="t('metrics.description')">
+    <projection slot="metrics"></projection>
+  </section-group>
+  <div v-else class="metric-views-detail">
+    <div class="metric-views-actions">
+      <el-button class="metric-views-back" @click="backToList">{{ t('metrics.back') }}</el-button>
+      <projection v-if="mode === 'edit'" slot="delete"></projection>
+    </div>
+    <section-group :title="mode === 'create' ? t('metrics.creating') : t('metrics.definition')" :description="t('metrics.bindingsHint')">
+      <projection slot="definition"></projection>
+    </section-group>
+  </div>
+</div>
