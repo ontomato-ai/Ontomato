@@ -120,6 +120,7 @@ const feedbackReads = [
     method: "GET", service: "", path: /^\/feedback(?:\?[^#]+)?$/, template: "/feedback",
     instructions: "Use sourceType, rating, and keyword to filter and limit and offset to page.",
   },
+  { method: "GET", service: "", path: new RegExp(`^/feedback/${uuidPattern}$`), template: "/feedback/:id" },
 ] as const satisfies readonly PanelClientRead[];
 
 const saveKnowledge = { method: "POST", service: "/data-query", path: /^\/admin\/editBussinessKnowledge$/ } as const satisfies ClientRequest;

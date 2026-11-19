@@ -150,6 +150,7 @@ test("knowledge, governance, feedback and skill reads stay at their declared own
     [KNOWLEDGE_GOVERNANCE_RECORD, "GET", "/data-query", "/ontology/ai/knowledge-governance/record/work"],
     [KNOWLEDGE_GOVERNANCE_RECORD, "GET", "/data-query", "/ontology/ai/knowledge-governance/record/sources/evidence?offset=20"],
     [FEEDBACK_RECORD, "GET", "", "/feedback?rating=like&limit=20"],
+    [FEEDBACK_RECORD, "GET", "", "/feedback/12a207b7-e868-45e5-a52d-e15f85447447"],
     [SKILL, "GET", "", "/skills/skill/file?path=references%2Fguide.md"],
   ] as const) {
     const key = binding(resource);
@@ -172,6 +173,7 @@ test("knowledge, governance, feedback and skill reads stay at their declared own
 
   assert.ok(!clientSends([binding(SKILL)], "GET", "", "/skills/skill/export"));
   assert.ok(!clientSends([binding(FEEDBACK_RECORD)], "GET", "", "/feedback/export"));
+  assert.ok(!clientSends([binding(FEEDBACK_RECORD)], "GET", "", "/feedback/state"));
   assert.ok(!clientSends([binding(KNOWLEDGE_GOVERNANCE_RECORD)], "POST", "/data-query",
     "/ontology/ai/knowledge-governance/record/runs/run/actions/approve"));
 });
