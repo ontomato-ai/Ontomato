@@ -201,8 +201,7 @@ function chosen(current: readonly string[], id: string) {
 }
 
 let reported = "";
-function reportViewport() {
-  const target = graph!;
+function reportViewport(target: Graph) {
   const zoom = target.getZoom();
   const [x, y] = target.getCanvasByViewport([0, 0]);
   const { width, height } = host.value!.getBoundingClientRect();
@@ -265,10 +264,12 @@ async function create(width: number, height: number) {
     const [x, y] = target.getElementPosition(id);
     emit("move", id, { x, y });
   });
-  target.on("aftertransform", reportViewport);
-  target.on("afterdraw", reportViewport);
   await target.render();
+  // Only now: G6 transforms its viewport while it creates it, before the graph can say what its zoom is.
+  target.on("aftertransform", () => reportViewport(target));
+  target.on("afterdraw", () => reportViewport(target));
   await sync(target);
+  reportViewport(target);
   opened();
 }
 
@@ -315,8 +316,11 @@ onMounted(() => {
       void create(width, height);
       return;
     }
-    graph.resize(Math.round(width), Math.round(height));
-    reportViewport();
+    // Through the queue: a resize while G6 is still drawing its first props waits until it can report the view.
+    void enqueue(async (target) => {
+      target.resize(Math.round(width), Math.round(height));
+      reportViewport(target);
+    });
   });
   resized.observe(host.value!);
 });

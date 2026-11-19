@@ -57,7 +57,8 @@ export function isLargeGraph(nodes: number, edges: number) {
  * it on one line, no wider than `labelWidth`, ending in an ellipsis where it would run on.
  */
 export function g6NodeStyle(node: GraphCanvasNode, colors: G6Colors, categories: readonly string[], choosable: boolean, labelWidth: number) {
-  if (node.anchor) return { size: 0, opacity: 0, lineWidth: 0, labelText: "", cursor: "default" as const };
+  // An anchor is drawn transparent at size 1, not 0: G6 places a node of size 0 at the origin, whatever its x and y.
+  if (node.anchor) return { size: 1, opacity: 0, lineWidth: 0, labelText: "", cursor: "default" as const };
   return {
     size: G6_NODE_SIZE,
     fill: node.category === undefined
