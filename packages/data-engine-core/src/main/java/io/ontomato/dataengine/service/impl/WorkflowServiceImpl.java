@@ -257,6 +257,9 @@ public class WorkflowServiceImpl implements WorkflowService {
 
         if (contract.getStepField() == null) problems.add("runContract names no step field");
         if (contract.getStatusField() == null) problems.add("runContract names no status field");
+        if (contract.getStepField() != null && contract.getStepField().equals(contract.getStatusField())) {
+            problems.add("runContract.stepField and runContract.statusField must name different attributes");
+        }
         if (contract.getStatusOpen() == null || contract.getStatusOpen().isEmpty()) {
             problems.add("runContract declares no open status values");
         }

@@ -362,6 +362,19 @@ class WorkflowServiceImplTest {
   }
 
   @Test
+  void activationRefusesAContractThatUsesOneFieldForStepAndStatus() {
+    Workflow workflow = workflow(step(1, "LEADER", "approve"));
+    workflow.setRunContract(contract("workflow_instance", "status", "status", List.of("待办")));
+    when(workflows.queryById("w1")).thenReturn(workflow);
+    when(admin.getJSONRule(DOMAIN)).thenReturn(classRule("workflow_instance", "id", "status"));
+
+    var error = assertThrows(IllegalArgumentException.class, () -> service.activate("w1", DOMAIN, "U1"));
+
+    assertTrue(error.getMessage().contains("different attributes"), error.getMessage());
+    verify(workflows, never()).publishVersion(any());
+  }
+
+  @Test
   void scopedStepsNeedMatchingTargetsAndMaterializeTheContractFieldWhenActivated() {
     var step = step(1, "LEADER", "approve");
     step.setScope(GrantScope.Kind.self_organization);
