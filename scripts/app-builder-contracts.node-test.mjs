@@ -99,7 +99,11 @@ test("the app-builder CLI reads the exact SDK and author candidate, then registe
   const ref = "f".repeat(40);
   const sdkVersion = "4.1.9-dev." + "a".repeat(64);
   const panel = {
-    content: { html: '<div id="app"></div>', module: 'import {mountPanel} from "@ontomato/sdk/panel"; await mountPanel({});' },
+    content: {
+      html: '<div id="app"></div>',
+      module: 'import {mountPanel} from "@ontomato/sdk/panel"; await mountPanel({});',
+      messages: { en: { "settings.title": "Settings for {name}" } },
+    },
     manifest: { slots: {}, state: {}, operations: [] },
     sdkVersion,
   };

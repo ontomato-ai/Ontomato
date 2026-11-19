@@ -32,6 +32,10 @@ const manifest = {
   slots: { form: { projectionId, inputs: {} } },
   operations: [],
 };
+const messages = {
+  en: { "settings.title": "Settings for {name}" },
+  "zh-CN": { "settings.title": "{name} 的设置" },
+};
 const currentTest = {
   contextId: "context-a", workspaceId, status: "READY", expiresAt: Date.now() + 60_000,
   classNames: [], sampleSummary: { name: "test-data/sample.json", classes: 0, sha256: null }, resources: [],
@@ -56,11 +60,12 @@ beforeAll(async () => {
   await git.replace(Object.entries({
     "panel.html": '<projection slot="form" />',
     "panel.mjs": 'throw new Error("The server must not execute the module");',
-    "panel.json": JSON.stringify({ manifest, sdkVersion }),
+    "panel.json": JSON.stringify({ manifest, sdkVersion, content: { messages } }),
     "recipes.md": "Committed recipes",
   }).map(([path, content]) => ({ path, content, encoding: "utf8" })));
   commit = await git.commit("Panel candidate");
   await rm(join(git.tree, "recipes.md"));
+  await writeFile(join(git.tree, "panel.json"), JSON.stringify({ manifest, sdkVersion }));
   await writeFile(join(git.tree, "panel.html"), '<projection slot="form" class="working" />');
 
   const { workspaceRouter } = await import("../workspaces");
@@ -154,7 +159,7 @@ it("loads a commit under the author, uses the workspace's current test context a
   expect(candidatePanelSourceSchema.parse(await response.json())).toEqual({
     kind: "candidate", workspace: { id: workspaceId, ref: commit },
     panel: {
-      content: { html: '<projection slot="form" />', module: 'throw new Error("The server must not execute the module");', recipes: "Committed recipes" },
+      content: { html: '<projection slot="form" />', module: 'throw new Error("The server must not execute the module");', recipes: "Committed recipes", messages },
       manifest, sdkVersion,
     },
     previewContext: { kind: "build-test", test: currentTest },
@@ -171,6 +176,7 @@ it("reads the working tree and preserves NONE as build-test", async () => {
   expect(source.workspace.ref).toBe("working");
   expect(source.panel.content.html).toContain('class="working"');
   expect(source.panel.content).not.toHaveProperty("recipes");
+  expect(source.panel.content).not.toHaveProperty("messages");
   expect(source.previewContext).toEqual({ kind: "build-test", test: null });
 });
 

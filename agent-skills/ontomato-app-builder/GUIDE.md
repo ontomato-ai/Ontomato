@@ -28,7 +28,7 @@ A workspace is the application source tree. Business definitions remain in Java;
 Registration material has up to three arrays, `projections`, `panels` and `applications`. Each item is `{id,mode,input}` with `mode` set to `create` or `update`.
 
 - For projections, `input` is the current definition's editable fields. New definitions include `componentId`, `binding`, `inputs` and `display` alongside `name`, `description` and `visibility`.
-- For panels, `input` adds `name`, `description` and `visibility` to the candidate response's `panel` object. That object includes the content, manifest and exact installed SDK version.
+- For panels, `input` adds `name`, `description` and `visibility` to the candidate response's `panel` object. That object includes the content, manifest and exact installed SDK version. Keep `content.messages` from the candidate when registering it.
 - Projection and panel updates carry the owner-returned current `revision` on the item alongside `mode`. Creation omits it. Only the chosen records should appear in the material. Updating a shared definition affects every use of that record.
 - Application `input` contains `entry: {path, renderer: "panels"}` and `panelUses`. Creation includes `declaration` and `entryAccess`. An update replaces the use set, so preserve the uses required by the app. Each use has `id`, `pageKey`, `panelId`, `path` and `access`, with optional localized `names` and `defaultAgentId`. Domain app paths use `/applications/<applicationId>/…` and `access: {kind: "domain-member"}` or the real `{permissionCode}` for the use. The platform owns built-in paths and derives skills from use access.
 
