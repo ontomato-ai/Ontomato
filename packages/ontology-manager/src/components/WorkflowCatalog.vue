@@ -40,6 +40,8 @@ const {
 } = useManagerClient();
 
 const scopeKinds = ["all", "self_organization", "self_subtree", "self_descendants", "initiated_by_self", "assigned_to_self"] as const;
+const actorPolicyModes = ["none", "rule", "agent"] as const;
+const invocationModes = ["manual", "automatic"] as const;
 const contractFields = ["className", "idField", "stepField", "statusField", "orgField", "initiatorField", "assigneeField", "workflowRefField"] as const;
 const workflows = ref<WorkflowRecord[]>([]);
 const actions = ref<SmartAsset[]>([]);
@@ -162,13 +164,80 @@ function openEdit(workflow: WorkflowRecord) {
     temporary: workflow.temporary,
     caseFormSchema: workflow.caseFormSchema,
     runContract: workflow.runContract ? { ...workflow.runContract, statusOpen: [...(workflow.runContract.statusOpen ?? [])] } : null,
-    steps: (workflow.steps ?? []).map((step) => ({ ...step })),
+    steps: (workflow.steps ?? []).map(editableStep),
   });
   editing.value = true;
 }
 
-function blankStep(no: number): WorkflowStepRecord {
-  return { stepNo: no, name: "", roleCode: "", actionId: "", actionType: "approve", scope: "all" };
+type EditableStep = WorkflowStepRecord & {
+  parametersJson?: string;
+  valueMapJson?: string;
+};
+
+function editableStep(step: WorkflowStepRecord): EditableStep {
+  const policy = step.actorPolicy ?? { mode: "none" as const };
+  return {
+    ...step,
+    invocationMode: step.invocationMode ?? "manual",
+    actorPolicy: { ...policy, mode: policy.mode ?? "none" },
+    parametersJson: JSON.stringify(policy.parameters ?? {}, null, 2),
+    valueMapJson: JSON.stringify(policy.valueMap ?? {}, null, 2),
+  };
+}
+
+function blankStep(no: number): EditableStep {
+  return {
+    stepNo: no,
+    name: "",
+    roleCode: "",
+    actionId: "",
+    actionType: "approve",
+    scope: "all",
+    invocationMode: "manual",
+    actorPolicy: { mode: "none" },
+    parametersJson: "{}",
+    valueMapJson: "{}",
+  };
+}
+
+function stepParametersJson(step: WorkflowStepRecord) {
+  return (step as EditableStep).parametersJson ?? "{}";
+}
+
+function setStepParametersJson(step: WorkflowStepRecord, value: string) {
+  (step as EditableStep).parametersJson = value;
+}
+
+function stepValueMapJson(step: WorkflowStepRecord) {
+  return (step as EditableStep).valueMapJson ?? "{}";
+}
+
+function setStepValueMapJson(step: WorkflowStepRecord, value: string) {
+  (step as EditableStep).valueMapJson = value;
+}
+
+function stepActorPolicy(step: WorkflowStepRecord) {
+  return (step.actorPolicy ??= { mode: "none" });
+}
+
+function stepActorPolicyMode(step: WorkflowStepRecord) {
+  return stepActorPolicy(step).mode;
+}
+
+function setStepActorPolicyMode(step: WorkflowStepRecord, mode: "none" | "rule" | "agent") {
+  stepActorPolicy(step).mode = mode;
+}
+
+function stepPolicyField(step: WorkflowStepRecord, field: "metricViewId" | "metricRevision" | "principalField" | "agentId" | "instruction") {
+  return stepActorPolicy(step)[field];
+}
+
+function setStepPolicyField(
+  step: WorkflowStepRecord,
+  field: "metricViewId" | "metricRevision" | "principalField" | "agentId" | "instruction",
+  value: string,
+) {
+  stepActorPolicy(step)[field] = value;
 }
 
 function addStep() {
@@ -187,7 +256,15 @@ async function save() {
     message.warning(ot("workflowNameRequired"));
     return;
   }
-  const steps = (form.steps ?? []).filter((step) => (step.roleCode ?? "").trim() || (step.actionId ?? "").trim());
+  let steps: WorkflowStepRecord[];
+  try {
+    steps = (form.steps ?? [])
+      .filter((step) => (step.roleCode ?? "").trim() || (step.actionId ?? "").trim())
+      .map(savedStep);
+  } catch (error) {
+    message.error((error as Error).message);
+    return;
+  }
   saving.value = true;
   try {
     await saveWorkflow({ ...form, name, steps, runClassName: form.runContract?.className ?? form.runClassName });
@@ -199,6 +276,47 @@ async function save() {
   } finally {
     saving.value = false;
   }
+}
+
+function savedStep(step: WorkflowStepRecord): WorkflowStepRecord {
+  const editable = step as EditableStep;
+  const mode = editable.actorPolicy?.mode ?? "none";
+  const actorPolicy =
+    mode === "rule"
+      ? {
+          mode,
+          metricViewId: editable.actorPolicy?.metricViewId?.trim(),
+          metricRevision: editable.actorPolicy?.metricRevision?.trim(),
+          principalField: editable.actorPolicy?.principalField?.trim() || "principal",
+          parameters: parsePolicyObject(editable.parametersJson, ot("workflowPolicyParameters")),
+          valueMap: parsePolicyObject(editable.valueMapJson, ot("workflowPolicyValueMap")) as Record<string, string>,
+        }
+      : mode === "agent"
+        ? {
+            mode,
+            agentId: editable.actorPolicy?.agentId?.trim(),
+            instruction: editable.actorPolicy?.instruction?.trim(),
+          }
+        : { mode: "none" as const };
+  return {
+    stepNo: step.stepNo,
+    name: step.name,
+    roleCode: step.roleCode,
+    actionId: step.actionId,
+    actionType: step.actionType ?? "approve",
+    scope: step.scope,
+    description: step.description,
+    invocationMode: step.invocationMode ?? "manual",
+    actorPolicy,
+  };
+}
+
+function parsePolicyObject(text: string | undefined, label: string): Record<string, unknown> {
+  const value = JSON.parse(text?.trim() || "{}");
+  if (value === null || Array.isArray(value) || typeof value !== "object") {
+    throw new Error(ot("workflowPolicyJsonInvalid", { field: label }));
+  }
+  return value as Record<string, unknown>;
 }
 
 /** Activation is the moment authority starts, so a refusal here is the point, not an obstacle. */
@@ -250,7 +368,13 @@ async function remove(workflow: WorkflowRecord) {
 function stepSummary(workflow: WorkflowRecord) {
   const steps = workflow.steps ?? [];
   if (steps.length === 0) return ot("workflowNoSteps");
-  return steps.map((step) => step.name || step.actionId || "-").join(" → ");
+  return steps
+    .map((step) => {
+      const actor = step.actorPolicy?.mode ?? "none";
+      const invocation = step.invocationMode ?? "manual";
+      return `${step.name || step.actionId || "-"} [${actor}/${invocation}]`;
+    })
+    .join(" → ");
 }
 
 /**
@@ -438,6 +562,87 @@ function grantSummary(workflow: WorkflowRecord) {
                   <el-option v-for="kind in scopeKinds" :key="kind" :value="kind" :label="ot(`scope_${kind}`)" />
                 </el-select>
               </el-form-item>
+              <el-form-item :label="ot('workflowStepInvocation')">
+                <el-select v-model="step.invocationMode">
+                  <el-option
+                    v-for="mode in invocationModes"
+                    :key="mode"
+                    :value="mode"
+                    :label="ot(`invocation_${mode}`)"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="ot('workflowStepActorPolicy')">
+                <el-select
+                  :model-value="stepActorPolicyMode(step)"
+                  @update:model-value="setStepActorPolicyMode(step, $event)"
+                >
+                  <el-option
+                    v-for="mode in actorPolicyModes"
+                    :key="mode"
+                    :value="mode"
+                    :label="ot(`actorPolicy_${mode}`)"
+                  />
+                </el-select>
+              </el-form-item>
+
+              <div v-if="stepActorPolicyMode(step) === 'rule'" class="workflow-policy-details">
+                <el-form-item :label="ot('workflowMetricViewId')">
+                  <el-input
+                    :model-value="stepPolicyField(step, 'metricViewId')"
+                    @update:model-value="setStepPolicyField(step, 'metricViewId', $event)"
+                  />
+                </el-form-item>
+                <el-form-item :label="ot('workflowMetricRevision')">
+                  <el-input
+                    :model-value="stepPolicyField(step, 'metricRevision')"
+                    @update:model-value="setStepPolicyField(step, 'metricRevision', $event)"
+                  />
+                </el-form-item>
+                <el-form-item :label="ot('workflowPrincipalField')">
+                  <el-input
+                    :model-value="stepPolicyField(step, 'principalField')"
+                    @update:model-value="setStepPolicyField(step, 'principalField', $event)"
+                  />
+                </el-form-item>
+                <el-form-item :label="ot('workflowPolicyParameters')">
+                  <el-input
+                    :model-value="stepParametersJson(step)"
+                    type="textarea"
+                    :rows="3"
+                    @update:model-value="setStepParametersJson(step, $event)"
+                  />
+                </el-form-item>
+                <el-form-item :label="ot('workflowPolicyValueMap')">
+                  <el-input
+                    :model-value="stepValueMapJson(step)"
+                    type="textarea"
+                    :rows="3"
+                    @update:model-value="setStepValueMapJson(step, $event)"
+                  />
+                </el-form-item>
+              </div>
+
+              <div v-if="stepActorPolicyMode(step) === 'agent'" class="workflow-policy-details">
+                <el-form-item :label="ot('workflowAgentId')">
+                  <el-input
+                    :model-value="stepPolicyField(step, 'agentId')"
+                    @update:model-value="setStepPolicyField(step, 'agentId', $event)"
+                  />
+                </el-form-item>
+                <el-form-item :label="ot('workflowAgentInstruction')">
+                  <el-input
+                    :model-value="stepPolicyField(step, 'instruction')"
+                    type="textarea"
+                    :rows="3"
+                    @update:model-value="setStepPolicyField(step, 'instruction', $event)"
+                  />
+                </el-form-item>
+              </div>
+
+              <div v-if="step.invocationMode === 'automatic'" class="workflow-policy-warning">
+                {{ ot("workflowAutomaticReserved") }}
+              </div>
             </div>
             <el-button link type="danger" :aria-label="ot('workflowDelete')" @click="removeStep(index)">
               <Trash2 :size="14" />
@@ -641,10 +846,36 @@ function grantSummary(workflow: WorkflowRecord) {
   min-width: 0;
   margin: 0;
 }
+.workflow-policy-details {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 16px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--el-fill-color-lighter);
+}
+.workflow-policy-details > .el-form-item {
+  min-width: 0;
+  margin: 0;
+}
+.workflow-policy-details > .el-form-item:nth-child(n + 4) {
+  grid-column: span 1;
+}
+.workflow-policy-details textarea {
+  font-family: var(--el-font-family-mono, monospace);
+}
+.workflow-policy-warning {
+  grid-column: 1 / -1;
+  color: var(--el-color-warning-dark-2);
+  font-size: 12px;
+  line-height: 1.6;
+}
 @container workflow-steps (min-width: 48rem) {
   .workflow-step-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 @container workflow-steps (max-width: 30rem) {
   .workflow-step-fields { grid-template-columns: minmax(0, 1fr); }
+  .workflow-policy-details { grid-template-columns: minmax(0, 1fr); }
 }
 </style>
