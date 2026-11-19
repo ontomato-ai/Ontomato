@@ -142,7 +142,7 @@ export const scheduledTaskAdapters: PlatformObjectAdapterFactory = requests => {
     if (!answer.submittable)
       throw new PlatformObjectRefusal(answer.errors[0]?.message ?? "The scheduled task form is incomplete", fieldErrors(answer.errors, taskFieldPath));
     return {
-      fields: answer.fields.map(typedField), values: { ...answer.values, ...filled }, revision, save: scheduledTaskSaveDescription(id),
+      fields: answer.fields.map(typedField), values: { ...answer.values, ...filled }, errors: [], revision, save: scheduledTaskSaveDescription(id),
     };
   }
   const forms = {
@@ -153,7 +153,7 @@ export const scheduledTaskAdapters: PlatformObjectAdapterFactory = requests => {
         id, values === undefined ? undefined : formValuesSchema.parse(values),
         changedField === null ? null : formFieldKey(changedField, "/"),
       );
-      return { fields: answer.fields.map(typedField), values: answer.values, revision, save: scheduledTaskSaveDescription(id) };
+      return { fields: answer.fields.map(typedField), values: answer.values, errors: [], revision, save: scheduledTaskSaveDescription(id) };
     },
     save(target: PanelFormTarget, input: PanelFormSaveInput) {
       // The task service saves the whole task, so which fields the reader submitted does not change its request.

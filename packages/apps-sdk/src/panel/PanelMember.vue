@@ -3,10 +3,9 @@ import { computed, onBeforeUnmount, provide, shallowRef, type Component } from "
 import { useI18n } from "vue-i18n";
 import { DataState } from "@ontomato/foundation-ui/data-state";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { componentFor } from "../catalogue-components";
 import { panelContextKey, projectionKey, type ProjectionSlot } from "./context";
-import { directPanelContext, type DirectPanelInstance, type MemberInputs } from "./direct";
+import { directPanelContext, memberComponentId, memberRecord, type DirectPanelInstance, type MemberInputs } from "./direct";
 import { panelMemberKey, type PanelMemberContext } from "./member";
 import { portsOf } from "./ports-of";
 
@@ -35,20 +34,8 @@ const inputs = computed<MemberInputs>(() => Object.fromEntries(Object.entries(de
 
 let release: (() => void) | undefined;
 void props.instance.projectionOf(props.member).then(async (projection) => {
-  const component = await componentFor(projection.componentId.replace(/^@ontomato\/sdk:/, ""));
-  // The shared machinery reads the bound type or operation from the datum the member is about.
-  const [first] = Object.values(projection.data);
-  if (!first) throw new Error(`Projection ${projection.id} declares no data`);
-  const binding = "operation" in first.source
-    ? { kind: "PlatformOperation" as const, id: first.source.operation }
-    : { kind: "PlatformObjectType" as const, id: "type" in first.source ? first.source.type : objectTypeOf(projection, first.source.object) };
-  const record = {
-    ...projection,
-    componentId: projection.componentId.replace(/^@ontomato\/sdk:/, ""),
-    binding,
-    inputs: Object.fromEntries(Object.entries(projection.inputs).flatMap(([name, type]) => (type.kind === "json" ? [] : [[name, type]]))),
-    display: projection.config,
-  } as ProductProjection;
+  const component = await componentFor(memberComponentId(projection));
+  const record = memberRecord(projection);
   release = props.instance.register({ slot: props.member, projectionId: projection.id, ports: portsOf(record) });
   loaded.value = {
     component,
@@ -60,21 +47,9 @@ void props.instance.projectionOf(props.member).then(async (projection) => {
 });
 onBeforeUnmount(() => release?.());
 
-function objectTypeOf(projection: { inputs: Record<string, { kind: string; objectType?: string }> }, object: { literal: { className: string } } | { input: string }) {
-  if ("literal" in object) return object.literal.className;
-  const type = projection.inputs[object.input]?.objectType;
-  if (!type) throw new Error(`Input '${object.input}' is no object input`);
-  return type;
-}
-
 provide(panelContextKey, directPanelContext(props.instance));
 provide(projectionKey, { slot: props.member, get projection() { return loaded.value!.slot.projection; }, get inputs() { return inputs.value; } });
-provide(panelMemberKey, {
-  key: props.member,
-  get projection() { return loaded.value!.member.projection; },
-  inputs,
-  get data() { return loaded.value!.member.data; },
-});
+provide(panelMemberKey, () => loaded.value!.member);
 const labels = computed(() => ({ empty: t("platform.dataEmpty"), forbidden: t("platform.dataForbidden"), awaiting: t("platform.dataAwaiting") }));
 </script>
 

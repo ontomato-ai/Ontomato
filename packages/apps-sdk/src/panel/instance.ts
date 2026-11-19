@@ -44,11 +44,6 @@ export interface PanelInstanceOptions {
   operations: PanelHumanOperations;
   /** The host's confirmation and single dispatch of a prepared write. */
   confirmOperation: ConfirmPanelOperation;
-  /**
-   * What the objects and types a successful write reports changed are read again by: each changed object, by default;
-   * a directly rendered panel reads again the named data they concern.
-   */
-  affected?: (affected: { objects: PanelObjectIdentity[]; objectTypes: string[] }) => void;
   reportDraftError?: (reason: unknown) => void;
 }
 
@@ -90,8 +85,8 @@ export interface PanelInstance {
   readOperation(operationId: string, call: { target: PanelOperationCall["target"]; input: ReadOperationInput }): Promise<PanelReadOperationResult>;
   /**
    * Runs a write as the reader, the way an agent's runs: one intent freezes the calls, the host confirms it where the
-   * owner or a batch asks and dispatches it once, and the objects the owner reports changed are read again here. A
-   * cancelled confirmation writes nothing.
+   * owner or a batch asks and dispatches it once. What the owner reports changed comes back through the host's refresh
+   * port, not from here. A cancelled confirmation writes nothing.
    */
   writeOperation(operationId: string, invocation: PanelWriteInvocation): Promise<AppBridgeConfirmPanelOperationResult>;
   objectChanged(object: PanelObjectIdentity): void;
@@ -122,13 +117,10 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     for (const listener of objectListeners) listener(object);
   };
   const registrations = shallowRef<readonly PanelProjectionRegistration[]>([]);
-  const reportAffected = options.affected ?? ((affected) => { for (const object of affected.objects) objectChanged(object); });
   async function writeOperation(operationId: string, invocation: PanelWriteInvocation) {
-    const result = await options.confirmOperation(await options.operations.prepare(operationId, invocation));
-    // Only the objects the owner reports a successful write changed; a refusal, a failure or an unknown result changes none.
-    const outcome = result.decision === "confirm" && result.response.kind === "dispatched" ? result.response.outcome : null;
-    if ((outcome?.kind === "success" || outcome?.kind === "batch") && outcome.affected) reportAffected(outcome.affected);
-    return result;
+    // What the owner reports the write changed reaches the instance through the host's one refresh port, as an agent's
+    // write does, and is read again from there; the receipt itself rereads nothing.
+    return options.confirmOperation(await options.operations.prepare(operationId, invocation));
   }
   const operations = computed(() => panelOperations(manifest, registrations.value, state, forms, options.text, writeOperation));
   const forms = new PanelFormAdapters(options.reportDraftError);

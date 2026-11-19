@@ -121,6 +121,10 @@ let held: {
 /** The target the form was last read for, so one change of target is one read. */
 let loaded: string | null = null;
 
+/** The owner's field errors, by the field each names. */
+const fieldMessages = (list: readonly { field: string; message: string }[]) =>
+  Object.fromEntries(list.map(({ field, message }) => [field, message]));
+
 function adopt(
   baseline: PanelFormDescription,
   shown: PanelFormDescription = baseline,
@@ -133,7 +137,8 @@ function adopt(
   values.value = shown.values;
   changed.value = marked;
   refusal.value = null;
-  errors.value = {};
+  // The owner's verdict on the values it returned: a field it does not accept says why, on that field.
+  errors.value = fieldMessages(shown.errors);
   invalid.value = {};
   failure.value = null;
   loading.value = false;
@@ -221,6 +226,7 @@ function set(path: string, value: RuntimeJsonValue) {
     if (loaded !== askedKey) return;
     description.value = answer;
     values.value = answer.values;
+    errors.value = fieldMessages(answer.errors);
   }, fail);
 }
 
@@ -279,6 +285,8 @@ useProjectionForm({
     const into: PanelFormTarget = draft.created ? { kind: "object", objectType, primaryKey: draft.created.id } : named;
     const baseline = targetKey(into) === targetKey(named) ? namedForm : await forms.describe({ target: into, changedField: null });
     const checked = await forms.describe({ target: into, values: draft.form as PanelFormValues, changedField: null });
+    // A draft the owner does not accept is refused whole, with the fields and the reasons.
+    if (checked.errors.length) throw new PlatformObjectRefusal(checked.errors[0]!.message, fieldMessages(checked.errors));
     const marked = changedPaths(checked.fields, baseline.values, checked.values);
     // What the draft wrote, by its presence: a field it left out is not submitted, though the owner's check returns it.
     const written = new Set(checked.fields.filter((item) => valueAt(draft.form as PanelFormValues, item.path) !== undefined).map((item) => item.path));
@@ -336,7 +344,9 @@ async function write(): Promise<unknown> {
     opened.value = { ...description.value!, values: values.value };
     changed.value = new Set();
     if (into.kind === "draft") moveTo({ kind: "object", objectType, primaryKey: saved.primaryKey });
-    panel.instance.objectChanged({ objectType, primaryKey: saved.primaryKey });
+    // A frame's save goes straight to the owner, so the frame says what it changed; a member's goes through the
+    // coordinator, whose receipt reaches the host's one refresh port and is read again from there.
+    if (!member) panel.instance.objectChanged({ objectType, primaryKey: saved.primaryKey });
     // A received draft ends with its save; a create draft first records the object it created. The save stands either
     // way: a record that fails is shown with the form, on the object the owner created.
     await panel.instance.settleDraft(slot.slot, into.kind === "draft" ? saved.primaryKey : undefined);

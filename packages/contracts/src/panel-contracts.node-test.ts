@@ -1,4 +1,5 @@
 import { formOptionSchema } from "./form-fields";
+import { appsSdkBuildSchema, appsSdkCurrentSchema } from "./apps-sdk";
 import {
   APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL, EXPORT_FEEDBACK, EXPORT_SKILL,
   FEEDBACK_RECORD, IMPORT_SKILL, KNOWLEDGE_GOVERNANCE_RECORD, SKILL,
@@ -58,6 +59,22 @@ import {
 import { ontologyParameterTypeSchema as legacyOntologyParameterTypeSchema } from "./product-projections";
 
 const binding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
+
+test("current SDK discovery carries the digest of the build and the component catalogue path", () => {
+  const build = { version: "1.1.2", digest: "2f".repeat(32) };
+  const root = "/tenant/api/apps-sdk/1.1.2";
+  const current = {
+    ...build, publicBasePath: "/tenant", sdkBasePath: root, manifestPath: `${root}/sdk.json`,
+    docsPath: `${root}/docs/index.md`, referencePath: `${root}/docs/reference.md`, componentsPath: `${root}/components.json`,
+  };
+  assert.deepEqual(appsSdkBuildSchema.parse(build), build);
+  assert.deepEqual(appsSdkCurrentSchema.parse(current), current);
+  for (const badDigest of [build.digest.toUpperCase(), build.digest.slice(1), "x".repeat(64)]) {
+    assert.equal(appsSdkBuildSchema.safeParse({ ...build, digest: badDigest }).success, false);
+    assert.equal(appsSdkCurrentSchema.safeParse({ ...current, digest: badDigest }).success, false);
+  }
+  assert.equal(appsSdkCurrentSchema.safeParse({ ...current, componentsPath: undefined }).success, false);
+});
 
 test("a no-code task panel registers and parses the same members and layout", async () => {
   const { registerDirectPanelRequestSchema } = await import("./product-panels");
@@ -264,6 +281,27 @@ test("form save preserves nested JSON and the owner's revision when present", ()
 const editableField = { required: false, readOnly: false };
 const ownerSave = { method: "PUT", path: "/workflows/example", bodySchema: {}, draftOperation: "workflow.update" };
 
+test("field validation stays in the ready form and preserves the submitted value", async () => {
+  const { productPanelReadResponseSchema } = await import("./panel-host");
+  const fields = [{ ...editableField, path: "/start", label: "Start", control: { kind: "time" }, valueSchema: { type: "string" } }];
+  const errors = [{ field: "/start", code: "invalid_time", message: "Enter a time between 00:00 and 23:59" }];
+  const value = { fields, values: { start: "25:00" }, errors, save: ownerSave };
+  const read = productPanelReadResponseSchema.parse({ status: "ready", value });
+  assert.ok(read.status === "ready");
+  assert.deepEqual(panelFormDescriptionSchema.parse(read.value), value);
+  assert.equal(panelFormDescriptionSchema.safeParse({ fields, values: value.values, save: ownerSave }).success, false);
+  assert.equal(productPanelReadResponseSchema.safeParse({ status: "error", message: "Validation", errors }).success, false);
+});
+
+test("write refusals carry typed field errors directly in the operation outcome", () => {
+  const errors = [{ field: "/steps/0/start", code: "invalid_time", message: "Enter a valid time" }];
+  const outcome = { kind: "refusal", code: "FIELD_VALIDATION_FAILED", message: "Invalid field", errors };
+  assert.deepEqual(panelOperationOutcomeSchema.parse(outcome), outcome);
+  assert.equal(panelOperationOutcomeSchema.safeParse({ ...outcome, errors: [{ ...errors[0], field: "start" }] }).success, false);
+  const batch = { kind: "batch", items: [{ target: { objectType: "platform:Workflow", primaryKey: "example" }, outcome }] };
+  assert.deepEqual(panelOperationOutcomeSchema.parse(batch), batch);
+});
+
 test("code, number, time and line array controls retain the owner's JSON values and schema", () => {
   const fields = [
     { ...editableField, path: "/definition", label: "Definition", control: { kind: "code", language: "json" },
@@ -281,8 +319,8 @@ test("code, number, time and line array controls retain the owner's JSON values 
     definition: { output: ["name"] }, limit: 0, start: "09:00",
     script: "print('ready')", questions: ["Who joined?", "Who left?"],
   };
-  assert.deepEqual(panelFormDescriptionSchema.parse({ fields, values, save: ownerSave }), {
-    fields, values, save: ownerSave,
+  assert.deepEqual(panelFormDescriptionSchema.parse({ fields, values, errors: [], save: ownerSave }), {
+    fields, values, errors: [], save: ownerSave,
   });
 });
 
@@ -310,7 +348,7 @@ test("nested controls keep relative field metadata and the existing absolute ref
     },
   ];
   const values = { steps: [{ id: "step-a", actionId: "review" }], runContract: { statusOpen: ["ready"] } };
-  assert.deepEqual(panelFormDescriptionSchema.parse({ fields, values, save: ownerSave }).fields, fields);
+  assert.deepEqual(panelFormDescriptionSchema.parse({ fields, values, errors: [], save: ownerSave }).fields, fields);
 
   const path = "/steps/0/actionId";
   const formField = { slot: "definition", path };
@@ -332,7 +370,7 @@ test("frequency uses the scheduled-task value and keeps time zone in a separate 
     ...editableField, path: "/condition/frequency", label: "Frequency", control: { kind: "frequency" },
     valueSchema: { $ref: "#/$defs/frequency" },
   };
-  assert.deepEqual(panelFormDescriptionSchema.parse({ fields: [field], values, save: ownerSave }).values, values);
+  assert.deepEqual(panelFormDescriptionSchema.parse({ fields: [field], values, errors: [], save: ownerSave }).values, values);
   assert.equal(panelFormFrequencyValueSchema.safeParse({ ...frequency, timeZone }).success, false);
 });
 
@@ -657,7 +695,7 @@ test("owner select options preserve integer status and customizable string tags"
     },
   ];
   const values = { status: 0, knowledgeTags: ["policy", "new tag"] };
-  const form = panelFormDescriptionSchema.parse({ fields, values, save: ownerSave });
+  const form = panelFormDescriptionSchema.parse({ fields, values, errors: [], save: ownerSave });
   assert.deepEqual(form.fields, fields);
   assert.deepEqual(panelFormSaveInputSchema.parse({ values: form.values }).values, values);
   assert.equal(formOptionSchema.safeParse({ ...option, value: 0, label: "Pending" }).success, false);

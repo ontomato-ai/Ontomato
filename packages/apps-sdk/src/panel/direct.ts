@@ -3,7 +3,7 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import type { DirectPanelManifest, PanelManifest, PanelStateField } from "@ontomato/contracts/panel-manifest";
 import { panelOperationAffectedSchema, panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { directReadDeclaration, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
-import type { DirectProjection } from "@ontomato/contracts/product-panels";
+import type { DirectProjection, ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PanelDataState, ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { createPanelInstance, type PanelInstance, type PanelInstanceOptions } from "./instance";
 import { stateObject, type PanelFieldValue } from "./state";
@@ -98,7 +98,6 @@ export function createDirectPanelInstance(direct: DirectPanelManifest, options: 
   let active = true;
   const instance = createPanelInstance(sharedManifest(direct), {
     ...options,
-    affected: (affected) => directInstance.refresh(affected),
     initial: { ...defaults, ...options.initial },
     // The shared machinery reads no projection of a direct panel; its members are read here.
     readProjection: () => Promise.reject(new Error("A direct panel's members read their projections through the instance")),
@@ -198,4 +197,32 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     t: instance.text,
     resources: () => Promise.resolve(),
   };
+}
+
+/** A direct projection's component, as this version's catalogue names it. */
+export const memberComponentId = (projection: DirectProjection) => projection.componentId.replace(/^@ontomato\/sdk:/, "");
+
+/**
+ * A direct projection as the machinery both kinds of panel share reads a projection: the type or operation its first
+ * datum is about as its binding, its object and scalar inputs, and its configuration as its display.
+ */
+export function memberRecord(projection: DirectProjection): ProductProjection {
+  const [first] = Object.values(projection.data);
+  if (!first) throw new Error(`Projection ${projection.id} declares no data`);
+  const objectType = (object: { literal: { className: string } } | { input: string }) => {
+    if ("literal" in object) return object.literal.className;
+    const input = projection.inputs[object.input];
+    if (input?.kind !== "object") throw new Error(`Input '${object.input}' of projection ${projection.id} is no object input`);
+    return input.objectType;
+  };
+  const binding = "operation" in first.source
+    ? { kind: "PlatformOperation" as const, id: first.source.operation }
+    : { kind: "PlatformObjectType" as const, id: "type" in first.source ? first.source.type : objectType(first.source.object) };
+  return {
+    ...projection,
+    componentId: memberComponentId(projection),
+    binding,
+    inputs: Object.fromEntries(Object.entries(projection.inputs).flatMap(([name, type]) => (type.kind === "json" ? [] : [[name, type]]))),
+    display: projection.config,
+  } as ProductProjection;
 }
