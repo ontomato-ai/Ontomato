@@ -25,7 +25,8 @@ import type {PanelManifest} from '@ontomato/contracts/panel-manifest';
 import {METRIC_CHART_COMPONENT,productProjectionResponseSchema} from '@ontomato/contracts/product-panels';
 import {pageDraftCreatedSchema,pageDraftReadSchema} from '@ontomato/contracts/page-draft';
 import {chartProjectionSourceSends,clientSends} from '@ontomato/contracts/panel-client-requests';
-import {panelHumanOperationDispatchResponseSchema,panelHumanOperationPreparationSchema,type PanelUseRef} from '@ontomato/contracts/panel-agent';
+import {panelHumanOperationDispatchResponseSchema,panelHumanOperationPreparationSchema,type PanelHumanOperationConfirmation,type PanelUseRef} from '@ontomato/contracts/panel-agent';
+import type {PanelOperationImpact} from '@ontomato/contracts/panel-operations';
 import {projectionBindingKeys} from '@ontomato/contracts/panel-projection';
 import type {AppBridgeConfirmPanelOperation,AppBridgeConfirmPanelOperationResult,AppBridgeExpandPageComposer} from '@ontomato/contracts/app-bridge';
 import type {PanelConversationEntry} from '@ontomato/contracts/panel-conversation-entry';
@@ -268,12 +269,13 @@ function expandPageComposer(source:object,{slot,...asked}:AppBridgeExpandPageCom
   expand(declared);
 }
 /**
- * A panel frame asks the person to confirm a human intent it prepared at Node. Only its ID is the frame's: the platform
- * reads the intent back from Node under the reader's own credential and shows the operation, the objects and their
- * total as Node froze them, in its own dialog. The intent's operation must be one the frame's declaration holds — a
- * slot of the panel, `<slot>.<name>`, whose projection the frame read through this host. Confirming dispatches the
- * intent once with an empty body; a cancel sends nothing anywhere. Node reads the intent only within the frame's own
- * application use, so a candidate preview, which has none, confirms nothing.
+ * A panel frame asks the platform to carry out a human intent it prepared at Node. Only its ID is the frame's: the
+ * platform reads the intent back from Node under the reader's own credential, within the frame's own application use,
+ * and its operation must be one the frame's declaration holds — a slot of the panel, `<slot>.<name>`, whose projection
+ * the frame read through this host. What Node froze decides whether the person is asked: a single call its owner did not
+ * inspect goes ahead at once; an inspected call or a batch is named in the platform's own dialog, as Node froze it. A
+ * going-ahead dispatches the intent once with an empty body and hands the frame Node's receipt as it is; a cancel sends
+ * nothing anywhere. A candidate preview has no application use and carries out nothing.
  */
 async function confirmPanelOperation(source:object,{intentId}:AppBridgeConfirmPanelOperation):Promise<AppBridgeConfirmPanelOperationResult>{
   const panel=panelFrames.get(source);
@@ -282,25 +284,29 @@ async function confirmPanelOperation(source:object,{intentId}:AppBridgeConfirmPa
   const read=await nodeApiRequest(`/api/panel-operation-intents/${encodeURIComponent(intentId)}?${new URLSearchParams(panel.use)}`);
   const intent=await read.json();
   if(!read.ok)throw new Error(intent.error?.message??'Operation request unavailable');
-  const {operationId,label,impact}=panelHumanOperationPreparationSchema.parse(intent);
+  const {operationId,label,confirmation}=panelHumanOperationPreparationSchema.parse(intent);
   const declared=Object.keys(panel.slots).some(slot=>operationId.startsWith(`${slot}.`)&&operationId.length>slot.length+1
     &&panel.bindings.get(panel.slots[slot]!.projectionId)!=null);
   if(!declared)throw new Error('This operation is not declared by the panel');
-  const {t}=workbenchI18n().global;
-  // The owner's names are text: each is rendered as a text node, never as markup.
-  const message=h('div',[
-    h('p',impact.summary),
-    h('ul',impact.objects.map(object=>h('li',object.label))),
-    h('p',t('platform.confirmOperationTotal',{total:impact.total})),
-  ]);
-  const confirmed=await ElMessageBox.confirm(message,label,{type:'warning',confirmButtonText:label,cancelButtonText:t('common.cancel')}).then(()=>true,()=>false);
-  if(!confirmed)return {decision:'cancel'};
+  if(confirmation.kind!=='none'&&!await askPerson(label,confirmation))return {decision:'cancel'};
   const sent=await nodeApiRequest(`/api/panel-operations/intents/${encodeURIComponent(intentId)}/dispatch`,{method:'POST',body:'{}'});
   const answer=await sent.json();
   if(!sent.ok)throw new Error(answer.error?.message??'Operation request failed');
-  const dispatched=panelHumanOperationDispatchResponseSchema.parse(answer);
-  if(dispatched.kind==='not-dispatched')throw new Error(dispatched.message);
-  return {decision:'confirm'};
+  return {decision:'confirm',response:panelHumanOperationDispatchResponseSchema.parse(answer)};
+}
+
+/** The platform's dialog naming what an operation acts on and what its owner said goes with it; true when confirmed. */
+function askPerson(label:string,confirmation:Exclude<PanelHumanOperationConfirmation,{kind:'none'}>){
+  const {t}=workbenchI18n().global;
+  // The owner's names are text: each is rendered as a text node, never as markup.
+  const names=({objects,total}:Pick<PanelOperationImpact,'objects'|'total'>)=>[
+    h('ul',objects.map(object=>h('li',object.label))),
+    h('p',t('platform.confirmOperationTotal',{total})),
+  ];
+  const impact=(value:PanelOperationImpact)=>[h('p',value.summary),...names(value)];
+  const message=h('div',confirmation.kind==='impact'?impact(confirmation.impact)
+    :[...names(confirmation.targets),...(confirmation.impact?impact(confirmation.impact):[])]);
+  return ElMessageBox.confirm(message,label,{type:'warning',confirmButtonText:label,cancelButtonText:t('common.cancel')}).then(()=>true,()=>false);
 }
 function executionContext(source: object) {
   const context=executionBindings.get(source);

@@ -3,6 +3,7 @@ import { APP_BRIDGE_CHANNEL } from "@ontomato/contracts/app-bridge";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { AGENT_DEFINITION, DELETE_AGENT, RUN_NOW } from "@ontomato/contracts/panel-client-requests";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
+import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import { inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, registered, type Sent } from "./panel-frame";
 
@@ -54,16 +55,21 @@ const impact = {
   ],
 };
 const intentId = "6f1c2a4e-0b7d-4c1e-9a55-3d2f8e7b9c10";
-/** What Node froze when the frame prepared the intent. */
-const prepared = { intentId, operationId: "remove.delete", label: "Delete", impact };
+type Confirmation = PanelHumanOperationPreparation["confirmation"];
+/** What Node froze when the frame prepared the intent: a single call whose owner inspected the impact. */
+const prepared: PanelHumanOperationPreparation = {
+  intentId, operationId: "remove.delete", label: "Delete", confirmation: { kind: "impact", impact },
+};
 /** What the frame sends: it may say anything, and the platform shows none of it. */
 const confirmation = {
   ...prepared, label: "Rename",
-  impact: { summary: "Nothing goes.", total: 0, objects: [] },
+  confirmation: { kind: "impact", impact: { summary: "Nothing goes.", total: 0, objects: [] } },
 };
+const dispatched = { kind: "dispatched", intentId, outcome: null };
 
-let stored: typeof prepared = prepared;
-let dispatchAnswer: unknown = { kind: "dispatched", intentId, outcome: null };
+let stored: PanelHumanOperationPreparation = prepared;
+let dispatchAnswer: unknown = dispatched;
+const storing = (frozen: Confirmation) => { stored = { ...prepared, confirmation: frozen }; };
 function answer(request: Sent) {
   const projection = /^\/api\/product-projections\/(.+)$/.exec(request.path);
   if (projection && projections[projection[1]!]) return Response.json({ projection: projections[projection[1]!] });
@@ -115,12 +121,12 @@ const button = (box: HTMLElement, text: string) =>
 
 afterEach(() => {
   stored = prepared;
-  dispatchAnswer = { kind: "dispatched", intentId, outcome: null };
+  dispatchAnswer = dispatched;
   leaveFrame();
 });
 
 describe("a person's confirmation of a panel operation", () => {
-  it("names what Node froze, dispatches once on confirm, and answers the same call with the decision", async () => {
+  it("names what Node froze, dispatches once on confirm, and answers the same call with Node's receipt", async () => {
     const { sent, invoke, read } = shownFrame();
     await read(removal);
 
@@ -142,7 +148,7 @@ describe("a person's confirmation of a panel operation", () => {
     const confirmed = invoke("confirm-panel-operation", confirmation);
     box = await dialog();
     button(box, "Delete").click();
-    await expect(confirmed).resolves.toEqual({ decision: "confirm" });
+    await expect(confirmed).resolves.toEqual({ decision: "confirm", response: dispatched });
     expect(writes(sent).map(({ method, path, body }) => ({ method, path, body }))).toEqual([
       { method: "POST", path: `/api/panel-operations/intents/${intentId}/dispatch`, body: {} },
     ]);
@@ -151,13 +157,44 @@ describe("a person's confirmation of a panel operation", () => {
     expect(reads.map((request) => request.search)).toEqual(["?applicationId=app-agents&useId=use-agents", "?applicationId=app-agents&useId=use-agents"]);
   });
 
-  it("tells the frame when Node did not dispatch the confirmed intent", async () => {
-    dispatchAnswer = { kind: "not-dispatched", intentId, code: "ALREADY_DISPATCHED", message: "This request was already sent." };
+  it("hands the frame Node's receipt as it is, also when Node did not dispatch", async () => {
+    dispatchAnswer = { kind: "not-dispatched", intentId, code: "OWNER_REFUSED", message: "The owner refused." };
     const { invoke, read } = shownFrame();
     await read(removal);
     const confirmed = invoke("confirm-panel-operation", confirmation);
     button(await dialog(), "Delete").click();
-    await expect(confirmed).rejects.toThrow("This request was already sent.");
+    await expect(confirmed).resolves.toEqual({ decision: "confirm", response: dispatchAnswer });
+  });
+
+  it("dispatches a call that needs no confirmation without a dialog", async () => {
+    storing({ kind: "none" });
+    const { sent, invoke, read } = shownFrame();
+    await read(removal);
+    await expect(invoke("confirm-panel-operation", confirmation)).resolves.toEqual({ decision: "confirm", response: dispatched });
+    expect(document.querySelector(".el-message-box")).toBeNull();
+    expect(writes(sent).map(({ path, body }) => ({ path, body }))).toEqual([
+      { path: `/api/panel-operations/intents/${intentId}/dispatch`, body: {} },
+    ]);
+  });
+
+  it("names a batch's targets and, when the owner gives one, its impact", async () => {
+    storing({
+      kind: "batch",
+      targets: { total: 2, objects: impact.objects },
+      impact: { summary: "Their schedules go too.", total: 3, objects: [
+        { target: { objectType: AGENT_DEFINITION, primaryKey: "s" }, label: "Nightly schedule" },
+      ] },
+    });
+    const { invoke, read } = shownFrame();
+    await read(removal);
+    const confirmed = invoke("confirm-panel-operation", confirmation);
+    const box = await dialog();
+    expect([...box.querySelectorAll("li")].map((item) => item.textContent)).toEqual(["Assistant A", "<b>Assistant B</b>", "Nightly schedule"]);
+    expect(box.textContent).toContain("2 affected in total");
+    expect(box.textContent).toContain("Their schedules go too.");
+    expect(box.textContent).toContain("3 affected in total");
+    button(box, "Delete").click();
+    await expect(confirmed).resolves.toEqual({ decision: "confirm", response: dispatched });
   });
 
   it("shows no dialog for an intent outside the frame's declaration, or a page that is not shown", async () => {
@@ -167,7 +204,7 @@ describe("a person's confirmation of a panel operation", () => {
     await read(removal);
     // What Node holds decides, whatever the frame names.
     for (const operationId of ["elsewhere.delete", "remove", "run.run"]) {
-      stored = { ...prepared, operationId };
+      stored = { ...prepared, operationId, confirmation: { kind: "none" } };
       await expect(invoke("confirm-panel-operation", confirmation), operationId).rejects.toThrow("not declared");
     }
     stored = prepared;
