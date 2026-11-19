@@ -40,7 +40,7 @@ afterEach(leaveFrame);
 
 it("tells the Manager's counts which object types a write changed, and nothing for a change that names none", async () => {
   installPlatform(answer);
-  const counted = vi.fn<(objectTypes: readonly string[]) => void>();
+  const counted: (readonly string[])[] = [];
   const refresh = ref<({ seq: number } & PanelObjectChange) | null>(null);
   const router = createRouter({ history: createMemoryHistory(), routes: [{
     path: "/applications/:applicationId/:panelPath",
@@ -49,18 +49,17 @@ it("tells the Manager's counts which object types a write changed, and nothing f
   }] });
   await router.push(use.path);
   const app = createApp({ render: () => h(RouterView) }).use(router).use(workbenchI18n()).use(ElementPlus);
-  app.provide(countedTypesChangedKey, counted);
+  app.provide(countedTypesChangedKey, objectTypes => { counted.push(objectTypes); });
   app.mount(document.body.appendChild(document.createElement("div")));
   try {
     await panelHostFrame();
     const target = { objectType: SCHEDULED_TASK, primaryKey: task.id };
     refresh.value = { seq: 1, target };
     await nextTick();
-    expect(counted).not.toHaveBeenCalled();
+    expect(counted).toEqual([]);
     const affected = { objects: [target], objectTypes: [SCHEDULED_TASK, OBJECT_TYPE] };
     refresh.value = { seq: 2, target: null, affected };
-    await vi.waitFor(() => expect(counted).toHaveBeenCalledWith(affected.objectTypes));
-    expect(counted).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(counted).toEqual([affected.objectTypes]));
   } finally {
     app.unmount();
   }
