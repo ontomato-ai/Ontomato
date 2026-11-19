@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import {
-  METRIC_CHART_COMPONENT, chartProjectionSchema, directPanelSchema, directProjectionSchema,
+  METRIC_CHART_COMPONENT, chartProjectionSchema, currentProjectionRecordSchema, directPanelSchema, directProjectionSchema,
   productPanelSchema, productProjectionSchema, type DirectPanel, type DirectPanelInput, type DirectProjectionInput,
   type ProductPanelInput, type ProductProjectionInput, type RegisterProductProjectionRequest,
 } from "@ontomato/contracts/product-panels";
@@ -19,7 +19,6 @@ import { notifyProductDefinitionChanged } from "./definition-stream";
 
 type CurrentDefinition = ProductPanelInput | ProductProjectionInput | DirectPanelInput | DirectProjectionInput;
 const panelRecordSchema = z.union([directPanelSchema, productPanelSchema]);
-const projectionRecordSchema = z.union([directProjectionSchema, productProjectionSchema]);
 
 export async function loadCurrentProduct(domainId: string, kind: CurrentProductKind, id: string, client?: PoolClient) {
   const row = await findCurrentProduct(domainId, kind, id, client);
@@ -48,7 +47,7 @@ export async function readCurrentPanel(owner: ProductOwner, credentials: Assista
   return productPanelSchema.parse(await readCurrentRecord(owner, credentials, "panel", id));
 }
 export async function readCurrentProjectionRecord(owner: ProductOwner, credentials: AssistantCredentials, id: string) {
-  return projectionRecordSchema.parse(await readCurrentRecord(owner, credentials, "projection", id));
+  return currentProjectionRecordSchema.parse(await readCurrentRecord(owner, credentials, "projection", id));
 }
 export async function readCurrentPanelRecord(owner: ProductOwner, credentials: AssistantCredentials, id: string) {
   return panelRecordSchema.parse(await readCurrentRecord(owner, credentials, "panel", id));
@@ -64,7 +63,7 @@ export async function requireDirectPanelMember(owner: ProductOwner, credentials:
 
 async function validatePanelReferences(owner: ProductOwner, credentials: AssistantCredentials, manifest: ProductPanelInput["manifest"], client: PoolClient) {
   for (const slot of Object.values(manifest.slots)) {
-    const projection = productProjectionSchema.parse(currentProductRecord(await requireCurrentProduct(owner, credentials, "projection", slot.projectionId, "use", client), false));
+    const projection = currentProjectionRecordSchema.parse(currentProductRecord(await requireCurrentProduct(owner, credentials, "projection", slot.projectionId, "use", client), false));
     for (const [name, ref] of Object.entries(slot.inputs)) {
       const target = projection.inputs[name];
       if (!target) throw new HttpError(400, `Projection has no input: ${name}`, "PANEL_INPUT_UNKNOWN");

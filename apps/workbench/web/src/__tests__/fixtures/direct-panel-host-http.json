@@ -1,0 +1,278 @@
+{
+  "panel": {
+    "panel": {
+      "content": {
+        "html": "<div flow=\"row\" gap=\"small\">\n  <panel-member ref=\"tasks\"></panel-member>\n  <section when=\"selectedTask\" ne=\"null\">\n    <panel-member ref=\"summary\"></panel-member>\n    <panel-member ref=\"form\"></panel-member>\n    <panel-member ref=\"run\"></panel-member>\n  </section>\n</div>\n",
+        "recipes": "# Scheduled tasks panel: how this scenario works\n\nWhat this panel is for, and the few things about it a reader of the platform cannot work out from the panel itself. The\npanel's declaration (its state and the projections it composes) and its projections say the rest, and the platform\ndescribes those from their current definitions.\n\n## What it covers\n\nOne of the reader's scheduled tasks, from the task's own application: pick it, see it, change it through the form its\napplication declares, save it, and run it now. It does not create, delete, enable, disable or list runs.\n\n## How a task is chosen\n\nThe list is the platform's own `platform:ScheduledTask` objects — the reader's tasks in the service's order. Choosing a\nrow writes that task into the panel's `selectedTask`, and the summary, the form and the button take it from there. A\nsecond click on the chosen row lets go of it.\n\nThe choice belongs to the panel instance, not to the panel: two readers, or two pages of the same reader, keep their own.\n\n## How the form changes\n\nThe form is the task's application's own: which fields it has, which of them a change makes the others depend on, and\nwhat a save accepts are all the application's answers. Changing such a field asks the application again, and its whole\nanswer replaces the fields and their values — a field the new answer removed disappears with its value.\n\nOnly one application's form changes with a field today: the operations application, whose first field chooses between\nrunning automated tests and running an inspection, each with its own fields.\n\n## How a change gets here from an agent\n\nA run may write a draft for this page and hand the reader a link. Opening it fills the form, marks the fields the draft\nchanged, and leaves them unsaved; the reader saves. Nothing is written until they do.\n\n## What a save and a run act on\n\nBoth act on the task currently selected in the panel instance. Saving writes it through its application's own interface\nwith the task's own revision, so a task somebody else changed meanwhile is refused rather than overwritten. Running it\nnow starts one execution and leaves the schedule as it is.\n"
+      },
+      "manifest": {
+        "state": {
+          "selectedTask": {
+            "type": {
+              "kind": "object",
+              "objectType": "platform:ScheduledTask"
+            },
+            "personal": false,
+            "deepLink": true,
+            "external": true,
+            "default": null
+          }
+        },
+        "members": {
+          "run": {
+            "target": {
+              "projectionId": "projection-schedules-run"
+            },
+            "inputs": {
+              "task": {
+                "state": "selectedTask"
+              }
+            },
+            "params": {
+              "width": "auto"
+            }
+          },
+          "form": {
+            "target": {
+              "projectionId": "projection-schedules-form"
+            },
+            "inputs": {
+              "task": {
+                "state": "selectedTask"
+              }
+            },
+            "params": {
+              "width": "full"
+            }
+          },
+          "tasks": {
+            "target": {
+              "projectionId": "projection-schedules-tasks"
+            },
+            "inputs": {
+              "value": {
+                "state": "selectedTask"
+              }
+            },
+            "outputs": {
+              "selected": {
+                "state": "selectedTask"
+              }
+            },
+            "params": {
+              "width": "third"
+            }
+          },
+          "summary": {
+            "target": {
+              "projectionId": "projection-schedules-summary"
+            },
+            "inputs": {
+              "task": {
+                "state": "selectedTask"
+              }
+            },
+            "params": {
+              "width": "full"
+            }
+          }
+        },
+        "events": {}
+      },
+      "name": "Scheduled tasks (trial)",
+      "description": "Pick one of the reader's scheduled tasks, change it through its application's form, save it, and run it now.",
+      "visibility": "domain",
+      "id": "panel-schedules-trial",
+      "domainId": "pilot",
+      "ownerId": "reader",
+      "revision": 1,
+      "createdAt": "2026-11-19T23:00:24.836Z",
+      "updatedAt": "2026-11-19T23:00:24.836Z",
+      "editable": true
+    }
+  },
+  "snapshot": {
+    "panel": {
+      "id": "panel-schedules-trial",
+      "revision": 1
+    },
+    "projections": [
+      {
+        "id": "projection-schedules-run",
+        "revision": 1
+      },
+      {
+        "id": "projection-schedules-form",
+        "revision": 1
+      },
+      {
+        "id": "projection-schedules-tasks",
+        "revision": 1
+      },
+      {
+        "id": "projection-schedules-summary",
+        "revision": 1
+      }
+    ]
+  },
+  "projections": {
+    "projection-schedules-run": {
+      "projection": {
+        "componentId": "@ontomato/sdk:OperationButton",
+        "inputs": {
+          "task": {
+            "kind": "object",
+            "objectType": "platform:ScheduledTask"
+          }
+        },
+        "outputs": {},
+        "data": {
+          "operation": {
+            "source": {
+              "operation": "schedules.runNow"
+            },
+            "read": "describe",
+            "params": {}
+          }
+        },
+        "config": {},
+        "name": "Run now",
+        "description": "Runs the chosen scheduled task now, leaving its schedule as it is.",
+        "visibility": "domain",
+        "id": "projection-schedules-run",
+        "domainId": "pilot",
+        "ownerId": "reader",
+        "revision": 1,
+        "createdAt": "2026-11-19T23:00:24.827Z",
+        "updatedAt": "2026-11-19T23:00:24.827Z",
+        "editable": true
+      }
+    },
+    "projection-schedules-form": {
+      "projection": {
+        "componentId": "@ontomato/sdk:ObjectForm",
+        "inputs": {
+          "task": {
+            "kind": "object",
+            "objectType": "platform:ScheduledTask"
+          },
+          "values": {
+            "kind": "json"
+          },
+          "changedField": {
+            "kind": "scalar",
+            "type": "string"
+          }
+        },
+        "outputs": {},
+        "data": {
+          "form": {
+            "source": {
+              "object": {
+                "input": "task"
+              }
+            },
+            "read": "form",
+            "params": {
+              "values": {
+                "input": "values"
+              },
+              "changedField": {
+                "input": "changedField"
+              }
+            }
+          }
+        },
+        "config": {},
+        "name": "Task form",
+        "description": "One scheduled task's form, as the application it belongs to declares it.",
+        "visibility": "domain",
+        "id": "projection-schedules-form",
+        "domainId": "pilot",
+        "ownerId": "reader",
+        "revision": 1,
+        "createdAt": "2026-11-19T23:00:24.818Z",
+        "updatedAt": "2026-11-19T23:00:24.818Z",
+        "editable": true
+      }
+    },
+    "projection-schedules-tasks": {
+      "projection": {
+        "componentId": "@ontomato/sdk:ObjectList",
+        "inputs": {
+          "value": {
+            "kind": "object",
+            "objectType": "platform:ScheduledTask"
+          }
+        },
+        "outputs": {
+          "selected": {
+            "kind": "object",
+            "objectType": "platform:ScheduledTask"
+          }
+        },
+        "data": {
+          "rows": {
+            "source": {
+              "type": "platform:ScheduledTask"
+            },
+            "read": "list",
+            "params": {}
+          }
+        },
+        "config": {},
+        "name": "Scheduled tasks",
+        "description": "The reader's scheduled tasks, to choose one from.",
+        "visibility": "domain",
+        "id": "projection-schedules-tasks",
+        "domainId": "pilot",
+        "ownerId": "reader",
+        "revision": 1,
+        "createdAt": "2026-11-19T23:00:24.808Z",
+        "updatedAt": "2026-11-19T23:00:24.808Z",
+        "editable": true
+      }
+    },
+    "projection-schedules-summary": {
+      "projection": {
+        "componentId": "@ontomato/sdk:ObjectSummary",
+        "inputs": {
+          "task": {
+            "kind": "object",
+            "objectType": "platform:ScheduledTask"
+          }
+        },
+        "outputs": {},
+        "data": {
+          "record": {
+            "source": {
+              "object": {
+                "input": "task"
+              }
+            },
+            "read": "record",
+            "params": {}
+          }
+        },
+        "config": {
+          "fields": [
+            "application",
+            "settings",
+            "state",
+            "nextRun"
+          ]
+        },
+        "name": "Task summary",
+        "description": "One scheduled task as a reader recognises it: its application, its settings, whether it is on, and when it runs next.",
+        "visibility": "domain",
+        "id": "projection-schedules-summary",
+        "domainId": "pilot",
+        "ownerId": "reader",
+        "revision": 1,
+        "createdAt": "2026-11-19T23:00:24.792Z",
+        "updatedAt": "2026-11-19T23:00:24.792Z",
+        "editable": true
+      }
+    }
+  }
+}

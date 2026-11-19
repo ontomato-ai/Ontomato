@@ -110,6 +110,8 @@ export const directProjectionInputSchema = directProjectionInput.superRefine(val
 export type DirectProjectionInput = z.infer<typeof directProjectionInputSchema>;
 export const directProjectionSchema = directProjectionInput.extend(currentRecordFields).superRefine(validateDirectProjection);
 export type DirectProjection = z.infer<typeof directProjectionSchema>;
+export const currentProjectionRecordSchema = z.union([directProjectionSchema, productProjectionSchema]);
+export type CurrentProjectionRecord = z.infer<typeof currentProjectionRecordSchema>;
 export const registerDirectProjectionRequestSchema = directProjectionInput.extend({
   revision: z.number().int().nonnegative(),
 }).superRefine(validateDirectProjection);
@@ -221,7 +223,7 @@ export const registerProductProjectionRequestSchema = z.union([
 export type RegisterProductProjectionRequest = z.infer<typeof registerProductProjectionRequestSchema>;
 
 /** GET and PUT return the same current record; neither accepts a historical revision selector. */
-export const productProjectionResponseSchema = z.object({ projection: productProjectionSchema }).strict();
+export const productProjectionResponseSchema = z.object({ projection: currentProjectionRecordSchema }).strict();
 export type ProductProjectionResponse = z.infer<typeof productProjectionResponseSchema>;
 
 /**

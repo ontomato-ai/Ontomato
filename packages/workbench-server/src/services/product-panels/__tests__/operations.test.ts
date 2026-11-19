@@ -21,7 +21,7 @@ vi.mock("../../assistant/skills",()=>({readPageSkills:mocks.pages}));
 vi.mock("../../../utils/backend-client",()=>({backendGet:mocks.backend,buildBackendHeaders:(token:string,_x:unknown,_l:unknown,key:string,headers:object)=>({...headers,...(token?{tk:token}:{}),...(key?{"X-API-Key":key}:{})})}));
 vi.mock("../../agent-host/caller",()=>({restoreAgentCaller:mocks.restore,readAgentSessionActor:mocks.sessionActor}));
 vi.mock("../../agent-host/presentation",()=>({publishObjectChanged:mocks.notify}));
-vi.mock("../current",()=>({readCurrentPanelRecord:mocks.panel,readCurrentProjection:mocks.projection}));
+vi.mock("../current",()=>({readCurrentPanelRecord:mocks.panel,readCurrentProjectionRecord:mocks.projection}));
 vi.mock("../skill-package",()=>({readComponentCatalogue:mocks.catalogue}));
 import {
   operatePanel as realOperatePanel, dispatchPanel, dispatchHumanPanelOperation, inspectPanelOperationImpact, ownPanelSettings,

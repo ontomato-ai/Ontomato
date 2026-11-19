@@ -1,15 +1,12 @@
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterEach, expect, it, vi } from "vitest";
 import { h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
-import { directPanelManifestSchema, type DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
-import type { DirectPanel, DirectProjection } from "@ontomato/contracts/product-panels";
+import { panelDefinitionSnapshotSchema } from "@ontomato/contracts/product-subscriptions";
+import { directPanelSchema, productProjectionResponseSchema } from "@ontomato/contracts/product-panels";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
-import { projections as trialProjections } from "../../../../../packages/apps-sdk/examples/panels/schedules-trial/definitions.mjs";
+import recorded from "./fixtures/direct-panel-host-http.json";
 import { installPlatform, mountPlatformPage, nothingAt, panelUse, type Sent } from "./panel-frame";
 
 /*
@@ -18,23 +15,21 @@ import { installPlatform, mountPlatformPage, nothingAt, panelUse, type Sent } fr
  * draws it without a frame: the reader picks a task from the list, sees it summed up and in its application's form,
  * runs it now, and picks another — all in one instance, each datum read through the platform as the reader.
  *
- * Real route, panel host, SDK instance and the trial's own material; the network is a stand-in for Java and Node.
+ * Real route, panel host, SDK instance and the trial's own material. Node's answers for the panel, its snapshot and its
+ * projections are the ones Node gave for this material over HTTP (`fixtures/direct-panel-host-http.json`, recorded by
+ * the workbench server's `direct-panel-host.integration.test.ts` with `DIRECT_PANEL_HOST_HTTP_EVIDENCE`), so a host
+ * call Node would refuse for a direct panel is not hidden by a stand-in; the owners' data and operations are stand-ins.
  *
  * What this rules out: trial material the platform cannot draw without a frame; a choice that does not reach the
  * summary, the form and the button, or the address; a run that bypasses the host's confirmation, runs twice or leaves
  * what it changed unread; a new choice that rebuilds the panel or reads its projections again.
  */
 
-const trial = join(dirname(fileURLToPath(import.meta.url)), "../../../../../packages/apps-sdk/examples/panels/schedules-trial");
 const application = "app-panels-trial-a";
 const use = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", "panel-schedules-trial", `/applications/${application}/tasks`);
-const base = { domainId: "d", ownerId: "o", revision: 1, createdAt: "", updatedAt: "", editable: false };
-const manifest: DirectPanelManifest = directPanelManifestSchema.parse(JSON.parse(readFileSync(join(trial, "p/panel.json"), "utf8")));
-const panel: DirectPanel = {
-  ...base, id: use.panelId, name: "Scheduled tasks (trial)", description: "", visibility: "domain",
-  content: { html: readFileSync(join(trial, "p/panel.html"), "utf8") }, manifest,
-};
-const projections: Record<string, DirectProjection> = Object.fromEntries(trialProjections.map(({ id, input }) => [id, { ...base, id, ...input }]));
+const panel = directPanelSchema.parse(recorded.panel.panel);
+const snapshot = panelDefinitionSnapshotSchema.parse(recorded.snapshot);
+const projections = Object.fromEntries(Object.entries(recorded.projections).map(([id, answer]) => [id, productProjectionResponseSchema.parse(answer)]));
 
 const rows = [
   { primaryKey: "t-1", label: "Nightly audit", fields: { application: "ops", settings: "daily 02:00", state: "on", nextRun: "2026-11-23T02:00:00Z" } },
@@ -52,11 +47,10 @@ type Read = { dataName: string; memberPath: [{ member: string }]; inputs: { task
 function answer(request: Sent) {
   if (request.path === `/api/data-query/platform/applications/${application}/panel-uses`)
     return Response.json({ data: { applicationId: application, entry: { path: "/", renderer: "panels" }, panelUses: [use] } });
-  if (request.path === `/api/product-panels/${panel.id}`) return Response.json({ panel });
-  if (request.path === `/api/product-panels/${panel.id}/snapshot`)
-    return Response.json({ panel: { id: panel.id, revision: 1 }, projections: Object.values(projections).map(({ id, revision }) => ({ id, revision })) });
+  if (request.path === `/api/product-panels/${panel.id}`) return Response.json(recorded.panel);
+  if (request.path === `/api/product-panels/${panel.id}/snapshot`) return Response.json(snapshot);
   const projection = /^\/api\/product-projections\/(.+)$/.exec(request.path);
-  if (projection) return Response.json({ projection: projections[decodeURIComponent(projection[1]!)] });
+  if (projection) return Response.json(projections[decodeURIComponent(projection[1]!)]);
   if (request.path === "/api/product-panels/read") {
     const { dataName, inputs } = request.body as Read;
     const value = dataName === "rows" ? rows : dataName === "operation" ? runNow

@@ -23,7 +23,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   ACTION, AGENT_DEFINITION, ATTRIBUTE, DELETE_ACTION, DELETE_AGENT, DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SET_ACTION_STATUS, SET_METRIC_VIEW_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, USER,
-  bindingKey, chartProjectionLookupRead, chartProjectionSourcePath, chartProjectionSourceSends, clientSends, panelClientReads,
+  RUN_NOW, SCHEDULED_TASK, bindingKey, chartProjectionLookupRead, chartProjectionSourcePath, chartProjectionSourceSends, clientSends, panelClientReads,
 } from "./panel-client-requests";
 import {
   candidatePanelSourceSchema, panelCapacityPlanSchema, panelCapacityRequestSchema, panelFrameMessageSchema,
@@ -52,7 +52,7 @@ import {
 } from "./platform-object-types";
 import {
   applicationPanelUseSchema, applicationPanelUsePathSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema,
-  chartSourceInUseErrorSchema, ontologyElementRefSchema, productPanelContentSchema, productProjectionInputSchema,
+  chartSourceInUseErrorSchema, ontologyElementRefSchema, productPanelContentSchema, productProjectionInputSchema, productProjectionResponseSchema,
   registerChartProjectionRequestSchema, registerChartProjectionResponseSchema, registerProductProjectionRequestSchema,
   updateChartProjectionSourceRequestSchema,
 } from "./product-panels";
@@ -147,6 +147,35 @@ test("direct task reads use the registered source, parameters and result envelop
   const row = { primaryKey: "task-1", label: "Morning report", fields: { state: "on" } };
   assert.deepEqual(panelReadResultSchemas.panelRecordList.parse([row]), [row]);
   assert.deepEqual(productPanelReadResponseSchema.parse({ status: "ready", value: row }), { status: "ready", value: row });
+});
+
+test("the current projection response admits named direct reads through the frame's binding keys", () => {
+  const taskId = "11111111-1111-4111-8111-111111111111";
+  const projection = {
+    id: "projection-schedules-summary", domainId: "domain", ownerId: "owner", revision: 1,
+    createdAt: "2026-11-20T00:00:00.000Z", updatedAt: "2026-11-20T00:00:00.000Z", editable: false,
+    name: "Task summary", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectSummary",
+    inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+    outputs: {}, config: {},
+  };
+  const data = {
+    record: { source: { object: { input: "task" } }, read: "record", params: {} },
+    fixedRecord: { source: { object: { literal: { className: SCHEDULED_TASK, primaryKey: taskId } } }, read: "record", params: {} },
+    list: { source: { type: SCHEDULED_TASK }, read: "list", params: {} },
+    run: { source: { operation: RUN_NOW }, read: "describe", params: {} },
+  };
+  const response = (data: object) => productProjectionResponseSchema.parse({ projection: { ...projection, data } });
+  const taskKey = binding(SCHEDULED_TASK);
+  const operationKey = bindingKey({ kind: "PlatformOperation", id: RUN_NOW });
+  for (const read of [data.record, data.fixedRecord, data.list])
+    assert.deepEqual(projectionBindingKeys(response({ read }).projection), [taskKey]);
+  assert.deepEqual(projectionBindingKeys(response({ run: data.run }).projection), [operationKey]);
+  const parsed = response(data);
+  assert.deepEqual(parsed.projection, { ...projection, data });
+  const keys = projectionBindingKeys(parsed.projection);
+  assert.deepEqual(keys, [taskKey, operationKey]);
+  assert.equal(clientSends(keys, "GET", "/data-query", `/platform/scheduled-tasks/${taskId}`), true);
+  assert.equal(clientSends(keys, "GET", "/data-query", "/platform-ontology/schema"), false);
 });
 
 test("the field port refers to another slot in the same manifest", () => {

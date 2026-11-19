@@ -228,12 +228,13 @@ async function relayToPanel(panel:PanelFrame,method:string,path:string,service:s
   if(!response.ok||service!==''||method!=='GET')return response;
   const projection=PROJECTION_READ.exec(path);
   if(projection){
-    const record=productProjectionResponseSchema.parse(await response.clone().json()).projection;
     const id=decodeURIComponent(projection[1]!);
+    // A direct, code or chart record: a direct one's bindings are what its read sources reach.
+    const record=productProjectionResponseSchema.parse(await response.clone().json()).projection;
     panel.bindings.set(id,projectionBindingKeys(record));
     if(record.componentId===METRIC_CHART_COMPONENT)panel.charts.add(id);
     else panel.charts.delete(id);
-    if(record.conversationEntry)panel.conversationEntries.set(id,record.conversationEntry);
+    if(!('data' in record)&&record.conversationEntry)panel.conversationEntries.set(id,record.conversationEntry);
     else panel.conversationEntries.delete(id);
     return response;
   }
