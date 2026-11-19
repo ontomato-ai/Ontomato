@@ -32,7 +32,7 @@ public class PlatformAuthoringService {
   private final IdentityService identity;
   private final DataPermissionLookup permissions;
   private final BuildTestContextService buildTests;
-  private final ActionServiceImpl actions;
+  private final ActionService actions;
   private final ActionDao actionDao;
   private final MetricViewService metrics;
   private final MetricViewDao metricDao;
@@ -42,7 +42,7 @@ public class PlatformAuthoringService {
       RuntimeCodeClient code, GenerationOperations operations, OntologyGenerationService generation,
       OntologyQueryService ontology, QueryGrantService grants, @Lazy IdentityService identity,
       @Lazy DataPermissionLookup permissions, BuildTestContextService buildTests,
-      @Lazy ActionServiceImpl actions, ActionDao actionDao, @Lazy MetricViewService metrics, MetricViewDao metricDao,
+      @Lazy ActionService actions, ActionDao actionDao, @Lazy MetricViewService metrics, MetricViewDao metricDao,
       LangService messages) {
     this.store = store;
     this.runtime = runtime;
