@@ -1,17 +1,25 @@
 import { randomUUID } from "node:crypto";
 import pg from "pg";
+import express from "express";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { assistantAgentInputSchema } from "@ontomato/contracts/assistant-chat";
 
-const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", setting: vi.fn(), prepare: vi.fn() }));
+const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", pageSkills: vi.fn(), validateSkills: vi.fn().mockResolvedValue([]), setting: vi.fn(), prepare: vi.fn() }));
 vi.mock("../../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
 }));
 vi.mock("../../../infrastructure/agent-runtime/client", () => ({ RuntimeClient: class { async modelOptions() { return { models: [{ ref: "test/configured", type: "chat", displayName: "Configured" }], defaultModelId: "test/configured" }; } } }));
 vi.mock("../execution-setting", () => ({ validateExecutionSetting: state.setting, prepareExecutionSetting: state.prepare }));
-vi.mock("../skills", () => ({ validateAssistantSkills: vi.fn().mockResolvedValue([]) }));
+vi.mock("../skills", () => ({ validateAssistantSkills: state.validateSkills, readPageSkills: state.pageSkills }));
 vi.mock("../../skills/operations", () => ({ withDomainSkills: async (_domain: string, work: () => Promise<unknown>) => work() }));
+import { configureI18n } from "../../../i18n";
+import { en, enLocaleMeta } from "../../../i18n/locales/en";
+import { installWorkbenchIdentity } from "../../../identity/installed";
+import type { WorkbenchIdentity } from "../../../identity/types";
+import assistantRouter from "../../../api/routes/assistant";
 import { HttpError } from "../../../utils/errors";
 import { createAgentDefinition, saveAgentDefinition, validateAgentDefinition } from "../definitions";
 import { readDiagnosisModel, saveDiagnosisModel } from "../../ops-diagnosis/model-settings";
@@ -21,7 +29,22 @@ const database = process.env.RUNTIME_TEST_DATABASE_URL;
 if (!database)
   throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
 
-describe("agent creation on PostgreSQL", () => {
+describe("agent definitions on PostgreSQL", () => {
+  let server: Server;
+  let base: string;
+  const owner = { userId: "owner", domainId: "skill-selection" };
+  const savedSkill = { namespace: { kind: "domain" as const, domainId: owner.domainId }, name: "stored-page-skill" };
+  const form = { name: "Agent", description: "", icon: null, enabled: true, systemPrompt: "Before" };
+  const write = (method: string, id: string, input: object) => fetch(base + (method === "POST" ? "" : "/" + id), {
+    method, headers: { "Content-Type": "application/json", "Idempotency-Key": id }, body: JSON.stringify(input),
+  });
+  const stored = async (id: string) => (await state.pool!.query(
+    `SELECT * FROM "${state.schema}".assistant_agents WHERE id=$1`, [id],
+  )).rows[0];
+  const skillWrites = async (id: string) => (await state.pool!.query(
+    `SELECT agent_id FROM "${state.schema}".skill_writes WHERE agent_id=$1`, [id],
+  )).rowCount;
+
   beforeAll(async () => {
     state.schema = `agent_definition_${randomUUID().replaceAll("-", "")}`;
     state.pool = new pg.Pool({ connectionString: database });
@@ -32,8 +55,28 @@ describe("agent creation on PostgreSQL", () => {
       enabled_mcp_service_ids jsonb, sort_order integer, execution_user_id text, model_reference_migrated boolean)`);
     await state.pool.query(`CREATE TABLE "${state.schema}".product_native_agent_bindings (domain_id text, agent_id text, asset_id text)`);
     await state.pool.query(`CREATE TABLE "${state.schema}".ops_diagnosis_settings (domain_id text PRIMARY KEY, model_selection jsonb NOT NULL, model_reference_migrated boolean)`);
+    await state.pool.query(`CREATE TABLE "${state.schema}".skill_writes (agent_id uuid);
+      CREATE FUNCTION "${state.schema}".record_skill_write() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN INSERT INTO "${state.schema}".skill_writes VALUES (NEW.id); RETURN NEW; END $$;
+      CREATE TRIGGER record_skill_write AFTER UPDATE OF skills ON "${state.schema}".assistant_agents
+        FOR EACH ROW EXECUTE FUNCTION "${state.schema}".record_skill_write()`);
+    state.pageSkills.mockResolvedValue({ registeredSkills: [], pageSkills: [] });
+    configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { messages: en, ...enLocaleMeta } } });
+    const requirePermission: WorkbenchIdentity["requirePermission"] = () => (_req, _res, next) => next();
+    installWorkbenchIdentity({ requireDomainId: () => owner.domainId, requirePermission } as unknown as WorkbenchIdentity);
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      Object.assign(req, owner, { token: "editor", locale: "en" });
+      next();
+    });
+    app.use("/api/assistant", assistantRouter);
+    server = createServer(app);
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/assistant/agent-definitions`;
   });
   afterAll(async () => {
+    if (server) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     if (state.pool) {
       await state.pool.query(`DROP SCHEMA "${state.schema}" CASCADE`);
       await state.pool.end();
@@ -60,6 +103,51 @@ describe("agent creation on PostgreSQL", () => {
     expect((await saveAgentDefinition(id, { ...input, name: "Renamed" }, owner, {})).sortOrder).toBe(7);
     expect((await saveAgentDefinition(id, { ...input, sortOrder: 0 }, owner, {})).sortOrder).toBe(0);
   });
+  it("updates other fields without validating or writing the absent skills column", async () => {
+    const id = randomUUID();
+    expect((await write("POST", id, { ...form, skills: [savedSkill] })).status).toBe(201);
+    state.validateSkills.mockClear();
+    state.pageSkills.mockClear();
+    const updated = await write("PUT", id, { ...form, name: "Renamed", systemPrompt: "After", modelSelection: { modelId: "test/configured" } });
+    expect(updated.status).toBe(200);
+    expect(await stored(id)).toMatchObject({
+      name: "Renamed", system_prompt: "After", model_selection: { modelId: "test/configured" }, skills: [savedSkill],
+    });
+    expect(state.validateSkills).not.toHaveBeenCalled();
+    expect(state.pageSkills).not.toHaveBeenCalled();
+    expect(await skillWrites(id)).toBe(0);
+    expect((await write("POST", randomUUID(), form)).status).toBe(400);
+  });
+  it("clears an explicitly submitted empty skill array through the existing validator", async () => {
+    const id = randomUUID();
+    expect((await write("POST", id, { ...form, skills: [savedSkill] })).status).toBe(201);
+    state.pageSkills.mockResolvedValueOnce({
+      registeredSkills: [savedSkill],
+      pageSkills: [{ permissionCode: "visible", skill: savedSkill }],
+    });
+    expect((await write("PUT", id, { ...form, skills: [] })).status).toBe(200);
+    expect(state.validateSkills).toHaveBeenLastCalledWith(owner.domainId, [], expect.objectContaining({ token: "editor" }), expect.anything());
+    expect((await stored(id)).skills).toEqual([]);
+    expect(await skillWrites(id)).toBe(1);
+  });
+  it.each([
+    { skills: [] }, { skills: [{ namespace: { kind: "domain", domainId: owner.domainId }, name: "other-skill" }] },
+  ])(
+    "rejects an explicit change with a valid hidden reference before writing or preparing a Key",
+    async ({ skills }) => {
+      const id = randomUUID();
+      expect((await write("POST", id, { ...form, skills: [savedSkill] })).status).toBe(201);
+      const before = await stored(id);
+      state.prepare.mockClear();
+      state.pageSkills.mockResolvedValueOnce({ registeredSkills: [savedSkill], pageSkills: [] });
+      const refusal = await write("PUT", id, { ...form, name: "Must not persist", executionUserId: "other", skills });
+      expect(refusal.status).toBe(403);
+      expect(await refusal.text()).not.toContain(savedSkill.name);
+      expect(await stored(id)).toEqual(before);
+      expect(await skillWrites(id)).toBe(0);
+      expect(state.prepare).not.toHaveBeenCalled();
+    },
+  );
   it("defaults execution to self and preserves a selected user on an omitted update", async () => {
     const id = randomUUID(), owner = { userId: "owner", domainId: "execution" };
     const input = assistantAgentInputSchema.parse({ name: "Execution", description: "", icon: null,
