@@ -74,6 +74,9 @@ export async function describeAgentDefinitionForm(
     const checked = await checkedDefinition(input, owner, credentials, current.executionUserId, current.skills,
       skillView && { credentials, view: skillView });
     values = { ...input, ...checked };
+    if (definition && input.skills === undefined) {
+      values.skills = projectAgentDefinitionSkills(definition, skillView!).skills;
+    }
   }
   const { canSetExecutionUser } = openOptions ?? await readExecutionOptions(credentials, null);
   const text = (key: string) => tForLocale(credentials.locale, `panels.agentForm.${key}`);

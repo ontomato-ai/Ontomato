@@ -5,6 +5,8 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { assistantAgentInputSchema } from "@ontomato/contracts/assistant-chat";
+import { AGENT_DEFINITION } from "@ontomato/contracts/panel-client-requests";
+import { panelFormDescriptionSchema } from "@ontomato/contracts/panel-projection";
 
 const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", assertPermission: vi.fn(), skillView: vi.fn(), hiddenSkills: vi.fn(), visibleSkills: vi.fn(), validateSkills: vi.fn().mockResolvedValue([]), setting: vi.fn(), prepare: vi.fn() }));
 vi.mock("../../infrastructure/postgres", () => ({
@@ -16,7 +18,11 @@ vi.mock("../../identity/installed", async original => ({
   ...await original<typeof import("../../identity/installed")>(),
   assertPermission: state.assertPermission,
 }));
-vi.mock("../../services/assistant/execution-setting", () => ({ validateExecutionSetting: state.setting, prepareExecutionSetting: state.prepare }));
+vi.mock("../../services/assistant/execution-setting", () => ({
+  validateExecutionSetting: state.setting,
+  prepareExecutionSetting: state.prepare,
+  readExecutionOptions: async () => ({ canSetExecutionUser: false, users: [], selected: null }),
+}));
 vi.mock("../../services/assistant/skills", () => ({
   validateAssistantSkills: state.validateSkills,
   readAssistantSkillView: state.skillView,
@@ -132,6 +138,36 @@ describe("agent definitions on PostgreSQL", () => {
     expect(state.skillView).toHaveBeenCalledTimes(1);
     expect(await skillWrites(id)).toBe(0);
     expect((await write("POST", randomUUID(), form)).status).toBe(400);
+  });
+  it("keeps visible skills in the display of an update draft that omits skills", async () => {
+    const id = randomUUID();
+    const hiddenSkill = { ...savedSkill, name: "hidden-page-skill" };
+    expect((await write("POST", id, { ...form, skills: [savedSkill, hiddenSkill] })).status).toBe(201);
+    state.validateSkills.mockClear();
+    state.hiddenSkills.mockClear();
+
+    const target = { kind: "object", objectType: AGENT_DEFINITION, primaryKey: id };
+    const values = { ...form, name: "Draft name", modelSelection: { modelId: null },
+      classNames: [], enabledMcpServiceIds: [], executionUserId: null };
+    const describeForm = async (draft?: typeof values) => {
+      state.skillView.mockResolvedValueOnce({ hidden: true });
+      state.visibleSkills.mockImplementationOnce((refs: typeof savedSkill[]) => refs.filter(ref => ref.name !== hiddenSkill.name));
+      const response = await fetch(base + "/form", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target, values: draft, changedField: null }),
+      });
+      expect(response.status).toBe(200);
+      return panelFormDescriptionSchema.parse(await response.json());
+    };
+    const baseline = await describeForm();
+    const draft = await describeForm(values);
+    expect(draft.values.name).toBe(values.name);
+    expect(baseline.values.skills).toEqual([savedSkill]);
+    expect(draft.values.skills).toEqual(baseline.values.skills);
+    expect(state.validateSkills).not.toHaveBeenCalled();
+    expect(state.hiddenSkills).not.toHaveBeenCalled();
+    expect((await stored(id)).skills).toEqual([savedSkill, hiddenSkill]);
+    expect(await skillWrites(id)).toBe(0);
   });
   it("clears an explicitly submitted empty skill array through the existing validator", async () => {
     const id = randomUUID();
