@@ -98,7 +98,6 @@ export function createDirectPanelInstance(direct: DirectPanelManifest, options: 
   let active = true;
   const instance = createPanelInstance(sharedManifest(direct), {
     ...options,
-    affected: (affected) => directInstance.refresh(affected),
     initial: { ...defaults, ...options.initial },
     // The shared machinery reads no projection of a direct panel; its members are read here.
     readProjection: () => Promise.reject(new Error("A direct panel's members read their projections through the instance")),
