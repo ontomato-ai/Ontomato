@@ -57,6 +57,11 @@ export interface PanelHostPort<Source extends PanelHostSource = PanelHostSource>
    * checked against when it is shown again. A candidate has no relation to check.
    */
   current?(): Promise<boolean>;
+  /**
+   * The check a page opened ahead of Java's answer waits for: whether that answer names its use relation, bound to the
+   * same panel. The frame is drawn only once it has passed. Absent when the relation was already Java's answer.
+   */
+  admitted?: Promise<boolean>;
   mode: PanelDefinitionMode;
 }
 
@@ -214,15 +219,17 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
    */
   async function load() {
     try {
-      const [read, root] = await Promise.all([port.source(), port.sdkRoot()]);
+      // The source, the SDK root and the relation check do not depend on one another: they are read side by side. The
+      // record just read is the current definition, so opening needs no snapshot of it besides.
+      const [read, root, admitted] = await Promise.all([port.source(), port.sdkRoot(), port.admitted ?? true]);
       if (!active) return;
+      if (!admitted) {
+        options.withdrawn?.();
+        return;
+      }
       sdkRoot = root;
       adopt(read);
       if (port.mode.kind === "author") follow(read);
-      // A viewer's panel is reconciled with a short read; the frame does not wait for it.
-      else if (read.kind === "registered")
-        void port.snapshot(read.panel.id).then(snapshot => { if (active) return advance([{ kind: "panel", ...snapshot.panel }]); })
-          .catch(failure => { if (active) reportPanelUnavailable(failure); });
     } catch (failure) {
       if (active) reportPanelUnavailable(failure);
     } finally {

@@ -10,6 +10,7 @@ import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/a
 import type { DisplayObjectRefresh } from "@ontomato/agent-shell-ui";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import { panelUsesOf, platformPanelHost } from "../panel-host";
+import { useApplicationCatalog } from "../catalog";
 
 /**
  * One page of an application whose entry is `renderer:'panels'`: the panel that one of its use relations names, shown
@@ -88,14 +89,25 @@ interface KeptPage {
  * document is loaded again, which is the rebuild keeping it avoids.
  */
 const kept = ref<KeptPage[]>([]);
+const catalog = useApplicationCatalog();
 let showings = 0;
 const failure = ref("");
 
+/**
+ * Java's answer for the application's use relations, while the page opened ahead of it waits on it: the route's list
+ * and that page's check share this one read.
+ */
+let relations: Promise<readonly ApplicationPanelUse[]> | null = null;
+/** Whether `uses` is Java's answer, not yet the shell's catalog. */
+const answered = ref(false);
+
 /** Reads the application's use relations, or says why it could not; `current` tells whether the answer is still wanted. */
-async function readUses(applicationId: string, current: () => boolean) {
+async function readUses(applicationId: string, current: () => boolean, read: Promise<readonly ApplicationPanelUse[]> = panelUsesOf(applicationId)) {
   try {
-    const records = await panelUsesOf(applicationId);
-    if (current()) uses.value = records;
+    const records = await read;
+    if (!current()) return;
+    uses.value = records;
+    answered.value = true;
   } catch (reason) {
     if (!current()) return;
     failure.value = reason instanceof Error ? reason.message : String(reason);
@@ -103,15 +115,19 @@ async function readUses(applicationId: string, current: () => boolean) {
   }
 }
 
-// Another application is another set of pages: the kept ones of the application left are dropped.
+// Another application is another set of pages: the kept ones of the application left are dropped. The shell's catalog
+// already lists the reader's use relations, so the page starts from it while Java's answer is read; nothing is drawn
+// before that answer names the page.
 watch(() => props.applicationId, (applicationId, _, onCleanup) => {
   let current = true;
   onCleanup(() => { current = false; });
-  uses.value = null;
+  relations = panelUsesOf(applicationId);
+  uses.value = catalog.applications.value.find((app) => app.id === applicationId)?.panelUses ?? null;
+  answered.value = false;
   kept.value = [];
   failure.value = "";
   emit("display-loaded", { status: "loading" });
-  void readUses(applicationId, () => current);
+  void readUses(applicationId, () => current, relations);
 }, { immediate: true });
 
 /** The page's address as the reader is on it: the conversation's page parameter beside a chat, the router's full. */
@@ -125,7 +141,7 @@ function useAt(path: string): ApplicationPanelUse | null {
 }
 const use = computed(() => useAt(openedPath.value));
 /** An address that names no use relation the reader may open is a page that cannot load, and its receipt says so. */
-const missing = computed(() => uses.value && !use.value ? t("platform.panelNotInApplication", { path: openedPath.value }) : "");
+const missing = computed(() => answered.value && !use.value ? t("platform.panelNotInApplication", { path: openedPath.value }) : "");
 watch(missing, (message) => {
   if (message) emit("display-loaded", panelUnavailable(new Error(message)));
 });
@@ -181,6 +197,8 @@ const shownPage = computed(() => kept.value.find((page) => page.use.id === use.v
  * says what it showed when it was left.
  */
 watch(use, (next, previous) => {
+  // Java's answer naming the page the catalog opened is the same page; a relation it rebinds ends that page's check.
+  if (next && previous?.id === next.id && previous.panelId === next.panelId) return;
   // A page left with unsaved changes was left through the unsaved-changes question: its changes go with its instance.
   const left = previous && previous.id !== next?.id ? kept.value.find((page) => page.use.id === previous.id) : undefined;
   if (left?.dirty) kept.value = kept.value.filter((page) => page !== left);
@@ -194,7 +212,7 @@ watch(use, (next, previous) => {
   }
   const page = found ?? {
     use: next,
-    port: markRaw(platformPanelHost(props.applicationId, next)),
+    port: markRaw(platformPanelHost(props.applicationId, next, undefined, answered.value ? undefined : relations!)),
     reported: panelAddress(pageAddress.value, requestedState.value),
     context: null,
     dirty: false,

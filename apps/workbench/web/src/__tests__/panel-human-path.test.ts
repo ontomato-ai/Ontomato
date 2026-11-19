@@ -106,10 +106,11 @@ it("opens the first visible use at its own URL when entering a panel application
   }
 });
 
-it("opens a viewing panel with a short snapshot and no definition stream", async () => {
+it("opens a viewing panel from its current record, with no snapshot of it besides and no definition stream", async () => {
   const { app, sent } = await open(`/applications/${appB}/summary`);
   try {
-    expect(sent.some(request => request.method === "GET" && request.path === `/api/product-panels/${q.id}/snapshot`)).toBe(true);
+    expect(sent.filter(request => request.path === `/api/product-panels/${q.id}`)).toHaveLength(1);
+    expect(sent.some(request => request.path === `/api/product-panels/${q.id}/snapshot`)).toBe(false);
     expect(sent.filter(request => request.path.startsWith("/api/product-assets/"))).toEqual([]);
   } finally {
     app.unmount();

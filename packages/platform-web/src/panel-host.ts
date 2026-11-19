@@ -63,7 +63,13 @@ async function snapshot(panelId: string) {
 }
 
 /** The platform's panel host for one use relation of the application whose page is showing it. */
-export function platformPanelHost(applicationId: string, use: ApplicationPanelUse, mode: PanelDefinitionMode = { kind: "view" }): PanelHostPort<Extract<PanelHostSource, { kind: "registered" }>> {
+export function platformPanelHost(
+  applicationId: string, use: ApplicationPanelUse, mode: PanelDefinitionMode = { kind: "view" },
+  /** Java's answer for the application, when the page was opened from the shell's catalog before it came. */
+  relations?: Promise<readonly ApplicationPanelUse[]>,
+): PanelHostPort<Extract<PanelHostSource, { kind: "registered" }>> {
+  const names = (records: readonly ApplicationPanelUse[]) =>
+    records.some(relation => relation.id === use.id && relation.panelId === use.panelId);
   return {
     async source() {
       return { kind: "registered", applicationId, use, panel: await panel(use.panelId) };
@@ -79,8 +85,9 @@ export function platformPanelHost(applicationId: string, use: ApplicationPanelUs
     // The relation this page opens is still the application's, bound to the same panel: a kept page shown again is
     // checked against Java's current relations before its frame may ask for anything.
     async current() {
-      return (await panelUsesOf(applicationId)).some(relation => relation.id === use.id && relation.panelId === use.panelId);
+      return names(await panelUsesOf(applicationId));
     },
+    ...(relations ? { admitted: relations.then(names) } : {}),
     snapshot,
     mode,
   };
