@@ -1,5 +1,5 @@
 import type { AppExecutionContext } from "@ontomato/contracts/build-tests";
-import {BUILD_TEST_HEADER} from '@ontomato/contracts/build-tests';
+import {BUILD_TEST_HEADER,BUILD_TEST_UNSUPPORTED} from '@ontomato/contracts/build-tests';
 import { watch,createVNode,render,type App } from "vue";
 import ProductRoute from './pages/ProductRoute.vue';
 import type { Router } from "vue-router";
@@ -237,7 +237,7 @@ export function installAppHost(options: {
       if(!['GET','POST','PUT','DELETE'].includes(method))throw new Error('Unsupported SDK request method');
       // A hosted build preview reaches Java only. A panel frame's requests are its declaration's, and in a candidate
       // preview they go to their owners marked with its build-test context: each owner admits or refuses them.
-      if(execution.kind==='build-test'&&service!=='/data-query'&&!panel)throw new Error('Product operations are unavailable in build previews');
+      if(execution.kind==='build-test'&&service!=='/data-query'&&!panel)throw Object.assign(new Error('This operation is not available for test-data preview'),{code:BUILD_TEST_UNSUPPORTED});
       const applicationId=publishedFrames.get(source);
       const isolated=typeof document!=='undefined'&&[...document.querySelectorAll('iframe')].some(frame=>frame.contentWindow===source&&frame.sandbox.contains('allow-scripts')&&!frame.sandbox.contains('allow-same-origin'));
       if(applicationId&&isolated){

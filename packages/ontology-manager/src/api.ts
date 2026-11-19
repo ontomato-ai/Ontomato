@@ -344,9 +344,9 @@ export function createManagerRequest(
       if (disposed || hostSource(context) !== source) throw stale();
     };
 
+    // A preview's request carries its build-test context to every owner, which admits it only where it declared support
+    // for test data or definition-only reads; the platform host decides which owners a frame may reach at all.
     const execution=context.executionContext;
-    if(execution?.kind==="build-test" && service!=="/data-query")
-      throw Object.assign(new Error("This operation is not available for test-data preview"),{code:"BUILD_TEST_UNSUPPORTED"});
     const requestInit:RequestInit = {
       ...init,
       headers: {
@@ -355,7 +355,7 @@ export function createManagerRequest(
         "Accept-Language": context.locale,
         "X-Requested-With": "XMLHttpRequest",
         ...credentialHeaders(credential),
-        ...(service === "/data-query" && execution?.kind === "build-test"
+        ...(execution?.kind === "build-test"
           ? { [BUILD_TEST_HEADER]: JSON.stringify({kind:"build-test",contextId:execution.contextId}) } : {}),
       },
     };

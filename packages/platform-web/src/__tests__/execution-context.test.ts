@@ -58,6 +58,12 @@ describe("explicit frame execution bindings",()=>{
     expect(headers.get(BUILD_TEST_HEADER)).toBe(JSON.stringify({kind:'build-test',contextId:context.contextId}));
     expect(headers.has('tk')).toBe(false);
   });
+  it('keeps a hosted build preview off Node: its product request is refused here, with the preview refusal code',async()=>{
+    const source=frame();registerBuildPreview(source,buildExecutionContext('workspace',null));
+    const request=vi.spyOn(globalThis,'fetch');
+    await expect(host().request!(source,'/assistant/sessions',{method:'POST',body:'{}'},'')).rejects.toMatchObject({code:'BUILD_TEST_UNSUPPORTED'});
+    expect(request).not.toHaveBeenCalled();
+  });
   it('removes the published application identity when its frame is disposed',()=>{
     const source=frame();const dispose=registerLiveFrame(source,'published');
     installProductEmbedding(createApp({template:'<div />'}));
