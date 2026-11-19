@@ -219,7 +219,7 @@ export function installPlatform(answer: (request: Sent) => Response | Promise<Re
       search: url.search,
       credential: new Headers(init?.headers).get("tk"),
       execution: new Headers(init?.headers).get(BUILD_TEST_HEADER),
-      body: typeof init?.body === "string" ? JSON.parse(init.body) : null,
+      body: typeof init?.body === "string" ? JSON.parse(init.body) : (init?.body instanceof FormData ? init.body : null),
     };
     sent.push(request);
     return answer(request);

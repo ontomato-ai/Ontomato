@@ -2,8 +2,8 @@ import express from 'express';
 import type {Server} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {afterAll,afterEach,beforeAll,beforeEach,expect,it,vi} from 'vitest';
-const mocks=vi.hoisted(()=>({restore:vi.fn(),run:vi.fn(),operate:vi.fn(),dispatch:vi.fn(),authoring:vi.fn()}));
-vi.mock('../../../services/assistant/authoring',()=>({executeAuthoring:mocks.authoring}));
+const mocks=vi.hoisted(()=>({restore:vi.fn(),run:vi.fn(),operate:vi.fn(),dispatch:vi.fn(),authoring:vi.fn(),adopt:vi.fn()}));
+vi.mock('../../../services/assistant/authoring',()=>({executeAuthoring:mocks.authoring,adoptAppBuilderDefinition:mocks.adopt}));
 vi.mock('../../../services/product-panels/operations',()=>({operatePanel:mocks.operate,dispatchPanel:mocks.dispatch}));
 vi.mock('../../../services/assistant/execution',()=>({credentialsForRun:mocks.restore,runForOwner:mocks.run}));
 vi.mock('../../../config/environment',()=>({environment:{agentRuntime:()=>({token:'test-callback-secret',callbackUrl:'http://workbench.test'})}}));
@@ -86,6 +86,12 @@ it.each([
   ["GET", "ontology/model-options"],
   ["GET", "ontology/platform/agent-execution/options?selected=worker"],
   ["POST", "ontology/admin/getMetas"],
+  ["POST", "ontology/metricView/queryList"],
+  ["POST", "ontology/metricView/queryById"],
+  ["POST", "ontology/metricView/form"],
+  ["POST", "ontology/function/queryList"],
+  ["POST", "ontology/function/queryById"],
+  ["POST", "ontology/function/form"],
 ])("uses the executor for %s %s", async (method, path) => {
  const upstream = vi.fn(async (_url: string, _request: NonNullable<Parameters<typeof fetch>[1]>) => Response.json({}));
  vi.stubGlobal("fetch", upstream);
@@ -133,6 +139,38 @@ it.each([
  const upstream = vi.fn();
  vi.stubGlobal("fetch", upstream);
  expect((await call(path, {}, method)).status).toBe(403);
+ expect(mocks.restore).not.toHaveBeenCalled();
+ expect(upstream).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["GET", "/api/platform-ontology/schema", undefined],
+  ["GET", "/api/platform-ontology/counts", undefined],
+  ["GET", "/api/platform-ontology/start", undefined],
+  ["POST", "/api/platform-ontology/neighbors", { node: { className: "platform:User", primaryKey: "V" }, relationKinds: ["owns"] }],
+  ["POST", "/api/platform-ontology/objects", { type: "platform:User", keyword: "V", page: 1 }],
+])("forwards the platform ontology read %s %s with the executor credential", async (method, path, body) => {
+ const upstream = vi.fn(async (_url: string, _request: NonNullable<Parameters<typeof fetch>[1]>) => Response.json({}));
+ vi.stubGlobal("fetch", upstream);
+ const response = await nativeFetch(base+`/api/assistant/executions/${run}/workbench`+path, {
+   method, headers: { "content-type": "application/json", "X-Ontomato-Callback-Credential": credential(), "X-Ontomato-Run-Id": run, tk: "oq.business.grant" },
+   body: body === undefined ? undefined : JSON.stringify(body),
+ });
+ expect(response.status).toBe(200);
+ expect(upstream.mock.calls[0]?.[0]).toBe("http://workbench.test" + path);
+ expect(upstream.mock.calls[0]?.[1]).toMatchObject({ method, body: body === undefined ? undefined : JSON.stringify(body), headers: { "X-API-Key": "selected-user-key" } });
+ expect(upstream.mock.calls[0]?.[1].headers).not.toHaveProperty("tk");
+});
+
+it.each([
+  ["POST", "workbench/api/platform-ontology/schema"],
+  ["GET", "workbench/api/platform-ontology/neighbors"],
+  ["POST", "workbench/api/platform-ontology/objects/extra"],
+  ["GET", "ontology/platform-ontology/start"],
+])("refuses the unlisted platform ontology callback %s %s", async (method, route) => {
+ const upstream = vi.fn();
+ vi.stubGlobal("fetch", upstream);
+ expect((await call(route, {}, method)).status).toBe(403);
  expect(mocks.restore).not.toHaveBeenCalled();
  expect(upstream).not.toHaveBeenCalled();
 });
@@ -227,4 +265,24 @@ it("accepts author parameters only through the registered method and the run's c
  expect((await call("authoring/metric-view/context",{},"POST")).status).toBeGreaterThanOrEqual(400);
  expect((await call("authoring/action/context",{},"GET","")).status).toBe(403);
  expect(mocks.authoring).not.toHaveBeenCalled();
+});
+
+it("lets only the current callback submit the App Builder definition for adoption", async () => {
+ const url=base+`/api/assistant/executions/${run}/authoring/action/adopt`;
+ const definition={function:{code:"program"}};
+ const adopted={definition,executionId:other,digest:"a".repeat(64)};
+ mocks.adopt.mockResolvedValue(adopted);
+ const headers={"content-type":"application/json","X-Ontomato-Callback-Credential":credential(),"X-Ontomato-Run-Id":run};
+ const response=await nativeFetch(url,{method:"POST",headers,body:JSON.stringify({definition})});
+ expect(response.status).toBe(200);
+ expect(await response.json()).toEqual(adopted);
+ expect(mocks.adopt).toHaveBeenCalledWith({userId:"U",domainId:"domain"},expect.objectContaining({token:"initiator-token"}),run,"action",definition);
+ mocks.adopt.mockClear();
+ for (const [auth,body,expected] of [
+   [{"content-type":"application/json"},{definition},403],
+   [headers,{definition,testPassed:true},400],
+ ] as const) {
+   expect((await nativeFetch(url,{method:"POST",headers:auth,body:JSON.stringify(body)})).status).toBe(expected);
+ }
+ expect(mocks.adopt).not.toHaveBeenCalled();
 });

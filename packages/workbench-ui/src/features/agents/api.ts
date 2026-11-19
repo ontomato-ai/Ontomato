@@ -9,6 +9,7 @@ import {
   type AgentExecutionOptions,
   type AssistantAgentDefinition,
   type AssistantAgentInput,
+  type AssistantAgentUpdateInput,
 } from "@ontomato/contracts/assistant-chat";
 import type { DataEngineTransport } from "@ontomato/platform-shell";
 import { apiGet, apiPut, nodeApiFetch, nodeApiGet, nodeApiPost, nodeApiPut } from "../../utils/api";
@@ -36,7 +37,7 @@ export const agentDefinitionsApi = {
       await nodeApiPost(base, input, { headers: { "Idempotency-Key": randomId() } }),
     );
   },
-  async update(id: string, input: AssistantAgentInput): Promise<AssistantAgentDefinition> {
+  async update(id: string, input: AssistantAgentUpdateInput): Promise<AssistantAgentDefinition> {
     return assistantAgentDefinitionSchema.parse(await nodeApiPut(`${base}/${encodeURIComponent(id)}`, input));
   },
   /**

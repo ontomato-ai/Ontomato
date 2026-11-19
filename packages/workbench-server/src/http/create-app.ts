@@ -45,6 +45,7 @@ import { createChartProjectionsRouter, productPanelsRouter, productProjectionsRo
 import { dashboardChartSources } from "../services/dashboard/chart-sources";
 import { installDashboardChartProjectionReferences } from "../services/dashboard/projection-references";
 import { createChartProjectionService, deleteChartProjectionsForDashboards, findChartProjectionsForCards } from "../services/product-panels/chart-sources";
+import { platformOntologyRouter } from "../api/routes/platform-ontology";
 import {installPlatformObjectProviders} from '../services/product-assets/platform-object-builtins';
 import platformHomeRouter from "../api/routes/platform-home";
 import queryHistoryRouter from "../api/routes/query-history";
@@ -230,6 +231,7 @@ export function createWorkbenchApp(): Express {
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", createChartProjectionsRouter(createChartProjectionService(dashboardChartSources)));
   app.use("/api/product-projections", productProjectionsRouter);
+  app.use("/api/platform-ontology", platformOntologyRouter);
   app.use("/api/memories", memoriesRouter);
 
   app.use("/api/skills", skillsRouter);

@@ -14,13 +14,15 @@ The page is the agent platform's agent settings page (the ontology manager shows
 | `enabled` | Whether the agent is available in conversations. |
 | `systemPrompt` | The agent's own prompt: role, which capability to use for which question, answer format. |
 | `modelSelection` | `{"modelId":"<provider>/<model>"}` from `models`; `null` follows the domain default. |
-| `skills` | Runtime skills it may use, each `{namespace, name}` from `skills`. |
+| `skills` | The agent's skills, each `{namespace, name}` from `skills`. Send the array to replace the whole selection, `[]` to clear it, or leave it out to keep the stored skills. |
 | `classNames` | Ontology classes it may query; empty means unrestricted. |
 | `enabledMcpServiceIds` | External MCP services it may call. |
 | `sortOrder` | Order in the list. |
 | `executionUserId` | `null` (the default) runs with the reader's own permission; a user ID from `execution-users` runs with that real domain user's permission. |
 
-A definition is saved whole: read it, change the fields, and send every field back without `id`. The selected model and every skill must exist in the catalog, so read `models` and `skills` before choosing. Names, descriptions and prompts are business content; write them in the user's language.
+A save is the whole definition: read it, change the fields, and send every field back without `id`. The one field an update may leave out is `skills`: leave it out to keep the agent's stored skills, or name the array — an empty one included — to replace the whole selection. Never read the agent and send the skills it shows back to keep them: `get` lists only the skills this caller may see, and that array is an explicit whole-selection change. Every other field goes back as it was; `name`, `description`, `icon`, `enabled` and `systemPrompt` are required, and leaving out `classNames`, `enabledMcpServiceIds` or `modelSelection` takes its default (`[]`, `[]`, the domain model) instead of the stored value. The selected model and every skill you send must exist in the catalog, so read `models` and `skills` before choosing. Names, descriptions and prompts are business content; write them in the user's language.
+
+Some skills are protected: an agent may hold skills this caller cannot see, and the page, `get` and the catalogs show only the ones this caller may see. If the agent holds such a skill, an update that names `skills` is refused as a whole, and none of that request is written; the refusal does not name the skill. Leave `skills` out unless the user asked to change them. When an explicit skills change is refused, say it must be made by someone who can see the complete selection; never send back the skills `get` showed as a way around it.
 
 Only a domain governance administrator may set `executionUserId`: `execution-users` reports `canSetExecutionUser`, and an editor who tries to add, remove or replace it is rejected. Other editors keep the stored value; an update that omits the field keeps it too, and a new form writes `null`. If the configured user is disabled, deleted or removed from the domain, the run fails explicitly; it never falls back to the reader.
 
@@ -48,6 +50,8 @@ Read [pages](references/pages.md) for the read commands and addresses, [forms](r
 ## Drafts inside the platform, direct writes outside
 
 The platform sets `ONTOMATO_SKILL_SCENARIO=platform`. Then `create`, `update` and `delete` refuse: write a page draft, validate it, and give the user the `draft-link` URL. The page opens with the form filled and unsaved; the user saves or discards it. Never say a change is saved, and never simulate the page's save.
+
+A draft's form is the same whole definition: `get` the agent, bring every other field back as it was, and leave only `skills` out when the user is not changing them. Naming the skills, `[]` included, replaces the whole selection.
 
 Without `ONTOMATO_SKILL_SCENARIO` (the Skill suite, using the reader's own credential) the same package writes directly through the same endpoints.
 

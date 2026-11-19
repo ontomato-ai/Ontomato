@@ -1,3 +1,4 @@
+import { ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE } from "@ontomato/contracts/platform-object-types";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -54,7 +55,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   extraProjections.clear();
   root = await mkdtemp(path.join(os.tmpdir(), "panel-skill-"));
-  const sdk = path.join(root, "dist/apps-sdk");
+  const sdk = path.join(root, "data/apps-sdk");
   await mkdir(path.join(sdk, version), { recursive: true });
   await writeFile(path.join(sdk, version, "components.json"), JSON.stringify({ version, components }));
   installContentLayout({ runtimeRoot: root, prompts: [], publicSkillsRoot: root, runtimeResources: [] });
@@ -205,6 +206,38 @@ it("describes both graph bindings and their single metadata read", async () => {
     expect(markdown).toContain("Graph nodes use PlatformObjectType:platform:ObjectType");
     expect(markdown).toContain("Edges use PlatformObjectType:platform:Relationship with endpoint fields at /fromclass and /toclass.");
     expect(markdown.match(/POST \/admin\/getMetas/gu)).toHaveLength(1);
+  } finally {
+    panel.manifest = before;
+  }
+});
+
+it("describes the platform ontology's five workbench reads once across both graph bindings", async () => {
+  javaSources([memberSources[0]!]);
+  const panel = panels.get(uses[0]!.panelId)!;
+  const before = panel.manifest;
+  const manifest = panelManifestSchema.parse(before);
+  const source = trial.projections.find(projection => projection.id === manifest.slots.run!.projectionId)!;
+  extraProjections.set("ontology-graph", {
+    ...source.input, componentId: "ObjectList", name: "Platform ontology", inputs: {},
+    binding: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE },
+    graph: {
+      edges: { binding: { kind: "PlatformObjectType", id: ONTOLOGY_RELATION_KIND },
+        sourcePath: "/from", targetPath: "/to" },
+    },
+  });
+  panel.manifest = { ...manifest, slots: { graph: { projectionId: "ontology-graph", inputs: {} } } };
+  try {
+    const [offering] = await panelSkillProvider.list({ domainId });
+    const markdown = (await offering!.provide()).files[0]!.content;
+    const reads = markdown.split("### Read current data")[1]!.split("### Open the panel")[0]!;
+    for (const [method, name] of [
+      ["GET", "schema"], ["GET", "counts"], ["GET", "start"], ["POST", "neighbors"], ["POST", "objects"],
+    ]) {
+      const command = "`" + method + " /api/platform-ontology/" + name + "` on `ONTOMATO_WORKBENCH_URL`";
+      expect(reads.split(command)).toHaveLength(2);
+    }
+    expect(reads).toContain("relationKinds?");
+    expect(reads).toContain("keyword?");
   } finally {
     panel.manifest = before;
   }

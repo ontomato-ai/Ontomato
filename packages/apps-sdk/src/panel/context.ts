@@ -8,11 +8,13 @@ import type { PanelFormAdapter, PanelFormHandle, ReceivedPanelDraft } from "./dr
 import {
   adapterPart,
   platformObjectAdapter,
+  type PlatformGraphNode,
   type PlatformObjectAdapter,
+  type PlatformObjectGraph,
   type PlatformObjectQuery,
   type PlatformObjectQueryResult,
 } from "./platform-objects";
-import { valueAt } from "./form-values";
+import { fieldAt, valueAt } from "./form-values";
 import type { PanelText } from "./text";
 
 /*
@@ -154,7 +156,7 @@ export function useFormField(): ProjectionFormField {
   const field = computed(() => {
     const form = handle.value;
     if (!form || !form.fields.value.length) return undefined;
-    const found = form.fields.value.find((item) => item.path === port.path);
+    const found = fieldAt(form.fields.value, port.path);
     if (!found) throw new Error(`The form in slot '${port.slot}' has no field ${port.path}`);
     return found;
   });
@@ -186,7 +188,9 @@ export interface ProjectionObjects extends Required<Pick<PlatformObjectAdapter, 
 
 function hasQueryParams(query: PlatformObjectQuery): boolean {
   return Boolean(
-    query.search?.trim()
+    query.parent
+    || query.objectType
+    || query.search?.trim()
     || query.page
     || (query.filters && Object.values(query.filters).some((value) => value !== "")),
   );
@@ -210,7 +214,17 @@ export function useProjectionObjects(objectType?: string): ProjectionObjects {
       const adapter = platformObjectAdapter(type);
       if (adapter.query) {
         const result = await adapter.query(query);
-        instance.nameObjects(type, result.items);
+        const byType = new Map<string, { primaryKey: string; label: string }[]>();
+        for (const item of result.items) {
+          const itemType = item.className ?? query.objectType ?? type;
+          let bucket = byType.get(itemType);
+          if (!bucket) {
+            bucket = [];
+            byType.set(itemType, bucket);
+          }
+          bucket.push(item);
+        }
+        for (const [itemType, items] of byType) instance.nameObjects(itemType, items);
         return result;
       }
       if (hasQueryParams(query)) throw new Error(`Platform object '${type}' has no query`);
@@ -222,6 +236,51 @@ export function useProjectionObjects(objectType?: string): ProjectionObjects {
       const found = await adapterPart(type, "read")(primaryKey);
       instance.nameObjects(type, [found]);
       return found;
+    },
+  };
+}
+
+/**
+ * The graph source port for the projection's bound type. Every node returned by `start` or `neighbors` registers its
+ * owner label on the panel instance, so `pageContext.selection` names selected graph nodes without extra reads.
+ */
+export function useProjectionGraph(objectType?: string): PlatformObjectGraph {
+  const { instance } = usePanelContext();
+  const type = objectType ?? useProjectionSlot().projection.binding.id;
+  const nameNodes = (nodes: readonly PlatformGraphNode[]) => {
+    const byType = new Map<string, { primaryKey: string; label: string }[]>();
+    for (const node of nodes) {
+      let bucket = byType.get(node.className);
+      if (!bucket) {
+        bucket = [];
+        byType.set(node.className, bucket);
+      }
+      bucket.push({ primaryKey: node.primaryKey, label: node.label });
+    }
+    for (const [className, items] of byType) instance.nameObjects(className, items);
+  };
+  return {
+    schema() {
+      const fn = adapterPart(type, "graph").schema;
+      if (!fn) throw new Error(`Platform object '${type}' has no graph schema`);
+      return fn();
+    },
+    counts() {
+      const fn = adapterPart(type, "graph").counts;
+      if (!fn) throw new Error(`Platform object '${type}' has no graph counts`);
+      return fn();
+    },
+    async start() {
+      const fn = adapterPart(type, "graph").start;
+      if (!fn) return null;
+      const node = await fn();
+      if (node) nameNodes([node]);
+      return node;
+    },
+    async neighbors(query) {
+      const result = await adapterPart(type, "graph").neighbors(query);
+      nameNodes([result.node, ...result.neighbors]);
+      return result;
     },
   };
 }
