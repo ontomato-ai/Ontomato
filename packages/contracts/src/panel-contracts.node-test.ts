@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, OBJECT_TYPE, RELATIONSHIP, USER, bindingKey, clientSends, panelClientReads } from "./panel-client-requests";
+import { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, OBJECT_TYPE, RELATIONSHIP, USER, bindingKey, chartProjectionLookupRead, chartProjectionSourcePath, chartProjectionSourceSends, clientSends, panelClientReads } from "./panel-client-requests";
 import { candidatePanelSourceSchema, panelFrameMessageSchema, panelUsePath } from "./panel-host";
 import { panelManifestSchema } from "./panel-manifest";
 import { panelFormSaveInputSchema, projectionBindingKeys, projectionOperations, projectionPorts } from "./panel-projection";
-import { applicationPanelUsePathSchema, ontologyElementRefSchema, productPanelContentSchema, productProjectionInputSchema } from "./product-panels";
+import {
+  applicationPanelUsePathSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema,
+  chartSourceInUseErrorSchema, ontologyElementRefSchema, productPanelContentSchema, productProjectionInputSchema,
+  registerChartProjectionRequestSchema, registerChartProjectionResponseSchema, registerProductProjectionRequestSchema,
+  updateChartProjectionSourceRequestSchema,
+} from "./product-panels";
 
 const binding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
 
@@ -136,4 +141,98 @@ test("bridge and skill agree about the specific semantic reads", () => {
     assert.ok(clientSends([binding(type)], "POST", "/data-query", "/admin/getMetas"));
   assert.ok(!clientSends([binding(OBJECT_TYPE)], "POST", "/data-query", "/admin/getschemamarkdown"));
   assert.ok(clientSends([binding(USER)], "GET", "/data-query", "/platform/agent-execution/options?selected=u"));
+});
+
+
+const chartSource = { dashboardId: "board-a", cardId: "chart-1" };
+const chartProjection = {
+  name: "Departments", description: "", visibility: "private",
+  componentId: "MetricChart", binding: { kind: "MetricView", id: "department-metric" },
+  inputs: { department: { kind: "scalar", type: "string" } },
+  display: { chartSource },
+};
+
+test("a chart projection can only store the source reference and its metric binding", () => {
+  const projection = {
+    ...chartProjection, id: "projection-a", domainId: "domain", ownerId: "author",
+    revision: 1, createdAt: "2026-11-19T00:00:00Z", updatedAt: "2026-11-19T00:00:00Z", editable: true,
+  };
+  assert.deepEqual(registerChartProjectionResponseSchema.parse({ projection }).projection.display, { chartSource });
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...chartProjection, binding: { kind: "Action", id: "unrelated" },
+  }).success, false);
+  for (const data of [{ chartFile: {} }, { query: { metricId: "other" } }, { rows: [] }]) {
+    assert.equal(productProjectionInputSchema.safeParse({
+      ...chartProjection, display: { chartSource, ...data },
+    }).success, false);
+  }
+});
+
+test("chart registration takes the source identity and ordinary writes cannot supply it", () => {
+  assert.deepEqual(registerChartProjectionRequestSchema.parse(chartSource), chartSource);
+  assert.equal(registerChartProjectionRequestSchema.safeParse({
+    ...chartSource, id: "supplied-projection", binding: chartProjection.binding, domainId: "another-domain",
+  }).success, false);
+  assert.equal(registerProductProjectionRequestSchema.safeParse({ ...chartProjection, revision: 1 }).success, false);
+  assert.equal(registerProductProjectionRequestSchema.safeParse({
+    ...chartProjection, componentId: "ObjectSummary", revision: 0,
+  }).success, false);
+  assert.equal(registerProductProjectionRequestSchema.safeParse({
+    ...chartProjection, display: {}, revision: 0,
+  }).success, false);
+  assert.equal(registerProductProjectionRequestSchema.safeParse({
+    ...chartProjection, display: {}, revision: 2,
+  }).success, true);
+});
+
+test("chart template read exposes only the chart file and edit supplies only its drawing", () => {
+  const chartFile = {
+    name: "department.chart.json",
+    content: {
+      dataset: [{ id: "metric", dimensions: ["name", "value"], source: [] }],
+      series: [{ id: "main", type: "bar", datasetId: "metric", encode: { x: "name", y: "value" } }],
+      ontomato: {},
+    },
+  };
+  assert.deepEqual(chartProjectionTemplateSchema.parse({ chartFile }), { chartFile });
+  for (const extra of [{ query: { metricId: "other" } }, { groups: [] }, { layout: {} }, { revision: 2 }])
+    assert.equal(chartProjectionTemplateSchema.safeParse({ chartFile, ...extra }).success, false);
+  assert.ok(updateChartProjectionSourceRequestSchema.safeParse({ chartFile: { content: chartFile.content } }).success);
+  assert.equal(updateChartProjectionSourceRequestSchema.safeParse({ chartFile }).success, false);
+  assert.equal(updateChartProjectionSourceRequestSchema.safeParse({
+    chartFile: { content: chartFile.content }, query: { metricId: "other" },
+  }).success, false);
+});
+
+test("the chart client is restricted to its chart projection and bound metric", () => {
+  const path = chartProjectionSourcePath("chart:id");
+  assert.ok(chartProjectionSourceSends(["chart:id"], "GET", "", path));
+  assert.ok(chartProjectionSourceSends(["chart:id"], "PUT", "", path));
+  assert.ok(!chartProjectionSourceSends(["other"], "GET", "", path));
+  assert.ok(!chartProjectionSourceSends(["chart:id"], "DELETE", "", path));
+
+  const metric = bindingKey(chartProjection.binding);
+  for (const [path, body] of [
+    ["/ontology/query/metrics/describe", { id: "department-metric" }],
+    ["/metricView/queryById", { id: "department-metric" }],
+    ["/metricView/execute", { id: "department-metric", param: { department: "sales" } }],
+  ] as const) {
+    assert.ok(panelClientReads(metric).some(read => read.method === "POST" && read.path.test(path)));
+    assert.ok(clientSends([metric], "POST", "/data-query", path, body));
+    assert.ok(!clientSends([metric], "POST", "/data-query", path, { ...body, id: "other" }));
+    assert.ok(!clientSends([metric], "POST", "/data-query", path));
+  }
+  const lookup = "/product-projections/chart-sources?dashboardId=board-a&cardId=chart-1";
+  assert.ok(chartProjectionLookupRead.path.test(lookup));
+  assert.ok(!clientSends([metric], "GET", "", lookup));
+  assert.deepEqual(chartProjectionLookupResponseSchema.parse({ projectionId: null }), { projectionId: null });
+});
+
+test("a blocked chart source removal reports the referring projection IDs", () => {
+  const refusal = {
+    success: false, error: "Chart source is in use", code: "CHART_SOURCE_IN_USE",
+    details: { projectionIds: ["projection-a"] },
+  };
+  assert.deepEqual(chartSourceInUseErrorSchema.parse(refusal).details.projectionIds, ["projection-a"]);
+  assert.equal(chartSourceInUseErrorSchema.safeParse({ ...refusal, details: { projectionIds: [] } }).success, false);
 });
