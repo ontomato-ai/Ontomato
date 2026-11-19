@@ -47,4 +47,20 @@ class ProductGrantControllerTest {
         assertThrows(ResponseStatusException.class,()->controller.register(request,Map.of("domainId","domain","ownerId","victim","id","profile","shared",true)));
         verifyNoInteractions(grants);
     }
+
+    @Test void unregisterRequiresServiceAuthenticationAndBindsTheDomainAndResource() throws Exception {
+        var grants = mock(ProductGrantService.class);
+        var mvc = MockMvcBuilders.standaloneSetup(new ProductGrantController(grants, new WorkbenchServiceAuthentication("fixture")))
+            .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+        var body = """
+            {"domainId":"domain","id":"projection"}
+            """;
+        mvc.perform(post(ProductGrantController.UNREGISTER_PATH).contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isForbidden());
+        verifyNoInteractions(grants);
+        mvc.perform(post(ProductGrantController.UNREGISTER_PATH).header(WorkbenchServiceAuthentication.HEADER, "fixture")
+            .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true));
+        verify(grants).unregister("domain", "projection");
+    }
 }

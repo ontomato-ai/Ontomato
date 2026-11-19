@@ -34,7 +34,7 @@ public class ProductGrantService implements InitializingBean {
         return ProductGrants.allows(grants,userId,principals.effectiveRoles(userId,domainId),verb);
     }
     @Transactional public void migrateApplication(String domainId,String id){
-        db.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0))",Object.class,"product-grant:"+domainId+":"+id);
+        lockResource(domainId,id);
         if(Boolean.TRUE.equals(db.queryForObject("SELECT EXISTS(SELECT 1 FROM product_application_grant_migration WHERE domain_id=? AND id=?)",Boolean.class,domainId,id)))return;
         var authors=db.queryForList("SELECT owner_user_id FROM sys_application WHERE domain_id=? AND id=? AND owner_user_id IS NOT NULL",String.class,domainId,id);
         if(authors.isEmpty())return;
@@ -57,17 +57,27 @@ public class ProductGrantService implements InitializingBean {
     /** The owning product service imports author and sharing facts; request bodies cannot select the acting user. */
     @Transactional public void register(String domainId,String id,String ownerId,boolean shared){
         if(domainId==null||domainId.isBlank()||id==null||id.isBlank()||ownerId==null||ownerId.isBlank())throw new IllegalArgumentException("Product identity is required");
-        db.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0))",Object.class,"product-grant:"+domainId+":"+id);
+        lockResource(domainId,id);
         var owners=db.queryForList("SELECT owner_id FROM product_resource WHERE domain_id=? AND id=?",String.class,domainId,id);
         if(!owners.isEmpty()&&!owners.getFirst().equals(ownerId))throw new ResponseStatusException(HttpStatus.CONFLICT,"Product owner changed");
         db.update("INSERT INTO product_resource(domain_id,id,owner_id) VALUES(?,?,?) ON CONFLICT DO NOTHING",domainId,id,ownerId);
         if(owners.isEmpty())for(String verb:List.of("use","edit"))insert(domainId,id,new ProductGrants.Grant("principal",ownerId,verb));
         if(owners.isEmpty()&&shared)insert(domainId,id,new ProductGrants.Grant("domain","*","use"));
     }
+    @Transactional public void unregister(String domainId, String id) {
+        lockResource(domainId, id);
+        db.update("DELETE FROM product_grant WHERE domain_id=? AND resource_id=?", domainId, id);
+        db.update("DELETE FROM product_resource WHERE domain_id=? AND id=?", domainId, id);
+    }
+
+    private void lockResource(String domainId, String id) {
+        db.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", Object.class, "product-grant:" + domainId + ":" + id);
+    }
+
     private void insert(String domain,String id,ProductGrants.Grant grant){db.update("INSERT INTO product_grant(domain_id,resource_id,principal_kind,principal_id,verb) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING",domain,id,grant.principalKind(),grant.principalId(),grant.verb());}
     @Transactional public void grant(String id,ProductGrants.Grant grant,boolean remove){
         var current=identity.getCurrentUser();
-        if(current!=null)db.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0))",Object.class,"product-grant:"+current.getDomainId()+":"+id);
+        if(current!=null)lockResource(current.getDomainId(),id);
         if(!allowed(id,"edit"))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Product edit Grant required");
         if(!List.of("use","edit").contains(grant.verb())||!List.of("principal","role").contains(grant.principalKind())||grant.principalId()==null||grant.principalId().isBlank())throw new IllegalArgumentException("Invalid product Grant");
         String domain=identity.getCurrentUser().getDomainId();
@@ -76,7 +86,7 @@ public class ProductGrantService implements InitializingBean {
     }
     @Transactional public void share(String id,boolean shared){
         var current=identity.getCurrentUser();
-        if(current!=null)db.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0))",Object.class,"product-grant:"+current.getDomainId()+":"+id);
+        if(current!=null)lockResource(current.getDomainId(),id);
         if(!allowed(id,"edit"))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Product edit Grant required");
         String domain=identity.getCurrentUser().getDomainId();
         db.update("DELETE FROM product_grant WHERE domain_id=? AND resource_id=? AND principal_kind='domain'",domain,id);
