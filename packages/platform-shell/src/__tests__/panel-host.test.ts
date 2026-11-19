@@ -114,7 +114,7 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
         posted.push(message);
         return post(message as never, ...(rest as [never]));
       }) as Window["postMessage"];
-      return () => frames.delete(frame);
+      return { dispose: () => frames.delete(frame), open: () => {} };
     },
     snapshot: async (id: string) => ({ panel: { id, revision: input.panels.get(id)!.revision }, projections: [] }),
     mode: {

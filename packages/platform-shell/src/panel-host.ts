@@ -47,12 +47,24 @@ export interface PanelHostPort<Source extends PanelHostSource = PanelHostSource>
   /** Where the platform serves its SDK builds, e.g. `/apps-sdk`: a definition's frame loads `<root>/<its sdkVersion>`. */
   sdkRoot(): Promise<string>;
   /**
-   * Registers the frame the panel runs in: the execution context and identity for the page it shows, and what the frame
-   * may ask the platform for, which the source's manifest declares.
+   * Registers the frame the panel runs in: the execution context and identity for the page it shows, what the frame
+   * may ask the platform for, which the source's manifest declares, and whether it may ask for anything now.
    */
-  frame(frame: Window, source: Source): () => void;
+  frame(frame: Window, source: Source, open: boolean): PanelFrameRegistration;
   snapshot(panelId: string): Promise<PanelDefinitionSnapshot>;
+  /**
+   * Whether the use relation this host opens is still the application's, bound to the same panel: what a kept page is
+   * checked against when it is shown again. A candidate has no relation to check.
+   */
+  current?(): Promise<boolean>;
   mode: PanelDefinitionMode;
+}
+
+/** A registered frame: ended with the instance, and closed to new requests while its page is not the reader's. */
+export interface PanelFrameRegistration {
+  dispose(): void;
+  /** Whether the frame may ask for anything; closing it also closes its streams. */
+  open(open: boolean): void;
 }
 
 export type { ProductDefinitionChangedEvent as DefinitionChanged } from "@ontomato/contracts/product-panels";
@@ -116,6 +128,16 @@ export interface PanelInstanceOptions {
   address: () => string;
   /** The current external address's requested state, including updates on the same page. */
   initial: () => Record<string, unknown>;
+  /**
+   * Whether the reader is on this instance's page. A page kept while the reader is on another of its application's pages
+   * holds no stream and its frame may ask for nothing; shown again, it is checked before its frame may. Absent means
+   * always shown.
+   */
+  shown?: () => boolean;
+  /** A kept page shown again passed its checks: its frame may ask again, and its objects are being read again. */
+  reopened?: () => void;
+  /** A kept page shown again is no longer the application's: its use relation was withdrawn or bound elsewhere. */
+  withdrawn?: () => void;
 }
 
 /** What a failure is called in the panel's error place: its own message, or what it was, verbatim. */
@@ -157,7 +179,9 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   let sdkRoot = "";
   let frameReady = false;
   let frameAddress = "";
-  let disposeFrame: (() => void) | undefined;
+  let registration: PanelFrameRegistration | undefined;
+  /** Whether the frame may ask the platform for anything: not while its page is kept out of view, nor until it is checked. */
+  let bridgeOpen = true;
   let active = true;
   let author: ReturnType<Extract<PanelDefinitionMode, { kind: "author" }>["definitions"]["observe"]> | undefined;
   const pending = new Map<string, ProductDefinitionRevision>();
@@ -166,6 +190,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   let pendingObjectRefresh = false;
   /** The draft the reader settled while the page's address still linked it. */
   let settledDraft: PageDraftLink | null = null;
+  const shownToReader = options.shown ?? (() => true);
   /** The page's address, without the link of a draft the reader has settled. */
   const pageAddress = () => {
     const page = options.address();
@@ -193,8 +218,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       if (!active) return;
       sdkRoot = root;
       adopt(read);
-      if (port.mode.kind === "author")
-        author = port.mode.definitions.observe(targetsOf(read), advance, reportPanelUnavailable);
+      if (port.mode.kind === "author") follow(read);
       // A viewer's panel is reconciled with a short read; the frame does not wait for it.
       else if (read.kind === "registered")
         void port.snapshot(read.panel.id).then(snapshot => { if (active) return advance([{ kind: "panel", ...snapshot.panel }]); })
@@ -234,8 +258,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     displayLoad.value = loading;
     document.value = written;
     if (frame) {
-      disposeFrame?.();
-      disposeFrame = port.frame(frame, next);
+      registration?.dispose();
+      registration = port.frame(frame, next, bridgeOpen);
     }
   }
 
@@ -301,9 +325,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   async function restore(shown: Extract<PanelHostSource, { kind: "registered" }>) {
     try {
       const snapshot = await port.snapshot(shown.panel.id);
-      if (!active) return;
-      await advance(snapshotRevisions(snapshot));
-      if (active) refresh(null);
+      if (active) await advance(snapshotRevisions(snapshot));
     } catch (failure) {
       if (active) reportPanelUnavailable(failure);
     }
@@ -328,14 +350,79 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
   }
 
-  void load();
+  /** An author's instance follows its definitions on the document's stream while it is shown, and only then. */
+  function follow(shown: PanelHostSource) {
+    if (shownToReader()) author = port.mode.kind === "author" ? port.mode.definitions.observe(targetsOf(shown), advance, reportPanelUnavailable) : undefined;
+  }
+
+  /**
+   * The document came back to the foreground with this page shown: the objects it shows are read again, and a viewer's
+   * definition revisions are checked beside that read; a changed definition is adopted as any is, never over an unsaved
+   * form.
+   */
+  function resume(shown: PanelHostSource) {
+    if (shown.kind === "candidate") {
+      void rereadCandidate(shown);
+      return;
+    }
+    refresh(null);
+    if (port.mode.kind === "view") void restore(shown);
+  }
+
+  function openBridge(open: boolean) {
+    bridgeOpen = open;
+    registration?.open(open);
+  }
+
+  /**
+   * A kept page shown again. Its frame is in view at once, but asks for nothing until the host has checked the page is
+   * still the reader's — its use relation, and the current definitions the reader may use, read side by side. Then the
+   * objects it shows are read again, whether or not anything changed, and a changed definition is adopted as any is. A
+   * relation withdrawn or bound elsewhere ends the instance; a refused check is shown where the panel is.
+   */
+  async function reopen(shown: PanelHostSource) {
+    if (shown.kind === "candidate") {
+      openBridge(true);
+      follow(shown);
+      void rereadCandidate(shown);
+      return;
+    }
+    try {
+      const [current, snapshot] = await Promise.all([
+        port.current ? port.current() : true,
+        port.mode.kind === "view" ? port.snapshot(shown.panel.id) : undefined,
+      ]);
+      if (!active || !shownToReader()) return;
+      if (!current) {
+        options.withdrawn?.();
+        return;
+      }
+      openBridge(true);
+      options.reopened?.();
+      follow(shown);
+      refresh(null);
+      if (snapshot) await advance(snapshotRevisions(snapshot));
+    } catch (failure) {
+      if (active) reportPanelUnavailable(failure);
+    }
+  }
+
+  watch(shownToReader, now => {
+    const shown = source.value;
+    if (!shown) return;
+    if (now) {
+      void reopen(shown);
+      return;
+    }
+    author?.close();
+    author = undefined;
+    openBridge(false);
+  });
   const stopVisibility = onDocumentVisibility(visible => {
     const shown = source.value;
-    if (!visible || !shown) return;
-    if (shown.kind === "candidate") void rereadCandidate(shown);
-    else if (port.mode.kind === "view") void restore(shown);
-    else refresh(null);
+    if (visible && shown && shownToReader()) resume(shown);
   });
+  void load();
   onScopeDispose(() => {
     active = false;
     stopVisibility();
@@ -431,7 +518,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   window.addEventListener("message", message);
   onScopeDispose(() => {
     window.removeEventListener("message", message);
-    disposeFrame?.();
+    registration?.dispose();
   });
 
   return {
@@ -456,8 +543,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     },
     frame(window) {
       frame = window;
-      disposeFrame?.();
-      disposeFrame = window && source.value ? port.frame(window, source.value) : undefined;
+      registration?.dispose();
+      registration = window && source.value ? port.frame(window, source.value, bridgeOpen) : undefined;
     },
   };
 }
