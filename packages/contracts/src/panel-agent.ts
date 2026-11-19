@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { agentExecutionRefSchema, agentSessionRefSchema } from "./agent-channel";
 import { agentQuestionAnswerReceiptSchema, agentUserQuestionReceiptSchema } from "./agent-user-questions";
+import { formFieldErrorSchema } from "./form-fields";
 import { panelObjectIdentitySchema, panelOperationCallSchema, panelOperationSchema } from "./panel-manifest";
 import {
   panelBatchInvocationSchema, panelOperationAffectedSchema, panelOwnerOperationDescriptorSchema,
@@ -61,6 +62,8 @@ const singleOutcomeSchema = z.discriminatedUnion("kind", [
   }).strict(),
   z.object({
     kind: z.literal("refusal"), code: key, message: z.string(), details: runtimeJsonObjectSchema.optional(),
+    /** Field validation failures use the same pointers and codes as form reads. */
+    errors: z.array(formFieldErrorSchema).optional(),
   }).strict(),
   z.object({
     kind: z.literal("failure"), code: key, message: z.string(), details: runtimeJsonObjectSchema.optional(),
