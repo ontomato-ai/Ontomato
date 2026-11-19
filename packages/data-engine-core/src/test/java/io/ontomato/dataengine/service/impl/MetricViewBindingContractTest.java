@@ -26,6 +26,7 @@ import io.ontomato.dataengine.util.ZipBundleUtil;
 import java.util.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -109,6 +110,11 @@ class MetricViewBindingContractTest {
     m.setStatus(MetricView.STATUS_PUBLISHED); m.setMatchQuestions(new HashSet<>());
     m.setBindings(new ArrayList<>(List.of(binding("First", 0), binding("Second", 12))));
     return m;
+  }
+
+  static void assertRefusal(String code, Executable action) {
+    OwnerRefusal refusal = assertThrows(OwnerRefusal.class, action);
+    assertEquals(code, refusal.code());
   }
 
   MetricViewBinding binding(String name, int amount) {
@@ -220,11 +226,11 @@ class MetricViewBindingContractTest {
     String before = JSON.toJSONString(functions);
     m.getFunction().getQueryPackage().getJSONObject("manifest").getJSONArray("parameterDefs").getJSONObject(0).put("type", Parameter.TYPE_STRING);
     m.setBindings(null); // Definition-only clients preserve the saved binding collection.
-    assertThrows(IllegalArgumentException.class, () -> service.save(m, "en"));
+    assertRefusal("METRIC_VIEW_BINDING_INVALID", () -> service.save(m, "en"));
     assertEquals(before, JSON.toJSONString(functions));
     MetricView renamed = service.queryById(m.getId(), "domain-a");
     renamed.getFunction().getQueryPackage().getJSONObject("manifest").getJSONArray("parameterDefs").getJSONObject(0).put("name", "renamed");
-    assertThrows(IllegalArgumentException.class, () -> service.save(renamed, "en"));
+    assertRefusal("METRIC_VIEW_BINDING_INVALID", () -> service.save(renamed, "en"));
     assertEquals(2, metrics.get(m.getId()).getBindings().size());
   }
 
@@ -233,7 +239,7 @@ class MetricViewBindingContractTest {
     MetricView a = service.save(metric("domain-a"), "en");
     MetricView other = service.save(metric("domain-a"), "en");
     a.getBindings().add(copy(other.getBindings().get(0), MetricViewBinding.class));
-    assertThrows(IllegalArgumentException.class, () -> service.save(a, "en"));
+    assertRefusal("METRIC_VIEW_BINDING_NOT_FOUND", () -> service.save(a, "en"));
     MetricView original = service.queryById(a.getId(), "domain-a");
     String bindingId = original.getBindings().get(0).getId();
     assertThrows(IllegalArgumentException.class, () -> service.execute(a.getId(), bindingId, JSONObject.of("amount", 100), null, "en", user, new UserDataPermission(), 1));
@@ -248,7 +254,7 @@ class MetricViewBindingContractTest {
     MetricView a = service.save(metric("domain-a"), "en");
     MetricView b = service.save(metric("domain-b"), "en");
     assertNull(service.queryById(b.getId(), "domain-a"));
-    assertThrows(IllegalArgumentException.class, () -> service.delete(b.getId(), "domain-a", "en"));
+    assertRefusal("METRIC_VIEW_NOT_FOUND", () -> service.delete(b.getId(), "domain-a", "en"));
     JSONArray exported = JSON.parseArray(new String(ZipBundleUtil.unzipFirstJson(service.exportMetricViews("domain-a", "en")), java.nio.charset.StandardCharsets.UTF_8));
     assertEquals(1, exported.size()); assertEquals(a.getId(), exported.getJSONObject(0).getString("id"));
     assertEquals(2, exported.getJSONObject(0).getJSONArray("bindings").size());
@@ -290,17 +296,65 @@ class MetricViewBindingContractTest {
 
 
   @Test
+  void aSystemMetricCannotBeSavedOrDeleted() {
+    var saved = service.save(metric("domain-a"), "en");
+    metrics.get(saved.getId()).setOrigin(MetricView.ORIGIN_SYSTEM);
+
+    assertRefusal("METRIC_VIEW_SYSTEM", () -> service.save(saved, "en"));
+    assertRefusal("METRIC_VIEW_SYSTEM", () -> service.delete(saved.getId(), "domain-a", "en"));
+  }
+
+  @Test
+  void aWorkflowPendingMetricIsEditedOnlyInItsWorkflow() {
+    var pending = metric("domain-a");
+    pending.setWorkflowSource(new MetricView.WorkflowSource("flow", 1, MetricView.WorkflowSource.Purpose.pending));
+    service.publishWorkflowMetric(pending, "en");
+
+    assertRefusal("METRIC_VIEW_WORKFLOW_PENDING", () -> service.save(pending, "en"));
+  }
+
+  @Test
+  void aMalformedSubjectReferenceIsAParameterRefusal() {
+    var definition = metric("domain-a");
+    definition.getBindings().get(0).getParameters().put("optional", "{{acount.id}}");
+
+    assertRefusal("METRIC_VIEW_PARAMETER_INVALID", () -> service.save(definition, "en"));
+  }
+
+  @Test
+  void aNonReadOrMissingFunctionIsAFunctionRefusal() {
+    var write = metric("domain-a");
+    write.getFunction().setOperation(Function.OPERATION_WRITE);
+    assertRefusal("METRIC_VIEW_FUNCTION_INVALID", () -> service.save(write, "en"));
+
+    var absent = metric("domain-a");
+    absent.getFunction().setId("missing-function");
+    assertRefusal("METRIC_VIEW_FUNCTION_INVALID", () -> service.save(absent, "en"));
+  }
+
+  @Test
+  void testExecuteRefusesAMetricTheCallerCannotRun() {
+    var candidate = metric("domain-a");
+    candidate.setStatus(MetricView.STATUS_PENDING_REVIEW);
+    candidate.setCreatedBy("someone-else");
+    var saved = service.save(candidate, "en");
+
+    assertRefusal("METRIC_VIEW_NOT_EXECUTABLE",
+        () -> service.testExecute(saved, null, new JSONObject(), "en", user, new UserDataPermission(), 1));
+  }
+
+  @Test
   void metricAuthorsCannotClaimWorkflowProvenanceAndDetailEditsKeepIt() throws Exception {
     var definition = metric("domain-a");
     var detail = new MetricView.WorkflowSource("flow", 1, MetricView.WorkflowSource.Purpose.detail);
     definition.setWorkflowSource(detail);
-    assertThrows(IllegalArgumentException.class, () -> service.save(definition, "en"));
+    assertRefusal("METRIC_VIEW_WORKFLOW_SOURCE", () -> service.save(definition, "en"));
     assertTrue(metrics.isEmpty());
     service.publishWorkflowMetric(definition, "en");
     definition.setWorkflowSource(null);
     definition.setDescription("Updated detail view");
     assertEquals(detail, service.save(definition, "en").getWorkflowSource());
     definition.setWorkflowSource(new MetricView.WorkflowSource("flow", 1, MetricView.WorkflowSource.Purpose.pending));
-    assertThrows(IllegalArgumentException.class, () -> service.save(definition, "en"));
+    assertRefusal("METRIC_VIEW_WORKFLOW_SOURCE", () -> service.save(definition, "en"));
   }
 }

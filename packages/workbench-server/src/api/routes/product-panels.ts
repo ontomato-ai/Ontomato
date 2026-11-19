@@ -19,6 +19,7 @@ import {
   registerProductProjectionRequestSchema, updateChartProjectionSourceRequestSchema,
 } from "@ontomato/contracts/product-panels";
 import { CHART_PROJECTION_SOURCES_PATH, chartProjectionSourceRead } from "@ontomato/contracts/panel-client-requests";
+import { mountProductCatalog } from "./product-catalog";
 import { context, wrap } from "../utils/agent-host";
 import { platformService } from "../middleware/platform-service";
 import { readCurrentPanel, readCurrentProjection, requireCurrentPanels, saveCurrentPanel, saveCurrentProjection } from "../../services/product-panels/current";
@@ -27,6 +28,7 @@ import { authorizeDefinitionStream, requirePanelDefinitions } from "../../servic
 import type { createChartProjectionService } from "../../services/product-panels/chart-sources";
 
 export const productPanelsRouter = Router();
+mountProductCatalog(productPanelsRouter, "panel");
 productPanelsRouter.get("/:id/snapshot", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
   res.json(await requirePanelDefinitions(c.owner, c.credentials, id));
@@ -37,7 +39,7 @@ productPanelsRouter.post("/definition-stream", wrap(async (req, res) => {
   const {attach,snapshot}=await authorizeDefinitionStream(owner,credentials,targets);
   if(res.destroyed)return;
   const send=(frame:ProductDefinitionStreamFrame)=>res.write(`data: ${JSON.stringify(frame)}\n\n`);
-  const stop=attach(send);
+  const stop=attach(send,()=>res.end());
   res.once('close',stop);
   res.set({'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','X-Accel-Buffering':'no'});
   res.flushHeaders();
@@ -54,6 +56,7 @@ productPanelsRouter.put("/:id", wrap(async (req, res) => {
   res.json({ panel: await saveCurrentPanel(c.owner, c.credentials, id, input, revision) });
 }));
 export const productProjectionsRouter = Router();
+mountProductCatalog(productProjectionsRouter, "projection");
 export function createChartProjectionsRouter(service: ReturnType<typeof createChartProjectionService>) {
   const router = Router();
   const collection = CHART_PROJECTION_SOURCES_PATH.slice("/product-projections".length);

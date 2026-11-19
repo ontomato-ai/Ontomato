@@ -3,6 +3,7 @@ package io.ontomato.dataengine.applications;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -10,6 +11,7 @@ import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.*;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -346,5 +348,68 @@ class PanelApplicationsTest {
         when(grants.allowed("panel-p", "use")).thenReturn(false);
         assertTrue(catalog.panelUses("app-panel-a", user).getJSONArray("panelUses").isEmpty());
         verify(access, never()).pageSkills(anyList(), any());
+    }
+
+    @Test void reverseLookupIncludesBuiltinAndDomainUsesButNoOtherDomainAndRequiresServiceAuth() throws Exception {
+        var local = app("app-panel-a", "panels", List.of(use("tasks", "app:app-panel-a:private")));
+        local.put("names", JSONObject.of("en", "Local app", "zh-CN", "域内应用"));
+        var foreign = app("app-foreign", "panels", List.of(use("app-foreign", "tasks", null)));
+        foreign.put("domainId", "foreign");
+        var builtin = app("ontology", "panels", List.of(at("settings", "/ontology/settings")));
+        builtin.put("domainId", null);
+        builtin.put("names", JSONObject.of("en", "Ontology"));
+        doReturn(List.of(local, foreign, builtin)).when(catalog).all();
+        var mvc = MockMvcBuilders.standaloneSetup(new ApplicationController(catalog, mock(IdentityService.class),
+            new WorkbenchServiceAuthentication("service-fixture"))).build();
+
+        mvc.perform(get(ApplicationController.PANEL_USES_BY_PANEL).param("domainId", "domain").param("panelId", "panel-p"))
+            .andExpect(status().isForbidden());
+        mvc.perform(get(ApplicationController.PANEL_USES_BY_PANEL).header(WorkbenchServiceAuthentication.HEADER, "service-fixture")
+            .param("domainId", "domain").param("panelId", "panel-p"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(2))
+            .andExpect(jsonPath("$.data[0].applicationId").value("app-panel-a"))
+            .andExpect(jsonPath("$.data[0].names.en").value("Local app"))
+            .andExpect(jsonPath("$.data[0].names['zh-CN']").value("域内应用"))
+            .andExpect(jsonPath("$.data[0].useId").value("use-tasks"))
+            .andExpect(jsonPath("$.data[0].path").value("/applications/app-panel-a/tasks"))
+            .andExpect(jsonPath("$.data[1].applicationId").value("ontology"));
+    }
+
+    @Test void deleteRespectsDomainMaintenanceAndRemovesTheApplicationWithItsPanelUses() throws Exception {
+        doAnswer(call -> {
+            call.<java.util.function.Consumer<org.springframework.transaction.TransactionStatus>>getArgument(0).accept(null);
+            return null;
+        }).when(tx).executeWithoutResult(any());
+        var local = app("app-panel-a", "panels", List.of(use("tasks", null)));
+        local.put("names", JSONObject.of("en", "Local app"));
+        var builtin = app("ontology", "panels", List.of(at("settings", "/ontology/settings")));
+        builtin.put("domainId", null);
+        builtin.put("names", JSONObject.of("en", "Ontology"));
+        var applications = new AtomicReference<>(List.of(local, builtin));
+        doAnswer(call -> applications.get()).when(catalog).all();
+        when(db.update("DELETE FROM sys_application WHERE id=? AND domain_id=?", "app-panel-a", "domain"))
+            .thenAnswer(call -> {
+                applications.set(List.of(builtin));
+                return 1;
+            });
+        var identity = mock(IdentityService.class);
+        when(identity.getCurrentUser()).thenReturn(user);
+        var mvc = MockMvcBuilders.standaloneSetup(new ApplicationController(catalog, identity,
+            new WorkbenchServiceAuthentication("service-fixture"))).build();
+
+        mvc.perform(delete("/platform/applications/ontology")).andExpect(status().isForbidden());
+        mvc.perform(delete("/platform/applications/app-panel-a")).andExpect(status().isForbidden());
+        verify(db, never()).update(startsWith("DELETE FROM sys_application"), anyString(), anyString());
+        verify(access, never()).retire(any());
+        when(access.canMaintain(local, user)).thenReturn(true);
+
+        mvc.perform(delete("/platform/applications/app-panel-a")).andExpect(status().isNoContent());
+        var retirement = inOrder(access, db);
+        retirement.verify(access).retire(local);
+        retirement.verify(db).update("DELETE FROM sys_application WHERE id=? AND domain_id=?", "app-panel-a", "domain");
+        mvc.perform(get(ApplicationController.PANEL_USES_BY_PANEL).header(WorkbenchServiceAuthentication.HEADER, "service-fixture")
+            .param("domainId", "domain").param("panelId", "panel-p"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(1))
+            .andExpect(jsonPath("$.data[0].applicationId").value("ontology"));
     }
 }

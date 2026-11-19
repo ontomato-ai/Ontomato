@@ -2,6 +2,7 @@ package io.ontomato.dataengine.applications;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.TypeReference;
 import io.ontomato.dataengine.core.bean.User;
 import java.util.*;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,6 +14,7 @@ import org.springframework.http.HttpStatus;
 
 @Service
 public class ApplicationCatalog {
+    public record PanelUseLocation(String applicationId, Map<String, String> names, String useId, String path) {}
     private record PanelSkillGroup(PageSkills.Mapping mapping, PanelSkills.Source source) {}
     public record Group(String key, Map<String,String> names, int sort) {}
     public record Permission(String code, Map<String,String> names, String groupKey, int sort) {}
@@ -298,6 +300,31 @@ public class ApplicationCatalog {
         }
     }
 
+    public List<PanelUseLocation> panelUsesByPanel(String domainId, String panelId) {
+        return applicationsInDomain(domainId).stream().filter(ApplicationCatalog::panelManaged)
+            .flatMap(app -> app.getList("panelUses", ApplicationPanelUse.class).stream()
+                .filter(use -> panelId.equals(use.panelId()))
+                .map(use -> new PanelUseLocation(app.getString("id"),
+                    app.getObject("names", new TypeReference<Map<String, String>>() {}), use.id(), use.path())))
+            .toList();
+    }
+
+    public void deleteDomainApplication(String id, User user) {
+        transactions.executeWithoutResult(tx -> {
+            lockCatalog();
+            var app = require(id);
+            requireDomainMaintainer(app, user);
+            access.retire(app);
+            // The entry table is stored in this application row.
+            db.update("DELETE FROM sys_application WHERE id=? AND domain_id=?", id, user.getDomainId());
+        });
+    }
+
+    private void requireDomainMaintainer(JSONObject app, User user) {
+        if (app.getString("domainId") == null || !inDomain(app, user) || !access.canMaintain(app, user))
+            throw denied();
+    }
+
     public JSONObject panelUses(String id, User user) {
         var app = require(id);
         if (!panelManaged(app)) throw bad("Application is not managed by panels");
@@ -340,7 +367,7 @@ public class ApplicationCatalog {
             var current = all().stream().filter(app -> id.equals(app.getString("id"))).findFirst();
             if (current.isPresent() && current.get().getString("domainId") == null) throw denied();
             if (current.isPresent() && !panelManaged(current.get())) throw bad("Use registration cannot take over an existing application");
-            if (current.isPresent() && (!inDomain(current.get(), user) || !access.canMaintain(current.get(), user))) throw denied();
+            current.ifPresent(app -> requireDomainMaintainer(app, user));
             var old = current.orElse(null);
             if (old == null && (supplied == null || body.entryAccess() == null)) throw bad("New applications require metadata and entry access");
             var entry = JSONObject.of("path", entryPath, "renderer", "panels");
