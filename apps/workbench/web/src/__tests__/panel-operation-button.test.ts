@@ -39,7 +39,7 @@ const projections: Record<string, ProductProjection> = {
 const manifest = definePanel({
   state: {
     selectedAgent: { kind: "object", objectType: AGENT_DEFINITION, deepLink: false },
-    checkedAgents: { kind: "objects", objectType: AGENT_DEFINITION },
+    checkedAgents: { kind: "objects", objectType: AGENT_DEFINITION, deepLink: false },
     selectedFunction: { kind: "object", objectType: FUNCTION, deepLink: false },
     month: { kind: "scalar", type: "string", deepLink: false },
   },

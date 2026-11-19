@@ -71,9 +71,9 @@ const target = computed<PanelOperationCall["target"]>(() => {
 });
 const checkedState = computed(() => (props.checked ? slotState(panel.manifest, slot.slot, props.checked) : null));
 /** The checked objects: the collection the panel's state holds for the slot's `checked` input. */
-const checked = computed(() => (checkedState.value === null ? [] : stateObjects(values.value[checkedState.value])));
+const checkedObjects = computed(() => (checkedState.value === null ? [] : stateObjects(values.value[checkedState.value])));
 const checkedTargets = computed(() =>
-  checked.value.map(({ className, primaryKey }) => ({ kind: "object" as const, objectType: className, primaryKey })));
+  checkedObjects.value.map(({ className, primaryKey }) => ({ kind: "object" as const, objectType: className, primaryKey })));
 const ready = computed(() => {
   if (!descriptor.value || running.value) return false;
   if (checkedState.value !== null) return checkedTargets.value.length > 0;
@@ -113,7 +113,7 @@ function keepUnchanged(response: PanelHumanOperationDispatchResponse) {
   if (checkedState.value === null || response.kind !== "dispatched" || response.outcome?.kind !== "batch") return;
   const changed = new Set(response.outcome.items.filter(({ outcome }) => outcome.kind === "success")
     .map(({ target: done }) => JSON.stringify([done.objectType, done.primaryKey])));
-  panel.instance.state.set(checkedState.value, checked.value.filter(({ className, primaryKey }) =>
+  panel.instance.state.set(checkedState.value, checkedObjects.value.filter(({ className, primaryKey }) =>
     !changed.has(JSON.stringify([className, primaryKey]))));
 }
 
