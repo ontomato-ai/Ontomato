@@ -51,6 +51,15 @@ describe("agent creation on PostgreSQL", () => {
     const stored = await state.pool!.query(`SELECT kind FROM "${state.schema}".assistant_agents WHERE id=$1`, [id]);
     expect(stored.rows[0].kind).toBe(id);
   });
+  it("keeps stored order on an omitted update and accepts explicit order", async () => {
+    const id = randomUUID(), owner = { userId: "owner", domainId: "ordering" };
+    const input = assistantAgentInputSchema.parse({ name: "Ordered", description: "", icon: null,
+      enabled: true, systemPrompt: "", skills: [] });
+    expect((await createAgentDefinition(id, input, owner, {})).sortOrder).toBe(0);
+    expect((await saveAgentDefinition(id, { ...input, sortOrder: 7 }, owner, {})).sortOrder).toBe(7);
+    expect((await saveAgentDefinition(id, { ...input, name: "Renamed" }, owner, {})).sortOrder).toBe(7);
+    expect((await saveAgentDefinition(id, { ...input, sortOrder: 0 }, owner, {})).sortOrder).toBe(0);
+  });
   it("defaults execution to self and preserves a selected user on an omitted update", async () => {
     const id = randomUUID(), owner = { userId: "owner", domainId: "execution" };
     const input = assistantAgentInputSchema.parse({ name: "Execution", description: "", icon: null,

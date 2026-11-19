@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
+import { agentExecutionOptionsSchema } from "@ontomato/contracts/assistant-chat";
+import { backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { config } from "../../config/application";
 import { environment } from "../../config/environment";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -32,4 +33,14 @@ export async function resolveAgentExecution(agent: Pick<AgentRow, "id" | "execut
   const resolved = resolvedSchema.parse(JSON.parse(response.text));
   return { executionUserId: resolved.executionUserId, credentials: resolved.apiKey === null ? initiatorCredentials :
     { apiKey: resolved.apiKey, locale: initiatorCredentials.locale } };
+}
+
+export async function readExecutionOptions(credentials: AssistantCredentials, selected: string | null) {
+  const query = new URLSearchParams({ pageSize: "1" });
+  if (selected !== null) query.set("selected", selected);
+  const response = await backendGet("agent-execution-options", `${config.dataQuery.baseUrl}/platform/agent-execution/options?${query}`, {
+    headers: buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey, credentials.headers),
+    retries: 1,
+  });
+  return agentExecutionOptionsSchema.parse(JSON.parse(response.text));
 }
