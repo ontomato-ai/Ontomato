@@ -28,13 +28,14 @@ it("keeps the reader across a notification wakeup and distinguishes an inherited
 it("issues a callback only for the same host's directly admitted human run with a live bound view", () => {
   vi.stubEnv("AGENT_RUNTIME_SERVICE_TOKEN", "presentation-test-only");
   const view = new AbortController();
-  const binding = openPresentationView("workbench", owner, () => {}, view.signal);
+  const binding = { viewId: "44444444-4444-4444-8444-444444444444" };
+  openPresentationView("workbench", owner, binding.viewId, () => {}, view.signal);
   const bound = { ...direct, presentationBinding: binding };
   const issue = (body: AgentPrepareRequest, host: "workbench" | "observe" = "workbench") =>
     presentationCallback(host, body, owner, { token: "fixture" }, Date.now() + 60_000);
 
   try {
-    expect(issue(bound)?.url).toContain(`/runs/${runId}/presentation-call/${binding.connectionId}`);
+    expect(issue(bound)?.url).toContain(`/runs/${runId}/presentation-call/${binding.viewId}`);
     expect(issue(direct)).toBeUndefined();
     expect(issue({ ...bound, requestedBy: direct.root })).toBeUndefined();
     expect(issue({ ...bound, input: notification })).toBeUndefined();

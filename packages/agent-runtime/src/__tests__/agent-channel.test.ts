@@ -38,7 +38,7 @@ function channel() {
 }
 
 const humanChannel = { ...context, userRecipient: { session: source.session, actor: context.actor } };
-const browserBinding = { connectionId: "55555555-5555-4555-8555-555555555555" };
+const browserBinding = { viewId: "55555555-5555-4555-8555-555555555555" };
 const initiatingCredential = { token: "initiating-token", apiKey: null };
 const userInput = { role: "user", content: "Show a page", timestamp: 1 } as const;
 
