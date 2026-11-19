@@ -8,6 +8,8 @@ import { panelManifestSchema } from "@ontomato/contracts/panel-manifest";
 import type { ApplicationPanelUse, PanelSkillSource } from "@ontomato/contracts/product-panels";
 import { components } from "../../../../../apps-sdk/src/catalogue";
 import { installContentLayout } from "../../../content/layout";
+import { configureI18n } from "../../../i18n";
+import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { parseSkillMarkdown } from "../../../core/skills/manifest";
 import { backendGet } from "../../../utils/backend-client";
 import { findCurrentProduct, type CurrentProductRow } from "../../../infrastructure/product-current";
@@ -94,6 +96,36 @@ it("uses the three Java member refs and reads only the verified domain and servi
   expect(backendGet).toHaveBeenNthCalledWith(1, "panel-skill-sources",
     "http://java.test/platform/applications/panel-skill-sources?domainId=trial-domain",
     { headers: { "X-Ontomato-Query-Service-Token": "fixture-platform-service" }, retries: 1 });
+});
+
+it("uses the panel's default-locale text for declared state operation labels", async () => {
+  configureI18n({
+    defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
+    packs: { en: { messages: en, ...enLocaleMeta } },
+  });
+  const source = memberSources[0]!;
+  const id = source.uses[0]!.panelId;
+  const panel = panels.get(id)!;
+  javaSources([source]);
+  vi.mocked(findCurrentProduct).mockResolvedValueOnce({
+    id, domainId, ownerId: "fixture-owner", revision: 1,
+    definition: {
+      ...panel,
+      manifest: {
+        ...panelManifestSchema.parse(panel.manifest),
+        operations: [
+          { kind: "state", id: "review", labelKey: "actions.review", sets: {} },
+          { kind: "state", id: "reset", labelKey: "actions.reset", sets: {} },
+        ],
+      },
+      content: { ...panel.content, messages: { en: { "actions.review": "Review scheduled tasks" } } },
+    },
+  } as CurrentProductRow);
+
+  const [offering] = await panelSkillProvider.list({ domainId });
+  const { files } = await offering!.provide();
+  expect(files[0]!.content).toContain("Review scheduled tasks (review), kind state");
+  expect(files[0]!.content).toContain("actions.reset (reset), kind state");
 });
 
 it("assembles one current package for a shared menu with a section per use and the original recipes", async () => {
