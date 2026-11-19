@@ -1,33 +1,8 @@
-<!--
-  Panel P: pick one of the reader's scheduled tasks, see it summed up, change it through its application's own form, save
-  it, and run it now. Each part is a projection the panel's declaration names; this file places them and writes nothing
-  about what they read, how they save or what a button runs.
-
-  A panel's HTML is a fragment: the platform's host puts it inside the document's body, so it carries no doctype, no html,
-  head or body element, and no placeholder for the host to fill — the host writes the document, this writes what the panel
-  composes. Its styles are its own, here, and `[v-cloak]` keeps the unfinished panel from flashing.
--->
-<style>
-  [v-cloak] { display: none; }
-  .panel { display: grid; gap: 12px; grid-template-columns: 260px 1fr; padding: 12px; }
-  .side, .main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-</style>
-<div id="app" class="panel" v-cloak>
-  <aside class="side">
-    <el-card shadow="never">
-      <template #header>Scheduled tasks</template>
-      <projection slot="tasks"></projection>
-    </el-card>
-  </aside>
-  <section class="main">
-    <el-card shadow="never">
-      <template #header>Selected task</template>
-      <projection slot="summary"></projection>
-    </el-card>
-    <el-card shadow="never">
-      <template #header>Task</template>
-      <projection slot="form"></projection>
-      <projection slot="run"></projection>
-    </el-card>
+<div flow="row" gap="small">
+  <panel-member ref="tasks"></panel-member>
+  <section when="selectedTask" ne="null">
+    <panel-member ref="summary"></panel-member>
+    <panel-member ref="form"></panel-member>
+    <panel-member ref="run"></panel-member>
   </section>
 </div>
