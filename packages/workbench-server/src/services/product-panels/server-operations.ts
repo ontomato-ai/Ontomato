@@ -1,4 +1,7 @@
 import type { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
+import { panelWriteOperationSnapshotSchema } from "@ontomato/contracts/panel-agent";
+import type { PanelOperation } from "@ontomato/contracts/panel-manifest";
 import type { PanelFormTarget, PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import type { OntologyElementRef } from "@ontomato/contracts/product-panels";
@@ -7,6 +10,7 @@ import { agentDefinitionOperations } from "../assistant/definition-operations";
 import { HttpError } from "../../utils/errors";
 
 export type PanelOperationTarget = PanelFormTarget;
+export type SinglePanelOperationOutcome = Exclude<PanelOperationOutcome, { kind: "batch" }>;
 export type PanelRecordTarget = Extract<PanelOperationTarget, { kind: "object" }>;
 export interface PanelOperationHost {
   requestWorkbench(path: string, init: NonNullable<Parameters<typeof fetch>[1]>): Promise<Response>;
@@ -15,10 +19,13 @@ export interface PanelOperationHost {
 interface ServerOperation {
   handlerRef: string;
   binding: OntologyElementRef;
+  effect: "write";
+  batch: false;
   targetType: string;
   targetSchema: z.ZodType<PanelOperationTarget>;
   inputSchema: z.ZodType<Record<string, unknown>>;
-  execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>, intentId: string): Promise<PanelOperationOutcome>;
+  resultSchema: z.ZodTypeAny;
+  execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>, intentId: string): Promise<SinglePanelOperationOutcome>;
 }
 export type PanelServerOperation = ServerOperation & (
   {
@@ -31,7 +38,7 @@ export type PanelServerOperation = ServerOperation & (
       createdObject(data: unknown): PanelObjectIdentity;
     };
   } |
-  { kind: "action"; targetLabel(host: PanelOperationHost, target: PanelRecordTarget): Promise<string> }
+  { kind: "action"; targetInput: string; targetLabel(host: PanelOperationHost, target: PanelRecordTarget): Promise<string> }
 );
 
 /** Each feature branch adds one entry for its owner's descriptor module. The coordinator owns this structure. */
@@ -40,6 +47,18 @@ const registrations: readonly PanelServerOperation[] = [
   ...agentDefinitionOperations,
 ];
 const operations = new Map(registrations.map(operation => [operation.handlerRef, operation]));
+const jsonSchema = (schema: z.ZodTypeAny) => zodToJsonSchema(schema, { effectStrategy: "input" });
+
+export function snapshotPanelWrite(handler: PanelServerOperation, operation: PanelOperation, slot: string) {
+  return panelWriteOperationSnapshotSchema.parse({
+    id: operation.id, label: operation.label, kind: handler.kind, slot,
+    handlerRef: handler.handlerRef, effect: handler.effect, batch: handler.batch,
+    target: handler.kind === "form.save" ? { source: "draft", slot } : { source: "input", input: handler.targetInput },
+    inputSchema: jsonSchema(handler.inputSchema),
+    resultSchema: jsonSchema(handler.resultSchema),
+  });
+}
+
 export function panelServerOperation(handlerRef: string): PanelServerOperation {
   const operation = operations.get(handlerRef);
   if (!operation) throw new HttpError(422, "This operation has no server owner client", "OPERATION_UNAVAILABLE");
