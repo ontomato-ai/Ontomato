@@ -4,6 +4,7 @@ import static io.ontomato.dataengine.service.agent.OntologyAgentStore.*;
 
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.config.ControllerConst;
+import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.agent.*;
 import io.ontomato.dataengine.service.impl.ActionDraftService;
@@ -77,6 +78,7 @@ public class OntologyGenerationController {
         new Owner(AgentJson.text(body, "ownerId"), AgentJson.text(body, "domainId")), AgentJson.text(body, "outcome"));
   }
 
+  @BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
   @PostMapping("/{run}/authoring/{kind}/{operation}")
   public Object externalAuthoring(@PathVariable String run, @PathVariable String kind,
       @PathVariable String operation, @RequestBody Map<String, Object> input,
@@ -93,16 +95,19 @@ public class OntologyGenerationController {
     return JSONObject.of("markdown", PythonHelperDocs.markdown());
   }
 
+  @BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
   @PostMapping("/gates")
   public Object open(@RequestBody JSONObject body, HttpServletRequest request) {
     access.authenticated(request);
     AgentJson.fields(body, "kind", "source");
-    return generation.open(
+    var caller = access.current(request);
+    var query = caller.access();
+    return generation.openExternal(
         AgentJson.text(body, "kind"),
         UUID.randomUUID().toString(),
         body.getString("source"),
-        access.current(request).owner(),
-        true);
+        caller.owner(),
+        QueryAccessService.classScope(query.permission(), query.classNames()));
   }
 
   private Owner owner(String run, HttpServletRequest request) throws Exception {

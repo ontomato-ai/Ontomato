@@ -4,7 +4,7 @@ import {
   runtimeJsonObjectSchema,
   runtimeTimestampSchema,
 } from "./agent-runtime-values";
-import { formFieldErrorSchema, formFieldSchema, formValuesSchema } from "./form-fields";
+import { formFieldErrorSchema, formFieldSchema, formTimeValueSchema, formValuesSchema } from "./form-fields";
 
 /** Gateway-relative resource. Every task and execution belongs to its creator in the current domain. */
 export const platformSchedulesPath = "/api/data-query/platform/scheduled-tasks";
@@ -17,7 +17,6 @@ export const PLATFORM_SCHEDULE_HANDLE_MAX_BYTES = 8 * 1024;
 
 const nonempty = z.string().min(1);
 const revision = z.number().int().positive().safe();
-const timeOfDay = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "HH:MM");
 const title = z.string().trim().min(1).max(PLATFORM_SCHEDULE_TITLE_MAX);
 const byteLength = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
 
@@ -39,11 +38,11 @@ export const platformTaskFrequencySchema = z.discriminatedUnion("kind", [
     every: z.number().int().min(1).max(1000),
     unit: z.enum(["minute", "hour", "day"]),
   }).strict(),
-  z.object({ kind: z.literal("daily"), time: timeOfDay }).strict(),
+  z.object({ kind: z.literal("daily"), time: formTimeValueSchema }).strict(),
   /** 1 = Monday, 7 = Sunday. */
-  z.object({ kind: z.literal("weekly"), weekday: z.number().int().min(1).max(7), time: timeOfDay }).strict(),
+  z.object({ kind: z.literal("weekly"), weekday: z.number().int().min(1).max(7), time: formTimeValueSchema }).strict(),
   /** A day past the end of the month uses that month's last day. */
-  z.object({ kind: z.literal("monthly"), day: z.number().int().min(1).max(31), time: timeOfDay }).strict(),
+  z.object({ kind: z.literal("monthly"), day: z.number().int().min(1).max(31), time: formTimeValueSchema }).strict(),
   /** Spring's seconds-precision expression is validated by DataRAG, not a second browser parser. */
   z.object({ kind: z.literal("cron"), expression: z.string().trim().min(1) }).strict(),
 ]);
