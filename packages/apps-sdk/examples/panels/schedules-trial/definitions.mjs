@@ -5,7 +5,7 @@ import declarationP from "./p/declaration.mjs";
 import declarationQ from "./q/declaration.mjs";
 
 /*
- * Everything this trial registers, in the order it is registered: three projections used by two panels, the two panels
+ * Everything this trial registers, in the order it is registered: four projections used by two panels, the two panels
  * themselves, and the two applications that use them.
  *
  * A projection is one base component bound to one element, with its own display and its inputs — and nothing about who
@@ -109,7 +109,7 @@ const use = (id, pageKey, panelId, path, names) => ({
 export const applications = [
   {
     applicationId: "app-panels-trial-a",
-    entry: { path: "/panels-trial-a", renderer: "panels" },
+    entry: { path: "/applications/app-panels-trial-a", renderer: "panels" },
     entryAccess: ["domain-member"],
     declaration: {
       names: { en: "Panels trial A", "zh-CN": "面板试点 A" },
@@ -118,11 +118,11 @@ export const applications = [
       groups: [],
       permissions: [],
     },
-    panelUses: [use("use-trial-a-tasks", "panels-trial-a-tasks", "panel-schedules-trial", "/tasks", { en: "Scheduled tasks", "zh-CN": "定时任务" })],
+    panelUses: [use("use-trial-a-tasks", "panels-trial-a-tasks", "panel-schedules-trial", "/applications/app-panels-trial-a/tasks", { en: "Scheduled tasks", "zh-CN": "定时任务" })],
   },
   {
     applicationId: "app-panels-trial-b",
-    entry: { path: "/panels-trial-b", renderer: "panels" },
+    entry: { path: "/applications/app-panels-trial-b", renderer: "panels" },
     entryAccess: ["domain-member"],
     declaration: {
       names: { en: "Panels trial B", "zh-CN": "面板试点 B" },
@@ -132,8 +132,8 @@ export const applications = [
       permissions: [],
     },
     panelUses: [
-      use("use-trial-b-tasks", "panels-trial-b-tasks", "panel-schedules-trial", "/tasks", { en: "Scheduled tasks", "zh-CN": "定时任务" }),
-      use("use-trial-b-summary", "panels-trial-b-summary", "panel-schedules-summary", "/summary", { en: "Task summary", "zh-CN": "任务摘要" }),
+      use("use-trial-b-tasks", "panels-trial-b-tasks", "panel-schedules-trial", "/applications/app-panels-trial-b/tasks", { en: "Scheduled tasks", "zh-CN": "定时任务" }),
+      use("use-trial-b-summary", "panels-trial-b-summary", "panel-schedules-summary", "/applications/app-panels-trial-b/summary", { en: "Task summary", "zh-CN": "任务摘要" }),
     ],
   },
 ];

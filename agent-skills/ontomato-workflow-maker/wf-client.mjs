@@ -229,7 +229,9 @@ if (cmd === 'login') {
   const data = unwrap(j, 'workflow/save');
   console.log(JSON.stringify({ id: data.id, name: data.name, status: data.status, version: data.version }, null, 2));
 } else if (cmd === 'wf-query') {
-  const j = await post('/workflow/query', args[0] ? { id: args[0] } : {});
+  const body = args[0] ? { id: args[0] } : {};
+  if (args[1] === '--active') body.status = 'ACTIVE';
+  const j = await post('/workflow/query', body);
   console.log(JSON.stringify(unwrap(j, 'workflow/query'), null, 2));
 } else if (cmd === 'wf-activate') {
   const j = await post('/workflow/activate', { id: args[0] });
@@ -275,8 +277,8 @@ if (cmd === 'login') {
   actions [status]                 列出动作
   action-get <actionId>            动作详情（含 function 与 submissionCriteria）
   action-import <json|@json>       导入动作（zip 内部完成）
-  wf-save <json>                   存流程草稿（DRAFT）
-  wf-query [id]                    查流程定义
+  wf-save <json>                   存流程草稿，保留已激活版本
+  wf-query [id] [--active]         查可编辑定义，--active 查生效快照
   wf-activate <id>                 激活：冻结版本 + 落授权
   wf-deactivate <id>               失效：只回收该版本授权
   wf-delete <id>                   删除草稿/已失效流程

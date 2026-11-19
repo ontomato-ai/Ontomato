@@ -19,7 +19,7 @@ vi.mock("../../../utils/backend-client", () => ({ backendGet: vi.fn() }));
 vi.mock("../../../infrastructure/product-current", () => ({ findCurrentProduct: vi.fn() }));
 
 const domainId = "trial-domain";
-const version = "trial-sdk";
+const version = "1.1.2-dev.trial";
 const example = new URL("../../../../../apps-sdk/examples/panels/schedules-trial/", import.meta.url);
 const definitions = fileURLToPath(new URL("definitions.mjs", example));
 const trial = await import(definitions) as {
@@ -36,27 +36,30 @@ const pageNames = [
   "panel-page-panels-trial-b-summary-bbb7128431ec0bc491e589e0",
 ];
 const menuName = "panel-menu-menu-c661d73dba966285774f9f15";
+// Deliberately consume the full addresses emitted by the application directory.
+const paths = ["/applications/app-panels-trial-a/tasks", "/applications/app-panels-trial-b/tasks", "/applications/app-panels-trial-b/summary"];
 const uses = trial.applications.flatMap(application => application.panelUses.map(use => ({
-  applicationId: application.applicationId, useId: use.id, pageKey: use.pageKey, path: use.path, panelId: use.panelId,
-})));
+  applicationId: application.applicationId, useId: use.id, pageKey: use.pageKey, panelId: use.panelId,
+}))).map((use, index) => ({ ...use, path: paths[index]! }));
 const skill = (name: string) => ({ namespace: { kind: "domain" as const, domainId }, name });
 const memberSources: PanelSkillSource[] = uses.map((use, index) => ({ skill: skill(pageNames[index]!), uses: [use] }));
 const panels = new Map(trial.panels.map(panel => [panel.id, {
-  name: panel.name, description: panel.description, manifest: panel.manifest, visibility: "domain",
+  name: panel.name, description: panel.description, manifest: panel.manifest, visibility: "domain", sdkVersion: version,
   content: trial.panelContent(panel.directory),
 }]));
 
+const extraProjections = new Map<string, Record<string, unknown>>();
 let root: string;
 beforeEach(async () => {
   vi.clearAllMocks();
+  extraProjections.clear();
   root = await mkdtemp(path.join(os.tmpdir(), "panel-skill-"));
   const sdk = path.join(root, "dist/apps-sdk");
   await mkdir(path.join(sdk, version), { recursive: true });
-  await writeFile(path.join(sdk, "current.json"), JSON.stringify({ version }));
   await writeFile(path.join(sdk, version, "components.json"), JSON.stringify({ version, components }));
   installContentLayout({ runtimeRoot: root, prompts: [], publicSkillsRoot: root, runtimeResources: [] });
   vi.mocked(findCurrentProduct).mockImplementation(async (requestedDomain, kind, id) => {
-    const definition = kind === "panel" ? panels.get(id) : trial.projections.find(projection => projection.id === id)?.input;
+    const definition = kind === "panel" ? panels.get(id) : extraProjections.get(id) ?? trial.projections.find(projection => projection.id === id)?.input;
     return requestedDomain === domainId && definition
       ? { id, definition, domainId, ownerId: "fixture-owner", revision: 1 } as CurrentProductRow
       : undefined;
@@ -119,7 +122,7 @@ it("assembles one current package for a shared menu with a section per use and t
     expect(markdown).toContain("handlerRef schedules.runNow");
     expect(markdown).toContain('"state":"selectedTask"');
     expect(markdown).toContain("POST /platform/scheduled-tasks/applications/:appId/form");
-    expect(markdown).toContain("Use these endpoints for `PlatformObjectType:platform:ScheduledTask`.");
+    expect(markdown).toContain("for `PlatformObjectType:platform:ScheduledTask`.");
     expect(markdown).toContain("POST JSON with `values`, `changedField`, `taskId`, and `timeZone`.");
     const readSection = markdown.split("### Read current data")[1]!.split("### Open the panel")[0]!;
     expect(readSection).toContain("`ONTOMATO_TK` is set, send `tk: $ONTOMATO_TK`");
@@ -130,10 +133,9 @@ it("assembles one current package for a shared menu with a section per use and t
     expect(markdown).toContain('"pageKey": "panels-trial-a-tasks"');
     expect(markdown).toContain('"form": {}');
     const draftSection = markdown.split("### Draft a change")[1]!.split("### Declared operations")[0]!;
-    expect(draftSection).toContain("only keys returned in the owner's current form `fields`");
-    expect(draftSection).toContain("Do not put `revision` or any other non-form key in the draft.");
-    expect(draftSection).toContain("The reader's save supplies the revision.");
-    expect(markdown.split("### Declared operations")[1]!).toContain("For POST `/operate` only, put the task `revision` in `call.input`");
+    expect(draftSection).toContain("Use the owner-described values in `form`.");
+    expect(markdown.split("### Declared operations")[1]!).toContain("Send the returned string values and the current task revision in call.input.");
+    expect(markdown).toContain('"required":["values","revision"]');
     expect(markdown).toContain("$ONTOMATO_PANEL_OPERATIONS_URL/operate");
     expect(markdown).toContain("/intents/<intentId>/dispatch");
     expect(markdown).toContain("End this tool call immediately; do not wait or poll.");
@@ -181,5 +183,29 @@ it("advertises a declared operation without promising a draft when there is no f
     expect(markdown).not.toContain("### Read current data");
   } finally {
     panel.manifest = original;
+  }
+});
+
+it("describes both graph bindings and their single metadata read", async () => {
+  javaSources([memberSources[0]!]);
+  const panel = panels.get(uses[0]!.panelId)!;
+  const before = panel.manifest;
+  const manifest = panelManifestSchema.parse(before);
+  const source = trial.projections.find(projection => projection.id === manifest.slots.run!.projectionId)!;
+  extraProjections.set("graph-fixture", {
+    ...source.input, componentId: "ObjectList", name: "Data scope", inputs: {},
+    binding: { kind: "PlatformObjectType", id: "platform:ObjectType" },
+    graph: { edges: { binding: { kind: "PlatformObjectType", id: "platform:Relationship" },
+      sourcePath: "/fromclass", targetPath: "/toclass" } },
+  });
+  panel.manifest = { ...manifest, slots: { graph: { projectionId: "graph-fixture", inputs: {} } } };
+  try {
+    const [offering] = await panelSkillProvider.list({ domainId });
+    const markdown = (await offering!.provide()).files[0]!.content;
+    expect(markdown).toContain("Graph nodes use PlatformObjectType:platform:ObjectType");
+    expect(markdown).toContain("Edges use PlatformObjectType:platform:Relationship with endpoint fields at /fromclass and /toclass.");
+    expect(markdown.match(/POST \/admin\/getMetas/gu)).toHaveLength(1);
+  } finally {
+    panel.manifest = before;
   }
 });

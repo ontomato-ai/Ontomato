@@ -1,7 +1,79 @@
 import { z } from "zod";
+import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
+import { formFieldErrorSchema, formOptionSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
-import { ontologyParameterTypeSchema, panelOperationId, type OntologyParameterType, type PanelManifest, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
+import { ontologyParameterTypeSchema, panelFormTargetSchema, panelOperationId, type OntologyParameterType, type PanelManifest, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
 import type { ProductProjectionInput } from "./product-panels";
+
+/** Nested JSON in the owner's value shape. Field pointers address this object, including values filled by projections. */
+export const panelFormValuesSchema = runtimeJsonObjectSchema;
+export type PanelFormValues = z.infer<typeof panelFormValuesSchema>;
+
+const fieldPath = formFieldErrorSchema.shape.field;
+const objectType = z.string().min(1);
+const controlSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("text"), multiline: z.boolean().optional(),
+    placeholder: z.string().nullish(), maxLength: z.number().int().positive().optional(),
+  }).strict(),
+  z.object({ kind: z.literal("select"), options: z.array(formOptionSchema) }).strict(),
+  z.object({ kind: z.literal("switch") }).strict(),
+  z.object({ kind: z.literal("markdown") }).strict(),
+  z.object({ kind: z.literal("avatar") }).strict(),
+  z.object({
+    /** A separate projection supplies the choices as well as any associated metadata, such as graph edges. */
+    kind: z.literal("reference"), objectType, multiple: z.boolean(),
+    relatedObjectTypes: z.array(objectType).optional(),
+  }).strict(),
+  z.object({ kind: z.literal("hidden") }).strict(),
+]);
+
+export const panelFormFieldSchema = z.object({
+  path: fieldPath,
+  label: z.string().min(1),
+  control: controlSchema,
+  /** JSON Schema for this value, derived from the owner's save schema for consumers such as the panel skill. */
+  valueSchema: runtimeJsonObjectSchema,
+  required: z.boolean(),
+  help: z.string().nullish(),
+  defaultValue: runtimeJsonValueSchema.optional(),
+  readOnly: z.boolean(),
+  readOnlyReason: z.string().min(1).optional(),
+  refreshOnChange: z.boolean().optional(),
+}).strict();
+export type PanelFormField = z.infer<typeof panelFormFieldSchema>;
+
+/** The client's native owner request. The form's binding supplies the body mapping to that owner's existing schema. */
+const formSaveRequestSchema = z.object({
+  method: z.enum(["POST", "PUT"]),
+  path: z.string().startsWith("/"),
+  /** Derived from the native request schema, including any owner-required wrapper or revision. */
+  bodySchema: runtimeJsonObjectSchema,
+  /** The operation name used by the existing page-draft envelope for this target. */
+  draftOperation: z.string().min(1),
+}).strict();
+
+/** Values and description returned together by the owner for the current target and caller. */
+export const panelFormDescriptionSchema = z.object({
+  fields: z.array(panelFormFieldSchema),
+  values: panelFormValuesSchema,
+  /** Present only when the owner's save requires the revision returned with these values. */
+  revision: z.number().int().positive().safe().optional(),
+  save: formSaveRequestSchema,
+}).strict();
+export type PanelFormDescription = z.infer<typeof panelFormDescriptionSchema>;
+
+/** Omit values on open; supply values with a field pointer on refresh, or with null to check an incoming draft. */
+export const panelFormRequestSchema = z.object({
+  target: panelFormTargetSchema,
+  values: panelFormValuesSchema.optional(),
+  changedField: fieldPath.nullable(),
+}).strict();
+export type PanelFormRequest = z.infer<typeof panelFormRequestSchema>;
+
+/** Input to the form.save operation; the resource adapter sends the native owner request. */
+export const panelFormSaveInputSchema = panelFormDescriptionSchema.pick({ values: true, revision: true });
+export type PanelFormSaveInput = z.infer<typeof panelFormSaveInputSchema>;
 
 /** Operation metadata declared by a component of the SDK. */
 export const componentOperationSchema = z.object({
@@ -15,7 +87,14 @@ export type ComponentOperation = Readonly<z.infer<typeof componentOperationSchem
 interface ComponentOperationMetadata {
   readonly operations?: readonly ComponentOperation[];
 }
-type Projection = Pick<ProductProjectionInput, "name" | "binding" | "inputs">;
+type ProjectionBindings = Pick<ProductProjectionInput, "binding" | "graph">;
+type Projection = ProjectionBindings & Pick<ProductProjectionInput, "name" | "inputs">;
+
+/** Both admission and skill reads use the entire set of resources this projection declares. */
+export function projectionBindingKeys(projection: ProjectionBindings): readonly string[] {
+  const primary = bindingKey(projection.binding);
+  return projection.graph ? [primary, bindingKey(projection.graph.edges.binding)] : [primary];
+}
 
 /** An operation a projection publishes: its own name, what it takes, and the SDK client operation it is. */
 export interface ProjectionOperation {
@@ -35,6 +114,8 @@ export interface ProjectionPorts {
   binding: string;
   /** The parameters it accepts, by name; a slot's inputs fill these. */
   inputs: Readonly<Record<string, OntologyParameterType>>;
+  /** The values it emits, by name; a slot can bind each output to its own panel state field. */
+  outputs?: Readonly<Record<string, OntologyParameterType>>;
   operations: readonly ProjectionOperation[];
 }
 
@@ -60,7 +141,15 @@ export function projectionPorts(projection: Projection, meta: ComponentOperation
     inputSchema: operation.inputSchema,
     handlerRef: `${client(operation.client)}.${operation.name}`,
   }));
-  return { binding, inputs: projection.inputs, operations: declared };
+  const edgeBinding = projection.graph?.edges.binding;
+  const outputs = edgeBinding && {
+    selectedNode: { kind: "object", objectType: projection.binding.id } as const,
+    // Only a platform type binding declares the edge selection's object type.
+    ...(edgeBinding.kind === "PlatformObjectType" && {
+      selectedEdge: { kind: "object", objectType: edgeBinding.id } as const,
+    }),
+  };
+  return { binding, inputs: projection.inputs, operations: declared, ...(outputs && { outputs }) };
 }
 
 /** The one operation a record bound to a platform operation publishes: the operation the record names. */
@@ -93,7 +182,7 @@ export function projectionOperations(
     label: operation.label,
     kind: operation.kind,
     inputSchema: { ...operation.inputSchema },
-    target,
+    target: operation.kind === "form.save" ? { source: "draft", slot: registration.slot } : target,
     slot: registration.slot,
     handlerRef: operation.handlerRef,
   }));
@@ -101,8 +190,8 @@ export function projectionOperations(
 
 /**
  * The object a projection's operations act on: the state field its first object-typed input is filled from, so the
- * reader's current selection is the target. A form that creates an object fills no object-typed input from the panel's
- * state, so its operations address the draft's own target.
+ * reader's current selection is the target. A form save always uses the form's target, which can change between an
+ * existing object and a create draft independently of that slot's inputs.
  */
 function projectionTarget(
   registration: { slot: string; ports: ProjectionPorts },

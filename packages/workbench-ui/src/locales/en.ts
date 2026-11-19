@@ -165,12 +165,14 @@ export default {
     "settings": "System settings",
     "dataGovernance": "Data governance platform",
     "panelNotInApplication": "{path} is not a panel of this application",
-    "panelUseMissing": "This application declares no panel use {use}",
+    "panelCandidateLabel": "Panel preview ({ref})",
     "panelNotStarted": "The panel has not started yet",
     "panelFileUnavailable": "The panel could not load {file}",
     "panelScriptThrew": "The panel's script failed while it ran",
     "panelScriptRejected": "The panel's script failed",
-    "panelDraftUnclaimed": "This draft belongs to no form of this panel"
+    "panelDraftUnclaimed": "This draft belongs to no form of this panel",
+    "panelDraftChanged": "Changed: {fields}",
+    "graphIncludeAdjacent": "Include adjacent ({count})"
   },
   "nav": {
     "agentsAndSkills": "Agents and Skills",
@@ -861,6 +863,7 @@ export default {
     "builtinSkills": "Built in",
     "model": "Model",
     "modelHint": "The model this agent uses. Following the domain default picks up later changes of the default.",
+    "useDomainDefault": "Use the domain default",
     "followDomainDefault": "Domain default ({model})",
     "noDefaultModel": "not set",
     "modelUnavailable": "{id} (unavailable)",
@@ -1003,16 +1006,16 @@ export default {
     "removeFavorite": "Remove {name} from favorites",
     "moveEarlier": "Move {name} earlier",
     "moveLater": "Move {name} later",
-    "loadFailed": "The home could not be loaded: {reason}",
+    "loadFailed": "Personal workspace could not be loaded: {reason}",
     "retry": "Retry",
     "dashboardPicker": {
-      "title": "Dashboards on the home",
-      "shown": "Shown on the home",
+      "title": "Dashboards on personal workspace",
+      "shown": "Shown on personal workspace",
       "available": "Your other dashboards",
-      "nothingShown": "No dashboard is shown on the home",
+      "nothingShown": "No dashboard is shown on personal workspace",
       "none": "You have no dashboards yet. Create one in the Dashboards application.",
       "add": "Add",
-      "remove": "Remove from home"
+      "remove": "Remove from personal workspace"
     }
   },
 

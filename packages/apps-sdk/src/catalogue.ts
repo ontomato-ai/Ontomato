@@ -225,6 +225,26 @@ export const components: readonly ComponentMetadata[] = [
     bindsElement: ["PlatformOperation:*"],
   }),
   defineComponentMeta({
+    componentId: "ReferencePicker",
+    module: "@ontomato/sdk/base",
+    exportName: "ReferencePicker",
+    role: "control",
+    meaning:
+      "Chooses the value of one reference field of a form in the same panel from the catalogue of the type the projection binds, writing the owner's own value (a skill's whole reference, a model's key) into that form, so the choice is saved, discarded and drafted with it. A value the form holds that the catalogue no longer offers stays listed, unavailable, with the owner's reason.",
+    effects: "Reads the bound type's choices as the reader; it writes only the form field its slot's field port names.",
+    bindsElement: ["PlatformObjectType:*"],
+  }),
+  defineComponentMeta({
+    componentId: "ObjectGraph",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectGraph",
+    role: "control",
+    meaning:
+      "Draws the objects of the bound type as a graph joined by the objects of its graph's edge type, and chooses on it the list of node keys one form field of the same panel holds: a choice adds or removes a node, the nodes one edge away from a chosen one are marked, and one action adds them all. It decides nothing about what the nodes stand for or who may read them.",
+    effects: "Reads the node and edge types' lists as the reader; it writes only the form field its slot's field port names.",
+    bindsElement: ["PlatformObjectType:*"],
+  }),
+  defineComponentMeta({
     componentId: "GraphCanvas",
     module: "@ontomato/sdk/base",
     exportName: "GraphCanvas",

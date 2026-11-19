@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentPrepareRequest } from "@ontomato/contracts/agent-channel";
+import type { AgentHostObjectChangedFrame, AgentHostSessionLiveFrame } from "@ontomato/contracts/agent-host";
 import { isDirectUserRun } from "@ontomato/contracts/agent-visibility";
 import type {
   PresentationBinding, PresentationFrame, PresentationReceipt, PresentationResult,
@@ -13,40 +14,55 @@ import type { AgentHostOwner, AgentHostService, AgentPresentationHost } from "./
 import type { AgentVisibilityReader } from "./visibility";
 
 interface Pending {
+  connection: Connection;
   sessionId: string;
   finish(result: PresentationResult): void;
 }
 
-interface View {
+interface Connection {
+  id: string;
   host: AgentPresentationHost;
   owner: AgentHostOwner;
-  send(frame: PresentationFrame): void;
+  send(frame: AgentHostSessionLiveFrame): void;
   signal: AbortSignal;
-  pending: Map<string, Pending>;
 }
 
-const views = new Map<string, View>();
+const views = new Map<string, Connection>();
+const pendingCalls = new Map<string, Pending>();
+const viewKey = (host: AgentPresentationHost, owner: AgentHostOwner, viewId: string) =>
+  JSON.stringify([host, owner.domainId, owner.userId, viewId]);
 const hostPaths: Record<AgentPresentationHost, string> = {
   workbench: "/api/assistant",
   observe: "/api/observe/agent",
 };
 
-export const PRESENTATION_CALL_PATH = "/sessions/:sessionId/runs/:runId/presentation-call/:connectionId";
+export const PRESENTATION_CALL_PATH = "/sessions/:sessionId/runs/:runId/presentation-call/:viewId";
 
 export function openPresentationView(
-  host: AgentPresentationHost, owner: AgentHostOwner, send: View["send"], signal: AbortSignal,
-): PresentationBinding {
+  host: AgentPresentationHost, owner: AgentHostOwner, viewId: string,
+  send: Connection["send"], signal: AbortSignal,
+): string {
   signal.throwIfAborted();
-  const connectionId = randomUUID();
-  views.set(connectionId, { host, owner, send, signal, pending: new Map() });
-  signal.addEventListener("abort", () => views.delete(connectionId), { once: true });
-  return { connectionId };
+  const key = viewKey(host, owner, viewId);
+  const connection = { id: randomUUID(), host, owner, send, signal };
+  views.set(key, connection);
+  signal.addEventListener("abort", () => {
+    if (views.get(key) === connection) views.delete(key);
+  }, { once: true });
+  return connection.id;
 }
 
-function boundView(host: AgentPresentationHost, owner: AgentHostOwner, connectionId: string) {
-  const view = views.get(connectionId);
-  return view && view.host === host &&
-    view.owner.userId === owner.userId && view.owner.domainId === owner.domainId ? view : undefined;
+export function publishObjectChanged(input: {
+  domainId: string;
+  initiator: string;
+  rootSession: AgentHostObjectChangedFrame["session"];
+  target: AgentHostObjectChangedFrame["target"];
+}): void {
+  const { domainId, initiator, rootSession, target } = input;
+  for (const { host, owner, send } of views.values()) {
+    if (host === rootSession.providerId && owner.domainId === domainId && owner.userId === initiator)
+      send({ type: "object-changed", session: rootSession, target });
+  }
 }
 
 export function visibilityReader(body: AgentPrepareRequest): AgentVisibilityReader | undefined {
@@ -58,12 +74,12 @@ export function presentationCallback(
   host: AgentPresentationHost, body: AgentPrepareRequest, owner: AgentHostOwner,
   credentials: AssistantCredentials, expiresAt: number,
 ): RuntimePresentationCallback | undefined {
-  const connectionId = body.presentationBinding?.connectionId;
-  if (!connectionId || body.mode !== "run" || body.input.role !== "user" || visibilityReader(body) !== "user" ||
+  const viewId = body.presentationBinding?.viewId;
+  if (!viewId || body.mode !== "run" || body.input.role !== "user" || visibilityReader(body) !== "user" ||
       body.root.runId !== body.runId || body.root.session.sessionId !== body.sessionId ||
       body.root.session.providerId !== host || body.userRecipient?.actor.id !== body.actor.id ||
-      body.userRecipient.actor.domainId !== owner.domainId || !boundView(host, owner, connectionId)) return;
-  const path = `${hostPaths[host]}/sessions/${body.sessionId}/runs/${body.runId}/presentation-call/${connectionId}`;
+      body.userRecipient.actor.domainId !== owner.domainId || !views.has(viewKey(host, owner, viewId))) return;
+  const path = `${hostPaths[host]}/sessions/${body.sessionId}/runs/${body.runId}/presentation-call/${viewId}`;
   return {
     url: environment.agentRuntime().callbackUrl.replace(/\/$/, "") + path,
     credential: callbackCredential({
@@ -82,18 +98,20 @@ const receiptMissing: PresentationResult = {
   status: "unknown", reason: "receipt_missing", current: { known: false, reason: "receipt_missing" },
 };
 
-const callKey = (runId: string, toolCallId: string) => JSON.stringify([runId, toolCallId]);
+const callKey = (connectionId: string, runId: string, toolCallId: string) =>
+  JSON.stringify([connectionId, runId, toolCallId]);
 
 export async function requestPresentation(
   service: AgentHostService, host: AgentPresentationHost, owner: AgentHostOwner,
   call: PresentationBinding & Pick<PresentationFrame, "sessionId" | "runId" | "toolCallId"> & { input: PresentRequest },
   signal: AbortSignal,
 ): Promise<PresentationResult> {
-  const { connectionId, sessionId, runId, toolCallId, input } = call;
-  const view = boundView(host, owner, connectionId);
-  if (!view) return notOpened("view_unavailable");
+  const { viewId, sessionId, runId, toolCallId, input } = call;
+  const route = viewKey(host, owner, viewId);
+  const connection = views.get(route);
+  if (!connection) return notOpened("view_unavailable");
 
-  const gone = AbortSignal.any([view.signal, signal]);
+  const gone = AbortSignal.any([connection.signal, signal]);
   let target: PresentationFrame["target"];
   try {
     if (input.target.startsWith("outputs/")) {
@@ -109,20 +127,20 @@ export async function requestPresentation(
     const reason = error.status === 403 ? "forbidden" : "not_found";
     return notOpened(reason, { code: error.code ?? reason.toUpperCase(), message: error.message });
   }
-  if (gone.aborted) return notOpened("view_unavailable");
+  if (gone.aborted || views.get(route) !== connection) return notOpened("view_unavailable");
 
-  const key = callKey(runId, toolCallId);
+  const key = callKey(connection.id, runId, toolCallId);
   const deadline = AbortSignal.any([gone, AbortSignal.timeout(30_000)]);
   return new Promise(resolve => {
     const finish = (result: PresentationResult) => {
-      view.pending.delete(key);
+      pendingCalls.delete(key);
       deadline.removeEventListener("abort", abandon);
       resolve(result);
     };
     const abandon = () => finish(receiptMissing);
-    view.pending.set(key, { sessionId, finish });
+    pendingCalls.set(key, { connection, sessionId, finish });
     deadline.addEventListener("abort", abandon, { once: true });
-    view.send({ type: "presentation", sessionId, runId, toolCallId, target });
+    connection.send({ type: "presentation", sessionId, runId, toolCallId, target });
   });
 }
 
@@ -130,8 +148,9 @@ export function receivePresentation(
   host: AgentPresentationHost, owner: AgentHostOwner, sessionId: string, runId: string,
   receipt: PresentationReceipt,
 ): void {
-  const pending = boundView(host, owner, receipt.connectionId)?.pending.get(callKey(runId, receipt.toolCallId));
-  if (!pending || pending.sessionId !== sessionId)
+  const pending = pendingCalls.get(callKey(receipt.connectionId, runId, receipt.toolCallId));
+  if (!pending || pending.sessionId !== sessionId || pending.connection.host !== host ||
+    pending.connection.owner.domainId !== owner.domainId || pending.connection.owner.userId !== owner.userId)
     throw new HttpError(404, "No waiting presentation for this connection and run", "NOT_FOUND");
   pending.finish(receipt.result);
 }

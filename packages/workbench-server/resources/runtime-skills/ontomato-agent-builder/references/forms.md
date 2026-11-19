@@ -29,7 +29,7 @@ The page's save request, and the `form` inside a draft.
 | `skills` | array of `{namespace, name}` | Copy entries from `skills` unchanged. |
 | `classNames` | string array | Ontology classes it may query; empty means unrestricted. |
 | `enabledMcpServiceIds` | UUID array | External MCP services. Keep the current IDs unless the user selects services on the page. |
-| `sortOrder` | integer | Order in the list. |
+| `sortOrder` | integer | Order in the list. Omit it to keep the stored order on update or use 0 on creation. |
 | `executionUserId` | string or `null` | `null` runs with the reader's own permission; a user `id` from `execution-users` runs with that user's. Omitted on update keeps the stored value. |
 
 A save replaces the whole definition. For an update, `get` it, edit the form in `work/`, keep every other field as it was, and remove `id`. The selected model and every selected skill must be in the catalogs.

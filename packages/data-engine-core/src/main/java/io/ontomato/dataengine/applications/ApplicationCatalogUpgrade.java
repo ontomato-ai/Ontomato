@@ -2,7 +2,7 @@ package io.ontomato.dataengine.applications;
 
 import com.alibaba.fastjson2.JSON;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
+import java.util.ArrayList;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
@@ -40,8 +40,10 @@ public class ApplicationCatalogUpgrade implements InitializingBean {
         private final ApplicationCatalog catalog;
         public Builtins(ApplicationCatalog catalog) { this.catalog = catalog; }
         public void afterPropertiesSet() throws Exception {
+            var declarations = new ArrayList<ApplicationCatalog.Builtin>();
             for (var resource : new PathMatchingResourcePatternResolver().getResources("classpath*:applications/*.json"))
-                catalog.builtins("data-engine", List.of(JSON.parseObject(resource.getContentAsString(StandardCharsets.UTF_8), ApplicationCatalog.Builtin.class)));
+                declarations.add(JSON.parseObject(resource.getContentAsString(StandardCharsets.UTF_8), ApplicationCatalog.Builtin.class));
+            catalog.builtins("data-engine", declarations);
         }
     }
 }

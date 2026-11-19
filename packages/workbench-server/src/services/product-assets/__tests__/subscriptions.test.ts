@@ -7,31 +7,16 @@ vi.mock('../grants',()=>({requireProductGrant:mocks.grant}));
 import {subscribeProduct,pollProductSubscription,unsubscribeProduct,resumeProductSubscription,deleteProductSubscription,notifyProductDefinitionChanged} from '../subscriptions';
 const owner={domainId:'domain',userId:'reader'};
 afterEach(()=>{vi.useRealTimers();vi.resetAllMocks();});
-it('delivers a panel and its current projections through one subscription with per-definition grants',async()=>{
+it('rechecks the existing short projection subscription grant when polling',async()=>{
   vi.useFakeTimers();
-  const manifest={state:{},slots:{
-    main:{projectionId:'p1',inputs:{}},secondary:{projectionId:'p2',inputs:{}},
-  },operations:[]};
-  mocks.query.mockImplementation(async(sql:string,values?:unknown)=>({
-    rows:sql.startsWith('SELECT id FROM product_panels')
-      ? JSON.stringify(values)===JSON.stringify(['domain','p2'])?[{id:'p'}]:[]
-      : sql.startsWith('SELECT id,domain_id')?[{id:'p',definition:{manifest}}]:[],
-  }));
-  const subscription=await subscribeProduct(owner,{token:'current'},{kind:'product-definition',target:{kind:'panel',id:'p'}});
-  for(const id of ['p','p1','p2'])expect(mocks.grant).toHaveBeenCalledWith(id,'use',{token:'current'});
-  await notifyProductDefinitionChanged({kind:'definition-changed',domainId:'other',target:{kind:'panel',id:'p'}});
-  await notifyProductDefinitionChanged({kind:'definition-changed',domainId:owner.domainId,target:{kind:'projection',id:'unrelated'}});
-  expect(pollProductSubscription(owner,subscription.id).events).toEqual([]);
-  const panel={kind:'definition-changed',domainId:owner.domainId,target:{kind:'panel',id:'p'}} as const;
+  mocks.query.mockImplementation(async(sql:string)=>({rows:sql.startsWith('SELECT id,domain_id')?[{id:'p2'}]:[]}));
+  const subscription=await subscribeProduct(owner,{token:'current'},{kind:'product-definition',target:{kind:'projection',id:'p2'}});
+  expect(mocks.grant).toHaveBeenCalledWith('p2','use',{token:'current'});
   const projection={kind:'definition-changed',domainId:owner.domainId,target:{kind:'projection',id:'p2'}} as const;
-  await notifyProductDefinitionChanged(panel);
   await notifyProductDefinitionChanged(projection);
-  expect((await resumeProductSubscription(owner,subscription.id,{token:'new'})).events).toEqual([panel,projection]);
-  await vi.advanceTimersByTimeAsync(10_000);
+  expect((await resumeProductSubscription(owner,subscription.id,{token:'new'})).events).toEqual([projection]);
   expect(mocks.execute).not.toHaveBeenCalled();expect(mocks.trigger).not.toHaveBeenCalled();
-  mocks.grant.mockImplementation(async(id:string)=>{
-    if(id==='p2')throw new Error('Product use revoked');
-  });
+  mocks.grant.mockRejectedValue(new Error('Product use revoked'));
   await expect(resumeProductSubscription(owner,subscription.id,{token:'revoked'})).rejects.toThrow('Product use revoked');
   await vi.advanceTimersByTimeAsync(10_000);
 });

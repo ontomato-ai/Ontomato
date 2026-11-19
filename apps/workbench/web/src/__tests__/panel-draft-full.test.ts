@@ -14,6 +14,7 @@ import {
   READER,
   task,
   writeFrameDocument,
+  caseSetLabel,
 } from "./panel-frame";
 
 /*
@@ -46,7 +47,7 @@ describe("a draft at a panel application's own address", () => {
         {
           path: "/applications/:applicationId/:panelPath(.*)",
           component: PanelApplicationRoute,
-          props: (route) => ({ applicationId: String(route.params.applicationId), panelPath: String(route.params.panelPath ?? "") }),
+          props: (route) => ({ applicationId: String(route.params.applicationId) }),
         },
       ],
     });
@@ -63,13 +64,12 @@ describe("a draft at a panel application's own address", () => {
     inside(element.contentWindow!);
     const { context } = await mountPanel({ setup: () => ({}) });
 
-    await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain("caseSetId"), {
+    await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")?.textContent ?? "").toContain(caseSetLabel), {
       timeout: 5000,
     });
-    expect(document.querySelector('[data-field="caseSetId"]')?.textContent).toContain("Smoke (8)");
+    expect(document.querySelector('[data-field="/caseSetId"]')?.textContent).toContain("Smoke (8)");
     expect(sent.filter((request) => request.method === "PUT")).toEqual([]);
-    expect(sent.filter((request) => request.method === "POST" && request.path === "/api/product-assets/subscriptions"))
-      .toMatchObject([{ body: { kind: "product-definition", target: { kind: "panel", id: scenario.panel.id } } }]);
+    expect(sent.filter(request => request.path.startsWith("/api/product-assets/"))).toEqual([]);
     const form = document.querySelector<HTMLFormElement>(".sdk-owner-form form")!;
     // The frame is sandboxed without allow-forms, so the save is the button's own click, not a form submission.
     const save = [...form.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Save")!;

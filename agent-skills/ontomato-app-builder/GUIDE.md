@@ -1,6 +1,6 @@
-# Build a hosted application
+# Build a panel application
 
-Pages use the exact platform SDK version, read published MetricViews and execute Actions. Business logic belongs in Functions owned by Java. Use the deployment, domain and authorized business scope already established with the user; obtain technical names, IDs, parameters and relationships from the platform. Do not invent them or write directly to the database.
+Use the exact platform SDK version and the current product records. Business logic belongs in Functions owned by Java. Use the deployment, domain and authorized business scope already established with the user; obtain technical names, IDs, parameters and relationships from the platform. Do not invent them or write directly to the database.
 
 ## Connection and workspace
 
@@ -10,6 +10,29 @@ Run `node <skill>/ontomato.mjs <command>`. JSON arguments accept inline JSON or 
 - Outside the platform, set `ONTOMATO_URL` to the browser entry, including any deployment prefix. The public edition is anonymous. The enterprise adapter accepts `ONTOMATO_TK` or `ONTOMATO_API_KEY`, or the login configured in `application.yml`. Edit a complete local source tree, create a workspace, then import the tree with an explicit commit message.
 
 A workspace is the application source tree. Business definitions remain in Java; do not copy them into it as a second source of truth. Keep downloaded documentation and scratch files outside the source tree. Errors are returned directly; report the actual cause and fix within the authorized scope.
+
+## Panels and application uses
+
+1. Read the installed SDK's `components.json` and the **Compose a panel** section in `docs/index.md` using `sdk read`. Use the commands below to inspect the relevant projections, panels and Java application relations. Inspect the platform's actual agents where the task calls for one. Reuse existing IDs. Send missing business capabilities to their owners and identify missing SDK components or resource clients before composing the panel.
+2. Write the candidate as described in the SDK guide. Confirm its declared slots and state in the author preview. `panel preview` reads the same source as the preview host and returns its JSON for inspection. Use `working` while editing or the workspace's explicit commit SHA for a saved candidate.
+3. After the requested preview is accepted for registration, submit the selected material to `panel register`. The platform derives skills from application uses. Use an application ID and address space you control.
+
+| Command | Result |
+| --- | --- |
+| `sdk read [<exact version>] components.json` | Base components and supported bindings in that SDK |
+| `panel projection <id>`, `panel get <id>` | Authorized current projection or panel, including its revision |
+| `panel applications`, `panel uses <applicationId>` | Java navigation catalog and visible use relations |
+| `panel preview <working or 40-character SHA> [--workspace <id>]` | Candidate content and workspace-owned test status. The in-product command uses the attached workspace by default |
+| `panel register <JSON or @file>` | Register selected current definitions and application uses under the author's permissions |
+
+Registration material has up to three arrays, `projections`, `panels` and `applications`. Each item is `{id,mode,input}` with `mode` set to `create` or `update`.
+
+- For projections, `input` is the current definition's editable fields. New definitions include `componentId`, `binding`, `inputs` and `display` alongside `name`, `description` and `visibility`.
+- For panels, `input` adds `name`, `description` and `visibility` to the candidate response's `panel` object. That object includes the content, manifest and exact installed SDK version. Keep `content.messages` from the candidate when registering it.
+- Projection and panel updates carry the owner-returned current `revision` on the item alongside `mode`. Creation omits it. Only the chosen records should appear in the material. Updating a shared definition affects every use of that record.
+- Application `input` contains `entry: {path, renderer: "panels"}` and `panelUses`. Creation includes `declaration` and `entryAccess`. An update replaces the use set, so preserve the uses required by the app. Each use has `id`, `pageKey`, `panelId`, `path` and `access`, with optional localized `names` and `defaultAgentId`. Domain app paths use `/applications/<applicationId>/…` and `access: {kind: "domain-member"}` or the real `{permissionCode}` for the use. The platform owns built-in paths and derives skills from use access.
+
+The command submits projections, panels and uses in that order. It prints each completed item and exits nonzero at the first failure. On a stale revision, compare the owner's current definition with the requested change before preparing a new update.
 
 ## Discover and save business capabilities
 
@@ -36,7 +59,7 @@ A definition without an ID creates an asset; with an ID it updates that asset. U
 
 `metric-view execute <id> [<parameter JSON>] [--binding <id>]` reads data. `action execute <id> [<parameter JSON>] [--file <path> ...]` performs the business write; execute only within the authorized scope. Supply parameter values by the names in `function.parameters`. A binding supplies its saved values. Action files use multipart uploads. A vector parameter uses `{className, attrName, text, fileId, uploadFile}` as applicable; `uploadFile` is the zero-based file position. Vector writes use the platform's vector operations, not ordinary object insert/update.
 
-## Read the current SDK, then write the page
+## SDK resources for an existing hosted application
 
 ```sh
 node <skill>/ontomato.mjs sdk current
@@ -52,7 +75,7 @@ Every page reports what its reader looks at with `context.setPageContext({ page,
 
 The returned paths already include the deployment prefix. HTML module and stylesheet URLs use `sdkBasePath` exactly once; never embed the internal workbench address or fetch modules from a CDN. `sdk read` automatically uses the agent's reachable URL. The version's examples may show root deployment paths: apply `publicBasePath` when writing them into the application. Documentation belongs in the agent's scratch location, not the released directory.
 
-## Product assets and personal home
+## Product assets for existing hosted applications and personal workspace
 
 Start with reusable product assets. If the requested page fits the product document contract, create or edit those same assets through the authoring CLI; manual editing and Agent editing must converge on the same asset IDs. Use custom source only for interactions the asset contract cannot express. Do not reproduce an existing configured page in HTML.
 
@@ -71,25 +94,25 @@ Product parameters are default inputs and interaction preferences. Business wind
 
 Commit `ontomato.products.json`; an empty `assetIds` array explicitly declares no product dependencies. The publisher derives `ontomato.product-review.json` from the actual source and ignores author attestations. Business reads use SDK capabilities, writes use Actions, and business calculations and eligibility rules remain in capabilities. Direct transports and parent-window access are rejected; the runtime network policy closes direct data access.
 
-Reuse templates without replacing the user's home: `product create-page <template-id> <name>` creates a new private page with the template's layout and component references. The SDK exposes the same operation as `context.products.createPage(id, name)`. Use the returned ID to assemble an application and declare it in the product manifest. `product use-home` instead replaces the current personal home configuration.
+Reuse templates without replacing the user's personal workspace: `product create-page <template-id> <name>` creates a new private page with the template's layout and component references. The SDK exposes the same operation as `context.products.createPage(id, name)`. Use the returned ID to assemble an application and declare it in the product manifest. `product use-home` instead replaces the current personal workspace configuration.
 
 `product create-dashboard <name>` creates a dashboard through its existing owner service and registers a product reference, returning `data.id` and `data.productAssetId`. The SDK's `context.products.createDashboard(name)` returns the product asset. Reuse an existing dashboard when appropriate. The Manager's dashboard creation uses this same path. Add content through the existing dashboard authoring workflow rather than embedding SQL or duplicating the definition in product storage.
 
-Use the three-category V2 model: elements are `object-projection`, `collection-view`, `metric-widget`, `action-view`; compositions are `page` and `navigation`; intelligent applications are `application` and `agent-profile`. A projection has one typed `renders` target. Pages contain asset IDs, never inline projection documents. Templates use `page.isTemplate`; pure display reusable pages use `page.embeddable` and cannot recursively contain Actions. Do not author legacy widget/group/panel/template types. Metric results remain row arrays; presentation selects fields and formats without calculating new measures.
+Existing hosted assets use the three-category V2 model: elements are `object-projection`, `collection-view`, `metric-widget`, `action-view`; compositions are `page` and `navigation`; intelligent applications are `application` and `agent-profile`. A projection has one typed `renders` target. Pages contain asset IDs, never inline projection documents. Templates use `page.isTemplate`; pure display reusable pages use `page.embeddable` and cannot recursively contain Actions. Do not author legacy widget/group/panel/template types. Metric results remain row arrays; presentation selects fields and formats without calculating new measures.
 
 Product-owned ObjectViews render ObjectType attributes and relationships through governed reads or reference published capabilities for calculations. Page parameters carry ontology types, such as `{selected:{kind:"object",objectType:"Person"}}`; projections bind identity paths such as `selected.primaryKey`. Personal resource selections and interaction preferences belong to principal overlays, not Page documents. AgentProfile contains tool/context IDs, instructions and an agentId reference to a same-domain Node agent definition. Execution permissions come from that definition's current executionUserId setting; only domain governance administrators can change the selected execution user. Product use/edit Grants remain separate from business execution permissions.
 
-Before generating a configurable page, use `product types`, `product list` and `product home`. `product get <id>` returns the asset, derived references and visible parents. `product save <id> <json|@file>` takes `{name, description, document, revision}`; use a new UUID with revision 0 to create, or the returned ID and revision to edit. New assets grant use/edit only to their creator; manage sharing with governance Grants rather than a product visibility field. Read before editing and preserve unrelated fields. A stale revision fails with `PRODUCT_CONFLICT`: read again and merge the user's change. `product copy <id> <name>` makes an independent copy. `product use-home <id> <current-home-revision>` copies a page or layout template into the reader's home. `product delete <id> <revision>` rejects referenced assets.
+For maintenance of an existing hosted application or personal workspace, use `product types`, `product list` and `product home`. `product get <id>` returns the asset, derived references and visible parents. `product save <id> <json|@file>` takes `{name, description, document, revision}`; use a new UUID with revision 0 to create, or the returned ID and revision to edit. New assets grant use/edit only to their creator; manage sharing with governance Grants rather than a product visibility field. Read before editing and preserve unrelated fields. A stale revision fails with `PRODUCT_CONFLICT`: read again and merge the user's change. `product copy <id> <name>` makes an independent copy. `product use-home <id> <current-home-revision>` copies a page or layout template into the reader's personal workspace. `product delete <id> <revision>` rejects referenced assets.
 
 Read `product types` for the exact current JSON Schema and existing documents for field mappings. Parameter bindings are typed literals or declared Page-state variables. CollectionView arguments must belong to the Definition signature. Business predicates, SQL, DSL and calculated measures never belong in product documents. Shared assets do not grant business permissions. Runtime results, conversations and business objects remain with their owning services.
 
 Use `product grants <id>` to inspect authorization. `product grant <id> <json|@file>` accepts `{principalKind:"principal"|"role",principalId,verb:"use"|"edit",remove:boolean}`; `product domain-grant <id> true|false` manages domain-member use. Grant mutation requires edit authority and does not modify the product document or authorize underlying data and Actions.
 
-The SDK exposes `context.products.list/get/home/save/copy/useHome/delete` with the same contract. These calls are unavailable inside build-test preview; use the authoring CLI for product edits. For configurable interfaces, edit these assets instead of producing an unrelated HTML copy. A custom source application can call product APIs, but only its explicit product references participate in this dependency model; do not claim complete static analysis of arbitrary JavaScript.
+The SDK exposes `context.products.list/get/home/save/copy/useHome/delete` for these assets. Make asset edits through the authoring CLI. A hosted source application declares its product references explicitly.
 
-## Workspace history and publication
+## Workspace history and hosted releases
 
-When custom source uses product assets, include `ontomato.products.json` in the committed tree:
+For an existing hosted source application that uses product assets, include `ontomato.products.json` in the committed tree:
 `{"schemaVersion":1,"assetIds":["<actual product ID>"]}`. Publication pins recursive child revisions and capability contracts. Rollback selects the release snapshot. Review evidence is build-derived. Use typed `context.navigate({pageId,params})` or `context.navigate({objectViewId,object})` to preserve application identity and frozen dependencies. Never copy capability logic into source.
 
 | Command | Purpose |
@@ -161,7 +184,7 @@ Write `test-data/sample.json` in the workspace using the complete envelope below
 
 Attachments are relative to that sample. Sample files must stay inside test-data/ so publication can exclude the entire test-material directory. Start with `test start --workspace <id>` (the built-in agent already has ONTOMATO_WORKSPACE_ID); `test status` and `test stop` use the same workspace entry. No sample is collected from live data. A new start ends and cleans the previous context before preparing a fresh ID. Once a round has expired or ended, the user may also restart it from the notice in the preview: that is the same start, preparing the sample at the same path again as the workspace holds it now, so read `test status` rather than assume the context you started is still the current one.
 
-Action/MetricView execute, execute-dsl, distinct-values and vector commands bind the workspace's current Java context once for that command. Missing, preparing, failed, ended or expired contexts fail; requests never switch to live data. Delegation in a build-test context is rejected with HTTP 422; it cannot dispatch live work. Metadata discovery and asset editing keep their existing APIs. To look at live data, publish the application for yourself first. A conversation ending does not stop its test context. An interface that does not declare test support refuses a headed request with BUILD_TEST_UNSUPPORTED; do not retry without the header. Definition reads, parameter forms and identity checks remain available.
+Action/MetricView execute, execute-dsl, distinct-values and vector commands bind the workspace's current Java context once for that command. Missing, preparing, failed, ended or expired contexts fail; requests never switch to live data. Delegation in a build-test context is rejected with HTTP 422; it cannot dispatch live work. Metadata discovery and asset editing keep their existing APIs. Verify live behavior in the registered application under the intended user permissions. For an existing hosted application, follow its release workflow. A conversation ending does not stop its test context. An interface that does not declare test support refuses a headed request with BUILD_TEST_UNSUPPORTED; do not retry without the header. Definition reads, parameter forms and identity checks remain available.
 
 Preview requires the SDK manifest's executionContext capability 1. Upgrade old workspace SDK references when the preview entry rejects them. Test samples are excluded from published application files.
 

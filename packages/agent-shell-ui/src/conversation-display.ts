@@ -8,6 +8,7 @@ import type {
 } from "@ontomato/contracts/agent-presentation";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import { panelAddress } from "@ontomato/contracts/panel-host";
+import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import { fileName } from "./artifacts";
 import type { OpenArtifact, ShellFeatureDeclaration } from "./types";
 
@@ -71,6 +72,14 @@ interface Shown {
 
 const READY: DisplayLoad = { status: "ready" };
 
+/**
+ * The signal a shown page reads its objects again by (design "long connections" 4): each change counts up `seq`. A
+ * `target` is the object an agent changed in this conversation; null asks for everything shown, because what changed
+ * while nothing was listening is not known — the page was just opened, or the view's stream is ready again. The same
+ * signal reaches the page wherever it sits: beside the conversation, over it, or full.
+ */
+export type DisplayObjectRefresh = { seq: number; target: PanelObjectIdentity | null };
+
 /** Where the side's own outlet sits now, as the outlet itself sees it: beside the conversation or over it. */
 export type DisplayPlacementProbe = () => "side" | "overlay";
 type Selected = Extract<DisplaySnapshot, { placement: unknown }>;
@@ -87,6 +96,10 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
   /** What the shown page instance reported about itself; another instance starts without. */
   const reported = shallowRef<PageContext | null>(null);
   const load = shallowRef<DisplayLoad>(READY);
+  const objectRefresh = shallowRef<DisplayObjectRefresh | null>(null);
+  function refreshObjects(target: PanelObjectIdentity | null) {
+    objectRefresh.value = { seq: (objectRefresh.value?.seq ?? 0) + 1, target };
+  }
   /** Whether the shown page instance (a panel) holds unsaved changes; native pages answer through `host.leave`. */
   let unsaved = false;
   /** The page address a serialisation is writing: the address bar arriving there is this controller's own write. */
@@ -119,6 +132,8 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
       unsaved = false;
     }
     shown.value = next;
+    // A page opened anew reads what it shows from its owner, whatever happened while it was not open.
+    if (!sameInstance && next.target?.kind === "page") refreshObjects(null);
   }
 
   /** Whether going to `next` leaves the shown page instance while it holds unsaved changes. */
@@ -220,6 +235,9 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     restorable: computed(() => shown.value.restorable),
     pageContext,
     load: computed(() => load.value),
+    /** What the shown page reads its objects again by; it keeps counting across pages. */
+    objectRefresh: computed(() => objectRefresh.value),
+    refreshObjects,
 
     /** Whether an in-app address opens a page of this display. */
     resolves: (address: string) => (host.resolve?.(address) ?? null) !== null,

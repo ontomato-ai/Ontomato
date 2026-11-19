@@ -14,7 +14,8 @@
     "./preview": "./src/preview/index.ts",
     "./theme": "./src/theme/index.ts",
     "./graph": "./src/graph/index.ts",
-    "./graph/g6": "./src/graph/g6.ts"
+    "./graph/g6": "./src/graph/g6.ts",
+    "./visibility": "./src/visibility.ts"
   },
   "scripts": {
     "typecheck": "vue-tsc --noEmit",

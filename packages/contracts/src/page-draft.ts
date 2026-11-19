@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { runtimeJsonObjectSchema, runtimeKeySchema, runtimeRelativePathSchema } from "./agent-runtime-values";
+import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeKeySchema, runtimeRelativePathSchema } from "./agent-runtime-values";
 
 /*
  * A page draft: what an agent wrote for one page to fill in and the reader to save. The envelope is the same
@@ -57,11 +57,7 @@ export interface PageDraft<Form> {
  * has no real object until its first save, so that save records the object it created (`pageDraftCreatedSchema`), and
  * the draft addresses that object from then on (`draftTarget`).
  */
-export interface PageDraftLink {
-  sessionId: string;
-  runId: string;
-  path: string;
-}
+export type PageDraftLink = z.infer<typeof pageDraftLinkSchema>;
 
 /** The query keys a page link carries; the form itself is never in the address. */
 export const PAGE_DRAFT_QUERY_KEYS = ["draftSessionId", "draftRunId", "draftPath"] as const;
@@ -146,6 +142,13 @@ export const pageDraftPathSchema = runtimeRelativePathSchema.refine((path) => {
     file !== ".page-draft.json"
   );
 }, "Expected a draft file at outputs/drafts/<name>.page-draft.json");
+
+/** The existing draft artifact identity, when sent as a wire value. */
+export const pageDraftLinkSchema = z.object({
+  sessionId: runtimeIdSchema,
+  runId: runtimeIdSchema,
+  path: pageDraftPathSchema,
+}).strict();
 
 /** What a page records once a create draft's first save created its object: the draft's path in its run, and the id. */
 export const pageDraftCreatedSchema = z

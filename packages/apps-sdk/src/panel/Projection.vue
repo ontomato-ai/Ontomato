@@ -30,15 +30,25 @@ const failure = shallowRef<Error | null>(null);
 const loaded = shallowRef<{ projection: ProductProjection; component: Component } | null>(null);
 const inputs = ref<Record<string, unknown>>({});
 let registered: (() => void) | undefined;
+let readGeneration = 0;
+let requestedRevision = 0;
 
-function start() {
+function start(revision = 0) {
+  const generation = ++readGeneration;
+  requestedRevision = revision;
   const declaration = panel!.manifest.slots[props.slot];
   if (!declaration) throw new Error(`The panel declares no slot '${props.slot}'`);
   loading.value = true;
   failure.value = null;
-  void panel!.projection(declaration.projectionId).then((projection) => {
-    // The ports are the record's and its catalogue entry's, so they are registered before anything is drawn: the
-    // header and an agent can list and run this projection's operations while its component is still being fetched.
+  void (async () => {
+    const projection = await panel!.projection(declaration.projectionId);
+    if (generation !== readGeneration) return;
+    // The component the record names and the resource clients it binds are fetched together, each the first time a
+    // panel names it; every later projection of the same one draws at once.
+    const [component] = await Promise.all([componentFor(projection.componentId), panel!.resources(projection)]);
+    if (generation !== readGeneration) return;
+    // The ports are the record's and its catalogue entry's, registered before the component draws, so a form finds its
+    // own save among them and the header and an agent can list them.
     registered?.();
     registered = panel!.instance.register({
       slot: props.slot,
@@ -46,19 +56,12 @@ function start() {
       ports: portsOf(projection),
       invoke: (handlerRef, call) => panel!.invoke(handlerRef, call),
     });
-    // The component the record names is fetched the first time a panel names it; every later projection of the same one
-    // draws at once.
-    componentFor(projection.componentId).then(
-      (component) => {
-        loaded.value = { projection, component };
-        loading.value = false;
-      },
-      (reason: unknown) => {
-        failure.value = reason instanceof Error ? reason : new Error(String(reason));
-        loading.value = false;
-      },
-    );
-  }, (reason: unknown) => {
+    requestedRevision = 0;
+    loaded.value = { projection, component };
+    loading.value = false;
+  })().catch((reason: unknown) => {
+    if (generation !== readGeneration) return;
+    requestedRevision = 0;
     failure.value = reason instanceof Error ? reason : new Error(String(reason));
     loading.value = false;
   });
@@ -72,9 +75,11 @@ watch(
 // A changed definition is read again by the same ID here, so every instance that uses it redraws.
 const stop = panel.projectionsChanged((id, revision) => {
   if (panel.manifest.slots[props.slot]?.projectionId !== id) return;
-  if (revision === undefined || (loaded.value && loaded.value.projection.revision !== revision)) start();
+  const currentRevision = loaded.value?.projection.id === id ? loaded.value.projection.revision : 0;
+  if (revision === undefined || revision > Math.max(currentRevision, requestedRevision)) start(revision);
 });
 onBeforeUnmount(() => {
+  readGeneration++;
   stop();
   registered?.();
 });

@@ -18,6 +18,7 @@ import {
   panelOf,
   task,
   writeFrameDocument,
+  caseSetLabel,
 } from "./panel-frame";
 
 /*
@@ -52,10 +53,10 @@ describe("a draft at a panel application's page beside the conversation", () => 
     inside(element.contentWindow!);
     const { context } = await mountPanel(panelOf("form"));
 
-    await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")?.textContent).toContain("caseSetId"), {
+    await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")?.textContent).toContain(caseSetLabel), {
       timeout: 5000,
     });
-    expect(document.querySelector('[data-field="caseSetId"]')?.textContent).toContain("Smoke (8)");
+    expect(document.querySelector('[data-field="/caseSetId"]')?.textContent).toContain("Smoke (8)");
     expect(sent.filter((request) => request.method === "PUT")).toEqual([]);
     // The panel reports the draft's object as its selection and keeps the draft link in the reported address.
     await vi.waitFor(() => {

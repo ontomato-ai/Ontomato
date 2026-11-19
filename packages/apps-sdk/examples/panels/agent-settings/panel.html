@@ -1,0 +1,39 @@
+<!--
+  Agent settings: the domain's agents on one side, and the chosen agent's definition — or a new one — on the other. Each
+  part is a projection the declaration names; the model, the skills, who the agent runs as and its data scope are fields
+  of the one definition form, drawn in their own groups. This file places them and says nothing about what they read,
+  which fields may change or how the definition is saved.
+-->
+<style>
+  [v-cloak] { display: none; }
+  .agent-settings-detail { display: flex; flex-direction: column; gap: var(--page-content-gap); }
+  .agent-settings-empty { color: var(--el-text-color-secondary); margin: 0; }
+</style>
+<div id="app" v-cloak>
+  <two-pane-layout>
+    <template #aside>
+      <section-group :title="t('agents.title')">
+        <projection slot="agents"></projection>
+      </section-group>
+    </template>
+    <p v-if="mode === 'list'" class="agent-settings-empty">{{ t('agents.empty') }}</p>
+    <div v-else class="agent-settings-detail">
+      <projection v-if="mode === 'edit'" slot="summary"></projection>
+      <section-group :title="mode === 'create' ? t('agents.creating') : t('agents.definition')">
+        <projection slot="definition"></projection>
+      </section-group>
+      <section-group :title="t('agents.model')" :description="t('agents.modelHint')">
+        <projection slot="model"></projection>
+      </section-group>
+      <section-group :title="t('agents.skills')" :description="t('agents.skillsHint')">
+        <projection slot="skills"></projection>
+      </section-group>
+      <section-group :title="t('agents.executor')" :description="t('agents.executorHint')">
+        <projection slot="executor"></projection>
+      </section-group>
+      <section-group :title="t('agents.scope')" :description="t('agents.scopeHint')">
+        <projection slot="scope"></projection>
+      </section-group>
+    </div>
+  </two-pane-layout>
+</div>

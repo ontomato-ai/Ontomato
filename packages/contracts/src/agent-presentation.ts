@@ -120,8 +120,8 @@ const observedResultSchema = z.discriminatedUnion("status", [openedResultSchema,
 export const presentationResultSchema = z.union([observedResultSchema, unknownResultSchema]);
 export type PresentationResult = z.infer<typeof presentationResultSchema>;
 
-/** The host issues a fresh ID for each authenticated session-run stream that requests presentation. */
-export const presentationBindingSchema = z.object({ connectionId: runtimeIdSchema }).strict();
+/** A view keeps its ID for the lifetime of its mount, across session-run streams. */
+export const presentationBindingSchema = z.object({ viewId: runtimeIdSchema }).strict();
 export type PresentationBinding = z.infer<typeof presentationBindingSchema>;
 
 /** Live-only payload on the host's session-run stream, carried as event: presentation. */
@@ -138,8 +138,9 @@ export const presentationFrameSchema = z.object({
 export type PresentationFrame = z.infer<typeof presentationFrameSchema>;
 
 /** Body of POST /sessions/:sessionId/runs/:runId/presentation-result. */
-export const presentationReceiptSchema = presentationBindingSchema.extend({
+export const presentationReceiptSchema = z.object({
+  connectionId: runtimeIdSchema,
   toolCallId: runtimeKeySchema,
   result: observedResultSchema,
-});
+}).strict();
 export type PresentationReceipt = z.infer<typeof presentationReceiptSchema>;

@@ -3,6 +3,8 @@ import { createApp, defineComponent, h, nextTick, ref, type App } from "vue";
 import type { AgentHostSession, AgentHostSessionRunFrame, AgentHostSessionRunSnapshot } from "@ontomato/contracts/agent-host";
 import { SessionRunStreamError, type SessionRunHandlers, type SessionRunPort } from "../host";
 import { useSessionRunFeed } from "../useSessionRunFeed";
+import { pageSessionStream, type SessionStreamShell } from "../session-run-notices";
+import { inject, onBeforeUnmount } from "vue";
 
 /*
  * The page's one list notice feed: one stream for every list the page shows, the light read it triggers on the rows
@@ -255,5 +257,39 @@ describe("the page's one list feed", () => {
     void handlers.frame({ type: "ready" });
     await settle();
     expect(host.read).not.toHaveBeenCalled();
+  });
+});
+
+describe("a page view's live frames", () => {
+  it("hands an object an agent changed to the shell, never to the page's lifecycle notices, and tells it each ready", async () => {
+    const host = port();
+    const onNotice = vi.fn();
+    const shell: SessionStreamShell = { present: vi.fn(), objectChanged: vi.fn(), ready: vi.fn() };
+    const Shell = defineComponent({
+      setup() {
+        onBeforeUnmount(inject(pageSessionStream)!.attach(shell));
+        return () => h("div");
+      },
+    });
+    const Host = defineComponent({
+      setup() {
+        useSessionRunFeed({ port: host.port, sessions: () => [], onNotice, onError: vi.fn(), presentation: true });
+        return () => h(Shell);
+      },
+    });
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    app = createApp(Host);
+    app.mount(root);
+    await settle();
+
+    await dispatch(host, { type: "ready", connectionId: c });
+    expect(shell.ready).toHaveBeenCalledTimes(1);
+    onNotice.mockClear();
+    const changed = { type: "object-changed" as const, session: { providerId: "workbench", sessionId: a }, target: { objectType: "platform:ScheduledTask", primaryKey: "task-1" } };
+    host.handlers.value!.view!.frame(changed);
+    await settle();
+    expect(shell.objectChanged).toHaveBeenCalledWith(changed);
+    expect(onNotice).not.toHaveBeenCalled();
   });
 });

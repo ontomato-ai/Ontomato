@@ -5,7 +5,7 @@ export const workbenchApplications: BuiltinApplication[] = [
     id: "application-gallery", kind: "native", rail: "top", category: "business", sort: 2,
     entry: {path:"/applications",renderer:"application-gallery",home:"/applications"},
     entryAccess:["domain-member"],scheduleAdapter:null,
-    declaration:{names:{en:"Application gallery","zh-CN":"应用广场"},descriptions:{en:"Discover applications and pin shortcuts to your home","zh-CN":"发现应用，并将常用入口固定到主页"},icon:"gallery",groups:[],permissions:[]},
+    declaration:{names:{en:"Application gallery","zh-CN":"应用广场"},descriptions:{en:"Discover applications and pin shortcuts to your personal workspace","zh-CN":"发现应用，并将常用入口固定到个人工作台"},icon:"gallery",groups:[],permissions:[]},
   },
   {
     id: "personal-workspace", kind: "native", rail: "top", category: "business", sort: 5,
@@ -33,8 +33,8 @@ export const workbenchApplications: BuiltinApplication[] = [
     "scheduleAdapter": null,
     "declaration": {
       "names": {
-        "en": "Home",
-        "zh-CN": "主页"
+        "en": "Personal workspace",
+        "zh-CN": "个人工作台"
       },
       "descriptions": {
         "en": "Your apps, agents and dashboards",

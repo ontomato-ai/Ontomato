@@ -4,13 +4,11 @@ import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { RUN_NOW, SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import type { PlatformSchedulesHost } from "./host";
 import { createSchedulesApi, ScheduleRequestError } from "./api";
-import { scheduledTaskPanelOperations } from "./panel-operations";
+import { scheduledTaskDraftOperation, scheduledTaskPanelOperations, scheduledTaskPanelSaveSchema } from "./panel-operations";
 
 type Host = Pick<PlatformSchedulesHost, "request">;
 type Target = Extract<PanelOperationCall["target"], { kind: "object" }>;
 const targetSchema = z.object({ kind: z.literal("object"), objectType: z.literal(SCHEDULED_TASK), primaryKey: z.string().uuid() }).strict();
-const saveInputSchema = z.object({ revision: z.number().int().positive() }).catchall(z.string());
-const valuesOf = (input: Record<string, unknown>) => Object.fromEntries(Object.entries(input).filter(([key]) => key !== "revision")) as Record<string, string>;
 
 /** Names are read as the initiator; an unreadable or missing task is identified only by its ID. */
 async function targetLabel(host: Host, target: Target): Promise<string> {
@@ -41,11 +39,14 @@ export const scheduledTaskServerOperations = [
     binding: { kind: "PlatformObjectType", id: SCHEDULED_TASK },
     targetType: SCHEDULED_TASK,
     targetSchema,
-    inputSchema: saveInputSchema,
+    inputSchema: scheduledTaskPanelSaveSchema,
     targetLabel,
-    draftInput: valuesOf,
+    draftOperation: () => scheduledTaskDraftOperation,
+    draftInput: (input: Record<string, unknown>) => scheduledTaskPanelSaveSchema.parse(input).values,
+    formInstructions: "Use the application's form response for the field keys. Send the returned string values and the current task revision in call.input.",
     execute(host: Host, target: Target, input: Record<string, unknown>, _intentId: string) {
-      return outcome(() => scheduledTaskPanelOperations(host).save(target.primaryKey, valuesOf(input), input.revision as number));
+      const { values, revision } = scheduledTaskPanelSaveSchema.parse(input);
+      return outcome(() => scheduledTaskPanelOperations(host).save(target.primaryKey, values, revision));
     },
   },
   {

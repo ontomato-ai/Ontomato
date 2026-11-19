@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ParsedLogRecord } from "@ontomato/contracts/observe";
-import { nextTick, onBeforeUnmount, reactive, ref } from "vue";
+import { nextTick, onBeforeUnmount, reactive, ref, watch } from "vue";
+import { useDocumentVisible } from "@ontomato/foundation-ui/visibility";
 import { authHost } from "../../../../utils/auth";
 import { diagnosisApi } from "../../api";
 import { Monitor, Database } from "lucide-vue-next";
@@ -17,8 +18,11 @@ const { t } = useI18n();
 type LogEntry = ParsedLogRecord & { key: number; timestamp?: string };
 
 interface PanelState {
+  /** The user's choice to watch this source; a background tab closes the stream but keeps the choice. */
   connected: boolean;
   paused: boolean;
+  /** The newest log sequence this stream has delivered, shown or not; the stream resumes after it. */
+  lastSeq: number | null;
   logs: LogEntry[];
   filterLevel: string;
   filterKeyword: string;
@@ -52,6 +56,7 @@ function createPanel(): PanelState {
   return {
     connected: false,
     paused: false,
+    lastSeq: null,
     logs: [],
     filterLevel: "",
     filterKeyword: "",
@@ -75,19 +80,28 @@ const { appLogSource } = workbenchContent().observe;
 
 function connectPanel(panel: PanelState, source: string, getContainer: () => HTMLElement | null) {
   disconnectPanel(panel);
+  panel.connected = true;
+  panel.lastSeq = null;
+  openPanelStream(panel, source, getContainer);
+}
 
+/** Opens the panel's stream, from its last delivered sequence when it has one (within what the server still retains). */
+function openPanelStream(panel: PanelState, source: string, getContainer: () => HTMLElement | null) {
   const params = new URLSearchParams();
   params.set("tk", authHost().getToken() || "");
   if (source) params.set("source", source);
   if (panel.filterLevel) params.set("level", panel.filterLevel);
   if (panel.filterKeyword) params.set("keyword", panel.filterKeyword);
+  if (panel.lastSeq !== null) params.set("since_seq", String(panel.lastSeq));
 
   const eventSource = diagnosisApi.openLiveLogs(params);
   panel.eventSource = eventSource;
-  panel.connected = true;
 
   eventSource.onmessage = (ev) => {
-    if (panel.eventSource !== eventSource || panel.paused) return;
+    if (panel.eventSource !== eventSource) return;
+    // A gap notice carries a negative id; it never moves the resume point back.
+    if (ev.lastEventId) panel.lastSeq = Math.max(panel.lastSeq ?? -1, Number(ev.lastEventId));
+    if (panel.paused) return;
     try {
       const payload = JSON.parse(ev.data) as Omit<LogEntry, "key">;
       enqueueLog(
@@ -137,11 +151,15 @@ function flushLogs(panel: PanelState, getContainer: () => HTMLElement | null) {
   }
 }
 
-function disconnectPanel(panel: PanelState) {
+function closePanelStream(panel: PanelState) {
   if (panel.eventSource) {
     panel.eventSource.close();
     panel.eventSource = null;
   }
+}
+
+function disconnectPanel(panel: PanelState) {
+  closePanelStream(panel);
   panel.connected = false;
 }
 
@@ -162,8 +180,11 @@ function clearLogs(panel: PanelState) {
 /*  Left / Right wrappers                                              */
 /* ------------------------------------------------------------------ */
 
+const leftContainer = () => leftLogContainer.value;
+const rightContainer = () => rightLogContainer.value;
+
 function connectLeft() {
-  connectPanel(left, appLogSource, () => leftLogContainer.value);
+  connectPanel(left, appLogSource, leftContainer);
 }
 function disconnectLeft() {
   disconnectPanel(left);
@@ -173,7 +194,7 @@ function reconnectLeft() {
 }
 
 function connectRight() {
-  connectPanel(right, "backend", () => rightLogContainer.value);
+  connectPanel(right, "backend", rightContainer);
 }
 function disconnectRight() {
   disconnectPanel(right);
@@ -244,6 +265,21 @@ function onDragStart(e: MouseEvent) {
 /* ------------------------------------------------------------------ */
 /*  Lifecycle                                                          */
 /* ------------------------------------------------------------------ */
+
+/*
+ * A background tab holds no log stream (design "long connections" 2). Back in front, only the panels the user left
+ * connected resume, from their last sequence; one the user disconnected stays off, and a paused one keeps dropping.
+ */
+const documentVisible = useDocumentVisible();
+watch(documentVisible, (shown) => {
+  if (!shown) {
+    closePanelStream(left);
+    closePanelStream(right);
+    return;
+  }
+  if (left.connected) openPanelStream(left, appLogSource, leftContainer);
+  if (right.connected) openPanelStream(right, "backend", rightContainer);
+});
 
 onBeforeUnmount(() => {
   clearLogs(left);

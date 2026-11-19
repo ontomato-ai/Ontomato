@@ -9,6 +9,7 @@ import { z } from "zod";
 import { workspaceIdSchema, workspacePathSchema, workspaceNameSchema, workspaceImportSchema, workspaceRestoreSchema, workspaceReadSchema, workspaceContentSchema, workspacePageSchema, workspaceDiffSchema, hostedPublishSchema, hostedRollbackSchema, hostedAppIdSchema } from "@ontomato/contracts/workspaces";
 import { context, id } from "../utils/agent-host";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
+import { panelCandidateQuerySchema, readPanelCandidate } from "../../services/workspaces/panel-candidate";
 import { workspaceSessions } from "../../services/workspaces/sessions";
 import { runtimeDataDir } from "../../content/layout";
 import { HttpError } from "../../utils/errors";
@@ -58,6 +59,12 @@ for (const method of ["get", "post", "delete"] as const) {
     res.json(result);
   }));
 }
+workspaceRouter.get("/:id/panel-candidate", wrap(async (req, res) => {
+  const { owner, credentials } = context(req);
+  const { ref } = panelCandidateQuerySchema.parse(req.query);
+  const source = await readPanelCandidate(owner, credentials, { id: id(req, "id"), ref });
+  res.set("Cache-Control", "no-store").json(source);
+}));
 workspaceRouter.post("/:id/preview-token", wrap(async (req, res) => {
   const owner = context(req).owner, workspaceId = id(req, "id");
   const tests=new WorkspaceBuildTests(owner,context(req).credentials,workspaceId);

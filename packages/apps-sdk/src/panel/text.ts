@@ -1,5 +1,6 @@
 import { watch, type Ref } from "vue";
 import { createI18n } from "vue-i18n";
+import type { PanelMessages } from "@ontomato/contracts/product-panels";
 
 /*
  * A panel's own words (design 7.1): the titles and messages its HTML lays out, kept with the panel's content as one text
@@ -9,9 +10,6 @@ import { createI18n } from "vue-i18n";
  * it is — never another language in between. There is no second negotiation of the language: the language is the one
  * the platform hands the frame and follows while the panel is open.
  */
-
-/** A panel's words: per locale (`en`, `zh-CN`), each key's text, in the platform's message syntax (`{count} agents`). */
-export type PanelMessages = Readonly<Record<string, Readonly<Record<string, string>>>>;
 
 /** Reads one of the panel's words in the current language, with the values its text names. */
 export type PanelText = (key: string, params?: Readonly<Record<string, unknown>>) => string;
@@ -27,7 +25,7 @@ export function createPanelText(messages: PanelMessages, locale: Readonly<Ref<st
     fallbackLocale: defaultLocale,
     // A key is the panel's own name for a text, dots and all; it is not a path into nested messages.
     flatJson: true,
-    messages: messages as Record<string, Record<string, string>>,
+    messages,
     // A missing word shows its key, as the platform's do; the panel's author sees it there, not in the console.
     missingWarn: false,
     fallbackWarn: false,
