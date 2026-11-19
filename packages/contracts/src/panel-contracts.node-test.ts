@@ -59,6 +59,63 @@ import { ontologyParameterTypeSchema as legacyOntologyParameterTypeSchema } from
 
 const binding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
 
+test("a no-code task panel registers and parses the same members and layout", async () => {
+  const { registerDirectPanelRequestSchema } = await import("./product-panels");
+  const { parsePanelLayout } = await import("./panel-layout");
+  const input = {
+    name: "Scheduled tasks", description: "", visibility: "domain", revision: 0,
+    content: { html: '<div flow="row">\n  <panel-member ref="tasks"></panel-member>\n</div>' },
+    manifest: {
+      state: { selectedTask: { type: { kind: "object", objectType: "platform:ScheduledTask" }, deepLink: true, external: true, default: null } },
+      members: { tasks: { target: { projectionId: "projection-schedules-tasks" }, outputs: { selected: { state: "selectedTask" } } } },
+      events: {},
+    },
+  };
+  const panel = registerDirectPanelRequestSchema.parse(input);
+  assert.deepEqual(parsePanelLayout(panel.content.html, panel.manifest), [{
+    kind: "container", tag: "div", flow: "row", gap: "medium", position: { offset: 0, line: 1, column: 1 },
+    children: [{ kind: "member", ref: "tasks", position: { offset: 19, line: 2, column: 3 } }],
+  }]);
+  const wrong = '<div>\n  <panel-member ref="tasks" onclick="run()"></panel-member>\n</div>';
+  assert.throws(() => parsePanelLayout(wrong, panel.manifest), /2:29.*onclick/u);
+  assert.equal(registerDirectPanelRequestSchema.safeParse({ ...input, content: { html: wrong } }).success, false);
+  assert.throws(() => parsePanelLayout('<section when="selectedTask" eq="1"></section>', panel.manifest), /Comparison/u);
+  assert.throws(() => parsePanelLayout('<div><panel-member ref="tasks"></div>', panel.manifest), /Unexpected closing tag/u);
+  assert.throws(() => parsePanelLayout('<div flow="row" flow="column"></div>', panel.manifest), /Duplicate attribute 'flow'/u);
+  assert.throws(() => parsePanelLayout('<panel-member ref="missing"></panel-member>', panel.manifest), /Undeclared member 'missing'/u);
+});
+
+test("direct task reads use the registered source, parameters and result envelope", async () => {
+  const { registerDirectProjectionRequestSchema } = await import("./product-panels");
+  const { panelDataStateSchema, productPanelReadRequestSchema, productPanelReadResponseSchema } = await import("./panel-host");
+  const { panelReadResultSchemas } = await import("./panel-operations");
+  const form = {
+    name: "Task form", description: "", visibility: "domain", revision: 0, componentId: "@ontomato/sdk:ObjectForm",
+    inputs: { task: { kind: "object", objectType: "platform:ScheduledTask" }, values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
+    outputs: {}, config: {},
+    data: { form: { source: { object: { input: "task" } }, read: "form", params: { values: { input: "values" }, changedField: { input: "changedField" } } } },
+  };
+  assert.deepEqual(registerDirectProjectionRequestSchema.parse(form), form);
+  const read = form.data.form;
+  for (const rejected of [{ ...read, read: "delete" }, { ...read, params: { values: { state: "selected" } } },
+    { ...read, params: { changedField: { literal: "missing-slash" } } }, { ...read, source: { object: { input: "missing" } } }])
+    assert.equal(registerDirectProjectionRequestSchema.safeParse({ ...form, data: { form: rejected } }).success, false);
+
+  const request = {
+    source: { kind: "registered", applicationId: "app-trial", useId: "tasks" }, memberPath: [{ member: "form" }],
+    dataName: "form", inputs: { task: { className: "platform:ScheduledTask", primaryKey: "task-1" } },
+  };
+  assert.deepEqual(productPanelReadRequestSchema.parse(request), request);
+  assert.equal(productPanelReadRequestSchema.safeParse({ source: request.source, items: [request] }).success, false);
+  assert.equal(productPanelReadRequestSchema.safeParse({ ...request, memberPath: [{ member: "form", selection: "untrusted" }] }).success, false);
+  assert.equal(productPanelReadResponseSchema.safeParse({ status: "forbidden", value: [] }).success, false);
+  assert.equal(productPanelReadResponseSchema.safeParse({ status: "loading" }).success, false);
+  assert.deepEqual(panelDataStateSchema.parse({ status: "loading" }), { status: "loading" });
+  const row = { primaryKey: "task-1", label: "Morning report", fields: { state: "on" } };
+  assert.deepEqual(panelReadResultSchemas.panelRecordList.parse([row]), [row]);
+  assert.deepEqual(productPanelReadResponseSchema.parse({ status: "ready", value: row }), { status: "ready", value: row });
+});
+
 test("the field port refers to another slot in the same manifest", () => {
   const picker = { projectionId: "skill-picker", formField: { slot: "definition", path: "/skills" } };
   const slots = { definition: { projectionId: "definition-form" }, picker };

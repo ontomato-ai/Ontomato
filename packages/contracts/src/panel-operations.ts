@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema, runtimeKeySchema } from "./agent-runtime-values";
 import { panelObjectIdentitySchema, panelOperationCallSchema } from "./panel-manifest";
-import { panelFormValuesSchema } from "./panel-projection";
+import { panelFormDescriptionSchema, panelFormValuesSchema, panelRecordListSchema, panelRecordSchema } from "./panel-projection";
+import type { PlatformReadDeclaration } from "./platform-object-types";
 
 /** The owner selects a named input or form slot to resolve before invoking the operation. */
 export const panelOwnerOperationTargetSchema = z.discriminatedUnion("source", [
@@ -26,6 +27,14 @@ export const panelReadOperationDescriptorSchema = panelOwnerOperationDescriptorS
   effect: z.literal("read"),
   batch: z.literal(false),
 });
+
+/** Result schema identifiers used by the registered read declarations. */
+export const panelReadResultSchemas = {
+  panelRecordList: panelRecordListSchema,
+  panelRecord: panelRecordSchema,
+  panelFormDescription: panelFormDescriptionSchema,
+  panelOperationDescriptor: panelOwnerOperationDescriptorSchema,
+} satisfies Record<PlatformReadDeclaration["result"], z.ZodTypeAny>;
 
 /** A read-only trial takes the current form values plus the execution parameter values. */
 export const panelReadOperationInputSchema = z.object({
