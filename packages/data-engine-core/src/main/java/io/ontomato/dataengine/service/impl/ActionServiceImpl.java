@@ -26,6 +26,7 @@ import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.dao.KnowledgeDao;
 import io.ontomato.dataengine.schedules.ScheduleJson;
 import io.ontomato.dataengine.service.ABCProgramService;
+import io.ontomato.dataengine.service.ActionForm;
 import io.ontomato.dataengine.service.ActionPreconditionService;
 import io.ontomato.dataengine.service.ActionService;
 import io.ontomato.dataengine.service.CapabilityGrantLookup;
@@ -34,6 +35,7 @@ import io.ontomato.dataengine.service.ActionFunctionAdmission;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
+import io.ontomato.dataengine.service.PanelFormFields;
 import io.ontomato.dataengine.service.ParameterForms;
 import io.ontomato.dataengine.service.SandboxService;
 import io.ontomato.dataengine.service.agent.AgentRuntimeClient;
@@ -50,8 +52,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -720,6 +724,76 @@ public class ActionServiceImpl implements ActionService {
     form.put("errors", interpreted.errors());
     form.put("parameters", interpreted.errors().isEmpty() ? interpreted.values() : null);
     return form;
+  }
+
+  @Override
+  public JSONObject definitionForm(JSONObject request, String lang, String domainId) {
+    JSONObject target = request.getJSONObject("target");
+    if (target == null) throw new IllegalArgumentException("target is required");
+    String kind = target.getString("kind");
+    boolean existing;
+    Action action;
+    if ("object".equals(kind)) {
+      if (!"platform:Action".equals(target.getString("objectType")))
+        throw new IllegalArgumentException("target.objectType: expected platform:Action");
+      String primaryKey = target.getString("primaryKey");
+      if (primaryKey == null || primaryKey.isBlank())
+        throw new IllegalArgumentException("target.primaryKey: expected an action id");
+      action = queryById(primaryKey);
+      if (action == null || !domainId.equals(action.getDomainId()))
+        throw new IllegalArgumentException("Action not found");
+      existing = true;
+    } else if ("draft".equals(kind)) {
+      action = ActionForm.defaultValues().to(Action.class);
+      action.setDomainId(domainId);
+      existing = false;
+    } else {
+      throw new IllegalArgumentException("target.kind: expected object or draft");
+    }
+    JSONObject values = request.getJSONObject("values");
+    if (values == null) values = PanelFormFields.asset(action);
+    else if (request.get("changedField") == null) ActionForm.checkDraft(values);
+    String readOnlyReason = null;
+    if (Action.ORIGIN_SYSTEM.equals(action.getOrigin()))
+      readOnlyReason = langService.get(lang, "Action.cannotModifySystem");
+    String codeReadOnlyReason = null;
+    if (existing && Action.STATUS_PUBLISHED.equals(action.getStatus()))
+      codeReadOnlyReason = langService.get(lang, "Action.publishedIsFrozen");
+    JSONArray classOptions = JSONArray.from(adminService.getJSONRule(domainId).get("classDef"));
+    return ActionForm.describe(
+        values, existing, readOnlyReason, codeReadOnlyReason, classOptions, lang, langService);
+  }
+
+  @Override
+  public List<StatusResult> setStatus(
+      String domainId, String userId, List<String> ids, String status, String lang) {
+    if (ids == null || ids.isEmpty())
+      throw new IllegalArgumentException("ids: expected at least one action id");
+    if (status == null
+        || !Set.of(Action.STATUS_PENDING_REVIEW, Action.STATUS_PUBLISHED, Action.STATUS_UNUSED)
+            .contains(status))
+      throw new IllegalArgumentException("status: expected PENDING_REVIEW, PUBLISHED or UNUSED");
+    List<StatusResult> results = new ArrayList<>();
+    for (String id : new LinkedHashSet<>(ids)) {
+      try {
+        Action action = queryById(id);
+        if (action == null || !domainId.equals(action.getDomainId()))
+          throw new IllegalArgumentException("Action not found");
+        action.setStatus(status);
+        if (Action.STATUS_PUBLISHED.equals(status)) action.setReviewedBy(userId);
+        results.add(
+            new StatusResult(id, save(action, null, new Owner(userId, domainId), lang), null));
+      } catch (Exception error) {
+        results.add(new StatusResult(id, null, failureMessage(error)));
+      }
+    }
+    return results;
+  }
+
+  private static String failureMessage(Exception error) {
+    String message = error.getMessage();
+    if (message == null || message.isBlank()) return error.getClass().getName();
+    return message;
   }
 
   @Override

@@ -7,7 +7,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +29,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.ontomato.dataengine.bean.PythonExecuteResult;
 import io.ontomato.dataengine.bean.action.Action;
 import io.ontomato.dataengine.config.BusinessConfig;
@@ -35,6 +40,8 @@ import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.security.CaseExecutionGuard;
 import io.ontomato.dataengine.service.ActionService;
 import io.ontomato.dataengine.service.LangService;
+import io.ontomato.dataengine.service.PanelFormException;
+import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.service.agent.ActionCreationService;
 import io.ontomato.dataengine.service.impl.ActionDraftService;
 import io.ontomato.dataengine.service.BusinessConfigService;
@@ -74,6 +81,12 @@ public class ActionController {
 
 	@Autowired
 	private ActionDraftService actionDraftService;
+
+	@Autowired
+	private SubjectDirectory subjectDirectory;
+
+	@Autowired
+	private ObjectMapper objectMapper;
 	
 	@PostMapping("/action/generateFromNatureLanguage")
     @ResponseBody
@@ -132,8 +145,9 @@ public class ActionController {
 			if (action.getFunction() != null) action.getFunction().setDomainId(user.getDomainId());
 			action.setCreatedBy(user.getId());
 			if (Action.STATUS_PUBLISHED.equals(action.getStatus())) action.setReviewedBy(user.getId());
-			ret.put("data", actionService.save(action, param.getString("explanationRef"),
-					new io.ontomato.dataengine.service.agent.OntologyAgentStore.Owner(user.getId(), user.getDomainId()), lang));
+			Action saved = actionService.save(action, param.getString("explanationRef"),
+					new io.ontomato.dataengine.service.agent.OntologyAgentStore.Owner(user.getId(), user.getDomainId()), lang);
+			ret.put("data", withDisplay(saved, subjectNames(user.getDomainId()), lang));
 			ret.put("success", true);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
@@ -212,13 +226,15 @@ public class ActionController {
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/action/queryById")
     @ResponseBody
-    public JSONObject queryById(@RequestBody JSONObject param) {
+    public JSONObject queryById(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, defaultValue = "en") String lang,
+		@RequestBody JSONObject param) {
 		JSONObject ret = new JSONObject();
 		try {
+			User user = SystemUtils.getCurUser();
 			String id = param.getString("id");
 			Action action = actionService.queryById(id);
 			ret.put("success", true);
-			ret.put("data", action);
+			ret.put("data", action == null ? null : withDisplay(action, subjectNames(user.getDomainId()), lang));
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -230,7 +246,8 @@ public class ActionController {
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/action/queryList")
     @ResponseBody
-    public JSONObject queryList(@RequestBody JSONObject param) {
+    public JSONObject queryList(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, defaultValue = "en") String lang,
+		@RequestBody JSONObject param) {
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
@@ -238,13 +255,74 @@ public class ActionController {
 			String className = param.getString("className");
 			List<Action> actions = actionService.queryList(status, null, className, user.getDomainId());
 			ret.put("success", true);
-			ret.put("data", actions);
+			ret.put("data", withDisplay(actions, user.getDomainId(), lang));
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
 		}
 		return ret;
+	}
+
+	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+	@PostMapping("/action/definitionForm")
+	@ResponseBody
+	public JSONObject definitionForm(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
+		JSONObject ret = new JSONObject();
+		try {
+			User user = SystemUtils.getCurUser();
+			ret.put("data", actionService.definitionForm(param, lang, user.getDomainId()));
+			ret.put("success", true);
+		} catch (PanelFormException e) {
+			ret.put("success", false);
+			ret.put("message", e.getMessage());
+			ret.put("fields", e.fields());
+		} catch (Exception e) {
+			log.error(e.getMessage(), e);
+			ret.put("success", false);
+			ret.put("message", e.getMessage());
+		}
+		return ret;
+	}
+
+	@PostMapping("/action/setStatus")
+	@ResponseBody
+	public JSONObject setStatus(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
+		JSONObject ret = new JSONObject();
+		try {
+			User user = SystemUtils.getCurUser();
+			List<ActionService.StatusResult> results = actionService.setStatus(user.getDomainId(), user.getId(),
+					statusIds(param), param.getString("status"), lang);
+			JSONArray items = new JSONArray();
+			for (ActionService.StatusResult result : results) {
+				JSONObject item = JSONObject.of("id", result.id(),
+						"outcome", result.error() == null ? "success" : "failure");
+				if (result.error() == null) item.put("data", result.data());
+				else item.put("error", JSONObject.of("message", result.error()));
+				items.add(item);
+			}
+			ret.put("data", JSONObject.of("items", items));
+			ret.put("success", true);
+		} catch (Exception e) {
+			log.error(e.getMessage(), e);
+			ret.put("success", false);
+			ret.put("message", e.getMessage());
+		}
+		return ret;
+	}
+
+	/** The ids a batch publication-status change acts on; Jackson binds the request array as a List. */
+	private static List<String> statusIds(JSONObject param) {
+		Object raw = param.get("ids");
+		if (!(raw instanceof List<?> list) || list.isEmpty())
+			throw new IllegalArgumentException("ids: expected at least one action id");
+		List<String> ids = new ArrayList<>();
+		for (Object id : list) {
+			if (!(id instanceof String text) || text.isBlank())
+				throw new IllegalArgumentException("ids: expected action ids");
+			ids.add(text);
+		}
+		return ids;
 	}
 
 	@PostMapping("/action/re-explain")
@@ -434,6 +512,50 @@ public class ActionController {
 		Path saved = Paths.get(dir.getPath(), name);
 		Files.copy(file.getInputStream(), saved);
 		return saved;
+	}
+
+	/** The action's creator and reviewer ids become the names a reader sees; a missing subject stays null. */
+	private ObjectNode withDisplay(Action action, Map<String, String> names, String lang) {
+		ObjectNode item = objectMapper.valueToTree(action);
+		item.put("createdByName", names.get(action.getCreatedBy()));
+		item.put("reviewedByName", names.get(action.getReviewedBy()));
+		item.put("statusLabel", statusLabel(action.getStatus(), lang));
+		item.put("originLabel", originLabel(action.getOrigin(), lang));
+		return item;
+	}
+
+	private ArrayNode withDisplay(List<Action> actions, String domainId, String lang) {
+		Map<String, String> names = subjectNames(domainId);
+		ArrayNode items = objectMapper.createArrayNode();
+		for (Action action : actions) items.add(withDisplay(action, names, lang));
+		return items;
+	}
+
+	private Map<String, String> subjectNames(String domainId) {
+		Map<String, String> names = new HashMap<>();
+		for (SubjectDirectory.Subject subject : subjectDirectory.subjectsInDomain(domainId))
+			names.put(subject.id(), subject.displayName() == null || subject.displayName().isBlank()
+					? subject.loginCode() : subject.displayName());
+		return names;
+	}
+
+	private String statusLabel(String status, String lang) {
+		if (status == null) return null;
+		return switch (status) {
+			case Action.STATUS_PENDING_REVIEW -> langService.get(lang, "PanelForm.status.pendingReview");
+			case Action.STATUS_PUBLISHED -> langService.get(lang, "PanelForm.status.published");
+			case Action.STATUS_UNUSED -> langService.get(lang, "PanelForm.status.unused");
+			default -> status;
+		};
+	}
+
+	private String originLabel(String origin, String lang) {
+		if (origin == null) return null;
+		return switch (origin) {
+			case Action.ORIGIN_SYSTEM -> langService.get(lang, "PanelForm.origin.system");
+			case Action.ORIGIN_USER -> langService.get(lang, "PanelForm.origin.user");
+			default -> origin;
+		};
 	}
 	
 }
