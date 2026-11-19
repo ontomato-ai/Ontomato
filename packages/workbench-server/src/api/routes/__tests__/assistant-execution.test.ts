@@ -86,6 +86,8 @@ it.each([
   ["GET", "ontology/model-options"],
   ["GET", "ontology/platform/agent-execution/options?selected=worker"],
   ["POST", "ontology/admin/getMetas"],
+  ["POST", "ontology/metricView/queryList"],
+  ["POST", "ontology/metricView/queryById"],
   ["POST", "ontology/metricView/form"],
   ["POST", "ontology/function/queryList"],
   ["POST", "ontology/function/queryById"],

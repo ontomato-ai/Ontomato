@@ -42,18 +42,20 @@ const ontologyPosts = [
   "/action/form",
   "/action/execute",
   "/action/re-explain",
-  "/metricView/queryById",
-  "/metricView/queryList",
-  "/metricView/form",
-  "/function/queryList",
-  "/function/queryById",
-  "/function/form",
   "/metricView/find",
   "/metricView/test",
   "/metricView/testExecute",
   "/data/queryInfoByNode",
   "/knowledge/findknowledge",
   "/admin/getBussinessKnowledge",
+];
+const assetReadPaths = [
+  "/metricView/queryById",
+  "/metricView/queryList",
+  "/metricView/form",
+  "/function/queryList",
+  "/function/queryById",
+  "/function/form",
 ];
 const queryOutput = /^\/ontology\/query\/outputs\/[0-9a-f-]+$/u;
 const queryOutputCancel = /^\/ontology\/query\/outputs\/[0-9a-f-]+\/cancel$/u;
@@ -145,7 +147,8 @@ assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
   const target = z.enum(["ontology", "workbench"]).parse(req.params.target);
   const path = "/" + req.params[0];
   const resourceRead = !req.path.includes("%") && (target === "ontology"
-    ? [...scheduledTaskReads, ...panelReads].some(read => read.service === "/data-query" && read.method === req.method && read.path.test(path))
+    ? (req.method === "POST" && assetReadPaths.includes(path)) ||
+      [...scheduledTaskReads, ...panelReads].some(read => read.service === "/data-query" && read.method === req.method && read.path.test(path))
     : (req.method === "GET" && skillReadPath.test(path)) ||
       (path.startsWith("/api/") && panelReads.some(read => read.service === "" && read.method === req.method && read.path.test(path.slice(4)))));
   const assistantDirectory = target === "workbench" && req.method === "GET" && path === "/api/assistant/agents";
