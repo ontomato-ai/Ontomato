@@ -109,7 +109,7 @@ const use = (id, pageKey, panelId, path, names) => ({
 export const applications = [
   {
     applicationId: "app-panels-trial-a",
-    entry: { path: "/panels-trial-a", renderer: "panels" },
+    entry: { path: "/applications/app-panels-trial-a", renderer: "panels" },
     entryAccess: ["domain-member"],
     declaration: {
       names: { en: "Panels trial A", "zh-CN": "面板试点 A" },
@@ -122,7 +122,7 @@ export const applications = [
   },
   {
     applicationId: "app-panels-trial-b",
-    entry: { path: "/panels-trial-b", renderer: "panels" },
+    entry: { path: "/applications/app-panels-trial-b", renderer: "panels" },
     entryAccess: ["domain-member"],
     declaration: {
       names: { en: "Panels trial B", "zh-CN": "面板试点 B" },

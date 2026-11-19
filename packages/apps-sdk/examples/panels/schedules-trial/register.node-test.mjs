@@ -149,6 +149,11 @@ test("snapshots the pre-upgrade revisions and uses them without reading the lega
   assert.deepEqual(writes.slice(0, 2).map(({ url, body }) => [url, body.revision]), panelPaths.map(path => [path, 3]));
   assert.ok(stand.requests.filter(request => request.method === "GET").every(request => !request.url.startsWith("/api/")));
   assert.equal(writes.length, 4);
+  assert.deepEqual(writes.slice(0, 2).map(({ body }) => body.sdkVersion), [SDK, SDK]);
+  assert.deepEqual(writes.slice(2).map(({ body }) => [body.entry.path, body.panelUses.map(use => use.path)]), [
+    ["/applications/app-panels-trial-a", ["/applications/app-panels-trial-a/tasks"]],
+    ["/applications/app-panels-trial-b", ["/applications/app-panels-trial-b/tasks", "/applications/app-panels-trial-b/summary"]],
+  ]);
   for (const { body } of writes.slice(2)) {
     assert.equal(Object.hasOwn(body, "declaration"), false);
     assert.equal(Object.hasOwn(body, "entryAccess"), false);
