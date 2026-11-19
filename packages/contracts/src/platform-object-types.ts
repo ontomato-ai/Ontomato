@@ -23,10 +23,12 @@ export const APPLICATION = "platform:Application";
 export const ONTOLOGY_TYPE = "platform:OntologyType";
 export const ONTOLOGY_RELATION_KIND = "platform:OntologyRelationKind";
 
+export const platformOntologyLayers = ["fact", "capability", "governance", "product"] as const;
+
 export interface PlatformObjectTypeDeclaration {
   labelKey?: string;
   /** Set for types that have a declared place in the four-layer ontology. */
-  layer?: "fact" | "capability" | "governance" | "product";
+  layer?: typeof platformOntologyLayers[number];
 }
 
 const describeType = (name: string, layer?: PlatformObjectTypeDeclaration["layer"]): PlatformObjectTypeDeclaration => ({

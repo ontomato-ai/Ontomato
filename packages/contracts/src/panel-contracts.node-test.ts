@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { AGENT_DEFINITION, ATTRIBUTE, MCP_SERVICE_OPTION, OBJECT_TYPE, RELATIONSHIP, USER, bindingKey, clientSends, panelClientReads } from "./panel-client-requests";
 import { candidatePanelSourceSchema, panelFrameMessageSchema, panelUsePath } from "./panel-host";
-import { panelManifestSchema, panelStateValueSchema } from "./panel-manifest";
-import { DEFINITION, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, USER as ONTOLOGY_USER, platformObjectTypes, platformRelationKinds } from "./platform-object-types";
+import { matchesObjectType, objectUnionTypes, ontologyObjectUnionTypeSchema, panelManifestSchema, panelStateFieldSchema, panelStateValueSchema, singleOntologyParameterTypeSchema } from "./panel-manifest";
+import { DEFINITION, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, USER as ONTOLOGY_USER, platformObjectTypes, platformOntologyLayers, platformRelationKinds } from "./platform-object-types";
 import { panelFormSaveInputSchema, projectionBindingKeys, projectionOperations, projectionPorts } from "./panel-projection";
 import { applicationPanelUsePathSchema, ontologyElementRefSchema, productPanelContentSchema, productProjectionInputSchema } from "./product-panels";
+import { ontologyParameterTypeSchema as legacyOntologyParameterTypeSchema } from "./product-projections";
 
 const binding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
 
@@ -141,7 +142,7 @@ test("bridge and skill agree about the specific semantic reads", () => {
 
 
 test("mixed graphs declare selected node types separately from the read bindings", () => {
-  const nodeIdentity = { kind: "object-union", objectTypes: [ONTOLOGY_USER, DEFINITION] };
+  const nodeIdentity = { kind: "object-union", layers: [...platformOntologyLayers] };
   const projection = productProjectionInputSchema.parse({
     name: "Platform ontology graph", description: "", visibility: "domain", componentId: "GraphCanvas",
     binding: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE },
@@ -160,6 +161,40 @@ test("mixed graphs declare selected node types separately from the read bindings
   const user = panelStateValueSchema.parse({ className: ONTOLOGY_USER, primaryKey: "shared-key" });
   const definition = panelStateValueSchema.parse({ className: DEFINITION, primaryKey: "shared-key" });
   assert.notDeepEqual(user, definition);
+});
+
+test("object unions resolve current layer declarations or an explicit list of declared types", () => {
+  const explicit = ontologyObjectUnionTypeSchema.parse({ kind: "object-union", objectTypes: [DEFINITION, ONTOLOGY_TYPE] });
+  assert.deepEqual(objectUnionTypes(explicit), [DEFINITION, ONTOLOGY_TYPE]);
+  assert.equal(matchesObjectType(explicit, ONTOLOGY_TYPE), true);
+  assert.equal(matchesObjectType(explicit, ONTOLOGY_USER), false);
+
+  const layered = ontologyObjectUnionTypeSchema.parse({ kind: "object-union", layers: ["capability"] });
+  assert.equal(matchesObjectType(layered, DEFINITION), true);
+  assert.equal(matchesObjectType(layered, ONTOLOGY_USER), false);
+  assert.equal(matchesObjectType(layered, ONTOLOGY_TYPE), false);
+  assert.equal(matchesObjectType({ kind: "object", objectType: ONTOLOGY_USER }, ONTOLOGY_USER), true);
+});
+
+test("object union contracts reject unknown types, unknown layers and ambiguous selectors", () => {
+  for (const selector of [
+    { objectTypes: [DEFINITION, "platform:Missing"] },
+    { layers: ["unclassified"] },
+    { layers: ["capability"], objectTypes: [DEFINITION] },
+    {},
+  ]) {
+    const field = { kind: "object-union", ...selector };
+    assert.equal(ontologyObjectUnionTypeSchema.safeParse(field).success, false);
+    assert.equal(panelStateFieldSchema.safeParse(field).success, false);
+  }
+});
+
+test("legacy single-type projection parameters reject both object union selectors", () => {
+  for (const selector of [{ objectTypes: [DEFINITION] }, { layers: ["capability"] }]) {
+    const type = { kind: "object-union", ...selector };
+    assert.equal(singleOntologyParameterTypeSchema.safeParse(type).success, false);
+    assert.equal(legacyOntologyParameterTypeSchema.safeParse(type).success, false);
+  }
 });
 
 test("platform ontology routes are semantic reads on the declared bindings", () => {
