@@ -38,6 +38,7 @@ import io.ontomato.dataengine.service.BackendSessionEntrance;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.MetricViewService;
+import io.ontomato.dataengine.service.PanelFormException;
 import io.ontomato.dataengine.service.SessionCancelledException;
 import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.service.IdentityService;
@@ -78,7 +79,8 @@ public class MetricViewController {
 	@Autowired
 	private SubjectDirectory subjectDirectory;
 
-	private static final ObjectMapper JACKSON = new ObjectMapper();
+	@Autowired
+	private ObjectMapper objectMapper;
 	
 	@PostMapping("/metricView/generateFromNatureLanguage")
     @ResponseBody
@@ -169,7 +171,8 @@ public class MetricViewController {
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/metricView/queryList")
     @ResponseBody
-    public JSONObject queryList(@RequestBody JSONObject param) {
+    public JSONObject queryList(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, defaultValue = "en") String lang,
+		@RequestBody JSONObject param) {
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
@@ -177,7 +180,7 @@ public class MetricViewController {
 			String className = param.getString("className");
 			List<MetricView> metricViews = metricViewService.queryList(status, null, className, user.getDomainId());
 			ret.put("success", true);
-			ret.put("data", withSubjectNames(metricViews, user.getDomainId()));
+			ret.put("data", withSubjectNames(metricViews, user.getDomainId(), lang));
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -225,6 +228,10 @@ public class MetricViewController {
 			User user = SystemUtils.getCurUser();
 			ret.put("data", metricViewService.form(param, lang, user.getDomainId()));
 			ret.put("success", true);
+		} catch (PanelFormException e) {
+			ret.put("success", false);
+			ret.put("message", e.getMessage());
+			ret.put("fields", e.fields());
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
@@ -274,19 +281,40 @@ public class MetricViewController {
 	}
 
 	/** The list's creator and reviewer ids become the names a reader sees; a missing subject stays null. */
-	private ArrayNode withSubjectNames(List<MetricView> metricViews, String domainId) {
+	private ArrayNode withSubjectNames(List<MetricView> metricViews, String domainId, String lang) {
 		Map<String, String> names = new HashMap<>();
 		for (SubjectDirectory.Subject subject : subjectDirectory.subjectsInDomain(domainId))
 			names.put(subject.id(), subject.displayName() == null || subject.displayName().isBlank()
 					? subject.loginCode() : subject.displayName());
-		ArrayNode items = JACKSON.createArrayNode();
+		ArrayNode items = objectMapper.createArrayNode();
 		for (MetricView metricView : metricViews) {
-			ObjectNode item = JACKSON.valueToTree(metricView);
+			ObjectNode item = objectMapper.valueToTree(metricView);
 			item.put("createdByName", names.get(metricView.getCreatedBy()));
 			item.put("reviewedByName", names.get(metricView.getReviewedBy()));
+			item.put("statusLabel", statusLabel(metricView.getStatus(), lang));
+			item.put("originLabel", originLabel(metricView.getOrigin(), lang));
 			items.add(item);
 		}
 		return items;
+	}
+
+	private String statusLabel(String status, String lang) {
+		if (status == null) return null;
+		return switch (status) {
+			case MetricView.STATUS_PENDING_REVIEW -> langService.get(lang, "PanelForm.status.pendingReview");
+			case MetricView.STATUS_PUBLISHED -> langService.get(lang, "PanelForm.status.published");
+			case MetricView.STATUS_UNUSED -> langService.get(lang, "PanelForm.status.unused");
+			default -> status;
+		};
+	}
+
+	private String originLabel(String origin, String lang) {
+		if (origin == null) return null;
+		return switch (origin) {
+			case MetricView.ORIGIN_SYSTEM -> langService.get(lang, "PanelForm.origin.system");
+			case MetricView.ORIGIN_USER -> langService.get(lang, "PanelForm.origin.user");
+			default -> origin;
+		};
 	}
 
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)

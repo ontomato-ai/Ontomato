@@ -520,6 +520,18 @@
     "value": "A published product function cannot be changed"
   },
   {
+    "key": "PanelForm.origin.system",
+    "value": "System"
+  },
+  {
+    "key": "PanelForm.origin.user",
+    "value": "User"
+  },
+  {
+    "key": "PanelForm.operation.product",
+    "value": "Product"
+  },
+  {
     "key": "WriteFunctionOperation.classNotExist",
     "value": "Class does not exist"
   },

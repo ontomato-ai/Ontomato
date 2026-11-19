@@ -14,6 +14,7 @@ import io.ontomato.dataengine.bean.metricView.MetricView;
 import io.ontomato.dataengine.bean.metricView.MetricViewBinding;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.dao.MetricViewDao;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.ontomato.dataengine.service.impl.MetricViewServiceImpl;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -187,25 +188,46 @@ class MetricViewFormTest {
     values.put("name", "New metric");
     values.getJSONObject("function").put("queryPackage", JSONObject.of("manifest", JSONObject.of("parameterDefs", new JSONArray())));
     values.getJSONObject("function").getJSONObject("returnDef").put("columnLabels", "not an object");
-    assertEquals("/function/returnDef/columnLabels: expected an object", draftError(values));
+    assertError(draftErrors(values), "/function/returnDef/columnLabels", "invalid_object");
 
     values = MetricViewForm.defaults();
     values.put("name", "New metric");
-    assertEquals("/function/queryPackage: expected a query package object", draftError(values));
+    assertError(draftErrors(values), "/function/queryPackage", "required");
 
     values = MetricViewForm.defaults();
     values.put("name", "New metric");
     values.getJSONObject("function").put("queryPackage", JSONObject.of("manifest", JSONObject.of("parameterDefs", new JSONArray())));
     values.put("matchQuestions", "one question");
-    assertEquals("/matchQuestions: expected an array of strings", draftError(values));
+    assertError(draftErrors(values), "/matchQuestions", "invalid_array");
 
     values = MetricViewForm.defaults();
     values.put("name", "");
-    assertEquals("/name: expected a nonempty string", draftError(values));
+    values.getJSONObject("function").put("queryPackage", JSONObject.of("manifest", JSONObject.of("parameterDefs", new JSONArray())));
+    assertError(draftErrors(values), "/name", "required");
+
+    values = MetricViewForm.defaults();
+    values.put("name", "New metric");
+    values.put("status", "DELETED");
+    values.getJSONObject("function").put("queryPackage", JSONObject.of("manifest", JSONObject.of("parameterDefs", new JSONArray())));
+    assertError(draftErrors(values), "/status", "invalid_option");
   }
 
   @Test
-  void rejectsABindingThatDoesNotMatchTheFunctionParameters() {
+  void collectsEveryDirectFieldError() {
+    JSONObject values = MetricViewForm.defaults();
+    values.put("name", "");
+    values.put("matchQuestions", "one question");
+
+    List<ObjectNode> errors = draftErrors(values);
+
+    assertEquals(3, errors.size());
+    assertTrue(errors.stream().anyMatch(error -> "/name".equals(error.get("field").asText())));
+    assertTrue(errors.stream().anyMatch(error -> "/matchQuestions".equals(error.get("field").asText())));
+    assertTrue(errors.stream().anyMatch(error -> "/function/queryPackage".equals(error.get("field").asText())));
+  }
+
+  @Test
+  void reportsValidatorErrorsOnTheContainerTheyValidate() {
     JSONObject values = MetricViewForm.defaults();
     values.put("name", "New metric");
     values.getJSONObject("function").put("queryPackage", JSONObject.of("manifest", JSONObject.of("parameterDefs",
@@ -214,18 +236,31 @@ class MetricViewFormTest {
         "parameters", new JSONObject());
     values.put("bindings", JSONArray.of(binding));
 
-    assertEquals("/bindings/0/parameters/amount: Missing parameter: amount", draftError(values));
+    List<ObjectNode> missing = draftErrors(values);
+    assertError(missing, "/bindings", "invalid_object");
+    assertTrue(missing.get(0).get("message").asText().contains("Missing parameter: amount"));
 
     binding.put("parameters", JSONObject.of("amount", "not a number"));
-    assertEquals("/bindings/0/parameters/amount: Parameter 'amount' requires TYPE_NUMBER; received String", draftError(values));
+    List<ObjectNode> wrongType = draftErrors(values);
+    assertError(wrongType, "/bindings", "invalid_object");
+    assertTrue(wrongType.get(0).get("message").asText().contains("Parameter 'amount' requires TYPE_NUMBER"));
   }
 
-  private String draftError(JSONObject values) {
+  private List<ObjectNode> draftErrors(JSONObject values) {
     JSONObject request = JSONObject.of("target", JSONObject.of("kind", "draft"));
     request.put("values", values);
     request.put("changedField", null);
-    IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> service.form(request, "en", "domain-a"));
-    return error.getMessage();
+    PanelFormException error = assertThrows(PanelFormException.class, () -> service.form(request, "en", "domain-a"));
+    assertEquals("Invalid MetricView draft", error.getMessage());
+    return error.fields();
+  }
+
+  private static void assertError(List<ObjectNode> fields, String field, String code) {
+    assertEquals(1, fields.size());
+    ObjectNode error = fields.get(0);
+    assertEquals(field, error.get("field").asText());
+    assertEquals(code, error.get("code").asText());
+    assertFalse(error.get("message").asText().isBlank());
   }
 
   private JSONObject form(JSONObject request) {

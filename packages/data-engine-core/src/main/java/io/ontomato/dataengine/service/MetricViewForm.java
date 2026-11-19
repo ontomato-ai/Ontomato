@@ -165,144 +165,87 @@ public final class MetricViewForm {
         false);
   }
 
-  /** Check an incoming draft without saving it; reject at the field path that fails. */
+  /** Check an incoming draft without saving it; reject with the field paths that fail. */
   public static void checkDraft(JSONObject values) {
-    requiredString(values, "name", "/name");
-    optionalString(values, "description", "/description");
+    PanelFormErrors errors = new PanelFormErrors();
+    errors.requiredString(values, "name", "/name");
+    errors.optionalString(values, "description", "/description");
     Object status = values.get("status");
-    if (!(status instanceof String statusText) || !STATUSES.contains(statusText))
-      throw new IllegalArgumentException("/status: expected PENDING_REVIEW, PUBLISHED or UNUSED");
-    stringArray(values, "matchQuestions", "/matchQuestions");
-    Function function = checkFunction(values);
-    checkBindings(values, function);
-  }
+    if (status == null) errors.required("/status", "status is required");
+    else if (!(status instanceof String statusText)) errors.invalidObject("/status", "expected a string");
+    else if (!STATUSES.contains(statusText))
+      errors.invalidOption("/status", "expected PENDING_REVIEW, PUBLISHED or UNUSED");
+    errors.stringArray(values, "matchQuestions", "/matchQuestions");
+    checkFunctionShape(values, errors);
+    checkBindingShapes(values, errors);
+    errors.throwIfAny("Invalid MetricView draft");
 
-  private static Function checkFunction(JSONObject values) {
-    Object raw = values.get("function");
-    if (!(raw instanceof Map<?, ?>))
-      throw new IllegalArgumentException("/function: expected an embedded Function object");
-    JSONObject function = values.getJSONObject("function");
-    JSONObject returnDef = objectField(function, "returnDef", "/function/returnDef");
-    if (returnDef != null) objectField(returnDef, "columnLabels", "/function/returnDef/columnLabels");
-    Function accepted;
+    Function function;
     try {
-      accepted = Function.fromAsset(values);
+      function = Function.fromAsset(values);
     } catch (RuntimeException error) {
-      throw functionError(error.getMessage(), "/function");
+      errors.invalidObject("/function", error);
+      errors.throwIfAny("Invalid MetricView draft");
+      return;
     }
-    if (!Function.OPERATION_READ.equals(accepted.getOperation()))
-      throw new IllegalArgumentException("/function/operation: expected OPERATION_READ");
-    if (function.get("queryPackage") == null)
-      throw new IllegalArgumentException("/function/queryPackage: expected a query package object");
-    return accepted;
-  }
-
-  private static void checkBindings(JSONObject values, Function function) {
-    Object raw = values.get("bindings");
-    if (raw == null) return;
-    if (!(raw instanceof List<?> list))
-      throw new IllegalArgumentException("/bindings: expected an array of bindings");
-    JSONArray bindingsJson = values.getJSONArray("bindings");
-    for (int i = 0; i < list.size(); i++) {
-      Object item = list.get(i);
-      if (!(item instanceof Map<?, ?>))
-        throw new IllegalArgumentException("/bindings/" + i + ": expected a binding object");
-      JSONObject binding = bindingsJson.getJSONObject(i);
-      String base = "/bindings/" + i;
-      optionalString(binding, "id", base + "/id");
-      requiredString(binding, "name", base + "/name");
-      optionalString(binding, "description", base + "/description");
-      stringArray(binding, "matchQuestions", base + "/matchQuestions");
-      if (!(binding.get("parameters") instanceof Map<?, ?>))
-        throw new IllegalArgumentException(base + "/parameters: expected an object of parameter values");
+    if (!Function.OPERATION_READ.equals(function.getOperation())) {
+      errors.invalidOption("/function/operation", "expected OPERATION_READ");
+      errors.throwIfAny("Invalid MetricView draft");
     }
-    MetricView metric = values.to(MetricView.class);
-    metric.setFunction(function);
+    MetricView metric;
+    try {
+      metric = values.to(MetricView.class);
+      metric.setFunction(function);
+    } catch (RuntimeException error) {
+      errors.invalidObject("/bindings", error);
+      errors.throwIfAny("Invalid MetricView draft");
+      return;
+    }
     List<MetricViewBinding> bindings = metric.getBindings() == null ? List.of() : metric.getBindings();
     try {
       MetricViewBindings.validate(function, bindings);
-    } catch (IllegalArgumentException error) {
-      throw bindingError(error.getMessage(), bindings);
+    } catch (RuntimeException error) {
+      errors.invalidObject("/bindings", error);
     }
+    errors.throwIfAny("Invalid MetricView draft");
   }
 
-  private static IllegalArgumentException bindingError(String message, List<MetricViewBinding> bindings) {
-    int index = -1;
-    String detail = message;
-    if (message.startsWith("Binding '")) {
-      int end = message.indexOf("': ");
-      if (end > 0) {
-        String name = message.substring("Binding '".length(), end);
-        for (int i = 0; i < bindings.size(); i++)
-          if (name.equals(bindings.get(i).getName())) {
-            index = i;
-            break;
-          }
-        detail = message.substring(end + 3);
+  private static void checkFunctionShape(JSONObject values, PanelFormErrors errors) {
+    Object raw = values.get("function");
+    if (!(raw instanceof Map<?, ?>)) {
+      errors.invalidObject("/function", "expected an embedded Function object");
+      return;
+    }
+    JSONObject function = values.getJSONObject("function");
+    JSONObject returnDef = errors.objectField(function, "returnDef", "/function/returnDef");
+    if (returnDef != null) errors.objectField(returnDef, "columnLabels", "/function/returnDef/columnLabels");
+    Object queryPackage = function.get("queryPackage");
+    if (queryPackage == null) errors.required("/function/queryPackage", "queryPackage is required");
+    else if (!(queryPackage instanceof Map<?, ?>)) errors.invalidObject("/function/queryPackage", "expected an object");
+  }
+
+  private static void checkBindingShapes(JSONObject values, PanelFormErrors errors) {
+    Object raw = values.get("bindings");
+    if (raw == null) return;
+    if (!(raw instanceof List<?> list)) {
+      errors.invalidArray("/bindings", "expected an array of bindings");
+      return;
+    }
+    JSONArray bindingsJson = values.getJSONArray("bindings");
+    for (int i = 0; i < list.size(); i++) {
+      Object item = list.get(i);
+      if (!(item instanceof Map<?, ?>)) {
+        errors.invalidObject("/bindings/" + i, "expected a binding object");
+        continue;
       }
-    } else if (message.startsWith("Duplicate binding ID: ")) {
-      String id = message.substring("Duplicate binding ID: ".length());
-      for (int i = 0; i < bindings.size(); i++)
-        if (id.equals(bindings.get(i).getId())) {
-          index = i;
-          break;
-        }
+      JSONObject binding = bindingsJson.getJSONObject(i);
+      String base = "/bindings/" + i;
+      errors.optionalString(binding, "id", base + "/id");
+      errors.requiredString(binding, "name", base + "/name");
+      errors.optionalString(binding, "description", base + "/description");
+      errors.stringArray(binding, "matchQuestions", base + "/matchQuestions");
+      errors.requiredObject(binding, "parameters", base + "/parameters");
     }
-    if (index < 0) return new IllegalArgumentException("/bindings: " + message);
-    String base = "/bindings/" + index;
-    if (detail.startsWith("Missing parameter: "))
-      return new IllegalArgumentException(
-          base + "/parameters/" + PanelFormFields.pointer(detail.substring("Missing parameter: ".length())) + ": " + detail);
-    if (detail.startsWith("Parameter '")) {
-      int quote = detail.indexOf('\'');
-      int next = detail.indexOf('\'', quote + 1);
-      if (next > quote)
-        return new IllegalArgumentException(
-            base + "/parameters/" + PanelFormFields.pointer(detail.substring(quote + 1, next)) + ": " + detail);
-    }
-    if (detail.startsWith("Unknown parameters")) return new IllegalArgumentException(base + "/parameters: " + detail);
-    return new IllegalArgumentException(base + ": " + detail);
-  }
-
-  private static IllegalArgumentException functionError(String message, String prefix) {
-    if (message.startsWith("function:"))
-      return new IllegalArgumentException(prefix + message.substring("function".length()));
-    if (message.startsWith("Function.")) {
-      String detail = message.substring("Function.".length());
-      int colon = detail.indexOf(':');
-      String field = (colon < 0 ? detail : detail.substring(0, colon)).replaceAll("\\[(\\d+)\\]", "/$1");
-      String suffix = colon < 0 ? "" : detail.substring(colon);
-      return new IllegalArgumentException(prefix + "/" + field + suffix);
-    }
-    return new IllegalArgumentException(message);
-  }
-
-  private static JSONObject objectField(JSONObject parent, String field, String pointer) {
-    Object value = parent.get(field);
-    if (value == null) return null;
-    if (!(value instanceof Map<?, ?>)) throw new IllegalArgumentException(pointer + ": expected an object");
-    return parent.getJSONObject(field);
-  }
-
-  private static void requiredString(JSONObject values, String field, String pointer) {
-    Object value = values.get(field);
-    if (!(value instanceof String text) || text.isBlank())
-      throw new IllegalArgumentException(pointer + ": expected a nonempty string");
-  }
-
-  private static void optionalString(JSONObject values, String field, String pointer) {
-    Object value = values.get(field);
-    if (value != null && !(value instanceof String))
-      throw new IllegalArgumentException(pointer + ": expected a string");
-  }
-
-  private static void stringArray(JSONObject values, String field, String pointer) {
-    Object value = values.get(field);
-    if (value == null) return;
-    if (!(value instanceof List<?> list))
-      throw new IllegalArgumentException(pointer + ": expected an array of strings");
-    for (Object item : list)
-      if (!(item instanceof String)) throw new IllegalArgumentException(pointer + ": expected an array of strings");
   }
 
   private static JSONArray statusOptions(String lang, LangService langService) {

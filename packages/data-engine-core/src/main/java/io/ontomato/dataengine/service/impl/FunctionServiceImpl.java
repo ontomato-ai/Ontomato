@@ -211,18 +211,19 @@ public class FunctionServiceImpl implements FunctionService {
 	}
 
 	private void isReferenced(String functionId, String lang) throws Exception {
-		// A Function referenced by a MetricView cannot be modified or deleted
-		if (metricViewDao.referencedFunctionIds().contains(functionId)) {
-			throw new Exception(langService.get(lang, "Function.referencedByMetricView"));
-		}
-		// A Function referenced by an Action cannot be modified or deleted
-		if (actionDao.queryList(null, functionId, null, null).size() > 0) {
-			throw new Exception(langService.get(lang, "Function.referencedByAction"));
-		}
-		// A Function referenced by a WriteTask cannot be modified or deleted
-		if (scheduledTasks.references(functionId)) {
-			throw new Exception(langService.get(lang, "Function.referencedByWriteTask"));
-		}
+		String reason = referenceReason(functionId, lang);
+		if (reason != null) throw new Exception(reason);
+	}
+
+	/** Why a Function cannot change, or null when no MetricView, Action or WriteTask references it. */
+	private String referenceReason(String functionId, String lang) {
+		if (metricViewDao.referencedFunctionIds().contains(functionId))
+			return langService.get(lang, "Function.referencedByMetricView");
+		if (actionDao.queryList(null, functionId, null, null).size() > 0)
+			return langService.get(lang, "Function.referencedByAction");
+		if (scheduledTasks.references(functionId))
+			return langService.get(lang, "Function.referencedByWriteTask");
+		return null;
 	}
 
   @Override
@@ -283,14 +284,8 @@ public class FunctionServiceImpl implements FunctionService {
       readOnlyReason = langService.get(lang, "Function.cannotModifySystem");
     else if (Function.OPERATION_PRODUCT.equals(function.getOperation()))
       readOnlyReason = langService.get(lang, "PanelForm.readOnly.product");
-    else if (function.getId() != null) {
-      if (metricViewDao.referencedFunctionIds().contains(function.getId()))
-        readOnlyReason = langService.get(lang, "Function.referencedByMetricView");
-      else if (actionDao.queryList(null, function.getId(), null, null).size() > 0)
-        readOnlyReason = langService.get(lang, "Function.referencedByAction");
-      else if (scheduledTasks.references(function.getId()))
-        readOnlyReason = langService.get(lang, "Function.referencedByWriteTask");
-    }
+    else if (function.getId() != null)
+      readOnlyReason = referenceReason(function.getId(), lang);
     String operationReadOnlyReason = langService.get(lang, "PanelForm.readOnly.operation");
     return FunctionForm.describe(values, existing, readOnlyReason, operationReadOnlyReason, lang, langService);
   }

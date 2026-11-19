@@ -13,6 +13,7 @@ import io.ontomato.dataengine.bean.function.ReturnDef;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.dao.MetricViewDao;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.ontomato.dataengine.service.impl.FunctionServiceImpl;
 import io.ontomato.dataengine.service.scheduling.OntologyScheduleReferences;
 import java.util.ArrayList;
@@ -183,39 +184,78 @@ class FunctionFormTest {
   void rejectsADraftAtTheFieldThatFails() {
     JSONObject values = FunctionForm.defaultValues();
     values.put("name", "New query");
-    assertEquals("/queryPackage: expected a query package object", draftError(values));
+    assertError(draftErrors(values), "/queryPackage", "required");
 
     values = FunctionForm.defaultValues();
     values.put("name", "New query");
     values.put("queryPackage", JSONObject.of("manifest", JSONObject.of("parameterDefs", new JSONArray())));
     values.put("operation", "OPERATION_DELETE");
-    assertEquals("/operation: expected OPERATION_READ or OPERATION_WRITE", draftError(values));
+    assertError(draftErrors(values), "/operation", "invalid_option");
 
     values = FunctionForm.defaultValues();
     values.put("name", "");
-    assertEquals("/name: expected a nonempty string", draftError(values));
+    values.put("queryPackage", JSONObject.of("manifest", JSONObject.of("parameterDefs", new JSONArray())));
+    assertError(draftErrors(values), "/name", "required");
 
     values = FunctionForm.defaultValues();
     values.put("name", "New write");
     values.put("operation", Function.OPERATION_WRITE);
     values.put("parameters", JSONArray.of(JSONObject.of("name", "amount", "type", "TYPE_BOOLEAN")));
-    assertEquals(
-        "/parameters/0/type: expected TYPE_STRING, TYPE_NUMBER, TYPE_TIME, TYPE_STRING_ARRAY, TYPE_NUMBER_ARRAY or TYPE_TIME_ARRAY",
-        draftError(values));
+    assertError(draftErrors(values), "/parameters/0/type", "invalid_option");
 
     values = FunctionForm.defaultValues();
     values.put("name", "New write");
     values.put("operation", Function.OPERATION_WRITE);
     values.getJSONObject("returnDef").put("classNames", "/Order");
-    assertEquals("/returnDef/classNames: expected an array of strings", draftError(values));
+    assertError(draftErrors(values), "/returnDef/classNames", "invalid_array");
   }
 
-  private String draftError(JSONObject values) {
+  @Test
+  void collectsEveryDirectFieldError() {
+    JSONObject values = FunctionForm.defaultValues();
+    values.put("name", "");
+    values.put("description", 42);
+    values.put("returnDef", "not an object");
+
+    List<ObjectNode> errors = draftErrors(values);
+
+    assertEquals(4, errors.size());
+    assertTrue(errors.stream().anyMatch(error -> "/name".equals(error.get("field").asText())));
+    assertTrue(errors.stream().anyMatch(error -> "/description".equals(error.get("field").asText())));
+    assertTrue(errors.stream().anyMatch(error -> "/returnDef".equals(error.get("field").asText())));
+    assertTrue(errors.stream().anyMatch(error -> "/queryPackage".equals(error.get("field").asText())));
+  }
+
+  @Test
+  void reportsValidatorErrorsOnTheFunctionContainer() {
+    JSONObject values = FunctionForm.defaultValues();
+    values.put("name", "New query");
+    values.put("queryPackage", JSONObject.of("manifest", JSONObject.of("parameterDefs", new JSONArray())));
+    values.put("sourceArtifact", new JSONObject());
+
+    List<ObjectNode> errors = draftErrors(values);
+
+    assertEquals(1, errors.size());
+    assertEquals("/function", errors.get(0).get("field").asText());
+    assertEquals("invalid_object", errors.get(0).get("code").asText());
+    assertTrue(errors.get(0).get("message").asText().contains("registered by the publication service"));
+  }
+
+  private List<ObjectNode> draftErrors(JSONObject values) {
     JSONObject request = JSONObject.of("target", JSONObject.of("kind", "draft"));
     request.put("values", values);
     request.put("changedField", null);
-    IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> service.form(request, "en", "domain-a"));
-    return error.getMessage();
+    PanelFormException error = assertThrows(PanelFormException.class, () -> service.form(request, "en", "domain-a"));
+    assertEquals("Invalid Function draft", error.getMessage());
+    return error.fields();
+  }
+
+  private static void assertError(List<ObjectNode> fields, String field, String code) {
+    assertEquals(1, fields.size());
+    ObjectNode error = fields.get(0);
+    assertEquals(field, error.get("field").asText());
+    assertEquals(code, error.get("code").asText());
+    assertFalse(error.get("message").asText().isBlank());
   }
 
   private JSONObject form(JSONObject request) {

@@ -170,48 +170,60 @@ public final class FunctionForm {
     return JSONObject.of("fields", fields, "values", values, "save", save(existing));
   }
 
-  /** Check an incoming draft without saving it; reject at the field path that fails. */
+  /** Check an incoming draft without saving it; reject with the field paths that fail. */
   public static void checkDraft(JSONObject values) {
-    requiredString(values, "name", "/name");
-    optionalString(values, "description", "/description");
-    Object operation = values.get("operation");
-    if (!(operation instanceof String operationText)
-        || !(Function.OPERATION_READ.equals(operationText) || Function.OPERATION_WRITE.equals(operationText)))
-      throw new IllegalArgumentException("/operation: expected OPERATION_READ or OPERATION_WRITE");
-    JSONObject returnDef = objectField(values, "returnDef", "/returnDef");
-    if (Function.OPERATION_READ.equals(operation)) {
-      if (!(values.get("queryPackage") instanceof Map<?, ?>))
-        throw new IllegalArgumentException("/queryPackage: expected a query package object");
-      if (returnDef != null) objectField(returnDef, "columnLabels", "/returnDef/columnLabels");
-    } else {
-      if (returnDef != null) stringArray(returnDef, "classNames", "/returnDef/classNames");
-      checkParameters(values.get("parameters"));
+    PanelFormErrors errors = new PanelFormErrors();
+    errors.requiredString(values, "name", "/name");
+    errors.optionalString(values, "description", "/description");
+    Object rawOperation = values.get("operation");
+    String operation = null;
+    if (rawOperation == null) errors.required("/operation", "operation is required");
+    else if (!(rawOperation instanceof String text)) errors.invalidObject("/operation", "expected a string");
+    else {
+      operation = text;
+      if (!(Function.OPERATION_READ.equals(text) || Function.OPERATION_WRITE.equals(text)))
+        errors.invalidOption("/operation", "expected OPERATION_READ or OPERATION_WRITE");
     }
+    JSONObject returnDef = errors.objectField(values, "returnDef", "/returnDef");
+    if (Function.OPERATION_READ.equals(operation)) {
+      errors.requiredObject(values, "queryPackage", "/queryPackage");
+      if (returnDef != null) errors.objectField(returnDef, "columnLabels", "/returnDef/columnLabels");
+    } else if (Function.OPERATION_WRITE.equals(operation)) {
+      if (returnDef != null) errors.stringArray(returnDef, "classNames", "/returnDef/classNames");
+      checkParameters(values.get("parameters"), errors);
+    }
+    errors.throwIfAny("Invalid Function draft");
     try {
       Function.fromInput(values);
     } catch (RuntimeException error) {
-      throw functionError(error.getMessage());
+      errors.invalidObject("/function", error);
+      errors.throwIfAny("Invalid Function draft");
     }
   }
 
-  private static void checkParameters(Object raw) {
+  private static void checkParameters(Object raw, PanelFormErrors errors) {
     if (raw == null) return;
-    if (!(raw instanceof List<?> list))
-      throw new IllegalArgumentException("/parameters: expected an array of parameter definitions");
+    if (!(raw instanceof List<?> list)) {
+      errors.invalidArray("/parameters", "expected an array of parameter definitions");
+      return;
+    }
     for (int i = 0; i < list.size(); i++) {
       Object item = list.get(i);
-      if (!(item instanceof Map<?, ?>))
-        throw new IllegalArgumentException("/parameters/" + i + ": expected a parameter definition object");
+      if (!(item instanceof Map<?, ?>)) {
+        errors.invalidObject("/parameters/" + i, "expected a parameter definition object");
+        continue;
+      }
       JSONObject parameter = JSONObject.from(item);
       String base = "/parameters/" + i;
-      optionalString(parameter, "name", base + "/name");
-      optionalString(parameter, "type", base + "/type");
-      optionalString(parameter, "description", base + "/description");
+      errors.optionalString(parameter, "name", base + "/name");
+      errors.optionalString(parameter, "type", base + "/type");
+      errors.optionalString(parameter, "description", base + "/description");
       Object type = parameter.get("type");
       if (type != null && !(type instanceof String text && PARAMETER_TYPES.contains(text)))
-        throw new IllegalArgumentException(
-            base + "/type: expected TYPE_STRING, TYPE_NUMBER, TYPE_TIME, TYPE_STRING_ARRAY, TYPE_NUMBER_ARRAY or TYPE_TIME_ARRAY");
-      stringArray(parameter, "classNames", base + "/classNames");
+        errors.invalidOption(
+            base + "/type",
+            "expected TYPE_STRING, TYPE_NUMBER, TYPE_TIME, TYPE_STRING_ARRAY, TYPE_NUMBER_ARRAY or TYPE_TIME_ARRAY");
+      errors.stringArray(parameter, "classNames", base + "/classNames");
     }
   }
 
@@ -308,45 +320,6 @@ public final class FunctionForm {
   private static boolean legacy(JSONObject function) {
     Object code = function.get("code");
     return function.get("queryPackage") == null && code instanceof String text && !text.isBlank();
-  }
-
-  private static IllegalArgumentException functionError(String message) {
-    if (message.startsWith("Function.")) {
-      String detail = message.substring("Function.".length());
-      int colon = detail.indexOf(':');
-      String field = (colon < 0 ? detail : detail.substring(0, colon)).replaceAll("\\[(\\d+)\\]", "/$1");
-      String suffix = colon < 0 ? "" : detail.substring(colon);
-      return new IllegalArgumentException("/" + field + suffix);
-    }
-    return new IllegalArgumentException(message);
-  }
-
-  private static JSONObject objectField(JSONObject parent, String field, String pointer) {
-    Object value = parent.get(field);
-    if (value == null) return null;
-    if (!(value instanceof Map<?, ?>)) throw new IllegalArgumentException(pointer + ": expected an object");
-    return parent.getJSONObject(field);
-  }
-
-  private static void requiredString(JSONObject values, String field, String pointer) {
-    Object value = values.get(field);
-    if (!(value instanceof String text) || text.isBlank())
-      throw new IllegalArgumentException(pointer + ": expected a nonempty string");
-  }
-
-  private static void optionalString(JSONObject values, String field, String pointer) {
-    Object value = values.get(field);
-    if (value != null && !(value instanceof String))
-      throw new IllegalArgumentException(pointer + ": expected a string");
-  }
-
-  private static void stringArray(JSONObject values, String field, String pointer) {
-    Object value = values.get(field);
-    if (value == null) return;
-    if (!(value instanceof List<?> list))
-      throw new IllegalArgumentException(pointer + ": expected an array of strings");
-    for (Object item : list)
-      if (!(item instanceof String)) throw new IllegalArgumentException(pointer + ": expected an array of strings");
   }
 
   private static JSONObject save(boolean existing) {

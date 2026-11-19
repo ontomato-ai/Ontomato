@@ -9,12 +9,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.ontomato.dataengine.bean.metricView.MetricView;
 import io.ontomato.dataengine.core.bean.User;
+import io.ontomato.dataengine.service.FormFields;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.MetricViewForm;
 import io.ontomato.dataengine.service.MetricViewService;
+import io.ontomato.dataengine.service.PanelFormException;
 import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.service.agent.AgentExecutionScope;
 import io.ontomato.dataengine.util.SpringBeanUtil;
@@ -32,6 +35,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class MetricViewPanelEndpointTest {
   private final MetricViewService metricViewService = mock(MetricViewService.class);
   private final SubjectDirectory subjectDirectory = mock(SubjectDirectory.class);
+  private final LangService langService = mock(LangService.class);
   private final MetricViewController controller =
       new MetricViewController(mock(AgentExecutionScope.class));
 
@@ -48,6 +52,9 @@ class MetricViewPanelEndpointTest {
     new SpringBeanUtil().setApplicationContext(context);
     ReflectionTestUtils.setField(controller, "metricViewService", metricViewService);
     ReflectionTestUtils.setField(controller, "subjectDirectory", subjectDirectory);
+    ReflectionTestUtils.setField(controller, "langService", langService);
+    ReflectionTestUtils.setField(controller, "objectMapper", new ObjectMapper());
+    when(langService.get(anyString(), anyString())).thenAnswer(call -> call.getArgument(1));
   }
 
   @Test
@@ -55,11 +62,15 @@ class MetricViewPanelEndpointTest {
     MetricView first = new MetricView();
     first.setId("m1");
     first.setName("Revenue");
+    first.setStatus(MetricView.STATUS_PUBLISHED);
+    first.setOrigin(MetricView.ORIGIN_USER);
     first.setCreatedBy("u1");
     first.setReviewedBy("u2");
     MetricView second = new MetricView();
     second.setId("m2");
     second.setName("Orders");
+    second.setStatus(MetricView.STATUS_UNUSED);
+    second.setOrigin(MetricView.ORIGIN_SYSTEM);
     second.setCreatedBy("u3");
     when(metricViewService.queryList(isNull(), isNull(), isNull(), eq("domain"))).thenReturn(List.of(first, second));
     when(subjectDirectory.subjectsInDomain("domain")).thenReturn(List.of(
@@ -72,6 +83,12 @@ class MetricViewPanelEndpointTest {
     assertEquals("Alice", data.getJSONObject(0).getString("createdByName"));
     assertEquals("bob", data.getJSONObject(0).getString("reviewedByName"));
     assertEquals("Revenue", data.getJSONObject(0).getString("name"));
+    assertEquals(MetricView.STATUS_PUBLISHED, data.getJSONObject(0).getString("status"));
+    assertEquals(MetricView.ORIGIN_USER, data.getJSONObject(0).getString("origin"));
+    assertEquals("PanelForm.status.published", data.getJSONObject(0).getString("statusLabel"));
+    assertEquals("PanelForm.origin.user", data.getJSONObject(0).getString("originLabel"));
+    assertEquals("PanelForm.status.unused", data.getJSONObject(1).getString("statusLabel"));
+    assertEquals("PanelForm.origin.system", data.getJSONObject(1).getString("originLabel"));
     assertTrue(data.getJSONObject(1).containsKey("createdByName"));
     assertNull(data.getJSONObject(1).get("createdByName"));
     assertNull(data.getJSONObject(1).get("reviewedByName"));
@@ -106,6 +123,24 @@ class MetricViewPanelEndpointTest {
     assertFalse(rejected.getBooleanValue("success"));
     assertNotNull(rejected.getString("message"));
     verifyNoInteractions(metricViewService);
+  }
+
+  @Test
+  void theFormEndpointReturnsStructuredFieldErrors() throws Exception {
+    when(metricViewService.form(any(), eq("en"), eq("domain")))
+        .thenThrow(new PanelFormException("Invalid MetricView draft",
+            List.of(FormFields.error("/name", "required", "name is required"))));
+
+    JSONObject body = perform("/metricView/form", """
+        {"target":{"kind":"draft"},"changedField":null}""");
+
+    assertFalse(body.getBooleanValue("success"));
+    assertEquals("Invalid MetricView draft", body.getString("message"));
+    JSONArray fields = body.getJSONArray("fields");
+    assertEquals(1, fields.size());
+    assertEquals("/name", fields.getJSONObject(0).getString("field"));
+    assertEquals("required", fields.getJSONObject(0).getString("code"));
+    assertEquals("name is required", fields.getJSONObject(0).getString("message"));
   }
 
   @Test
