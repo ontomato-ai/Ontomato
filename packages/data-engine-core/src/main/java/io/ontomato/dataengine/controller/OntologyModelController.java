@@ -28,6 +28,8 @@ import io.ontomato.dataengine.service.OntologyModelService.AttributeUpdate;
 import io.ontomato.dataengine.service.OntologyModelService.AttributeView;
 import io.ontomato.dataengine.service.OntologyModelService.ClassDeletion;
 import io.ontomato.dataengine.service.OntologyModelService.DeletionImpact;
+import io.ontomato.dataengine.service.OntologyModelService.FormDescription;
+import io.ontomato.dataengine.service.OntologyModelService.FormRequest;
 import io.ontomato.dataengine.service.OntologyModelService.ObjectTypeCreate;
 import io.ontomato.dataengine.service.OntologyModelService.ObjectTypeUpdate;
 import io.ontomato.dataengine.service.OntologyModelService.ObjectTypeView;
@@ -213,5 +215,23 @@ public class OntologyModelController {
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		service.deleteRelationship(body.relationship(), SystemUtils.getCurUser(), lang);
 		return ResponseEntity.ok(Map.of());
+	}
+
+	@PostMapping("/object-type/form")
+	public FormDescription objectTypeForm(@RequestBody FormRequest body,
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
+		return service.objectTypeForm(body, SystemUtils.getCurUser(), lang);
+	}
+
+	@PostMapping("/attribute/form")
+	public FormDescription attributeForm(@RequestBody FormRequest body,
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
+		return service.attributeForm(body, SystemUtils.getCurUser(), lang);
+	}
+
+	@PostMapping("/relationship/form")
+	public FormDescription relationshipForm(@RequestBody FormRequest body,
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
+		return service.relationshipForm(body, SystemUtils.getCurUser(), lang);
 	}
 }

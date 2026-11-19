@@ -1,7 +1,10 @@
 package io.ontomato.dataengine.controller;
 
+import static io.ontomato.dataengine.schedules.ScheduleJson.object;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -33,6 +36,10 @@ import io.ontomato.dataengine.service.OntologyModelException;
 import io.ontomato.dataengine.service.OntologyModelService;
 import io.ontomato.dataengine.service.OntologyModelService.AttributeUpdate;
 import io.ontomato.dataengine.service.OntologyModelService.ClassDeletion;
+import io.ontomato.dataengine.service.OntologyModelService.FormDescription;
+import io.ontomato.dataengine.service.OntologyModelService.FormRequest;
+import io.ontomato.dataengine.service.OntologyModelService.FormSave;
+import io.ontomato.dataengine.service.OntologyModelService.FormTarget;
 import io.ontomato.dataengine.service.OntologyModelService.ObjectTypeCreate;
 import io.ontomato.dataengine.service.OntologyModelService.ObjectTypeUpdate;
 import io.ontomato.dataengine.service.OntologyModelService.ObjectTypeView;
@@ -182,6 +189,63 @@ class OntologyModelControllerTest {
 
 		verify(service).updateAttribute(eq("Device"), eq("site_id"),
 				eq(new AttributeUpdate("Site", "", true, true)), eq(user), eq("en"));
+	}
+
+	@Test
+	void aFormRequestBindsThroughTheRealConverterAndAnswersItsDescription() throws Exception {
+		when(service.objectTypeForm(any(), eq(user), eq("en"))).thenReturn(new FormDescription(
+				List.of(object("path", "/className", "label", "API name", "control", object("kind", "text"),
+						"valueSchema", object("type", "string"), "required", true, "readOnly", true)),
+				Map.of("className", "Device"),
+				new FormSave("POST", "/ontology/model/object-type/update", object("type", "object"),
+						"objectType.update")));
+
+		var response = mvc().perform(post("/ontology/model/object-type/form")
+				.header("Accept-Language", "en")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"target":{"kind":"object","objectType":"platform:ObjectType","primaryKey":"Device"},
+						"values":{"className":"Device","showName":"Devices","nested":{"a":1}},"changedField":null}
+						"""))
+				.andExpect(status().isOk()).andReturn().getResponse();
+
+		var body = JSON.parseObject(response.getContentAsString());
+		assertEquals("/className", body.getJSONArray("fields").getJSONObject(0).getString("path"));
+		assertEquals("Device", body.getJSONObject("values").getString("className"));
+		assertEquals("objectType.update", body.getJSONObject("save").getString("draftOperation"));
+		assertFalse(body.containsKey("revision"));
+		// The real converter binds the nested objects of the body as Maps, never as fastjson objects.
+		var bound = ArgumentCaptor.forClass(FormRequest.class);
+		verify(service).objectTypeForm(bound.capture(), eq(user), eq("en"));
+		assertEquals(new FormTarget("object", "platform:ObjectType", "Device"), bound.getValue().target());
+		assertTrue(bound.getValue().values().get("nested") instanceof Map);
+		assertEquals(Map.of("className", "Device", "showName", "Devices", "nested", Map.of("a", 1)),
+				bound.getValue().values());
+	}
+
+	@Test
+	void anUncheckedFormDraftAnswers422AndABrokenOneAnswers400() throws Exception {
+		when(service.attributeForm(any(), eq(user), eq(null))).thenThrow(OntologyModelException.validation(
+				List.of(FormFields.error("/values/showName", "required", "A display name is required")),
+				"Some fields are invalid"));
+
+		var response = mvc().perform(post("/ontology/model/attribute/form")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"target":{"kind":"draft"},"values":{"showName":""},"changedField":null}
+						"""))
+				.andExpect(status().isUnprocessableEntity()).andReturn().getResponse();
+		var fields = JSON.parseObject(response.getContentAsString()).getJSONObject("error").getJSONArray("fields");
+		assertEquals("/values/showName", fields.getJSONObject(0).getString("field"));
+
+		when(service.attributeForm(any(), eq(user), eq(null))).thenThrow(
+				new OntologyModelException(400, "INVALID_REQUEST", "Invalid request", Map.of()));
+		mvc().perform(post("/ontology/model/attribute/form")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"target":{"kind":"draft"},"values":{"className":5},"changedField":null}
+						"""))
+				.andExpect(status().isBadRequest());
 	}
 
 	private MockMvc mvc() {
