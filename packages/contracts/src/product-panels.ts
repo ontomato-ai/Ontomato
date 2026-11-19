@@ -2,9 +2,17 @@ import { z } from "zod";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
 import { ontologyParameterTypeSchema, panelManifestSchema } from "./panel-manifest";
 import { applicationMetadataSchema } from "./application-metadata";
+import { appsSdkBuildSchema } from "./apps-sdk";
 
 const id = z.string().min(1).max(200);
 const path = z.string().regex(/^\/(?!\/)/);
+
+/** The Java-owned canonical site route, before any instance state or draft query is added. */
+export const applicationPanelUsePathSchema = path.pipe(z.string().refine((value) => {
+  if (/[?#\\\s\p{Cc}]|%(?:2f|5c|(?![0-9a-f]{2}))/iu.test(value)) return false;
+  return new URL(value, "https://panel.invalid").pathname === value &&
+    (value === "/" || value.slice(1).split("/").every(Boolean));
+}, "Expected a canonical site path without query or fragment"));
 
 /**
  * PlatformObjectType refers to a read-only platform type, never a customer-editable ObjectType.
@@ -51,7 +59,7 @@ export type ProductProjection = z.infer<typeof productProjectionSchema>;
 const panelText = z.string().refine(value => new TextEncoder().encode(value).byteLength <= 256 * 1024,
   "Panel text must not exceed 256 KiB");
 
-/** Text owned by the current panel record, returned under the panel's use Grant. */
+/** The text of a current panel definition or a workspace candidate. */
 export const productPanelContentSchema = z.object({
   html: panelText,
   module: panelText,
@@ -59,12 +67,16 @@ export const productPanelContentSchema = z.object({
 }).strict();
 export type ProductPanelContent = z.infer<typeof productPanelContentSchema>;
 
-export const productPanelInputSchema = z.object({
-  ...editableDefinitionFields,
+/** Everything needed to render a panel from either source, independent of its registration. */
+export const panelDefinitionContentSchema = z.object({
   content: productPanelContentSchema,
   /** Supplied by the registrant's module export; Node validates references without executing module text. */
   manifest: panelManifestSchema,
+  sdkVersion: appsSdkBuildSchema.shape.version.regex(/^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9.-]+)*$/),
 }).strict();
+export type PanelDefinitionContent = z.infer<typeof panelDefinitionContentSchema>;
+
+export const productPanelInputSchema = panelDefinitionContentSchema.extend(editableDefinitionFields);
 export type ProductPanelInput = z.infer<typeof productPanelInputSchema>;
 
 export const productPanelSchema = productPanelInputSchema.extend(currentRecordFields).strict();
@@ -75,7 +87,7 @@ export const applicationPanelUseSchema = z.object({
   id,
   pageKey: id,
   panelId: id,
-  path,
+  path: applicationPanelUsePathSchema,
   access: z.union([
     z.object({ permissionCode: id }).strict(),
     z.object({ kind: z.literal("domain-member") }).strict(),
@@ -140,8 +152,10 @@ export const registerApplicationPanelUsesRequestSchema = z.object({
 export type RegisterApplicationPanelUsesRequest = z.infer<typeof registerApplicationPanelUsesRequestSchema>;
 
 /** Current Java-owned entry and use relations; Java owns their access checks. */
-export const applicationPanelUsesResponseSchema = registerApplicationPanelUsesRequestSchema.omit({ declaration: true, entryAccess: true }).extend({
+export const applicationPanelUsesResponseSchema = z.object({
   applicationId: id,
+  entry: z.object({ path, renderer: id, home: path.optional() }).strict(),
+  panelUses: z.array(applicationPanelUseSchema),
 }).strict();
 export type ApplicationPanelUsesResponse = z.infer<typeof applicationPanelUsesResponseSchema>;
 

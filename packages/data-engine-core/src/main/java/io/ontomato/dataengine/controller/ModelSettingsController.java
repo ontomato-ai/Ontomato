@@ -48,6 +48,7 @@ public class ModelSettingsController {
     return success(saved);
   }
 
+  @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
   @GetMapping("/model-options")
   public Object options(HttpServletRequest request) throws Exception {
     return success(runtime.json(domain(request), "model-options", "/v1/models/options", "GET", null, null));

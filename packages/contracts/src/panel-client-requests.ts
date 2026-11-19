@@ -16,6 +16,15 @@ export const SCHEDULED_TASK = "platform:ScheduledTask";
 /** The platform operation that runs one scheduled task now, as a projection binds it. */
 export const RUN_NOW = "schedules.runNow";
 
+export const AGENT_DEFINITION = "platform:AgentDefinition";
+export const SKILL = "platform:Skill";
+export const MODEL_OPTION = "platform:ModelOption";
+export const MCP_SERVICE_OPTION = "platform:McpServiceOption";
+export const USER = "platform:User";
+export const OBJECT_TYPE = "platform:ObjectType";
+export const RELATIONSHIP = "platform:Relationship";
+export const DELETE_AGENT = "agents.delete";
+
 /**
  * The gateway prefix the scheduled tasks' contract spells its paths with. A frame's request names the service and the
  * path inside it, as the platform's app host takes them, so the prefix becomes the service.
@@ -33,9 +42,9 @@ export interface ClientRequest {
 export const bindingKey = (binding: { kind: string; id: string }) => `${binding.kind}:${binding.id}`;
 
 const tasks = platformSchedulesPath.slice(DATA_QUERY_GATEWAY.length);
-/** A task's ID is a UUID, so no other segment of the service (`applications`, `credential`) reads as a task. */
-const taskIdPattern = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
-const task = `${tasks}/${taskIdPattern}`;
+/** Record routes accept UUIDs, never another named endpoint of the resource. */
+const uuidPattern = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+const task = `${tasks}/${uuidPattern}`;
 
 interface PanelClientRead extends ClientRequest {
   template: string;
@@ -55,18 +64,70 @@ export const scheduledTaskReads = [
   },
 ] as const satisfies readonly PanelClientRead[];
 
-export const panelClientReads = (binding: string): readonly PanelClientRead[] =>
-  binding === bindingKey({ kind: "PlatformObjectType", id: SCHEDULED_TASK }) ? scheduledTaskReads : [];
+const agents = "/assistant/agent-definitions";
+const agent = `${agents}/${uuidPattern}`;
+const agentForm = `${agents}/form`;
+const validateAgent = `${agents}/validate`;
+
+const agentDefinitionReads = [
+  { method: "GET", service: "", path: new RegExp(`^${agents}$`), template: agents },
+  { method: "GET", service: "", path: new RegExp(`^${agent}$`), template: `${agents}/:id` },
+  {
+    method: "POST", service: "", path: new RegExp(`^${agentForm}$`), template: agentForm,
+    instructions: "POST JSON with the form target, changedField, and optional values. Use the returned field paths and values.",
+  },
+  { method: "POST", service: "", path: new RegExp(`^${validateAgent}$`), template: validateAgent },
+] as const satisfies readonly PanelClientRead[];
+
+const ontologyMetadataRead = {
+  method: "POST", service: "/data-query", path: /^\/admin\/getMetas$/, template: "/admin/getMetas",
+  instructions: "POST an empty JSON object. Class definitions and relationship rules come from this same response.",
+} as const satisfies PanelClientRead;
+
+const objectBinding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
+const readRequests: Readonly<Record<string, readonly PanelClientRead[]>> = {
+  [objectBinding(SCHEDULED_TASK)]: scheduledTaskReads,
+  [objectBinding(AGENT_DEFINITION)]: agentDefinitionReads,
+  [objectBinding(SKILL)]: [
+    { method: "GET", service: "", path: /^\/assistant\/agent-skills$/, template: "/assistant/agent-skills" },
+  ],
+  [objectBinding(MODEL_OPTION)]: [
+    { method: "GET", service: "/data-query", path: /^\/model-options$/, template: "/model-options" },
+  ],
+  [objectBinding(MCP_SERVICE_OPTION)]: [
+    { method: "GET", service: "", path: /^\/mcp\/services\/names$/, template: "/mcp/services/names" },
+  ],
+  [objectBinding(USER)]: [
+    {
+      method: "GET", service: "/data-query", path: /^\/platform\/agent-execution\/options(?:\?[^#]*)?$/,
+      template: "/platform/agent-execution/options",
+      instructions: "Use keyword, pageNum, and pageSize to list choices; use selected to resolve the current reference.",
+    },
+  ],
+  [objectBinding(OBJECT_TYPE)]: [ontologyMetadataRead],
+  [objectBinding(RELATIONSHIP)]: [ontologyMetadataRead],
+};
+
+export const panelClientReads = (binding: string): readonly PanelClientRead[] => readRequests[binding] ?? [];
 
 /** Each binding's requests: what its client sends, and nothing more. */
 export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> = {
-  [bindingKey({ kind: "PlatformObjectType", id: SCHEDULED_TASK })]: [
+  ...readRequests,
+  [objectBinding(SCHEDULED_TASK)]: [
     // The reader's tasks, one task, its application's form for given values, and the save at the task's revision.
     ...scheduledTaskReads,
     { method: "PUT", service: "/data-query", path: new RegExp(`^${task}$`) },
   ],
   [bindingKey({ kind: "PlatformOperation", id: RUN_NOW })]: [
     { method: "POST", service: "/data-query", path: new RegExp(`^${task}/runs$`) },
+  ],
+  [objectBinding(AGENT_DEFINITION)]: [
+    ...agentDefinitionReads,
+    { method: "POST", service: "", path: new RegExp(`^${agents}$`) },
+    { method: "PUT", service: "", path: new RegExp(`^${agent}$`) },
+  ],
+  [bindingKey({ kind: "PlatformOperation", id: DELETE_AGENT })]: [
+    { method: "DELETE", service: "", path: new RegExp(`^${agent}$`) },
   ],
 };
 
