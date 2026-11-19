@@ -30,9 +30,6 @@ export function sdkChunks(root) {
       };
       const vueEntry = normalizePath(join(root, "src/entries/vue.ts"));
       claim("vue-runtime", ...getModuleInfo(vueEntry).importedIds);
-      // Rollup's CommonJS interop helpers serve every CommonJS dependency, not one Element Plus family: left to a
-      // family, a library that also needs them (G6) would load that family's whole chunk and its siblings.
-      claim("commonjs-helpers", "\0commonjsHelpers.js");
 
       const elementPaths = new Map([...getModuleIds()].filter(module => module.includes(element)).map(module =>
         [module.split(element)[1], module],

@@ -56,6 +56,7 @@ vi.mock("@antv/g6", () => ({
       return point;
     }
     setNode() {}
+    setEdge() {}
     destroy() {}
   },
 }));
@@ -132,6 +133,21 @@ it("hands back a choice without keeping it, ignores the second click of a double
   await wrapper.setProps({ selected: ["n1"] });
   await flushPromises();
   expect(of("states")).toEqual([{ n0: [], n1: ["selected"] }]);
+});
+
+it("chooses edges as it chooses nodes, handing them back on their own event", async () => {
+  const nodes = placed(2);
+  const wrapper = mount(G6GraphCanvas, {
+    props: { label: "Graph", nodes, edges: [{ id: "e", source: "n0", target: "n1" }], layout: { type: "preset" }, selected: ["n0"] },
+  });
+  await flushPromises();
+  handlers["edge:click"]({ target: { id: "e" }, detail: 1 });
+  expect(wrapper.emitted("update:selectedEdges")).toEqual([[["e"]]]);
+  expect(wrapper.emitted("update:selected")).toBeUndefined();
+  calls.length = 0;
+  await wrapper.setProps({ selected: [], selectedEdges: ["e"] });
+  await flushPromises();
+  expect(of("states")).toEqual([{ n0: [], e: ["selected"] }]);
 });
 
 const colors: G6Colors = { text: "t", muted: "m", surface: "s", edge: "e", primary: "p", accent: "a", palette: ["c1", "c2"] };

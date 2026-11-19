@@ -234,15 +234,6 @@ export const components: readonly ComponentMetadata[] = [
     outputs: ["selected", "viewport"],
   }),
   defineComponentMeta({
-    componentId: "G6GraphCanvas",
-    module: "@ontomato/sdk/graph",
-    exportName: "G6GraphCanvas",
-    role: "control",
-    meaning:
-      "Draws the nodes and edges it is given with G6, for graphs a reader pans, zooms and drags: the graph canvas's interface, plus each node coloured by its category from the edition's palette, edges labelled, dashed or weighted as given, and invisible anchors for aggregated edges. It hands back the selection a reader's choice results in, the part of the graph in view, a double-click, a dragged node's new place and a click on empty canvas, and gives its caller the current positions and an image of the view. What the nodes are, what a choice means, and where positions and images are kept are its caller's: it reads and stores nothing.",
-    outputs: ["selected", "viewport", "blank", "activate", "move", "progress"],
-  }),
-  defineComponentMeta({
     componentId: "TwoPaneLayout",
     module: "@ontomato/sdk/base",
     exportName: "TwoPaneLayout",

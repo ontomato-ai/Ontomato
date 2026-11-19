@@ -33,6 +33,11 @@ const props = withDefaults(
     edges?: readonly GraphCanvasEdge[];
     /** The IDs of the chosen nodes, drawn as selected. */
     selected?: readonly string[];
+    /**
+     * The IDs of the chosen edges, drawn as selected; a reader chooses edges under the same `selection` rule as nodes.
+     * Whether a node and an edge may be chosen at once is the caller's: it passes back what it keeps.
+     */
+    selectedEdges?: readonly string[];
     /** How a reader chooses: `none` draws only, `single` keeps at most one node, `multiple` adds and removes one at a time. */
     selection?: GraphCanvasSelection;
     /** Where the nodes go: `grid` in the given order, `preset` at each node's `x`/`y`. */
@@ -43,16 +48,25 @@ const props = withDefaults(
     categories?: readonly string[];
     /** The widest a node's name is drawn, in graph units; a longer one ends in an ellipsis. Twice the node when absent. */
     labelWidth?: number;
+    /**
+     * Lets a reader ask for a new edge: dragging from a node to a node with Shift held hands back `connect`, while a
+     * plain drag still moves the node. The canvas draws no edge of its own: the caller adds one if its owner creates it.
+     */
+    editable?: boolean;
   }>(),
-  { edges: () => [], selected: () => [], selection: "single", layout: () => ({ type: "grid" }), maxHeight: undefined, categories: () => [], labelWidth: G6_LABEL_WIDTH },
+  { edges: () => [], selected: () => [], selectedEdges: () => [], selection: "single", layout: () => ({ type: "grid" }), maxHeight: undefined, categories: () => [], labelWidth: G6_LABEL_WIDTH, editable: false },
 );
 const emit = defineEmits<{
   /** The selection a reader's choice results in: every chosen ID, in the order they were chosen. */
   "update:selected": [ids: string[]];
+  /** The edge selection a reader's choice on an edge results in, as `update:selected` is for nodes. */
+  "update:selectedEdges": [ids: string[]];
   /** The part of the graph in view, in graph coordinates: after each draw, pan, zoom and resize. */
   viewport: [viewport: GraphCanvasViewport];
   /** A reader clicked the canvas away from every node and edge. */
   blank: [];
+  /** A reader asked for an edge from `source` to `target` (both node IDs, the same one for a loop); only when `editable`. */
+  connect: [source: string, target: string];
   /** A reader double-clicked a node or an edge: what that does is the caller's. */
   activate: [element: GraphCanvasElement];
   /** A reader dragged a node and let go here. The canvas keeps it there until its caller gives it another position. */
@@ -65,7 +79,7 @@ const BATCH = 200;
 const host = ref<HTMLElement | null>(null);
 let graph: Graph | null = null;
 let colors: G6Colors;
-/** What G6 holds now, as last handed to it: each node's look and position, each edge, and the selected IDs. */
+/** What G6 holds now, as last handed to it: each node's look and position, each edge, and the selected node and edge IDs. */
 let drawnNodes = new Map<string, string>();
 let drawnPositions = new Map<string, string>();
 let drawnEdges = new Map<string, string>();
@@ -110,7 +124,10 @@ async function sync(target: Graph) {
   if (goneEdges.length) target.removeEdgeData(goneEdges);
   const goneNodes = [...drawnNodes.keys()].filter((id) => !nodes.has(id));
   if (goneNodes.length) target.removeNodeData(goneNodes);
-  for (const id of goneEdges) drawnEdges.delete(id);
+  for (const id of goneEdges) {
+    drawnEdges.delete(id);
+    drawnSelected.delete(id);
+  }
   for (const id of goneNodes) {
     drawnNodes.delete(id);
     drawnPositions.delete(id);
@@ -165,9 +182,9 @@ async function addInBatches(target: Graph, nodes: NodeData[], edges: EdgeData[])
   }
 }
 
-/** Marks the selected nodes; whether that changed anything. */
+/** Marks the selected nodes and edges; whether that changed anything. */
 function applySelection(target: Graph) {
-  const next = new Set(props.selected.filter((id) => drawnNodes.has(id)));
+  const next = new Set([...props.selected.filter((id) => drawnNodes.has(id)), ...props.selectedEdges.filter((id) => drawnEdges.has(id))]);
   const states: Record<string, string[]> = {};
   for (const id of drawnSelected) if (!next.has(id)) states[id] = [];
   for (const id of next) if (!drawnSelected.has(id)) states[id] = ["selected"];
@@ -177,11 +194,10 @@ function applySelection(target: Graph) {
   return true;
 }
 
-function choose(id: string) {
-  if (props.selection === "none") return;
-  const chosen = props.selected.includes(id);
-  if (props.selection === "single") emit("update:selected", chosen ? [] : [id]);
-  else emit("update:selected", chosen ? props.selected.filter((item) => item !== id) : [...props.selected, id]);
+/** The selection that choosing `id` among `current` results in, under the canvas's `selection` rule. */
+function chosen(current: readonly string[], id: string) {
+  if (props.selection === "single") return current.includes(id) ? [] : [id];
+  return current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
 }
 
 let reported = "";
@@ -194,6 +210,10 @@ function reportViewport() {
   if (JSON.stringify(viewport) === reported) return;
   reported = JSON.stringify(viewport);
   emit("viewport", viewport);
+}
+
+function edgeOptions() {
+  return { type: "line", state: { selected: { stroke: colors.primary, lineWidth: 3, opacity: 1 } } };
 }
 
 function nodeOptions() {
@@ -210,15 +230,32 @@ async function create(width: number, height: number) {
     padding: 48,
     animation: false,
     data: { nodes: [], edges: [] },
-    behaviors: ["drag-canvas", "zoom-canvas", "drag-element"],
+    behaviors: [
+      "drag-canvas",
+      "zoom-canvas",
+      { type: "drag-element", enable: (event: any) => !(props.editable && event.shiftKey) },
+      {
+        type: "create-edge",
+        trigger: "drag",
+        enable: (event: any) => props.editable && event.shiftKey,
+        onCreate: (edge: EdgeData) => {
+          emit("connect", String(edge.source), String(edge.target));
+          return undefined;
+        },
+      },
+    ],
     node: nodeOptions(),
-    edge: { type: "line" },
+    edge: edgeOptions(),
   });
   graph = target;
   // The second click of a double-click is not a second choice: it would undo the first.
   target.on("node:click", (event: any) => {
-    if (event.detail >= 2) return;
-    choose(String(event.target.id));
+    if (event.detail >= 2 || props.selection === "none") return;
+    emit("update:selected", chosen(props.selected, String(event.target.id)));
+  });
+  target.on("edge:click", (event: any) => {
+    if (event.detail >= 2 || props.selection === "none") return;
+    emit("update:selectedEdges", chosen(props.selectedEdges, String(event.target.id)));
   });
   target.on("canvas:click", () => emit("blank"));
   target.on("node:dblclick", (event: any) => emit("activate", { kind: "node", id: String(event.target.id) }));
@@ -247,6 +284,7 @@ function restyle() {
     restyling = false;
     colors = readG6Colors(host.value!);
     target.setNode(nodeOptions());
+    target.setEdge(edgeOptions());
     drawnNodes = new Map([...drawnNodes.keys()].map((id) => [id, ""]));
     drawnEdges = new Map([...drawnEdges.keys()].map((id) => [id, ""]));
     drawnSelected = new Set();
@@ -259,7 +297,7 @@ watch(
   () => void enqueue(sync),
 );
 watch(
-  () => props.selected,
+  () => [props.selected, props.selectedEdges],
   () =>
     void enqueue(async (target) => {
       if (applySelection(target)) await target.draw();
