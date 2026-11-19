@@ -84,14 +84,20 @@ it("labels every record and offers the filter choices in the request language", 
     ratingLabel: "Like",
   });
   expect(page.filters).toEqual({
-    sourceType: [
-      { value: "qa", label: "Query" },
-      { value: "analysis_task", label: "Analysis task" },
-    ],
-    rating: [
-      { value: "like", label: "Like" },
-      { value: "dislike", label: "Dislike" },
-    ],
+    sourceType: {
+      label: "Source",
+      options: [
+        { value: "qa", label: "Query" },
+        { value: "analysis_task", label: "Analysis task" },
+      ],
+    },
+    rating: {
+      label: "Rating",
+      options: [
+        { value: "like", label: "Like" },
+        { value: "dislike", label: "Dislike" },
+      ],
+    },
   });
 });
 

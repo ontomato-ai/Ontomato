@@ -32,7 +32,7 @@ const record = {
   turnKey: "turn.11111111-1111-4111-8111-111111111111.3",
   createdAt: Date.UTC(2026, 10, 19, 8, 0, 0),
 };
-const page = { records: [record], total: 1, limit: 20, offset: 0, filters: { sourceType: [], rating: [] } };
+const page = { records: [record], total: 1, limit: 20, offset: 0, filters: { sourceType: { label: "", options: [] }, rating: { label: "", options: [] } } };
 
 let server: Server;
 let base: string;

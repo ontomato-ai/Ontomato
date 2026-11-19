@@ -13,22 +13,23 @@ export function feedbackCsv(
   locale: string | undefined,
   timeZone: string,
 ): string {
-  const text = (key: string) => tForLocale(locale, `api.feedbackExport.${key}`);
+  const column = (key: string) => tForLocale(locale, `api.feedbackExport.${key}`);
+  const label = (key: string) => tForLocale(locale, `api.feedback.${key}`);
   const headers = [
-    text("columns.time"),
-    text("columns.source"),
-    text("columns.rating"),
-    text("columns.user"),
-    text("columns.turnKey"),
-    text("columns.input"),
-    text("columns.output"),
-    text("columns.feedback"),
+    column("columns.time"),
+    column("columns.source"),
+    column("columns.rating"),
+    column("columns.user"),
+    column("columns.turnKey"),
+    column("columns.input"),
+    column("columns.output"),
+    column("columns.feedback"),
   ];
   const lines = records.map((record) =>
     [
       new Date(record.createdAt).toLocaleString(locale, { timeZone }),
-      text(`sources.${record.sourceType}`),
-      text(`ratings.${record.rating}`),
+      label(`sources.${record.sourceType}`),
+      label(`ratings.${record.rating}`),
       record.userName || record.userId,
       record.turnKey,
       record.userInput ?? "",

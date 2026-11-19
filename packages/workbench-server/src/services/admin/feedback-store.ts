@@ -81,12 +81,12 @@ export async function listFeedback(
     records.push({
       id: row.id,
       sourceType,
-      sourceTypeLabel: tForLocale(o.locale, `api.feedbackExport.sources.${sourceType}`),
+      sourceTypeLabel: tForLocale(o.locale, `api.feedback.sources.${sourceType}`),
       targetId: row.target_id,
       threadId: row.session_id,
       taskId: row.run_id,
       rating,
-      ratingLabel: tForLocale(o.locale, `api.feedbackExport.ratings.${rating}`),
+      ratingLabel: tForLocale(o.locale, `api.feedback.ratings.${rating}`),
       userId: row.owner_id,
       userInput: messageText(
         s.messages.find((m) => m.message.role === "user")?.message ?? {
@@ -112,16 +112,22 @@ export async function listFeedback(
   };
 }
 
-/** The values and display names of the two feedback filters. */
+/** The names, values and display names of the two feedback filters. */
 function feedbackFilters(locale: string | undefined): FeedbackFilters {
   return {
-    sourceType: [
-      { value: "qa", label: tForLocale(locale, "api.feedbackExport.sources.qa") },
-      { value: "analysis_task", label: tForLocale(locale, "api.feedbackExport.sources.analysis_task") },
-    ],
-    rating: [
-      { value: "like", label: tForLocale(locale, "api.feedbackExport.ratings.like") },
-      { value: "dislike", label: tForLocale(locale, "api.feedbackExport.ratings.dislike") },
-    ],
+    sourceType: {
+      label: tForLocale(locale, "api.feedback.filters.sourceType"),
+      options: [
+        { value: "qa", label: tForLocale(locale, "api.feedback.sources.qa") },
+        { value: "analysis_task", label: tForLocale(locale, "api.feedback.sources.analysis_task") },
+      ],
+    },
+    rating: {
+      label: tForLocale(locale, "api.feedback.filters.rating"),
+      options: [
+        { value: "like", label: tForLocale(locale, "api.feedback.ratings.like") },
+        { value: "dislike", label: tForLocale(locale, "api.feedback.ratings.dislike") },
+      ],
+    },
   };
 }

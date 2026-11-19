@@ -29,6 +29,7 @@ const feedbackRecordSchema = z.object({
 });
 
 const feedbackFilterOptionSchema = z.object({ value: z.string(), label: z.string() });
+const feedbackFilterSchema = z.object({ label: z.string(), options: z.array(feedbackFilterOptionSchema) });
 
 export const feedbackPageSchema = z.object({
   records: z.array(feedbackRecordSchema),
@@ -36,8 +37,8 @@ export const feedbackPageSchema = z.object({
   limit: z.number().int().positive(),
   offset: z.number().int().nonnegative(),
   filters: z.object({
-    sourceType: z.array(feedbackFilterOptionSchema),
-    rating: z.array(feedbackFilterOptionSchema),
+    sourceType: feedbackFilterSchema,
+    rating: feedbackFilterSchema,
   }),
 });
 

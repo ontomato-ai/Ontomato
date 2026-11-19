@@ -8,9 +8,15 @@ export interface FeedbackFilterOption {
   label: string;
 }
 
+/** One filter of the feedback page: its own name and the values it offers. */
+export interface FeedbackFilter {
+  label: string;
+  options: FeedbackFilterOption[];
+}
+
 export interface FeedbackFilters {
-  sourceType: FeedbackFilterOption[];
-  rating: FeedbackFilterOption[];
+  sourceType: FeedbackFilter;
+  rating: FeedbackFilter;
 }
 
 export interface FeedbackRecord {

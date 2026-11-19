@@ -68,7 +68,7 @@ beforeEach(() => {
 });
 
 it("exports the filtered records as a BOM CSV attachment with the admin page's columns", async () => {
-  records.mockResolvedValue({ records: [record], total: 1, limit: 20, offset: 0, filters: { sourceType: [], rating: [] } });
+  records.mockResolvedValue({ records: [record], total: 1, limit: 20, offset: 0, filters: { sourceType: { label: "", options: [] }, rating: { label: "", options: [] } } });
 
   const response = await fetch(`${base}/export?sourceType=qa&rating=like&keyword=refund&timeZone=America%2FNew_York`);
 
@@ -102,7 +102,7 @@ it("exports the filtered records as a BOM CSV attachment with the admin page's c
 });
 
 it("keeps the list's admission and sends no filter it was not given", async () => {
-  records.mockResolvedValue({ records: [], total: 0, limit: 20, offset: 0, filters: { sourceType: [], rating: [] } });
+  records.mockResolvedValue({ records: [], total: 0, limit: 20, offset: 0, filters: { sourceType: { label: "", options: [] }, rating: { label: "", options: [] } } });
 
   const response = await fetch(`${base}/export?timeZone=Asia%2FShanghai`);
 
