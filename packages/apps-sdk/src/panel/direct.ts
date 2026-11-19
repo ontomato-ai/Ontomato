@@ -1,4 +1,4 @@
-import { computed, onScopeDispose, shallowRef, watch, type ComputedRef } from "vue";
+import { computed, onScopeDispose, shallowReactive, shallowRef, watch, type ComputedRef } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { DirectPanelManifest, PanelManifest, PanelStateField } from "@ontomato/contracts/panel-manifest";
 import { panelOperationAffectedSchema, panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
@@ -58,6 +58,14 @@ export interface DirectPanelInstance extends PanelInstance {
   memberData(member: string, projection: DirectProjection, inputs: () => MemberInputs): MemberData;
   /** An operation's reported changes: the shown data they concern are read again. */
   refresh(affected: PanelOperationAffected): void;
+  /** Every shown datum is read again, and every component that reads its own data is told to. */
+  refreshAll(): void;
+  /** While the reader does not see the instance it reads nothing; a refresh when seen again brings it up to date. */
+  setActive(active: boolean): void;
+  /** A projection's definition changed: its members read it again and draw it anew. */
+  projectionChanged(id: string): void;
+  /** How many times a member's projection was read anew, which its drawing is keyed by. */
+  projectionVersion(member: string): number;
 }
 
 /** The old declaration the shared machinery reads: members as slots, typed state fields as kinds, no state operations. */
@@ -86,6 +94,8 @@ export function createDirectPanelInstance(direct: DirectPanelManifest, options: 
   const defaults = Object.fromEntries(Object.entries(direct.state).flatMap(([name, field]) =>
     field.default === undefined ? [] : [[name, field.default]]));
   const projections = new Map<string, Promise<DirectProjection>>();
+  const versions = shallowReactive(new Map<string, number>());
+  let active = true;
   const instance = createPanelInstance(sharedManifest(direct), {
     ...options,
     affected: (affected) => directInstance.refresh(affected),
@@ -125,6 +135,8 @@ export function createDirectPanelInstance(direct: DirectPanelManifest, options: 
           const state = shallowRef<MemberDataState>({ status: "loading" });
           let sequence = 0;
           const reread = () => {
+            // Unseen, the instance reads nothing; the refresh when it is seen again reads every shown datum.
+            if (!active) return;
             const reading = ++sequence;
             state.value = { status: "loading" };
             // An answer for an earlier read (an earlier selection) is dropped once a later read was asked for.
@@ -148,6 +160,21 @@ export function createDirectPanelInstance(direct: DirectPanelManifest, options: 
       }
       for (const object of affected.objects) instance.objectChanged(object);
     },
+    refreshAll() {
+      for (const { reread } of shown) reread();
+      instance.refreshObjects();
+    },
+    setActive(next: boolean) {
+      active = next;
+    },
+    projectionChanged(id: string) {
+      for (const [member, declaration] of Object.entries(direct.members)) {
+        if (declaration.target.projectionId !== id) continue;
+        projections.delete(member);
+        versions.set(member, (versions.get(member) ?? 0) + 1);
+      }
+    },
+    projectionVersion: (member: string) => versions.get(member) ?? 0,
   });
   return directInstance;
 }

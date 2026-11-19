@@ -4,7 +4,8 @@
   "version": "1.1.2",
   "type": "module",
   "exports": {
-    ".": "./src/edition.ts"
+    ".": "./src/edition.ts",
+    "./direct": "./src/direct.ts"
   },
   "scripts": {
     "test": "node --test '*.node-test.mjs' 'examples/**/*.node-test.mjs'",
