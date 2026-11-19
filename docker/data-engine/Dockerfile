@@ -129,7 +129,7 @@ set -eu
 cat > /tmp/maven-settings.xml <<'SETTINGS'
 <settings></settings>
 SETTINGS
-MAVEN_SETTINGS=/tmp/maven-settings.xml /usr/local/bin/export-java.sh
+MAVEN_USER_HOME=/tmp/maven-wrapper-diagnostics MAVEN_SETTINGS=/tmp/maven-settings.xml /usr/local/bin/export-java.sh
 rm -f /tmp/maven-settings.xml
 EOF
 

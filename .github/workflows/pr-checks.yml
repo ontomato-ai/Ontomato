@@ -102,6 +102,8 @@ jobs:
         run: python3 -m pip install requests==2.32.5
 
       - name: Test the Java contract and boundary group
+        env:
+          MAVEN_USER_HOME: ${{ runner.temp }}/maven-wrapper-diagnostics
         run: ./mvnw -B -ntp -Pcontract test
 
       # Match docker/workbench/Dockerfile and the public branch image build facts.
